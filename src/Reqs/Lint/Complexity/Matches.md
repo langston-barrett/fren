@@ -44,7 +44,11 @@ environment as it is wherever they match (`lang::bind`), since an
 or-pattern binds nothing (`F0333`). A variant whose payload is `_` for
 each of its values binds nothing either, but telling so looks along the
 payload, which needs a recursion, so the function leaves it, and the
-linter fires there besides. That is a rewrite, as [Fixes as
+linter fires there besides. The guard `true` elaborates away, so the
+function fires on `match s { _ if true => b }` too. The linter does not,
+since the arm has a guard, and leaves it to
+[`trivial_guard`](#trivial-guards), whose fix makes it a trivial `match`.
+That is a rewrite, as [Fixes as
 rewrites](../Rewrites.md) states for every such lint:
 
 ```fren

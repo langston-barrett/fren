@@ -235,8 +235,12 @@ remainder of its inputs. A spec cannot compute them, since the product of
 two variables is not linear, and a divisor must be a constant (see
 [Division and remainder](../Lang/Expressions.md#division-and-remainder)).
 So the implementation gives them, as `Int.mul`, `Int.ediv` and
-`Int.emod`, and `src/Impls/Rewrites.lean` proves it in Lean, for every
-two integers. The concatenation is Fren's own `++`, and the solver checks
+`Int.emod`. The `ensure`s do not determine the outputs, so that they are
+the language's primitives rests on the implementation writing them so,
+which is trusted, as [Semantics](../Lang/Semantics.md) states the
+language's interpretation. `src/Impls/Rewrites.lean` proves in Lean only
+that those values meet `usual_point?`, for every two integers. The
+concatenation is Fren's own `++`, and the solver checks
 it, for every two strings. `usual_language` checks it with the
 solver at the language's own value of each point whose value is linear
 in its arguments: a product with `0`, `1` or `-1`; a quotient by `1`,

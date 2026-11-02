@@ -8,9 +8,9 @@ import Reqs.Lint
 `overly_complex_bool_expr`, `double_neg`, `int_plus_one`, `manual_abs`,
 `manual_abs_diff`, `unless_not`, `collapsible_when`, `same_branches`,
 `neg_multiply`, `identity_op`, `manual_rem_euclid`, `trivial_guard` and
-`trivial_match` over `lang::Expr`: each fix agrees with the expression where it fires,
-`neg_multiply`, `identity_op` and `manual_rem_euclid` in an
-interpretation whose primitive operations are `usual?`; what the messages
+`trivial_match` over `lang::Expr`: each fix agrees with the expression
+where it fires, `neg_multiply`, `identity_op` and `manual_rem_euclid` in
+an interpretation whose primitive operations are `usual?`; what the messages
 of `eq_op`, `erasing_op` and `modulo_one` say agrees with the expression,
 the last two in such an interpretation; and the
 linter's rule for `overly_complex_bool_expr`, `Core.overlyComplexRule`,
@@ -1106,8 +1106,9 @@ theorem usual_language_text (s t : String) :
     lint.usual_point? (Fren.Str.lit "++") (.Cons (.Text s) (.Cons (.Text t) .Nil)) (.Text (s ++ t)) = true := by
   simp [lint.usual_point?, lang.Value.Cons.x0, lang.Value.Cons.x1, lang.Value.Text.x0, Fren.Str.lit]
 
--- The language's products, quotients and remainders are `Int.mul`,
--- `Int.ediv` and `Int.emod`, by `usual_language_points`.
+-- The outputs are `Int.mul`, `Int.ediv` and `Int.emod`, which is trusted to
+-- be the language's interpretation; `usual_language_points` proves only that
+-- they meet `usual_point?`.
 impl usual_primitives: lint::usual_primitives for (m n : Int) (s t : String) {
   m := m, n := n, s := s, t := t,
   product := m * n,
@@ -1167,7 +1168,6 @@ theorem fires_at_mre (e : Expr String) :
   show decide (lint.manual_rem_euclid_fires? String e = true) = _
   cases lint.manual_rem_euclid_fires? String e <;> rfl
 
-/-- `fits?` of a lint whose fix rests on the primitive operations: they are `usual?`. -/
 theorem fires_at_tg (e : Expr String) :
     lint.fires_at? String .TrivialGuard e = lint.trivial_guard_fires? String e := by
   show decide (lint.trivial_guard_fires? String e = true) = _
@@ -1178,6 +1178,7 @@ theorem fires_at_tm (e : Expr String) :
   show decide (lint.trivial_match_fires? String e = true) = _
   cases lint.trivial_match_fires? String e <;> rfl
 
+/-- `fits?` of a lint whose fix rests on the primitive operations: they are `usual?`. -/
 theorem fits_usual (l : lint.ExprLint) (hl : l = .NegMultiply ∨ l = .IdentityOp ∨ l = .ManualRemEuclid)
     (h : lint.fits? l i = true) : lint.usual? i.primitives = true := by
   rcases hl with rfl | rfl | rfl <;> simpa [lint.fits?, lint.uses_primitives?] using h

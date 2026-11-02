@@ -16,9 +16,9 @@ for every two types of names, by its definition (`fires_at_rn`,
 `fix_at_rn`); `fires_in?` and `fix_all`, which look within the operands, by
 induction on the expression (`fires_in_rn`, `fix_all_rn`). `lint::renamed_apart`
 is these, for a swap of two names. `int_plus_one`, `double_neg`, `unless_not`,
-`collapsible_when`, `neg_multiply`, `identity_op` and `trivial_guard` compare no operands, so
-they are invariant under every renaming, injective or not (their lemmas `omit`
-the injectivity). -/
+`collapsible_when`, `neg_multiply`, `identity_op`, `trivial_guard` and
+`trivial_match` compare no operands, so they are invariant under every
+renaming, injective or not (their lemmas `omit` the injectivity). -/
 
 open Fren.Generated
 open lang
