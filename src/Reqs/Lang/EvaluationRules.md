@@ -120,8 +120,9 @@ r[evaluation.operator.primitive]
 `*`, `div` and `mod` of two integers, and `++` of two strings, are
 [primitive operations](Semantics.md#environments-and-interpretations).
 Each applies where the interpretation has a point for it at the operands'
-values, and gives that point's value (`binary_defined`, `product`,
-`quotient`, `remainder` and `text_concatenation`).
+values, but `div` and `mod` by `0` (`evaluation.operator.division`), and
+gives that point's value (`binary_defined`, `product`, `quotient`,
+`remainder` and `text_concatenation`).
 
 r[evaluation.operator.division]
 `div` and `mod` apply only to a divisor other than `0` (`zero_divisor`).
@@ -132,8 +133,9 @@ elements of the first, then those of the second (`binary_defined` and
 `list_concatenation`).
 
 r[evaluation.operator.membership]
-`in` applies to a list on its right, and says whether the left operand's
-value is one of the list's elements (`binary_defined` and `membership`).
+`in` applies, to any left operand, exactly where its right operand is a
+list, and says whether the left operand's value is one of the list's
+elements (`binary_defined` and `membership`).
 
 r[evaluation.operator.equality]
 `=` applies to any two values, and says whether they are equal
@@ -148,8 +150,8 @@ The orders of the other [ordered types](Types.md#ordered-types) are not
 yet in the model (`semantics.excluded.orders`).
 
 r[evaluation.operator.count]
-`Count(c, args)` evaluates every argument, and applies where each is a
-`Bool`. `Count(Exactly, args)` says whether exactly one argument is
+`Count(c, args)` evaluates every argument, and applies exactly where each
+is a `Bool`. `Count(Exactly, args)` says whether exactly one argument is
 `true`, and `Count(AtMost, args)` whether at most one is
 (`lang::count_rules`).
 

@@ -18,7 +18,7 @@
 evaluation.laws
 evaluation.constant
 evaluation.variant
-evaluation.operator.order.excluded -- says what the model leaves out (`semantics.excluded.orders`), which is no law of evaluation
+evaluation.operator.order.excluded -- defers to `semantics.excluded.orders`, which the Interlock of Semantics closes by modelling the orders
 evaluation.match
 evaluation.match.order
 evaluation.list.nil
