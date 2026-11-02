@@ -646,7 +646,7 @@ def specStateOf (files : Array (String × Array Char)) (callTargs : Std.HashMap 
   lowerAll items callTargs
 
 def specOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    Except String Spec := (·.spec) <$> specStateOf files callTargs
+    Except String Spec := (·.spec.keepCompiledRecs) <$> specStateOf files callTargs
 
 /-- The evaluator's procedure for the elaborator's, matched by path, for a
 global expectation by its module and name, or for the body of a function

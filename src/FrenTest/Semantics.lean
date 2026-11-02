@@ -41,7 +41,9 @@ testing does, keeps the value of its applications (`compiledRecursion`),
 and a pattern that `Pat.mayMatchCtor` says matches no variant of an index
 matches none (`mayMatchCtorSound`), which `Ex.dispatch` rests on, and
 deciding whether a pattern matches before binding it gives the frame that
-matching gives (`matchSplitAgrees`), which `Ex.eval`'s arms rest on. Last,
+matching gives (`matchSplitAgrees`), which `Ex.eval`'s arms rest on, and
+the union, intersection and difference of two sets are those that
+`Val.setOf` gives (`setOpsAgree`), which `binV` rests on. Last,
 expressions of the semantics alone are evaluated under interpretations
 that differ in the functions that they do not mention. Both lemmas are
 proved in `Impls/Semantics.lean`; these tests cross-check the proofs'
@@ -753,8 +755,60 @@ def constantOfRecursion : Bool :=
 
 #guard constantOfRecursion
 
+/-- A random member of a set for `setOpsAgree`: `genVal`'s values, and
+pairs, sets and long strings of them, so that some keys are printed by
+`reprStr` itself, over 120 characters, rather than flat (`Val.setKey`). -/
+partial def genMember (d : Nat) : R Val := do
+  match ← next (if d == 0 then 2 else 5) with
+  | 0 => genVal 2
+  | 1 => return .str (String.ofList (List.replicate (← next 160) 'a'))
+  | 2 => return .pair (← genMember (d - 1)) (← genMember (d - 1))
+  | 3 => return Val.setOf (← (List.range (← next 4)).toArray.mapM fun _ => genMember (d - 1))
+  | _ => return .ctor `E (← next 3) (← (List.range (← next 4)).toArray.mapM fun _ => genMember (d - 1))
+
+/-- How `binV` takes the union, intersection and difference of two sets
+(`Val.union`, `Val.setFilter`): as `Val.setOf` of their members would,
+on random sets, which share members often, so that one often has every
+member of the other, each made by `Val.setOf`, `Val.setOfKeyed` or
+`smallSets`, the ways that sets are made with more than one member. -/
+def setOpsAgree : Array String := Id.run do
+  let mut failures := #[]
+  let mut seed := 17
+  let mut within := 0
+  let mut long := 0
+  for _ in [0:5000] do
+    let ((a, b), s) := (do
+      let pool ← (List.range (1 + (← next 6))).toArray.mapM fun _ => genMember 2
+      let pick : R (Array Val) := do
+        let n ← next 5
+        (List.range n).toArray.mapM fun _ => do return pool[← next pool.size]!
+      -- Each set made one of the ways a search makes them: `Val.setOf`,
+      -- `Val.setOfKeyed` as `Problem.pool` calls it, or `smallSets`.
+      let keyed : Array (Thunk String × Val) := pool.map fun (v : Val) => (Thunk.mk fun _ => v.setKey, v)
+      let make : R Val := do
+        match ← next 3 with
+        | 0 => return Val.setOf (← pick)
+        | 1 => return Val.setOfKeyed (← (List.range (← next 5)).toArray.mapM fun _ => do
+            return keyed[← next keyed.size]!)
+        | _ => let small := FrenCli.Eval.smallSets pool; return small[← next small.size]!
+      return (← make, ← make)).run seed
+    seed := s
+    let .set a := a | continue
+    let .set b := b | continue
+    if b.all a.contains || a.all b.contains then within := within + 1
+    if (a ++ b).any fun v => (v.reprFlat "" false).length > 120 then long := long + 1
+    if Val.union a b != Val.setOf (a ++ b) then
+      failures := failures.push s!"`Val.union` and `Val.setOf` disagree on {repr a} and {repr b}"
+    if Val.setFilter a b.contains != Val.setOf (a.filter b.contains) then
+      failures := failures.push s!"an intersection and `Val.setOf` disagree on {repr a} and {repr b}"
+    if Val.setFilter a (!b.contains ·) != Val.setOf (a.filter (!b.contains ·)) then
+      failures := failures.push s!"a difference and `Val.setOf` disagree on {repr a} and {repr b}"
+  if within < 1000 then failures := failures.push s!"only {within} pairs of sets had one within the other"
+  if long < 300 then failures := failures.push s!"only {long} pairs of sets had a member printed over 120 characters"
+  return failures
+
 #eval show IO Unit from do
-  let failures := run ++ runInterp ++ mayMatchCtorSound ++ matchSplitAgrees ++ compiledRecursion
+  let failures := run ++ runInterp ++ mayMatchCtorSound ++ matchSplitAgrees ++ compiledRecursion ++ setOpsAgree
   unless failures.isEmpty do
     throw (IO.userError s!"`lang::eval` and `Ex.eval` disagree:\n{"\n".intercalate (failures.toList.take 5)}")
 
