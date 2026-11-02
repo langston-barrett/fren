@@ -2035,8 +2035,8 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
             "help: establish the other postconditions before relying on this one"]]
       else if w.startsWith "recursive contracts: " then
         #[one "F0450" s!"could not decide whether {what}" (some "contracts may be too weak")
-          #[s!"note: this check fails only under the contracts of {((w.drop 21).toString)}",
-            "note: evaluation of the recursive definitions does not confirm the counterexample",
+          #[s!"note: this check fails under the contracts of {((w.drop 21).toString)}",
+            "note: evaluation of the recursive definitions does not confirm the counterexample: it refutes it, or cannot evaluate it",
             "help: strengthen those functions' contracts"]]
       else if let some (code, notes) := elementReasonNotes? w then
         #[one code s!"could not decide whether {what}{why}" (some "undecided") notes]
