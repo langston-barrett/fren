@@ -1625,7 +1625,7 @@ def knownKinds : List KnownKind :=
    -- trait's laws (F0665), on its assumptions and calls (F0664), that its
    -- assumptions contradict each other (F0602), or that an arm is never
    -- taken (F0626), and so the summaries' counts (#493).
-   { kind := leanSmtArrow, issue := 493, seed := 1179170 },
+   -- DEMO ONLY: Lean's '->' failure treated as unknown.
    { kind := "only fren reports *", issue := 493, seed := 1179170, alongside? := some leanSmtArrow, onItsLine := true },
    { kind := "summary: fren says …, Lean says …", issue := 493, seed := 1179061, alongside? := some leanSmtArrow },
    -- A trait's expectation rests on a contract whose realizability did
@@ -1742,7 +1742,7 @@ private def laws : String :=
     not checked"
 private def summary : String := "summary: fren says `12 passed, 2 failed, 2 inconclusive, 0 redundant`, Lean says \
   `11 passed, 2 failed, 3 inconclusive, 0 redundant`"
-#guard known arrow
+#guard !known arrow
 #guard known laws (found := #[laws, arrow]) && known summary (found := #[laws, arrow, summary])
 #guard !known laws && !known summary (found := #[laws, summary])
 -- only at the line of Lean's failure.
@@ -1750,7 +1750,7 @@ private def summary : String := "summary: fren says `12 passed, 2 failed, 2 inco
 #guard knownIssue? { avoidKnown := true } #[] #[laws, arrow] laws == some 493
 #guard knownIssue? {} #[] #[laws, arrow] laws == none
 -- Lean's failure is known whatever it could not decide.
-#guard known "line 61:12: only Lean reports warning: could not decide whether the assumptions and calls of \
+#guard !known "line 61:12: only Lean reports warning: could not decide whether the assumptions and calls of \
   `fz::Tr::e1` can hold together with its trait's laws: cvc5.Error.error \"Symbol '->' not declared as a variable\""
 end
 -- Lean's failure to enumerate explains what only `fren` reports of the
