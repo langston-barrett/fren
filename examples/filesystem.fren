@@ -35,6 +35,7 @@
 -- end reaches `simp`'s maximum recursion depth, or its heartbeat limit, on
 -- most of the lemmas, which apply recursive functions with contracts to
 -- applications of others (#417), where the `fren` command passes them all.
+-- Once #417 is fixed, drop the next line, so that both front ends check it.
 --@ only: cli
 mod filesystem
 
@@ -459,8 +460,9 @@ pub fn mv_refines?(l: Listing, before: FileSystem, src: Path, dst: Path, q: Path
 -- one directory, `/a`, and move it to `/b/c` under the weakened
 -- precondition: Fren finds that `b` may be `a`. The spec's equation then
 -- puts the directory at `/a/c`, below itself, but the tree has nowhere to
--- put it, and has lost it. The comment after the check is the
--- counterexample that the tests expect: the names are the empty string.
+-- put it, and has lost it. The comment after the check is the failure that
+-- the tests expect. Its counterexample has `b = a`; the strings it picks
+-- for the names are the solver's choice.
 --
 -- The paths' shapes are fixed and their names left to the solver. With the
 -- history, the tree and the paths all free, as in `mv_refines?`, the
@@ -471,7 +473,7 @@ expect mv_into_itself(a: Name, b: Name, c: Name) {
     let dst: Path := Sub(b, Sub(c, Root))
     let before: FileSystem := FileSystem::Mkdir(FileSystem::Empty, src)
     assume weakened: entry(before, parent(dst)) = Entry::Dir and entry(before, dst) = Entry::Missing
-    expect agrees: agrees?(  --~ error: counterexample: a = "", b = "", c = ""
+    expect agrees: agrees?(  --~ error: expectation `filesystem::mv_into_itself::agrees` does not hold
         mv(mkdir(Listing::Empty, src), src, dst),
         FileSystem::Mv(before, src, dst),
         dst
