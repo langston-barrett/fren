@@ -267,9 +267,11 @@ def roundRobin (cap : Nat) (each : Array (Array Val)) : Array Val := Id.run do
 
 /-- All of `each`, if they are at most `cap`; otherwise the first `cap` of
 them taken in turn, the first of each, then the second of each, and so on,
-so that each has some within `cap`: the values of a data type that
-`smallValuesMemo` gives, from those of each variant, `each`. It makes only
-the values of each variant that this reads (`interleavedCounts`). -/
+so that each has some within `cap`. Only the reference that the
+`#guard` after `interleavedCounts` compares against: `smallValuesMemo`
+no longer calls it, and gives a data type's values as it would of each
+variant's, `each`, making only those of each variant that it reads
+(`interleavedCounts`). That they agree is tested, not proved. -/
 def smallInterleaved (cap : Nat) (each : Array (Array Val)) : Array Val :=
   if each.foldl (· + ·.size) 0 ≤ cap then each.flatten else roundRobin cap each
 
@@ -277,7 +279,11 @@ def smallInterleaved (cap : Nat) (each : Array (Array Val)) : Array Val :=
 how many each has, `sizes`, alone: all of each, where they are at most
 `cap` in all, and otherwise as many as the turns that `roundRobin` takes
 reach. So `roundRobin` of the first that many of each is `roundRobin` of
-`each`, and `smallValuesMemo` makes only those. -/
+`each`, and `smallValuesMemo` makes only those. That is tested, not
+proved: by the `#guard` below, at every `cap` up to 9 and up to four
+arrays of up to six values, and, with `combosSize` and `extendCombos`,
+end to end against `smallValuesMemo`'s old formulation on generated data
+types (`FrenTest.SmallValues`). -/
 def interleavedCounts (cap : Nat) (sizes : Array Nat) : Array Nat := Id.run do
   if sizes.foldl (· + ·) 0 ≤ cap then return sizes
   let mut counts := sizes.map fun _ => 0
