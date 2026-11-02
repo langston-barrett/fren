@@ -331,11 +331,13 @@ sorts and at each instance:
 - Evaluation, testing and enumeration apply the instance's definition.
 - A counterexample of the check at the sorts is confirmed by evaluation as
   any other is ([Counterexamples and completeness](#counterexamples-and-completeness)),
-  with each sort at the type that the model's values give it (as lean-smt
-  reads a sort, a `Fin n`; `Nat` where the model gives no value of it). A
-  model may give values of a type parameter's sort, as `t =
-  Term::Var(V#0)`: both front ends read them, and once evaluation confirms
-  the counterexample the check fails, with that counterexample.
+  at the model's values of each type parameter's sort: the `fren` command
+  evaluates with them as abstract values, as `T#0`, and the Lean-hosted
+  front end puts each sort at the type that lean-smt reads it as, a `Fin
+  n`, or `Nat` where the model gives no value of it. A model may give
+  values of a type parameter's sort, as `t = Term::Var(V#0)`: both front
+  ends read them, and once evaluation confirms the counterexample the check
+  fails, with that counterexample.
 - An instance's result type brings no fact of its own: the result's
   declared type is the type parameter's, which has none, so a subset type's
   invariant reaches an instance's result only through its postconditions.

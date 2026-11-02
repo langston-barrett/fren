@@ -530,9 +530,9 @@ counterexample. Failure to evaluate is not confirmation. -/
 def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
     (hyps : Array (Name × Expr)) (goal : Expr) (model : Array (Name × Expr)) : MetaM Bool := do
   try
-    let values ← modelValues c fvs primes model
-    let vars := values.map (·.1)
-    let values ← values.mapM fun (x, v?) => match v? with
+    let read ← modelValues c fvs primes model
+    let vars := read.map (·.1)
+    let values ← read.mapM fun (x, v?) => match v? with
       | some v => pure v
       | none => do mkAppOptM ``Inhabited.default #[some (← inferType x), none]
     let instantiate (e : Expr) := e.replaceFVars vars values
@@ -542,7 +542,7 @@ def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
     -- `Inhabited` instance: a counterexample at every type is one at those
     -- (`Reqs/Lang/Recursion#generic-recursion`).
     let mut sortTys : Array (FVarId × Expr) := #[]
-    for (x, v?) in (← modelValues c fvs primes model) do
+    for (x, v?) in read do
       let some v := v? | continue
       sortTys := matchSorts (← instantiateMVars (← inferType x)) (← instantiateMVars (← inferType v)) sortTys
     let atSorts (e : Expr) : MetaM Expr := do
