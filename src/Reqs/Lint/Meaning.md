@@ -184,8 +184,8 @@ decides, as the whole product is not. Besides, a product, quotient or
 remainder of two integers is an integer. A point at other arguments, or
 of another name, is not constrained. Nor is a remainder by `0`, which the
 language's interpretation gives as `Int.emod` does, the dividend; `eval`
-never reads it, since `x mod 0` is undefined before the graph is read,
-and so is `x div 0`.
+never reads it, since `x mod 0`, like `x div 0`, is undefined before the
+graph is read.
 
 A lint whose fix, or whose message, rests on a primitive operation states
 that it agrees in each interpretation whose primitives are `usual?`, and
@@ -228,15 +228,25 @@ pub fn usual?(g: lang::Graph) := match g {
 ```
 
 `usual?` must not ask more than the language's interpretation gives, or
-the claims that assume it would say nothing of that interpretation. That
-the whole of the usual meaning meets it cannot be stated, since the
-product is not linear. `usual_language` checks it at the language's own
-value of each point whose value is linear in its arguments: a product
-with `0`, `1` or `-1`; a quotient by `1`, `-1` or `0`, or of `0`, as
-`Int.ediv` gives it; a remainder by `1`, `-1` or `0`, or of a dividend
-within `n.abs` of the range, as `Int.emod` gives it; and a concatenation
-with `""`. `src/Impls/Rewrites.lean` also proves, in Lean, that every
-point of `Int.mul`, `Int.ediv` and `Int.emod` meets `usual_point?`.
+the claims that assume it would say nothing of that interpretation.
+`lint::usual_primitives` states that every point of the language's
+primitives meets it: its outputs are the language's product, quotient and
+remainder of its inputs. A spec cannot compute them, since the product of
+two variables is not linear, and a divisor must be a constant (see
+[Division and remainder](../Lang/Expressions.md#division-and-remainder)).
+So the implementation gives them, as `Int.mul`, `Int.ediv` and
+`Int.emod`. The `ensure`s do not determine the outputs, so that they are
+the language's primitives rests on the implementation writing them so,
+which is trusted, as [Semantics](../Lang/Semantics.md) states the
+language's interpretation. `src/Impls/Rewrites.lean` proves in Lean only
+that those values meet `usual_point?`, for every two integers. The
+concatenation is Fren's own `++`, and the solver checks
+it, for every two strings. `usual_language` checks it with the
+solver at the language's own value of each point whose value is linear
+in its arguments: a product with `0`, `1` or `-1`; a quotient by `1`,
+`-1` or `0`, or of `0`, as `Int.ediv` gives it; a remainder by `1`, `-1`
+or `0`, or of a dividend within `n.abs` of the range, as `Int.emod` gives
+it; and a concatenation with `""`.
 
 ```fren
 -- The two integers `m` and `n`, as the list of arguments of a primitive.
@@ -245,6 +255,25 @@ fn integers(m: Int, n: Int): lang::Value :=
         lang::Value::Integer(m),
         lang::Value::Cons(lang::Value::Integer(n), lang::Value::Nil)
     )
+
+set_option fren.lint.undecidable "allow" in
+pub proc usual_primitives(m: Int, n: Int, s: String, t: String): (
+    product: Int,
+    quotient: Int,
+    remainder: Int,
+) {
+    ensure times: usual_point?("*", integers(m, n), lang::Value::Integer(product))
+    ensure divides: usual_point?("div", integers(m, n), lang::Value::Integer(quotient))
+    ensure modulo: usual_point?("mod", integers(m, n), lang::Value::Integer(remainder))
+    expect concatenates: usual_point?(
+        "++",
+        lang::Value::Cons(
+            lang::Value::Text(s),
+            lang::Value::Cons(lang::Value::Text(t), lang::Value::Nil)
+        ),
+        lang::Value::Text(s ++ t)
+    )
+}
 
 expect usual_language(m: Int, n: Int, s: String, t: String) {
     use lang::Value::{Cons, Integer, Nil, Text}

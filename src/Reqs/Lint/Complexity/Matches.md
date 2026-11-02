@@ -33,6 +33,129 @@ pub proc trivial_match(
 }
 ```
 
+### Trivial matches, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+a `match` of one arm without a guard is `Match(s, p, true, b, NoMatch)`
+([Derived forms](../../Lang/Semantics.md#derived-forms)).
+`trivial_match_fires?` fires on it where `p` is `_`, an or-pattern, or a
+variant without a payload, and its fix is `b`. These patterns leave the
+environment as it is wherever they match (`lang::bind`), since an
+or-pattern binds nothing (`F0333`). A variant whose payload is `_` for
+each of its values binds nothing either, but telling so looks along the
+payload, which needs a recursion, so the function leaves it, and the
+linter fires there besides. The guard `true` elaborates away, so the
+function fires on `match s { _ if true => b }` too. The linter does not,
+since the arm has a guard, and leaves it to
+[`trivial_guard`](#trivial-guards), whose fix makes it a trivial `match`.
+That is a rewrite, as [Fixes as
+rewrites](../Rewrites.md) states for every such lint:
+
+```fren
+-- `p` is `_`, an or-pattern, or a variant without a payload: it binds no name.
+pub fn binds_none?<V>(p: lang::Pattern<V>) :=
+    p is lang::Pattern::Wildcard | lang::Pattern::Or(_, _) | lang::Pattern::Variant(_, lang::Pattern::Nil)
+
+pub fn trivial_match_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Match(_, p, g, _, rest) =>
+        g = lang::Expr::Literal(lang::Value::True) and rest = lang::Expr::NoMatch and binds_none?(p),
+    _ => false,
+}
+
+pub fn trivial_match_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Match(_, p, g, b, rest) =>
+        if g = lang::Expr::Literal(lang::Value::True) and rest = lang::Expr::NoMatch and binds_none?(p) then b
+        else e,
+    _ => e,
+}
+```
+
+`lint::trivial_match` binds this to the linter. Where the arm's pattern
+is one of those, the front ends read it as binding nothing (`read`), and
+the linter fires, as the function does, and the fix is the body. Where
+the pattern binds a name, the linter does not fire. That the front ends
+read the pattern so, and the text of the fix, are trusted, and checked by
+the ui tests in `test/ui/lints/methods.fren` and
+`test/ui/lints/matches_table.fren`:
+
+```fren
+expect trivial_match_elaborated(
+    binds?,
+    s: lang::Expr<lang::Id>,
+    p: lang::Pattern<lang::Id>,
+    b: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{Literal, Match, NoMatch}
+
+    assume read: when binds_none?(p), not binds?
+
+    call t := trivial_match(1, binds?)
+
+    let arm: lang::Expr<lang::Id> := Match(s, p, Literal(lang::Value::True), b, NoMatch)
+
+    expect fires: when binds_none?(p), t.fires? and trivial_match_fires?(arm) and trivial_match_fix(arm) = b
+    expect binds: when binds?, not t.fires?
+}
+```
+
+Where it fires, the fix [agrees](../Meaning.md#fixes-that-agree) with the
+`match`, in every interpretation and environment. Where the scrutinee is
+well-defined and the pattern matches it, the `match` is the body, in the
+environment as it is. Where the pattern does not match, it is `NoMatch`,
+which is undefined, as the `match` is where the scrutinee is undefined.
+The static rules accept only a `match` whose arms cover the type, so a
+well-typed `match` never reaches `NoMatch`, but the fix agrees without
+that. `src/Impls/Rewrites.lean` proves this in Lean, for every
+expression, interpretation and environment; `fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc trivial_match_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure agrees: when trivial_match_fires?(e),
+        agrees?(
+            lang::eval(i, env, trivial_match_fix(e)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
+The fix writes the body, an operand. Once the operands are fixed, it does
+not fire, so the fix leaves nothing to fix. The fix alone need not: the
+fix of a trivial `match` whose body is another is that one, which fires
+again (`kept`). And a `match` around it may start firing once it is
+fixed: an arm whose `rest` is a trivial `match` of `NoMatch` does not
+fire, but the fix of its `rest` makes it `NoMatch` (`around`):
+
+```fren
+expect trivial_match_refires(
+    s: lang::Expr<lang::Id>,
+    t: lang::Expr<lang::Id>,
+    b: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{Literal, Match, NoMatch}
+    use lang::Pattern::Wildcard
+    use lang::Value::True
+
+    let inner: lang::Expr<lang::Id> := Match(t, Wildcard, Literal(True), NoMatch, NoMatch)
+
+    expect kept: trivial_match_fires?(
+        trivial_match_fix(
+            Match(
+                s,
+                Wildcard,
+                Literal(True),
+                Match(t, Wildcard, Literal(True), b, NoMatch),
+                NoMatch
+            )
+        )
+    )
+    expect around: not trivial_match_fires?(Match(s, Wildcard, Literal(True), b, inner))
+        and trivial_match_fires?(
+            Match(s, Wildcard, Literal(True), b, trivial_match_fix(inner))
+        )
+}
+```
+
 ## Matches that give back the scrutinee
 
 `needless_match` fires on a `match` each of whose arms gives back the
@@ -206,6 +329,126 @@ expect trivial_guard_complete(m: lint::Mode) {
     use lint
     call concrete := trivial_guard_written(m)
     refines concrete trivial_guard_fixed(m)
+}
+```
+
+### Trivial guards, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+an arm of a `match` is `Match(s, p, g, b, rest)`, where `rest` is the
+`match` of the arms after it, and an arm without a guard has the guard
+`true` ([Derived forms](../../Lang/Semantics.md#derived-forms)). So the
+guard `true` elaborates away: the arm with it and the arm without it are
+one expression, and the fix that drops it writes the same expression.
+`trivial_guard_fires?` fires on the guard `false`, and its fix is `rest`.
+That is a rewrite, as [Fixes as rewrites](../Rewrites.md) states for
+every such lint:
+
+```fren
+pub fn trivial_guard_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Match(_, _, g, _, _) => g = lang::Expr::Literal(lang::Value::False),
+    _ => false,
+}
+
+pub fn trivial_guard_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Match(_, _, g, _, rest) => if g = lang::Expr::Literal(lang::Value::False) then rest else e,
+    _ => e,
+}
+
+-- An arm's guard as elaborated: `true` where it has none, the literal, or
+-- `g`, the guard written otherwise.
+fn guard_of<V>(guard: Guard, g: lang::Expr<V>): lang::Expr<V> := match guard {
+    Guard::Absent => lang::Expr::Literal(lang::Value::True),
+    Guard::Literal(b?) => lang::Expr::Literal(lang::truth(b?)),
+    Guard::Other(_) => g,
+}
+```
+
+`lint::trivial_guard` binds this to the linter. The linter reads a guard
+without the parentheses around it, so a guard that it reads as another
+expression does not elaborate to a literal (`plain`). For every guard
+but `true`, it fires exactly where `trivial_guard_fires?` does. On
+`true`, the function does not fire, and the linter's fix drops a guard
+that elaborates away. Where the linter drops the arm, the fix is what
+`trivial_guard_fix` writes. That the front ends read the guard so, and
+what the fix removes from the text, are trusted, and checked by the ui
+tests in `test/ui/lints/guards.fren`:
+
+```fren
+expect trivial_guard_elaborated(
+    guard: Guard,
+    matches?,
+    accepted?,
+    commented?,
+    s: lang::Expr<lang::Id>,
+    p: lang::Pattern<lang::Id>,
+    g: lang::Expr<lang::Id>,
+    b: lang::Expr<lang::Id>,
+    rest: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{Literal, Match}
+
+    assume plain: not (g is Literal(lang::Value::True) | Literal(lang::Value::False))
+
+    call t := trivial_guard(guard, matches?, accepted?, commented?)
+
+    let arm: lang::Expr<lang::Id> := Match(s, p, guard_of(guard, g), b, rest)
+
+    expect fires: when guard != Guard::Literal(true), t.fires? iff trivial_guard_fires?(arm)
+    expect true_guard: when guard = Guard::Literal(true), t.fires? and not trivial_guard_fires?(arm)
+    expect drop_arm: when t.fix = GuardFix::DropArm, trivial_guard_fix(arm) = rest
+    expect drop_guard: when t.fix = GuardFix::DropGuard, Match(s, p, guard_of(Guard::Absent, g), b, rest) = arm
+}
+```
+
+Where it fires, the fix [agrees](../Meaning.md#fixes-that-agree) with the
+`match`, in every interpretation and environment. Where the scrutinee is
+well-defined, the arm whose pattern matches it evaluates its guard,
+`false`, and goes on to `rest`, as the arm whose pattern does not match
+does. Elsewhere the `match` is undefined. `src/Impls/Rewrites.lean`
+proves this in Lean, for every expression, interpretation and
+environment, as it proves the other rewrites; `fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc trivial_guard_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure agrees: when trivial_guard_fires?(e),
+        agrees?(
+            lang::eval(i, env, trivial_guard_fix(e)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
+The fix writes `rest`, an operand. Once the operands are fixed, it does
+not fire, so the fix leaves nothing to fix. The fix alone need not. The
+fix of two arms whose guards are `false` is the second, which fires
+again (`kept`). And a `match` around it may start firing once it is
+fixed: an arm whose guard is a `match` whose only arm has the guard
+`false`, and whose `rest` is `false`, does not fire, but the fix of its
+guard makes the guard `false` (`around`):
+
+```fren
+expect trivial_guard_refires(
+    s: lang::Expr<lang::Id>,
+    p: lang::Pattern<lang::Id>,
+    q: lang::Pattern<lang::Id>,
+    b: lang::Expr<lang::Id>,
+    c: lang::Expr<lang::Id>,
+    r: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{Literal, Match}
+    use lang::Value::False
+
+    let inner: lang::Expr<lang::Id> := Match(s, q, Literal(False), c, Literal(False))
+
+    expect kept: trivial_guard_fires?(
+        trivial_guard_fix(
+            Match(s, p, Literal(False), b, Match(s, q, Literal(False), c, r))
+        )
+    )
+    expect around: not trivial_guard_fires?(Match(s, p, inner, b, r))
+        and trivial_guard_fires?(Match(s, p, trivial_guard_fix(inner), b, r))
 }
 ```
 
