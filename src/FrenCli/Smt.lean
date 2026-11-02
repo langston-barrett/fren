@@ -364,7 +364,8 @@ def observationsOf (c : CComp) : Array ModelObservation := Id.run do
 
 /-- Checks the satisfiability of `script`, a query over `vars`, with values
 of `vars` if `wantModel`. -/
-def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observations : Array ModelObservation := #[]) : IO (Outcome String) := do
+def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observations : Array ModelObservation := #[])
+    (limitSecs : Nat := 0) : IO (Outcome String) := do
   let r ← cvc5.Env.run do
     let tm ← cvc5.TermManager.new
     let solver ← cvc5.Solver.new tm
@@ -385,8 +386,8 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observ
       if out.trimAscii.toString.startsWith "(error" then
         throw (.error out)
     -- The time of a query that reaches its time limit is recorded
-    -- (`Fren.Core.solverTimeoutMs`).
-    let res ← Fren.Core.timeQuery (fun (res : cvc5.Result) => res.isUnknown &&
+    -- (`Fren.Core.solverCredit`).
+    let res ← Fren.Core.timeQuery limitSecs (fun (res : cvc5.Result) => res.isUnknown &&
       Fren.Core.timedOutExplanation (toString res.getUnknownExplanation)) solver.checkSat
     if res.isUnsat then return Outcome.unsat
     if !res.isSat then return .unknown s!"the solver returned unknown ({res.getUnknownExplanation})"
@@ -429,7 +430,7 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
     return .unknown (Fren.Core.quantifiedQueryReason logic)
   if let some dump := dump? then dump script
   let key := (script, observations)
-  let some cache := cache? | solveScript script vars wantModel observations
+  let some cache := cache? | solveScript script vars wantModel observations limits.timeoutSecs
   -- A model's variables are those that the script declares, which are `vars`.
   match (← cache.answers.get)[key]? with
   | some (o@(.sat _), hasModel) =>
@@ -442,7 +443,7 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
     if let some (o, hasModel) ← store.lookup? script observations wantModel then
       cache.answers.modify (·.insert key (o, hasModel))
       return if wantModel then o else match o with | .sat _ => .sat #[] | _ => o
-  let o ← solveScript script vars wantModel observations
+  let o ← solveScript script vars wantModel observations limits.timeoutSecs
   cache.answers.modify (·.insert key (o, wantModel))
   if let some store := cache.store? then store.record script observations o wantModel
   return o

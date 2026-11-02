@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Impl
 import Fren.Trace
+import FrenCore.SolverTime
 import FrenTest.Jobs
 import FrenTest.SpecTimeout
 import FrenTest.Ui
@@ -20,7 +21,8 @@ its answer passes its check, which shows that it is right
 from the search of `assignable` otherwise (`assignable_iff`).
 `testing::portable_name`, proved of `Fren.portableName`, the name of a file
 that a definition's `source?` keeps. `testing::fuzz_overdue`, proved of
-`FrenTest.SpecTimeout.overdue`, for any times. `testing::fresh` rests on Lake, so it
+`FrenTest.SpecTimeout.overdue`, and `testing::solver_credit`, of
+`Fren.Core.Credit.step`, for any times. `testing::fresh` rests on Lake, so it
 is trusted. -/
 
 namespace Fren.Impls.Testing
@@ -647,6 +649,22 @@ impl ui_check: testing::ui_file for (ds : List Diagnostic) (es : List Expectatio
   · cases x <;> cases gx <;> simp [exitFailures, Fren.Prelude.Option.some.x0] <;> omega
 
 end Matching
+
+-- What a query that timed out leaves out of the fuzzer's time limit,
+-- `Fren.Core.Credit.step`, which `Fren.Core.timeQuery` applies.
+impl solver_credit: testing::solver_credit for (c : Fren.Core.Credit) (start stop first : Nat) {
+  credit := c.credit,
+  covered := c.covered,
+  start := start,
+  stop := stop,
+  first := first,
+  credit_after := (c.step start stop).credit,
+  covered_after := (c.step start stop).covered,
+} by
+  intro c start stop first _
+  simp only [fren_spec, Fren.Core.Credit.step]
+  simp only [Nat.max_def]
+  constructor <;> (repeat' split) <;> omega
 
 -- The fuzzer's time limit on a spec, `FrenTest.SpecTimeout.overdue`.
 impl fuzz_overdue: testing::fuzz_overdue for (limit elapsed timedOut : Nat) {

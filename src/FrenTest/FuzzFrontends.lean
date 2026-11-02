@@ -2468,7 +2468,7 @@ def reportSolverTime (r : Run) : IO Unit := do
   let mut last := 0
   let tmp := r.solver.addExtension "tmp"
   while !(← IO.checkCanceled) do
-    let ms ← Fren.Core.solverTimeoutMs.get
+    let ms ← Fren.Core.solverTimeoutMs
     if ms != last then
       IO.FS.writeFile tmp (toString ms)
       IO.FS.rename tmp r.solver
@@ -2488,14 +2488,14 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
   for i in [0:count] do
     let s := seed + i
     -- The spec, and the time in queries that timed out before it.
-    let solver0 ← Fren.Core.solverTimeoutMs.get
+    let solver0 ← Fren.Core.solverTimeoutMs
     IO.FS.writeFile run.progress s!"{s}\n{solver0}"
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
     let ran ← runFrontends env run.spec text
     let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
     let elapsed := (← IO.monoMsNow) - t0
-    let timedOut := (← Fren.Core.solverTimeoutMs.get) - solver0
+    let timedOut := (← Fren.Core.solverTimeoutMs) - solver0
     if elapsed > slowMs then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s, {timedOut / 1000}s of it in queries that timed out"
     let issues := found.map fun f => (knownIssue? mode (sharedStaticErrorLines ran.cli ran.hosted) found f).getD 0
     let status := if found.isEmpty then "ok" else if flaky then "inconclusive"
@@ -2635,15 +2635,14 @@ def outcomesIn (dir : System.FilePath) : IO (Array Outcome) := do
       out := out ++ parseOutcomes (← IO.FS.readFile e.path)
   return out
 
-/-- The most specs that one worker checks: a worker slows down as it
-checks more, until, on a CI machine with four of them, specs that take
-seconds take more than 20 s after some 150 specs each, and some time out,
-so a fresh worker takes over after these. The hosted front end's memory
-grows by some 90 MB a spec on macOS (the binary's stays level, #650):
-after 100, four workers would need more than a runner's 16 GB, and on CI a worker's 97th
-and 98th specs, which take under a second on their own, took 22 s and
-more than 30 s (seeds 1202247 and 1202248). Starting a worker takes a
-few seconds. -/
+/-- The most specs that one worker checks, a workaround for #650: a
+worker slows down as it checks more, since the hosted front end's memory
+grows by some 90 MB a spec (on macOS; the binary's stays level), so that
+four workers of 100 specs would need more than a CI runner's 16 GB. On
+CI, a worker's 97th and 98th specs, which take under a second on their
+own, took 22 s and more than 30 s (seeds 1202247 and 1202248). A fresh
+worker, which takes a few seconds to start, takes over after these. Once
+#650 is fixed, this is to be raised, or the replacement dropped. -/
 def workerSpecs : Nat := 25
 
 /-- Runs workers until every seed is checked. The solver can abort the
@@ -2664,7 +2663,8 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
     let batch := min (seed + count - next) workerSpecs
     let args := #["--worker", run.id, "--count", toString batch, "--seed", toString next, "--out", dir]
       ++ mode.args
-    try IO.FS.removeFile run.solver catch _ => pure ()
+    for f in [run.solver, run.solver.addExtension "tmp"] do
+      try IO.FS.removeFile f catch _ => pure ()
     let child ← IO.Process.spawn { cmd := (← IO.appPath).toString, args, stdin := .null, stdout := .inherit, stderr := .inherit }
     -- Wait, and stop the worker if one spec takes too long, leaving out its
     -- queries that timed out (`SpecTimeout.overdue`).
@@ -2707,7 +2707,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
     record run { seed := failed, status := kind, flags := flags mode, ms := spent.1, solverTimeoutMs := spent.2 }
     next := failed + 1
   let outcomes ← outcomesOf run
-  for f in [run.progress, run.spec, run.solver] do
+  for f in [run.progress, run.spec, run.solver, run.solver.addExtension "tmp"] do
     try IO.FS.removeFile f catch _ => pure ()
   let mut sigs := #[]
   let mut codes := #[]

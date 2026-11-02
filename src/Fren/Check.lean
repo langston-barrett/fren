@@ -775,8 +775,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         -- back as a `have`, which they cannot then introduce
         -- (`withRecursiveDefs`).
         -- The time of a query that reaches its time limit is recorded
-        -- (`Core.solverTimeoutMs`).
-        match ← Core.timeQuery smtTimedOut <|
+        -- (`Core.solverCredit`).
+        match ← Core.timeQuery timeout smtTimedOut <|
             Smt.smt { trust := true, model, timeout := some timeout, embeddings := true, intros := false
                       -- `fmf-bound` right after the options both front ends set, as the
                       -- binary sets it.

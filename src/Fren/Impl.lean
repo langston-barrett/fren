@@ -304,7 +304,7 @@ def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := do
   let stmt ← Meta.zetaReduce (← Core.betaReduce stmt)
   let mv ← mkFreshExprMVar stmt
   try
-    match ← Core.timeQuery smtTimedOut <|
+    match ← Core.timeQuery (fren.timeout.get (← getOptions)) smtTimedOut <|
         Smt.smt { trust := true, timeout := some (fren.timeout.get (← getOptions))
                   extraSolverOptions := resourceLimitOptions (← getOptions) ++ quietOptions }
           mv.mvarId! #[] with
