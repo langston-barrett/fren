@@ -540,6 +540,8 @@ structure Spec where
   its body, in which its applications of itself are `Ex.app`s of it, which
   evaluation applies (`Interp.recDefs`). -/
   recDefs : NameMap (Array Name × Ex) := {}
+  /-- PROTOTYPE: `recDefs`' bodies as erased `Code`. -/
+  recCodes : NameMap (Array Name × NonScalar) := {}
   /-- Each constant's value, as a literal, or as its expression where the
   value is unknown: an index out of range, or a table where no row holds. -/
   consts : NameMap (Ex × VTy) := {}
@@ -642,6 +644,8 @@ structure Interp where
   /-- How many defined variables `defined` gives: as deep as a chain of
   them, each defined as another, can be, since definitions are acyclic. -/
   definedCount : Nat := 0
+  /-- PROTOTYPE: each structural recursion's body as `Code`, erased. -/
+  recCode : Name → Option (Array Name × NonScalar) := fun _ => none
 
 instance : Inhabited Interp := ⟨{}⟩
 
@@ -1703,6 +1707,253 @@ example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option V
     (h : I.recDefs g = some (ps, body)) :
     (Ex.app g args).eval I look l s fr m 0 (d + 1) = none := by
   rw [Ex.eval, Ex.evalIn]; simp only [h, argFrame_eq]; cases evalEach (·.evalIn I look l s fr m 0 d) args <;> rfl
+
+
+/-! ## PROTOTYPE: closure compilation -/
+
+structure RCx where
+  I : Interp
+  look : Look
+  locals : List (Name × Val)
+  slots : Array (Option Val)
+  memos : Array (Thunk (Option Val))
+
+structure Code where
+  run : RCx → Frame → Nat → Nat → Option Val
+
+instance : Inhabited Code := ⟨⟨fun _ _ _ _ => none⟩⟩
+
+@[inline] def stepD (d : Nat) (k : Nat → Option Val) : Option Val :=
+  match d with
+  | 0 => outOfFuel ()
+  | d + 1 => k d
+
+@[inline] def evalEachC (cs : Array Code) (cx : RCx) (fr : Frame) (f d : Nat) : Option (Array Val) :=
+  cs.foldlM (init := Array.mkEmpty cs.size) fun vs c => do return vs.push (← c.run cx fr f d)
+
+@[inline] def argFrameC (cs : Array Code) (cx : RCx) (fr : Frame) (f d : Nat) (ps : Array Name) : Option Frame :=
+  let os? := cs.foldlM (init := Array.mkEmpty cs.size) fun os c =>
+    let o := c.run cx fr f d
+    match o with
+    | some _ => some (os.push o)
+    | none => none
+  os?.map fun os => frameFrom ps (fun i => os[i]!) (min ps.size os.size) .nil
+
+def fallbackC (e : Ex) : Code := .mk fun cx fr f d => e.evalIn cx.I cx.look cx.locals cx.slots fr cx.memos f d
+
+partial def quantC (all : Bool) (names : Array Name) (doms : Array (Option Code)) (tys : Array Fren.Core.PTy)
+    (body : Code) (lets : Array (Array Code)) (k : Nat) (cx : RCx) (fr : Frame) (fuel depth : Nat) : Option Val :=
+  stepD depth fun depth =>
+  let cx' := match lets[k]? with
+    | some ls => { cx with memos := ls.foldl (init := cx.memos) fun ms x => ms.push (Thunk.mk fun _ => x.run cx fr fuel depth) }
+    | none => cx
+  if h : k < names.size then
+    let dom? := doms[k]?.bind id
+    let listed := match dom?.bind (·.run cx' fr fuel depth) with
+      | some (.seq vs) | some (.set vs) => some (vs, true)
+      | _ => if dom?.isSome then none else tys[k]?.bind cx.I.domain
+    match listed with
+    | some (vs, exact) =>
+      let inst (v : Val) : Option Bool :=
+        let typed := match tys[k]? with
+          | some t => Ex.evalIn.typeV cx.I fuel depth t v
+          | none => some true
+        match typed with
+        | some true =>
+          let fr' := .bind names[k] (some v) fr
+          match quantC all names doms tys body lets (k + 1) cx' fr' fuel (depth + 1) with
+          | some (.bool b) => someBool b
+          | _ => none
+        | some false => someBool all
+        | none => none
+      truthV (quantTruthIn exact all inst vs)
+    | none => none
+  else evalResult (body.run cx' fr fuel depth)
+
+section
+set_option linter.unusedVariables false
+@[noinline] def cLit (v : Val) : Code := .mk fun _ _ _ d => stepD d fun _ => some v
+@[noinline] def cKnown (v : Option Val) : Code := .mk fun _ _ _ d => stepD d fun _ => v
+@[noinline] def cVar (n : Name) : Code := .mk fun cx _ _ d => stepD d fun _ => cx.look n
+@[noinline] def cSlot (k : Nat) : Code := .mk fun cx _ _ d => stepD d fun _ => if h : k < cx.slots.size then cx.slots[k] else none
+@[noinline] def cBound (n : Name) : Code := .mk fun cx fr _ d => stepD d fun _ => match fr.find? n with
+  | some v => v
+  | none => cx.locals.lookup n
+@[noinline] def cBoundAt (k : Nat) : Code := .mk fun _ fr _ d => stepD d fun _ => fr.get k
+@[noinline] def cShared (k : Nat) : Code := .mk fun cx _ _ d => stepD d fun _ =>
+  if k < cx.memos.size then cx.memos[cx.memos.size - 1 - k]!.get else none
+@[noinline] def cMemo (cs : Array Code) (c : Code) : Code := .mk fun cx fr f d => stepD d fun d =>
+  let ms := cs.foldr (init := cx.memos) fun x ms => ms.push (Thunk.mk fun _ => x.run cx fr f d)
+  evalResult (c.run { cx with memos := ms } fr f d)
+@[noinline] def cNot (c : Code) : Code := .mk fun cx fr f d => stepD d fun d => notV (c.run cx fr f d)
+@[noinline] def cNeg (c : Code) : Code := .mk fun cx fr f d => stepD d fun d => match c.run cx fr f d with
+  | some (.int x) => some (.int (-x))
+  | _ => none
+@[noinline] def cMember (ca : Code) (cs : Array Code) : Code := .mk fun cx fr f d => stepD d fun d => do
+  let x ← ca.run cx fr f d
+  boolV ((← evalEachC cs cx fr f d).contains x)
+@[noinline] def cAnd (ca cb : Code) : Code := .mk fun cx fr f d => stepD d fun d => match ca.run cx fr f d with
+  | some (.bool false) => some (.bool false)
+  | x => kleeneAnd x (cb.run cx fr f d)
+@[noinline] def cOr (ca cb : Code) : Code := .mk fun cx fr f d => stepD d fun d => match ca.run cx fr f d with
+  | some (.bool true) => some (.bool true)
+  | x => kleeneOr x (cb.run cx fr f d)
+@[noinline] def cBin (op : Op) (ca cb : Code) : Code := .mk fun cx fr f d => stepD d fun d => binV op (ca.run cx fr f d) (cb.run cx fr f d)
+@[noinline] def cWhen (negated : Bool) (cc cd : Code) : Code := .mk fun cx fr f dp => stepD dp fun dp =>
+  let c := cc.run cx fr f dp
+  match notV (if negated then notV c else c) with
+  | some (.bool true) => some (.bool true)
+  | x => kleeneOr x (cd.run cx fr f dp)
+@[noinline] def cIte (cc ca cb : Code) : Code := .mk fun cx fr f d => stepD d fun d => match cc.run cx fr f d with
+  | some (.bool true) => ca.run cx fr f d
+  | some (.bool false) => cb.run cx fr f d
+  | _ =>
+    let x := ca.run cx fr f d
+    if x.isSome && x == cb.run cx fr f d then x else none
+@[noinline] unsafe def cApp (fn : Name) (cs : Array Code) : Code := .mk fun cx fr fuel d => stepD d fun d =>
+  match cx.I.recCode fn with
+  | some (ps, code) => do
+    let fr' ← argFrameC cs cx fr fuel d ps
+    match fuel with
+    | 0 => outOfFuel ()
+    | fuel + 1 =>
+      evalResult ((unsafeCast code : Code).run { I := cx.I, look := cx.look, locals := [], slots := #[], memos := #[] } fr' fuel evalDepth)
+  | none => match cx.I.recDefs fn with
+    | some (ps, body) => do
+      let fr' ← argFrameC cs cx fr fuel d ps
+      match fuel with
+      | 0 => outOfFuel ()
+      | fuel + 1 => evalResult (body.evalIn cx.I cx.look [] #[] fr' #[] fuel evalDepth)
+    | none => do cx.I.fn fn (← evalEachC cs cx fr fuel d)
+@[noinline] def cPass (c : Code) : Code := .mk fun cx fr f d => stepD d fun d => c.run cx fr f d
+@[noinline] def cPassR (c : Code) : Code := .mk fun cx fr f d => stepD d fun d => evalResult (c.run cx fr f d)
+@[noinline] def cPair (ca cb : Code) : Code := .mk fun cx fr f d => stepD d fun d => do return .pair (← ca.run cx fr f d) (← cb.run cx fr f d)
+@[noinline] def cSeq (cs : Array Code) : Code := .mk fun cx fr f d => stepD d fun d => do return .seq (← evalEachC cs cx fr f d)
+@[noinline] def cIndex (cq ci : Code) (u : Name) : Code := .mk fun cx fr f d => stepD d fun d => do
+  let .seq es ← cq.run cx fr f d | none
+  let .int k ← ci.run cx fr f d | none
+  if 0 ≤ k && k < es.size then es[k.toNat]? else cx.I.outOfRange u
+@[noinline] def cCtor (ty : Name) (idx : Nat) (cs : Array Code) : Code := .mk fun cx fr f d => stepD d fun d => do
+  return .ctor ty idx (← evalEachC cs cx fr f d)
+@[noinline] def cSet (cs : Array Code) : Code := .mk fun cx fr f d => stepD d fun d => do return Val.setOf (← evalEachC cs cx fr f d)
+@[noinline] def cCard (c : Code) : Code := .mk fun cx fr f d => stepD d fun d => do
+  let .set ms ← c.run cx fr f d | none
+  return .int ms.size
+@[noinline] def cField (c : Code) (idx : Nat) : Code := .mk fun cx fr f d => stepD d fun d => match c.run cx fr f d with
+  | some (.ctor _ _ vs) => vs[idx]?
+  | _ => none
+@[noinline] def cUpdate (c : Code) (cfs : Array (Nat × Code)) : Code := .mk fun cx fr f d => stepD d fun d => do
+  let .ctor ty idx vs ← c.run cx fr f d | none
+  let mut vs := vs
+  for (k, x) in cfs do vs := vs.set! k (← x.run cx fr f d)
+  return .ctor ty idx vs
+@[noinline] def cTable (crs : Array (Option Code × Code)) (unspec? : Option Name) : Code := .mk fun cx fr f d => stepD d fun d =>
+  firstCaseThen crs (fun (c?, v) => match c? with
+    | none => some (some v)
+    | some c => match c.run cx fr f d with
+      | some (.bool true) => some (some v)
+      | some (.bool false) => some none
+      | _ => none)
+    (fun v => v.run cx fr f d)
+    fun _ => do cx.I.fn (← unspec?) #[]
+@[noinline] def cConst (c : Code) : Code := .mk fun cx _ f d => stepD d fun d =>
+  evalResult (c.run { I := cx.I, look := fun _ => none, locals := [], slots := #[], memos := #[] } .nil f d)
+@[noinline] def cTyped (t : Fren.Core.PTy) (c : Code) : Code := .mk fun cx fr f d => stepD d fun d => do
+  truthV (Ex.evalIn.typeV cx.I f d t (← c.run cx fr f d))
+@[noinline] def cMatch (cs : Code) (carms : Array (Pat × Option Code × Code)) (unspec? : Option Name) : Code :=
+  .mk fun cx fr f d => stepD d fun d => do
+    let v ← cs.run cx fr f d
+    firstCaseThen carms (fun (p, g?, body) => match p.matches v with
+      | false => some none
+      | true =>
+        let fr' := p.bindInto v fr
+        match g? with
+        | none => some (some (fr', body))
+        | some g => match g.run cx fr' f d with
+          | some (.bool true) => some (some (fr', body))
+          | some (.bool false) => some none
+          | _ => none)
+      (fun (fr', body) => body.run cx fr' f d)
+      fun _ => do cx.I.fn (← unspec?) #[]
+@[noinline] def cDispatch (byCtor : Array (Array Nat)) (cs : Code) (carms : Array (Pat × Option Code × Code))
+    (unspec? : Option Name) : Code :=
+  .mk fun cx fr f d => stepD d fun d => do
+    let v ← cs.run cx fr f d
+    let take (arm : Pat × Option Code × Code) : Option (Option (Frame × Code)) :=
+      let (p, g?, body) := arm
+      match p.matches v with
+      | false => some none
+      | true =>
+        let fr' := p.bindInto v fr
+        match g? with
+        | none => some (some (fr', body))
+        | some g => match g.run cx fr' f d with
+          | some (.bool true) => some (some (fr', body))
+          | some (.bool false) => some none
+          | _ => none
+    let ks? := match v with
+      | .ctor _ idx _ => byCtor[idx]?
+      | _ => none
+    let found (taken : Frame × Code) : Option Val := taken.2.run cx taken.1 f d
+    match ks? with
+    | some ks => firstCaseThen ks (fun k => take carms[k]!) found fun _ => do cx.I.fn (← unspec?) #[]
+    | none => firstCaseThen carms take found fun _ => do cx.I.fn (← unspec?) #[]
+@[noinline] def cQuant (all : Bool) (names : Array Name) (cds : Array (Option Code)) (tys : Array Fren.Core.PTy) (cb : Code)
+    (cls : Array (Array Code)) : Code :=
+  .mk fun cx fr f d => stepD d fun d => quantC all names cds tys cb cls 0 cx fr f d
+end
+
+unsafe def Ex.toCodeB (e : Ex) : Code :=
+  match e with
+  | .lit v => cLit v
+  | .known v => cKnown v
+  | .var n => cVar n
+  | .slot k => cSlot k
+  | .bound n => cBound n
+  | .boundAt k => cBoundAt k
+  | .shared k => cShared k
+  | .memo lets e => cMemo (lets.map Ex.toCodeB) (Ex.toCodeB e)
+  | .not a => cNot (Ex.toCodeB a)
+  | .neg a => cNeg (Ex.toCodeB a)
+  | .bin .member a (.setLit es) => cMember (Ex.toCodeB a) (es.map Ex.toCodeB)
+  | .bin .and a b => cAnd (Ex.toCodeB a) (Ex.toCodeB b)
+  | .bin .or a b => cOr (Ex.toCodeB a) (Ex.toCodeB b)
+  | .bin op a b => if b.mayBeOne then fallbackC e else cBin op (Ex.toCodeB a) (Ex.toCodeB b)
+  | .when negated c d => cWhen negated (Ex.toCodeB c) (Ex.toCodeB d)
+  | .ite c a b => cIte (Ex.toCodeB c) (Ex.toCodeB a) (Ex.toCodeB b)
+  | .app fn args => cApp fn (args.map Ex.toCodeB)
+  | .pre _ _ _ a => cPass (Ex.toCodeB a)
+  | .pair a b => cPair (Ex.toCodeB a) (Ex.toCodeB b)
+  | .seqLit es => cSeq (es.map Ex.toCodeB)
+  | .index q i _ u => cIndex (Ex.toCodeB q) (Ex.toCodeB i) u
+  | .ctor ty idx args => cCtor ty idx (args.map Ex.toCodeB)
+  | .setLit es => cSet (es.map Ex.toCodeB)
+  | .card s => cCard (Ex.toCodeB s)
+  | .field a idx => cField (Ex.toCodeB a) idx
+  | .update a fs => cUpdate (Ex.toCodeB a) (fs.map fun (k, x) => (k, (Ex.toCodeB x)))
+  | .table _ rows unspec? => cTable (rows.map fun (_, c?, v) => (c?.map Ex.toCodeB, (Ex.toCodeB v))) unspec?
+  | .const _ a => cConst (Ex.toCodeB a)
+  | .typed t _ a => cTyped t (Ex.toCodeB a)
+  | .match s arms _ _ unspec? _ => cMatch (Ex.toCodeB s) (arms.map fun (p, g?, b) => (p, g?.map Ex.toCodeB, (Ex.toCodeB b))) unspec?
+  | .dispatch byCtor (.match s arms _ _ unspec? _) =>
+    cDispatch byCtor (Ex.toCodeB s) (arms.map fun (p, g?, b) => (p, g?.map Ex.toCodeB, (Ex.toCodeB b))) unspec?
+  | .dispatch _ m => cPassR (Ex.toCodeB m)
+  | .quant _ _ all names doms tys body => cQuant all names (doms.map (·.map Ex.toCodeB)) tys (Ex.toCodeB body) #[]
+  | .lifted lets q => match q with
+    | .quant _ _ all names doms tys body =>
+      cQuant all names (doms.map (·.map Ex.toCodeB)) tys (Ex.toCodeB body) (lets.map (·.map Ex.toCodeB))
+    | q => cPass (Ex.toCodeB q)
+  | e => fallbackC e
+
+@[implemented_by Ex.toCodeB] opaque Ex.toCode : Ex → Code
+
+unsafe def Ex.toCodeErasedU (e : Ex) : NonScalar := unsafeCast (Ex.toCodeB e)
+
+@[implemented_by Ex.toCodeErasedU] opaque Ex.toCodeErased : Ex → NonScalar
+
+/-- PROTOTYPE: run `c` as `Ex.eval` runs its expression from the top. -/
+@[inline] def Code.top (c : Code) (I : Interp) (look : Look) (slots : Array (Option Val)) : Option Val :=
+  c.run { I, look, locals := [], slots, memos := #[] } .nil evalFuel evalDepth
 
 /-- The expressions directly within `e`. -/
 def Ex.children : Ex → Array Ex

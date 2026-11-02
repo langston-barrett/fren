@@ -32,6 +32,9 @@ structure Rng where
 
 abbrev R := StateM Rng
 
+/-- PROTOTYPE switch. -/
+def useCode : Bool := true
+
 def rand : R UInt64 := modifyGet Rng.next
 
 /-- Uniform in `[0, n)`, for `n > 0`. -/
@@ -174,6 +177,7 @@ def World.interp (sp : Spec) (w : World) (shapes? : Option (Std.HashMap Name Fre
   defs := sp.defs.find?
   fn f args := w.value sp f args
   recDefs := sp.recDefs.find?
+  recCode := sp.recCodes.find?
   matchMemo p s := do return (← (← sp.matchMemo[p]?)[s]?).get
   shapes p := match shapes? with
     | some m => m[p]?
@@ -481,6 +485,8 @@ structure Prepared where
   compiled and as written, and the slots that those expressions read,
   computed when a search first reaches it. -/
   equated : Array (Thunk (Array (Ex × Ex) × Array Nat))
+  /-- PROTOTYPE: `run` as closures. -/
+  runCode : Array Code := #[]
 
 structure Problem where
   /-- The variables to choose, in order, with their types. -/
@@ -660,6 +666,12 @@ def holdsIn (I : Interp) (slots : Slots) (e : Ex) : Option Bool :=
   | some (.bool b) => some b
   | _ => none
 
+/-- PROTOTYPE. -/
+def holdsC (I : Interp) (slots : Slots) (c : Code) : Option Bool :=
+  match c.top I (fun _ => none) slots with
+  | some (.bool b) => some b
+  | _ => none
+
 /-- The slots that `e` reads (`Ex.slot`), each as often as it occurs. -/
 partial def Ex.slots : Ex → Array Nat
   | .slot k => #[k]
@@ -716,7 +728,7 @@ def Problem.prepare (shapes : Name → Option Fren.Core.DataShape) (p : Problem)
   let run := p.atoms.map fun a =>
     ((a.run?.map (·.get)).getD (a.e.compile shapes (some []))).substVars fun n => .slot index[a.pfx ++ n]!
   let varSlot := p.vars.map fun (x, _) => index[x]!
-  { names, index, byVar, full, run, varSlot
+  { names, index, byVar, full, run, varSlot, runCode := if useCode then run.map (·.toCode) else #[]
     fullSlots := full.map (·.slots)
     equated := varSlot.map fun x => Thunk.mk fun _ =>
       let es := full.flatMap fun e => e.equated x
@@ -763,15 +775,17 @@ random numbers. -/
 partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (env : Env) (budget : Nat := 4000)
     (backjump := true) : R (Option Env × Nat) := do
   let seed ← rand
-  let { names, byVar, full, run, fullSlots, varSlot, equated, .. } :=
+  let { names, byVar, full, run, fullSlots, varSlot, equated, runCode, .. } :=
     (p.prepared?.map (·.get)).getD (p.prepare I.shapes)
+  let holdsK (slots : Slots) (k : Nat) : Option Bool :=
+    if h : k < runCode.size then holdsC I slots runCode[k] else holdsIn I slots run[k]!
   -- When each constraint is surely unknown, so that it need not be evaluated.
   let unknown := full.map (·.unknownIf)
   let slots : Slots := names.map (env[·]?)
   -- Each constraint's value in `env`. A constraint that is `true` stays
   -- so on that branch (evaluation is monotone), and is not evaluated again;
   -- one that is `false` stays so on every branch.
-  let atRoot := run.map (holdsIn I slots ·)
+  let atRoot := (Array.range run.size).map (holdsK slots ·)
   if atRoot.any (· == some false) then return (none, 0)
   let rootTrue := atRoot.map (· == some true)
   -- For each slot, the set of the variables to choose that it is: the
@@ -790,7 +804,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
     let mut newly := #[]
     for k in byVar[x]! do
       if known[k]! || unknown[k]!.holds slots then continue
-      match holdsIn I slots run[k]! with
+      match holdsK slots k with
       | some false => return .error k
       | some true => newly := newly.push k
       | none => pure ()
@@ -844,7 +858,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
       if left == 0 then return (false, 0, slots.set! x none, known, 0)
       return (false, conflictOf i eqReads rejections, slots.set! x none, known, left)
     else
-      match (run.zip known).zipIdx.find? fun ((e, t), _) => !(t || holdsIn I slots e == some true) with
+      match (run.zip known).zipIdx.find? fun ((_, t), k) => !(t || holdsK slots k == some true) with
       | none => return (true, 0, slots, known, left)
       | some (_, k) => return (false, conflictOf i 0 [reads[k]!], slots, known, left)
   let (found, _, slots, _, left) := go 0 seed slots rootTrue budget
@@ -981,7 +995,8 @@ frame of their own, the first innermost (`paramFrame`), so the body reads
 each by its position there, as `Ex.compile` resolves a binder that its
 scope names; it gives the same value from that frame as the body did. -/
 def Spec.withCompiledRecs (sp : Spec) (shapes : Name → Option Fren.Core.DataShape) : Spec :=
-  { sp with recDefs := sp.recDefs.foldl (init := sp.recDefs) fun m f (ps, b) => m.insert f (ps, b.compile shapes (some ps.toList)) }
+  let recDefs := sp.recDefs.foldl (init := sp.recDefs) fun m f (ps, b) => m.insert f (ps, b.compile shapes (some ps.toList))
+  { sp with recDefs, recCodes := if useCode then recDefs.foldl (init := {}) fun m f (ps, b) => m.insert f (ps, b.toCodeErased) else {} }
 
 /-- The defined outputs of `c` that the inputs alone give, in an order in
 which each mentions only inputs and earlier such outputs. Members may
