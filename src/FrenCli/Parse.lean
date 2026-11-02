@@ -566,6 +566,19 @@ def leanCommands : List String :=
    "namespace", "section", "end", "variable", "set_option", "attribute", "macro", "syntax",
    "notation", "#check", "#eval", "#print", "#guard_msgs"]
 
+/-- The form of the right side of a `:=` or `=>`, its outermost expression
+(`fmt::Form`). -/
+inductive RightForm where
+  /-- A `match` or a table, with arms. -/
+  | arms
+  /-- An `if`. -/
+  | conditional
+  /-- A call, a parenthesized expression, a literal, a record update or a
+  Boolean block. -/
+  | bracketed
+  | other
+  deriving BEq, DecidableEq, Repr, Inhabited
+
 /-- A list or block whose line breaks the formatter decides
 (`fmt::list_layout`), by how its elements may be laid out. -/
 inductive ListKind where
@@ -641,6 +654,9 @@ structure Layout where
   /-- The spans of the operations of binary operators, each with that of
   its right operand. -/
   pairs : Array (Span × Span) := #[]
+  /-- The right sides of `:=` and `=>` that are expressions: the operator,
+  and the first and last tokens of its right side. -/
+  rightSides : Array (Nat × Nat × Nat × RightForm) := #[]
 
 /-- What a procedure's members need of its header: its results' names. -/
 structure ProcHeader where
@@ -716,6 +732,30 @@ def listComma : P Bool := do
 open block, which another member follows (`Bracketed.commas`). -/
 def memberEnd : P Unit :=
   modify fun s => { s with openLists := s.openLists.modify (s.openLists.size - 1) fun b => { b with commas := b.commas.push (s.pos - 1) } }
+/-- Runs `x`, which parses the right side of the `:=` or `=>` just
+consumed, recording it (`Layout.rightSides`). -/
+def rightSide (x : P Expr) : P Expr := do
+  let first := (← get).pos
+  let e ← x
+  let s ← get
+  let last := s.pos - 1
+  if first > 0 && last ≥ first then
+    let whole := e.span.start == s.toks[first]!.span.start && e.span.stop == s.toks[last]!.span.stop
+    -- Its form, from its outermost expression where that is all of it, and
+    -- otherwise a parenthesized expression, the parser keeping no node for
+    -- the parentheses, where it is in the brackets of its first and last tokens.
+    let form : RightForm :=
+      if whole then match e with
+        | .match _ _ _ _ | .matches _ _ _ _ | .table _ _ => .arms
+        | .ite _ _ _ _ => .conditional
+        | .app _ _ _ | .method _ _ _ _ | .record _ _ _ | .update _ _ _ | .set _ _ | .seq _ _ | .block _ _ _
+        | .pair _ _ _ => .bracketed
+        | _ => .other
+      else if s.toks[first]!.tok == .kw "(" && s.toks[last]!.tok == .kw ")" && s.toks[first]!.span.start < e.span.start
+          && e.span.stop < s.toks[last]!.span.stop then .bracketed
+      else .other
+    modify fun s => { s with layout.rightSides := s.layout.rightSides.push (first - 1, first, last, form) }
+  return e
 /-- Records that the next token closes the innermost open list or block. -/
 def closeList : P Unit := modify fun s =>
   match s.openLists.back? with
@@ -1363,7 +1403,7 @@ partial def fieldInits (what : String) : P (Array (Ident × Option Expr)) := do
       err eq.span "F0104" s!"expected `:=` in {what}, found `=`" (some "expected `:=`")
         #["note: `=` is equality; a field is given as `x := e`"] #[{ msg := "use `:=`", replacement := ":=" }]
     -- Below `when`, which would swallow the following fields.
-    let e ← if (← eatKw ":=").isSome then some <$> withRecords iff else pure none
+    let e ← if (← eatKw ":=").isSome then some <$> rightSide (withRecords iff) else pure none
     fs := fs.push (f, e)
     if !(← listComma) then break
   return fs
@@ -1391,7 +1431,7 @@ partial def matchArms (t : Token) (table : Bool) : P Expr := do
     let guard? ← if (← eatKw "if").isSome then some <$> withRecords iff else pure none
     discard (expectKw "=>")
     -- Below `when`, which would swallow the following arms.
-    arms := arms.push (ps, guard?, ← withRecords iff)
+    arms := arms.push (ps, guard?, ← rightSide (withRecords iff))
     if !(← listComma) then break
   closeList
   discard (expectKw "}")
@@ -1507,7 +1547,7 @@ partial def atom : P Expr := do
       -- would swallow the row's value.
       let cond? ← if (← peek).tok == .ident "_" then discard bump; pure none else some <$> withRecords iff
       discard (expectKw "=>")
-      rows := rows.push (start, cond?, ← withRecords iff)
+      rows := rows.push (start, cond?, ← rightSide (withRecords iff))
       if !(← listComma) then break
     closeList
     discard (expectKw "}")
@@ -1615,7 +1655,7 @@ partial def definitions (inLet : Bool) : P (Array (Ident × Option (Array Ident)
     discard (expectKw ":=")
     let saved := (← get).noIn
     modify fun s => { s with noIn := inLet }
-    let e ← iff
+    let e ← rightSide iff
     modify fun s => { s with noIn := saved }
     defs := defs.push (x, ty, e)
     if (← eatKw ",").isNone then break
@@ -1703,7 +1743,7 @@ def member : P Member := do
     discard bump
     let x ← ident
     discard (expectKw ":=")
-    let e ← top
+    let e ← rightSide top
     if let some rn := (← get).fnResult? then
       if x.name == rn then return .define x e
       throw { span := t.span.to x.span, msg := Fren.Core.fnOutMsg x.name rn }
@@ -1720,7 +1760,7 @@ def member : P Member := do
     let d? ← if isKw t "exists" then pure none else some <$> expectKw ":="
     match d? with
     | none => return .var false false isDet x ty none
-    | some _ => return .var false false isDet x ty (some (← top))
+    | some _ => return .var false false isDet x ty (some (← rightSide top))
   if let some m := det? <|> pub? then
     let mod := if isDet then "det" else "pub"
     let what := if isWord t "call" then "a call"
@@ -2235,7 +2275,7 @@ partial def item (inTrait := false) : P Item := do
     if (s.toks[s.pos]?).any (isKw · ":") && (s.toks[s.pos + 1]?).any (isKw · "(") then
       return ← fnBlock isPub name typeParams params
     let result ← if (← eatKw ":").isSome then some <$> typeExpr else pure none
-    let body ← if (← eatKw ":=").isSome then some <$> top else pure none
+    let body ← if (← eatKw ":=").isSome then some <$> rightSide top else pure none
     return .function isPub name typeParams params result body #[] (← lastSpan)
   if isKw t "const" then
     discard bump
@@ -2243,7 +2283,7 @@ partial def item (inTrait := false) : P Item := do
     discard (expectKw ":")
     let ty ← typeExpr
     discard (expectKw ":=")
-    return .const isPub name ty (← top)
+    return .const isPub name ty (← rightSide top)
   if isKw t "proc" then
     discard bump
     let name ← ident

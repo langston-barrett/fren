@@ -345,7 +345,8 @@ pub proc named_node(e: NamedBool, wanted?): (det truth?, failed: Set<String>) {
 }
 
 pub proc named_conjunction(a?, b?, wanted?): (failed: Set<String>) {
-    out failed := if wanted? then (if a? then {} else {"a"}) union (if b? then {} else {"b"})
+    out failed :=
+        if wanted? then (if a? then {} else {"a"}) union (if b? then {} else {"b"})
         else if a? and b? then {"a", "b"} else {}
     expect positive_a: when wanted?, "a" in failed iff not a?
     expect positive_b: when wanted?, "b" in failed iff not b?
@@ -429,8 +430,10 @@ pub proc varying_inhabitation(membership: Rel<InhabitationWorld, InhabitationVal
     det inhabited_everywhere?,
 ) {
     assume interpretation: membership = {(InhabitationWorld::First, InhabitationValue::Zero)}
-    out some_witness? := exists (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
-    out inhabited_everywhere? := forall (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
+    out some_witness? :=
+        exists (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
+    out inhabited_everywhere? :=
+        forall (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
     expect one_world_insufficient: some_witness? and not inhabited_everywhere?
 }
 ```

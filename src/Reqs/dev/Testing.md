@@ -846,7 +846,8 @@ which nothing reads, since Lean loads each of them by its path.
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub proc portable_name(root: String, file: String): (det name: String) {
-    out name := if file.starts_with?(root ++ "/") then file.slice(root.len + 1, file.len - root.len - 1) else file
+    out name :=
+        if file.starts_with?(root ++ "/") then file.slice(root.len + 1, file.len - root.len - 1) else file
 
     expect round_trip: when file.starts_with?(root ++ "/"), root ++ "/" ++ name = file
     cover inside: file.starts_with?(root ++ "/")

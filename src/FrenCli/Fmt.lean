@@ -17,15 +17,17 @@ line, and from the outside in whether its line fits, where it is its
 line's expression (`fmt::own_line`), and for a block, whether its line
 continues its item (`fmt::continued`). A line break that a list decides
 before an element goes before the comments that start the element's line
-(`fmt::break_before`). It keeps the other line breaks. It decides, for
+(`fmt::break_before`). It decides whether the right side of a `:=` or `=>`
+starts the next line (`fmt::right_side`), and if so, indents it as inside a
+bracket. It keeps the other line breaks. It decides, for
 each line, its indentation (`fmt::indent`), the spaces between its tokens
 (`fmt::space`), where its trailing comment goes (`fmt::comment_column`),
 and how many blank lines precede it (`fmt::blank_lines`); and it adds or
 removes the trailing commas of lists (`fmt::trailing_comma`). The parser
 says which tokens start an item, a member or an element, which `-` are
 unary, where each list or block opens, separates its elements and closes,
-which other braces open lists, and where the claims and imports are
-(`Layout`).
+which other braces open lists, where the claims and imports are, and where
+each right side is (`Layout`).
 -/
 
 namespace FrenCli.Fmt
@@ -82,11 +84,15 @@ inductive Bracket where
   | curly
   /-- `::{`. -/
   | pathCurly
+  /-- A `:=` or `=>` whose right side starts the next line, until the right
+  side ends. -/
+  | operator
   deriving BEq, DecidableEq, Repr
 
 /-- Whether a bracket indents the lines inside it (`fmt::indents?`): a
-brace, or one that opens a list or block. -/
-def bracketIndents (b : Bracket) (list : Bool) : Bool := b matches .curly | .pathCurly || list
+brace, an operator whose right side starts the next line, or one that
+opens a list or block. -/
+def bracketIndents (b : Bracket) (list : Bool) : Bool := b matches .curly | .pathCurly | .operator || list
 
 /-- A bracket open at the start of a line: its kind, whether it opens a
 list or block, and the indentation of the line that opens it. -/
@@ -108,9 +114,10 @@ def indent (brackets : List OpenBracket) (start : LineStart) (comment : Bool) : 
   | .continuing => base brackets + 4
 
 /-- The column of a trailing comment, after code `width` wide, that started
-at column `original` (`fmt::comment_column`). -/
-def commentColumn (width original : Nat) : Nat :=
-  if original ≥ width + 2 then original else width + 2
+at column `original`, on a line that the formatter starts where the source
+did not if `split` (`fmt::comment_column`). -/
+def commentColumn (width original : Nat) (split : Bool) : Nat :=
+  if !split && original ≥ width + 2 then original else width + 2
 
 /-- The blank lines kept before a line (`fmt::blank_lines`). -/
 def blankLines (blank : Nat) (first afterOpen beforeClose : Bool) : Nat :=
@@ -158,6 +165,34 @@ def continuedLine (first : Option Nat) (items : List Nat) : Bool := !(first.any 
 break that its list decides goes before (`fmt::break_before`): all of them
 if the first starts its line, and otherwise none. -/
 def breakBefore (comments : Nat) (startsLine : Bool) : Nat := if startsLine then comments else 0
+
+/-- The form of the right side of a `:=` or `=>` (`fmt::Form`), which the
+parser gives. -/
+abbrev Form := RightForm
+
+/-- Whether a right side of form `f` may hang from its operator's line, its
+bracket's elements or arms breaking (`fmt::overflows?`): it is wholly a
+bracketed expression, a `match` or a table, and the operator's line fits
+up to its opening bracket (`headEnd`). -/
+def overflows (f : Form) (headEnd : Nat) : Bool := headEnd ≤ 100 && f matches .bracketed | .arms
+
+/-- Whether the right side of a `:=` or `=>` starts the next line
+(`fmt::right_side`). Outside the brackets opened on the operator's line
+(`inner`), it does where that line starts with the `)` of a signature's
+parameters (`afterClose`), unless it is a whole `match`, table or
+bracketed expression, which follows the rule below. A chain broken by hand
+outside its brackets (`chained`) starts the next line where the source has
+it there (`written`), where a line break is before an `else` of its `if`
+(`ladder`), or where its first line would end past `maxWidth` on the
+operator's line (`firstEnd`). Any other right side does where it does not
+fit on the operator's line, as some of it must span several lines
+(`broken`) or that line would end past `maxWidth` (`lineEnd`), and either
+it fits on the next line on one line (`nextEnd`) or it does not overflow. -/
+def rightSide (form : Form) (chained written ladder afterClose broken inner : Bool)
+    (lineEnd nextEnd firstEnd headEnd : Nat) : Bool :=
+  !inner && ((afterClose && (chained || form matches .conditional | .other)) ||
+    if chained then written || ladder || firstEnd > maxWidth
+    else (broken || lineEnd > maxWidth) && ((!broken && nextEnd ≤ maxWidth) || !overflows form headEnd))
 
 /-- The width of elements `ws` wide on one line, separated by `, `. -/
 def joinedWidth : List Nat → Nat
@@ -441,6 +476,10 @@ structure Line where
   commentCol : Nat := 0
   /-- The line of the source it starts on. -/
   line : Nat
+  /-- A line of the source starts where it does. -/
+  fresh : Bool := true
+  /-- The line of the source its last comment is on. -/
+  commentLine : Nat := 0
   /-- Its last piece opens a bracket that indents the lines after it, or is
   a record update's `with`. -/
   endsOpen : Bool := false
@@ -463,7 +502,10 @@ def Line.render (l : Line) : String := Id.run do
     prev? := some k
   let some c := trailing? | return s
   let width := ((s.splitOn "\n").getLast?.getD "").length
-  return s.pushn ' ' (commentColumn width l.commentCol - width) ++ c
+  -- The line's code is not the code of the comment's line in the source,
+  -- as where the formatter split or joined lines there.
+  let split := !l.fresh || l.line != l.commentLine
+  return s.pushn ' ' (commentColumn width l.commentCol split - width) ++ c
 
 /-- The width of a line's last row, rendered. -/
 def Line.width (l : Line) : Nat := ((l.render.splitOn "\n").getLast?.getD "").length
@@ -480,6 +522,8 @@ inductive Role where
   | joined
   /-- Before a block's `{`. -/
   | blockBrace
+  /-- After a `:=` or `=>`, before its right side. -/
+  | rightSide
   deriving BEq, Inhabited
 
 /-- The gap is between two elements or members. -/
@@ -489,7 +533,7 @@ def Role.betweenElements : Role → Bool
 
 /-- A vertical list or block ends a line at the gap. -/
 def Role.vertical : Role → Bool
-  | .afterOpen | .afterComma | .beforeClose => true
+  | .afterOpen | .afterComma | .beforeClose | .rightSide => true
   | .joined | .blockBrace => false
 
 /-- Whether a line ends at a gap that a list or block of layout `vertical`
@@ -580,6 +624,8 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     | .kw ")" | .kw "]" | .kw "}" =>
       if let some o := unclosed.back? then openerOf := openerOf.insert k o; unclosed := unclosed.pop
     | _ => pure ()
+  let mut closerOf : Std.HashMap Nat Nat := {}
+  for (c, o) in openerOf.toList do closerOf := closerOf.insert o c
   let mut listOf : Std.HashMap Nat Nat := {}
   let mut listAtLead : Std.HashMap Nat Nat := {}
   for h : c in [0:lists.size] do
@@ -657,14 +703,29 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     for k in b.commas do
       if !trailing.contains k then governed := governed.set! (elementBreak (pieceAt (k + 1))) (some (c, .afterComma))
     governed := governed.set! (pieceAt b.closing) (some (c, .beforeClose))
+  -- The gap before each right side of a `:=` or `=>`, whose line break
+  -- `fmt::right_side` decides: before its first token, or before the
+  -- comments that start its line. Each is given by its index in
+  -- `lay.rightSides`.
+  let mut rightGap : Std.HashMap Nat Nat := {}
+  let mut gapOf : Std.HashMap Nat Nat := {}
+  let mut rightOf : Std.HashMap Nat Nat := {}
+  for h : r in [0:lay.rightSides.size] do
+    let (op, first, _, _) := lay.rightSides[r]
+    let g := elementBreak (pieceAt first)
+    if governed[g]!.isNone && g > pieceAt op then
+      rightGap := rightGap.insert g r
+      gapOf := gapOf.insert r g
+    rightOf := rightOf.insert op r
   -- Whether a line ends before piece `i` if the list or block that decides
-  -- its gap, if any, is `vertical` (`fmt::line_break`): where none decides,
-  -- exactly where the source breaks the line, or between segments or after
-  -- a line comment.
+  -- its gap, if any, is `vertical`, or for a right side, if it starts the
+  -- next line (`fmt::line_break`): where none decides, exactly where the
+  -- source breaks the line, or between segments or after a line comment.
   let breaksAt (i : Nat) (vertical : Bool) : Bool :=
-    match governed[i]! with
-    | some (_, r) => lineBreak r vertical (boundary i) (i > 0 && lineComment (i - 1)) (inBreak i && isComment i) (blankIn i)
-    | none => boundary i || (i > 0 && lineComment (i - 1)) || inBreak i
+    match governed[i]!, rightGap.contains i with
+    | some (_, r), _ => lineBreak r vertical (boundary i) (i > 0 && lineComment (i - 1)) (inBreak i && isComment i) (blankIn i)
+    | none, true => lineBreak .rightSide vertical (boundary i) (i > 0 && lineComment (i - 1)) (inBreak i && isComment i) (blankIn i)
+    | none, false => boundary i || (i > 0 && lineComment (i - 1)) || inBreak i
   -- The gaps where a line must end whatever the layout.
   let forced (i : Nat) : Bool := breaksAt i false
   -- The width of pieces `a` to `b`, exclusive, on one line.
@@ -732,6 +793,12 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     if i + 1 < pieces.size && isComment (i + 1) && !forced (i + 1) then 2 + pieces[i + 1]!.text.length else 0
   let mut out : Array Line := #[]
   let mut vertical : Array Bool := Array.replicate lists.size false
+  -- Whether each right side starts the next line (`fmt::right_side`).
+  let mut nextLine : Array Bool := Array.replicate lay.rightSides.size false
+  -- The first tokens of the right sides that start a line.
+  let mut rightStarts : Std.HashSet Nat := {}
+  -- The first tokens of a moved chain's links.
+  let mut linkStarts : Std.HashSet Nat := {}
   -- The open brackets, the innermost first, each with its token
   -- (`fmt::indent`'s `brackets`).
   let mut stack : List (Nat × OpenBracket) := []
@@ -749,7 +816,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   for h : k in [0:toks.size] do tokAt := tokAt.insert toks[k].span.start k
   for h : i in [0:pieces.size] do
     let p := pieces[i]
-    let brk := i == 0 || breaksAt i (governed[i]!.any fun (c, _) => vertical[c]!)
+    let brk := i == 0 || breaksAt i (match governed[i]! with
+      | some (c, _) => vertical[c]!
+      | none => rightGap[i]?.any (nextLine[·]!))
     -- Token `k` closes the innermost open bracket, which indents.
     let closesTop (k : Nat) : Bool :=
       openerOf[k]?.any fun o => stack.head?.any fun (t, b, l, _) => t == o && bracketIndents b l
@@ -777,7 +846,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       let start := match next? with
         | some (k, j) =>
           if closesTop k then LineStart.closing
-          else if lay.starts.contains k
+          else if lay.starts.contains k || rightStarts.contains k
               || [i, j].any (governed[·]!.any fun (_, r) => r matches .afterOpen | .afterComma | .blockBrace) then
             .starting
           else .continuing
@@ -787,14 +856,16 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       let afterOpen := out.back?.any (·.endsOpen)
       let beforeClose := p.tok?.any closesTop
       let kept := blankLines (blankIn i) first afterOpen beforeClose
-      out := out.push { blank := kept, indent := columns, pieces := #[], line := p.startLine }
+      out := out.push { blank := kept, indent := columns, pieces := #[], line := p.startLine
+                        fresh := first || inBreak i }
       lineFirst := none
-      continues := start == .continuing
+      continues := start == .continuing || (next?.any fun (k, _) => linkStarts.contains k)
     -- A line that ends with a bracket that indents, or with a record
     -- update's `with`, has no blank line after it (`fmt::blank_lines`).
     let opens := p.tok?.any fun k => indents k || listAtLead.contains k
     out := out.modify (out.size - 1) fun l =>
       { l with pieces := l.pieces.push (kinds[i]!, p.text), commentCol := if p.tok?.isNone then p.col else l.commentCol
+               commentLine := if p.tok?.isNone then p.startLine else l.commentLine
                endsOpen := opens }
     let some k := p.tok? | continue
     last? := some (out.size - 1, out.back!.pieces.size - 1, k)
@@ -856,7 +927,70 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
         vertical := vertical.set! c v
         if !v then flatUntil := some b.closing
     if (openerOf[k]?.any fun o => stack.head?.any (·.1 == o)) then stack := stack.tail
+    -- The right sides that end here.
+    while stack.head?.any fun (t, b, _) => b == .operator && (rightOf[t]?.any (lay.rightSides[·]!.2.2.1 == k)) do
+      stack := stack.tail
     if flatUntil == some k then flatUntil := none
+    -- A `:=` or `=>`: whether its right side starts the next line
+    -- (`fmt::right_side`), and if so, the right side is inside it, as
+    -- inside a bracket that indents.
+    if let some r := rightOf[k]? then
+      let (_, first, last, form) := lay.rightSides[r]!
+      if let some g := gapOf[r]? then
+        let lastPiece := pieceAt last
+        let mut broken := false
+        for j in [g:lastPiece + 1] do
+          if (j > g && forced j) || pieces[j]!.startLine != pieces[j]!.endLine then broken := true
+          if let some t := pieces[j]!.tok? then
+            if let some d := listOf[t]? then
+              if !infos[d]!.flat then broken := true
+        let sp := if space kinds[i]! kinds[i + 1]! then 1 else 0
+        let lineEnd := out.back!.width + sp + flatWidth (i + 1) (lastPiece + 1) + (suffix vertical .arguments lastPiece).1
+        let inner := stack.any fun (t, _) => outLine[t]? == some (out.size - 1)
+        let nextEnd := out.back!.indent + 4 + flatWidth (pieceAt first) (lastPiece + 1)
+          + (suffix vertical .arguments lastPiece).1
+        -- A line break kept outside its brackets.
+        let mut links : Array Nat := #[]
+        let mut depth : Int := 0
+        for j in [pieceAt first:lastPiece + 1] do
+          if depth == 0 && j > pieceAt first && inBreak j && !isComment j && governed[j]!.isNone
+              && !rightGap.contains j then
+            links := links.push j
+          if let some t := pieces[j]!.tok? then
+            if bracketAt? t |>.isSome then depth := depth + 1
+            else if openerOf.contains t then depth := depth - 1
+        -- Its first line: up to the first line break kept, or that a list
+        -- that cannot be on one line decides.
+        let mut firstStop := lastPiece + 1
+        for j in [pieceAt first + 1:lastPiece + 1] do
+          let kept := match governed[j]! with
+            | some (c, _) => !infos[c]!.flat
+            | none => !rightGap.contains j
+          if firstStop == lastPiece + 1 && inBreak j && kept then firstStop := j
+        let firstEnd := out.back!.width + sp + flatWidth (i + 1) firstStop
+        let chained := !links.isEmpty
+        -- The operator's line continues a signature that spans several lines, as
+        -- `) :=` or `): Int :=` does: it starts with the `)` of its parameters.
+        let afterClose := lineFirst.any fun f => isTok f ")" &&
+          (openerOf[f]?.bind (listOf[·]?)).any fun c => lists[c]!.kind matches .parameters | .functionParameters
+        -- The opening bracket of a bracketed right side.
+        let o := (openerOf[last]?).getD last
+        let headEnd := out.back!.width + sp + flatWidth (i + 1) (pieceAt o + 1)
+        let ladder := isTok first "if" && links.any fun j => pieces[j]!.tok?.any (isTok · "else")
+        -- The source starts the right side on the next line.
+        let written := inBreak g
+        let next := rightSide form chained written ladder afterClose broken inner lineEnd nextEnd firstEnd headEnd
+        nextLine := nextLine.set! r next
+        if breaksAt g next then
+          stack := (k, .operator, false, out.back!.indent) :: stack
+          rightStarts := rightStarts.insert first
+          -- A chain's links are indented as its first operand, but still
+          -- continue it, for `fmt::own_line`.
+          for j in links do
+            if let some t := pieces[j]!.tok? then
+              rightStarts := rightStarts.insert t
+              linkStarts := linkStarts.insert t
+          out := out.modify (out.size - 1) fun l => { l with endsOpen := true }
   return out
 
 /-- An error that stops a file from being formatted. -/

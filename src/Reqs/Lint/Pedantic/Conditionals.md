@@ -96,11 +96,10 @@ pub proc branches_sharing_code(
     out shared_left? := then_left = else_left
     out shared_right? := then_right = else_right
     -- What the `if` that the fix moves out, `if C then A else B`, mentions.
-    out moved_mentioned :=
-        lang::mentioned_by(
-            lang::ExprKind::Compound,
-            condition_mentioned union a_mentioned union b_mentioned
-        )
+    out moved_mentioned := lang::mentioned_by(
+        lang::ExprKind::Compound,
+        condition_mentioned union a_mentioned union b_mentioned
+    )
 
     -- The product the fix would write, for `*`.
     call product := lang::linear_product(moved_mentioned, shared_mentioned)

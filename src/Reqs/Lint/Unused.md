@@ -394,7 +394,8 @@ pub fn checks_assumptions?(u: ProcUse) := u = ProcUse::Call
 
 -- Whether the file reads every input of the procedure: where a use checks
 -- its assumptions.
-pub fn reads_inputs?(uses: Set<ProcUse>) := exists (u: ProcUse), u in uses and checks_assumptions?(u)
+pub fn reads_inputs?(uses: Set<ProcUse>) :=
+    exists (u: ProcUse), u in uses and checks_assumptions?(u)
 
 set_option fren.lint.undecidable "allow" in
 pub proc unused_assumption(

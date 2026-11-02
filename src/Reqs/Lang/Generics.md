@@ -82,7 +82,8 @@ pub proc type_bracket(
     bracket: Bracket,
     adjacent?,                   -- it follows the name directly
 ): (det reading: AfterName) {
-    out reading := if bracket = Bracket::Angle then (if adjacent? then AfterName::Opens else AfterName::Spaced)
+    out reading :=
+        if bracket = Bracket::Angle then (if adjacent? then AfterName::Opens else AfterName::Spaced)
         else AfterName::Ends
 
     -- After a type's name, a `<` is never a comparison.
@@ -309,7 +310,8 @@ pub proc own_type(
     out as_declared? := own? and params <= 3 and segs = own_written(params)
     out nested? := own_nested?(segs)
     out bare? := segs = [Own]
-    out in_element? := (SetOf in segs or SeqOf in segs or RelOf in segs or RelSep in segs) and Own in segs
+    out in_element? :=
+        (SetOf in segs or SeqOf in segs or RelOf in segs or RelSep in segs) and Own in segs
 
     ensure rule: accepted? iff (not nested? and (not own? or as_declared?))
 
@@ -390,7 +392,8 @@ pub proc instantiation(
     arguments: Seq<Ty>,
     instantiated: Seq<Ty>,         -- each of the parts of `ty`, instantiated in turn
 ): (det result: Ty) {
-    out result := if param?(ty) then
+    out result :=
+        if param?(ty) then
         (if param_index(ty) < arguments.len then arguments[param_index(ty)] else ty)
         else with_parts(ty, instantiated)
 
@@ -533,7 +536,8 @@ pub proc parameter_matching(
     part_matched?,                 -- matching the part of `found` there against that part gives `k` an argument
     part_argument: Ty,             -- that argument
 ): (det matched?, det argument: Ty) {
-    out matched? := if param?(declared) then param_index(declared) = k
+    out matched? :=
+        if param?(declared) then param_index(declared) = k
         else same_shape?(declared, found) and first >= 0 and part_matched?
     out argument := if param?(declared) then found else part_argument
 

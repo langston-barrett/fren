@@ -393,7 +393,8 @@ pub fn bound_value(b: Bound): Int := match b {
 pub fn bounded?(a: Alternative) := a.lo != Bound::Open and a.hi != Bound::Open
 
 -- How many integers a bounded alternative has.
-pub fn width(a: Alternative): Int := if bounded?(a) and bound_value(a.lo) <= bound_value(a.hi) then bound_value(a.hi) - bound_value(a.lo) + 1 else 0
+pub fn width(a: Alternative): Int :=
+    if bounded?(a) and bound_value(a.lo) <= bound_value(a.hi) then bound_value(a.hi) - bound_value(a.lo) + 1 else 0
 
 pub proc pattern_count(alts: Seq<Alternative>): (
     det finite?,
@@ -941,10 +942,14 @@ pub enum ExprSite {
 
 -- The position of an expression written at `site`.
 pub fn site_position(site: ExprSite): Position := match site {
-    ExprSite::Binding | ExprSite::RecordField | ExprSite::NewtypeValue | ExprSite::FunctionArgument | ExprSite::Payload | ExprSite::SeqMethodArgument | ExprSite::OrderedMethodArgument | ExprSite::OutputDefinition | ExprSite::FunctionBody | ExprSite::ConstantValue | ExprSite::TypedDefinition | ExprSite::TypedClosureBody => Position::Declared,
-    ExprSite::SetOperand | ExprSite::ConcatOperand | ExprSite::Branch | ExprSite::ArmBody | ExprSite::RowValue | ExprSite::Element | ExprSite::Parenthesized | ExprSite::LetBody | ExprSite::PairMember => Position::Shared,
-    ExprSite::ComparedOperand | ExprSite::SubsetOperand | ExprSite::MembershipRight => Position::Compared,
-    ExprSite::MembershipLeft | ExprSite::JoinOperand | ExprSite::StringOperand | ExprSite::CountArgument | ExprSite::MethodArgument | ExprSite::Receiver | ExprSite::Scrutinee | ExprSite::ArmGuard | ExprSite::RowCondition | ExprSite::UpdatedRecord | ExprSite::UntypedDefinition | ExprSite::UntypedClosureBody => Position::Synthesized,
+    ExprSite::Binding | ExprSite::RecordField | ExprSite::NewtypeValue | ExprSite::FunctionArgument | ExprSite::Payload | ExprSite::SeqMethodArgument | ExprSite::OrderedMethodArgument | ExprSite::OutputDefinition | ExprSite::FunctionBody | ExprSite::ConstantValue | ExprSite::TypedDefinition | ExprSite::TypedClosureBody =>
+        Position::Declared,
+    ExprSite::SetOperand | ExprSite::ConcatOperand | ExprSite::Branch | ExprSite::ArmBody | ExprSite::RowValue | ExprSite::Element | ExprSite::Parenthesized | ExprSite::LetBody | ExprSite::PairMember =>
+        Position::Shared,
+    ExprSite::ComparedOperand | ExprSite::SubsetOperand | ExprSite::MembershipRight =>
+        Position::Compared,
+    ExprSite::MembershipLeft | ExprSite::JoinOperand | ExprSite::StringOperand | ExprSite::CountArgument | ExprSite::MethodArgument | ExprSite::Receiver | ExprSite::Scrutinee | ExprSite::ArmGuard | ExprSite::RowCondition | ExprSite::UpdatedRecord | ExprSite::UntypedDefinition | ExprSite::UntypedClosureBody =>
+        Position::Synthesized,
 }
 
 set_option fren.evidence "enumerated" in
@@ -1057,7 +1062,8 @@ pub proc expected_type(
     }
     ensure rule: expected = match site_position(site) {
         Declared => whole,
-        Shared => if whole? and (kind(whole) = NatTy or (site is ArmBody | RowValue)) then whole
+        Shared =>
+            if whole? and (kind(whole) = NatTy or (site is ArmBody | RowValue)) then whole
             else if sibling? then widened(sibling) else whole,
         Compared => if sibling? then sibling else whole,
         Synthesized => whole,

@@ -51,7 +51,7 @@
 -    expect r5: P { x := x  -- a comment
 -            , y := y }.x = x
 +    expect r5: P {
-+        x := x,            -- a comment
++        x := x,  -- a comment
 +        y := y,
 +    }.x = x
 exit=1

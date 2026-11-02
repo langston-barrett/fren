@@ -122,16 +122,18 @@ pub fn unless_not_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
 }
 
 -- `if a then (if b then d else true) else true`.
-fn nested_when?<V>(t: lang::Expr<V>, f: lang::Expr<V>) := true?(f) and match t {
-    lang::Expr::If(_, _, g) => true?(g),
-    _ => false,
-}
+fn nested_when?<V>(t: lang::Expr<V>, f: lang::Expr<V>) :=
+    true?(f) and match t {
+        lang::Expr::If(_, _, g) => true?(g),
+        _ => false,
+    }
 
 -- `if a then true else (if b then true else d)`.
-fn nested_unless?<V>(t: lang::Expr<V>, f: lang::Expr<V>) := true?(t) and match f {
-    lang::Expr::If(_, u, _) => true?(u),
-    _ => false,
-}
+fn nested_unless?<V>(t: lang::Expr<V>, f: lang::Expr<V>) :=
+    true?(t) and match f {
+        lang::Expr::If(_, u, _) => true?(u),
+        _ => false,
+    }
 
 pub fn collapsible_when_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::If(_, t, f) => nested_when?(t, f) or nested_unless?(t, f),
@@ -737,10 +739,11 @@ where the right is `-1`, as `lint::neg_multiply`'s `negate_left?` says:
 
 ```fren
 -- `e` is `-1`, the negation of the literal `1`.
-fn minus_one?<V>(e: lang::Expr<V>) := e = lang::Expr::Unary(
-    lang::UnaryOp::Neg,
-    lang::Expr::Literal(lang::Value::Integer(1))
-)
+fn minus_one?<V>(e: lang::Expr<V>) :=
+    e = lang::Expr::Unary(
+        lang::UnaryOp::Neg,
+        lang::Expr::Literal(lang::Value::Integer(1))
+    )
 
 pub fn neg_multiply_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::Binary(lang::BinaryOp::Mul, a, b) => minus_one?(a) or minus_one?(b),
@@ -775,8 +778,10 @@ expect neg_multiply_elaborated(
 
     call p := neg_multiply(left_minus_one?, right_minus_one?)
 
-    let a: lang::Expr<lang::Id> := if left_minus_one? then Unary(Neg, Literal(lang::Value::Integer(1))) else x
-    let b: lang::Expr<lang::Id> := if right_minus_one? then Unary(Neg, Literal(lang::Value::Integer(1))) else y
+    let a: lang::Expr<lang::Id> :=
+        if left_minus_one? then Unary(Neg, Literal(lang::Value::Integer(1))) else x
+    let b: lang::Expr<lang::Id> :=
+        if right_minus_one? then Unary(Neg, Literal(lang::Value::Integer(1))) else y
 
     expect fires: unless minus_one?(x) or minus_one?(y), p.fires? iff neg_multiply_fires?(Binary(lang::BinaryOp::Mul, a, b))
     expect fix: when p.fires?, neg_multiply_fix(Binary(lang::BinaryOp::Mul, a, b)) = Unary(Neg, if p.negate_left? then a else b)

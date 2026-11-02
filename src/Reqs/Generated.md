@@ -202,7 +202,8 @@ pub proc prelude_type(
         PreludeType::Result => "Except",
     }
     -- `Except`'s arguments are `Result`'s, swapped.
-    out lean_args := if ty = PreludeType::Result and args.len = 2 then [args[1], args[0]]
+    out lean_args :=
+        if ty = PreludeType::Result and args.len = 2 then [args[1], args[0]]
         else args
 
     expect option_same: when ty = PreludeType::Option, lean_args = args
@@ -418,7 +419,8 @@ pub enum Mention { Computable, ClassicalDecision, NoncomputableDecl, DataAxiom }
 pub enum DefinitionForm { NotCompiled, Compiled, MarkedNoncomputable }
 
 pub proc definition_form(value: ValueKind, mentions: Set<Mention>): (det form: DefinitionForm) {
-    out form := if value = ValueKind::Proposition then DefinitionForm::NotCompiled
+    out form :=
+        if value = ValueKind::Proposition then DefinitionForm::NotCompiled
         else if Mention::ClassicalDecision in mentions or Mention::NoncomputableDecl in mentions
         or Mention::DataAxiom in mentions then DefinitionForm::MarkedNoncomputable
         else DefinitionForm::Compiled

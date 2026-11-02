@@ -383,14 +383,15 @@ pub enum Premise {
 
 -- Whether the query of a check at `site` has the constraints of call `j`
 -- among its hypotheses, of an item with `n_calls` calls.
-pub fn has_call?(site: Site, j: Int, n_calls: Int) := 0 <= j < n_calls and match site {
-    Site::Whole => true,
-    Site::Constraint => true,
-    Site::Refinement(_) => true,
-    Site::CallArgument(k) => j < k,
-    Site::CallAssumption(k) => j < k,
-    _ => false,
-}
+pub fn has_call?(site: Site, j: Int, n_calls: Int) :=
+    0 <= j < n_calls and match site {
+        Site::Whole => true,
+        Site::Constraint => true,
+        Site::Refinement(_) => true,
+        Site::CallArgument(k) => j < k,
+        Site::CallAssumption(k) => j < k,
+        _ => false,
+    }
 
 -- Whether `p` is the assumption checks of the call whose assumption the
 -- check at `site` is.
@@ -486,7 +487,8 @@ pub fn backs(check: CheckRecord, h: Hypothesis, kinds: Rel<Int, FnKind>): Set<Pr
         then {} else {Premise::OwnRealizability},
     Hypothesis::Definitions => {},
     Hypothesis::Call(j) => {Premise::Realizability(j), Premise::CallAssumptions(j)},
-    Hypothesis::Facts(f) => (if (f, FnKind::Contract) in kinds then {Premise::ContractRealizability(f)} else {})
+    Hypothesis::Facts(f) =>
+        (if (f, FnKind::Contract) in kinds then {Premise::ContractRealizability(f)} else {})
         union (if (f, FnKind::Instance) in kinds then {Premise::InstanceContract(f)} else {})
         union (if (f, FnKind::Recursive) in kinds then {Premise::Postconditions(f)} else {}),
     Hypothesis::Invariants(t) => {Premise::Inhabitation(t)},
@@ -1056,12 +1058,13 @@ trait (`F0215`). `check::law_premise` states which verdicts carry
 -- A pass of a check of this kind comes from an `unsat` query, not a
 -- model: all but a cover goal's, a vacuity check's, a redundancy check's
 -- and a reachability question's.
-pub fn pass_from_unsat?(kind: Kind) := not kind in {
-    Kind::Cover,
-    Kind::Vacuity,
-    Kind::Redundancy,
-    Kind::Reachability,
-}
+pub fn pass_from_unsat?(kind: Kind) :=
+    not kind in {
+        Kind::Cover,
+        Kind::Vacuity,
+        Kind::Redundancy,
+        Kind::Reachability,
+    }
 
 -- The verdict comes from an `unsat` query.
 pub fn from_unsat?(kind: Kind, verdict: Verdict) := match verdict {
@@ -1258,7 +1261,8 @@ procedures has an assumption, so they have no assumption checks:
 -- realizability) and 4 (`e`) through `lookup`'s, check 0, and check 5
 -- (`top`'s realizability) through `caller`'s, check 1; and whether `wrong`
 -- and `e` take their own item's realizability, checks 1 and 3.
-pub fn example_edges(p1?, p2?, o2?, p3?, p4?, o4?, p5?): Rel<Int, Int> := (if p1? then {(1, 0)} else {})
+pub fn example_edges(p1?, p2?, o2?, p3?, p4?, o4?, p5?): Rel<Int, Int> :=
+    (if p1? then {(1, 0)} else {})
     union (if p2? then {(2, 0)} else {}) union (if o2? then {(2, 1)} else {})
     union (if p3? then {(3, 0)} else {}) union (if p4? then {(4, 0)} else {})
     union (if o4? then {(4, 3)} else {}) union (if p5? then {(5, 1)} else {})

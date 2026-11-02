@@ -21,7 +21,8 @@ pub fn mentioned<V, B>(t: Term<V, B>): Set<V> := match t {
 set_option fren.lint.undecidable "allow" in
 pub fn lone?<X>(s: Set<X>) := forall (a: X) (b: X), when a in s and b in s, a = b
 set_option fren.lint.undecidable "allow" in
-pub fn functional?<X, Y>(r: Rel<X, Y>) := forall (a: X) (b: Y) (c: Y), when (a, b) in r and (a, c) in r, b = c
+pub fn functional?<X, Y>(r: Rel<X, Y>) :=
+    forall (a: X) (b: Y) (c: Y), when (a, b) in r and (a, c) in r, b = c
 
 -- Within the core: the operations on a set and a sequence of the
 -- parameter, and a quantifier over a sequence's elements.

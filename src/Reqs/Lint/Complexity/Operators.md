@@ -122,7 +122,8 @@ fn empty_text?<V>(e: lang::Expr<V>) := e = lang::Expr::Literal(lang::Value::Text
 
 -- `b` is `-y`, of a `y` that is neither `0` nor a negation.
 fn flips?<V>(b: lang::Expr<V>) := match b {
-    lang::Expr::Unary(lang::UnaryOp::Neg, y) => not zero?(y) and not (y is lang::Expr::Unary(lang::UnaryOp::Neg, _)),
+    lang::Expr::Unary(lang::UnaryOp::Neg, y) =>
+        not zero?(y) and not (y is lang::Expr::Unary(lang::UnaryOp::Neg, _)),
     _ => false,
 }
 
@@ -133,7 +134,8 @@ fn flipped<V>(
     b: lang::Expr<V>,
     e: lang::Expr<V>
 ): lang::Expr<V> := match b {
-    lang::Expr::Unary(lang::UnaryOp::Neg, y) => if flips?(b) then lang::Expr::Binary(op, a, y) else e,
+    lang::Expr::Unary(lang::UnaryOp::Neg, y) =>
+        if flips?(b) then lang::Expr::Binary(op, a, y) else e,
     _ => e,
 }
 
@@ -142,7 +144,8 @@ pub fn identity_op_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::Binary(lang::BinaryOp::Sub, a, b) => zero?(b) or (not zero?(a) and flips?(b)),
     lang::Expr::Binary(lang::BinaryOp::Mul, a, b) => one?(b) or one?(a),
     lang::Expr::Binary(lang::BinaryOp::Div, _, b) => one?(b),
-    lang::Expr::Binary(lang::BinaryOp::Concat, a, b) => empty_text?(b) or empty_text?(a) or a = lang::Expr::Nil,
+    lang::Expr::Binary(lang::BinaryOp::Concat, a, b) =>
+        empty_text?(b) or empty_text?(a) or a = lang::Expr::Nil,
     _ => false,
 }
 
@@ -151,7 +154,8 @@ pub fn identity_op_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
         if zero?(b) then a else if zero?(a) then b else flipped(lang::BinaryOp::Sub, a, b, e),
     lang::Expr::Binary(lang::BinaryOp::Sub, a, b) =>
         if zero?(b) then a else if zero?(a) then e else flipped(lang::BinaryOp::Add, a, b, e),
-    lang::Expr::Binary(lang::BinaryOp::Mul, a, b) => if one?(b) then a else if one?(a) then b else e,
+    lang::Expr::Binary(lang::BinaryOp::Mul, a, b) =>
+        if one?(b) then a else if one?(a) then b else e,
     lang::Expr::Binary(lang::BinaryOp::Div, a, b) => if one?(b) then a else e,
     lang::Expr::Binary(lang::BinaryOp::Concat, a, b) =>
         if empty_text?(b) then a else if empty_text?(a) or a = lang::Expr::Nil then b else e,
@@ -182,7 +186,8 @@ pub fn operand_of<V>(
 ): lang::Expr<V> := match o {
     IdentityOperand::Zero => lang::Expr::Literal(lang::Value::Integer(0)),
     IdentityOperand::One => lang::Expr::Literal(lang::Value::Integer(1)),
-    IdentityOperand::Empty => if list? then lang::Expr::Nil else lang::Expr::Literal(lang::Value::Text("")),
+    IdentityOperand::Empty =>
+        if list? then lang::Expr::Nil else lang::Expr::Literal(lang::Value::Text("")),
     IdentityOperand::Negation => lang::Expr::Unary(lang::UnaryOp::Neg, y),
     IdentityOperand::Other => x,
 }
@@ -228,19 +233,21 @@ expect identity_op_elaborated(
     let b: lang::Expr<lang::Id> := operand_of(right, right_list?, z, w)
     let e: lang::Expr<lang::Id> := Binary(binary_of(op), a, b)
     -- The four cases that `identity_op_fires?` leaves.
-    let left_out? := (p.rewrite = KeepLeft and op = IdentityOperator::Concat and right = IdentityOperand::Empty and right_list?)
+    let left_out? :=
+        (p.rewrite = KeepLeft and op = IdentityOperator::Concat and right = IdentityOperand::Empty and right_list?)
         or (p.rewrite = Flip and (zero?(w) or (w is lang::Expr::Unary(lang::UnaryOp::Neg, _))
-        or (op = IdentityOperator::Sub and left = IdentityOperand::Zero)))
+            or (op = IdentityOperator::Sub and left = IdentityOperand::Zero)))
 
     expect fires: unless left_out?, (p.rewrite != Unchanged) iff identity_op_fires?(e)
     expect fix: unless left_out?, match p.rewrite {
         KeepLeft => identity_op_fix(e) = a,
         KeepRight => identity_op_fix(e) = b,
-        Flip => identity_op_fix(e) = Binary(
-            if op = IdentityOperator::Add then lang::BinaryOp::Sub else lang::BinaryOp::Add,
-            a,
-            w
-        ),
+        Flip =>
+            identity_op_fix(e) = Binary(
+                if op = IdentityOperator::Add then lang::BinaryOp::Sub else lang::BinaryOp::Add,
+                a,
+                w
+            ),
         Unchanged => identity_op_fix(e) = e,
     }
 }
@@ -407,7 +414,8 @@ fn pair_negated?(pairs: Set<PairNegation>, x: Operand, y: Operand) :=
     } in pairs
 
 -- `x` is an operand of some conjunct.
-fn named?(pairs: Set<PairNegation>, x: Operand) := exists (y: Operand), pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x)
+fn named?(pairs: Set<PairNegation>, x: Operand) :=
+    exists (y: Operand), pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x)
 
 pub proc manual_at_most_one(
     pairs: Set<PairNegation>,     -- the run of conjuncts `not (a and b)`

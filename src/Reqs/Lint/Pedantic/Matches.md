@@ -344,7 +344,8 @@ pub fn tests_only?<V>(p: lang::Pattern<V>) := p is lang::Pattern::Literal(_)
 
 -- `rest` is the arm `_ => b` of a `match` on `s`, and no arm after it.
 fn wildcard_arm?<V>(s: lang::Expr<V>, rest: lang::Expr<V>) := match rest {
-    lang::Expr::Match(t, q, h, _, r) => t = s and q = lang::Pattern::Wildcard and true?(h) and r = lang::Expr::NoMatch,
+    lang::Expr::Match(t, q, h, _, r) =>
+        t = s and q = lang::Pattern::Wildcard and true?(h) and r = lang::Expr::NoMatch,
     _ => false,
 }
 
@@ -650,7 +651,8 @@ fn bool_pair?<V>(p: lang::Pattern<V>, q: lang::Pattern<V>) :=
 -- `rest` is an arm of a `match` on `s` without a guard, whose pattern is
 -- the other of `true` and `false` than `p`, and no arm after it.
 fn bool_arm?<V>(s: lang::Expr<V>, p: lang::Pattern<V>, rest: lang::Expr<V>) := match rest {
-    lang::Expr::Match(t, q, h, _, r) => t = s and bool_pair?(p, q) and true?(h) and r = lang::Expr::NoMatch,
+    lang::Expr::Match(t, q, h, _, r) =>
+        t = s and bool_pair?(p, q) and true?(h) and r = lang::Expr::NoMatch,
     _ => false,
 }
 

@@ -3,7 +3,8 @@ enum B { X, Y }
 enum P { V(B, B, B, B, B, B, B, B, B) }
 proc c(p: P): (y: Int) {
     ensure r: y = match p {
-        P::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) => 0,
+        P::V(B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y, B::X | B::Y) =>
+            0,
         _ => 1,
     }
 }

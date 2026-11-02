@@ -269,13 +269,15 @@ pub proc first_segment(
     opened: Seq<Path>,             -- the distinct variants that `use ...::*` opens
     prelude: Seq<Path>,            -- the prelude's item or variant
 ): (det result: Resolution, det target: Seq<Path>) {
-    out result := if declared != [] then Local
+    out result :=
+        if declared != [] then Local
         else if opened.len = 1 then Glob
         else if opened.len > 1 then Ambiguous
         else if prelude != [] then Prelude
         else Unbound
     -- What it resolves to: none if it is ambiguous or unbound.
-    out target := if declared != [] then declared.at(0)
+    out target :=
+        if declared != [] then declared.at(0)
         else if opened.len = 1 then opened
         else if opened.len > 1 then []
         else prelude.at(0)

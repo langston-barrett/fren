@@ -149,7 +149,8 @@ fn disjoint?(op1: Comparison, a: Int, op2: Comparison, b: Int) :=
     or (op2 in {Eq, Gt, Ge} and op1 in {Eq, Lt, Le} and least(op2, b) > greatest(op1, a))
     or (a = b and ((op1 = Eq and op2 = Ne) or (op1 = Ne and op2 = Eq)))
 
-fn both?(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) := compares?(op1, x, a) and compares?(op2, x, b)
+fn both?(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) :=
+    compares?(op1, x, a) and compares?(op2, x, b)
 
 fn complement_of(op: Comparison): Comparison := match op {
     Eq => Ne,
@@ -368,18 +369,21 @@ pub fn offset_of<V>(e: lang::Expr<V>): Offset := match e {
 }
 
 pub fn without_offset<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
-    lang::Expr::Binary(lang::BinaryOp::Add, a, b) => if one?(b) then a else if one?(a) then b else e,
+    lang::Expr::Binary(lang::BinaryOp::Add, a, b) =>
+        if one?(b) then a else if one?(a) then b else e,
     lang::Expr::Binary(lang::BinaryOp::Sub, a, b) => if one?(b) then a else e,
     _ => e,
 }
 
 pub fn int_plus_one_fires?<V>(e: lang::Expr<V>) := match e {
-    lang::Expr::Binary(lang::BinaryOp::Le, a, b) => offset_of(a) = PlusOne or offset_of(b) = MinusOne,
+    lang::Expr::Binary(lang::BinaryOp::Le, a, b) =>
+        offset_of(a) = PlusOne or offset_of(b) = MinusOne,
     _ => false,
 }
 
 pub fn int_plus_one_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
-    lang::Expr::Binary(lang::BinaryOp::Le, a, b) => if offset_of(a) = PlusOne
+    lang::Expr::Binary(lang::BinaryOp::Le, a, b) =>
+        if offset_of(a) = PlusOne
         then lang::Expr::Binary(lang::BinaryOp::Lt, without_offset(a), b)
         else if offset_of(b) = MinusOne then lang::Expr::Binary(lang::BinaryOp::Lt, a, without_offset(b))
         else e,

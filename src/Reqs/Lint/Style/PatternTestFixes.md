@@ -34,11 +34,12 @@ no value matches two alternatives of the fix (`reachable`).
 pub mod lint
 
 -- The value that an equation's value side writes.
-fn equation_value(c: ComparisonShape): Option<lang::Value> := match value_alt(c.left.value, c.nat?), value_alt(c.right.value, c.nat?) {
-    None, Some(_) => literal_value(c.right.value),
-    Some(_), None => literal_value(c.left.value),
-    _, _ => None,
-}
+fn equation_value(c: ComparisonShape): Option<lang::Value> :=
+    match value_alt(c.left.value, c.nat?), value_alt(c.right.value, c.nat?) {
+        None, Some(_) => literal_value(c.right.value),
+        Some(_), None => literal_value(c.left.value),
+        _, _ => None,
+    }
 
 -- The operand `s` as the language means it, where `patterns` are its pattern
 -- test's alternatives, as the language means them.

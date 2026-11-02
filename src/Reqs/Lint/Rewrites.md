@@ -150,11 +150,12 @@ the size of the expression.
 
 ```fren
 -- The lints whose fixes rest on the primitive operations.
-pub fn uses_primitives?(l: ExprLint) := l in {
-    ExprLint::NegMultiply,
-    ExprLint::IdentityOp,
-    ExprLint::ManualRemEuclid,
-}
+pub fn uses_primitives?(l: ExprLint) :=
+    l in {
+        ExprLint::NegMultiply,
+        ExprLint::IdentityOp,
+        ExprLint::ManualRemEuclid,
+    }
 
 -- `i` gives the primitive operations that `l`'s fix rests on their usual meaning.
 pub fn fits?(l: ExprLint, i: lang::Interp) := not uses_primitives?(l) or usual?(i.primitives)
@@ -182,26 +183,28 @@ whether those passes reach what `fix_all` gives is open (#490).
 
 ```fren
 -- Whether `l` fires on `e` or within one of its operands.
-pub fn fires_in?(l: ExprLint, e: Expr<lang::Id>) := fires_at?(l, e) or match e {
-    Expr::Let(_, _, b) => fires_in?(l, b),
-    Expr::Unary(_, a) => fires_in?(l, a),
-    Expr::Binary(_, a, b) => fires_in?(l, a) or fires_in?(l, b),
-    Expr::And(a, b) => fires_in?(l, a) or fires_in?(l, b),
-    Expr::Or(a, b) => fires_in?(l, a) or fires_in?(l, b),
-    Expr::If(c, t, f) => fires_in?(l, c) or fires_in?(l, t) or fires_in?(l, f),
-    Expr::Is(s, _) => fires_in?(l, s),
-    Expr::Match(s, _, g, b, rest) => fires_in?(l, s) or fires_in?(l, g) or fires_in?(l, b) or fires_in?(l, rest),
-    Expr::Cons(a, rest) => fires_in?(l, a) or fires_in?(l, rest),
-    Expr::Construct(_, args) => fires_in?(l, args),
-    Expr::Project(a, _, _) => fires_in?(l, a),
-    Expr::Index(q, k) => fires_in?(l, q) or fires_in?(l, k),
-    Expr::Method(_, r, args) => fires_in?(l, r) or fires_in?(l, args),
-    Expr::Count(_, args) => fires_in?(l, args),
-    Expr::Apply(_, args, _, body) => fires_in?(l, args) or fires_in?(l, body),
-    Expr::Call(_, args) => fires_in?(l, args),
-    Expr::Recur(_, args) => fires_in?(l, args),
-    _ => false,
-}
+pub fn fires_in?(l: ExprLint, e: Expr<lang::Id>) :=
+    fires_at?(l, e) or match e {
+        Expr::Let(_, _, b) => fires_in?(l, b),
+        Expr::Unary(_, a) => fires_in?(l, a),
+        Expr::Binary(_, a, b) => fires_in?(l, a) or fires_in?(l, b),
+        Expr::And(a, b) => fires_in?(l, a) or fires_in?(l, b),
+        Expr::Or(a, b) => fires_in?(l, a) or fires_in?(l, b),
+        Expr::If(c, t, f) => fires_in?(l, c) or fires_in?(l, t) or fires_in?(l, f),
+        Expr::Is(s, _) => fires_in?(l, s),
+        Expr::Match(s, _, g, b, rest) =>
+            fires_in?(l, s) or fires_in?(l, g) or fires_in?(l, b) or fires_in?(l, rest),
+        Expr::Cons(a, rest) => fires_in?(l, a) or fires_in?(l, rest),
+        Expr::Construct(_, args) => fires_in?(l, args),
+        Expr::Project(a, _, _) => fires_in?(l, a),
+        Expr::Index(q, k) => fires_in?(l, q) or fires_in?(l, k),
+        Expr::Method(_, r, args) => fires_in?(l, r) or fires_in?(l, args),
+        Expr::Count(_, args) => fires_in?(l, args),
+        Expr::Apply(_, args, _, body) => fires_in?(l, args) or fires_in?(l, body),
+        Expr::Call(_, args) => fires_in?(l, args),
+        Expr::Recur(_, args) => fires_in?(l, args),
+        _ => false,
+    }
 
 -- `l` fires within no operand of `e`, as `fires_in?` looks within them.
 pub fn operands_fixed?(l: ExprLint, e: Expr<lang::Id>) := match e {
@@ -212,7 +215,8 @@ pub fn operands_fixed?(l: ExprLint, e: Expr<lang::Id>) := match e {
     Expr::Or(a, b) => not fires_in?(l, a) and not fires_in?(l, b),
     Expr::If(c, t, f) => not fires_in?(l, c) and not fires_in?(l, t) and not fires_in?(l, f),
     Expr::Is(s, _) => not fires_in?(l, s),
-    Expr::Match(s, _, g, b, rest) => not fires_in?(l, s) and not fires_in?(l, g) and not fires_in?(l, b)
+    Expr::Match(s, _, g, b, rest) =>
+        not fires_in?(l, s) and not fires_in?(l, g) and not fires_in?(l, b)
         and not fires_in?(l, rest),
     Expr::Cons(a, rest) => not fires_in?(l, a) and not fires_in?(l, rest),
     Expr::Construct(_, args) => not fires_in?(l, args),
@@ -256,10 +260,8 @@ pub fn fix_all(l: ExprLint, e: Expr<lang::Id>): Expr<lang::Id> := match e {
     Expr::Index(q, k) => fix_at(l, Expr::Index(fix_all(l, q), fix_all(l, k))),
     Expr::Method(m, r, args) => fix_at(l, Expr::Method(m, fix_all(l, r), fix_all(l, args))),
     Expr::Count(c, args) => fix_at(l, Expr::Count(c, fix_all(l, args))),
-    Expr::Apply(f, args, ps, body) => fix_at(
-        l,
-        Expr::Apply(f, fix_all(l, args), ps, fix_all(l, body))
-    ),
+    Expr::Apply(f, args, ps, body) =>
+        fix_at(l, Expr::Apply(f, fix_all(l, args), ps, fix_all(l, body))),
     Expr::Call(f, args) => fix_at(l, Expr::Call(f, fix_all(l, args))),
     Expr::Recur(f, args) => fix_at(l, Expr::Recur(f, fix_all(l, args))),
     _ => fix_at(l, e),
@@ -344,7 +346,8 @@ for every type of names, and everywhere by induction on the expression;
 
 ```fren
 -- `x`, with the names `a` and `b` swapped.
-pub fn swapped(a: lang::Id, b: lang::Id, x: lang::Id): lang::Id := if x = a then b else if x = b then a else x
+pub fn swapped(a: lang::Id, b: lang::Id, x: lang::Id): lang::Id :=
+    if x = a then b else if x = b then a else x
 
 pub fn swap_pattern(
     a: lang::Id,
@@ -353,18 +356,18 @@ pub fn swap_pattern(
 ): lang::Pattern<lang::Id> := match p {
     lang::Pattern::Binder(x) => lang::Pattern::Binder(swapped(a, b, x)),
     lang::Pattern::Variant(c, ps) => lang::Pattern::Variant(c, swap_pattern(a, b, ps)),
-    lang::Pattern::Cons(first, rest) => lang::Pattern::Cons(
-        swap_pattern(a, b, first),
-        swap_pattern(a, b, rest)
-    ),
+    lang::Pattern::Cons(first, rest) =>
+        lang::Pattern::Cons(swap_pattern(a, b, first), swap_pattern(a, b, rest)),
     lang::Pattern::Or(p1, p2) => lang::Pattern::Or(swap_pattern(a, b, p1), swap_pattern(a, b, p2)),
     _ => p,
 }
 
-pub fn swap_params(a: lang::Id, b: lang::Id, ps: lang::Params<lang::Id>): lang::Params<lang::Id> := match ps {
-    lang::Params::Cons(x, rest) => lang::Params::Cons(swapped(a, b, x), swap_params(a, b, rest)),
-    lang::Params::Nil => lang::Params::Nil,
-}
+pub fn swap_params(a: lang::Id, b: lang::Id, ps: lang::Params<lang::Id>): lang::Params<lang::Id> :=
+    match ps {
+        lang::Params::Cons(x, rest) =>
+            lang::Params::Cons(swapped(a, b, x), swap_params(a, b, rest)),
+        lang::Params::Nil => lang::Params::Nil,
+    }
 
 -- `e`, with the names `a` and `b` swapped.
 pub fn swap_names(a: lang::Id, b: lang::Id, e: Expr<lang::Id>): Expr<lang::Id> := match e {
