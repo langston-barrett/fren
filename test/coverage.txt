@@ -58,7 +58,6 @@ Fren.Core.inferArgs
 Fren.Core.inputsOf
 Fren.Core.intervalIndex?
 Fren.Core.intervalsHold
-Fren.Core.irrefutableIs
 Fren.Core.iteV
 Fren.Core.lineAt
 Fren.Core.memberText
@@ -76,6 +75,7 @@ Fren.Core.quantifierBinder
 Fren.Core.rangeMatches
 Fren.Core.redundantSlicing
 Fren.Core.siteHolds
+Fren.Core.solverTimeoutMs -- runs only in fren_fuzz_frontends to track time in timed-out queries, outside lake test
 Fren.Core.subsetPlaceDecidable
 Fren.Core.subsetWidening
 Fren.Core.trustedAccepted
@@ -176,7 +176,6 @@ FrenCli.Eval.corePatSame
 FrenCli.Eval.firstCaseIn
 FrenCli.Eval.kleeneAnd
 FrenCli.Eval.kleeneOr
-FrenCli.Eval.lowerFiles
 FrenCli.Eval.notV
 FrenCli.Eval.paramFrame
 FrenCli.Eval.resolveComp
