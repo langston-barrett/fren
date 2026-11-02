@@ -149,8 +149,11 @@ quote, so it needs no label.
   requirement, removes its line, and removes the mark. A rule that is to
   keep no requirement says why on its line, after ` -- `, which every line
   of a section without the mark must. A rule whose markers link only part
-  of what it states stays listed, with ` -- partly formalized`, until they
-  link all of it.
+  of what it states stays listed, with ` -- partly formalized`, or
+  ` -- partly formalized: ` and what is missing, until they link all of it.
+  What a message or a help says, which a rule may state, is left to the ui
+  tests: a rule whose requirement states all but its message counts as
+  formalized.
 - A test cites each rule that it tests with a line
   `--@ reference: quantifier.guard.strict`, as the Rust Reference's tests
   do with `//@ reference:`.

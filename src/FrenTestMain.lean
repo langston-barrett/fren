@@ -469,7 +469,7 @@ def pieces (s : String) : Array Piece := Id.run do
         j := j + 1
     match close with
     | some k =>
-      let body := (cs.extract (i + n) k).toList.asString
+      let body := String.ofList (cs.extract (i + n) k).toList
       let body := if body.length ≥ 2 && body.startsWith " " && body.endsWith " " then ((body.drop 1).dropEnd 1).toString else body
       out := out.push (.code body)
       i := k + n
@@ -512,7 +512,7 @@ def isPath (c : String) : Bool :=
 /-- Whether a code span names a clause, such as `and_true`. -/
 def isClauseName (c : String) : Bool :=
   match c.toList with
-  | first :: rest => (first.isLower || first == '_') && (c.dropEnd (if c.endsWith "?" then 1 else 0)).all fun ch =>
+  | first :: _ => (first.isLower || first == '_') && (c.dropEnd (if c.endsWith "?" then 1 else 0)).all fun ch =>
       ch.isLower || ch.isDigit || ch == '_'
   | [] => false
 
@@ -551,23 +551,22 @@ def refOf (ps : Array Piece) : Option (Option Ref) := Id.run do
     if !ok then return none
     return some (some (.clauses (names.filterMap fun | .code c => some c | _ => none).toArray path))
 
-/-- Whether the reference `ref` names only what exists among `items`: an
-item, or clauses of an item, or clauses alone that are clauses of some
-item. -/
-def refExists (items : Array ReqItem) : Ref → Bool
-  | .item q => items.any (·.path == q)
-  | .clauses names (some q) => items.any (·.path == q) && names.all fun c => items.any (·.clauses.contains c)
+/-- Whether the reference `ref` is a marker's among `items`: one that names
+an item, which must exist, or clauses alone that are clauses of some item.
+Code spans alone that are no item's clauses, as in "(`true` or `false`)",
+are no reference. -/
+def isMarkerRef (items : Array ReqItem) : Ref → Bool
   | .clauses names none => names.all fun c => items.any (·.clauses.contains c)
+  | _ => true
 
 /-- The references of a parenthesized group, if it is a marker: one with
 an element, between its commas and semicolons, that is a reference and
-nothing else, to an item among `items`, or to clauses that are clauses of
-some item. A code span within prose, as in "(over `lang::q`)", or one that
-names nothing, as in "(`true` or `false`)", is no reference. -/
+nothing else (`isMarkerRef`). A code span within prose, as in "(over
+`lang::q`)", is no reference. -/
 def markerRefs (items : Array ReqItem) (g : Array Piece) : Option (Array Ref) := do
   let elements := g.foldl (init := #[#[]]) fun acc p =>
     if p == .text "," || p == .text ";" then acc.push #[] else acc.modify (acc.size - 1) (·.push p)
-  let refs := elements.filterMap fun e => ((refOf e).bind id).filter (refExists items)
+  let refs := elements.filterMap fun e => ((refOf e).bind id).filter (isMarkerRef items)
   guard !refs.isEmpty
   return refs
 
@@ -580,7 +579,7 @@ def guardItems (is : List (String × List String)) : Array ReqItem :=
   #[#[.item "lang::size"], #[.clauses #["a_b", "c"] (some "lang::rules")], #[.clauses #["z"] none]]
 #guard (groupsOf (pieces "(see [`lang::m`](M.md#a)) (`lang::p`, over `lang::q`) (``a`b``) (`c`; see [S](S.md)) (`true` or `false`) (`lang::none`)")).filterMap
     (markerRefs (guardItems [("lang::m", []), ("lang::p", ["c"]), ("lang::q", [])])) ==
-  #[#[.item "lang::p"], #[.clauses #["c"] none]]
+  #[#[.item "lang::p"], #[.clauses #["c"] none], #[.item "lang::none"]]
 
 /-- The requirements that formalize each rule of the chapter `md`, in
 order, each item with the clauses named, and the problems of its markers:
@@ -618,11 +617,14 @@ def reqsOfChapter (md : String) (items : Array ReqItem) (rules : Array Rule) :
         let some q := q?
           | problems := problems.push s!"{here}: the rule `{r.id}` names {code names} alone, and no marker before it names an item"
             continue
-        let some i := find q | continue
+        let some i := find q
+          | problems := problems.push s!"{here}: the rule `{r.id}` names `{q}`, which is no item of the reference"
+            continue
         let missing := names.filter (!i.clauses.contains ·)
         if missing.isEmpty then links := links.push (i, names)
         else problems := problems.push s!"{here}: the rule `{r.id}` names {code missing}, which `{q}` has no clause of: write \"of `ITEM`\" after a clause of another item"
-      if let some q := groupItem then context := some q
+      if let some q := groupItem then
+        if (find q).isSome then context := some q
     -- One entry for each item, with the clauses of all of its links.
     let merged := links.foldl (init := #[]) fun (acc : Array (ReqItem × Array String)) (i, cs) =>
       match acc.findIdx? (·.1.path == i.path) with
@@ -655,6 +657,13 @@ def guardLinks (items : List (String × List String)) (texts : List String) :
     ["(`lang::method_rules`, `lang::call_rules`)", "(`recursive`)", "(`a` alone)", "x (`recursive`)"] ==
   (#[#[("lang::method_rules", #[]), ("lang::call_rules", #[])], #[("lang::call_rules", #["recursive"])], #[],
      #[("lang::call_rules", #["recursive"])]], #[])
+-- A misspelt marker fails where it is written, and leaves the context to
+-- the markers that name an item (the review of #688).
+#guard guardLinks [("lang::lazy_rules", ["and_false", "and_unevaluated", "and_true"])]
+    ["(`and_false` of `lang::lazy_rules`)", "(`and_unevaluatd` of `lang::lazy_rules`)", "(`lang::lazy_rule`)", "(`and_true`)"] ==
+  (#[#[("lang::lazy_rules", #["and_false"])], #[], #[], #[("lang::lazy_rules", #["and_true"])]],
+   #["c:2: the rule `r.r1` names `and_unevaluatd`, which `lang::lazy_rules` has no clause of: write \"of `ITEM`\" after a clause of another item",
+     "c:3: the rule `r.r2` names `lang::lazy_rule`, which is no item of the reference"])
 #guard (guardLinks [("lang::p", ["c"])] ["(`c`)"]).2 == #["c:1: the rule `r.r0` names `c` alone, and no marker before it names an item"]
 
 /-- The requirements of `reqs`, which formalize the rule `r` of the chapter
@@ -678,6 +687,13 @@ def pendingMark : String := " (Interlock pending)"
 /-- What a line of `unformalizedFile` says of a rule whose markers link
 only some of what it states, which stays listed until they link all of it. -/
 def partlyMark : String := "partly formalized"
+
+/-- Whether `why`, the reason on a line of `unformalizedFile`, says
+`partlyMark`, alone or followed by `:` and what is missing. -/
+def isPartly (why : String) : Bool := why == partlyMark || why.startsWith s!"{partlyMark}:"
+
+#guard isPartly "partly formalized" && isPartly "partly formalized: no claim for max"
+#guard !isPartly "partly formalized max" && !isPartly "unformalized"
 
 /-- An entry of a list such as `unformalizedFile`: its line, the rule's
 identifier, why it has no requirement (`""` if it does not say), the
@@ -766,9 +782,9 @@ def ruleLinks : IO (Array (String × Array (Rule × Array (ReqItem × Array Stri
     | some (md, r, reqs) =>
       if !formalLabels.contains r.label then
         failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) is not under **Legality rules** or **Dynamic semantics**, so it needs no requirement: remove its line"
-      else if !reqs.isEmpty && e.why != partlyMark then
+      else if !reqs.isEmpty && !isPartly e.why then
         failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) is formalized by `{reqs[0]!.1.path}`: remove its line, or say ` -- {partlyMark}` if that is only part of the rule"
-      else if reqs.isEmpty && e.why == partlyMark then
+      else if reqs.isEmpty && isPartly e.why then
         failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) has no requirement at all, so it is not `{partlyMark}`"
       else if e.chapter != md then
         failures := failures.push s!"{here}: `{e.id}` is a rule of {md}, so it is listed under `# {md}`"
@@ -845,10 +861,12 @@ def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem �
 /-- The rules of the reference and their requirements and tests
 (`Reqs/dev/Style#rules-and-requirements`): every rule of **Legality rules**
 or **Dynamic semantics** has a requirement, or is listed in
-`unformalizedFile`, and not both unless the line says `partlyMark`; a
+`unformalizedFile`, and not both unless the line says `partlyMark`
+(`isPartly`); a
 listed rule is in its chapter's section, and says why it has none once
 its chapter's Interlock step is done; the clauses that a marker names
-alone are clauses of the item that they resolve to; each requirement that
+alone are clauses of the item that they resolve to, and every item and
+clause that a marker names exists; each requirement that
 formalizes a rule and is declared in its chapter is declared after it;
 each item of a module named as one of its chapter's constructs, whose
 name is shaped as a rule identifier, is named as a rule, or, if it has
@@ -861,7 +879,7 @@ def ruleReqs : IO (Array String) := return (← ruleLinks).2.2
 def rulesReport : IO String := do
   let (chapters, tests, _) ← ruleLinks
   let partly := (listedRules (← IO.FS.readFile unformalizedFile)).filterMap fun e =>
-    if e.why == partlyMark then some e.id else none
+    if isPartly e.why then some e.id else none
   return rulesReportText chapters (← implBindings) tests partly
 
 /-! ## Fren's own requirements -/

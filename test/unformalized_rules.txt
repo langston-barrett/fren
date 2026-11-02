@@ -6,7 +6,8 @@
 # requirement, removes its line and the mark. A rule that is to keep no
 # requirement says why, after ` -- `, which every line of a section without
 # the mark must. A rule whose markers link only part of what it states is
-# listed too, with ` -- partly formalized`, until they link all of it. The
+# listed too, with ` -- partly formalized` (or `: ` and what is missing
+# after it), until they link all of it. The
 # `ruleReqs` job fails on a rule of those labels that has no requirement and
 # is not listed, and on a listed one that has one (but for `partly
 # formalized`), is of another label, is in another chapter's section, or is

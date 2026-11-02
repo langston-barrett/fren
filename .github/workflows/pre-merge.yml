@@ -7,8 +7,9 @@ name: pre-merge
 # request changes. On a pull request, its `book` job builds the book with
 # the test driver of shard 0 (`book.yml`). Its last job, `pre-merge`, passes
 # only if the build and every shard did, and, on a pull request, the book
-# was built and passed: it is the status to rely on, and the one the merge
-# queue requires, where the book is not built.
+# was built and passed (`scripts/pre_merge_verdict.py`, which `lint` tests):
+# it is the status to rely on, and the one the merge queue requires, where
+# the book is not built.
 #
 # On a pull request, it also uploads stripped copies of the binaries it
 # built, `fren` from the build and `fren_test` from shard 0, as the
@@ -169,11 +170,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-    - run: |
-        test "$BUILD" = success && test "$TEST" = success
-        if [ "$EVENT" = pull_request ]; then
-          test "$BOOK" = success && test "$BUILT" = true
-        fi
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    # The verdict, which `lint` tests on every combination of the results.
+    - run: python3 -I -B scripts/pre_merge_verdict.py
       env:
         BUILD: ${{ needs.build.result }}
         TEST: ${{ needs.test.result }}

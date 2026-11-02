@@ -955,8 +955,9 @@ shown as `book / book` in that run, after its shards. Where shard 0 was
 cancelled or failed before it uploaded the driver, `book` builds nothing
 and passes, with a notice. The `pre-merge` workflow's last job, also named
 `pre-merge`, passes only if its build and every shard passed and, on a
-pull request, the book was built and passed: it is the status that
-reviewers and the coordinator rely on.
+pull request, the book was built and passed (`scripts/pre_merge_verdict.py`,
+which `lint` tests on every combination of its jobs' results): it is the
+status that reviewers and the coordinator rely on.
 
 Where each check runs, and why. The rule is the speed of development as a
 whole: a check that is cheap gates every pull request, and one that is
