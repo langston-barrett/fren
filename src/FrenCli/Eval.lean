@@ -768,20 +768,6 @@ partial def typeHolds (shapes : Name → Option Fren.Core.DataShape) (t : Fren.C
       ((shapes p).bind (·.inst t.parts |>.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
     | _, _ => true
 
-/-- Whether checking that a value is of the declared type `t` evaluates
-no invariant (`Ex.eval.typeV`): `t` has none, nor do the types within it,
-nor, through `shapes`, the types of its records', enumerations' and
-newtypes' parts. `seen` is the types already being looked through, which
-a recursive type reaches again. Where it holds, the check reads none of
-the interpretation's definitions (`Interp.defs`), so `typeHolds` decides
-it. -/
-partial def _root_.Fren.Core.PTy.invariantFree (shapes : Name → Option Fren.Core.DataShape) (t : Fren.Core.PTy)
-    (seen : List Name := []) : Bool :=
-  t.invariants.isEmpty && t.elems.all (·.invariantFree shapes seen) && match t.ty with
-    | .record p _ | .enum p _ | .newtype p _ => seen.contains p ||
-      ((shapes p).map fun d => (d.inst t.parts).parts.all (·.all (·.invariantFree shapes (p :: seen)))).getD true
-    | _ => true
-
 /-- `Fren.Core.firstCase xs.toList take`, the case of `xs` that is taken,
 read from the array, from case `i` (`firstCaseIn_eq`): `take` of each
 case in turn, until one is taken or whether one is is unknown. -/
@@ -925,9 +911,9 @@ the expression evaluated, with the definitions that it reads
 evaluation runs out of it rests on that, and on no source being anywhere
 near this deep, and is not tested. One that did would have an unknown
 value (`outOfFuel`), and its test would count as one without a value
-(`F0617`). In practice the native stack overflows long before `2^20`
-nested calls, so past any depth that a source reaches, evaluation
-crashes rather than runs out. -/
+(`F0617`). Long before the bound, at a depth that no source reaches,
+the native stack overflows, so evaluation crashes rather than leave a
+value unknown; that is not tested either. -/
 def evalDepth : Nat := 1 <<< 20
 
 /-- What evaluation gives when it runs out of fuel (`evalFuel`): an
@@ -1764,12 +1750,17 @@ where
       if n == 0 then e else
       .dispatch ((Array.range n).map fun idx => (Array.range arms.size).filter fun k => arms[k]!.1.mayMatchCtor idx) e
     | e => e
-  /-- An expression all of whose parts are known is too, unless it applies
-  a function, or is a constant, a table or `match` without a value where
-  nothing holds, an index, which may be out of range, or a type check, or
-  a quantifier over a bound name of a type, that may evaluate an invariant
-  (`PTy.invariantFree`), whose values are the interpretation's: its value,
-  whatever the environment, under any interpretation with `shapes`. -/
+  /-- An expression all of whose parts are known is too: its value,
+  whatever the environment, under any interpretation with `shapes`. That
+  holds unless its own evaluation reads the interpretation, as it does
+  when it
+  - reads functions: it applies a function, or is a constant, a table or
+    `match` without a value where nothing holds, or an index, which may be
+    out of range;
+  - reads definitions: it is a type check, or a quantifier over bound names
+    of types, that may evaluate an invariant (`PTy.invariantFree`);
+  - reads the domain: it is a quantifier with a bound name without a
+    domain. -/
   fold (e : Ex) : Ex :=
     let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index ..
     -- A type check, or a quantifier's of each instance, that may evaluate

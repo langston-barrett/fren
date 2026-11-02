@@ -200,9 +200,9 @@ reaches a check by (see below). Fren's evaluator has `2^20` units of fuel
 it nests between two steps (`evalDepth`, `2^20`), only to be total: between
 two steps, evaluation nests no deeper than the expression, the definitions
 that it reads and the newtypes that it checks are nested, and no spec comes
-near the bound. That rests on source size and is not tested. Past any depth
-that a source reaches, the evaluator's native stack overflows before the
-bound, so evaluation crashes rather than leave a value unknown.
+near the bound. That rests on source size. Long before the bound, at a
+depth that no source reaches, the evaluator's native stack overflows, so
+evaluation crashes rather than leave a value unknown. Neither is tested.
 
 ## Searching for behaviours
 

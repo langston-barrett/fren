@@ -272,9 +272,11 @@ An opaque function may take any value its contract permits. Before a
 check applying a recursive function reports a counterexample, evaluation
 of the real recursive definitions on the model's inputs must confirm the
 failure. A failure confirmed by evaluation is reported normally. A model
-refuted by evaluation makes the check Inconclusive (`F0450`): it fails
-only under the contracts of the named recursive functions, which may be
-too weak. Both front ends use this rule and diagnostic.
+that evaluation does not confirm, because it refutes it or cannot evaluate
+it, makes the check Inconclusive (`F0450`): it fails under the contracts
+of the named recursive functions, which may be too weak, and the message
+says only that evaluation did not confirm it, not which. Both front ends
+use this rule and diagnostic.
 
 ```fren
 pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?):
