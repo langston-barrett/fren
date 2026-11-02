@@ -9,7 +9,8 @@ build` elaborates them: `src/Reqs/Lang.lean` reads every page in
 `src/Reqs/Lang/` except Modules and Calls, which, like the other chapters,
 have their own Lean file and module. `lake test` checks the same pages with
 the `fren` command, and Lean checks them on `main`
-([Testing](Testing.md#own-requirements)). Pages that are only prose, such as this one, are not read.
+([Testing](Testing.md#own-requirements)). Pages that are only prose, such
+as this one, are not read.
 
 - [Architecture](Architecture.md): design principles and libraries
 - [Testing](Testing.md): the kinds of tests and where they live

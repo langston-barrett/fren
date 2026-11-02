@@ -28,10 +28,11 @@ permissions:
 # rather than cancelling it: of pushes in quick succession, none cancels a
 # running job and the latest saves a `.lake`, though GitHub cancels a job
 # that is still pending when a later one of its group is queued, so that a
-# run in between may be cancelled, in part or whole. Shard 0 compares with
-# the query cache that the shard 0 before it saved. It does not wait for the whole run before it: the build
-# job saves the `.lake` from which pull requests start as soon as it has
-# built, rather than once the slowest job of the run before it has finished
+# run in between may be cancelled, in part or whole. So shard 0 still
+# compares with the query cache that the previous shard 0 saved. No job
+# waits for the whole run before it, so the build job saves the `.lake`
+# from which pull requests start as soon as it has built, rather than once
+# the slowest job of the run before it has finished
 # (`Reqs/dev/Testing#continuous-integration`).
 jobs:
   build:

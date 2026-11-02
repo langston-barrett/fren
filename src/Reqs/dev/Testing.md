@@ -633,18 +633,28 @@ The cache only grows. Each build adds the outputs of every step that it
 runs, several hundred MB to some 1 GB for a head that changes `Fren` or
 `FrenCore`, and its `.lake/build` links to them, read-only. So deleting a
 worktree's `.lake` breaks nothing but frees almost nothing either: the
-cache keeps the outputs, and frees them only when pruned.
+cache keeps the outputs, and frees them only when pruned. That holds when
+the worktrees are on the filesystem of the toolchain's directory, as
+`/tmp` and `~/.elan` are on sky: across filesystems, Lake copies the
+outputs instead of linking them, so they take disk twice and link counts
+say nothing of which a worktree uses. The cache is per toolchain, so
+after a toolchain bump the old one's cache stays until it is pruned with
+`--cache DIR` or deleted, once no worktree builds with that toolchain.
+
 `scripts/lake_cache.py size` prints how much the cache holds, and how much
 of it no worktree links to. `heavy python3 scripts/lake_cache.py prune`
-deletes the outputs that no worktree links to and that no build has
-linked for 7 days (`--days`), and the cache's entries that name them,
-safely while other agents build: entries first, so that a build that
-finds an entry gone runs the step, and then, after a grace of a minute,
-each output that still has no other link. A build that finds an entry
-whose outputs are gone warns, which fails `--wfail`, and runs the step;
-pruning deletes such entries too. Run it under `heavy`, when the disk is
-short or once a week. `lake cache clean`, which empties the cache at once,
-is safe only while no build runs.
+deletes the outputs that no worktree links to and whose links have not
+changed for 7 days (`--days`), and the cache's entries that name them: the
+entries first, so that a build that finds an entry gone runs the step and
+saves its outputs again, and then, after a grace of a minute, each output
+whose link count and `ctime` are still those it scanned, so that one that
+a build linked or saved again in the meantime stays. A build that finds
+an entry whose outputs are gone warns, which fails `--wfail`, and runs
+the step; pruning deletes such entries too. It refuses to prune a cache on
+another filesystem than the repository's. Run it under `heavy`, when the
+disk is short or once a week; `python3 scripts/lake_cache.py test` checks
+it on a scratch cache. `lake cache clean`, which empties the cache at
+once, is safe only while no build runs.
 
 A step's outputs must then not depend on where it ran, or a worktree would
 get another's. Lean names a module's source by its absolute path, and a
@@ -661,9 +671,10 @@ definitions show. A message about the definition names the current file as
 Lean names it, if the definition is in it, and the other file by the kept
 name otherwise (`Fren.shownFileName`).
 
-`scripts/relocatable.py` checks that no `.olean` or `.ilean` file that a
-build wrote names the worktree's directory, which it would if anything else
-kept an absolute path. The build jobs of `pre-merge` and `lean ci` run it
+`scripts/relocatable.py` checks that no `.olean` or `.ilean` file, and no
+file of C code or object code under `.lake/build/ir`, that a build wrote
+names the worktree's directory, which it would if anything else kept an
+absolute path. The build jobs of `pre-merge` and `lean ci` run it
 after `lake build --wfail`, over the outputs written after the build began:
 the others are `main`'s, checked by the build that wrote them, or stale
 files of modules that the build no longer has. It checks Fren's own
@@ -710,11 +721,11 @@ as the front-end fuzzer compares a spec's (`FrenTest.Frontends`). It
 leaves out the summaries, since Lean reports one for each `#fren_check`,
 and what only the binary runs: the checks set to random testing and those
 that rest on them, which Lean leaves to `fren check` and does not report
-([Evidence](../Evidence.md#lean)). Since Lean does not report them alike,
-it leaves out every message of the binary's in an item that has one of
-Lean's notes that it leaves checks to `fren check`, so a check of such an
-item that Lean failed to report would go unnoticed there; the binary's
-result still gates. Lean reports a check once for each
+([Evidence](../Evidence.md#lean)). Lean and the binary report the checks
+of an item that has one of Lean's notes that it leaves checks to `fren
+check` differently, so the comparison leaves out every message that the
+binary gives about such an item: a check of it that Lean failed to report
+would go unnoticed there, though the binary's result still gates. Lean reports a check once for each
 `#fren_check` of its file that runs it, so each of its messages counts
 once. It fails if a module was built without its checks. A pull request does not
 run it, so a difference between the front ends that a pull request

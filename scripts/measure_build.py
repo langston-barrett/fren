@@ -17,7 +17,9 @@ prints the report.
 most memory, a summary by kind of module, and the peak of the memory of
 the steps that ran at once.
 
-For a clean build, delete `.lake/build` first (not `.lake/packages`).
+For a clean build, delete `.lake/build` first (not `.lake/packages`), and
+set `LAKE_CACHE_DIR` to a new, empty directory: otherwise Lake takes the
+deleted steps' outputs from its artifact cache, and they are not logged.
 Lake may rebuild some of the dependencies too; their steps are in the
 log, named `package/Module`.
 
