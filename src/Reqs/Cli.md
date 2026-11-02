@@ -206,6 +206,12 @@ gives the same script the same answer, model and all, unless it reaches a
 [limit](#limits). [`fren mutate`](Mutate.md) shares the answers between
 the spec and all its mutants.
 
+Each query gets a solver of its own, which is freed once the query is
+answered, so that the memory of `fren check` grows little with the number
+of its queries: what is kept is the answers, and the commands that the
+solver parsed from each script, which a fault of the cvc5 bindings keeps
+from being freed (`FrenCli.Cvc5`), about 5 kB a query.
+
 Each script sets the [SMT-LIB logic](https://smt-lib.org/logics.shtml) of
 its query, so that the solver rejects a query outside the fragment that
 Fren's rules keep it in, rather than running an incomplete procedure:

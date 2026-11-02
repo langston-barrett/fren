@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCli.Cvc5
 import FrenCore.Check
 import cvc5
 -- keep-sorted end
@@ -378,10 +379,7 @@ structure QueryStore where
 
 /-- cvc5's version, as its solver reports it. -/
 def cvc5Version : IO String := do
-  match ← cvc5.Env.run (do
-      let tm ← cvc5.TermManager.new
-      let solver ← cvc5.Solver.new tm
-      solver.getVersion) with
+  match ← Cvc5.version.run with
   | .ok v => return v
   | .error e => throw (IO.userError s!"cannot read cvc5's version: {e}")
 

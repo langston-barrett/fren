@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCli.Cvc5
 import FrenCli.Elab
 import FrenCli.QueryStore
 import FrenCli.SeqElems
@@ -363,55 +364,86 @@ def observationsOf (c : CComp) : Array ModelObservation := Id.run do
       out := out.push { key := value, formula := member.valueFormula?.getD member.formula, guard? := some guard }
   return out
 
+/-- `solveScript`'s work, on `solver`, which it borrows: what it makes
+from the solver, it drops before it returns, and so before the solver is
+freed (`FrenCli.Cvc5`). -/
+def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wantModel : Bool)
+    (observations : Array ModelObservation) (limitSecs : Nat) (shared : Bool) : cvc5.Env (Outcome String) := do
+  -- cvc5 warns on stderr when a model's value of a quantified formula
+  -- cannot be evaluated (`Could not evaluate ... in getValue.`), which the
+  -- model then holds as that formula: the warning is not an outcome, and
+  -- only cvc5's own diagnostics are silenced.
+  Cvc5.setOption solver "verbosity" "-1"
+  let parser ← Cvc5.parserNew solver
+  let sm ← Cvc5.getSymbolManager parser
+  Cvc5.setStringInput parser script .SMT_LIB_2_6 "lean-cvc5"
+  -- The first command that initializes the solver's theories runs
+  -- exclusively if its logic shares libpoly's state, and so does
+  -- `checkSat` if none did (`FrenCli.Cvc5.exclusively`).
+  let mut initialized := false
+  repeat
+    let cmd ← Cvc5.nextCommand parser
+    if Cvc5.isNull cmd then break
+    let initializes := !initialized && Cvc5.initializes (Cvc5.commandName cmd)
+    -- A command that fails reports an error as its output, rather than
+    -- throwing; ignoring it could let a dropped assertion give `sat`.
+    let out ← if initializes then Cvc5.exclusively shared (Cvc5.invoke cmd solver sm) else Cvc5.invoke cmd solver sm
+    initialized := initialized || initializes
+    if out.trimAscii.toString.startsWith "(error" then
+      throw (.error out)
+  -- The time of a query that reaches its time limit is recorded
+  -- (`Fren.Core.solverCredit`).
+  let res ← Fren.Core.timeQuery limitSecs (fun (res : cvc5.Result) => Cvc5.isUnknown res &&
+    Fren.Core.timedOutExplanation (toString (Cvc5.unknownExplanation res)))
+    (if initialized then Cvc5.checkSat solver else Cvc5.exclusively shared (Cvc5.checkSat solver))
+  if Cvc5.isUnsat res then return Outcome.unsat
+  if !Cvc5.isSat res then return .unknown s!"the solver returned unknown ({Cvc5.unknownExplanation res})"
+  if !wantModel then return .sat #[]
+  let mut model := #[]
+  for t in ← Cvc5.getDeclaredTerms sm do
+    let n := (Cvc5.termText t).replace "|" ""
+    if let some v := vars.find? (fun v => Fren.Core.smtName (v.name.toString (escape := false)) == n) then
+      let value := Cvc5.termText (← Cvc5.getValue solver t)
+      -- cvc5 shares values and qualified constructor symbols with lets.
+      -- Expand them before confirmation, rendering, or pinning a model.
+      let value := toString ((SeqElems.parse value).unfold {})
+      model := model.push (v.name, value)
+  for observation in observations do
+    let reached := observation.guard?.all fun guard => model.any (fun (name, value) => name == guard && value == "true")
+    let value ← if !reached then pure "unknown" else do
+      try
+        Cvc5.setStringInput parser observation.formula .SMT_LIB_2_6 "lean-cvc5"
+        let term ← Cvc5.nextTerm parser
+        pure (Cvc5.termText (← Cvc5.getValue solver term))
+      catch _ => pure "unknown"
+    model := model.push (observation.key, value)
+  return .sat model
+
+/-- `solveOn` on a solver of the term manager `tm`, which it borrows: it
+frees the solver before it returns, and so before the term manager is
+(`FrenCli.Cvc5`). -/
+@[noinline] def solveWith (tm : @& cvc5.TermManager) (script : String) (vars : Array CVar) (wantModel : Bool)
+    (observations : Array ModelObservation) (limitSecs : Nat) : cvc5.Env (Outcome String) := do
+  let shared := Cvc5.sharesLibpoly (Cvc5.scriptLogic script)
+  -- Only `cell` holds the solver once `solveOn` returns, so that emptying
+  -- it frees the solver, exclusively if its logic shares libpoly's state
+  -- (`FrenCli.Cvc5.exclusively`), even after an error.
+  let cell ← IO.mkRef (some (← Cvc5.solverNew tm))
+  ExceptT.mk do
+    let r ← match ← cell.get with
+      | some solver => (solveOn solver script vars wantModel observations limitSecs shared).run
+      -- Not reached: `cell` was just set to the solver.
+      | none => pure (.error (.error "the solver was freed before its query"))
+    let _ ← (Cvc5.exclusively shared (cell.set none)).run
+    return r
+
 /-- Checks the satisfiability of `script`, a query over `vars`, with values
-of `vars` if `wantModel`. -/
+of `vars` if `wantModel`, with a solver of its own, which is freed once
+it is answered (`FrenCli.Cvc5`). -/
 def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observations : Array ModelObservation := #[])
     (limitSecs : Nat := 0) : IO (Outcome String) := do
   let r ← cvc5.Env.run do
-    let tm ← cvc5.TermManager.new
-    let solver ← cvc5.Solver.new tm
-    -- cvc5 warns on stderr when a model's value of a quantified formula
-    -- cannot be evaluated (`Could not evaluate ... in getValue.`), which the
-    -- model then holds as that formula: the warning is not an outcome, and
-    -- only cvc5's own diagnostics are silenced.
-    solver.setOption "verbosity" "-1"
-    let parser ← cvc5.InputParser.new solver
-    let sm ← parser.getSymbolManager
-    parser.setStringInput script .SMT_LIB_2_6
-    repeat
-      let cmd ← parser.nextCommand
-      if cmd.isNull then break
-      -- A command that fails reports an error as its output, rather than
-      -- throwing; ignoring it could let a dropped assertion give `sat`.
-      let out ← cmd.invoke solver sm
-      if out.trimAscii.toString.startsWith "(error" then
-        throw (.error out)
-    -- The time of a query that reaches its time limit is recorded
-    -- (`Fren.Core.solverCredit`).
-    let res ← Fren.Core.timeQuery limitSecs (fun (res : cvc5.Result) => res.isUnknown &&
-      Fren.Core.timedOutExplanation (toString res.getUnknownExplanation)) solver.checkSat
-    if res.isUnsat then return Outcome.unsat
-    if !res.isSat then return .unknown s!"the solver returned unknown ({res.getUnknownExplanation})"
-    if !wantModel then return .sat #[]
-    let mut model := #[]
-    for t in ← sm.getDeclaredTerms do
-      let n := (toString t).replace "|" ""
-      if let some v := vars.find? (fun v => Fren.Core.smtName (v.name.toString (escape := false)) == n) then
-        let value := toString (← solver.getValue t)
-        -- cvc5 shares values and qualified constructor symbols with lets.
-        -- Expand them before confirmation, rendering, or pinning a model.
-        let value := toString ((SeqElems.parse value).unfold {})
-        model := model.push (v.name, value)
-    for observation in observations do
-      let reached := observation.guard?.all fun guard => model.any (fun (name, value) => name == guard && value == "true")
-      let value ← if !reached then pure "unknown" else do
-        try
-          parser.setStringInput observation.formula .SMT_LIB_2_6
-          let term ← parser.nextTerm
-          pure (toString (← solver.getValue term))
-        catch _ => pure "unknown"
-      model := model.push (observation.key, value)
-    return .sat model
+    solveWith (← cvc5.TermManager.new) script vars wantModel observations limitSecs
   match r with
   | .ok o => return o
   | .error e => return .unknown s!"solver error: {e}"
