@@ -768,6 +768,20 @@ partial def typeHolds (shapes : Name → Option Fren.Core.DataShape) (t : Fren.C
       ((shapes p).bind (·.inst t.parts |>.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
     | _, _ => true
 
+/-- Whether checking that a value is of the declared type `t` evaluates
+no invariant (`Ex.eval.typeV`): `t` has none, nor do the types within it,
+nor, through `shapes`, the types of its records', enumerations' and
+newtypes' parts. `seen` is the types already being looked through, which
+a recursive type reaches again. Where it holds, the check reads none of
+the interpretation's definitions (`Interp.defs`), so `typeHolds` decides
+it. -/
+partial def _root_.Fren.Core.PTy.invariantFree (shapes : Name → Option Fren.Core.DataShape) (t : Fren.Core.PTy)
+    (seen : List Name := []) : Bool :=
+  t.invariants.isEmpty && t.elems.all (·.invariantFree shapes seen) && match t.ty with
+    | .record p _ | .enum p _ | .newtype p _ => seen.contains p ||
+      ((shapes p).map fun d => (d.inst t.parts).parts.all (·.all (·.invariantFree shapes (p :: seen)))).getD true
+    | _ => true
+
 /-- `Fren.Core.firstCase xs.toList take`, the case of `xs` that is taken,
 read from the array, from case `i` (`firstCaseIn_eq`): `take` of each
 case in turn, until one is taken or whether one is is unknown. -/
@@ -1716,7 +1730,9 @@ interpretation whose records', newtypes' and enumerations' parts are
   binds names, binders are read by name, as everywhere else.
 - A quantifier's domain that is a literal, a listed type's values, keeps
   only the values of its declared type, which are those that `Ex.eval`
-  instantiates, so that it does not check them at each evaluation.
+  instantiates, so that it does not check them at each evaluation, unless
+  the type may have invariants (`PTy.invariantFree`), which only the
+  interpretation's definitions decide, and which evaluation still checks.
 - The costly expressions that a table's rows share, such as an argument
   of a defined function that its body reads in each row, are each
   evaluated once, when first read (`.memo`, `Ex.share`).
@@ -1750,18 +1766,23 @@ where
     | e => e
   /-- An expression all of whose parts are known is too, unless it applies
   a function, or is a constant, a table or `match` without a value where
-  nothing holds, an index, which may be out of range, or a type check,
-  which may evaluate the definitions of invariants, in its type or in the
-  parts' types that `shapes` gives, whose values are the
-  interpretation's: its value, whatever the environment, under any
-  interpretation with `shapes`. -/
+  nothing holds, an index, which may be out of range, or a type check, or
+  a quantifier over a bound name of a type, that may evaluate an invariant
+  (`PTy.invariantFree`), whose values are the interpretation's: its value,
+  whatever the environment, under any interpretation with `shapes`. -/
   fold (e : Ex) : Ex :=
-    let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index .. | .typed ..
+    let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index ..
+    -- A type check, or a quantifier's of each instance, that may evaluate
+    -- an invariant reads the interpretation's definitions.
+    let readsDefs := match e with
+      | .typed t _ _ => !t.invariantFree shapes
+      | .quant _ _ _ _ _ ts _ => !ts.all (·.invariantFree shapes)
+      | _ => false
     -- A quantifier without a domain reads the interpretation's domain.
     let readsDomain := match e with
       | .quant _ _ _ _ domains _ _ => domains.any Option.isNone
       | _ => false
-    if !readsFns && !readsDomain && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
+    if !readsFns && !readsDefs && !readsDomain && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
   /-- `e`, an expression with parts, with its parts compiled. -/
   compound (e : Ex) : Ex :=
   let go (x : Ex) := x.compile shapes scope
@@ -1801,9 +1822,13 @@ where
       | .lit (.set vs) => .lit (.set (vs.filter fun v => ts[k]?.all (typeHolds shapes · v)))
       | d => d.compile shapes (scope.map ((ns.extract 0 k).toList.reverse ++ ·))
     let listed (d? : Option Ex) : Bool := d? matches some (.lit (.seq _)) | some (.lit (.set _))
-    -- A literal domain's values are of their type already: a `Bool`, with
-    -- no pattern, holds of any value (`typeHolds`).
-    let ts := if ds.all listed then #[] else ts.mapIdx fun k t => if listed ds[k]! then { ty := .bool } else t
+    -- A literal domain's values are of their type already, unless it has
+    -- invariants, which `typeHolds` does not check, and which are checked
+    -- at each evaluation, under the interpretation's definitions: a
+    -- `Bool`, with no pattern, holds of any value (`typeHolds`).
+    let checked (k : Nat) : Bool := listed ds[k]! && ts[k]?.all (·.invariantFree shapes)
+    let ts := if (List.range ds.size).all checked then #[]
+      else ts.mapIdx fun k t => if checked k then { ty := .bool } else t
     -- The position after the last of the bound names that `x` reads: the
     -- first at which its value is known.
     let level (x : Ex) : Nat := x.freeBound.foldl (init := 0) fun l n =>
