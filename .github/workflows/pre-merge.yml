@@ -65,6 +65,9 @@ jobs:
       run: |
         mkdir "$RUNNER_TEMP/artifact"
         cp .lake/build/bin/fren "$RUNNER_TEMP/artifact/fren"
+        # Lake's artifact cache links its outputs read-only, so the copy is
+        # too (`Reqs/dev/Testing#shared-builds`).
+        chmod u+w "$RUNNER_TEMP/artifact/fren"
         strip "$RUNNER_TEMP/artifact/fren"
         git rev-parse HEAD > "$RUNNER_TEMP/artifact/MERGE_SHA"
         git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"
@@ -109,6 +112,9 @@ jobs:
       run: |
         mkdir "$RUNNER_TEMP/artifact"
         cp .lake/build/bin/fren_test "$RUNNER_TEMP/artifact/fren_test"
+        # Lake's artifact cache links its outputs read-only, so the copy is
+        # too (`Reqs/dev/Testing#shared-builds`).
+        chmod u+w "$RUNNER_TEMP/artifact/fren_test"
         strip "$RUNNER_TEMP/artifact/fren_test"
         git rev-parse HEAD > "$RUNNER_TEMP/artifact/MERGE_SHA"
         git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"

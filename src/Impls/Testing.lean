@@ -17,7 +17,9 @@ expectations messages (`met_iff_assigns`), from `solve`'s matching where
 its answer passes its check, which shows that it is right
 (`checkAssigns_sound`, `refutesExpected_sound`, `refutesGiven_sound`), and
 from the search of `assignable` otherwise (`assignable_iff`).
-`testing::fresh` rests on Lake, so it is trusted. -/
+`testing::portable_name`, proved of `Fren.portableName`, the name of a file
+that a definition's `source?` keeps. `testing::fresh` rests on Lake, so it
+is trusted. -/
 
 namespace Fren.Impls.Testing
 
@@ -644,6 +646,16 @@ impl ui_check: testing::ui_file for (ds : List Diagnostic) (es : List Expectatio
 
 end Matching
 
-trusted testing::fresh: "Lake rebuilds a module when a file that its library needs changed since its last build, which is part of Lake's rule and not checked by Fren; that the modules that read files read only files that their library needs is checked by `lake test`'s `libraries` job, which reads the sources and `lakefile.lean`"
+-- The name that `Fren.keptFileName` keeps, of the directory that Lean runs in.
+impl portable_name: testing::portable_name for (root file : String) {
+  root := root,
+  file := file,
+  name := Fren.portableName root file,
+} by
+  intro root file _
+  simp only [fren_spec]
+  exact ⟨by first | rfl | simp [Fren.portableName, Fren.Str.lit], trivial⟩
+
+trusted testing::fresh: "Lake rebuilds a module when a file that its library needs changed since its last build, and takes a module's outputs from its artifact cache only for a build whose inputs, those files among them, had the same content, which is part of Lake's rule and not checked by Fren; that the modules that read files read only files that their library needs is checked by `lake test`'s `libraries` job, which reads the sources and `lakefile.lean`"
 
 end Fren.Impls.Testing

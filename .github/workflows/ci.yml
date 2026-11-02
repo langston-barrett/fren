@@ -24,17 +24,21 @@ on:
 permissions:
   contents: read
 
-# A push to `main` waits for the run before it, rather than cancelling it,
-# so that pushes in quick succession still save a `.lake`.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
+# Each job of a push to `main` waits for the same job of the run before it,
+# rather than cancelling it, so that pushes in quick succession still save
+# a `.lake`, and shard 0 compares with the query cache that the shard 0
+# before it saved. It does not wait for the whole run before it: the build
+# job saves the `.lake` from which pull requests start as soon as it has
+# built, rather than once the slowest job of the run before it has finished
+# (`Reqs/dev/Testing#continuous-integration`).
 jobs:
   build:
     if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-build-${{ github.ref }}
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -96,6 +100,9 @@ jobs:
     if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-test-${{ matrix.shard }}-${{ github.ref }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -111,9 +118,9 @@ jobs:
     # Shard 0 asks every query of Fren's own requirements of the solver,
     # with an empty query cache, and compares each answer with the one that
     # the previous `main`'s run kept: a contradiction fails it, and so does
-    # comparing no answers, unless the previous cache holds no entry of
-    # this `queryCacheVersion` and cvc5, after a change that alters every
-    # key. It then saves exactly the answers of this run, from which pull
+    # comparing no answers, unless the previous cache has no entry of this
+    # `queryCacheVersion` and cvc5 (as after a change that alters every
+    # key). It then saves exactly the answers of this run, from which pull
     # requests answer their queries (`Reqs/dev/Testing#query-cache`).
     # `actions/cache` restores only a cache saved with the same `path`, to
     # that path, so the previous cache is restored where this run's is
@@ -164,6 +171,9 @@ jobs:
     if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-own-spec-agreement-${{ github.ref }}
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -199,6 +209,9 @@ jobs:
   fuzz-frontends:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    concurrency:
+      group: ${{ github.workflow }}-fuzz-frontends-${{ github.ref }}
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -252,6 +265,9 @@ jobs:
     if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    concurrency:
+      group: ${{ github.workflow }}-coverage-${{ github.ref }}
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:

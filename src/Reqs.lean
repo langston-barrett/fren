@@ -1,4 +1,5 @@
--- Fren's own requirements, written in Fren. `lake build` checks them.
+-- Fren's own requirements, written in Fren. `lake build` elaborates them,
+-- `fren check` checks them in `lake test`, and Lean checks them on `main`.
 -- keep-sorted start
 import Reqs.Calls
 import Reqs.Check
