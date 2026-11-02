@@ -985,8 +985,13 @@ from a fork. Its comment counts as the pull request's review, for
 everything, and says which probes it ran and which it could not, such as
 those that need a rebuild. The only code of the pull request that
 it runs is these binaries, `fren check` of each spec that the pull request
-changes, in a job of its own with no secret, offline, under
-`scripts/heavy --offline`. The reviewer, in the job that holds the Claude
+changes, in a job of its own with no secret, in a container as `nobody`
+with no network, a read-only root and read-only mounts, no capabilities,
+no variable of the runner and no docker socket
+(`.github/pr-review/sandbox.sh`), so that a probe can affect nothing but
+its own output, which `lint` tests with a hostile stand-in for `fren`
+(`test_sandbox.sh`). Only comments by the repository's owner, members and
+collaborators count as reviews or requests. The reviewer, in the job that holds the Claude
 token, reads their output as text, with a checkout of the head and the
 diffs that the workflow wrote, with no shell and no reads outside the
 checkout, and suggests any other probe in its findings. The workflow

@@ -23,7 +23,13 @@ comment that names the head decides. The head that it checks against is
 the one reviewed last before that comment, which must be another head than
 this one, and whose review must have found no blocking issues. Otherwise
 the head gets a full review. A workflow_run skips a head that already has a
-review. Whether the head is only an update from `main` of a reviewed head is
+review.
+
+Anyone who can read the repository can comment, so only the comments of
+those who can push count, as reviews and as requests: those whose
+`authorAssociation` is OWNER, MEMBER or COLLABORATOR, as in claude.yml.
+Any other comment is ignored, so an outsider's forged verdict or request
+changes nothing. Whether the head is only an update from `main` of a reviewed head is
 decided by prepare.sh, which has the commits.
 """
 
@@ -33,6 +39,7 @@ import sys
 
 REVIEW = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues|blocking issues)")
 LIGHT = {"fixes only": "fixes", "rebase only": "rebase"}
+PUSHERS = {"OWNER", "MEMBER", "COLLABORATOR"}
 SHA = re.compile(r"\b[0-9a-f]{7,40}\b")
 
 
@@ -66,9 +73,16 @@ def names(body, sha):
     return any(sha.startswith(m) for m in SHA.findall(body.lower()))
 
 
+def counted(pr):
+    """The comments that count, oldest first: those of the repository's
+    owner, members and collaborators."""
+    return sorted((c for c in pr["comments"] if c.get("authorAssociation") in PUSHERS),
+                  key=lambda c: c["createdAt"])
+
+
 def decide(pr, event):
     head = pr["headRefOid"]
-    comments = sorted(pr["comments"], key=lambda c: c["createdAt"])
+    comments = counted(pr)
     found = reviews(comments)
     if event == "workflow_run" and any(sha == head for sha, _, _ in found):
         return {"kind": "skip", "reason": f"{head} already has a review"}
@@ -99,8 +113,7 @@ def decide(pr, event):
 
 def verdict(pr, sha):
     """The verdict of the last review of `sha` among the comments, or None."""
-    comments = sorted(pr["comments"], key=lambda c: c["createdAt"])
-    found = [first_line(c["body"]) for s, _, c in reviews(comments) if s == sha]
+    found = [first_line(c["body"]) for s, _, c in reviews(counted(pr)) if s == sha]
     return found[-1][len(f"Review of {sha}: "):] if found else None
 
 

@@ -65,13 +65,38 @@ class Problem(unittest.TestCase):
         for text in ("![x](https://example.com/p.png?d=1)", "![x](/relative.png)", "![x][ref]",
                      '<img src="https://example.com/p.png">', "<https://example.com/?d=1>",
                      "[x](http://example.com)", "see https://evil.example/?d=1",
-                     "[x](https://github.com.evil.example/)"):
-            self.assertIsNotNone(problem(f"{OK}\n\n{text}", HEAD, "full"), text)
+                     "[x](https://github.com.evil.example/)",
+                     # A shortcut reference image, with an entity, or a
+                     # protocol-relative destination, in its definition.
+                     "See ![logo] here.\n\n[logo]: h&#116;tps://evil.example/x.png",
+                     "See ![logo] here.\n\n[logo]: //evil.example/x.png",
+                     "See [logo] here.\n\n[logo]: h&#116;tps://evil.example/x.png",
+                     "See [logo] here.\n\n[logo]: //evil.example/x.png",
+                     "[x](//evil.example/a)", "[x](h&#x74;tp://evil.example)",
+                     "[x](h&amp;#116;tps://evil.example)", "&lt;img src=x&gt;",
+                     "<!-- hidden -->", "</details>", "x<img src=//evil.example/p>",
+                     "`Set<img src=x>`", "a<Picture>"):
+            self.assertIsNotNone(problem(f"{OK}\n\n{text}{PROBED}", HEAD, "full"), text)
 
     def test_github_links(self):
         for text in ("[#670](https://github.com/langston-barrett/fren/pull/670)",
-                     "<https://docs.github.com/en/actions>", "a // comment, and `x // y`"):
+                     "[docs](https://docs.github.com/en/actions)", "[x](//github.com/a)",
+                     "a // comment, and `x // y`", "`a < b` and 3 < 4",
+                     # Fren's type applications.
+                     "`Set<Role>`, `Set<Set<Role>>` and `Rel<Role, Role>`"):
             self.assertIsNone(problem(f"{OK}\n\n{text}{PROBED}", HEAD, "full"), text)
+
+    def test_findings_that_escape_the_column(self):
+        # Markdown renders each as a numbered item, so each is a finding.
+        for line in (" 1. [blocking] x", "  1. [blocking] x", "1.[blocking] x", "1) [blocking] x"):
+            self.assertIsNotNone(problem(f"{OK}\n\n{line}{PROBED}", HEAD, "full"), line)
+            self.assertIsNone(problem(f"{BAD}\n\n{line}{PROBED}", HEAD, "full"), line)
+
+    def test_no_blocking_mark_under_a_clean_verdict(self):
+        # Even where no finding is recognized, such as an item indented
+        # three spaces.
+        self.assertIsNotNone(problem(f"{OK}\n\n   1. [blocking] x{PROBED}", HEAD, "full"))
+        self.assertIsNotNone(problem(f"{OK}\n\nA [blocking] point.{PROBED}", HEAD, "full"))
 
 
 class Leaks(unittest.TestCase):

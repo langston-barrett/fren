@@ -17,10 +17,12 @@ name: pr-review
 #   them out, and writes the texts that the reviewer reads.
 # - `probe` holds no secret and a read-only token. It runs `fren check` on
 #   the specs that the pull request changes, with the `fren` that
-#   `pre-merge` built, under `scripts/heavy --offline` (no network), in a
-#   PID namespace of its own, after taking `sudo` away, and passes what
-#   they print on as text (.github/pr-review/probe.sh). It runs no action
-#   after them.
+#   `pre-merge` built, in a container (.github/pr-review/sandbox.sh): as
+#   `nobody`, with no network, a read-only root and read-only mounts, no
+#   capabilities, no variable of the runner and no docker socket, so that
+#   a probe can affect nothing but its own output, which the step captures
+#   and passes on as text (probe.sh). `lint` runs test_sandbox.sh, which
+#   checks each of these with a hostile stand-in for `fren`.
 # - `review` holds the Claude token, and runs nothing of the pull request.
 #   It checks out the head, which nothing executes, removes its CLAUDE.md,
 #   .claude, .mcp.json and symbolic links, and runs the model with Read,
@@ -35,8 +37,10 @@ name: pr-review
 # request's text still reaches the model, and could try to steer its
 # verdict; the brief has the model report such text as a finding.
 #
-# The scripts and brief in .github/pr-review, `scripts/heavy` and
-# AGENTS.md come from the workflow's own commit: on a workflow_run,
+# Only comments by the repository's owner, members and collaborators count
+# as reviews or requests for a light check (kind.py).
+#
+# The scripts and brief in .github/pr-review and AGENTS.md come from the workflow's own commit: on a workflow_run,
 # `main`'s. A workflow_run fires only from `main`'s copy of this file. To
 # try a branch's, run it by hand (`gh workflow run pr-review --ref BRANCH -f
 # pr=N`), with `post` empty, so that the review goes only to the run's
@@ -121,10 +125,11 @@ jobs:
       actions: read
       contents: read
     outputs:
-      probes: ${{ steps.output.outputs.probes }}
-    # Only shell steps: no action runs after the probes (probe.sh).
+      probes: ${{ steps.probe.outputs.probes }}
+    # One shell step, which writes the job's output itself (probe.sh).
     steps:
-    - name: Fetch the workflow's own scripts, and probe
+    - id: probe
+      name: Fetch the workflow's own scripts, and probe
       run: |
         git init --quiet "$TRUSTED"
         basic=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
@@ -138,18 +143,6 @@ jobs:
         REPO: ${{ github.repository }}
         RUN: ${{ needs.prepare.outputs.run }}
         TRUSTED: ${{ runner.temp }}/trusted
-    - id: output
-      if: ${{ always() }}
-      name: Pass the probes' output on
-      run: |
-        [ -s "$RUNNER_TEMP/probes.md" ] || echo "The probes did not run: see the probe job's log." > "$RUNNER_TEMP/probes.md"
-        delimiter="probes-$(openssl rand -hex 16)"
-        {
-          echo "probes<<$delimiter"
-          head -c 60000 "$RUNNER_TEMP/probes.md"
-          echo
-          echo "$delimiter"
-        } >> "$GITHUB_OUTPUT"
   review:
     needs: [prepare, probe]
     if: ${{ !cancelled() && needs.prepare.outputs.kind != '' && needs.prepare.outputs.kind != 'skip' }}
@@ -173,7 +166,10 @@ jobs:
     - name: Remove what would configure the reviewer, and the symbolic links
       run: |
         mv .trusted "$RUNNER_TEMP/trusted"
-        find . -path ./.git -prune -o \( -name CLAUDE.md -o -name CLAUDE.local.md -o -name .mcp.json \) -print0 \
+        # The brief has the workflow commit's AGENTS.md, and diff.patch shows
+        # any change to it, so no copy of the checkout's is loaded as memory.
+        find . -path ./.git -prune -o \( -name CLAUDE.md -o -name CLAUDE.local.md -o -name AGENTS.md \
+          -o -name AGENTS.local.md -o -name .mcp.json \) -print0 \
           | xargs -0 rm -f
         find . -path ./.git -prune -o -type d -name .claude -print0 | xargs -0 rm -rf
         find . -path ./.git -prune -o -type l -print0 | xargs -0 rm -f

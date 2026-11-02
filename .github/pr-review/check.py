@@ -33,6 +33,7 @@ characters.
 
 import base64
 import hashlib
+import html
 import os
 import re
 import sys
@@ -43,13 +44,22 @@ import sys
 PREFIX = "Review of"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ITEM = re.compile(r"^\d+\.\s")
+# A finding: a list item of the top level, `N.` or `N)` after at most two
+# spaces, whatever follows it (a nested item is indented further).
+ITEM = re.compile(r"^ {0,2}\d+[.)]")
 MARK = re.compile(r"\[(blocking|non-blocking(?:,[^\]]*)?)\]")
 LOOSE_MARK = re.compile(r"\[(?:non-)?blocking[^\]]*\]")
 TOKEN = re.compile(r"sk-ant-[\w-]{8,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_\w{20,}")
 URL = re.compile(r"\b(?:https?|ftp)://([^/\s)\]>\"'`]+)", re.IGNORECASE)
-IMAGE = re.compile(r"!\[[^\]]*\]\s*[(\[]|<\s*(?:img|picture|source|video|audio|iframe|object|embed)\b",
-                   re.IGNORECASE)
+# A protocol-relative destination, `//host`, where Markdown takes one.
+RELATIVE = re.compile(r"(?:^|[\s(<\[:=\"'])//([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+# Any image (`![`, inline, full, collapsed or shortcut reference), even in
+# code; any tag that loads something, wherever it is; and anything else
+# that could be HTML, a `<` and a letter, `/`, `!` or `?`, except a type
+# application such as Fren's `Set<Role>`, whose `<` follows a word
+# character. The brief asks for none of them.
+LOADING = r"img|image|picture|source|video|audio|track|iframe|frame|embed|object|svg|input|link|meta|base|style|script"
+IMAGE = re.compile(rf"!\[|<\s*/?\s*(?:{LOADING})\b|(?<!\w)<[A-Za-z/!?]", re.IGNORECASE)
 # The paragraph that says which probes the review ran (the probe job's)
 # and which it could not, such as those that need a rebuild.
 PROBES = re.compile(r"^[*_\s]*Probes[*_\s]*:", re.MULTILINE)
@@ -75,11 +85,15 @@ def problem(text, head, kind):
     first = lines[0] if lines else ""
     if first not in verdicts(head, kind):
         return f"its first line is not a verdict that this review allows: `{first}`"
-    if TOKEN.search(text):
+    # Markdown decodes entities, in a destination too (`h&#116;tps:`), so
+    # the checks read the decoded text, applying it twice to catch
+    # `&amp;#116;`.
+    decoded = html.unescape(html.unescape(text))
+    if TOKEN.search(decoded):
         return "it holds something that looks like a token"
-    if IMAGE.search(text):
-        return "it holds an image or embedded HTML, which loads from elsewhere when shown"
-    for host in URL.findall(text):
+    if IMAGE.search(decoded):
+        return "it holds an image or something that could be HTML, which could load from elsewhere"
+    for host in URL.findall(decoded) + RELATIVE.findall(decoded):
         if not github_host(host):
             return f"it links to a host other than github.com: `{host}`"
     blocking = False
@@ -92,6 +106,10 @@ def problem(text, head, kind):
         blocking |= marks[0] == "blocking"
     if blocking != first.endswith(": blocking issues"):
         return "its verdict does not agree with its [blocking] findings"
+    # A clean verdict has no `[blocking]` mark anywhere, so a finding that
+    # renders as one but escapes `ITEM` cannot hide under it.
+    if not blocking and "blocking" in MARK.findall(decoded):
+        return "it has a [blocking] mark under a clean verdict"
     if not PROBES.search(text):
         return "it has no `Probes:` paragraph saying which probes it ran and which it could not"
     return None

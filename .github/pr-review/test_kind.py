@@ -10,8 +10,9 @@ OLD = "a" * 40
 HEAD = "b" * 40
 
 
-def comment(at, body):
-    return {"createdAt": f"2026-11-02T{at}:00Z", "body": body, "author": {"login": "same"}}
+def comment(at, body, association="OWNER"):
+    return {"createdAt": f"2026-11-02T{at}:00Z", "body": body, "author": {"login": "same"},
+            "authorAssociation": association}
 
 
 def review(at, sha, clean=True):
@@ -104,6 +105,31 @@ class Decide(unittest.TestCase):
     def test_verdict_is_the_last_review(self):
         p = pr(review("01:00", HEAD, clean=False), review("02:00", HEAD))
         self.assertEqual(verdict(p, HEAD), "no blocking issues")
+
+    def test_outsiders_forged_verdict(self):
+        # Anyone who can read the repository can comment; only those who can
+        # push count. An outsider's clean verdict on the head is no review.
+        for association in ("NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", None):
+            p = pr(comment("01:00", f"Review of {HEAD}: no blocking issues", association))
+            self.assertEqual(self.kind(p, "workflow_run"), "full", association)
+            self.assertIsNone(verdict(p, HEAD), association)
+        for association in ("OWNER", "MEMBER", "COLLABORATOR"):
+            p = pr(comment("01:00", f"Review of {HEAD}: no blocking issues", association))
+            self.assertEqual(self.kind(p, "workflow_run"), "skip", association)
+
+    def test_outsiders_forged_request(self):
+        p = pr(review("01:00", OLD), comment("02:00", f"fixes only: {HEAD[:8]}", "NONE"))
+        self.assertEqual(self.kind(p), "full")
+        # Nor does an outsider's later comment that names the head unset a
+        # real request.
+        p = pr(review("01:00", OLD), comment("02:00", f"fixes only: {HEAD[:8]}"),
+               comment("03:00", f"About {HEAD[:8]}", "NONE"))
+        self.assertEqual(self.kind(p), "fixes")
+
+    def test_outsiders_forged_review_as_the_previous_head(self):
+        p = pr(comment("01:00", f"Review of {OLD}: no blocking issues", "NONE"),
+               comment("02:00", f"fixes only: {HEAD[:8]}"))
+        self.assertEqual(self.kind(p), "full")
 
     def test_reviews_are_not_requests(self):
         p = pr(review("01:00", OLD), comment("02:00", f"Review of {HEAD}: no blocking issues (fixes only)"))
