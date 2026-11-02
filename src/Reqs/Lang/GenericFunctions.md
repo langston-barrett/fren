@@ -576,11 +576,15 @@ type arguments are the application's own, as the function has them, over
 its type parameters, each instantiated (`lang::instantiation`) with the
 instance's. So an application of the function itself, at its own type
 parameters, applies the same instance, which is how a [generic structural
-recursion](Recursion.md#generic-recursion) recurses at its instance. Here
-an application has three type arguments at most, and the rule is the same
-for more. Both front ends' instances of generic functions, and
-`Core.instancesThrough`, take them from `Core.appliedInstance`, which is
-bound to it with an `impl`:
+recursion](Recursion.md#generic-recursion) recurses at its instance. Both
+front ends' instances of generic functions, and `Core.instancesThrough`,
+take them from `Core.appliedInstance`, which is `Core.instantiatedArgs`,
+bound to it with an `impl`, over the application's type arguments with the
+function's type parameters as `Ty.param` (`Ty.asParams`). The Req is a
+bounded check: it states the rule, and the `impl` proves it, for an
+application with three type arguments at most, since Fren cannot yet define
+a sequence of unbounded length element by element; `Core.instantiatedArgs`
+is the same map for any number:
 
 ```fren
 -- `inner.len > 0` rather than `inner != []`, which compares sequences of

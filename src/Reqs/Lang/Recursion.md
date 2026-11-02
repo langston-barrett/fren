@@ -305,10 +305,13 @@ type arguments. So `len<Int>` is the structural recursion whose body is
 `len`'s with `Int` for `T`, which applies `len<Int>`; and a recursion that
 applies another generic recursion at its own type parameter, as `total<T>`
 applies `len<T>`, applies `len<Int>` at `total<Int>`. A self-application
-is at the function's own type parameters, since its arguments are payloads
-of its parameter, of its parameter's type: there is no polymorphic
-recursion, and an instance's body applies only itself and instances of the
-functions declared before it.
+is at the function's own type parameters: within its body the function has
+its declared type, with its type parameters as the abstract types that they
+are there, so each argument is checked against its parameter's declared
+type, and one of another instance's type is a type mismatch (`F0304`), as
+`f(m, Option::Some(x))` in `fn f<T>(n: N, x: T): Int` is. So there is no
+polymorphic recursion, and an instance's body applies only itself and
+instances of the functions declared before it.
 
 Its checks are as for any structural recursion, at its type parameters'
 sorts and at each instance:
@@ -328,10 +331,18 @@ sorts and at each instance:
 - Evaluation, testing and enumeration apply the instance's definition.
 - A counterexample of the check at the sorts is confirmed by evaluation as
   any other is ([Counterexamples and completeness](#counterexamples-and-completeness)),
-  with each sort at the type that the model gives it. A model that gives
-  a value of a type parameter's sort, as `t = Term::Var(V#0)`, is not
-  read, in either front end, as lean-smt reads none, so that check is
-  Inconclusive (`F0450`).
+  with each sort at the type that the model's values give it (as lean-smt
+  reads a sort, a `Fin n`; `Nat` where the model gives no value of it). A
+  model may give values of a type parameter's sort, as `t =
+  Term::Var(V#0)`: both front ends read them, and once evaluation confirms
+  the counterexample the check fails, with that counterexample.
+- An instance's result type brings no fact of its own: the result's
+  declared type is the type parameter's, which has none, so a subset type's
+  invariant reaches an instance's result only through its postconditions.
+  With `fn rep<T>(n: N, x: T): T` and `d: Pos`, `rep(n, d) >= 1` holds but is
+  Inconclusive (`F0450`). That is sound but incomplete, and particular to a
+  recursion: a generic function that is not recursive is unfolded, so its
+  result's invariant follows from its body.
 
 Termination of what the checks collect does not change: an instance's facts
 apply only itself and the instances of earlier functions, so each round of

@@ -492,9 +492,12 @@ partial def specializeRecursions (e : Expr) : MetaM Expr := do
 /-- The structural recursion of its own of the generic one `d` at the
 instance whose type arguments and `Inhabited` instances are `pre`
 (`specializeRecursions`): its name, once added, or none if Lean does not
-accept it. -/
+accept it. The name is the instance's own, so that an existing declaration
+of it is this instance, never another's. -/
 partial def specializedRecursion (d : DefinedInfo) (pre : Array Expr) : MetaM (Option Name) := do
-  let name := d.decl.str s!"#at{pre.foldl (fun h x => mixHash h x.hash) 7}"
+  -- Named after the type arguments and instances themselves, written out
+  -- whole, so that two instances never share a name.
+  let name := d.decl.str s!"#at{pre.toList.map toString}"
   if (← getEnv).contains name then return some name
   let some v := d.recValue? | return none
   try

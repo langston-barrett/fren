@@ -33,7 +33,10 @@ pub fn positive<V, B>(t: Term<V, B>): (n: Int) {
 }
 
 -- Contracts that fail, with a counterexample at the sorts, with and without
--- a value of a type parameter's.
+-- a value of a type parameter's: every term has a `Term::Var` leaf, so each
+-- counterexample of `none` has a value of `V`'s sort, which both front ends
+-- read, and a recursive application, so it is reported only once
+-- evaluation confirms it (`Reqs/Lang/Recursion#generic-recursion`).
 pub enum List<T> { Nil, Cons(T, List<T>) }
 
 pub fn zero<T>(l: List<T>): (n: Int) {

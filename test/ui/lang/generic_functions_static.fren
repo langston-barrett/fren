@@ -40,3 +40,11 @@ proc arity(x: Int): (det y: Int) {
     out y := id(x, 2)  --~ error: `generic_functions_static::id` takes 1 argument, but 2 were given
 }
 --@ exit: 2
+
+-- A structural recursion applies itself only at its own type parameters
+-- (`Reqs/Lang/Recursion#generic-recursion`): no polymorphic recursion.
+enum N { Z, S(N) }
+fn poly<T>(n: N, x: T): Int := match n {
+    N::Z => 0,
+    N::S(m) => poly(m, Option::Some(x)),  --~ error: type mismatch: expected `T`, found `Option<T>`
+}
