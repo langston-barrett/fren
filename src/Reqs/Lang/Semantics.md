@@ -13,10 +13,14 @@ Programming Languages*. Its sections follow the Rust Reference's chapter
 on expressions, and [Rules of evaluation](EvaluationRules.md) states the
 rule of each form.
 
+**Dynamic semantics**
+
 r[semantics.eval.big-step]
 One function, `lang::eval`, gives the outcome of an expression in an
 interpretation and an environment. It has one rule for each form of
-expression, over the outcomes of the form's immediate subexpressions.
+expression, over the outcomes of the form's immediate subexpressions, some
+of them evaluated in an environment that the outcome or value of another
+gives (`semantics.eval.outcomes`).
 
 r[semantics.derived-forms]
 A form of the source language that is not in the [abstract
@@ -83,7 +87,7 @@ pub fn truth(b?): Value := if b? then Value::True else Value::False
 
 ## Outcomes and well-definedness
 
-An expression either has a value, or the semantics does not fix one.
+An expression's value is either fixed by the semantics, or unspecified.
 
 **Dynamic semantics**
 
@@ -511,7 +515,7 @@ the graph has no point for them.
 
 > **Rationale:** Fren's own decidable fragment cannot compute the
 > primitive operations, so this chapter takes them as given, as the
-> Definition of Standard ML takes its basic values from `APPLY`.
+> Definition of Standard ML takes its basic values from `APPLY` (#391).
 
 ```fren
 pub enum Env { Empty, Bind(Id, Outcome, Env) }
@@ -577,13 +581,11 @@ applies them.
 **Dynamic semantics**
 
 r[semantics.eval.laws]
-[Rules of evaluation](EvaluationRules.md) states each row as laws over the
-outcomes of a form's immediate subexpressions, and `eval` meets them. They
-are the readable rules, and `eval` refines them, with every case that
-they leave out.
-
-r[semantics.eval.ill-typed]
-The outcome of `x + true`, which elaboration rejects, is undefined.
+[Rules of evaluation](EvaluationRules.md) states the rule of each form as
+laws over the outcomes of the form's immediate subexpressions, and `eval`
+meets them. They are the readable rules, and `eval` refines them, with
+every case that they leave out, such as `x + true`, which elaboration
+rejects, and whose outcome is undefined.
 
 ### Operations on lists
 
@@ -594,15 +596,21 @@ r[semantics.list.nth]
 undefined out of range.
 
 r[semantics.list.length]
-`length(list)` is the number of elements of `list`, and `append(a, b)` is
-the list of the elements of `a`, then those of `b`.
+`length(list)` is the number of elements of `list`.
+
+r[semantics.list.append]
+`append(a, b)` is the list of the elements of `a`, then those of `b`.
 
 r[semantics.list.element]
-`element?(v, list)` says that `v` is an element of `list`, and `list?(v)`
-that `v` is a list.
+`element?(v, list)` says that `v` is an element of `list`.
+
+r[semantics.list.is-list]
+`list?(v)` says that `v` is a list.
 
 r[semantics.list.trues]
-`trues(list)` is the number of elements of `list` that are `True`, and
+`trues(list)` is the number of elements of `list` that are `True`.
+
+r[semantics.list.booleans]
 `booleans?(list)` says that `list` is a list of `Bool`s.
 
 ```fren
@@ -805,8 +813,8 @@ pub fn count_value(c: Cardinality, args: Outcome): Outcome := match args {
 
 r[semantics.eval.outcomes]
 The rule of each form is a function of the outcomes of its immediate
-subexpressions, but for `Match` and `Apply`. Those evaluate a
-subexpression in an environment that the value of another gives.
+subexpressions, but for `Let`, `Match` and `Apply`. Those evaluate a
+subexpression in an environment that another's outcome or value gives.
 
 r[semantics.connective]
 The rules of `and`, `or` and a conditional take the outcome of each
@@ -816,15 +824,48 @@ r[semantics.connective.and]
 `and_value(a, b)` is `b` only where `a` is `true`. It is undefined where
 `b` is only where the form evaluates `b`.
 
-r[semantics.connective.arm]
+r[semantics.connective.or]
+`or_value(a, b)` is `true` where `a` is `true`, `b` where `a` is `false`,
+and undefined otherwise.
+
+r[semantics.connective.if]
+`if_value(c, t, f)` is `t` where `c` is `true`, `f` where `c` is `false`,
+and undefined otherwise.
+
+r[semantics.eval.match]
 An arm of a `match` whose pattern matches is `if_value` of its guard, its
 body and the arms after it, the guard and body in the environment with the
 pattern's binders bound.
 
+r[semantics.test]
+`is_value(p, s)` says whether `p` matches the value of `s`, and is
+undefined where `s` is.
+
+r[semantics.construction.cons]
+`cons_value(a, rest)` is `Cons(v, l)` where `a` is `v` and `rest` is `l`,
+and undefined where either is.
+
+r[semantics.construction.construct]
+`construct_value(c, args)` is `Constructed(c, l)` where `args` is `l`, and
+undefined where `args` is.
+
+r[semantics.construction.project]
+`project_value(a, c, k)` is the element at position `k` of `l` where `a`
+is `Constructed(c, l)`, and undefined otherwise.
+
+r[semantics.construction.index]
+`index_value(q, k)` is the element of the list `q` at the position `k`,
+and undefined out of range, where `q` is not a list, or where `k` is not
+an integer.
+
+r[semantics.call]
+`call_value(g, f, args)` is `f`'s value in the graph `g` at the list of the
+arguments' values, and undefined where `args` is.
+
 > **Rationale:** Giving each rule its own function keeps `eval` small.
 > Compiling it, a structural recursion with an arm for each form, took 199M
 > of Lean's raw heartbeats with these rules written within it, against a
-> limit of 200M, and takes 160M.
+> limit of 200M, and takes 160M (#572).
 
 ```fren
 -- The outcome of `a and b`, of `a or b`, and of a conditional, from those of their operands.
