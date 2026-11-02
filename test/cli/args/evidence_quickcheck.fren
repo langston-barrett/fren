@@ -1,0 +1,2 @@
+--@ argv: quickcheck --evidence random spec.fren
+-- `--evidence` is an option of `fren check` only.

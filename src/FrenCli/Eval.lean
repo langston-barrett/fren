@@ -3563,7 +3563,10 @@ partial def lowerPredicateClauses (cx : Cx) (expression : Expr) (splitConjunctio
 type brings, as a constraint (`Reqs/Lang/Procedures#subset-types`). -/
 def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option Constraint) := do
   let sp := (← get).spec
-  if (t.cons sp.shapes.find?).isNone then return none
+  -- A recursive enumeration's payloads bring no constraint here, but where
+  -- they are read, for the solver; a value is of its type only if they are
+  -- of theirs, at every depth (`Reqs/Eval`), which `.typed` checks.
+  if (t.cons sp.shapes.find?).isNone && !t.recursivelyConstrained sp.shapes.find? then return none
   -- The bounds of its patterns, and of those within it, to search among.
   let rec ints (fuel : Nat) (t : Fren.Core.PTy) : Array Int :=
     match fuel with

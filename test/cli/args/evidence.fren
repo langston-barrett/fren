@@ -1,0 +1,9 @@
+--@ args: check --evidence random
+-- `--evidence random` tests the expectation that the source sets to
+-- enumeration, and the procedure's realizability, which the source leaves
+-- to the solver; testing skips the vacuity and redundancy checks (`F0654`).
+proc p(x: Int): (y: Int) {
+    ensure d: y = x + 1
+    set_option fren.evidence "enumerated" in
+    expect e: when x > 0, y > x
+}

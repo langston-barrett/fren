@@ -265,6 +265,77 @@ pub proc combined(
 Fren has no code that combines verdicts yet, so `combined` has no
 `impl`. It will have one when `fren.evidence` takes sets (#447).
 
+## Agreement of methods
+
+Where two methods both reach a verdict on a check, they must not
+contradict each other: a wrong encoding of a check for the solver, or a
+wrong search, shows up as a method that passes a check that another
+refutes. Two verdicts *contradict* each other when one method contributes
+a counterexample to the check and another a pass that is a decision, each
+as its cell allows (`check::contribution`). So:
+
+- `Inconclusive`, and a check that a method does not run, such as one that
+  it skips (`check::method_run`), contribute nothing, and contradict
+  nothing;
+- random testing's "no counterexample found" for a check of the first row
+  is not a pass here, and it never refutes one of the second;
+- a pass of enumeration's that holds only up to the size does not
+  contradict a counterexample, which may be larger than the size.
+
+`check::methods_agree` states this for the three methods that run today,
+each with the verdict that it reached itself, before the
+[evidence](Evidence.md) of what the check rests on changes how it is
+shown:
+
+```fren
+pub proc methods_agree(
+    kind: Kind,
+    solver: Verdict,         -- the solver's own verdict, `Inconclusive` if it did not run the check
+    enumerated: Verdict,     -- enumeration's, likewise
+    bounded?,                -- enumeration's pass holds only up to the size
+    random: Verdict,         -- random testing's, likewise
+): (det contradiction?) {
+    use self::Contribution::{Passed, Refuted}
+    use self::ProofMethod::{Enumerated, Random, Solver}
+    use self::Verdict::{Fail, Inconclusive, Pass}
+
+    call solver_cell := method_cell(kind, Solver)
+    call enumerated_cell := method_cell(kind, Enumerated)
+    call random_cell := method_cell(kind, Random)
+    let s: Contribution := contribution(solver_cell.cell, solver, false)
+    let e: Contribution := contribution(enumerated_cell.cell, enumerated, bounded?)
+    let r: Contribution := contribution(random_cell.cell, random, false)
+
+    ensure rule: contradiction? iff (Refuted in {s, e, r} and Passed in {s, e, r})
+
+    expect one_method: when enumerated = Inconclusive and random = Inconclusive, not contradiction?
+    expect decisions_differ: when solver = Pass and enumerated = Fail, contradiction?
+    expect untested_pass_silent: when proof?(kind) and random = Pass and enumerated = Inconclusive, not contradiction?
+    expect beyond_size: when solver = Fail and enumerated = Pass and bounded? and random != Pass, not contradiction?
+    expect witness_refuted: when not proof?(kind) and random = Pass and solver = Fail, contradiction?
+}
+```
+
+`bounded?` is an input, rather than computed by `enumerated_verdict` as
+`combined` computes it, because what is compared is each method's
+reported result, which already holds enumeration's verdict and whether it
+is bounded; `enumerated_verdict` is bound to the code that gives them
+(`enumeratedVerdict`). `methods_agree` is bound to
+`Fren.Core.methodsContradict`. The test job
+`methodsAgree`, which runs on `main` only, checks it of Fren's own
+requirements, of the ui tests and of the front-end fuzzer's corpus. It
+checks each of them three times, under `fren check --evidence` set to
+`solver`, to `enumerated` and to `random` (see [The `fren`
+command](Cli.md#evidence)), in place of the specs' own settings, so that
+every check runs under every method that applies, with enumeration at the
+size that the spec sets, or the default. It fails on every contradiction,
+reporting the spec, the check, each method's verdict and what it found,
+and counts in its summary the checks that each method decided, left
+inconclusive or did not run, and the counterexamples beside a pass up to
+the size. Model confirmation already checks every counterexample and
+witness that the solver reports ([Models](Models.md)); this checks the
+other direction too: a pass that rests only on the solver's `unsat`.
+
 ## What runs today
 
 Not every cell of the table runs yet. `check::method_run` states what
