@@ -159,11 +159,12 @@ jobs:
         # Read, Grep and Glob, but not in the checkout's .git, other
         # processes' environments, or the runner's and the action's own
         # files; Write only for review.md. Read's rules hold for Grep and
-        # Glob too.
+        # Glob too, and Edit's for Write.
+        show_full_output: "true"
         claude_args: >-
           --model claude-opus-5-5
-          --allowedTools "Read,Grep,Glob,Write(./review.md)"
-          --disallowedTools "Agent,Task,Bash,Edit,MultiEdit,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Read(//proc/**),Read(//sys/**),Read(//dev/**),Read(//etc/**),Read(//tmp/**),Read(//var/**),Read(//run/**),Read(//root/**),Read(//opt/**),Read(//usr/**),Read(//snap/**),Read(//mnt/**),Read(//home/runner/.*/**),Read(//home/runner/work/_temp/**),Read(//home/runner/work/_actions/**),Read(//home/runner/work/_tool/**),Read(//home/runner/runners/**),Read(//home/runner/actions-runner/**)"
+          --allowedTools "Read,Grep,Glob,Write(./review.md),Edit(./review.md)"
+          --disallowedTools "Agent,Task,Bash,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Read(//proc/**),Read(//sys/**),Read(//dev/**),Read(//etc/**),Read(//tmp/**),Read(//var/**),Read(//run/**),Read(//root/**),Read(//opt/**),Read(//usr/**),Read(//snap/**),Read(//mnt/**),Read(//home/runner/.*/**),Read(//home/runner/work/_temp/**),Read(//home/runner/work/_actions/**),Read(//home/runner/work/_tool/**),Read(//home/runner/runners/**),Read(//home/runner/actions-runner/**)"
     - if: ${{ always() }}
       name: Keep the review, unless it holds a credential
       run: |
