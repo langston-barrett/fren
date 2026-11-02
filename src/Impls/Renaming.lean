@@ -357,6 +357,77 @@ theorem tm_fix_rn (e : Expr V) : lint.trivial_match_fix W (expr r e) = expr r (l
   · cases p <;> simp [h, pat, expr] <;> rename_i ps <;> cases ps <;> simp [pat, expr]
   · simp [h, expr]
 
+omit hr in
+theorem tests_rn (p : Pattern V) : lint.tests_only? W (pat r p) = lint.tests_only? V p := by
+  cases p <;> try rfl
+  rename_i c ps; cases ps <;> rfl
+
+omit [Inhabited V] [Inhabited W] hr in
+theorem expr_nomatch (e : Expr V) : expr r e = .NoMatch ↔ e = .NoMatch := by cases e <;> simp
+
+omit [Inhabited V] [Inhabited W] hr in
+theorem pat_true (p : Pattern V) : pat r p = .Literal .True ↔ p = .Literal .True := by cases p <;> simp [pat]
+
+omit hr in
+theorem sme_fires_match {U : Type} [Inhabited U] (s : Expr U) (p : Pattern U) (g a rest : Expr U) :
+    lint.single_match_else_fires? U (.Match s p g a rest) =
+      (lint.tests_only? U p && lint.true? U g && lint.wildcard_arm? U s rest) := by
+  cases rest <;> simp [lint.single_match_else_fires?, lint.tests_only?, lint.true?, lint.wildcard_arm?, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2, lang.Expr.Match.x3,
+    lang.Expr.Match.x4]
+
+theorem wildcard_arm_rn (s rest : Expr V) :
+    lint.wildcard_arm? W (expr r s) (expr r rest) = lint.wildcard_arm? V s rest := by
+  cases rest <;> simp [lint.wildcard_arm?, expr_nomatch, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2,
+    lang.Expr.Match.x3, lang.Expr.Match.x4]
+  rename_i q _ _ _; cases q <;> simp [pat]
+
+omit hr in
+theorem arm_body_rn (rest : Expr V) : lint.arm_body W (expr r rest) = expr r (lint.arm_body V rest) := by
+  cases rest <;> simp [lint.arm_body]
+
+theorem sme_fires_rn (e : Expr V) :
+    lint.single_match_else_fires? W (expr r e) = lint.single_match_else_fires? V e := by
+  cases e <;> try rfl
+  rename_i s p g a rest
+  simp only [expr, sme_fires_match, tests_rn, true_rn, wildcard_arm_rn]
+
+theorem sme_fix_rn (e : Expr V) :
+    lint.single_match_else_fix W (expr r e) = expr r (lint.single_match_else_fix V e) := by
+  cases e <;> try rfl
+  rename_i s p g a rest
+  have hf := sme_fires_rn (r := r) (.Match s p g a rest)
+  simp only [expr] at hf
+  simp only [lint.single_match_else_fix, expr, hf]
+  split <;> simp [expr, arm_body_rn]
+
+omit hr in
+theorem mb_fires_match {U : Type} [Inhabited U] (s : Expr U) (p : Pattern U) (g a rest : Expr U) :
+    lint.match_bool_fires? U (.Match s p g a rest) = (lint.true? U g && lint.bool_arm? U s p rest) := by
+  cases rest <;> simp [lint.match_bool_fires?, lint.true?, lint.bool_arm?, lint.bool_pair?, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2, lang.Expr.Match.x3,
+    lang.Expr.Match.x4]
+
+theorem bool_arm_rn (s : Expr V) (p : Pattern V) (rest : Expr V) :
+    lint.bool_arm? W (expr r s) (pat r p) (expr r rest) = lint.bool_arm? V s p rest := by
+  cases rest <;> simp [lint.bool_arm?, lint.bool_pair?, expr_nomatch, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2, lang.Expr.Match.x3,
+    lang.Expr.Match.x4]
+  rename_i q _ _ _; cases p <;> cases q <;> simp [pat]
+
+theorem mb_fires_rn (e : Expr V) : lint.match_bool_fires? W (expr r e) = lint.match_bool_fires? V e := by
+  cases e <;> try rfl
+  rename_i s p g a rest
+  simp only [expr, mb_fires_match, true_rn, bool_arm_rn]
+
+theorem mb_fix_rn (e : Expr V) : lint.match_bool_fix W (expr r e) = expr r (lint.match_bool_fix V e) := by
+  cases e <;> try rfl
+  rename_i s p g a rest
+  have hf := mb_fires_rn (r := r) (.Match s p g a rest)
+  simp only [expr] at hf
+  simp only [lint.match_bool_fix, expr, hf]
+  by_cases h1 : lint.match_bool_fires? V (.Match s p g a rest) = true
+  · simp only [h1, not_true_eq_false, if_false, pat_true]
+    by_cases h2 : p = .Literal .True <;> simp [h2, pat_true, pat, expr, arm_body_rn]
+  · simp [h1, expr]
+
 theorem absorbs_rn (c : Bool) (k o : Expr V) :
     lint.absorbs_operand? W c (expr r k) (expr r o) = lint.absorbs_operand? V c k o := by
   cases k <;> simp [lint.absorbs_operand?, lang.Expr.Or.x0, lang.Expr.Or.x1, lang.Expr.And.x0, lang.Expr.And.x1]
@@ -385,11 +456,12 @@ writes. -/
 theorem fires_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fires_at? W l (expr r e) = lint.fires_at? V l e := by
   cases l <;> simp only [lint.fires_at?, oc_fires_rn, dn_fires_rn, ipo_fires_rn, ma_fires_rn, mad_fires_rn,
     un_fires_rn, cw_fires_rn, sb_fires_rn, nm_fires_rn, io_fires_rn, mre_fires_rn, tg_fires_rn,
-    tm_fires_rn]
+    tm_fires_rn, sme_fires_rn, mb_fires_rn]
 
 theorem fix_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fix_at W l (expr r e) = expr r (lint.fix_at V l e) := by
   cases l <;> simp only [lint.fix_at, oc_fix_rn, dn_fix_rn, ipo_fix_rn, ma_fix_rn, mad_fix_rn, un_fix_rn, cw_fix_rn,
-    sb_fix_rn, nm_fix_rn, io_fix_rn, mre_fix_rn, tg_fix_rn, tm_fix_rn]
+    sb_fix_rn, nm_fix_rn, io_fix_rn, mre_fix_rn, tg_fix_rn, tm_fix_rn,
+    sme_fix_rn, mb_fix_rn]
 
 end
 

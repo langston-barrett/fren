@@ -250,6 +250,61 @@ expect irrefutable_is_complete(s: lint::Shade, n: Int) {
 }
 ```
 
+### Pattern tests, over the syntax of the semantics
+
+In the [syntax of the semantics](../Lang/Semantics.md#abstract-syntax), a
+pattern test is `Is(s, p)`. Without types, the model knows only of `_`
+as a pattern that matches every value. That alternatives cover
+a type, or that an enumeration has one variant, is a fact about the
+scrutinee's type, which the static rules decide and the model cannot
+state. `irrefutable_is_fires?` fires on a test of `_`, and the message
+says that it is `true`. As for
+[`eq_op`](Suspicious/Expressions.md#operands-written-the-same-over-the-syntax-of-the-semantics),
+there is no fix, and what the lint states is that its message is right:
+
+```fren
+pub fn irrefutable_is_fires?<V>(e: lang::Expr<V>) := e is lang::Expr::Is(_, lang::Pattern::Wildcard)
+```
+
+`lint::irrefutable_is` binds this to the linter: where the pattern is `_`,
+the front ends read it as matching every value (`read`), and the linter
+fires, as the function does. On the other patterns that it fires on, the
+function does not. That the front ends read the
+pattern so, and the `true` that the message gives, which is not an
+output of `lint::irrefutable_is`, are trusted, and checked by the ui
+tests in `test/ui/lints/pattern_tests_chains.fren`:
+
+```fren
+expect irrefutable_is_elaborated(
+    matches_every?,
+    s: lang::Expr<lang::Id>,
+    p: lang::Pattern<lang::Id>,
+) {
+    assume read: when p = lang::Pattern::Wildcard, matches_every?
+
+    call t := irrefutable_is(matches_every?)
+
+    expect fires: when p = lang::Pattern::Wildcard, t.fires? and irrefutable_is_fires?(lang::Expr::Is(s, p))
+}
+```
+
+Where it fires, the message agrees with the test, in every interpretation
+and environment: the test is `true` wherever the scrutinee is
+well-defined, and undefined elsewhere. `src/Impls/Rewrites.lean` proves
+this in Lean, for every expression, interpretation and environment;
+`fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc irrefutable_is_said_agrees(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure said: when irrefutable_is_fires?(e),
+        agrees?(
+            lang::eval(i, env, lang::Expr::Literal(lang::Value::True)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
 ## Cover goals
 
 `trivial_cover` fires on a [cover goal](../Lang/Procedures.md#cover-goals)
