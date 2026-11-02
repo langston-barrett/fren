@@ -11,12 +11,13 @@ name: pre-merge
 # it is the status to rely on, and the one `main`'s ruleset requires.
 #
 # On a pull request, it also uploads stripped copies of the binaries it
-# built, `fren` from the build and `fren_test` from shard 0, as the
-# artifacts `fren-SHA` and `fren_test-SHA`, where SHA is the pull request's
-# head, kept for 3 days: Linux binaries of the head merged into `main`, each
-# with the merge commit in `MERGE_SHA` and its parents, `main`'s commit and
-# the head, in `MERGE_PARENTS`, with which a reviewer can probe the
-# head without building it (`Reqs/dev/Testing#continuous-integration`).
+# built, `fren` from the build of all but the requirements and `fren_test`
+# from shard 0, as the artifacts `fren-SHA` and `fren_test-SHA`, where SHA
+# is the pull request's head, kept for 3 days: Linux binaries of the head
+# merged into `main`, each with the merge commit in `MERGE_SHA` and its
+# parents, `main`'s commit and the head, in `MERGE_PARENTS`, with which a
+# reviewer can probe the head without building it
+# (`Reqs/dev/Testing#continuous-integration`).
 #
 # It runs on each push to a pull request, on GitHub's merge of the head
 # into `main` as it is then. It also keeps a `merge_group` trigger, for a

@@ -930,9 +930,22 @@ request's.
 ## Continuous integration
 
 On a pull request, the `pre-merge` workflow checks the head merged into
-`main`, starting from the `.lake` that `main`'s last build left: one
-machine runs `lake build --wfail`, and others run `lake test --
---skip-own-mutants --shard K/N`, each building only the test driver. On
+`main`, starting from the `.lake` that `main`'s last build left: two
+machines run `lake build --wfail`, and others run `lake test --
+--skip-own-mutants --shard K/N`, each building only the test driver. One
+build machine builds Fren's own requirements and their `impl`s (`lake
+build --wfail Reqs Impls`), the other the rest of the default targets:
+the code, the tests, the examples and the binaries, among them the C code
+that the first needs none of. The chain from `Fren.Elab` through
+`Reqs.Lang`, `Reqs.Lint` and `Impls.Lint` is the build's critical path,
+and on one machine its modules shared the runner's four cores with the
+rest, which took some 2,400 of the build's CPU seconds where everything
+was rebuilt, so that they ran at about half speed: on 2026-11-02, in one
+run where both were rebuilt from `FrenCore`, the single build took 729 s
+and the build of the requirements 361 s, on runners that started
+together. Both build what both import, from `FrenCore` to `Fren`, and
+`lake test`'s `libraries` job checks that the two lists of targets
+together are `lakefile.lean`'s default targets. On
 `main`, the `lean ci` workflow runs `lake build --wfail` and the whole
 `lake test`, samples mutants of Fren's own requirements, checks them in
 Lean and compares the front ends' messages about them ([Own
@@ -987,7 +1000,7 @@ request of its own rather than slowing every pull request down.
 
 | Check | `pre-merge` | `lean ci` | Why |
 |---|---|---|---|
-| `lake build --wfail`: the code, the regression tests, the `impl`s' proofs, the examples, and Fren's own requirements elaborated | yes | yes | it is the build |
+| `lake build --wfail`: the code, the regression tests, the `impl`s' proofs, the examples, and Fren's own requirements elaborated | yes, on two machines | yes | it is the build |
 | `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
@@ -998,7 +1011,8 @@ request of its own rather than slowing every pull request down.
 
 On a pull request, `pre-merge` also uploads stripped copies of the
 binaries that it built and tested, so that a reviewer can probe the head
-without building it: `fren`, once the build has passed, as the artifact
+without building it: `fren`, once the build of all but the requirements
+has passed, as the artifact
 `fren-SHA`, and `fren_test`, once shard 0 has built it, as
 `fren_test-SHA`, where SHA is the full sha of the pull request's head.
 They are kept for 3 days. They are Linux binaries, built on
