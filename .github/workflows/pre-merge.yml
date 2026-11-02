@@ -37,10 +37,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # `lake build --wfail` of every default target, on two machines: Fren's
+  # own requirements and their `impl`s, the build's critical path, on one,
+  # and the rest on the other, so that the first shares its four cores with
+  # nothing else (`Reqs/dev/Testing#continuous-integration`). Both build the
+  # modules that both need. `lake test`'s `libraries` job checks that the
+  # two together are `lakefile.lean`'s default targets.
   build:
-    name: lake build --wfail
+    name: lake build --wfail (${{ matrix.part }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - part: requirements
+          targets: Reqs Impls
+        - part: the rest
+          targets: FrenCore Fren FrenTest FrenTestFiles Examples fren fren_fuzz
     steps:
     # The parent of the merge commit, too: it is `main`'s commit, or, in
     # the merge queue, the commit of the pull request ahead in the queue,
@@ -59,7 +73,12 @@ jobs:
     # elaborated: shard 0 checks them with the binary), the links
     # from Fren's code to them, the examples and the binaries; warnings,
     # including inconclusive checks and untraced requirements, fail it.
-    - run: touch "$RUNNER_TEMP/build-start" && lake build --wfail
+    - run: |
+        read -ra targets <<< "$TARGETS"
+        touch "$RUNNER_TEMP/build-start"
+        lake build --wfail "${targets[@]}"
+      env:
+        TARGETS: ${{ matrix.targets }}
     # No output that the build wrote names the checkout's directory, so that
     # another worktree can take it from Lake's artifact cache; the outputs
     # that it did not write are `main`'s, checked by the build that wrote
@@ -69,7 +88,7 @@ jobs:
     # the `fren` of `main` that it was restored with. A stripped copy, with
     # the merge commit it was built from, which a probe must check out; the
     # copy checks an example, so that stripping cannot break it unnoticed.
-    - if: ${{ github.event_name == 'pull_request' }}
+    - if: ${{ github.event_name == 'pull_request' && matrix.part == 'the rest' }}
       run: |
         mkdir "$RUNNER_TEMP/artifact"
         cp .lake/build/bin/fren "$RUNNER_TEMP/artifact/fren"
@@ -81,7 +100,7 @@ jobs:
         git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"
         ls -l .lake/build/bin/fren "$RUNNER_TEMP/artifact"
         "$RUNNER_TEMP/artifact/fren" check examples/arith.fren
-    - if: ${{ github.event_name == 'pull_request' }}
+    - if: ${{ github.event_name == 'pull_request' && matrix.part == 'the rest' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fren-${{ github.event.pull_request.head.sha }}
