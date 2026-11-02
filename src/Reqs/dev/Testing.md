@@ -1026,6 +1026,38 @@ MB stripped and 78 MB compressed. The `.olean` files are not uploaded:
 those of `Fren` and its dependencies came to some 340 MB, 96 MB
 compressed, on macOS.
 
+The `pr-review` workflow reviews each pull request's head with Claude once
+`pre-merge` has passed on it, by AGENTS.md's review rules: a full review,
+or a light check when the last comment that names the head starts with
+"fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
+an update from `main` of a reviewed head. It never reviews a pull request
+from a fork. Its comment counts as the pull request's review, for
+everything, and says which probes it ran and which it could not, such as
+those that need a rebuild. The only code of the pull request that it runs
+is these binaries, `fren check` of each spec that the pull request
+changes, in a job of its own with no secret, in a container as `nobody`
+with no network, a read-only root and read-only mounts, no capabilities,
+no variable of the runner and no docker socket
+(`.github/pr-review/sandbox.sh`), so that a probe can affect nothing but
+its own output, which `lint` tests with a hostile stand-in for `fren`
+(`test_sandbox.sh`). Each probe's output is framed as a code block that
+nothing in it can close (`frame.py`, which `lint` tests with a CommonMark
+parser). Only comments by the repository's owner, members and
+collaborators count as reviews or requests. The reviewer, in the job that
+holds the Claude token, reads the probes' output as text, with a checkout
+of the head and the diffs that the workflow wrote, with no shell and no
+reads outside the checkout, and suggests any other probe in its findings.
+The workflow posts the review as one comment, once its check of the
+review passes: the first line, a mark on each finding that agrees with
+the verdict, the paragraph on the probes, no copy of a token, plain or
+encoded, and no names of machines. Whatever it posts, the review or a
+note that it failed, which quotes nothing of it, loads nothing from
+outside github.com and mentions no one. The Claude token is a repository
+secret, which anyone who can push a branch can read, until it is moved to
+an environment that only `main` can use. Run by hand (`gh workflow run
+pr-review -f pr=N`), it posts only on the pull request that its `post`
+input names.
+
 Pull requests merge through GitHub's merge queue. The queue merges each
 pull request into the current `main`, behind any pull requests ahead of it
 in the queue, and runs `pre-merge` and `lint` on that merge commit. It
