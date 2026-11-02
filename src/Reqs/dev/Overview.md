@@ -37,7 +37,10 @@ The book's page "Rules and their requirements" is written when it is
 built, by `scripts/rules_report.py`, from the test driver,
 `.lake/build/bin/fren_test`: run `lake build fren_test` before `mdbook
 build`, or the page is a placeholder that says so. A driver built from an
-older checkout writes that checkout's report.
+older checkout writes that checkout's report. The same preprocessor
+renders each rule's links, the rest of its identifier's line, small, and
+leaves the identifier alone on its line for mdbook-spec, which reads only
+`r[...]`; `python3 scripts/rules_report.py test` tests this.
 
 The `book` job builds the book on every pull request, in `pre-merge`, and
 on `main`, in `lean ci`, and publishes nothing. It builds no Lean: it runs

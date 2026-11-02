@@ -90,8 +90,26 @@ quote, so it needs no label.
   (`quantifier.guard.strict`). Spell words out, as in prose.
 - The identifier of a grammar is `<construct>.syntax`, on the line
   before its block.
-- The identifier's line is exactly `r[...]`, not indented, as mdbook-spec
-  reads it, which renders it as an anchor.
+- The identifier's line is `r[...]`, not indented, alone or followed by
+  one space and the rule's *links*: the requirements that formalize it
+  (see [Rules and requirements](#rules-and-requirements)).
+
+  ```text
+  r[evaluation.operator.concatenation] lang::operator_rules::{binary_defined, list_concatenation}
+  `++` applies only to two strings or two lists. Of two lists, it gives the
+  elements of the first, then those of the second.
+  ```
+
+- The links are paths, fully qualified, separated by `, `. Each names an
+  item of a ```` ```fren ```` block, or a clause of one as the item's path
+  and the clause's name (`lang::operator_rules::list_concatenation`). A
+  path may end in `::{...}`, which stands for its prefix followed by each
+  of the links between the braces, separated by `, `, as in a Rust `use`
+  declaration: `lang::p::{a, b}` is `lang::p::a, lang::p::b`.
+- mdbook-spec reads only `r[...]` alone on its line, and renders it as an
+  anchor. The book's preprocessor `scripts/rules_report.py` first moves
+  the links to a line of their own, rendered small, at the start of the
+  rule.
 - An identifier is unique across the reference. `lake test` checks this,
   the format, and that each rule cited in backticks exists (`ruleIds`).
 - An identifier is never renumbered, renamed or reused. A rule that is
@@ -105,13 +123,19 @@ quote, so it needs no label.
 - A ```` ```fren ```` block in a chapter is part of the chapter's module,
   and `lake build` and `lake test` check it (see [Markdown
   specs](../Markdown.md)).
-- The block is the precise form of a rule, and the rule names it: "...
-  (`lang::quantifier_size`)". The rule states the property in a sentence;
-  the block's `ensure`s state it exactly, and its `expect`s are its
-  examples, which the checker checks at the block's evidence (proved,
-  enumerated or tested).
-- Where a rule and its block disagree, the block is right, and the rule is
-  fixed.
+- The block is the precise form of a rule, and the rule links it on its
+  identifier's line. The rule states the property in a sentence; the
+  block's `ensure`s state it exactly, and its `expect`s are its examples,
+  which the checker checks at the block's evidence (proved, enumerated or
+  tested).
+- The block is normative wherever it is the clearer statement. A rule's
+  prose states the intent, the scope, and anything that the block cannot
+  say, and points to the block. It does not paraphrase match arms,
+  assumptions or clauses that the block states precisely. Never drop a
+  normative statement that the block does not make.
+- Where a rule and its block could disagree, the block decides: the prose
+  must not contradict it, which review checks, and where it does, the rule
+  is fixed.
 - A block's comments are not normative. They say what a parameter or
   item stands for.
 
@@ -127,20 +151,12 @@ quote, so it needs no label.
   for `quantifier.type.not-listed`), or it is one segment shorter and has a
   clause named as the last segment (`proc guard` in `mod quantifier`, with
   `ensure strict`, for `quantifier.guard.strict`).
-- Where the structures differ, the rule names its requirement in a
-  *marker* instead: a parenthesized group with an element, between its
-  commas and semicolons, that is only a path in a module that the
-  reference declares, which must name an item, "(`F0356`,
-  `lang::quantifier_size`)", or a clause, "(`lang::lazy_rules::and_true`)";
-  or only clauses of one, "(`and_false` and `and_unevaluated` of
-  `lang::lazy_rules`)", which must be its clauses. A path elsewhere in the
-  rule, as in "`lang::eval` gives", an example path, as in
-  "(`Shape::Circle`)", and, in a group with no such path, code spans that
-  are no item's clauses, as in "(`true` or `false`)", are no marker.
-- Clauses alone, "(`and_true`)", are of the last item that their group
-  names, or else of the last item that the latest marker before them in the
-  chapter names, and it must have them. A clause of another item says
-  which: "(`condition` of `lang::if_rules`)".
+- Where the structures differ, the rule links its requirements on its
+  identifier's line (see [Rule identifiers](#rule-identifiers)):
+  `r[evaluation.and.false] lang::lazy_rules::{and_false, and_unevaluated}`.
+  Every link names an item or a clause that exists. A code span in a
+  rule's prose is never a link, and the prose names no requirement in
+  parentheses.
 - An item of a chapter in a module named as one of the chapter's
   constructs, such as `quantifier`, has a rule of its name, or, if it has
   clauses, each of them does, where the name is shaped as a rule
@@ -151,9 +167,9 @@ quote, so it needs no label.
   marked "(Interlock pending)". Its Interlock step gives each rule a
   requirement, removes its line, and removes the mark. A rule that is to
   keep no requirement says why on its line, after ` -- `, which every line
-  of a section without the mark must. A rule whose markers link only part
+  of a section without the mark must. A rule whose links name only part
   of what it states stays listed, with ` -- partly formalized: ` and what
-  is missing, until they link all of it; in a section that is still
+  is missing, until they name all of it; in a section that is still
   "(Interlock pending)", ` -- partly formalized` alone will do.
   What a message or a help says, which a rule may state, is left to the ui
   tests: a rule whose requirement states all but its message counts as
@@ -162,9 +178,10 @@ quote, so it needs no label.
   `--@ reference: quantifier.guard.strict`, as the Rust Reference's tests
   do with `//@ reference:`.
 - `lake test` checks these links and the list, but not whether a rule is
-  only partly formalized, which is the reviewer's to judge. It also checks
-  that every cited rule exists, and that each requirement that formalizes a
-  rule of its own chapter follows the rule (`ruleReqs`).
+  only partly formalized, nor whether its prose agrees with its block,
+  which are the reviewer's to judge. It also checks that every cited rule
+  exists, and that each requirement that formalizes a rule of its own
+  chapter follows the rule (`ruleReqs`).
 - The report, the page "Rules and their requirements" under this one,
   which is written when the book is built, gives each rule's
   requirements, the `impl`s bound to them and the tests that cite it.

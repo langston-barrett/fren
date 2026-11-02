@@ -16,7 +16,9 @@ command = "mdbook-spec"
 # Adds the page `dev/Rules.md`, the report of the rules and their
 # requirements, which `fren_test --rules-report` writes
 # (`scripts/rules_report.py`): build the test driver, `lake build fren_test`,
-# before the book, or the page is a placeholder.
+# before the book, or the page is a placeholder. Renders the links of each
+# rule's identifier line, `r[ID] LINKS`, before mdbook-spec, which reads only
+# `r[ID]`.
 [preprocessor.rules]
 command = "python3 scripts/rules_report.py"
 before = ["spec"]

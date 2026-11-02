@@ -15,8 +15,8 @@ rule of each form.
 
 **Dynamic semantics**
 
-r[semantics.eval.big-step]
-One function, `lang::eval`, gives the outcome of an expression in an
+r[semantics.eval.big-step] lang::eval
+One function, `eval`, gives the outcome of an expression in an
 interpretation and an environment. It has one rule for each form of
 expression, over the outcomes of the form's immediate subexpressions, some
 of them evaluated in an environment that the outcome or value of another
@@ -37,8 +37,8 @@ A value is the result of evaluating an expression that is well-defined.
 
 **Dynamic semantics**
 
-r[semantics.value]
-`lang::Value` is the value of an expression, of any type.
+r[semantics.value] lang::Value
+One type, `Value`, holds the values of expressions of every type.
 
 r[semantics.value.bool]
 `True` and `False` are the values of `Bool`.
@@ -91,9 +91,8 @@ An expression's value is either fixed by the semantics, or unspecified.
 
 **Dynamic semantics**
 
-r[semantics.outcome]
-An expression's *outcome* is `Defined(v)`, its value `v`, or `Undefined`
-(`lang::Outcome`).
+r[semantics.outcome] lang::Outcome
+An expression's *outcome* is `Defined(v)`, its value `v`, or `Undefined`.
 
 r[semantics.outcome.well-defined]
 An expression is *well-defined* (WD) in an environment where its outcome
@@ -460,20 +459,19 @@ and an interpretation, which gives its functions.
 
 **Dynamic semantics**
 
-r[semantics.env]
-An *environment*, `lang::Env`, binds variables to outcomes: those of a
+r[semantics.env] lang::Env
+An *environment*, `Env`, binds variables to outcomes: those of a
 procedure and of its calls, the parameters of a function, the bound
 names of quantifiers, the names of `let`s, and the binders of patterns.
 
-r[semantics.env.lookup]
-`lookup(env, x)` is the outcome of the innermost binding of `x`
-(`lang::lookup`).
+r[semantics.env.lookup] lang::lookup
+`lookup(env, x)` is the outcome of the innermost binding of `x`.
 
 r[semantics.env.unbound]
 An unbound variable is undefined. A resolved expression never reads one.
 
-r[semantics.interp]
-An *interpretation*, `lang::Interp`, gives three tables of values:
+r[semantics.interp] lang::Interp
+An *interpretation*, `Interp`, gives three tables of values:
 `functions`, `recursions` and `primitives`.
 
 r[semantics.interp.functions]
@@ -544,8 +542,8 @@ pub fn apply(g: Graph, f: Id, args: Value): Outcome := match g {
 }
 ```
 
-r[semantics.env.shadowing]
-One binding hides another of the same name (`lang::lookup_binding`).
+r[semantics.env.shadowing] lang::lookup_binding
+One binding hides another of the same name.
 
 ```fren
 expect lookup_binding(env: Env, x: Id, y: Id, r: Outcome) {
@@ -940,9 +938,9 @@ environment `env`.
 r[semantics.eval.structural]
 `eval` is a [structural recursion](Recursion.md) on `e`. It is a function.
 
-r[semantics.eval.determinism]
+r[semantics.eval.determinism] lang::determinism
 The same expression in the same interpretation and environment always has
-the same outcome (*determinism*, `lang::determinism`).
+the same outcome: *determinism*.
 
 > **Note:** Determinism is why two expressions written the same have the
 > same value (see [Expressions as

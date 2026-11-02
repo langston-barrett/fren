@@ -29,9 +29,8 @@ A literal evaluates to its value.
 
 **Dynamic semantics**
 
-r[evaluation.literal]
-`Literal(v)` evaluates to `v`, and is always WD (`literal` of
-`lang::leaf_rules`).
+r[evaluation.literal] lang::leaf_rules::literal
+`Literal(v)` evaluates to `v`, and is always WD.
 
 ## Path expressions
 
@@ -39,9 +38,9 @@ A variable evaluates to what the environment binds it to.
 
 **Dynamic semantics**
 
-r[evaluation.variable]
+r[evaluation.variable] lang::leaf_rules::read
 `Var(x)`, a variable, evaluates to the outcome that the environment binds
-`x` to (`read` of `lang::leaf_rules`).
+`x` to.
 
 r[evaluation.constant]
 A constant is an `Apply` of its definition (`semantics.derived.constant`).
@@ -62,14 +61,13 @@ A `let` binds its name to the outcome of its definition, not to its value.
 
 **Dynamic semantics**
 
-r[evaluation.let]
-`Let(x, d, b)` evaluates `b` with `x` bound to the outcome of `d` (`body`
-of `lang::let_rules`).
+r[evaluation.let] lang::let_rules::body
+`Let(x, d, b)` evaluates `b` with `x` bound to the outcome of `d`.
 
-r[evaluation.let.lazy]
+r[evaluation.let.lazy] lang::let_rules::lazy
 The definition `d` counts only where `b` reads `x`. A definition that is
 not WD makes the `let` undefined only where its name is evaluated, as if it
-were written there (`lazy`).
+were written there.
 
 > **Note:** `d` counts only where `b` reads `x` because `x` is bound to an
 > outcome, not a value. This is the rule of [Local
@@ -92,68 +90,58 @@ An operator evaluates every operand, and applies to some of their values.
 
 **Dynamic semantics**
 
-r[evaluation.operator.strict]
+r[evaluation.operator.strict] lang::operator_rules::{strict_left, strict_right, strict_unary}
 `Unary(op, a)` and `Binary(op, a, b)` evaluate every operand. Each is
-undefined where an operand is not WD (`strict_left`, `strict_right` and
-`strict_unary` of `lang::operator_rules`).
+undefined where an operand is not WD.
 
-r[evaluation.operator.defined]
+r[evaluation.operator.defined] lang::operator_rules::{strict_unary, strict_left, strict_right, unary_defined, binary_defined}
 `Unary(op, a)` and `Binary(op, a, b)` are WD exactly where the operands
-are and the operator applies to their values (`strict_unary`,
-`strict_left`, `strict_right`, `unary_defined` and `binary_defined` of
-`lang::operator_rules`). Where an operator applies is
-`lang::unary_applies?` and `lang::applies?`, as the rules below state.
+are and the operator applies to their values. The rules below say where
+each operator applies, and `unary_applies?` and `applies?` in the block
+below state it exactly.
 
-r[evaluation.operator.not]
-`not` applies to a `Bool`, and gives its negation (`unary_defined` and
-`negated`).
+r[evaluation.operator.not] lang::operator_rules::{unary_defined, negated}
+`not` applies to a `Bool`, and gives its negation.
 
-r[evaluation.operator.negation]
-`-` applies to an integer (`negation`).
+r[evaluation.operator.negation] lang::operator_rules::negation
+`-` applies to an integer.
 
-r[evaluation.operator.arithmetic]
+r[evaluation.operator.arithmetic] lang::operator_rules::{binary_defined, sum, difference}
 The arithmetic operators, `+`, `-`, `*`, `div` and `mod`, apply only to
-integers. `+` gives the sum, and `-` the difference (`binary_defined`,
-`sum` and `difference`).
+integers. `+` gives the sum, and `-` the difference.
 
-r[evaluation.operator.primitive]
+r[evaluation.operator.primitive] lang::operator_rules::{binary_defined, product, quotient, remainder, text_concatenation}
 `*`, `div` and `mod` of two integers, and `++` of two strings, are
 [primitive operations](Semantics.md#environments-and-interpretations).
 Each applies where the interpretation has a point for it at the operands'
-values, but `div` and `mod` by `0` (`evaluation.operator.division`), and
-gives that point's value (`binary_defined`, `product`, `quotient`,
-`remainder` and `text_concatenation`).
+values, except `div` and `mod` by `0` (`evaluation.operator.division`), and
+gives that point's value.
 
-r[evaluation.operator.division]
-`div` and `mod` apply only to a divisor other than `0` (`zero_divisor`).
+r[evaluation.operator.division] lang::operator_rules::zero_divisor
+`div` and `mod` apply only to a divisor other than `0`.
 
-r[evaluation.operator.concatenation]
+r[evaluation.operator.concatenation] lang::operator_rules::{binary_defined, list_concatenation}
 `++` applies only to two strings or two lists. Of two lists, it gives the
-elements of the first, then those of the second (`binary_defined` and
-`list_concatenation`).
+elements of the first, then those of the second.
 
-r[evaluation.operator.membership]
-`in` applies, to any left operand, exactly where its right operand is a
-list, and says whether the left operand's value is one of the list's
-elements (`binary_defined` and `membership`).
+r[evaluation.operator.membership] lang::operator_rules::{binary_defined, membership}
+`in` applies where its right operand is a list, and says whether the left
+operand's value is one of its elements.
 
-r[evaluation.operator.equality]
-`=` applies to any two values, and says whether they are equal
-(`equality`).
+r[evaluation.operator.equality] lang::operator_rules::equality
+`=` applies to any two values, and says whether they are equal.
 
-r[evaluation.operator.order]
-`<` and `<=` apply only to integers, and compare them (`binary_defined`,
-`less` and `at_most`).
+r[evaluation.operator.order] lang::operator_rules::{binary_defined, less, at_most}
+`<` and `<=` apply only to integers, and compare them.
 
 r[evaluation.operator.order.excluded]
 The orders of the other [ordered types](Types.md#ordered-types) are not
 yet in the model (`semantics.excluded.orders`).
 
-r[evaluation.operator.count]
+r[evaluation.operator.count] lang::count_rules
 `Count(c, args)` evaluates every argument, and applies exactly where each
 is a `Bool`. `Count(Exactly, args)` says whether exactly one argument is
-`true`, and `Count(AtMost, args)` whether at most one is
-(`lang::count_rules`).
+`true`, and `Count(AtMost, args)` whether at most one is.
 
 ```fren
 -- Where the unary operator `op` applies to the value `v`.
@@ -258,25 +246,22 @@ not decide the result. `or` is the dual of `and`.
 
 **Dynamic semantics**
 
-r[evaluation.and.false]
+r[evaluation.and.false] lang::lazy_rules::{and_false, and_unevaluated}
 `And(a, b)` evaluates `a`. Where `a` is `false`, the result is `false`, and
-`b` is not evaluated (`and_false` and `and_unevaluated` of
-`lang::lazy_rules`).
+`b` is not evaluated.
 
-r[evaluation.and.true]
-Where `a` is `true`, the result of `And(a, b)` is that of `b`
-(`and_true`).
+r[evaluation.and.true] lang::lazy_rules::and_true
+Where `a` is `true`, the result of `And(a, b)` is that of `b`.
 
-r[evaluation.or.true]
+r[evaluation.or.true] lang::lazy_rules::{or_true, or_unevaluated}
 `Or(a, b)` evaluates `a`. Where `a` is `true`, the result is `true`, and
-`b` is not evaluated (`or_true` and `or_unevaluated`).
+`b` is not evaluated.
 
-r[evaluation.or.false]
-Where `a` is `false`, the result of `Or(a, b)` is that of `b` (`or_false`).
+r[evaluation.or.false] lang::lazy_rules::or_false
+Where `a` is `false`, the result of `Or(a, b)` is that of `b`.
 
-r[evaluation.lazy.undefined]
-`And(a, b)` and `Or(a, b)` are undefined where `a` is not a WD `Bool`
-(`and_undefined` and `or_undefined`).
+r[evaluation.lazy.undefined] lang::lazy_rules::{and_undefined, or_undefined}
+`And(a, b)` and `Or(a, b)` are undefined where `a` is not a WD `Bool`.
 
 > **Note:** So `a and b` and `b and a` have the same value wherever both
 > are WD, but not the same well-definedness: `q != [] and q[0] = x` is WD,
@@ -311,21 +296,19 @@ A conditional evaluates its condition, and then one branch.
 
 **Dynamic semantics**
 
-r[evaluation.if.then]
+r[evaluation.if.then] lang::if_rules::then_branch
 `If(c, t, f)` evaluates `c`. Where `c` is `true`, the result is that of
-`t`, and `f` is not evaluated (`then_branch` of `lang::if_rules`).
+`t`, and `f` is not evaluated.
 
-r[evaluation.if.else]
+r[evaluation.if.else] lang::if_rules::else_branch
 Where `c` is `false`, the result of `If(c, t, f)` is that of `f`, and `t`
-is not evaluated (`else_branch`).
+is not evaluated.
 
-r[evaluation.if.one-branch]
-Where `c` is a WD `Bool`, exactly one branch is evaluated (`one_branch` of
-`lang::guards_evaluation`).
+r[evaluation.if.one-branch] lang::guards_evaluation::one_branch
+Where `c` is a WD `Bool`, exactly one branch is evaluated.
 
-r[evaluation.if.condition]
-`If(c, t, f)` is undefined where `c` is not a WD `Bool` (`condition` of
-`lang::if_rules`).
+r[evaluation.if.condition] lang::if_rules::condition
+`If(c, t, f)` is undefined where `c` is not a WD `Bool`.
 
 ```fren
 expect if_rules(
@@ -356,30 +339,29 @@ r[evaluation.match]
 `Match(s, p, g, b, rest)` is a `match`'s first arm and the arms after it,
 `rest`. It evaluates the scrutinee `s`.
 
-r[evaluation.match.taken]
+r[evaluation.match.taken] lang::match_rules::taken
 Where `p` matches the value of `s`, the guard `g` is evaluated with `p`'s
 binders bound. Where `g` is `true`, the arm is *taken*, and the result is
-the body `b`'s, with the binders bound (`taken` of `lang::match_rules`).
+the body `b`'s, with the binders bound.
 
-r[evaluation.match.falls-through]
-Where `p` matches and `g` is `false`, the result is `rest`'s
-(`falls_through`).
+r[evaluation.match.falls-through] lang::match_rules::falls_through
+Where `p` matches and `g` is `false`, the result is `rest`'s.
 
-r[evaluation.match.skipped]
+r[evaluation.match.skipped] lang::match_rules::skipped
 Where `p` does not match, the result is `rest`'s, and neither `g` nor `b`
-is evaluated (`skipped`).
+is evaluated.
 
-r[evaluation.match.no-match]
-`NoMatch`, after the last arm, is undefined (`no_arm`). A `match` where no
+r[evaluation.match.no-match] lang::match_rules::no_arm
+`NoMatch`, after the last arm, is undefined. A `match` where no
 arm is taken is not WD.
 
 r[evaluation.match.order]
 The arms are tried in order, and the first that is taken gives the value,
 as [`lang::guarded_match`](Expressions.md#matches) states with `Taken`.
 
-r[evaluation.test]
+r[evaluation.test] lang::match_rules::test
 `Is(s, p)` says whether `p` matches the value of `s`, and is WD where `s`
-is (`test`).
+is.
 
 > **Note:** The [completeness check](../Check.md#completeness) rules out a
 > `match` where no arm is taken.
@@ -427,23 +409,20 @@ from lists of values and taken apart by position.
 r[evaluation.list.nil]
 `Nil` evaluates to a list, and is WD.
 
-r[evaluation.list.cons]
-`Cons(a, rest)` evaluates to a list, and is WD where every element is
-(`element` and `strict_element` of `lang::list_rules`).
+r[evaluation.list.cons] lang::list_rules::{element, strict_element}
+`Cons(a, rest)` evaluates to a list, and is WD where every element is.
 
-r[evaluation.construct]
+r[evaluation.construct] lang::list_rules::constructed
 `Construct(c, args)` evaluates to the value `c` built from the list of its
-arguments' values (`constructed`).
+arguments' values.
 
-r[evaluation.project]
+r[evaluation.project] lang::list_rules::first_field
 `Project(a, c, k)` is the value at position `k` of the list of `a`'s
-value, where that value is built by `c`, and is undefined otherwise
-(`first_field`).
+value, where that value is built by `c`, and is undefined otherwise.
 
-r[evaluation.index]
+r[evaluation.index] lang::list_rules::{first_index, empty_index}
 `Index(q, k)` is the element of the list `q` at the position `k`, from 0,
-and is undefined out of range (`first_index` and `empty_index`; see
-[Sequences](Expressions.md#sequences)).
+and is undefined out of range (see [Sequences](Expressions.md#sequences)).
 
 > **Note:** A `Project` is a field of a record, or a payload's value where
 > a pattern test has shown its variant.
@@ -479,18 +458,18 @@ A method call evaluates its receiver and its arguments.
 
 **Dynamic semantics**
 
-r[evaluation.method]
+r[evaluation.method] lang::method_rules::strict
 `Method(m, r, args)` evaluates the receiver and the arguments, and applies
-the [method](Expressions.md#methods) (`strict` of `lang::method_rules`).
+the [method](Expressions.md#methods).
 
-r[evaluation.method.abs]
-`abs` applies to an integer (`abs`).
+r[evaluation.method.abs] lang::method_rules::abs
+`abs` applies to an integer.
 
-r[evaluation.method.min-max]
-`min` and `max` apply to integers (`min`).
+r[evaluation.method.min-max] lang::method_rules::min
+`min` and `max` apply to integers.
 
-r[evaluation.method.len]
-`len` applies to a string or a list (`text_len`).
+r[evaluation.method.len] lang::method_rules::text_len
+`len` applies to a string or a list.
 
 r[evaluation.method.excluded]
 The methods of strings other than `len`, and `min` and `max` of the other
@@ -520,10 +499,9 @@ r[evaluation.apply]
 `Apply(f, args, ps, body)` is an application of a defined function that is
 not recursive, or of a constant.
 
-r[evaluation.apply.body]
+r[evaluation.apply.body] lang::call_rules::substitution
 `Apply(f, args, ps, body)` evaluates the arguments, and then the body, in
-an environment that binds only the parameters `ps` to their values
-(`substitution` of `lang::call_rules`).
+an environment that binds only the parameters `ps` to their values.
 
 r[evaluation.apply.caller]
 The body of an `Apply` reads nothing of the caller's environment.
@@ -533,10 +511,9 @@ The value of an application is that of the body with the parameters
 substituted by the arguments' values (*substitution*), as [Defined
 functions](Items.md#defined-functions) states.
 
-r[evaluation.call]
+r[evaluation.call] lang::call_rules::interpreted
 `Call(f, args)` is an application of an uninterpreted function, whose
-value is the interpretation's `functions`, which differ between behaviours
-(`interpreted`).
+value is the interpretation's `functions`, which differ between behaviours.
 
 r[evaluation.call.generic]
 An instance of a [generic uninterpreted
@@ -544,10 +521,9 @@ function](GenericFunctions.md#uninterpreted-generic-functions) is named
 with its type arguments, as `pick<Int>`. Each instance is a function of its
 own (`semantics.derived.call.generic`).
 
-r[evaluation.recur]
+r[evaluation.recur] lang::call_rules::recursive
 `Recur(f, args)` is an application of a structural recursion, whose value
-is the interpretation's `recursions`, the same in every behaviour
-(`recursive`).
+is the interpretation's `recursions`, the same in every behaviour.
 
 r[evaluation.call.arguments]
 `Apply`, `Call` and `Recur` evaluate every argument.
@@ -575,20 +551,18 @@ A structural recursion `f` with the parameters `ps` and the body `e`
 denotes the least fixed point of its equations (see
 [Meaning](Recursion.md#meaning)).
 
-r[evaluation.recur.respects]
+r[evaluation.recur.respects] lang::respects?
 An interpretation *respects* `f` at the arguments `l` where its point in
-`recursions` for `f` there is the body's outcome, evaluated with `f`'s
-applications read from the same interpretation, or where it has no point
-(`lang::respects?`).
+`recursions` for `f` there, if it has one, is the body's outcome in that
+interpretation.
 
 r[evaluation.recur.language]
 The language's interpretation respects every structural recursion
 everywhere.
 
-r[evaluation.recur.unfolds]
+r[evaluation.recur.unfolds] lang::recursion_unfolds
 Where an interpretation respects `f`, an application of `f` unfolds to its
-body, as [Defined functions](Items.md#defined-functions) states
-(`lang::recursion_unfolds`).
+body, as [Defined functions](Items.md#defined-functions) states.
 
 ```fren
 pub fn respects?(i: Interp, f: Id, ps: Params<Id>, e: Expr<Id>, l: Value) :=
@@ -619,9 +593,9 @@ The free variables of an expression are what its outcome may depend on.
 
 **Dynamic semantics**
 
-r[evaluation.free]
+r[evaluation.free] lang::free_vars
 `free_vars(e)` is the set of the variables and functions that `e`'s
-outcome may depend on, as `lang::Mention`s (`lang::free_vars`).
+outcome may depend on, its *mentions*.
 
 r[evaluation.free.mention]
 Mentions are named apart: a variable and a function of one name are two
@@ -712,14 +686,14 @@ pub fn free_vars(e: Expr<Id>): Set<Mention> := match e {
 }
 ```
 
-r[evaluation.agree]
+r[evaluation.agree] lang::agree?
 Two interpretations and environments *agree* on a set of mentions where
 they bind each of its variables to the same outcome, give each of its
 functions the same points, and have the same structural recursions and
-primitive operations (`lang::agree?`).
+primitive operations.
 
-r[evaluation.points]
-`points(g, f)` are the points of `g` for `f` (`lang::points`).
+r[evaluation.points] lang::points
+`points(g, f)` are the points of `g` for `f`.
 
 > **Note:** The structural recursions and the primitive operations are the
 > same in every behaviour.
@@ -742,10 +716,9 @@ pub fn agree?(i: Interp, p: Env, j: Interp, q: Env, ms: Set<Mention>) := i.recur
     })
 ```
 
-r[evaluation.coincidence]
+r[evaluation.coincidence] lang::coincidence
 The *coincidence lemma*: an expression has the same outcome under two
-interpretations and environments that agree on its free variables
-(`lang::coincidence`).
+interpretations and environments that agree on its free variables.
 
 > **Note:** So an expression that mentions nothing has the same outcome in
 > every behaviour, which is why a product may have it as a factor (see
@@ -772,10 +745,10 @@ pub proc coincidence(i: Interp, p: Env, j: Interp, q: Env, e: Expr<Id>) {
 }
 ```
 
-r[evaluation.closed]
+r[evaluation.closed] lang::closed
 An expression that mentions nothing has one outcome in every
 interpretation and environment, given the structural recursions and the
-primitive operations (`lang::closed`).
+primitive operations.
 
 > **Note:** `lang::closed` is the coincidence lemma's case for an
 > expression that mentions nothing. It needs no quantifier, and is the one
@@ -799,9 +772,10 @@ An operand of some forms is evaluated only under a condition.
 r[evaluation.guard.term]
 The condition under which an expression is evaluated is its *guard*.
 
-r[evaluation.guard]
-`lang::guard` states which operands are evaluated only under a condition,
-and when, from the operand and the condition's value.
+r[evaluation.guard] lang::guard
+Some operands are evaluated only under a condition. Whether such an
+operand is evaluated follows from which operand it is and from the
+condition's value.
 
 r[evaluation.guard.when]
 The body of `when C` is evaluated where `C` holds, and that of `unless C`
@@ -873,10 +847,10 @@ r[evaluation.guard.evaluation]
 The guards are those of evaluation: where `guard` says that an operand is
 not evaluated, replacing it changes no outcome.
 
-r[evaluation.guard.evaluation.connectives]
-`lang::guards_evaluation` states `evaluation.guard.evaluation` for the
-operands of `and`, `or`, the conditional, and `when` and `unless` through
-their [translations](Semantics.md#derived-forms), whose conditions are WD
+r[evaluation.guard.evaluation.connectives] lang::guards_evaluation
+`evaluation.guard.evaluation` holds for the operands of `and`, `or`, the
+conditional, and `when` and `unless` through their
+[translations](Semantics.md#derived-forms), whose conditions are WD
 `Bool`s.
 
 ```fren
@@ -912,13 +886,12 @@ expect guards_evaluation(
 }
 ```
 
-r[evaluation.guard.evaluation.arms]
-`lang::arm_guards_evaluation` states `evaluation.guard.evaluation` for the
-guard and the body of an arm of a `match`, with the conditions that
-[`guard`](#guards) gives `ArmGuard` and `ArmBody`
-(`evaluation.guard.arm-guard`, `evaluation.guard.arm-body`). It states it
-of the first arm of a chain, whose earlier arms are none, and of a later
-arm, through the `rest` of the first.
+r[evaluation.guard.evaluation.arms] lang::arm_guards_evaluation
+`evaluation.guard.evaluation` holds for the guard and the body of an arm of
+a `match`, with the conditions that [`guard`](#guards) gives `ArmGuard` and
+`ArmBody` (`evaluation.guard.arm-guard`, `evaluation.guard.arm-body`). It
+holds of the first arm of a chain, whose earlier arms are none, and of a
+later arm, through the `rest` of the first.
 
 r[evaluation.guard.evaluation.rest]
 The `rest` of the first arm is evaluated exactly where the first is not
