@@ -70,7 +70,8 @@ pub proc k_def_ens(x: Int): (w: Int) {
 pub proc u_ens(z: Int) { call u := k_def_ens(z) }
 
 -- Definitions declared before the ones they read are computed in the
--- order in which each reads only earlier ones.
+-- order in which each reads only earlier ones. Its expectation passes, so
+-- it prints nothing: only the summary's count of passes checks it.
 pub proc order2(x: Int): (y: Int) {
     let b: Int := a + 1
     let a: Int := x + 1

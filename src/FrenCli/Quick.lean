@@ -285,17 +285,12 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let expects := c.ofKind .expect
   let covers := c.ofKind .cover
   let dets := c.vars.filter (·.isDet)
-  let instAssumes := c.insts.flatMap fun i =>
-    ((sp.comp? i.comp).map fun d => (d.ofKind .assume).map fun a => (i.name, d.path, a.name, (d.inlineEarly a.e).trigger?)).getD #[]
   let mut realizable : Tally := {}
   let mut expT : Array Tally := expects.map fun _ => {}
   -- Each cover goal's first witness: the tests that found one reach it.
   let mut covT : Array Tally := covers.map fun _ => {}
   let mut covW : Array (Option Assignment) := covers.map fun _ => none
   let mut detT : Array Tally := dets.map fun _ => {}
-  let mut instT : Array Tally := instAssumes.map fun _ => {}
-  -- The tests that reached each call, whether or not the trigger held.
-  let mut instFound : Array Nat := instAssumes.map fun _ => 0
   let mut noOutputs? := none
   let mut behaviours := 0
   -- The definitions, so that the search computes defined outputs.
@@ -313,6 +308,13 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   -- of every interpretation below (`World.interp`).
   let compiled := Atom.compiled fun p => shapes[p]?
   let pre := sp.admitAtoms c fun p => shapes[p]?
+  -- Each call assumption's trigger, from the copy that admission
+  -- evaluates (`AdmitAtoms.callAssumes`), so that the two cannot differ.
+  let instAssumes := (c.insts.zip pre.callAssumes).flatMap fun (i, as) =>
+    ((sp.comp? i.comp).map fun d => as.map fun (a, e) => (i.name, d.path, a, e.trigger?)).getD #[]
+  let mut instT : Array Tally := instAssumes.map fun _ => {}
+  -- The tests that reached each call, whether or not the trigger held.
+  let mut instFound : Array Nat := instAssumes.map fun _ => 0
   let reqs := reqs.map compiled
   let all := all.map compiled
   let negations := expects.map fun e => compiled { label := e.name, pfx := .anonymous, e := .not e.e }
