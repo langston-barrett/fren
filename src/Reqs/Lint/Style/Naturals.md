@@ -137,6 +137,7 @@ expect manual_nat_input_sound(n: Nat, k: Int) {
     call concrete := manual_nat_input_fixed(n, k)
     refines concrete manual_nat_input_written(n, k)
 }
+
 expect manual_nat_input_complete(n: Nat, k: Int) {
     assume spec_counts: (k) < (n)
     call concrete := manual_nat_input_written(n, k)

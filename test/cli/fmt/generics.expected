@@ -1,13 +1,14 @@
 --- test/cli/fmt/generics.fren
 +++ test/cli/fmt/generics.fren
-@@ -5,3 +5,3 @@
+@@ -5,3 +5,4 @@
 -pub enum Option!<  T > { None, Some( T ) }
 -pub struct Pair< A,B > { fst: A, snd: B }
 -proc c(x: Option<Pair< Int,Bool >>, s: Set< Option< Set<Int> > >, n: Int): (y: Option<Int>) {
 +pub enum Option!<T> { None, Some(T) }
 +pub struct Pair<A, B> { fst: A, snd: B }
++
 +proc c(x: Option<Pair<Int, Bool>>, s: Set<Option<Set<Int>>>, n: Int): (y: Option<Int>) {
-@@ -9 +9 @@
+@@ -9 +10 @@
 -    ensure q: forall (t: Set< Int >), n<3 or n>t.card
 +    ensure q: forall (t: Set<Int>), n < 3 or n > t.card
 exit=1

@@ -106,6 +106,7 @@ expect nfc_sound(s: String) {
     call concrete := nfc_fixed(s)
     refines concrete nfc_written(s)
 }
+
 set_option fren.lint.undecidable "allow" in
 expect nfc_complete(s: String) {
     assume spec_composed: not (s).contains?("e\u0301")
@@ -171,6 +172,7 @@ expect trailing_comma_sound(x: Int) {
     call concrete := trailing_comma_fixed(x)
     refines concrete trailing_comma_written(x)
 }
+
 expect trailing_comma_complete(x: Int) {
     call concrete := trailing_comma_written(x)
     refines concrete trailing_comma_fixed(x)

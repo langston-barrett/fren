@@ -1,5 +1,6 @@
 -- Arms of different types.
 enum Mode { Off, On }
+
 proc c(m: Mode): (y: Int) {
     ensure r: y = match m {
         Mode::On => 1,

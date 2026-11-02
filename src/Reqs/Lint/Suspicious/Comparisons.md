@@ -215,6 +215,7 @@ expect contradictory_chain_sound(x: Int) {
     call concrete := contradictory_chain_value(x)
     refines concrete contradictory_chain_written(x)
 }
+
 expect contradictory_chain_complete(x: Int) {
     call concrete := contradictory_chain_written(x)
     refines concrete contradictory_chain_value(x)

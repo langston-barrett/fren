@@ -1,6 +1,7 @@
 -- A range bounded by a constant whose value applies a function.
 fn double(n: Int): Int := 2 * n
 const MAX: Int := double(5)
+
 proc c(n: Int): (y: Int) {
     ensure r: y = match n {
         0..=MAX => 0,

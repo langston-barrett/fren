@@ -1,7 +1,7 @@
 error[F0317]: non-exhaustive match: `Reply::Ok(Shape::Square(_))`, `Reply::Ok(Shape::Empty)`, `Reply::Err(..=-1)`, `Reply::Err(1..)` not covered
- --> test/cli/types/f0317_nested.fren:5:19
+ --> test/cli/types/f0317_nested.fren:6:19
   |
-5 |     ensure q: y = match r {
+6 |     ensure q: y = match r {
   |                   ^^^^^^^^^ `Reply::Ok(Shape::Square(_))`, `Reply::Ok(Shape::Empty)`, `Reply::Err(..=-1)`, `Reply::Err(1..)` not covered
   |
   = note: a `match` has an arm for every variant, or a last arm `_`

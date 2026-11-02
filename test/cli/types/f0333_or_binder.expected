@@ -1,14 +1,14 @@
 error[F0333]: an or-pattern cannot bind `n`
- --> test/cli/types/f0333_or_binder.fren:5:23
+ --> test/cli/types/f0333_or_binder.fren:6:23
   |
-5 |         Shape::Circle(n) | Shape::Square(n) => n,
+6 |         Shape::Circle(n) | Shape::Square(n) => n,
   |                       ^ binds a name
   |
   = note: when another alternative matches, the name would have no value
 help: ignore the value
   |
-5 -         Shape::Circle(n) | Shape::Square(n) => n,
-5 +         Shape::Circle(_) | Shape::Square(n) => n,
+6 -         Shape::Circle(n) | Shape::Square(n) => n,
+6 +         Shape::Circle(_) | Shape::Square(n) => n,
   |
 
 error: could not check due to previous errors

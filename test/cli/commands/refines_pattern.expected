@@ -1,7 +1,7 @@
 error[F0603]: expectation `bad::refines_1` does not hold
- --> test/cli/commands/refines_pattern.fren:8:5
+ --> test/cli/commands/refines_pattern.fren:9:5
   |
-8 |     refines c specification(0)
+9 |     refines c specification(0)
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
   |
   = counterexample: c.y = 0

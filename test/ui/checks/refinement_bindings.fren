@@ -18,6 +18,7 @@ expect holds(all_parsed?, changed?) {
     call concrete := fmt_exit(all_parsed?, changed?)
     refines concrete exit_status((all_parsed?))
 }
+
 expect fails(all_parsed?) {
     call concrete := bad_exit(all_parsed?)
     refines concrete exit_status((all_parsed?))  --~ error: expectation `fails::refines_1` does not hold
@@ -52,6 +53,7 @@ expect guarded(q: Seq<Int>) {
     call concrete := seqs(q)
     expect r: ((concrete.s)[0]) = (if (q) != [] then (q)[0] else 0)
 }
+
 expect unguarded(q: Seq<Int>) {
     assume spec_pos: (1) > 0  --~ warning: this assumption mentions no variable
     call concrete := seqs(q)
@@ -67,6 +69,7 @@ expect swapped(x: Int, y: Int) {
     call concrete := reversed(x, y)
     refines concrete difference((y), (x))
 }
+
 expect unswapped(x: Int, y: Int) {
     call concrete := reversed(x, y)
     refines concrete difference(x, y)  --~ error: expectation `unswapped::refines_1` does not hold

@@ -1,5 +1,6 @@
 -- An arm after `_`.
 enum Mode { Off, On }
+
 proc c(m: Mode): (y: Int) {
     ensure r: y = match m {
         _ => 0,

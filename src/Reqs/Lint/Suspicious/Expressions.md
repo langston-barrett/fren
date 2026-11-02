@@ -206,6 +206,7 @@ expect eq_op_cardinality_sound(a?, b?) {
     call concrete := eq_op_cardinality_value(a?, b?)
     refines concrete eq_op_cardinality_written(a?, b?)
 }
+
 expect eq_op_cardinality_complete(a?, b?) {
     call concrete := eq_op_cardinality_written(a?, b?)
     refines concrete eq_op_cardinality_value(a?, b?)
@@ -442,6 +443,7 @@ expect empty_membership_sound(x: Int) {
     call concrete := empty_membership_value(x)
     refines concrete empty_membership_written(x)
 }
+
 expect empty_membership_complete(x: Int) {
     call concrete := empty_membership_written(x)
     refines concrete empty_membership_value(x)
@@ -458,6 +460,7 @@ expect empty_subset_sound(s: Set<Int>) {
     call concrete := empty_subset_value(s)
     refines concrete empty_subset_written(s)
 }
+
 expect empty_subset_complete(s: Set<Int>) {
     call concrete := empty_subset_written(s)
     refines concrete empty_subset_value(s)
@@ -499,6 +502,7 @@ expect erasing_division_sound() {
     call concrete := erasing_division_fixed()
     refines concrete erasing_division_written()
 }
+
 expect erasing_division_complete() {
     call concrete := erasing_division_written()
     refines concrete erasing_division_fixed()
@@ -704,6 +708,7 @@ expect same_rows_sound(n: Int) {
     call concrete := same_rows_fixed(n)
     refines concrete same_rows_written(n)
 }
+
 expect same_rows_complete(n: Int) {
     call concrete := same_rows_written(n)
     refines concrete same_rows_fixed(n)

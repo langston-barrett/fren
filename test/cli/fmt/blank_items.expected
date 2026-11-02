@@ -1,0 +1,38 @@
+--- test/cli/fmt/blank_items.fren
++++ test/cli/fmt/blank_items.fren
+@@ -10,0 +11 @@
++
+@@ -14,0 +16 @@
++
+@@ -18,0 +21 @@
++
+@@ -23,0 +27 @@
++
+@@ -28,0 +33 @@
++
+@@ -29,0 +35 @@
++
+@@ -31,0 +38 @@
++
+@@ -33,0 +41 @@
++
+@@ -35,3 +43 @@
+-proc two_members_on_one_line(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat ensure s: on? }
+--- Laid out on one line, though written on several.
+-proc joined(m: Mode): (on?) {
++proc two_members_on_one_line(m: Mode): (on?) {
+@@ -38,0 +45 @@
++    ensure s: on?
+@@ -39,0 +47,3 @@
++
++-- Laid out on one line, though written on several.
++proc joined(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+@@ -46,0 +57 @@
++
+@@ -49,0 +61 @@
++
+@@ -51,0 +64 @@
++
+@@ -52,0 +66 @@
++
+exit=1

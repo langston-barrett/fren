@@ -100,6 +100,7 @@ expect let_and_return_sound(x: Int, s: Set<Int>, a?) {
     call concrete := let_and_return_fixed(x, s, a?)
     refines concrete let_and_return_written(x, s, a?)
 }
+
 expect let_and_return_complete(x: Int, s: Set<Int>, a?) {
     call concrete := let_and_return_written(x, s, a?)
     refines concrete let_and_return_fixed(x, s, a?)
@@ -267,6 +268,7 @@ expect manual_forall_sound(s: Set<lint::Hue>, t: Set<lint::Hue>, hue: lint::Hue,
     call concrete := manual_forall_fixed(s, t, hue, a?)
     refines concrete manual_forall_written(s, t, hue, a?)
 }
+
 expect manual_forall_complete(s: Set<lint::Hue>, t: Set<lint::Hue>, hue: lint::Hue, a?) {
     use lint
     call concrete := manual_forall_written(s, t, hue, a?)

@@ -185,6 +185,7 @@ expect nonminimal_cardinality_sound(a?, x: Int) {
     call concrete := nonminimal_cardinality_fixed(a?, x)
     refines concrete nonminimal_cardinality_written(a?, x)
 }
+
 expect nonminimal_cardinality_complete(a?, x: Int) {
     call concrete := nonminimal_cardinality_written(a?, x)
     refines concrete nonminimal_cardinality_fixed(a?, x)
@@ -353,6 +354,7 @@ expect struct_initialization_sound(p: lint::Point) {
     call concrete := struct_initialization_fixed(p)
     refines concrete struct_initialization_written(p)
 }
+
 expect struct_initialization_complete(p: lint::Point) {
     use lint
     call concrete := struct_initialization_written(p)
@@ -444,6 +446,7 @@ expect roundtrip_sound(x: lint::Ms, n: Int) {
     call concrete := roundtrip_fixed(x, n)
     refines concrete roundtrip_written(x, n)
 }
+
 expect roundtrip_complete(x: lint::Ms, n: Int) {
     use lint
     call concrete := roundtrip_written(x, n)
@@ -532,6 +535,7 @@ expect zero_prefixed_sound(x: Int) {
     call concrete := zero_prefixed_fixed(x)
     refines concrete zero_prefixed_written(x)
 }
+
 expect zero_prefixed_complete(x: Int) {
     call concrete := zero_prefixed_written(x)
     refines concrete zero_prefixed_fixed(x)
@@ -628,6 +632,7 @@ expect trivial_quantifier_sound(s: Set<lint::Solo>, t: Set<lint::Solo>) {
     call concrete := trivial_quantifier_fixed(s, t)
     refines concrete trivial_quantifier_written(s, t)
 }
+
 expect trivial_quantifier_complete(s: Set<lint::Solo>, t: Set<lint::Solo>) {
     use lint
     call concrete := trivial_quantifier_written(s, t)

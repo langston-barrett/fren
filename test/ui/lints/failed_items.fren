@@ -33,6 +33,7 @@ proc bad_type(BadName: Nope): (p?) {
 -- still a use (`dead_code`), and one that nothing uses.
 const TWO: Int := 2
 const THREE: Int := 3  --~ warning: constant `THREE` is never used
+
 proc uses_const(x: Int): (y: Int) {
     ensure a: y = TWO + nope  --~ error: cannot find `nope` in this scope
 }

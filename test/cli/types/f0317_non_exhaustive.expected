@@ -1,7 +1,7 @@
 error[F0317]: non-exhaustive match: `Shape::Empty` not covered
- --> test/cli/types/f0317_non_exhaustive.fren:4:19
+ --> test/cli/types/f0317_non_exhaustive.fren:5:19
   |
-4 |     ensure r: a = match s {
+5 |     ensure r: a = match s {
   |                   ^^^^^^^^^ `Shape::Empty` not covered
   |
   = note: a `match` has an arm for every variant, or a last arm `_`

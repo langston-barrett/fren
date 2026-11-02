@@ -32,6 +32,7 @@ proc relations(r: Rel<Bool, Bool>) {  --~ info: 1 check of `relations` holds for
 
 -- A pattern on a string keeps only its value, which is within the bound.
 type Word = w: String where invariant: w = "ab"
+
 set_option fren.evidence "enumerated" in
 proc words(w: Word) {  --~ info: 2 checks of `words` hold for every behaviour up to size 3
     expect only: w = "ab"
@@ -40,12 +41,14 @@ proc words(w: Word) {  --~ info: 2 checks of `words` hold for every behaviour up
 -- A collection within a struct, beside another field, and a sequence of
 -- structs: slots of thousands of values.
 pub struct Indexed { q: Seq<Int>, n: Int }
+
 set_option fren.evidence "enumerated" in
 proc in_struct(r: Indexed) {  --~ info: 2 checks of `in_struct` hold for every behaviour up to size 3
     expect e: r.q.len <= 3
 }
 
 pub struct Point { x: Int, on? }
+
 set_option fren.evidence "enumerated" in
 proc of_structs(q: Seq<Point>) {  --~ info: 2 checks of `of_structs` hold for every behaviour up to size 3
     expect e: q.len <= 3
@@ -54,6 +57,7 @@ proc of_structs(q: Seq<Point>) {  --~ info: 2 checks of `of_structs` hold for ev
 -- A slot of 39200 values, within the limit, is enumerated as quickly as
 -- any: the values are read at run time, not compiled into the checks.
 pub struct Wide { q: Seq<Int>, n: Int, m: Int, on? }
+
 set_option fren.evidence "enumerated" in
 proc wide(w: Wide) {  --~ info: 2 checks of `wide` hold for every behaviour up to size 3
     expect short: w.q.len <= 3
@@ -142,6 +146,7 @@ proc folded(b?) {  --~ info: 1 check of `folded` holds for every behaviour up to
 -- `[][0]` and `[][1]` differ, which `[][0]` everywhere does not show.
 type Odd = q: Seq<Int> where inv: q[0] != q[1]  --~ error: invariant `Odd::inv` may not be defined
 --~^ error: invariant `Odd::inv` may not be defined
+
 set_option fren.evidence "enumerated" in
 proc type_fact(q: Odd) {  --~ info: 1 check of `type_fact` holds for every behaviour up to size 3
     expect nonempty: q != []  --~ warning: could not decide whether `type_fact::nonempty` holds: an index out of range may decide it
@@ -169,12 +174,14 @@ proc partial_table(b?): (x?) {
 -- Lean evaluates an index out of range within a recursive function by its
 -- own default, so neither front end enumerates one.
 pub enum Peano { Z, S(Peano) }
+
 pub fn sixth(n: Peano, q: Seq<Int>): (r: Int) {
     out r := match n {
         Peano::Z => q[5],
         Peano::S(m) => sixth(m, q),
     }
 }
+
 set_option fren.evidence "enumerated" in
 proc recursive(n: Peano) {  --~ error: `recursive` cannot be enumerated: it applies a recursive function that indexes a sequence, whose value out of range enumeration cannot give
     expect e: sixth(n, [1]) = 0
@@ -183,6 +190,7 @@ proc recursive(n: Peano) {  --~ error: `recursive` cannot be enumerated: it appl
 -- A slot whose type has a recursive field is read at run time as well,
 -- by a decoder iterated as deeply as its values nest: 22400 values here.
 pub struct Counted { p: Peano, q: Seq<Int>, n: Int, on? }
+
 set_option fren.evidence "enumerated" in
 proc counted(c: Counted) {  --~ info: 1 check of `counted` holds for every behaviour up to size 3
     expect zero: c.p = Peano::Z  --~ error: counterexample: c = Counted { p := Peano::S(Peano::Z), q := [], n := 0, on? := false }
@@ -191,12 +199,14 @@ proc counted(c: Counted) {  --~ info: 1 check of `counted` holds for every behav
 -- A generic type at an instance of itself is a smaller type with a
 -- decoder of its own, so its 39200 values are read at run time too.
 pub struct Box<T> { v: T }
+
 set_option fren.evidence "enumerated" in
 proc nested_big(b: Box<Box<Wide>>) {  --~ info: 2 checks of `nested_big` hold for every behaviour up to size 3
     expect e: b.v.v.q.len <= 3
 }
 
 pub enum List<T> { Nil, Cons(T, List<T>) }
+
 set_option fren.evidence "enumerated" in
 proc nested_list(l: List<List<Int>>) {  --~ info: 1 check of `nested_list` holds for every behaviour up to size 3
     expect e: l = List::Nil  --~ error: counterexample: l = List::Cons(List::Nil, List::Nil)
@@ -205,6 +215,7 @@ proc nested_list(l: List<List<Int>>) {  --~ info: 1 check of `nested_list` holds
 -- A defined output of a recursive type with a set in it is shown as a
 -- slot's value is.
 pub enum Bag { Empty, More(Set<Int>, Bag) }
+
 set_option fren.evidence "enumerated" in
 proc bag_out(x: Bag): (det y: Bag) {  --~ info: 2 checks of `bag_out` hold for every behaviour up to size 3
     out y := x
@@ -275,6 +286,7 @@ proc def_nested(q: Seq<Int>): (k: Int, j: Int) {  --~ info: 2 checks of `def_nes
 -- Through a non-recursive function, which both front ends unfold where
 -- it is applied.
 pub fn ind(c?): Int := if c? then 1 else 0
+
 set_option fren.lint.nonminimal_bool "allow" in
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "enumerated" in
@@ -286,6 +298,7 @@ proc fn_count(q: Seq<Int>) {  --~ info: 2 checks of `fn_count` hold for every be
 -- Counts at `Nat` are read as those at `Int` are: through a function, a
 -- defined output and a `let` addend, and a chain of defined outputs.
 pub fn indn(c?): Nat := if c? then 1 else 0
+
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "enumerated" in
 proc nat_fn(q: Seq<Int>) {  --~ info: 2 checks of `nat_fn` hold for every behaviour up to size 3
@@ -358,6 +371,7 @@ proc two_tables(b?): (x?) {  --~ error: `two_tables` is not realizable
 -- through a function, inline, through a defined output and with an addend.
 pub ordered struct Ms(Int)
 pub fn indm(c?): Ms := if c? then Ms(1) else Ms(0)
+
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "enumerated" in
 proc ms_fn(q: Seq<Int>) {  --~ info: 2 checks of `ms_fn` hold for every behaviour up to size 3
@@ -391,6 +405,7 @@ proc ms_addend(q: Seq<Int>) {  --~ info: 2 checks of `ms_addend` hold for every 
 -- `=` compares a newtype's values, and `<=` their fields, which are read
 -- alike; and a newtype over `Nat` too.
 pub ordered struct Cn(Nat)
+
 set_option fren.lint.nonminimal_bool "allow" in
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "enumerated" in
@@ -411,6 +426,7 @@ proc cn_count(q: Seq<Int>) {  --~ info: 2 checks of `cn_count` hold for every be
 -- depth: two and three deep.
 pub ordered struct Mm(Ms)
 pub ordered struct Mmm(Mm)
+
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "enumerated" in
 proc nested_inline(q: Seq<Int>) {  --~ info: 2 checks of `nested_inline` hold for every behaviour up to size 3

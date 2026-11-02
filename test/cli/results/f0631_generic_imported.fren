@@ -6,6 +6,7 @@
 mod client
 use lib::other
 pub enum One { A }
+
 proc c(x: One, n: Int): (det y: One) {
     out y := other(x)
     expect anything: n = 42

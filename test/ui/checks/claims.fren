@@ -3,10 +3,12 @@
 proc shown(x?): (y?) { ensure r: y? iff x? }
 
 tested shown: "test/fixtures/covers_shown.txt"
+
 -- A trailing comma.
 tested shown:
     "test/fixtures/covers_shown.txt",
     "test/fixtures/covers_shown.txt",
+
 tested shown: "test/ui/missing.fren"       --~ error: cannot read `test/ui/missing.fren`
 tested shown: "test/ui/lang/scoping.fren"       --~ error: `test/ui/lang/scoping.fren` does not say that it covers `shown`
 trusted shown: ""                          --~ error: the justification of a `trusted` claim cannot be empty

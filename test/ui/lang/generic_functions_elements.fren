@@ -20,6 +20,7 @@ pub fn mentioned<V, B>(t: Term<V, B>): Set<V> := match t {
 -- relation's, is outside the decidable core, as for any set.
 set_option fren.lint.undecidable "allow" in
 pub fn lone?<X>(s: Set<X>) := forall (a: X) (b: X), when a in s and b in s, a = b
+
 set_option fren.lint.undecidable "allow" in
 pub fn functional?<X, Y>(r: Rel<X, Y>) :=
     forall (a: X) (b: Y) (c: Y), when (a, b) in r and (a, c) in r, b = c
@@ -144,6 +145,7 @@ proc expected(r: Seq<Nm>): (det v: Nm) {
     expect rev_differ: when r = [], r[0] != at_first([])
     --~^ error: expectation `generic_functions_elements::expected::rev_differ` does not hold
 }
+
 -- A generic function with a function parameter, given a closure and a
 -- named function: at the instance that the elaborator inferred, too.
 pub fn apply_first?<T>(q: Seq<T>, f: fn(T) -> Bool) := f(q[0])
@@ -159,6 +161,7 @@ proc higher_order(r: Seq<Nm>) {
     expect named_same: when r = [], apply_first?(r, is_a?) iff is_a?(r[0])
     --~^ warning: could not decide whether `generic_functions_elements::higher_order::named_same` holds: an index out of range may decide it
 }
+
 -- A precondition over an element of a `Seq<T>`, of a function with a body
 -- and of one with a function parameter: read at the instance, as the body
 -- is.
@@ -166,6 +169,7 @@ pub fn pick_first<T>(q: Seq<T>, d: T): (r: T) {
     assume first: q[0] = d
     out r := d
 }
+
 pub fn apply_at?<T>(q: Seq<T>, d: T, f: fn(T) -> Bool): (r?) {
     assume first: q[0] = d
     out r? := f(d)

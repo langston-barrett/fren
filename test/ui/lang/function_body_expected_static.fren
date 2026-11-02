@@ -12,9 +12,11 @@ pub enum Shape<V> { Dot, Named(V), Box(Int, Int) }
 -- type is a type mismatch.
 fn wrong(x: Int): Shape<String> := Shape::Named(x)
 --~^ error: type mismatch: expected `String`, found `Int`
+
 fn wrong_block(x: Int): (r: Option<Int>) {
     out r := if x > 0 then Option::None else Option::Some(true)
     --~^ error: type mismatch: expected `Int`, found `Bool`
 }
+
 fn wrong_set(x: Int): Set<Int> := if x > 0 then {} else [x]
 --~^ error: type mismatch: expected `Seq<Int>`, found an empty set

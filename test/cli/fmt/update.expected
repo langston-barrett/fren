@@ -1,13 +1,15 @@
 --- test/cli/fmt/update.fren
 +++ test/cli/fmt/update.fren
-@@ -7,4 +7,2 @@
+@@ -5,0 +6 @@
++
+@@ -7,4 +8,2 @@
 -    ensure a: q = {p with x:=1,y}
 -    ensure b: r = {  p   with
 -    x := 2
 -    }
 +    ensure a: q = { p with x := 1, y }
 +    ensure b: r = { p with x := 2 }
-@@ -12,3 +10,2 @@
+@@ -12,3 +11,2 @@
 -    ensure t: q = {
 -    p with x := 3 }
 -    ensure u: r = { p with y := 4, }

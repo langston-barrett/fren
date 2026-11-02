@@ -340,6 +340,7 @@ expect int_plus_one_chain_sound(i: Int, n: Int, m: Int) {
     call concrete := int_plus_one_chain_fixed(i, n, m)
     refines concrete int_plus_one_chain_written(i, n, m)
 }
+
 expect int_plus_one_chain_complete(i: Int, n: Int, m: Int) {
     call concrete := int_plus_one_chain_written(i, n, m)
     refines concrete int_plus_one_chain_fixed(i, n, m)

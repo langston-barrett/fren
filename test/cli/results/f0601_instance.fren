@@ -1,5 +1,6 @@
 -- Unrealizable because of an instance (F0601).
 proc chooser(): (b?) {}
+
 proc c(): (x: Int) {
     call pick := chooser()
     ensure lucky: pick.b? and x = 0

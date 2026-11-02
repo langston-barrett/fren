@@ -80,6 +80,7 @@ proc wildcard(e: E, s: Shape): (a: Int, b: Int, c: Int) {
         _ => 3,
     }
 }
+
 -- An arm with a guard may not be taken where its pattern matches: the
 -- lints that merge or remove arms, or replace the `match`, leave a `match`
 -- with a guard alone, and `_` matches the variants that only arms with

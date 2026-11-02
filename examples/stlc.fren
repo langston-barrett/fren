@@ -51,6 +51,7 @@ pub enum Term<V, B> {
     False,
     If(Term<V, B>, Term<V, B>, Term<V, B>),
 }
+
 use self::Term::{App, False, If, Lam, True, Var}
 
 pub type Named := Term<Name, Name>

@@ -1,7 +1,7 @@
 warning[F0747]: this `match` has one arm, which binds nothing
- --> test/cli/lints/complexity/f0747_trivial_match.fren:4:23
+ --> test/cli/lints/complexity/f0747_trivial_match.fren:5:23
   |
-4 |     ensure r: y = 2 * match e {
+5 |     ensure r: y = 2 * match e {
   |                       ^^^^^^^^^ always its only arm
   |
   = note: its value is the arm's body, whatever the scrutinee is
@@ -10,8 +10,8 @@ warning[F0747]: this `match` has one arm, which binds nothing
   = help: to allow it, `set_option fren.lint.trivial_match "allow"`
 help: write `(x + 1)`
   |
-4 -     ensure r: y = 2 * match e {
-4 +     ensure r: y = 2 * (x + 1)
+5 -     ensure r: y = 2 * match e {
+5 +     ensure r: y = 2 * (x + 1)
   |
 
 fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant

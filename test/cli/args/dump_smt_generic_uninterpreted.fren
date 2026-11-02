@@ -6,6 +6,7 @@
 -- `define-fun`s at the instance
 -- (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`).
 pub fn choose<T>(a: T, b: T): (r: T) { ensure either: choose(a, b) = a or choose(a, b) = b }
+
 proc c(x: Int, p?): (det y: Int, det q?) {
     out y := choose(x, 0)
     out q? := choose(p?, true)
