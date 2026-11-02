@@ -1605,6 +1605,9 @@ def knownKinds : List KnownKind :=
    { kind := "only fren reports warning[F08*", issue := 493, seed := 6000809, afterStaticError := true },
    -- and its static errors after the first, as the decidable core's.
    { kind := "only fren reports error[F0*", issue := 493, seed := 6000809, afterStaticError := true },
+   -- Only Lean notes why an assumption's operands cannot both hold, in
+   -- any wording (#493; `knownDifferences` lists two at seed 1160124).
+   { kind := "only Lean reports info: Both operands of `_` cannot be *", issue := 493, seed := 1190787 },
    -- For the same input, Lean gives a realizability conflict core that
    -- has more clauses than `fren`'s (#493).
    { kind := "for the same input, fren says `no outputs satisfy `*``, Lean says `no outputs satisfy `*` and `*``",
@@ -1734,6 +1737,8 @@ private def known (f : String) (staticLines : Array Nat := #[]) (found : Array S
 -- of a code that `knownDifferences` does not list, but no other warning.
 #guard known "line 21:25: only fren reports warning[F0736]: both operands of `=` are written the same" #[11]
 #guard !known "line 21:25: only fren reports warning[F0736]: both operands of `=` are written the same"
+#guard known "line 10:33: only Lean reports info: Both operands of `a0` cannot be false: this would require `b0?` to \
+  equal false, while `a1` requires `b0?` to equal true."
 #guard !known "line 65:72: only fren reports warning[F0806]: this guard is always `false`, so the arm is never taken"
 #guard known "line 65:72: only fren reports warning[F0806]: this guard is always `false`, so the arm is never taken"
   #[46]
