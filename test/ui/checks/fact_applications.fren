@@ -134,8 +134,10 @@ pub proc q(x: Int): (y: BigI) {   --~ warning: could not decide whether `q` is r
 }
 
 -- Covers over variables of a subset type whose invariant applies a
--- recursive function: each is met by a real witness, `2`, in both front
--- ends.
+-- recursive function: each verdict is right, but no front end checks the
+-- witness against the type, except the binary for `fc_call`, whose call
+-- hypothesis has its output's type, so the front ends agree there only as
+-- the solver's model is a real one (#634).
 pub type FcBig = m: Int where invariant: total(L::Cons(m, L::Nil)) >= 2 or m = 2
 
 set_option fren.lint.unused_variables "allow" in

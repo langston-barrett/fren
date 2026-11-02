@@ -315,6 +315,10 @@ needs a model that evaluation does not refute wherever a real one exists,
 or the verdict would depend on which model each front end's solver gives:
 the values of the recursive applications that a refuted model leaves open,
 as `total(L::Nil)` above, added as facts, and the query asked again (#634).
+The binary already confirms a model against the type of a call's output,
+which is part of the call's hypothesis there, and the Lean front end does
+not: there, too, the front ends agree only where the solver's model is a
+real one (#634).
 
 ```fren
 set_option fren.lint.undecidable "allow" in
