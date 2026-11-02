@@ -3,7 +3,8 @@ name: lint
 # pull request: its `lint` status gates merges, like `pre-merge`'s. Two
 # pull requests that each pass can still fail together, for example two
 # imports added out of order to one sorted block, and `main`'s own run is
-# what catches that.
+# what catches that. It keeps a `merge_group` trigger, as `pre-merge` does,
+# for a merge queue, which this repository doesn't use.
 on:
   push:
     branches:
