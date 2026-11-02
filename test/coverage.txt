@@ -242,4 +242,5 @@ _private.FrenCli.Parse.0.FrenCli.nextSegs
 _private.FrenCli.Parse.0.FrenCli.nextSpan
 _private.FrenCli.Parse.0.FrenCli.segAtoms
 _private.FrenCli.Parse.0.FrenCli.spanAtoms
+_private.FrenCore.SubsetTypes.0.Fren.Core.guardShapes -- a fixture of the `#guard`s on `PTy.invariantFree`, which run in Lean's interpreter when the module builds
 main -- the entry point of `fren`, which only calls `FrenCli.run`; the tests call `run` itself
