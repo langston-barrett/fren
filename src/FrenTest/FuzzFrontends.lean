@@ -1243,7 +1243,7 @@ def patternTests : R String := do
   return decls ++ s!"pub proc zpt(t: Zt, o: Zo, w: Zw, v: Zn, q: Zq, n: Int): ({", ".intercalate results.toList}) \{\n{body}}\n"
 
 /-- A goal with leading binders (`cli::goal_introduction`), whose terms
-mention `outer`: one to three heads, each a universal quantifier over one
+mention `outer`, its body the first of them: one to three heads, each a universal quantifier over one
 or two bound names, of an infinite type, `Nat`, an abstract type, or a
 listed type, or a premise, in any order, then a body, and now and then a
 guard within the last quantifier. -/
@@ -1279,7 +1279,12 @@ def goalWithHeads (outer : Array String) : R String := do
       heads := heads.push s!"forall {" ".intercalate names.toList}, "
     else heads := heads.push s!"when {← cond bound}, "
   let guard ← if ← chance 30 then pure s!"when {← cond bound}, " else pure ""
-  let body := s!"{guard}{← intOf bound} {← pick #["<", "<=", ">=", "!="]} {← intOf bound} + {← below 3}"
+  -- The right operand is the first of `outer`, if any, so that the
+  -- goal mentions it, and an assumption over it is used (F0792).
+  let rhs ← match outer[0]? with
+    | some o => pure o
+    | none => intOf bound
+  let body := s!"{guard}{← intOf bound} {← pick #["<", "<=", ">=", "!="]} {rhs} + {← below 3}"
   -- Each head wraps the rest; a quantifier after a premise in parentheses.
   return heads.foldr (init := body) fun h rest =>
     if h.startsWith "when" && rest.startsWith "forall" then s!"{h}({rest})" else h ++ rest
