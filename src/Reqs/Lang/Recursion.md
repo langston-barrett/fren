@@ -226,6 +226,42 @@ pub proc recursive_facts(origin: RecApplication, bound?): (det facts: RecFacts) 
 }
 ```
 
+The work queue finds an application once on each path to it: within the
+formulas of the query, and through the facts and equations that bring it.
+Each path has its own guards, and a fact of the application holds where
+they do. A query asserts each fact once, where it is first found, under the
+disjunction of the guards of its weakest paths, and with no guard where one
+of them has none. A path is weaker than another when its guards are among
+the other's, as they are of a path through the facts of an application that
+another fact mentions too, which only adds guards to the first: then the
+fact under the other's guards follows from it under its own. So the query
+is equivalent to one with the fact under every path's guards.
+`lang::merged_facts` states which paths each fact is asserted under, over
+the paths on which the queue finds it, by position. Its first two conjuncts
+make the query equivalent: where some guards hold, the query asserts each
+fact found on a path whose guards hold, by the second, and no other, by the
+first. Images over `Int` are outside the [decidable core](Decidability.md),
+so the procedure opts out:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc merged_facts(
+    found: Rel<Int, Int>,        -- each fact that the queue finds, with each path on which it finds it
+    guards: Rel<Int, Int>,       -- each path, with its guards
+    asserted: Rel<Int, Int>,     -- each fact that the query asserts, with each path under whose guards it does
+    assertions: Rel<Int, Int>,   -- each of the query's assertions of these facts, by position, with its fact
+): (det merged?) {
+    ensure rule: merged? iff (asserted subset found
+        and (forall (f: Int) (p: Int), when (f, p) in found,
+        exists (q: Int), (f, q) in asserted and guards.image({q}) subset guards.image({p}))
+        and (forall (f: Int) (p: Int) (q: Int), when (f, p) in asserted and (f, q) in asserted and p != q,
+        not guards.image({q}) subset guards.image({p}))
+        -- Each fact once.
+        and (forall (a: Int) (b: Int) (f: Int), when (a, f) in assertions and (b, f) in assertions, a = b)
+        and assertions.range = found.domain)
+}
+```
+
 An application is ground when its arguments mention no variable bound by
 an enclosing quantifier. Both front ends collect its one-step equations
 and postconditions as top-level facts wherever it appears, including beneath
@@ -441,6 +477,7 @@ functions to quantifier-free queries.
 #fren_check structural_recursion
 #fren_check recursive_match
 #fren_check recursive_facts
+#fren_check merged_facts
 #fren_check recursive_post_result
 #fren_check recursion_formulas
 #fren_check recursive_counterexample

@@ -25,8 +25,8 @@ pub mod testing
   for a line that no longer differs); `--~[cli]` and `--~[hosted]` mark the
   only messages that may differ, parse errors, which the Lean front end gets
   from Lean's parser, and a known disagreement that a test pins until it is
-  fixed, with its issue, as `checks/simp_recursion_depth.fren` does for
-  #417. `--~$` expects a message with no line, such as the Lean front end's
+  fixed, with its issue, as `lang/traits_frontends.fren` does for
+  #493. `--~$` expects a message with no line, such as the Lean front end's
   error at the `#fren_check` that the test adds, and `--~?` allows a
   message without expecting it, for one that may be in one of several
   places, such as a conflict's

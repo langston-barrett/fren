@@ -32,7 +32,6 @@
 (declare-const |n| Int)
 (declare-const |y| Int)
 (assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
-(assert (=> (not (|::small?| |n|)) (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|))))))) ; equation
 (assert (= |y| (+ (|::depth| |t|) (|::depth| |t|)))) ; r
 (assert (not (or (|::small?| |n|) (= |y| (* 2 (|::depth| |t|))))))
 (check-sat)

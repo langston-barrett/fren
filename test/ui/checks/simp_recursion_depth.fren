@@ -1,22 +1,16 @@
--- A known disagreement of the front ends (#417): the Lean-hosted front end's
--- `simp` reaches its maximum recursion depth, where the `fren` command passes.
+-- Once a disagreement of the front ends (#417): the Lean-hosted front end's
+-- `simp` reached its maximum recursion depth, where the `fren` command passes.
 --
 -- A model of the dynamic semantics (`src/Reqs/Lang/Semantics.md`) with 12 of
 -- its 21 forms of expression, and `recursion_unfolds` and `respects?` as
 -- `src/Reqs/Lang/EvaluationRules.md` states them, in which `bind_params` has
 -- the contract that the semantics rewrite (#391) dropped, `no_parameters`.
--- With it, the `fren` command passes every check, and the Lean-hosted front
--- end reaches `simp`'s maximum recursion depth in `recursion_unfolds`, which
--- the hosted annotation there expects, as a limit reached, at that
--- expectation; every other check's result is still reported. Without the
--- contract, both front ends pass every check. A fix of the hosted front end
--- makes that annotation fail; then drop it, and this file is an agreement
--- test like the others.
---
--- The depth that `simp` reaches grows with the model. With the default
--- `maxRecDepth`, the whole semantics fails, and so do these 12 forms; in the
--- hosted front end, 11 of them, without `Index`, and 10, without `Construct`
--- and `Project`, pass.
+-- With it, the reflection of `recursion_unfolds` finds the facts of `eval`'s
+-- applications on many paths. While each was asserted once on each path, the
+-- Lean-hosted front end reached `simp`'s maximum recursion depth there. Now
+-- that each is asserted once, under its weakest paths
+-- (`lang::merged_facts`), both front ends pass every check, so this file is
+-- an agreement test like the others.
 
 pub type Id := String
 
@@ -218,7 +212,7 @@ pub fn respects?(i: Interp, f: Id, ps: Params, e: Expr, l: Value) :=
     apply(i.recursions, f, l) = Outcome::Undefined
     or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
 
-expect recursion_unfolds(  --~[hosted] error: checking `recursion_unfolds` in Lean reached a limit
+expect recursion_unfolds(
     i: Interp,
     env: Env,
     f: Id,

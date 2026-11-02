@@ -763,18 +763,17 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     seen := seen.push key
     let some (c, d) := recs.find? (app.getAppFn.isConstOf ·.1) | continue
     let ancestors := ancestors.push app
-    let guarded (f : Expr) := gs.foldr (fun g b => mkForall `h .default g b) f
     -- A generic one's at the instance that the application applies, its
     -- type arguments first (`Reqs/Lang/Recursion#generic-recursion`).
     let ((_, pre), args) := recInstanceOf c d.solverTypeArgs.size app
     let atI := d.atRecInstance pre
-    if d.result == .nat then out := out.push (`nat, guarded (← atLeast0 app))
+    if d.result == .nat then out := out.push ((`nat, ← atLeast0 app), gs)
     -- Newly reflected type facts need the same solver forms as explicit
     -- clauses: their subset helpers may have executable Lean matches.
     if let some fact := d.fact? then
       let value := if d.result == .nat then
         mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
-      out := out.push (`type, guarded (← unfoldDefined ((atI fact).beta #[value])))
+      out := out.push ((`type, ← unfoldDefined ((atI fact).beta #[value])), gs)
     let k := st.contracts.get? d.path
     let domain := ((st.bodies.get? d.path).map fun b => (b.vars.zip args).filterMap fun (v, x) => v.fact?.map fun f => (atI f).beta #[x]).getD #[]
     let pres ← ((k.map (·.pres)).getD #[]).mapM fun c => unfoldDefined (atI (c.at args))
@@ -782,14 +781,22 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     let posts ← ((k.map (·.posts)).getD #[]).mapM fun c => return (c.name, ← unfoldDefined (atI (c.at args)))
     let implies (ps : Array Expr) (q : Expr) := ps.foldr (fun p b => mkForall `h .default p b) q
     for (name, f) in (if ← allowPosts d app gs then Core.postconditionFacts implies pres posts else #[]) do
-      out := out.push (name, guarded f)
+      out := out.push ((name, f), gs)
       work := work ++ (← scan recs f gs introduced ancestors)
     if (Core.recursiveFacts introduced).2 then
       if let some body := d.recBody? then
         let body ← unfoldDefined ((atI body).beta args)
-        out := out.push (`equation, guarded (← mkEq app body))
+        out := out.push ((`equation, ← mkEq app body), gs)
         work := work ++ (← scan recs body gs true ancestors)
-  return out.toList.eraseDups.toArray
+  -- Each fact once, where it is first found, under its weakest paths, as
+  -- the binary asserts it.
+  let implies (gs : Array Expr) (f : Expr) := gs.foldr (fun g b => mkForall `h .default g b) f
+  let conj (gs : Array Expr) := if gs.isEmpty then mkConst ``True else gs.pop.foldr mkAnd gs.back!
+  let disj (ps : List (Array Expr)) := match ps.reverse with
+    | [] => mkConst ``False
+    | p :: rest => rest.foldl (fun b q => mkOr (conj q) b) (conj p)
+  return (Core.mergeGuarded Core.guardsWithin out.toList).toArray.map fun ((n, f), ps) =>
+    (n, Core.guardedFact implies disj f ps)
 where
   scan (recs : Array (Name × DefinedInfo)) (e : Expr) (gs : Array Expr)
       (introduced : Bool) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Bool × Array Expr)) := do
