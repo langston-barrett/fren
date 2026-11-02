@@ -216,8 +216,8 @@ quantifiers. An application mentioning a quantifier-bound variable brings
 no top-level facts. Guards mentioning such variables are not exported either;
 ground facts retain only guards independent of those variables. No fact may
 refer to a variable outside its binder. If the remaining facts cannot prove
-a check and evaluation refutes its model, both front ends report Inconclusive
-with the same `F0450` diagnostic.
+a check and evaluation does not confirm its model, both front ends report
+Inconclusive with the same `F0450` diagnostic.
 
 ## Contracts
 

@@ -1,0 +1,15 @@
+-- A counterexample under `g`'s contracts that evaluation cannot decide,
+-- since its goal quantifies over all of `Int`, rather than refutes: both
+-- front ends give `F0450` with a note that covers both cases.
+
+pub enum T { Z, S(T) }
+
+pub fn g(t: T): (r: Int) {
+    out r := match t { T::Z => 0, T::S(a) => g(a) + g(a) + 1 }
+    ensure nonneg: r >= 0
+}
+
+set_option fren.lint.undecidable "allow" in
+proc p(t: T) {
+    expect big: when t = T::S(T::S(T::Z)), g(t) != 5 and (forall (x: Int), x + 1 > x)  --~ warning: does not confirm the counterexample: it refutes it, or cannot evaluate it
+}

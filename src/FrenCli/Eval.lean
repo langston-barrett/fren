@@ -1754,9 +1754,10 @@ where
   whatever the environment, under any interpretation with `shapes`. That
   holds unless its own evaluation reads the interpretation, as it does
   when it
-  - reads functions: it applies a function, or is a constant, a table or
-    `match` without a value where nothing holds, or an index, which may be
-    out of range;
+  - reads functions: it applies a function, or is a constant, or a table
+    or `match` without a value where nothing holds;
+  - reads the values of indexes out of range (`Interp.outOfRange`): it is
+    an index, which may be out of range;
   - reads definitions: it is a type check, or a quantifier over bound names
     of types, that may evaluate an invariant (`PTy.invariantFree`);
   - reads the domain: it is a quantifier with a bound name without a
