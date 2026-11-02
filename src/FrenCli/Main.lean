@@ -4,4 +4,4 @@ import FrenCli.Run
 
 /-! # `fren`: check `.fren` files and report their traceability -/
 
-def main (args : List String) : IO UInt32 := FrenCli.run args
+def main (args : List String) : IO UInt32 := FrenCli.run args (persist := true)
