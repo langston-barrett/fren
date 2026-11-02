@@ -1620,6 +1620,15 @@ def knownKinds : List KnownKind :=
    -- behaviours of, at any size bound (#493).
    { kind := "only Lean reports error: `_` has N behaviours up to size *, too many to enumerate", issue := 493,
      seed := 1164145, alongside? := some evaluatorUnread },
+   -- and so only Lean reports what enumerating the procedure found, and
+   -- what rests on it, and the summaries differ.
+   { kind := "only Lean reports warning: could not decide whether *: no * up to size *", issue := 493,
+     seed := 1187360, alongside? := some evaluatorUnread },
+   { kind := "only Lean reports info: * checks of `_` hold for every behaviour up to size *", issue := 493,
+     seed := 1187360, alongside? := some evaluatorUnread },
+   { kind := "only Lean reports warning: * rests on the realizability of `_`, which did not pass", issue := 493,
+     seed := 1187360, alongside? := some evaluatorUnread },
+   { kind := "summary: fren says …, Lean says …", issue := 493, seed := 1187360, alongside? := some evaluatorUnread },
    -- A trait's check that Lean cannot decide (`leanSmtArrow`): what only
    -- `fren` reports of the check at its line, as that it rests on the
    -- trait's laws (F0665), on its assumptions and calls (F0664), that its
@@ -1753,6 +1762,13 @@ private def summary : String := "summary: fren says `12 passed, 2 failed, 2 inco
 #guard known "line 61:12: only Lean reports warning: could not decide whether the assumptions and calls of \
   `fz::Tr::e1` can hold together with its trait's laws: cvc5.Error.error \"Symbol '->' not declared as a variable\""
 end
+-- The evaluator's failure explains what only Lean's enumeration reports,
+-- and nothing else.
+#guard known "line 40:12: only Lean reports warning: `fz::c0::x0` rests on the realizability of `fz::c0`, which did \
+  not pass" (found := #["line 40:12: only Lean reports warning: `fz::c0::x0` rests on the realizability of `fz::c0`, \
+  which did not pass", evaluatorUnread])
+#guard !known "line 40:12: only Lean reports warning: `fz::c0::x0` rests on the realizability of `fz::c0`, which did \
+  not pass"
 -- Lean's failure to enumerate explains what only `fren` reports of the
 -- procedure, at any size bound, and is #485's.
 #guard knownIssue? { avoidKnown := true } #[] #[leanEnumerationFails, "line 31:10: only fren reports info[F0646]: \
