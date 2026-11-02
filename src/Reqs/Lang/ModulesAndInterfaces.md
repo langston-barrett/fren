@@ -597,6 +597,8 @@ pub fn last_item(apps: Applications): Int := match apps {
 -- Whether `a` applies the function `s`, outside every quantifier of the sentence.
 pub fn outer_application?(a: SentenceApplication, s: Int) := a.item = s and not a.call? and not a.inner?
 
+-- Membership in a sequence is outside the decidable core.
+set_option fren.lint.undecidable "allow" in
 pub fn compound_application?(a: SentenceApplication, s: Int) :=
     outer_application?(a, s) and SentenceArg::Compound in a.args
 
