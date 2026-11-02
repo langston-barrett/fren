@@ -4,17 +4,22 @@
     python3 scripts/measure_build.py run [--log FILE] -- heavy lake build --wfail
     python3 scripts/measure_build.py report FILE [--top N]
 
-`run` runs the command with Lake pointed at a copy of the toolchain's
-sysroot whose `lean` and `clang` are wrappers. Each wrapper runs the real
-tool, waits for it with `wait4`, and appends a line of JSON to the log
-(default `build-times.jsonl`): the step (a module's elaboration, its C
-compilation `Module:c.o`, or a link), its wall time, its CPU time, its
-peak resident memory and when it started. Then it prints the report.
+`run` runs the command in the repository's root, wherever it is run
+from, with Lake pointed at a copy of the toolchain's sysroot whose `lean`
+and `clang` are wrappers. It empties the log first (default
+`build-times.jsonl`, relative to the directory it is run from), so that
+the log is of one build. Each wrapper runs the real tool, waits for it
+with `wait4`, and appends a line of JSON to the log: the step (a module's
+elaboration, its C compilation `Module:c.o`, or a link), its wall time,
+its CPU time, its peak resident memory and when it started. Then it
+prints the report.
 `report` prints the report of a log: the slowest steps, those with the
 most memory, a summary by kind of module, and the peak of the memory of
 the steps that ran at once.
 
-For a clean build, delete `.lake/build` first (not `.lake/packages`).
+For a clean build, delete `.lake/build` first (not `.lake/packages`), and
+set `LAKE_CACHE_DIR` to a new, empty directory: otherwise Lake takes the
+deleted steps' outputs from its artifact cache, and they are not logged.
 Lake may rebuild some of the dependencies too; their steps are in the
 log, named `package/Module`.
 
@@ -23,19 +28,23 @@ cores. A step's CPU time includes that of the processes it waited for,
 and its peak memory (`ru_maxrss`) is that of the largest of them. The
 peak of the steps that ran at once is the largest sum over steps whose
 runs overlap, an upper bound, since each step's peak need not be at the
-same moment.
+same moment. It covers only the logged steps, each by its largest
+process: not Lake itself, the wrappers, or the steps that Lake took from
+its artifact cache instead of running.
 Works on macOS and Linux. Run it through `heavy`, as any build.
 """
 
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
 import time
 
 HERE = os.path.abspath(__file__)
+ROOT = os.path.dirname(os.path.dirname(HERE))
 WRAPPED = ("lean", "clang")
 
 
@@ -107,7 +116,7 @@ def fake_sysroot(dest, log):
     """A directory like the toolchain's sysroot, with `lean` and `clang`
     replaced by wrappers that log to `log`."""
     real = subprocess.run(
-        ["lean", "--print-prefix"], capture_output=True, text=True, check=True
+        ["lean", "--print-prefix"], capture_output=True, text=True, check=True, cwd=ROOT
     ).stdout.strip()
     for entry in os.listdir(real):
         if entry != "bin":
@@ -119,7 +128,9 @@ def fake_sysroot(dest, log):
         if exe in WRAPPED:
             with open(dst, "w") as f:
                 f.write(
-                    f'#!/bin/sh\nexec {sys.executable} {HERE} wrap {log} {exe} {src} "$@"\n'
+                    "#!/bin/sh\nexec "
+                    + " ".join(shlex.quote(a) for a in [sys.executable, HERE, "wrap", log, exe, src])
+                    + ' "$@"\n'
                 )
             os.chmod(dst, 0o755)
         else:
@@ -230,10 +241,11 @@ def main():
     if not command:
         p.error("run needs a command, e.g. -- heavy lake build --wfail")
     log = os.path.abspath(a.log)
+    open(log, "w").close()
     with tempfile.TemporaryDirectory(prefix="fren-sysroot-") as root:
         fake_sysroot(root, log)
         env = dict(os.environ, LEAN_SYSROOT=root, LAKE_OVERRIDE_LEAN="true")
-        code = subprocess.run(command, env=env).returncode
+        code = subprocess.run(command, env=env, cwd=ROOT).returncode
     report(log, a.top)
     sys.exit(code)
 

@@ -134,7 +134,8 @@ def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit :=
     let text := match at?.bind fun r => vias.find? (·.1 == r.getPos?) with
       | some (_, f) => if msg.severity == .error then (msg.msg.note (Core.viaNote f)).text else msg.text
       | none => msg.text
-    if let some (fileName, fileMap) := (prop?.filter fun p => msg.atRange?.isSome || p.sourceRef).bind (·.source?) then
+    if let some (kept, fileMap) := (prop?.filter fun p => msg.atRange?.isSome || p.sourceRef).bind (·.source?) then
+      let fileName ← shownFileName kept (← getFileName)
       withReader (fun ctx => { ctx with fileName, fileMap }) (logAt ref text severity)
     else logAbout path ref text severity
 

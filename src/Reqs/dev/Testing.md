@@ -604,6 +604,97 @@ pub proc fresh(
 #fren_check
 ```
 
+## Shared builds
+
+Lake keeps an artifact cache for each toolchain on a machine, which
+`lakefile.lean` enables, and which every worktree on the machine shares.
+Each step of a build, a module's elaboration, its C compilation or a link,
+is keyed by a hash of its inputs by their content: the module's source,
+the outputs of the modules that it imports, the files that its library
+needs, its options and the toolchain. A step whose key a build on the
+machine met before takes that build's outputs from the cache, linked into
+`.lake/build`, instead of running. So a new worktree, a reviewer's
+checkout of a head or a probe of a merge commit runs only the steps that
+no build on the machine ran with the same inputs. The key covers every
+file that the module's library needs, so `testing::fresh` holds as
+before. A coverage build (`-Kcoverage`) does not use the cache: its
+object files name the directory where they write their counters.
+
+The cache keeps a step's outputs but not its messages. A module that is
+up to date in a worktree's own `.lake/build` replays its messages from its
+trace, as before; one taken from the cache reports none. So a local `lake
+build --wfail` passes over a warning that only another worktree's build of
+the same module reported, and `ownSpecAgreement`, which reads Lean's
+messages from the traces, reports a module taken from the cache as one
+whose checks it cannot tell ran. `pre-merge` stays the gate: each of CI's
+machines starts with an empty cache.
+
+The cache only grows. Each build adds the outputs of every step that it
+runs, several hundred MB to some 1 GB for a head that changes `Fren` or
+`FrenCore`, and its `.lake/build` links to them, read-only. So deleting a
+worktree's `.lake` breaks nothing but frees almost nothing either: the
+cache keeps the outputs, and frees them only when pruned. That holds when
+the worktrees are on the filesystem of the toolchain's directory, as
+`/tmp` and `~/.elan` are on sky: across filesystems, Lake copies the
+outputs instead of linking them, so they take disk twice and link counts
+say nothing of which a worktree uses. The cache is per toolchain, so
+after a toolchain bump the old one's cache stays until it is pruned with
+`--cache DIR` or deleted, once no worktree builds with that toolchain.
+
+`scripts/lake_cache.py size` prints how much the cache holds, and how much
+of it no worktree links to. `heavy python3 scripts/lake_cache.py prune`
+deletes the outputs that no worktree links to and whose links have not
+changed for 7 days (`--days`), and the cache's entries that name them: the
+entries first, so that a build that finds an entry gone runs the step and
+saves its outputs again, and then, after a grace of a minute, each output
+whose link count and `ctime` are still those it scanned, so that one that
+a build linked or saved again in the meantime stays. A build that finds
+an entry whose outputs are gone warns, which fails `--wfail`, and runs
+the step; pruning deletes such entries too. It refuses to prune a cache on
+another filesystem than the repository's. Run it under `heavy`, when the
+disk is short or once a week; `python3 scripts/lake_cache.py test` checks
+it on a scratch cache. `lake cache clean`, which empties the cache at
+once, is safe only while no build runs.
+
+A step's outputs must then not depend on where it ran, or a worktree would
+get another's. Lean names a module's source by its absolute path, and a
+definition's `source?` (`Fren.DefinedInfo`) keeps the name of the file
+that declares it, for the messages about it. It keeps the name relative to
+the directory that Lean runs in (`Fren.keptFileName`, which
+`testing::portable_name` states, with that directory as its input). Lake
+runs Lean in the directory that Lake was started in, which is the
+package's root for `lake build` and `lake test` run there, as `heavy` runs
+them and CI does. A build started elsewhere, as `lake -d ROOT build`, keeps
+absolute names, and its outputs, which another worktree may take from the
+cache, then differ only in the names that messages about other files'
+definitions show. A message about the definition names the current file as
+Lean names it, if the definition is in it, and the other file by the kept
+name otherwise (`Fren.shownFileName`).
+
+`scripts/relocatable.py` checks that no `.olean` or `.ilean` file, and no
+file of C code or object code under `.lake/build/ir`, that a build wrote
+names the worktree's directory, which it would if anything else kept an
+absolute path. The build jobs of `pre-merge` and `lean ci` run it
+after `lake build --wfail`, over the outputs written after the build began:
+the others are `main`'s, checked by the build that wrote them, or stale
+files of modules that the build no longer has. It checks Fren's own
+outputs, not the dependencies' in `.lake/packages`: lean-smt's shared
+libraries keep the absolute install name of the directory that built them,
+which nothing reads, since Lean loads each of them by its path.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc portable_name(root: String, file: String): (det name: String) {
+    out name := if file.starts_with?(root ++ "/") then file.slice(root.len + 1, file.len - root.len - 1) else file
+
+    expect round_trip: when file.starts_with?(root ++ "/"), root ++ "/" ++ name = file
+    cover inside: file.starts_with?(root ++ "/")
+    cover outside: not file.starts_with?(root ++ "/")
+}
+
+#fren_check
+```
+
 ## Own requirements
 
 `lake build` elaborates Fren's own requirements, the specs of `src/Reqs`
@@ -630,7 +721,11 @@ as the front-end fuzzer compares a spec's (`FrenTest.Frontends`). It
 leaves out the summaries, since Lean reports one for each `#fren_check`,
 and what only the binary runs: the checks set to random testing and those
 that rest on them, which Lean leaves to `fren check` and does not report
-([Evidence](../Evidence.md#lean)). Lean reports a check once for each
+([Evidence](../Evidence.md#lean)). Lean and the binary report the checks
+of an item that has one of Lean's notes that it leaves checks to `fren
+check` differently, so the comparison leaves out every message that the
+binary gives about such an item: a check of it that Lean failed to report
+would go unnoticed there, though the binary's result still gates. Lean reports a check once for each
 `#fren_check` of its file that runs it, so each of its messages counts
 once. It fails if a module was built without its checks. A pull request does not
 run it, so a difference between the front ends that a pull request
@@ -647,7 +742,17 @@ machine runs `lake build --wfail`, and others run `lake test --
 `lake test`, samples mutants of Fren's own requirements, checks them in
 Lean and compares the front ends' messages about them ([Own
 requirements](#own-requirements)), measures the coverage, and saves the
-`.lake` for pull requests. It also runs the
+`.lake` for pull requests. Each job of a `lean ci` run waits for the same
+job of the run before it, not for the whole run, so that the build job
+saves the `.lake` as soon as it has built. A `pre-merge` run that starts
+before the `.lake` of its `main` is saved starts from an older one, and
+each of its machines rebuilds what `main` changed since. Over the runs of
+2026-11-01 and 2026-11-02, almost half did; had each build job waited only
+for the one before it, the median time from a push to `main` to its
+`.lake` being saved would have been some 6 minutes instead of 13, and a
+fifth would have. The runners' artifact caches ([Shared
+builds](#shared-builds)) start empty, so on CI every step that `.lake`
+does not have runs, and reports its messages. It also runs the
 front-end fuzzer on seeds that no run used before, from the run's number,
 with `--avoid-known`, of both generators. What fails that job is exactly a
 spec with a difference of a kind that is not known, a crash, or a
@@ -681,7 +786,7 @@ request of its own rather than slowing every pull request down.
 | `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
-| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | in `lake build`, it took some 10 GB in each of `Reqs.Lang` and `Reqs.Lint`, and about 500 s of the build's critical path |
+| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (on sky, one run each) |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
 On a pull request, `pre-merge` also uploads stripped copies of the

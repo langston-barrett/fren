@@ -141,7 +141,7 @@ def DataShape.inst (d : DataShape) (args : Array PTy) : DataShape :=
   if args.isEmpty then d else { d with parts := d.parts.map (·.map (·.subst args)) }
 
 /-- Whether checking that a value is of the declared type `t` evaluates
-no invariant (the binary's `Ex.eval.typeV`): `t` has none, nor do the
+no invariant (the binary's `Ex.evalIn.typeV`): `t` has none, nor do the
 types within it, nor, through `shapes`, the types of its records',
 enumerations' and newtypes' parts. `seen` is the types already being
 looked through, which a recursive type reaches again. Where it holds, the
