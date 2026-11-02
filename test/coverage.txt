@@ -218,6 +218,8 @@ FrenCli.Refutation.about -- runs only when the evaluator refutes a model of the 
 FrenCli.Refutation.msg -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
 FrenCli.elabTy
 FrenCli.elaborate
+FrenCli.escapeChar -- used only in `escapeLine` and the proofs of `escapeLine_eq_impl` and `Impls.QueryCache`; `escapeOnto` runs instead
+FrenCli.escapeLine -- the reference of `escapeLineImpl`, which runs in its place (`escapeLine_eq_impl`, `@[csimp]`)
 FrenCli.evidenceInEffect
 FrenCli.instSameArray
 FrenCli.instSameHashMap
@@ -232,7 +234,10 @@ FrenCli.isVariant
 FrenCli.patSmt
 FrenCli.sameCheck
 FrenCli.termsIn
+FrenCli.textLines -- the reference of `textLinesImpl`, which runs in its place (`textLines_eq_impl`, `@[csimp]`)
 FrenCli.typeNames
+FrenCli.unescapeChars -- used only in `unescapeLine` and the proofs of `unescapeLine_eq_impl` and `Impls.QueryCache`; `unescapeStep` runs instead
+FrenCli.unescapeLine -- the reference of `unescapeLineImpl`, which runs in its place (`unescapeLine_eq_impl`, `@[csimp]`)
 FrenCli.varTy
 _private.FrenCli.Parse.0.FrenCli.atom
 _private.FrenCli.Parse.0.FrenCli.atomsOf

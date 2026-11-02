@@ -708,11 +708,13 @@ the results that a refuted model is about, with their internal errors; and
 an internal error if the evaluator has no counterpart of `c`. `sy` is
 `symbolsOf spec?`, built once for the spec. `prelude` is `st`'s, indexed
 (`State.queryPrelude`), and `cache` holds the answers to the queries asked
-before (`QueryCache`). -/
+before (`QueryCache`). `sites?` is `st.instanceSites`, if it is given,
+computed once for the checks of every item rather than for each. -/
 partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
-    (examples : Option Nat := some 1) (instances : Bool := true) :
+    (examples : Option Nat := some 1) (instances : Bool := true)
+    (sites? : Option (Array (Fren.Core.InstanceSite × Lean.Name × Array Fren.Core.Ty)) := none) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   -- The functions whose contracts each check's queries apply, recorded by
   -- the backend, and taken by `checkComp` after each check
@@ -747,7 +749,7 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
   -- its type parameters' sorts does not pass: its check at each instance
   -- that the spec applies, in order of their names (`lang::generic_contract`).
   if !instances then return (markInterpreted prelude c results, refuted, missing?)
-  let sites := st.instanceSites
+  let sites := sites?.getD st.instanceSites
   -- The contract of the instance of `f` at `targs`, where `f`'s check at its
   -- type parameters' sorts, `r`'s, does not pass: its realizability check.
   let atInstance (f : Lean.Name) (targs : Array Fren.Core.Ty) : IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg)) := do
@@ -897,6 +899,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- with the checks that run on it.
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.body, t.key)
   let prelude := st.queryPrelude
+  -- Where the contracts of instances of generic functions are checked,
+  -- the same for every item (`lang::instance_site`).
+  let sites := st.instanceSites
   -- A query asked again, as some checks of a procedure share one, is
   -- answered once (`Reqs/Cli#solver-queries`), and one asked by an earlier
   -- run, from `--query-cache` (`Reqs/Cli#query-cache`).
@@ -937,7 +942,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         dumped.modify (· ++ s!"; {c.path}: query {k}\n{script}(check-sat)\n(reset)\n\n")
       else none
     let start ← IO.monoNanosNow
-    let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body args.examples
+    let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body args.examples (sites? := some sites)
     let solved ← IO.monoNanosNow
     -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
     let tested? := if !(c.tested.minus c.enumerated).any then none else match spec? with

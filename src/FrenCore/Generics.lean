@@ -639,14 +639,24 @@ structure GenericUse where
   targs : Array Ty
   deriving Inhabited, BEq
 
+/-- Of each generic function, by its path, the applications of `uses`
+within it (`GenericUse.caller?`), in order: what `instancesThrough` looks
+up at each instance, grouped once rather than found by a scan of every
+application at each. -/
+def usesByCaller (uses : Array GenericUse) : Std.HashMap Name (Array GenericUse) :=
+  uses.foldl (init := {}) fun m u => match u.caller? with
+    | some g => m.alter g fun us? => some ((us?.getD #[]).push u)
+    | none => m
+
 /-- The instances that applying the instances `start` applies, them
 included: each, and, for an instance of a generic function, its
 applications within the function at that instance, and so on, each once,
 in the order found, where `tps` gives each generic function's type
-parameters. A function's applications at its own type parameters are its
-own, and lead nowhere else. -/
-partial def instancesThrough (uses : Array GenericUse) (tps : Name → Array Name) (start : Array (Name × Array Ty)) :
-    Array (Name × Array Ty) :=
+parameters and `byCaller` the applications within each, in order
+(`usesByCaller`). A function's applications at its own type parameters
+are its own, and lead nowhere else. -/
+partial def instancesThrough (byCaller : Std.HashMap Name (Array GenericUse)) (tps : Name → Array Name)
+    (start : Array (Name × Array Ty)) : Array (Name × Array Ty) :=
   go start #[]
 where
   go (todo all : Array (Name × Array Ty)) : Array (Name × Array Ty) :=
@@ -658,8 +668,7 @@ where
       let ps := tps g
       let own := ps.mapIdx fun k p => Ty.abstract (typeParamPath g k p)
       if targs == own then go todo all else
-      let more := uses.filterMap fun u =>
-        if u.caller? == some g then some (u.callee, u.targs.map fun t => (t.asParams g ps).subst targs) else none
+      let more := (byCaller.getD g #[]).map fun u => (u.callee, u.targs.map fun t => (t.asParams g ps).subst targs)
       go (todo ++ more) all
     else all
 
@@ -697,11 +706,15 @@ def instanceSites (uses : Array GenericUse) (tps : Name → Array Name) (fileOf 
     Array (InstanceSite × Name × Array Ty) := Id.run do
   let items := uses.foldl (init := #[]) fun acc u =>
     if !checked u.item || acc.contains (u.file, u.item) then acc else acc.push (u.file, u.item)
+  let byCaller := usesByCaller uses
+  -- Each item's applications, in order, grouped once.
+  let byItem : Std.HashMap (Nat × Name) (Array (Name × Array Ty)) := uses.foldl (init := {}) fun m u =>
+    m.alter (u.file, u.item) fun d? => some ((d?.getD #[]).push (u.callee, u.targs))
   let mut out : Array (InstanceSite × Name × Array Ty) := #[]
   let mut seen : Array (Name × Array Ty) := #[]
   for (file, item) in items do
-    let direct := uses.filterMap fun u => if u.file == file && u.item == item then some (u.callee, u.targs) else none
-    for (f, targs) in instancesThrough uses tps direct do
+    let direct := byItem.getD (file, item) #[]
+    for (f, targs) in instancesThrough byCaller tps direct do
       let some ff := fileOf f | continue
       let own := (tps f).mapIdx fun k p => Ty.abstract (typeParamPath f k p)
       if targs == own || seen.contains (f, targs) then continue
