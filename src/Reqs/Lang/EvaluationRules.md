@@ -9,8 +9,10 @@ expression, with the coincidence lemma, and the guards of the
 **Dynamic semantics**
 
 r[evaluation.laws]
-Each law of this chapter is about one form of expression, and is stated
-over the outcomes of the form's immediate subexpressions, some of them
+Each law of `lang::leaf_rules`, `let_rules`, `operator_rules`,
+`lazy_rules`, `if_rules`, `match_rules`, `list_rules`, `method_rules` and
+`call_rules` is about one form of expression, and is stated over the
+outcomes of the form's immediate subexpressions, some of them
 evaluated in an environment that the outcome or value of another gives
 (`semantics.eval.outcomes`).
 
@@ -154,7 +156,7 @@ expect operator_rules(i: Interp, env: Env, op: BinaryOp, a: Expr<Id>, b: Expr<Id
 ## Lazy Boolean expressions
 
 `and` and `or` evaluate their right operand only where the left one does
-not decide the result.
+not decide the result. `or` is the dual of `and`.
 
 **Dynamic semantics**
 
@@ -168,9 +170,8 @@ Where `a` is `true`, the result of `And(a, b)` is that of `b`
 (`and_true`).
 
 r[evaluation.or.true]
-`Or(a, b)` is the dual of `And(a, b)`. It evaluates `a`. Where `a` is
-`true`, the result is `true`, and `b` is not evaluated (`or_true` and
-`or_unevaluated`).
+`Or(a, b)` evaluates `a`. Where `a` is `true`, the result is `true`, and
+`b` is not evaluated (`or_true` and `or_unevaluated`).
 
 r[evaluation.or.false]
 Where `a` is `false`, the result of `Or(a, b)` is that of `b`.
@@ -213,7 +214,8 @@ Where `c` is `false`, the result of `If(c, t, f)` is that of `f`, and `t`
 is not evaluated (`else_branch`).
 
 r[evaluation.if.one-branch]
-Exactly one branch is evaluated.
+Where `c` is a WD `Bool`, exactly one branch is evaluated (`one_branch` of
+`lang::guards_evaluation`).
 
 r[evaluation.if.condition]
 `If(c, t, f)` is undefined where `c` is not a WD `Bool` (`condition`).
@@ -715,8 +717,8 @@ r[evaluation.guard.evaluated]
 An operand is evaluated exactly when its guard holds.
 
 r[evaluation.guard.unguarded]
-An operand that is not one of these is evaluated whenever the expression
-that it is in is.
+An operand that no `GuardedOperand` names is evaluated whenever the
+expression that it is in is.
 
 r[evaluation.guard.nesting]
 Guards nest by conjunction.
