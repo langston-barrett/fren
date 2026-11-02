@@ -824,6 +824,43 @@ def State.enumOf? (s : State) (ty : Expr) : Option EnumInfo := ty.getAppFn.const
 /-- The record whose Lean type, or an instance of it, is `ty`. -/
 def State.recordOf? (s : State) (ty : Expr) : Option RecordInfo := ty.getAppFn.constName?.bind s.recordOfDecl?
 
+/-- A term elaborated alone for its type (`typeOf`), with what its
+elaboration reads besides the declarations: the local variables in scope,
+the current namespace and the open namespaces. The same term in the same
+scope has the same type, unless that type has a metavariable, which a
+caller may assign: `typeOf` keeps only the types without one. Its syntax
+is compared without its positions (`Syntax.structEq`), which only an error
+message would read.
+
+The declarations are left out, though a command adds some (`addDecl`,
+`addInstance`): only a type found is kept, so a name that did not resolve
+is never cached, and the translation's global names are resolved already
+(`mkCIdent`), so a later declaration cannot change what a kept term means.
+A hit also skips the rest of what the elaboration did: its metavariable
+assignments, info trees and messages. The first elaboration's stay in the
+same state as the cache, which lives in the environment, so a `restore`
+rolls both back together. -/
+structure TypedTerm where
+  fvars : Array FVarId
+  currNamespace : Name
+  openDecls : List OpenDecl
+  term : Syntax
+
+instance : BEq TypedTerm := ⟨fun a b =>
+  a.fvars == b.fvars && a.currNamespace == b.currNamespace && a.openDecls == b.openDecls && a.term.structEq b.term⟩
+
+/-- A hash of `s` that `Syntax.structEq` respects: it reads the kinds,
+atoms and names, not the positions. -/
+partial def syntaxHash : Syntax → UInt64
+  | .missing => 7
+  | .node _ k args => args.foldl (fun h a => mixHash h (syntaxHash a)) (hash k)
+  | .atom _ v => hash v
+  | .ident _ _ v _ => hash v
+
+-- Without `openDecls`, which `List OpenDecl` has no hash for: keys that are
+-- equal still hash alike, and keys in one command rarely differ only there.
+instance : Hashable TypedTerm := ⟨fun k => mixHash (mixHash (hash k.fvars) (hash k.currNamespace)) (syntaxHash k.term)⟩
+
 /-- Per-file state; not visible to importing files. -/
 structure LocalState where
   /-- The module that items are currently being declared in, or the trait
@@ -992,6 +1029,13 @@ structure LocalState where
   staticErrors : Array (String × Nat × Nat) := #[]
   /-- How many errors `#fren_check` has logged, which are not static. -/
   checkErrors : Nat := 0
+  /-- The types without metavariables that `typeOf` has found, each with
+  its term, since the start of the last command that `recordingErrors`
+  wraps, which empties it. Others, such as `newtype`, `impl`, `interp`,
+  `trace` and `open`, do not, which is harmless: local variables are new
+  in each command, so only a closed term can be found again across
+  commands, and its type does not change. -/
+  types : Std.HashMap TypedTerm Expr := {}
   deriving Inhabited
 
 /-- Records that the item `path` is declared now: in the Markdown spec being
@@ -1192,6 +1236,7 @@ reported, has missing parts: it is not elaborated, as the `fren` command
 stops at the parse error (`Reqs/View#static-errors`). -/
 def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
   if stx.hasMissing then return
+  modifyLocal fun l => { l with types := {} }
   let checks := (← getLocal).checkErrors
   try k stx
   catch ex =>

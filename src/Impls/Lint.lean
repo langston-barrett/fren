@@ -1419,11 +1419,6 @@ trusted lint::membership_test_written: "a model of an expression, checked by the
 
 /-! ## Pedantic lints of expressions, matches, records and literals -/
 
-def toBoolRule : Fren.Core.BoolRule → lint.BoolRule
-  | .absorption => .Absorption
-  | .contradiction => .Contradiction
-  | .excludedMiddle => .ExcludedMiddle
-
 /-- The core's `InfixOp` of each of `lint::InfixOp`'s, the inverse of `toInfixOp`. -/
 def ofLintInfixOp : lint.InfixOp → Fren.Core.InfixOp
   | .Iff => .iff
