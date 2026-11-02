@@ -1,5 +1,6 @@
+-- Not `Impls.Lint`, so that the two build side by side: after `Reqs.Lint`,
+-- they were the end of the build's critical path, one after the other.
 -- keep-sorted start
-import Impls.Lint
 import Reqs.Lint
 -- keep-sorted end
 
@@ -1920,6 +1921,12 @@ theorem negates_eq (k o : Expr String) :
 
 end RewriteProof
 
+/-- The core's `BoolRule` as `lint::BoolRule`. -/
+def toBoolRule : Fren.Core.BoolRule → lint.BoolRule
+  | .absorption => .Absorption
+  | .contradiction => .Contradiction
+  | .excludedMiddle => .ExcludedMiddle
+
 /-- The core's `Kept` as `lint::Kept`. -/
 def toKept : Fren.Core.Kept → lint.Kept
   | .left => .Left
@@ -1938,7 +1945,7 @@ macro "linter_cases" a:term:max b:term:max c:term:max : tactic => `(tactic|
       if_false, true_or, or_true,
       or_false, false_or, Bool.false_eq_true, reduceIte, iff_true, iff_false, Option.isSome_some,
       Option.isSome_none, Option.elim, forall_const, Bool.not_eq_true, imp_self, true_implies] <;>
-    simp [lint.kept_fix, toKept, Fren.Impls.toBoolRule]))
+    simp [lint.kept_fix, toKept, toBoolRule]))
 
 open RewriteProof in
 -- Both front ends run `Core.overlyComplexRule` (trusted, and checked by the ui
@@ -1950,7 +1957,7 @@ impl overly_complex_bool_expr: lint::overly_complex_bool_expr for (e : lang.Expr
   negation_rewritten? := n,
   fires? := (rule n e).isSome,
   kept := toKept ((rule n e).elim .left (·.2)),
-  kind := Fren.Impls.toBoolRule ((rule n e).elim .absorption (·.1)),
+  kind := toBoolRule ((rule n e).elim .absorption (·.1)),
 } by
   intro e n _
   unfold lint.overly_complex_bool_expr.ensures lint.overly_complex_bool_expr.ensure.rule

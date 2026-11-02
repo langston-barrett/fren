@@ -764,10 +764,20 @@ def unwrapTerm (chain : Array NewtypeInfo) (x : Term) : TermElabM Term :=
   chain.foldlM (fun t n => `($(mkCIdent n.field) $t)) x
 
 /-- The Lean type of the Fren expression `t`, elaborated with the procedure's
-variables in scope. -/
+variables in scope. The translation asks for the types of the same terms
+again and again, as of an operand for each check of it, so each one's is
+elaborated once in a command (`LocalState.types`): two of every three
+were asked for again, and elaborating them took about a quarter of the
+time of `Reqs.Lint`. Only a type found is kept: an error is thrown each
+time. -/
 def typeOf (t : Term) : TermElabM Expr := do
+  let key : TypedTerm :=
+    { fvars := (← getLCtx).getFVarIds, currNamespace := ← getCurrNamespace, openDecls := ← getOpenDecls, term := t.raw }
+  if let some ty := (← getLocal).types.get? key then return ← whnfR (← instantiateMVars ty)
   let e ← withoutErrToSorry <| Term.withSynthesize <| elabTerm (← `(open Classical in $t)) none
-  whnfR (← instantiateMVars (← inferType e))
+  let ty ← whnfR (← instantiateMVars (← inferType e))
+  modifyLocal fun l => { l with types := l.types.insert key ty }
+  return ty
 
 /-- The Fren type of the term `t` (`coreTy?`), if it has one. A term whose
 type cannot be found alone, as `{}`'s, has none: its error, if any, is
