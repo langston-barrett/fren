@@ -1,0 +1,2 @@
+--@ argv: check --evidence randm spec.fren
+-- An invalid `--evidence`, with the value meant.

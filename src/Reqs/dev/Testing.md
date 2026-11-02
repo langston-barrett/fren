@@ -893,7 +893,8 @@ for the one before it, the median time from a push to `main` to its
 `.lake` being saved would have been some 6 minutes instead of 13, and a
 fifth would have. The runners' artifact caches ([Shared
 builds](#shared-builds)) start empty, so on CI every step that `.lake`
-does not have runs, and reports its messages. It also runs the
+does not have runs, and reports its messages. It also compares the methods on every check that each can run
+(`methodsAgree`, [Agreement of methods](../Methods.md#agreement-of-methods)), and runs the
 front-end fuzzer on seeds that no run used before, from the run's number,
 with `--avoid-known`, of both generators. What fails that job is exactly a
 spec with a difference of a kind that is not known, a crash, or a
@@ -928,6 +929,7 @@ request of its own rather than slowing every pull request down.
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
 | Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
+| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, once by the solver with no query cache to reuse for the other methods |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
 On a pull request, `pre-merge` also uploads stripped copies of the

@@ -17,6 +17,21 @@ namespace Fren.Impls
 
 open Fren.Core (Severity worst)
 
+-- Which evidence a check has under `fren check --evidence`
+-- (`evidenceInEffect`): `o` is the option's, `s` that of the setting in effect.
+impl evidence_in_effect: cli::evidence_in_effect for (o s : Option Fren.Core.Evidence) {
+  «given?» := o.isSome,
+  «given_random?» := (o.map (·.tested)).getD false,
+  «given_enumerated?» := (o.map (·.enumerated)).getD false,
+  «set?» := s.isSome,
+  «set_random?» := (s.map (·.tested)).getD false,
+  «set_enumerated?» := (s.map (·.enumerated)).getD false,
+  «random?» := (Fren.Core.evidenceInEffect o s).tested,
+  «enumerated?» := (Fren.Core.evidenceInEffect o s).enumerated,
+} by
+  intro o s _
+  rcases o with _ | ⟨_ | _, _ | _⟩ <;> rcases s with _ | ⟨_ | _, _ | _⟩ <;> decide
+
 impl exit_code: cli::exit for (ran : Bool) (s : Option Severity) {
   ran? := ran,
   worst := toLevel s,

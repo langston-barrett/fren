@@ -1,0 +1,5 @@
+error: invalid evidence `randm`
+  = note: `--evidence` is `solver`, `random`, `enumerated` or `enumerated+random`
+  = help: a value with a similar name exists: `random`
+  = help: run `fren --help` for usage
+exit=2

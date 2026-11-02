@@ -857,6 +857,9 @@ structure State where
   checked where it applies (`Reqs/Check#checking-by-testing`), and the
   value's span. -/
   evidence? : Option (String × Span) := none
+  /-- `fren check --evidence`: the evidence of every check that the source
+  could set, in place of the source's settings (`cli::evidence_in_effect`). -/
+  evidenceOverride? : Option Fren.Core.Evidence := none
   /-- The size bound of enumeration in effect (`fren.enumeration.size`). -/
   enumSize : Nat := Fren.Core.Enumeration.defaultSize
   /-- Where the current item starts. -/
@@ -5895,9 +5898,8 @@ def declareMemberUses (path : Name) (members : Array Member) : M Unit := do
 /-- The evidence that the `set_option fren.evidence` in effect sets
 (`Reqs/Check#checking-by-enumeration`); an invalid value sets nothing. -/
 def evidenceOfEffect : M Fren.Core.Evidence := do
-  match (← get).evidence? with
-  | none => return {}
-  | some (value, _) => return (Fren.Core.evidenceOf? value).getD {}
+  let st ← get
+  return Fren.Core.evidenceInEffect st.evidenceOverride? (st.evidence?.bind fun (value, _) => Fren.Core.evidenceOf? value)
 
 /-- Whether the `set_option fren.evidence` in effect sets checks to testing.
 An invalid value, reported once where it is set (`F0214`), sets nothing. -/
@@ -5957,7 +5959,9 @@ def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.
       let some b := Fren.Core.evidenceOf? value | err valueSpan (Fren.Core.invalidEvidenceMsg value)
       pending := some (b, span)
       continue
-    let set? := pending.map (·.1)
+    -- `--evidence` sets every check, the members' too (`cli::evidence_in_effect`).
+    let override? := (← get).evidenceOverride?
+    let set? := pending.map fun (b, _) => Fren.Core.evidenceInEffect override? (some b)
     match m, pending with
     | .refines .., _ =>
       refinesIndex := refinesIndex + 1

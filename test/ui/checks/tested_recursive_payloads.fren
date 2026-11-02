@@ -1,0 +1,16 @@
+-- Random testing reads a recursive enumeration's payloads as of their
+-- types at every depth (`Reqs/Eval`), as the solver assumes them where they
+-- are read: a chain whose second link's payload is 19 is no `Chain`, so it
+-- is no counterexample to `heads`.
+type Digit = n: Int where invariant: n is 0..=9
+
+set_option fren.lint.undecidable "allow" in
+enum Chain { End, Link(Digit, Chain) }
+
+set_option fren.evidence "random" in
+proc chained(c: Chain) {  --~[hosted] info: the checks of `chained` set to random testing are run by `fren check`, not in Lean
+    expect heads: match c {
+        Chain::Link(d, Chain::Link(e, _)) => d + e <= 18,
+        _ => true,
+    }
+}

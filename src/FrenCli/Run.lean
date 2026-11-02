@@ -16,7 +16,7 @@ import FrenCoreCodes
 
 ```
 fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
-    [--seed N] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
+    [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
@@ -57,7 +57,7 @@ open Fren.Core (Msg Paint)
 
 def usage : String :=
   "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]\n              \
-  [--seed N] [--query-cache DIR] [--verify-query-cache DIR] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
@@ -72,6 +72,9 @@ def usage : String :=
   inconclusive, some constraint redundant or some lint warned. `--dump-smt` writes each solver\n\
   query to stdout, as SMT-LIB; diagnostics go to stderr. `--tests N` and\n\
   `--seed N` are as for `quickcheck`, for checks set to testing.\n\
+  `--evidence METHOD` sets every check that `set_option fren.evidence`\n\
+  could set to METHOD, in place of the spec's own settings: `solver`,\n\
+  `random`, `enumerated` or `enumerated+random`.\n\
   `--timeout` limits each solver query's wall-clock time (default 10), and\n\
   `--resource-limit` its work, in cvc5's resource units, which unlike time\n\
   does not depend on the machine's load (default none); 0 is no limit.\n\
@@ -216,11 +219,14 @@ structure Args where
   shard? : Option (Nat × Nat) := none
   /-- `mutate --list`. -/
   listOnly : Bool := false
+  /-- `check --evidence`: the evidence of every check that the source could
+  set, in place of its settings (`cli::evidence_in_effect`). -/
+  evidence? : Option Fren.Core.Evidence := none
 
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--query-cache", "--verify-query-cache", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
@@ -342,6 +348,15 @@ where
       | none => .error (argError p {
           code? := none, headline := s!"invalid shard `{k}`",
           notes := #["note: a shard is `K/N`, the `K`th of `N` from 0, with `K < N`, such as `--shard 0/4`"] })
+    | "--evidence" :: v :: rest, a =>
+      if a.command != .check then only "--evidence" "check" else
+      match Fren.Core.evidenceOf? v with
+      | some ev => go rest { a with evidence? := some ev }
+      | none => .error (argError p {
+          code? := none, headline := s!"invalid evidence `{v}`",
+          notes := #["note: `--evidence` is `solver`, `random`, `enumerated` or `enumerated+random`"]
+          fixes := (Fren.Core.similarStr v #["solver", "random", "enumerated", "enumerated+random"]).toArray.map fun c =>
+            { msg := s!"a value with a similar name exists: `{c}`", replacement := c } })
     | "--dump-smt" :: rest, a =>
       if a.command == .check then go rest { a with dumpSmt := true }
       else only "--dump-smt" "check"
@@ -383,6 +398,7 @@ where
     | opt@"-D" :: n :: rest, a | opt@"--deny" :: n :: rest, a => do go rest (← addLint opt .deny n a)
     | opt@"-F" :: n :: rest, a | opt@"--forbid" :: n :: rest, a => do go rest (← addLint opt .forbid n a)
     | [opt@"--timeout"], _ | [opt@"--resource-limit"], _ | [opt@"--examples"], _ | [opt@"--jobs"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
+    | [opt@"--evidence"], _
     | [opt@"--only"], _ | [opt@"--skip"], _
     | [opt@"--proc"], _ | [opt@"--set"], _ | [opt@"--seed"], _
     | [opt@"--by"], _ | [opt@"--mutant"], _ | [opt@"--sample"], _ | [opt@"--diff"], _ | [opt@"--shard"], _
@@ -471,19 +487,22 @@ def elabParsed (st : State) (file : Nat) (chars : Array Char) (p : Parsed) : Sta
   | .ok (toks, items, starts, found) => (elabFile file chars items starts (trailingCommas toks) found |>.run st).2
 
 /-- The state before any file, with the lint levels `lints`. -/
-def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) : State :=
-  ({ cliLevels := Fren.Core.Levels.ofFlags lints } : State).withPrelude
+def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (evidence? : Option Fren.Core.Evidence := none) : State :=
+  ({ cliLevels := Fren.Core.Levels.ofFlags lints, evidenceOverride? := evidence? } : State).withPrelude
 
 /-- Elaborates the files at `paths`, whose contents are `srcs`, with the
 state before each file and after the last, before the claims are checked,
 from which `fren mutate` elaborates its mutants (`mutantsWith`). `fren fix`
-fixes the lints `fixing` in the files that `ignored` does not match. -/
+fixes the lints `fixing` in the files that `ignored` does not match.
+`evidence?` is that of `fren check --evidence`. -/
 def elaborateSourcesBefore (paths srcs : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
+    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false)
+    (evidence? : Option Fren.Core.Evidence := none) :
     IO (Array (String × Array Char) × Array State × State) := do
   let mut files := #[]
   let mut states := #[]
-  let mut st := initialState lints
+  let mut st := initialState lints evidence?
   for path in paths, src in srcs do
     let md := Fren.Core.isMarkdownFile path
     let text := if md then Fren.Core.unwrapMarkdown src else src
@@ -512,13 +531,14 @@ def elaborateSources (paths srcs : Array String) (lints : Array (Fren.Core.LintT
 `elaborateSourcesBefore`; `none` if one cannot be read. `fren fix` fixes
 the lints `fixing` in the files that `ignored` does not match. -/
 def elaborateBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
+    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false)
+    (evidence? : Option Fren.Core.Evidence := none) :
     IO (Option (Array (String × Array Char) × Array State × State)) := do
   let mut srcs := #[]
   for path in paths do
     let some src ← readSpec p path | return none
     srcs := srcs.push src
-  return some (← elaborateSourcesBefore paths srcs lints fixing ignored)
+  return some (← elaborateSourcesBefore paths srcs lints fixing ignored evidence?)
 
 /-- Reads and elaborates the files; `none` if one cannot be read. `fren fix`
 fixes the lints `fixing` in the files that `ignored` does not match. -/
@@ -537,9 +557,10 @@ def printStopped (p : Paint) (diags : Array Diag) (what := "check") : IO Unit :=
 
 /-- Reads and elaborates the files, printing any static errors, with the
 states of `elaborateSourcesBefore`. -/
-def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
+def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (evidence? : Option Fren.Core.Evidence := none) :
     IO (Option (Array (String × Array Char) × Array State × State)) := do
-  let some (files, states, st) ← elaborateBefore p paths lints | return none
+  let some (files, states, st) ← elaborateBefore p paths lints (evidence? := evidence?) | return none
   let starts := linesOf files
   for d in st.diags do printDiag p files d starts
   let errors := st.diags.filter (·.severity == .error) |>.size
@@ -548,10 +569,12 @@ def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.Lint
     return none
   return some (files, states, st)
 
-/-- Reads and elaborates the files, printing any static errors. -/
-def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
+/-- Reads and elaborates the files, printing any static errors, with the
+evidence of `fren check --evidence`, `evidence?`. -/
+def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (evidence? : Option Fren.Core.Evidence := none) :
     IO (Option (Array (String × Array Char) × State)) := do
-  return (← loadBefore p paths lints).map fun (files, _, st) => (files, st)
+  return (← loadBefore p paths lints evidence?).map fun (files, _, st) => (files, st)
 
 /-- Prints the messages of result `r` of `c`, at the positions of the items
 they are about; returns them. -/
@@ -886,10 +909,12 @@ def jobsDefault : BaseIO Nat :=
 
 /-- Runs `fren check`, printing diagnostics and the summary to stderr and
 any solver queries to stdout; returns the exit code. `record?` collects the
-results of each item, by its key (`Mutate.Todo.key`), for the tests of
-`fren mutate`'s decisions. -/
-def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.CheckResult))) := none) : IO UInt32 := do
-  let some (files, st) ← load args.paint args.files args.lints | return exitCode false none
+results of each item, by its key (`Mutate.Todo.key`), each with the method
+that ran it, for the tests of `fren mutate`'s decisions and of the
+agreement of methods (`check::methods_agree`). -/
+def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.CheckResult × Fren.Core.ProofMethod))) := none) :
+    IO UInt32 := do
+  let some (files, st) ← load args.paint args.files args.lints args.evidence? | return exitCode false none
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)
@@ -985,6 +1010,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- Each of its results, with the caveats of the method that ran it.
     let mut item : Array (Fren.Core.CheckResult × List Fren.Core.Caveat) :=
       results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
+    let mut methods : Array Fren.Core.ProofMethod := results.map fun _ => .solver
     -- The evaluator's internal error, printed above, explains why the
     -- checks set to testing are missing from the summary.
     if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
@@ -994,6 +1020,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       -- A witness found by testing is a real witness: only a proof check's
       -- pass by testing has the caveat `Random` (`Reqs/Evidence`).
       item := item ++ tested.map fun r => (r, Fren.Core.ownCaveatsOf r true)
+      methods := methods ++ tested.map fun _ => .random
     -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
     match enumerated? with
     | some (.error msg) =>
@@ -1004,6 +1031,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       for r in e.results do
         shown := shown ++ (← printResult args.paint files c r st.vias)
       item := item ++ e.results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
+      methods := methods ++ e.results.map fun _ => .enumerated
       if let some msg := e.boundedMsg? (subjectOf c global) c.tested then
         printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
         shown := shown.push msg
@@ -1051,7 +1079,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     all := all ++ final
     -- The tests compare each method's own verdicts, before the evidence of
     -- what they rest on changes how they are shown.
-    if let some r := record? then r.modify (· ++ item.map fun (x, _) => (key, x))
+    if let some r := record? then r.modify (· ++ (item.zip methods).map fun ((x, _), m) => (key, x, m))
   -- A fresh answer that contradicts `--verify-query-cache`'s
   -- (`cli::contradicts`), with no position: it is about the cache, not
   -- about a file.

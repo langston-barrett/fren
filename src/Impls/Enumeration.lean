@@ -2241,6 +2241,24 @@ impl enumerated_verdict: check::enumerated_verdict for (k : CheckKind) (v : Verd
   intro k v c x o _
   cases k <;> cases v <;> cases c <;> cases x <;> cases o <;> decide
 
+-- Whether the methods' own verdicts on a check contradict each other
+-- (`methodsContradict`), which the test job `methodsAgree` decides with.
+impl methods_contradict: check::methods_agree for (k : CheckKind) (s e r : Verdict) (b : Bool) {
+  kind := toCheckKind k,
+  solver := toVerdict s,
+  enumerated := toVerdict e,
+  «bounded?» := b,
+  random := toVerdict r,
+  «contradiction?» := Fren.Core.methodsContradict k s e b r,
+} by
+  intro k s e r b _
+  -- The cells of `check::method_cell`, and the contributions they allow.
+  let rc : check.Cell := if (Fren.Core.CheckKind.proof k) then .Refutes else .Confirms
+  refine ⟨check.contribution .Decides (toVerdict s) false, check.contribution .DecidesUpToSize (toVerdict e) b,
+    check.contribution rc (toVerdict r) false, toCheckKind k, .Solver, .Decides, toCheckKind k, .Enumerated,
+    .DecidesUpToSize, toCheckKind k, .Random, rc, ?_⟩
+  cases k <;> cases s <;> cases e <;> cases r <;> cases b <;> decide
+
 
 /-- Shapes of most kinds, nested a little, for `estimate_bounds_count`. -/
 def estimateSamples : List Shape :=

@@ -265,6 +265,43 @@ jobs:
         path: fuzz
         if-no-files-found: ignore
         retention-days: 30
+  # Every check of Fren's own requirements, the ui tests and the front-end
+  # fuzzer's corpus, under the solver, enumeration and random testing, each
+  # set by `fren check --evidence`; it fails where two methods' verdicts on
+  # a check contradict each other (`check::methods_agree`,
+  # `Reqs/Methods#agreement-of-methods`). Four processes, one to a part.
+  methods-agree:
+    if: ${{ !inputs.fuzz-only }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-methods-agree-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ github.sha }}
+    - run: lake build fren_test
+    - run: |
+        set -euo pipefail
+        part() {
+          local name="${*// /-}"
+          lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out"
+        }
+        part own & a=$!
+        part ui 0 2 & b=$!
+        part ui 1 2 & c=$!
+        part fuzz & d=$!
+        code=0
+        for pid in "$a" "$b" "$c" "$d"; do wait "$pid" || code=1; done
+        for f in "$RUNNER_TEMP"/methods-*.out; do
+          cat "$f"
+          test "$(tail -n 1 "$f")" = "[]" || code=1
+        done
+        exit "$code"
   # Every declaration of Fren's code is run by `lake test`, or listed in
   # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
   coverage:
