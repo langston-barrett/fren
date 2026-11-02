@@ -1,51 +1,35 @@
 # The rules of the reference's **Legality rules** and **Dynamic semantics**
 # that no requirement formalizes yet (`Reqs/dev/Style#rules-and-requirements`),
-# by chapter, in the chapter's order: the measure of each chapter group's
-# Interlock step (#620), which gives each a requirement and removes its line.
-# A rule that is to keep none says why, after ` -- `. The `ruleReqs` job
-# fails on such a rule that is not listed, and on a listed one that has a
-# requirement, is not such a rule, or is no rule.
+# one per line, in a section for each chapter, in the chapter's order. The
+# Measure step of a chapter group (#620) lists its chapters' rules, in
+# sections marked " (Interlock pending)"; its Interlock step gives each a
+# requirement, removes its line and the mark. A rule that is to keep no
+# requirement says why, after ` -- `, which every line of a section without
+# the mark must. The `ruleReqs` job fails on a rule of those labels that has
+# no requirement and is not listed, and on a listed one that has one, is of
+# another label, is in another chapter's section, or is no rule.
 
-# src/Reqs/Lang/EvaluationRules.md
+# src/Reqs/Lang/EvaluationRules.md (Interlock pending)
+evaluation.laws
 evaluation.constant
 evaluation.variant
-evaluation.let.lazy
 evaluation.operator.defined
 evaluation.operator.not
-evaluation.operator.negation
-evaluation.operator.arithmetic
-evaluation.operator.division
 evaluation.operator.concatenation
 evaluation.operator.membership
-evaluation.operator.equality
 evaluation.operator.order
 evaluation.operator.order.excluded
 evaluation.operator.count
-evaluation.and.true
-evaluation.or.true
 evaluation.or.false
 evaluation.lazy.undefined
-evaluation.if.else
-evaluation.if.condition
 evaluation.match
-evaluation.match.falls-through
-evaluation.match.skipped
-evaluation.match.no-match
-evaluation.test
+evaluation.match.order
 evaluation.list.nil
-evaluation.construct
-evaluation.project
-evaluation.index
-evaluation.method.abs
-evaluation.method.min-max
-evaluation.method.len
 evaluation.method.excluded
 evaluation.apply
 evaluation.apply.caller
 evaluation.apply.substitution
-evaluation.call
 evaluation.call.generic
-evaluation.recur
 evaluation.call.arguments
 evaluation.recur.fixed-point
 evaluation.recur.language
@@ -62,6 +46,7 @@ evaluation.free.unread
 evaluation.free.binders
 evaluation.free.params
 evaluation.guard.term
+evaluation.guard
 evaluation.guard.when
 evaluation.guard.branches
 evaluation.guard.and-or
@@ -71,9 +56,11 @@ evaluation.guard.evaluated
 evaluation.guard.unguarded
 evaluation.guard.nesting
 evaluation.guard.evaluation
+evaluation.guard.evaluation.connectives
+evaluation.guard.evaluation.arms
 evaluation.guard.evaluation.rest
 
-# src/Reqs/Lang/Quantifiers.md
+# src/Reqs/Lang/Quantifiers.md (Interlock pending)
 quantifier.type.body
 quantifier.type.binder
 quantifier.type.not-listed
@@ -101,9 +88,13 @@ quantifier.guard.exists
 quantifier.guard.conjuncts
 quantifier.guard.bound
 quantifier.guard.free
+quantifier.guard.operand
 quantifier.guard.strict
 quantifier.guard.name.members
+quantifier.guard.name.model
+quantifier.guard.domain.inputs
 quantifier.guard.range.other
+quantifier.guard.range.model
 quantifier.guard.meaning
 quantifier.guard.evaluation
 quantifier.name.scope
@@ -115,8 +106,10 @@ quantifier.name.mentions.unbounded
 quantifier.name.mentions.quantifier
 quantifier.global.short-form
 
-# src/Reqs/Lang/Semantics.md
+# src/Reqs/Lang/Semantics.md (Interlock pending)
+semantics.eval.big-step
 semantics.derived-forms
+semantics.value
 semantics.value.bool
 semantics.value.integer
 semantics.value.text
@@ -146,6 +139,7 @@ semantics.derived.table.scrutinee
 semantics.derived.test.and
 semantics.derived.test.if
 semantics.derived.test.when
+semantics.derived.test.chain
 semantics.derived.list
 semantics.derived.variant
 semantics.derived.construct
@@ -165,7 +159,9 @@ semantics.derived.lambda-match
 semantics.derived.function-name
 semantics.derived.function-parameter
 semantics.derived.count
+semantics.env
 semantics.env.unbound
+semantics.interp
 semantics.interp.functions
 semantics.interp.recursions
 semantics.interp.primitives
@@ -209,23 +205,24 @@ semantics.excluded.quantifiers
 semantics.excluded.abstract
 semantics.excluded.orders
 
-# src/Reqs/Lang/Traits.md
-trait.member.kinds
-trait.member.other
-trait.member.pub
-trait.member.default
-trait.member.generic
-trait.member.use
-trait.carrier
-trait.carrier.payload
-trait.carrier.outside
-trait.scope.shadowing
-trait.scope.order
-trait.scope.distinct
-trait.scope.outside
-trait.law.type
-trait.law.variables
-trait.law.mentions
-trait.law.names
-trait.law.meaning
-trait.law.interpretation
+# src/Reqs/Lang/Traits.md (Interlock pending)
+traits.member.kinds
+traits.member.other
+traits.member.pub
+traits.member.default
+traits.member.generic
+traits.member.use
+traits.member.rule
+traits.carrier
+traits.carrier.payload
+traits.carrier.outside
+traits.scope.shadowing
+traits.scope.order
+traits.scope.distinct
+traits.scope.outside
+traits.law.type
+traits.law.variables
+traits.law.mentions
+traits.law.names
+traits.law.meaning
+traits.law.interpretation

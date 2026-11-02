@@ -1,7 +1,9 @@
 name: book
 # Builds the reference manual (`book.toml`) with mdBook and mdbook-spec, which
 # renders rule identifiers as anchors (`Reqs/dev/Style#rule-identifiers`), and
-# fails if the build does. It publishes nothing.
+# fails if the build does. It publishes nothing. The test driver, built first,
+# writes the report of the rules and their requirements, a page of the book
+# (`scripts/rules_report.py`).
 on:
   push:
     branches:
@@ -26,11 +28,19 @@ env:
 jobs:
   book:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
+    # The parent too, whose `.lake` to start from, as in `pre-merge`.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+        fetch-depth: 2
+    - id: base
+      run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ steps.base.outputs.sha }}
+    - run: lake build fren_test
     - name: Install mdBook
       run: | # zizmor: ignore[github-env]
         set -euo pipefail

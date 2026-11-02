@@ -118,30 +118,44 @@ quote, so it needs no label.
 ## Rules and requirements
 
 - A rule under **Legality rules** or **Dynamic semantics** is formalized
-  by a requirement: an item of a ```` ```fren ```` block. One requirement
-  may formalize several rules.
+  by a requirement: an item of a ```` ```fren ```` block, or some of its
+  *clauses*, the named `ensure`s, `expect`s and `cover`s of a procedure or
+  of an expectation's block, and a function's postconditions. One
+  requirement may formalize several rules.
 - The requirement has the rule's name: its path is the rule's identifier
   with each `.` a `::` and each `-` an `_` (`quantifier::type::not_listed`
-  for `quantifier.type.not-listed`), or it is one segment shorter and has an
-  `ensure` named as the last segment (`proc guard` in `mod quantifier`, with
+  for `quantifier.type.not-listed`), or it is one segment shorter and has a
+  clause named as the last segment (`proc guard` in `mod quantifier`, with
   `ensure strict`, for `quantifier.guard.strict`).
-- Where the structures differ, the rule names its requirement in a code
-  span instead, as it names its checked block: "(`lang::guard_bound`)".
-- An item in a module named as a rule's construct, such as `quantifier`,
-  has a rule of its name: each of its `ensure`s does, or the item itself
-  if it has none.
+- Where the structures differ, the rule names its requirement in a
+  *marker* instead: a parenthesized group with an element, between its
+  commas and semicolons, that is only an item's path, "(`F0356`,
+  `lang::quantifier_size`)", or clauses of one, "(`and_false` and
+  `and_unevaluated` of `lang::lazy_rules`)". Clauses alone, "(`and_true`)",
+  are of the latest item that a marker before them in the chapter names
+  that has them. A path elsewhere in the rule, as in "`lang::eval` gives",
+  is no marker.
+- An item of a chapter in a module named as one of the chapter's
+  constructs, such as `quantifier`, has a rule of its name, as each of its
+  clauses does, where the name is shaped as a rule identifier: lowercase
+  words and digits joined by `_`.
 - A rule that has no requirement yet is listed in
-  `test/unformalized_rules.txt`. The Interlock step of a chapter group
-  (#620) gives such rules requirements and removes their lines. A rule
-  that is to keep none says why there.
+  `test/unformalized_rules.txt`, in its chapter's section. The Measure
+  step of a chapter group (#620) lists its chapters' rules in sections
+  marked "(Interlock pending)". Its Interlock step gives each rule a
+  requirement, removes its line, and removes the mark. A rule that is to
+  keep no requirement says why on its line, after ` -- `, which every line
+  of a section without the mark must.
 - A test cites each rule that it tests with a line
   `--@ reference: quantifier.guard.strict`, as the Rust Reference's tests
   do with `//@ reference:`.
-- `lake test` checks these links, that every cited rule exists, and that
-  each requirement that formalizes a rule of its own chapter follows the
-  rule (`ruleReqs`). It writes the [report](Rules.md): for each rule, its
+- `lake test` checks all of this, that each marker names items and
+  clauses that exist, that every cited rule exists, and that each
+  requirement that formalizes a rule of its own chapter follows the rule
+  (`ruleReqs`).
+- The report, the page "Rules and their requirements" under this one,
+  which is written when the book is built, gives each rule's
   requirements, the `impl`s bound to them and the tests that cite it.
-  `lake test -- --bless` rewrites it.
 
 ## Examples
 

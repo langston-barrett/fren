@@ -12,3 +12,11 @@ build-dir = "book"
 # Installing it is described in `dev/Overview.md`.
 [preprocessor.spec]
 command = "mdbook-spec"
+
+# Adds the page `dev/Rules.md`, the report of the rules and their
+# requirements, which `fren_test --rules-report` writes
+# (`scripts/rules_report.py`): build the test driver, `lake build fren_test`,
+# before the book.
+[preprocessor.rules]
+command = "python3 scripts/rules_report.py"
+before = ["spec"]

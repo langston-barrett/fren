@@ -33,5 +33,9 @@ cargo install --locked --git https://github.com/rust-lang/reference \
   --rev 3989fe91f1a601b51684a582ad17b2503f221787 mdbook-spec
 ```
 
+The book's page "Rules and their requirements" is written when
+it is built, by `scripts/rules_report.py`, from the test driver: run
+`lake build fren_test` before `mdbook build`.
+
 The `book` workflow builds the book on every pull request and on `main`,
 and publishes nothing.

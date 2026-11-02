@@ -52,9 +52,15 @@ pub mod testing
   reference](Style.md#rule-identifiers)).
 - **Rules and their requirements** (`lake test`, `ruleReqs`): each rule of
   **Legality rules** or **Dynamic semantics** has a requirement or is
-  listed in `test/unformalized_rules.txt`, every rule that a test cites
-  with `--@ reference: ID` exists, and the [report](Rules.md) is up to
-  date (see [Writing the reference](Style.md#rules-and-requirements)).
+  listed in `test/unformalized_rules.txt`, with why where its chapter's
+  section is not "(Interlock pending)"; each marker names items and clauses
+  that exist; a block that formalizes a rule of its chapter follows it; each
+  item of a module named as one of its chapter's constructs, and each of its
+  clauses, whose name is shaped as a rule identifier, has a rule of that
+  name; and every rule that a test cites with `--@ reference: ID` exists
+  (see [Writing the reference](Style.md#rules-and-requirements)). The
+  report of these links, a page of the book under [Writing the
+  reference](Style.md), is written when the book is built.
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
   `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).
