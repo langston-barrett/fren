@@ -4,15 +4,16 @@
 # counted declaration that a compiled entry point reaches, that does not
 # run and is not listed, and warns of a listed one that runs, that nothing
 # compiled reaches, or that is no longer counted, naming the line to
-# remove. One that only proofs, `#guard`s, `#eval`s or `run_cmd`s use needs
-# no line.
+# remove. One that no entry point reaches (used only by proofs, `#guard`s
+# or `#eval`s, inlined into its callers, or replaced by `@[csimp]`) needs no
+# line.
 Fren.Core.Enumeration.Shape.random.go
 Fren.Core.Enumeration.Shapes.random
 Fren.Core.Enumeration.charSize
 Fren.Core.Enumeration.notEnumerable
 Fren.Core.Enumeration.notEnumerableWhy
 Fren.Core.Pat.matchesVal
-Fren.Core.Re.mat
+Fren.Core.Re.mat -- the reference of `Re.matchD`, which runs in its place (`Re.mat_eq_matchD`, `@[csimp]`)
 Fren.Core.Re.matchD
 Fren.Core.Re.matches
 Fren.Core.firstFree -- runs only when a goal's bound name is already a symbol of the query, which no spec can make since bound names became `x#k` (#659)

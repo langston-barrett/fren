@@ -1172,22 +1172,29 @@ executable's own environment, from its entry points:
   `CommandElab`, which Lean looks up by name and calls, as the attributes
   that register elaborators, macros, formatters and lean-smt's
   translators require;
-- every definition of the modules whose definitions the Lean definitions
-  that the hosted front end generates for a spec may call (`specRuntime`:
-  `Fren.Prelude`, `Fren.Seq`, `Fren.SeqElems`, `Fren.FinSet`,
-  `Fren.Finite`, `Fren.Enumerate`, `FrenCore.Prelude`, `FrenCore.Str` and
-  `FrenCore.Regex`). The hosted front end compiles and runs those
-  definitions, in `lean` and in the tests, and they reach Fren's code by
-  names built from strings, by instances that synthesis finds, and by the
+- every definition of the modules of `specRuntime`: `Fren.Prelude`,
+  `Fren.Seq`, `Fren.SeqElems`, `Fren.FinSet`, `Fren.Finite`,
+  `Fren.Enumerate`, `FrenCore.Prelude`, `FrenCore.Str` and
+  `FrenCore.Regex`. For each spec, the hosted front end generates Lean
+  definitions, and compiles and runs them, in `lean` and in the tests.
+  Those definitions may call the definitions of these modules: by names
+  built from strings, by instances that synthesis finds, and by the
   spec's own identifiers, none of which the compiled code shows.
 
 From what it reaches, it follows each call and each closure of the
 compiled code (the IR), and the declarations that a reached definition
 names with a `Name` literal or a syntax quotation. A counted declaration
-that none of this reaches is used only by proofs and by what Lean
-interprets while a module builds, such as `#guard`s, `#eval`s and
-`run_cmd`s. No test of an executable can run it, so it is no gap, and it
-is not listed (`testing::coverage`). One that ran although nothing
+that none of this reaches is no gap, and is not listed
+(`testing::coverage`), for one of three reasons:
+
+- only proofs, and what Lean interprets while a module builds, such as
+  `#guard`s, `#eval`s and `run_cmd`s, use it, so no test of an
+  executable can run it;
+- its compiled callers have its code inlined or specialized, even with
+  `-Dcompiler.small=0`, so its own function never runs, but its code
+  runs, and counts, in theirs, as an `@[inline]` definition's does;
+- it is the reference of a `@[csimp]` replacement, which runs in its
+  place, or only such a reference uses it. One that ran although nothing
 reaches it shows a call that the graph does not see, such as one into
 `specRuntime` from a module that it should list; `fren_coverage` warns of
 each, by name, on GitHub Actions as an annotation too. The Lean-hosted
@@ -1203,14 +1210,14 @@ trusted: `ran?` is gcov's counters, and `reached?` is
 ```fren
 pub proc coverage(
     ran?,                       -- gcov's counters show that one of its entry points ran
-    reached?,                   -- a compiled entry point of an executable reaches it
+    reached?,                   -- an entry point reaches it, of an executable or of generated code
     listed?,                    -- `test/coverage.txt` lists it
 ): (det fails?, det stale?) {
     ensure gap: fails? iff not ran? and reached? and not listed?
     ensure needless_line: stale? iff listed? and (ran? or not reached?)
 
-    -- A function that only proofs, `#guard`s or `#eval`s use never fails,
-    -- and needs no line...
+    -- A function that no entry point reaches, such as one that only proofs
+    -- use, never fails, and needs no line...
     expect proof_only: when not reached?, not fails? and (stale? iff listed?)
     -- ...but one that an executable can run fails until a test runs it or
     -- a line says why none can.
@@ -1227,7 +1234,8 @@ in its log and in the job's summary, but does not fail on them, since it
 finds them in the sources' text: a `def`, `abbrev` or `opaque` without an
 attribute whose name appears nowhere in `src` or `examples`, in Lean or in
 Markdown, but in its own declaration. A name that code builds from
-strings would seem dead.
+strings would seem dead; and dead code whose short name another
+declaration, or prose, shares goes unreported.
 
 `test/coverage.txt` lists the counted declarations that no test runs, one
 per line. One that is never meant to run, such as code that runs only when

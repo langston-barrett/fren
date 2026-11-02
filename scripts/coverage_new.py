@@ -9,9 +9,9 @@
 merge base with BASE (`origin/main` by default) by the compiled code of
 the executables (`Reqs/dev/Testing#coverage`):
 
-- `UNREACHED`: no compiled entry point reaches it, so only proofs,
-  `#guard`s, `#eval`s or `run_cmd`s, which Lean interprets while a
-  module builds, use it. It needs no test.
+- `UNREACHED`: no entry point reaches it: only proofs, `#guard`s,
+  `#eval`s or `run_cmd`s use it, its callers inline it, or a `@[csimp]`
+  replacement runs in its place. It needs no test.
 - `DEAD`: nothing refers to it, not even a proof. Delete it.
 - `REACHED`: it needs a test. Name the test in the pull request.
 
@@ -137,14 +137,24 @@ def exe_roots():
 def evict(paths):
     """Delete the objects `paths` and their copies in the artifact cache,
     so that the next build compiles them again, with their notes. Only this
-    worktree's builds use them (`-Kcoverage_dir`)."""
-    inodes = {(os.stat(p).st_dev, os.stat(p).st_ino) for p in paths}
+    worktree's builds use them (`-Kcoverage_dir`). The copies are found as
+    the cache's own links to the objects: a cache on another filesystem
+    copies its outputs instead, and then its copy cannot be found."""
+    inodes = {(os.stat(p).st_dev, os.stat(p).st_ino): p for p in paths}
+    evicted = set()
     for d, _, files in os.walk(os.path.join(cache_dir(), "artifacts")):
         for f in files:
             path = os.path.join(d, f)
             st = os.stat(path)
             if (st.st_dev, st.st_ino) in inodes:
                 os.remove(path)
+                evicted.add(inodes[(st.st_dev, st.st_ino)])
+    missing = [p for p in paths if p not in evicted]
+    if missing:
+        sys.exit("coverage_new: the artifact cache keeps no link to "
+                 + ", ".join(os.path.relpath(p, ROOT) for p in missing)
+                 + " (it copies its outputs, as on another filesystem), so its copy cannot be evicted: "
+                 "build without the cache, with `lake -R -Kcoverage=RUNTIME build fren_test` and no `-Kcoverage_dir`")
     for p in paths:
         os.remove(p)
         print(f"coverage_new: compiling {os.path.relpath(p, ROOT)} again, for its notes", flush=True)

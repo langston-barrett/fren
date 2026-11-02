@@ -28,11 +28,11 @@ theorems, constructors, recursors, matchers, projections, instances that
 `deriving` makes, constants, `@[extern]` declarations, whose code is C, or
 `@[inline]` definitions, whose code runs in their callers.
 
-Only what the executables can run is a gap: a declaration that no
-compiled entry point of an executable of `lakefile.lean` reaches is used
-only by proofs and by what Lean interprets while a module builds, such
-as `#guard`s and `#eval`s, and is not
-counted against the tests (`reached`).
+Only what the executables can run is a gap: a declaration that no entry
+point reaches (`reached`) is not counted against the tests. Only proofs,
+and what Lean interprets while a module builds, use it; or its compiled
+callers have its code inlined or specialized; or it is the reference of a
+`@[csimp]` replacement, which runs in its place.
 
 The declarations that the executables can run but no test runs are listed
 in `test/coverage.txt`, one per line, each followed by ` -- ` and why, if
@@ -339,7 +339,9 @@ unsafe def reachedByExes (consts : Bool) : IO (Except String NameSet) := do
       -- A lambda, join point or closed term may be shared with other
       -- declarations whose code is alike (`declOf?`): reaching it reaches
       -- none of them.
-      let shared := n.components.any fun
+      -- Only before `_at_`: `X._at_.Y._lam_0.spec_0` is a specialization
+      -- of `X`, at a lambda of `Y`.
+      let shared := (n.components.takeWhile (· != .str .anonymous "_at_")).any fun
         | .str _ s => s.startsWith "_lam" || s.startsWith "_elam" || s.startsWith "_jp" || s.startsWith "_closed"
         | _ => false
       unless shared do owners := owners.insert (ownerOf n)
@@ -534,8 +536,9 @@ unsafe def main (args : List String) : IO UInt32 := do
   let defs := defs.filter (!derived.contains ·)
   let decls := defs.filter hasParams
   -- What the compiled code of the executables can run. A declaration that
-  -- none of it reaches is used only by proofs, `#guard`s, `#eval`s or Lean's
-  -- interpreter, so no test of the executables can run it, and it is no gap.
+  -- none of it reaches is used only by proofs, `#guard`s and `#eval`s, or
+  -- inlined into its callers, or replaced by a `@[csimp]` lemma's function:
+  -- no test can run its own function, and it is no gap.
   -- Without counters, the build may be one that inlines small functions.
   let reachedSet ← match ← reachedByExes o.static with
     | .ok s => pure s
@@ -562,7 +565,7 @@ unsafe def main (args : List String) : IO UInt32 := do
       else if !hasParams d then
         IO.println s!"CONSTANT {d}: computed when its module is initialized, not counted"
       else if !reachedBy d then
-        IO.println s!"UNREACHED {d}: no compiled entry point reaches it, so only proofs and `#guard`s, `#eval`s or `run_cmd`s, which Lean interprets while a module builds, use it: no test needed"
+        IO.println s!"UNREACHED {d}: no entry point reaches it: only proofs, `#guard`s or `#eval`s use it, its callers inline it, or a `@[csimp]` replacement runs in its place: no test needed"
       else if o.static then
         IO.println s!"REACHED {d}: needs a test: name it in the pull request, and check that it runs it with `scripts/coverage_new.py --run JOB...`"
       else if ranBy d then
@@ -621,7 +624,7 @@ unsafe def main (args : List String) : IO UInt32 := do
   let covered := (decls.filter ranBy).size
   let counted := decls.size - (unreached.filter (!ranBy ·)).size
   let pct := if counted == 0 then 100 else 100 * covered / counted
-  let summary := s!"{covered} of {counted} declarations run by the tests ({pct}%), {(listed.filter (·.2.isSome)).size} never meant to run; {unreached.size - ranUnreached.size} more that no compiled entry point reaches, which only proofs and what Lean interprets while a module builds use"
+  let summary := s!"{covered} of {counted} declarations run by the tests ({pct}%), {(listed.filter (·.2.isSome)).size} never meant to run; {unreached.size - ranUnreached.size} more that no entry point reaches: used only by proofs, `#guard`s or `#eval`s, inlined into their callers, or replaced by `@[csimp]`"
   IO.println s!"fren_coverage: {summary}"
   -- Each shows a hole in the entry points, such as a module that
   -- `specRuntime` should list.
