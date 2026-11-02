@@ -1,0 +1,23 @@
+-- A known difference of the front ends at a trait's vacuity under its laws
+-- (#493, fuzzer seed 91253): a law with a `Bool` variable under `when`,
+-- over a method with a postcondition, beside a law that is false. The
+-- `fren` command decides the check; Lean's query hits cvc5's `Symbol '->'`.
+-- fren-covers: view::inconclusive_reported
+set_option fren.lint.dead_code "allow"
+
+mod traits_frontends
+
+set_option fren.lint.undecidable "allow" in
+trait Tr {
+    fn obs(s: Self): (r: Int) { ensure low: r >= 0 }
+
+    law closed(): 3 <= 0 * 2  --~ warning: this `*` is always `0`
+    law flagged(s: Self, b?): when b?, obs(s) >= 0
+
+    expect e(s: Self, t: Self) {  --~[cli] error: the assumptions of `traits_frontends::Tr::e` are unsatisfiable
+        --~^[hosted] warning: could not decide whether the assumptions and calls of `traits_frontends::Tr::e` can hold together with its trait's laws: cvc5.Error.error "Symbol '->' not declared as a variable"
+        assume a: t = s
+        expect c: obs(s) >= 0  --~[cli] warning: rests on the assumptions and calls of `traits_frontends::Tr::e` holding together with its trait's laws
+        --~^[hosted] warning: could not decide whether `traits_frontends::Tr::e::c` holds: cvc5.Error.error "Symbol '->' not declared as a variable"
+    }
+}

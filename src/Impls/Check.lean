@@ -778,20 +778,16 @@ impl definitions: check::definitions for (k : CheckKind) {
   substituted? := k.substitutes,
 }
 
-impl law_premise: check::law_premise for (k : CheckKind) (v : Verdict) (l : Bool) (w : Option Verdict) {
+impl law_premise: check::law_premise for (k : CheckKind) (v : Verdict) (l a : Bool) {
   kind := toCheckKind k,
   verdict := toVerdict v,
   laws? := l,
-  asked? := w.isSome,
-  lawful := toVerdict (w.getD .inconclusive),
-  rests? := Fren.Core.lawPremise k v l w,
+  asked? := a,
+  rests? := Fren.Core.lawPremise k v l a,
 } by
-  intro k v l w _
-  rcases w with _ | w
-  · cases k <;> cases v <;> cases l <;> simp [fren_spec, Fren.Core.lawPremise, Fren.Core.fromUnsat,
-      Fren.Core.CheckKind.passFromUnsat, Fren.Core.CheckKind.queryHasLaws, toCheckKind, toVerdict]
-  · cases k <;> cases v <;> cases l <;> cases w <;> simp [fren_spec, Fren.Core.lawPremise, Fren.Core.fromUnsat,
-      Fren.Core.CheckKind.passFromUnsat, Fren.Core.CheckKind.queryHasLaws, toCheckKind, toVerdict]
+  intro k v l a _
+  cases k <;> cases v <;> cases l <;> cases a <;> simp [fren_spec, Fren.Core.lawPremise, Fren.Core.fromUnsat,
+    Fren.Core.CheckKind.passFromUnsat, Fren.Core.CheckKind.queryHasLaws, toCheckKind, toVerdict]
 
 /-- An item with one law, for `check::query_hypotheses`. -/
 def lawfulComp : Fren.Core.Comp Unit :=

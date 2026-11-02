@@ -6,6 +6,7 @@
 -- proof says that it rests on the laws (`F0665`).
 -- In a module, since Lean has an `Option` of its own.
 -- fren-covers: lang::trait_expectation
+-- fren-covers: view::inconclusive_reported
 set_option fren.lint.dead_code "allow"
 
 mod traits
@@ -75,7 +76,7 @@ trait Clash {
 
     expect e(s: Self) {  --~ error: the assumptions of `traits::Clash::e` are unsatisfiable: `one`, `two` contradict each other
         assume known: value(s) >= 0
-        expect c: value(s) = 5  --~ warning: rests on the vacuity of `traits::Clash::e` under the laws, which did not pass
+        expect c: value(s) = 5  --~ warning: rests on the assumptions and calls of `traits::Clash::e` holding together with its trait's laws, which did not pass
     }
 }
 
@@ -88,15 +89,15 @@ trait Pos {
 
     expect e(s: Self) {  --~ error: the assumptions of `traits::Pos::e` are unsatisfiable: `pos`, `neg` contradict each other
         assume neg: v(s) < 0
-        expect c: v(s) = 5  --~ warning: `traits::Pos::e::c` rests on the vacuity of `traits::Pos::e` under the laws, which did not pass
+        expect c: v(s) = 5  --~ warning: `traits::Pos::e::c` rests on the assumptions and calls of `traits::Pos::e` holding together with its trait's laws, which did not pass
         cover w: v(s) = 1  --~ error: cannot be met
     }
 
-    -- An assumption with a quantified law, which nothing decides: one
-    -- warning, at the claim.
-    expect undecided(s: Self) {
+    -- An assumption with a quantified law, which the solver does not
+    -- decide, as a realizability that is not decided is reported.
+    expect undecided(s: Self) {  --~ warning: could not decide whether the assumptions and calls of `traits::Pos::undecided` can hold together with its trait's laws
         assume big: v(s) > 3
-        expect c: v(s) >= 0  --~ warning: rests on the laws of `traits::Pos` holding together with its assumptions and calls
+        expect c: v(s) >= 0  --~ warning: `traits::Pos::undecided::c` rests on the assumptions and calls of `traits::Pos::undecided` holding together with its trait's laws, which did not pass
     }
 }
 
@@ -158,6 +159,7 @@ trait Flagged {
 
     expect e0(s: Self) { assume big: obs(s) > 2 }
     --~^ warning: the assumption `big` constrains only parameters that nothing uses
+    --~^^ warning: could not decide whether the assumptions and calls of `traits::Flagged::e0` can hold together with its trait's laws
 }
 
 -- Without laws, an expectation is about every carrier and every method,
@@ -175,3 +177,4 @@ trait Lawless {
 
 -- `law` is a name like any other outside a trait.
 fn law(Int): Int
+--@ summary: 24 passed, 6 failed, 7 inconclusive, 0 redundant

@@ -496,6 +496,22 @@ pub proc severity(kind: Kind, verdict: Verdict): (det level: Severity) {
 }
 ```
 
+`view::inconclusive_reported` states that the summary counts no
+inconclusive result in silence: every undecided result of a check, of any
+kind, about a constraint or about the whole item, as the vacuity of an
+expectation of a trait under the laws is, has a warning among its messages:
+
+```fren
+-- The same for every kind, and either place, as it should be.
+set_option fren.lint.unused_variables "allow" in
+pub proc inconclusive_reported(
+    kind: Kind,
+    whole?,                  -- about the whole item, not one constraint
+): (det warned?) {
+    ensure rule: warned?
+}
+```
+
 `view::build` states when a Lean build fails, from the most severe level of
 the diagnostics of a `#fren_check`: its results, and its internal errors,
 each an `Error`, such as one that reports a refuted model (see [Check

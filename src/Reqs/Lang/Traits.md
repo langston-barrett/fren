@@ -264,25 +264,25 @@ pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: Che
 r[trait.expect.lawful]
 An expectation of a trait with laws, and with assumptions or calls, has a
 vacuity check of its own: whether its assumptions and calls can hold
-together with the laws. Where they cannot, it is an error (`F0602`). Its
-other checks rest on this check as they rest on its realizability: a pass
-of a proof check is then inconclusive (`F0664`), and the verdict of a
-check that a model decides, such as a cover goal's, stands
-([Evidence](../Evidence.md#the-laws-of-a-trait)). Laws that contradict
-each other fail it too.
+together with the laws. Where they cannot, it is an error (`F0602`). Where
+the solver does not decide it, it is a warning (`F0608`). Its other checks
+rest on this check as they rest on its realizability: where it does not
+pass, a pass of a proof check is inconclusive (`F0664`), and a witness
+check's verdict stands ([Evidence](../Evidence.md#the-laws-of-a-trait)).
+Laws that contradict each other fail it too.
 
 r[trait.expect.laws-unchecked]
 A verdict of an expectation of a trait with laws that comes from an
 `unsat` query, such as a pass of an expectation or a failure of a cover
-goal, rests on the laws. Where the expectation has a vacuity check under
-the laws that is not decided, the verdict rests on the laws holding
-together with its assumptions and calls, and where it has none, on the
-laws' consistency, which Fren does not check yet (#594). Either way, its
-constraint says so once, whatever its other checks give, and that check
-reports nothing more (`F0665`, `check::law_premise`). A verdict that comes
-from a model, such as a counterexample, rests on nothing more, since the
-model meets the laws. Realizability's queries have no laws
-(`check::query_hypotheses`).
+goal, rests on the laws. Where the expectation has no vacuity check under
+the laws, the verdict rests on what no check settles: on the laws'
+consistency, which Fren does not check yet (#594), where it has no
+assumptions or calls, and on their holding together with its assumptions
+and calls where it has some and the run leaves out vacuity checks. Either
+way, its constraint says so once, whatever its other checks give (`F0665`,
+`check::law_premise`). A verdict that comes from a model, such as a
+counterexample, rests on nothing more, since the model meets the laws.
+Realizability's queries have no laws (`check::query_hypotheses`).
 
 r[trait.expect.once]
 An expectation of a trait is checked once, in the trait.

@@ -977,23 +977,25 @@ An item whose trait has laws, and that has assumptions or calls, has a
 check of its own of this, its *vacuity under the laws*: whether the laws,
 its assumptions and its calls can hold together, which a model shows. Its
 checks rest on it as they rest on its realizability (`OwnRealizability`),
-and so are reported as those are:
+and so are reported as those of an item whose assumptions are about
+uninterpreted functions with contracts are:
 
 - Where it passes, no verdict rests on more than its proof.
 - Where it fails, the assumptions and calls cannot hold with the laws
   (`F0602`). A pass of a proof check that rests on it is inconclusive
-  (`F0664`), and a witness check's verdict stands, as where an item's
-  assumptions cannot hold by themselves.
+  (`F0664`), and a witness check's verdict stands.
 - Where it is not decided, which, with quantified laws, it seldom is, it
-  is settled for the checks that rest on it. Each constraint whose verdict
-  comes from an `unsat` query says, once, that it rests on the laws
-  holding together with the assumptions and calls (`F0665`), and this
-  check reports nothing of its own.
+  is a warning of its own (`F0608`), and a pass of a proof check that rests
+  on it is inconclusive (`F0664`), as where an item's realizability is not
+  decided.
 
-An item without assumptions or calls has no such check. Its verdicts rest
-on the laws alone, whose consistency Fren does not check yet (#594), and
-each constraint whose verdict comes from an `unsat` query says so
-(`F0665`). `check::law_premise` states which verdicts carry `F0665`:
+An item that has no such check rests on the laws in a way that nothing
+settles. Each of its constraints whose verdict comes from an `unsat` query
+says so, once (`F0665`): where it has no assumptions or calls, that the
+laws' consistency is not checked yet (#594), and where it has some, as in
+a run that leaves out vacuity checks, that their holding together with the
+laws was not checked. `check::law_premise` states which verdicts carry
+`F0665`:
 
 ```fren
 -- A pass of a check of this kind comes from an `unsat` query, not a
@@ -1018,15 +1020,13 @@ pub proc law_premise(
     verdict: Verdict,
     laws?,
     asked?,                  -- the item has a vacuity under the laws
-    lawful: Verdict,         -- its verdict, if it has one
 ): (det rests?) {
-    ensure rule: rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict)
-        and (not asked? or lawful = Verdict::Inconclusive)
+    ensure rule: rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict) and not asked?
 
     expect lawless: when not laws?, not rests?
     expect counterexamples: when kind = Kind::Expectation and verdict = Verdict::Fail, not rests?
     expect alone: when laws? and kind = Kind::Expectation and verdict = Verdict::Pass and not asked?, rests?
-    expect decided: when asked? and lawful != Verdict::Inconclusive, not rests?
+    expect asked: when asked?, not rests?
 }
 ```
 
