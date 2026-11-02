@@ -1027,7 +1027,9 @@ postcondition, whose one-step equations a query reflects from a fact
 (`lang::recursion_formulas`); its results `Int` or `Nat`, sometimes under
 a precondition. An expectation and a cover goal over the last then hold or
 fail by the facts of all of them, as do the rows of a table over the last
-in a contract of its own, whose own facts its checks never have. It is
+in a contract of its own, whose own facts its checks never have; and an
+input, an output and a call's output of a subset type whose invariant
+applies the recursive function. It is
 appended to specs of the corpus, so it is written from a grammar of its
 own, every form of which is well-typed, whatever the spec declares. -/
 def factChain : R String := do
@@ -1078,6 +1080,21 @@ def factChain : R String := do
   out := out ++ s!"\nproc fc_cover(s: Fc) \{\n    cover low: {last} < {c}\n}\n"
   if ← chance 40 then
     out := out ++ s!"\npub fn fc_table(s: Fc): (r: Int) \{\n    ensure t: table \{ fc{n}(s, true) >= {c} => r > 0, r < 0 => true, _ => true }\n}\n"
+  -- An input, an output and a call's output of a subset type whose
+  -- invariant applies the recursive `fcsum`, whose facts each query has,
+  -- and against which a model that a check reports is confirmed
+  -- (`lang::recursion_formulas`); its second row keeps the type inhabited
+  -- without the opaque `fcsum`. Each cover goal fixes the value of the
+  -- typed variable, so that whether evaluation confirms its model does
+  -- not depend on which model the solver gives, which the front ends'
+  -- solvers may pick differently.
+  if ← chance 50 then
+    let b ← below 4
+    let d ← below 4
+    out := out ++ s!"\npub type FcBig = m: Int where invariant: fcsum(Fl::Cons(m, Fl::Nil)) >= {b} or m = {b}\n" ++
+      "proc fc_in(x: FcBig): (det z: Int) { out z := x + 1 }\n" ++
+      s!"proc fc_out(): (y: FcBig) \{\n    cover w: y = {d}\n}\n" ++
+      s!"proc fc_call(u: Int) \{\n    call w := fc_out()\n    cover v: w.y = {d} and u > 0\n}\n"
   return out
 
 /-- A spec with constants, functions, and components over them, and its

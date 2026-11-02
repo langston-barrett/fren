@@ -122,3 +122,20 @@ pub fn plus_one(l: L): (r: Int) { ensure e: r = total(L::Cons(1, l)) }
 proc plus_small(x: L) {
     cover small: plus_one(x) >= 5 and x = L::Cons(1, L::Cons(1, L::Nil))   --~ warning: could not decide whether `plus_small::small` can be met
 }
+
+-- A model is confirmed against the variables' facts only where a check
+-- reports it: these are realizable, `pi::y` deterministic and `q::g` not
+-- redundant, though a model of their queries that want no model may give
+-- `total` a value that only the opaque function allows. The second row
+-- keeps the type's inhabitation check from asking for a witness that only
+-- the opaque `total` gives (#493).
+pub type BigI = n: Int where invariant: total(L::Cons(n, L::Nil)) >= 5 or n = 5
+
+set_option fren.lint.unused_variables "allow" in
+proc po(): (y: BigI) {}
+
+proc pi(x: BigI): (det y: Int) { out y := x + 1 }
+
+pub proc q(x: Int): (y: BigI) {   --~ warning: could not decide whether `q` is realizable
+    ensure g: y >= x
+}

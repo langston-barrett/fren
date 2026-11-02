@@ -389,11 +389,12 @@ the recursive confirmation is. -/
 def plainContradiction (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
     (model : Array (Name × Expr)) (recs : Array Name) : MetaM Bool := do
   let values ← modelValues c fvs primes model
-  let plain (e : Expr) : MetaM (Option Expr) := do
-    if ← readsAny recs e then return none
-    atModel values e
-  let truths ← decideAll ((← hyps.mapM (plain ·.2)).push (← plain goal))
-  return (Core.contradiction? (hyps.zipWith (fun (n, _) t => (n, t)) truths) truths.back?.join).isSome
+  let formulas := (hyps.map (·.2)).push goal
+  let recursive ← formulas.mapM (readsAny recs ·)
+  -- A formula that applies a recursive function is not evaluated here.
+  let truths ← decideAll (← (formulas.zip recursive).mapM fun (e, r) => if r then pure none else atModel values e)
+  let atK (k : Nat) : Option Bool × Bool := ((truths[k]?).join, recursive[k]?.getD false)
+  return Core.plainContradiction (hyps.mapIdx fun k (n, _) => (n, atK k)) (atK hyps.size)
 
 /-- Evaluate a model using real definitions, before reporting a recursive
 counterexample. Failure to evaluate is not confirmation. -/
@@ -842,7 +843,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         else pure none
       -- The formulas that a model is confirmed against: the variables'
       -- facts too (`Core.confirmedFormulas`).
-      let confirmed := Core.confirmedFormulas facts hyps
+      let confirmed := Core.confirmedFormulas wantModel facts hyps
       let recs ← match unfolded? with
         | some (_, g) => recursiveSolvers ((← confirmed.mapM (unfoldDefined ·.2)).push g)
         | none => pure #[]

@@ -287,10 +287,18 @@ equation of `total(L::Cons(1, l))` too, so that `one(l) >= 1` follows where
 has the one-step equations of `total(x)`, so that `x is L::Nil` cannot
 hold.
 
-A model is confirmed against the query's own formulas and its variables'
-facts, `confirmed` below, whose values are the model's: where one of them
-applies a recursive function, evaluation of the real definitions on the
-model must confirm it, so that a model of `x: Big` with `x = L::Cons(1,
+A model is confirmed against the query's own formulas, and, where a check
+reports it, its variables' facts too, `confirmed` below, whose values are
+the model's: where one of them applies a recursive function, evaluation of
+the real definitions on the model must confirm it. A check reports the
+model of a query that wants one (`Fren.Core.Backend.query`'s `wantModel`):
+a counterexample, a cover goal's witness, or a member's value. A query that
+wants none reports nothing: its `sat` is the answer that passes its check,
+as that the assumptions are consistent or that a constraint is not
+redundant, so its model is confirmed against its own formulas alone, as it
+was before the variables' facts were among them, and a procedure with an
+output of a type whose invariant applies a recursive function, as `proc
+po(): (y: BigI) {}`, is realizable without one. So a model of `x: Big` with `x = L::Cons(1,
 L::Cons(1, L::Cons(1, L::Nil)))`, which only the opaque `total` allows,
 does not meet `cover small: x = L::Cons(1, L::Cons(1, L::Cons(1,
 L::Nil)))`. Where a fact of the applications that it has applies a
@@ -315,9 +323,10 @@ pub proc recursion_formulas(
     written: Set<Int>,           -- the query's own hypotheses, by position
     facts: Rel<Int, Int>,        -- each application, with the formulas of its facts
     brought: Set<Int>,           -- the applications whose facts the query has (`check::fact_applications`)
+    reported?,                   -- a check reports the query's model: the query wants one
 ): (det reflected: Set<Int>, det confirmed: Set<Int>) {
     out reflected := variables union facts.image(brought) union written
-    out confirmed := variables union written
+    out confirmed := if reported? then variables union written else written
 }
 
 pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?, facts_recursive?):

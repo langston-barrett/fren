@@ -387,6 +387,25 @@ where
       | none => #[])
       ++ t.elems.flatMap typeNames
 
+/-- What the types of `c`'s variables that no definition gives bring, and
+those of its calls' variables, as `w.y`, from their procedures' own, as
+`Spec.flatVars` names them: the solver's queries assume each
+(`CComp.natFacts`), and a model that a check reports is confirmed against
+them (`Fren.Core.confirmedFormulas`). -/
+partial def _root_.FrenCli.Eval.Spec.flatTypeConstraints (sp : Spec) (c : Comp) : Array Constraint := Id.run do
+  let undefined (k : Constraint) : Bool := match k.name with
+    | .num x 0 => !c.defs.any (·.1 == x)
+    | _ => true
+  let mut cs := c.typeConstraints.filter undefined
+  for i in c.insts do
+    let some d := sp.comp? i.comp | continue
+    for k in sp.flatTypeConstraints d do
+      let name := match k.name with
+        | .num x n => .num (i.name ++ x) n
+        | x => i.name ++ x
+      cs := cs.push { k with name, e := k.e.renameVars (i.name ++ ·) }
+  return cs
+
 /-- `b`, with each formula paired with its meaning, and each model
 evaluated; refuted models are recorded in `log`. `sy` is `Symbols.of sp`,
 which the caller builds once for the spec. -/
@@ -407,7 +426,7 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
   -- too (`Fren.Core.confirmedFormulas`).
   let brought := vars.filter fun v =>
     Fren.Core.natBrought (v.role == .output) (ec.defs.any (·.1 == v.name)) != .nothing
-  let varTypes : Fm := .atoms <| ec.typeConstraints.filterMap fun p =>
+  let varTypes : Fm := .atoms <| (sp.flatTypeConstraints ec).filterMap fun p =>
     if brought.any (p.name == .num ·.name 0) then some { label := p.name, pfx := .anonymous, e := p.e } else none
   let varFacts : Array (Lean.Name × Fm) := #[(`type, varTypes), (`type, .primed copied varTypes)]
   -- The variables that a model may leave free, and the second copy of each
@@ -429,14 +448,15 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
         let vals := hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys)
         let bad := vals.find? (·.2 == some false)
         let g := goal.2.eval sp sy I env tys
-        let confirmed := Fren.Core.confirmedFormulas varFacts (hyps.map fun (n, f) => (n, f.2))
+        let confirmed := Fren.Core.confirmedFormulas wantModel varFacts (hyps.map fun (n, f) => (n, f.2))
         let confirmedVals := confirmed.map fun (_, f) => f.eval sp sy I env tys
         let recursive := (confirmed.flatMap fun (_, f) => f.recursiveNames sp) ++ goal.2.recursiveNames sp
         -- A formula without recursion that the model contradicts is a bug
         -- in Fren, which the refutation below reports, not evidence about
         -- the contracts (`Reqs/Models#reporting`).
-        let plain := (hyps.zip vals).any (fun ((_, f), (_, v)) => v == some false && (f.2.recursiveNames sp).isEmpty)
-          || (g == some true && (goal.2.recursiveNames sp).isEmpty)
+        let plain := Fren.Core.plainContradiction
+          ((confirmed.zip confirmedVals).map fun ((n, f), v) => (n, v, !(f.recursiveNames sp).isEmpty))
+          (g, !(goal.2.recursiveNames sp).isEmpty)
         if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty)
             (bad.isNone && g == some false && confirmedVals.all (· == some true))
             false then

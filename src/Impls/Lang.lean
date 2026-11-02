@@ -3572,17 +3572,19 @@ theorem mem_positions_unnamed (ns : List Nat) (x : Int) :
 -- and its hypotheses (`confirmedFormulas`), over any variables' facts,
 -- hypotheses, facts of any applications, and applications that it has.
 impl recursion_formulas: lang::recursion_formulas for (vars hyps : List Nat) (rel : List (Nat × Nat))
-    (brought : List Nat) {
+    (brought : List Nat) (reported : Bool) {
   variables := Fren.FinSet.ofList (vars.map fun (a : Nat) => (a : Int)),
   written := Fren.FinSet.ofList (hyps.map fun (a : Nat) => (a : Int)),
   facts := Fren.FinSet.ofList (rel.map fun (p : Nat × Nat) => ((p.1 : Int), (p.2 : Int))),
   brought := Fren.FinSet.ofList (brought.map fun (a : Nat) => (a : Int)),
   reflected := positions (Fren.Core.recursionFormulas (unnamed vars) (unnamed (factsOfApps rel brought))
     (unnamed hyps)),
-  confirmed := positions (Fren.Core.confirmedFormulas (unnamed vars) (unnamed hyps)),
+  «reported?» := reported,
+  confirmed := positions (Fren.Core.confirmedFormulas reported (unnamed vars) (unnamed hyps)),
 } by
-  intro vars hyps rel brought _
-  refine ⟨⟨?_, ?_⟩, trivial⟩ <;> apply Fren.FinSet.ext <;> intro x <;>
+  intro vars hyps rel brought reported _
+  cases reported
+  all_goals refine ⟨⟨?_, ?_⟩, trivial⟩ <;> apply Fren.FinSet.ext <;> intro x <;>
     simp only [positions, Fren.Core.recursionFormulas, Fren.Core.confirmedFormulas, Array.toList_append,
       List.map_append, List.mem_append, Fren.FinSet.mem_ofList, Fren.FinSet.mem_union, mem_image_factsOfApps] <;>
     simp [unnamed, or_assoc]
