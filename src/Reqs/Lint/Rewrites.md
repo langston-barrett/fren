@@ -32,7 +32,9 @@ functions:
 - [`identity_op`](Complexity/Operators.md#identities-over-the-syntax-of-the-semantics);
 - [`manual_rem_euclid`](Complexity/Integers.md#remainders-over-the-syntax-of-the-semantics);
 - [`trivial_guard`](Complexity/Matches.md#trivial-guards-over-the-syntax-of-the-semantics), on the guard `false`;
-- [`trivial_match`](Complexity/Matches.md#trivial-matches-over-the-syntax-of-the-semantics).
+- [`trivial_match`](Complexity/Matches.md#trivial-matches-over-the-syntax-of-the-semantics);
+- [`single_match_else`](Pedantic/Matches.md#one-pattern-and-_-over-the-syntax-of-the-semantics);
+- [`match_bool`](Pedantic/Matches.md#matches-on-a-bool-over-the-syntax-of-the-semantics), of the arms `true` and `false`.
 
 `fix_all` below applies `fix_at` in each of its arms, and `fires_in?`
 applies `fires_at?`, and each lint's functions are definitions of their
@@ -58,6 +60,8 @@ pub enum ExprLint {
     ManualRemEuclid,
     TrivialGuard,
     TrivialMatch,
+    SingleMatchElse,
+    MatchBool,
 }
 
 pub fn fires_at?<V>(l: ExprLint, e: Expr<V>) := match l {
@@ -74,6 +78,8 @@ pub fn fires_at?<V>(l: ExprLint, e: Expr<V>) := match l {
     ExprLint::ManualRemEuclid => manual_rem_euclid_fires?(e),
     ExprLint::TrivialGuard => trivial_guard_fires?(e),
     ExprLint::TrivialMatch => trivial_match_fires?(e),
+    ExprLint::SingleMatchElse => single_match_else_fires?(e),
+    ExprLint::MatchBool => match_bool_fires?(e),
 }
 
 pub fn fix_at<V>(l: ExprLint, e: Expr<V>): Expr<V> := match l {
@@ -90,6 +96,8 @@ pub fn fix_at<V>(l: ExprLint, e: Expr<V>): Expr<V> := match l {
     ExprLint::ManualRemEuclid => manual_rem_euclid_fix(e),
     ExprLint::TrivialGuard => trivial_guard_fix(e),
     ExprLint::TrivialMatch => trivial_match_fix(e),
+    ExprLint::SingleMatchElse => single_match_else_fix(e),
+    ExprLint::MatchBool => match_bool_fix(e),
 }
 ```
 
@@ -117,6 +125,8 @@ negation, on which it does not fire, of an operand. That of `identity_op`
 writes an operand, or an operation of an operand and an operand's operand
 on which it does not fire. That of `manual_rem_euclid` writes an
 operand's operand. Those of `trivial_guard` and `trivial_match` write an
+operand. Those of `single_match_else` and `match_bool` write a
+conditional, on which they do not fire, of an operand and an operand's
 operand.
 
 The fixes of `neg_multiply`, `identity_op` and `manual_rem_euclid` rest
@@ -268,8 +278,9 @@ place where it fires: `fix_at_unfired`, `fix_at_agrees` and
 `overly_complex_refires`, `double_neg_refires`, `manual_abs_refires`,
 `collapsible_when_refires`, `same_branches_refires`,
 `neg_multiply_refires`, `identity_op_refires`,
-`manual_rem_euclid_refires`, `trivial_guard_refires` and
-`trivial_match_refires` show: these laws are of fixing everywhere.
+`manual_rem_euclid_refires`, `trivial_guard_refires`,
+`trivial_match_refires`, `single_match_else_refires` and
+`match_bool_refires` show: these laws are of fixing everywhere.
 For `int_plus_one` and `unless_not` it does, as `int_plus_one_once` and
 `unless_not_once` show. That the passes of `fren
 fix` end where `fix_all` does is a property of the passes, which these
