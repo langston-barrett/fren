@@ -8,7 +8,18 @@ on:
   push:
     branches:
     - main
+  # A run by hand, on any branch, may fuzz alone, and more seeds, to try a
+  # change to the fuzzer or to its known kinds.
   workflow_dispatch:
+    inputs:
+      fuzz-only:
+        description: Run only the fuzz-frontends job
+        type: boolean
+        default: false
+      fuzz-count:
+        description: Seeds for each of fuzz-frontends' four fuzzers
+        type: number
+        default: 150
 
 permissions:
   contents: read
@@ -21,6 +32,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -81,6 +93,7 @@ jobs:
   # binary, and the others the rest (`Reqs/dev/Testing`).
   test:
     name: lake test (shard ${{ matrix.shard }} of 5)
+    if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -148,6 +161,7 @@ jobs:
   # the binary's (`Reqs/dev/Testing#own-requirements`). It saves no `.lake`:
   # pull requests start from the build job's, without the checks.
   own-spec-agreement:
+    if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -168,13 +182,19 @@ jobs:
       env:
         FREN_QUERY_CACHE: ""
   # The front-end fuzzer on seeds that no run used before, from the run's
-  # number, with `--avoid-known`: a difference of a kind that
-  # `knownDifferences` does not list for `--avoid-known`, a crash or a
-  # timeout fails it, and the specs that it found are uploaded, to be
-  # fixed or filed and listed (`Reqs/dev/Testing#continuous-integration`).
-  # The kinds listed for `--avoid-known` go unchecked here, with either
-  # generator: today Lean's extra `F0743` and kinds of #493 and #295, each
-  # listed at a seed of an earlier run (`knownDifferences`). `lake test`
+  # number, with `--avoid-known` (`Reqs/dev/Testing#continuous-integration`).
+  # Each difference is classified by its kind (`signature`). A kind is
+  # known if `knownDifferences` lists it for `--avoid-known`, or
+  # `knownKinds` lists it, each with the issue that tracks it, under the
+  # conditions that the entry states (after a static error, or alongside
+  # another kind). What fails the job is exactly this: a spec with a
+  # difference of a kind that is not known, a crash, or a timeout. A spec
+  # whose differences are all of known kinds, or only in inconclusive
+  # results, does not fail it. The job's summary lists every failure with
+  # its kinds, and every known kind found, with its issue and seeds; the
+  # specs are uploaded as the artifact `fuzz-frontends-RUN`, those of known
+  # kinds as `known-fe-seedN.fren`. A new kind is fixed, or recorded on its
+  # issue and listed in `knownKinds`; CI posts to no issue. `lake test`
   # checks the fixed corpus on every pull request.
   fuzz-frontends:
     runs-on: ubuntu-24.04
@@ -188,21 +208,37 @@ jobs:
         sha: ${{ github.sha }}
     - run: lake build fren_fuzz_frontends
     # Four fuzzers at once, one to a core, two of each generator, each on
-    # 150 seeds of the run's 1000, far from the corpus's.
+    # 150 seeds of the run's 1000, far from the corpus's (a run by hand may
+    # ask for more, which reach into later runs' seeds). Each exits nonzero
+    # on a failure, as above.
     - name: Fuzz the front ends
       env:
         RUN: ${{ github.run_number }}
+        COUNT: ${{ inputs.fuzz-count || 150 }}
       run: |
         set -euo pipefail
         base=$((1000000 + RUN * 1000))
         fuzz() { lake env .lake/build/bin/fren_fuzz_frontends --avoid-known --out fuzz "$@"; }
-        fuzz --count 150 --seed "$base" & a=$!
-        fuzz --count 150 --seed "$((base + 150))" & b=$!
-        fuzz --guards --count 150 --seed "$((base + 300))" & c=$!
-        fuzz --guards --count 150 --seed "$((base + 450))" & d=$!
+        fuzz --count "$COUNT" --seed "$base" & a=$!
+        fuzz --count "$COUNT" --seed "$((base + COUNT))" & b=$!
+        fuzz --guards --count "$COUNT" --seed "$((base + 2 * COUNT))" & c=$!
+        fuzz --guards --count "$COUNT" --seed "$((base + 3 * COUNT))" & d=$!
         code=0
         for pid in "$a" "$b" "$c" "$d"; do wait "$pid" || code=1; done
         exit "$code"
+    - name: Report the findings
+      if: ${{ !cancelled() && hashFiles('fuzz/results-*.jsonl') != '' }}
+      env:
+        RUN: ${{ github.run_number }}
+      run: |
+        set -euo pipefail
+        {
+          echo "### Front-end fuzzer"
+          echo
+          echo "The specs are in the artifact \`fuzz-frontends-$RUN\`."
+          echo
+          lake env .lake/build/bin/fren_fuzz_frontends --report fuzz
+        } >> "$GITHUB_STEP_SUMMARY"
     - if: ${{ !cancelled() }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
@@ -213,6 +249,7 @@ jobs:
   # Every declaration of Fren's code is run by `lake test`, or listed in
   # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
   coverage:
+    if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:

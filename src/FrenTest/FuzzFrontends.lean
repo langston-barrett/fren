@@ -43,10 +43,13 @@ recorded against its spec and the run goes on.
 `--avoid-known` keeps the generator clear of the differences already
 known, to find others: it parenthesizes every method's receiver that is
 not a name, and counts a spec whose every difference is of a kind that
-`knownDifferences` lists for `--avoid-known` as known, not as a finding.
-`lake test` checks a fixed corpus of seeds against `knownDifferences`
-(`corpusFailures`), and that what `genWide` appends adds no static error
-(`Wide.genWideCuts`); CI runs fresh seeds on `main`.
+`knownDifferences` lists for `--avoid-known`, or that `knownKinds` lists,
+as known, not as a finding (`knownIssue?`). `lake test` checks a fixed
+corpus of seeds against `knownDifferences` (`corpusFailures`), and that
+what `genWide` appends adds no static error (`Wide.genWideCuts`); CI runs
+fresh seeds on `main`, and fails only on a difference of a kind that is
+not known, a crash or a timeout. `--report DIR` gives the results of the
+runs in `DIR` as Markdown (`report`), for CI's job summary.
 `--guards` generates guarded quantifiers alone
 (`Wide.genGuards`), over every type that a guard may bound or not, with
 their operands read through fields, so that many run fast; `genWide`
@@ -1400,7 +1403,8 @@ it is; never list a difference here to absorb a changed corpus. A
 difference that the run of fresh seeds on `main` finds is listed with its
 seed and mode, and the corpus then checks that seed too (`listedOutside`).
 `--avoid-known` counts a spec whose every difference is of a kind (its
-`signature`) listed here for `--avoid-known` as known. An entry holds the
+`signature`) listed here for `--avoid-known`, or in `knownKinds`, as
+known. An entry holds the
 whole difference: its line and column, the names that a front end gives
 its own facts, as Lean's `f0.equation0.1`, and the message's wording. A
 change to any of those, such as to where a front end places a message or
@@ -1525,6 +1529,122 @@ def knownDifferences : List Known :=
    { mode := { avoidKnown := true }, seed := 1160230, issue := 493, alongside? := some evaluatorUnread,
      difference := "exit: fren exits 1, and Lean's messages call for 2" }]
 
+/-- Whether the kind `s` (a `signature`) is of the pattern `p`, where each
+`*` stands for any text, and every other character for itself. -/
+partial def kindMatches (p s : String) : Bool :=
+  go p.toList s.toList
+where
+  go : List Char → List Char → Bool
+    | [], s => s.isEmpty
+    | '*' :: p, s => go p s || match s with
+      | [] => false
+      | _ :: s => go ('*' :: p) s
+    | c :: p, d :: s => c == d && go p s
+    | _ :: _, [] => false
+
+#guard kindMatches "only fren reports warning[F07*"
+  "only fren reports warning[F0712]: this `_` expression can be simpler"
+#guard !kindMatches "only fren reports warning[F07*" "only fren reports warning[F0608]: could not decide"
+#guard kindMatches "a * b * c" "a x b y b z c"
+#guard !kindMatches "a * c" "a x c d"
+#guard kindMatches "exit" "exit" && !kindMatches "exit" "exits"
+
+/-- A kind of difference that an issue tracks, which runs of fresh seeds
+find, but that no spec of the corpus has, so that `knownDifferences` does
+not list it: `--avoid-known` counts it as known, like the kinds that
+`knownDifferences` lists, and `lake test` does not check it. -/
+structure KnownKind where
+  /-- The kind, as a `signature`, where `*` stands for any text
+  (`kindMatches`). -/
+  kind : String
+  issue : Nat
+  /-- The spec where a run found it first, to reproduce it with. -/
+  mode : Mode := { avoidKnown := true }
+  seed : Nat
+  /-- As `Known.afterStaticError`. -/
+  afterStaticError : Bool := false
+  /-- As `Known.alongside?`, a kind that may have `*`s too. -/
+  alongside? : Option String := none
+  /-- Whether `kind` is matched against the difference itself, without
+  its line, rather than against its kind: for a kind whose wording the
+  `signature` masks whole, which only the names tell apart. -/
+  ofDifference : Bool := false
+
+/-- The kind of Lean's failure, through lean-smt, on a query that has the
+same closed application twice under different binders (#493), whatever
+it could not decide. -/
+def leanSmtArrow : String :=
+  "only Lean reports warning: could not decide whether * cvc5.Error.error \
+    \"Symbol '->' not declared as a variable\""
+
+/-- The kind of Lean's failure to enumerate a procedure that the `fren`
+command enumerates (#485), which explains the inconclusive results and
+the summary that only `fren` gives there. -/
+def leanEnumerationFails : String :=
+  "only Lean reports error: internal error: enumerating `_` in Lean failed: failed to synthesize"
+
+/-- The kind of the `fren` command's warning that a trait's expectation
+rests on an uninterpreted function's contract whose realizability did not
+pass, which Lean does not give (#493). -/
+def traitRestsOnContract : String :=
+  "only fren reports warning[F0664]: `_` rests on the realizability of the contract of `_`, which did not pass"
+
+/-- The kinds of the issues that runs of `--avoid-known` on fresh seeds
+found, beyond those that `knownDifferences` lists: `fuzz-frontends` in
+`lean ci` fails on a difference of any other kind. Each entry gives the
+first seed where a run found it. A kind is listed here once its issue
+records it, with the seed; when the issue is fixed, its kinds are
+removed. -/
+def knownKinds : List KnownKind :=
+  -- After a static error, only `fren` reports the lints of what follows
+  -- it (#493): any lint, as `knownDifferences` lists a few.
+  [{ kind := "only fren reports warning[F07*", issue := 493, seed := 1175152, afterStaticError := true },
+   { kind := "only fren reports warning[F08*", issue := 493, seed := 6000809, afterStaticError := true },
+   -- and its static errors after the first, as the decidable core's.
+   { kind := "only fren reports error[F0*", issue := 493, seed := 6000809, afterStaticError := true },
+   -- For the same input, Lean gives a realizability conflict core that
+   -- has more clauses than `fren`'s (#493).
+   { kind := "for the same input, fren says `no outputs satisfy `*``, Lean says `no outputs satisfy `*` and `*``",
+     issue := 493, seed := 6001014, ofDifference := true },
+   -- Only `fren` reports that an assumption constrains only parameters
+   -- that nothing uses (F0792, #493).
+   { kind := "only fren reports warning[F0792]: the assumption `_` constrains only parameters that nothing uses",
+     issue := 493, seed := 1175274 },
+   -- The CLI's evaluator cannot read a formula that Lean counts the
+   -- behaviours of, at any size bound (#493).
+   { kind := "only Lean reports error: `_` has N behaviours up to size *, too many to enumerate", issue := 493,
+     seed := 1164145, alongside? := some evaluatorUnread },
+   -- A trait's expectation: Lean cannot decide it (`leanSmtArrow`), and
+   -- `fren` warns that it rests on the trait's laws, so the summaries'
+   -- counts of inconclusive results differ (#493).
+   { kind := leanSmtArrow, issue := 493, seed := 1179170 },
+   { kind := "only fren reports warning[F0665]: `_` rests on the laws of `_`, whose consistency is not checked",
+     issue := 493, seed := 1179170, alongside? := some leanSmtArrow },
+   { kind := "summary: fren says …, Lean says …", issue := 493, seed := 1179061, alongside? := some leanSmtArrow },
+   -- What `fren` decides where Lean could not: that the expectation rests
+   -- on its assumptions and calls holding with the trait's laws, or that
+   -- those contradict each other.
+   { kind := "only fren reports warning[F0664]: `_` rests on the assumptions and calls of `_` holding together with \
+       its trait's laws, which did not pass", issue := 493, seed := 6000795, alongside? := some leanSmtArrow },
+   { kind := "only fren reports error[F0602]: the assumptions of `_` are unsatisfiable: `_` contradict each other",
+     issue := 493, seed := 6000265, alongside? := some leanSmtArrow },
+   -- A trait's expectation rests on a contract whose realizability did
+   -- not pass: only `fren` warns, and counts it inconclusive (#493).
+   { kind := traitRestsOnContract, issue := 493, seed := 1179203 },
+   { kind := "summary: fren says …, Lean says …", issue := 493, seed := 1179203,
+     alongside? := some traitRestsOnContract },
+   -- Lean fails to enumerate a procedure (#485), so only `fren` reports
+   -- what enumerating it found, and what rests on it.
+   { kind := leanEnumerationFails, issue := 485, seed := 1175253 },
+   { kind := "only fren reports warning[F0608]: could not decide whether *", issue := 485, seed := 1175253,
+     alongside? := some leanEnumerationFails },
+   { kind := "only fren reports info[F0646]: * checks of `_` hold for every behaviour up to size *", issue := 485,
+     seed := 1175253, alongside? := some leanEnumerationFails },
+   { kind := "only fren reports warning[F0664]: * rests on the realizability of `_`, which did not pass",
+     issue := 485, seed := 1175253, alongside? := some leanEnumerationFails },
+   { kind := "summary: fren says …, Lean says …", issue := 485, seed := 1175253,
+     alongside? := some leanEnumerationFails }]
+
 /-- The line of the difference `f`, if it has one: `line N:` or `line
 N:COL:` at its start. -/
 def differenceLine? (f : String) : Option Nat := do
@@ -1536,19 +1656,35 @@ def differenceLine? (f : String) : Option Nat := do
 #guard differenceLine? "line 11: for the same input, fren notes #[]" == some 11
 #guard differenceLine? "exit: fren exits 1, and Lean's messages call for 2" == none
 
-/-- The difference `f`, on a spec whose differences are `found` and where
-the `fren` command reports static errors at the lines `staticLines`, is of
-a kind that `knownDifferences` lists for a seed of `--avoid-known`, of
-either generator, and `mode` is of `--avoid-known` too: on the fresh seeds
-that CI checks with it, those kinds go unchecked. An entry that holds only
-after a static error (`afterStaticError`) matches only where one is at or
-before `f`'s line, and one that holds only alongside another kind
-(`alongside?`) only where `found` has that kind. -/
+/-- The issue of the known kind of the difference `f`, on a spec whose
+differences are `found` and where the `fren` command reports static errors
+at the lines `staticLines`: a kind that `knownDifferences` lists for a seed
+of `--avoid-known`, of either generator, or one of `knownKinds`, where
+`mode` is of `--avoid-known` too: on the fresh seeds that CI checks with
+it, those kinds go unchecked. An entry that holds only after a static
+error (`afterStaticError`) matches only where one is at or before `f`'s
+line, and one that holds only alongside another kind (`alongside?`) only
+where `found` has that kind. -/
+def knownIssue? (mode : Mode) (staticLines : Array Nat) (found : Array String) (f : String) : Option Nat :=
+  let sig := signature f
+  let holds (afterStaticError : Bool) (alongside? : Option String) :=
+    (!afterStaticError || (differenceLine? f).any fun l => staticLines.any (· ≤ l))
+      && alongside?.all fun a => found.any (kindMatches a <| signature ·)
+  if !mode.avoidKnown then none
+  else match knownDifferences.find? (fun k =>
+      k.mode.avoidKnown && signature k.difference == sig && holds k.afterStaticError k.alongside?) with
+    | some k => some k.issue
+    | none =>
+      let unplaced := match f.splitOn ": " with
+        | l :: rest => if l.startsWith "line " then ": ".intercalate rest else f
+        | [] => f
+      (knownKinds.find? fun k =>
+        kindMatches k.kind (if k.ofDifference then unplaced else sig) && holds k.afterStaticError k.alongside?).map
+        (·.issue)
+
+/-- Whether the difference `f` is of a known kind (`knownIssue?`). -/
 def knownKind (mode : Mode) (staticLines : Array Nat) (found : Array String) (f : String) : Bool :=
-  mode.avoidKnown && knownDifferences.any fun k =>
-    k.mode.avoidKnown && signature k.difference == signature f
-      && (!k.afterStaticError || (differenceLine? f).any fun l => staticLines.any (· ≤ l))
-      && k.alongside?.all fun a => found.any (signature · == a)
+  (knownIssue? mode staticLines found f).isSome
 
 section
 private def known (f : String) (staticLines : Array Nat := #[]) (found : Array String := #[f])
@@ -1573,13 +1709,51 @@ private def known (f : String) (staticLines : Array Nat := #[]) (found : Array S
 #guard known "exit: fren exits 1, and Lean's messages call for 2"
   (found := #["exit: fren exits 1, and Lean's messages call for 2", "line 13:10: only fren reports error[-]: \
     internal error: the evaluator does not know the meaning of a formula of `fz::c0`"])
--- A verdict count, a core and another exit code are no known kind, so a
--- spec that has one is a finding.
+-- A verdict count on its own, and another exit code, are no known kind, so
+-- a spec that has one is a finding.
 #guard !known "summary: fren says `15 passed, 19 failed, 1 inconclusive, 0 redundant`, Lean says `14 passed, \
   20 failed, 1 inconclusive, 0 redundant`" #[1]
-#guard !known "line 23: for the same input, fren says `no outputs satisfy `q2``, Lean says `no outputs \
-  satisfy `q0`, `q1` and `q2``" #[1]
+-- A conflict core is known only where Lean's has more clauses than `fren`'s.
+#guard known "line 23: for the same input, fren says `no outputs satisfy `q2``, Lean says `no outputs \
+  satisfy `q0`, `q1` and `q2``"
+#guard !known "line 23: for the same input, fren says `no outputs satisfy `q0` and `q2``, Lean says `no outputs \
+  satisfy `q2``"
 #guard !known "exit: fren exits 0, and Lean's messages call for 1" #[1]
+-- Of `knownKinds`: any lint that only `fren` reports after a static error,
+-- of a code that `knownDifferences` does not list, but no other warning.
+#guard known "line 21:25: only fren reports warning[F0736]: both operands of `=` are written the same" #[11]
+#guard !known "line 21:25: only fren reports warning[F0736]: both operands of `=` are written the same"
+#guard !known "line 65:72: only fren reports warning[F0806]: this guard is always `false`, so the arm is never taken"
+#guard known "line 65:72: only fren reports warning[F0806]: this guard is always `false`, so the arm is never taken"
+  #[46]
+#guard known "line 22:12: only fren reports warning[F0792]: the assumption `a0` constrains only parameters that \
+  nothing uses"
+#guard !known "line 31:10: only fren reports warning[F0608]: could not decide whether `fz::c0` is realizable: no \
+  outputs up to size 2, but larger ones may exist" #[1]
+-- A trait's expectation that Lean cannot decide: the warning that only
+-- `fren` gives, and the summary, are known only alongside Lean's failure.
+section
+private def arrow : String := "line 95:12: only Lean reports warning: could not decide whether `fz::Tr::e0` holds: \
+  cvc5.Error.error \"Symbol '->' not declared as a variable\""
+private def laws : String :=
+  "line 95:12: only fren reports warning[F0665]: `fz::Tr::e0` rests on the laws of `fz::Tr`, whose consistency is \
+    not checked"
+private def summary : String := "summary: fren says `12 passed, 2 failed, 2 inconclusive, 0 redundant`, Lean says \
+  `11 passed, 2 failed, 3 inconclusive, 0 redundant`"
+#guard known arrow
+#guard known laws (found := #[laws, arrow]) && known summary (found := #[laws, arrow, summary])
+#guard !known laws && !known summary (found := #[laws, summary])
+#guard knownIssue? { avoidKnown := true } #[] #[laws, arrow] laws == some 493
+#guard knownIssue? {} #[] #[laws, arrow] laws == none
+-- Lean's failure is known whatever it could not decide.
+#guard known "line 61:12: only Lean reports warning: could not decide whether the assumptions and calls of \
+  `fz::Tr::e1` can hold together with its trait's laws: cvc5.Error.error \"Symbol '->' not declared as a variable\""
+end
+-- Lean's failure to enumerate explains what only `fren` reports of the
+-- procedure, at any size bound, and is #485's.
+#guard knownIssue? { avoidKnown := true } #[] #[leanEnumerationFails, "line 31:10: only fren reports info[F0646]: \
+    7 checks of `fz::c0` hold for every behaviour up to size 3"]
+  "line 31:10: only fren reports info[F0646]: 7 checks of `fz::c0` hold for every behaviour up to size 3" == some 485
 end
 
 -- The numbers that place a difference or count what the spec has are
@@ -1695,12 +1869,14 @@ def appendedErrors (cutLines : Array Nat) (diags : Array Diagnostic) : Array (Na
     return (start, d)
 
 /-- The lines of the static errors of the `fren` command, those that are
-not a check's result nor the trailer that says that they stopped the
-checks (`knownKind`). -/
+not a check's result, the trailer that says that they stopped the checks,
+nor an internal error, as the evaluator's that cannot read a formula
+(`evaluatorUnread`), which is no error of the spec's and from which no
+front end recovers (`knownKind`). -/
 def staticErrorLines (diags : Array Diagnostic) : Array Nat :=
   diags.filterMap fun d =>
     if d.severity == "error" && !FrenTest.Frontends.isCheckResult d && !FrenTest.Frontends.isStoppedTrailer d
-      && d.line > 0 then some d.line else none
+      && !d.text.startsWith "internal error" && d.line > 0 then some d.line else none
 
 section
 private def errAt (line : Nat) (code : String := "F0304") : Diagnostic :=
@@ -1716,6 +1892,9 @@ private def errAt (line : Nat) (code : String := "F0304") : Diagnostic :=
 #guard (appendedErrors #[10, 20] #[{ line := 0, severity := "error", text := "unreadable", code? := some "F0001" }]).map (·.1) == #[10]
 -- No cuts, as in `--guards`: nothing is a group's.
 #guard (appendedErrors #[] #[errAt 12]).isEmpty
+-- An internal error is no static error of the spec's.
+#guard staticErrorLines #[errAt 3, { line := 25, severity := "error", text := "internal error: the evaluator does \
+  not know the meaning of a formula of `fz::c0`" }] == #[3]
 end
 
 /-- Checks the specs of the corpus with both front ends, in this process.
@@ -1758,8 +1937,13 @@ structure Outcome where
   `known` (with `--avoid-known`, differ only in kinds that
   `knownDifferences` lists), `crash` or `timeout`. -/
   status : String
+  /-- The mode's flags, as `flags` gives them. -/
+  flags : String := ""
   errors : Array String := #[]
   signatures : Array String := #[]
+  /-- For each of `signatures`, the issue of its known kind
+  (`knownIssue?`), or 0 if it is of none. -/
+  issues : Array Nat := #[]
   deriving ToJson, FromJson
 
 /-- A run's work files, named after the driver's process, so that runs
@@ -1790,8 +1974,9 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
     let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
     let elapsed := (← IO.monoMsNow) - t0
     if elapsed > 20000 then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s"
+    let issues := found.map fun f => (knownIssue? mode (staticErrorLines ran.cli) found f).getD 0
     let status := if found.isEmpty then "ok" else if flaky then "inconclusive"
-      else if mode.avoidKnown && found.all (knownKind mode (staticErrorLines ran.cli) found) then "known" else "differ"
+      else if mode.avoidKnown && issues.all (· != 0) then "known" else "differ"
     unless found.isEmpty do
       let pre := if status == "differ" then "" else s!"{status}-"
       let file : System.FilePath := run.dir / s!"{pre}fe-seed{s}.fren"
@@ -1803,7 +1988,8 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
         | _ => ""
       IO.eprintln s!"seed {s}: front ends differ{why}, written to {file}"
       for f in found.extract 0 4 do IO.eprintln s!"  {f}"
-    record run { seed := s, status, errors := errs.toList.eraseDups.toArray, signatures := found.map signature }
+    record run { seed := s, status, flags := flags mode, errors := errs.toList.eraseDups.toArray,
+                 signatures := found.map signature, issues }
     -- Between specs, a crash is no spec's.
     IO.FS.writeFile run.progress ""
   return 0
@@ -1814,10 +2000,100 @@ def tally (xs : Array (String × Nat × Nat)) (x : String) (seed : Nat) : Array 
   | some k => xs.modify k fun (x, n, first) => (x, n + 1, first)
   | none => xs.push (x, 1, seed)
 
+/-- The outcomes of a results file's text, one to a line. -/
+def parseOutcomes (text : String) : Array Outcome :=
+  (text.splitOn "\n").toArray.filterMap fun l => (Json.parse l >>= fromJson? : Except String Outcome).toOption
+
 /-- The outcomes recorded so far in a run. -/
 def outcomesOf (run : Run) : IO (Array Outcome) := do
-  return ((← IO.FS.readFile run.results).splitOn "\n").toArray.filterMap fun l =>
-    (Json.parse l >>= fromJson? : Except String Outcome).toOption
+  return parseOutcomes (← IO.FS.readFile run.results)
+
+/-! ### The report of a run -/
+
+/-- The file where a run writes the spec of an outcome, if it writes one. -/
+def Outcome.file? (o : Outcome) : Option String :=
+  match o.status with
+  | "differ" => some s!"fe-seed{o.seed}.fren"
+  | "known" | "inconclusive" => some s!"{o.status}-fe-seed{o.seed}.fren"
+  | "crash" | "timeout" => some s!"{o.status}-seed{o.seed}.fren"
+  | _ => none
+
+/-- Whether an outcome fails the run: a difference of a kind that is not
+known, a crash or a timeout. -/
+def Outcome.fails (o : Outcome) : Bool := o.status ∈ ["differ", "crash", "timeout"]
+
+/-- `s` in a cell of a Markdown table. -/
+def mdCell (s : String) : String := (s.replace "\n" " ").replace "|" "\\|" |>.replace "<" "&lt;"
+
+/-- The kinds of an outcome's differences, each with its issue, or as new
+if it is of no known kind. -/
+def Outcome.kinds (o : Outcome) : String :=
+  "<br>".intercalate (o.signatures.toList.zipIdx.map fun (g, i) =>
+    let issue := o.issues[i]?.getD 0
+    (if issue == 0 then "**new**: " else s!"#{issue}: ") ++ mdCell g)
+
+/-- A Markdown report of a run's outcomes, for the job's summary: how many
+specs of each outcome; each one that fails it, with its kinds; and each
+known kind, with its issue, how many specs had it, and their seeds. The
+specs are named as the run writes them. -/
+def report (outcomes : Array Outcome) : String := Id.run do
+  let n (st : String) := (outcomes.filter (·.status == st)).size
+  let mut out := s!"{outcomes.size} specs: {n "differ"} differ in a kind that is not known, {n "crash"} crashed and \
+    {n "timeout"} took too long, which fail the job; {n "known"} differ only in known kinds, and \
+    {n "inconclusive"} only in inconclusive results.\n"
+  let failed := outcomes.filter (·.fails) |>.qsort (·.seed < ·.seed)
+  unless failed.isEmpty do
+    out := out ++ "\n#### Failures\n\n| Seed | Flags | Outcome | Spec | Kinds |\n|---|---|---|---|---|\n"
+    for o in failed do
+      let fl := o.flags.trimAscii.toString
+      let fl := if fl.isEmpty then "" else s!"`{fl}`"
+      out := out ++ s!"| {o.seed} | {fl} | {o.status} | `{(o.file?).getD ""}` | {o.kinds} |\n"
+  -- Each known kind, with its issue, and the seeds of the specs that have it.
+  let mut kinds : Array (String × Nat × Array Nat) := #[]
+  for o in outcomes.qsort (·.seed < ·.seed) do
+    for (g, i) in o.signatures.toList.zipIdx do
+      let issue := o.issues[i]?.getD 0
+      if issue == 0 then continue
+      kinds := match kinds.findIdx? fun (g', j, _) => g' == g && j == issue with
+        | some k => kinds.modify k fun (g, j, seeds) =>
+          (g, j, if seeds.contains o.seed then seeds else seeds.push o.seed)
+        | none => kinds.push (g, issue, #[o.seed])
+  unless kinds.isEmpty do
+    out := out ++ "\n#### Known kinds\n\n| Kind | Issue | Specs | Seeds |\n|---|---|---|---|\n"
+    for (g, issue, seeds) in kinds.qsort (·.2.2.size > ·.2.2.size) do
+      let shown := ", ".intercalate ((seeds.extract 0 5).toList.map toString) ++ if seeds.size > 5 then ", …" else ""
+      out := out ++ s!"| {mdCell g} | #{issue} | {seeds.size} | {shown} |\n"
+  let inconclusive := outcomes.filter (·.status == "inconclusive")
+  unless inconclusive.isEmpty do
+    let seeds := ", ".intercalate (inconclusive.toList.map (toString ·.seed))
+    out := out ++ s!"\nOnly in inconclusive results: seeds {seeds}.\n"
+  return out
+
+section
+private def kn : Outcome :=
+  { seed := 7, status := "known", flags := " --avoid-known", signatures := #["k"], issues := #[493] }
+private def df : Outcome :=
+  { seed := 5, status := "differ", flags := " --avoid-known", signatures := #["a|b", "k"], issues := #[0, 493] }
+-- A clean run reports only its counts.
+#guard report #[{ seed := 1, status := "ok" }] == "1 specs: 0 differ in a kind that is not known, 0 crashed and \
+  0 took too long, which fail the job; 0 differ only in known kinds, and 0 only in inconclusive results.\n"
+-- A failing spec is listed with its kinds, new or known, and every known
+-- kind with its issue and seeds, of the failing specs too.
+#guard ((report #[kn, df, { seed := 9, status := "crash" }]).splitOn "\n").drop 6 == [
+  "| 5 | `--avoid-known` | differ | `fe-seed5.fren` | **new**: a\\|b<br>#493: k |",
+  "| 9 |  | crash | `crash-seed9.fren` |  |",
+  "", "#### Known kinds", "", "| Kind | Issue | Specs | Seeds |", "|---|---|---|---|",
+  "| k | #493 | 2 | 5, 7 |", ""]
+#guard !kn.fails && df.fails
+end
+
+/-- The outcomes of every run whose results are in `dir`. -/
+def outcomesIn (dir : System.FilePath) : IO (Array Outcome) := do
+  let mut out := #[]
+  for e in ← dir.readDir do
+    if e.fileName.startsWith "results-" && e.fileName.endsWith ".jsonl" then
+      out := out ++ parseOutcomes (← IO.FS.readFile e.path)
+  return out
 
 /-- Runs workers until every seed is checked. The solver can abort the
 process (a failed assertion in cvc5), so specs run in a worker, and a
@@ -1868,7 +2144,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
     let text : String := mode.spec failed
     let kind := if timedOut then "timeout" else "crash"
     IO.FS.writeFile (dir / s!"{kind}-seed{failed}.fren") (s!"-- fren_fuzz_frontends{flags mode} --seed {failed}: {what}\n" ++ text)
-    record run { seed := failed, status := kind }
+    record run { seed := failed, status := kind, flags := flags mode }
     next := failed + 1
   let outcomes ← outcomesOf run
   for f in [run.progress, run.spec] do
@@ -1893,6 +2169,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
 def usage : String :=
   "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
+  "       fren_fuzz_frontends --report DIR\n" ++
   "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] --print SEED"
 
 structure Opts where
@@ -1909,6 +2186,9 @@ unsafe def main (args : List String) : IO UInt32 := do
   let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
                        sites := args.contains "--sites" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites")
+  if let ["--report", dir] := args then
+    IO.print (report (← outcomesIn dir))
+    return 0
   if let ["--print", n] := args then
     let some s := n.toNat? | IO.eprintln usage; return 2
     IO.print (mode.spec s)

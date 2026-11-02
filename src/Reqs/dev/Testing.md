@@ -282,9 +282,19 @@ pub mod testing
   overlapping seeds in one `DIR` overwrite each other's. `--avoid-known`
   steers clear of differences already known, to find others: the generator
   parenthesizes every method's receiver that is not a name, and a spec
-  whose every difference is of a kind that the [front-end
-  corpus](#front-end-corpus)'s `knownDifferences` lists for a seed of
-  `--avoid-known` is counted apart, as known, rather than as a finding. A
+  whose every difference is of a known kind is counted apart, as known,
+  rather than as a finding. A kind is known if the [front-end
+  corpus](#front-end-corpus)'s `knownDifferences` lists it for a seed of
+  `--avoid-known`, or `knownKinds` lists it: the kinds that runs of fresh
+  seeds found, each recorded on its issue, with the seed where a run found
+  it first, which no corpus spec has, so that `lake test` does not check
+  them. An entry of `knownKinds` may write `*` for any text, so that one
+  entry stands for a family: after a static error, any lint that only
+  `fren` reports. Each difference's kind, with the issue of its entry, is
+  recorded in the run's results (`results-ID.jsonl`), and `--report DIR`
+  gives every result in `DIR` as Markdown: the specs that fail, each with
+  its kinds, new or known, and each known kind, with its issue and the
+  seeds of the specs that have it. A
   kind is the difference without its line, names and values, as the
   fuzzer's summary gives it (`signature`). Of its numbers, only those that
   place it or count what the spec happens to have are values: a line, a
@@ -292,16 +302,21 @@ pub mod testing
   is part of the kind: an exit code, a size bound, the counts of a
   summary's verdicts or of a note's checks. Nor is a difference whose
   wording a kind masks whole, as a summary or the core of a realizability
-  check (`fren says …, Lean says …`) is, listed as a kind: it is a
-  disagreement on a verdict, to be fixed. A kind that a static error
+  check (`fren says …, Lean says …`) is, listed as a kind on its own: it is a
+  disagreement on a verdict, to be fixed, and is known only alongside a
+  kind that explains it, as Lean's failure to decide a check explains the
+  summary's count of inconclusive results, or by the difference itself,
+  names kept, in the form that its issue records (`ofDifference`), as a
+  conflict core where Lean's has more clauses than `fren`'s. A kind that a static error
   explains, as the front ends' different recovery from it does, is
   listed as such (`afterStaticError`), and is known only on a spec where
-  the `fren` command reports a static error at or before its line; and
+  the `fren` command reports a static error at or before its line (an
+  internal error, as the evaluator's, is none); and
   one that another difference explains, as the evaluator's internal error
   explains an exit code, only alongside that difference (`alongside?`).
   `compare` masks only what may legitimately differ, above; a known
-  difference is fixed, or listed in `knownDifferences` with its issue, and
-  not masked. The known column differences of #555 are of static errors
+  difference is fixed, or listed in `knownDifferences` or `knownKinds`
+  with its issue, and not masked. The known column differences of #555 are of static errors
   that the generator does not write (an unknown method or field, a
   `refines`, an invalid string pattern, a higher-order call's arity), so
   `compare` masks no column. `--files FILE...` compares the front ends on
@@ -626,18 +641,23 @@ Lean and compares the front ends' messages about them ([Own
 requirements](#own-requirements)), measures the coverage, and saves the
 `.lake` for pull requests. It also runs the
 front-end fuzzer on seeds that no run used before, from the run's number,
-with `--avoid-known`, of both generators: a difference of a kind that
-`knownDifferences` does not list for `--avoid-known`, a crash or a timeout
-fails the run, and the specs it found are uploaded as the artifact
-`fuzz-frontends-RUN`, to be filed (with the issue's number, in
-`knownDifferences` if the corpus reaches the kind) or fixed. The kinds
-listed for `--avoid-known` go unchecked on those seeds, of either
-generator, where the run counts each spec that has only those apart, as
-known: today Lean's extra report of a chain of methods that has a shorter
-form (`F0743`, #493), and kinds of #493 and #295, each listed at a seed of
-a run on `main` or of a run of fresh seeds (`knownDifferences`'s comments
-say which kinds). The kinds listed only for the default generator are
-checked there. The `lint` workflow runs `lun run --check` on
+with `--avoid-known`, of both generators. What fails that job is exactly a
+spec with a difference of a kind that is not known, a crash, or a
+timeout; a spec whose differences are all of known kinds
+(`knownDifferences` for `--avoid-known`, and `knownKinds`), or only in
+undecided checks, does not. The job's summary gives `--report`'s
+Markdown, so that what it found and did not fail on is not lost, and the
+specs it found are uploaded as the artifact `fuzz-frontends-RUN` (those
+of known kinds as `known-fe-seedN.fren`). A spec of a new kind is fixed,
+or its kind is recorded on its issue and listed in `knownKinds`; CI posts
+to no issue. The known kinds go unchecked on those seeds, of either
+generator: today Lean's extra report of a chain of methods that has a
+shorter form (`F0743`, #493), the front ends' different recovery after a
+static error (#493, #295), and the kinds of #493 and #485 that
+`knownKinds`'s comments name. The kinds listed only for the default
+generator are checked there. A run of `lean ci` by hand
+(`workflow_dispatch`), on any branch, may run that job alone
+(`fuzz-only`) and on more seeds (`fuzz-count`). The `lint` workflow runs `lun run --check` on
 both. The `pre-merge` workflow's last job, also named `pre-merge`, passes
 only if its build and every shard passed: it is the status that reviewers
 and the coordinator rely on.
