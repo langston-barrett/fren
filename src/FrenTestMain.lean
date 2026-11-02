@@ -2449,10 +2449,10 @@ def detailText : Fren.Core.Detail → String
 --evidence value`, by `methodKey`, and the run's exit code. A check that
 the method does not run, such as one that it skips (`check::method_run`),
 or one of a function, which only the solver runs, is not among them. -/
-def methodResults (files : Array String) (method : Fren.Core.ProofMethod) (value : String) :
+def methodResults (files : Array String) (method : Fren.Core.ProofMethod) (value : String) (jobs? : Option Nat) :
     IO (Std.HashMap String MethodFound × UInt32) := do
   let record ← IO.mkRef #[]
-  let args : FrenCli.Args := { files, evidence? := Fren.Core.evidenceOf? value }
+  let args : FrenCli.Args := { files, evidence? := Fren.Core.evidenceOf? value, jobs? }
   let (_, code) ← IO.FS.withIsolatedStreams (FrenCli.check args (some record))
   let found := (← record.get).foldl (init := ({} : Std.HashMap String MethodFound)) fun acc (item, r, m) =>
     if m != method then acc else
@@ -2478,19 +2478,25 @@ structure MethodCounts where
   the size: no contradiction, as the counterexample may be larger. -/
   beyondSize : Nat := 0
   excepted : Nat := 0
-  /-- Runs that could not check, by a static error under the method (exit 2),
-  as `name: method`. -/
+  /-- Specs with a static error, which no method checks. -/
+  static : Nat := 0
+  /-- Runs that could not check, by a static error under their method alone
+  (exit 2), as `name: method`, such as `F0639` under random testing. -/
   stopped : Array String := #[]
   deriving Inhabited
 
-/-- Compares the methods on `files`, checked together as `name`, adding to
-`counts`; returns the contradictions. -/
-def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref MethodCounts) : IO (Array String) := do
+/-- Compares the methods on `files`, checked together as `name`, `jobs?`
+procedures at once, adding to `counts`; returns the contradictions. -/
+def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref MethodCounts)
+    (jobs? : Option Nat := none) : IO (Array String) := do
   let mut runs := #[]
   for (m, value) in comparedMethods do
-    let (found, code) ← methodResults files m value
-    if code == 2 then counts.modify fun c => { c with stopped := c.stopped.push s!"{name}: {value}" }
+    let (found, code) ← methodResults files m value jobs?
     runs := runs.push (found, code)
+  if runs[0]!.2 == 2 then counts.modify fun c => { c with static := c.static + 1 }
+  else
+    for (_, code) in runs, (_, value) in comparedMethods do
+      if code == 2 then counts.modify fun c => { c with stopped := c.stopped.push s!"{name}: {value}" }
   -- Every check that some method ran, by its key, in order.
   let keys := (runs.foldl (init := (#[] : Array String)) fun acc (found, _) =>
     acc ++ found.toArray.map (·.1)).qsort (· < ·) |>.toList.eraseDups
@@ -2541,7 +2547,9 @@ def methodsAgree (part : List String) : IO (Array String) := do
   let mut failures := #[]
   let all := part.isEmpty
   if all || part == ["own"] then
-    failures := failures ++ (← methodsAgreeOn "src/Reqs" ownSpecFiles counts)
+    -- Two at a time: the solver, asked the checks that the requirements set
+    -- to other methods, took some 9.4 GB at two, and 13.8 GB at four.
+    failures := failures ++ (← methodsAgreeOn "src/Reqs" ownSpecFiles counts (jobs? := some 2))
   let (k, n) := match part with
     | ["ui", k, n] => (k.toNat?.getD 0, n.toNat?.getD 1)
     | _ => (0, 1)
@@ -2561,8 +2569,8 @@ def methodsAgree (part : List String) : IO (Array String) := do
     s!"{comparedMethods[i]!.2} decided {c.decided[i]!}, inconclusive {c.inconclusive[i]!}, not run {c.notRun[i]!}"
   IO.println s!"methodsAgree: {c.checks} checks, {c.compared} compared by at least two methods; {"; ".intercalate byMethod}; \
     {c.beyondSize} counterexamples beside a pass up to the size; {c.excepted} excepted; {failures.size} contradictions"
-  unless c.stopped.isEmpty do
-    IO.println s!"methodsAgree: {c.stopped.size} runs could not check: {", ".intercalate c.stopped.toList}"
+  IO.println s!"methodsAgree: {c.static} specs with static errors; {c.stopped.size} runs stopped by an error of their method alone\
+    {if c.stopped.isEmpty then "" else s!": {", ".intercalate c.stopped.toList}"}"
   let least := if all then 1000 else 1
   return if c.compared < least then failures.push s!"methodsAgree: only {c.compared} checks compared" else failures
 

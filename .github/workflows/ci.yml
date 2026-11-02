@@ -269,7 +269,7 @@ jobs:
   # fuzzer's corpus, under the solver, enumeration and random testing, each
   # set by `fren check --evidence`; it fails where two methods' verdicts on
   # a check contradict each other (`check::methods_agree`,
-  # `Reqs/Methods#agreement-of-methods`). Four processes, one to a part.
+  # `Reqs/Methods#agreement-of-methods`).
   methods-agree:
     if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
@@ -291,12 +291,12 @@ jobs:
           local name="${*// /-}"
           lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out"
         }
-        part own & a=$!
-        part ui 0 2 & b=$!
-        part ui 1 2 & c=$!
-        part fuzz & d=$!
+        # One part at a time: the solver took up to 13.8 GB on Fren's own
+        # requirements, and 8.8 GB on the ui tests, on macOS.
         code=0
-        for pid in "$a" "$b" "$c" "$d"; do wait "$pid" || code=1; done
+        part own || code=1
+        part ui 0 1 || code=1
+        part fuzz || code=1
         for f in "$RUNNER_TEMP"/methods-*.out; do
           cat "$f"
           test "$(tail -n 1 "$f")" = "[]" || code=1
