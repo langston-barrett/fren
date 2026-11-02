@@ -3827,6 +3827,19 @@ theorem mergeGuarded_equivalent {F : Type} [BEq F] [LawfulBEq F] (refl : ∀ a, 
 
 end MergeGuarded
 
+/-- The front ends' `within`, `guardsWithin`, is the inclusion of guards that
+`pathWithin` decides of paths by position: so it is reflexive and
+transitive, as `mergeGuarded_inv` needs. -/
+theorem guardsWithin_iff {G : Type} [BEq G] [LawfulBEq G] (g h : Array G) :
+    Fren.Core.guardsWithin g h = true ↔ ∀ x ∈ g, x ∈ h := by
+  unfold Fren.Core.guardsWithin
+  constructor
+  · intro hall x hx
+    obtain ⟨i, hi, rfl⟩ := Array.getElem_of_mem hx
+    simpa using Array.all_eq_true.mp hall i hi
+  · intro hin
+    exact Array.all_eq_true.mpr fun i hi => by simpa using hin _ (Array.getElem_mem hi)
+
 /-- The guards of the path `p`, of the pairs `guards` of each path and one
 of its guards. -/
 def guardsOfPath (guards : List (Nat × Nat)) (p : Nat) : List Nat := (guards.filter (·.1 == p)).map (·.2)

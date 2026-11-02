@@ -34,8 +34,9 @@ enumeration, an enumeration with payloads, whose outputs' variants a
 clash note may give, sets and relations with `card`, so that it
 reaches `linear_product`, the decidable core and the lints,
 expressions that do not synthesize their types at each kind of site
-(`sitesProc`), and traits, with laws and expectations over their methods
-(`traitGroup`).
+(`sitesProc`), traits, with laws and expectations over their methods
+(`traitGroup`), and a recursive function applied on several paths of one
+expectation (`guardPaths`).
 
 What legitimately differs is normalized away by
 `FrenTest.Frontends.compare`, whose documentation lists it, as does
@@ -1098,6 +1099,26 @@ def factChain : R String := do
       s!"proc fc_in2(x: FcBig) \{\n    cover v: x > {d}\n}\n"
   return out
 
+/-- A recursive defined function with a postcondition, applied on several
+paths of one expectation, each with its own guards, whose facts a query
+asserts once, under its weakest paths (`lang::merged_facts`): on a path
+whose guards include another's, on two neither of whose guards are among
+the other's, or on one without guards first; and at a larger argument,
+whose one-step equation applies it again. Each expectation holds, by the
+postcondition or by one unfolding, so no result depends on a model. It is
+written from a grammar of its own, as `factChain` is. -/
+def guardPaths : R String := do
+  let k ← below 3
+  let shape ← below 3
+  let (params, goal) := match shape with
+    | 0 => ("a?", "(not a? or gpsum(l) >= 0) and (not a? or gpsum(l) > -1)")
+    | 1 => ("a?, b?", s!"(not a? or gpsum(l) >= 0) and (not b? or gpsum(GuardList::Cons({k}, l)) >= {k})")
+    | _ => ("a?", s!"gpsum(l) > -1 and (not a? or gpsum(GuardList::Cons({k}, l)) >= {k})")
+  return "pub enum GuardList { Nil, Cons(Int, GuardList) }\n" ++
+    "pub fn gpsum(l: GuardList): (r: Int) {\n    out r := match l { GuardList::Nil => 0, GuardList::Cons(m, rest) => m.abs + gpsum(rest) }\n" ++
+    "    ensure e: r >= 0\n}\n" ++
+    s!"\nproc gp_paths(l: GuardList, {params}) \{\n    expect c: {goal}\n}\n"
+
 /-- Generic functions whose type parameters are element types
 (`lang::element_parameter`): sets, sequences and relations of them, nested
 and within an instance, in signatures, bodies and contracts, defined and
@@ -1714,6 +1735,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- Generic structural recursions, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← genericRecursion sc)
+  -- A recursive application found on several paths, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← guardPaths)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
