@@ -43,6 +43,39 @@ lemma still_made(fs: Fs, p: Path, q: Path): exists?(mkdir(mkdir(fs, p), q), q)
 > interface is written as today's [`trait`](Traits.md), and an
 > implementation as the `inst` to come.
 
+> **Note:** #669 also decides the following, which later stages specify:
+>
+> - Two lints, each an exact rewrite: one moves a lemma or `assume` item
+>   whose only application is one function at exactly its parameters into
+>   that function as an `ensure` clause, and one moves out an `ensure`
+>   clause that mentions other abstract items (stage 3).
+> - Traits stage 1's `trait` and `inst` move to `mod I<Self>` and `mod x:
+>   I<T>` by a migration script, once stage 3 builds the shared machinery.
+> - An implementation in scope is canonical for dispatch, two are an
+>   error, and an explicit choice is always available
+>   (`module.meta.coherence`, stage 3).
+> - A module whose parts stay abstract, with `assume` items, is code over
+>   an assumed implementation, as Lean's `section` and `variable` are, and
+>   can later be ascribed to a named interface (stage 3).
+> - A generic implementation, `mod list_eq<T: Eq>: Eq<List<T>>`, is a
+>   functor, the only kind of functor for now. A bound on a type parameter
+>   is an interface parameter of its theory (#617).
+> - An interface generates a Lean `class` whose laws are `Prop` fields,
+>   and an implementation an `instance` whose law fields Fren fills from
+>   its own checks. An existing Lean instance can be named as an
+>   implementation's witness. An interface's procedures are `Prop`-valued
+>   relations there.
+> - An unspecified value is a constant of its theory, instantiated at each
+>   instance (the lesson of #635).
+> - Dictionary passing is the reference semantics of generic items, and
+>   monomorphization an optimization proved to agree with it (#594).
+> - Theories stay second-class, unlike 1ML's, so that instances
+>   resolve statically and queries stay free of the sentences' quantifiers.
+> - Stage 1 removes the copies of instances across guard paths, and scopes
+>   the closure of facts to the queries that mention a sentence's items.
+>   The solver's time limit and the limit of 256 instances (`F0356`) are
+>   settings to remove later.
+
 ```fren
 pub mod lang
 ```
@@ -61,10 +94,11 @@ ensure         := "ensure" IDENT ":" top
 ```
 
 r[module.syntax.forms]
-An `expect` item is a [global expectation](Global.md) in either of its
-forms. An `expect` member is a member of a procedure, a function, a global
-expectation or a lemma. A `law` item is a member of a
-[trait](Traits.md#laws).
+An `expect` is accepted everywhere but in an `assume` item's block: as an
+item of a module or of an interface, which is a [global
+expectation](Global.md) in either of its forms, and as a member of a
+function, a procedure, a global expectation or a lemma. A `law` item is a
+member of a [trait](Traits.md#laws).
 
 r[module.syntax.keywords]
 `lemma` and `require` are contextual keywords. `lemma` starts an item where
@@ -145,8 +179,10 @@ the evidence lists the items that a partial implementation leaves
 abstract.
 
 r[module.implementation.theorems]
-A theorem of a module, once checked, holds of every implementation of it,
-translated, without another check (*functional instantiation*).
+A theorem of a module, once checked, holds translated, without another
+check, of every implementation of it whose obligations hold, and of a
+partial one, given the axioms that it leaves trusted (*functional
+instantiation*, `lang::translated_theorem`).
 
 r[module.parametricity]
 No check or item of a module or generic function inspects a type
@@ -315,7 +351,7 @@ set_option fren.evidence "enumerated" in
 pub proc sentence_member(
     block: SentenceKind,       -- `Lemma`, or `Assume` for an `assume` item
     member: SentenceMember,
-    det?,                      -- written with `det`
+    det?,                      -- written with `det`, which no member of these blocks may be
 ): (det accepted?) {
     use self::SentenceMember::{Call, Cover, Ensure, Expect, Let, Require, Use}
     assume blocks: block in {SentenceKind::Lemma, SentenceKind::Assume}
@@ -378,8 +414,8 @@ uninterpreted function, of a procedure, or of an `assume` item. The
 spec's interpretations are those that meet every axiom.
 
 r[module.role.goal]
-An `expect` item or member is a *goal*. It holds as a theorem does, and no other check
-uses it.
+An `expect` item or member is a *goal*. Fren proves it as it proves a
+theorem, and no other check uses it.
 
 r[module.ensure.sugar]
 An `ensure` clause of a function `f` with the parameters `x` is the sentence that
@@ -419,7 +455,7 @@ pub proc sentence_role(
     mentioned: Set<Int>,     -- the items that the sentence mentions
     abstract: Set<Int>,      -- the abstract items of the spec
 ): (det role: SentenceRole, det accepted?) {
-    use self::SentencePlace::{AssumeBlock, DefinedFunction, LemmaBlock, Module}
+    use self::SentencePlace::{DefinedFunction, LemmaBlock, Module}
     use self::SentenceRole::{Axiom, Domain, Goal, Theorem}
 
     out role := match keyword {
@@ -428,39 +464,47 @@ pub proc sentence_role(
         SentenceKind::Lemma => Theorem,
         SentenceKind::Law => Axiom,
         SentenceKind::Ensure => if place in {DefinedFunction, LemmaBlock} then Theorem else Axiom,
-        SentenceKind::Assume => if place in {Module, AssumeBlock} then Axiom else Domain,
+        SentenceKind::Assume => if place = Module then Axiom else Domain,
     }
     out accepted? := not (keyword = SentenceKind::Assume and place = Module and mentioned inter abstract = {})
 
     expect axioms_mention_abstract_items: when keyword = SentenceKind::Assume and place = Module and accepted?,
         mentioned inter abstract != {}
-    expect within_items: when keyword = SentenceKind::Assume and not place is Module | AssumeBlock, role = Domain
+    expect within_items: when keyword = SentenceKind::Assume and place != Module, role = Domain
     expect uninterpreted_contracts: when keyword = SentenceKind::Ensure and place = SentencePlace::UninterpretedFunction,
         role = Axiom
 }
 ```
 
 > **Rationale:** An `assume` about defined items alone could contradict
-> their definitions, and needs no trust: it is a lemma.
+> their definitions, and needs no trust: it is a lemma, and defined items
+> are a conservative extension (`module.meta.conservative`).
 
 ## Instantiation
 
 Fren uses a theorem or an axiom in a check by *instantiating* it: it puts
 ground terms of the check's query for the sentence's quantified variables,
 and adds each instance as a hypothesis. It chooses the instances itself,
-from the applications and calls of the query, so that every query stays
-free of quantifiers, and no spec writes or sees how a sentence is
-instantiated.
+from the applications and calls of the query, and no spec writes or sees
+how a sentence is instantiated.
 
 **Legality rules**
 
-r[module.subject]
-A sentence's *subject* is the item, of those it applies or calls, that is
-declared last.
+r[module.signature]
+A module's *signature* is its items other than its lemma, `assume`,
+`expect` and `law` items: its types, functions and procedures. A module
+declares its signature as a whole. A sentence may mention any item of its
+own module's signature, wherever it is declared, and the items of the
+modules that its module imports.
 
-r[module.order]
-A sentence applies and calls only items declared before it. Another
-application is an error that names it (the *order rule*).
+r[module.order.items]
+The items of a spec are ordered: an imported module's items come before
+those of the module that imports it, and a module's own items come in the
+order in which they are declared.
+
+r[module.subject]
+A sentence's *subject* is the item, of those it applies or calls, that
+comes last in that order.
 
 r[module.anchor]
 An *anchor* of a sentence is an application of its subject, as a function,
@@ -474,33 +518,44 @@ The *matched* applications of a sentence are its anchors and each of its
 calls that mentions no name that a quantifier within the sentence binds.
 
 r[module.binding]
-Each quantified variable that a sentence mentions, and whose type is not
-[listed](Quantifiers.md#types), occurs in a matched application. A variable
-that does not is an error that names it (the *binding rule*).
+Each quantified variable of a sentence that occurs in an application of
+it, and whose type is not [listed](Quantifiers.md#types), occurs in a
+matched application. A variable that does not is an error that names it
+(the *binding rule*).
+
+r[module.binding.outside]
+A quantified variable that the sentence mentions only outside its
+applications, as `n` in `law bounded(s: Self, n: Int): when n > 0, h(s) >=
+0`, needs no term: it stays quantified within each instance.
 
 r[module.rules.kinds]
-The order rule and the binding rule apply to a lemma, an `assume` item
-and a law. An `expect` that does not meet them is checked, as every goal
-is. An `ensure` meets them, since a contract applies its function only to
-its parameters ([Contracts](Items.md#contracts)).
+The binding rule applies to a lemma item and an `assume` item. An `expect`
+that does not meet it is checked, as every goal is. An `ensure` meets it,
+since a contract applies its function only to its parameters
+([Contracts](Items.md#contracts)).
+
+r[module.rules.laws]
+A `law` that meets the binding rule is instantiated as a lemma is. A `law`
+that does not is not an error, and is used only as today, as a quantified
+hypothesis of its trait's checks ([Traits](Traits.md#laws)).
 
 r[module.rules.report]
-A sentence that breaks both rules reports its first application that
-breaks the order rule, and no variable. One that breaks only the binding
-rule reports its first unbound variable (`lang::sentence_instantiation`).
+A sentence that breaks the binding rule reports its first unbound variable
+(`lang::sentence_instantiation`).
 
 **Dynamic semantics**
 
 r[module.instance]
 An *instance* of a sentence is the sentence with a ground term in place of
-each of its quantified variables. It holds wherever the sentence does.
+each of its quantified variables that has one. It holds wherever the
+sentence does.
 
 r[module.instance.matching]
-Fren takes the instances at which each matched application of the sentence
-is a term of the query: each anchor an application of the query, and each
-call a call of the query, with the same arguments once the instance's terms
-are put in. Two terms are the same where they are written alike, once each
-name with a definition is replaced by it.
+Fren takes the instances at which all the matched applications of the
+sentence are terms of the query at once: each anchor an application of the
+query, and each call a call of the query, with the same arguments once the
+instance's terms are put in. Two terms are the same where they are written
+alike, once each name with a definition is replaced by it.
 
 r[module.instance.ground]
 An application of the query that mentions a name that a quantifier of the
@@ -517,7 +572,14 @@ A quantified variable that the sentence does not mention takes no term.
 r[module.instance.hypothesis]
 Each instance adds its claims, under its domain, as one hypothesis of the
 query. The applications and calls that the instance has are terms of the
-query too.
+query too, but for those that mention a name that stays quantified.
+
+r[module.instance.quantifiers]
+A quantifier within a sentence, and a variable that stays quantified
+(`module.binding.outside`), are quantifiers of each instance. Where their
+types are not listed, the instance is outside the [decidable
+core](Decidability.md), and `undecidable` reports it at the sentence, as
+it reports an [unbounded quantifier](Quantifiers.md#unbounded-quantifiers).
 
 r[module.closure]
 Fren instantiates each sentence that the check uses at the terms of the
@@ -525,18 +587,33 @@ query and of the instances, until no new instance arises. The *closure* is
 the set of all those instances.
 
 r[module.closure.finite]
-The closure of every query is finite. No bound on the number of rounds is
-part of the language.
+The closure of every query is finite. Take the items in reverse order
+(`module.order.items`). An instance applies its subject only to quantified
+variables, which matching binds to proper subterms of the query's terms,
+to values of listed types, and to closed terms of the sentence. It applies
+every other item only where that item comes before the subject. So the
+arguments of each item's applications are among finitely many terms, once
+the applications of the items after it are finitely many. No bound on the
+number of rounds is part of the language.
+
+r[module.instance.models]
+A model of a query whose hypotheses include instances of axioms is a
+model of those instances, not always of the axioms. Fren reports it as a
+counterexample, or as a witness of consistency, only where it confirms
+that the model meets the axioms themselves. Where it does not, a check
+that uses only today's laws asks today's query, with the laws quantified
+([Traits](Traits.md#expectations)), and any other check is Inconclusive.
 
 r[module.use]
-A check uses the lemmas, `assume` items and laws that are visible to it,
-declared before its item, and meet the two rules, whose subject the
-closure applies (`lang::sentence_use`). An `ensure` is used as a
-[contract](Items.md#contracts) is.
+A check uses the sentences that are visible to it and meet the binding
+rule, whose subject the closure applies (`lang::sentence_use`): every
+axiom of its module and of the modules it imports, wherever it is
+declared, and each theorem declared before the check's item. An `ensure`
+is used as a [contract](Items.md#contracts) is.
 
 r[module.use.subject]
 A sentence is used where its subject is applied by the query, or by an
-instance of a used sentence whose subject is declared after it.
+instance of a used sentence.
 
 r[module.use.verdict]
 A check uses a lemma whatever the lemma's own verdict. Where the check
@@ -544,14 +621,15 @@ passes, the pass rests on the lemma's check ([Evidence](../Evidence.md#resting-o
 
 r[module.use.laws]
 The laws of a trait are visible to the checks of the trait's lemmas and
-expectations, as [Traits](Traits.md#expectations) states.
+expectations, wherever each is written, as [Traits](Traits.md#expectations)
+states.
 
 r[module.use.morphism]
 The sentences visible to a check are those of its module, of the modules
 that it imports, and their theorems and axioms translated along the
 implementations that the check's terms use: an interface's at each of its
-implementations, and a generic function's at each of its instances.
-Each is used as `module.use` states, at its translation's subject.
+implementations, and a generic function's at each of its instances. Each
+is used as `module.use` states, at its translation's subject.
 
 r[module.no-patterns]
 No sentence states how it is instantiated, and no setting changes it.
@@ -564,9 +642,10 @@ pub enum SentenceArg { Variable, Closed, Compound }
 
 -- An application of a function, or a call of a procedure, in a sentence.
 pub struct SentenceApplication {
-    item: Int,                  -- the item applied or called, by its position in declaration order
+    item: Int,                  -- the item applied or called, by its place in the order of items
     call?,                      -- it is a call
     args: Seq<SentenceArg>,     -- its arguments
+    point: Int,                 -- its arguments as written: applications with the same arguments have the same point
     mentions: Set<Int>,         -- the quantified variables that occur in it, by position
     inner?,                     -- it mentions a name that a quantifier within the sentence binds
 }
@@ -583,12 +662,11 @@ pub struct SentenceVariable {
 -- A sentence's quantified variables, in order.
 pub enum SentenceVariables { Nil, Cons(SentenceVariable, SentenceVariables) }
 
--- Whether a sentence meets the two rules; or the first application that
--- breaks the order rule, or the first variable that breaks the binding
--- rule, each by position.
-pub enum SentenceInstantiation { Instantiable, Unordered(Int), Unbound(Int) }
+-- Whether a sentence meets the binding rule; or the first variable that
+-- breaks it, by position.
+pub enum SentenceInstantiation { Instantiable, Unbound(Int) }
 
--- The item, of those that `apps` applies or calls, declared last, and -1 where there is none.
+-- The item, of those that `apps` applies or calls, that comes last, and -1 where there is none.
 pub fn last_item(apps: Applications): Int := match apps {
     Applications::Nil => -1,
     Applications::Cons(a, rest) => a.item.max(last_item(rest)),
@@ -627,36 +705,31 @@ pub fn bound?(apps: Applications, v: Int, s: Int, compound?) := match apps {
     Applications::Cons(a, rest) => (matched?(a, s, compound?) and v in a.mentions) or bound?(rest, v, s, compound?),
 }
 
--- The first application of an item that is not declared before `position`,
--- the first at position `k`, and -1 where there is none.
-pub fn first_unordered(apps: Applications, position: Int, k: Int): Int := match apps {
-    Applications::Nil => -1,
-    Applications::Cons(a, rest) => if a.item >= position then k else first_unordered(rest, position, k + 1),
+-- Whether an application of `apps` mentions the variable `v`.
+pub fn in_application?(apps: Applications, v: Int) := match apps {
+    Applications::Nil => false,
+    Applications::Cons(a, rest) => v in a.mentions or in_application?(rest, v),
 }
 
 -- The first variable that the binding rule needs bound and is not, the
 -- first at position `v`, and -1 where there is none.
 pub fn first_unbound(vars: SentenceVariables, apps: Applications, v: Int, s: Int, compound?): Int := match vars {
     SentenceVariables::Nil => -1,
-    SentenceVariables::Cons(x, rest) => if x.mentioned? and not x.listed? and not bound?(apps, v, s, compound?)
+    SentenceVariables::Cons(x, rest) => if not x.listed? and in_application?(apps, v) and not bound?(apps, v, s, compound?)
         then v else first_unbound(rest, apps, v + 1, s, compound?),
 }
 
--- Whether the sentence at `position`, with these variables and applications, meets the two rules.
-pub fn instantiation_verdict(
-    position: Int,
-    vars: SentenceVariables,
-    apps: Applications
-): SentenceInstantiation :=
-    if first_unordered(apps, position, 0) != -1 then SentenceInstantiation::Unordered(first_unordered(apps, position, 0))
-    else if first_unbound(
+-- Whether a sentence with these variables and applications meets the binding rule.
+pub fn instantiation_verdict(vars: SentenceVariables, apps: Applications): SentenceInstantiation :=
+    if first_unbound(
         vars,
         apps,
         0,
         last_item(apps),
         has_compound?(apps, last_item(apps))
-    ) != -1
-    then SentenceInstantiation::Unbound(
+    ) = -1
+    then SentenceInstantiation::Instantiable
+    else SentenceInstantiation::Unbound(
         first_unbound(
             vars,
             apps,
@@ -665,11 +738,9 @@ pub fn instantiation_verdict(
             has_compound?(apps, last_item(apps))
         )
     )
-    else SentenceInstantiation::Instantiable
 
 set_option fren.evidence "random" in
 pub proc sentence_instantiation(
-    position: Int,                   -- the sentence's position in declaration order
     variables: SentenceVariables,    -- its quantified variables, in order
     applications: Applications,      -- its applications and calls, in the order written
 ): (det subject: Int, det anchors: Set<Int>, det verdict: SentenceInstantiation) {
@@ -680,12 +751,10 @@ pub proc sentence_instantiation(
         has_compound?(applications, subject),
         0
     )
-    out verdict := instantiation_verdict(position, variables, applications)
+    out verdict := instantiation_verdict(variables, applications)
 
-    expect order_first: when first_unordered(applications, position, 0) != -1,
-        verdict = SentenceInstantiation::Unordered(first_unordered(applications, position, 0))
-    expect no_variables: when variables = SentenceVariables::Nil and first_unordered(applications, position, 0) = -1,
-        verdict = SentenceInstantiation::Instantiable
+    expect no_variables: when variables = SentenceVariables::Nil, verdict = SentenceInstantiation::Instantiable
+    expect no_applications: when applications = Applications::Nil, verdict = SentenceInstantiation::Instantiable
 }
 ```
 
@@ -694,19 +763,32 @@ The law `get_put` of [Traits](Traits.md) has one anchor,
 `get(put(s, k, v), j)`, which binds all four variables. It is
 instantiated at each application of `get` to an application of `put`
 (`lang::get_put_instantiation`). Of `f(x) = f(f(x))`, `f(f(x))` is the only
-anchor (`lang::nested_anchor`). `f(x) <= g(x, y)`, where `g` is declared
-before `f`, leaves `y` unbound (`lang::unbound_variable`). A law whose
-variable is a `Bool` that no application has, such as `law flagged(s:
-Self, b?): when b?, obs(s) >= 0`, takes both values of it
-(`lang::listed_variable`).
+anchor (`lang::nested_anchor`). Of `f(g(x)) = f(g(g(x)))`, both
+applications of `f` are anchors, matched at once, so an instance arises
+only where both are terms of the query, and adds no application of `f`.
+Of `f(a, b) = f(b, a)`, both applications are anchors, so it relates
+`f(c, d)` and `f(d, c)` only where both are terms of the query.
+`f(x) <= g(x, y)`, where `g` comes before `f`, leaves `y` unbound
+(`lang::unbound_variable`). A law may come before the methods it mentions
+(`lang::law_before_method`). A law whose variable is a `Bool` that no
+application has, such as `law flagged(s: Self, b?): when b?, obs(s) >= 0`,
+takes both values of it (`lang::listed_variable`), and `law bounded(s:
+Self, n: Int): when n > 0, h(s) >= 0` keeps `n` quantified
+(`lang::outside_variable`).
 
 ```fren
--- An application, outside every quantifier, of `item` to `args`, which mention `mentions`.
-pub fn app(item: Int, args: Seq<SentenceArg>, mentions: Set<Int>): SentenceApplication :=
+-- An application, outside every quantifier, of `item` at `point` to `args`, which mention `mentions`.
+pub fn app(
+    item: Int,
+    point: Int,
+    args: Seq<SentenceArg>,
+    mentions: Set<Int>
+): SentenceApplication :=
     SentenceApplication {
         item,
         call? := false,
         args,
+        point,
         mentions,
         inner? := false,
     }
@@ -717,7 +799,7 @@ pub fn quantified(listed?): SentenceVariable := SentenceVariable {
 }
 
 -- `law get_put(s: Self, k: Key, v: Int, j: Key): get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))`,
--- with `put` declared at 1, `get` at 2, and the law at 3.
+-- with `put` at 1 and `get` at 2.
 pub const GET_PUT_VARIABLES: SentenceVariables := SentenceVariables::Cons(
     quantified(false),
     SentenceVariables::Cons(
@@ -732,11 +814,13 @@ pub const GET_PUT_VARIABLES: SentenceVariables := SentenceVariables::Cons(
 pub const GET_PUT_APPLICATIONS: Applications := Applications::Cons(
     app(
         2,
+        0,
         [SentenceArg::Compound, SentenceArg::Variable],
         {0, 1, 2, 3}
     ),
     Applications::Cons(
         app(
+            1,
             1,
             [
                 SentenceArg::Variable,
@@ -746,7 +830,7 @@ pub const GET_PUT_APPLICATIONS: Applications := Applications::Cons(
             {0, 1, 2}
         ),
         Applications::Cons(
-            app(2, [SentenceArg::Variable, SentenceArg::Variable], {0, 3}),
+            app(2, 2, [SentenceArg::Variable, SentenceArg::Variable], {0, 3}),
             Applications::Nil
         )
     )
@@ -754,7 +838,7 @@ pub const GET_PUT_APPLICATIONS: Applications := Applications::Cons(
 
 set_option fren.evidence "random" in
 expect get_put_instantiation() {
-    call r := sentence_instantiation(3, GET_PUT_VARIABLES, GET_PUT_APPLICATIONS)
+    call r := sentence_instantiation(GET_PUT_VARIABLES, GET_PUT_APPLICATIONS)
     expect subject: r.subject = 2
     expect one_anchor: r.anchors = {0}
     expect instantiable: r.verdict = SentenceInstantiation::Instantiable
@@ -766,63 +850,75 @@ pub const ONE_VARIABLE: SentenceVariables := SentenceVariables::Cons(
     SentenceVariables::Nil
 )
 
--- `f(x) = f(f(x))`, with `f` declared at 1 and the sentence at 2: the
--- applications `f(x)`, `f(f(x))` and the inner `f(x)`.
+-- `f(x) = f(f(x))`, with `f` at 1: the applications `f(x)`, `f(f(x))` and the inner `f(x)`.
 pub const NESTED_APPLICATIONS: Applications := Applications::Cons(
-    app(1, [SentenceArg::Variable], {0}),
+    app(1, 0, [SentenceArg::Variable], {0}),
     Applications::Cons(
-        app(1, [SentenceArg::Compound], {0}),
-        Applications::Cons(app(1, [SentenceArg::Variable], {0}), Applications::Nil)
+        app(1, 1, [SentenceArg::Compound], {0}),
+        Applications::Cons(app(1, 0, [SentenceArg::Variable], {0}), Applications::Nil)
     )
 )
 
 set_option fren.evidence "random" in
 expect nested_anchor() {
-    call r := sentence_instantiation(2, ONE_VARIABLE, NESTED_APPLICATIONS)
+    call r := sentence_instantiation(ONE_VARIABLE, NESTED_APPLICATIONS)
     expect outer_only: r.anchors = {1}
     expect instantiable: r.verdict = SentenceInstantiation::Instantiable
 }
 
--- `f(x) <= g(x, y)`, with `g` declared at 1 and `f` at 2.
+-- `f(x) <= g(x, y)`, with `g` at 1 and `f` at 2.
 pub const TWO_VARIABLES: SentenceVariables := SentenceVariables::Cons(
     quantified(false),
     SentenceVariables::Cons(quantified(false), SentenceVariables::Nil)
 )
 
-pub const UNBOUND_APPLICATIONS: Applications := Applications::Cons(
-    app(2, [SentenceArg::Variable], {0}),
-    Applications::Cons(
-        app(1, [SentenceArg::Variable, SentenceArg::Variable], {0, 1}),
-        Applications::Nil
-    )
-)
-
--- Declared at 3, the sentence leaves `y` unbound.
 set_option fren.evidence "random" in
 expect unbound_variable() {
-    call r := sentence_instantiation(3, TWO_VARIABLES, UNBOUND_APPLICATIONS)
+    call r := sentence_instantiation(
+        TWO_VARIABLES,
+        Applications::Cons(
+            app(2, 0, [SentenceArg::Variable], {0}),
+            Applications::Cons(
+                app(1, 1, [SentenceArg::Variable, SentenceArg::Variable], {0, 1}),
+                Applications::Nil
+            )
+        ),
+    )
     expect y_unbound: r.verdict = SentenceInstantiation::Unbound(1)
 }
 
--- Declared at 2, the sentence applies `f`, which is not declared before it.
+-- `law l(s: Self): f(s) >= 0`, written before `fn f(Self): Int`: the law
+-- applies `f`, at 1, wherever it is declared.
 set_option fren.evidence "random" in
-expect unordered_application() {
-    call r := sentence_instantiation(2, TWO_VARIABLES, UNBOUND_APPLICATIONS)
-    expect f_not_earlier: r.verdict = SentenceInstantiation::Unordered(0)
+expect law_before_method() {
+    call r := sentence_instantiation(
+        ONE_VARIABLE,
+        Applications::Cons(app(1, 0, [SentenceArg::Variable], {0}), Applications::Nil),
+    )
+    expect instantiable: r.verdict = SentenceInstantiation::Instantiable
+    expect anchored: r.anchors = {0}
 }
 
--- `law flagged(s: Self, b?): when b?, obs(s) >= 0`, with `obs` declared at 1 and the law at 2.
-pub const FLAGGED_VARIABLES: SentenceVariables := SentenceVariables::Cons(
-    quantified(false),
-    SentenceVariables::Cons(quantified(true), SentenceVariables::Nil)
-)
-
+-- `law flagged(s: Self, b?): when b?, obs(s) >= 0`, with `obs` at 1.
 set_option fren.evidence "random" in
 expect listed_variable() {
     call r := sentence_instantiation(
-        2,
-        FLAGGED_VARIABLES,
-        Applications::Cons(app(1, [SentenceArg::Variable], {0}), Applications::Nil),
+        SentenceVariables::Cons(
+            quantified(false),
+            SentenceVariables::Cons(quantified(true), SentenceVariables::Nil)
+        ),
+        Applications::Cons(app(1, 0, [SentenceArg::Variable], {0}), Applications::Nil),
+    )
+    expect instantiable: r.verdict = SentenceInstantiation::Instantiable
+}
+
+-- `law bounded(s: Self, n: Int): when n > 0, h(s) >= 0`, with `h` at 1:
+-- `n` is in no application.
+set_option fren.evidence "random" in
+expect outside_variable() {
+    call r := sentence_instantiation(
+        TWO_VARIABLES,
+        Applications::Cons(app(1, 0, [SentenceArg::Variable], {0}), Applications::Nil),
     )
     expect instantiable: r.verdict = SentenceInstantiation::Instantiable
 }
@@ -832,7 +928,8 @@ expect listed_variable() {
 sentences visible to it and the items that its query applies:
 
 ```fren
--- A lemma, `assume` item or law, or a goal, visible to a check.
+-- A lemma, `assume` item or law, or a goal, visible to a check. `Ensure`
+-- is an `ensure` clause of an abstract item.
 pub struct Sentence {
     kind: SentenceKind,
     position: Int,                   -- its position in declaration order
@@ -848,9 +945,18 @@ pub fn applied_items(apps: Applications): Set<Int> := match apps {
     Applications::Cons(a, rest) => {a.item} union applied_items(rest),
 }
 
--- Whether `p` may be used by a check of the item at `check`, where its subject is applied.
-pub fn fact?(p: Sentence, check: Int) := p.kind in {SentenceKind::Lemma, SentenceKind::Assume, SentenceKind::Law}
-    and p.position < check and instantiation_verdict(p.position, p.variables, p.applications) = SentenceInstantiation::Instantiable
+-- Whether `p` is an axiom: an `assume` item, a law, or an `ensure` clause of an abstract item.
+pub fn axiom?(p: Sentence) := p.kind in {
+    SentenceKind::Assume,
+    SentenceKind::Law,
+    SentenceKind::Ensure,
+}
+
+-- Whether `p` may be used by a check of the item at `check`, where its
+-- subject is applied: an axiom, wherever it is declared, or a lemma
+-- declared before the item, that meets the binding rule.
+pub fn fact?(p: Sentence, check: Int) := (axiom?(p) or (p.kind = SentenceKind::Lemma and p.position < check))
+    and instantiation_verdict(p.variables, p.applications) = SentenceInstantiation::Instantiable
 
 -- Whether `p` is used where the query and the instances apply `items`.
 pub fn used?(p: Sentence, check: Int, items: Set<Int>) := fact?(p, check) and last_item(p.applications) in items
@@ -875,27 +981,27 @@ pub fn used_positions(ps: Sentences, check: Int, items: Set<Int>): Set<Int> := m
 set_option fren.evidence "random" in
 pub proc sentence_use(
     check: Int,                  -- the position of the item whose check it is
-    sentences: Sentences,      -- the sentences visible to the check
+    sentences: Sentences,        -- the sentences visible to the check
     applied: Set<Int>,           -- the items that the query applies or calls
 ): (det reached: Set<Int>, det used: Set<Int>) {
     out reached := reach(sentences, sentences, check, applied)
     out used := used_positions(sentences, check, reached)
 
     expect query_items_reached: applied subset reached
-    expect only_earlier: when sentences = Sentences::Nil, used = {}
+    expect nothing_visible: when sentences = Sentences::Nil, used = {}
 }
 
 -- `assume made(fs: Fs, p: Path): exists?(mkdir(fs, p), p)`, with `mkdir`
--- declared at 1, `exists?` at 2 and the axiom at 3.
-pub const MADE: Sentences := Sentences::Cons(
+-- at 1, `exists?` at 2 and the axiom at 3.
+pub fn made(keyword: SentenceKind): Sentences := Sentences::Cons(
     Sentence {
-        kind := SentenceKind::Assume,
+        kind := keyword,
         position := 3,
         variables := TWO_VARIABLES,
         applications := Applications::Cons(
-            app(2, [SentenceArg::Compound, SentenceArg::Variable], {0, 1}),
+            app(2, 0, [SentenceArg::Compound, SentenceArg::Variable], {0, 1}),
             Applications::Cons(
-                app(1, [SentenceArg::Variable, SentenceArg::Variable], {0, 1}),
+                app(1, 1, [SentenceArg::Variable, SentenceArg::Variable], {0, 1}),
                 Applications::Nil
             )
         ),
@@ -903,10 +1009,10 @@ pub const MADE: Sentences := Sentences::Cons(
     Sentences::Nil
 )
 
--- A later check that applies `exists?` uses it, and reaches `mkdir`.
+-- A check that applies `exists?` uses it, and reaches `mkdir`.
 set_option fren.evidence "random" in
 expect made_used() {
-    call r := sentence_use(4, MADE, {2})
+    call r := sentence_use(4, made(SentenceKind::Assume), {2})
     expect used: r.used = {3}
     expect reaches_mkdir: 1 in r.reached
 }
@@ -914,33 +1020,42 @@ expect made_used() {
 -- One that applies only `mkdir` does not.
 set_option fren.evidence "random" in
 expect made_unused() {
-    call r := sentence_use(4, MADE, {1})
+    call r := sentence_use(4, made(SentenceKind::Assume), {1})
     expect unused: r.used = {}
 }
 
--- Nor does the check of an item declared before it.
+-- An axiom is used by the check of an item declared before it, as a law
+-- is by an expectation written before it; a lemma is not.
 set_option fren.evidence "random" in
-expect made_later() {
-    call r := sentence_use(3, MADE, {2})
-    expect not_before: r.used = {}
+expect axioms_anywhere() {
+    call assumed := sentence_use(2, made(SentenceKind::Assume), {2})
+    expect used_before: assumed.used = {3}
+}
+
+set_option fren.evidence "random" in
+expect lemmas_ranked() {
+    call lemma := sentence_use(2, made(SentenceKind::Lemma), {2})
+    expect not_before: lemma.used = {}
 }
 ```
 
 > **Rationale:** Instantiating at the query's own terms keeps each query
-> quantifier-free and its verdict the same in both front ends. In the
-> experiment of #669, ground instances always sufficed: every theorem that
-> was not proved needed a generalization or a lemma that nobody wrote. The
-> binding rule takes variables only from the subject's applications because
-> the closure would not end otherwise: with `forall z, f(z) = g(z)` taking
-> `z` from `f`'s arguments, and `forall x, f(g(x)) = 0`, each application
-> `g(a)` brings `f(g(a))`, which brings `g(g(a))`, and so on. Under the two
-> rules each instance applies the subject only to terms that the query
-> already has within the subject's applications, or to closed terms, and
-> applies every other item only where that item is declared before the
-> subject. So the applications of the item declared last are finitely many
-> once those of the items after it are, and the closure ends. Fren
-> chooses the instances that F\*'s `SMTPat` and Dafny's triggers have the
-> author choose.
+> free of the sentences' own quantifiers, and its verdict the same in both
+> front ends. In the experiment of #669, ground instances always sufficed:
+> every theorem that was not proved needed a generalization or a lemma
+> that nobody wrote. The binding rule takes variables only from the
+> subject's applications because the closure would not end otherwise: with
+> `forall z, f(z) = g(z)` taking `z` from `f`'s arguments, and `forall x,
+> f(g(x)) = 0`, each application `g(a)` brings `f(g(a))`, which brings
+> `g(g(a))`, and so on. Matching the anchors at once is needed too: matched
+> one at a time, `f(g(x)) = f(g(g(x)))` brings `f(g(g(g(c))))` from
+> `f(g(g(c)))`, and so on. Axioms are used wherever they are declared,
+> since no axiom is proved and so none can rest on a check that rests on
+> it. Theorems are ranked, so that no proof rests on itself. A model of the
+> instances alone need not be one of the axioms: `forall (n: Nat), f(n) >
+> f(n + 1)`, with `f` to `Nat`, has no model, but each finite set of its
+> instances does. Fren chooses the instances that F\*'s `SMTPat` and
+> Dafny's triggers have the author choose.
 
 ## Checks
 
@@ -956,55 +1071,80 @@ induction, where `module.induction` applies.
 r[module.axiom.check]
 An axiom is never proved. Fren checks that the axioms of each module can
 hold together (its *consistency*), item by abstract item, in the tier that
-`lang::consistency` gives. The axioms of an abstract item are those of its
-module's axioms that mention it.
+`lang::axiom_tier` gives.
+
+r[module.axiom.owner]
+Each axiom has one *owner*, its subject (`module.subject`). The axioms of
+an abstract item are those it owns.
+
+r[module.contract.earlier]
+A contract mentions only the items declared before its function, and the
+function itself ([Contracts](Items.md#contracts)). The owner of an
+`ensure` clause is its own item.
 
 r[module.tier.modular]
-An abstract item whose axioms mention no other abstract item of its module
-is checked as today: it is *realizable* where, for each argument that
-meets its domain, some value meets its axioms, whatever the other items
-are (tier 1, [Realizability](../Check.md#contracts-of-uninterpreted-functions)).
-An `ensure`'s axiom is its item's alone, whatever else it mentions.
+An abstract item that owns only `ensure` clauses, and axioms that mention
+no other abstract item, is checked as today: it is *realizable* where, for
+each argument that meets its domain, some value meets its axioms, whatever
+the other items are (tier 1,
+[Realizability](../Check.md#contracts-of-uninterpreted-functions)).
+
+r[module.tier.pointwise]
+An axiom is *pointwise* where all its applications and calls of its owner
+have the same arguments, as `f(x)` in each of `f`'s contracts.
 
 r[module.tier.relative]
-An abstract item whose `assume` items or laws mention other abstract
-items of its module is *relatively realizable* where its axioms are
-realizable for every interpretation of the others that meets the others'
-own axioms (tier 2), as in the rely-guarantee method.
+An abstract item that owns only pointwise axioms, some of them mentioning
+other abstract items, is *relatively realizable* where, for every
+interpretation of the items before it that meets the axioms they own, each
+argument that meets its domain has a value that meets the axioms it owns
+(tier 2), as in the rely-guarantee method. Fren asks it with the instances
+of those items' axioms at the query's terms as the rely, which considers
+more interpretations, not fewer.
 
 r[module.tier.joint]
-Where an item is not shown relatively realizable, its module's axioms are
-*jointly consistent* where some interpretation of the module's abstract
-items meets all of them (tier 3).
+An abstract item that owns an axiom that is not pointwise, or that is not
+shown relatively realizable, is checked with the module's other axioms:
+they are *jointly consistent* where some interpretation of the module's
+abstract items meets all of them (tier 3).
+
+r[module.tier.order]
+Where every abstract item of a module is realizable in tier 1 or tier 2,
+its axioms are jointly consistent (`lang::relative_tiers`). The proof is by
+induction on the order of items: an interpretation of the items before an
+item that meets the axioms they own extends, by a value at each argument
+that its tier gives, to one of the item as well. It rests on
+`module.contract.earlier` for tier 1, and on `module.axiom.owner` for tier
+2: an item's axioms mention only it and items before it.
 
 r[module.tier.theories]
 The tiers are the same for every theory, whichever construct it is: a
-module's abstract items, an
-interface's `Self` and methods, and a generic function's type parameters
-and their bounds' members.
+module's abstract items, an interface's `Self` and methods, and a generic
+function's type parameters and their bounds' members.
 
 r[module.consistency.evidence]
 The evidence of consistency is, from strongest to weakest: a total
-implementation whose obligations hold (a *witness*), a
-tier's proof, an interpretation that bounded model finding finds up to its
-bound, or none, which is Inconclusive.
+implementation whose obligations hold (a *witness*), a tier's proof, an
+interpretation that bounded model finding finds up to its bound, or none,
+which is Inconclusive (`lang::consistency`). A model of the axioms'
+instances alone is no evidence (`module.instance.models`).
 
 r[module.consistency.vacuity]
 Where the axioms cannot hold together, every check that uses them holds
 vacuously, and the report names a minimal set of axioms that cannot hold
-together.
+together. Where an item's tier fails, the report names the axioms it owns.
 
 r[module.assume.trusted]
-An axiom that no implementation makes an obligation is reported as trusted: a
-pass that rests on it says that it does, as one that rests on a trait's
-laws does (`F0665`).
+An axiom that no implementation makes an obligation is reported as
+trusted: a pass that rests on it says that it does, as one that rests on a
+trait's laws does (`F0665`).
 
 r[module.inst]
 An implementation of an interface, `mod x: I<T>` or an `inst`, is a total
-morphism from the interface (`module.implementation`). Each law is an obligation of it, over its
-`Self` and its members. Where every law holds, each lemma of the interface
-holds of the implementation without another check, and the implementation
-is a witness of the laws' consistency.
+morphism from the interface (`module.implementation`). Each law is an
+obligation of it, over its `Self` and its members. Where every law holds,
+each lemma of the interface holds of the implementation without another
+check, and the implementation is a witness of the laws' consistency.
 
 r[module.inst.group]
 A group of abstract functions that is meant to be implemented together is
@@ -1013,14 +1153,137 @@ an interface, and a refinement of the group is an implementation of it.
 r[module.impl]
 The [`impl`](../Impl.md) and [`interp`](../Impl.md#interpretations)
 bindings of a spec are an implementation of its module, partial where
-some abstract item has neither. An axiom that becomes an obligation of it is
-proved in Lean, and where the implementation is total, it is a witness of the
-module's consistency.
+some abstract item has neither. An axiom that becomes an obligation of it
+is proved in Lean, and where the implementation is total, it is a witness
+of the module's consistency.
 
 r[module.generic.check]
 A generic function's contract is checked once, at its type parameters, as
 the theorems of its one-item theory, and each instance `f<Int>` uses it
 translated, by `module.implementation.theorems`.
+
+```fren
+-- Which tier checks an abstract item's axioms.
+pub enum Tier { Modular, Relative, Joint }
+
+-- The first point at which `apps` applies or calls `s`, and -1 where none is.
+pub fn first_point(apps: Applications, s: Int): Int := match apps {
+    Applications::Nil => -1,
+    Applications::Cons(a, rest) => if a.item = s then a.point else first_point(rest, s),
+}
+
+-- Whether every application and call of `s` in `apps` is at the point `p`.
+pub fn all_at?(apps: Applications, s: Int, p: Int) := match apps {
+    Applications::Nil => true,
+    Applications::Cons(a, rest) => (a.item != s or a.point = p) and all_at?(rest, s, p),
+}
+
+pub fn pointwise?(p: Sentence) :=
+    all_at?(
+        p.applications,
+        last_item(p.applications),
+        first_point(p.applications, last_item(p.applications))
+    )
+
+-- Whether `p` is an axiom that `item` owns.
+pub fn owns?(p: Sentence, item: Int) := axiom?(p) and last_item(p.applications) = item
+
+-- Whether an axiom of `item` keeps it in tier 1: an `ensure` clause, or one that mentions no other abstract item.
+pub fn modular_axiom?(p: Sentence, item: Int, abstract: Set<Int>) :=
+    p.kind = SentenceKind::Ensure or applied_items(p.applications) inter abstract subset {item}
+
+pub fn owned(ps: Sentences, item: Int): Set<Int> := match ps {
+    Sentences::Nil => {},
+    Sentences::Cons(p, rest) => (if owns?(p, item) then {p.position} else {}) union owned(rest, item),
+}
+
+pub fn all_modular?(ps: Sentences, item: Int, abstract: Set<Int>) := match ps {
+    Sentences::Nil => true,
+    Sentences::Cons(p, rest) => (not owns?(p, item) or modular_axiom?(p, item, abstract)) and all_modular?(rest, item, abstract),
+}
+
+pub fn all_pointwise?(ps: Sentences, item: Int) := match ps {
+    Sentences::Nil => true,
+    Sentences::Cons(p, rest) => (not owns?(p, item) or pointwise?(p)) and all_pointwise?(rest, item),
+}
+
+set_option fren.evidence "random" in
+pub proc axiom_tier(
+    item: Int,                   -- the abstract item, by its place in the order of items
+    abstract: Set<Int>,          -- the module's abstract items
+    sentences: Sentences,        -- the module's axioms
+): (det owns: Set<Int>, det tier: Tier) {
+    out owns := owned(sentences, item)
+    out tier := if all_modular?(sentences, item, abstract) then Tier::Modular
+        else if all_pointwise?(sentences, item) then Tier::Relative else Tier::Joint
+
+    expect nothing_owned: when sentences = Sentences::Nil, tier = Tier::Modular
+}
+
+-- `assume ax(x: Int): f(x) >= g(x) + 1 and g(x) >= f(x) + 1`, with `f` at
+-- 1, `g` at 2 and the axiom at 3: `g` owns it, and it is pointwise, so `g`
+-- is checked in tier 2, which it fails, naming `ax`. `f` owns nothing.
+pub const SHARED_AXIOM: Sentences := Sentences::Cons(
+    Sentence {
+        kind := SentenceKind::Assume,
+        position := 3,
+        variables := ONE_VARIABLE,
+        applications := Applications::Cons(
+            app(1, 0, [SentenceArg::Variable], {0}),
+            Applications::Cons(app(2, 0, [SentenceArg::Variable], {0}), Applications::Nil)
+        ),
+    },
+    Sentences::Nil
+)
+
+set_option fren.evidence "random" in
+expect shared_axiom_owned() {
+    call g := axiom_tier(2, {1, 2}, SHARED_AXIOM)
+    expect g_owns_it: g.owns = {3}
+    expect g_relative: g.tier = Tier::Relative
+}
+
+set_option fren.evidence "random" in
+expect shared_axiom_not_earlier() {
+    call f := axiom_tier(1, {1, 2}, SHARED_AXIOM)
+    expect f_owns_nothing: f.owns = {}
+}
+
+-- An interpretation of a function from `Bool` to `Bool`: its values at
+-- `false` and at `true`.
+pub struct Table { at_false?, at_true? }
+
+-- An interpretation of two such functions, `f`, which comes first, and `g`.
+pub struct Tables { f: Table, g: Table }
+
+-- Tier 2 over two abstract functions, with their interpretations as the
+-- values: `f`'s axioms constrain `f` alone, and `g`'s both.
+pub proc relative_tiers(
+    f_meets: Set<Table>,         -- the interpretations of `f` that meet the axioms that `f` owns
+    g_meets: Set<Tables>,        -- the interpretations of both that meet the axioms that `g` owns
+): (det f_realizable?, det g_realizable?, det consistent?) {
+    out f_realizable? := f_meets != {}
+    out g_realizable? := forall (t: Table), when t in f_meets, exists (u: Table), Tables { f := t, g := u } in g_meets
+    out consistent? := exists (t: Table) (u: Table), t in f_meets and Tables { f := t, g := u } in g_meets
+
+    expect tiers_give_consistency: when f_realizable? and g_realizable?, consistent?
+    -- The axiom that no interpretation meets is caught at its owner.
+    expect contradiction_caught: when g_meets = {} and f_realizable?, not g_realizable?
+}
+```
+
+> **Rationale:** The file system of #631 has abstract functions, such as
+> `at`, `mkdir` and `rm`, whose sentences relate them, and so fail tier 1,
+> which asks each to be realizable whatever the others are. Tier 2 is the
+> rely-guarantee reading of such a group, ordered by the items' order so
+> that an axiom that relates `f` and `g` is checked once, at the later of
+> them, against the earlier one's own axioms. Asking each item of `assume
+> ax(x: Int): f(x) >= g(x) + 1 and g(x) >= f(x) + 1` against the others'
+> axioms, `ax` included, would find both realizable, since no
+> interpretation meets `ax`. Tier 3 is the consistency of ACL2's
+> `encapsulate`, Why3's realizations and Alloy's `run`. A group that
+> cannot hold together makes every check that uses it vacuous, so the
+> report must say which axioms to blame.
 
 ```fren
 -- The outcome of a query about consistency: shown to hold, shown not to,
@@ -1041,11 +1304,11 @@ pub enum ConsistencyEvidence {
 
 set_option fren.evidence "random" in
 pub proc consistency(
-    others: Seq<Int>,      -- the other abstract items of the module that the item's `assume` items and laws mention
+    tier: Tier,            -- the item's tier (`lang::axiom_tier`)
     witness?,              -- a total implementation of the module meets its axioms
-    modular: Answer,       -- tier 1: realizable whatever the others are
-    relative: Answer,      -- tier 2: realizable for every interpretation of the others that meets their axioms
-    joint: Answer,         -- tier 3: some interpretation meets all of them
+    modular: Answer,       -- the tier 1 query: realizable whatever the others are
+    relative: Answer,      -- the tier 2 query: realizable for every interpretation of the items before it that meets their axioms
+    joint: Answer,         -- the tier 3 query: some interpretation meets all the axioms
     found?,                -- bounded model finding found an interpretation up to its bound
 ): (det evidence: ConsistencyEvidence) {
     use self::ConsistencyEvidence::{
@@ -1060,33 +1323,121 @@ pub proc consistency(
     }
 
     out evidence := if witness? then Witness
-        else if others = [] then (match modular {
+        else if tier = Tier::Modular then (match modular {
             Answer::Holds => Modular,
             Answer::Fails => Unrealizable,
             Answer::Unknown => Inconclusive,
         })
-        else if relative = Answer::Holds then Relative
+        else if tier = Tier::Relative and relative = Answer::Holds then Relative
         else match joint {
             Answer::Holds => Joint,
             Answer::Fails => Inconsistent,
             Answer::Unknown => if found? then Bounded else Inconclusive,
         }
 
-    -- Tier 1 is today's check, and a sentence of one item is never judged by the later tiers.
-    expect as_today: when not witness? and others = [], evidence in {Modular, Unrealizable, Inconclusive}
+    -- Tier 1 is today's check, and an item in it is never judged by the later tiers.
+    expect as_today: when not witness? and tier = Tier::Modular, evidence in {Modular, Unrealizable, Inconclusive}
     expect witness_suffices: when witness?, evidence = Witness
-    expect relative_before_joint: when not witness? and others != [] and relative = Answer::Holds, evidence = Relative
+    expect relative_only_pointwise: when evidence = Relative, tier = Tier::Relative
     expect inconsistency_needs_proof: when evidence = Inconsistent, joint = Answer::Fails
 }
 ```
 
-> **Rationale:** The file system of #631 has abstract functions, such as
-> `at`, `mkdir` and `rm`, whose sentences relate them, and so fail tier 1,
-> which asks each to be realizable whatever the others are. Tier 2 is the
-> rely-guarantee reading of such a group; tier 3 is the consistency of
-> ACL2's `encapsulate`, Why3's realizations and Alloy's `run`. A group
-> that cannot hold together makes every check that uses it vacuous, so the
-> report must say which sentences to blame.
+The `joint` query is the solver's, over the axioms themselves, and a model
+of their instances alone does not answer it `Holds`
+(`module.instance.models`).
+
+## Metatheory
+
+The rules above rest on properties of the logic and of the language. Each
+is stated here, with the rule that relies on it, and whether it is argued
+or open (#669).
+
+**Dynamic semantics**
+
+r[module.meta.satisfaction]
+The *satisfaction condition* holds: a model of an implementing module,
+reduced along the implementation, is a model of the implemented module,
+and it meets a sentence's translation exactly where its reduction meets
+the sentence (Goguen and Burstall's institutions, 1992).
+`module.implementation.obligations` and `module.implementation.theorems`
+rely on it. It is argued for Fren's many-sorted first-order logic, and its
+proof in Lean is open.
+
+r[module.meta.theorems]
+An implementation preserves theorems: where its obligations hold, the
+translation of each theorem of the implemented module holds in the
+implementing one. It follows from `module.meta.satisfaction`, as in CASL's
+views and ACL2's functional instantiation (Kaufmann and Moore).
+`module.implementation.theorems`, `module.trait.lemma` and
+`module.generic.check` rely on it. It is argued.
+
+r[module.meta.composition]
+Implementations compose, and each module has the identity implementation:
+the translation along the composite of two implementations is the
+translation along one, then along the other. A generic function applied
+within another generic function, and an implementation of a generic
+module, rely on it (`module.implementation.instantiate`). It is argued, as
+substitutions compose, and its proof is open.
+
+r[module.meta.conservative]
+A module's defined items are a *conservative extension* of its other
+items: adding a defined function, a constant or a structural recursion
+proves no new sentence that does not mention it (Shoenfield; CASL's
+definitional extensions). `module.abstract`, which leaves defined items out
+of the abstract ones, and `module.assume.abstract`, which needs no trust in
+an `assume` about defined items alone, rely on it. It is argued from the
+totality of [structural recursion](Recursion.md#meaning), and from an
+unspecified value being a constant of the theory, one for each instance.
+
+r[module.meta.coherence]
+Instances are *coherent* and *canonical*: an implementation in scope is
+canonical for dispatch, two in scope for the same interface and types are
+an error, and every way of elaborating a use gives the same meaning
+(Dreyer, Harper, Chakravarty and Keller, POPL 2007). Dispatch and
+`module.use.morphism` rely on it. It is open, and comes with stage 3.
+
+r[module.meta.parametricity]
+`module.parametricity` is Reynolds's abstraction theorem for Fren's
+generic items (Reynolds 1983; Wadler, "Theorems for free!", 1989).
+`module.generic.check`, which checks a generic function once, at its type
+parameters, for every instance, relies on it. A construct that inspected a
+type parameter, such as a type case, would break it. It is open.
+
+```fren
+-- What a translated theorem rests on: nothing more, the axioms that the
+-- implementation leaves trusted, or what is not yet established.
+pub enum Translation { Holds, GivenTrusted, Unestablished }
+
+-- The statuses of a module's axioms under an implementation, in order.
+pub enum Statuses { Nil, Cons(MorphismStatus, Statuses) }
+
+-- Whether each axiom that is an obligation, or relies on the rest, is
+-- discharged, the first at position `k`.
+pub fn discharged?(axioms: Statuses, done: Set<Int>, k: Int) := match axioms {
+    Statuses::Nil => true,
+    Statuses::Cons(s, rest) => (s = MorphismStatus::Trusted or k in done) and discharged?(rest, done, k + 1),
+}
+
+pub fn any_trusted?(axioms: Statuses) := match axioms {
+    Statuses::Nil => false,
+    Statuses::Cons(s, rest) => s = MorphismStatus::Trusted or any_trusted?(rest),
+}
+
+set_option fren.evidence "random" in
+pub proc translated_theorem(
+    axioms: Statuses,            -- what the implementation makes of each axiom (`lang::morphism_status`)
+    done: Set<Int>,              -- the positions of the obligations that hold
+): (det translation: Translation) {
+    out translation := if not discharged?(axioms, done, 0) then Translation::Unestablished
+        else if any_trusted?(axioms) then Translation::GivenTrusted else Translation::Holds
+
+    expect total_and_discharged: when not any_trusted?(axioms) and discharged?(axioms, done, 0),
+        translation = Translation::Holds
+    expect obligation_open: when axioms is Statuses::Cons(MorphismStatus::Obligation, _) and not 0 in done,
+        translation = Translation::Unestablished
+}
+```
 
 ## Induction by unfolding
 
@@ -1244,15 +1595,36 @@ pub proc induction_verdict(direct: CheckVerdict, attempts: Inductions): (
 **Dynamic semantics**
 
 r[module.expansion]
-A spec without lemmas, `assume` items, `require`s, an `expect` in a
-function, or a sentence with calls outside a global expectation has the
-same messages and verdicts as before this chapter, but that a check that
-was Inconclusive may pass by induction (`lang::strict_expansion`).
+A spec whose items and clauses are all of today's forms has the same
+verdicts and messages as before this chapter, but for the exceptions
+below (`lang::strict_expansion`). Today's forms are an `ensure` clause and
+an `assume` clause of a function or procedure, an `expect` of a procedure,
+a global expectation or a trait, a global expectation, and a trait's
+`law`. A `require`, a lemma item, an `assume` item, an `expect` in a
+function, and any member of a lemma's or an `assume` item's block are new.
 
 r[module.expansion.laws]
-A trait's laws are the one exception: once their consistency is checked
-(`module.axiom.check`), the warning that a verdict rests on laws whose
-consistency is not checked (`F0665`) gives way to that check's.
+Today's laws keep their meaning. They may come before the methods they
+mention (`module.signature`). Every check of their trait uses them,
+wherever each is written (`module.use.laws`). One that breaks the binding
+rule is used as today (`module.rules.laws`). A query that their instances
+do not decide is asked as today (`module.instance.models`), so the
+warning of `traits::Pos::undecided`, that it could not decide whether its
+assumptions hold with the laws, stays.
+
+r[module.expansion.induction]
+A check that was Inconclusive may pass by induction (`module.induction`).
+
+r[module.expansion.instances]
+A check that was not decided may be decided by the instances of today's
+laws, where their closure gives `unsat`: an expectation may pass, and
+assumptions that contradict the laws may be an error (`F0602`) where today
+they are a warning that the check is not decided (`F0608`).
+
+r[module.expansion.consistency]
+Once the laws' consistency is checked (`module.axiom.check`), the warning
+that a verdict rests on laws whose consistency is not checked (`F0665`)
+gives way to that check's messages (`F0602`, `F0608`).
 
 r[module.expansion.corpus]
 Each stage that lands compares the messages of Fren's own specs and of the
@@ -1260,18 +1632,69 @@ ui tests, before and after, and every difference is one that
 `module.expansion` allows.
 
 ```fren
-set_option fren.evidence "enumerated" in
-pub proc strict_expansion(
-    new_forms?,                  -- the spec uses a form of this chapter
-    before: CheckVerdict,
-    after: CheckVerdict,
-    by_induction?,               -- the check passes by induction
-): (det allowed?) {
-    out allowed? := new_forms? or after = before
-        or (before = CheckVerdict::Inconclusive and after = CheckVerdict::Pass and by_induction?)
+-- An item or clause of a spec, by its keyword and its place.
+pub struct WrittenSentence { kind: SentenceKind, place: SentencePlace }
 
-    expect passes_stay: when not new_forms? and before = CheckVerdict::Pass and allowed?, after = CheckVerdict::Pass
-    expect failures_stay: when not new_forms? and before = CheckVerdict::Fail and allowed?, after = CheckVerdict::Fail
+-- Whether an item or clause is of today's language.
+pub fn today_form?(w: WrittenSentence) := match w.kind {
+    SentenceKind::Ensure => w.place in {
+        SentencePlace::DefinedFunction,
+        SentencePlace::UninterpretedFunction,
+        SentencePlace::Procedure,
+    },
+    SentenceKind::Assume => w.place in {
+        SentencePlace::DefinedFunction,
+        SentencePlace::UninterpretedFunction,
+        SentencePlace::Procedure,
+        SentencePlace::GlobalBlock,
+    },
+    SentenceKind::Expect => w.place in {
+        SentencePlace::Procedure,
+        SentencePlace::GlobalBlock,
+        SentencePlace::Module,
+        SentencePlace::Interface,
+    },
+    SentenceKind::Law => w.place = SentencePlace::Interface,
+    _ => false,
+}
+
+-- What a check reports: its verdict, and the codes of its messages.
+pub struct Report { verdict: CheckVerdict, messages: Set<String> }
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc strict_expansion(
+    written: Seq<WrittenSentence>,       -- the spec's items and clauses that state claims
+    before: Report,              -- what the check reports before this chapter
+    after: Report,               -- and after it
+    by_induction?,               -- the check passes by induction
+    by_instances?,               -- the closure of today's laws' instances decides it
+): (det new_forms?, det allowed?) {
+    out new_forms? := exists (k: Int), 0 <= k < written.len and not today_form?(written[k])
+    out allowed? := new_forms? or after = before
+        or (before.verdict = CheckVerdict::Inconclusive and after.verdict = CheckVerdict::Pass and by_induction?)
+        or (before.verdict = CheckVerdict::Inconclusive and by_instances?)
+        or (after.verdict = before.verdict and after.messages minus {"F0602", "F0608"} = before.messages minus {"F0665"})
+
+    expect laws_are_today: when written = [
+        WrittenSentence {
+            kind := SentenceKind::Law,
+            place := SentencePlace::Interface,
+        },
+    ],
+        not new_forms?
+    expect lemmas_are_new: when written = [
+        WrittenSentence {
+            kind := SentenceKind::Lemma,
+            place := SentencePlace::Module,
+        },
+    ],
+        new_forms?
+    expect passes_stay: when not new_forms? and before.verdict = CheckVerdict::Pass and allowed?, after.verdict = CheckVerdict::Pass
+    expect failures_stay: when not new_forms? and before.verdict = CheckVerdict::Fail and allowed?, after.verdict = CheckVerdict::Fail
+    expect messages_kept: when not new_forms? and before.verdict != CheckVerdict::Inconclusive and allowed?
+        and not "F0665" in before.messages and not "F0602" in after.messages and not "F0608" in after.messages,
+        after.messages = before.messages
 }
 ```
 
@@ -1293,13 +1716,20 @@ check every earlier chapter again:
 #fren_check get_put_instantiation
 #fren_check nested_anchor
 #fren_check unbound_variable
-#fren_check unordered_application
+#fren_check law_before_method
 #fren_check listed_variable
+#fren_check outside_variable
 #fren_check sentence_use
 #fren_check made_used
 #fren_check made_unused
-#fren_check made_later
+#fren_check axioms_anywhere
+#fren_check lemmas_ranked
+#fren_check axiom_tier
+#fren_check shared_axiom_owned
+#fren_check shared_axiom_not_earlier
+#fren_check relative_tiers
 #fren_check consistency
+#fren_check translated_theorem
 #fren_check induction_variables
 #fren_check arm_decided
 #fren_check induction_verdict
