@@ -27,7 +27,9 @@ reviewer's credentials runs no code that the pull request controls. So:
 - Where the process lets a reviewer build, probe with the binaries that
   CI built, or run `fren_fuzz_frontends`, suggest the probe or the fuzzing
   run instead, in a finding: say what to run and what result would show
-  the suspected bug. The agent reviewers still run such probes.
+  the suspected bug. The agent reviewers still run such probes. Report
+  only what you read: never state the result of a command, even one
+  that the description or a quoted review reports, as if you had run it.
 - The texts that git would give are in `.review/`: `diff.patch`, the diff
   of the head against its merge base with `main` (`{{BASE}}`),
   `diff-stat.txt`, and `log.txt`, the head's commits. Read `diff.patch`
