@@ -1247,8 +1247,8 @@ mention `outer`, its body the first of them: one to three heads, each a universa
 or two bound names, of an infinite type, `Nat`, an abstract type, or a
 listed type, or a premise, in any order, then a body, and now and then a
 guard within the last quantifier. -/
-def goalWithHeads (outer : Array String) : R String := do
-  let tys := #["Int", "Nat", "Zgt", "Zgt", "Zge", "Bool"]
+def goalWithHeads (outer : Array String) (tys : Array String := #["Int", "Nat", "Zgt", "Zgt", "Zge", "Bool"]) :
+    R String := do
   let mut bound : Array (String × String) := #[]
   let mut heads : Array String := #[]
   -- An `Int` term of one of the names in scope.
@@ -1257,6 +1257,7 @@ def goalWithHeads (outer : Array String) : R String := do
     let (x, t) ← pick scope
     return match t with
       | "Zgt" => s!"zgw({x})"
+      | "Self" => s!"zgo({x})"
       | "Zge" => s!"(if {x} = Zge::A then 1 else 0)"
       | "Bool" => s!"(if {x} then 1 else 0)"
       | _ => x
@@ -1265,7 +1266,9 @@ def goalWithHeads (outer : Array String) : R String := do
     | 0 =>
       match scope.find? (·.2 == "Zgt") with
       | some (x, _) => return s!"zgh?({x})"
-      | none => return s!"{← intOf scope} > 0"
+      | none => match scope.find? (·.2 == "Self") with
+        | some (x, _) => return s!"zgo({x}) > 0"
+        | none => return s!"{← intOf scope} > 0"
     | 1 => return s!"{← intOf scope} {← pick #["<", "<=", "="]} {← intOf scope}"
     | _ => return s!"{← intOf scope} >= {← below 3}"
   for _ in [0:(← below 3) + 1] do
@@ -1292,8 +1295,9 @@ def goalWithHeads (outer : Array String) : R String := do
 /-- Goals with leading binders (`goalWithHeads`), as each item poses
 them: a global expectation of each form, one with a quantified assumption
 that only instances at the goal's bound names decide, as a trait's laws
-are, and a procedure with a defined output, which the binary's goal binds
-with a `let` (`Reqs/Cli#goal-introduction`). -/
+are, a procedure with a defined output, which the binary's goal binds
+with a `let`, a `let` and a `where` in front of a goal, and a trait's
+expectations over `Self` under its laws (`Reqs/Cli#goal-introduction`). -/
 def goalHeads : R String := do
   let mut out := "pub type Zgt\npub enum Zge { A, B }\npub fn zgw(Zgt): Int\npub fn zgh?(Zgt)\n"
   let undecidable := "set_option fren.lint.undecidable \"allow\" in\n"
@@ -1308,6 +1312,22 @@ def goalHeads : R String := do
     for k in [0:(← below 2) + 1] do
       body := body ++ s!"    expect c{k}: {← goalWithHeads #["n", "zd"]}\n"
     out := out ++ s!"\n{undecidable}pub proc zgp(n: Int): (zd: Int) \{\n{body}}\n"
+  -- Drawn after the items above, so that they are as they were: a `let`
+  -- or `where` in front of a goal, and a trait whose expectations
+  -- quantify over `Self` under its laws, two of which may contradict each
+  -- other, as at #543.
+  if ← chance 60 then
+    let goal ← goalWithHeads #["zl", "n"]
+    let d ← below 3
+    let e := if ← chance 50 then s!"let zl := n + {d} in {goal}" else s!"{goal} where zl := n + {d}"
+    out := out ++ s!"\n{undecidable}pub proc zgq(n: Int) \{\n    expect c: {e}\n}\n"
+  if ← chance 60 then
+    let mut body := "    fn zgo(Self): Int\n"
+    body := body ++ s!"    law zl0(s: Self): zgo(s) {← pick #["=", ">=", "<="]} {← below 4}\n"
+    if ← chance 50 then body := body ++ s!"    law zl1(s: Self): zgo(s) = {← below 4}\n"
+    for k in [0:(← below 2) + 1] do
+      body := body ++ s!"    expect ze{k}: {← goalWithHeads #[] #["Self", "Self", "Int", "Nat"]}\n"
+    out := out ++ s!"\n{undecidable}pub trait Zgr \{\n{body}}\n"
   return out
 
 /-- A spec with constants, functions, and components over them, and its

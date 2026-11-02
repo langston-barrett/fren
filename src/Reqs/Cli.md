@@ -389,12 +389,14 @@ each premise of an implication in front becomes a hypothesis, asserted
 after the others with the comment `; premise`; and a `let` in front has its
 definitions substituted into the rest. Then the solver is asked to refute
 the hypotheses with the negation of what is left. This keeps the query's
-validity: the hypotheses entail `forall (x: T), p(x)` exactly when they
+validity, as argued here and not checked: no Req states it, and no test
+compares the answers to a query with and without its introduction: the hypotheses entail `forall (x: T), p(x)` exactly when they
 entail `p(c)` for a constant `c` of `T` that occurs nowhere else, and
 `when p, q` exactly when they and `p` entail `q`. A constant keeps its bound
 name's symbol, such as `|x'0|`, unless the query already has that symbol
 free, as a variable, a declaration, or an earlier constant, and is otherwise
-`|x'0#goal0|`, with the first number that the query does not have.
+`|x'0#goal0|`, with the first number that the query does not have
+(`cli::goal_constant_name`).
 
 Introducing them changes what cvc5 decides, though not what a query
 means. With the constants, the negated goal is ground, and cvc5 can
@@ -448,6 +450,31 @@ pub proc goal_introduction(
     assume within_limit: heads.len <= 1024
 
     ensure rule: introduced? iff introducible_through?(heads, i)
+}
+```
+
+`cli::goal_constant_name` states the symbol of each constant, which
+`fren check` chooses with `Fren.Core.goalConstantName`, from which
+symbols the query has: those of its variables, the free symbols of its
+hypotheses and goal, its declarations, and the earlier constants. No
+bound name of a goal and no other symbol that `fren check` writes ends in
+`#goal` and a number, so the candidates are new unless the query has them.
+Its `impl` is proved, for a bound name `x`, over every set of candidates
+that the query has; with `fren check`'s bound on how many candidates it
+tries, one more than the symbols that the query has, one is always free:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc goal_constant_name(
+    base_taken?,                 -- the query has the bound name's own symbol
+    taken: Set<Int>,             -- the numbers `k`, at least 0, whose `base#goal{k}` the query has
+    k: Nat,                      -- a number
+): (
+    det kept?,                   -- the constant is the bound name's own symbol
+    det chosen?,                 -- the constant is `base#goal{k}`
+) {
+    ensure keeps: kept? iff not base_taken?
+    ensure least: chosen? iff (base_taken? and not (k in taken) and (forall (j: Int), when 0 <= j < k, j in taken))
 }
 ```
 

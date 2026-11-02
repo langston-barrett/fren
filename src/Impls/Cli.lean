@@ -6,6 +6,7 @@ import FrenCli.SeqElems
 import Impls.QueryCache
 import Impls.View
 import Reqs.Cli
+import Std.Data.String.ToNat
 -- keep-sorted end
 open Fren.Lang
 
@@ -488,5 +489,133 @@ impl goal_introduction: cli::goal_introduction for (hs : List cli.GoalHead) (i :
       rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simp at hi ⊢; omega)] at this
       simpa using (introducible_iff _).mp this
     omega
+
+/-- Whether the query has the symbol `s`, when it has the bound name `x`
+if `b`, and the candidates `x#goal{j}` of `ks`. -/
+def takenOf (b : Bool) (ks : List Nat) (s : String) : Bool :=
+  (b && s == "x") || ks.any fun j => Fren.Core.goalCandidate "x" j == s
+
+/-- The candidates are distinct. -/
+theorem goalCandidate_inj {base : String} {j k : Nat}
+    (h : Fren.Core.goalCandidate base j = Fren.Core.goalCandidate base k) : j = k := by
+  simp only [Fren.Core.goalCandidate, String.append_right_inj] at h
+  exact Nat.repr_injective h
+
+/-- No candidate is the bound name itself. -/
+theorem goalCandidate_ne (k : Nat) : Fren.Core.goalCandidate "x" k ≠ "x" := by
+  intro h
+  have := congrArg String.length h
+  simp only [Fren.Core.goalCandidate, String.length_append] at this
+  rw [show "x".length = 1 from rfl, show "#goal".length = 5 from rfl] at this
+  omega
+
+theorem takenOf_candidate (b : Bool) (ks : List Nat) (j : Nat) :
+    takenOf b ks (Fren.Core.goalCandidate "x" j) = ks.contains j := by
+  have e : ∀ i, (Fren.Core.goalCandidate "x" i == Fren.Core.goalCandidate "x" j) = (i == j) := by
+    intro i
+    by_cases hij : i = j
+    · simp [hij]
+    · have : Fren.Core.goalCandidate "x" i ≠ Fren.Core.goalCandidate "x" j := fun h => hij (goalCandidate_inj h)
+      exact (beq_eq_false_iff_ne.mpr this).trans (beq_eq_false_iff_ne.mpr hij).symm
+  have hn : (Fren.Core.goalCandidate "x" j == "x") = false := by simp [goalCandidate_ne]
+  simp only [takenOf, hn, Bool.and_false, Bool.false_or, e]
+  rw [Bool.eq_iff_iff]
+  simp [List.any_eq_true]
+
+/-- `firstFree` finds the first number from `start` that `free` holds of,
+if one is within reach. -/
+theorem firstFree_spec (free : Nat → Bool) (start fuel : Nat) (j : Nat) (hj : start ≤ j) (hjf : j < start + fuel)
+    (fj : free j = true) :
+    let r := Fren.Core.firstFree free start fuel
+    free r = true ∧ start ≤ r ∧ ∀ i, start ≤ i → i < r → free i = false := by
+  induction fuel generalizing start with
+  | zero => omega
+  | succ f ih =>
+    simp only [Fren.Core.firstFree]
+    by_cases fs : free start = true
+    · rw [if_pos fs]
+      exact ⟨fs, Nat.le_refl _, fun i hi hr => by omega⟩
+    · rw [if_neg fs]
+      have hj' : start + 1 ≤ j := by
+        rcases Nat.lt_or_eq_of_le hj with h | h
+        · exact h
+        · subst h; simp [fs] at fj
+      obtain ⟨a, b', c⟩ := ih (start + 1) hj' (by omega)
+      refine ⟨a, by omega, fun i hi hr => ?_⟩
+      rcases Nat.lt_or_eq_of_le hi with h | h
+      · exact c i h hr
+      · subst h; simpa using fs
+
+/-- Nodup numbers all in `ks` are no more than `ks`. -/
+theorem nodup_length_le (l ks : List Nat) (hl : l.Nodup) (hs : ∀ j ∈ l, j ∈ ks) : l.length ≤ ks.length := by
+  induction l generalizing ks with
+  | nil => simp
+  | cons a t ih =>
+    have ha : a ∈ ks := hs a (by simp)
+    have hn := List.nodup_cons.mp hl
+    have := ih (ks.erase a) hn.2 fun j hj =>
+      (List.mem_erase_of_ne (fun e => hn.1 (by rw [← e]; exact hj))).mpr (hs j (by simp [hj]))
+    rw [List.length_erase_of_mem ha] at this
+    have : 0 < ks.length := List.length_pos_of_mem ha
+    simp only [List.length_cons]; omega
+
+/-- Of `0, ..., ks.length`, one is not in `ks`. -/
+theorem exists_free (ks : List Nat) : ∃ j, j < ks.length + 1 ∧ j ∉ ks := by
+  apply Classical.byContradiction
+  intro hne
+  have hall : ∀ j ∈ List.range (ks.length + 1), j ∈ ks := fun j hj =>
+    Classical.byContradiction fun hj' => hne ⟨j, List.mem_range.mp hj, hj'⟩
+  have := nodup_length_le _ ks List.nodup_range hall
+  simp at this
+  omega
+
+impl goal_constant_name: cli::goal_constant_name for (b : Bool) (ks : List Nat) (k : Nat) {
+  base_taken? := b,
+  taken := Fren.FinSet.ofList (ks.map Int.ofNat),
+  k := k,
+  kept? := Fren.Core.goalConstantName (takenOf b ks) "x" (ks.length + 1) == "x",
+  chosen? := Fren.Core.goalConstantName (takenOf b ks) "x" (ks.length + 1) == Fren.Core.goalCandidate "x" k,
+} by
+  intro b ks k _
+  simp only [fren_spec]
+  have hx : takenOf b ks "x" = b := by
+    cases b <;> simp [takenOf, goalCandidate_ne]
+  have memk : ∀ j : Nat, ((j : Int) ∈ Fren.FinSet.ofList (ks.map Int.ofNat)) ↔ j ∈ ks := by
+    intro j
+    simp only [Fren.FinSet.mem_ofList, List.mem_map]
+    exact ⟨fun ⟨a, ha, e⟩ => (Int.ofNat.inj e) ▸ ha, fun h => ⟨j, h, rfl⟩⟩
+  cases b with
+  | false =>
+    simp only [Fren.Core.goalConstantName, hx, Bool.not_false, if_true]
+    simp [(goalCandidate_ne k).symm]
+  | true =>
+    simp only [Fren.Core.goalConstantName, hx, Bool.not_true, Bool.false_eq_true, if_false]
+    simp only [takenOf_candidate]
+    obtain ⟨j, hj, hjk⟩ := exists_free ks
+    obtain ⟨fr, -, least⟩ := firstFree_spec (fun i => !ks.contains i) 0 (ks.length + 1) j (Nat.zero_le _)
+      (by omega) (by simpa using hjk)
+    generalize Fren.Core.firstFree (fun i => !ks.contains i) 0 (ks.length + 1) = r at fr least
+    refine ⟨by simp [goalCandidate_ne], ?_⟩
+    have ceq : (Fren.Core.goalCandidate "x" r == Fren.Core.goalCandidate "x" k) = true ↔ r = k := by
+      constructor
+      · intro e; exact goalCandidate_inj (by simpa using e)
+      · intro e; simp [e]
+    rw [ceq, memk]
+    simp only [Bool.not_eq_true'] at fr least
+    have fr : r ∉ ks := by simpa using fr
+    constructor
+    · rintro rfl
+      refine ⟨⟨trivial, fr⟩, fun i ⟨hi0, hik⟩ => ?_⟩
+      obtain ⟨n, rfl⟩ := Int.eq_ofNat_of_zero_le hi0
+      rw [memk]
+      have := least n (Nat.zero_le _) (by omega)
+      simpa using this
+    · rintro ⟨⟨-, hk⟩, hlt⟩
+      rcases Nat.lt_trichotomy r k with h | h | h
+      · have := hlt r ⟨by omega, by omega⟩
+        rw [memk] at this; exact absurd this fr
+      · exact h
+      · have := least k (Nat.zero_le _) h
+        simp at this; exact absurd this hk
 
 end Fren.Impls

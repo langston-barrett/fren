@@ -86,4 +86,23 @@ def introduceGoal [Monad m] (read : F → m (GoalHead B F)) (goal : F) :
       pure { r with steps := i :: r.steps }
     | none => pure { goal }
 
+/-- The `k`th symbol that a bound name `base` of a goal may be renamed
+to: `base#goal{k}`, which no Fren name and no symbol that `smtName` makes
+is. -/
+def goalCandidate (base : String) (k : Nat) : String := base ++ "#goal" ++ toString k
+
+/-- The first of `start`, `start + 1`, ... that `free` holds of, looking
+at `fuel` of them, and `start + fuel` if none. -/
+def firstFree (free : Nat → Bool) (start : Nat) : (fuel : Nat) → Nat
+  | 0 => start
+  | fuel + 1 => if free start then start else firstFree free (start + 1) fuel
+
+/-- The symbol of the constant that a bound name `base` of a goal becomes
+(`cli::goal_constant_name`): `base` itself if the query does not have it,
+by `taken`, and otherwise the first `goalCandidate base k` that it does
+not have. `fuel` bounds how many candidates are tried: more than the
+query has symbols is enough, since the candidates are distinct. -/
+def goalConstantName (taken : String → Bool) (base : String) (fuel : Nat) : String :=
+  if !taken base then base else goalCandidate base (firstFree (fun k => !taken (goalCandidate base k)) 0 fuel)
+
 end Fren.Core

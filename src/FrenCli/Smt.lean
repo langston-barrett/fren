@@ -252,23 +252,21 @@ open SeqElems (SExpr) in
 /-- The head of a goal of `fren check`, as `Fren.Core.introduceGoal` reads
 it (`Reqs/Cli#goal-introduction`): `(forall ((x S) ...) body)`,
 `(=> p q ...)` and `(let (...) body)`, the last with its definitions
-substituted. A bound name keeps its symbol, as the constant `(x, S)`,
-unless the state, the symbols that the query has, has it already, and is
-otherwise renamed to the first `x#goal{k}` that it does not; the state
-gets the symbol either way. -/
-def smtGoalHead (prelude : Prelude) (e : SExpr) : StateM (Std.HashSet String) (Fren.Core.GoalHead (String × String) SExpr) := do
+substituted. A bound name becomes the constant `(x', S)`, where `x'` is
+`Fren.Core.goalConstantName` of the symbols that the state has, the
+query's, and the prelude's declarations; the state gets `x'`. The state
+is computed only when a bound name needs it. -/
+def smtGoalHead (prelude : Prelude) (e : SExpr) :
+    StateM (Thunk (Std.HashSet String)) (Fren.Core.GoalHead (String × String) SExpr) := do
   match e with
   | .list #[.atom "forall", .list decls, body] =>
     let some (SExpr.list #[.atom x, sort]) := decls[0]? | return .other
     let rest := if decls.size == 1 then body else .list #[.atom "forall", .list (decls.extract 1), body]
-    let taken ← get
+    let taken := (← get).get
     let base := SeqElems.unquoted x
-    let free (s : String) := !taken.contains s && !prelude.owner.contains s
-    let name := if free base then base else Id.run do
-      let mut k := 0
-      while !free s!"{base}#goal{k}" do k := k + 1
-      return s!"{base}#goal{k}"
-    modify (·.insert name)
+    let name := Fren.Core.goalConstantName (fun s => taken.contains s || prelude.owner.contains s) base
+      (taken.size + prelude.owner.size + 1)
+    set (Thunk.pure (taken.insert name))
     if name == base then return .universal (x, sort.toString) rest
     return .universal (quote name, sort.toString) (rest.subst #[(x, .atom (quote name))])
   | .list ts =>
@@ -286,12 +284,13 @@ def smtGoalHead (prelude : Prelude) (e : SExpr) : StateM (Std.HashSet String) (F
 
 /-- `goal`, a goal over `vars` with the hypotheses `hyps`, with its leading
 heads introduced (`Fren.Core.introduceGoal`, `smtGoalHead`): its constants,
-each with its sort, its premises, and the goal left. A goal with nothing
-to introduce is left as it is written. -/
+each with its sort, its premises, and the goal left. The hypotheses are
+read only if a bound name is introduced. A goal with nothing to introduce
+is left as it is written. -/
 def introduceSmtGoal (prelude : Prelude) (vars : Array CVar) (hyps : Array (Lean.Name × String)) (goal : String) :
     Array (String × String) × Array String × String :=
   let parsed := SeqElems.parse goal
-  let taken : Std.HashSet String := .ofArray (vars.map (·.name.toString) ++
+  let taken : Thunk (Std.HashSet String) := Thunk.mk fun _ => .ofArray (vars.map (·.name.toString) ++
     (hyps.flatMap fun (_, h) => (SeqElems.parse h).freeAtoms) ++ parsed.freeAtoms)
   let r := (Fren.Core.introduceGoal (smtGoalHead prelude) parsed).run' taken
   if r.steps.isEmpty then (#[], #[], goal)
