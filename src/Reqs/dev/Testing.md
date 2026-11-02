@@ -171,6 +171,14 @@ pub mod testing
   The ui tests
   `checks/enumerated*.fren` and `checks/evidence_obligations.fren` cover
   enumeration in both front ends.
+- **Solver lifetime** (`lake test`, `solverLifetime`): 500 queries in a
+  row must not grow the test driver's memory by more than 100 MB, as they
+  did by 1.5 MB each while no solver was freed (see [Solver
+  queries](../Cli.md#solver-queries)); and sixteen threads that each ask
+  300 queries in `ALL`, a logic with nonlinear arithmetic, at once must
+  get every answer right, which crashed about one run in three while
+  their solvers initialized and were freed at the same time
+  (`FrenCli.Cvc5`).
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
