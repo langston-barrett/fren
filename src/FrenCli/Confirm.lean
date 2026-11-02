@@ -417,7 +417,8 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
         -- the contracts (`Reqs/Models#reporting`).
         let plain := (hyps.zip vals).any (fun ((_, f), (_, v)) => v == some false && (f.2.recursiveNames sp).isEmpty)
           || (g == some true && (goal.2.recursiveNames sp).isEmpty)
-        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty) (bad.isNone && g == some false && vals.all (·.2 == some true)) then
+        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty) (bad.isNone && g == some false && vals.all (·.2 == some true))
+            false then
           return .unknown (Fren.Core.recursiveReason recursive)
         -- Only a refuted model is reported (`eval::confirm`).
         if confirmation bad.isSome (g == some true) (vals.all (·.2.isSome) && g.isSome) == .Refuted then

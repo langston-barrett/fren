@@ -719,7 +719,7 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
   -- (`Fren.Core.withApplies`).
   let applied ← IO.mkRef (#[] : Array Lean.Name)
   let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache st.quantified
-    st.appFuns (contractFns := st.contractFns) (applied? := some applied)
+    st.appFuns (contractFns := st.contractFns) (applied? := some applied) (recursiveSyms := st.recursiveSyms)
   let take : IO (Array Lean.Name) := applied.modifyGet fun a => (a, #[])
   -- Whether a formula uses an abstract type or an uninterpreted function,
   -- for the values that a realizability conflict's notes may show

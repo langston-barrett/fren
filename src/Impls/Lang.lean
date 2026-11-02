@@ -3527,12 +3527,43 @@ impl recursive_post_result: lang::recursive_post_result for (r : lang.RecPost) (
   intro r failed _
   cases r <;> cases failed <;> simp [fren_spec, Fren.Core.recursivePostResult]
 
-impl recursive_counterexample: lang::recursive_counterexample for (recursive confirms : Bool) {
+impl recursive_counterexample: lang::recursive_counterexample for (recursive confirms facts : Bool) {
   applies_recursive? := recursive,
   evaluation_confirms? := confirms,
-  report_counterexample? := Fren.Core.recursiveCounterexample recursive confirms,
+  facts_recursive? := facts,
+  report_counterexample? := Fren.Core.recursiveCounterexample recursive confirms facts,
 } by
-  intro recursive confirms _
-  cases recursive <;> cases confirms <;> simp [fren_spec, Fren.Core.recursiveCounterexample]
+  intro recursive confirms facts _
+  cases recursive <;> cases confirms <;> cases facts <;> simp [fren_spec, Fren.Core.recursiveCounterexample]
+
+-- Both front ends' query builders reflect the facts of the applications
+-- that a query has and then its hypotheses (`recursionFormulas`), over any
+-- hypotheses, any facts of any applications, and any applications that it
+-- has.
+impl recursion_formulas: lang::recursion_formulas for (hyps : List Nat) (rel : List (Nat × Nat)) (brought : List Nat) {
+  written := Fren.FinSet.ofList (hyps.map fun (a : Nat) => (a : Int)),
+  facts := Fren.FinSet.ofList (rel.map fun (p : Nat × Nat) => ((p.1 : Int), (p.2 : Int))),
+  brought := Fren.FinSet.ofList (brought.map fun (a : Nat) => (a : Int)),
+  reflected := Fren.FinSet.ofList ((Fren.Core.recursionFormulas
+    ((brought.flatMap fun a => (rel.filter (·.1 == a)).map (·.2)).toArray.map ((Lean.Name.anonymous, ·)))
+    (hyps.toArray.map ((Lean.Name.anonymous, ·)))).toList.map fun (p : Lean.Name × Nat) => (p.2 : Int)),
+} by
+  intro hyps rel brought _
+  refine ⟨?_, trivial⟩
+  unfold lang.recursion_formulas.defs
+  apply Fren.FinSet.ext
+  intro x
+  simp only [fren_spec, Fren.Core.recursionFormulas, Fren.FinSet.mem_ofList, Fren.FinSet.mem_union,
+    Fren.FinSet.mem_image, List.mem_map, Array.toList_append, Array.toList_map,
+    List.mem_append, List.mem_flatMap, List.mem_filter, beq_iff_eq]
+  constructor
+  · rintro ⟨_, (⟨b, ⟨a, ha, q, ⟨hq, hqa⟩, rfl⟩, rfl⟩ | ⟨b, hb, rfl⟩), rfl⟩
+    · exact .inr ⟨q.1, ⟨a, ha, by rw [hqa]⟩, q, hq, rfl⟩
+    · exact .inl ⟨b, hb, rfl⟩
+  · rintro (⟨b, hb, rfl⟩ | ⟨_, ⟨a, ha, rfl⟩, q, hq, he⟩)
+    · exact ⟨_, .inr ⟨b, hb, rfl⟩, rfl⟩
+    · simp only [Prod.mk.injEq] at he
+      have h1 : q.1 = a := Int.ofNat_inj.mp he.1
+      exact ⟨_, .inl ⟨q.2, ⟨a, ha, q, ⟨hq, h1⟩, rfl⟩, rfl⟩, he.2⟩
 
 end Fren.Impls

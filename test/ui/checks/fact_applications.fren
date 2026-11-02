@@ -39,8 +39,8 @@ pub fn own(s: S): (r: Int) {
     }
 }
 
--- Nor does a recursive function's postcondition, which an application of
--- it brings where a fact mentions it.
+-- A recursive function's postcondition is brought too, where a fact
+-- applies it.
 pub enum L { Nil, Cons(Int, L) }
 
 pub fn total(l: L): (r: Int) {
@@ -55,8 +55,46 @@ pub fn first(l: L, n: Int): (r: Int) { ensure e: r = total(L::Cons(n, l)) }
 
 expect recursive(l: L, n: Int) { expect c: first(l, n) >= 0 }
 
+-- And the one-step equation of a recursive application that a fact brings
+-- (`lang::recursion_formulas`): `total(L::Cons(1, l))` is at least 1.
+pub fn one(l: L): (r: Int) { ensure e: r = total(L::Cons(1, l)) }
+
+expect one_step(l: L) { expect c: one(l) >= 1 }
+
+proc one_low(l: L) {
+    cover low: one(l) < 1   --~ error: cover goal `one_low::low` cannot be met: no behaviour satisfies it
+}
+
+-- A model of a fact that applies a recursive function is never confirmed:
+-- only the opaque `total` allows `three(l) < 6`, so the cover goal is not
+-- met, as it is not where its formula applies `total` itself.
+pub fn three(l: L): (r: Int) { ensure e: r = total(L::Cons(1, L::Cons(2, L::Cons(3, l)))) }
+
+proc three_low(l: L) {
+    cover low: three(l) < 6   --~ warning: could not decide whether `three_low::low` can be met
+}
+
+proc three_low_written(l: L) {
+    cover low: total(L::Cons(1, L::Cons(2, L::Cons(3, l)))) < 6   --~ warning: could not decide whether `three_low_written::low` can be met
+}
+
 -- A parameter that a contract does not mention, beside an application
 -- whose facts the realizability check has: the query declares what those
 -- facts mention.
 pub fn h(n: Int): (r: Int) { ensure e: r >= 0 }
 pub fn g(n: Int, b?): (r: Int) { ensure e: r >= h(n) }
+
+-- An instance of a generic function that only a fact applies, two levels
+-- down, brings its facts too: the Lean front end declares the instances
+-- that the clauses of the functions it uses apply.
+pub fn gen_bound<T>(x: T, y: T, s: S): (r: Int) {
+    ensure e: r >= (if x = y then a(s) else a(s) + 1)
+}
+pub fn via_gen(s: S, b?): (r: Int) { ensure e: r = gen_bound(b?, true, s) + 1 }
+pub fn via_via(s: S, b?): (r: Int) { ensure e: r = via_gen(s, b?) }
+
+expect generic(s: S) { expect c: via_via(s, true) >= 1 }
+
+proc generic_low(s: S) {
+    cover low: via_via(s, true) < 1   --~ error: cover goal `generic_low::low` cannot be met: no behaviour satisfies it
+}

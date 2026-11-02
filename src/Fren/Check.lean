@@ -784,7 +784,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- `unfolded?` is `hyps`'s and `goal`'s formulas already unfolded, by
   -- `unfoldDefined`, which a query that may be recursive does first.
   let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (unfolded? : Option (Array Expr × Expr) := none) :
-      MetaM ((Core.Outcome Expr × Bool) × Array Name) :=
+      MetaM ((Core.Outcome Expr × Bool) × Array Name × Array Name) :=
     withoutModifyingState do
     -- With the `have`s of `let`s and `where` clauses substituted, so that an
     -- application to a name mentions no bound variable. And the functions
@@ -799,7 +799,17 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     let unfoldedHyps ← match unfolded? with
       | some (us, _) => pure (hyps.zipWith (fun (n, _) u => (n, u)) us)
       | none => hyps.mapM fun (n, t) => return (n, ← unfoldDefined t)
-    let hyps ← ((← (facts ++ appFacts).mapM fun (n, t) => return (n, ← unfoldDefined t)) ++ unfoldedHyps).mapM
+    let appFacts ← appFacts.mapM fun (n, t) => return (n, ← unfoldDefined t)
+    -- The recursive functions that those facts apply, by path, whose
+    -- models evaluation cannot confirm (`Core.recursiveCounterexample`).
+    let st ← getState
+    let factRecs := appFacts.foldl (init := #[]) fun acc (_, t) => t.foldConsts acc fun k acc =>
+      match st.defined.foldl (init := none) fun r _ d => r <|> if d.recursive && d.solver? == some k then some d.path else none with
+      | some p => if acc.contains p then acc else acc.push p
+      | none => acc
+    let unfoldedFacts ← facts.mapM fun (n, t) => return (n, ← unfoldDefined t)
+    -- Reflected with the hypotheses (`Core.recursionFormulas`).
+    let hyps ← (Core.recursionFormulas (unfoldedFacts ++ appFacts) unfoldedHyps).mapM
       fun (n, t) => return (n, ← contractBody c fvs t)
     let goal ← contractBody c fvs (← match unfolded? with | some (_, g) => pure g | none => unfoldDefined goal)
     let reflected ← recursiveQueryFacts hyps goal
@@ -811,8 +821,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- expanded.
     let goal := instances goal
     let hyps := hyps.map fun (n, t) => (n, instances t)
-    if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then return (← askElems hyps goal wantModel, fns)
-    else return (← askSmt hyps goal wantModel, fns)
+    if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then return (← askElems hyps goal wantModel, fns, factRecs)
+    else return (← askSmt hyps goal wantModel, fns, factRecs)
   { query := fun hyps goal wantModel => do
       -- The same formulas, in the same local context and with the same
       -- options, are the same query.
@@ -833,12 +843,18 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         | none => pure #[]
       -- Even a query that needs only sat/unsat must obtain its inputs to
       -- confirm a recursive model, as the CLI's confirming backend does.
-      let ((o, cacheable), fns) ← ask hyps goal (wantModel || !recs.isEmpty) unfolded?
+      let ((o, cacheable), fns, factRecs) ← ask hyps goal (wantModel || !recs.isEmpty) unfolded?
       record fns
       let o ← match o with
         | .sat model => do
-          if recs.isEmpty then pure o else
-            if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes hyps goal model) then pure o
+          -- A fact that applies a recursive function is never confirmed:
+          -- the check fails only under that function's contract, as the
+          -- binary's backend decides it too.
+          if !factRecs.isEmpty then
+            if Core.recursiveCounterexample (!recs.isEmpty) true true then pure o
+            else pure (.unknown (Core.recursiveReason factRecs))
+          else if recs.isEmpty then pure o else
+            if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes hyps goal model) false then pure o
             else do
               let st ← getState
               -- A formula without recursion that the model contradicts is
@@ -1020,8 +1036,12 @@ formulas applies a function under a binder: a `match` is a chain of `if`s
 over selectors, a global expectation's binders are locals, defined
 functions, whose bodies apply no uninterpreted function, and the clauses of
 contracts, which the `fren` command's queries apply as functions too, are
-unfolded only after the facts are found, and under realizability's `∃`,
-an application's arguments mention no output (`lang::argument`). An
+unfolded only after the query's own applications are found, and under
+realizability's `∃`, an application's arguments mention no output
+(`lang::argument`). The applications of a fact (`Core.closeApps`) are
+found once its clauses are unfolded, so there a clause's quantifiers bind
+as an unbounded quantifier's do, and a fact of an application under a
+binder is a `∀` over it (`closedFacts`). An
 application is met before its arguments, and they from left to right, as
 `natAppFacts` orders them. -/
 partial def natApps (fs : Array (Expr × Nat)) (e : Expr) (acc : Array Expr := #[])
@@ -1043,7 +1063,11 @@ application that `natApps` closes over the binders around it, closed over
 those that it mentions alone, as its facts are (`closedFacts`), so that
 the same application found under other binders, as in a fact of another
 (`Core.closeApps`), is the same, as the `fren` command's are (`natApps`
-of its elaborator). -/
+of its elaborator). Without it, lean-smt also fails on the query, with
+cvc5's "Symbol '->' not declared as a variable", for a reason not yet
+known: in realizability's query of `test/ui/checks/quantifier_facts.fren`'s
+`nats`, the application `fun ok? i => h i` of its goal, closed over the
+`∃`'s `ok?` too, beside `fun i => h i` of its own fact (#493). -/
 partial def pruneLams : Expr → Expr
   | .lam n d b bi =>
     let b := pruneLams b
@@ -1151,6 +1175,14 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
   let mut insts := #[]
   if !gens.isEmpty then
     for e in formulas do insts := instancesIn gens (← unfoldDefined (← rep e)) insts
+    -- And those that the clauses of the functions that it uses apply, whose
+    -- facts the queries may have where a fact applies them
+    -- (`Core.closeApps`), as the `fren` command declares every instance.
+    let clauses := st0.abstracts.foldl (init := #[]) fun acc _ a =>
+      if a.typeParams.isEmpty && c.uses.contains a.placeholder then
+        acc ++ (((st0.contracts.get? a.path).map fun k => k.pres ++ k.posts).getD #[])
+      else acc
+    for cl in clauses do insts := instancesIn gens (← unfoldDefined (← rep (cl.at #[]))) insts
   let mut done := 0
   while done < insts.size do
     let (u, pre) := insts[done]!

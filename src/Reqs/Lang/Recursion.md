@@ -276,10 +276,37 @@ refuted by evaluation makes the check Inconclusive (`F0450`): it fails
 only under the contracts of the named recursive functions, which may be
 too weak. Both front ends use this rule and diagnostic.
 
+The formulas whose recursive applications a query reflects, with their
+one-step equations, and whose recursive functions it confirms its models
+against, are its own and the facts of the applications that it has,
+transitively (`check::fact_applications`): of `fn one(l: L): (r: Int) {
+ensure e: r = total(L::Cons(1, l)) }`, a query that mentions `one(l)` has
+the one-step equation of `total(L::Cons(1, l))` too, so that `one(l) >= 1`
+follows where `total`'s body adds the absolute values of the list's
+elements. Evaluation cannot confirm a model of such a fact, which is about
+an application of an uninterpreted function, whose value is the model's
+alone: where a fact applies a recursive function, a model is never
+confirmed, and the check is Inconclusive (`F0450`), as it is where the
+query's own formulas apply one and evaluation refutes the model. So of `fn
+first(l: L): (r: Int) { ensure e: r = total(L::Cons(1, L::Cons(2,
+L::Cons(3, l)))) }`, `cover low: first(l) < 6` is not met by a model that
+only the opaque `total` allows. Both front ends take the formulas from
+`Fren.Core.recursionFormulas`, and decide with
+`Fren.Core.recursiveCounterexample`:
+
 ```fren
-pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?):
+set_option fren.lint.undecidable "allow" in
+pub proc recursion_formulas(
+    written: Set<Int>,           -- the query's own hypotheses, by position
+    facts: Rel<Int, Int>,        -- each application, with the formulas of its facts
+    brought: Set<Int>,           -- the applications whose facts the query has (`check::fact_applications`)
+): (det reflected: Set<Int>) {
+    out reflected := written union facts.image(brought)
+}
+
+pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?, facts_recursive?):
     (det report_counterexample?) {
-        ensure rule: report_counterexample? iff (not applies_recursive? or evaluation_confirms?)
+        ensure rule: report_counterexample? iff (not facts_recursive? and (not applies_recursive? or evaluation_confirms?))
     }
 ```
 
@@ -295,5 +322,6 @@ functions to quantifier-free queries.
 #fren_check recursive_match
 #fren_check recursive_facts
 #fren_check recursive_post_result
+#fren_check recursion_formulas
 #fren_check recursive_counterexample
 ```

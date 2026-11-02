@@ -728,6 +728,12 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashM
   let typed := (types.get? head).map fun t => (`type, pre ++ t.replace factHole inner ++ post)
   (if nat then #[(`nat, pre ++ s!"(>= {inner} 0)" ++ post)] else #[]) ++ typed.toArray ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
 
+/-- The atoms of the SMT-LIB term `e`, each once, in order. -/
+partial def atomsOf (e : SeqElems.SExpr) (acc : Array String := #[]) : Array String :=
+  match e with
+  | .atom a => if acc.contains a then acc else acc.push a
+  | .list xs => xs.foldl (fun acc x => atomsOf x acc) acc
+
 /-- The applications of the symbols `heads` in the SMT-LIB term `e`, each
 once, after `acc`, as the Lean front end's `natApps` finds them: an
 application before its arguments, and they from left to right. One that
@@ -904,7 +910,8 @@ the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
     (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (quantified : Bool := false)
     (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind)
-    (contractFns : Std.HashMap String Lean.Name := {}) (applied? : Option (IO.Ref (Array Lean.Name)) := none) :
+    (contractFns : Std.HashMap String Lean.Name := {}) (applied? : Option (IO.Ref (Array Lean.Name)) := none)
+    (recursiveSyms : Std.HashMap String Lean.Name := {}) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
   -- has what the `Nat` variables bring, of both copies, and what the
@@ -981,7 +988,16 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
       r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
     -- A procedure whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
-    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts hyps goal mentioned ++ hyps
+    -- The recursive functions that those facts apply, once their clauses
+    -- are unfolded, by path, whose models evaluation cannot confirm
+    -- (`Fren.Core.recursiveCounterexample`).
+    let factRecs := if recursiveSyms.isEmpty then #[] else appFacts.foldl (init := #[]) fun acc (_, f) =>
+      (atomsOf ((SeqElems.parse f).unfold prelude.unfolds.get)).foldl (init := acc) fun acc a =>
+        match recursiveSyms.get? a with
+        | some p => if acc.contains p then acc else acc.push p
+        | none => acc
+    -- Reflected with the hypotheses (`Fren.Core.recursionFormulas`).
+    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas appFacts hyps) goal mentioned ++ hyps
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
       -- The contract of a generic function without a body, at its type
       -- parameters' sorts, with finite-model finding.
@@ -993,6 +1009,12 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
         solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations) vars hyps goal
           wantModel
       else runQuery logic options prelude vars limits dump? hyps goal wantModel cache? observations
+    -- A fact that applies a recursive function is never confirmed, as the
+    -- Lean front end decides it too.
+    let o := match o with
+      | .sat _ => if Fren.Core.recursiveCounterexample false true (!factRecs.isEmpty) then o
+        else .unknown (Fren.Core.recursiveReason factRecs)
+      | o => o
     return match o with
       | .sat m => .sat (m.filter fun (n, _) => shown.contains n.toString || n.toString.startsWith "#member_observation_")
       | o => o

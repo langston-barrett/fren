@@ -902,7 +902,9 @@ those of the round before, as a contract applies only those
 ([Contracts](Lang/Items.md#contracts)), so the rounds end. Both front ends
 take them from `Fren.Core.closeApps`, inside `Fren.Core.appFactsWith`,
 each finding the applications in a fact once its clauses are unfolded,
-and what they take is `closed?`. Images of relations over `Int` are outside
+and what they take is `closed?`: the query has every such application, and
+no other, as each that it has is one of its own or is reached from one of
+them through the applications that facts mention. Images of relations over `Int` are outside
 the [decidable core](Lang/Decidability.md), so the procedure opts out:
 
 ```fren
@@ -914,7 +916,8 @@ pub proc fact_applications(
     brought: Set<Int>,           -- the applications whose facts the query has
 ): (det closed?) {
     ensure rule: closed? iff (written inter brings subset brought
-        and inside.image(brought) inter brings subset brought and brought subset brings)
+        and inside.image(brought) inter brings subset brought and brought subset brings
+        and brought subset written union inside.closure.image(written))
 
     -- `b(s)` brings `a(s)`'s facts, and `c(s)`, whose fact mentions `b(s)`, both.
     expect transitive: forall (x: Int) (y: Int) (z: Int), when closed? and x in written and (x, y) in inside
