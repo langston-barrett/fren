@@ -34,11 +34,12 @@ says changes nothing, and, where it mentions nothing, in the empty
 environment, which `lang::closed` says changes nothing either. Each is
 compiled too (`Ex.compile`), which keeps its value in every interpretation,
 one with values for the indexes out of range among them, and compiled
-again, and so does each integer one checked to be of a subset type, or
-compared with the bound name of a quantifier over one. Compiling a structural recursion's body, as testing does, keeps
-the value of its applications (`compiledRecursion`), and a pattern that
-`Pat.mayMatchCtor` says matches no variant of an index matches none
-(`mayMatchCtorSound`), which `Ex.dispatch` rests on. Last,
+again, and so does each integer one checked to be of a subset type,
+directly or as the field of a record, or compared with the bound name of
+a quantifier over one. Compiling a structural recursion's body, as
+testing does, keeps the value of its applications (`compiledRecursion`),
+and a pattern that `Pat.mayMatchCtor` says matches no variant of an index
+matches none (`mayMatchCtorSound`), which `Ex.dispatch` rests on. Last,
 expressions of the semantics alone are evaluated under interpretations
 that differ in the functions that they do not mention. Both lemmas are
 proved in `Impls/Semantics.lean`; these tests cross-check the proofs'
@@ -386,6 +387,11 @@ def posTy : Fren.Core.PTy := { ty := .int, invariants := #[{ name := `pos, predi
 def posDefs (f : Lean.Name) : Option (Array Lean.Name × Ex × FrenCli.Eval.VTy) :=
   if f == `pos? then some (#[`x], .bin .gt (.bound `x) (.lit (.int 0)), .bool) else none
 
+/-- The shape of the record `RP(Pos)`, whose field's type has an invariant
+that only `Fren.Core.PTy.invariantFree`'s descent through shapes sees. -/
+def posShapes (p : Lean.Name) : Option Fren.Core.DataShape :=
+  if p == `RP then some { isRecord := true, parts := #[#[posTy]] } else none
+
 /-- The problems found on 3000 random expressions. -/
 def run : Array String := Id.run do
   let mut failures := #[]
@@ -450,6 +456,12 @@ def run : Array String := Id.run do
       for (what, x) in checks do
         unless (x.compile (fun _ => none) none).eval I look == x.eval I look do
           failures := failures.push s!"{repr e.2} in {repr b}, {what}, changes its value when compiled"
+      -- And a check that a record is of its type, whose field's type is
+      -- `Pos`, which only the record's shape says (`posShapes`).
+      let rp : Ex := .typed { ty := .record `RP [] } #[] (.ctor `RP 0 #[e.1])
+      let I := { I with shapes := posShapes }
+      unless (rp.compile posShapes none).eval I look == rp.eval I look do
+        failures := failures.push s!"{repr e.2} in {repr b}, as the field of a record of a subset type, changes its value when compiled"
     -- A variable that the expression does not mention, rebound, changes nothing.
     for x in ["x", "y", "p", "q"] do
       unless decide (lang.Mention.Var x ∈ lang.free_vars e.2) do
