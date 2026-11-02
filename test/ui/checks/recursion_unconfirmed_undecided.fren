@@ -5,7 +5,10 @@
 pub enum T { Z, S(T) }
 
 pub fn g(t: T): (r: Int) {
-    out r := match t { T::Z => 0, T::S(a) => g(a) + g(a) + 1 }
+    out r := match t {
+        T::Z => 0,
+        T::S(a) => g(a) + g(a) + 1,
+    }
     ensure nonneg: r >= 0
 }
 
