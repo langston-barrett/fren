@@ -3,6 +3,7 @@ fn any?(x?, y?) := or { first: x?, second: y? }
 fn same?(x?, y?) := iff { first: x?, second: y? }
 fn unique?(x?, y?, z?) := one { first: x?, second: y?, third: z? }
 fn all?(x?, y?) := and { first: x?, second: y? }
+
 expect members() {
     expect none: any?(false, false)
     expect held: not any?(true, false)

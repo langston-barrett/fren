@@ -91,6 +91,7 @@ const K: Int := table {
 const B: Bool := table {  --~ error: a table in `B` may have no row that holds
     1 > 2 => true,  --~ error: row 1 of a table in `B` is never the first that holds
 }
+
 const OUT: Int := [1, 2][5]
 
 proc mentions_unknown(x: Int): (y?, z: Int) {

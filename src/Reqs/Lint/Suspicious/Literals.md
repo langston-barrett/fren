@@ -219,6 +219,7 @@ expect literal_dot_sound(s: String) {
     call concrete := literal_dot_value(s)
     refines concrete literal_dot_fixed(s)
 }
+
 expect literal_dot_complete(s: String) {
     call concrete := literal_dot_fixed(s)
     refines concrete literal_dot_value(s)

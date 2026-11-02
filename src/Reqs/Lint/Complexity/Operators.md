@@ -550,6 +550,7 @@ expect manual_at_most_one_sound(a?, b?, c?, d?) {
     call concrete := manual_at_most_one_fixed(a?, b?, c?, d?)
     refines concrete manual_at_most_one_written(a?, b?, c?, d?)
 }
+
 expect manual_at_most_one_complete(a?, b?, c?, d?) {
     call concrete := manual_at_most_one_written(a?, b?, c?, d?)
     refines concrete manual_at_most_one_fixed(a?, b?, c?, d?)

@@ -3,6 +3,7 @@
 enum Mode { Off, Heat, Cool }
 
 type SmallSigned = n: Int where invariant: n is -2..=2
+
 set_option fren.evidence "enumerated" in
 proc thermostat(mode: Mode, temp: SmallSigned): (det on?) {
     ensure r: on? iff (mode = Mode::Heat and temp < 0)

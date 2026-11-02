@@ -47,6 +47,7 @@ proc patterned(): (s: Roundish) {   --~ error: no outputs satisfy `round` and `b
     ensure round: s is Shape::Circle(_)   --~ info: `round` forces s is Shape::Circle(_), but `boxy` forces s is Shape::Rect(_, _)
     ensure boxy: s is Shape::Rect(_, _)
 }
+
 -- A generic enumeration: its constructors and selectors take the type's
 -- arguments.
 enum Opt<T> { Nothing, Just(T) }

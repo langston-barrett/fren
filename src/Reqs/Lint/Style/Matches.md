@@ -290,6 +290,7 @@ expect collapsible_match_sound(g: lint::Gauge) {
     call concrete := collapsible_match_fixed(g)
     refines concrete collapsible_match_written(g)
 }
+
 expect collapsible_match_complete(g: lint::Gauge) {
     use lint
     call concrete := collapsible_match_written(g)
@@ -328,6 +329,7 @@ expect collapsible_shadow_sound(g: lint::Gauge, n: Int) {
     call concrete := collapsible_shadow_fixed(g, n)
     refines concrete collapsible_shadow_written(g, n)
 }
+
 expect collapsible_shadow_complete(g: lint::Gauge, n: Int) {
     use lint
     call concrete := collapsible_shadow_written(g, n)
@@ -783,6 +785,7 @@ expect match_arm_if_else_sound(g: lint::Gate, k: Int) {
     call concrete := match_arm_if_else_fixed(g, k)
     refines concrete match_arm_if_else_written(g, k)
 }
+
 expect match_arm_if_else_complete(g: lint::Gate, k: Int) {
     use lint
     call concrete := match_arm_if_else_written(g, k)

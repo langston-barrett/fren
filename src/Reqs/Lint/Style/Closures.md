@@ -75,6 +75,7 @@ expect redundant_closure_sound(k: Int) {
     call concrete := redundant_closure_fixed(k)
     refines concrete redundant_closure_written(k)
 }
+
 expect redundant_closure_complete(k: Int) {
     call concrete := redundant_closure_written(k)
     refines concrete redundant_closure_fixed(k)

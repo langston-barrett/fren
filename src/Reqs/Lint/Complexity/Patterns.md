@@ -46,6 +46,7 @@ expect wildcard_in_or_sound(s: lint::Signal) {
     call concrete := wildcard_in_or_fixed(s)
     refines concrete wildcard_in_or_written(s)
 }
+
 expect wildcard_in_or_complete(s: lint::Signal) {
     use lint
     call concrete := wildcard_in_or_written(s)
@@ -114,6 +115,7 @@ expect manual_range_sound(n: Int) {
     call concrete := manual_range_fixed(n)
     refines concrete manual_range_written(n)
 }
+
 expect manual_range_complete(n: Int) {
     call concrete := manual_range_written(n)
     refines concrete manual_range_fixed(n)

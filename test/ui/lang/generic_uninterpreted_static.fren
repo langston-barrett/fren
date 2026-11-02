@@ -19,12 +19,15 @@ fn either<T>(a: T, b: T): T := pick(a, b)  --~ error: a defined function's body 
 proc unknown(): (c?) {
     ensure r: c? iff first(Option::None)  --~ error: cannot infer the type arguments of `generic_uninterpreted_static::first`
 }
+
 proc argument(x: Int): (det y: Int) {
     out y := pick(x, true)  --~ error: type mismatch: expected `Int`, found `Bool`
 }
+
 proc arity(x: Int): (det y: Int) {
     out y := pick(x)  --~ error: `generic_uninterpreted_static::pick` takes 2 arguments, but 1 was given
 }
+
 -- Outputs may not occur in its arguments, as in any uninterpreted
 -- function's.
 proc output(x: Int): (y: Int, z: Int) {

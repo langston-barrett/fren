@@ -3,6 +3,7 @@
 proc concrete(x: Int): (y: Int) { out y := x }
 type Pos = n: Int where invariant: n is 1..
 proc specification(x: Pos): (y: Int) { out y := x }
+
 expect bad() {
     call c := concrete(0)
     refines c specification(0)

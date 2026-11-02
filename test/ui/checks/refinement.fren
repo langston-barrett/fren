@@ -20,10 +20,12 @@ expect holds(x: Int) {
     call concrete := precise(x)
     refines concrete rough(x)
 }
+
 expect fails(x: Int) {
     call concrete := precise(x)
     refines concrete wrong(x)  --~ error: expectation `fails::refines_1` does not hold
 }
+
 -- `picky` assumes more than `rough`, so it does not accept all of its inputs.
 expect narrower(x: Int) {  --~ warning: the realizability of `narrower` rests on the assumption `picky::positive` of call `concrete`, which did not pass
     assume spec_small: (x) < 100

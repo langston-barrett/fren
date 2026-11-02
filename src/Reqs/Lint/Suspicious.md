@@ -253,6 +253,7 @@ expect irrefutable_is_sound(s: lint::Shade, n: Int) {
     call concrete := irrefutable_is_value(s, n)
     refines concrete irrefutable_is_written(s, n)
 }
+
 expect irrefutable_is_complete(s: lint::Shade, n: Int) {
     use lint
     call concrete := irrefutable_is_written(s, n)
@@ -430,6 +431,7 @@ expect redundant_locals_sound(x: Int, y: Int) {
     call concrete := redundant_locals_fixed(x, y)
     refines concrete redundant_locals_written(x, y)
 }
+
 expect redundant_locals_complete(x: Int, y: Int) {
     call concrete := redundant_locals_written(x, y)
     refines concrete redundant_locals_fixed(x, y)

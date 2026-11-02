@@ -312,6 +312,7 @@ expect min_or_max_sound(x: lint::Tier) {
     call concrete := min_or_max_fixed(x)
     refines concrete min_or_max_written(x)
 }
+
 expect min_or_max_complete(x: lint::Tier) {
     use lint
     call concrete := min_or_max_written(x)

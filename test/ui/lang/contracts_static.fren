@@ -52,6 +52,7 @@ fn outside(n: Int): (r: Int) {
 -- A clause may apply uninterpreted functions declared before, unlike a
 -- body, and the function itself in a postcondition, to its parameters.
 fn arity(Name): Nat
+
 fn positive_arity(n: Name): (r: Nat) {
     assume some_arity: arity(n) > 0
     ensure bounded: r <= arity(n)

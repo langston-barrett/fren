@@ -148,6 +148,7 @@ expect membership_test_sound(s: lint::Shade, n: Int) {
     call concrete := membership_test_fixed(s, n)
     refines concrete membership_test_written(s, n)
 }
+
 expect membership_test_complete(s: lint::Shade, n: Int) {
     use lint
     call concrete := membership_test_written(s, n)
@@ -193,6 +194,7 @@ expect is_equality_sound(s: lint::Shade, n: Int, b?) {
     call concrete := is_equality_fixed(s, n, b?)
     refines concrete is_equality_written(s, n, b?)
 }
+
 expect is_equality_complete(s: lint::Shade, n: Int, b?) {
     use lint
     call concrete := is_equality_written(s, n, b?)
@@ -483,6 +485,7 @@ expect chainable_sound(lo: Int, x: Int, hi: Int, m: Int) {
     call concrete := chainable_fixed(lo, x, hi, m)
     refines concrete chainable_written(lo, x, hi, m)
 }
+
 expect chainable_complete(lo: Int, x: Int, hi: Int, m: Int) {
     call concrete := chainable_written(lo, x, hi, m)
     refines concrete chainable_fixed(lo, x, hi, m)

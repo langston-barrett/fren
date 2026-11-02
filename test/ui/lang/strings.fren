@@ -63,6 +63,7 @@ proc shown(s: String): (q?) {
 
     expect never: not q?                                  --~ error: expectation `shown::never` does not hold
 }
+
 -- A comparison with a literal is a match of the strings below it, which
 -- the solver decides even when the string's length is unbounded.
 proc ordering(s: String) {

@@ -2,6 +2,7 @@
 -- An expectation whose condition's pattern test binds a name has a trigger,
 -- as one that binds none does: no behaviour reaches either.
 enum Reply { Empty, Value(Int) }
+
 proc q(r: Reply): (det w: Int) {
     assume only: r = Reply::Empty
     ensure x: w = 0

@@ -1,5 +1,6 @@
 -- A record literal that copies most of its fields from one value (F0818).
 struct Point { x: Int, y: Int, z: Int }
+
 proc c(p: Point): (q: Point) {
     ensure r: q = Point {
         x := 0,

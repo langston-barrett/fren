@@ -1,7 +1,7 @@
 error[F0318]: unreachable arm
- --> test/cli/types/f0318_unreachable.fren:6:9
+ --> test/cli/types/f0318_unreachable.fren:7:9
   |
-6 |         Mode::On => 1,
+7 |         Mode::On => 1,
   |         ^^^^^^^^ never matches
   |
   = note: an earlier `_` arm matches every value

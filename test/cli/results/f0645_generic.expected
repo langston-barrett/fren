@@ -1,7 +1,7 @@
 error[F0645]: `c` cannot be enumerated: it applies the generic function `pick`, which has no body
- --> test/cli/results/f0645_generic.fren:8:6
+ --> test/cli/results/f0645_generic.fren:9:6
   |
-8 | proc c(x: LeftTwoBit, y: RightTwoBit): (det z: Int) {
+9 | proc c(x: LeftTwoBit, y: RightTwoBit): (det z: Int) {
   |      ^ not enumerable
   |
   = note: enumeration cannot apply an uninterpreted function with a contract or type parameters, nor evaluate an index within a recursive function

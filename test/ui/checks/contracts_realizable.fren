@@ -32,6 +32,7 @@ fn never(n: Int): (result: Int) {   --~ error: the preconditions of `never` are 
 
 -- A postcondition over an earlier function, which is free: it can be false.
 fn base(Int): Int
+
 fn above(n: Int): (r: Int) {   --~ error: the postconditions of `above` cannot all hold
     ensure over: base(n) > 0 and r > base(n)
 }

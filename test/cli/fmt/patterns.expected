@@ -1,6 +1,8 @@
 --- test/cli/fmt/patterns.fren
 +++ test/cli/fmt/patterns.fren
-@@ -9,3 +9,3 @@
+@@ -6,0 +7 @@
++
+@@ -9,3 +10,3 @@
 -        Reply::Ok( Shape::Circle(_)|Shape::Empty ) => 0,
 -        Reply::Err(- 1) => 1,
 -        Reply::Err(-5..=MAX|10..) => 2,

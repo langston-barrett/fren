@@ -359,6 +359,7 @@ expect invalid_upcast_sound(x: Int, s: String, t: String, i: Int) {
     call concrete := invalid_upcast_fixed(x, s, t, i)
     refines concrete invalid_upcast_written(x, s, t, i)
 }
+
 set_option fren.lint.undecidable "allow" in
 expect invalid_upcast_complete(x: Int, s: String, t: String, i: Int) {
     call concrete := invalid_upcast_written(x, s, t, i)
@@ -422,6 +423,7 @@ expect raw_hashes_sound() {
     call concrete := raw_hashes_fixed()
     refines concrete raw_hashes_written()
 }
+
 expect raw_hashes_complete() {
     call concrete := raw_hashes_written()
     refines concrete raw_hashes_fixed()

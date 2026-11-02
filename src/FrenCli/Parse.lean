@@ -657,6 +657,10 @@ structure Layout where
   /-- The right sides of `:=` and `=>` that are expressions: the operator,
   and the first and last tokens of its right side. -/
   rightSides : Array (Nat × Nat × Nat × RightForm) := #[]
+  /-- The top-level items, the `import` and `open` lines of the header
+  included, in order: the first and last tokens of each, an item's first
+  being that of the `set_option ... in` before it, if any. -/
+  items : Array (Nat × Nat) := #[]
 
 /-- What a procedure's members need of its header: its results' names. -/
 structure ProcHeader where
@@ -2345,10 +2349,12 @@ def header : P Unit := do
     let t ← peek
     if isWord t "import" || isWord t "open" then
       markStart
+      let first := (← get).pos
       discard bump
       let n ← peek
       unless n.tok matches .ident _ do fail n "a module name"
       discard bump
+      modify fun s => { s with layout.items := s.layout.items.push (first, first + 1) }
     else break
 
 /-- Parses a file, stopping at the first error. -/
@@ -2358,8 +2364,10 @@ def file : P (Array Item) := do
   repeat
     if (← peek).tok == .eof then break
     let start := (← peek).span.start
+    let first := (← get).pos
     modify fun s => { s with itemStarts := s.itemStarts.push start, items := #[] }
     items := items.push (← item)
+    modify fun s => { s with layout.items := s.layout.items.push (first, s.pos - 1) }
   return items
 
 end Parser

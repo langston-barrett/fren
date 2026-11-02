@@ -57,6 +57,7 @@ expect field_copy_sound(t: lint::Triple, n: Int) {
     call concrete := field_copy_fixed(t, n)
     refines concrete field_copy_written(t, n)
 }
+
 expect field_copy_complete(t: lint::Triple, n: Int) {
     use lint
     call concrete := field_copy_written(t, n)
@@ -135,6 +136,7 @@ expect manual_record_update_sound(t: lint::Triple, n: Int) {
     call concrete := manual_record_update_fixed(t, n)
     refines concrete manual_record_update_written(t, n)
 }
+
 expect manual_record_update_complete(t: lint::Triple, n: Int) {
     use lint
     call concrete := manual_record_update_written(t, n)

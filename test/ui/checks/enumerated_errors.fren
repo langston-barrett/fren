@@ -8,6 +8,7 @@ set_option fren.lint.undecidable "allow"
 type FirstPercent = n: Int where invariant: n is 0..=99
 type SecondPercent = n: Int where invariant: n is 0..=99
 type ThirdPercent = n: Int where invariant: n is 0..=99
+
 set_option fren.evidence "enumerated" in
 proc wide(a: FirstPercent, b: SecondPercent, c: ThirdPercent): (det sum: Int) {  --~ error: `wide` has 1000000 behaviours up to size 3, too many to enumerate
     out sum := a + b + c
@@ -31,6 +32,7 @@ proc big(): (t?) {  --~ error: `big` has a quantifier over a type with more than
 -- slot too, counted alike in both front ends.
 type InputByte = n: Int where invariant: n is 0..=255
 type OtherByte = n: Int where invariant: n is 0..=255
+
 set_option fren.evidence "enumerated" in
 proc hidden(x: InputByte, y: OtherByte): (det d: Int) {  --~ error: `hidden` has 458752 behaviours up to size 3, too many to enumerate
     out d := table {

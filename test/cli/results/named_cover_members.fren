@@ -1,6 +1,7 @@
 fn either?(x?) := or { held: x?, skipped: false }
 fn unique?(x?) := one { held: x?, absent: false }
 fn same?(x?) := iff { held: x?, also: true }
+
 expect observations(x?) {
     assume input: x?
     cover disjunction: either?(x?)

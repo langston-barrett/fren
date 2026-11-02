@@ -10,9 +10,9 @@ warning[F0710]: unused variable `b?`
   = help: to allow it, `set_option fren.lint.unused_variables "allow"`
 
 error[F0601]: `c` is not realizable
- --> test/cli/results/f0601_instance.fren:3:6
+ --> test/cli/results/f0601_instance.fren:4:6
   |
-3 | proc c(): (x: Int) {
+4 | proc c(): (x: Int) {
   |      ^ not realizable
   |
   = note: for the input

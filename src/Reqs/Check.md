@@ -2836,64 +2836,75 @@ expect expectation_proves(q: check::Outcome) {
     expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
     expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
 }
+
 expect instance_assumption_proves(q: check::Outcome) {
     use check
     call concrete := instance_assumption(q)
     expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
     expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
 }
+
 expect definedness_proves(q: check::Outcome) {
     use check
     call concrete := definedness(q)
     expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
     expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
 }
+
 expect completeness_proves(q: check::Outcome) {
     use check
     call concrete := completeness(q)
     expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
     expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
 }
+
 expect disjointness_proves(q: check::Outcome) {
     use check
     call concrete := disjointness(q)
     expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
     expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
 }
+
 expect precondition_proves(q: check::Outcome) {
     use check
     call concrete := precondition(q)
     expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
     expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
 }
+
 expect postcondition_proves(q: check::Outcome) {
     use check
     call concrete := postcondition(q)
     expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
     expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
 }
+
 expect determinism_proves(q: check::Outcome) {
     use check
     call concrete := determinism(q)
     expect proof: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Unsat
     expect counterexample: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Sat
 }
+
 expect vacuity_witnesses(q: check::Outcome) {
     use check
     call concrete := non_vacuity(q)
     refines concrete satisfiable(q)
 }
+
 expect cover_witnesses(q: check::Outcome) {
     use check
     call concrete := cover_goal(q)
     expect witness: (concrete.verdict) = check::Verdict::Pass iff (q) = check::Outcome::Sat
     expect refuted: (concrete.verdict) = check::Verdict::Fail iff (q) = check::Outcome::Unsat
 }
+
 expect redundancy_witnesses(q: check::Outcome) {
     use check
     call concrete := non_redundancy(q)
     refines concrete satisfiable(q)
 }
+
 expect reachability_witnesses(q: check::Outcome) {
     use check
     call concrete := reachability(q)

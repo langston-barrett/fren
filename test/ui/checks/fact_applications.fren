@@ -90,6 +90,7 @@ pub fn g(n: Int, b?): (r: Int) { ensure e: r >= h(n) }
 pub fn gen_bound<T>(x: T, y: T, s: S): (r: Int) {
     ensure e: r >= (if x = y then a(s) else a(s) + 1)
 }
+
 pub fn via_gen(s: S, b?): (r: Int) { ensure e: r = gen_bound(b?, true, s) + 1 }
 pub fn via_via(s: S, b?): (r: Int) { ensure e: r = via_gen(s, b?) }
 

@@ -13,6 +13,7 @@ proc exit(n_fail: Int, n_inconc: Int): (code: Int) {
 -- Instances: only earlier instances appear in an instance's counterexample,
 -- and instance variables can't be assumed about.
 proc chooser(): (b?) {}
+
 proc uses(n_fail: Int): (ok?) {
     call first := exit(n_fail, 0)
     call second := exit(first.code, n_fail)
