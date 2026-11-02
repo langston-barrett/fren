@@ -1574,7 +1574,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/table.fren", "test/cli/fmt/subset_types.fren", "test/cli/fmt/subset_shorthand.fren",
    "test/cli/fmt/contract.fren",
    "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren", "test/cli/fmt/commas.fren",
-   "test/cli/fmt/independent.fren",
+   "test/cli/fmt/independent.fren", "test/cli/fmt/right_sides.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren",
@@ -1601,7 +1601,7 @@ list is then removed (#509). -/
 def fmtPending : List String :=
   ["test/cli/commands/counterexample_newtype.fren",
    "test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
-   "test/ui/checks/simp_recursion_depth.fren", "test/ui/checks/subset_obligations.fren",
+   "test/ui/checks/subset_obligations.fren",
    "test/ui/lang/bool_members.fren", "test/ui/lang/cardinality.fren",
    "test/ui/lang/cardinality_static.fren", "test/ui/lang/chained_comparisons.fren",
    "test/ui/lang/checking_static.fren", "test/ui/lang/constants.fren",
@@ -1761,7 +1761,8 @@ that `fmt::blank_lines` keeps of `src`'s; and a token or comment after a
 blank line of `src` that does not start a line of `out` is after a gap
 whose line break a list or block decides and whose blank lines go
 (`fmt::line_break`): after an opening bracket, a record update's `{` or
-`with`, before a closing bracket, or before a block's `{`. Pieces after a
+`with`, before a closing bracket, before a block's `{`, or before the right
+side of a `:=` or `=>` (`fmt::right_side`). Pieces after a
 `use` item are left out, as imports are merged and sorted. -/
 def fmtBlanksKept (src out : String) : Array String := Id.run do
   let some (ps, _, lay) := blankPieces src | return #[]
@@ -1773,10 +1774,14 @@ def fmtBlanksKept (src out : String) : Array String := Id.run do
     if b.kind == .members then joinable := joinable.insert b.opening
     joinable := (joinable.insert (b.lead + 1)).insert b.closing
     if b.lead != b.opening then joinable := joinable.insert (b.opening + 1)
+  -- And the gap before each right side of a `:=` or `=>` (`fmt::right_side`).
+  for (_, first, _, _) in lay.rightSides do joinable := joinable.insert first
   -- Tokens of `out` after which a line has no blank line after it, and
   -- the closing brackets of those that indent.
   let mut opens : Std.HashSet Nat := {}
   for b in lay'.bracketed do opens := (opens.insert b.opening).insert b.lead
+  -- A `:=` or `=>` that ends a line is followed by its right side.
+  for (op, _, _, _) in lay'.rightSides do opens := opens.insert op
   for h : k in [0:toks'.size] do
     if toks'[k].tok == .kw "{" || toks'[k].tok == .kw "::{" then opens := opens.insert k
   let mut closes : Std.HashSet Nat := {}
@@ -1923,10 +1928,12 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
   return #[]
 
 /-- `src` laid out again at random, from `seed`, as `fmt::layout_free`
-allows: each gap whose line break a list or block decides, with no comment
-in it and none on its lines, is laid out again. One whose blank lines go
+allows: each gap whose line break a list or block decides, or that before
+the right side of a `:=` or `=>` (`fmt::right_side`) but a chain broken by
+hand, with no comment in it and none on its lines, is laid out again. One whose blank lines go
 (`fmt::line_break`, `fmt::blank_lines`: after an opening bracket, a record
-update's `{` or `with`, before a closing bracket, or before a block's `{`)
+update's `{` or `with`, before a closing bracket, before a block's `{`, or
+before a right side)
 gets a space, a line break or a blank line, whatever it had; one between
 two elements or members gets a space or a line break if it has no blank
 line, and otherwise keeps its blank lines, with spaces on them at random.
@@ -1987,6 +1994,31 @@ def relaid (src : String) (seed : Nat) : Option String := do
         let last := b.closing - 1
         if b.commas.back? == some last then edits := edits.push (toks[last]!.span.start, toks[last]!.span.stop, "")
         else edits := edits.push (toks[last]!.span.stop, toks[last]!.span.stop, ",")
+  -- The gap before the right side of each `:=` and `=>`, whose blank lines
+  -- go (`fmt::right_side`): a space, a line break or a blank line. But for
+  -- a chain broken by hand, with a line break outside its brackets, whose
+  -- gap is content.
+  let firsts : Std.HashSet Nat := lay.rightSides.foldl (fun acc (_, f, _, _) => acc.insert f) {}
+  for (op, first, last, _) in lay.rightSides do
+    let mut depth : Int := 0
+    let mut chained := false
+    for k in [first:last + 1] do
+      if depth == 0 && k > first && !firsts.contains k
+          && lineOf[toks[k]!.span.start]! > lineOf[toks[k - 1]!.span.stop - 1]! then
+        chained := true
+      match toks[k]!.tok with
+      | .kw "(" | .kw "[" | .kw "{" | .kw "::{" => depth := depth + 1
+      | .kw ")" | .kw "]" | .kw "}" => depth := depth - 1
+      | _ => pure ()
+    if chained then continue
+    let start := toks[op]!.span.stop
+    let stop := toks[first]!.span.start
+    if seen.contains start || !(chars.extract start stop).all Char.isWhitespace then continue
+    if commented.contains lineOf[start]! || commented.contains lineOf[stop]! then continue
+    seen := seen.insert start
+    rng := (rng * 1103515245 + 12345) % 2147483648
+    let pick := (rng / 65536) % 3
+    edits := edits.push (start, stop, if pick == 0 then " " else if pick == 1 then "\n" else "\n\n")
   -- Commas, on the next line (`fmt::separators`).
   let mut listCommas : Std.HashSet Nat := {}
   for b in lay.bracketed do

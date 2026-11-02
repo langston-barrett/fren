@@ -140,18 +140,20 @@ pub proc step(
     call parts := split(line, indent, run, lead)
     call block := block_kind(opening.info)
 
-    let closes? := inside? and parts.fence? and parts.marker = opening.marker and parts.run >= opening.run
+    let closes? :=
+        inside? and parts.fence? and parts.marker = opening.marker and parts.run >= opening.run
         and parts.info = ""
 
     ensure opens: opens? iff not inside? and parts.fence?
     ensure body: body? iff inside? and not closes?
     ensure inside_after: inside_after? iff (if inside? then not closes? else parts.fence?)
     ensure kept: kept? iff body? and block.kind = BlockKind::Spec
-    out opening_after := if opens? then Opening {
-        marker := parts.marker,
-        run := parts.run,
-        info := parts.info,
-    }
+    out opening_after :=
+        if opens? then Opening {
+            marker := parts.marker,
+            run := parts.run,
+            info := parts.info,
+        }
         else opening
 
     expect closes_longer: when inside? and opening.marker = "`" and opening.run = 3 and line = "````"

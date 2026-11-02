@@ -590,7 +590,8 @@ pub fn free_vars(e: Expr<Id>): Set<Mention> := match e {
     Expr::Or(a, b) => free_vars(a) union free_vars(b),
     Expr::If(c, t, f) => free_vars(c) union free_vars(t) union free_vars(f),
     Expr::Is(s, _) => free_vars(s),
-    Expr::Match(s, p, g, b, rest) => free_vars(s) union ((free_vars(g) union free_vars(b)) minus binders(p))
+    Expr::Match(s, p, g, b, rest) =>
+        free_vars(s) union ((free_vars(g) union free_vars(b)) minus binders(p))
         union free_vars(rest),
     Expr::Cons(a, rest) => free_vars(a) union free_vars(rest),
     Expr::Construct(_, args) => free_vars(args),
@@ -619,7 +620,8 @@ r[evaluation.points]
 
 ```fren
 pub fn points(g: Graph, f: Id): Graph := match g {
-    Graph::Point(h, a, r, rest) => if h = f then Graph::Point(h, a, r, points(rest, f)) else points(rest, f),
+    Graph::Point(h, a, r, rest) =>
+        if h = f then Graph::Point(h, a, r, points(rest, f)) else points(rest, f),
     Graph::Empty => Graph::Empty,
 }
 

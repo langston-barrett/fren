@@ -14,7 +14,8 @@ pub fn depth(t: T): Int := match t {
     T::Node(u) => 1 + depth(u),
 }
 
-fn triples_nonneg?(q: Seq<Int>) := forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
+fn triples_nonneg?(q: Seq<Int>) :=
+    forall (x y z: Int), when x in q and y in q and z in q, x + y + z >= 0
 
 -- Three bound names over an index set of seven terms: 343 instances.
 proc many(q: Seq<Int>) {

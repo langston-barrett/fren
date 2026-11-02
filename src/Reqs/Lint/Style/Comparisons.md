@@ -267,7 +267,8 @@ pub struct Step { strict?, operand: String }
 -- and `>=`: a comparison if it has one step, else a chained comparison.
 pub struct Chain { first: String, ascending?, steps: Seq<Step> }
 
-pub fn last_operand(c: Chain): String := if c.steps = [] then c.first else c.steps[c.steps.len - 1].operand
+pub fn last_operand(c: Chain): String :=
+    if c.steps = [] then c.first else c.steps[c.steps.len - 1].operand
 
 -- A comparison the other way round: `b > a` for `a < b`.
 pub fn reversed(c: Chain): Chain := Chain {
@@ -352,7 +353,8 @@ pub fn chain_operand(c: Chain, k: Int): String := if k = 0 then c.first else c.s
 
 -- The inequality of `c` at the position `k`, from `0`: of its operands at
 -- `k` and `k + 1`, the other way round if `c` orders descending.
-pub fn inequality(c: Chain, k: Int): Inequality := if c.ascending?
+pub fn inequality(c: Chain, k: Int): Inequality :=
+    if c.ascending?
     then Inequality {
         lower := chain_operand(c, k),
         strict? := c.steps[k].strict?,

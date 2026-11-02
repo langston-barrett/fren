@@ -157,7 +157,8 @@ semantics](../Lang/Semantics.md#abstract-syntax) states that its fix agrees,
 with `agrees?`, at the outcomes of `lang::eval`:
 
 ```fren
-pub fn agrees?(fix: lang::Outcome, original: lang::Outcome) := original = lang::Outcome::Undefined or fix = original
+pub fn agrees?(fix: lang::Outcome, original: lang::Outcome) :=
+    original = lang::Outcome::Undefined or fix = original
 ```
 
 ## Primitive operations
@@ -250,11 +251,10 @@ it; and a concatenation with `""`.
 
 ```fren
 -- The two integers `m` and `n`, as the list of arguments of a primitive.
-fn integers(m: Int, n: Int): lang::Value :=
-    lang::Value::Cons(
-        lang::Value::Integer(m),
-        lang::Value::Cons(lang::Value::Integer(n), lang::Value::Nil)
-    )
+fn integers(m: Int, n: Int): lang::Value := lang::Value::Cons(
+    lang::Value::Integer(m),
+    lang::Value::Cons(lang::Value::Integer(n), lang::Value::Nil)
+)
 
 set_option fren.lint.undecidable "allow" in
 pub proc usual_primitives(m: Int, n: Int, s: String, t: String): (

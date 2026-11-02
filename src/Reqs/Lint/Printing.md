@@ -51,8 +51,10 @@ pub fn op_precedence(o: BinOp): Precedence := match o {
     BinOp::Iff => Precedence::Iff,
     BinOp::Or => Precedence::Or,
     BinOp::And => Precedence::And,
-    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::In | BinOp::Subset => Precedence::Comparison,
-    BinOp::Plus | BinOp::Minus | BinOp::Concat | BinOp::Union | BinOp::Difference => Precedence::Sum,
+    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::In | BinOp::Subset =>
+        Precedence::Comparison,
+    BinOp::Plus | BinOp::Minus | BinOp::Concat | BinOp::Union | BinOp::Difference =>
+        Precedence::Sum,
     BinOp::Times | BinOp::Div | BinOp::Mod | BinOp::Inter | BinOp::Join => Precedence::Product,
 }
 
@@ -154,9 +156,12 @@ pub fn bare_operand?(outer: Precedence, inner: Precedence, assoc: Assoc, right?)
 
 pub fn ends_open?(t: FixTree) := match t {
     FixTree::Written(_, _, open?, _) => open?,
-    FixTree::Bin(o, _, b) => bare_operand?(op_precedence(o), precedence_of(b), op_assoc(o), true) and ends_open?(b),
-    FixTree::Not(a) => bare_operand?(Precedence::Not, precedence_of(a), Assoc::Right, true) and ends_open?(a),
-    FixTree::Neg(a) => bare_operand?(Precedence::Negative, precedence_of(a), Assoc::Right, true) and ends_open?(a),
+    FixTree::Bin(o, _, b) =>
+        bare_operand?(op_precedence(o), precedence_of(b), op_assoc(o), true) and ends_open?(b),
+    FixTree::Not(a) =>
+        bare_operand?(Precedence::Not, precedence_of(a), Assoc::Right, true) and ends_open?(a),
+    FixTree::Neg(a) =>
+        bare_operand?(Precedence::Negative, precedence_of(a), Assoc::Right, true) and ends_open?(a),
     FixTree::When(_, _, _) | FixTree::If(_, _, _) => true,
     _ => false,
 }
@@ -233,7 +238,8 @@ conditional among them, and anything can be written between delimiters or
 keywords:
 
 ```fren
-pub fn grammar_precedence(t: FixTree): Precedence := if t is FixTree::If(_, _, _) then Precedence::Atom else precedence_of(t)
+pub fn grammar_precedence(t: FixTree): Precedence :=
+    if t is FixTree::If(_, _, _) then Precedence::Atom else precedence_of(t)
 
 pub fn reads_bare?(t: FixTree, place: Place, open?) := match place {
     Place::Operand(outer, assoc, right?, followed?) =>
@@ -322,10 +328,11 @@ pub fn printed(t: FixTree): String := match t {
             printed(b),
             bare?(b, op_precedence(o), op_assoc(o), true, false)
         ),
-    FixTree::Not(a) => "not " ++ enclosed(
-        printed(a),
-        bare?(a, Precedence::Not, Assoc::Right, true, false)
-    ),
+    FixTree::Not(a) =>
+        "not " ++ enclosed(
+            printed(a),
+            bare?(a, Precedence::Not, Assoc::Right, true, false)
+        ),
     FixTree::Neg(a) => negated(
         enclosed(
             printed(a),
@@ -348,10 +355,11 @@ pub fn printed(t: FixTree): String := match t {
             printed(e),
             bare?(e, Precedence::Comparison, Assoc::NonAssoc, false, true)
         ) ++ " is " ++ p,
-    FixTree::Field(e, x) => enclosed(
-        printed(e),
-        bare?(e, Precedence::Atom, Assoc::Left, false, true) and receivable?(e)
-    ) ++ "." ++ x,
+    FixTree::Field(e, x) =>
+        enclosed(
+            printed(e),
+            bare?(e, Precedence::Atom, Assoc::Left, false, true) and receivable?(e)
+        ) ++ "." ++ x,
 }
 ```
 

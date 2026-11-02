@@ -229,44 +229,48 @@ pub proc applies(item: CheckedItem, kind: Kind): (det runs?) {
 
     ensure rule: runs? iff match item {
         Component => true,
-        GlobalExpectation => kind in {
-            Realizability,
-            InstanceAssumption,
-            Expectation,
-            Cover,
-            Vacuity,
-            Definedness,
-            Completeness,
-            Disjointness,
-            Precondition,
-            Reachability,
-        },
-        ShortExpectation => kind in {
-            InstanceAssumption,
-            Expectation,
-            Cover,
-            Vacuity,
-            Definedness,
-            Completeness,
-            Disjointness,
-            Precondition,
-            Reachability,
-        },
-        Body => kind in {
-            Definedness,
-            Completeness,
-            Disjointness,
-            Precondition,
-            Postcondition,
-            Reachability,
-        },
-        Contract => kind in {
-            Realizability,
-            Completeness,
-            Disjointness,
-            Precondition,
-            Reachability,
-        },
+        GlobalExpectation =>
+            kind in {
+                Realizability,
+                InstanceAssumption,
+                Expectation,
+                Cover,
+                Vacuity,
+                Definedness,
+                Completeness,
+                Disjointness,
+                Precondition,
+                Reachability,
+            },
+        ShortExpectation =>
+            kind in {
+                InstanceAssumption,
+                Expectation,
+                Cover,
+                Vacuity,
+                Definedness,
+                Completeness,
+                Disjointness,
+                Precondition,
+                Reachability,
+            },
+        Body =>
+            kind in {
+                Definedness,
+                Completeness,
+                Disjointness,
+                Precondition,
+                Postcondition,
+                Reachability,
+            },
+        Contract =>
+            kind in {
+                Realizability,
+                Completeness,
+                Disjointness,
+                Precondition,
+                Reachability,
+            },
     }
 
     expect claims_only: when item in {GlobalExpectation, ShortExpectation, Body} and runs?,
@@ -698,26 +702,26 @@ pub fn single_valued?(forced: Set<Forcing>) :=
 -- the variant of each value that it forces it to.
 pub fn variants_of?(forced: Set<Forcing>, variants: Set<VariantForcing>) :=
     (forall (h: Guarantee) (o: Output) (k l: ChoiceVariant),
-    when VariantForcing {
-        guarantee := h,
-        output := o,
-        variant := k,
-    } in variants
-    and VariantForcing {
-        guarantee := h,
-        output := o,
-        variant := l,
-    } in variants, k = l)
+        when VariantForcing {
+            guarantee := h,
+            output := o,
+            variant := k,
+        } in variants
+        and VariantForcing {
+            guarantee := h,
+            output := o,
+            variant := l,
+        } in variants, k = l)
     and (forall (h: Guarantee) (o: Output) (v: Choice), when Forcing {
         guarantee := h,
         output := o,
         value := v,
     } in forced,
-    VariantForcing {
-        guarantee := h,
-        output := o,
-        variant := variant_of(v),
-    } in variants)
+        VariantForcing {
+            guarantee := h,
+            output := o,
+            variant := variant_of(v),
+        } in variants)
 
 pub proc clash_notes(
     core: Set<Guarantee>,
@@ -861,9 +865,10 @@ pub proc general_branch_explanation(
     out reported? := context_q = Sat and exclusion_q = Unsat
     out consistent? := base inter others != {}
     out excluded? := consistent? and base inter others inter alternative = {}
-    out locally_excluded? := not (exists (w: DiagnosticWorld),
-        w in base inter others inter alternative and w.eligible? = sample.eligible?
-        and w.within_budget? = sample.within_budget?)
+    out locally_excluded? :=
+        not (exists (w: DiagnosticWorld),
+            w in base inter others inter alternative and w.eligible? = sample.eligible?
+            and w.within_budget? = sample.within_budget?)
     expect reported_sound: when reported?, excluded?
     expect unknown_silent: when context_q = Unknown or exclusion_q = Unknown, not reported?
     expect all_models: when excluded?, forall (w: DiagnosticWorld),
@@ -881,10 +886,12 @@ pub proc retry_alternatives_general(worlds: Set<DiagnosticWorld>): (
     assume all_worlds: forall (w: DiagnosticWorld), w in worlds
     out true_possible? := exists (w: DiagnosticWorld), w in worlds and w.retry? and w.eligible?
         and (when w.retry?, w.within_budget?)
-    out false_possible? := exists (w: DiagnosticWorld), w in worlds and not w.retry? and not w.eligible?
+    out false_possible? :=
+        exists (w: DiagnosticWorld), w in worlds and not w.retry? and not w.eligible?
         and (when w.retry?, w.within_budget?)
-    out bad_input? := not (exists (w: DiagnosticWorld), w in worlds and w.eligible? and not w.within_budget?
-        and (w.retry? iff w.eligible?) and (when w.retry?, w.within_budget?))
+    out bad_input? :=
+        not (exists (w: DiagnosticWorld), w in worlds and w.eligible? and not w.within_budget?
+            and (w.retry? iff w.eligible?) and (when w.retry?, w.within_budget?))
     expect both_globally_possible: true_possible? and false_possible?
     expect still_a_counterexample: bad_input?
 }
@@ -2155,7 +2162,8 @@ set_option fren.lint.undecidable "allow" in
 pub proc contract_blocker(applied: Seq<Applied>, named: Option<String>): (det right?) {
     ensure rule: right? iff match named {
         Option::None => not (exists (a: Applied), a in applied and a.postconditions > 0),
-        Option::Some(p) => (exists (a: Applied), a in applied and a.postconditions > 0 and a.path = p)
+        Option::Some(p) =>
+            (exists (a: Applied), a in applied and a.postconditions > 0 and a.path = p)
             and (forall (a: Applied), when a in applied and a.postconditions > 0, p <= a.path),
     }
 
@@ -2697,12 +2705,13 @@ values are pinned by the input, and its contradictory assumptions rest on
 -- rather than a witness (see [Verdict families](#verdict-families)). The
 -- chapter on [evidence](Evidence.md) uses it: only such a pass rests on
 -- the evidence of the checks that back its hypotheses.
-pub fn proof?(kind: Kind) := not kind in {
-    Kind::Cover,
-    Kind::Vacuity,
-    Kind::Reachability,
-    Kind::Redundancy,
-}
+pub fn proof?(kind: Kind) :=
+    not kind in {
+        Kind::Cover,
+        Kind::Vacuity,
+        Kind::Reachability,
+        Kind::Redundancy,
+    }
 
 pub proc enumerated_verdict(
     kind: Kind,
@@ -2720,8 +2729,10 @@ pub proc enumerated_verdict(
     ensure reported_rule: reported = table {
         exact? => verdict,
         not exact? and verdict = Pass => Pass,
-        not exact? and verdict = Fail and kind = Realizability and conflict? and outputs_exact? => Fail,
-        not exact? and verdict = Fail and kind = Realizability and not (conflict? and outputs_exact?) => Inconclusive,
+        not exact? and verdict = Fail and kind = Realizability and conflict? and outputs_exact? =>
+            Fail,
+        not exact? and verdict = Fail and kind = Realizability and not (conflict? and outputs_exact?) =>
+            Inconclusive,
         not exact? and verdict = Fail and kind != Realizability and proof?(kind) => Fail,
         not exact? and verdict = Fail and not proof?(kind) => Inconclusive,
         not exact? and verdict = Inconclusive => Inconclusive,

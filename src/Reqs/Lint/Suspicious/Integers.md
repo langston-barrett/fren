@@ -127,7 +127,8 @@ expect modulo_one_elaborated(
 
     call p := modulo_one(literal?, if negated? then -n else n)
 
-    let b: lang::Expr<lang::Id> := if not literal? then k
+    let b: lang::Expr<lang::Id> :=
+        if not literal? then k
         else if negated? then Unary(lang::UnaryOp::Neg, Literal(Integer(n)))
         else Literal(Integer(n))
 
