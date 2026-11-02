@@ -95,7 +95,9 @@ def agrees (seed : Nat) : Bool :=
   let (fs, marked) := randomQuery seed
   marked.contains "" && !needsExpansion marked fs
 
-/-- Every text of at most `n` characters of `alphabet`. -/
+/-- Every text of at most `n` characters of `alphabet`, each once if
+`alphabet` has no duplicates: a text of `k + 1` characters only as its
+first `k` with its last pushed on. -/
 def allTexts (alphabet : List Char) : Nat → List String
   | 0 => [""]
   | n + 1 => "" :: (allTexts alphabet n).flatMap fun t => alphabet.map (t.push ·)
@@ -106,7 +108,7 @@ def allTexts (alphabet : List Char) : Nat → List String
 -- longer than the other, a match at the very end, overlaps and
 -- neighbouring multi-byte characters.
 #guard let alphabet := ['a', 'b', 'é', 'è', '€', '😀']
-  let haystacks := (allTexts alphabet 5).eraseDups
-  (allTexts alphabet 3).eraseDups.all fun t => haystacks.all fun s => Fren.Core.occursIn t s == splitHas s t
+  let haystacks := allTexts alphabet 5
+  (allTexts alphabet 3).all fun t => haystacks.all fun s => Fren.Core.occursIn t s == splitHas s t
 
 end Fren.Test.TextSearch
