@@ -382,9 +382,12 @@ def answerShard [Hashable α] (k : α) : Fin answerShards :=
   ⟨(hash k).toNat % answerShards, Nat.mod_lt _ (by decide)⟩
 
 /-- Maps split by `answerShard`, as values: what `QueryCache.answers`
-holds. `get?` and `insert` are what `QueryCache.find?` and
-`QueryCache.insert` do, and they behave as one map does
-(`Shards.get?_insert`, `Shards.get?_empty`, `Shards.get?_foldl`). -/
+holds. `QueryCache.find?` and `QueryCache.insert` mirror `get?` and
+`insert`, on the reference of the same map, rather than call them: no
+theorem is about `QueryCache` itself. `get?` and `insert` behave as one
+map does (`Shards.get?_insert`, `Shards.get?_empty`, `Shards.get?_foldl`),
+and over keys with their hashes, as one map of the plain keys does
+(`Shards.get?_foldl_of`). -/
 abbrev Shards (α β : Type) [BEq α] [Hashable α] := Vector (Std.HashMap α β) answerShards
 
 /-- No key, in any map. -/
@@ -416,8 +419,8 @@ theorem Shards.get?_insert [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable 
 theorem Shards.get?_empty [BEq α] [Hashable α] (k : α) : (Shards.empty : Shards α β).get? k = none := by
   simp [Shards.get?, Shards.empty]
 
-/-- The same answers as one map that is given the same insertions, as
-`QueryCache.answers` was before it was split. -/
+/-- The same answers as one map of the same keys that is given the same
+insertions. -/
 theorem Shards.get?_foldl [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α] (kvs : List (α × β)) (k : α) :
     (kvs.foldl (fun s (k, v) => s.insert k v) Shards.empty).get? k
       = (kvs.foldl (fun m (k, v) => m.insert k v) ({} : Std.HashMap α β))[k]? := by
@@ -435,13 +438,16 @@ theorem Shards.get?_foldl [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable �
 /-- A key with its hash, computed once (`Hashed.of`): a map that holds it
 neither hashes it again to look it up, to add it nor to grow, which for a
 query's script is a pass over the whole text each time. Two are equal only
-if their hashes are, so the hash is lawful whatever `α`'s is. -/
+if their hashes are, so the hash is lawful whatever `α`'s is. `code_eq`,
+which is erased at runtime, keeps the hash from going stale: a key built
+with another hash would miss its equal and land in another map. -/
 structure Hashed (α : Type) [Hashable α] where
   key : α
   code : UInt64
+  code_eq : code = hash key
 
 /-- `k`, with its hash. -/
-def Hashed.of [Hashable α] (k : α) : Hashed α := ⟨k, hash k⟩
+def Hashed.of [Hashable α] (k : α) : Hashed α := ⟨k, hash k, rfl⟩
 
 instance [Hashable α] : Hashable (Hashed α) := ⟨Hashed.code⟩
 
@@ -474,6 +480,33 @@ theorem Hashed.of_beq [Hashable α] [BEq α] [LawfulHashable α] (a b : α) :
       simp [this] at h
   · exact (Hashed.beq_iff _ _).2 ⟨hash_eq h, h⟩
 
+/-- A map of keys with their hashes answers `Hashed.of k` as the map of
+the plain keys, given the same insertions, answers `k`. -/
+theorem Hashed.getElem?_foldl [Hashable α] [BEq α] [EquivBEq α] [LawfulHashable α] (kvs : List (α × β)) (k : α) :
+    (kvs.foldl (fun m (k, v) => m.insert (Hashed.of k) v) ({} : Std.HashMap (Hashed α) β))[Hashed.of k]?
+      = (kvs.foldl (fun m (k, v) => m.insert k v) ({} : Std.HashMap α β))[k]? := by
+  suffices h : ∀ (m₁ : Std.HashMap (Hashed α) β) (m₂ : Std.HashMap α β), (∀ k : α, m₁[Hashed.of k]? = m₂[k]?) →
+      ∀ k, (kvs.foldl (fun m (k, v) => m.insert (Hashed.of k) v) m₁)[Hashed.of k]?
+        = (kvs.foldl (fun m (k, v) => m.insert k v) m₂)[k]? from
+    h _ _ (fun k => by simp) k
+  induction kvs with
+  | nil => intro m₁ m₂ h; exact h
+  | cons kv kvs ih =>
+    intro m₁ m₂ h
+    apply ih
+    intro k'
+    rw [Std.HashMap.getElem?_insert, Std.HashMap.getElem?_insert, Hashed.of_beq, h]
+
+/-- What `QueryCache.answers` holds, given the insertions of `runQuery`,
+which keys each answer by `Hashed.of`, answers a key as the one map of
+plain keys that it was before it was split, given the same insertions. -/
+theorem Shards.get?_foldl_of [Hashable α] [BEq α] [EquivBEq α] [LawfulHashable α] (kvs : List (α × β)) (k : α) :
+    (kvs.foldl (fun s (k, v) => s.insert (Hashed.of k) v) (Shards.empty : Shards (Hashed α) β)).get? (Hashed.of k)
+      = (kvs.foldl (fun m (k, v) => m.insert k v) ({} : Std.HashMap α β))[k]? := by
+  have h := Shards.get?_foldl (kvs.map fun (k, v) => (Hashed.of k, v)) (Hashed.of k)
+  simp only [List.foldl_map] at h
+  rw [h, Hashed.getElem?_foldl]
+
 /-- The key of a query's answer: the script and the observations of its
 model, which are every input of `solveScript` but its variables, which
 the script declares. -/
@@ -495,11 +528,13 @@ structure QueryCache where
 def QueryCache.new (store? : Option QueryStore := none) : IO QueryCache := do
   return { answers := ← (Shards.empty : Shards (Hashed QueryKey) _).mapM fun m => IO.mkRef m, store? }
 
-/-- The answer to `k`, if it was asked (`Shards.get?`). -/
+/-- The answer to `k`, if it was asked: as `Shards.get?`, on the
+reference of `k`'s map. -/
 def QueryCache.find? (c : QueryCache) (k : Hashed QueryKey) : BaseIO (Option (Outcome String × Bool)) :=
   return (← c.answers[answerShard k].get)[k]?
 
-/-- Keeps `a` as the answer to `k` (`Shards.insert`). -/
+/-- Keeps `a` as the answer to `k`: as `Shards.insert`, on the reference
+of `k`'s map, atomically. -/
 def QueryCache.insert (c : QueryCache) (k : Hashed QueryKey) (a : Outcome String × Bool) : BaseIO Unit :=
   c.answers[answerShard k].modify (·.insert k a)
 

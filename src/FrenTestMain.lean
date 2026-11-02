@@ -1361,9 +1361,9 @@ def ownSpecCaches : IO (Option String × Option String) := do
   return (dir?, verify?)
 
 /-- What `sharedSpec` runs on the `fren` binary's path, each in a process
-of its own: Fren's own requirements, with a query cache, and ui tests that
-fail checks (exit 1) and leave checks undecided (exit 3), under `check`
-and `quickcheck`. -/
+of its own: Fren's own requirements, with the query cache `cache`, and ui
+tests that fail checks (exit 1) and leave checks undecided (exit 3), under
+`check` and `quickcheck`. -/
 def sharedSpecCases (cache : String) : Array (List String) :=
   let ui := ["enumerated_collections", "enumerated_quantifiers", "contracts", "quantifier_facts"].map
     (s!"test/ui/checks/{·}.fren")
@@ -1378,38 +1378,82 @@ def persistentRun (args : List String) : IO (Array String) := do
   let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.run args (persist := true))
   return #[toString code, out]
 
+/-- Copies the files of the directory `src`, if there is one, into `dst`. -/
+def copyTree (src dst : FilePath) : IO Unit := do
+  unless ← src.isDir do return
+  for f in ← src.walkDir do
+    if ← f.isDir then continue
+    let rel := (f.toString.dropPrefix (src.toString ++ "/")).toString
+    let target := dst / rel
+    if let some p := target.parent then IO.FS.createDirAll p
+    IO.FS.writeBinFile target (← IO.FS.readBinFile f)
+
+/-- Whether a run's output says that a solver query reached its time
+limit, which a busier machine makes likelier (`Reqs/Cli#parallel-checking`). -/
+def timedOut (out : String) : Bool := out.contains "returned unknown (TIMEOUT)".toSlice
+
+/-- `out` without the lines of `--verify-query-cache`'s report
+(`fren: compared …`), which only a run that compares writes. -/
+def unverified (out : String) : String :=
+  "\n".intercalate ((out.splitOn "\n").filter (!·.startsWith "fren: compared "))
+
 /-- The `fren` binary's path through `check` and `quickcheck`, where the
 spec and what else the threads read is read once, marked persistent and
 shared by every thread (`FrenCli.inParallel`), gives the same output and
-exit code at `--jobs 4` as the path of the tests, unmarked, at `--jobs 1`
+exit code at `--jobs 4` as the path of the tests, unmarked
 (`Reqs/Cli#parallel-checking`). Each run of that path is a process of its
-own (`persistentRun`). Fren's own requirements are checked with a fresh
-query cache, which the run at `--jobs 4` fills and the one at `--jobs 1`
-answers from. -/
-def sharedSpec : IO (Array String) := do
+own (`persistentRun`). The tests' path is a run at `--jobs 1`, but for
+Fren's own requirements when `ownSpec` gives its own run, `own?`, at the
+default `--jobs`, without its lines about `--verify-query-cache`. Fren's
+own requirements are checked with a copy of `cache`, `ownSpec`'s query
+cache, if any, once `ownSpec` has filled it, so that their queries are
+answered from it rather than solved under load. A case whose runs differ
+while one of them reached a query's time limit is run again once, and if
+they still differ so, it is skipped, saying so on stdout, rather than
+failed: only a run that reached no time limit must give the same output
+at every `--jobs`. -/
+def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none) : IO (Array String) := do
   let root : FilePath := ".lake" / "shared-spec-test" / s!"{← IO.monoNanosNow}"
-  let mut failures := #[]
-  for case in sharedSpecCases root.toString do
-    let cmd :: rest := case | continue
-    let out ← IO.Process.output
-      { cmd := (← IO.appPath).toString, args := #["--job", "persistentRun", cmd, "--jobs", "4"] ++ rest.toArray }
-    let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
-    let (one, oneCode) ← runFren (cmd :: "--jobs" :: "1" :: rest)
-    let name := " ".intercalate (cmd :: (rest.filter (!·.startsWith "src/Reqs/")))
-    match (Json.parse last >>= fromJson? : Except String (Array String)) with
-    | .ok #[code, shared] =>
-      unless code == toString oneCode && shared == one do
-        failures := failures.push
-          s!"`fren {name}`: the binary's shared path at --jobs 4 (exit {code}) differs from --jobs 1 (exit {oneCode}):\n{shared}\n---\n{one}"
-    | _ => failures := failures.push s!"`fren {name}` on the binary's shared path crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"
-    unless out.stderr.isEmpty do
-      failures := failures.push s!"`fren {name}` on the binary's shared path wrote to stderr:\n{out.stderr}"
-  if ← root.pathExists then IO.FS.removeDirAll root
-  return failures
+  try
+    if let some dir := cache then copyTree dir (root / "cache")
+    let mut failures := #[]
+    let cases := sharedSpecCases (root / "cache").toString
+    for case in cases, k in [0:cases.size] do
+      let cmd :: rest := case | continue
+      let name := " ".intercalate (cmd :: (rest.filter (!·.startsWith "src/Reqs/")))
+      -- The first case is Fren's own requirements.
+      let reference : IO (String × UInt32) := match own?, k with
+        | some own, 0 => pure own
+        | _, _ => runFren (cmd :: "--jobs" :: "1" :: rest)
+      let compare : IO (Except String (Option String)) := do
+        let out ← IO.Process.output
+          { cmd := (← IO.appPath).toString, args := #["--job", "persistentRun", cmd, "--jobs", "4"] ++ rest.toArray }
+        let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+        let (one, oneCode) ← reference
+        unless out.stderr.isEmpty do
+          return .error s!"`fren {name}` on the binary's shared path wrote to stderr:\n{out.stderr}"
+        match (Json.parse last >>= fromJson? : Except String (Array String)) with
+        | .ok #[code, shared] =>
+          if code == toString oneCode && shared == one then return .ok none
+          let msg := s!"`fren {name}`: the binary's shared path at --jobs 4 (exit {code}) differs from the tests' path (exit {oneCode}):\n{shared}\n---\n{one}"
+          return if timedOut shared || timedOut one then .ok (some msg) else .error msg
+        | _ => return .error s!"`fren {name}` on the binary's shared path crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"
+      match ← compare with
+      | .ok none => pure ()
+      | .error msg => failures := failures.push msg
+      | .ok (some _) =>
+        match ← compare with
+        | .ok none => pure ()
+        | .error msg => failures := failures.push msg
+        | .ok (some msg) => IO.println s!"sharedSpec: skipped, since a query reached its time limit: {msg}"
+    return failures
+  finally
+    if ← root.pathExists then IO.FS.removeDirAll root
 
 /-- Fren's own requirements pass under the binary, and it checks every
-chapter that the Lean front end does; and Lean checks every chapter too
-(`hostedChecks`). -/
+chapter that the Lean front end does; Lean checks every chapter too
+(`hostedChecks`); and the binary's shared path agrees with the tests'
+(`sharedSpec`), with this job's query cache, once it is filled. -/
 def ownSpec : IO (Array String) := do
   let missing := (← hostedSpecFiles).filter (!ownSpecFiles.contains ·)
   let (queryCache?, verifyQueryCache?) ← ownSpecCaches
@@ -1437,6 +1481,7 @@ def ownSpec : IO (Array String) := do
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
     ++ compared
     ++ (← hostedChecks)
+    ++ (← sharedSpec queryCache? (some (unverified out, code)))
 
 /-- A message that Lake kept in a module's trace, `src/Reqs/M.lean:L:C: text`
 or `src/Reqs/M.lean:L:C: warning: text`, about a Markdown spec that the
@@ -3465,7 +3510,7 @@ def jobs : IO (Array (List String)) := do
   -- Every `n`th file, so that the slow ones spread over the batches.
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
-  return #[["ownSpec"], ["sharedSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
+  return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["panicGuard"]]
@@ -3501,7 +3546,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["ownSpec"] => ownSpec
-  | ["sharedSpec"] => sharedSpec
+  -- Run by `ownSpec` too, after it, with its query cache.
+  | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
   -- Spawned by `sharedSpec` only: what it marks is never freed.
   | "persistentRun" :: args => persistentRun args
   -- Not among `jobs`: on `main` only, after a build of `Reqs` with its

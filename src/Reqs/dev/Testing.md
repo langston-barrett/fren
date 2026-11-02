@@ -199,17 +199,28 @@ pub mod testing
   `ALL` ones crashed about one run in three while their solvers
   initialized and were freed at the same time; the linear ones take no
   lock (`FrenCli.Cvc5`).
-- **The binary's shared reading** (`lake test`, `sharedSpec`): only the
-  `fren` binary reads the spec once, marks it and what else the threads
-  read persistent, and shares it with every thread (`FrenCli.Args.persist`);
-  the other jobs call `check` and `quickcheck` within the test driver,
-  which gives each thread a reading of its own. So `sharedSpec` runs the
-  binary's path, each run in a process of its own, since what it marks is
-  never freed: `fren check` of Fren's own requirements, with a fresh query
-  cache, and `fren check` and `fren quickcheck` of ui tests that fail and
-  leave checks undecided, at `--jobs 4`. Each must give the same output
-  and exit status as the tests' path at `--jobs 1` (see [Parallel
-  checking](../Cli.md#parallel-checking)).
+- **The binary's shared reading** (`lake test`, `ownSpec`, which runs
+  `sharedSpec` after its own check): only the `fren` binary reads the spec
+  once, marks it and what else the threads read persistent, and shares it
+  with every thread (`FrenCli.Args.persist`); the other jobs call `check`
+  and `quickcheck` within the test driver, which gives each thread a
+  reading of its own. So `sharedSpec` runs the binary's path, each run in
+  a process of its own, since what it marks is never freed: `fren check`
+  of Fren's own requirements, and `fren check` and `fren quickcheck` of ui
+  tests that fail and leave checks undecided, at `--jobs 4`. Each must
+  give the same output and exit status as the tests' path (see [Parallel
+  checking](../Cli.md#parallel-checking)): for Fren's own requirements,
+  `ownSpec`'s own run, at the default `--jobs`, and for the ui tests, a
+  run at `--jobs 1`. Fren's own requirements are checked with a copy of
+  `ownSpec`'s [query cache](#query-cache), once that run has filled it, so
+  that their queries are answered from it rather than solved under load,
+  where one could reach its time limit; a case whose runs differ while
+  one of them reached a time limit is run again once, and skipped if they
+  still differ so. So the shared path's own-spec run is not independent of
+  the tests' path's solver answers: it answers from the cache that
+  `ownSpec`'s run filled, and a wrong answer that the solver gave there
+  would be given again. Only a difference in a query's script, which
+  changes its key, is solved anew, and the ui tests' runs share no cache.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
@@ -1104,9 +1115,9 @@ not set, and keeps no answers if it is empty. `FREN_VERIFY_QUERY_CACHE`, if
 set, is the directory to compare with (`--verify-query-cache`): the job
 fails if `fren check` compared no answers with it, unless it holds no
 entry of the current `queryCacheVersion` and cvc5, which no answer could
-be compared with. Only that job uses the cache, and the `queryCache` job
-tests the cache itself: the same output cold, in a fresh directory, as
-warm, a warm run that writes no entry, so that it answered every query
+be compared with. Only that job uses the cache, and `sharedSpec`, which it
+runs, a copy of it. The `queryCache` job tests the cache itself: the same
+output cold, in a fresh directory, as warm, a warm run that writes no entry, so that it answered every query
 from the cache, the same entries from two cold runs, a comparison that
 compares answers and finds no contradiction, one with entries whose
 answers are flipped that reports each as a contradiction with no

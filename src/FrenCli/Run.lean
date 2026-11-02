@@ -225,8 +225,8 @@ structure Args where
   /-- Whether `check` and `quickcheck` mark what their threads share
   `persistent`, which is then never freed: only the `fren` binary, whose
   process ends with the command, sets it (`run`), and the test job
-  `sharedSpec`, which runs that path once in a process of its own. Not an
-  option. -/
+  `sharedSpec`, which runs that path once in each process of its own. Not
+  an option. -/
   persist : Bool := false
 
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
