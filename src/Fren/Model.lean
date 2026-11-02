@@ -8,6 +8,7 @@ import FrenCore.Evidence
 import FrenCore.Lint
 import FrenCore.Names
 import FrenCore.Recursion
+import FrenCore.Str
 import FrenCore.SubsetTypes
 import Lean
 -- keep-sorted end
@@ -317,6 +318,27 @@ structure PredicateMemberInfo where
   memberGroups : Array (Core.MemberGroup Expr) := #[]
   deriving Inhabited
 
+/-- `file` relative to the directory `root`, if it is in it, and `file`
+otherwise (`testing::portable_name`). -/
+def portableName (root file : String) : String :=
+  if Str.startsWith file (root ++ "/") then Str.slice file (Str.len root + 1) (Str.len file - Str.len root - 1)
+  else file
+
+/-- The name of `file` that the environment keeps, in a definition's
+`source?`: relative to the directory that Lean runs in, so that a module's
+`.olean` names no directory of the worktree that built it, and is the same
+wherever it was built. Lake runs Lean in the directory that Lake was
+started in, which is the package's root for `lake build` run there; under
+`lake -d ROOT` started elsewhere, the names stay absolute
+(`Reqs/dev/Testing#shared-builds`). -/
+def keptFileName (file : String) : IO String :=
+  return portableName (← IO.currentDir).toString file
+
+/-- The name for messages of `kept`, a name that `keptFileName` gave: the
+current file's name if it names the current file, and `kept` otherwise. -/
+def shownFileName (kept current : String) : IO String :=
+  return if (← keptFileName current) == kept then current else kept
+
 /-- A defined function: the generated definition `decl`, which takes a
 parameter for each placeholder of `uses`, then its own parameters, and
 which the solver unfolds. -/
@@ -356,6 +378,7 @@ structure DefinedInfo where
   namedMembers : Array PredicateMemberInfo := #[]
   namedBranchGroups : Array (Core.BranchGroup Expr) := #[]
   namedMemberGroups : Array (Core.MemberGroup Expr) := #[]
+  /-- The file that declares it, named by `keptFileName`, and its text. -/
   source? : Option (String × FileMap) := none
   /-- It is a structural recursion (`lang::structural_recursion`): `solver?`
   is then its evaluable definition over the placeholders themselves;
@@ -469,6 +492,7 @@ structure PropInfo where
   memberGroups : Array (Core.MemberGroup Expr) := #[]
   evidenceOwner? : Option Name := none
   sourceRef : Bool := false
+  /-- The file that declares it, named by `keptFileName`, and its text. -/
   source? : Option (String × FileMap) := none
   /-- For a refinement claim (`refines`): its abstraction, the procedure
   whose realizability its checks rest on (`Reqs/Evidence`). -/

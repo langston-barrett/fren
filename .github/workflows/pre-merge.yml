@@ -56,7 +56,12 @@ jobs:
     # elaborated: shard 0 checks them with the binary), the links
     # from Fren's code to them, the examples and the binaries; warnings,
     # including inconclusive checks and untraced requirements, fail it.
-    - run: lake build --wfail
+    - run: touch "$RUNNER_TEMP/build-start" && lake build --wfail
+    # No output that the build wrote names the checkout's directory, so that
+    # another worktree can take it from Lake's artifact cache; the outputs
+    # that it did not write are `main`'s, checked by the build that wrote
+    # them (`Reqs/dev/Testing#shared-builds`).
+    - run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
     # Only once the build has passed: until then, the `.lake` may still hold
     # the `fren` of `main` that it was restored with. A stripped copy, with
     # the merge commit it was built from, which a probe must check out; the
@@ -65,6 +70,9 @@ jobs:
       run: |
         mkdir "$RUNNER_TEMP/artifact"
         cp .lake/build/bin/fren "$RUNNER_TEMP/artifact/fren"
+        # Lake's artifact cache links its outputs read-only, so the copy is
+        # too (`Reqs/dev/Testing#shared-builds`).
+        chmod u+w "$RUNNER_TEMP/artifact/fren"
         strip "$RUNNER_TEMP/artifact/fren"
         git rev-parse HEAD > "$RUNNER_TEMP/artifact/MERGE_SHA"
         git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"
@@ -109,6 +117,9 @@ jobs:
       run: |
         mkdir "$RUNNER_TEMP/artifact"
         cp .lake/build/bin/fren_test "$RUNNER_TEMP/artifact/fren_test"
+        # Lake's artifact cache links its outputs read-only, so the copy is
+        # too (`Reqs/dev/Testing#shared-builds`).
+        chmod u+w "$RUNNER_TEMP/artifact/fren_test"
         strip "$RUNNER_TEMP/artifact/fren_test"
         git rev-parse HEAD > "$RUNNER_TEMP/artifact/MERGE_SHA"
         git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"

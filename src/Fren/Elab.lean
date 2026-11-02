@@ -7551,7 +7551,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
         let r : Core.HofParamRecord :=
           { path, index := j, name := x, generic := !tps.isEmpty, level := ← lintLevel .needlessHigherOrder }
         modifyLocal fun l => { l with hofParams := l.hofParams.push (r, ref) }
-    let source? := some (← getFileName, ← getFileMap)
+    let source? := some (← keptFileName (← getFileName), ← getFileMap)
     record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
