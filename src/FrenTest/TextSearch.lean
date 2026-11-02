@@ -95,4 +95,18 @@ def agrees (seed : Nat) : Bool :=
   let (fs, marked) := randomQuery seed
   marked.contains "" && !needsExpansion marked fs
 
+/-- Every text of at most `n` characters of `alphabet`. -/
+def allTexts (alphabet : List Char) : Nat → List String
+  | 0 => [""]
+  | n + 1 => "" :: (allTexts alphabet n).flatMap fun t => alphabet.map (t.push ·)
+
+-- Exhaustively on small inputs: every text of at most 3 characters
+-- against every text of at most 5, over characters of one to four bytes,
+-- `é` and `è` sharing their lead byte. That covers the empty text, a text
+-- longer than the other, a match at the very end, overlaps and
+-- neighbouring multi-byte characters.
+#guard let alphabet := ['a', 'b', 'é', 'è', '€', '😀']
+  let haystacks := (allTexts alphabet 5).eraseDups
+  (allTexts alphabet 3).eraseDups.all fun t => haystacks.all fun s => Fren.Core.occursIn t s == splitHas s t
+
 end Fren.Test.TextSearch

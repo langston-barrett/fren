@@ -18,6 +18,10 @@ is `t`'s is compared in full. -/
 def occursFrom (s t : String) (m n i : Nat) (hm : m = t.utf8ByteSize) (hn : n = s.utf8ByteSize) : Bool :=
   if h : 0 < m ∧ i + m ≤ n then
     (s.getUTF8Byte ⟨i⟩ (by simp [String.Pos.Raw.lt_iff]; omega) == t.getUTF8Byte 0 (by simp [String.Pos.Raw.lt_iff]; omega)
+      -- Core Lean's native `memcmp` of the two strings' bytes: an internal
+      -- API, this module's one, which a toolchain bump may rename or
+      -- change. `FrenTest.TextSearch` checks `occursIn` against the old
+      -- `splitOn` search, and would catch a change in its meaning.
       && String.Slice.Pattern.Internal.memcmpStr s t ⟨i⟩ 0 ⟨m⟩
         (by simp [String.Pos.Raw.le_iff, String.Pos.Raw.offsetBy]; omega)
         (by simp [String.Pos.Raw.le_iff, String.Pos.Raw.offsetBy]; omega))

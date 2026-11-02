@@ -8127,28 +8127,6 @@ def State.instanceSites (s : State) : Array (Fren.Core.InstanceSite × Name × A
   Fren.Core.instanceSites s.genericUses (fun g => ((s.genericFns.find? g).map (·.params)).getD #[])
     fun g => (s.genericFns.find? g).bind fun gf => if gf.defined then none else some gf.file
 
-/-- A `State`, `st`, with what checking each of its items reads of it that
-is the same for every item (`FrenCli.solveComp`), built once for all of
-them (`State.forSolving`) rather than for each. Each field is, by its
-proof, what the `State` function of its name gives of `st`, so it cannot
-be another `State`'s, such as a mutant's. -/
-structure Solving where
-  st : State
-  appFuns : Std.HashMap String (Bool × Contract)
-  contractFns : Std.HashMap String Name
-  recursiveSyms : Std.HashMap String Name
-  instanceSites : Array (Fren.Core.InstanceSite × Name × Array Ty)
-  appFuns_eq : appFuns = st.appFuns
-  contractFns_eq : contractFns = st.contractFns
-  recursiveSyms_eq : recursiveSyms = st.recursiveSyms
-  instanceSites_eq : instanceSites = st.instanceSites
-
-/-- `s`, with its maps for checking its items, each computed once. -/
-def State.forSolving (s : State) : Solving :=
-  { st := s, appFuns := s.appFuns, contractFns := s.contractFns, recursiveSyms := s.recursiveSyms
-    instanceSites := s.instanceSites, appFuns_eq := rfl, contractFns_eq := rfl, recursiveSyms_eq := rfl
-    instanceSites_eq := rfl }
-
 /-- The whole prelude, as one script. -/
 def State.preludeText (s : State) : String := String.join (s.prelude.toList.map (·.text))
 

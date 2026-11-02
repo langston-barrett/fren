@@ -729,17 +729,18 @@ def symbolsOf (spec? : Except String Eval.Spec) : Symbols :=
 each model confirmed by the evaluator's `spec?` (`Reqs/Eval#confirming-models`);
 the results that a refuted model is about, with their internal errors; and
 an internal error if the evaluator has no counterpart of `c`. `sv` is the
-spec's `State`, `sv.st`, with what checking each item reads of it,
-built once for every item rather than for each (`State.forSolving`).
-`sy` is `symbolsOf spec?`, built once for the spec. `prelude` is
-`sv.st`'s, indexed (`State.queryPrelude`), and `cache` holds the answers
-to the queries asked before (`QueryCache`). -/
-partial def solveComp (sv : Solving) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
+spec's `State`, `sv.st`, with what checking each item reads of it, its
+prelude, indexed, among it, built once for every item rather than for
+each (`State.forSolving`). `sy` is `symbolsOf spec?`, built once for the
+spec, and `cache` holds the answers to the queries asked before
+(`QueryCache`). -/
+partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
     (examples : Option Nat := some 1) (instances : Bool := true) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   let st := sv.st
+  let prelude := sv.prelude
   -- The functions whose contracts each check's queries apply, recorded by
   -- the backend, and taken by `checkComp` after each check
   -- (`Fren.Core.withApplies`).
@@ -777,7 +778,7 @@ partial def solveComp (sv : Solving) (prelude : Prelude) (spec? : Except String 
   -- type parameters' sorts, `r`'s, does not pass: its realizability check.
   let atInstance (f : Lean.Name) (targs : Array Fren.Core.Ty) : IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg)) := do
     let some (_, ic) := ((st.instContracts.find? f).getD #[]).find? (·.1 == targs) | return (#[], #[])
-    let (rs, ref, _) ← solveComp sv prelude spec? sy ic global #[.realizable] limits cache dump? body examples false
+    let (rs, ref, _) ← solveComp sv spec? sy ic global #[.realizable] limits cache dump? body examples false
     return (rs.filter (·.kind == .realizable), ref)
   let mut results := results
   let mut refuted := refuted
@@ -800,7 +801,7 @@ partial def solveComp (sv : Solving) (prelude : Prelude) (spec? : Except String 
   for (site, f, targs) in sv.instanceSites do
     unless site == .item c.file key do continue
     let some b := st.bodies.find? fun b => b.fn? == some f && b.generic | continue
-    let (rs, _, _) ← solveComp sv prelude spec? sy b false #[.realizable] limits cache dump? true examples false
+    let (rs, _, _) ← solveComp sv spec? sy b false #[.realizable] limits cache dump? true examples false
     unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue
     let (rs, ref) ← atInstance f targs
     results := results ++ rs.map fun r => { r with clashes := #[] }
@@ -923,11 +924,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- Each procedure and global expectation,
   -- with the checks that run on it.
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.body, t.key)
-  let prelude := st.queryPrelude
   -- What checking each item reads of `st` that is the same for every
   -- item, such as where the contracts of instances of generic functions
   -- are checked (`lang::instance_site`): built once for all of them.
   let sv := st.forSolving
+  let prelude := sv.prelude
   -- A query asked again, as some checks of a procedure share one, is
   -- answered once (`Reqs/Cli#solver-queries`), and one asked by an earlier
   -- run, from `--query-cache` (`Reqs/Cli#query-cache`).
@@ -968,7 +969,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         dumped.modify (· ++ s!"; {c.path}: query {k}\n{script}(check-sat)\n(reset)\n\n")
       else none
     let start ← IO.monoNanosNow
-    let r ← solveComp sv prelude spec? sy c global kinds args.limits cache dump? body args.examples
+    let r ← solveComp sv spec? sy c global kinds args.limits cache dump? body args.examples
     let solved ← IO.monoNanosNow
     -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
     let tested? := if !(c.tested.minus c.enumerated).any then none else match spec? with
@@ -1699,14 +1700,14 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   -- as its assumptions' consistency, is often one of the spec's
   -- (`Reqs/Cli#solver-queries`).
   let cache ← QueryCache.new
-  let prelude := st.queryPrelude
   let sv := st.forSolving
+  let prelude := sv.prelude
   -- As `fren check` checks `c`: with the solver, and the checks set to
   -- testing by testing; with the internal errors, each at its place in `c`.
-  let solve (sv : Solving) (prelude : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+  let solve (sv : Solving) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
     -- A procedure's checks share the symbols of its spec.
-    let (rs, refuted, missing?) ← solveComp sv prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
+    let (rs, refuted, missing?) ← solveComp sv spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
       (examples := args.examples)
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds) else #[]
     let errors := refuted.map fun (r, msg) =>
@@ -1788,10 +1789,10 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
       let preludeText' := st'.preludeText
-      -- The mutant's maps for checking (`State.forSolving`) and prelude, built
-      -- once for all of its items.
+      -- The mutant's maps and prelude for checking (`State.forSolving`),
+      -- built once for all of its items.
       let (killers₁, inconclusive₁) ← if args.checker.solves then
-          killedBy solved st' preludeText' (solve sv prelude spec?) (solve st'.forSolving st'.queryPrelude spec'?) onMutant
+          killedBy solved st' preludeText' (solve sv spec?) (solve st'.forSolving spec'?) onMutant
         else pure (#[], false)
       let (killers₂, inconclusive₂) ← if args.checker.tests then killedBy tested st' preludeText' (test spec?) (test spec'?) onMutant
         else pure (#[], false)

@@ -72,29 +72,6 @@ def charRunList (p : String → Bool) : List Char → Nat
   | [] => 0
   | c :: cs => if p (String.ofList [c]) then charRunList p cs + 1 else 0
 
-theorem _root_.Fren.Str.at_eq_drop (s : String) (i : Nat) :
-    Fren.Str.at s i = (match s.toList.drop i with | [] => "" | c :: _ => String.ofList [c]) := by
-  simp only [Fren.Str.at, Fren.Str.slice]
-  have hl := String.length_toList (s := s)
-  cases h : s.toList.drop i with
-  | nil =>
-    have : s.toList.length ≤ i := List.drop_eq_nil_iff.mp h
-    rw [if_neg (by omega)]
-  | cons c cs =>
-    have : i < s.toList.length := by
-      have := congrArg List.length h; simp at this; omega
-    rw [if_pos (by omega)]
-    simp [h]
-
-/-- The rest of `s` from `a + b + c`, as `splitLine` slices it. -/
-theorem _root_.Fren.Str.slice_rest (s : String) (a b c : Nat) :
-    Fren.Str.slice s ((a : Int) + b + c) ((s.length : Int) - a - b - c) = String.ofList (s.toList.drop (a + b + c)) := by
-  simp only [Fren.Str.slice]
-  have hl := String.length_toList (s := s)
-  split
-  · rw [show (((a : Int) + b + c).toNat) = a + b + c by omega, List.take_of_length_le (by simp; omega)]
-  · rw [List.drop_eq_nil_of_le (by omega)]
-
 theorem charRun_eq_list (p : String → Bool) (s : String) (i : Nat) :
     charRun p s i = charRunList p (s.toList.drop i) := by
   have hl := String.length_toList (s := s)
@@ -113,8 +90,7 @@ theorem charRun_eq_list (p : String → Bool) (s : String) (i : Nat) :
       | cons c cs => exact ⟨c, cs, rfl⟩
     have h1 : s.toList.drop (i + 1) = cs := by
       rw [← List.drop_drop, h]; rfl
-    rw [charRun, h, charRunList, Fren.Str.at_eq_drop, h, ← h1, ← ih (i + 1) (by omega)]
-    simp only
+    rw [charRun, h, charRunList, Fren.Str.at_eq_drop, h, Fren.Str.firstOf, ← h1, ← ih (i + 1) (by omega)]
     by_cases hp : p (String.ofList [c]) = true
     · rw [if_pos ⟨by omega, hp⟩, if_pos hp]
     · rw [if_neg (fun h => hp h.2), if_neg hp]
@@ -123,7 +99,7 @@ theorem charRun_eq_list (p : String → Bool) (s : String) (i : Nat) :
 def splitLineImpl (line : String) : LineParts :=
   let cs := line.toList
   let indent := charRunList (· == " ") cs
-  let c := match cs.drop indent with | [] => "" | c :: _ => String.ofList [c]
+  let c := Fren.Str.firstOf (cs.drop indent)
   let marker := if c = "`" ∨ c = "~" then c else ""
   let run := if marker = "" then 0 else charRunList (· == marker) (cs.drop indent)
   let lead := charRunList isBlank (cs.drop (indent + run))
