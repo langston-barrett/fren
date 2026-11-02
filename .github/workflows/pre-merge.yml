@@ -150,6 +150,15 @@ jobs:
       env:
         SHARD: ${{ matrix.shard }}
         FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
+  # The book, with the page of the rules that shard 0's test driver writes
+  # (`book.yml`), on a pull request only, which has that artifact. It shows
+  # on the pull request as `book / book`, and is no part of `pre-merge`.
+  book:
+    needs: test
+    if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+    uses: ./.github/workflows/book.yml
+    with:
+      artifact: fren_test-${{ github.event.pull_request.head.sha }}
   pre-merge:
     needs: [build, test]
     if: ${{ !cancelled() }}

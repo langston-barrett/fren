@@ -121,6 +121,24 @@ jobs:
       with:
         sha: ${{ github.sha }}
     - run: lake build fren_test
+    # The test driver, stripped, from which `book` writes the page of the
+    # rules (`book.yml`).
+    - if: ${{ matrix.shard == 0 }}
+      run: |
+        mkdir "$RUNNER_TEMP/artifact"
+        cp .lake/build/bin/fren_test "$RUNNER_TEMP/artifact/fren_test"
+        # Lake's artifact cache links its outputs read-only, so the copy is
+        # too (`Reqs/dev/Testing#shared-builds`).
+        chmod u+w "$RUNNER_TEMP/artifact/fren_test"
+        strip "$RUNNER_TEMP/artifact/fren_test"
+    - if: ${{ matrix.shard == 0 }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: fren_test-${{ github.sha }}
+        path: ${{ runner.temp }}/artifact
+        if-no-files-found: error
+        retention-days: 3
+        overwrite: true
     # Shard 0 asks every query of Fren's own requirements of the solver,
     # with an empty query cache, and compares each answer with the one that
     # the previous `main`'s run kept: a contradiction fails it, and so does
@@ -168,6 +186,14 @@ jobs:
       with:
         path: ${{ runner.temp }}/query-cache
         key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+  # The book, with the page of the rules that shard 0's test driver writes
+  # (`book.yml`).
+  book:
+    needs: test
+    if: ${{ !inputs.fuzz-only && !cancelled() }}
+    uses: ./.github/workflows/book.yml
+    with:
+      artifact: fren_test-${{ github.sha }}
   # Fren's own requirements checked in Lean, which `lake build` only
   # elaborates: built with their checks (`-Kcheck_reqs`), where a failing or
   # inconclusive check fails `--wfail`, and Lean's messages compared with

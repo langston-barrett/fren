@@ -1,23 +1,24 @@
 name: book
 # Builds the reference manual (`book.toml`) with mdBook and mdbook-spec, which
 # renders rule identifiers as anchors (`Reqs/dev/Style#rule-identifiers`), and
-# fails if the build does. It publishes nothing. The test driver, built first,
-# writes the report of the rules and their requirements, a page of the book
-# (`scripts/rules_report.py`).
+# fails if the build does. It publishes nothing. The page of the rules and
+# their requirements is written by the test driver that the calling workflow
+# built in the same run and uploaded as the artifact `artifact`
+# (`scripts/rules_report.py`), so that this job builds no Lean: `pre-merge`
+# calls it on each pull request, and `lean ci` on each push to `main`.
+#
+# It has no `concurrency` of its own: a called workflow's group would be
+# named after its caller and take the caller's own group.
 on:
-  push:
-    branches:
-    - main
-  pull_request:
-  merge_group:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      artifact:
+        description: The artifact that holds the test driver, `fren_test`.
+        type: string
+        required: true
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 env:
   MDBOOK_VERSION: v0.5.4
@@ -28,19 +29,19 @@ env:
 jobs:
   book:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
-    # The parent too, whose `.lake` to start from, as in `pre-merge`.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-        fetch-depth: 2
-    - id: base
-      run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
-    - uses: ./.github/actions/lake
+    # The stripped test driver of the caller's run, which links only to the
+    # system's libraries, so it runs here without Lean.
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
-        sha: ${{ steps.base.outputs.sha }}
-    - run: lake build fren_test
+        name: ${{ inputs.artifact }}
+        path: ${{ runner.temp }}/fren_test
+    # An artifact keeps no executable bit.
+    - run: chmod +x "$RUNNER_TEMP/fren_test/fren_test"
     - name: Install mdBook
       run: | # zizmor: ignore[github-env]
         set -euo pipefail
@@ -92,6 +93,8 @@ jobs:
     # checkout (`SPEC_RUST_ROOT`), so the job fails on its summary line
     # instead.
     - name: Build the book
+      env:
+        FREN_TEST: ${{ runner.temp }}/fren_test/fren_test
       run: |
         set -euo pipefail
         export PATH="${HOME}/.cargo-mdbook-spec/bin:${PATH}"
