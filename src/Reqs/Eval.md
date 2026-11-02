@@ -196,7 +196,13 @@ quantifiers, `match`es and the definitions read through
 known outcome under an approximation is the recursion's own, and running
 out only leaves a value unknown, which the test then neither refutes nor
 reaches a check by (see below). Fren's evaluator has `2^20` units of fuel
-(`evalFuel`), far more than any evaluation needs.
+(`evalFuel`), far more than any evaluation needs. It also bounds how deeply
+it nests between two steps (`evalDepth`, `2^20`), only to be total: between
+two steps, evaluation nests no deeper than the expression, the definitions
+that it reads and the newtypes that it checks are nested, and no spec comes
+near the bound. That rests on source size and is not tested. Past any depth
+that a source reaches, the evaluator's native stack overflows before the
+bound, so evaluation crashes rather than leave a value unknown.
 
 ## Searching for behaviours
 
