@@ -1,27 +1,27 @@
 warning[F0798]: this comparison is always `true`
- --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:5:42
+ --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:6:15
   |
-5 | proc c(x: Int): (a?, b?, c?) { out a? := x.abs >= 0 out b? := -1 > x.abs out c? := x.abs > 0 }
-  |                                          ^^^^^^^^^^ `abs` is never below 0
+6 |     out a? := x.abs >= 0
+  |               ^^^^^^^^^^ `abs` is never below 0
   |
   = note: the bound or the operator is probably not the one meant
   = note: `invalid_upcast_comparisons` is set to `warn`
 
 warning[F0798]: this comparison is always `false`
- --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:5:63
+ --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:7:15
   |
-5 | proc c(x: Int): (a?, b?, c?) { out a? := x.abs >= 0 out b? := -1 > x.abs out c? := x.abs > 0 }
-  |                                                               ^^^^^^^^^^ `abs` is never below 0
+7 |     out b? := -1 > x.abs
+  |               ^^^^^^^^^^ `abs` is never below 0
   |
   = note: the bound or the operator is probably not the one meant
 
 warning[F0798]: this comparison is always `false`
- --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:8:44
-  |
-8 | proc d(s: String): (p?) { ensure r: p? iff s.index_of("a", 0) < -1 }
-  |                                            ^^^^^^^^^^^^^^^^^^^^^^^ `index_of` is never below -1
-  |
-  = note: the bound or the operator is probably not the one meant
+  --> test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren:12:44
+   |
+12 | proc d(s: String): (p?) { ensure r: p? iff s.index_of("a", 0) < -1 }
+   |                                            ^^^^^^^^^^^^^^^^^^^^^^^ `index_of` is never below -1
+   |
+   = note: the bound or the operator is probably not the one meant
 
 fren: 3 passed, 0 failed, 0 inconclusive, 0 redundant
 

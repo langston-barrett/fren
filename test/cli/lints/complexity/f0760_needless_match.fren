@@ -1,6 +1,12 @@
 -- `needless_match`.
 pub enum Shape { Dot, Circle(Int) }
 pub proc c(s: Shape): (t: Shape, u: Shape) {
-    ensure r: t = match s { Shape::Dot => Shape::Dot, Shape::Circle(r) => Shape::Circle(r) }
-    ensure q: u = match s { Shape::Circle(r) => Shape::Circle(r), _ => s }
+    ensure r: t = match s {
+        Shape::Dot => Shape::Dot,
+        Shape::Circle(r) => Shape::Circle(r),
+    }
+    ensure q: u = match s {
+        Shape::Circle(r) => Shape::Circle(r),
+        _ => s,
+    }
 }

@@ -5,5 +5,8 @@ set_option fren.lint.min_ident_chars "warn"
 enum Shape { Circle(Int), Dot }
 
 proc area(s: Shape): (n: Int) {
-    ensure rule: n = match s { Shape::Circle(r) => r, Shape::Dot => 0 }
+    ensure rule: n = match s {
+        Shape::Circle(r) => r,
+        Shape::Dot => 0,
+    }
 }

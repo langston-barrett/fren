@@ -1,4 +1,7 @@
 -- `erasing_op`, which has no fix.
 enum E { A, B }
 
-proc c(x: Int, r: Rel<E, E>): (y: Int, p?) { ensure r1: y = 0 * x + 1 ensure r2: p? iff r inter {} = r }
+proc c(x: Int, r: Rel<E, E>): (y: Int, p?) {
+    ensure r1: y = 0 * x + 1
+    ensure r2: p? iff r inter {} = r
+}

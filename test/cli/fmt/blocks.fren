@@ -110,3 +110,32 @@ set_option fren.evidence "enumerated" in
 proc after_option(m: Mode): (on?) {
     ensure r: on? iff m = Mode::Heat
 }
+
+-- A block's `{` on the line after the signature goes back onto it (`fmt::line_break`), unless a line
+-- comment ends the signature's line.
+pub proc brace_line(m: Mode): (on?)
+{
+    ensure r: on? iff m = Mode::Heat
+}
+
+pub proc brace_line_two(m: Mode): (on?, off?)
+{
+    ensure r: on? iff m = Mode::Heat
+    ensure s: off? iff not on?
+}
+
+pub fn brace_line_function(x: Int): (r: Int)
+{ out r := x + 1 }
+
+expect brace_line_expectation(m: Mode)
+{
+    expect a: m is Mode::Heat | Mode::Cool
+}
+
+pub proc brace_line_empty()
+{}
+
+pub proc brace_after_comment(m: Mode): (on?)  -- the signature
+{
+    ensure r: on? iff m = Mode::Heat
+}

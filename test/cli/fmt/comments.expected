@@ -1,0 +1,24 @@
+--- test/cli/fmt/comments.fren
++++ test/cli/fmt/comments.fren
+@@ -8 +8,2 @@
+-    /- lead -/ x: Int, y: Int,
++    /- lead -/ x: Int,
++    y: Int,
+@@ -12 +13,2 @@
+-        /- lead -/ x, y,
++        /- lead -/ x,
++        y,
+@@ -17 +19,2 @@
+-        /- lead -/ y, /- after the comma -/ x,
++        /- lead -/ y, /- after the comma -/
++        x,
+@@ -26,3 +29 @@
+-    call e := sub(/- after -/
+-        x, y,
+-    )
++    call e := sub( /- after -/ x, y)
+@@ -32 +33,2 @@
+-        /- lead -/ 0 => 1, _ => 2,
++        /- lead -/ 0 => 1,
++        _ => 2,
+exit=1

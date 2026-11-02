@@ -929,7 +929,7 @@ def fmtIgnore : List String :=
   ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
    "test/cli/fmt/chain_error.fren", "test/cli/fmt/quantifier.fren", "test/cli/fmt/quantifier_error.fren", "test/cli/fmt/quantifier_unbounded.fren",
    "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
-   "test/cli/fmt/cover.fren", "test/cli/fmt/blocks.fren",
+   "test/cli/fmt/cover.fren", "test/cli/fmt/blocks.fren", "test/cli/fmt/comments.fren",
    "test/cli/fmt/generics.fren", "test/cli/fmt/generic_functions.fren", "test/cli/fmt/closures.fren",
    "test/cli/fmt/newtypes.fren",
    "test/cli/fmt/table.fren", "test/cli/fmt/subset_types.fren", "test/cli/fmt/subset_shorthand.fren",
@@ -960,62 +960,7 @@ formatting them means updating those too. They are formatted a group at a
 time, each only where the new layout reads better than the old, and this
 list is then removed (#509). -/
 def fmtPending : List String :=
-  ["test/cli/commands/counterexample_newtype.fren", "test/cli/lints/complexity/f0712_cardinality.fren",
-   "test/cli/lints/complexity/f0717_singleton.fren", "test/cli/lints/complexity/f0719_constant_output.fren",
-   "test/cli/lints/complexity/f0730_double_comparison.fren", "test/cli/lints/complexity/f0732_manual_method.fren",
-   "test/cli/lints/complexity/f0733_else_extends.fren", "test/cli/lints/complexity/f0734_identity_op.fren",
-   "test/cli/lints/complexity/f0739_double_parens.fren", "test/cli/lints/complexity/f0741_int_plus_one.fren",
-   "test/cli/lints/complexity/f0743_redundant_method_chain.fren", "test/cli/lints/complexity/f0747_trivial_match.fren",
-   "test/cli/lints/complexity/f0753_redundant_slicing.fren",
-   "test/cli/lints/complexity/f0758_zero_prefixed_literal.fren", "test/cli/lints/complexity/f0760_needless_match.fren",
-   "test/cli/lints/complexity/f0767_redundant_comparisons.fren",
-   "test/cli/lints/complexity/f0790_unnecessary_struct_initialization.fren",
-   "test/cli/lints/complexity/f0806_trivial_guard.fren", "test/cli/lints/complexity/f0807_redundant_guards.fren",
-   "test/cli/lints/complexity/f0811_manual_abs.fren", "test/cli/lints/complexity/f0812_manual_abs_diff.fren",
-   "test/cli/lints/complexity/f0813_manual_min_max.fren", "test/cli/lints/complexity/f0814_manual_clamp.fren",
-   "test/cli/lints/complexity/f0815_manual_rem_euclid.fren", "test/cli/lints/complexity/f0819_needless_update.fren",
-   "test/cli/lints/complexity/f0827_trivial_quantifier.fren",
-   "test/cli/lints/complexity/f0833_manual_range_patterns.fren",
-   "test/cli/lints/complexity/f0834_wildcard_in_or_patterns.fren", "test/cli/lints/complexity/f0842_untyped.fren",
-   "test/cli/lints/decidability/f0714_quantified_generic.fren", "test/cli/lints/pedantic/f0718_chain.fren",
-   "test/cli/lints/pedantic/f0720_definable.fren", "test/cli/lints/pedantic/f0725_match_same_arms.fren",
-   "test/cli/lints/pedantic/f0728_wildcard_single_variant.fren", "test/cli/lints/pedantic/f0731_bool_equality.fren",
-   "test/cli/lints/pedantic/f0771_single_match_else.fren",
-   "test/cli/lints/pedantic/f0772_inconsistent_struct_constructor.fren",
-   "test/cli/lints/pedantic/f0789_zero_sized_map_values.fren",
-   "test/cli/lints/pedantic/f0795_many_single_char_names.fren", "test/cli/lints/pedantic/f0796_similar_names.fren",
-   "test/cli/lints/pedantic/f0798_invalid_upcast_comparisons.fren",
-   "test/cli/lints/pedantic/f0809_match_could_be_table.fren",
-   "test/cli/lints/pedantic/f0823_needless_higher_order.fren",
-   "test/cli/lints/pedantic/f0836_unnested_or_patterns.fren", "test/cli/lints/pedantic/f0837_match_bool.fren",
-   "test/cli/lints/pedantic/f0838_manual_table.fren", "test/cli/lints/restriction/f0781_wildcard_enum_match_arm.fren",
-   "test/cli/lints/restriction/f0785_min_ident_chars.fren", "test/cli/lints/restriction/f0788_single_call_fn.fren",
-   "test/cli/lints/restriction/f0822_redundant_type_annotations.fren",
-   "test/cli/lints/settings/group_flag_forbidden.fren", "test/cli/lints/settings/lint_deny.fren",
-   "test/cli/lints/style/f0702_glob.fren", "test/cli/lints/style/f0715_length_zero.fren",
-   "test/cli/lints/style/f0716_card_zero.fren", "test/cli/lints/style/f0726_match_like_membership.fren",
-   "test/cli/lints/style/f0735_redundant_bindings_update.fren", "test/cli/lints/style/f0740_double_neg.fren",
-   "test/cli/lints/style/f0742_neg_multiply.fren", "test/cli/lints/style/f0744_trivial_pattern.fren",
-   "test/cli/lints/style/f0746_redundant_bool_type.fren", "test/cli/lints/style/f0748_module_inception.fren",
-   "test/cli/lints/style/f0751_just_underscores_and_digits.fren", "test/cli/lints/style/f0752_disallowed_names.fren",
-   "test/cli/lints/style/f0756_manual_pattern_char_comparison.fren", "test/cli/lints/style/f0802_is_equality.fren",
-   "test/cli/lints/style/f0804_chainable_comparison.fren", "test/cli/lints/style/f0805_manual_pattern_test.fren",
-   "test/cli/lints/style/f0808_match_arm_if_else.fren", "test/cli/lints/style/f0818_manual_record_update.fren",
-   "test/cli/lints/style/f0821_redundant_closure.fren", "test/cli/lints/style/f0824_let_and_return.fren",
-   "test/cli/lints/style/f0826_manual_forall.fren", "test/cli/lints/style/f0832_collapsible_match.fren",
-   "test/cli/lints/style/f0835_match_overlapping_arm.fren", "test/cli/lints/suspicious/f0721_index_after_use.fren",
-   "test/cli/lints/suspicious/f0736_eq_op.fren", "test/cli/lints/suspicious/f0736_eq_op_cardinality.fren",
-   "test/cli/lints/suspicious/f0737_same_branches.fren", "test/cli/lints/suspicious/f0738_duplicate_elements.fren",
-   "test/cli/lints/suspicious/f0745_empty_argument.fren", "test/cli/lints/suspicious/f0754_no_effect_replace.fren",
-   "test/cli/lints/suspicious/f0755_const_is_empty.fren", "test/cli/lints/suspicious/f0757_almost_complete_range.fren",
-   "test/cli/lints/suspicious/f0763_absurd_extreme_comparisons.fren", "test/cli/lints/suspicious/f0764_erasing_op.fren",
-   "test/cli/lints/suspicious/f0765_ifs_same_cond.fren", "test/cli/lints/suspicious/f0768_duplicate_constraint.fren",
-   "test/cli/lints/suspicious/f0769_invisible_characters.fren",
-   "test/cli/lints/suspicious/f0770_negative_position.fren", "test/cli/lints/suspicious/f0793_unrelated_binders.fren",
-   "test/cli/lints/suspicious/f0794_literal_dot_in_pattern.fren", "test/cli/lints/suspicious/f0803_irrefutable_is.fren",
-   "test/cli/lints/suspicious/f0816_modulo_one.fren", "test/cli/lints/suspicious/f0817_min_max.fren",
-   "test/cli/lints/suspicious/f0825_redundant_locals.fren", "test/cli/lints/unused/f0701_unused.fren",
-   "test/cli/lints/unused/f0791_unused_lint_setting.fren", "test/cli/lints/unused/f0792_unused_assumption.fren",
+  ["test/cli/commands/counterexample_newtype.fren",
    "test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
    "test/ui/checks/simp_recursion_depth.fren", "test/ui/checks/subset_obligations.fren",
    "test/ui/lang/bool_members.fren", "test/ui/lang/cardinality.fren",
@@ -1268,6 +1213,16 @@ def relaid (src : String) (seed : Nat) : Option String := do
   let mut edits : Array (Nat × Nat × String) := #[]
   let mut seen : Std.HashSet Nat := {}
   for b in lay.bracketed do
+    -- The gap before a block's `{`.
+    if b.kind == .members && b.opening > 0 then
+      let start := toks[b.opening - 1]!.span.stop
+      let stop := toks[b.opening]!.span.start
+      let between := chars.extract start stop
+      if !seen.contains start && between.all Char.isWhitespace && between.count '\n' ≤ 1
+          && !commented.contains lineOf[start]! && !commented.contains lineOf[stop]! then
+        seen := seen.insert start
+        rng := (rng * 1103515245 + 12345) % 2147483648
+        edits := edits.push (start, stop, if (rng / 65536) % 2 == 0 then "\n" else " ")
     if b.closing == b.opening + 1 then continue
     let mut gaps := #[(b.lead, b.lead + 1), (b.closing - 1, b.closing)]
     if b.lead != b.opening then gaps := gaps.push (b.opening, b.opening + 1)

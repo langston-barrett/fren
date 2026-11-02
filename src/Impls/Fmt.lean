@@ -192,6 +192,30 @@ impl continued: fmt::continued for (o : Option Nat) (xs : List Nat) {
   intro o xs _
   rcases o with _ | i <;> simp [fren_spec, FrenCli.Fmt.continuedLine, has_toIndices]
 
+def toGap : FrenCli.Fmt.Role → fmt.Gap
+  | .afterOpen => .AfterOpen
+  | .afterComma => .AfterComma
+  | .beforeClose => .BeforeClose
+  | .joined => .UpdatedRecord
+  | .blockBrace => .BlockBrace
+
+impl line_break: fmt::line_break for (r : FrenCli.Fmt.Role) (v f : Bool) {
+  gap := toGap r,
+  vertical? := v,
+  forced? := f,
+  break? := FrenCli.Fmt.lineBreak r v f,
+} by
+  intro r v f _
+  cases r <;> cases v <;> cases f <;> simp [fren_spec, FrenCli.Fmt.lineBreak, toGap]
+
+impl break_before: fmt::break_before for (n : Nat) (s : Bool) {
+  comments := n,
+  starts_line? := s,
+  before := FrenCli.Fmt.breakBefore n s,
+} by
+  intro n s _
+  cases s <;> simp [fren_spec, FrenCli.Fmt.breakBefore]
+
 theorem only_closing_toFollowers (fs : List Follower) :
     fmt.«only_closing?» (toFollowers fs) = FrenCli.Fmt.onlyClosing fs := by
   induction fs with

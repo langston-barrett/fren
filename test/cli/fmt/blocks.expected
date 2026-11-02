@@ -101,4 +101,28 @@
 -    ensure r: on? iff m = Mode::Heat
 -}
 +proc after_option(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+@@ -116,4 +126 @@
+-pub proc brace_line(m: Mode): (on?)
+-{
+-    ensure r: on? iff m = Mode::Heat
+-}
++pub proc brace_line(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+@@ -121,2 +128 @@
+-pub proc brace_line_two(m: Mode): (on?, off?)
+-{
++pub proc brace_line_two(m: Mode): (on?, off?) {
+@@ -127,2 +133 @@
+-pub fn brace_line_function(x: Int): (r: Int)
+-{ out r := x + 1 }
++pub fn brace_line_function(x: Int): (r: Int) { out r := x + 1 }
+@@ -130,4 +135 @@
+-expect brace_line_expectation(m: Mode)
+-{
+-    expect a: m is Mode::Heat | Mode::Cool
+-}
++expect brace_line_expectation(m: Mode) { expect a: m is Mode::Heat | Mode::Cool }
+@@ -135,2 +137 @@
+-pub proc brace_line_empty()
+-{}
++pub proc brace_line_empty() {}
 exit=1

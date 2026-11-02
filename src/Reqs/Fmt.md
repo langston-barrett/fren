@@ -84,8 +84,9 @@ what it keeps. A file's *content* is what formatting keeps of it:
   keeps it;
 - where it has [blank lines](#blank-lines) that formatting keeps;
 - for now, its line breaks but those that a [list or block](#lists-and-blocks)
-  decides, such as those between the members of a procedure, a line break
-  before a [comma](#commas-and-comments) counting as one after it.
+  decides, such as those between the members of a procedure and the one
+  before a block's `{`, a line break before a
+  [comma](#commas-and-comments) counting as one after it.
 
 `fmt::format` is what `fren fmt` writes for a file that parses. It writes
 `fmt::render` of the file's content, whatever the file's layout: its line
@@ -147,13 +148,14 @@ that checks formatting, which also checks `fmt::layout_free`. A claim
 names a procedure, and `fmt::layout_free` is an expectation, so its trust
 is recorded only here, as that of `fmt::safe`. The job formats every spec
 in the repository, and each laid out again at random, twice. Laying out
-again changes the line breaks of lists and their trailing commas, the side
-of a comma that a line break or a line comment is on, the spaces between
-tokens and the indentation of lines. Other than moving a comma past a line
-comment, which keeps the comment's column, it leaves alone the lines with
-comments, and it leaves alone the gaps with blank lines and the gaps
-between two tokens with no space, where a space could change what the
-parser reads, as in `f(x)`. It changes no part of a file's content. The
+again changes the line breaks of lists and blocks, the one before a
+block's `{` included, and their trailing commas, the side of a comma that
+a line break or a line comment is on, the spaces between tokens and the
+indentation of lines. Other than moving a comma past a line comment,
+which keeps the comment's column, it leaves alone the lines with comments,
+and it leaves alone the gaps with blank lines and the gaps between two
+tokens with no space, where a space could change what the parser reads,
+as in `f(x)`. It changes no part of a file's content. The
 job checks that formatting keeps the order of the tokens and comments,
 computed by the implementation of `fmt::ordering`, with whether each
 comment starts its line, and the imports; that no comma of what it writes,
@@ -230,6 +232,38 @@ call h := heater(
 ensure r: q = { p with
     x := 1,
     y := 2,
+}
+```
+
+A block's `{` goes on the line of what comes before it, unless a line
+comment ends that line, as rustfmt puts a function's `{` on the line of
+its signature. So `proc c(x: Int): (y: Int)`, then `{` on the next line,
+is written `proc c(x: Int): (y: Int) {`. `fmt::line_break` says where a
+list or block ends a line: where it is vertical, after its opening
+bracket, between its elements and before its closing bracket, and
+elsewhere only where a line must end whatever the layout, as after a line
+comment. The formatter's decision implements it, proved in Lean:
+
+```fren
+-- A gap between two pieces whose line break a list or block decides.
+pub enum Gap {
+    AfterOpen,               -- after its opening bracket
+    AfterComma,              -- before an element or member that follows another
+    BeforeClose,             -- before its closing bracket
+    UpdatedRecord,           -- after a record update's `{`, before the record it updates
+    BlockBrace,              -- before a block's `{`
+}
+
+pub proc line_break(
+    gap: Gap,
+    vertical?,               -- the list or block is vertical
+    forced?,                 -- a line must end there whatever the layout
+): (det break?) {
+    ensure rule: break? iff (forced?
+        or (vertical? and gap is Gap::AfterOpen | Gap::AfterComma | Gap::BeforeClose))
+
+    -- `{ p with` and `) {` stay on their lines.
+    expect joined: when gap is Gap::UpdatedRecord | Gap::BlockBrace, break? iff forced?
 }
 ```
 
@@ -525,10 +559,10 @@ first token starts an item that the block is in: its procedure, function
 or global expectation, or a `set_option ... in` before it, which starts
 an item that holds that one. So a block whose item's signature spans
 several lines is on a line that continues it, such as `): (y: Int) {` or
-`: (y: Int) {`, and so is a block whose `{` starts its line. The parser
-gives the first tokens of the items that each block is in, and the
-formatter's decision implements `fmt::continued`, proved in Lean, and
-gives what it decides to `fmt::list_layout`:
+`: (y: Int) {`, and so is a block whose `{` starts its line, after a line
+comment. The parser gives the first tokens of the items that each block
+is in, and the formatter's decision implements `fmt::continued`, proved
+in Lean, and gives what it decides to `fmt::list_layout`:
 
 ```fren
 -- Indices of tokens.
@@ -658,6 +692,49 @@ expect records_break_in_place(
 }
 ```
 
+### Comments before an element
+
+A comment keeps whether it starts its line, as it is
+[content](#safety). Where a block comment starts the line of an element,
+before its code, as in `/- lead -/ x`, a vertical list keeps the two
+together, as rustfmt does: the line break that the list decides before
+the element goes before the comments that start its line. Otherwise it
+goes just before the element, and a comment after the opening bracket or
+the comma on its line stays there, as in `f(/- c -/` ... So
+
+```text
+call w := g(
+    /- lead -/ x, y,
+)
+```
+
+is formatted as
+
+```text
+call w := g(
+    /- lead -/ x,
+    y,
+)
+```
+
+`fmt::break_before` says how many of the comments before an element on its
+line the line break goes before. The formatter's decision implements it,
+proved in Lean:
+
+```fren
+pub proc break_before(
+    comments: Nat,           -- the comments before the element on its line, after any token
+    starts_line?,            -- the first of those comments starts its line
+): (det before: Int) {
+    ensure rule: before = (if starts_line? then comments else 0)
+
+    -- `/- lead -/ x` stays together.
+    expect together: when starts_line?, before = comments
+    -- `f(/- c -/` keeps the comment on the line of `(`.
+    expect after_code: when not starts_line?, before = 0
+}
+```
+
 ## Spaces
 
 Within a line, two tokens are separated by one space or by none.
@@ -783,6 +860,10 @@ fn at(q: Seq<Int>, i: Int): (r: Int) {
     out r := q[i]
 }
 ```
+
+A block's `{` that starts its line, after a line comment, is not a
+continuation either: it is indented as its item, as rustfmt indents a
+function's `{` on a line of its own.
 
 A line that starts with the closing bracket of one that indents is
 indented as the line that opens it. A comment on a line of its own is
@@ -1114,13 +1195,13 @@ expect separators_after_a_block_comment(rest: Pieces) {
 ```
 
 So a comma may move across line breaks, line comments and block comments
-that start their lines, and nothing else moves. The order of a file's tokens and comments that is part of its
-[content](#safety) is `fmt::order` of its pieces, but its trailing commas
-and its `use` items: their order with their commas placed, but for the
-line breaks. `fmt::ordering` states that placing the commas first changes
-nothing, that it keeps the commas, and that the other pieces keep their
-order. That a comma moves only across those is the definition of
-`fmt::put`, and `fmt::order_starts` checks one
+that start their lines, and nothing else moves. The order of a file's
+tokens and comments that is part of its [content](#safety) is `fmt::order`
+of its pieces, but its trailing commas and its `use` items: their order
+with their commas placed, but for the line breaks. `fmt::ordering` states
+that placing the commas first changes nothing, that it keeps the commas,
+and that the other pieces keep their order. That a comma moves only across
+those is the definition of `fmt::put`, and `fmt::order_starts` checks one
 consequence: a token, a block comment or a comma at the start of the
 pieces stays at the start of their order. The job that checks formatting
 computes the order with the implementation of `fmt::ordering`, and checks
