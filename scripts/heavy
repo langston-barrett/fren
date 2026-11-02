@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+"""Run a command that uses every core, such as `lake build`, `lake test`, a
+fuzzer or a mutation run, while holding one of a few machine-wide slots, so
+that parallel jobs don't pile up.
+
+    scripts/heavy [--offline] [--] COMMAND [ARG...]
+
+Slots are `flock`ed files in ~/.cache/heavy/ (`slot0`, `slot1`, ...), so a
+crashed or killed holder releases its slot, and every copy of this script on
+a machine shares them. Each slot file names the job that holds it.
+
+Slots: at most `HEAVY_SLOTS` jobs run at once, else the number in
+~/.cache/heavy/slots, else 2.
+
+Memory: all heavy jobs together may use at most `HEAVY_MEM_GB` gigabytes of
+resident memory, else the number in ~/.cache/heavy/mem_gb, else 80% of the
+machine's physical memory. A job's memory is that of its whole process
+group, summed about every second. A job waits to start while the running
+ones use more than 60% of the cap. When they use more than the cap, the most
+recently started job is killed (TERM, then KILL) and heavy exits with 137,
+saying so. The files are re-read on every use, so changing one takes effect
+for running jobs too. An unset, empty, invalid, infinite or non-positive
+setting falls through to the next, with a warning unless it is unset.
+
+`--offline` runs COMMAND with no network: on Linux in a new user and
+network namespace (`unshare -rn`), whose only interface is loopback, which
+is down, and in which COMMAND runs as uid 0, mapped to the user; and on
+macOS under `sandbox-exec` with a profile that denies all IP networking,
+loopback included, and name lookups, but allows other Unix sockets. When it cannot cut the
+network, heavy fails (exit 126) rather than run COMMAND online. Use it
+for what never needs the network: binaries that a pull request built,
+fuzzers and mutation runs. Builds and `lake test` stay online, since
+Lake fetches packages and elan fetches toolchains.
+
+`python3 scripts/heavy_test.py` tests the argument parsing, the memory cap
+and the order of the overrides.
+"""
+import fcntl
+import math
+import os
+import platform
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+STATE = os.path.expanduser("~/.cache/heavy")
+DEFAULT_SLOTS = 2
+DEFAULT_MEM_FRACTION = 0.8
+START_FRACTION = 0.6
+USAGE = "usage: heavy [--offline] [--] <command> [args...]"
+
+# Denies all IP networking, inbound and outbound, loopback included, and
+# name lookups through mDNSResponder, which would send DNS queries for the
+# command, and allows everything else, other Unix sockets too, since they
+# are local IPC. Later rules take precedence.
+MACOS_OFFLINE_PROFILE = """\
+(version 1)
+(allow default)
+(deny network*)
+(allow network* (local unix-socket))
+(allow network* (remote unix-socket))
+(deny network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
+(deny mach-lookup (global-name "com.apple.dnssd.service"))
+"""
+
+
+class UsageError(Exception):
+    pass
+
+
+def parse_args(argv):
+    """(offline, command) from heavy's arguments, without the program name.
+    Options come before the command; `--` ends them."""
+    offline = False
+    i = 0
+    while i < len(argv) and argv[i].startswith("-"):
+        arg = argv[i]
+        i += 1
+        if arg == "--":
+            break
+        if arg == "--offline":
+            offline = True
+        elif arg in ("-h", "--help"):
+            raise UsageError(__doc__)
+        else:
+            raise UsageError(f"heavy: unknown option {arg}\n{USAGE}")
+    if i >= len(argv):
+        raise UsageError(USAGE)
+    return offline, argv[i:]
+
+
+def meminfo_kb(text):
+    """MemTotal, in KB, from the text of /proc/meminfo."""
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[0] == "MemTotal:":
+            return int(fields[1])
+    raise ValueError("no MemTotal in /proc/meminfo")
+
+
+def memsize_kb(text):
+    """KB, from the bytes that `sysctl -n hw.memsize` prints."""
+    return int(text.strip()) // 1024
+
+
+def physical_memory_kb(system=None, meminfo="/proc/meminfo"):
+    """The machine's physical memory, in KB."""
+    system = system or platform.system()
+    if system == "Linux":
+        with open(meminfo) as f:
+            return meminfo_kb(f.read())
+    if system == "Darwin":
+        out = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True,
+                             text=True, check=True).stdout
+        return memsize_kb(out)
+    raise ValueError(f"cannot tell the physical memory on {system}")
+
+
+def positive(kind, text):
+    value = kind(text)
+    if not (math.isfinite(value) and value > 0):
+        raise ValueError(f"{text.strip()!r} is not a positive finite number")
+    return value
+
+
+_warned = set()
+
+
+def warn_once(where, text, warn):
+    if (where, text) not in _warned:
+        _warned.add((where, text))
+        warn(f"heavy: ignoring {where}={text.strip()!r}, which is not a positive finite number")
+
+
+def setting(env, name, kind, environ=None, state=STATE, warn=None):
+    """The positive finite `kind` that the environment variable `env` holds,
+    else the one in the file `name` in the state directory, else None; read
+    on every call. A value that is set but rejected is reported once, by
+    `warn`, on stderr by default."""
+    environ = os.environ if environ is None else environ
+    warn = warn or (lambda m: print(m, file=sys.stderr))
+    text = environ.get(env)
+    if text is not None:
+        try:
+            return positive(kind, text)
+        except ValueError:
+            warn_once(env, text, warn)
+    path = os.path.join(state, name)
+    try:
+        with open(path) as f:
+            text = f.read()
+    except OSError:
+        return None
+    try:
+        return positive(kind, text)
+    except ValueError:
+        if text.strip():
+            warn_once(path, text, warn)
+        return None
+
+
+def slot_count(environ=None, state=STATE, warn=None):
+    n = setting("HEAVY_SLOTS", "slots", int, environ, state, warn)
+    return DEFAULT_SLOTS if n is None else n
+
+
+_physical = []
+
+
+def mem_cap_kb(environ=None, state=STATE, physical=None, warn=None):
+    """The memory cap, in KB: `HEAVY_MEM_GB`, else the file `mem_gb`, else
+    80% of `physical()`, the physical memory in KB."""
+    gb = setting("HEAVY_MEM_GB", "mem_gb", float, environ, state, warn)
+    if gb is not None:
+        return int(gb * 1024 * 1024)
+    if physical is None:
+        if not _physical:
+            _physical.append(physical_memory_kb())
+        kb = _physical[0]
+    else:
+        kb = physical()
+    return int(kb * DEFAULT_MEM_FRACTION)
+
+
+def offline_command(command, system=None, check=None):
+    """`command` wrapped so that it runs with no network, or a RuntimeError
+    saying why it cannot be. `check` runs a command and says whether it
+    succeeded."""
+    system = system or platform.system()
+    if check is None:
+        def check(c):
+            try:
+                return subprocess.run(c, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL).returncode == 0
+            except OSError:
+                return False
+    if system == "Linux":
+        wrapper = ["unshare", "-rn", "--"]
+        if not check(wrapper + ["true"]):
+            raise RuntimeError(
+                "heavy: --offline needs unprivileged user namespaces, and `unshare -rn true` "
+                "failed; enable them (for example the sysctls "
+                "kernel.unprivileged_userns_clone=1, or "
+                "kernel.apparmor_restrict_unprivileged_userns=0 under AppArmor), "
+                "or run the command without --offline only if it may use the network")
+        return wrapper + command
+    if system == "Darwin":
+        wrapper = ["sandbox-exec", "-p", MACOS_OFFLINE_PROFILE]
+        if not check(wrapper + ["true"]):
+            raise RuntimeError("heavy: --offline needs sandbox-exec, and it failed")
+        return wrapper + command
+    raise RuntimeError(f"heavy: --offline is not supported on {system}")
+
+
+def group_rss_kb():
+    """Resident memory, in KB, of every process group on the machine."""
+    out = subprocess.run(["ps", "-A", "-o", "pgid=,rss="], capture_output=True, text=True).stdout
+    rss = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            rss[int(parts[0])] = rss.get(int(parts[0]), 0) + int(parts[1])
+    return rss
+
+
+def jobs(state=STATE):
+    """(start time, process group) of every running heavy job, from the slot files."""
+    found = []
+    for name in os.listdir(state):
+        if not name.startswith("slot") or name == "slots":
+            continue
+        try:
+            with open(os.path.join(state, name)) as f:
+                fields = f.readline().split()
+            found.append((float(fields[1]), int(fields[0])))
+        except (OSError, ValueError, IndexError):
+            pass
+    return found
+
+
+def kill_group(pgid):
+    for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 0)):
+        try:
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            try:
+                os.waitpid(pgid, os.WNOHANG)
+            except ChildProcessError:
+                pass
+            try:
+                os.killpg(pgid, 0)
+            except (ProcessLookupError, PermissionError):
+                return
+            time.sleep(0.2)
+
+
+def run(f, command, shown):
+    try:
+        child = subprocess.Popen(command, start_new_session=True)
+    except OSError as e:
+        print(f"heavy: cannot run `{shown}`: {e.strerror}", file=sys.stderr)
+        return 127
+    began = time.time()
+    f.seek(0)
+    f.truncate()
+    f.write(f"{child.pid} {began} {os.getcwd()} {shown}\n")
+    f.flush()
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda s, _: kill_group(child.pid))
+    while child.poll() is None:
+        time.sleep(1)
+        rss = group_rss_kb()
+        running = [(t, g) for t, g in jobs() if g in rss]
+        total, cap = sum(rss[g] for _, g in running), mem_cap_kb()
+        if total > cap and running and max(running)[1] == child.pid:
+            print(f"heavy: killed `{shown}`: heavy jobs used "
+                  f"{total / 1048576:.1f} GB, over the {cap / 1048576:.1f} GB cap "
+                  f"(HEAVY_MEM_GB, {os.path.join(STATE, 'mem_gb')}); run it again when "
+                  "fewer jobs run", file=sys.stderr)
+            kill_group(child.pid)
+            child.wait()
+            return 137
+    return child.returncode if child.returncode >= 0 else 128 - child.returncode
+
+
+def heavy_rss_kb():
+    rss = group_rss_kb()
+    return sum(rss.get(g, 0) for _, g in jobs())
+
+
+def main(argv):
+    try:
+        offline, command = parse_args(argv)
+    except UsageError as e:
+        print(e, file=sys.stderr)
+        return 2
+    shown = " ".join(command)
+    if os.sep not in command[0] and shutil.which(command[0]) is None:
+        print(f"heavy: {command[0]}: command not found", file=sys.stderr)
+        return 127
+    if offline:
+        try:
+            command = offline_command(command)
+        except RuntimeError as e:
+            print(e, file=sys.stderr)
+            return 126
+        shown = "--offline " + shown
+    os.makedirs(STATE, exist_ok=True)
+    try:
+        mem_cap_kb()
+    except (OSError, ValueError, subprocess.CalledProcessError) as e:
+        print(f"heavy: cannot tell the physical memory ({e}); set HEAVY_MEM_GB", file=sys.stderr)
+        return 2
+    start, warned = time.time(), False
+    while True:
+        slots = slot_count()
+        # Start no job while the running ones already use most of the cap: a
+        # job that starts now would likely be the one killed when they grow.
+        if heavy_rss_kb() > START_FRACTION * mem_cap_kb():
+            if not warned:
+                print(f"heavy: heavy jobs use most of the memory cap, waiting (see {STATE})",
+                      file=sys.stderr)
+                warned = True
+            time.sleep(5)
+            continue
+        for i in range(slots):
+            f = open(os.path.join(STATE, f"slot{i}"), "a+")
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                f.close()
+                continue
+            waited = time.time() - start
+            if waited > 1:
+                print(f"heavy: got slot {i} after {waited:.0f}s", file=sys.stderr)
+            code = run(f, command, shown)
+            f.seek(0)
+            f.truncate()
+            f.flush()
+            return code
+        if not warned:
+            print(f"heavy: all {slots} slots busy, waiting (see {STATE})", file=sys.stderr)
+            warned = True
+        time.sleep(2)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

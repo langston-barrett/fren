@@ -5,6 +5,7 @@ import FrenCli.SeqElems
 import FrenCore.Check
 import FrenCore.Goals
 import FrenCore.SolverTime
+import FrenCore.Symbols
 import cvc5
 -- keep-sorted end
 
@@ -291,7 +292,7 @@ is left as it is written. -/
 def introduceSmtGoal (prelude : Prelude) (vars : Array CVar) (hyps : Array (Lean.Name × String)) (goal : String) :
     Array (String × String) × Array String × String :=
   let parsed := SeqElems.parse goal
-  let taken : Thunk (Std.HashSet String) := Thunk.mk fun _ => .ofArray (vars.map (·.name.toString) ++
+  let taken : Thunk (Std.HashSet String) := Thunk.mk fun _ => .ofArray (vars.map (·.name.toString (escape := false)) ++
     (hyps.flatMap fun (_, h) => (SeqElems.parse h).freeAtoms) ++ parsed.freeAtoms)
   let r := (Fren.Core.introduceGoal (smtGoalHead prelude) parsed).run' taken
   if r.steps.isEmpty then (#[], #[], goal)
@@ -321,9 +322,9 @@ declares only what the prelude needs to (`Prelude.neededDecls`), and is in
 def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (hyps : Array (Lean.Name × String)) (goal : String) : String :=
   let (constants, premises, goal) := introduceSmtGoal prelude vars hyps goal
-  let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
+  let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote (v.name.toString (escape := false))} {v.ty.sort})\n")
   let decls := decls ++ String.join (constants.toList.map fun (x, s) => s!"(declare-const {x} {s})\n")
-  let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n}\n")
+  let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n.toString (escape := false)}\n")
   let asserts := asserts ++ String.join (premises.toList.map fun p => s!"(assert {p}) ; premise\n")
   let body := s!"{decls}{asserts}(assert (not {goal}))\n"
   -- `mapQuoted` of the whole script, piece by piece: each piece is whole
@@ -395,7 +396,7 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observ
     let mut model := #[]
     for t in ← sm.getDeclaredTerms do
       let n := (toString t).replace "|" ""
-      if let some v := vars.find? (Fren.Core.smtName ·.name.toString == n) then
+      if let some v := vars.find? (fun v => Fren.Core.smtName (v.name.toString (escape := false)) == n) then
         let value := toString (← solver.getValue t)
         -- cvc5 shares values and qualified constructor symbols with lets.
         -- Expand them before confirmation, rendering, or pinning a model.
@@ -631,8 +632,8 @@ def primes (c : CComp) : Array CVar :=
 Like `rename`, relies on variables being quoted symbols. -/
 def prime (c : CComp) (smt : String) : String :=
   -- Functions are not variables, so they are never renamed.
-  let names := (c.vars.filter fun v => (Fren.Core.Symbol.ofRole v.role).copied).map (·.name.toString)
-  mapQuoted (fun p => if names.contains p then p ++ "'" else p) smt
+  let names := (c.vars.filter fun v => (Fren.Core.Symbol.ofRole v.role).copied).map (·.name.toString (escape := false))
+  mapQuoted (fun p => if names.contains p then Fren.Core.copySymbol p else p) smt
 
 /-- Those of `terms` that occur in the SMT-LIB text `f`, outside its string
 literals, in the order in which they start: an enclosing term before the
@@ -1056,7 +1057,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- mention.
     let appFacts := appFacts.map fun (n, f) => (n, dropUnusedLets f)
     let mentioned := appFacts.foldl (init := mentioned) fun m (_, f) => (quotedSymbols f).foldl (·.insert ·) m
-    let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
+    let vars := (c.vars ++ primes c).filter (fun v => mentioned.contains (v.name.toString (escape := false)))
     if let some r := applied? then
       r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
     -- A procedure whose queries may quantify sets `fmf-bound`
@@ -1089,7 +1090,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
         else .unknown (Fren.Core.recursiveReason factRecs)
       | o => o
     return match o with
-      | .sat m => .sat (m.filter fun (n, _) => shown.contains n.toString || n.toString.startsWith "#member_observation_")
+      | .sat m => .sat (m.filter fun (n, _) => shown.contains (n.toString (escape := false)) || (n.toString (escape := false)).startsWith "#member_observation_")
       | o => o
   falseF := "false"
   notF f := s!"(not {f})"
@@ -1098,21 +1099,21 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- Defined outputs are substituted, never searched for.
     let outs := c.vars.filter fun v => v.role == .output && v.defn?.isNone
     if outs.isEmpty then return f
-    let binders := " ".intercalate (outs.toList.map fun v => s!"({quote v.name.toString} {v.ty.sort})")
+    let binders := " ".intercalate (outs.toList.map fun v => s!"({quote (v.name.toString (escape := false))} {v.ty.sort})")
     -- The outputs' `Nat`s are at least 0, with the requirements.
     return s!"(exists ({binders}) {conj ((c.natFacts true).map (·.2) ++ #[f])})"
   -- A value of an abstract type names a solver-internal constant, such as
   -- `@U_0`, which a fresh query cannot parse.
-  pin n v := return if v.contains '@' then none else some s!"(= {quote n.toString} {v})"
+  pin n v := return if v.contains '@' then none else some s!"(= {quote (n.toString (escape := false))} {v})"
   -- The tester of its variant (`DataDecl.tester`), by the variable's type.
   pinVariant n v := return do
     let ty ← (c.vars ++ primes c).find? (·.name == n) |>.map (·.ty)
     let (k, idx, d, args) ← variantOfValue dts ty v
-    return (k, d.tester idx (quote n.toString) args)
+    return (k, d.tester idx (quote (n.toString (escape := false))) args)
   -- By the variable's type, for its newtypes.
   render n v := return renderValue dts v ((c.vars ++ primes c).find? (·.name == n) |>.map (·.ty))
   prime := prime c
-  samePrimed n := s!"(= {quote n.toString} {quote (Fren.Core.primed n).toString})"
+  samePrimed n := s!"(= {quote (n.toString (escape := false))} {quote (Fren.Core.copySymbol (n.toString (escape := false)))})"
   -- Each definition sees the earlier ones.
   subst ds f := ds.foldr (init := f) fun (d, e) f => s!"(let (({quote d.toString} {e})) {f})"
 

@@ -25,6 +25,7 @@ import FrenCore.SolverTime
 import FrenCore.Sound
 import FrenCore.Str
 import FrenCore.SubsetTypes
+import FrenCore.Symbols
 import FrenCore.Syntax
 import FrenCore.Table
 import FrenCore.Trace

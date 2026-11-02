@@ -2,5 +2,9 @@
 enum E { A, B, C }
 
 proc c(e: E): (p?) {
-    ensure r: p? iff match e { E::A => true, E::B => false, E::C => true }
+    ensure r: p? iff match e {
+        E::A => true,
+        E::B => false,
+        E::C => true,
+    }
 }

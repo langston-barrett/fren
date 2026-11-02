@@ -1,0 +1,43 @@
+-- A bound name's symbol is apart from every variable's, and a variable's
+-- second copy's from every other variable's (`cli::query_symbols`). Both
+-- were the name and `'`, as in `i'0` and `y'`, which a variable may be
+-- named, so a bound name captured the variable, or a variable the copy.
+set_option fren.lint.undecidable "allow"
+
+mod bound_symbols
+
+proc c(i'0: Int, j'1: Int): (y: Int) {
+    ensure r: y = i'0 + 1
+
+    -- Captured, it failed: `i'0 > i'0`.
+    expect holds: forall (i: Int), when i > y, i > i'0
+    expect differs: exists (i: Int), i != i'0
+    expect nested: forall (i: Int) (j: Int), when i > i'0 and j > j'1, i != i'0 and j != j'1
+
+    -- Captured, it passed: `i'0 = i'0`.
+    expect wrong: forall (i: Int), i = i'0  --~ error: expectation `bound_symbols::c::wrong` does not hold
+}
+
+-- Captured, `y'` was the copy of `y`, which passed, or which the binary
+-- declared twice.
+proc free(t: Int): (
+    det y: Int,             --~ error: `bound_symbols::free::y` is not determined by the inputs
+    y': Int,
+) {
+    ensure a: y = y' + t
+}
+
+proc pinned(t: Int): (det y: Int, y': Int) {
+    ensure a: y' = t
+    ensure b: y = y'
+}
+
+enum Mode { Off, Heat, Cool }
+
+-- Enumerated, `m'` was read as the copy of a variable `m`, and given its
+-- type, or `Bool` without one, so that `e` was vacuous.
+set_option fren.evidence "enumerated" in
+proc enumerated(m': Mode): (det on?) {
+    ensure r: on? iff m' = Mode::Heat
+    expect e: when on?, m' = Mode::Cool  --~ error: expectation `bound_symbols::enumerated::e` does not hold
+}

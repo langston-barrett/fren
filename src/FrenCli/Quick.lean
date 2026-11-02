@@ -120,7 +120,7 @@ is `sp.fixedPools strs` of the types of the variables
 (`Problem.fixedPools`). -/
 def Spec.admit (sp : Spec) (w : World) (c : Comp) (ints : Array Int) (strs : Array String)
     (shapes? : Option (Std.HashMap Name Fren.Core.DataShape)) (pre : AdmitAtoms)
-    (fixedPools : Std.HashMap VTy (Thunk (Array Val)) := {}) : R (Option Admitted) := do
+    (fixedPools : Std.HashMap VTy (Array Val) := {}) : R (Option Admitted) := do
   let I := w.interp sp shapes?
   let inputs := c.vars.filter (·.role == .input) |>.map fun v => (v.name, v.ty)
   let some env ← ({ vars := inputs, atoms := pre.assumes, ints, strs, fixedPools : Problem }.solve sp w I {})
@@ -302,8 +302,9 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   let strs ← stringsOf lits
   let sp := sp.withMatchMemo lits strs
   let shapes := sp.shapeMap
-  -- The structural recursions too.
-  let sp := sp.withCompiledRecs fun p => shapes[p]?
+  -- The structural recursions too, compiled once for this reading of the
+  -- spec if it keeps them (`Spec.keepCompiledRecs`).
+  let sp := sp.withOwnCompiledRecs shapes
   -- The constraints of the searches, each compiled once, with the shapes
   -- of every interpretation below (`World.interp`).
   let compiled := Atom.compiled fun p => shapes[p]?
@@ -326,7 +327,7 @@ def Spec.quickComp (sp : Spec) (c : Comp) (tests : Nat) : R Report := do
   -- (`Spec.fixedPools`), computed once for all of the searches.
   let fixedPools := sp.fixedPools strs ((sp.order c).map (·.2))
   let prepared (p : Problem) : Problem :=
-    { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?), fixedPools }
+    { p with prepared? := some (p.prepare fun q => shapes[q]?), fixedPools }
   let outs := c.vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let outputsP := prepared { vars := outs, atoms := reqs, ints, strs }
   let negationsP := negations.map fun n => prepared { vars := sp.order c, atoms := all.push n, ints, strs }
@@ -472,7 +473,7 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let ints := intsOf lits
   let sp := sp.withMatchMemo lits strs
   let shapes := sp.shapeMap
-  let sp := sp.withCompiledRecs fun p => shapes[p]?
+  let sp := sp.withOwnCompiledRecs shapes
   -- Compiled once, as in `Spec.quickComp`.
   let compiled := Atom.compiled fun p => shapes[p]?
   let meaning := meaning.map compiled
@@ -485,7 +486,7 @@ def Spec.quickGlobal (sp : Spec) (g : Comp) (tests : Nat) : R Report := do
   let fixedPools := sp.fixedPools strs (order.map (·.2))
   let prepared (atoms : Array Atom) : Problem :=
     let p : Problem := { vars := order, atoms, ints, strs, fixedPools }
-    { p with prepared? := some (Thunk.mk fun _ => p.prepare fun q => shapes[q]?) }
+    { p with prepared? := some (p.prepare fun q => shapes[q]?) }
   let withTriggerP := prepared withTrigger
   let meaningP := prepared meaning
   let negatedP := prepared negated

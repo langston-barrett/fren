@@ -17,6 +17,7 @@ import FrenCore.Recursion
 import FrenCore.Regex
 import FrenCore.SeqElems
 import FrenCore.SubsetTypes
+import FrenCore.Symbols
 import FrenCore.Trace
 import FrenCore.Traits
 import FrenCore.Ty
@@ -3621,7 +3622,7 @@ distinct, follow the Boolean names rule and be written with `!` exactly
 when they shadow (`lang::shadowing`), and the combinations be at most
 `Fren.Core.maxInstances` (`lang::quantifier_size`). A bound name of a
 listed type has a symbol that no variable has, which each instance
-replaces; one of another type, the symbol `x'k`, with `k` its position
+replaces; one of another type, the symbol `x#k` (`Fren.Core.boundSymbol`), with `k` its position
 among the binders in scope, which the solver's quantifier binds, and which
 `undecidable` reports at its binder (`lang::in_core`), unless `defer`,
 for its caller to report at the spans returned last, once it knows whether
@@ -3661,7 +3662,7 @@ def quantBinders (cx : ExprCtx) (bs : Array Binder) (defer : Bool := false) :
         sizes := sizes.push n
         listed := listed.push vs
       | none =>
-        let sym := quote s!"{y.name}'{k}"
+        let sym := quote (Fren.Core.boundSymbol y.name k)
         let st ← get
         free := free.push { sym, sort := t.sort, cons? := (pt.cons st.shapeOf true).map (consSmt st.dataOf? · sym) }
         out := out.push { name := bn, smt := sym, ty := t, scrutinee := none, outer := k, unbounded := true }
@@ -5104,7 +5105,7 @@ partial def elabClosure (cx : ExprCtx) (params : Array (Ident × Ty)) (body : Ex
       liftMsg y.span (Fren.Core.checkVarName bn (some (t == .bool)))
       lintName .binder bn y.span
       pure bn
-    let sym := quote s!"{bn}#{n}"
+    let sym := quote (Fren.Core.closureSymbol bn.toString n)
     let st ← get
     free := free.push { sym, sort := t.sort, cons? := ((Fren.Core.PTy.plain t).cons st.shapeOf true).map (consSmt st.dataOf? · sym) }
     new := new.push { name := bn, smt := sym, ty := t, scrutinee := none, outer := cx.binders.size + new.size, unbounded := true }

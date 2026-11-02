@@ -3,6 +3,7 @@ import FrenCli.Color
 import FrenCli.Exit
 import FrenCli.QueryStore
 import FrenCli.SeqElems
+import FrenCore.Symbols
 import Impls.QueryCache
 import Impls.View
 import Reqs.Cli
@@ -617,5 +618,147 @@ impl goal_constant_name: cli::goal_constant_name for (b : Bool) (ks : List Nat) 
       · exact h
       · have := least k (Nat.zero_le _) h
         simp at this; exact absurd this hk
+
+/-! ## The symbols of a query (`cli::query_symbols`) -/
+
+namespace QuerySymbols
+
+/-- A string that does not contain `"#"`, as Fren's `contains?` reads it,
+has no `#`. -/
+theorem not_mem_of_contains {s : String} (h : Fren.Str.contains s "#" = false) : '#' ∉ s.toList := by
+  intro hm
+  obtain ⟨i, hi, he⟩ := List.getElem_of_mem hm
+  have : Fren.Str.contains s "#" = true := by
+    simp only [Fren.Str.contains, List.any_eq_true, List.mem_range]
+    refine ⟨i, by rw [← String.length_toList]; omega, ?_⟩
+    rw [List.drop_eq_getElem_cons hi, he]
+    rfl
+  simp_all
+
+/-- What precedes the first `#` and what follows it. -/
+theorem hash_split : ∀ {x y s t : List Char}, '#' ∉ x → '#' ∉ y → x ++ '#' :: s = y ++ '#' :: t → x = y ∧ s = t
+  | [], [], _, _, _, _, h => by simpa using h
+  | [], c :: _, _, _, _, hy, h => by
+    simp only [List.nil_append, List.cons_append, List.cons.injEq] at h
+    exact absurd (h.1 ▸ List.mem_cons_self) hy
+  | c :: _, [], _, _, hx, _, h => by
+    simp only [List.nil_append, List.cons_append, List.cons.injEq] at h
+    exact absurd (h.1 ▸ List.mem_cons_self) hx
+  | a :: x, b :: y, s, t, hx, hy, h => by
+    simp only [List.cons_append, List.cons.injEq] at h
+    obtain ⟨rfl, h⟩ := h
+    have := hash_split (x := x) (y := y) (fun m => hx (List.mem_cons_of_mem _ m))
+      (fun m => hy (List.mem_cons_of_mem _ m)) h
+    exact ⟨by rw [this.1], this.2⟩
+
+/-- A number's text is its decimal digits, which are not empty and are
+all digits. -/
+theorem digits (k : Nat) : (toString k).toList = Nat.toDigits 10 k := Nat.toList_repr
+
+theorem digit_of_mem {k : Nat} {c : Char} (h : c ∈ (toString k).toList) : c.isDigit = true :=
+  Nat.isDigit_of_mem_toDigits (by decide) (by decide) (digits k ▸ h)
+
+theorem digits_ne_nil (k : Nat) : (toString k).toList ≠ [] := digits k ▸ Nat.toDigits_ne_nil
+
+theorem digits_inj {j k : Nat} (h : (toString j).toList = (toString k).toList) : j = k :=
+  Nat.repr_injective (String.toList_inj.mp h)
+
+/-- The symbol of each kind, as a list: its name, then, but for a
+variable's, `#` and what tells the kinds apart. -/
+def tail : Fren.Core.QuerySymbol → Option (List Char)
+  | .name x => if Fren.Core.theorySymbols.contains x then some [] else none
+  | .copy _ => some ['\'']
+  | .bound _ k => some (toString k).toList
+  | .closure _ n => some ("closure".toList ++ (toString n).toList)
+
+theorem text_toList (a : Fren.Core.QuerySymbol) :
+    a.text.toList = a.base.toList ++ (match tail a with | some t => '#' :: t | none => []) := by
+  cases a with
+  | name x =>
+    simp only [Fren.Core.QuerySymbol.text, Fren.Core.QuerySymbol.base, Fren.Core.smtName, tail]
+    split <;> simp [String.toList_append]
+  | copy x => simp [Fren.Core.QuerySymbol.text, Fren.Core.QuerySymbol.base, Fren.Core.copySymbol, tail, String.toList_append]
+  | bound x k => simp [Fren.Core.QuerySymbol.text, Fren.Core.QuerySymbol.base, Fren.Core.boundSymbol, tail, String.toList_append]
+  | closure x n =>
+    simp [Fren.Core.QuerySymbol.text, Fren.Core.QuerySymbol.base, Fren.Core.closureSymbol, tail, String.toList_append]
+
+theorem digit_head {k : Nat} {c : Char} {t : List Char} (h : (toString k).toList = c :: t) : c.isDigit = true :=
+  digit_of_mem (h ▸ List.mem_cons_self)
+
+/-- Symbols of one name with the same tail are of the same thing. -/
+theorem tail_inj {a b : Fren.Core.QuerySymbol} (hx : a.base = b.base) (ht : tail a = tail b) : a = b := by
+  cases a <;> cases b <;> simp only [Fren.Core.QuerySymbol.base] at hx <;> subst hx <;>
+    simp only [tail] at ht
+  all_goals first
+    | rfl
+    | (split at ht <;> simp at ht)
+    | (split at ht <;> simp at ht <;> exact absurd ht.symm (digits_ne_nil _))
+    | (simp only [Option.some.injEq] at ht
+       first
+        | exact absurd (digit_head ht.symm) (by decide)
+        | exact absurd (digit_head ht) (by decide)
+        | exact congrArg _ (digits_inj ht)
+        | exact congrArg _ (digits_inj (List.append_cancel_left ht))
+        | (simp at ht; done))
+
+/-- Two symbols of names without `#` are the same only if they are of the
+same thing. -/
+theorem text_inj {a b : Fren.Core.QuerySymbol} (ha : '#' ∉ a.base.toList) (hb : '#' ∉ b.base.toList)
+    (h : a.text = b.text) : a = b := by
+  have h := congrArg String.toList h
+  rw [text_toList, text_toList] at h
+  apply tail_inj _ _
+  all_goals cases hta : tail a <;> cases htb : tail b <;> simp only [hta, htb, List.append_nil] at h
+  · exact String.toList_inj.mp h
+  · exact absurd (h ▸ List.mem_append_right _ List.mem_cons_self) ha
+  · exact absurd (h ▸ List.mem_append_right _ List.mem_cons_self) hb
+  · exact String.toList_inj.mp (hash_split ha hb h).1
+  · rfl
+  · exact absurd (h ▸ List.mem_append_right _ List.mem_cons_self) ha
+  · exact absurd (h ▸ List.mem_append_right _ List.mem_cons_self) hb
+  · rw [(hash_split ha hb h).2]
+
+end QuerySymbols
+
+/-- A symbol as the Req has it: whether a theory has a variable's name,
+and numbers in decimal. -/
+def toReqSymbol : Fren.Core.QuerySymbol → cli.QuerySymbol
+  | .name x => .Name x (Fren.Core.theorySymbols.contains x)
+  | .copy x => .Copy x
+  | .bound x k => .Bound x (toString k)
+  | .closure x n => .Closure x (toString n)
+
+theorem toReqSymbol_inj {a b : Fren.Core.QuerySymbol} (h : toReqSymbol a = toReqSymbol b) : a = b := by
+  cases a <;> cases b <;> simp only [toReqSymbol, reduceCtorEq, cli.QuerySymbol.Name.injEq,
+    cli.QuerySymbol.Copy.injEq, cli.QuerySymbol.Bound.injEq, cli.QuerySymbol.Closure.injEq] at h
+  all_goals first
+    | exact congrArg _ h.1
+    | (obtain ⟨rfl, h⟩ := h; exact congrArg _ (Nat.repr_injective h))
+    | (rw [h])
+
+theorem not_mem_of_not_contains {s : String} (h : ¬Fren.Str.contains s (Fren.Str.lit "#") = true) : '#' ∉ s.toList :=
+  QuerySymbols.not_mem_of_contains (by simpa using h)
+
+impl query_symbols: cli::query_symbols for (a b : Fren.Core.QuerySymbol) {
+  a := toReqSymbol a,
+  b := toReqSymbol b,
+  symbol_a := a.text,
+  symbol_b := b.text,
+  same? := a.text == b.text,
+} by
+  intro a b _
+  simp only [fren_spec]
+  refine ⟨⟨?_, ?_⟩, beq_iff_eq⟩
+  · cases a <;> simp [toReqSymbol, Fren.Core.QuerySymbol.text, Fren.Core.smtName, Fren.Core.copySymbol,
+      Fren.Core.boundSymbol, Fren.Core.closureSymbol, Fren.Str.lit, String.append_assoc]
+  · cases b <;> simp [toReqSymbol, Fren.Core.QuerySymbol.text, Fren.Core.smtName, Fren.Core.copySymbol,
+      Fren.Core.boundSymbol, Fren.Core.closureSymbol, Fren.Str.lit, String.append_assoc]
+
+/-- What the Req's `apart` says, which its checker proves from `forms` and
+`rule`: of names without `#`, symbols are the same only if they are of
+the same thing. -/
+theorem query_symbols_apart {a b : Fren.Core.QuerySymbol} (ha : '#' ∉ a.base.toList) (hb : '#' ∉ b.base.toList) :
+    a.text = b.text ↔ toReqSymbol a = toReqSymbol b :=
+  ⟨fun e => congrArg _ (QuerySymbols.text_inj ha hb e), fun e => by rw [toReqSymbol_inj e]⟩
 
 end Fren.Impls

@@ -52,15 +52,15 @@
 (declare-const |p?| Bool)
 (declare-const |y| Int)
 (declare-const |q?| Bool)
-(declare-const |y'| Int)
-(declare-const |q?'| Bool)
+(declare-const |y#'| Int)
+(declare-const |q?#'| Bool)
 (assert (|::choose<Int>#either| |x| 0)) ; either
 (assert (|::choose<Bool>#either| |p?| true)) ; either
 (assert (= |y| (|::choose<Int>| |x| 0))) ; y
 (assert (= |q?| (|::choose<Bool>| |p?| true))) ; q?
-(assert (= |y'| (|::choose<Int>| |x| 0))) ; y'
-(assert (= |q?'| (|::choose<Bool>| |p?| true))) ; q?'
-(assert (not (= |y| |y'|)))
+(assert (= |y#'| (|::choose<Int>| |x| 0))) ; y#'
+(assert (= |q?#'| (|::choose<Bool>| |p?| true))) ; q?#'
+(assert (not (= |y| |y#'|)))
 (check-sat)
 (reset)
 
@@ -76,15 +76,15 @@
 (declare-const |p?| Bool)
 (declare-const |y| Int)
 (declare-const |q?| Bool)
-(declare-const |y'| Int)
-(declare-const |q?'| Bool)
+(declare-const |y#'| Int)
+(declare-const |q?#'| Bool)
 (assert (|::choose<Int>#either| |x| 0)) ; either
 (assert (|::choose<Bool>#either| |p?| true)) ; either
 (assert (= |y| (|::choose<Int>| |x| 0))) ; y
 (assert (= |q?| (|::choose<Bool>| |p?| true))) ; q?
-(assert (= |y'| (|::choose<Int>| |x| 0))) ; y'
-(assert (= |q?'| (|::choose<Bool>| |p?| true))) ; q?'
-(assert (not (= |q?| |q?'|)))
+(assert (= |y#'| (|::choose<Int>| |x| 0))) ; y#'
+(assert (= |q?#'| (|::choose<Bool>| |p?| true))) ; q?#'
+(assert (not (= |q?| |q?#'|)))
 (check-sat)
 (reset)
 
