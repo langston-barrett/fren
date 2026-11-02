@@ -27,7 +27,7 @@ code (`Reqs/dev/Style#what-is-not-a-rule`):
   are stated under the solver's quantifier over the bound names that it
   mentions, without the guard: for `forall (i: Int), when 0 <= i < n,
   h(i) >= 0`, with `fn h(Int): Nat`, the queries assume
-  `(forall ((|i'0| Int)) (>= (h |i'0|) 0))`, and Lean `∀ i'0, 0 ≤ ↑(h i'0)`.
+  `(forall ((|i#0| Int)) (>= (h |i#0|) 0))`, and Lean `∀ «i#0», 0 ≤ ↑(h «i#0»)`.
 -/
 
 open Lean

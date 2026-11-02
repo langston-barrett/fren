@@ -66,12 +66,12 @@
 (define-fun |::unwrap_or<Int>| ((|o| (Option Int)) (|d| Int)) Int (ite (= |o| ((as Option.some (Option Int)) (Option.some.val |o|))) (Option.some.val |o|) (|::id<Int>| |d|)))
 (declare-const |x| (Option Int))
 (declare-const |y| Int)
-(declare-const |y'| Int)
+(declare-const |y#'| Int)
 (assert (= |y| (|::unwrap_or<Int>| |x| 0))) ; y
 (assert (distinct |x| (as Option.none (Option Int)))) ; some
-(assert (= |y'| (|::unwrap_or<Int>| |x| 0))) ; y'
-(assert (distinct |x| (as Option.none (Option Int)))) ; some'
-(assert (not (= |y| |y'|)))
+(assert (= |y#'| (|::unwrap_or<Int>| |x| 0))) ; y#'
+(assert (distinct |x| (as Option.none (Option Int)))) ; some#'
+(assert (not (= |y| |y#'|)))
 (check-sat)
 (reset)
 

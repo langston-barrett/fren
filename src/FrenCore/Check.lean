@@ -472,9 +472,17 @@ structure VarSig where
 /-- Universally quantified: not chosen by the procedure (`Role.isUniversal`). -/
 def VarSig.isIn (v : VarSig) : Bool := v.role.isUniversal
 
-/-- The name of the second copy of variable `n`, for `determinism`. Never a
-Fren identifier, so it cannot clash. -/
-def primed (n : Name) : Name := n.appendAfter "'"
+/-- The name of the second copy of variable `n`, for `determinism`: `n#'`,
+whose text, unescaped, is `copySymbol` of `n`'s. No Fren identifier
+contains `#`, so it is no variable's name (`cli::query_symbols`); `n'`
+was, since an identifier may contain `'`. -/
+def primed (n : Name) : Name := n.appendAfter "#'"
+
+/-- The variable that `n` is the second copy of (`primed`), if it is one. -/
+def unprimed? (n : Name) : Option Name :=
+  match n with
+  | .str p s => if s.endsWith "#'" then some (.str p (s.dropEnd 2).toString) else none
+  | _ => none
 
 /-- A call, with formulas over the calling procedure's variables. -/
 structure Inst (F : Type) where

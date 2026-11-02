@@ -16,7 +16,7 @@
 (set-option :inst-when last-call)
 (declare-const |n| Int)
 (declare-const |none?| Bool)
-(assert (not (exists ((|none?| Bool)) (= |none?| (forall ((|i'0| Int)) (=> (and (<= 0 |i'0|) (< |i'0| |n|)) (distinct |i'0| 3)))))))
+(assert (not (exists ((|none?| Bool)) (= |none?| (forall ((|i#0| Int)) (=> (and (<= 0 |i#0|) (< |i#0| |n|)) (distinct |i#0| 3)))))))
 (check-sat)
 (reset)
 
@@ -28,7 +28,7 @@
 (set-option :inst-when last-call)
 (declare-const |n| Int)
 (declare-const |none?| Bool)
-(assert (= |none?| (forall ((|i'0| Int)) (=> (and (<= 0 |i'0|) (< |i'0| |n|)) (distinct |i'0| 3))))) ; r
+(assert (= |none?| (forall ((|i#0| Int)) (=> (and (<= 0 |i#0|) (< |i#0| |n|)) (distinct |i#0| 3))))) ; r
 (assert (not false))
 (check-sat)
 (reset)
@@ -41,7 +41,7 @@
 (set-option :inst-when last-call)
 (declare-const |n| Int)
 (declare-const |none?| Bool)
-(assert (not (= |none?| (forall ((|i'0| Int)) (=> (and (<= 0 |i'0|) (< |i'0| |n|)) (distinct |i'0| 3))))))
+(assert (not (= |none?| (forall ((|i#0| Int)) (=> (and (<= 0 |i#0|) (< |i#0| |n|)) (distinct |i#0| 3))))))
 (check-sat)
 (reset)
 
