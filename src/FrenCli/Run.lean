@@ -733,14 +733,14 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
       | some ec =>
         let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
         let (core, ks) := { core with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
-        pure (← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core ks examples (interprets ·.1) (some take), none)
+        pure (← Fren.Core.checkCompLawful (fun k => confirming sp sy ec k log (bk k)) core ks examples (interprets ·.1) (some take), none)
       | none =>
         let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
-        pure (← Fren.Core.checkComp bk core ks examples interprets (some take),
+        pure (← Fren.Core.checkCompLawful bk core ks examples interprets (some take),
           some (Msg.internal s!"the evaluator has no counterpart of `{Fren.Core.showComp c.path}`"))
     | .error _ =>
       let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
-      pure (← Fren.Core.checkComp bk core ks examples interprets (some take), none)
+      pure (← Fren.Core.checkCompLawful bk core ks examples interprets (some take), none)
   let (results, refuted) := applyRefutations raw (← log.get)
   let results := Fren.Core.recursiveResults c.recursive results
   -- The contract of a generic function without a body, where its check at

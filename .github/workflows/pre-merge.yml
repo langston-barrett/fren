@@ -52,7 +52,8 @@ jobs:
     - uses: ./.github/actions/lake
       with:
         sha: ${{ steps.base.outputs.sha }}
-    # The library, the regression tests, Fren's own requirements, the links
+    # The library, the regression tests, Fren's own requirements (only
+    # elaborated: shard 0 checks them with the binary), the links
     # from Fren's code to them, the examples and the binaries; warnings,
     # including inconclusive checks and untraced requirements, fail it.
     - run: lake build --wfail

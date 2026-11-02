@@ -547,6 +547,13 @@ its lowering (`Reqs/Lang/Items#function-blocks`). -/
   setting removes: up to the item after `in`, if any. -/
   | lintSetting (span : Span) (option : Ident) (value : String) (valueSpan : Span) (removal : Span)
       (body : Option Item)
+  /-- `trait T { members }` (`Reqs/Lang/Traits`): its members, each an item
+  as written, which the elaborator checks is a method, a law or an
+  expectation (`lang::trait_member`), and the span of its closing `}`. -/
+  | «trait» (isPub : Bool) (name : Ident) (members : Array Item) (close : Span)
+  /-- `law n(x: T, y?): e`, a member of a trait: its variables, each with its
+  type after `:` if written, and its equation. -/
+  | law (name : Ident) (params : Array (Ident × Option (Array Ident))) (body : Expr)
   deriving Inhabited
 
 structure ParseError where
@@ -2002,7 +2009,10 @@ def procRest (name : Ident) (global := false) : P (Array Member × Array Member 
   modify fun s => { s with proc? := saved }
   return (header, ms, close.span, spans, ob.span.stop)
 
-partial def item : P Item := do
+mutual
+/-- An item, or, `inTrait`, a member of a trait after a `set_option ... in`
+(`traitMember`). -/
+partial def item (inTrait := false) : P Item := do
   markStart
   -- An item is in another only after its `set_option ... in`, at its end.
   modify fun s => { s with items := s.items.push s.pos }
@@ -2042,7 +2052,8 @@ partial def item : P Item := do
     let span := t.span.to v.span
     if (← eatKw "in").isSome then
       let removal := { span with stop := (← peek).span.start }
-      return .lintSetting span { name, span := o.span } value v.span removal (some (← item))
+      return .lintSetting span { name, span := o.span } value v.span removal
+        (some (← if inTrait then traitMember else item))
     return .lintSetting span { name, span := o.span } value v.span span none
   if isKw t "tested" || isKw t "trusted" then
     discard bump
@@ -2236,15 +2247,55 @@ partial def item : P Item := do
     let name ← ident
     let (header, ms, close, spans, openStop) ← procRest name
     return .comp isPub name header ms close spans openStop
+  if isKw t "trait" then
+    discard bump
+    let name ← ident
+    openList .members
+    discard (expectKw "{")
+    let mut ms := #[]
+    repeat
+      let m ← peek
+      if isKw m "}" then break
+      if m.tok == .eof then fail m "`}`"
+      unless ms.isEmpty do memberEnd
+      ms := ms.push (← traitMember)
+    closeList
+    let close ← bump
+    return .trait isPub name ms close.span
   match t.tok with
   | .ident w | .kw w =>
     if leanCommands.contains w then
       err t.span "F0112" "Lean code is not supported in .fren files" (some "Lean, not Fren")
-        #["note: only Fren items (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `proc`, `expect`, `tested`, `trusted`) may appear",
+        #["note: only Fren items (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `proc`, `trait`, `expect`, `tested`, `trusted`) may appear",
           s!"help: move the `{w}` to a Lean file that opens `Fren.Lang`, and check it with `lake build`"]
   | _ => pure ()
-  fail t "an item (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `proc`, `expect`, `tested` or `trusted`)"
-    #["mod", "use", "pub", "enum", "struct", "type", "fn", "const", "proc", "expect", "tested", "trusted"]
+  fail t "an item (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `proc`, `trait`, `expect`, `tested` or `trusted`)"
+    #["mod", "use", "pub", "enum", "struct", "type", "fn", "const", "proc", "trait", "expect", "tested", "trusted"]
+
+/-- A member of a trait (`Reqs/Lang/Traits`): a law, `law n(x: T): e`,
+whose `law` is a contextual keyword, or an item, which the elaborator
+checks is a method or an expectation. -/
+partial def traitMember : P Item := do
+  let t ← peek
+  unless isWord t "law" && ((← get).toks[(← get).pos + 1]?).any (·.tok matches .ident _) do return ← item (inTrait := true)
+  markStart
+  discard bump
+  let name ← ident
+  noSpaceBeforeParen name.name s!"the variables of `{name.name}`"
+  markCall
+  openList .functionParameters
+  discard (expectKw "(")
+  let mut params := #[]
+  repeat
+    if isKw (← peek) ")" then break
+    let x ← ident
+    params := params.push (x, ← type?)
+    if !(← listComma) then break
+  closeList
+  discard (expectKw ")")
+  discard (expectKw ":")
+  return .law name params (← top)
+end
 
 /-- Skips `import X` and `open X` lines at the start of the file. -/
 def header : P Unit := do

@@ -778,6 +778,30 @@ impl definitions: check::definitions for (k : CheckKind) {
   substituted? := k.substitutes,
 }
 
+impl law_premise: check::law_premise for (k : CheckKind) (v : Verdict) (l a : Bool) {
+  kind := toCheckKind k,
+  verdict := toVerdict v,
+  laws? := l,
+  asked? := a,
+  rests? := Fren.Core.lawPremise k v l a,
+} by
+  intro k v l a _
+  cases k <;> cases v <;> cases l <;> cases a <;> simp [fren_spec, Fren.Core.lawPremise, Fren.Core.fromUnsat,
+    Fren.Core.CheckKind.passFromUnsat, Fren.Core.CheckKind.queryHasLaws, toCheckKind, toVerdict]
+
+-- For every kind of check, and the vacuity under the laws, what both
+-- front ends' queries have among their hypotheses (`Core.hypParts`, which
+-- `checkLawful` reads, and whose `laws` is `CheckKind.queryHasLaws`, which
+-- `Comp.forKind` reads for every other check).
+impl query_hypotheses: check::query_hypotheses for (k : CheckKind) (l : Bool) {
+  kind := toCheckKind k,
+  lawful? := l,
+  laws? := (Fren.Core.hypParts k l).laws,
+  call_assumptions? := (Fren.Core.hypParts k l).callAssumptions,
+} by
+  intro k l _
+  cases k <;> cases l <;> simp [fren_spec, Fren.Core.hypParts, Fren.Core.CheckKind.queryHasLaws, toCheckKind]
+
 impl copied: check::copied for (s : Fren.Core.Symbol) {
   symbol := toSymbol s,
   copied? := s.copied,

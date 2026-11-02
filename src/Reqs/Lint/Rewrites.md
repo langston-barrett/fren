@@ -26,7 +26,11 @@ functions:
 - [`double_neg`](Style.md#negations-over-the-syntax-of-the-semantics);
 - [`int_plus_one`](Complexity/Comparisons.md#off-by-one-comparisons-over-the-syntax-of-the-semantics);
 - [`manual_abs` and `manual_abs_diff`](Complexity/Integers.md#absolute-values-over-the-syntax-of-the-semantics);
-- [`unless_not` and `collapsible_when`](Style.md#conditionals-over-the-syntax-of-the-semantics).
+- [`unless_not` and `collapsible_when`](Style.md#conditionals-over-the-syntax-of-the-semantics);
+- [`same_branches`](Suspicious/Expressions.md#branches-written-the-same-over-the-syntax-of-the-semantics);
+- [`neg_multiply`](Style.md#products-with--1-over-the-syntax-of-the-semantics);
+- [`identity_op`](Complexity/Operators.md#identities-over-the-syntax-of-the-semantics);
+- [`manual_rem_euclid`](Complexity/Integers.md#remainders-over-the-syntax-of-the-semantics).
 
 `fix_all` below applies `fix_at` in each of its arms, and `fires_in?`
 applies `fires_at?`, and each lint's functions are definitions of their
@@ -51,6 +55,10 @@ pub enum ExprLint {
     ManualAbsDiff,
     UnlessNot,
     CollapsibleWhen,
+    SameBranches,
+    NegMultiply,
+    IdentityOp,
+    ManualRemEuclid,
 }
 
 pub fn fires_at?<V>(l: ExprLint, e: Expr<V>) := match l {
@@ -61,6 +69,10 @@ pub fn fires_at?<V>(l: ExprLint, e: Expr<V>) := match l {
     ExprLint::ManualAbsDiff => manual_abs_diff_fires?(e),
     ExprLint::UnlessNot => unless_not_fires?(e),
     ExprLint::CollapsibleWhen => collapsible_when_fires?(e),
+    ExprLint::SameBranches => same_branches_fires?(e),
+    ExprLint::NegMultiply => neg_multiply_fires?(e),
+    ExprLint::IdentityOp => identity_op_fires?(e),
+    ExprLint::ManualRemEuclid => manual_rem_euclid_fires?(e),
 }
 
 pub fn fix_at<V>(l: ExprLint, e: Expr<V>): Expr<V> := match l {
@@ -71,6 +83,10 @@ pub fn fix_at<V>(l: ExprLint, e: Expr<V>): Expr<V> := match l {
     ExprLint::ManualAbsDiff => manual_abs_diff_fix(e),
     ExprLint::UnlessNot => unless_not_fix(e),
     ExprLint::CollapsibleWhen => collapsible_when_fix(e),
+    ExprLint::SameBranches => same_branches_fix(e),
+    ExprLint::NegMultiply => neg_multiply_fix(e),
+    ExprLint::IdentityOp => identity_op_fix(e),
+    ExprLint::ManualRemEuclid => manual_rem_euclid_fix(e),
 }
 ```
 
@@ -92,7 +108,20 @@ That of `unless_not` writes a conditional of an operand's operand and an
 operand, whose `else` branch is `true`, on which it does not fire. Those
 of `collapsible_when` write a conditional of a new `and` or `or` and of
 the nested conditional's body, on which it fires only where that body is
-another nested conditional, which would make the nested one fire.
+another nested conditional, which would make the nested one fire. That
+of `same_branches` writes an operand. That of `neg_multiply` writes a
+negation, on which it does not fire, of an operand. That of `identity_op`
+writes an operand, or an operation of an operand and an operand's operand
+on which it does not fire. That of `manual_rem_euclid` writes an
+operand's operand.
+
+The fixes of `neg_multiply`, `identity_op` and `manual_rem_euclid` rest
+on [primitive operations](Meaning.md#primitive-operations), `*`, `div`,
+`mod` and `++` of strings, so they agree only in an interpretation that
+gives them their usual meaning, as the language's does.
+`uses_primitives?` names these lints, and `fits?(l, i)` says that `i` is
+such an interpretation for `l`. Each law that is about meaning assumes
+it. The other lints agree in every interpretation.
 
 A lint whose fix may write something that it fires on, from operands
 that are fixed, does not meet the last fact. The De Morgan rewrites of
@@ -104,13 +133,23 @@ until nothing changes, which needs a measure that decreases other than
 the size of the expression.
 
 ```fren
+-- The lints whose fixes rest on the primitive operations.
+pub fn uses_primitives?(l: ExprLint) := l in {
+    ExprLint::NegMultiply,
+    ExprLint::IdentityOp,
+    ExprLint::ManualRemEuclid,
+}
+
+-- `i` gives the primitive operations that `l`'s fix rests on their usual meaning.
+pub fn fits?(l: ExprLint, i: lang::Interp) := not uses_primitives?(l) or usual?(i.primitives)
+
 expect fix_at_unfired(l: ExprLint, e: Expr<lang::Id>) {
     expect unfired: unless fires_at?(l, e), fix_at(l, e) = e
 }
 
 set_option fren.evidence "random" in
 pub proc fix_at_agrees(l: ExprLint, e: Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
-    ensure agrees: agrees?(lang::eval(i, env, fix_at(l, e)), lang::eval(i, env, e))
+    ensure agrees: when fits?(l, i), agrees?(lang::eval(i, env, fix_at(l, e)), lang::eval(i, env, e))
 }
 ```
 
@@ -217,25 +256,28 @@ Fixing a lint everywhere fixes it: the lint fires nowhere in what
 `fix_all` gives (`fixed`). So fixing it again changes nothing
 (`idempotent`), since on an expression where it fires nowhere `fix_all`
 changes nothing (`unchanged`). And the result agrees with the expression as
-written, in every interpretation and environment (`keeps_meaning`). These
+written, in every interpretation that `fits?` the lint and every
+environment (`keeps_meaning`). These
 follow from the [facts about each lint](#each-lint-where-it-fires) at the
 place where it fires: `fix_at_unfired`, `fix_at_agrees` and
 `fix_at_fixed`. The fix at one place alone need not fix the lint, as
-`overly_complex_refires`, `double_neg_refires`, `manual_abs_refires` and
-`collapsible_when_refires` show: these laws are of fixing everywhere. For
-`int_plus_one` and `unless_not` it does, as `int_plus_one_once` and
-`unless_not_once` show. That the passes of `fren fix` end where `fix_all`
-does is a property of the passes, which these laws do not state.
+`overly_complex_refires`, `double_neg_refires`, `manual_abs_refires`,
+`collapsible_when_refires`, `same_branches_refires`,
+`neg_multiply_refires`, `identity_op_refires` and
+`manual_rem_euclid_refires` show: these laws are of fixing everywhere. For `int_plus_one` and `unless_not` it does, as
+`int_plus_one_once` and `unless_not_once` show. That the passes of `fren
+fix` end where `fix_all` does is a property of the passes, which these
+laws do not state.
 
 The laws are about every expression, and so by induction on it, which the
 solver does not do: `src/Impls/Rewrites.lean` proves them in Lean, for
-every lint, expression, interpretation and environment, from those facts
-and from evaluation being monotone in the operands: where each
-operand of an expression agrees with another, in every environment, so does
-the expression with those operands replaced. `fix_all` leaves the
-definition of a `let` as written, so the environments in which it fixes
-operands are the same as those in which the expression as written evaluates
-them. `fren check` tests them:
+every lint, expression, interpretation that `fits?` it and environment,
+from those facts and from evaluation being monotone in the operands:
+where each operand of an expression agrees with another, in every
+environment, so does the expression with those operands replaced.
+`fix_all` leaves the definition of a `let` as written, so the
+environments in which it fixes operands are the same as those in which
+the expression as written evaluates them. `fren check` tests them:
 
 ```fren
 set_option fren.evidence "random" in
@@ -243,7 +285,7 @@ pub proc fix_all_laws(l: ExprLint, e: Expr<lang::Id>, i: lang::Interp, env: lang
     ensure fixed: not fires_in?(l, fix_all(l, e))
     ensure unchanged: unless fires_in?(l, e), fix_all(l, e) = e
     ensure idempotent: fix_all(l, fix_all(l, e)) = fix_all(l, e)
-    ensure keeps_meaning: agrees?(lang::eval(i, env, fix_all(l, e)), lang::eval(i, env, e))
+    ensure keeps_meaning: when fits?(l, i), agrees?(lang::eval(i, env, fix_all(l, e)), lang::eval(i, env, e))
 }
 ```
 

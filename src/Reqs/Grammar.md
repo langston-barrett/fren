@@ -21,7 +21,7 @@
 ```
 spec           := item*
 item           := module | use | enumeration | record | abstract-type | type-alias | subset-type | function | constant
-                | procedure | expectation | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
+                | procedure | trait | expectation | check | claim | lint-setting | evidence-setting ["in" item] | lean-item
 
 module         := ["pub"] "mod" path
 use            := "use" path ["::*" | "::{" path ("," path)* [","] "}"]
@@ -43,6 +43,11 @@ function       := ["pub"] "fn" declared-type"(" type ("," type)* ")" [":" type]
 constant       := ["pub"] "const" IDENT ":" type ":=" top
 procedure      := ["pub"] "proc" IDENT"(" [variable ("," variable)* [","]] ")"
                   [":" "(" result ("," result)* [","] ")"] "{" member* "}"
+trait          := ["pub"] "trait" IDENT "{" trait-member* "}"
+trait-member   := method | law | expectation | lint-setting "in" trait-member
+method         := "fn" IDENT"(" type ("," type)* ")" [":" type]
+                | "fn" IDENT"(" variable ("," variable)* ")" ":" "(" variable [","] ")" "{" member* "}"
+law            := "law" IDENT"(" [variable ("," variable)* [","]] ")" ":" top
 expectation    := "expect" IDENT"(" [variable ("," variable)* [","]] ")"
                   [":" "(" result ("," result)* [","] ")"] "{" member* "}"
                 | "expect" IDENT ":" ["forall" binder+ ","] top

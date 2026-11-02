@@ -9,8 +9,8 @@ The case of a name says what it names:
 
 | Case | Names | Lint |
 |---|---|---|
-| `snake_case` | modules, procedures, variables, fields, functions, calls, constraints, global expectations, the binders of `match` patterns, the bound names of quantifiers, and the names of `let` and `where` clauses | `non_snake_case` |
-| `CamelCase` | enumerations, variants, records and abstract types | `non_camel_case_types` |
+| `snake_case` | modules, procedures, variables, fields, functions, calls, constraints, global expectations, laws, the binders of `match` patterns, the bound names of quantifiers, and the names of `let` and `where` clauses | `non_snake_case` |
+| `CamelCase` | enumerations, variants, records, abstract types and traits | `non_camel_case_types` |
 | `UPPER_CASE` | constants | `non_upper_case_constants` |
 
 `lint::naming_case` gives the case of the names of each
@@ -25,10 +25,10 @@ use self::Case::{Camel, Snake, Upper}
 
 set_option fren.evidence "enumerated" in
 pub proc naming_case(what: Named): (det case: Case) {
-    use self::Named::{AbstractType, Constant, Enumeration, Record, TypeAlias, Variant}
+    use self::Named::{AbstractType, Constant, Enumeration, Record, Trait, TypeAlias, Variant}
 
     ensure rule: case = match what {
-        Enumeration | Variant | Record | AbstractType | TypeAlias => Camel,
+        Enumeration | Variant | Record | AbstractType | TypeAlias | Trait => Camel,
         Constant => Upper,
         _ => Snake,
     }

@@ -500,6 +500,7 @@ def ownSpecFiles : Array String :=
     "Lang/Items",
     "Lang/Generics",
     "Lang/GenericFunctions",
+    "Lang/Traits",
     "Lang/Prelude",
     "Lang/Scope",
     "Lang/Procedures",
@@ -597,6 +598,13 @@ def checkedItems (ls : Array String) : Array String :=
       (r.toString.takeWhile fun c => c.isAlphanum || c == '_' || c == '?').toString
     (word "proc ").orElse fun _ => word "expect "
 
+/-- The `#fren_check`s of the Markdown text `md`, in its `fren` blocks: a
+line in prose is prose, which `#fren_md` does not read (`Reqs/Markdown`). -/
+def chapterChecks (md : String) : Array String :=
+  (frenBlockLines md).filter (·.trimAscii.toString.startsWith "#fren_check")
+
+#guard chapterChecks "```fren\nproc p() {}\n#fren_check p\n```\n\n#fren_check\n" == #["#fren_check p"]
+
 /-- The problems of Lean's checks of `src/Reqs`: each chapter that a Lean file
 reads by `#fren_md`, and that declares procedures or global expectations, is
 checked by a `#fren_check` without a path in it or in a later chapter of
@@ -613,8 +621,7 @@ def hostedChecks : IO (Array String) := do
       | [_, rest] => (rest.splitOn "\"").head?
       | _ => none
     let texts ← chapters.toArray.mapM fun (c : String) => IO.FS.readFile (("src" : FilePath) / "Reqs" / c)
-    -- A chapter's `#fren_check`s, in its `fren` blocks or on lines of their own.
-    let checks := texts.map fun t => (t.splitOn "\n").toArray.filter (·.trimAscii.toString.startsWith "#fren_check")
+    let checks := texts.map chapterChecks
     for c in chapters.toArray, t in texts, k in [0:texts.size] do
       let items := checkedItems (frenBlockLines t)
       if items.isEmpty then continue
@@ -622,7 +629,7 @@ def hostedChecks : IO (Array String) := do
       let named := checks[k]!.filterMap fun l => (l.trimAscii.toString.dropPrefix? "#fren_check ").map (·.toString.trimAscii.toString)
       for i in items do
         unless bare || named.contains i do
-          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as the chapter comes after its file's last `#fren_check`: name it, as `#fren_check {i}`"
+          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as the chapter comes after its file's last `#fren_check` in a `fren` block: name it, as `#fren_check {i}`"
   return failures
 
 /-- `fren check --query-cache` gives the same output cold, in a fresh
@@ -761,6 +768,148 @@ def ownSpec : IO (Array String) := do
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
     ++ compared
     ++ (← hostedChecks)
+
+/-- A message that Lake kept in a module's trace, `src/Reqs/M.lean:L:C: text`
+or `src/Reqs/M.lean:L:C: warning: text`, about a Markdown spec that the
+module reads: the spec, as a path from the repository's root, and the
+message, at its position in the spec (`Fren.elabMd` places it at the
+`#fren_md` and starts its text with `NAME.md:LINE:COL: `, the column from
+0). A message about the Lean file's own item, or Lean's summary of a
+`#fren_check` (`fren: …`), is none. -/
+def ownSpecMessage? (level : String) (message : String) : Option (String × Diagnostic) := do
+  let severity ← match level with
+    | "info" => some "info"
+    | "warning" => some "warning"
+    | "error" => some "error"
+    | _ => none
+  -- After the Lean file's position, `src/Reqs/M.lean:L:C: `.
+  let rest := match message.splitOn ".lean:" with
+    | _ :: after@(_ :: _) => ".lean:".intercalate after
+    | _ => ""
+  let rest := match rest.splitOn ": " with
+    | _ :: after@(_ :: _) => ": ".intercalate after
+    | _ => ""
+  let rest := ["warning: ", "error: "].foldl (fun r p => ((r.dropPrefix? p).map (·.toString)).getD r) rest
+  match rest.splitOn ": " with
+  | loc :: text@(_ :: _) =>
+    match loc.splitOn ":" with
+    | [name, line, col] =>
+      guard (name.endsWith ".md")
+      let text := ": ".intercalate text
+      guard (!text.startsWith "fren: ")
+      return (s!"src/Reqs/{name}", { line := ← line.toNat?, col := ← col.toNat?, severity, text })
+    | _ => none
+  | _ => none
+
+#guard (ownSpecMessage? "info" "src/Reqs/Lang.lean:33:0: Lang/Types.md:1041:10: cover goal `t` is met\n\nwitness: x = 1").map
+  (fun (f, d) => (f, d.line, d.col, d.severity, d.text)) ==
+  some ("src/Reqs/Lang/Types.md", 1041, 10, "info", "cover goal `t` is met\n\nwitness: x = 1")
+#guard (ownSpecMessage? "warning" "src/Reqs/Check.lean:15:0: warning: Check.md:3:4: could not decide").map
+  (fun (f, d) => (f, d.line, d.severity)) == some ("src/Reqs/Check.md", 3, "warning")
+#guard (ownSpecMessage? "info" "src/Reqs/Fmt.lean:9:0: Fmt.md:461:0: fren: 100 passed, 0 failed").isNone
+#guard (ownSpecMessage? "trace" "src/Reqs/Fmt.lean:9:0: Fmt.md:461:0: x").isNone
+#guard (ownSpecMessage? "info" "stderr:\nCould not evaluate").isNone
+
+/-- The Lean front end's messages about the Markdown specs of Fren's own
+requirements, from the logs that Lake kept in the traces of the modules of
+`src/Reqs` (`ownSpecMessage?`), with the problems: a module without a trace,
+or built without its checks (`fren.runChecks`), as `lake build` builds it
+unless `-Kcheck_reqs` is set. -/
+def hostedOwnSpec : IO (Array (String × Diagnostic) × Array String) := do
+  let mut msgs := #[]
+  let mut problems := #[]
+  let modules := (← System.FilePath.readDir "src/Reqs").filter (·.path.extension == some "lean")
+  for entry in modules.qsort (·.fileName < ·.fileName) do
+    let some stem := entry.path.fileStem | continue
+    let trace : FilePath := ".lake" / "build" / "lib" / "lean" / "Reqs" / s!"{stem}.trace"
+    let text ← match ← (IO.FS.readFile trace).toBaseIO with
+      | .ok t => pure t
+      | .error _ =>
+        problems := problems.push s!"{trace}: no trace; run `lake -R -Kcheck_reqs=1 build Reqs` first"
+        continue
+    let log : Array Json := match Json.parse text >>= (·.getObjValAs? (Array Json) "log") with
+      | .ok l => l
+      | .error _ => #[]
+    let entries : Array (String × String) := log.filterMap fun e =>
+      match e.getObjValAs? String "level", e.getObjValAs? String "message" with
+      | .ok level, .ok message => some (level, message)
+      | _, _ => none
+    -- The command that built it, which Lake logs first.
+    match entries.find? (·.1 == "trace") with
+    | some (_, cmd) =>
+      if cmd.contains "fren.runChecks=false".toSlice then
+        problems := problems.push s!"{trace}: `Reqs.{stem}` was built without its checks; run `lake -R -Kcheck_reqs=1 build Reqs` first"
+    | none => problems := problems.push s!"{trace}: no command in its log, so whether its checks ran is unknown"
+    msgs := msgs ++ entries.filterMap fun (level, message) => ownSpecMessage? level message
+  return (msgs, problems)
+
+/-- Lean's note that it leaves checks to `fren check`: those set to random
+testing, or that rest on them (`Reqs/Evidence#lean`). -/
+def leavesToBinary (d : Diagnostic) : Bool :=
+  d.severity == "info" && ((FrenTest.Frontends.headOf d).splitOn " set to random testing are run by `fren check`").length > 1
+
+/-- The reports to compare on a spec of Fren's own requirements, of text
+`text`, from the binary's messages `cli` and Lean's `hosted`, without what
+only the binary runs (`ownSpecAgreement`): the checks set to random
+testing and those that rest on them, which Lean leaves to it and does not
+report (`Reqs/Evidence#lean`). So Lean's notes that it leaves them
+(`leavesToBinary`) are dropped, and so is a message of the binary's that
+Lean does not report alike: a caveat about them (`F0654`, `F0663`), or
+any message in an item that Lean notes. Lean reports a check once for each
+`#fren_check` of its Lean file that runs it, so its messages are counted
+once. -/
+def ownSpecReports (text : String) (cli hosted : Array Diagnostic) : FrenTest.Frontends.Report × FrenTest.Frontends.Report :=
+  let items := FrenTest.Frontends.itemOf text
+  let itemAt (n : Nat) := items[n]?.getD 0
+  let same (a b : Diagnostic) := a.line == b.line && a.col == b.col && a.severity == b.severity && a.text == b.text
+  let hosted := hosted.foldl (init := #[]) fun acc d => if acc.any (same d) then acc else acc.push d
+  let left := (hosted.filter leavesToBinary).map (itemAt ·.line)
+  let alike (c : Diagnostic) := hosted.any fun h => h.line == c.line && h.col == c.col && h.severity == c.severity
+    && FrenTest.Frontends.normHead h.text == FrenTest.Frontends.normHead c.text
+  let cli := cli.filter fun c => alike c || !(c.code?.any (["F0654", "F0663"].contains ·) || left.contains (itemAt c.line))
+  ({ diags := cli }, { diags := hosted.filter (!leavesToBinary ·) })
+
+/-- The binary's messages, and Lean's, on a procedure `p` whose checks of
+`b` Lean leaves to the binary: for `ownSpecReports`. -/
+def ownSpecExample : Array Diagnostic × Array Diagnostic :=
+  (#[{ line := 2, col := 4, severity := "info", text := "cover goal `a` is met" },
+     { line := 3, col := 4, severity := "info", text := "cover goal `b` is met" },
+     { line := 1, col := 0, severity := "info", text := "x", code? := some "F0663" }],
+   #[{ line := 2, col := 4, severity := "info", text := "cover goal `a` is met" },
+     { line := 2, col := 4, severity := "info", text := "cover goal `a` is met" },
+     { line := 1, col := 0, severity := "info",
+       text := "the checks of `p` that rest on checks set to random testing are run by `fren check`, not in Lean" }])
+
+#guard
+  let r := ownSpecReports "proc p() {\n    cover a: true\n    cover b: true\n}\n" ownSpecExample.1 ownSpecExample.2
+  (r.1.diags.map (·.line), r.2.diags.map (·.line)) == (#[2], #[2])
+
+/-- Both front ends report the same messages about Fren's own requirements
+(`cli::agreement`): Lean's, from a build of `Reqs` with its checks
+(`lake -R -Kcheck_reqs=1 build Reqs`, `hostedOwnSpec`), and the binary's,
+from `fren check` over `ownSpecFiles`, compared spec by spec as the
+front-end fuzzer compares them (`FrenTest.Frontends.comparison`), without
+the summaries, which Lean gives for each `#fren_check`, and without what
+only the binary runs (`ownSpecReports`). Run on `main` only,
+by the `lean ci` workflow: `lake build` does not check `Reqs`, and `lake
+test`'s `ownSpec` job checks them with the binary. -/
+def ownSpecAgreement : IO (Array String) := do
+  let (hosted, problems) ← hostedOwnSpec
+  unless problems.isEmpty do return problems
+  let (queryCache?, _) ← ownSpecCaches
+  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := ownSpecFiles, queryCache? })
+  let mut failures := if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"]
+  for f in ownSpecFiles do
+    let text := Fren.Core.unwrapMarkdown (← IO.FS.readFile f)
+    let (cli, lean) := ownSpecReports text (cliDiagnostics f out).1
+      (hosted.filterMap fun (g, d) => if g == f then some d else none)
+    for d in (FrenTest.Frontends.comparison text cli lean).found do
+      failures := failures.push s!"{f}: {d}"
+  -- Lean's messages about a spec that the binary does not check.
+  for (g, d) in hosted do
+    unless ownSpecFiles.contains g do
+      failures := failures.push s!"{g}:{d.line}: Lean reports about a spec that `ownSpecFiles` lacks: {FrenTest.Frontends.headOf d}"
+  return failures
 
 /-! ## Formatting -/
 
@@ -2268,6 +2417,9 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["ownSpec"] => ownSpec
+  -- Not among `jobs`: on `main` only, after a build of `Reqs` with its
+  -- checks (`ownSpecAgreement`).
+  | ["ownSpecAgreement"] => ownSpecAgreement
   | ["queryCache"] => queryCache
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus

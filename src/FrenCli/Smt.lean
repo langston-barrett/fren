@@ -984,6 +984,8 @@ def toCore (c : CComp) : Fren.Core.Comp String :=
       vars := c.vars.map fun v =>
         { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
       assumes := props .assume
+      laws := c.laws
+      lawsOf := c.lawsOf
       -- A function's postconditions are claims of its own
       -- (`check::postcondition`), and the hypotheses of nothing.
       reqs := if c.fn?.isNone || contract then props .ensure else #[]

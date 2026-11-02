@@ -295,6 +295,9 @@ structure CheckResult where
   them (`check::CheckRecord`'s `applies`); a check that no query decides
   has none. -/
   applies : Array Name := #[]
+  /-- The trait whose laws its queries have among their hypotheses, which
+  no check of the item showed can hold (`check::law_premise`). -/
+  restsOnLaws? : Option Name := none
   deriving Inhabited
 
 /-- The behaviour that a report shows of the procedure (`view::Shown`): a
@@ -575,6 +578,13 @@ structure Comp (F : Type) where
   /-- Source Boolean groups, whose owners match named assumptions or requirements. -/
   branchGroups : Array (BranchGroup F) := #[]
   memberGroups : Array (MemberGroup F) := #[]
+  /-- For an expectation of a trait: the trait's laws, each a closed
+  formula, which every query with the assumptions and calls among its
+  hypotheses has before them (`Comp.hyps`), but realizability's, which sees
+  the item without them (`Comp.forKind`, `check::query_hypotheses`). -/
+  laws : Array (Name × F) := #[]
+  /-- The trait whose laws `laws` are. -/
+  lawsOf : Name := .anonymous
 
 variable {m : Type → Type} [Monad m] {F V : Type} (b : Backend m F V)
 
@@ -717,9 +727,42 @@ realizability. -/
 def Comp.substHyps (c : Comp F) (b : Backend m F V) (hs : Array (Name × F)) : Array (Name × F) :=
   hs.map fun (n, f) => (n, c.subst b .realizable f)
 
-/-- The assumptions, then what each call contributes (`I`). -/
+/-- Whether the queries of a check of kind `k` have a trait's laws among
+their hypotheses (`check::query_hypotheses`): every check's but
+realizability's, both of whose queries ask of the item's own assumptions
+and calls alone. -/
+def CheckKind.queryHasLaws (k : CheckKind) : Bool := k != .realizable
+
+/-- What a check's queries have among their hypotheses
+(`check::query_hypotheses`): the item's trait's laws, its assumptions, and
+of each call, its bindings and the called procedure's behaviour, with the
+called procedure's assumptions or only what follows from them. -/
+structure HypParts where
+  laws : Bool
+  /-- Each call's procedure's assumptions as hypotheses, not only as the
+  premise of its guarantees. -/
+  callAssumptions : Bool
+  deriving Inhabited, DecidableEq, Repr
+
+/-- What the queries of a check of kind `k` have among their hypotheses,
+or, `lawful`, those of an item's vacuity under its trait's laws
+(`check::query_hypotheses`): every check's queries have the laws but
+realizability's, and each call's procedure's assumptions; the vacuity
+under the laws has the laws, and of a call only what its procedure
+guarantees where its assumptions hold, which the call checks apart
+(`checkInst`), as the item's realizability does not ask them either. -/
+def hypParts (k : CheckKind) (lawful : Bool) : HypParts :=
+  if lawful then { laws := true, callAssumptions := false }
+  else { laws := k.queryHasLaws, callAssumptions := true }
+
+/-- The item as the queries of a check of kind `k` see it: without its
+trait's laws where `hypParts` leaves them out. -/
+def Comp.forKind (c : Comp F) (k : CheckKind) : Comp F :=
+  if (hypParts k false).laws then c else { c with laws := #[] }
+
+/-- The laws, the assumptions, then what each call contributes (`I`). -/
 def Comp.hyps (c : Comp F) (b : Backend m F V) (upTo : Nat := c.insts.size) : Array (Name × F) :=
-  c.assumes ++ (c.insts.extract 0 upTo).map fun i => (i.name, b.conj #[i.bindings, i.behaviour])
+  c.laws ++ c.assumes ++ (c.insts.extract 0 upTo).map fun i => (i.name, b.conj #[i.bindings, i.behaviour])
 
 /-- The outputs whose values a clash note may give: the public ones that
 are not defined, since realizability replaces those by their definitions. -/
@@ -740,7 +783,7 @@ procedure whose inputs, definitions, assumptions or calls need the ordinary
 universal-completion protocol. Interpretation freedom is checked separately. -/
 def Comp.fixedInhabitation (c : Comp F) (interprets : F → Bool := fun _ => false) : Bool :=
   c.inhabitation && !c.realizableInterpreted interprets && c.defs.isEmpty &&
-    c.assumes.isEmpty && c.insts.isEmpty && c.vars.all (·.role == .output)
+    c.laws.isEmpty && c.assumes.isEmpty && c.insts.isEmpty && c.vars.all (·.role == .output)
 
 /-- Additional all-model forcing relationships under the general assumptions
 and calls. The primary core may be input-local; its pins are not premises. -/
@@ -1460,7 +1503,7 @@ def checkComp (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array Che
   let one := withApplies applied?
   let all := withAllApplies applied?
   let realizable ← ifSelected (kinds.contains .realizable)
-    ((#[·]) <$> one (checkRealizable (bk .realizable) c examples interprets))
+    ((#[·]) <$> one (checkRealizable (bk .realizable) (c.forKind .realizable) examples interprets))
   let insts ← ifSelected (kinds.contains .inst) (all (checkInsts (bk .inst) c))
   let expects ← ifSelected (kinds.contains .expect) (c.expects.mapM fun e => one (checkExpect (bk .expect) c e))
   let covers ← ifSelected (kinds.contains .cover) (c.covers.mapM (fun g => one (checkCover (bk .cover) c g examples)))
@@ -1633,9 +1676,105 @@ def coverInterpreted (c : Comp F) (interprets : F → Bool) (n : Name) : Bool :=
     | some (_, g) => (c.coverFormulas g).any interprets
     | none => false
 
-/-- `rs`, with each cover goal's result marked by `coverInterpreted`. -/
+def showComp (path : Name) : String :=
+  -- Unescaped, so that an instance of a generic function shows as `pick<Int>`
+  -- (`instanceName`).
+  "::".intercalate (path.components.map (·.toString (escape := false)))
+
+/-- Whether a pass of a check of kind `k` comes from an `unsat` query, a
+proof, rather than from a model (`check::pass_from_unsat?`): a cover goal,
+a vacuity check and a reachability question pass by a witness, and a
+redundancy check by a model in which the constraint is needed. -/
+def CheckKind.passFromUnsat : CheckKind → Bool
+  -- A pass gives a typed behaviour: `Sound.checkCover_pass`,
+  -- `checkVacuity_pass`, `checkRedundant_pass`, `checkReach_pass`.
+  | .cover | .vacuity | .redundancy | .reachability => false
+  -- A pass holds of every behaviour: `Sound.checkExpect_pass`,
+  -- `checkInst_pass`, `checkDeterminism_pass`, `checkDefinedness_pass`,
+  -- `checkTable_pass` (completeness, disjointness, preconditions),
+  -- `checkPostcondition`'s, and realizability's `checkRealizable_pass`,
+  -- whose queries have no laws (`queryHasLaws`).
+  | _ => true
+
+/-- Whether a verdict `v` of a check of kind `k` comes from an `unsat`
+query (`check::from_unsat?`): a pass or a failure, whichever is not the
+model's, and never an inconclusive verdict, which comes from neither. -/
+def fromUnsat (k : CheckKind) (v : Verdict) : Bool :=
+  match v with
+  | .pass => k.passFromUnsat
+  | .fail => !k.passFromUnsat
+  | .inconclusive => false
+
+/-- Whether the verdict `v` of a check of kind `k`, of an item whose trait
+has laws (`hasLaws`), rests on the laws in a way that no check of the item
+settles (`check::law_premise`): where its queries have the laws
+(`CheckKind.queryHasLaws`), it comes from an `unsat` query, which laws that
+cannot hold would give, and the item's vacuity under the laws was not
+asked (`asked`). Where it was asked, the evidence of the item's checks
+rests on it, as on its realizability (`Reqs/Evidence`). A verdict from a
+model rests on nothing more: the model meets the laws. -/
+def lawPremise (k : CheckKind) (v : Verdict) (hasLaws : Bool) (asked : Bool := false) : Bool :=
+  hasLaws && k.queryHasLaws && fromUnsat k v && !asked
+
+/-- The vacuity of an item whose trait has laws, under the laws
+(`r[trait.expect.lawful]`, `Reqs/Evidence#the-laws-of-a-trait`): whether
+its assumptions and calls can hold together with the laws, which the
+queries of its checks but realizability have. A model shows that they can.
+Where they cannot, it fails, and the item's checks rest on it as they rest
+on its realizability (`itemEvidence`). -/
+def checkLawful (c : Comp F) : m CheckResult := do
+  let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
+    { kind := .vacuity, comp := c.path, prop? := none, verdict, detail, global := true }
+  let base := c.defEqs .vacuity
+  let parts := hypParts .vacuity true
+  -- Of each call, its bindings, and its procedure's behaviour where its
+  -- assumptions hold (`HypParts.callAssumptions`).
+  let call (i : Inst F) : Name × F :=
+    if parts.callAssumptions then (i.name, b.conj #[i.bindings, i.behaviour])
+    else (i.name, b.conj #[i.bindings, b.notF (b.conj #[b.conj (i.assumes.map (·.2)), b.notF i.behaviour])])
+  let hyps := (if parts.laws then c.laws else #[]) ++ c.assumes ++ c.insts.map call
+  match ← b.query (base ++ hyps) b.falseF false with
+  | .sat _ => return result .pass
+  | .unsat => return result .fail (.vacuousAssumptions (← minimize b base hyps b.falseF))
+  | .unknown r => return result .inconclusive (.unknown r)
+
+/-- Whether `r` is the vacuity of its item under its trait's laws
+(`checkLawful`). -/
+def CheckResult.isLawful (r : CheckResult) : Bool := r.kind == .vacuity && r.prop?.isNone
+
+/-- `checkComp`, and, for an item whose trait has laws and that has
+assumptions or calls, its vacuity under the laws (`checkLawful`), as both
+front ends run them. -/
+def checkCompLawful (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array CheckKind := CheckKind.all)
+    (examples : Option Nat := some 1) (interprets : F → Bool := fun _ => false)
+    (applied? : Option (m (Array Name)) := none) : m (Array CheckResult) := do
+  let rs ← checkComp bk c kinds examples interprets applied?
+  -- Without assumptions or calls, it would ask of the laws alone, which
+  -- is the same for every expectation of the trait.
+  if c.laws.isEmpty || (c.assumes.isEmpty && c.insts.isEmpty) || !kinds.contains .vacuity then return rs
+  return rs.push (← checkLawful (bk .vacuity) c)
+
+/-- `rs`, of an item whose trait has laws, with the first result at each
+constraint that rests on the laws (`lawPremise`) marked, for the one
+message there that says so (`lawsMsg`); none is marked where the item's vacuity
+under the laws was asked. -/
+def withLaws (c : Comp F) (rs : Array CheckResult) : Array CheckResult := Id.run do
+  if c.laws.isEmpty then return rs
+  let asked := rs.any (·.isLawful)
+  let mut seen : Array (Option Name) := #[]
+  let mut out := #[]
+  for r in rs do
+    if !r.isLawful && lawPremise r.kind r.verdict true asked && !seen.contains r.prop? then
+      seen := seen.push r.prop?
+      out := out.push { r with restsOnLaws? := some c.lawsOf }
+    else out := out.push r
+  return out
+
+/-- `rs`, with each cover goal's result marked by `coverInterpreted`, and
+each result that rests on a trait's laws by `withLaws`. Both front ends
+mark their results so. -/
 def withInterpreted (c : Comp F) (interprets : F → Bool) (rs : Array CheckResult) : Array CheckResult :=
-  rs.map fun r => if r.kind == .cover then { r with interpreted := r.prop?.any (coverInterpreted c interprets) } else r
+  withLaws c <| rs.map fun r => if r.kind == .cover then { r with interpreted := r.prop?.any (coverInterpreted c interprets) } else r
 
 /-! ## Reporting
 
@@ -1775,10 +1914,6 @@ def rowsText (rows? : Option (Nat × Nat)) (arms : Bool := false) : String :=
 (`Comp.fn?`). -/
 def clauseName (n : Name) : Name := Name.mkSimple n.getString!
 
-def showComp (path : Name) : String :=
-  -- Unescaped, so that an instance of a generic function shows as `pick<Int>`
-  -- (`instanceName`).
-  "::".intercalate (path.components.map (·.toString (escape := false)))
 
 /-- The subject of the messages about a procedure at `path`, as both front
 ends show it: a global expectation, `global`, by its module and the name
@@ -1853,7 +1988,8 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
       | .inst, none => s!"{subject} holds"
       | .expect, _ => s!"{subject} holds"
       | .cover, _ => s!"{subject} can be met"
-      | .vacuity, _ => s!"{subject} is vacuous"
+      | .vacuity, _ => if r.isLawful then s!"the assumptions and calls of {subject} can hold together with its trait's laws"
+        else s!"{subject} is vacuous"
       | .redundancy, _ => s!"{subject} is redundant"
       | .determinism, _ => s!"{subject} is determined by the inputs"
       | .definedness, _ => match r.subsetTy? with
@@ -2167,13 +2303,35 @@ def memberMessages (r : CheckResult) : Array Message := Id.run do
     }
   return out
 
+/-- A constraint whose verdict rests on the laws of the trait `t`, whose
+consistency is not checked (`F0665`, `check::law_premise`): laws that
+contradict each other would give that verdict whatever the constraint
+says. -/
+def lawsMsg (what : String) (t : Name) : Msg :=
+    { code? := some "F0665"
+      headline := s!"{what} rests on the laws of `{showComp t}`, whose consistency is not checked"
+      label? := some "rests on unchecked laws"
+      notes := #[s!"note: its verdict comes from the laws of `{showComp t}`; if no interpretation meets them all, it would be the same whatever it says",
+        "note: Fren does not check yet that a trait's laws can hold together (#594)"] }
+
+/-- The message of a result that rests on a trait's laws (`lawsMsg`), at
+its constraint, or none. -/
+def lawsMessages (r : CheckResult) : Array Message :=
+  match r.restsOnLaws? with
+  | some t =>
+    let subject := match r.prop? with
+      | some n => s!"`{showComp (r.comp ++ n)}`"
+      | none => s!"`{showComp r.comp}`"
+    #[{ severity := .warning, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?, msg := lawsMsg subject t }]
+  | none => #[]
+
 /-- The messages of one result, which both front ends report. The result
 shows a behaviour only where its verdict allows it: it is sealed here, so
 that no message of a pass shows a counterexample, whatever method reached
 the verdict (`view::report_shows`). -/
 def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
   let r := r.sealShown
-  baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r
+  baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r ++ lawsMessages r
 
 /-- Sealing twice is sealing once. -/
 theorem CheckResult.sealShown_idem (r : CheckResult) : r.sealShown.sealShown = r.sealShown := by

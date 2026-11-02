@@ -663,12 +663,8 @@ evaluated where it was, so the guards are kept.
 In the [syntax of the semantics](../Lang/Semantics.md#abstract-syntax),
 parentheses are gone and `-a` is `Unary(Neg, a)`, so `double_neg` fires on
 `Unary(Neg, Unary(Neg, a))`, and its fix is `a`, as [Fixes as
-rewrites](Rewrites.md) states for every such lint. `neg_multiply` is not
-stated so: a product is a primitive operation, which an interpretation
-gives (see [Environments and
-interpretations](../Lang/Semantics.md#environments-and-interpretations)),
-so `x * -1` and `-x` agree only in an interpretation that gives `*` its
-usual meaning.
+rewrites](Rewrites.md) states for every such lint. `neg_multiply` is
+[below](#products-with--1-over-the-syntax-of-the-semantics).
 
 ```fren
 pub fn double_neg_fires?<V>(e: lang::Expr<V>) :=
@@ -729,6 +725,123 @@ expect double_neg_refires(x: lang::Id, e: lang::Expr<lang::Id>) {
         double_neg_fix(Unary(Neg, Unary(Neg, Unary(Neg, Unary(Neg, Var(x))))))
     )
     expect around: when double_neg_fires?(e), double_neg_fires?(Unary(Neg, e))
+}
+```
+
+### Products with `-1`, over the syntax of the semantics
+
+`-1` is the negation of the literal `1`, `Unary(Neg, Literal(1))`, so
+`neg_multiply` fires on `Binary(Mul, a, b)` where `a` or `b` is that
+negation. Its fix is the negation of the other operand, the left one
+where the right is `-1`, as `lint::neg_multiply`'s `negate_left?` says:
+
+```fren
+-- `e` is `-1`, the negation of the literal `1`.
+fn minus_one?<V>(e: lang::Expr<V>) := e = lang::Expr::Unary(
+    lang::UnaryOp::Neg,
+    lang::Expr::Literal(lang::Value::Integer(1))
+)
+
+pub fn neg_multiply_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Binary(lang::BinaryOp::Mul, a, b) => minus_one?(a) or minus_one?(b),
+    _ => false,
+}
+
+pub fn neg_multiply_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Binary(lang::BinaryOp::Mul, a, b) =>
+        if minus_one?(b) then lang::Expr::Unary(lang::UnaryOp::Neg, a)
+        else if minus_one?(a) then lang::Expr::Unary(lang::UnaryOp::Neg, b)
+        else e,
+    _ => e,
+}
+```
+
+`lint::neg_multiply` binds this to the linter. For every two operands
+`x` and `y` that are not `-1`, with each operand `-1` or not as its input
+says, it fires exactly where `neg_multiply_fires?` does, and the fix
+negates the operand that `negate_left?` names. That the front ends read
+`-1` through parentheses as elaboration does, and run the lint only at a
+product, is trusted, and checked by the ui tests of the lint.
+
+```fren
+expect neg_multiply_elaborated(
+    left_minus_one?,
+    right_minus_one?,
+    x: lang::Expr<lang::Id>,
+    y: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{Binary, Literal, Unary}
+    use lang::UnaryOp::Neg
+
+    call p := neg_multiply(left_minus_one?, right_minus_one?)
+
+    let a: lang::Expr<lang::Id> := if left_minus_one? then Unary(Neg, Literal(lang::Value::Integer(1))) else x
+    let b: lang::Expr<lang::Id> := if right_minus_one? then Unary(Neg, Literal(lang::Value::Integer(1))) else y
+
+    expect fires: unless minus_one?(x) or minus_one?(y), p.fires? iff neg_multiply_fires?(Binary(lang::BinaryOp::Mul, a, b))
+    expect fix: when p.fires?, neg_multiply_fix(Binary(lang::BinaryOp::Mul, a, b)) = Unary(Neg, if p.negate_left? then a else b)
+}
+```
+
+`*` is a [primitive operation](Meaning.md#primitive-operations), so the
+fix agrees with the product only in an interpretation that gives `*` its
+usual meaning. In one that does, where the other operand is an integer
+`n`, the product is `-n` or, where the graph has no point for it,
+undefined, and the fix is `-n`. Elsewhere the product is undefined. The
+solver unfolds [`eval`](../Lang/Semantics.md#the-evaluation-function)
+one step, and the graph of the primitives is a list of any length, so
+`src/Impls/Rewrites.lean` proves it in Lean, for every expression,
+interpretation whose primitives are `usual?`, and environment; `fren check`
+tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc neg_multiply_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure agrees: when usual?(i.primitives) and neg_multiply_fires?(e),
+        agrees?(
+            lang::eval(i, env, neg_multiply_fix(e)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
+The fix is a negation, on which the lint does not fire, of an operand, so
+it fixes the lint at its place (`kept`). It may start a firing around it.
+In `c * (1 * -1)`, the outer product does not fire, and the fix of the
+inner one, `-1`, makes it fire (`around`).
+
+```fren
+expect neg_multiply_refires(c: lang::Expr<lang::Id>, e: lang::Expr<lang::Id>) {
+    use lang::BinaryOp::Mul
+    use lang::Expr::{Binary, Literal, Unary}
+    use lang::UnaryOp::Neg
+
+    expect kept: not neg_multiply_fires?(neg_multiply_fix(e))
+    expect around: unless minus_one?(c),
+        not neg_multiply_fires?(
+            Binary(
+                Mul,
+                c,
+                Binary(
+                    Mul,
+                    Literal(lang::Value::Integer(1)),
+                    Unary(Neg, Literal(lang::Value::Integer(1)))
+                )
+            )
+        )
+        and neg_multiply_fires?(
+            Binary(
+                Mul,
+                c,
+                neg_multiply_fix(
+                    Binary(
+                        Mul,
+                        Literal(lang::Value::Integer(1)),
+                        Unary(Neg, Literal(lang::Value::Integer(1)))
+                    )
+                )
+            )
+        )
 }
 ```
 

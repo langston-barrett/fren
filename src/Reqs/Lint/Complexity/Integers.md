@@ -214,9 +214,6 @@ test of being written the same. The model orders only integers, so
 neither states what the condition compares.
 
 ```fren
--- `e` is the literal `0`.
-fn zero?<V>(e: lang::Expr<V>) := e = lang::Expr::Literal(lang::Value::Integer(0))
-
 -- `op` is `<` or `<=`, the orderings that elaboration writes.
 fn ordering?(op: lang::BinaryOp) := op is lang::BinaryOp::Lt | lang::BinaryOp::Le
 
@@ -666,6 +663,149 @@ expect manual_rem_euclid_sound(x: Int, n: Nat) {
 expect manual_rem_euclid_complete(x: Int, n: Nat) {
     call concrete := manual_rem_euclid_written(x, n)
     refines concrete manual_rem_euclid_fixed(x, n)
+}
+```
+
+### Remainders, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+`manual_rem_euclid` fires on `Binary(Mod, Binary(Add, p, q), k)`, where
+the first of `p` and `q` that is a `mod` is by `k`, and the other is `k`,
+as `lint::manual_rem_euclid` reads them. Its fix is that `mod`, as [Fixes
+as rewrites](../Rewrites.md) states for every such lint.
+
+```fren
+-- `r` is a remainder.
+fn remainder?<V>(r: lang::Expr<V>) := r is lang::Expr::Binary(lang::BinaryOp::Mod, _, _)
+
+-- `r` is a remainder by `k`, and `other` is `k`.
+fn remainder_by?<V>(r: lang::Expr<V>, other: lang::Expr<V>, k: lang::Expr<V>) := match r {
+    lang::Expr::Binary(lang::BinaryOp::Mod, _, d) => d = k and other = k,
+    _ => false,
+}
+
+pub fn manual_rem_euclid_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Binary(lang::BinaryOp::Mod, lang::Expr::Binary(lang::BinaryOp::Add, p, q), k) =>
+        if remainder?(p) then remainder_by?(p, q, k) else remainder_by?(q, p, k),
+    _ => false,
+}
+
+pub fn manual_rem_euclid_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Binary(lang::BinaryOp::Mod, lang::Expr::Binary(lang::BinaryOp::Add, p, q), k) =>
+        if remainder?(p) then (if remainder_by?(p, q, k) then p else e)
+        else if remainder_by?(q, p, k) then q
+        else e,
+    _ => e,
+}
+```
+
+`lint::manual_rem_euclid` binds this to the linter. It compares written
+forms, not elaborations. `+` and `mod` bind no names, so the texts within
+`(p + q) mod k` are in one scope, and a text elaborates alike wherever it
+is written there: `summand_written(t)` is the elaboration of the text `t`.
+A summand that is a `mod` elaborates to one, of its dividend `x` or `y`
+and its divisor, and one that is not elaborates to no `mod`
+(`read`). Where the linter fires, `manual_rem_euclid_fires?` fires on
+the elaboration, and the fix is the summand that the linter writes. The
+converse need not hold, since texts that differ may elaborate alike. The
+front ends' reading of the summands, and the text of the fix, are
+trusted, and checked by the ui tests in `test/ui/lints/integers.fren`.
+
+```fren
+-- The elaboration of a text written within `(p + q) mod k`.
+fn summand_written(String): lang::Expr<lang::Id>
+
+expect manual_rem_euclid_elaborated(
+    p: Summand,
+    q: Summand,
+    k: String,
+    x: lang::Expr<lang::Id>,
+    y: lang::Expr<lang::Id>,
+) {
+    use lang::BinaryOp::{Add, Mod}
+    use lang::Expr::Binary
+
+    -- Each summand elaborates to a remainder of `x` or `y` by its divisor where it is one, and to no
+    -- remainder elsewhere.
+    assume read: (if p.remainder? then summand_written(p.text) = Binary(Mod, x, summand_written(p.divisor))
+        else not remainder?(summand_written(p.text)))
+        and (if q.remainder? then summand_written(q.text) = Binary(Mod, y, summand_written(q.divisor))
+        else not remainder?(summand_written(q.text)))
+
+    call m := manual_rem_euclid(p, q, k)
+
+    let e: lang::Expr<lang::Id> := Binary(
+        Mod,
+        Binary(Add, summand_written(p.text), summand_written(q.text)),
+        summand_written(k)
+    )
+
+    expect fires: when m.fires?, manual_rem_euclid_fires?(e)
+        and manual_rem_euclid_fix(e) = summand_written(if p.remainder? then p.text else q.text)
+}
+```
+
+`mod` is a [primitive operation](../Meaning.md#primitive-operations), so
+the fix agrees with the expression only in an interpretation that gives
+`mod` its usual meaning. In one that does, where `a` is an integer and `k`
+an integer `n` that is not `0`, the remainder `r` of `a` by `n` is at least
+`0` and below `n.abs`. So `r + n` is within `n.abs` above that range,
+where `n` is positive, or below it, where `n` is negative, and its
+remainder by `n` is `r`. Where the graph has no point for either
+remainder, the expression is undefined, and elsewhere `a mod k` is
+undefined too. The solver unfolds
+[`eval`](../../Lang/Semantics.md#the-evaluation-function) one step, and the
+graph of the primitives is a list of any length, so
+`src/Impls/Rewrites.lean` proves it in Lean, for every expression,
+interpretation whose primitives are `usual?`, and environment; `fren check`
+tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc manual_rem_euclid_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure agrees: when usual?(i.primitives) and manual_rem_euclid_fires?(e),
+        agrees?(
+            lang::eval(i, env, manual_rem_euclid_fix(e)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
+The fix writes an operand's operand, which is fixed where the operands
+are. The fix alone need not fix the lint: the fix of `((x mod k + k) mod
+k + k) mod k` is `(x mod k + k) mod k`, which fires (`kept`). And an
+expression around it may start firing once it is fixed: in `(a mod d + (d
++ j) mod j) mod d`, where `d` is `z mod j`, the second summand is not `d`,
+and its fix, `d`, makes the outer remainder fire (`around`).
+
+```fren
+expect manual_rem_euclid_refires(
+    x: lang::Expr<lang::Id>,
+    k: lang::Expr<lang::Id>,
+    a: lang::Expr<lang::Id>,
+    z: lang::Expr<lang::Id>,
+    j: lang::Expr<lang::Id>,
+) {
+    use lang::BinaryOp::{Add, Mod}
+    use lang::Expr::Binary
+
+    let twice: lang::Expr<lang::Id> := Binary(
+        Mod,
+        Binary(Add, Binary(Mod, Binary(Add, Binary(Mod, x, k), k), k), k),
+        k
+    )
+    let d: lang::Expr<lang::Id> := Binary(Mod, z, j)
+    let inner: lang::Expr<lang::Id> := Binary(Mod, Binary(Add, d, j), j)
+
+    let before: lang::Expr<lang::Id> := Binary(Mod, Binary(Add, Binary(Mod, a, d), inner), d)
+    let after: lang::Expr<lang::Id> := Binary(
+        Mod,
+        Binary(Add, Binary(Mod, a, d), manual_rem_euclid_fix(inner)),
+        d
+    )
+
+    expect kept: manual_rem_euclid_fires?(manual_rem_euclid_fix(twice))
+    expect around: not manual_rem_euclid_fires?(before) and manual_rem_euclid_fires?(after)
 }
 ```
 

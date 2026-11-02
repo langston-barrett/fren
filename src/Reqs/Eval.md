@@ -178,6 +178,32 @@ does, so the test that finds it reaches nothing.
 type's values up to the bound, and the quantifier is true, false or
 unknown over them.
 
+## Fuel
+
+Evaluation is total: it spends *fuel*, and a value that would need more
+than it has is unknown. Fuel is counted in steps of the semantics, never
+in steps of the evaluator, so that however the evaluator is optimized, the
+same evaluations run out. With fuel `n`, evaluation reads each
+[structural recursion](Lang/Recursion.md#meaning) `f` as its `n`th
+approximation: the 0th has no point anywhere, and the `k + 1`th's point at
+the arguments `l` is the outcome of `f`'s body at `l`, with `f`'s
+applications read as the `k`th. So an application of `f` spends one unit,
+for its body, and its arguments none. Checking that a value is of a
+[subset type](Lang/SubsetTypes.md) spends one unit for each invariant that
+it evaluates, likewise. Nothing else spends fuel: an expression's parts,
+quantifiers, `match`es and the definitions read through
+[`let` and `where`](Lang/Let.md) do not. Outcomes are monotone, so a
+known outcome under an approximation is the recursion's own, and running
+out only leaves a value unknown, which the test then neither refutes nor
+reaches a check by (see below). Fren's evaluator has `2^20` units of fuel
+(`evalFuel`), far more than any evaluation needs. It also bounds how deeply
+it nests between two steps (`evalDepth`, `2^20`), only to be total: between
+two steps, evaluation nests no deeper than the expression, the definitions
+that it reads and the newtypes that it checks are nested, and no spec comes
+near the bound. That rests on source size and is not tested. Past any depth
+that a source reaches, the evaluator's native stack overflows before the
+bound, so evaluation crashes rather than leave a value unknown.
+
 ## Searching for behaviours
 
 Both commands search for behaviours. The search chooses the variables in
@@ -459,7 +485,7 @@ A test reaches a check only where the check has a value in what the test
 found, too, and so does its trigger, if it has one: a trigger without a
 value does not hold. Where the check has none, as where an index is out of range, a
 function has no value that the evaluator knows, no case of a table or
-`match` is taken, or evaluation runs out of fuel, the test refutes
+`match` is taken, or evaluation runs out of [fuel](#fuel), the test refutes
 nothing, and it says nothing either: counting it would let an expectation
 pass by testing that no test ever evaluated. A check that has no value in
 any test is inconclusive, with the warning that `eval::unreached` gives.

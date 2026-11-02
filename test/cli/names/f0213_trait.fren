@@ -1,0 +1,4 @@
+trait Counter {
+    fn count(Self): Int
+    fn count(Self, Int): Int
+}

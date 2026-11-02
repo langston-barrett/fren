@@ -15,9 +15,10 @@ use only equality, so each lint is proved invariant at the place where it fires,
 for every two types of names, by its definition (`fires_at_rn`,
 `fix_at_rn`); `fires_in?` and `fix_all`, which look within the operands, by
 induction on the expression (`fires_in_rn`, `fix_all_rn`). `lint::renamed_apart`
-is these, for a swap of two names. `int_plus_one`, `double_neg`, `unless_not`
-and `collapsible_when` compare no operands, so they are invariant under
-every renaming, injective or not (their lemmas `omit` the injectivity). -/
+is these, for a swap of two names. `int_plus_one`, `double_neg`, `unless_not`,
+`collapsible_when`, `neg_multiply` and `identity_op` compare no operands, so
+they are invariant under every renaming, injective or not (their lemmas `omit`
+the injectivity). -/
 
 open Fren.Generated
 open lang
@@ -220,6 +221,109 @@ theorem cw_fix_rn (e : Expr V) : lint.collapsible_when_fix W (expr r e) = expr r
   all_goals (cases f <;> simp only [expr] <;> try rfl)
   all_goals (simp only [apply_ite (expr r)]; split <;> split <;> simp_all [lint.true?])
 
+theorem sb_fires_rn (e : Expr V) : lint.same_branches_fires? W (expr r e) = lint.same_branches_fires? V e := by
+  cases e <;> simp [lint.same_branches_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2]
+
+theorem sb_fix_rn (e : Expr V) : lint.same_branches_fix W (expr r e) = expr r (lint.same_branches_fix V e) := by
+  cases e <;> simp only [lint.same_branches_fix, expr] <;> try rfl
+  rename_i c t f
+  by_cases h : t = f <;> simp [h]
+
+omit [Inhabited V] [Inhabited W] hr in
+@[local simp] theorem minus_one_rn (e : Expr V) : lint.minus_one? W (expr r e) = lint.minus_one? V e := by
+  simp [lint.minus_one?]
+
+omit hr in
+theorem nm_fires_rn (e : Expr V) : lint.neg_multiply_fires? W (expr r e) = lint.neg_multiply_fires? V e := by
+  cases e <;> simp [lint.neg_multiply_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+
+omit hr in
+theorem nm_fix_rn (e : Expr V) : lint.neg_multiply_fix W (expr r e) = expr r (lint.neg_multiply_fix V e) := by
+  cases e <;> simp only [lint.neg_multiply_fix, expr] <;> try rfl
+  rename_i op a b; cases op <;> simp only [minus_one_rn] <;> (try split) <;> (try split) <;> simp [expr]
+
+omit [Inhabited V] [Inhabited W] hr in
+theorem expr_nil (e : Expr V) : expr r e = .Nil ↔ e = .Nil := by
+  cases e <;> simp [expr]
+
+omit [Inhabited V] [Inhabited W] hr in
+@[local simp] theorem empty_text_rn (e : Expr V) : lint.empty_text? W (expr r e) = lint.empty_text? V e := by
+  simp [lint.empty_text?]
+
+omit hr in
+@[local simp] theorem flips_rn (b : Expr V) : lint.flips? W (expr r b) = lint.flips? V b := by
+  cases b <;> simp [lint.flips?, lang.Expr.Unary.x0, lang.Expr.Unary.x1]
+  rename_i op y; cases op <;> simp
+  cases y <;> simp [expr]
+  rename_i op' _; cases op' <;> simp
+
+omit hr in
+theorem flipped_rn (op : BinaryOp) (a b e : Expr V) :
+    lint.flipped W op (expr r a) (expr r b) (expr r e) = expr r (lint.flipped V op a b e) := by
+  have hf := flips_rn (r := r) b
+  cases b <;> simp only [lint.flipped, expr] <;> try rfl
+  rename_i op' y; cases op' <;> simp only [expr] at hf ⊢ <;> try rfl
+  simp only [hf]; split <;> simp [expr]
+
+omit [Inhabited W] hr in
+open Classical in
+/-- Where `identity_op` fires on an operation, by its operator. -/
+theorem io_fires_bin (op : BinaryOp) (a b : Expr V) : lint.identity_op_fires? V (.Binary op a b) =
+    match op with
+    | .Add => lint.zero? V b || lint.zero? V a || lint.flips? V b
+    | .Sub => lint.zero? V b || (!lint.zero? V a && lint.flips? V b)
+    | .Mul => lint.one? V b || lint.one? V a
+    | .Div => lint.one? V b
+    | .Concat => lint.empty_text? V b || lint.empty_text? V a || decide (a = .Nil)
+    | _ => false := by
+  cases op <;> simp [lint.identity_op_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2] <;>
+    (try rw [Bool.eq_iff_iff]) <;> simp [or_assoc]
+
+omit hr in
+theorem io_fires_rn (e : Expr V) : lint.identity_op_fires? W (expr r e) = lint.identity_op_fires? V e := by
+  cases e
+  case Binary op a b =>
+    simp only [expr]; rw [io_fires_bin, io_fires_bin]
+    cases op <;> simp only [zero_rn, one_rn, flips_rn, empty_text_rn]
+    case Concat => congr 1; exact decide_eq_decide.2 (expr_nil a)
+  all_goals first | rfl | simp [lint.identity_op_fires?, expr, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+
+omit hr in
+theorem io_fix_rn (e : Expr V) : lint.identity_op_fix W (expr r e) = expr r (lint.identity_op_fix V e) := by
+  cases e <;> simp only [lint.identity_op_fix, expr] <;> try rfl
+  rename_i op a b
+  cases op <;> simp only [zero_rn, one_rn, empty_text_rn, expr_nil] <;> (try rfl) <;> (repeat' split) <;>
+    (first
+      | rfl
+      | exact flipped_rn _ a b (.Binary _ a b)
+      | (exfalso; simp_all [empty_text_rn, expr_nil]; done)
+      | (simp [expr]; done))
+
+omit hr in
+@[local simp] theorem remainder_rn (e : Expr V) : lint.remainder? W (expr r e) = lint.remainder? V e := by
+  cases e <;> try rfl
+  rename_i op _ _; cases op <;> rfl
+
+theorem rby_rn (a b k : Expr V) :
+    lint.remainder_by? W (expr r a) (expr r b) (expr r k) = lint.remainder_by? V a b k := by
+  cases a <;> simp [lint.remainder_by?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+
+theorem mre_fires_rn (e : Expr V) :
+    lint.manual_rem_euclid_fires? W (expr r e) = lint.manual_rem_euclid_fires? V e := by
+  cases e <;> try rfl
+  rename_i op a k; cases op <;> try rfl
+  cases a <;> try rfl
+  rename_i op' p q; cases op' <;> try rfl
+  simp only [lint.manual_rem_euclid_fires?, expr, remainder_rn, rby_rn]
+
+theorem mre_fix_rn (e : Expr V) :
+    lint.manual_rem_euclid_fix W (expr r e) = expr r (lint.manual_rem_euclid_fix V e) := by
+  cases e <;> try rfl
+  rename_i op a k; cases op <;> try rfl
+  cases a <;> try rfl
+  rename_i op' p q; cases op' <;> try rfl
+  simp only [lint.manual_rem_euclid_fix, expr, remainder_rn, rby_rn]; (repeat' split) <;> simp [expr]
+
 theorem absorbs_rn (c : Bool) (k o : Expr V) :
     lint.absorbs_operand? W c (expr r k) (expr r o) = lint.absorbs_operand? V c k o := by
   cases k <;> simp [lint.absorbs_operand?, lang.Expr.Or.x0, lang.Expr.Or.x1, lang.Expr.And.x0, lang.Expr.And.x1]
@@ -247,10 +351,11 @@ changes neither whether it fires nor, but for the renaming, what its fix
 writes. -/
 theorem fires_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fires_at? W l (expr r e) = lint.fires_at? V l e := by
   cases l <;> simp only [lint.fires_at?, oc_fires_rn, dn_fires_rn, ipo_fires_rn, ma_fires_rn, mad_fires_rn,
-    un_fires_rn, cw_fires_rn]
+    un_fires_rn, cw_fires_rn, sb_fires_rn, nm_fires_rn, io_fires_rn, mre_fires_rn]
 
 theorem fix_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fix_at W l (expr r e) = expr r (lint.fix_at V l e) := by
-  cases l <;> simp only [lint.fix_at, oc_fix_rn, dn_fix_rn, ipo_fix_rn, ma_fix_rn, mad_fix_rn, un_fix_rn, cw_fix_rn]
+  cases l <;> simp only [lint.fix_at, oc_fix_rn, dn_fix_rn, ipo_fix_rn, ma_fix_rn, mad_fix_rn, un_fix_rn, cw_fix_rn,
+    sb_fix_rn, nm_fix_rn, io_fix_rn, mre_fix_rn]
 
 end
 

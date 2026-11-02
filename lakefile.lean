@@ -98,7 +98,17 @@ lean_lib FrenElab where
   moreLeancArgs := coverageArgs ++ #["-O0"]
   moreLeanArgs := coverageLeanArgs
 
--- Fren's own requirements, written in Fren and checked on every build. They
+-- `lake build` only elaborates Fren's own requirements, which the `impl`s of
+-- `Impls` need, and runs none of their checks (`fren.runChecks`): `fren
+-- check` checks them, in `lake test`'s `ownSpec` job, with the same checks
+-- at the same evidence. `lake -R -Kcheck_reqs=1 build Reqs` checks them in
+-- Lean too, as the `lean ci` workflow does on `main`, and its
+-- `ownSpecAgreement` job compares the two front ends' messages
+-- (`Reqs/dev/Testing#own-requirements`).
+def reqsArgs : Array String :=
+  if (get_config? check_reqs).isSome then #[] else #["-Dweak.fren.runChecks=false"]
+
+-- Fren's own requirements, written in Fren, elaborated on every build. They
 -- are Markdown specs (`src/Reqs/*.md`) read by `#fren_md`, which Lake can't
 -- see, hence `needs`. The libraries after `Reqs` hold its modules by the
 -- specs that they read, so that editing a spec rebuilds only the modules
@@ -107,7 +117,9 @@ lean_lib FrenElab where
 -- so each is built in the last library that has it (see the top of this
 -- file). `lake test`'s `libraries` job checks that each module reads only
 -- the specs of its library.
-@[default_target] lean_lib Reqs where needs := #[`@/reqs_md]
+@[default_target] lean_lib Reqs where
+  needs := #[`@/reqs_md]
+  moreLeanArgs := reqsArgs
 
 input_dir reqs_md where
   path := "src/Reqs"
@@ -117,6 +129,7 @@ input_dir reqs_md where
 lean_lib ReqsChapters where
   globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Generated, `Reqs.Impl, `Reqs.Markdown, `Reqs.Models, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
   needs := #[`@/reqs_chapters_md]
+  moreLeanArgs := reqsArgs
 
 -- The specs in `src/Reqs` itself, not in its subdirectories.
 input_dir reqs_chapters_md where
@@ -127,6 +140,7 @@ input_dir reqs_chapters_md where
 lean_lib ReqsLang where
   globs := #[`Reqs.Calls, `Reqs.Lang, `Reqs.Modules, `Reqs.Refine]
   needs := #[`@/reqs_lang_md]
+  moreLeanArgs := reqsArgs
 
 input_dir reqs_lang_md where
   path := "src/Reqs/Lang"
@@ -136,6 +150,7 @@ input_dir reqs_lang_md where
 lean_lib ReqsLint where
   globs := #[`Reqs.Lint]
   needs := #[`@/reqs_lint_md, `@/reqs_lint_chapter_md]
+  moreLeanArgs := reqsArgs
 
 input_dir reqs_lint_md where
   path := "src/Reqs/Lint"
@@ -149,6 +164,7 @@ input_file reqs_lint_chapter_md where
 lean_lib ReqsDev where
   globs := #[`Reqs.Testing]
   needs := #[`@/reqs_dev_md]
+  moreLeanArgs := reqsArgs
 
 input_dir reqs_dev_md where
   path := "src/Reqs/dev"

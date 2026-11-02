@@ -1,6 +1,7 @@
 name: lean ci
 # On `main`, everything: `lake build --wfail`, the whole `lake test`, a
-# sample of the mutants of Fren's own requirements, and the coverage. It
+# sample of the mutants of Fren's own requirements, their checks in Lean,
+# compared with the binary's, and the coverage. It
 # saves `main`'s `.lake`, from which each pull request's `pre-merge`
 # workflow starts (`Reqs/dev/Testing#continuous-integration`).
 on:
@@ -32,7 +33,8 @@ jobs:
         sha: ${{ github.sha }}
     # `lake build` builds the library, the regression tests (`FrenTest`, which
     # check their own output with `#guard_msgs`), Fren's own requirements
-    # (`Reqs`, which `#fren_check` checks with the SMT solver), the links from
+    # (`Reqs`, only elaborated: `lake test`'s `ownSpec` checks them with the
+    # binary, and the `own-spec-agreement` job below in Lean), the links from
     # Fren's code to them (`Impls`, whose `#fren_trace` warns about any
     # requirement without evidence), the example specs' Lean implementations
     # (`Examples`) and the `fren` binary; warnings, including
@@ -140,6 +142,31 @@ jobs:
       with:
         path: ${{ runner.temp }}/query-cache
         key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+  # Fren's own requirements checked in Lean, which `lake build` only
+  # elaborates: built with their checks (`-Kcheck_reqs`), where a failing or
+  # inconclusive check fails `--wfail`, and Lean's messages compared with
+  # the binary's (`Reqs/dev/Testing#own-requirements`). It saves no `.lake`:
+  # pull requests start from the build job's, without the checks.
+  own-spec-agreement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ github.sha }}
+    - run: lake -R -Kcheck_reqs=1 build --wfail Reqs
+    - run: lake -R -Kcheck_reqs=1 build fren_test
+    # With an empty query cache, so that the binary asks the solver too.
+    - run: |
+        set -euo pipefail
+        out=$(lake env .lake/build/bin/fren_test --job ownSpecAgreement)
+        echo "$out"
+        test "$out" = "[]"
+      env:
+        FREN_QUERY_CACHE: ""
   # The front-end fuzzer on seeds that no run used before, from the run's
   # number, with `--avoid-known`: a difference of a kind that
   # `knownDifferences` does not list for `--avoid-known`, a crash or a

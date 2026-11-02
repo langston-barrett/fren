@@ -6,8 +6,12 @@ import Reqs.Lint
 /-! # Lints over the syntax of the semantics (`Reqs/Lint/Rewrites`)
 
 `overly_complex_bool_expr`, `double_neg`, `int_plus_one`, `manual_abs`,
-`manual_abs_diff`, `unless_not` and `collapsible_when` over `lang::Expr`:
-each fix agrees with the expression where it fires, and the
+`manual_abs_diff`, `unless_not`, `collapsible_when`, `same_branches`,
+`neg_multiply`, `identity_op` and `manual_rem_euclid` over `lang::Expr`:
+each fix agrees with the expression where it fires, the last three in an
+interpretation whose primitive operations are `usual?`; what the messages
+of `eq_op`, `erasing_op` and `modulo_one` say agrees with the expression,
+the last two in such an interpretation; and the
 linter's rule for `overly_complex_bool_expr`, `Core.overlyComplexRule`,
 meets `lint::overly_complex_bool_expr` at `lang::Expr`. Then the laws of
 fixing every lint everywhere (`lint::fix_all_laws`), by induction on the
@@ -518,6 +522,494 @@ theorem cw_site (env : Env) (e : Expr String) : eval i env (lint.collapsible_whe
     · rfl
   · rfl
 
+/-! ### `same_branches` and `eq_op` -/
+
+theorem sb_fires_if (c t f : Expr String) : lint.same_branches_fires? String (.If c t f) = decide (t = f) := by
+  simp [lint.same_branches_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2]
+
+/-- `same_branches` fires only on a conditional. -/
+theorem sb_fires_other (e : Expr String) (h : ∀ c t f, e = .If c t f → False) :
+    lint.same_branches_fires? String e = false := by
+  cases e with
+  | If c t f => exact absurd rfl (h c t f)
+  | _ => simp [lint.same_branches_fires?]
+
+/-- Where `same_branches` does not fire, its fix is the expression. -/
+theorem sb_unfired (e : Expr String) (h : lint.same_branches_fires? String e = false) :
+    lint.same_branches_fix String e = e := by
+  unfold lint.same_branches_fix; split
+  · rename_i c t f
+    rw [sb_fires_if] at h
+    rw [if_neg (by simpa using h)]
+  · rfl
+
+/-- `if c then a else a` is `a` where `c` is a `Bool`, and undefined elsewhere. -/
+theorem sb_site (env : Env) (e : Expr String) : Le (eval i env e) (eval i env (lint.same_branches_fix String e)) := by
+  unfold lint.same_branches_fix; split
+  · rename_i c t f
+    split
+    · rename_i h
+      subst h
+      eval_step
+      generalize eval i env c = C
+      rcases C with v | _ <;> (try cases v) <;> simp [Le]
+    · exact Le.refl _
+  · exact Le.refl _
+
+/-- Where `eq_op` fires, what its message says agrees with the expression:
+`a = a` is `true`, `a < a` `false`, `a - a` `0`, and `a and a`, `a or a`
+and `unless a, a` are `a`, where `a` is well-defined and of the type the
+form applies to, and the form is undefined elsewhere. -/
+theorem eo_said (env : Env) (e : Expr String) (h : lint.eq_op_fires? String e = true) :
+    Le (eval i env e) (eval i env (lint.eq_op_said String e)) := by
+  cases e with
+  | Binary op a b =>
+    cases op <;> simp [lint.eq_op_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1,
+      lang.Expr.Binary.x2] at h <;> subst h <;> simp only [lint.eq_op_said] <;> eval_step <;>
+      simp only [binary_value] <;> generalize eval i env a = A <;> rcases A with v | _ <;> (try cases v) <;>
+      simp [Le, truth]
+  | Unary op x =>
+    cases op <;> cases x <;> simp [lint.eq_op_fires?, lang.Expr.Unary.x0, lang.Expr.Unary.x1,
+      lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2] at h
+    rename_i op a b
+    cases op <;> simp at h
+    subst h; simp only [lint.eq_op_said]; eval_step
+    simp only [binary_value]
+    generalize eval i env a = A
+    rcases A with v | _ <;> simp [Le, truth, unary_value]
+  | And a b =>
+    simp [lint.eq_op_fires?, lang.Expr.And.x0, lang.Expr.And.x1] at h
+    subst h; simp only [lint.eq_op_said]; eval_step
+    generalize eval i env a = A
+    rcases A with v | _ <;> (try cases v) <;> simp [Le]
+  | Or a b =>
+    simp [lint.eq_op_fires?, lang.Expr.Or.x0, lang.Expr.Or.x1] at h
+    subst h; simp only [lint.eq_op_said]; eval_step
+    generalize eval i env a = A
+    rcases A with v | _ <;> (try cases v) <;> simp [Le]
+  | If c t f =>
+    simp [lint.eq_op_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2] at h
+    rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · simp only [lint.eq_op_said]
+      split
+      · rename_i ht
+        obtain rfl := (true_iff _).1 ht
+        eval_step; simp [Le]
+      · eval_step
+        generalize eval i env t = C
+        rcases C with v | _ <;> (try cases v) <;> simp [Le]
+    · simp only [lint.eq_op_said, true_lit, if_true]
+      eval_step
+      generalize eval i env f = C
+      rcases C with v | _ <;> (try cases v) <;> simp [Le]
+  | _ => simp [lint.eq_op_fires?] at h
+
+/-! ### Primitive operations, `neg_multiply` and `identity_op` -/
+
+/-- A graph that is `usual?` gives each primitive, where it has a point for
+the arguments, a value that meets `usual_point?`. -/
+theorem usual_apply (g : Graph) (h : lint.usual? g = true) (f : String) (args : Value) :
+    apply g f args = .Undefined ∨ ∃ r, apply g f args = .Defined r ∧ lint.usual_point? f args r = true := by
+  induction g with
+  | Empty => left; simp [apply]
+  | Point h' a r rest ih =>
+    simp only [lint.usual?] at h
+    have h := of_decide_eq_true h
+    simp only [apply]
+    split
+    · rename_i hm
+      obtain ⟨rfl, rfl⟩ := hm
+      exact Or.inr ⟨r, rfl, h.1⟩
+    · exact ih h.2
+
+/-- A primitive at two values agrees with `r` where every value that
+`usual_point?` allows there is `r`. -/
+theorem prim_le (hu : lint.usual? i.primitives = true) (f : String) (v w r : Value)
+    (hr : ∀ r', lint.usual_point? f (.Cons v (.Cons w .Nil)) r' = true → r' = r) :
+    Le (primitive i f v w) (.Defined r) := by
+  unfold primitive
+  rcases usual_apply _ hu f (.Cons v (.Cons w .Nil)) with h | ⟨r', h, hp⟩
+  · exact Or.inl h
+  · right; rw [h, hr r' hp]
+
+/-- The value at a point of a `usual?` graph, by `usual_point?`. -/
+macro "usual_point" : tactic => `(tactic|
+  (intro r h
+   simp [lint.usual_point?, lang.Value.Cons.x0, lang.Value.Cons.x1, lang.Value.Integer.x0, Fren.Str.lit] at h
+   grind))
+macro "usual_text" : tactic => `(tactic|
+  (intro r h
+   simp [lint.usual_point?, lang.Value.Cons.x0, lang.Value.Cons.x1, lang.Value.Text.x0, Fren.Str.lit] at h
+   grind))
+
+/-- `x * -1` and `-1 * x` are `-x`, in an interpretation whose primitives are `usual?`. -/
+theorem nm_site (hu : lint.usual? i.primitives = true) (env : Env) (e : Expr String) :
+    Le (eval i env e) (eval i env (lint.neg_multiply_fix String e)) := by
+  unfold lint.neg_multiply_fix; split
+  · rename_i a b
+    split
+    · rename_i h
+      simp [lint.minus_one?] at h; subst h
+      eval_step; simp only [unary_value, binary_value]
+      generalize eval i env a = A
+      rcases A with v | _ <;> (try cases v) <;> simp only [] <;> (try exact Or.inl rfl)
+      exact prim_le hu _ _ _ _ (by usual_point)
+    · split
+      · rename_i _ h
+        simp [lint.minus_one?] at h; subst h
+        eval_step; simp only [unary_value, binary_value]
+        generalize eval i env b = B
+        rcases B with v | _ <;> (try cases v) <;> simp only [] <;> (try exact Or.inl rfl)
+        exact prim_le hu _ _ _ _ (by usual_point)
+      · exact Le.refl _
+  · exact Le.refl _
+
+/-- An outcome agrees with another: one of them is undefined, they are the
+same, or the first is a primitive that `prim_le` gives. -/
+macro "le_finish" : tactic => `(tactic| first
+  | exact Or.inl rfl
+  | exact Le.refl _
+  | (right; simp [append]; done)
+  | exact prim_le (by assumption) _ _ _ _ (by usual_point)
+  | exact prim_le (by assumption) _ _ _ _ (by usual_text))
+
+/-- Cases on the outcomes of two operands, and their values. -/
+macro "outcomes" A:term:max B:term:max : tactic => `(tactic|
+  (generalize $A = X; generalize $B = Y
+   rcases X with v | _ <;> rcases Y with w | _ <;> (try cases v) <;> (try cases w) <;> simp only [] <;> le_finish))
+
+/-- The flip of `identity_op` agrees where the rewrite it writes does. -/
+theorem flip_le (env : Env) (op' : BinaryOp) (a b e : Expr String)
+    (h : ∀ y, b = .Unary .Neg y → lint.flips? String b = true →
+      Le (eval i env e) (eval i env (.Binary op' a y))) :
+    Le (eval i env e) (eval i env (lint.flipped String op' a b e)) := by
+  unfold lint.flipped; split
+  · rename_i y; split
+    · rename_i hf; exact h y rfl hf
+    · exact Le.refl _
+  · exact Le.refl _
+
+/-- Each identity of `identity_op` agrees, in an interpretation whose
+primitives are `usual?`. -/
+theorem io_site (hu : lint.usual? i.primitives = true) (env : Env) (e : Expr String) :
+    Le (eval i env e) (eval i env (lint.identity_op_fix String e)) := by
+  unfold lint.identity_op_fix; split
+  · rename_i a b
+    split
+    · rename_i h; simp [lint.zero?] at h; subst h
+      eval_step; simp only [binary_value]; outcomes (eval i env a) (eval i env a)
+    · split
+      · rename_i _ h; simp [lint.zero?] at h; subst h
+        eval_step; simp only [binary_value]; outcomes (eval i env b) (eval i env b)
+      · refine flip_le env _ a b _ (fun y hb _ => ?_); subst hb
+        eval_step; simp only [binary_value, unary_value]; outcomes (eval i env a) (eval i env y)
+  · rename_i a b
+    split
+    · rename_i h; simp [lint.zero?] at h; subst h
+      eval_step; simp only [binary_value]; outcomes (eval i env a) (eval i env a)
+    · split
+      · exact Le.refl _
+      · refine flip_le env _ a b _ (fun y hb _ => ?_); subst hb
+        eval_step; simp only [binary_value, unary_value]; outcomes (eval i env a) (eval i env y)
+  · rename_i a b
+    split
+    · rename_i h; simp [lint.one?] at h; subst h
+      eval_step; simp only [binary_value]; outcomes (eval i env a) (eval i env a)
+    · split
+      · rename_i _ h; simp [lint.one?] at h; subst h
+        eval_step; simp only [binary_value]; outcomes (eval i env b) (eval i env b)
+      · exact Le.refl _
+  · rename_i a b
+    split
+    · rename_i h; simp [lint.one?] at h; subst h
+      eval_step; simp only [binary_value]; outcomes (eval i env a) (eval i env a)
+    · exact Le.refl _
+  · rename_i a b
+    split
+    · rename_i h; simp [lint.empty_text?] at h; subst h
+      eval_step; simp only [binary_value]; outcomes (eval i env a) (eval i env a)
+    · split
+      · rename_i _ h
+        rcases h with h | h
+        · simp [lint.empty_text?] at h; subst h
+          eval_step; simp only [binary_value]; outcomes (eval i env b) (eval i env b)
+        · subst h
+          eval_step; simp only [binary_value]; outcomes (eval i env b) (eval i env b)
+      · exact Le.refl _
+  · exact Le.refl _
+
+/-- `neg_multiply` on a product, without its selectors. -/
+theorem nm_fires_mul (a b : Expr String) :
+    lint.neg_multiply_fires? String (.Binary .Mul a b) = (lint.minus_one? String a || lint.minus_one? String b) := by
+  simp [lint.neg_multiply_fires?, lint.minus_one?, decide_classical, lang.Expr.Binary.x0, lang.Expr.Binary.x1,
+    lang.Expr.Binary.x2]
+
+/-- `neg_multiply` fires only on a product. -/
+theorem nm_fires_other (e : Expr String) (h : ∀ a b, e = .Binary .Mul a b → False) :
+    lint.neg_multiply_fires? String e = false := by
+  cases e with
+  | Binary op a b =>
+    cases op <;> first
+      | exact absurd rfl (h a b)
+      | simp [lint.neg_multiply_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+  | _ => simp [lint.neg_multiply_fires?]
+
+/-- Where `neg_multiply` does not fire, its fix is the expression. -/
+theorem nm_unfired (e : Expr String) (h : lint.neg_multiply_fires? String e = false) :
+    lint.neg_multiply_fix String e = e := by
+  unfold lint.neg_multiply_fix; split
+  · rename_i a b
+    rw [nm_fires_mul, Bool.or_eq_false_iff] at h
+    rw [if_neg (by simp [h.2]), if_neg (by simp [h.1])]
+  · rfl
+
+/-- `flips?`, without its selectors. -/
+theorem flips_iff (b : Expr String) : lint.flips? String b = true ↔
+    ∃ y, b = .Unary .Neg y ∧ lint.zero? String y = false ∧ ∀ z, y ≠ .Unary .Neg z := by
+  cases b with
+  | Unary op y =>
+    cases op
+    · simp [lint.flips?, lang.Expr.Unary.x0, lang.Expr.Unary.x1]
+    · cases y with
+      | Unary op' z => cases op' <;> simp [lint.flips?, lang.Expr.Unary.x0, lang.Expr.Unary.x1, lint.zero?]
+      | _ => simp [lint.flips?, lang.Expr.Unary.x0, lang.Expr.Unary.x1]
+  | _ => simp [lint.flips?]
+
+/-- Where `identity_op` fires on an operation, by its operator. -/
+theorem io_fires_bin (op : BinaryOp) (a b : Expr String) : lint.identity_op_fires? String (.Binary op a b) =
+    match op with
+    | .Add => lint.zero? String b || lint.zero? String a || lint.flips? String b
+    | .Sub => lint.zero? String b || (!lint.zero? String a && lint.flips? String b)
+    | .Mul => lint.one? String b || lint.one? String a
+    | .Div => lint.one? String b
+    | .Concat => lint.empty_text? String b || lint.empty_text? String a || decide (a = .Nil)
+    | _ => false := by
+  cases op <;> simp [lint.identity_op_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2] <;>
+    (try rw [Bool.eq_iff_iff]) <;> simp [or_assoc]
+
+/-- Where `identity_op` does not fire, its fix is the expression. -/
+theorem io_unfired (e : Expr String) (h : lint.identity_op_fires? String e = false) :
+    lint.identity_op_fix String e = e := by
+  unfold lint.identity_op_fix; split
+  · rename_i a b
+    simp only [io_fires_bin, Bool.or_eq_false_iff] at h
+    obtain ⟨⟨hb, ha⟩, hf⟩ := h
+    rw [if_neg (by simp [hb]), if_neg (by simp [ha])]
+    unfold lint.flipped; split
+    · rw [if_neg (by simp [hf])]
+    · rfl
+  · rename_i a b
+    simp only [io_fires_bin, Bool.or_eq_false_iff, Bool.and_eq_false_iff, Bool.not_eq_false'] at h
+    obtain ⟨hb, h2⟩ := h
+    rw [if_neg (by simp [hb])]
+    split
+    · rfl
+    · rename_i ha
+      unfold lint.flipped; split
+      · rcases h2 with h2 | h2
+        · exact absurd h2 ha
+        · rw [if_neg (by simp [h2])]
+      · rfl
+  · simp only [io_fires_bin, Bool.or_eq_false_iff] at h
+    rw [if_neg (by simp [h.1]), if_neg (by simp [h.2])]
+  · simp only [io_fires_bin] at h
+    rw [if_neg (by simp [h])]
+  · rename_i a b
+    simp only [io_fires_bin, Bool.or_eq_false_iff] at h
+    obtain ⟨⟨hb, ha⟩, hn⟩ := h
+    rw [if_neg (by simp [hb]), if_neg (by simp only [ha, Bool.false_eq_true, false_or]; simpa using hn)]
+  · rfl
+
+/-! ### `manual_rem_euclid`, `erasing_op` and `modulo_one` -/
+
+/-- A remainder of two integers in a `usual?` graph: undefined, or an
+integer that `usual_remainder?` allows. -/
+theorem rem_point (hu : lint.usual? i.primitives = true) (m n : Int) :
+    primitive i (Fren.Str.lit "mod") (.Integer m) (.Integer n) = .Undefined ∨
+      ∃ r, primitive i (Fren.Str.lit "mod") (.Integer m) (.Integer n) = .Defined (.Integer r) ∧
+        lint.usual_remainder? m n r = true := by
+  unfold primitive
+  rcases usual_apply _ hu (Fren.Str.lit "mod") (.Cons (.Integer m) (.Cons (.Integer n) .Nil)) with h | ⟨r, h, hp⟩
+  · exact Or.inl h
+  · right
+    cases r with
+    | Integer k =>
+      refine ⟨k, h, ?_⟩
+      simpa [lint.usual_point?, lang.Value.Cons.x0, lang.Value.Cons.x1, lang.Value.Integer.x0, Fren.Str.lit] using hp
+    | _ => simp [lint.usual_point?, lang.Value.Cons.x0, lang.Value.Cons.x1, lang.Value.Integer.x0, Fren.Str.lit] at hp
+
+/-- The remainder by `n` of a remainder `r` by `n`, plus `n`, is `r`. -/
+theorem rem_shift {m n r r' : Int} (hn : n ≠ 0) (h : lint.usual_remainder? m n r = true)
+    (h' : lint.usual_remainder? (r + n) n r' = true) : r' = r := by
+  simp only [lint.usual_remainder?, decide_eq_true_eq] at h h'
+  have h := h hn
+  have h' := h' hn
+  by_cases hs : n < 0 <;> simp only [hs, if_true, if_false] at h h' <;> omega
+
+/-- `remainder_by?`, without its selectors. -/
+theorem rby_iff (r o k : Expr String) : lint.remainder_by? String r o k = true ↔ ∃ a, r = .Binary .Mod a k ∧ o = k := by
+  cases r with
+  | Binary op a d =>
+    cases op <;> simp [lint.remainder_by?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+  | _ => simp [lint.remainder_by?]
+
+/-- `(a mod k + k) mod k` and `(k + a mod k) mod k` are `a mod k`, in an
+interpretation whose primitives are `usual?`. -/
+theorem mre_shape (hu : lint.usual? i.primitives = true) (env : Env) (a k : Expr String) (left : Bool) :
+    Le (eval i env (.Binary .Mod (if left then .Binary .Add (.Binary .Mod a k) k else .Binary .Add k (.Binary .Mod a k)) k))
+      (eval i env (.Binary .Mod a k)) := by
+  cases left <;> simp only [if_true, if_false, Bool.false_eq_true] <;> eval_step <;>
+  generalize eval i env a = A <;> generalize eval i env k = K <;>
+  rcases A with v | _ <;> rcases K with w | _ <;> (try cases v) <;> (try cases w) <;>
+    simp only [binary_value] <;> (try exact Or.inl rfl)
+  all_goals
+    rename_i m n
+    by_cases hn : n = 0
+    · simp only [hn, if_true]; exact Or.inl rfl
+    simp only [hn, if_false]
+    rcases rem_point hu m n with h | ⟨r, h, hr⟩
+    · rw [h]; exact Or.inl rfl
+    rw [h]; simp only [hn, if_false]
+    first
+      | (rcases rem_point hu (r + n) n with h' | ⟨r', h', hr'⟩
+         · rw [h']; exact Or.inl rfl
+         · rw [h', rem_shift hn hr hr']; exact Le.refl _)
+      | (rcases rem_point hu (n + r) n with h' | ⟨r', h', hr'⟩
+         · rw [h']; exact Or.inl rfl
+         · rw [Int.add_comm] at hr'; rw [h', rem_shift hn hr hr']; exact Le.refl _)
+
+/-- Where `manual_rem_euclid` fires, its fix agrees, in an interpretation
+whose primitives are `usual?`. -/
+theorem mre_site (hu : lint.usual? i.primitives = true) (env : Env) (e : Expr String) :
+    Le (eval i env e) (eval i env (lint.manual_rem_euclid_fix String e)) := by
+  unfold lint.manual_rem_euclid_fix; split
+  · rename_i p q k
+    split
+    · split
+      · rename_i _ h
+        obtain ⟨a, rfl, rfl⟩ := (rby_iff _ _ _).1 h
+        exact mre_shape hu env a q true
+      · exact Le.refl _
+    · split
+      · rename_i _ h
+        obtain ⟨a, rfl, rfl⟩ := (rby_iff _ _ _).1 h
+        exact mre_shape hu env a p false
+      · exact Le.refl _
+  · exact Le.refl _
+
+/-- An outcome of `div` or `mod` of `0`, or by `1` or `-1`, by cases on
+the divisor, and a primitive that `usual_point?` gives. -/
+macro "divisor_cases" B:term:max : tactic => `(tactic|
+  (generalize $B = Y
+   rcases Y with w | _ <;> (try cases w) <;> simp only [] <;> (try exact Or.inl rfl)
+   all_goals (split <;> first | exact Or.inl rfl | exact prim_le (by assumption) _ _ _ _ (by usual_point))))
+
+/-- Where `erasing_op` fires, the value that its message says agrees with
+the expression: a product with `0`, and a quotient or remainder of `0`,
+are `0`, in an interpretation whose primitives are `usual?`, and a
+membership in `[]` is `false`. -/
+theorem er_said (hu : lint.usual? i.primitives = true) (env : Env) (e : Expr String)
+    (h : lint.erasing_op_fires? String e = true) :
+    Le (eval i env e) (eval i env (lint.erasing_op_said String e)) := by
+  cases e with
+  | Binary op a b =>
+    cases op <;> simp [lint.erasing_op_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2,
+      lint.zero_dividend?, lint.zero?] at h <;> simp only [lint.erasing_op_said]
+    · rcases h with rfl | rfl <;> eval_step <;> simp only [binary_value]
+      · outcomes (eval i env b) (eval i env b)
+      · outcomes (eval i env a) (eval i env a)
+    · rcases h with rfl | rfl <;> eval_step <;> simp only [binary_value, unary_value] <;> divisor_cases (eval i env b)
+    · rcases h with rfl | rfl <;> eval_step <;> simp only [binary_value, unary_value] <;> divisor_cases (eval i env b)
+    · subst h; eval_step; simp only [binary_value]
+      generalize eval i env a = A
+      rcases A with v | _ <;> simp [Le, lang.element?, lang.truth]
+  | _ => simp [lint.erasing_op_fires?] at h
+
+/-- Where `modulo_one` fires, the remainder is `0`, in an interpretation
+whose primitives are `usual?`. -/
+theorem mo_said (hu : lint.usual? i.primitives = true) (env : Env) (e : Expr String)
+    (h : lint.modulo_one_fires? String e = true) :
+    Le (eval i env e) (eval i env (.Literal (.Integer 0))) := by
+  cases e with
+  | Binary op a b =>
+    cases op <;> simp [lint.modulo_one_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2,
+      lint.one?, lint.minus_one?] at h
+    rcases h with rfl | rfl <;> eval_step <;> simp only [binary_value, unary_value] <;>
+      generalize eval i env a = A <;> rcases A with v | _ <;> (try cases v) <;> simp only [] <;>
+      (try exact Or.inl rfl) <;> exact prim_le hu _ _ _ _ (by usual_point)
+  | _ => simp [lint.modulo_one_fires?] at h
+
+/-- `manual_rem_euclid` on a remainder of a sum, without its selectors. -/
+theorem mre_fires_mod (p q k : Expr String) : lint.manual_rem_euclid_fires? String (.Binary .Mod (.Binary .Add p q) k) =
+    (if lint.remainder? String p = true then lint.remainder_by? String p q k else lint.remainder_by? String q p k) := by
+  simp only [lint.manual_rem_euclid_fires?]
+  split <;> simp
+
+/-- `manual_rem_euclid` fires only on a remainder of a sum. -/
+theorem mre_fires_other (e : Expr String) (h : ∀ p q k, e = .Binary .Mod (.Binary .Add p q) k → False) :
+    lint.manual_rem_euclid_fires? String e = false := by
+  unfold lint.manual_rem_euclid_fires?
+  split
+  · rename_i p q k; exact absurd rfl (h p q k)
+  · rfl
+
+/-- Where `manual_rem_euclid` does not fire, its fix is the expression. -/
+theorem mre_unfired (e : Expr String) (h : lint.manual_rem_euclid_fires? String e = false) :
+    lint.manual_rem_euclid_fix String e = e := by
+  unfold lint.manual_rem_euclid_fix; split
+  · rename_i p q k
+    rw [mre_fires_mod] at h
+    split <;> rename_i hp <;> simp only [hp, if_true, if_false, Bool.false_eq_true] at h <;> simp [h]
+  · rfl
+
+/-! ### The language's own primitives -/
+
+/-- The remainder by a positive `n` of an `m` within `n` of the range from `0` to `n`. -/
+theorem emod_window (m n : Int) (_hn : 0 < n) :
+    (0 ≤ m ∧ m < n → m % n = m) ∧ (n ≤ m ∧ m < n + n → m % n = m - n) ∧ (-n ≤ m ∧ m < 0 → m % n = m + n) := by
+  refine ⟨fun h => Int.emod_eq_of_lt h.1 h.2, fun h => ?_, fun h => ?_⟩
+  · have e : m = (m - n) + n * 1 := by omega
+    rw [e, Int.add_mul_emod_self_left]; rw [← e]
+    exact Int.emod_eq_of_lt (by omega) (by omega)
+  · have e : m = (m + n) + n * (-1) := by omega
+    rw [e, Int.add_mul_emod_self_left]; rw [← e]
+    exact Int.emod_eq_of_lt (by omega) (by omega)
+
+/-- The language's own products, quotients and remainders meet
+`usual_point?` at every point. No check of Fren states this, since the
+product is not linear; `lint::usual_language` checks the linear points. -/
+theorem usual_language_points (m n : Int) :
+    lint.usual_point? (Fren.Str.lit "*") (.Cons (.Integer m) (.Cons (.Integer n) .Nil)) (.Integer (m * n)) = true ∧
+    lint.usual_point? (Fren.Str.lit "div") (.Cons (.Integer m) (.Cons (.Integer n) .Nil)) (.Integer (m / n)) = true ∧
+    lint.usual_point? (Fren.Str.lit "mod") (.Cons (.Integer m) (.Cons (.Integer n) .Nil)) (.Integer (m % n)) = true := by
+  simp only [lint.usual_point?, lint.usual_product?, lint.usual_remainder?, lang.Value.Cons.x0, lang.Value.Cons.x1,
+    lang.Value.Integer.x0, Fren.Str.lit]
+  refine ⟨?_, ?_, ?_⟩ <;> simp
+  · refine ⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+    · by_cases h : n = 1 <;> simp [h]
+    · by_cases h : m = 1 <;> simp [h]
+    · by_cases h : n = -1 <;> simp [h]
+    · by_cases h : m = -1 <;> simp [h]
+    · by_cases h : m = 0 <;> by_cases h' : n = 0 <;> simp [h, h']
+  · exact ⟨by by_cases h : n = 1 <;> simp [h], by by_cases h : m = 0 <;> simp [h]⟩
+  · by_cases hn : n = 0
+    · exact Or.inl hn
+    right
+    generalize hb : (if n < 0 then -n else n) = b
+    have hpos : 0 < b := by subst hb; split <;> omega
+    have hm : m % n = m % b := by subst hb; split <;> simp [Int.emod_neg]
+    have w := emod_window m b hpos
+    have h0 := Int.emod_nonneg m (show b ≠ 0 by omega)
+    have h1 := Int.emod_lt_of_pos m hpos
+    rw [hm]
+    generalize m % b = r at w h0 h1 ⊢
+    omega
+
+/-- So do its concatenations of strings. -/
+theorem usual_language_text (s t : String) :
+    lint.usual_point? (Fren.Str.lit "++") (.Cons (.Text s) (.Cons (.Text t) .Nil)) (.Text (s ++ t)) = true := by
+  simp [lint.usual_point?, lang.Value.Cons.x0, lang.Value.Cons.x1, lang.Value.Text.x0, Fren.Str.lit]
+
 /-! ### Each lint at the place where it fires -/
 
 theorem fires_at_overly (e : Expr String) : lint.fires_at? String .OverlyComplexBoolExpr e = lint.overly_complex_fires? String e := by
@@ -548,6 +1040,28 @@ theorem fires_at_cw (e : Expr String) : lint.fires_at? String .CollapsibleWhen e
   show decide (lint.collapsible_when_fires? String e = true) = _
   cases lint.collapsible_when_fires? String e <;> rfl
 
+theorem fires_at_sb (e : Expr String) : lint.fires_at? String .SameBranches e = lint.same_branches_fires? String e := by
+  show decide (lint.same_branches_fires? String e = true) = _
+  cases lint.same_branches_fires? String e <;> rfl
+
+theorem fires_at_nm (e : Expr String) : lint.fires_at? String .NegMultiply e = lint.neg_multiply_fires? String e := by
+  show decide (lint.neg_multiply_fires? String e = true) = _
+  cases lint.neg_multiply_fires? String e <;> rfl
+
+theorem fires_at_io (e : Expr String) : lint.fires_at? String .IdentityOp e = lint.identity_op_fires? String e := by
+  show decide (lint.identity_op_fires? String e = true) = _
+  cases lint.identity_op_fires? String e <;> rfl
+
+theorem fires_at_mre (e : Expr String) :
+    lint.fires_at? String .ManualRemEuclid e = lint.manual_rem_euclid_fires? String e := by
+  show decide (lint.manual_rem_euclid_fires? String e = true) = _
+  cases lint.manual_rem_euclid_fires? String e <;> rfl
+
+/-- `fits?` of a lint whose fix rests on the primitive operations: they are `usual?`. -/
+theorem fits_usual (l : lint.ExprLint) (hl : l = .NegMultiply ∨ l = .IdentityOp ∨ l = .ManualRemEuclid)
+    (h : lint.fits? l i = true) : lint.usual? i.primitives = true := by
+  rcases hl with rfl | rfl | rfl <;> simpa [lint.fits?, lint.uses_primitives?] using h
+
 /-- Where a lint does not fire, its fix is the expression
 (`lint::fix_at_unfired`). Each new arm of `lint::ExprLint` owes this. -/
 theorem fix_at_unfired (l : lint.ExprLint) (e : Expr String) (h : lint.fires_at? String l e = false) : lint.fix_at String l e = e := by
@@ -559,10 +1073,15 @@ theorem fix_at_unfired (l : lint.ExprLint) (e : Expr String) (h : lint.fires_at?
   · rw [fires_at_mad] at h; exact mad_unfired e h
   · rw [fires_at_un] at h; exact un_unfired e h
   · rw [fires_at_cw] at h; exact cw_unfired e h
+  · rw [fires_at_sb] at h; exact sb_unfired e h
+  · rw [fires_at_nm] at h; exact nm_unfired e h
+  · rw [fires_at_io] at h; exact io_unfired e h
+  · rw [fires_at_mre] at h; exact mre_unfired e h
 
 /-- Each lint's fix agrees with the expression, where it fires and where not
 (`lint::fix_at_agrees`). Each new arm of `lint::ExprLint` owes this. -/
-theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr String) : Le (eval i env e) (eval i env (lint.fix_at String l e)) := by
+theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr String) (hl : lint.fits? l i = true) :
+    Le (eval i env e) (eval i env (lint.fix_at String l e)) := by
   cases l
   · show Le _ (eval i env (lint.overly_complex_fix String e))
     cases h : lint.overly_complex_fires? String e
@@ -579,6 +1098,10 @@ theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr String) : Le (eval i e
     rw [un_site env e]; exact Le.refl _
   · show Le _ (eval i env (lint.collapsible_when_fix String e))
     rw [cw_site env e]; exact Le.refl _
+  · exact sb_site env e
+  · exact nm_site (fits_usual _ (Or.inl rfl) hl) env e
+  · exact io_site (fits_usual _ (Or.inr (Or.inl rfl)) hl) env e
+  · exact mre_site (fits_usual _ (Or.inr (Or.inr rfl)) hl) env e
 
 /-! ### Fixing everywhere -/
 
@@ -819,6 +1342,151 @@ theorem clean_at (l : lint.ExprLint) (e : Expr String) (ho : lint.operands_fixed
           nu_not_if t f (fun b u d h => h2 c t b u d (by rw [h]))] at hf
         cases hf
       | _ => rw [cw_fires_other _ (fun _ _ _ h => by cases h)] at hf; cases hf
+  · rw [fires_at_sb] at hf
+    show lint.fires_in? _ (lint.same_branches_fix String e) = false
+    revert ho hf
+    unfold lint.same_branches_fix; split
+    · rename_i c t f
+      intro ho hf
+      rw [sb_fires_if] at hf
+      rw [if_pos (of_decide_eq_true hf)]
+      exact (operands_if _ c t f ho).2.1
+    · rename_i hne
+      intro _ hf
+      rw [sb_fires_other e hne] at hf; cases hf
+  · rw [fires_at_nm] at hf
+    show lint.fires_in? _ (lint.neg_multiply_fix String e) = false
+    have hneg (x : Expr String) (hx : lint.fires_in? .NegMultiply x = false) :
+        lint.fires_in? .NegMultiply (.Unary .Neg x) = false := by
+      rw [fires_in_eq, fires_at_nm, nm_fires_other _ (fun _ _ h => by cases h)]; operands_simp; simp [hx]
+    revert ho hf
+    unfold lint.neg_multiply_fix; split
+    · rename_i a b
+      intro ho hf
+      have hab := operands_two _ a b (Or.inr (Or.inr ⟨_, ho⟩))
+      split
+      · exact hneg _ hab.1
+      · split
+        · exact hneg _ hab.2
+        · rename_i h1 h2
+          rw [nm_fires_mul, Bool.or_eq_true] at hf
+          rcases hf with h | h
+          · exact absurd h h2
+          · exact absurd h h1
+    · rename_i hne
+      intro _ hf
+      rw [nm_fires_other e hne] at hf; cases hf
+  · rw [fires_at_io] at hf
+    show lint.fires_in? _ (lint.identity_op_fix String e) = false
+    -- An operation of fixed operands on which the lint does not fire is fixed.
+    have hbin (op : BinaryOp) (x y : Expr String) (hx : lint.fires_in? .IdentityOp x = false)
+        (hy : lint.fires_in? .IdentityOp y = false) (h : lint.identity_op_fires? String (.Binary op x y) = false) :
+        lint.fires_in? .IdentityOp (.Binary op x y) = false := by
+      rw [fires_in_eq, fires_at_io, h]; operands_simp; simp [hx, hy]
+    have hflip (op : BinaryOp) (a y : Expr String) (hop : op = .Add ∨ op = .Sub)
+        (ha : lint.fires_in? .IdentityOp a = false) (hb : lint.fires_in? .IdentityOp (.Unary .Neg y) = false)
+        (hfl : lint.flips? String (.Unary .Neg y) = true) (hza : op = .Add → lint.zero? String a = false) :
+        lint.fires_in? .IdentityOp (.Binary op a y) = false := by
+      obtain ⟨y', hy', hz, hn⟩ := (flips_iff _).1 hfl
+      cases hy'
+      have hy := operands_one _ _ _ (operands_of_clean _ _ hb)
+      refine hbin _ _ _ ha hy ?_
+      have : lint.flips? String y = false := by
+        cases h : lint.flips? String y
+        · rfl
+        · obtain ⟨z, rfl, _⟩ := (flips_iff _).1 h; exact absurd rfl (hn z)
+      rcases hop with rfl | rfl <;> rw [io_fires_bin]
+      · simp [hz, this, hza rfl]
+      · simp [hz, this]
+    -- A `b` that is not a negation does not flip.
+    have hnf (b : Expr String) (hne : ∀ y, b = .Unary .Neg y → False) : lint.flips? String b = false := by
+      cases h : lint.flips? String b
+      · rfl
+      · obtain ⟨y, rfl, _⟩ := (flips_iff _).1 h; exact absurd rfl (hne y)
+    revert ho hf
+    unfold lint.identity_op_fix; split
+    · rename_i a b; intro ho hf
+      have hab := operands_two _ a b (Or.inr (Or.inr ⟨_, ho⟩))
+      simp only [io_fires_bin] at hf
+      split
+      · exact hab.1
+      · rename_i hzb
+        split
+        · exact hab.2
+        · rename_i hza
+          unfold lint.flipped; split
+          · rename_i y
+            split
+            · rename_i hfl; exact hflip _ a y (Or.inr rfl) hab.1 hab.2 hfl (fun h => by cases h)
+            · rename_i hfl; exfalso; simp [hzb, hza, hfl] at hf
+          · rename_i hne; exfalso; simp [hzb, hza, hnf b hne] at hf
+    · rename_i a b; intro ho hf
+      have hab := operands_two _ a b (Or.inr (Or.inr ⟨_, ho⟩))
+      simp only [io_fires_bin] at hf
+      split
+      · exact hab.1
+      · rename_i hzb
+        split
+        · rename_i hza; exfalso; simp [hzb, hza] at hf
+        · rename_i hza
+          unfold lint.flipped; split
+          · rename_i y
+            split
+            · rename_i hfl; exact hflip _ a y (Or.inl rfl) hab.1 hab.2 hfl (fun _ => by simpa using hza)
+            · rename_i hfl; exfalso; simp [hzb, hza, hfl] at hf
+          · rename_i hne; exfalso; simp [hzb, hza, hnf b hne] at hf
+    · rename_i a b; intro ho hf
+      have hab := operands_two _ a b (Or.inr (Or.inr ⟨_, ho⟩))
+      simp only [io_fires_bin] at hf
+      split
+      · exact hab.1
+      · rename_i h1
+        split
+        · exact hab.2
+        · rename_i h2; exfalso; simp [h1, h2] at hf
+    · rename_i a b; intro ho hf
+      have hab := operands_two _ a b (Or.inr (Or.inr ⟨_, ho⟩))
+      simp only [io_fires_bin] at hf
+      split
+      · exact hab.1
+      · rename_i h1; exfalso; simp [h1] at hf
+    · rename_i a b; intro ho hf
+      have hab := operands_two _ a b (Or.inr (Or.inr ⟨_, ho⟩))
+      simp only [io_fires_bin] at hf
+      split
+      · exact hab.1
+      · rename_i h1
+        split
+        · exact hab.2
+        · rename_i h2; exfalso; exact h2 (by simpa [h1] using hf)
+    · rename_i h1 h2 h3 h4 h5
+      intro _ hf; exfalso
+      cases e with
+      | Binary op a b =>
+        cases op <;> simp only [io_fires_bin, Bool.false_eq_true] at hf <;>
+          first
+            | exact absurd rfl (h1 a b) | exact absurd rfl (h2 a b) | exact absurd rfl (h3 a b)
+            | exact absurd rfl (h4 a b) | exact absurd rfl (h5 a b)
+      | _ => simp [lint.identity_op_fires?] at hf
+  · rw [fires_at_mre] at hf
+    show lint.fires_in? _ (lint.manual_rem_euclid_fix String e) = false
+    revert ho hf
+    unfold lint.manual_rem_euclid_fix; split
+    · rename_i p q k
+      intro ho hf
+      have hs := (operands_two _ _ k (Or.inr (Or.inr ⟨_, ho⟩))).1
+      have hpq := operands_two _ p q (Or.inr (Or.inr ⟨_, operands_of_clean _ _ hs⟩))
+      rw [mre_fires_mod] at hf
+      split
+      · rename_i h1
+        rw [if_pos h1] at hf
+        rw [if_pos hf]; exact hpq.1
+      · rename_i h1
+        rw [if_neg h1] at hf
+        rw [if_pos hf]; exact hpq.2
+    · rename_i hne
+      intro _ hf
+      rw [mre_fires_other e hne] at hf; cases hf
 
 /-- `lint::fix_all_laws::fixed`. -/
 theorem fixed (l : lint.ExprLint) (e : Expr String) : lint.fires_in? l (lint.fix_all l e) = false := by
@@ -849,9 +1517,9 @@ macro "truth_cases" o:term:max : tactic => `(tactic|
 /-- `lint::fix_all_laws::keeps_meaning`, by evaluation being monotone in the
 operands: an operand is evaluated in the same environment as written and
 fixed, since `fix_all` leaves a `let`'s definition as it is. -/
-theorem keeps (l : lint.ExprLint) (e : Expr String) (env : Env) :
+theorem keeps (l : lint.ExprLint) (e : Expr String) (env : Env) (hl : lint.fits? l i = true) :
     Le (eval i env e) (eval i env (lint.fix_all l e)) := by
-  induction e generalizing env <;> simp only [lint.fix_all] <;> refine Le.trans ?_ (site_le l env _)
+  induction e generalizing env <;> simp only [lint.fix_all] <;> refine Le.trans ?_ (site_le l env _ hl)
   case Literal | Var | NoMatch | Nil => exact Le.refl _
   case Let x d b _ ihb => eval_step; exact ihb _
   case Unary op a iha => eval_step; operand iha env; exact Le.refl _
@@ -988,7 +1656,8 @@ impl fix_at_agrees: lint::fix_at_agrees for (l : lint.ExprLint) (e : lang.Expr S
 } by
   intro l e i env _
   unfold lint.fix_at_agrees.ensures lint.fix_at_agrees.ensure.agrees
-  exact (agrees_iff _ _).2 (site_le l env e)
+  intro hl
+  exact (agrees_iff _ _).2 (site_le l env e hl)
 
 open RewriteProof in
 -- For every lint, expression, interpretation and environment, by induction on the expression.
@@ -998,7 +1667,7 @@ impl fix_all_laws: lint::fix_all_laws for (l : lint.ExprLint) (e : lang.Expr Str
   intro l e i env _
   unfold lint.fix_all_laws.ensures lint.fix_all_laws.ensure.fixed lint.fix_all_laws.ensure.unchanged
     lint.fix_all_laws.ensure.idempotent lint.fix_all_laws.ensure.keeps_meaning
-  refine ⟨by simp [fixed], fun h => unchanged l e (by simpa using h), idempotent l e, (agrees_iff _ _).2 (keeps l e env)⟩
+  refine ⟨by simp [fixed], fun h => unchanged l e (by simpa using h), idempotent l e, fun hl => (agrees_iff _ _).2 (keeps l e env hl)⟩
 
 open RewriteProof in
 -- For every expression, interpretation and environment, by evaluating the operand.
@@ -1075,3 +1744,79 @@ impl fix_at_fixed: lint::fix_at_fixed for (l : lint.ExprLint) (e : lang.Expr Str
   unfold lint.fix_at_fixed.ensures lint.fix_at_fixed.ensure.fixed
   intro h
   simpa using clean_at l e (by simpa using h)
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the condition.
+impl same_branches_keeps_meaning: lint::same_branches_keeps_meaning for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.same_branches_keeps_meaning.ensures lint.same_branches_keeps_meaning.ensure.agrees
+  intro _
+  exact (agrees_iff _ _).2 (sb_site env e)
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the operands.
+impl eq_op_said_agrees: lint::eq_op_said_agrees for (e : lang.Expr String) (i : lang.Interp) (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.eq_op_said_agrees.ensures lint.eq_op_said_agrees.ensure.said
+  intro h
+  exact (agrees_iff _ _).2 (eo_said env e (by simpa using h))
+
+open RewriteProof in
+-- For every expression, environment and interpretation whose primitives are `usual?`, by evaluating the operands.
+impl neg_multiply_keeps_meaning: lint::neg_multiply_keeps_meaning for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.neg_multiply_keeps_meaning.ensures lint.neg_multiply_keeps_meaning.ensure.agrees
+  intro h
+  exact (agrees_iff _ _).2 (nm_site h.1 env e)
+
+open RewriteProof in
+-- For every expression, environment and interpretation whose primitives are `usual?`, by evaluating the operands.
+impl identity_op_keeps_meaning: lint::identity_op_keeps_meaning for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.identity_op_keeps_meaning.ensures lint.identity_op_keeps_meaning.ensure.agrees
+  intro h
+  exact (agrees_iff _ _).2 (io_site h.1 env e)
+
+open RewriteProof in
+-- For every expression, environment and interpretation whose primitives are `usual?`, by evaluating the operands.
+impl manual_rem_euclid_keeps_meaning: lint::manual_rem_euclid_keeps_meaning for (e : lang.Expr String)
+    (i : lang.Interp) (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.manual_rem_euclid_keeps_meaning.ensures lint.manual_rem_euclid_keeps_meaning.ensure.agrees
+  intro h
+  exact (agrees_iff _ _).2 (mre_site h.1 env e)
+
+open RewriteProof in
+-- For every expression, environment and interpretation whose primitives are `usual?`, by evaluating the operands.
+impl erasing_op_said_agrees: lint::erasing_op_said_agrees for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.erasing_op_said_agrees.ensures lint.erasing_op_said_agrees.ensure.said
+  intro h
+  exact (agrees_iff _ _).2 (er_said h.1 env e h.2)
+
+open RewriteProof in
+-- For every expression, environment and interpretation whose primitives are `usual?`, by evaluating the operands.
+impl modulo_one_said_agrees: lint::modulo_one_said_agrees for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.modulo_one_said_agrees.ensures lint.modulo_one_said_agrees.ensure.said
+  intro h
+  exact (agrees_iff _ _).2 (mo_said h.1 env e h.2)
