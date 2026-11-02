@@ -1,0 +1,199 @@
+-- The file system of `filesystem.fren` again, as a trait: an interface
+-- whose type is abstract, whose methods are the observer and the
+-- operations, and whose laws relate them. It tries Fren's first stage of
+-- traits (#613), and the direction it points at: laws that stand on their
+-- own, checked for whether they can hold together, rather than each bundled
+-- with one function's contract.
+--
+-- Inspired, as `filesystem.fren` is, by Alloy's example model
+-- `file_system.als` (AlloyTools, MIT licence:
+-- https://github.com/AlloyTools/org.alloytools.alloy/blob/master/org.alloytools.alloy.extra/extra/models/examples/systems/file_system.als).
+-- Alloy's facts become laws here directly, as `rooted` does.
+--
+-- What the first stage of traits gives, and what it does not yet:
+--
+-- - Laws, and expectations that follow from them, as Larch's `implies`
+--   does. A law over a type that is not listed, such as `Self` or `Path`,
+--   is outside the decidable core, so the trait allows `undecidable`. The
+--   solver gets each law as a quantifier, and instantiates it at the terms
+--   of each query; there are no triggers yet.
+-- - Inside a law, a function's contract does not apply: an application
+--   that mentions a law's variable brings no facts. So the facts of the path
+--   functions that the expectations need are laws too, and
+--   `path_facts` below checks each of them against the functions.
+-- - Whether the laws can hold together is not checked (#594). An
+--   expectation without assumptions rests on them, and says so (`F0665`).
+--   One with assumptions has a check of its own, whether they can hold with
+--   the laws, and a goal with a `when` whether its premise can: the solver
+--   decides neither for these laws (`F0608`), since a model of them must
+--   interpret quantifiers over paths. So each expectation of `FileSystem`
+--   passes, with those two warnings, which the comments after it expect.
+-- - There are no instances yet: `inst FileSystem for Listing { ... }`,
+--   which would make `filesystem.fren`'s tree an instance and check every
+--   law of it, is not an item (`F0104`). That file's lemmas are those
+--   obligations, proved one by one.
+--
+-- What can be shown is that a law is wrong, where it contradicts the others:
+-- `CarelessFileSystem` below forgets, in `mv`'s law, that a directory may
+-- not move below itself, and Fren finds that its laws have no model.
+mod filesystem_trait
+
+pub type Name := String
+pub type Bytes := String
+
+-- # Paths, as in `filesystem.fren`
+
+pub enum Path { Root, Sub(Name, Path) }
+use self::Path::{Root, Sub}
+
+pub fn under?(q: Path, p: Path): (u?) {
+    out u? := match p {
+        Root => true,
+        Sub(n, rest) => match q {
+            Root => false,
+            Sub(m, more) => m = n and under?(more, rest),
+        },
+    }
+    ensure everything_under_root: when p = Root, u?
+    ensure root_under_root_only: when q = Root, u? iff p = Root
+    ensure reflexive: when q = p, u?
+}
+
+pub fn append(a: Path, b: Path): (r: Path) {
+    out r := match a {
+        Root => b,
+        Sub(n, rest) => Sub(n, append(rest, b)),
+    }
+    ensure onto_root: when a = Root, r = b
+    ensure root_onto: when b = Root, r = a
+}
+
+pub fn parent(p: Path): (r: Path) {
+    out r := match p {
+        Root => Root,
+        Sub(n, rest) => match rest {
+            Root => Root,
+            Sub(_, _) => Sub(n, parent(rest)),
+        },
+    }
+    ensure top: when p is Sub(_, Root), r = Root
+}
+
+pub fn strip(q: Path, p: Path): (r: Path) {
+    out r := match p {
+        Root => q,
+        Sub(_, rest) => match q {
+            Root => Root,
+            Sub(_, more) => strip(more, rest),
+        },
+    }
+    ensure nothing_left: when under?(q, p), r = Root iff q = p
+}
+
+-- The facts of the path functions that the traits restate as laws, each
+-- checked here against the functions' definitions.
+expect path_facts(p: Path, a: Path, n: Name, m: Name) {
+    expect under_itself: under?(p, p)
+    expect strip_itself: strip(p, p) = Root
+    expect append_root: append(a, Root) = a
+    expect parent_of_child: parent(Sub(n, Sub(m, Root))) = Sub(n, Root)
+    expect child_under_parent: under?(Sub(n, Sub(m, Root)), Sub(n, Root))
+    expect parent_not_under_child: not under?(Sub(n, Root), Sub(n, Sub(m, Root)))
+}
+
+-- # The trait
+
+pub enum Entry { Missing, Dir, File(Bytes) }
+
+-- A file system. Each operation's law holds where its precondition does,
+-- as `valid?` in `filesystem.fren` states them; where it does not, the
+-- laws say nothing of the operation.
+set_option fren.lint.undecidable "allow" in
+trait FileSystem {
+    fn entry(Self, Path): Entry
+    fn mkdir(Self, Path): Self
+    fn write(Self, Path, Bytes): Self
+    fn rm(Self, Path): Self
+    fn mv(Self, Path, Path): Self
+
+    -- Alloy's facts: there is a root, and what exists but the root has a
+    -- directory as its parent.
+    law root(fs: Self): entry(fs, Root) = Entry::Dir
+    law rooted(fs: Self, q: Path): when q != Root and entry(fs, q) != Entry::Missing,
+        entry(fs, parent(q)) = Entry::Dir
+
+    -- What each operation leaves at `q`.
+    law mkdir_at(fs: Self, p: Path, q: Path): when p != Root and entry(fs, parent(p)) = Entry::Dir
+        and entry(fs, p) = Entry::Missing,
+        entry(mkdir(fs, p), q) = (if q = p then Entry::Dir else entry(fs, q))
+    law write_at(fs: Self, p: Path, data: Bytes, q: Path): when p != Root and entry(fs, parent(p)) = Entry::Dir
+        and entry(fs, p) != Entry::Dir,
+        entry(write(fs, p, data), q) = (if q = p then Entry::File(data) else entry(fs, q))
+    law rm_at(fs: Self, p: Path, q: Path): when p != Root,
+        entry(rm(fs, p), q) = (if under?(q, p) then Entry::Missing else entry(fs, q))
+    law mv_at(fs: Self, src: Path, dst: Path, q: Path): when src != Root and entry(fs, src) != Entry::Missing
+        and dst != Root and entry(fs, parent(dst)) = Entry::Dir and entry(fs, dst) = Entry::Missing
+        and not under?(dst, src),
+        entry(mv(fs, src, dst), q) = (if under?(q, dst) then entry(fs, append(src, strip(q, dst)))
+        else if under?(q, src) then Entry::Missing else entry(fs, q))
+
+    -- The path functions' facts, as `path_facts` checks them.
+    law under_itself(p: Path): under?(p, p)
+    law strip_itself(p: Path): strip(p, p) = Root
+    law append_root(a: Path): append(a, Root) = a
+
+    -- What follows from the laws.
+    expect read_after_write(fs: Self, p: Path, data: Bytes) {
+        expect same: when p != Root and entry(fs, parent(p)) = Entry::Dir and entry(fs, p) != Entry::Dir,  --~ warning: rests on the laws
+            entry(write(fs, p, data), p) = Entry::File(data)  --~^ warning: is vacuous
+    }
+
+    expect mkdir_then_rm(fs: Self, p: Path) {
+        expect gone: when p != Root and entry(fs, parent(p)) = Entry::Dir and entry(fs, p) = Entry::Missing,  --~ warning: rests on the laws
+            entry(rm(mkdir(fs, p), p), p) = Entry::Missing  --~^ warning: is vacuous
+    }
+
+    expect mv_moves(fs: Self, src: Path, dst: Path) {
+        expect there: when src != Root and entry(fs, src) != Entry::Missing and dst != Root  --~ warning: rests on the laws
+            and entry(fs, parent(dst)) = Entry::Dir and entry(fs, dst) = Entry::Missing and not under?(dst, src),  --~^ warning: is vacuous
+            entry(mv(fs, src, dst), dst) = entry(fs, src)
+    }
+}
+
+-- # A law that cannot hold
+--
+-- `mv`'s law without "not below `src`", as Alloy's weakened `OneParent`.
+-- Then the laws have no model: move a directory `/a` to `/a/b`, and the law
+-- puts it at `/a/b` but takes away `/a`, its parent, which `rooted` forbids.
+-- Fren finds the contradiction in the assumptions of `into_itself`, which
+-- are one directory, a new path below it, and a look at where it moves. The look follows from the
+-- laws; it is assumed so that the query has the term, since the solver
+-- instantiates the laws at the terms that it has. The comment after it is
+-- the error that the tests expect.
+set_option fren.lint.undecidable "allow" in
+trait CarelessFileSystem {
+    fn entry(Self, Path): Entry
+    fn mv(Self, Path, Path): Self
+
+    law rooted(fs: Self, q: Path): when q != Root and entry(fs, q) != Entry::Missing,
+        entry(fs, parent(q)) = Entry::Dir
+    law mv_at(fs: Self, src: Path, dst: Path, q: Path): when src != Root and entry(fs, src) != Entry::Missing
+        and dst != Root and entry(fs, parent(dst)) = Entry::Dir and entry(fs, dst) = Entry::Missing,
+        entry(mv(fs, src, dst), q) = (if under?(q, dst) then entry(fs, append(src, strip(q, dst)))
+        else if under?(q, src) then Entry::Missing else entry(fs, q))
+
+    law under_itself(p: Path): under?(p, p)
+    law strip_itself(p: Path): strip(p, p) = Root
+    law append_root(a: Path): append(a, Root) = a
+    law parent_of_child(n: Name, m: Name): parent(Sub(n, Sub(m, Root))) = Sub(n, Root)
+    law parent_not_under_child(n: Name, m: Name): not under?(Sub(n, Root), Sub(n, Sub(m, Root)))
+
+    expect into_itself(fs: Self, a: Name, b: Name) {  --~ error: are unsatisfiable
+        let dir: Path := Sub(a, Root)
+        let below: Path := Sub(a, Sub(b, Root))
+        assume made: entry(fs, dir) = Entry::Dir
+        assume new: entry(fs, below) = Entry::Missing
+        assume looked: entry(mv(fs, dir, below), below) != Entry::Missing
+        expect moved: entry(mv(fs, dir, below), below) = Entry::Dir  --~ warning: which did not pass
+    }
+}
