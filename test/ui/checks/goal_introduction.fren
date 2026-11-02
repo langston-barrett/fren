@@ -1,0 +1,42 @@
+-- A goal's leading binders are introduced before the query is given to the
+-- solver, by both front ends alike (`Reqs/Cli#goal-introduction`): each
+-- bound name of a leading `forall` is a fresh constant, and each premise of
+-- a leading `when` a hypothesis. With the constants, cvc5 has ground
+-- terms to instantiate the laws with: under the quantifier, the `fren`
+-- command's cvc5 gave up on `e0` (#543, fuzzer seeds 1195151 and 1191725),
+-- which Lean decided.
+set_option fren.lint.dead_code "allow"
+
+mod goal_introduction
+
+-- The laws contradict each other, so every expectation holds.
+set_option fren.lint.undecidable "allow" in
+pub trait Tr {
+    fn obs(Self): Int
+    law l1(s: Self): obs(s) = 0
+    expect e0: forall (s: Self) (x: Int), obs(s) + x = 1  --~ warning: rests on the laws of `goal_introduction::Tr`
+    law f(s: Self): obs(s) = 3
+}
+
+-- Bound names of an abstract type and a premise, each introduced: the law
+-- holds at the constants, under the premise.
+type Item
+
+fn weight(Item): Int
+
+fn heavy?(Item)
+
+set_option fren.lint.undecidable "allow" in
+expect weights: forall (i: Item) (j: Item), when heavy?(i) and weight(j) <= weight(i), weight(j) < 100 + weight(i)
+
+set_option fren.lint.undecidable "allow" in
+proc bounded(n: Int): (ok?) {
+    ensure r: ok? iff n > 0
+
+    -- A premise in front of a `forall`, then that `forall`'s bound name and
+    -- the premise of its guard.
+    expect nested: when ok?, (forall (x: Int), when 2 * x < n, x < n)
+
+    -- A counterexample, of the variables alone.
+    expect wrong: forall (x: Int), x > n  --~ error: expectation `goal_introduction::bounded::wrong` does not hold
+}

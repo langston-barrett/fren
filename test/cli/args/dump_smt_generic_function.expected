@@ -24,7 +24,7 @@
 (declare-const |x| (Option Int))
 (declare-const |y| Int)
 (assert (let ((|y| (|::unwrap_or<Int>| |x| 0))) (distinct |x| (as Option.none (Option Int))))) ; some
-(assert (not (let ((|y| (|::unwrap_or<Int>| |x| 0))) true)))
+(assert (not true))
 (check-sat)
 (reset)
 
