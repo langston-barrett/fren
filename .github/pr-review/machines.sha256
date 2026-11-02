@@ -1,0 +1,5 @@
+# The SHA-256 of each name of a machine that a review must not show, in
+# lowercase, one per line: check.py replaces any word whose hash is here, so
+# the names are kept out of what is posted without being spelled here. Add
+# one with `printf %s NAME | sha256sum`.
+05f514fae7ca5710f9e9289a20a5c9b372af781bfc94dd23d9cb8a044122460f

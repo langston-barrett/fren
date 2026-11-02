@@ -18,6 +18,10 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# `python3 -I` leaves the script's directory off the path.
+sys.path.insert(0, HERE)
+
+from check import PREFIX, verdicts  # noqa: E402
 SECTIONS = ["Reviews by separate agents", "Keeping the front ends together"]
 
 FULL = "This is a full review of the head."
@@ -46,8 +50,8 @@ HOW = {
         "Read `.review/fixes.patch`, the diff from the previous head to the "
         "new one (absent if the new head was also rebased), and "
         "`.review/range-diff.txt`. Confirm that each change answers a "
-        "finding of the previous review that the comment lists, that it "
-        "answers it well, and that nothing else changed."
+        "non-blocking finding of the previous review that the comment "
+        "lists, that it answers it well, and that nothing else changed."
     ),
     "rebase": (
         "Read `.review/range-diff.txt`, the range-diff of the previous "
@@ -57,7 +61,7 @@ HOW = {
     ),
 }
 
-CHANGE = {"fixes": "fixes of that review's findings", "rebase": "a rebase"}
+CHANGE = {"fixes": "fixes of that review's non-blocking findings", "rebase": "a rebase"}
 
 
 def quote(text):
@@ -77,7 +81,6 @@ def main():
     with open(f"{temp}/pr.json") as f:
         pr = json.load(f)
     head = env["HEAD"]
-    verdicts = [f"Review of {head}: no blocking issues", f"Review of {head}: blocking issues"]
     if kind == "full":
         section = FULL
     else:
@@ -88,7 +91,6 @@ def main():
         section = LIGHT.format(
             what=f"{kind} only", change=CHANGE[kind], how=HOW[kind], previous=env["PREVIOUS"],
             head=head, review=quote(review), request=quote(request))
-        verdicts.insert(1, f"Review of {head}: no blocking issues ({kind} only)")
     with open("AGENTS.md") as f:
         agents = sections(f.read())
     with open(f"{HERE}/brief.md") as f:
@@ -96,7 +98,8 @@ def main():
     facts = {
         "REPO": env["REPO"], "PR": env["PR"], "HEAD": head, "BASE": env["BASE"],
         "RUN": env["RUN"], "AGENTS": agents, "KIND": section,
-        "VERDICTS": "\n".join(f"    {v}" for v in verdicts),
+        "VERDICTS": "\n".join(f"    {v}" for v in verdicts(head, kind)),
+        "PREFIX": PREFIX,
         "TITLE": pr["title"], "BODY": quote(pr["body"] or "(no description)"),
     }
     # One pass, so that a placeholder in the pull request's own text, or in

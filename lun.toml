@@ -13,9 +13,11 @@ name = "typos"
 configs = []
 
 # lun's default for zizmor, `.github/**/*.yml`, matches no file, so zizmor
-# never ran. Every YAML file of the repository is GitHub's, but for
-# zizmor's own configuration, which zizmor does not find by itself when it
-# is given files.
+# never ran. Every YAML file of the repository is GitHub's, except zizmor's
+# own configuration, which zizmor does not find by itself when it is given
+# files, so it is passed. Lint runs zizmor without a GitHub token, so
+# offline: its online audits, such as `impostor-commit`, `ref-confusion`
+# and `known-vulnerable-actions`, don't run.
 [[tool]]
 name = "zizmor"
 cmd = "zizmor --config zizmor.yml --"

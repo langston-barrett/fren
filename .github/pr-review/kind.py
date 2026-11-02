@@ -1,25 +1,30 @@
 """Decides which review a pull request's head gets, from its comments.
 
 Usage: kind.py PR_JSON EVENT OUT_DIR
+       kind.py verdict PR_JSON SHA
 
 PR_JSON is `gh pr view --json headRefOid,comments`. EVENT is the
-workflow's event. It prints `key=value` lines for `$GITHUB_OUTPUT`:
-`kind` (`full`, `fixes`, `rebase` or `skip`), `reason`, and, for a light
-check, `previous`, the previously reviewed head. For a light check it
-writes the previous review to OUT_DIR/previous-review.md and the comment
-that asks for the check to OUT_DIR/request.md.
+workflow's event. The first form prints `key=value` lines for
+`$GITHUB_OUTPUT`: `kind` (`full`, `fixes`, `rebase` or `skip`), `reason`,
+and, for a light check, `previous`, the previously reviewed head. For a
+light check it writes the previous review to OUT_DIR/previous-review.md and
+the comment that asks for the check to OUT_DIR/request.md. The second form
+prints the verdict of the last review of SHA, or nothing, for prepare.sh's
+skip of an update from `main`, so that both read a review the same way.
 
-The author, the reviewers and the coordinator all post under one login, so
-a comment's login says nothing about who wrote it. A light check needs a
-comment that is not a review, names the head (by at least its first 7
-hex digits), and starts with "fixes only" or "rebase only"; the latest
-such comment that names the head decides. The head that it checks against
-is the one reviewed last before that comment, which must be another head
-than this one, and which must not be this head's own review. For "rebase
-only", AGENTS.md also asks that review to have found no blocking issues.
-Otherwise the head gets a full review. A workflow_run skips a head that
-already has a review. Whether the head is only an update from `main` of a
-reviewed head is decided by prepare.sh, which has the commits.
+AGENTS.md allows two light checks, each only when the previous head's
+review was clean: "rebase only", when the new head only rebases it, and
+"fixes only", when it only fixes that review's non-blocking findings. The
+author, the reviewers and the coordinator all post under one login, so a
+comment's login says nothing about who wrote it. So a light check needs a
+comment that is not a review, names the head (by at least its first 7 hex
+digits), and starts with "fixes only" or "rebase only"; the latest such
+comment that names the head decides. The head that it checks against is
+the one reviewed last before that comment, which must be another head than
+this one, and whose review must have found no blocking issues. Otherwise
+the head gets a full review. A workflow_run skips a head that already has a
+review. Whether the head is only an update from `main` of a reviewed head is
+decided by prepare.sh, which has the commits.
 """
 
 import json
@@ -81,8 +86,8 @@ def decide(pr, event):
     previous, clean, review = before[-1]
     if previous == head:
         return {"kind": "full", "reason": "the request comes after a review of the head itself"}
-    if kind == "rebase" and not clean:
-        return {"kind": "full", "reason": f"the review of {previous}, which the head rebases, found blocking issues"}
+    if not clean:
+        return {"kind": "full", "reason": f"the review of {previous} found blocking issues, so the head gets a fresh review"}
     return {
         "kind": kind,
         "reason": f"the last comment that names the head starts with \"{kind} only\"",
@@ -92,7 +97,19 @@ def decide(pr, event):
     }
 
 
+def verdict(pr, sha):
+    """The verdict of the last review of `sha` among the comments, or None."""
+    comments = sorted(pr["comments"], key=lambda c: c["createdAt"])
+    found = [first_line(c["body"]) for s, _, c in reviews(comments) if s == sha]
+    return found[-1][len(f"Review of {sha}: "):] if found else None
+
+
 def main():
+    if sys.argv[1] == "verdict":
+        pr_json, sha = sys.argv[2:]
+        with open(pr_json) as f:
+            print(verdict(json.load(f), sha) or "")
+        return
     pr_json, event, out_dir = sys.argv[1:]
     with open(pr_json) as f:
         decision = decide(json.load(f), event)

@@ -47,12 +47,15 @@ else
 fi
 [ -n "$pr" ] || skip "the pre-merge run $RUN_ID is of no pull request"
 gh pr view "$pr" --repo "$REPO" \
-  --json number,state,isDraft,author,headRefOid,headRefName,title,body,comments \
+  --json number,state,isDraft,isCrossRepository,author,headRefOid,headRefName,title,body,comments \
   > "$RUNNER_TEMP/pr.json"
 head=$(jq -r .headRefOid "$RUNNER_TEMP/pr.json")
 branch=$(jq -r .headRefName "$RUNNER_TEMP/pr.json")
 out pr "$pr"
 out head "$head"
+# A pull request from a fork is never reviewed, by hand either: the probes
+# run its code, so its author must be one who can push here.
+[ "$(jq -r .isCrossRepository "$RUNNER_TEMP/pr.json")" = false ] || skip "#$pr is from a fork"
 
 if [ "$EVENT" = workflow_run ]; then
   [ "$(jq -r .state "$RUNNER_TEMP/pr.json")" = OPEN ] || skip "#$pr is not open"
@@ -91,10 +94,7 @@ if [ "$EVENT" = workflow_run ]; then
     from=$(git rev-parse "$commit^2")
     git merge-base --is-ancestor "$from" origin/main || break
     [ "$(git merge-tree --write-tree "$first" "$from")" = "$(git rev-parse "$commit^{tree}")" ] || break
-    verdict=$(jq -r --arg sha "$first" \
-      '[.comments[].body | ltrimstr("\n") | select(startswith("Review of " + $sha + ":"))
-        | split("\n")[0] | ltrimstr("Review of " + $sha + ": ")] | last // empty' \
-      "$RUNNER_TEMP/pr.json")
+    verdict=$(python3 -I "$here/kind.py" verdict "$RUNNER_TEMP/pr.json" "$first")
     if [ -n "$verdict" ]; then
       skip "$head only merges main into $first, whose review stands: $verdict"
     fi

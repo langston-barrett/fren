@@ -980,15 +980,21 @@ The `pr-review` workflow reviews each pull request's head with Claude once
 `pre-merge` has passed on it, by AGENTS.md's review rules: a full review,
 or a light check when the last comment that names the head starts with
 "fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
-an update from `main` of a reviewed head. Its review is static and
-advisory. No job of it runs code that the pull request controls, so it
-does not probe with these binaries: the reviewer reads a checkout of the
-head and the diffs that the workflow wrote, without a shell, and suggests
-probes in its findings. The workflow posts the review as one comment, once
-its check of the review passes: the first line, a mark on each finding
-that agrees with the verdict, and no credentials or names of machines.
-Run by hand (`gh workflow run pr-review -f pr=N`), it posts only on the
-pull request that its `post` input names.
+an update from `main` of a reviewed head. It never reviews a pull request
+from a fork. Its review is advisory: the pull request's own text reaches
+the reviewer, and could steer it. The only code of the pull request that
+it runs is these binaries, `fren check` of each spec that the pull request
+changes, in a job of its own with no secret, offline, under
+`scripts/heavy --offline`. The reviewer, in the job that holds the Claude
+token, reads their output as text, with a checkout of the head and the
+diffs that the workflow wrote, with no shell and no reads outside the
+checkout, and suggests any other probe in its findings. The workflow
+posts the review as one comment, once its check of the review passes: the
+first line, a mark on each finding that agrees with the verdict, no copy
+of a token, plain or encoded, no image or link that loads from outside
+github.com, and no names of machines. Run by hand (`gh workflow run
+pr-review -f pr=N`), it posts only on the pull request that its `post`
+input names.
 
 Pull requests merge through GitHub's merge queue. The queue merges each
 pull request into the current `main`, behind any pull requests ahead of it
