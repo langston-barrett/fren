@@ -3825,7 +3825,43 @@ theorem mergeGuarded_equivalent {F : Type} [BEq F] [LawfulBEq F] (refl : ∀ a, 
   · rintro ⟨e, he, rfl, q, hq, hh⟩
     exact ⟨q, inv.sound e he q hq, hh⟩
 
+/-- Each fact that `mergeGuarded` keeps has a path, so `guardedFact` never
+gets an empty list. -/
+theorem mergeGuarded_nonempty {F : Type} [BEq F] [LawfulBEq F] (refl : ∀ a, within a a = true)
+    (trans : ∀ a b c, within a b = true → within b c = true → within a c = true) (found : List (F × P)) :
+    ∀ e ∈ Fren.Core.mergeGuarded within found, e.2 ≠ [] := by
+  have inv := mergeGuarded_inv within refl trans found
+  intro e he
+  obtain ⟨x, hx, hk⟩ := List.mem_map.mp ((inv.keys e.1).mp (List.mem_map_of_mem he))
+  obtain ⟨e', he', hk', q, hq, -⟩ := inv.covers x hx
+  have : e' = e := by
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem he
+    obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem he'
+    have := nodup_getElem_inj inv.nodup (by simpa using hj) (by simpa using hi) (by simpa using hk'.trans hk)
+    subst this
+    rfl
+  subst this
+  exact List.ne_nil_of_mem hq
+
 end MergeGuarded
+
+/-- The formula that `guardedFact` asserts for the paths that
+`mergeGuarded` keeps: wherever `implies` means implication from all of
+its guards and `disj` the disjunction of its paths' guards, as each front
+end's do, it holds just when the fact does wherever all of some path's
+guards hold. With `mergeGuarded_equivalent` and `mergeGuarded_nonempty`,
+the query's formula for a fact is then equivalent to the fact under every
+path on which it was found. That each front end's `implies` and `disj`
+mean that is not proved: they build Lean terms and SMT-LIB text. -/
+theorem guardedFact_holds {F G : Type} (implies : Array G → F → F) (disj : List (Array G) → G)
+    (sat : F → Prop) (guard : G → Prop)
+    (himp : ∀ gs f, sat (implies gs f) ↔ ((∀ g ∈ gs, guard g) → sat f))
+    (hdisj : ∀ ps, guard (disj ps) ↔ ∃ p ∈ ps, ∀ g ∈ p, guard g)
+    (f : F) (ps : List (Array G)) (hne : ps ≠ []) :
+    sat (Fren.Core.guardedFact implies disj f ps) ↔ ((∃ p ∈ ps, ∀ g ∈ p, guard g) → sat f) := by
+  match ps, hne with
+  | [g], _ => simp [Fren.Core.guardedFact, himp]
+  | p :: q :: rest, _ => simp [Fren.Core.guardedFact, himp, hdisj]
 
 /-- The front ends' `within`, `guardsWithin`, is the inclusion of guards that
 `pathWithin` decides of paths by position: so it is reflexive and
@@ -3839,6 +3875,18 @@ theorem guardsWithin_iff {G : Type} [BEq G] [LawfulBEq G] (g h : Array G) :
     simpa using Array.all_eq_true.mp hall i hi
   · intro hin
     exact Array.all_eq_true.mpr fun i hi => by simpa using hin _ (Array.getElem_mem hi)
+
+/-- `mergeGuarded` at the front ends' own instantiation, paths given by
+their guards and `guardsWithin` (`recursiveQueryFacts`): each fact once,
+with only paths on which it was found, among them one within each such
+path, and none within another, as `impl merged_facts` proves of paths by
+position. -/
+theorem mergeGuarded_guards {F G : Type} [BEq F] [LawfulBEq F] [BEq G] [LawfulBEq G]
+    (found : List (F × Array G)) :
+    MergeInv Fren.Core.guardsWithin (Fren.Core.mergeGuarded Fren.Core.guardsWithin found) found :=
+  mergeGuarded_inv _ (fun a => (guardsWithin_iff a a).mpr fun _ h => h)
+    (fun a b c hab hbc => (guardsWithin_iff a c).mpr fun x h =>
+      (guardsWithin_iff b c).mp hbc x ((guardsWithin_iff a b).mp hab x h)) found
 
 /-- The guards of the path `p`, of the pairs `guards` of each path and one
 of its guards. -/

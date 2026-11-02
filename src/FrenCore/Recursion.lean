@@ -140,7 +140,12 @@ the other's follows from it under its own, and the merged facts are
 equivalent to `found`. The reflection finds an application once on each
 path to it, so without this, a fact of an application that many facts
 mention would be asserted once on each of their paths, though those paths
-mostly only add guards to the first. -/
+mostly only add guards to the first. In #669's version of
+`examples/stlc.fren` with contracts on `subst_all` and `free`, one query
+asserted one fact of `free` 423 times, under 423 paths' guards that all had
+one path's; its 1,992 asserts were 279 distinct facts. Both front ends'
+`recursiveQueryFacts` call this, and `mergeGuarded_equivalent` proves the
+merged facts equivalent to `found`. -/
 def mergeGuarded {F P : Type} [BEq F] (within : P → P → Bool) (found : List (F × P)) : List (F × List P) :=
   found.foldl (mergeStep within) []
 

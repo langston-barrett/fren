@@ -234,18 +234,13 @@ of them has none. A path is weaker than another when its guards are among
 the other's, as they are of a path through the facts of an application that
 another fact mentions too, which only adds guards to the first: then the
 fact under the other's guards follows from it under its own. So the query
-is equivalent to one with the fact under every path's guards, and both
-front ends take the paths from `Fren.Core.mergeGuarded`, through
-`Fren.Core.guardedFact`. Without that, in a version of `examples/stlc.fren`
-with contracts on `subst_all` and `free`, one query asserted one fact of
-`free` 423 times, under 423 paths' guards that all had one path's.
-`lang::merged_facts` states it, over the paths on which the queue finds
-each fact, by position. Its first two conjuncts make the query equivalent:
-where some guards hold, the query asserts each fact found on a path whose
-guards hold, by the second, and no other, by the first, as
-`mergeGuarded_equivalent` proves of `mergeGuarded`. Images over `Int`
-are outside the [decidable core](Decidability.md), so the procedure opts
-out:
+is equivalent to one with the fact under every path's guards.
+`lang::merged_facts` states which paths each fact is asserted under, over
+the paths on which the queue finds it, by position. Its first two conjuncts
+make the query equivalent: where some guards hold, the query asserts each
+fact found on a path whose guards hold, by the second, and no other, by the
+first. Images over `Int` are outside the [decidable core](Decidability.md),
+so the procedure opts out:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
