@@ -76,7 +76,7 @@ recursive function, of `formulas`, each with its truth at the model and
 whether it applies one, or the goal, `goal`, likewise: a bug in Fren,
 which the report of the model shows (`Reqs/Models#reporting`), not
 evidence about the functions' contracts. Both front ends decide it here,
-over the formulas of `confirmedFormulas`. -/
+over the query's own hypotheses. -/
 def plainContradiction (formulas : Array (Name × Option Bool × Bool)) (goal : Option Bool × Bool) : Bool :=
   let plain (v : Option Bool × Bool) : Option Bool := if v.2 then none else v.1
   (contradiction? (formulas.map fun (n, v) => (n, plain v)) (plain goal)).isSome

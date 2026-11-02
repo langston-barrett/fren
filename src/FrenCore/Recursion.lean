@@ -91,9 +91,9 @@ postcondition is unproved (`lang::recursive_post_result`). -/
 def recursivePostResult (passed unproved : Bool) : Bool := passed && !unproved
 
 /-- Recursive counterexamples require evaluation (`lang::recursive_counterexample`):
-where the formulas that `confirmedFormulas` gives apply a recursive
-function (`recursive`), the evaluation of its real definition on the model
-must confirm them (`confirms`); and where a fact of the applications that
+where the query's own hypotheses and goal apply a recursive function
+(`recursive`), the evaluation of its real definition on the model must
+confirm them (`confirms`); and where a fact of the applications that
 the query has applies one (`factsRecursive`), it is never confirmed. That
 is a conservative choice, not a necessity: the model gives the values of
 those facts' applications, at which the real definitions could evaluate
@@ -113,21 +113,6 @@ front ends' query builders give these to their reflection, from the same
 three. -/
 def recursionFormulas {F : Type} (varFacts appFacts hyps : Array (Lean.Name × F)) : Array (Lean.Name × F) :=
   varFacts ++ appFacts ++ hyps
-
-/-- The formulas that a model of a query is confirmed against, where they
-apply a recursive function (`lang::recursion_formulas`,
-`recursiveCounterexample`): its own hypotheses, `hyps`, with its goal; and,
-where a check reports the model (`reported`), as a counterexample, a cover
-goal's witness or a member's value, which are the queries that want one,
-the facts that its variables' types bring, `varFacts`, whose values are
-the model's variables'. A query that wants no model reports none: its
-`sat` is the answer that passes its check, as a consistent assumption or
-a constraint that is not redundant, and so it is confirmed against its own
-formulas alone, as before the variables' facts were. Not the facts of its
-applications, which `recursiveCounterexample` takes apart. -/
-def confirmedFormulas {F : Type} (reported : Bool) (varFacts hyps : Array (Lean.Name × F)) :
-    Array (Lean.Name × F) :=
-  if reported then varFacts ++ hyps else hyps
 
 /-! ## Lean `match`es (`lang::recursive_match`) -/
 

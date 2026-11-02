@@ -841,11 +841,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let unfolded? ← if hasRecursion then
           pure (some (← hyps.mapM (unfoldDefined ·.2), ← unfoldDefined goal))
         else pure none
-      -- The formulas that a model is confirmed against: the variables'
-      -- facts too (`Core.confirmedFormulas`).
-      let confirmed := Core.confirmedFormulas wantModel facts hyps
       let recs ← match unfolded? with
-        | some (_, g) => recursiveSolvers ((← confirmed.mapM (unfoldDefined ·.2)).push g)
+        | some (us, g) => recursiveSolvers (us.push g)
         | none => pure #[]
       -- Even a query that needs only sat/unsat must obtain its inputs to
       -- confirm a recursive model, as the CLI's confirming backend does.
@@ -860,14 +857,14 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
             if Core.recursiveCounterexample (!recs.isEmpty) true true then pure o
             else pure (.unknown (Core.recursiveReason factRecs))
           else if recs.isEmpty then pure o else
-            if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes confirmed goal model) false then pure o
+            if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes hyps goal model) false then pure o
             else do
               let st ← getState
               -- A formula without recursion that the model contradicts is
               -- the report's internal error, not the contracts'.
               let recursive := st.defined.foldl (init := #[]) fun acc _ d =>
                 if d.recursive then (acc.push d.decl) ++ d.solver?.toArray else acc
-              if ← plainContradiction c fvs primes confirmed goal model recursive then pure o else
+              if ← plainContradiction c fvs primes hyps goal model recursive then pure o else
               let names := recs.filterMap fun r => st.defined.foldl (init := none) fun acc _ d =>
                 if d.solver? == some r then some d.path else acc
               pure (.unknown (Core.recursiveReason names))
