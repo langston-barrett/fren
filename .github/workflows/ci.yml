@@ -339,7 +339,9 @@ jobs:
         runtime=$(find "/usr/lib/llvm-$version" -name 'libclang_rt.profile*.a' | grep -E 'x86_64|linux/libclang_rt.profile.a' | head -n 1)
         printf 'COVERAGE_RUNTIME=%s\nLLVM_COV=%s\n' "$runtime" "/usr/lib/llvm-$version/bin/llvm-cov" >> "$GITHUB_ENV"
     - name: Build with coverage
-      run: lake -R -Kcoverage="$COVERAGE_RUNTIME" build fren fren_test fren_coverage
+      # The `.olean` files of every executable's root, which `fren_coverage`
+      # reads to follow each one's compiled code, too.
+      run: lake -R -Kcoverage="$COVERAGE_RUNTIME" build fren fren_test fren_coverage FrenFuzz FrenFuzzFrontends
     - name: Run the tests
       run: lake -Kcoverage="$COVERAGE_RUNTIME" test
     - name: Report what the tests did not run

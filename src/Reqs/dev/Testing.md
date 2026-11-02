@@ -751,8 +751,28 @@ machine met before takes that build's outputs from the cache, linked into
 checkout of a head or a probe of a merge commit runs only the steps that
 no build on the machine ran with the same inputs. The key covers every
 file that the module's library needs, so `testing::fresh` holds as
-before. A coverage build (`-Kcoverage`) does not use the cache: its
-object files name the directory where they write their counters.
+before.
+
+A coverage build (`-Kcoverage`) uses the cache only with
+`-Kcoverage_dir=DIR`, where DIR is the worktree's own directory, which
+`coverage_new.py` passes: each of its object files names the directory
+where it writes its counters, and the option puts that directory into the
+key of the step that compiles it, so no other worktree is given it.
+`lakefile.lean` compares DIR with its own directory, and another, such as
+one copied from another worktree's command, turns the cache off. The
+coverage build's other steps, whose outputs name no directory, are
+shared. The key covers `-Kcoverage`'s compiler options too, so a coverage
+build's outputs and a normal build's never mix. Compiling an object also
+writes gcov's notes (`.gcno`) beside it, which the cache does not keep: a
+module edited and then reverted gets its first object back with the
+notes of the second, and one whose `.lake/build` was deleted gets it back
+with none. So `coverage_new.py` deletes an object whose notes are missing
+or newer than it, and its copy in the cache, which only this worktree's
+builds use, and builds again, which compiles it (Lake warns that the copy
+is gone); and `fren_coverage` checks that each module's notes and
+counters have the same stamp, that of the object that wrote the counters,
+and otherwise stops, naming the module. Without `-Kcoverage_dir`, as on
+CI, a coverage build does not use the cache.
 
 The cache keeps a step's outputs but not its messages. A module that is
 up to date in a worktree's own `.lake/build` replays its messages from its
@@ -1091,7 +1111,7 @@ per declaration, not per line or per `match` arm:
 
 ```text
 find .lake/build -name '*.gcda' -delete
-lake -R -Kcoverage=RUNTIME build fren fren_test fren_coverage
+lake -R -Kcoverage=RUNTIME build fren fren_test fren_coverage FrenFuzz FrenFuzzFrontends
 lake -Kcoverage=RUNTIME test
 lake exe fren_coverage GCOV...
 ```
@@ -1129,16 +1149,93 @@ closed term applies a function. The declarations counted are the
 compiled definitions of `FrenCore`, `Fren` and `FrenCli` that are
 written in the source and compile to a function: not theorems,
 constructors, recursors, matchers, projections, `@[inline]` definitions,
-instances that `deriving` makes, or definitions without arguments, which
+`@[extern]` declarations, whose code is C of their own, instances that
+`deriving` makes, or definitions without arguments, which
 are constants computed at initialization. A definition of a function
 type written without parameters, as `def f : Nat → Nat := g`, compiles
 with its parameters, so it is counted. A declaration that compiles to a
 function that gcov does not report did not run. The proofs of `impl`s
 are not code, but the definitions they are about are counted.
 
-Only compiled code is measured. The Lean-hosted front end's elaborators
-run in Lean's interpreter where a test elaborates Fren in Lean, so some of
-them are listed although the ui tests elaborate them.
+Only compiled code is measured, and only code that the executables can
+run can be a gap. `fren_coverage` follows the compiled code of each
+executable that `lakefile.lean` declares (`lean_exe`), in that
+executable's own environment, from its entry points:
+
+- its `main`;
+- the initialization of Fren's modules, which runs their `initialize`
+  functions and computes their constants: the calls in a constant's
+  definition, but not the closures that it makes, which run only through
+  code that reads it;
+- `@[export]` functions, which C may call;
+- the functions whose type is a named function type, such as
+  `CommandElab`, which Lean looks up by name and calls, as the attributes
+  that register elaborators, macros, formatters and lean-smt's
+  translators require;
+- every definition of the modules of `specRuntime`: `Fren.Prelude`,
+  `Fren.Seq`, `Fren.SeqElems`, `Fren.FinSet`, `Fren.Finite`,
+  `Fren.Enumerate`, `FrenCore.Prelude`, `FrenCore.Str` and
+  `FrenCore.Regex`. For each spec, the hosted front end generates Lean
+  definitions, and compiles and runs them, in `lean` and in the tests.
+  Those definitions may call the definitions of these modules: by names
+  built from strings, by instances that synthesis finds, and by the
+  spec's own identifiers, none of which the compiled code shows.
+
+From what it reaches, it follows each call and each closure of the
+compiled code (the IR), and the declarations that a reached definition
+names with a `Name` literal or a syntax quotation. A counted declaration
+that none of this reaches is no gap, and is not listed
+(`testing::coverage`), for one of three reasons:
+
+- only proofs, and what Lean interprets while a module builds, such as
+  `#guard`s, `#eval`s and `run_cmd`s, use it, so no test of an
+  executable can run it;
+- its compiled callers have its code inlined or specialized, even with
+  `-Dcompiler.small=0`, so its own function never runs, but its code
+  runs, and counts, in theirs, as an `@[inline]` definition's does;
+- it is the reference of a `@[csimp]` replacement, which runs in its
+  place, or only such a reference uses it. One that ran although nothing
+reaches it shows a call that the graph does not see, such as one into
+`specRuntime` from a module that it should list; `fren_coverage` warns of
+each, by name, on GitHub Actions as an annotation too. The Lean-hosted
+front end's elaborators run in the interpreter where a test elaborates
+Fren in Lean, so some of them are listed although the ui tests elaborate
+them.
+
+`testing::coverage` is proved of `fren_coverage`'s verdict on each
+declaration (`FrenTest.Coverage.fails` and `stale`). Its inputs are
+trusted: `ran?` is gcov's counters, and `reached?` is
+`FrenCoverage.reached`, which no Req states and no evidence backs (#679).
+
+```fren
+pub proc coverage(
+    ran?,                       -- gcov's counters show that one of its entry points ran
+    reached?,                   -- an entry point reaches it, of an executable or of generated code
+    listed?,                    -- `test/coverage.txt` lists it
+): (det fails?, det stale?) {
+    ensure gap: fails? iff not ran? and reached? and not listed?
+    ensure needless_line: stale? iff listed? and (ran? or not reached?)
+
+    -- A function that no entry point reaches, such as one that only proofs
+    -- use, never fails, and needs no line...
+    expect proof_only: when not reached?, not fails? and (stale? iff listed?)
+    -- ...but one that an executable can run fails until a test runs it or
+    -- a line says why none can.
+    expect compiled_untested: when reached? and not ran?, fails? iff not listed?
+    -- A line is needed exactly where it keeps a declaration from failing.
+    expect line_needed: when listed?, not stale? iff not ran? and reached?
+    cover failing: fails?
+}
+```
+
+A counted definition that nothing refers to at all, not even a proof, is
+dead: it is deleted, not listed. `fren_coverage` reports each as `DEAD`,
+in its log and in the job's summary, but does not fail on them, since it
+finds them in the sources' text: a `def`, `abbrev` or `opaque` without an
+attribute whose name appears nowhere in `src` or `examples`, in Lean or in
+Markdown, but in its own declaration. A name that code builds from
+strings would seem dead; and dead code whose short name another
+declaration, or prose, shares goes unreported.
 
 `test/coverage.txt` lists the counted declarations that no test runs, one
 per line. One that is never meant to run, such as code that runs only when
@@ -1153,4 +1250,30 @@ it, keeping the reasons. The aim is a list of reasons alone. CI runs it on
 the whole `lake test` on one machine take 20 to 35 minutes, about twice
 `pre-merge`'s 12 to 15, so a pull request that adds code no test runs
 fails `main` right after it merges, and a small pull request lists or
-tests it.
+tests it. The job's summary gives the counts, the failures, the stale
+lines and the dead code.
+
+Before pushing, an author checks the definitions that the branch adds,
+in two steps, with `main`'s job as the backstop:
+
+1. `python3 scripts/coverage_new.py` (`fren_coverage --static --new
+   origin/main`) lists each counted definition that the working tree adds
+   since its merge base with `origin/main`, or in a file that git does
+   not track yet. It first brings up to date the `.olean` files that it
+   reads, of `Fren` and of every executable's root, which takes seconds
+   on a built worktree: `UNREACHED` needs no test, `DEAD` is deleted (and
+   fails the step), and `REACHED` needs a test, which the pull request
+   names. A normal build inlines small functions, whose calls are then
+   gone from the compiled code, so this step also counts as reached what
+   any reached definition's definition uses.
+2. `python3 scripts/coverage_new.py --run JOB ARG...`, with `--run` once
+   for each `fren_test` job that the change affects, builds `fren_test`
+   with the counters, using the artifact cache, so that only what changed
+   is compiled again ([Shared builds](#shared-builds)); clears the
+   counters; runs those jobs; and fails on a reached new definition that
+   none of them ran and that `test/coverage.txt` does not list. For
+   example, a change to one module, `FrenCli.Run`, with the rest built
+   before, took under a minute with one ui job, on one machine on
+   2026-11-02. Afterwards the worktree's build is the instrumented one,
+   and `lake -R build` returns to the normal one, from the artifact
+   cache.
