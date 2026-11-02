@@ -147,10 +147,47 @@ class Comment(unittest.TestCase):
         body, ok = comment(f"{OK}\n\nAsk @someone, or @org/team.{PROBED}", HEAD, "full", "URL", set())
         self.assertTrue(ok)
         self.assertNotRegex(body, r"@[A-Za-z0-9_-]")
-        self.assertIn("@​someone", body)
+        self.assertIn("@\u200bsomeone", body)
         # Lean's attributes stay as they are.
         body, _ = comment(f"{OK}\n\nThe `@[simp]` lemma.{PROBED}", HEAD, "full", "URL", set())
         self.assertIn("`@[simp]`", body)
+
+    def test_entity_mentions(self):
+        # Markdown decodes each to `@`, so each would mention someone.
+        for at in ("&#64;", "&#064;", "&#x40;", "&#X40;", "&commat;"):
+            body, ok = comment(f"{OK}\n\nAsk {at}someone, or {at}&#115;omeone.{PROBED}", HEAD, "full", "URL", set())
+            self.assertTrue(ok, at)
+            self.assertNotIn(f"{at}s", body, at)
+            self.assertNotIn(f"{at}&", body, at)
+            self.assertEqual(body.count("@\u200b"), 2, at)
+
+    def test_code_keeps_its_mentions(self):
+        # GitHub mentions no one in code, so code is left as written.
+        text = (f"{OK}\n\nIn `@someone` and ``a ` @other``, and\n\n```lean\n@[simp] theorem x := @foo\n```\n\n"
+                f"~~~~\n@bar\n~~~~\n\nbut @outside.{PROBED}")
+        body, ok = comment(text, HEAD, "full", "URL", set())
+        self.assertTrue(ok)
+        for kept in ("`@someone`", "``a ` @other``", "@foo", "\n@bar\n"):
+            self.assertIn(kept, body, kept)
+        self.assertIn("@\u200boutside", body)
+
+    def test_what_only_looks_like_code_is_not(self):
+        cases = {
+            # A backslash escapes the backtick, so there is no code span.
+            "\\`@someone`": "@\u200bsomeone",
+            # A code span ends at a blank line.
+            "`a\n\n@someone`": "@\u200bsomeone",
+            # A backtick fence's info string has no backtick, so this is
+            # no fence, and the last line opens an empty one (CommonMark).
+            "```a`b\n@someone\n```": "@\u200bsomeone",
+            # A code span across lines counts as text, which is safe.
+            "`a\n@someone`": "@\u200bsomeone",
+            # After the closing fence, mentions count again.
+            "```\nx\n```\n@someone": "@\u200bsomeone",
+        }
+        for text, expected in cases.items():
+            body, _ = comment(f"{OK}\n\n{text}{PROBED}", HEAD, "full", "URL", set())
+            self.assertIn(expected, body, text)
 
     def test_posted_comment_is_checked_as_posted(self):
         # The run's URL is the only thing a note links to, and a run URL
