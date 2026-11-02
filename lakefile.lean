@@ -7,21 +7,26 @@ open System Lake DSL
 -- step that a build on the machine ran before takes that step's outputs
 -- from the cache instead of running (`Reqs/dev/Testing#shared-builds`).
 -- They are linked into `.lake/build` too, where `lake env` and the tests'
--- runs of the hosted front end look for them. Not for a coverage build
--- (below), whose object files name the directory where they write their
--- counters.
+-- runs of the hosted front end look for them. A coverage build (below)
+-- uses it only when its key covers the worktree's directory, which its
+-- object files name.
 package fren where
   srcDir := "src"
   testDriver := "fren_test"
   version := v!"0.1.0"
-  enableArtifactCache := (get_config? coverage).isNone
+  enableArtifactCache := (get_config? coverage).isNone || (get_config? coverage_dir).isSome
   restoreAllArtifacts := true
 
 -- `lake -R -Kcoverage=RUNTIME build` compiles the code whose coverage is
 -- measured with gcov's counters, and links the executables that run it
 -- with the profiling runtime at the path RUNTIME, which Lean's toolchain
--- lacks (`Reqs/dev/Testing#coverage`).
-def coverageArgs : Array String := if (get_config? coverage).isSome then #["--coverage"] else #[]
+-- lacks (`Reqs/dev/Testing#coverage`). Its object files name the directory
+-- where they write their counters, so it uses the artifact cache only
+-- with `-Kcoverage_dir=DIR`, the worktree's directory, which their key
+-- then covers: no other worktree gets them.
+def coverageArgs : Array String := match get_config? coverage with
+  | some _ => #["--coverage"] ++ ((get_config? coverage_dir).map (s!"-DFREN_COVERAGE_DIR={·}")).toArray
+  | none => #[]
 -- The compiler inlines small functions, whose code then runs in their
 -- callers, so that they would seem never to run.
 def coverageLeanArgs : Array String := if (get_config? coverage).isSome then #["-Dcompiler.small=0"] else #[]
