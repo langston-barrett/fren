@@ -161,33 +161,27 @@ class Comment(unittest.TestCase):
             self.assertNotIn(f"{at}&", body, at)
             self.assertEqual(body.count("@\u200b"), 2, at)
 
-    def test_code_keeps_its_mentions(self):
-        # GitHub mentions no one in code, so code is left as written.
-        text = (f"{OK}\n\nIn `@someone` and ``a ` @other``, and\n\n```lean\n@[simp] theorem x := @foo\n```\n\n"
+    def test_code_is_defused_too(self):
+        # Every `@` before a name is defused, in code as well, since telling
+        # code from text took a guess that once let a mention through.
+        text = (f"{OK}\n\nIn `@someone` and ``a ` @other``, and\n\n```lean\ntheorem x := @foo\n```\n\n"
                 f"~~~~\n@bar\n~~~~\n\nbut @outside.{PROBED}")
         body, ok = comment(text, HEAD, "full", "URL", set())
         self.assertTrue(ok)
-        for kept in ("`@someone`", "``a ` @other``", "@foo", "\n@bar\n"):
-            self.assertIn(kept, body, kept)
-        self.assertIn("@\u200boutside", body)
+        self.assertNotRegex(body, r"@(?!\u200b)[A-Za-z0-9_-]")
+        for name in ("someone", "other", "foo", "bar", "outside"):
+            self.assertIn(f"@\u200b{name}", body, name)
 
-    def test_what_only_looks_like_code_is_not(self):
-        cases = {
-            # A backslash escapes the backtick, so there is no code span.
-            "\\`@someone`": "@\u200bsomeone",
-            # A code span ends at a blank line.
-            "`a\n\n@someone`": "@\u200bsomeone",
-            # A backtick fence's info string has no backtick, so this is
-            # no fence, and the last line opens an empty one (CommonMark).
-            "```a`b\n@someone\n```": "@\u200bsomeone",
-            # A code span across lines counts as text, which is safe.
-            "`a\n@someone`": "@\u200bsomeone",
-            # After the closing fence, mentions count again.
-            "```\nx\n```\n@someone": "@\u200bsomeone",
-        }
-        for text, expected in cases.items():
-            body, _ = comment(f"{OK}\n\n{text}{PROBED}", HEAD, "full", "URL", set())
-            self.assertIn(expected, body, text)
+    def test_checkers_bypasses(self):
+        # The four inputs with which the check of 333712e0 got a live
+        # mention past the code exemption: each is text in CommonMark.
+        for case in ("- ```\n  x\n  ```\n\nthen @someone here",
+                     "- a\n\n  ```\n  x\n- b @someone",
+                     'x<span title="`">@someone x<span title="`">',
+                     "see x<https://github.com/`>@someone `"):
+            body, _ = comment(f"{OK}\n\n{case}{PROBED}", HEAD, "full", "URL", set())
+            self.assertNotRegex(body, r"@(?!\u200b)[A-Za-z0-9_-]", case)
+            self.assertNotIn("@someone", body, case)
 
     def test_posted_comment_is_checked_as_posted(self):
         # The run's URL is the only thing a note links to, and a run URL

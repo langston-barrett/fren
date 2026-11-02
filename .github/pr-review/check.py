@@ -96,31 +96,16 @@ def loading(decoded):
 # An `@`, as itself or as an entity that Markdown decodes to one (`&#64;`,
 # `&#x40;`, `&commat;`), before a login's character or another entity.
 AT = re.compile(r"(?:@|&#0*64;|&#[xX]0*40;|&commat;)(?=[A-Za-z0-9_-]|&)")
-# What GitHub does not look for mentions in, and so is left as written: a
-# fenced code block, from its fence to a closing one of the same character
-# and at least its length (or the end), and a code span, between equal runs
-# of backticks that no backslash escapes, on one line. Where a line is in
-# doubt, it counts as text, whose mentions are made inert: a code span
-# across lines, or a fence that CommonMark would not take for one.
-CODE = re.compile(
-    r"^ {0,3}(?P<fence>(?P<c>[`~])(?P=c){2,})[^\n`]*\n(?:.*?\n)??"
-    r" {0,3}(?P=fence)(?P=c)*[ \t]*(?:\n|\Z)"
-    r"|^ {0,3}(?P<open>(?P<d>[`~])(?P=d){2,})[^\n`]*(?:\n.*)?\Z"
-    r"|(?<![\\`])(?P<ticks>`+)(?!`)[^\n]+?(?<!`)(?P=ticks)(?!`)",
-    re.MULTILINE | re.DOTALL)
 
 
 def unmention(text):
     """`text` with every `@` before a login's character, plain or as an
-    entity, outside code, made `@` and a zero-width space, so that the
-    comment notifies no one. Code, where GitHub mentions no one, keeps its
-    text."""
-    parts, last = [], 0
-    for m in CODE.finditer(text):
-        parts += [AT.sub("@\u200b", text[last:m.start()]), m.group(0)]
-        last = m.end()
-    parts.append(AT.sub("@\u200b", text[last:]))
-    return "".join(parts)
+    entity, made `@` and a zero-width space, so that the comment notifies
+    no one. This holds in code too, where GitHub mentions no one, at the
+    cost, which is deliberate, of an invisible character in such code as
+    Lean's `@foo`: telling code from text needs a real CommonMark parse,
+    and a guess at it once let a mention through."""
+    return AT.sub("@\u200b", text)
 
 
 def problem(text, head, kind):
