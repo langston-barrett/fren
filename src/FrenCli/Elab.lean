@@ -788,8 +788,14 @@ structure State where
   namedPredicates : NameMap NamedPredicate := {}
   namedOccurrences : Std.HashMap String Nat := {}
   contractIndexes : Array (Name × Fren.Core.IndexPlace × Span × String × Option (String × Bool)) := #[]
-  /-- Structural recursions, used opaquely with one-step ground equations. -/
+  /-- Structural recursions, used opaquely with one-step ground equations:
+  each instance of a generic one too, by its name (`instantiate`). -/
   recursiveDefs : Std.HashSet Name := {}
+  /-- Of each instance of a generic structural recursion, by its name, its
+  function, and the facts that its parameters' types bring, at the
+  instance, as its function's `CComp.vars` give them
+  (`PreludeDecl.domain`). -/
+  recInstances : NameMap (Name × Array String) := {}
   /-- The contracts of the functions that have one, by path
   (`Reqs/Lang/Items#contracts`). -/
   contracts : NameMap Contract := {}
@@ -2570,11 +2576,13 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
   let mut repl : Std.HashMap String String := {}
   for p in g.params, k in [0:g.params.size] do
     repl := repl.insert (itemSym (Fren.Core.typeParamPath path k p)) args[k]!.sort
-  repl := repl.insert (itemSym path) sym
+  -- Its applications of itself, at its own type parameters, apply this
+  -- instance, in a structural recursion too (`lang::applied_instance`).
+  repl := repl.insert (itemSym path) (instSym path (Fren.Core.appliedInstance path g.params args own))
   for (csym, _, _) in g.clauses do repl := repl.insert csym (clauseInstSym path args csym)
   for (callee, cargs) in g.calls do
     if callee == path then continue
-    repl := repl.insert (instSym callee cargs) (← instantiate callee (cargs.map inst))
+    repl := repl.insert (instSym callee cargs) (← instantiate callee (Fren.Core.appliedInstance path g.params args cargs))
   let clauses := g.clauses.map fun (csym, cvars, cbody) =>
     (clauseInstSym path args csym, cvars.map fun (x, t) => (x, inst t), replaceSymbols cbody repl)
   if !g.defined then
@@ -2627,6 +2635,18 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
     instSyms := s.instSyms.insert name sym
     defs := s.defs.push (name, vars, g.result.subst args, replaceSymbols g.body repl)
     clauseDefs := s.clauseDefs ++ clauses }
+  -- An instance of a structural recursion is one too, at the instance: its
+  -- applications are opaque, with its contract's postconditions at the
+  -- instance and one step of its body, which applies the instance itself
+  -- (`Reqs/Lang/Recursion#generic-recursion`).
+  if (← get).recursiveDefs.contains path then
+    let k := ((← get).contracts.find? path).getD {}
+    let atInst (cs : Array (Name × String)) := cs.map fun (n, csym) => (n, clauseInstSym path args csym)
+    let domain := ((← get).bodies.find? (·.fn? == some path)).map (·.vars.filterMap (·.fact?)) |>.getD #[]
+    modify fun s => { s with
+      recursiveDefs := s.recursiveDefs.insert name
+      contracts := s.contracts.insert name { k with pres := atInst k.pres, posts := atInst k.posts }
+      recInstances := s.recInstances.insert name (path, domain.map (replaceSymbols · repl)) }
   return sym
 
 /-- The quoted symbols that the prelude declares: a closure captures each
@@ -4846,6 +4866,13 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       smts := smts.push x
     if cx.noteIndexes then
       modify fun s => { s with recApps := s.recApps.push (fnSpan, smts, cx.guards) }
+    -- Of a generic one, at its own type parameters, the instance that it
+    -- applies within itself (`LState.callTargs`,
+    -- `Reqs/Lang/Recursion#generic-recursion`).
+    if let some (g, tps) := (← get).fnTypeParams.filter (·.1 == f) then
+      let own := tps.mapIdx fun k p => Ty.abstract (Fren.Core.typeParamPath g k p)
+      modify fun s => { s with callTargs := if s.module == Fren.Core.preludeModule then s.callTargs
+                                 else s.callTargs.insert (s.file, span.start) own }
     return (s!"({sym} {" ".intercalate smts.toList})", ft.result)
   -- A function parameter (`Reqs/Lang/HigherOrder#function-parameters`).
   if segs.size == 1 then
@@ -7317,9 +7344,10 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
   discard takeTables
   discard takeIndexes
   modify fun s => { s with outsideCore := false, guardedUsed := false, natApps := #[] }
-  -- A first-order function that is not generic may apply itself, in a
-  -- structural recursion (`lang::structural_recursion`).
-  let selfRec? := if tps.isEmpty && fnPs.isEmpty then
+  -- A first-order function, generic or not, may apply itself, in a
+  -- structural recursion (`lang::self_application`,
+  -- `lang::structural_recursion`).
+  let selfRec? := if Fren.Core.selfApplicable (!tps.isEmpty) (!fnPs.isEmpty) then
     some (vars.map (·.name), ({ params := vars.map (·.ty), result := r } : Fren.Core.FnTy), itemSym path) else none
   -- The body is checked against the result type (`lang::checked`).
   let cx : ExprCtx := { vars, place := .prop, selfFn := if (← get).inSubset then none else some n, expected? := Fren.Core.ExprSite.functionBody.expected (some r) none, fnParams, selfRec? }
@@ -8086,7 +8114,8 @@ def State.prelude (s : State) : Array PreludeDecl :=
     if s.recursiveDefs.contains p then
       ({ text := s!"(declare-fun {sym} ({" ".intercalate (ps.toList.map (·.2.sort))}) {r.sort})\n"
          syms := #[unquote sym], recursion? := some (ps.map (quote ∘ toString ∘ Prod.fst), body)
-         domain := ((s.bodies.find? (·.fn? == some p)).map fun b => b.vars.filterMap (·.fact?)).getD #[] } : PreludeDecl)
+         domain := ((s.recInstances.find? p).map (·.2)).getD
+           (((s.bodies.find? (·.fn? == some p)).map fun b => b.vars.filterMap (·.fact?)).getD #[]) } : PreludeDecl)
     else
       { text := s!"(define-fun {sym} ({binders}) {r.sort} {body})\n", syms := #[unquote sym] }
   -- After every function, since a clause may apply its own and those
@@ -8107,7 +8136,8 @@ def State.appFuns (s : State) : Std.HashMap String (Bool × Contract) :=
 a fact may apply, which evaluation cannot confirm a model of
 (`Fren.Core.recursiveCounterexample`). -/
 def State.recursiveSyms (s : State) : Std.HashMap String Name :=
-  s.recursiveDefs.fold (init := {}) fun m p => m.insert ((s.instSyms.find? p).getD (itemSym p)) p
+  -- An instance's, its function's (`Reqs/Lang/Recursion#generic-recursion`).
+  s.recursiveDefs.fold (init := {}) fun m p => m.insert ((s.instSyms.find? p).getD (itemSym p)) (((s.recInstances.find? p).map (·.1)).getD p)
 
 /-- Of each uninterpreted function with postconditions, by its SMT-LIB
 symbol, its path: the function whose contract's realizability the checks

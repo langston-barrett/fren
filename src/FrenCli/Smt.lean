@@ -838,6 +838,13 @@ partial def splitLets (t : String) : String × String × String :=
   let closes := (t.toList.reverse.takeWhile (· == ')')).length - (inner.toList.reverse.takeWhile (· == ')')).length
   ((t.take (n - closes)).toString, inner, (t.takeEnd closes).toString)
 
+/-- The symbol at the start of `s`, the inside of an SMT-LIB application:
+a quoted one whole, which may have spaces, as an instance of a generic
+function with two type arguments, `|::f<Int, Bool>|`, does. -/
+def headSymbol (s : String) : String :=
+  if s.startsWith "|" then "|" ++ ((s.drop 1).takeWhile (· != '|')).toString ++ "|"
+  else (s.takeWhile (· != ' ')).toString
+
 /-- The facts that the application `app`, of an uninterpreted function into
 `Nat`, into a subset type or with postconditions, or a read of a
 recursive enumeration's payload of a subset type, brings
@@ -851,7 +858,7 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashM
     Array (Lean.Name × String) :=
   let (pre, inner, post) := splitLets app
   -- `(SYM ARGS)`.
-  let head := ((inner.drop 1).takeWhile (· != ' ')).toString
+  let head := headSymbol (inner.drop 1).toString
   let args := ((inner.drop (head.length + 2)).dropEnd 1).toString
   let (nat, k) := funs.getD head (false, {})
   let implies (ps : Array String) (q : String) := if ps.isEmpty then q else s!"(=> {conj ps} {q})"
@@ -1096,7 +1103,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- (`Fren.Core.appFactsWith`).
     let fnOf (app : String) : Option Lean.Name :=
       let inner := (splitLets app).2.1
-      contractFns.get? ((inner.drop 1).takeWhile (· != ' ')).toString
+      contractFns.get? (headSymbol (inner.drop 1).toString)
     -- And those of the applications in those facts, once their clauses
     -- are unfolded, of the functions whose applications bring facts
     -- (`Fren.Core.closeApps`).

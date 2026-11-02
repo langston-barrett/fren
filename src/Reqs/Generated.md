@@ -384,7 +384,11 @@ its [one-step equations](Lang/Recursion.md#solver-encoding), from its body
 with its `match`es as `if`s and the defined functions that it applies
 unfolded. So Lean's structural recursion runs once, over `p`'s body,
 which applies those functions, rather than also over that unfolded body,
-whose size is the sum of theirs in each arm.
+whose size is the sum of theirs in each arm. A [generic
+one](Lang/Recursion.md#generic-recursion)'s `p.«#solver»` takes each type
+parameter's type and its `Inhabited` instance first, and `p` takes every
+type parameter's placeholder and its instance's, so that each instance is
+`p.«#solver»` at its type arguments.
 
 ## Computable definitions
 
@@ -497,7 +501,8 @@ structural induction principle is used when ordinary datatype induction
 does not supply the needed hypotheses. This supplies hypotheses at nested payload calls as well as direct
 children. Each clause gets
 `f.clause.holds`, projected from that proof. These theorems are generated
-only when all postcondition checks pass. Induction cases use one-step
+only when all postcondition checks pass, and not yet for a generic
+recursion. Induction cases use one-step
 equations, constructor equalities, and induction hypotheses at the actual
 recursive applications. Solver steps use `trust := true`, as other hosted
 checks do; a case that does not close prevents theorem generation.
