@@ -1300,14 +1300,16 @@ def queryCache : IO (Array String) := do
 /-- A satisfiable query whose solver initializes its theories at a
 definition: in `ALL`, a logic with nonlinear arithmetic, whose solvers
 take `FrenCli.Cvc5.solverLock`, or, if `linear`, in `QF_UFDTLIA`, whose
-solvers do not. -/
-def lifetimeScript (k : Nat) (linear : Bool := false) : String :=
+solvers do not. If `pushed`, it initializes them earlier, at a `push`,
+which `FrenCli.Cvc5.initializes` does not list. -/
+def lifetimeScript (k : Nat) (linear : Bool := false) (pushed : Bool := false) : String :=
+  let push := if pushed then "(push 1)\n" else ""
   if linear then
     s!"(set-logic QF_UFDTLIA)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-      s!"(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
+      s!"{push}(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
   else
     s!"(set-logic ALL)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-      s!"(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
+      s!"{push}(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
 
 /-- This process's resident memory, in kB, as `ps` reports it. -/
 def residentKb : IO Nat := do
@@ -1320,8 +1322,8 @@ of a logic with nonlinear arithmetic answer correctly on several threads
 at once, which they share libpoly's state for (`FrenCli.Cvc5`). -/
 def solverLifetime : IO (Array String) := do
   let mut failures := #[]
-  let solve (k : Nat) (linear : Bool := false) : IO Bool := do
-    return (← FrenCli.solveScript (lifetimeScript k linear) #[] false) matches .sat _
+  let solve (k : Nat) (linear : Bool := false) (pushed : Bool := false) : IO Bool := do
+    return (← FrenCli.solveScript (lifetimeScript k linear pushed) #[] false) matches .sat _
   -- Warm up the allocator first, so that what it keeps does not count.
   for k in [0:100] do discard <| solve k
   let before ← residentKb
@@ -1336,10 +1338,13 @@ def solverLifetime : IO (Array String) := do
   -- without `FrenCli.Cvc5.exclusively`, this crashed one run in three.
   -- After every third, each thread asks one in a linear logic, whose
   -- solvers take no lock and must answer correctly beside those that do.
+  -- Every other query in `ALL` initializes its solver at a `push`, which
+  -- is not a command that `FrenCli.Cvc5.initializes` lists, and must
+  -- hold the lock all the same.
   let tasks ← (List.range 16).mapM fun t => IO.asTask (prio := .dedicated) do
     let mut n := 0
     for k in [0:300] do
-      if ← solve (1000 * t + k) then n := n + 1
+      if ← solve (1000 * t + k) (pushed := k % 2 == 1) then n := n + 1
       if k % 3 == 0 then if ← solve (1000 * t + k) (linear := true) then n := n + 1
     return n
   for t in tasks do

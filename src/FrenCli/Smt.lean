@@ -270,6 +270,20 @@ structure Limits where
   resources : Nat := 0
   deriving Inhabited
 
+-- cvc5 checks both limits only where it spends resources, and cvc5 1.3.x's
+-- strings solver (which also decides sequences) can loop in
+-- `TheoryStrings::postCheck` → `BaseSolver::checkInit` without spending
+-- any, so that neither `--timeout` nor `--resource-limit` stops the
+-- query, and `fren check` hangs (#297; cvc5 1.3.2 and 1.3.4, recorded on
+-- #549, not reported). The query that found it, minimized to 88 commands,
+-- had a datatype with `String` fields (`Val`), a `Seq` of it built with
+-- `seq.++` of `seq.unit`s and read with `seq.nth` under a bounds `ite`,
+-- string-valued selectors compared with string literals, and sets of
+-- `String` and `Int` tuples (`set.member`, `set.subset`), from two
+-- `lang::node` instances at 527d4ee. No encoding choice is known to avoid
+-- the loop, and no current spec reaches it: on 7bf7cc0, none of the
+-- 14,002 distinct queries of `src/Reqs`, `test/` and `examples/` ran past
+-- a 1 s `tlimit-per` (the slowest took 0.85 s).
 /-- The options that set `limits`. A script without a resource limit sets
 none, so that it is the script that `fren` wrote before the limit
 existed. -/
@@ -403,17 +417,21 @@ def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wan
   let parser ← Cvc5.parserNew solver
   let sm ← Cvc5.getSymbolManager parser
   Cvc5.setStringInput parser script .SMT_LIB_2_6 "lean-cvc5"
-  -- The first command that initializes the solver's theories runs
-  -- exclusively if its logic shares libpoly's state, and so does
-  -- `checkSat` if none did (`FrenCli.Cvc5.exclusively`).
+  -- Every command up to and including the first that initializes the
+  -- solver's theories runs exclusively if its logic shares libpoly's
+  -- state, and so does `checkSat` if none did
+  -- (`FrenCli.Cvc5.exclusively`). So a command that initializes the
+  -- solver without being one that `Cvc5.initializes` lists still runs
+  -- under the lock: the list only decides when the lock is let go.
   let mut initialized := false
   repeat
     let cmd ← Cvc5.nextCommand parser
     if Cvc5.isNull cmd then break
-    let initializes := !initialized && Cvc5.initializes (Cvc5.commandName cmd)
+    let initializes := Cvc5.initializes (Cvc5.commandName cmd)
     -- A command that fails reports an error as its output, rather than
     -- throwing; ignoring it could let a dropped assertion give `sat`.
-    let out ← if initializes then Cvc5.exclusively shared (Cvc5.invoke cmd solver sm) else Cvc5.invoke cmd solver sm
+    let out ← if initialized then Cvc5.invoke cmd solver sm
+      else Cvc5.exclusively shared (Cvc5.invoke cmd solver sm)
     initialized := initialized || initializes
     if out.trimAscii.toString.startsWith "(error" then
       throw (.error out)

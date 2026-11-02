@@ -35,8 +35,12 @@ it when it is freed. Solvers that are never freed only ever add to the
 count, but once they are, two threads that change it at once can lose a
 change, and the database is then freed while it is in use. So a solver of
 such a logic (`sharesLibpoly`) initializes and is freed while it holds
-`solverLock` (`exclusively`): the first command that `initializes` it, or
-its `checkSat` if no command did. Solvers parse and solve in parallel,
+`solverLock` (`exclusively`): every command up to and including the first
+that `initializes` lists, or its `checkSat` too if no command did. So a
+command that initializes the solver without being on that list still
+holds the lock, and the list only decides when the lock is let go: the
+declarations before the first assertion, which are cheap, are the only
+ones that wait for it. Solvers parse and solve in parallel,
 and those of a linear logic, such as `QF_UFDTLIA`, take no lock. A
 solver that never initializes, such as `version`'s, takes no reference.
 
