@@ -60,6 +60,81 @@ def splitLine (line : String) : LineParts :=
   let fence := decide (indent ≤ 3) && decide (3 ≤ run) && (marker == "~" || !Fren.Str.contains info "`")
   { indent, marker, run, lead, info, fence }
 
+/-! `splitLine` reads the line through `Fren.Str`, whose `at` and `slice`
+each make the list of the line's characters again, several times for each
+line of every Markdown spec. `splitLineImpl` makes it once and reads the
+runs off it, and the compiled code runs it in `splitLine`'s place, by
+`splitLine_eq_impl`. -/
+
+/-- `charRun p s i`, of the characters `cs` of `s` from `i` on
+(`charRun_eq_list`). -/
+def charRunList (p : String → Bool) : List Char → Nat
+  | [] => 0
+  | c :: cs => if p (String.ofList [c]) then charRunList p cs + 1 else 0
+
+theorem _root_.Fren.Str.at_eq_drop (s : String) (i : Nat) :
+    Fren.Str.at s i = (match s.toList.drop i with | [] => "" | c :: _ => String.ofList [c]) := by
+  simp only [Fren.Str.at, Fren.Str.slice]
+  have hl := String.length_toList (s := s)
+  cases h : s.toList.drop i with
+  | nil =>
+    have : s.toList.length ≤ i := List.drop_eq_nil_iff.mp h
+    rw [if_neg (by omega)]
+  | cons c cs =>
+    have : i < s.toList.length := by
+      have := congrArg List.length h; simp at this; omega
+    rw [if_pos (by omega)]
+    simp [h]
+
+/-- The rest of `s` from `a + b + c`, as `splitLine` slices it. -/
+theorem _root_.Fren.Str.slice_rest (s : String) (a b c : Nat) :
+    Fren.Str.slice s ((a : Int) + b + c) ((s.length : Int) - a - b - c) = String.ofList (s.toList.drop (a + b + c)) := by
+  simp only [Fren.Str.slice]
+  have hl := String.length_toList (s := s)
+  split
+  · rw [show (((a : Int) + b + c).toNat) = a + b + c by omega, List.take_of_length_le (by simp; omega)]
+  · rw [List.drop_eq_nil_of_le (by omega)]
+
+theorem charRun_eq_list (p : String → Bool) (s : String) (i : Nat) :
+    charRun p s i = charRunList p (s.toList.drop i) := by
+  have hl := String.length_toList (s := s)
+  suffices ∀ n i, s.length - i = n → charRun p s i = charRunList p (s.toList.drop i) from this _ i rfl
+  intro n
+  induction n with
+  | zero =>
+    intro i hi
+    rw [charRun, if_neg (fun h => absurd h.1 (by omega)), List.drop_eq_nil_of_le (by omega)]
+    rfl
+  | succ n ih =>
+    intro i hi
+    obtain ⟨c, cs, h⟩ : ∃ c cs, s.toList.drop i = c :: cs := by
+      cases h : s.toList.drop i with
+      | nil => have := List.drop_eq_nil_iff.mp h; omega
+      | cons c cs => exact ⟨c, cs, rfl⟩
+    have h1 : s.toList.drop (i + 1) = cs := by
+      rw [← List.drop_drop, h]; rfl
+    rw [charRun, h, charRunList, Fren.Str.at_eq_drop, h, ← h1, ← ih (i + 1) (by omega)]
+    simp only
+    by_cases hp : p (String.ofList [c]) = true
+    · rw [if_pos ⟨by omega, hp⟩, if_pos hp]
+    · rw [if_neg (fun h => hp h.2), if_neg hp]
+
+/-- `splitLine`, with the line's characters listed once. -/
+def splitLineImpl (line : String) : LineParts :=
+  let cs := line.toList
+  let indent := charRunList (· == " ") cs
+  let c := match cs.drop indent with | [] => "" | c :: _ => String.ofList [c]
+  let marker := if c = "`" ∨ c = "~" then c else ""
+  let run := if marker = "" then 0 else charRunList (· == marker) (cs.drop indent)
+  let lead := charRunList isBlank (cs.drop (indent + run))
+  let info := String.ofList (cs.drop (indent + run + lead))
+  let fence := decide (indent ≤ 3) && decide (3 ≤ run) && (marker == "~" || !Fren.Str.contains info "`")
+  { indent, marker, run, lead, info, fence }
+
+@[csimp] theorem splitLine_eq_impl : @splitLine = @splitLineImpl := by
+  funext line
+  simp only [splitLine, splitLineImpl, charRun_eq_list, Fren.Str.at_eq_drop, List.drop_zero, Fren.Str.slice_rest]
+
 /-- The fence that opened the block that the reader is in. -/
 structure Opening where
   marker : String
@@ -168,14 +243,9 @@ def fencedBlocks (src : String) : Array FencedBlock := Id.run do
   if let some b := cur then out := out.push b
   return out
 
-/-- Whether `line` is the spec's, after the lines before it: in the body of
-a `fren` block (`markdown::kept`). -/
-def keptLine (inside : Bool) (o : Opening) (line : String) : Bool :=
-  (step inside o line).kept
-
 /-- The Fren code of a Markdown spec, with everything else blanked out:
-`keptLine` folded over its lines. A block still open at the end of the
-text extends to its end. -/
+each line kept if `step` keeps it (`markdown::kept`), after the lines
+before it. A block still open at the end of the text extends to its end. -/
 def unwrapMarkdown (src : String) : String := Id.run do
   let raw := (src.splitOn "\n").toArray
   let lines := markdownLines src
@@ -184,7 +254,7 @@ def unwrapMarkdown (src : String) : String := Id.run do
   let mut out := #[]
   for h : k in [0:lines.size] do
     let st := step inside o lines[k]
-    out := out.push (if keptLine inside o lines[k] then raw[k]! else "")
+    out := out.push (if st.kept then raw[k]! else "")
     inside := st.inside
     o := st.opening
   return "\n".intercalate out.toList

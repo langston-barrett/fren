@@ -876,7 +876,7 @@ partial def factAppsIn (heads : Std.HashSet String) (e : SeqElems.SExpr) (bound 
 /-- Whether a query of the formulas `fs` has a quantifier over elements to
 expand, directly or in a `define-fun` of `marked` that it applies. -/
 def needsExpansion (marked : Std.HashMap String (Array String × SeqElems.SExpr)) (fs : Array String) : Bool :=
-  fs.any fun f => SeqElems.hasMarker f || marked.keys.any fun g => (f.splitOn g).length > 1
+  fs.any fun f => SeqElems.hasMarker f || marked.keys.any (Fren.Core.occursIn · f)
 
 /-- The answer to the query of `hyps` and `goal`, with its quantifiers over
 elements expanded (`SeqElems.expandQuery`), asked by `ask` of its
