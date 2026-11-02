@@ -200,9 +200,9 @@ reaches a check by (see below). Fren's evaluator has `2^20` units of fuel
 it nests between two steps (`evalDepth`, `2^20`), only to be total: between
 two steps, evaluation nests no deeper than the expression, the definitions
 that it reads and the newtypes that it checks are nested, and no spec comes
-near the bound. That rests on source size and is not tested. Past any depth
-that a source reaches, the evaluator's native stack overflows before the
-bound, so evaluation crashes rather than leave a value unknown.
+near the bound. That rests on source size. Long before the bound, at a
+depth that no source reaches, the evaluator's native stack overflows, so
+evaluation crashes rather than leave a value unknown. Neither is tested.
 
 ## Searching for behaviours
 
@@ -262,11 +262,10 @@ application has no value that the evaluator knows, as an index out of
 range has none, since a value that does not meet them is no
 interpretation of the spec. A [generic
 function](Lang/GenericFunctions.md#uninterpreted-generic-functions)
-without a body has a function of its own at each instance, the one that
-the types of an application's arguments give it, with its result type at
-that instance. Where they do not give each of its type arguments, as the
-type expected of an application may instead, the application has no value
-that the evaluator knows. So is the value of each type that
+without a body has a function of its own at each instance, the one whose
+type arguments the application's are (see
+[Applications](Lang/GenericFunctions.md#applications)), with its result
+type at that instance. So is the value of each type that
 a [table](Lang/Expressions.md#tables) without a `_` row has where no row
 holds, and a [`match`](Lang/Expressions.md#matches) where no arm is taken,
 which the interpretation gives, as the solver's does: one value of

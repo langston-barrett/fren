@@ -345,6 +345,22 @@ inductive ParamPlace where
   | element
   deriving Inhabited, DecidableEq, Repr
 
+/-- Whose type parameter an element type is (`lang::ParamOwner`): a generic
+enumeration's or record's, within its declaration, or a generic function's,
+within its signature, body and contract. -/
+inductive ParamOwner where
+  | datatype
+  | function
+  deriving Inhabited, DecidableEq, Repr
+
+/-- Whether a type parameter of `owner` is accepted as an element type, as
+in `Set<T>` (`lang::element_parameter`): a generic function's is, as its
+type parameter is an uninterpreted sort within it, and a generic
+enumeration's or record's is not, for now. -/
+def elementParamAccepted : ParamOwner → Bool
+  | .function => true
+  | .datatype => false
+
 /-- Whether a type parameter is accepted at `place` (`lang::type_parameter_place`). -/
 def typeParamPlaceAccepted : ParamPlace → Bool
   | .whole | .argument | .ownParameter => true
@@ -526,6 +542,13 @@ def inferCallArg (declared : Array Ty) (found : Array (Option Ty)) (result : Ty)
   match (expectedArgs result expected? (k + 1))[k]?.join with
   | some a => some a
   | none => inferArg declared found none k
+
+/-- The type `t`, as the body of the generic function at `fn`, with the type
+parameters `params`, writes it, at the instance with the type arguments
+`targs` (`lang::instantiation`): each type parameter with an argument is it,
+and one without stays the abstract type that it is within the function. -/
+def instanceType (fn : Name) (params : Array Name) (targs : Array (Option Ty)) (t : Ty) : Ty :=
+  (t.asParams fn params).subst (targs.mapIdx fun k a? => a?.getD (.abstract (typeParamPath fn k params[k]!)))
 
 /-- Elaborates the arguments of an application of a generic function with
 the type parameters `params`, whose parameters have the declared types

@@ -41,7 +41,9 @@ parts, in order, omitting the empty ones:
 
 1. **Introduction**: one or two sentences in plain language, and perhaps
    a short ```` ```text ```` sketch. Not normative.
-2. **Syntax**: the grammar, as a rule.
+2. **Syntax**: the grammar, as a rule. An abstract syntax, given as a
+   datatype in a ```` ```fren ```` block, is a **Syntax** part too, and
+   its rules precede its block.
 3. **Legality rules**: what is accepted, its types, its names, and the
    static errors.
 4. **Dynamic semantics**: what it means.

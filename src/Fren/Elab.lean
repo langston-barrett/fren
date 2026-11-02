@@ -336,14 +336,16 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   -- `fnParamType` elaborates (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   -- `Set<T>`: `"Set" "<" T ">"`; `Rel<A, B>`: `"Rel" "<" A "," B ">"`.
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
-  -- parameter (`lang::type_parameter_place`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
+  -- generic type's type parameter (`lang::element_parameter`).
   let elem (e : Syntax) : m Expr := do
     let t ← elabType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
-    if let .bvar k := t then throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
+    if let .bvar k := t then
+      unless Core.elementParamAccepted .datatype do throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
     if let some n := t.constName?.bind (Core.typeParamName? ·) then
-      throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
+      unless Core.elementParamAccepted .function do
+        throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
     return t
   -- An instance of a generic type, `G<A, B>`, whose arguments are payloads'
   -- types (`Reqs/Lang/Generics#type-parameters`).
@@ -2695,16 +2697,18 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
   -- (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   let text := Core.typeText (exactText ty)
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
-  -- parameter (`lang::type_parameter_place`), and whose constraint, if any,
-  -- quantifies over the elements, outside the decidable core
-  -- (`lang::subset_place`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
+  -- generic type's type parameter (`lang::element_parameter`), and whose
+  -- constraint, if any, quantifies over the elements, outside the
+  -- decidable core (`lang::subset_place`).
   let elem (e : Syntax) : TermElabM (Expr × Core.PTy) := do
     let (t, pt) ← elabPType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
-    if let .bvar k := t then throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
+    if let .bvar k := t then
+      unless Core.elementParamAccepted .datatype do throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
     if let some n := t.constName?.bind (Core.typeParamName? ·) then
-      throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
+      unless Core.elementParamAccepted .function do
+        throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
     if (pt.cons (← getState).shapeOf).isSome then recordOutsideCore e Core.undecidableElementsMsg
     return (t, pt)
   if ty.isOfKind ``Lang.relType then

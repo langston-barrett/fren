@@ -2,6 +2,7 @@
 -- ends, and the forms they leave as they are.
 
 const LIMIT: Int := 4
+const ONE: Int := 1
 
 proc absolute(x: Int, y: Int, n: Nat): (
     a1: Int,
@@ -98,6 +99,7 @@ proc remainders(x: Int, n: Nat): (
     s1: Int,
     s2: Int,
     s3: Int,
+    s4: Int,
 ) {
     out r1 := (x mod 7 + 7) mod 7  --~ warning: `mod` is never negative already
     out r2 := (-3 + x mod -3) mod -3  --~ warning: `mod` is never negative already
@@ -111,6 +113,8 @@ proc remainders(x: Int, n: Nat): (
     out s1 := (x mod 7 + 6) mod 7
     out s2 := (x mod 7 + 7) mod 5
     out s3 := x mod 2 + x div -1
+    -- A divisor that is a constant, not a literal: no lint.
+    out s4 := x mod ONE
 }
 
 proc bounds(x: Int): (b1: Int, b2: Int, b3: Int, b4: Int, c1: Int, c2: Int, c3: Int, c4: Int) {

@@ -140,6 +140,54 @@ parameters: its instance's (`PTy.subst`). -/
 def DataShape.inst (d : DataShape) (args : Array PTy) : DataShape :=
   if args.isEmpty then d else { d with parts := d.parts.map (·.map (·.subst args)) }
 
+/-- Whether checking that a value is of the declared type `t` evaluates
+no invariant (the binary's `Ex.eval.typeV`): `t` has none, nor do the
+types within it, nor, through `shapes`, the types of its records',
+enumerations' and newtypes' parts. `seen` is the types already being
+looked through, which a recursive type reaches again. Where it holds, the
+check reads none of the interpretation's definitions (`Interp.defs`), so
+`typeHolds` decides it. -/
+partial def PTy.invariantFree (shapes : Name → Option DataShape) (t : PTy) (seen : List Name := []) : Bool :=
+  t.invariants.isEmpty && t.elems.all (·.invariantFree shapes seen) && match t.ty with
+    | .record p _ | .enum p _ | .newtype p _ => seen.contains p ||
+      ((shapes p).map fun d => (d.inst t.parts).parts.all (·.all (·.invariantFree shapes (p :: seen)))).getD true
+    | _ => true
+
+section
+/-! `PTy.invariantFree` looks through element types, type arguments and,
+through the shapes, each part of a record, an enumeration and a newtype,
+and ends on recursive types. -/
+
+/-- `Int`, with an invariant. -/
+private def guardPos : PTy := { ty := .int, invariants := #[{ name := `pos, predicate := `pos? }] }
+
+/-- The shapes of `R(Pos)`, the newtype `N(Pos)`, the recursive
+enumerations `L { Nil, Cons(Int, L) }` and `P { Nil, Cons(Pos, P) }`,
+the generic record `G<T>(T)`, and `H(G<Pos>)`. -/
+private def guardShapes : Name → Option DataShape
+  | `R => some { isRecord := true, parts := #[#[guardPos]] }
+  | `N => some { isRecord := true, isNewtype := true, parts := #[#[guardPos]] }
+  | `L => some { recursive := true, parts := #[#[], #[{ ty := .int }, { ty := .enum `L [] }]] }
+  | `P => some { recursive := true, parts := #[#[], #[guardPos, { ty := .enum `P [] }]] }
+  | `G => some { isRecord := true, parts := #[#[{ ty := .param 0 `T }]] }
+  | `H => some { isRecord := true, parts := #[#[{ ty := .record `G [.int], elems := #[guardPos] }]] }
+  | _ => none
+
+#guard (PTy.plain .int).invariantFree guardShapes
+#guard !guardPos.invariantFree guardShapes
+#guard !(PTy.invariantFree guardShapes { ty := .record `R [] })
+#guard !(PTy.invariantFree guardShapes { ty := .newtype `N .int })
+#guard PTy.invariantFree guardShapes { ty := .enum `L [] }
+#guard !(PTy.invariantFree guardShapes { ty := .enum `P [] })
+#guard !(PTy.invariantFree guardShapes { ty := .record `G [.int], elems := #[guardPos] })
+#guard PTy.invariantFree guardShapes { ty := .record `G [.int], elems := #[PTy.plain .int] }
+#guard !(PTy.invariantFree guardShapes { ty := .record `H [] })
+#guard !(PTy.invariantFree guardShapes { ty := .set .int, elems := #[guardPos] })
+#guard PTy.invariantFree guardShapes (PTy.plain (.set .int))
+-- A type whose shape is unknown has no parts to look through.
+#guard PTy.invariantFree guardShapes { ty := .record `Unknown [] }
+end
+
 /-- What a value of a type must satisfy beyond its type, as a formula about
 the value, built from parts
 (`Reqs/Lang/SubsetTypes#static-types-assumptions-and-obligations`). -/

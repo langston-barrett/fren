@@ -16,12 +16,10 @@ fn pick<T>(a: T, b: T): T  --~ error: the parameters of uninterpreted function `
 -- Each type parameter is inferred from the signature.
 fn unused<T, U>(x: T): T := x  --~ error: type parameter `U` of `unused` cannot be inferred
 
--- Type parameters: distinct, named apart from types and items, and not
--- element types.
+-- Type parameters: distinct, and named apart from types and items.
 fn twice<T, T>(x: T): T := x  --~ error: type parameter `T` is defined multiple times
 fn builtin<Int>(x: Int): Int := x  --~ error: type parameter `Int` has the name of the built-in type `Int`
 fn item<Option>(x: Option): Option := x  --~ error: type parameter `Option` has the name of an enum
-fn elements<T>(s: Set<T>): Int := s.card  --~ error: type parameter `T` cannot be an element type, for now
 fn arguments<T>(x: T<Int>): Int := 0  --~ error: `T` takes no type arguments, but 1 was given
 
 -- Within the function, a type parameter is a type of its own.

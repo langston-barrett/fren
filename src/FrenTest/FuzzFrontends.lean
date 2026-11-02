@@ -23,7 +23,9 @@ constants, defined outputs, defined and uninterpreted functions, the
 former of every kind of result, as functions with `:=` and as function
 blocks, with bodies that take their type from it (`bodyFns`), the
 latter sometimes with contracts whose postconditions may contradict each
-other, so that what applies them rests on their realizability, `match`
+other, so that what applies them rests on their realizability, and
+chains of contracts whose facts mention applications with facts of their
+own (`factChain`), `match`
 and tables over a scrutinee,
 string methods with constant and non-constant arguments and `++`, products
 of every kind of operand, orderings and `min` and `max` of an ordered
@@ -1013,6 +1015,198 @@ def traitGroup (sc : WScope) : R String := do
   out := if ← chance 30 then out.replace "pub trait Tr" "trait Tr" else out
   return out ++ "}\n"
 
+/-- A chain of uninterpreted functions with contracts, each of whose
+postconditions applies the one before it, and checks over the last, so
+that the facts of an application mention another, whose facts a query has
+too, transitively (`check::fact_applications`, #619). Each link applies
+the one before it in one of the forms that a fact's applications take: a
+sum, a bound, a product, a conditional, a nested application of an
+uninterpreted function without a contract, a quantifier whose body applies
+a function into `Nat` at its bound name, an arm of a `match` that binds a
+payload, a `where` clause, a table, a function into `Nat` or into a subset
+type, without a contract, a generic function with a contract over the
+first of the chain, and a recursive defined function with a
+postcondition, whose one-step equations a query reflects from a fact
+(`lang::recursion_formulas`); its results `Int` or `Nat`, sometimes under
+a precondition. An expectation and a cover goal over the last then hold or
+fail by the facts of all of them, as do the rows of a table over the last
+in a contract of its own, whose own facts its checks never have; and an
+input, an output and a call's output of a subset type whose invariant
+applies the recursive function. It is
+appended to specs of the corpus, so it is written from a grammar of its
+own, every form of which is well-typed, whatever the spec declares. -/
+def factChain : R String := do
+  let mut out := "pub type Fc\npub fn fct(Fc): Fc\n"
+  let n := (← below 3) + 1
+  let bound ← below 3
+  let nat0 ← chance 30
+  out := out ++ s!"pub fn fc0(s: Fc): (r: {if nat0 then "Nat" else "Int"}) \{ ensure e: r >= {bound} }\n"
+  -- What the links may apply besides the chain, each well-typed alone.
+  out := out ++ "pub enum Fk { A, B(Int) }\npub fn fck(Fc): Fk\npub fn fcn(Fc): Nat\npub fn fci(Int): Nat\n" ++
+    "pub type FcPos = p: Int where invariant: p > 0\npub fn fcp(Fc): FcPos\n" ++
+    "pub fn fcg<T>(x: T, y: T, s: Fc): (r: Int) { ensure e: r >= (if x = y then fc0(s) else fc0(s) + 1) }\n" ++
+    "pub enum Fl { Nil, Cons(Int, Fl) }\npub fn fcl(Fc): Fl\n" ++
+    "pub fn fcsum(l: Fl): (r: Int) {\n    out r := match l { Fl::Nil => 0, Fl::Cons(m, rest) => m.abs + fcsum(rest) }\n" ++
+    "    ensure e: r >= 0\n}\n"
+  for k in [1:n + 1] do
+    let prev := s!"fc{k - 1}"
+    let arg ← pick #["s", "fct(s)", "fct(fct(s))"]
+    let app := if k == 1 then s!"{prev}({arg})" else s!"{prev}({arg}, b?)"
+    let c ← below 3
+    let form ← below 13
+    let (opt, post) ← match form with
+      | 0 => pure ("", s!"ensure e: r = {app} + {c}")
+      | 1 => pure ("", s!"ensure e: r >= {app}")
+      | 2 => pure ("", s!"ensure e: r > 2 * {app}")
+      | 3 => pure ("", s!"ensure e: r = if b? then {app} else {c}")
+      | 4 => pure ("", s!"ensure e: r = {app} - {c}")
+      | 5 => pure ("set_option fren.lint.undecidable \"allow\" in\n",
+          s!"ensure e: forall (i: Int), when 0 <= i < {c + 1}, r >= {app} + fci(i)")
+      | 6 => pure ("", s!"ensure e: r = match fck(s) \{ Fk::A => {app}, Fk::B(x) => {app} + x.abs }")
+      | 7 => pure ("", s!"ensure e: r = y + {c} where y := {app}")
+      | 8 => pure ("", s!"ensure e: table \{ b? => r >= {app}, _ => r = {app} + {c} }")
+      | 9 => pure ("", s!"ensure e: r = {app} + fcn({arg})")
+      | 10 => pure ("", s!"ensure e: r = {app} + fcp({arg})")
+      | 11 => pure ("", s!"ensure e: r = fcg(b?, true, {arg}) + {app}")
+      | _ => pure ("", s!"ensure e: r = fcsum(Fl::Cons({c}, fcl({arg}))) + {app}")
+    let pre := if ← chance 30 then s!"    assume p: b?\n" else ""
+    -- A `Nat` result only where the clause gives its value: where it only
+    -- bounds it by an `Int`, Lean's realizability query often times out
+    -- (#493).
+    let ty := if k > 1 && [0, 7, 9, 10].contains form && (← chance 40) then "Nat" else "Int"
+    out := out ++ s!"{opt}pub fn fc{k}(s: Fc, b?): (r: {ty}) \{\n{pre}    {post}\n}\n"
+  -- Whatever its preconditions, `b?` is `true` at the checks, so that
+  -- none fails at a call.
+  let last := s!"fc{n}(s, true)"
+  let c ← below 4
+  out := out ++ s!"\nexpect fc_holds(s: Fc) \{ expect c: {last} >= {c} }\n"
+  out := out ++ s!"\nproc fc_cover(s: Fc) \{\n    cover low: {last} < {c}\n}\n"
+  if ← chance 40 then
+    out := out ++ s!"\npub fn fc_table(s: Fc): (r: Int) \{\n    ensure t: table \{ fc{n}(s, true) >= {c} => r > 0, r < 0 => true, _ => true }\n}\n"
+  -- An input, an output and a call's output of a subset type whose
+  -- invariant applies the recursive `fcsum`, whose facts each query has
+  -- (`lang::recursion_formulas`); its second row keeps the type inhabited
+  -- without the opaque `fcsum`.
+  if ← chance 50 then
+    let b ← below 4
+    let d ← below 4
+    out := out ++ s!"\npub type FcBig = m: Int where invariant: fcsum(Fl::Cons(m, Fl::Nil)) >= {b} or m = {b}\n" ++
+      "proc fc_in(x: FcBig): (det z: Int) { out z := x + 1 }\n" ++
+      s!"proc fc_out(): (y: FcBig) \{\n    cover w: y = {d}\n}\n" ++
+      s!"proc fc_call(u: Int) \{\n    call w := fc_out()\n    cover v: w.y = {d} + u\n}\n" ++
+      s!"proc fc_in2(x: FcBig) \{\n    cover v: x > {d}\n}\n"
+  return out
+
+/-- Generic functions whose type parameters are element types
+(`lang::element_parameter`): sets, sequences and relations of them, nested
+and within an instance, in signatures, bodies and contracts, defined and
+not, one applied within another at its own type parameter, one whose type
+argument only what is expected gives, one with a function parameter,
+preconditions and postconditions over an element of a `Seq<T>`, and a
+procedure that applies them at one element type: `Int`, `Bool`, `String`, an
+abstract type, `E` if the spec has it, or `Option<Int>`, with arguments that
+are empty literals, nested or not, in either order. Now and then, at `Bool`
+or `E`, the procedure is enumerated, with only inputs of that type and small
+sets and sequences of it, so that it is enumerated indeed. A postcondition
+may fail, a check's result, but nothing here is a static error: no
+relational operator or quantifier over a set's members, which are outside
+the decidable core, and the function without a body only at `Int`, since one
+of sets of a type that may be finite is too (#437). -/
+def genericElements (sc : WScope) : R String := do
+  let mut out := "pub type Atom\n" ++
+    "pub fn ge_grow<T>(s: Set<T>, x: T): Set<T> := s union {x}\n" ++
+    "pub fn ge_twice<T>(s: Set<T>, x: T): Set<T> := ge_grow(ge_grow(s, x), x)\n" ++
+    "pub fn ge_has?<T>(s: Set<T>, x: T) := x in s\n" ++
+    "pub fn ge_first<T>(q: Seq<T>, d: T): T := if q != [] then q[0] else d\n" ++
+    "pub fn ge_at<T>(q: Seq<T>): T := q[0]\n" ++
+    "pub fn ge_apply?<T>(q: Seq<T>, f: fn(T) -> Bool) := f(q[0])\n" ++
+    "pub fn ge_pick<T>(q: Seq<T>, d: T): (r: T) {\n    assume first: q[0] = d\n    out r := d\n    ensure same: r = q[0]\n}\n" ++
+    "pub fn ge_head<T>(q: Seq<T>): (r: T) {\n    ensure m: r = q[0]\n}\n" ++
+    "pub fn ge_len<T>(q: Seq<T>): Int := q.len\n" ++
+    "pub fn ge_all?<T>(q: Seq<T>, s: Set<T>) := forall (x: T), when x in q, x in s\n" ++
+    "pub fn ge_nest<T>(s: Set<Set<T>>, x: T): Set<Set<T>> := s union {{x}}\n" ++
+    "pub fn ge_sets?<T>(q: Seq<Set<T>>, s: Set<T>) := q = [s]\n" ++
+    "pub fn ge_deep<T>(q: Seq<Seq<T>>, d: T): T := if q = [] then d else q[0][0]\n" ++
+    "pub fn ge_deep2<T>(d: T, q: Seq<Seq<T>>): T := if q = [] then d else q[0][0]\n" ++
+    "pub fn ge_opt<T>(s: Set<T>): Option<Set<T>> := if s = {} then Option::None else Option::Some(s)\n" ++
+    "pub fn ge_put<T>(q: Seq<Option<T>>, x: T): Seq<Option<T>> := q.update(0, Option::Some(x))\n" ++
+    "pub fn ge_pair<A, B>(a: A, b: B): Rel<A, B> := {(a, b)}\n" ++
+    "pub fn ge_in?<A, B>(r: Rel<A, B>, a: A, b: B) := (a, b) in r\n" ++
+    "pub fn ge_parts<T>(s: Set<T>, t: Set<T>): Int := (s inter t).card + (s minus t).card\n"
+  -- A contract over a set of the parameter, which holds or fails.
+  let post ← pick #["not x in r", "r subset s", "r = s", "r.card < s.card"]
+  out := out ++ s!"pub fn ge_drop<T>(s: Set<T>, x: T): (r: Set<T>) \{\n    out r := s minus \{x}\n    ensure q: {post}\n}\n"
+  if ← chance 50 then
+    out := out ++ "pub fn ge_choose<T>(s: Set<T>): (r: T) {\n    assume ne: s != {}\n    ensure m: r in s\n}\n"
+  -- The element type, and two of its values, distinct where it has two.
+  let tys := #[("Int", "1", "2"), ("Bool", "true", "false"), ("String", "\"a\"", "\"b\""), ("Atom", "", ""),
+    ("Option<Int>", "Option::None", "Option::Some(0)")] ++
+    (if sc.nVariants > 0 then #[("E", "E::V0", "E::V1")] else #[])
+  let (ty, a, b) ← pick tys
+  -- Enumerated now and then, at a finite element type: then its inputs are
+  -- only of that type, and the function without a body, whose
+  -- postcondition blocks enumeration, is not applied.
+  let enumerated := (ty == "Bool" || ty == "E") && (← chance 50)
+  -- Its variables, named with `?` if they are `Bool`s.
+  let x := if ty == "Bool" then "x?" else "x"
+  let y := if ty == "Bool" then "y?" else "y"
+  let lit (v : String) : R String := do if v.isEmpty then pure x else pick #[v, x, y]
+  let n := if enumerated then "0" else "n"
+  -- A value to compare with: not `q[0]` of a `Seq<String>`, which with an
+  -- application is a comparison of two strings neither of which is a
+  -- variable, outside the decidable core.
+  let other : R String := if ty == "String" then pure x else pick #[x, "q[0]"]
+  let mut body := ""
+  for k in [0:(← below 4) + 2] do
+    let e ← match ← below 19 with
+      | 0 => pure s!"{x} in ge_grow(s, {x})"
+      | 1 => pure s!"ge_has?(ge_grow(s, {← lit a}), {← lit b})"
+      | 2 => pure s!"ge_first(q, {y}) = {← pick #[x, y]}"
+      | 3 => pure s!"ge_all?(q, ge_grow(s, {← lit a}))"
+      | 4 => pure s!"\{{x}} in ge_nest(\{s}, {← lit b})"
+      | 5 => pure s!"(ge_opt(s) = Option::None) iff s = \{}"
+      | 6 => pure s!"ge_put([Option::None], {x}) = [Option::Some({← lit a})]"
+      | 7 => pure s!"ge_in?(ge_pair({x}, {← pick #["0", n]}), {← lit b}, {n})"
+      | 8 => pure s!"ge_parts(s, \{{x}}) {← pick #["=", ">=", "<"]} s.card"
+      | 9 => pure s!"not {x} in ge_drop(s, {← lit b})"
+      | 10 => pure s!"ge_twice(s, {← lit a}) = ge_grow(s, {← lit b})"
+      | 11 => pure s!"ge_len({← pick #["q", s!"[{x}]", s!"[{x}, {y}]"]}) > 1"
+      | 12 =>
+        -- Not both empty, which would leave `T` unknown (`F0400`).
+        let q ← pick #["[s]", s!"[\{{x}}]", "[{}]"]
+        pure s!"ge_sets?({q}, {← pick (if q == "[{}]" then #["s"] else #["s", "{}"])})"
+      | 13 =>
+        let q ← pick #["[[]]", s!"[[{x}]]", "[]", "[q]"]
+        let call ← pick #[s!"ge_deep({q}, {y})", s!"ge_deep2({y}, {q})"]
+        pure s!"{call} = {← if ← chance 33 then other else pick #[x, y]}"
+      -- An instance whose type argument only what is expected gives.
+      | 14 => pure s!"{← other} {← pick #["=", "!="]} ge_at([])"
+      -- A generic function with a function parameter, given a closure or,
+      -- at a type with a literal, a named function (`ge_is?`).
+      | 15 =>
+        let v := if ty == "Bool" then "v?" else "v"
+        let f ← if a.isEmpty || (← chance 50) then pure s!"|{v}| {v} = {y}" else pure "ge_is?"
+        pure s!"ge_apply?({← pick #["q", s!"[{x}]"]}, {f})"
+      -- A precondition and a postcondition over an element of a `Seq<T>`,
+      -- read at the instance, the function without a body's only where the
+      -- procedure is not enumerated, as its postcondition blocks it.
+      | 16 => pure s!"ge_pick({← pick #["q", s!"[{x}]", "[]"]}, {← pick #[y, "q[0]"]}) = {← other}"
+      | 17 =>
+        if enumerated then pure s!"{x} in ge_grow(s, {x})"
+        else pure s!"ge_head({← pick #["q", s!"[{x}]"]}) {← pick #["=", "!="]} {← other}"
+      | _ => pure s!"ge_first([{← lit a}], {y}) = {← lit b}"
+    let e := if ← chance 30 then s!"when {x} != {y}, {e}" else e
+    body := body ++ s!"    expect ge{k}: {e}\n"
+  if out.contains "ge_choose" && !enumerated then
+    body := body ++ s!"    expect gc: when ks != \{}, ge_choose(ks) in ks\n"
+  let xs := if ty == "Bool" then s!"{x}, {y}" else s!"{x}: {ty}, {y}: {ty}"
+  if body.contains "ge_is?" then
+    out := out ++ (if ty == "Bool" then s!"pub fn ge_is?(v?) := v? = {a}\n" else s!"pub fn ge_is?(v: {ty}) := v = {a}\n")
+  if enumerated then
+    return out ++ "set_option fren.enumeration.size 2 in\nset_option fren.evidence \"enumerated\" in\n" ++
+      s!"pub proc ge_apps({xs}, s: Set<{ty}>, q: Seq<{ty}>) \{\n{body}}\n"
+  return out ++ s!"pub proc ge_apps({xs}, s: Set<{ty}>, q: Seq<{ty}>, n: Int, ks: Set<Int>) \{\n{body}}\n"
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1225,6 +1419,14 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- A trait, last too.
   cuts := cuts.push out
   if ← chance 30 then out := out ++ "\n" ++ (← traitGroup sc)
+  -- Contracts whose facts mention applications with facts of their own,
+  -- last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← factChain)
+  -- Generic functions over sets, sequences and relations of their type
+  -- parameters, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← genericElements sc)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)

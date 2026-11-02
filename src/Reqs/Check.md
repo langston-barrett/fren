@@ -54,7 +54,9 @@ types](Lang/Procedures.md#subset-types) and the
 [postconditions](Lang/Items.md#contracts) of uninterpreted functions
 bring: `N(i, y)` that each `Nat` input and call variable, and each
 application of an uninterpreted function whose result is a `Nat` that the
-query's own hypotheses or goal mention, is at least 0, and that each such
+query's own hypotheses or goal mention, or that one of these facts
+mentions, transitively (`check::fact_applications`, in
+[Evidence](Evidence.md)), is at least 0, and that each such
 application of an uninterpreted function with postconditions meets each
 of them if its arguments meet the function's preconditions; and `N(o)`
 that each `Nat` output is at least 0; and likewise that each variable and
@@ -65,7 +67,8 @@ type, if that is a subset type.
 Each variable's constraints come in the order of the variables, after its
 `Nat`'s, and each application's or payload's in the order in which the
 query mentions them, one application's as one fact each: its `Nat`'s, its
-type's, then its postconditions'. So a query's facts about applications depend only on its
+type's, then its postconditions', and then, round by round, those of the
+applications that the facts of the round before mention. So a query's facts about applications depend only on its
 formulas: a call's query has none about its procedure's
 expectations, which are not among them. Every query has both among its hypotheses,
 though the formulas below leave them implicit, and realizability also
@@ -335,7 +338,8 @@ Recursive defined functions reuse these application facts and argument
 obligations. Their contracts are checked against their bodies by Hoare
 induction, as [Recursion](Lang/Recursion.md#contracts) specifies, rather
 than by contract realizability. Their counterexamples require confirmation
-by evaluation; a refuted model yields Inconclusive (`F0450`).
+by evaluation; a model that evaluation refutes, or cannot evaluate,
+yields Inconclusive (`F0450`).
 
 An uninterpreted function's [postconditions](Lang/Items.md#contracts)
 are assumed at each of its applications, so if they cannot hold together,
