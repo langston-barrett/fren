@@ -50,6 +50,11 @@ pub mod testing
   `src/Reqs/**/*.md` outside a code block that starts with `r[` is a
   well-formed rule identifier, and no two are the same (see [Writing the
   reference](Style.md#rule-identifiers)).
+- **Rules and their requirements** (`lake test`, `ruleReqs`): each rule of
+  **Legality rules** or **Dynamic semantics** has a requirement or is
+  listed in `test/unformalized_rules.txt`, every rule that a test cites
+  with `--@ reference: ID` exists, and the [report](Rules.md) is up to
+  date (see [Writing the reference](Style.md#rules-and-requirements)).
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
   `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).

@@ -115,6 +115,34 @@ quote, so it needs no label.
 - A block's comments are not normative. They say what a parameter or
   item stands for.
 
+## Rules and requirements
+
+- A rule under **Legality rules** or **Dynamic semantics** is formalized
+  by a requirement: an item of a ```` ```fren ```` block. One requirement
+  may formalize several rules.
+- The requirement has the rule's name: its path is the rule's identifier
+  with each `.` a `::` and each `-` an `_` (`quantifier::type::not_listed`
+  for `quantifier.type.not-listed`), or it is one segment shorter and has an
+  `ensure` named as the last segment (`proc guard` in `mod quantifier`, with
+  `ensure strict`, for `quantifier.guard.strict`).
+- Where the structures differ, the rule names its requirement in a code
+  span instead, as it names its checked block: "(`lang::guard_bound`)".
+- An item in a module named as a rule's construct, such as `quantifier`,
+  has a rule of its name: each of its `ensure`s does, or the item itself
+  if it has none.
+- A rule that has no requirement yet is listed in
+  `test/unformalized_rules.txt`. The Interlock step of a chapter group
+  (#620) gives such rules requirements and removes their lines. A rule
+  that is to keep none says why there.
+- A test cites each rule that it tests with a line
+  `--@ reference: quantifier.guard.strict`, as the Rust Reference's tests
+  do with `//@ reference:`.
+- `lake test` checks these links, that every cited rule exists, and that
+  each requirement that formalizes a rule of its own chapter follows the
+  rule (`ruleReqs`). It writes the [report](Rules.md): for each rule, its
+  requirements, the `impl`s bound to them and the tests that cite it.
+  `lake test -- --bless` rewrites it.
+
 ## Examples
 
 - An example that only shows syntax or a meaning, and need not run, is

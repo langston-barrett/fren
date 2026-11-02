@@ -3,6 +3,11 @@
 -- unbounded, and outside the decidable core, which `undecidable` reports at
 -- its binder.
 -- fren-covers: lang::quantified_type, lang::quantifier_size
+--@ reference: quantifier.type.not-listed
+--@ reference: quantifier.type.unbounded
+--@ reference: quantifier.limit
+--@ reference: quantifier.limit.nested
+--@ reference: quantifier.name.shadowing
 set_option fren.lint.eq_op "allow"
 
 enum Method { Len, Card, Rev }

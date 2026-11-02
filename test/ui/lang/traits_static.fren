@@ -1,4 +1,5 @@
 -- Static rules of traits (`Reqs/Lang/Traits`), in both front ends.
+--@ reference: trait.member.rule
 set_option fren.lint.dead_code "allow"
 
 mod traits_static

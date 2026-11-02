@@ -98,4 +98,5 @@
 - [Architecture](dev/Architecture.md)
 - [Testing](dev/Testing.md)
 - [Writing the reference](dev/Style.md)
+  - [Rules and their requirements](dev/Rules.md)
 - [Roadmap](dev/Roadmap.md)
