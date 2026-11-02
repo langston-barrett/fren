@@ -717,7 +717,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
   let slotBit : Array Nat := Id.run do
     let mut bits := Array.replicate names.size 0
     for x in varSlot.reverse, i in (List.range varSlot.size).reverse do
-      bits := bits.set! x (if slots[x]!.isSome then 0 else 1 <<< i)
+      bits := bits.set! x (if slots[x]!.isSome then 0 else pow2 i)
     return bits
   let readsOf (ks : Array Nat) : Nat := ks.foldl (fun acc k => acc ||| slotBit[k]!) 0
   -- The set of the variables that each constraint reads.
