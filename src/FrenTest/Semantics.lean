@@ -539,22 +539,61 @@ def mayMatchCtorSound : Array String := Id.run do
   if matched < 1000 then failures := failures.push s!"only {matched} patterns matched"
   return failures
 
+/-- A random pattern for `matchSplitAgrees`, at most `d` deep: as
+`genPat`'s, but with integer ranges open at either end, and binders of two
+names, so that two binders pushed in the wrong order are told apart. -/
+partial def genSplitPat (d : Nat) : R Pat := do
+  match ← next (if d == 0 then 7 else 9) with
+  | 0 => return .wild
+  | 1 => return .bind (if (← next 2) == 0 then `z else `w)
+  | 2 => return .bool ((← next 2) == 0)
+  | 3 =>
+    let lo ← small
+    let hi := lo + (← next 3)
+    return match ← next 4 with
+      | 0 => .int (some lo) (some hi)
+      | 1 => .int none (some hi)
+      | 2 => .int (some lo) none
+      | _ => .int none none
+  | 4 => return .str (if (← next 2) == 0 then "a" else "b")
+  | 5 => return .ctor (← next 3) #[]
+  | 6 => return .bind `w
+  | 7 => return .ctor (← next 3) (← (List.range (← next 3)).toArray.mapM fun _ => genSplitPat (d - 1))
+  | _ => return .alts (← (List.range (1 + (← next 3))).toArray.mapM fun _ => genSplitPat (d - 1))
+
+/-- A random value that `p` matches, but where a binder or `_` takes any
+value, so that a pattern's binders are bound often. -/
+partial def genValFor : Pat → R Val
+  | .wild | .bind _ => genVal 1
+  | .bool b => return .bool b
+  | .int lo hi => return .int ((lo.orElse fun _ => hi).getD (← small))
+  | .str t => return .str t
+  | .ctor idx ps => return .ctor `E idx (← ps.mapM genValFor)
+  | .alts ps => do genValFor (ps[← next ps.size]?.getD .wild)
+
 /-- How `Ex.eval` takes a `match` arm: `Pat.matches` decides whether the
 pattern matches, and `Pat.bindInto` binds it, as `Pat.matchInto` does
-both, on random patterns, values and frames. -/
+both, on random patterns (`genSplitPat`), values and frames. -/
 def matchSplitAgrees : Array String := Id.run do
   let mut failures := #[]
   let mut seed := 13
   let mut matched := 0
+  let mut bound := 0
   for _ in [0:20000] do
-    let ((p, v, w), s) := (do return (← genPat 3, ← genVal 2, ← genVal 1)).run seed
+    let ((p, v, w), s) := (do
+      -- Half are a variant of two parts, so that two binders often match.
+      let p ← if (← next 2) == 0 then genSplitPat 3
+        else pure (Pat.ctor (← next 3) #[← genSplitPat 2, ← genSplitPat 2])
+      return (p, ← if (← next 2) == 0 then genValFor p else genVal 2, ← genVal 1)).run seed
     seed := s
     let fr : Array FrenCli.Eval.Binding := if v == w then #[] else #[(`y, some w)]
     let split := if p.matches v then some (p.bindInto v fr) else none
     if split.isSome then matched := matched + 1
+    if split.any (·.size > fr.size + 1) then bound := bound + 1
     if split != p.matchInto v fr then
       failures := failures.push s!"`Pat.matches` and `Pat.bindInto` disagree with `Pat.matchInto` on {repr v}"
   if matched < 1000 then failures := failures.push s!"only {matched} patterns matched"
+  if bound < 300 then failures := failures.push s!"only {bound} matches bound two or more names"
   return failures
 
 /-- The recursion `g(a, b)` of `compiledRecursion`: a `match` on `a`, an

@@ -214,8 +214,10 @@ where
     | k + 1, fr => do payload ps vs k (← ps[k]!.matchInto vs[k]! fr)
 
 /-- Whether `p` matches `v`: whether `p.matchInto v fr` is a frame,
-whatever `fr` is, decided without binding anything or allocating
-(`matchSplitAgrees` in `FrenTest.Semantics`). -/
+whatever `fr` is, decided without binding anything or allocating. That it
+agrees with `Pat.matchInto` is tested, by `matchSplitAgrees` in
+`FrenTest.Semantics`, not proved: this, `Pat.bindInto` and `matchInto` are
+`partial`. -/
 partial def Pat.matches : Pat → Val → Bool
   | .wild, _ | .bind _, _ => true
   | .bool b, .bool b' => b == b'
@@ -232,7 +234,9 @@ where
 
 /-- `fr` with each binder of `p` bound to the part of `v` that it matches,
 where `p` matches `v` (`Pat.matches`): the frame that `p.matchInto v fr`
-gives, without the `Option` around it and the frames between. -/
+gives, without the `Option` around it and the frames between. That it
+gives `matchInto`'s frame is tested, by `matchSplitAgrees`, not proved, as
+for `Pat.matches`. -/
 partial def Pat.bindInto : Pat → Val → Array (Name × Option Val) → Array (Name × Option Val)
   | .bind n, v, fr => fr.push (n, some v)
   | .ctor _ ps, .ctor _ _ vs, fr => payload ps vs ps.size fr
@@ -763,7 +767,8 @@ partial def cmpV : Val → Val → Option Ordering
 
 /-- An ordering, of values of an ordered type (`cmpV`). Two `Int`s are
 compared at once, as `cmpV` compares them, without the `Ordering` that it
-would allocate. -/
+would allocate: the fast path is `cmpV`'s first clause, so the two agree
+by inspection; that is not proved, since `cmpV` is `partial`. -/
 @[inline] def ordV (f : Ordering → Bool) : Option Val → Option Val → Option Val
   | some (.int x), some (.int y) => boolV (f (compare x y))
   | some x, some y => match cmpV x y with
@@ -1051,8 +1056,8 @@ def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : 
   | some c => if b.isInt 1 defined fuel then (Ex.indicators? defined fuel false a).map (c, ·) else none
   | none => none
 
-/-- Whether `e` may be the integer literal 1 (`Ex.isInt`): only a literal,
-or a variable, which may be defined as one, may be. Unless it may be, a
+/-- Whether `e` may be the integer literal 1 (`Ex.isInt`): only the literal
+or known value 1, or a variable, which may be defined as one, may be. Unless it may be, a
 comparison with it is no count (`Ex.countOfOne?_of_not_mayBeOne`), which
 evaluation then does not look for. -/
 @[inline] def Ex.mayBeOne : Ex → Bool
@@ -1106,8 +1111,25 @@ def paramFrame (ps : Array Name) (vs : Array Val) : Array Binding :=
   let n := min ps.size vs.size
   frameFrom ps (fun i => some vs[i]!) n (Array.mkEmpty n)
 
-#guard paramFrame #[`a, `b] #[.int 1, .int 2] == #[(`b, some (.int 2)), (`a, some (.int 1))]
-#guard paramFrame #[`a, `b, `c] #[.int 1, .int 2] == #[(`b, some (.int 2)), (`a, some (.int 1))]
+theorem frameFrom_eq (ps : Array Name) (g : Nat → Option Val) (k : Nat) (fr : Array Binding) :
+    frameFrom ps g k fr = fr ++ ((List.range k).reverse.map fun i => (ps[i]!, g i)).toArray := by
+  induction k generalizing fr with
+  | zero => simp [frameFrom]
+  | succ k ih => simp [frameFrom, ih, List.range_succ]
+
+/-- `paramFrame` is what its docstring says: the pairs of `ps.zip vs`,
+each value in a `some`, from the last to the first. -/
+theorem paramFrame_eq (ps : Array Name) (vs : Array Val) :
+    paramFrame ps vs = ((ps.zip vs).map fun (p, v) => (p, some v)).reverse := by
+  rw [paramFrame, frameFrom_eq, Array.mkEmpty_eq]
+  apply Array.ext
+  · simp
+  · intro i h1 h2
+    simp at h1 h2
+    simp [Array.getElem_reverse, List.getElem_reverse]
+    have hp : min ps.size vs.size - 1 - i < ps.size := by omega
+    have hv : min ps.size vs.size - 1 - i < vs.size := by omega
+    exact ⟨getElem!_pos ps _ hp, getElem!_pos vs _ hv⟩
 
 /-- The values of `es`, in order, each as `f` gives it, or none at the
 first that has none: `evalEach`'s, each still in the `some` that `f`
@@ -1208,13 +1230,15 @@ that applies a recursion is inconclusive (`F0450`). -/
 of `Ex.eval` is passed to a function that takes it over, as `Array.push`
 does, the compiler takes the parameter itself over: every call of
 `Ex.eval` would count a reference to it, and uncount it. Passed through
-`own`, which borrows it, it stays borrowed (`@&`). -/
+`own`, which borrows it, it stays borrowed (`@&`). `FrenTest.Borrowing`
+checks, from the IR, that it does. -/
 @[noinline] def own (x : @& α) : α := x
 
 /-- `x`, the value of an evaluation. A call of `Ex.eval` in tail position,
 with an argument that the caller made, would make the compiler take that
 parameter over, to keep the tail call (as for `own`). Passed through
-`evalResult`, the call is not in tail position. -/
+`evalResult`, the call is not in tail position. `FrenTest.Borrowing`
+checks, from the IR, that the parameters stay borrowed. -/
 @[noinline] def evalResult (x : Option Val) : Option Val := x
 
 /-- The value of an expression, as far as it is known: each variable as

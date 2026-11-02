@@ -163,12 +163,20 @@ Fren.proveContract
 Fren.resolveUsePath
 Fren.unreadableValue
 Fren.varType
+FrenCli.Eval.Ex.isInt
+FrenCli.Eval.Pat.matchInto
+FrenCli.Eval.Pat.matchInto.payload
 FrenCli.Eval.Spec.fits
 FrenCli.Eval.Spec.quickGlobal
 FrenCli.Eval.confirmedVerdict
 FrenCli.Eval.conflictOf
 FrenCli.Eval.corePatSame
+FrenCli.Eval.firstCaseIn
+FrenCli.Eval.kleeneAnd
+FrenCli.Eval.kleeneOr
 FrenCli.Eval.lowerFiles
+FrenCli.Eval.notV
+FrenCli.Eval.paramFrame
 FrenCli.Eval.resolveComp
 FrenCli.Eval.resumesAt
 FrenCli.Fm.subject? -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
