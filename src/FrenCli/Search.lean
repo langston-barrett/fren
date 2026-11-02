@@ -151,14 +151,16 @@ partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (d
   let others : Interp := { defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find?, fn := fun g as => if depth == 0 then none else w.value sp g as (depth - 1) }
   let checkPosts := contract.any fun (ps, pres, _) =>
     pres.all (·.eval others (fun _ => none) (ps.zip args).toList == some (.bool true))
-  let candidates := (List.range 16).map fun k => valueAt (if k == 0 then h else mix h k.toUInt64)
-  candidates.find? fun v =>
+  -- The first of 16 random candidates that meets the contract, each made
+  -- only if those before it do not.
+  (List.range 16).findSome? fun k =>
+    let v := valueAt (if k == 0 then h else mix h k.toUInt64)
     let I : Interp := { defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find?, fn := fun g as =>
       if (g == f || g == base) && as == args then some v else if depth == 0 then none else w.value sp g as (depth - 1) }
     let member := (sp.results.find? base).all fun t =>
       (Ex.typed t #[] (.lit v)).eval I (fun _ => none) == some (.bool true)
-    member && (!checkPosts || contract.all fun (ps, _, posts) =>
-      posts.all (·.eval I (fun _ => none) (ps.zip args).toList == some (.bool true)))
+    if member && (!checkPosts || contract.all fun (ps, _, posts) =>
+      posts.all (·.eval I (fun _ => none) (ps.zip args).toList == some (.bool true))) then some v else none
 
 /-- `sp.shapes`, in a hash map, in which `typeHolds` looks up a type more
 cheaply than in a `NameMap`, at each instance of a quantifier. It has the
@@ -309,7 +311,14 @@ partial def smallValuesMemo (sp : Spec) (w : World) (ints : Array Int) (strs : A
           let mut combos : Array (Array Val) := #[#[]]
           for (_, t) in c.fields do
             let vs ← go (depth - 1) (t.subst targs)
-            combos := (combos.flatMap fun pre => vs.map pre.push).extract 0 cap
+            -- The first `cap` of the combinations, in order, each made
+            -- only if it is among them.
+            let mut next := #[]
+            for pre in combos do
+              for v in vs do
+                if next.size ≥ cap then break
+                next := next.push (pre.push v)
+            combos := next
           each := each.push (combos.map (.ctor p idx ·))
         pure (smallInterleaved cap each)
   modify (·.insert (depth, ty) vs)
