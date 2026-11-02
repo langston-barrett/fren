@@ -25,6 +25,9 @@ whose arguments give the called procedure's parameters. See
 and `at_most_one?`, which hold when exactly one, or at most one, of their
 `Bool` arguments is `true`. See [Expressions](Lang/Expressions.md#cardinality).
 
+**Carrier.** The type of a trait, written `Self` within it. See
+[Traits](Lang/Traits.md#the-carrier).
+
 **Chained comparison.** Orderings written one after another, as in
 `0 <= i < n`, which means `0 <= i and i < n`. See
 [Expressions](Lang/Expressions.md#chained-comparisons).
@@ -156,6 +159,10 @@ conjunction or disjunction of its instances. See [Quantifiers](Lang/Quantifiers.
 enumeration, record, abstract type, function, constant, procedure, global
 expectation, check or claim. See [Items](Lang/Items.md).
 
+**Law.** A member of a trait, declared with `law`, that states what holds
+of its methods for all values of its variables. See
+[Traits](Lang/Traits.md#laws).
+
 **Let.** An expression, `let x := e in b`, that names the value of `e` as
 `x` within `b`. See [Local definitions](Lang/Let.md).
 
@@ -174,7 +181,14 @@ holds. See
 [Expressions](Lang/Expressions.md#matches).
 
 **Member.** A declaration inside a procedure's body: an `exists` or `let`
-variable, a result's definition, a constraint or a call.
+variable, a result's definition, a constraint or a call. Or a declaration
+inside a trait: a method, a law or an expectation (see
+[Traits](Lang/Traits.md#members)).
+
+**Method.** A built-in operation written after its receiver and `.`, as
+`s.len` and `s.starts_with?(t)` are (see [Expressions](Lang/Expressions.md#methods));
+or a function of a trait, without a body, over its carrier (see
+[Traits](Lang/Traits.md#members)).
 
 **Newtype.** A record with exactly one field, which has no name, declared
 as `struct Ms(Int)`: a type distinct from every other, with the values of
@@ -303,6 +317,10 @@ types](Lang/Generics.md#type-arguments).
 **Type parameter.** A name that stands for a type within the declaration
 of a generic type, as `T` in `enum Option<T> { None, Some(T) }`. See
 [Generic types](Lang/Generics.md#type-parameters).
+
+**Trait.** An interface, declared with `trait`: a carrier, its methods,
+the laws that they obey, and expectations that follow from the laws. See
+[Traits](Lang/Traits.md).
 
 **Trigger.** The condition under which a `when` or `unless` constraint
 applies. See [Procedures](Lang/Procedures.md#triggers).

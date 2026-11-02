@@ -23,6 +23,12 @@ expect over_proc: forall (a: sub), true  --~ error: expected a type, but `sub` i
 expect over_values: forall (a: E), a = E::A  --~ warning: this `forall` ranges over one value
 --~^ warning: this expectation mentions no variable
 expect twice: forall (a: E) (a: E), true  --~ error: `a` is bound multiple times in this expectation
+-- A quantifier's body is a `Bool`, which both front ends check before
+-- they report that a quantifier over a type that is not listed is outside
+-- the decidable core.
+type Label
+fn width(Label): Int
+expect body_not_bool: forall (n: Label), width(n)  --~ error: type mismatch: expected `Bool`, found `Int`
 expect twice2(x: Int) {
     call a := sub(x)
     call a := sub(x)  --~ error: `a` is defined multiple times in this global expectation

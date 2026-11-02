@@ -1,0 +1,11 @@
+type Key
+
+set_option fren.lint.undecidable "allow" in
+trait Store {
+    fn put(Self, Key, Int): Self
+    fn get(Self, Key): Option<Int>
+
+    law get_put(s: Self, k: Key, v: Int, j: Key): get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))
+
+    expect read_back(s: Self, k: Key, v: Int) { expect c: get(put(s, k, v), k) = Option::Some(v) }
+}

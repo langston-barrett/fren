@@ -5,7 +5,7 @@ items can be mixed with Lean code.
 
 ```
 item := module | use | enumeration | record | abstract-type | type-alias | function | constant
-      | procedure | expectation | check | claim | lint-setting | lean-item
+      | procedure | trait | expectation | check | claim | lint-setting | lean-item
 ```
 
 Items are processed in order: an item must be declared before it is used,
@@ -933,6 +933,11 @@ visibility](Modules.md)).
 
 A procedure is declared with `proc`, as `procedure`: see
 [Procedures](Procedures.md) for its grammar and meaning.
+
+## Traits
+
+A trait is declared with `trait`, as `trait`: its carrier, its methods,
+its laws and its expectations. See [Traits](Traits.md).
 
 ## Global expectations
 

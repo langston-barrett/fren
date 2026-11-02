@@ -561,5 +561,23 @@ scoped syntax (name := globalBlockCmd) "expect " frenIdent noWs "("
   (" : " "(" sepBy1(fren_result, ", ", ", ", allowTrailingSep) ")")? " { " fren_member* " }" : command
 
 
+/-- A member of a trait (`Reqs/Lang/Traits`): a law, or a command, which the
+elaborator checks is a method or an expectation (`lang::trait_member`).
+`law` is a contextual keyword, a law's only where a trait's member starts. -/
+declare_syntax_cat fren_trait_member (behavior := both)
+
+/-- `set_option fren.lint.NAME "LEVEL" in`, before a law, as before an item. -/
+syntax fren_law_setting := "set_option " ident ppSpace (str <|> num) " in "
+
+/-- `law n(x: T, y?): e`, a law of a trait, after any settings: its
+variables, and its equation. -/
+scoped syntax (name := lawMember) fren_law_setting* &"law " frenIdent noWs "(" sepBy(fren_field, ", ", ", ", allowTrailingSep) ")"
+  " : " fren_expr (fren_where)? : fren_trait_member
+
+/-- An item as a member of a trait: a method or an expectation. -/
+scoped syntax (name := itemMember) command : fren_trait_member
+
+/-- `[pub] trait T { members }`, a trait (`Reqs/Lang/Traits`). -/
+scoped syntax (name := traitCmd) ("pub ")? "trait " frenIdent " { " fren_trait_member* " }" : command
 
 end Fren.Lang

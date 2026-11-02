@@ -1176,6 +1176,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       vars := c.vars.map fun v =>
         { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
       assumes := ← named c.assumes
+      laws := ← c.laws.mapM fun (n, l) => return (n, ← rep l)
+      lawsOf := c.lawsOf
       -- A defined function's postconditions are claims of its own
       -- (`check::postcondition`), and the hypotheses of nothing; an
       -- uninterpreted function's, of its value, its contract's guarantees
@@ -1368,7 +1370,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
           if let .sat model := o then models.modify (·.push (goal, model))
           return o }
     let examples := fren.examples.get (← getOptions)
-    let results := Core.recursiveResults comp.recursive (Core.withInterpreted full interprets (← Core.checkComp bk comp kinds (some examples) interprets
+    let results := Core.recursiveResults comp.recursive (Core.withInterpreted full interprets (← Core.checkCompLawful bk comp kinds (some examples) interprets
       (some (applied.modifyGet fun a => (a, #[])))))
     -- The contract of a generic function without a body, where its check
     -- at its type parameters' sorts does not pass: its check at each

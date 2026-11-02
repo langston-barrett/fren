@@ -500,6 +500,7 @@ def ownSpecFiles : Array String :=
     "Lang/Items",
     "Lang/Generics",
     "Lang/GenericFunctions",
+    "Lang/Traits",
     "Lang/Prelude",
     "Lang/Scope",
     "Lang/Procedures",

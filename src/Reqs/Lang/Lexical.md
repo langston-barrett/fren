@@ -216,6 +216,7 @@ pub const RESERVED: Set<String> := {
     "fn",
     "const",
     "proc",
+    "trait",
     "expect",
     "impl",
     "interp",
@@ -250,7 +251,8 @@ pub proc reserved_word(
     ensure rule: reserved? iff lexeme in RESERVED
 
     expect contextual: when lexeme is "when" | "ensure" | "cover" | "out" | "call" | "det", not reserved?
-    expect items: when lexeme is "proc" | "fn" | "enum" | "struct", reserved?
+    expect items: when lexeme is "proc" | "fn" | "enum" | "struct" | "trait", reserved?
+    expect law_contextual: when lexeme = "law", not reserved?
     expect membership: when lexeme = "in", reserved?
     expect pattern_test: when lexeme = "is", reserved?
     expect record_update: when lexeme = "with", reserved?
@@ -282,8 +284,11 @@ These *contextual keywords* have special meaning at the start of a
 construct, and are otherwise ordinary identifiers:
 
 ```
-when  unless  not  true  false  det  out  call  assume  ensure  cover
+when  unless  not  true  false  det  out  call  assume  ensure  cover  law
 ```
+
+`law` starts a [law](Traits.md#laws) only as a member of a trait, so
+elsewhere it is a name like any other.
 
 `unless` is a keyword of Lean's too, so it cannot be declared.
 
