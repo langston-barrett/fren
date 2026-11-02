@@ -17,8 +17,8 @@ fragment is decidable does not mean that the solver decides every query
 in it quickly, or at all: see [In practice](#in-practice) for where it
 does and where it does not. An `Inconclusive` verdict then means that the
 solver ran out of time, and the [message](../View.md#check-results) says
-to raise the time limit. With recursive functions, it may instead mean that evaluation refuted
-a model allowed by their contracts (`F0450`); strengthen those contracts
+to raise the time limit. With recursive functions, it may instead mean that evaluation did not
+confirm a model allowed by their contracts (`F0450`); strengthen those contracts
 rather than raising the time limit. In a procedure that opts out, it may also mean
 that the solver gave up, and the message says that instead.
 
@@ -255,7 +255,8 @@ only. This is finite and adds no quantifiers, even for constant arguments,
 so recursion never raises `undecidable`. Completeness is modulo this
 opacity: facts requiring more of a recursive body than its one-step
 equations and contract are not promised. Strengthen its contract to prove
-such facts. Models refuted by evaluation are Inconclusive (`F0450`).
+such facts. Models that evaluation does not confirm are Inconclusive
+(`F0450`).
 
 ## In practice
 

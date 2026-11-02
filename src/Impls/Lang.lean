@@ -3527,12 +3527,64 @@ impl recursive_post_result: lang::recursive_post_result for (r : lang.RecPost) (
   intro r failed _
   cases r <;> cases failed <;> simp [fren_spec, Fren.Core.recursivePostResult]
 
-impl recursive_counterexample: lang::recursive_counterexample for (recursive confirms : Bool) {
+impl recursive_counterexample: lang::recursive_counterexample for (recursive confirms facts : Bool) {
   applies_recursive? := recursive,
   evaluation_confirms? := confirms,
-  report_counterexample? := Fren.Core.recursiveCounterexample recursive confirms,
+  facts_recursive? := facts,
+  report_counterexample? := Fren.Core.recursiveCounterexample recursive confirms facts,
 } by
-  intro recursive confirms _
-  cases recursive <;> cases confirms <;> simp [fren_spec, Fren.Core.recursiveCounterexample]
+  intro recursive confirms facts _
+  cases recursive <;> cases confirms <;> cases facts <;> simp [fren_spec, Fren.Core.recursiveCounterexample]
+
+/-- The facts of the applications `brought`, of the pairs `rel` of each
+application and a formula of its facts, in order. -/
+def factsOfApps (rel : List (Nat × Nat)) (brought : List Nat) : List Nat :=
+  brought.flatMap fun a => (rel.filter (·.1 == a)).map (·.2)
+
+theorem mem_image_factsOfApps (rel : List (Nat × Nat)) (brought : List Nat) (x : Int) :
+    x ∈ Fren.FinSet.image (Fren.FinSet.ofList (rel.map fun (p : Nat × Nat) => ((p.1 : Int), (p.2 : Int))))
+      (Fren.FinSet.ofList (brought.map fun (a : Nat) => (a : Int))) ↔
+    ∃ b ∈ factsOfApps rel brought, (b : Int) = x := by
+  simp only [Fren.FinSet.mem_image, Fren.FinSet.mem_ofList, List.mem_map, factsOfApps, List.mem_flatMap,
+    List.mem_filter, beq_iff_eq]
+  constructor
+  · rintro ⟨_, ⟨a, ha, rfl⟩, q, hq, he⟩
+    simp only [Prod.mk.injEq] at he
+    exact ⟨q.2, ⟨a, ha, q, ⟨hq, Int.ofNat_inj.mp he.1⟩, rfl⟩, he.2⟩
+  · rintro ⟨b, ⟨a, ha, q, ⟨hq, hqa⟩, rfl⟩, rfl⟩
+    exact ⟨a, ⟨a, ha, rfl⟩, q, hq, by rw [hqa]⟩
+
+/-- The positions of `fs`, formulas named by nothing, as `Int`s. -/
+def positions (fs : Array (Lean.Name × Nat)) : Fren.FinSet Int :=
+  Fren.FinSet.ofList (fs.toList.map fun (p : Lean.Name × Nat) => (p.2 : Int))
+
+/-- `ns` as formulas named by nothing. -/
+def unnamed (ns : List Nat) : Array (Lean.Name × Nat) := ns.toArray.map ((Lean.Name.anonymous, ·))
+
+theorem mem_positions_unnamed (ns : List Nat) (x : Int) :
+    x ∈ Fren.FinSet.ofList ((unnamed ns).toList.map fun (p : Lean.Name × Nat) => (p.2 : Int)) ↔
+      ∃ b ∈ ns, (b : Int) = x := by
+  simp [unnamed]
+
+-- Both front ends' query builders reflect the facts of their variables and
+-- of the applications that a query has, and then its hypotheses
+-- (`recursionFormulas`), over any variables' facts, hypotheses, facts of
+-- any applications, and applications that it has.
+impl recursion_formulas: lang::recursion_formulas for (vars hyps : List Nat) (rel : List (Nat × Nat))
+    (brought : List Nat) {
+  variables := Fren.FinSet.ofList (vars.map fun (a : Nat) => (a : Int)),
+  written := Fren.FinSet.ofList (hyps.map fun (a : Nat) => (a : Int)),
+  facts := Fren.FinSet.ofList (rel.map fun (p : Nat × Nat) => ((p.1 : Int), (p.2 : Int))),
+  brought := Fren.FinSet.ofList (brought.map fun (a : Nat) => (a : Int)),
+  reflected := positions (Fren.Core.recursionFormulas (unnamed vars) (unnamed (factsOfApps rel brought))
+    (unnamed hyps)),
+} by
+  intro vars hyps rel brought _
+  refine ⟨?_, trivial⟩
+  apply Fren.FinSet.ext
+  intro x
+  simp only [positions, Fren.Core.recursionFormulas, Array.toList_append,
+    List.map_append, List.mem_append, Fren.FinSet.mem_ofList, Fren.FinSet.mem_union, mem_image_factsOfApps]
+  simp [unnamed, or_assoc]
 
 end Fren.Impls

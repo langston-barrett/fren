@@ -119,8 +119,8 @@ def unreached (t : Tally) (found : Nat) : Unreached :=
 ahead: with one unit too few, `deep` has no value, in each of `interps`,
 and a test of it neither refutes nor reaches it, so testing leaves it
 inconclusive. With one unit too few, `throughBinders`, `positive` and
-`downward` have no value either. It panics, so it runs in a process of its own, without
-`LEAN_ABORT_ON_PANIC` (`panicGuard` in `FrenTestMain`). -/
+`downward` have no value either. It panics, so it runs in a process of
+its own, without `LEAN_ABORT_ON_PANIC` (`panicGuard` in `FrenTestMain`). -/
 def tinyFuel : IO (Array String) := do
   let fuel := (← IO.monoMsNow) % 1 + 3
   let mut failures := #[]

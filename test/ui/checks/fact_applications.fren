@@ -1,0 +1,157 @@
+-- The applications in the facts that a query's applications bring bring
+-- their own facts too, transitively (`check::fact_applications`, #619):
+-- `b(s) = a(s) + 1`, of `b(s)`, brings `a(s) >= 0`.
+set_option fren.lint.dead_code "allow"
+
+pub type S
+
+pub fn a(s: S): (r: Int) { ensure e: r >= 0 }
+pub fn b(s: S): (r: Int) { ensure e: r = a(s) + 1 }
+
+expect pos(s: S) { expect c: b(s) > 0 }
+
+-- Without `a`'s facts, `b(s)` could be 0.
+proc unreachable(s: S) {
+    cover zero: b(s) <= 0   --~ error: cover goal `unreachable::zero` cannot be met: no behaviour satisfies it
+}
+
+-- Two levels down.
+pub fn c(s: S): (r: Int) { ensure e: r = 2 * b(s) }
+
+expect twice(s: S) { expect c: c(s) >= 2 }
+
+-- An application nested in another's arguments, in a fact.
+pub fn t(S): S
+pub fn d(s: S): (r: Int) { ensure e: r = b(t(s)) - 1 }
+
+expect nested(s: S) { expect c: d(s) >= 0 }
+
+-- A function's own applications still bring nothing to its own clauses:
+-- `a(s)`'s facts make row 1 hold everywhere, so rows 2 and 3 are never the
+-- first, but without the clause, which gives `r > 0` there, `r < 0` may
+-- hold too.
+pub fn own(s: S): (r: Int) {
+    ensure e: table {
+        a(s) >= 0 => r > 0,
+        r < 0 => true,   --~ error: rows 1 and 2 of a table in `own::e` may both hold
+        --~^ error: row 2 of a table in `own::e` is never the first that holds
+        _ => true,   --~ error: row 3 of a table in `own::e` is never the first that holds
+    }
+}
+
+-- A recursive function's postcondition is brought too, where a fact
+-- applies it.
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn total(l: L): (r: Int) {
+    out r := match l {
+        L::Nil => 0,
+        L::Cons(n, rest) => n.abs + total(rest),
+    }
+    ensure e: r >= 0
+}
+
+pub fn first(l: L, n: Int): (r: Int) { ensure e: r = total(L::Cons(n, l)) }
+
+expect recursive(l: L, n: Int) { expect c: first(l, n) >= 0 }
+
+-- And the one-step equation of a recursive application that a fact brings
+-- (`lang::recursion_formulas`): `total(L::Cons(1, l))` is at least 1.
+pub fn one(l: L): (r: Int) { ensure e: r = total(L::Cons(1, l)) }
+
+expect one_step(l: L) { expect c: one(l) >= 1 }
+
+proc one_low(l: L) {
+    cover low: one(l) < 1   --~ error: cover goal `one_low::low` cannot be met: no behaviour satisfies it
+}
+
+-- A model of a fact that applies a recursive function is never confirmed:
+-- only the opaque `total` allows `three(l) < 6`, so the cover goal is not
+-- met, as it is not where its formula applies `total` itself.
+pub fn three(l: L): (r: Int) { ensure e: r = total(L::Cons(1, L::Cons(2, L::Cons(3, l)))) }
+
+proc three_low(l: L) {
+    cover low: three(l) < 6   --~ warning: could not decide whether `three_low::low` can be met
+}
+
+proc three_low_written(l: L) {
+    cover low: total(L::Cons(1, L::Cons(2, L::Cons(3, l)))) < 6   --~ warning: could not decide whether `three_low_written::low` can be met
+}
+
+-- A parameter that a contract does not mention, beside an application
+-- whose facts the realizability check has: the query declares what those
+-- facts mention.
+pub fn h(n: Int): (r: Int) { ensure e: r >= 0 }
+pub fn g(n: Int, b?): (r: Int) { ensure e: r >= h(n) }
+
+-- An instance of a generic function that only a fact applies, two levels
+-- down, brings its facts too: the Lean front end declares the instances
+-- that the clauses of the functions it uses apply.
+pub fn gen_bound<T>(x: T, y: T, s: S): (r: Int) {
+    ensure e: r >= (if x = y then a(s) else a(s) + 1)
+}
+pub fn via_gen(s: S, b?): (r: Int) { ensure e: r = gen_bound(b?, true, s) + 1 }
+pub fn via_via(s: S, b?): (r: Int) { ensure e: r = via_gen(s, b?) }
+
+expect generic(s: S) { expect c: via_via(s, true) >= 1 }
+
+proc generic_low(s: S) {
+    cover low: via_via(s, true) < 1   --~ error: cover goal `generic_low::low` cannot be met: no behaviour satisfies it
+}
+
+-- The facts of a variable's subset type are reflected too
+-- (`lang::recursion_formulas`): `x = L::Nil` cannot hold of a `Big`. A
+-- model is not yet confirmed against them (#634). The second row keeps the
+-- type's inhabitation check from asking for a witness that only the
+-- opaque `total` gives (#493).
+pub type Big = l: L where invariant: total(l) >= 5 or l = L::Cons(5, L::Nil)
+
+proc big_nil(x: Big) {
+    cover nil: x = L::Nil   --~ error: cover goal `big_nil::nil` cannot be met: no behaviour satisfies it
+}
+
+-- An application whose fact applies a recursive function, beside its
+-- argument's value: never confirmed.
+pub fn plus_one(l: L): (r: Int) { ensure e: r = total(L::Cons(1, l)) }
+
+proc plus_small(x: L) {
+    cover small: plus_one(x) >= 5 and x = L::Cons(1, L::Cons(1, L::Nil))   --~ warning: could not decide whether `plus_small::small` can be met
+}
+
+-- Variables of a subset type whose invariant applies a recursive function:
+-- `po` is realizable, `pi::y` deterministic and `q::g` not redundant, in
+-- both front ends. The second row keeps the type's inhabitation check from
+-- asking for a witness that only the opaque `total` gives (#493).
+pub type BigI = n: Int where invariant: total(L::Cons(n, L::Nil)) >= 5 or n = 5
+
+set_option fren.lint.unused_variables "allow" in
+proc po(): (y: BigI) {}
+
+proc pi(x: BigI): (det y: Int) { out y := x + 1 }
+
+pub proc q(x: Int): (y: BigI) {   --~ warning: could not decide whether `q` is realizable
+    ensure g: y >= x
+}
+
+-- Covers over variables of a subset type whose invariant applies a
+-- recursive function: each verdict is right, but no front end checks the
+-- witness against the type, except the binary for `fc_call`, whose call
+-- hypothesis has its output's type, so the front ends agree there only as
+-- the solver's model is a real one (#634).
+pub type FcBig = m: Int where invariant: total(L::Cons(m, L::Nil)) >= 2 or m = 2
+
+set_option fren.lint.unused_variables "allow" in
+proc fc_out(): (y: FcBig) {}
+
+proc fc_call(u: Int) {
+    call w := fc_out()
+    cover v: w.y = 1 + u   --~ info: cover goal `fc_call::v` is met
+}
+
+proc fc_in(x: FcBig, u: Int) {
+    cover v: x = 1 + u   --~ info: cover goal `fc_in::v` is met
+}
+
+proc fc_in2(x: FcBig) {
+    cover v: x > 0   --~ info: cover goal `fc_in2::v` is met
+}
