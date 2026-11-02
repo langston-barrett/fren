@@ -335,7 +335,8 @@ Recursive defined functions reuse these application facts and argument
 obligations. Their contracts are checked against their bodies by Hoare
 induction, as [Recursion](Lang/Recursion.md#contracts) specifies, rather
 than by contract realizability. Their counterexamples require confirmation
-by evaluation; a refuted model yields Inconclusive (`F0450`).
+by evaluation; a model that evaluation refutes, or cannot evaluate,
+yields Inconclusive (`F0450`).
 
 An uninterpreted function's [postconditions](Lang/Items.md#contracts)
 are assumed at each of its applications, so if they cannot hold together,
