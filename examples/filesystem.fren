@@ -1,0 +1,479 @@
+-- A file system, specified abstractly and refined by a tree.
+--
+-- Inspired by "Model of a generic file system", Alloy's example model
+-- `file_system.als` (AlloyTools, MIT licence:
+-- https://github.com/AlloyTools/org.alloytools.alloy/blob/master/org.alloytools.alloy.extra/extra/models/examples/systems/file_system.als),
+-- and chapter 4 of Daniel Jackson's "Software Abstractions". Alloy states
+-- the model over objects and a parent relation, and checks it within a
+-- scope; here it is stated over paths, which is equivalent for trees and
+-- keeps every check decidable, for file systems of any size.
+--
+-- The spec is the term algebra of the operations: a file system is how it
+-- was built, and `entry` says what is at each path, with one equation for
+-- each operation. The equations are the laws; `valid?` is each
+-- operation's precondition. Nothing in the spec chooses a representation.
+--
+-- The model is a tree of listings. Each of its operations is shown to
+-- refine the spec's: where the tree shows what a file system does, it
+-- shows what the operation makes of it. A deliberately weakened `mv`,
+-- which forgets that a directory cannot move below itself, is refuted with
+-- a counterexample, as Alloy's model refutes its weakened `OneParent`; the
+-- comment after that check is the error that the tests expect, so `fren
+-- check` on this file reports one error, and passes everything else.
+--
+-- The solver decides every check. A recursive function's contract is
+-- proved by induction: the solver checks one step of the body, assuming
+-- the contract at the body's own recursive applications. A *lemma* below
+-- is a function whose value is `true` and whose postcondition is its
+-- statement; its body applies it where the induction needs it, and the
+-- other lemmas that the step needs, whose postconditions it then has.
+-- Each theorem about all histories is stated by its inductive steps, one
+-- for each operation, each assuming the hypothesis at the paths that the
+-- operation reads.
+--
+-- The tests check this file with the `fren` command only. The Lean front
+-- end reaches `simp`'s maximum recursion depth, or its heartbeat limit, on
+-- most of the lemmas, which apply recursive functions with contracts to
+-- applications of others (#417), where the `fren` command passes them all.
+--@ only: cli
+mod filesystem
+
+pub type Name := String
+pub type Bytes := String
+
+-- # Paths
+--
+-- A path is a list of names from the root: `/usr/bin` is
+-- `Sub("usr", Sub("bin", Root))`. Ancestry is prefix, so no path is its
+-- own strict ancestor: the acyclicity that Alloy states as a fact holds by
+-- construction, as does each directory having one parent.
+pub enum Path { Root, Sub(Name, Path) }
+use self::Path::{Root, Sub}
+
+-- `q` is `p` or below it: `p` is a prefix of `q`.
+pub fn under?(q: Path, p: Path): (u?) {
+    out u? := match p {
+        Root => true,
+        Sub(n, rest) => match q {
+            Root => false,
+            Sub(m, more) => m = n and under?(more, rest),
+        },
+    }
+    ensure everything_under_root: when p = Root, u?
+    ensure root_under_root_only: when q = Root, u? iff p = Root
+    ensure reflexive: when q = p, u?
+}
+
+-- `a` followed by `b`.
+pub fn append(a: Path, b: Path): (r: Path) {
+    out r := match a {
+        Root => b,
+        Sub(n, rest) => Sub(n, append(rest, b)),
+    }
+    ensure onto_root: when a = Root, r = b
+    ensure not_root: when a != Root or b != Root, r != Root
+}
+
+-- The path without its last name. The root is its own parent.
+pub fn parent(p: Path): (r: Path) {
+    out r := match p {
+        Root => Root,
+        Sub(n, rest) => match rest {
+            Root => Root,
+            Sub(_, _) => Sub(n, parent(rest)),
+        },
+    }
+    ensure above: when p != Root, not under?(r, p)
+}
+
+-- `q` with its prefix `p` taken off.
+pub fn strip(q: Path, p: Path): (r: Path) {
+    out r := match p {
+        Root => q,
+        Sub(_, rest) => match q {
+            Root => Root,
+            Sub(_, more) => strip(more, rest),
+        },
+    }
+    ensure off_root: when p = Root, r = q
+    ensure put_back: when under?(q, p), append(p, r) = q
+    ensure nothing_left: when under?(q, p), r = Root iff q = p
+}
+
+-- Lemma: a path whose parent is below `r` is below `r` too.
+pub fn parent_under?(p: Path, r: Path): (proved?) {
+    out proved? := match p {
+        Root => true,
+        Sub(_, pr) => match r {
+            Root => true,
+            Sub(_, rr) => parent_under?(pr, rr),
+        },
+    }
+    ensure law: proved? and (when p != Root and under?(parent(p), r), under?(p, r))
+}
+
+-- Lemma: a path strictly below `d` has its parent below `d`.
+pub fn parent_stays_under?(q: Path, d: Path): (proved?) {
+    out proved? := match q {
+        Root => true,
+        Sub(_, qr) => match d {
+            Root => true,
+            Sub(_, dr) => parent_stays_under?(qr, dr),
+        },
+    }
+    ensure law: proved? and (when under?(q, d) and q != d, under?(parent(q), d))
+}
+
+-- Lemma: taking the parent commutes with putting a prefix in front.
+pub fn parent_append?(a: Path, s: Path): (proved?) {
+    out proved? := match a {
+        Root => true,
+        Sub(_, ar) => parent_append?(ar, s),
+    }
+    ensure law: proved? and (when s != Root, parent(append(a, s)) = append(a, parent(s)))
+}
+
+-- Lemma: taking the parent commutes with taking a prefix off.
+pub fn parent_strip?(q: Path, d: Path): (proved?) {
+    out proved? := match q {
+        Root => true,
+        Sub(_, qr) => match d {
+            Root => true,
+            Sub(_, dr) => parent_strip?(qr, dr),
+        },
+    }
+    ensure law: proved? and (when under?(q, d) and q != d, strip(parent(q), d) = parent(strip(q, d)))
+}
+
+-- # The spec
+
+-- What is at a path.
+pub enum Entry { Missing, Dir, File(Bytes) }
+
+-- A file system is the history of the operations that made it.
+pub enum FileSystem {
+    Empty,
+    Mkdir(FileSystem, Path),
+    Write(FileSystem, Path, Bytes),
+    Rm(FileSystem, Path),
+    Mv(FileSystem, Path, Path),
+}
+
+-- The laws: what is at `q` after each operation, from what was there
+-- before. `rm(p)` removes exactly the paths below `p`; `mv(src, dst)`
+-- moves exactly the paths below `src` to below `dst`.
+pub fn entry(fs: FileSystem, q: Path): Entry := match fs {
+    FileSystem::Empty => if q = Root then Entry::Dir else Entry::Missing,
+    FileSystem::Mkdir(before, p) => if q = p then Entry::Dir else entry(before, q),
+    FileSystem::Write(before, p, data) => if q = p then Entry::File(data) else entry(before, q),
+    FileSystem::Rm(before, p) => if under?(q, p) then Entry::Missing else entry(before, q),
+    FileSystem::Mv(before, src, dst) => if under?(q, dst) then entry(before, append(src, strip(q, dst)))
+        else if under?(q, src) then Entry::Missing else entry(before, q),
+}
+
+-- The preconditions: `mkdir` and `write` need their parent to be a
+-- directory; `rm` and `mv` need what they act on to exist; `mv` needs
+-- `dst` to be new, its parent a directory, and not below `src`.
+pub fn valid?(fs: FileSystem) := match fs {
+    FileSystem::Empty => true,
+    FileSystem::Mkdir(before, p) => valid?(before) and p != Root and entry(before, parent(p)) = Entry::Dir
+        and entry(before, p) = Entry::Missing,
+    FileSystem::Write(before, p, _) => valid?(before) and p != Root and entry(before, parent(p)) = Entry::Dir
+        and entry(before, p) != Entry::Dir,
+    FileSystem::Rm(before, p) => valid?(before) and p != Root and entry(before, p) != Entry::Missing,
+    FileSystem::Mv(before, src, dst) => valid?(before) and src != Root and entry(before, src) != Entry::Missing
+        and dst != Root and entry(before, parent(dst)) = Entry::Dir and entry(before, dst) = Entry::Missing
+        and not under?(dst, src),
+}
+
+-- What exists, but the root, has a directory as its parent: Alloy's facts
+-- that every object is reachable from the root and has one parent.
+pub fn rooted_at?(fs: FileSystem, q: Path) := when q != Root and entry(fs, q) != Entry::Missing,
+    entry(fs, parent(q)) = Entry::Dir
+
+-- Every valid file system is rooted at every path. The empty one is, and
+-- each operation keeps it so: by induction over the history, each step
+-- assuming it at the paths that the operation reads.
+pub fn empty_rooted?(q: Path): (proved?) {
+    out proved? := true
+    ensure law: proved? and rooted_at?(FileSystem::Empty, q)
+}
+
+pub fn mkdir_keeps_rooted?(before: FileSystem, p: Path, q: Path): (proved?) {
+    assume valid: valid?(FileSystem::Mkdir(before, p))
+    assume rooted: rooted_at?(before, q)
+    out proved? := true
+    ensure law: proved? and rooted_at?(FileSystem::Mkdir(before, p), q)
+}
+
+pub fn write_keeps_rooted?(before: FileSystem, p: Path, data: Bytes, q: Path): (proved?) {
+    assume valid: valid?(FileSystem::Write(before, p, data))
+    assume rooted: rooted_at?(before, q)
+    out proved? := true
+    ensure law: proved? and rooted_at?(FileSystem::Write(before, p, data), q)
+}
+
+pub fn rm_keeps_rooted?(before: FileSystem, p: Path, q: Path): (proved?) {
+    assume valid: valid?(FileSystem::Rm(before, p))
+    assume rooted: rooted_at?(before, q)
+    out proved? := parent_under?(q, p)
+    ensure law: proved? and rooted_at?(FileSystem::Rm(before, p), q)
+}
+
+pub fn mv_keeps_rooted?(before: FileSystem, src: Path, dst: Path, q: Path): (proved?) {
+    assume valid: valid?(FileSystem::Mv(before, src, dst))
+    assume rooted: rooted_at?(before, q)
+    assume rooted_moved: rooted_at?(before, append(src, strip(q, dst)))
+    out proved? := parent_under?(q, src) and parent_under?(q, dst) and parent_under?(dst, src)
+        and parent_stays_under?(q, dst) and parent_strip?(q, dst) and parent_append?(src, strip(q, dst))
+    ensure law: proved? and rooted_at?(FileSystem::Mv(before, src, dst), q)
+}
+
+-- # The model
+--
+-- A directory is its listing: its entries in order, each a file or a
+-- directory with a name. Where a name has several entries, the first is
+-- the one that counts; `rm` removes them all.
+pub enum Listing { Empty, File(Name, Bytes, Listing), Dir(Name, Listing, Listing) }
+
+-- What is at a path in a tree: nothing, a file, or a directory.
+pub enum Node { Gone, File(Bytes), Dir(Listing) }
+
+-- The node at `q` in the directory `l`.
+pub fn node(l: Listing, q: Path): (x: Node) {
+    out x := match l {
+        Listing::Empty => if q = Root then Node::Dir(Listing::Empty) else Node::Gone,
+        Listing::File(m, data, more) => match q {
+            Root => Node::Dir(l),
+            Sub(n, rest) => if m = n then (if rest = Root then Node::File(data) else Node::Gone) else node(more, q),
+        },
+        Listing::Dir(m, kids, more) => match q {
+            Root => Node::Dir(l),
+            Sub(n, rest) => if m = n then node(kids, rest) else node(more, q),
+        },
+    }
+    ensure itself: when q = Root, x = Node::Dir(l)
+}
+
+pub fn kind(x: Node): Entry := match x {
+    Node::Gone => Entry::Missing,
+    Node::File(data) => Entry::File(data),
+    Node::Dir(_) => Entry::Dir,
+}
+
+-- The abstraction function: what the tree shows at each path.
+pub fn view(l: Listing, q: Path): Entry := kind(node(l, q))
+
+-- The node at `r` below the node `x`.
+pub fn below(x: Node, r: Path): Node := match x {
+    Node::Gone => Node::Gone,
+    Node::File(_) => if r = Root then x else Node::Gone,
+    Node::Dir(kids) => node(kids, r),
+}
+
+-- A listing of the one entry `n`, for `x`.
+pub fn alone(n: Name, x: Node): Listing := match x {
+    Node::Gone => Listing::Empty,
+    Node::File(data) => Listing::File(n, data, Listing::Empty),
+    Node::Dir(kids) => Listing::Dir(n, kids, Listing::Empty),
+}
+
+-- The tree with `x` put at `p`, where `p`'s parent is a directory and `p`
+-- is new; elsewhere unchanged.
+pub fn graft(l: Listing, p: Path, x: Node): Listing := match l {
+    Listing::Empty => match p {
+        Root => l,
+        Sub(n, rest) => if rest = Root then alone(n, x) else l,
+    },
+    Listing::File(m, data, more) => match p {
+        Root => l,
+        Sub(n, _) => if m = n then l else Listing::File(m, data, graft(more, p, x)),
+    },
+    Listing::Dir(m, kids, more) => match p {
+        Root => l,
+        Sub(n, rest) => if m = n then Listing::Dir(m, graft(kids, rest, x), more)
+            else Listing::Dir(m, kids, graft(more, p, x)),
+    },
+}
+
+-- The tree without `p` and what is below it.
+pub fn rm(l: Listing, p: Path): Listing := match l {
+    Listing::Empty => Listing::Empty,
+    Listing::File(m, data, more) => match p {
+        Root => l,
+        Sub(n, rest) => if m = n and rest = Root then rm(more, p) else Listing::File(m, data, rm(more, p)),
+    },
+    Listing::Dir(m, kids, more) => match p {
+        Root => l,
+        Sub(n, rest) => if m = n then (if rest = Root then rm(more, p) else Listing::Dir(m, rm(kids, rest), more))
+            else Listing::Dir(m, kids, rm(more, p)),
+    },
+}
+
+pub fn mkdir(l: Listing, p: Path): Listing := graft(l, p, Node::Dir(Listing::Empty))
+pub fn write(l: Listing, p: Path, data: Bytes): Listing := graft(rm(l, p), p, Node::File(data))
+pub fn mv(l: Listing, src: Path, dst: Path): Listing := graft(rm(l, src), dst, node(l, src))
+
+-- ## The tree's laws
+
+-- Lemma: what is below `p` is what is below the node at `p`.
+pub fn subtree_law?(l: Listing, p: Path, r: Path): (proved?) {
+    out proved? := match l {
+        Listing::Empty => true,
+        Listing::File(_, _, more) => subtree_law?(more, p, r),
+        Listing::Dir(_, kids, more) => subtree_law?(more, p, r) and match p {
+            Root => true,
+            Sub(_, rest) => subtree_law?(kids, rest, r),
+        },
+    }
+    ensure law: proved? and kind(below(node(l, p), r)) = view(l, append(p, r))
+}
+
+-- Lemma: `rm` removes exactly what is below `p`.
+pub fn rm_law?(l: Listing, p: Path, q: Path): (proved?) {
+    assume not_root: p != Root
+    out proved? := match l {
+        Listing::Empty => true,
+        Listing::File(_, _, more) => rm_law?(more, p, q),
+        Listing::Dir(_, kids, more) => rm_law?(more, p, q) and match p {
+            Root => true,
+            Sub(_, rest) => match q {
+                Root => true,
+                Sub(_, qr) => rest = Root or rm_law?(kids, rest, qr),
+            },
+        },
+    }
+    ensure law: proved? and view(rm(l, p), q) = (if under?(q, p) then Entry::Missing else view(l, q))
+}
+
+-- Lemma: `graft` puts `x` at `p`, and changes nothing else.
+pub fn graft_law?(l: Listing, p: Path, x: Node, q: Path): (proved?) {
+    assume not_root: p != Root
+    assume parent_dir: view(l, parent(p)) = Entry::Dir
+    assume absent: view(l, p) = Entry::Missing
+    out proved? := match l {
+        Listing::Empty => true,
+        Listing::File(m, _, more) => match p {
+            Root => true,
+            Sub(n, _) => m = n or graft_law?(more, p, x, q),
+        },
+        Listing::Dir(m, kids, more) => match p {
+            Root => true,
+            Sub(n, rest) => if m != n then graft_law?(more, p, x, q) else rest = Root or match q {
+                Root => true,
+                Sub(_, qr) => graft_law?(kids, rest, x, qr),
+            },
+        },
+    }
+    ensure law: proved? and view(graft(l, p, x), q) = (if under?(q, p) then kind(below(x, strip(q, p))) else view(l, q))
+}
+
+-- Lemma: the tree's `mkdir` makes `p` and changes nothing else.
+pub fn mkdir_law?(l: Listing, p: Path, q: Path): (proved?) {
+    assume not_root: p != Root
+    assume parent_dir: view(l, parent(p)) = Entry::Dir
+    assume absent: view(l, p) = Entry::Missing
+    out proved? := graft_law?(l, p, Node::Dir(Listing::Empty), q) and subtree_law?(l, p, strip(q, p))
+    ensure law: proved? and view(mkdir(l, p), q) = (if q = p then Entry::Dir else view(l, q))
+}
+
+-- Lemma: the tree's `write` puts `data` at `p` and changes nothing else.
+pub fn write_law?(l: Listing, p: Path, data: Bytes, q: Path): (proved?) {
+    assume not_root: p != Root
+    assume parent_dir: view(l, parent(p)) = Entry::Dir
+    assume not_dir: view(l, p) != Entry::Dir
+    out proved? := rm_law?(l, p, parent(p)) and rm_law?(l, p, p) and rm_law?(l, p, q)
+        and graft_law?(rm(l, p), p, Node::File(data), q) and subtree_law?(l, p, strip(q, p))
+    ensure law: proved? and view(write(l, p, data), q) = (if q = p then Entry::File(data) else view(l, q))
+}
+
+-- Lemma: the tree's `mv` moves what is below `src` to below `dst`.
+pub fn mv_law?(l: Listing, src: Path, dst: Path, q: Path): (proved?) {
+    assume src_not_root: src != Root
+    assume dst_not_root: dst != Root
+    assume parent_dir: view(l, parent(dst)) = Entry::Dir
+    assume absent: view(l, dst) = Entry::Missing
+    assume not_into_itself: not under?(dst, src)
+    out proved? := parent_under?(dst, src) and rm_law?(l, src, parent(dst)) and rm_law?(l, src, dst)
+        and rm_law?(l, src, q) and graft_law?(rm(l, src), dst, node(l, src), q)
+        and subtree_law?(l, src, strip(q, dst))
+    ensure law: proved? and view(mv(l, src, dst), q) = (if under?(q, dst) then view(l, append(src, strip(q, dst)))
+        else if under?(q, src) then Entry::Missing else view(l, q))
+}
+
+-- # The refinement
+--
+-- The tree `l` agrees with the file system `fs` at `q`.
+pub fn agrees?(l: Listing, fs: FileSystem, q: Path) := view(l, q) = entry(fs, q)
+
+-- The empty tree is the empty file system, and each of the tree's
+-- operations refines the spec's: where the tree agrees with `before` at the
+-- paths that the operation reads, it agrees with what the operation makes
+-- of `before` at `q`. By induction over the history, the tree built by any
+-- valid history shows what the spec says, at every path.
+pub fn empty_refines?(q: Path): (proved?) {
+    out proved? := true
+    ensure law: proved? and agrees?(Listing::Empty, FileSystem::Empty, q)
+}
+
+pub fn mkdir_refines?(l: Listing, before: FileSystem, p: Path, q: Path): (proved?) {
+    assume valid: valid?(FileSystem::Mkdir(before, p))
+    assume here: agrees?(l, before, q)
+    assume at_parent: agrees?(l, before, parent(p))
+    assume at_p: agrees?(l, before, p)
+    out proved? := mkdir_law?(l, p, q)
+    ensure law: proved? and agrees?(mkdir(l, p), FileSystem::Mkdir(before, p), q)
+}
+
+pub fn write_refines?(l: Listing, before: FileSystem, p: Path, data: Bytes, q: Path): (proved?) {
+    assume valid: valid?(FileSystem::Write(before, p, data))
+    assume here: agrees?(l, before, q)
+    assume at_parent: agrees?(l, before, parent(p))
+    assume at_p: agrees?(l, before, p)
+    out proved? := write_law?(l, p, data, q)
+    ensure law: proved? and agrees?(write(l, p, data), FileSystem::Write(before, p, data), q)
+}
+
+pub fn rm_refines?(l: Listing, before: FileSystem, p: Path, q: Path): (proved?) {
+    assume valid: valid?(FileSystem::Rm(before, p))
+    assume here: agrees?(l, before, q)
+    out proved? := rm_law?(l, p, q)
+    ensure law: proved? and agrees?(rm(l, p), FileSystem::Rm(before, p), q)
+}
+
+pub fn mv_refines?(l: Listing, before: FileSystem, src: Path, dst: Path, q: Path): (proved?) {
+    assume valid: valid?(FileSystem::Mv(before, src, dst))
+    assume here: agrees?(l, before, q)
+    assume at_parent: agrees?(l, before, parent(dst))
+    assume at_dst: agrees?(l, before, dst)
+    assume moved: agrees?(l, before, append(src, strip(q, dst)))
+    out proved? := mv_law?(l, src, dst, q)
+    ensure law: proved? and agrees?(mv(l, src, dst), FileSystem::Mv(before, src, dst), q)
+}
+
+-- ## A bug the refinement finds
+--
+-- Suppose `valid?` forgot that `mv` may not move a directory below
+-- itself, as Alloy's weakened `OneParent` forgets that a directory is in
+-- one entry. Then `mv` no longer refines `Mv`. Take the file system with
+-- one directory, `/a`, and move it to `/b/c` under the weakened
+-- precondition: Fren finds that `b` may be `a`. The spec's equation then
+-- puts the directory at `/a/c`, below itself, but the tree has nowhere to
+-- put it, and has lost it. The comment after the check is the
+-- counterexample that the tests expect: the names are the empty string.
+--
+-- The paths' shapes are fixed and their names left to the solver. With the
+-- history, the tree and the paths all free, as in `mv_refines?`, the
+-- solver's counterexample rests on recursive functions that it does not
+-- unfold, which evaluation cannot confirm, and the check is inconclusive.
+expect mv_into_itself(a: Name, b: Name, c: Name) {
+    let src: Path := Sub(a, Root)
+    let dst: Path := Sub(b, Sub(c, Root))
+    let before: FileSystem := FileSystem::Mkdir(FileSystem::Empty, src)
+    assume weakened: entry(before, parent(dst)) = Entry::Dir and entry(before, dst) = Entry::Missing
+    expect agrees: agrees?(  --~ error: counterexample: a = "", b = "", c = ""
+        mv(mkdir(Listing::Empty, src), src, dst),
+        FileSystem::Mv(before, src, dst),
+        dst
+    )
+}
