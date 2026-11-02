@@ -2420,9 +2420,21 @@ def membershipMsg (replacement : String) (test : Bool) : Msg :=
 after it, as for an arm after it (`Reqs/Lang/Patterns`). -/
 def matchesEvery (sigs : Sigs) (ty : PatTy) (p : Pat) : Bool := !useful sigs [ty] #[[p]] [.wild]
 
-/-- Whether `irrefutable_is` fires on `e is P`, from whether `P` matches
-every value of `e`'s type (`lint::irrefutable_is`). -/
-def irrefutableIs (matchesEvery : Bool) : Bool := matchesEvery
+/-- Whether the pattern `p` contains a binder. -/
+partial def Pat.bindsName : Pat → Bool
+  | .wild b => b
+  | .ctor _ args => args.any (·.bindsName)
+  | .or alts => alts.any (·.bindsName)
+  | _ => false
+
+/-- Whether `irrefutable_is` fires on `e is P`, from whether `P` binds a
+name, which what follows the test needs, and whether it matches every
+value of `e`'s type (`lint::irrefutable_is`). -/
+def irrefutableIs (binds matchesEvery : Bool) : Bool := !binds && matchesEvery
+
+/-- `irrefutable_is` on `e is p`, where `e` is a `ty`: both front ends call
+this, with the pattern (`lint::irrefutable_is`). -/
+def irrefutableIsAt (sigs : Sigs) (ty : PatTy) (p : Pat) : Bool := irrefutableIs p.bindsName (matchesEvery sigs ty p)
 
 /-- `e is P` that is always `true`, where `e` is a `ty`. -/
 def irrefutableIsMsg (ty : String) (wildcard : Bool) : Msg :=

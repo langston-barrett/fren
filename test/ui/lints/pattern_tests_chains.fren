@@ -3,6 +3,7 @@ set_option fren.lint.if_chain_match "warn"
 
 enum Shade { Light, Dark, Tinted(Int) }
 enum Single { Only }
+enum Wrap { W(Int) }
 
 proc tests(s: Shade, o: Single): (a?, b?, c?, d?, e?, f?, g?, h?, k: Int) {
     ensure r1: a? iff s is Shade::Light         --~ warning: this pattern test is an equation
@@ -23,12 +24,17 @@ proc tests(s: Shade, o: Single): (a?, b?, c?, d?, e?, f?, g?, h?, k: Int) {
     --~^^ warning: this pattern test is an equation
 }
 
-proc binders(s: Shade): (a?) {
+proc binders(s: Shade, n: Int, w: Wrap): (a?, b: Int, c: Int) {
     -- A pattern that binds a name is left as it is.
     ensure r1: a? iff match s {
         Shade::Tinted(r) => true,
         _ => false,
     }
+    -- A binder matches every value, but `irrefutable_is` leaves a test that
+    -- binds a name, which what follows needs.
+    ensure r2: b = if n is m then m else 0
+    -- A payload binder of an enumeration of one variant, likewise.
+    ensure r3: c = if w is Wrap::W(x) then x else 0
 }
 
 proc chains(i: Int, n: Int, m: Int, p?): (a?, b?, c?, d?, e?, f?, g?, h?, j?, k?, l?) {

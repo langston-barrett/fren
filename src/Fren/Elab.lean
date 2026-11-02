@@ -3724,9 +3724,8 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
       new := new.push (bn, term.raw, b.type, scrutinee, cx.binders.size)
     modifyLocal fun l => { l with bound := l.bound ++ new }
   if cx.noteIndexes then
-    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`):
-    -- not of a test that binds names, which it is needed for.
-    let irrefutable := bs.isEmpty && Core.irrefutableIs (Core.matchesEvery (← patSigs) pty q)
+    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
+    let irrefutable := Core.irrefutableIsAt (← patSigs) pty q
     if irrefutable then recordLint .irrefutableIs e (Core.irrefutableIsMsg (← patTypeName ty) (q matches .wild _))
     lintOrPatterns (orNode (topAlts e[2]).1 q)
     let texts := (topAlts e[2]).1.map exactText
