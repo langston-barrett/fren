@@ -589,6 +589,7 @@ def CheckResult.isOwnRealizability (r : CheckResult) (comp : Name) : Bool :=
 /-- How a message names a check of the item `comp`: by its kind, and the
 constraint or call that it is about (`F0663`, `F0664`). -/
 def CheckResult.premiseText (r : CheckResult) (comp : Name) : String :=
+  if r.isLawful then s!"the vacuity of `{showComp r.comp}` under the laws" else
   match r.kind, r.prop?, r.target? with
   | .realizable, _, _ => s!"the realizability of `{showComp r.comp}`"
   | .inst, some w, some (d, a) => s!"the assumption `{showComp (d ++ a)}` of call `{w}`"
@@ -847,10 +848,12 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
         here := here ++ [nExt + layout.size]
         layout := layout.push (some i, names[i]!)
     callNodes := callNodes.push here
-  -- Then the item's own realizability, which rests on them.
+  -- Then the item's own realizability, which rests on them, and, of an
+  -- expectation of a trait, its vacuity under the laws, which the checks
+  -- that rest on its realizability rest on too (`Reqs/Evidence#the-laws-of-a-trait`).
   let mut ownNodes : List Nat := []
   for i in [0:rs.size] do
-    if !placed[i]! && rs[i]!.1.isOwnRealizability comp then
+    if !placed[i]! && (rs[i]!.1.isOwnRealizability comp || (rs[i]!.1.isLawful && rs[i]!.1.comp == comp)) then
       placed := placed.set! i true
       ownNodes := ownNodes ++ [nExt + layout.size]
       layout := layout.push (some i, names[i]!)
@@ -895,7 +898,9 @@ def itemEvidence (comp : Name) (item : CheckedItem) (subsetInvariant : Bool) (ca
           -- The premises of instances, recursive functions and subset types
           -- are not applied yet (#522).
           | _ => []
-      nodes := nodes.push { own, settled := r.verdict == .pass, premises }
+      -- A vacuity under the laws that is not decided leaves the checks
+      -- that rest on it as they are, which say so (`F0665`, `lawPremise`).
+      nodes := nodes.push { own, settled := r.verdict == .pass || (r.isLawful && r.verdict == .inconclusive), premises }
   let finals := passEvidence nodes.toList
   -- For each node, a check that it rests on with each of its caveats in its
   -- own method: an external one's as it was kept, and otherwise its own, or

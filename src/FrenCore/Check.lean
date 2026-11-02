@@ -297,7 +297,7 @@ structure CheckResult where
   applies : Array Name := #[]
   /-- The trait whose laws its queries have among their hypotheses, whose
   consistency is not checked (`check::law_premise`). -/
-  restsOnLaws? : Option Name := none
+  restsOnLaws? : Option (Name × Bool) := none
   deriving Inhabited
 
 /-- The behaviour that a report shows of the procedure (`view::Shown`): a
@@ -1684,17 +1684,24 @@ def fromUnsat (k : CheckKind) (v : Verdict) : Bool :=
   | .inconclusive => false
 
 /-- Whether the verdict `v` of a check of kind `k`, of an item whose trait
-has laws (`hasLaws`), rests on the laws' consistency (`check::law_premise`):
-where its queries have the laws (`CheckKind.queryHasLaws`) and it comes
-from an `unsat` query, which laws that contradict each other would give. A
-verdict from a model does not: the model meets the laws. -/
-def lawPremise (k : CheckKind) (v : Verdict) (hasLaws : Bool) (lawful : Verdict := .inconclusive) : Bool :=
-  hasLaws && k.queryHasLaws && fromUnsat k v && !(lawful matches .pass)
+has laws (`hasLaws`), rests on the laws holding together with the item's
+assumptions and calls in a way that no check of the item settles
+(`check::law_premise`): where its queries have the laws
+(`CheckKind.queryHasLaws`), it comes from an `unsat` query, which laws that
+cannot hold would give, and the item's vacuity under the laws (`lawful`,
+`none` where the item has none) was not decided. Where that vacuity passed,
+nothing more is needed, and where it failed, the evidence of the item's
+checks says so (`Reqs/Evidence`). A verdict from a model rests on nothing
+more: the model meets the laws. -/
+def lawPremise (k : CheckKind) (v : Verdict) (hasLaws : Bool) (lawful : Option Verdict := none) : Bool :=
+  hasLaws && k.queryHasLaws && fromUnsat k v && (lawful matches none | some .inconclusive)
 
-/-- The vacuity of an item whose trait has laws (`check::lawful_assumptions`):
-whether its assumptions and calls can hold together with the laws, which
-the queries of its checks but realizability have. A model shows that they
-can, and then no verdict of the item rests on the laws' consistency. -/
+/-- The vacuity of an item whose trait has laws, under the laws
+(`r[trait.expect.lawful]`, `Reqs/Evidence#the-laws-of-a-trait`): whether
+its assumptions and calls can hold together with the laws, which the
+queries of its checks but realizability have. A model shows that they can.
+Where they cannot, it fails, and the item's checks rest on it as they rest
+on its realizability (`itemEvidence`). -/
 def checkLawful (c : Comp F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .vacuity, comp := c.path, prop? := none, verdict, detail, global := true }
@@ -1709,15 +1716,6 @@ def checkLawful (c : Comp F) : m CheckResult := do
 (`checkLawful`). -/
 def CheckResult.isLawful (r : CheckResult) : Bool := r.kind == .vacuity && r.prop?.isNone
 
-/-- The verdict shown of a check of kind `k`, of an item whose trait has
-laws, where the item's vacuity under the laws has the verdict `lawful`
-(`check::lawful_verdict`): a verdict that comes from an `unsat` query is
-inconclusive where the assumptions and calls cannot hold with the laws, as
-any verdict of an item whose assumptions cannot hold rests on its
-realizability. -/
-def lawfulVerdict (k : CheckKind) (v : Verdict) (lawful : Verdict) : Verdict :=
-  if (lawful matches .fail) && k.queryHasLaws && fromUnsat k v then .inconclusive else v
-
 /-- `checkComp`, and, for an item whose trait has laws and that has
 assumptions or calls, its vacuity under the laws (`checkLawful`), as both
 front ends run them. -/
@@ -1730,26 +1728,19 @@ def checkCompLawful (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Arr
   if c.laws.isEmpty || (c.assumes.isEmpty && c.insts.isEmpty) || !kinds.contains .vacuity then return rs
   return rs.push (← checkLawful (bk .vacuity) c)
 
-/-- `rs`, of an item whose trait has laws: each verdict that comes from an
-`unsat` query made inconclusive where the item's vacuity under the laws
-failed (`lawfulVerdict`), and otherwise, where that vacuity is not
-decided, the first result at each constraint that rests on the laws'
-consistency marked (`lawPremise`), for the one message there that says so
-(`lawsMsg`). -/
+/-- `rs`, of an item whose trait has laws, with the first result at each
+constraint that rests on the laws (`lawPremise`) marked, for the one
+message there that says so (`lawsMsg`), with whether the item's vacuity
+under the laws was asked. -/
 def withLaws (c : Comp F) (rs : Array CheckResult) : Array CheckResult := Id.run do
   if c.laws.isEmpty then return rs
-  let lawful := ((rs.find? (·.isLawful)).map (·.verdict)).getD .inconclusive
+  let lawful := (rs.find? (·.isLawful)).map (·.verdict)
   let mut seen : Array (Option Name) := #[]
   let mut out := #[]
   for r in rs do
-    if r.isLawful then out := out.push r; continue
-    let shown := lawfulVerdict r.kind r.verdict lawful
-    if shown != r.verdict then
-      out := out.push { r with verdict := shown
-                               detail := .unknown s!"its assumptions and calls cannot hold together with the laws of `{showComp c.lawsOf}`" }
-    else if lawPremise r.kind r.verdict true lawful && !seen.contains r.prop? then
+    if !r.isLawful && lawPremise r.kind r.verdict true lawful && !seen.contains r.prop? then
       seen := seen.push r.prop?
-      out := out.push { r with restsOnLaws? := some c.lawsOf }
+      out := out.push { r with restsOnLaws? := some (c.lawsOf, lawful.isSome) }
     else out := out.push r
   return out
 
@@ -2289,22 +2280,29 @@ def memberMessages (r : CheckResult) : Array Message := Id.run do
 consistency is not checked (`F0665`, `check::law_premise`): laws that
 contradict each other would give that verdict whatever the constraint
 says. -/
-def lawsMsg (what : String) (t : Name) : Msg :=
-  { code? := some "F0665"
-    headline := s!"{what} rests on the laws of `{showComp t}` holding together with its assumptions, which is not decided"
-    label? := some "rests on unchecked laws"
-    notes := #[s!"note: its verdict comes from the laws of `{showComp t}` and its assumptions and calls together; if no interpretation meets them all, it would be the same whatever it says",
-      "note: Fren could not decide whether they can hold together"] }
+def lawsMsg (what : String) (t : Name) (asked : Bool) : Msg :=
+  if asked then
+    { code? := some "F0665"
+      headline := s!"{what} rests on the laws of `{showComp t}` holding together with its assumptions and calls, which is not decided"
+      label? := some "rests on unchecked laws"
+      notes := #[s!"note: its verdict comes from the laws of `{showComp t}` and the item's assumptions and calls together; if no interpretation meets them all, it would be the same whatever it says",
+        "note: the solver could not decide whether they can hold together"] }
+  else
+    { code? := some "F0665"
+      headline := s!"{what} rests on the laws of `{showComp t}`, whose consistency is not checked"
+      label? := some "rests on unchecked laws"
+      notes := #[s!"note: its verdict comes from the laws of `{showComp t}`; if no interpretation meets them all, it would be the same whatever it says",
+        "note: Fren does not check yet that a trait's laws can hold together (#594)"] }
 
 /-- The message of a result that rests on a trait's laws (`lawsMsg`), at
 its constraint, or none. -/
 def lawsMessages (r : CheckResult) : Array Message :=
   match r.restsOnLaws? with
-  | some t =>
+  | some (t, asked) =>
     let subject := match r.prop? with
       | some n => s!"`{showComp (r.comp ++ n)}`"
       | none => s!"`{showComp r.comp}`"
-    #[{ severity := .warning, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?, msg := lawsMsg subject t }]
+    #[{ severity := .warning, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?, msg := lawsMsg subject t asked }]
   | none => #[]
 
 /-- The messages of one result, which both front ends report. The result
@@ -2313,6 +2311,9 @@ that no message of a pass shows a counterexample, whatever method reached
 the verdict (`view::report_shows`). -/
 def messages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := true) : Array Message :=
   let r := r.sealShown
+  -- An item's vacuity under the laws that is not decided is said by the
+  -- `F0665` of each constraint that rests on it, once (`withLaws`).
+  if r.isLawful && r.verdict == .inconclusive then #[] else
   baseMessages hasPrivateOuts r decidable ++ branchMessages r ++ memberMessages r ++ lawsMessages r
 
 /-- Sealing twice is sealing once. -/

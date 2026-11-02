@@ -264,19 +264,24 @@ pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: Che
 r[trait.expect.lawful]
 An expectation of a trait with laws, and with assumptions or calls, has a
 vacuity check of its own: whether its assumptions and calls can hold
-together with the laws. Where
-they cannot, it is an error (`F0602`), and each of its verdicts that comes
-from an `unsat` query, such as a pass of an expectation or a failure of a
-cover goal, is inconclusive (`check::lawful_verdict`). Laws that contradict
+together with the laws. Where they cannot, it is an error (`F0602`). Its
+other checks rest on this check as they rest on its realizability: a pass
+of a proof check is then inconclusive (`F0664`), and the verdict of a
+check that a model decides, such as a cover goal's, stands
+([Evidence](../Evidence.md#the-laws-of-a-trait)). Laws that contradict
 each other fail it too.
 
 r[trait.expect.laws-unchecked]
-Where that check is not decided, each verdict of the expectation that
-comes from an `unsat` query rests on the laws holding together with its
-assumptions and calls, and its constraint says so once, whatever its other
-checks give (`F0665`, `check::law_premise`). A verdict that comes from a
-model, such as a counterexample, rests on nothing more, since the model
-meets them. Realizability's queries have no laws
+A verdict of an expectation of a trait with laws that comes from an
+`unsat` query, such as a pass of an expectation or a failure of a cover
+goal, rests on the laws. Where the expectation has a vacuity check under
+the laws that is not decided, the verdict rests on the laws holding
+together with its assumptions and calls, and where it has none, on the
+laws' consistency, which Fren does not check yet (#594). Either way, its
+constraint says so once, whatever its other checks give, and that check
+reports nothing more (`F0665`, `check::law_premise`). A verdict that comes
+from a model, such as a counterexample, rests on nothing more, since the
+model meets the laws. Realizability's queries have no laws
 (`check::query_hypotheses`).
 
 r[trait.expect.once]

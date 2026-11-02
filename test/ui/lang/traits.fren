@@ -75,7 +75,7 @@ trait Clash {
 
     expect e(s: Self) {  --~ error: the assumptions of `traits::Clash::e` are unsatisfiable: `one`, `two` contradict each other
         assume known: value(s) >= 0
-        expect c: value(s) = 5  --~ warning: could not decide whether `traits::Clash::e::c` holds
+        expect c: value(s) = 5  --~ warning: rests on the vacuity of `traits::Clash::e` under the laws, which did not pass
     }
 }
 
@@ -88,7 +88,15 @@ trait Pos {
 
     expect e(s: Self) {  --~ error: the assumptions of `traits::Pos::e` are unsatisfiable: `pos`, `neg` contradict each other
         assume neg: v(s) < 0
-        expect c: v(s) = 5  --~ warning: could not decide whether `traits::Pos::e::c` holds
+        expect c: v(s) = 5  --~ warning: `traits::Pos::e::c` rests on the vacuity of `traits::Pos::e` under the laws, which did not pass
+        cover w: v(s) = 1  --~ error: cannot be met
+    }
+
+    -- An assumption with a quantified law, which nothing decides: one
+    -- warning, at the claim.
+    expect undecided(s: Self) {
+        assume big: v(s) > 3
+        expect c: v(s) >= 0  --~ warning: rests on the laws of `traits::Pos` holding together with its assumptions and calls
     }
 }
 
@@ -150,7 +158,6 @@ trait Flagged {
 
     expect e0(s: Self) { assume big: obs(s) > 2 }
     --~^ warning: the assumption `big` constrains only parameters that nothing uses
-    --~^^ warning: could not decide whether `traits::Flagged::e0` is vacuous
 }
 
 -- Without laws, an expectation is about every carrier and every method,

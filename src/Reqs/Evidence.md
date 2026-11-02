@@ -160,7 +160,8 @@ realizability check of the procedure that the item's call `j` calls,
 `CallAssumptions(j)` is call `j`'s assumption checks, one for each
 assumption of the called procedure and for each of its parameters whose
 type brings a constraint (`Lang/SubsetTypes`), `OwnRealizability` is the
-item's own realizability check, `AbstractionRealizability(a)` is the
+item's own realizability check, with, for an expectation of a trait, its
+vacuity under the laws (below), `AbstractionRealizability(a)` is the
 realizability check of the abstraction of the item's refinement claim `a`,
 by the claim's position among the item's refinement claims, `ContractRealizability(f)` is uninterpreted
 function `f`'s contract's realizability check, `InstanceContract(i)` is
@@ -969,18 +970,30 @@ pub proc query_hypotheses(kind: Kind): (det laws?) {
 Where the laws cannot hold together with the item's assumptions and
 calls, each query that has them is unsatisfiable, whatever else it asks.
 So a verdict that comes from an `unsat` query rests on their holding
-together: an expectation's pass, or a cover goal's failure. One that comes
-from a model does not, since the model meets them. An item whose trait has
-laws, and that has assumptions or calls, has a check of its own of this,
-its *vacuity under the laws*: whether the laws, its assumptions and its
-calls can hold together, which a model shows. An item without either rests
-on the laws alone, whose consistency Fren does not check yet (#594). Where it fails, the assumptions and calls cannot hold with the laws
-(`F0602`), and each verdict that comes from an `unsat` query is
-inconclusive (`check::lawful_verdict`). Where it is not decided, as with
-quantified laws it seldom is, each constraint that has such a verdict says
-that it rests on the laws, once, with the warning `F0665`, and its verdict
-is its own. Where it passes, no verdict rests on more than its proof.
-`check::law_premise` states which verdicts rest on the laws:
+together: an expectation's pass, or a cover goal's failure. A verdict that
+comes from a model does not, since the model meets them.
+
+An item whose trait has laws, and that has assumptions or calls, has a
+check of its own of this, its *vacuity under the laws*: whether the laws,
+its assumptions and its calls can hold together, which a model shows. Its
+checks rest on it as they rest on its realizability (`OwnRealizability`),
+and so are reported as those are:
+
+- Where it passes, no verdict rests on more than its proof.
+- Where it fails, the assumptions and calls cannot hold with the laws
+  (`F0602`). A pass of a proof check that rests on it is inconclusive
+  (`F0664`), and a witness check's verdict stands, as where an item's
+  assumptions cannot hold by themselves.
+- Where it is not decided, which, with quantified laws, it seldom is, it
+  is settled for the checks that rest on it. Each constraint whose verdict
+  comes from an `unsat` query says, once, that it rests on the laws
+  holding together with the assumptions and calls (`F0665`), and this
+  check reports nothing of its own.
+
+An item without assumptions or calls has no such check. Its verdicts rest
+on the laws alone, whose consistency Fren does not check yet (#594), and
+each constraint whose verdict comes from an `unsat` query says so
+(`F0665`). `check::law_premise` states which verdicts carry `F0665`:
 
 ```fren
 -- A pass of a check of this kind comes from an `unsat` query, not a
@@ -1004,24 +1017,16 @@ pub proc law_premise(
     kind: Kind,
     verdict: Verdict,
     laws?,
-    lawful: Verdict,         -- the item's vacuity under the laws
+    asked?,                  -- the item has a vacuity under the laws
+    lawful: Verdict,         -- its verdict, if it has one
 ): (det rests?) {
-    ensure rule: rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict) and lawful != Verdict::Pass
+    ensure rule: rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict)
+        and (not asked? or lawful = Verdict::Inconclusive)
 
     expect lawless: when not laws?, not rests?
     expect counterexamples: when kind = Kind::Expectation and verdict = Verdict::Fail, not rests?
-    expect undecided: when laws? and kind = Kind::Expectation and verdict = Verdict::Pass
-        and lawful = Verdict::Inconclusive, rests?
-    expect shown_lawful: when lawful = Verdict::Pass, not rests?
-}
-
-pub proc lawful_verdict(kind: Kind, verdict: Verdict, lawful: Verdict): (det shown: Verdict) {
-    ensure rule: shown = (if lawful = Verdict::Fail and query_laws?(kind) and from_unsat?(kind, verdict)
-        then Verdict::Inconclusive else verdict)
-
-    expect vacuous_proof: when lawful = Verdict::Fail and kind = Kind::Expectation and verdict = Verdict::Pass,
-        shown = Verdict::Inconclusive
-    expect counterexample_stands: when kind = Kind::Expectation and verdict = Verdict::Fail, shown = Verdict::Fail
+    expect alone: when laws? and kind = Kind::Expectation and verdict = Verdict::Pass and not asked?, rests?
+    expect decided: when asked? and lawful != Verdict::Inconclusive, not rests?
 }
 ```
 
