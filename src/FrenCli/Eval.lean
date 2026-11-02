@@ -2,6 +2,7 @@
 import Fren.Seq
 import FrenCli.Guard
 import FrenCli.Parse
+import FrenCore.Check
 import FrenCore.Enumeration
 import FrenCore.Names
 import FrenCore.Patterns
@@ -359,6 +360,54 @@ partial def Pat.binders : Pat → Array Name
   | .ctor _ ps | .alts ps => ps.flatMap Pat.binders
   | _ => #[]
 
+/-- `fr` with each binder of `p` bound to an unknown value, in the order
+that `Pat.matchInto` binds them, for an arm whose scrutinee's value is
+unknown (`model::unknown_binders`). Alternatives bind none, as
+`lang::bind` binds none of an or-pattern. -/
+partial def Pat.unknownInto (p : Pat) (fr : Frame) : Frame :=
+  match p with
+  | .bind n => .bind n none fr
+  | .ctor _ ps => ps.foldr (fun q fr => q.unknownInto fr) fr
+  | _ => fr
+
+/-- The value of a chain of cases, each the truth of its condition, `none`
+where unknown, and its value, tried in order, with `rest` where none is
+taken: the `if`s that a table or a `match` is, which every evaluation, a
+model's confirmation and enumeration alike, decides by
+`Fren.Core.iteKnown` at each (`Reqs/Models#known-values`),
+known where an unknown case's value and the rest's are known and equal.
+After an unknown case, where no case is taken is unknown too, as
+`lang::eval`'s `NoMatch` is and the Lean-hosted front end's index of the
+empty sequence is, rather than the interpretation's unspecified value. -/
+def chainKnown : List (Option Bool × (Unit → Option Val)) → (Unit → Option Val) → Option Val
+  | [], rest => rest ()
+  | (t, v) :: more, rest => match t with
+    | some true => v ()
+    | some false => chainKnown more rest
+    | none =>
+      let x := v ()
+      let y := chainKnown more fun _ => none
+      if Fren.Core.iteKnown none x.isSome y.isSome (x == y) then x else none
+
+/-- An arm's test and the frame of its binders where its scrutinees'
+values may be unknown: of each of its patterns and its scrutinee's value,
+the conjunction of the patterns' tests (`Fren.Core.armTest`), each `true`
+or `false` where the value is known and unknown where it is not, but none
+for a pattern that tests nothing (`Fren.Core.Pat.irrefutable`); with each
+binder bound to its part of the value, or unknown where the value is
+(`Pat.unknownInto`). The scrutinees are bound from the last to the first,
+as `Pat.matchInto` binds a variant's payload, and so a `match`'s vector of
+several scrutinees. -/
+def armCase (parts : Array (Pat × Option Val)) (fr : Frame) : Option Bool × Frame :=
+  let (tests, fr) := parts.foldr (init := (([] : List (Option Bool)), fr)) fun (p, v?) (tests, fr) =>
+    let (t, fr) := match v? with
+      | some v => match p.matchInto v fr with
+        | some fr' => (some true, fr')
+        | none => (some false, fr)
+      | none => (none, p.unknownInto fr)
+    (if p.core.irrefutable then tests else t :: tests, fr)
+  (Fren.Core.armTest tests, fr)
+
 /-- `p` with each binder renamed by `f`. -/
 partial def Pat.rename (f : Name → Name) : Pat → Pat
   | .bind n => .bind (f n)
@@ -469,6 +518,12 @@ inductive Ex where
   `e`'s, and the positions pair the preconditions with their checks
   (`Ex.tableGoals`, `check::precondition`). -/
   | pre (pos : Nat) (f : Name) (goals : Array (Name × Ex)) (e : Ex)
+  /-- `e`, a defined function's body with its parameters standing for the
+  arguments `args`, as lowering applies it: its value is `e`'s, but where
+  evaluation is strict (`Interp.strict`), only where every argument's is
+  known, though `e` may not read them all (`model::known_application`).
+  Only evaluation reads `args`: the solver and the checks see `e`. -/
+  | strict (args : Array Ex) (e : Ex)
   /-- That `e` is a value of the declared type `t`: what its subset
   types, and those within it, say of it
   (`Reqs/Lang/SubsetTypes#static-types-assumptions-and-obligations`). -/
@@ -657,6 +712,11 @@ structure Interp where
   /-- How many defined variables `defined` gives: as deep as a chain of
   them, each defined as another, can be, since definitions are acyclic. -/
   definedCount : Nat := 0
+  /-- Whether an application is known only where its arguments are
+  (`Ex.strict`): in a model's confirmation, which follows Fren's
+  semantics, strict as `lang::eval` is (`Reqs/Models#how-the-front-ends-evaluate`).
+  Elsewhere, as in enumeration, an application's value is its body's. -/
+  strict : Bool := false
 
 instance : Inhabited Interp := ⟨{}⟩
 
@@ -1078,48 +1138,57 @@ theorem firstCase_filter (xs : List α) (take : α → Option (Option β)) (keep
     · simp [List.filter, hk, ih, Fren.Core.firstCase, h c List.mem_cons_self hk]
     · simp only [List.filter, hk, Fren.Core.firstCase, ih]
 
+/-- `e` without the `Ex.strict`s around it: the body of a defined
+function, as the shape of a count reads it. -/
+def Ex.unstrict (strict : Bool := false) : Ex → Ex
+  -- Evaluated strictly, an application of arguments is not its body: it
+  -- is unknown where an argument is (`model::known_application`).
+  | .strict args e => if strict && !args.isEmpty then .strict args e else e.unstrict strict
+  | e => e
+
 /-- `e`, or, if it is a defined variable, its definition, through those
 of the defined variables it is, `fuel` deep (`Interp.defined`): the term
 that the Lean-hosted front end sees, with definitions substituted. -/
-def Ex.unfoldDefined (defined : Name → Option Ex) : Nat → Ex → Ex × Bool
+def Ex.unfoldDefined (defined : Name → Option Ex) (strict : Bool := false) : Nat → Ex → Ex × Bool
   | fuel + 1, .var n => match defined n with
-    | some d => ((Ex.unfoldDefined defined fuel d).1, true)
+    | some d => ((Ex.unfoldDefined defined strict fuel d).1, true)
     | none => (.var n, false)
-  | _, e => (e, false)
+  | _, e => (e.unstrict strict, false)
 
-/-- Whether `e` is the integer literal `k`, as written or folded, through
-the definitions of the defined variables it is. -/
-def Ex.isInt (k : Int) (defined : Name → Option Ex) (fuel : Nat) (e : Ex) : Bool :=
-  match (e.unfoldDefined defined fuel).1 with
-  | .lit (.int i) | .known (some (.int i)) => i == k
-  | _ => false
+/-- The integer that `e` is, as written or folded, or negated, as Lean's
+`Expr.int?`, which the Lean-hosted front end reads a count's parts by, has
+`-k`, and as folding has it. -/
+def Ex.intLit? : Ex → Option Int
+  | .lit (.int i) | .known (some (.int i)) => some i
+  | .neg (.lit (.int i)) | .neg (.known (some (.int i))) => some (-i)
+  | _ => none
+
+/-- Whether `e` is the integer `k` (`Ex.intLit?`), through the definitions
+of the defined variables it is. -/
+def Ex.isInt (k : Int) (defined : Name → Option Ex) (fuel : Nat) (e : Ex) (strict : Bool := false) : Bool :=
+  (e.unfoldDefined defined strict fuel).1.intLit? == some k
 
 /-- `Ex.isInt` as it runs, at each evaluation of a comparison
 (`Ex.countOfOne?`): without the pair, and the variable, that
 `Ex.unfoldDefined` allocates. -/
-def Ex.isIntImpl (k : Int) (defined : Name → Option Ex) : Nat → Ex → Bool
+def Ex.isIntImpl (k : Int) (defined : Name → Option Ex) (fuel : Nat) (e : Ex) (strict : Bool := false) : Bool :=
+  match fuel, e with
   | fuel + 1, .var n => match defined n with
-    | some d => Ex.isIntImpl k defined fuel d
+    | some d => Ex.isIntImpl k defined fuel d strict
     | none => false
-  | _, .lit (.int i) => i == k
-  | _, .known (some (.int i)) => i == k
-  | _, _ => false
+  | _, e => (e.unstrict strict).intLit? == some k
 
 @[csimp] theorem Ex.isInt_eq_impl : @Ex.isInt = @Ex.isIntImpl := by
-  funext k defined fuel e
+  funext k defined fuel e strict
   induction fuel generalizing e with
-  | zero =>
-    cases e <;> simp only [Ex.isInt, Ex.isIntImpl, Ex.unfoldDefined]
-    case lit v => cases v <;> rfl
-    case known v => rcases v with _ | ⟨_ | _ | _ | _ | _ | _ | _ | _⟩ <;> rfl
+  | zero => cases e <;> rfl
   | succ n ih =>
-    cases e <;> simp only [Ex.isInt, Ex.isIntImpl, Ex.unfoldDefined]
-    case lit v => cases v <;> rfl
-    case known v => rcases v with _ | ⟨_ | _ | _ | _ | _ | _ | _ | _⟩ <;> rfl
-    case var x =>
-      cases defined x
-      · rfl
-      · rename_i d; simp only [← ih d, Ex.isInt]
+    cases e <;> try rfl
+    rename_i x
+    simp only [Ex.isInt, Ex.isIntImpl, Ex.unfoldDefined]
+    cases defined x
+    · rfl
+    · rename_i d; simp only [← ih d, Ex.isInt]
 
 /-- The conditions of `e`, a sum of `if c then 1 else 0` and of integer
 literals and constants that are not negative, if it is one, each such
@@ -1129,50 +1198,59 @@ with 1 as more do. Each part is read through the definitions of the
 defined variables it is, as the Lean-hosted front end, which substitutes
 them, sees it; each condition with whether it is within a definition,
 which is evaluated on its own. -/
-partial def Ex.indicators? (defined : Name → Option Ex) (fuel : Nat) (inDef : Bool) (e : Ex) : Option (List (Ex × Bool)) :=
-  let (e, unfolded) := e.unfoldDefined defined fuel
+partial def Ex.indicators? (defined : Name → Option Ex) (fuel : Nat) (inDef : Bool) (e : Ex) (strict : Bool := false) :
+    Option (List (Ex × Bool)) :=
+  let (e, unfolded) := e.unfoldDefined defined strict fuel
   let inDef := inDef || unfolded
   match e with
-  | .bin .add a b => do return (← Ex.indicators? defined fuel inDef a) ++ (← Ex.indicators? defined fuel inDef b)
-  | .ite c x y => if x.isInt 1 defined fuel && y.isInt 0 defined fuel then some [(c, inDef)] else none
-  | .lit (.int k) | .known (some (.int k)) =>
-    if 0 ≤ k then some (List.replicate (min k.toNat 2) (.lit (.bool true), inDef)) else none
-  | _ => none
+  | .bin .add a b => do
+    return (← Ex.indicators? defined fuel inDef a strict) ++ (← Ex.indicators? defined fuel inDef b strict)
+  | .ite c x y => if x.isInt 1 defined fuel strict && y.isInt 0 defined fuel strict then some [(c, inDef)] else none
+  | e => match e.intLit? with
+    | some k => if 0 ≤ k then some (List.replicate (min k.toNat 2) (.lit (.bool true), inDef)) else none
+    | none => none
 
-/-- For `a = 1` or `a <= 1`, where `a` is a sum of `if c then 1 else 0`
+/-- For `a = 1`, `a <= 1` or `1 >= a`, where `a` is a sum of `if c then 1 else 0`
 (`Ex.indicators?`), the cardinality operation that it spells out and its
 conditions: the count of them that are `true`, compared with 1, as
 `exactly_one?` and `at_most_one?` are defined. -/
-def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : Ex) :
+def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : Ex) (strict : Bool := false) :
     Option (Fren.Core.Cardinality × List (Ex × Bool)) :=
   let c? : Option Fren.Core.Cardinality := match op with
     | .eq => some .exactlyOne
-    | .le => some .atMostOne
+    | .le | .ge => some .atMostOne
     | _ => none
+  -- `1 >= a` is `a <= 1` (`Reqs/Lang/Semantics#derived-forms`).
+  let (a, b) := if op == .ge then (b, a) else (a, b)
   match c? with
-  | some c => if b.isInt 1 defined fuel then (Ex.indicators? defined fuel false a).map (c, ·) else none
+  | some c => if b.isInt 1 defined fuel strict then (Ex.indicators? defined fuel false a strict).map (c, ·) else none
   | none => none
 
-/-- Whether `e` may be the integer literal 1 (`Ex.isInt`): only the literal
-or known value 1, or a variable, which may be defined as one, may be. Unless it may be, a
-comparison with it is no count (`Ex.countOfOne?_of_not_mayBeOne`), which
-evaluation then does not look for. -/
+/-- Whether `e` may be the integer 1 (`Ex.isInt`): only the literal or
+known value 1, a negation, a variable, which may be defined as one, or an
+application's body (`Ex.strict`) may be. Unless it may be, a comparison
+with it is no count (`Ex.countOfOne?_of_not_mayBeOne`), which evaluation
+then does not look for. -/
 @[inline] def Ex.mayBeOne : Ex → Bool
-  | .lit (.int 1) | .known (some (.int 1)) | .var _ => true
-  | _ => false
+  | .var _ | .neg _ | .strict _ _ => true
+  | e => e.intLit? == some 1
+
+/-- The side of a comparison that a count compares with 1
+(`Ex.countOfOne?`): the left of `1 >= a`, else the right. -/
+@[inline] def Ex.countedOne (op : Op) (a b : Ex) : Ex := if op == .ge then a else b
+
+theorem Ex.isInt_one_of_not_mayBeOne (defined : Name → Option Ex) (fuel : Nat) (strict : Bool) (x : Ex)
+    (h : x.mayBeOne = false) : x.isInt 1 defined fuel strict = false := by
+  rw [Ex.isInt_eq_impl]
+  -- Of every other form, `mayBeOne` is what `isIntImpl` computes.
+  cases fuel <;> cases x <;> first | exact h | simp [Ex.mayBeOne] at h
 
 theorem Ex.countOfOne?_of_not_mayBeOne (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : Ex)
-    (h : b.mayBeOne = false) : Ex.countOfOne? defined fuel op a b = none := by
-  have : b.isInt 1 defined fuel = false := by
-    rw [Ex.isInt_eq_impl]
-    unfold Ex.mayBeOne at h
-    split at h
-    · simp at h
-    · simp at h
-    · simp at h
-    · rename_i hne1 hne2 hne3
-      cases fuel <;> unfold Ex.isIntImpl <;> split <;> simp_all
-  unfold Ex.countOfOne?; split <;> simp_all
+    (strict : Bool) (h : (Ex.countedOne op a b).mayBeOne = false) :
+    Ex.countOfOne? defined fuel op a b strict = none := by
+  unfold Ex.countedOne at h
+  have := Ex.isInt_one_of_not_mayBeOne defined fuel strict _ h
+  cases op <;> simp_all (config := { decide := true }) [Ex.countOfOne?]
 
 /-- `es.mapM f`: the values of `es` in order, or none at the first that
 has none. `Array.mapM` writes each value over its element of `es`, so,
@@ -1389,7 +1467,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     -- defined (`Reqs/Lang/Expressions#cardinality`), is known where they
     -- are, as the Lean-hosted front end, which sees the same term for
     -- both, has it (`Ex.countOfOne?`).
-    match if b.mayBeOne then Ex.countOfOne? I.defined I.definedCount op a b else none with
+    match if (Ex.countedOne op a b).mayBeOne then Ex.countOfOne? I.defined I.definedCount op a b I.strict else none with
     | some (c, conds) =>
       truthV (c.holds? (conds.map fun (x, inDef) =>
         match if inDef then x.evalIn I look [] #[] .nil #[] fuel depth else x.evalIn I look locals slots frame memos fuel depth with
@@ -1406,7 +1484,8 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     | some (.bool false) => b.evalIn I look locals slots frame memos fuel depth
     | _ =>
       let x := a.evalIn I look locals slots frame memos fuel depth
-      if x.isSome && x == b.evalIn I look locals slots frame memos fuel depth then x else none
+      let y := b.evalIn I look locals slots frame memos fuel depth
+      if Fren.Core.iteKnown none x.isSome y.isSome (x == y) then x else none
   | .app f args =>
     -- A structural recursion's body, at the arguments' values, which ends
     -- (`Reqs/Lang/Recursion#meaning`).
@@ -1423,6 +1502,11 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
       | fuel + 1 => evalResult (body.evalIn I look [] #[] fr #[] fuel evalDepth)
     | none => do I.fn f (← evalEach (·.evalIn I look locals slots frame memos fuel depth) args)
   | .pre _ _ _ e => e.evalIn I look locals slots frame memos fuel depth
+  | .strict args e =>
+    if !I.strict then evalResult (e.evalIn I look locals slots frame memos fuel depth) else
+    let v := e.evalIn I look locals slots frame memos fuel depth
+    if Fren.Core.appliedKnown (args.toList.map fun a => (a.evalIn I look locals slots frame memos fuel depth).isSome) v.isSome
+    then v else none
   -- Known once the unknown arguments cannot change it: with two `true`,
   -- whatever the rest are (`Cardinality.holds?`).
   | .cardinality c args =>
@@ -1533,14 +1617,21 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
   -- As the arms `_ if C => v` and `_ => v` (`Fren.Core.firstCase`).
   -- `firstCaseIn`'s case, passed on (`firstCaseThen_eq`).
   | .table _ rows unspec? =>
-    firstCaseThen rows (fun (_, c?, v) => match c? with
+    (firstCaseThen rows (fun (_, c?, v) => match c? with
       | none => some (some v)
       | some c => match c.evalIn I look locals slots frame memos fuel depth with
         | some (.bool true) => some (some v)
         | some (.bool false) => some none
         | _ => none)
       (fun v => v.evalIn I look locals slots frame memos fuel depth)
-      fun _ => do I.fn (← unspec?) #[]
+      fun _ => do I.fn (← unspec?) #[]) <|>
+      -- Where whether a row is taken is unknown, the rows decide it as the
+      -- `if`s that they are, as the Lean-hosted front end's definitions
+      -- are (`chainKnown`).
+      chainKnown (rows.toList.map fun (_, c?, v) => (match c? with
+          | none => some true
+          | some c => truthOf (c.evalIn I look locals slots frame memos fuel depth), fun _ => v.evalIn I look locals slots frame memos fuel depth))
+        fun _ => do I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => evalResult (e.evalIn I (fun _ => none) [] #[] .nil #[] fuel depth)
   | .typed t _ e => do truthV (typeV I fuel depth t (← e.evalIn I look locals slots frame memos fuel depth))
@@ -1548,7 +1639,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
   -- is taken, the interpretation's unspecified value of its type.
   -- The first arm that is taken: whose pattern matches and whose guard
   -- holds (`Fren.Core.firstCase`, `lang::guarded_match`).
-  | .match e arms _ _ unspec? _ => do
+  | .match e arms _ _ unspec? _ => (do
     let v ← e.evalIn I look locals slots frame memos fuel depth
     -- Whether the pattern matches, decided first, so that an arm that
     -- does not match binds nothing (`Pat.matches`, `Pat.bindInto`).
@@ -1564,11 +1655,36 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
           | some (.bool false) => some none
           | _ => none)
       (fun (fr, body) => body.evalIn I look locals slots fr memos fuel depth)
-      fun _ => do I.fn (← unspec?) #[]
+      fun _ => do I.fn (← unspec?) #[]) <|>
+    -- Where whether an arm is taken is unknown, the arms decide it as the
+    -- `if`s that they are: an arm's test and its guard, and its body, with
+    -- the binders bound, or unknown where a scrutinee is (`armCase`,
+    -- `chainKnown`). The scrutinees of a `match` of several are its
+    -- vector's values, which each pattern tests on its own.
+    let scrutinees? : Option (Array Ex) := match e with
+      | .ctor t _ xs => if t == Fren.Core.matchVectorPath then some xs else none
+      | _ => none
+    let values : Array (Option Val) := match scrutinees? with
+      | some xs => xs.map fun x => x.evalIn I look locals slots frame memos fuel depth
+      | none => #[e.evalIn I look locals slots frame memos fuel depth]
+    let case (arm : Pat × Option Ex × Ex) : Option Bool × (Unit → Option Val) :=
+      let (p, g?, body) := arm
+      let pats := match scrutinees?, p with
+        | some _, .ctor _ ps => ps
+        | some xs, p => xs.map fun _ => p
+        | none, p => #[p]
+      let (test, fr) := armCase (pats.zip values) frame
+      let guard := if test == some false then some false else match g? with
+        | none => some true
+        | some g => truthOf (g.evalIn I look locals slots fr memos fuel depth)
+      (Fren.Core.Enumeration.andTruth test guard, fun _ => body.evalIn I look locals slots fr memos fuel depth)
+    chainKnown (arms.toList.map case) fun _ => do I.fn (← unspec?) #[]
   -- The same arm as the `match` takes: those left out are those whose
   -- patterns do not match the value, which `firstCase` passes over
   -- (`firstCase_filter`).
-  | .dispatch byCtor (.match e arms _ _ unspec? _) => do
+  -- Where the dispatch gives no value, as where the scrutinee is unknown,
+  -- the `match` may still decide it as its `if`s.
+  | .dispatch byCtor m@(.match e arms _ _ unspec? _) => (do
     let v ← e.evalIn I look locals slots frame memos fuel depth
     let take (arm : Pat × Option Ex × Ex) : Option (Option (Frame × Ex)) :=
       let (p, g?, body) := arm
@@ -1589,7 +1705,8 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
       taken.2.evalIn I look locals slots taken.1 memos fuel depth
     match ks? with
     | some ks => firstCaseThen ks (fun k => take arms[k]!) found fun _ => do I.fn (← unspec?) #[]
-    | none => firstCaseThen arms take found fun _ => do I.fn (← unspec?) #[]
+    | none => firstCaseThen arms take found fun _ => do I.fn (← unspec?) #[]) <|>
+    evalResult (m.evalIn I look locals slots frame memos fuel depth)
   | .dispatch _ m => evalResult (m.evalIn I look locals slots frame memos fuel depth)
   | .range lo hi => do
     let .int a ← lo.evalIn I look locals slots frame memos fuel depth | none
@@ -1760,6 +1877,15 @@ def Ex.children : Ex → Array Ex
   | .quant _ _ _ _ ds _ b => (ds.filterMap id).push b
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => c?.toArray.push v
   | .pre _ _ gs e => (gs.map (·.2)).push e
+  -- Only evaluation reads the arguments (`Ex.strict`). The traversals built
+  -- on this, which look for recursions, indexes or unspecified values, miss
+  -- one in an argument that the body never reads. Its value can only make
+  -- the application unknown, in a confirmation, never give it another, and
+  -- outside one it is not evaluated. But `Ex.siteGoals` then gives such an
+  -- index no definedness goal, so the `fren` command shows the model of its
+  -- definedness check on the solver's word, where the Lean-hosted front end
+  -- may refute it (#493).
+  | .strict _ e => #[e]
 
 /-- Whether `e` has an unbounded quantifier: one with a bound name whose
 domain is not its type's listed values. -/
@@ -1808,122 +1934,6 @@ partial def Ex.trigger? : Ex → Option Ex
   | .match s #[(p, none, d), (.wild, none, .lit (.bool true))] 1 #[] none none =>
     some (.match s #[(p, none, d.trigger?.getD (.lit (.bool true))), (.wild, none, .lit (.bool false))] 0 #[] none none)
   | _ => none
-
-/-- The indexes, tables and `match`es in `e`, as the questions that the
-checks ask of them, each with its position, the question about a table's
-rows or a `match`'s arms (`none` for an index's definedness), and its
-formula: that it holds wherever the conditions before it hold
-(`check::definedness`, `check::completeness`, `check::disjointness`,
-`check::reachability`). An index's position is its own, and a table's or
-a `match`'s question is at its `table` or `match` for completeness, at
-the later row for disjointness, and at the row's condition or `_`, or the
-arm's pattern, for reachability. The conditions are read left to right, as the
-elaborator reads them, through `when`, `unless`, `if`, `and`, `or`, the
-arms of `match` and the rows of tables; `wrap` puts a formula under those
-around `e`. -/
-partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Option Fren.Core.TableGoal × Ex) :=
-  let go (e : Ex) (w : Ex → Ex := wrap) := e.siteGoals w
-  match e with
-  | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
-  -- Only evaluation reads what `Ex.compile` gives.
-  | .memo _ e | .lifted _ e | .dispatch _ e => go e
-  | .not a | .neg a | .field a _ | .card a => go a
-  | .update a fs => go a ++ fs.flatMap (go ·.2)
-  | .when negated c d => go c ++ go d (fun g => wrap (.when negated c g))
-  | .ite c a b => go c ++ go a (fun g => wrap (.when false c g)) ++ go b (fun g => wrap (.when true c g))
-  | .bin .and a b => go a ++ go b (fun g => wrap (.when false a g))
-  | .bin .or a b => go a ++ go b (fun g => wrap (.when true a g))
-  | .bin _ a b | .pair a b => go a ++ go b
-  | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (go ·)
-  | .method _ r args => go r ++ args.flatMap (go ·)
-  -- Its arguments' questions, then its preconditions', as the elaborator
-  -- records them.
-  | .pre pos f goals e => go e ++ goals.map fun (p, g) => (pos, some (.precondition f p), wrap g)
-  | .matches r _ _ => go r
-  | .index q i pos _ =>
-    let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))
-    go q ++ go i ++ #[(pos, none, wrap bounds)]
-  -- An arm's guard is guarded by its pattern's matching where no earlier
-  -- arm is taken, and its body by its being the first arm taken: the same
-  -- `match`, with `g` in that arm and true in every other and where no arm
-  -- is taken. Then the `match`'s own questions.
-  | .match s arms pos armPos unspec? pairs? =>
-    let tt := Ex.lit (.bool true)
-    let others (j : Nat) := (arms.extract 0 j).map fun (p, g?, _) => (p, g?, tt)
-    let inGuard (j : Nat) (g : Ex) : Ex := .match s (others j ++ #[(arms[j]!.1, none, g), (.wild, none, tt)]) pos armPos none none
-    let inBody (j : Nat) (g : Ex) : Ex :=
-      .match s (others j ++ #[(arms[j]!.1, arms[j]!.2.1, g), (.wild, none, tt)]) pos armPos none none
-    let inArms := (List.range arms.size).toArray.flatMap fun j =>
-      (match arms[j]!.2.1 with | some c => go c (fun g => wrap (inGuard j g)) | none => #[]) ++
-        go arms[j]!.2.2 (fun g => wrap (inBody j g))
-    -- Where each arm is taken, if no earlier one is: its pattern matches and
-    -- its guard holds; `none` for `_` or a binder without a guard.
-    let taken := arms.map fun (p, g?, _) => match p, g? with
-      | .wild, none | .bind _, none => none
-      | _, _ => some (Ex.match s #[(p, none, g?.getD tt), (.wild, none, .lit (.bool false))] pos #[] none none)
-    let guarded := arms.map (·.2.1.isSome)
-    let orF (cs : Array Ex) : Ex := if cs.isEmpty then .lit (.bool false) else cs.pop.foldr (fun c acc => .bin .or c acc) cs.back!
-    -- Completeness is asked exactly where no arm may be taken.
-    let split := Fren.Core.splitGoals (if pairs?.isSome then .tableMatch else .match) orF (.bin .and) .not tt taken
-      guarded (unspec?.isSome)
-    -- Of a table over a scrutinee, the disjointness of the pairs of its
-    -- arms that `Fren.Core.tableArmPair` asks about, between completeness
-    -- and reachability, as `Fren.Core.tableMatchGoals` orders them. That
-    -- the indexes in an arm's guard are in range reads its binders, so it
-    -- is put within the arm's own `match`, beside the guard.
-    let pairGoals := match pairs? with
-      | none => #[]
-      | some pairs =>
-        let both : Array (Option Ex) := arms.map fun (p, g?, _) =>
-          let d := g?.bind fun g =>
-            Fren.Core.allOf? (.bin .and) (g.siteGoals.filterMap fun (_, q?, f) => if q?.isNone then some f else none)
-          some (Ex.match s #[(p, none, Fren.Core.allOf? (.bin .and) (d.toArray ++ g?.toArray) |>.getD tt),
-            (.wild, none, .lit (.bool false))] pos #[] none none)
-        Fren.Core.disjointGoals .tableMatch (.bin .and) .not tt both #[] pairs
-    let goals := split.filter (·.1 matches .completeness _) ++ pairGoals ++ split.filter (·.1 matches .reachability ..)
-    go s ++ inArms ++ goals.map fun (g, f) =>
-      ((match g with | .reachability _ j | .disjointness _ _ j => armPos[j]! | _ => pos), some g, wrap f)
-  -- In every instance, whatever the quantifier: the instances do not guard
-  -- each other.
-  | .quant file pos _ names doms tys body => go body (fun g => wrap (.quant file pos true names doms tys g))
-  | .range lo hi => go lo ++ go hi
-  -- A row's condition is guarded by the earlier rows' not holding, and its
-  -- value by its own holding too; then the table's own questions.
-  -- A constant's indexes and tables are the constant's.
-  | .const .. => #[]
-  | .typed _ _ a => go a
-  | .table pos rows _ =>
-    let unlessAll (cs : Array Ex) (g : Ex) : Ex := cs.foldr (fun c g => .when true c g) g
-    let (inRows, _) := rows.foldl (init := ((#[] : Array (Nat × Option Fren.Core.TableGoal × Ex)), (#[] : Array Ex)))
-      fun (acc, before) (_, c?, v) =>
-        let inC := match c? with
-          | some c => go c (fun g => wrap (unlessAll before g))
-          | none => #[]
-        let inV := go v (fun g => wrap (unlessAll before (match c? with | some c => .when false c g | none => g)))
-        (acc ++ inC ++ inV, before ++ c?.toArray)
-    let conds := rows.filterMap (·.2.1)
-    let starts := rows.filterMap fun (p, c?, _) => c?.map fun _ => p
-    let orF (cs : Array Ex) : Ex := if cs.isEmpty then .lit (.bool false) else cs.pop.foldr (fun c acc => .bin .or c acc) cs.back!
-    let wild := (rows.back?.map (·.2.1.isNone)).getD false
-    -- That a condition's indexes are in range where it evaluates them.
-    let defined := conds.map fun c =>
-      Fren.Core.allOf? (.bin .and) (c.siteGoals.filterMap fun (_, g?, f) => if g?.isNone then some f else none)
-    inRows ++ (Fren.Core.tableGoals orF (.bin .and) .not (.lit (.bool true)) conds defined wild).map fun (g, f) =>
-      ((match g with
-        | .disjointness _ _ j => starts[j]!
-        | .reachability _ j => rows[j]!.1
-        | _ => pos), some g, wrap f)
-
-/-- The indexes in `e`, each with its position and its definedness: that
-its position is in range wherever the conditions before it hold
-(`check::definedness`), read as `Ex.siteGoals` reads them. -/
-def Ex.indexGoals (e : Ex) : Array (Nat × Ex) :=
-  e.siteGoals.filterMap fun (pos, g?, f) => if g?.isNone then some (pos, f) else none
-
-/-- The questions about the rows of the tables in `e`, each with where it
-is reported and its formula, read as `Ex.siteGoals` reads them. -/
-def Ex.tableGoals (e : Ex) : Array (Nat × Fren.Core.TableGoal × Ex) :=
-  e.siteGoals.filterMap fun (pos, g?, f) => g?.map (pos, ·, f)
 
 /-! ## Compiling constraints
 
@@ -1999,6 +2009,7 @@ partial def Ex.same : Ex → Ex → Bool
   | .pre pos f gs e, .pre pos' f' gs' e' =>
     pos == pos' && f == f' && sameAll (fun (n, g) (n', g') => n == n' && g.same g') gs gs' && e.same e'
   | .typed t is e, .typed t' is' e' => ptySame t t' && is == is' && e.same e'
+  | .strict as e, .strict bs e' => sameAll Ex.same as bs && e.same e'
   | .memo ls e, .memo ls' e' => sameAll Ex.same ls ls' && e.same e'
   | .lifted ls e, .lifted ls' e' => sameAll (sameAll Ex.same) ls ls' && e.same e'
   | .dispatch ks m, .dispatch ks' m' => ks == ks' && m.same m'
@@ -2011,7 +2022,7 @@ constant. -/
 partial def Ex.costly (e : Ex) : Bool :=
   match e with
   | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => false
-  | .not _ | .neg _ | .field .. | .card _ | .when .. | .ite .. | .index .. => e.children.any (·.costly)
+  | .not _ | .neg _ | .field .. | .card _ | .when .. | .ite .. | .index .. | .strict .. => e.children.any (·.costly)
   | .bin op .. =>
     !(op matches .and | .or | .iff | .eq | .ne | .lt | .le | .gt | .ge | .add | .sub | .mul | .div | .mod)
       || e.children.any (·.costly)
@@ -2069,6 +2080,7 @@ partial def Ex.share (pick : Ex → Bool) (lets : Array Ex) (e : Ex) : Ex × Arr
     let (gs, l) := gs.foldl (init := (#[], lets)) fun (acc, l) (n, g) => let (g, l) := g.share pick l; (acc.push (n, g), l)
     let (a, l) := a.share pick l
     (.pre pos f gs a, l)
+  | .strict args a => let (args, l) := all args lets; let (a, l) := a.share pick l; (.strict args a, l)
   | e => (e, lets)
 where
   all (es : Array Ex) (lets : Array Ex) : Array Ex × Array Ex :=
@@ -2096,6 +2108,7 @@ partial def Ex.freeBound (e : Ex) : Array Name :=
     s.freeBound ++ arms.flatMap fun (p, g?, b) =>
       let reads := (g?.map (·.freeBound)).getD #[] ++ b.freeBound
       if p.altsBind then reads else reads.filter (!p.binders.contains ·)
+  | .strict args a => args.flatMap (·.freeBound) ++ a.freeBound
   | e => e.children.flatMap (·.freeBound)
 
 /-- `e` with each `.shared k` read as `.shared (f k)`, outside scopes
@@ -2124,6 +2137,7 @@ partial def Ex.renumberShared (f : Nat → Nat) (e : Ex) : Ex :=
   | .index q i pos u => .index (go q) (go i) pos u
   | .update a fs => .update (go a) (fs.map fun (k, x) => (k, go x))
   | .pre pos f' gs a => .pre pos f' (gs.map fun (n, g) => (n, go g)) (go a)
+  | .strict args a => .strict (args.map go) (go a)
   | e => e
 
 /-- `e`, evaluated by `Ex.eval` in less time, to the same value under any
@@ -2191,6 +2205,11 @@ where
       | .typed t _ _ => !t.invariantFree shapes
       | .quant _ _ _ _ _ ts _ => !ts.all (·.invariantFree shapes)
       | _ => false
+    -- A `.strict` whose arguments are not all known values, whose value
+    -- depends on whether evaluation is strict; with them, it is its body's.
+    let readsFns := readsFns || match e with
+      | .strict args _ => !args.all (· matches .known (some _))
+      | _ => false
     -- A quantifier without a domain reads the interpretation's domain.
     let readsDomain := match e with
       | .quant _ _ _ _ domains _ _ => domains.any Option.isNone
@@ -2220,6 +2239,7 @@ where
   | .index q i pos u => .index (go q) (go i) pos u
   | .update a fs => .update (go a) (fs.map fun (k, x) => (k, go x))
   | .pre pos f gs a => .pre pos f (gs.map fun (n, g) => (n, go g)) (go a)
+  | .strict args a => .strict (args.map go) (go a)
   -- Evaluated on its own, from an empty frame.
   | .const p a => .const p (a.compile shapes (some []))
   | .memo lets a => .memo (lets.map go) (go a)
@@ -2585,6 +2605,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .ite c a b => .ite (c.renameBound f) (a.renameBound f) (b.renameBound f)
   | .app g args => .app g (args.map (·.renameBound f))
   | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.renameBound f)) (e.renameBound f)
+  | .strict args e => .strict (args.map (·.renameBound f)) (e.renameBound f)
   | .cardinality c args => .cardinality c (args.map (·.renameBound f))
   | .method m r args => .method m (r.renameBound f) (args.map (·.renameBound f))
   | .matches r p re => .matches (r.renameBound f) p re
@@ -2623,6 +2644,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .ite c a b => .ite (c.renameVars f) (a.renameVars f) (b.renameVars f)
   | .app g args => .app g (args.map (·.renameVars f))
   | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.renameVars f)) (e.renameVars f)
+  | .strict args e => .strict (args.map (·.renameVars f)) (e.renameVars f)
   | .cardinality c args => .cardinality c (args.map (·.renameVars f))
   | .method m r args => .method m (r.renameVars f) (args.map (·.renameVars f))
   | .matches r p re => .matches (r.renameVars f) p re
@@ -2660,6 +2682,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .ite c a b => .ite (c.substVars f) (a.substVars f) (b.substVars f)
   | .app g args => .app g (args.map (·.substVars f))
   | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.substVars f)) (e.substVars f)
+  | .strict args e => .strict (args.map (·.substVars f)) (e.substVars f)
   | .cardinality c args => .cardinality c (args.map (·.substVars f))
   | .method m r args => .method m (r.substVars f) (args.map (·.substVars f))
   | .matches r p re => .matches (r.substVars f) p re
@@ -2700,6 +2723,7 @@ partial def Ex.mapNames (f app : Name → Name) : Ex → Ex
   | .ite c a b => .ite (c.mapNames f app) (a.mapNames f app) (b.mapNames f app)
   | .app g args => .app (app g) (args.map (·.mapNames f app))
   | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.mapNames f app)) (e.mapNames f app)
+  | .strict args e => .strict (args.map (·.mapNames f app)) (e.mapNames f app)
   | .cardinality c args => .cardinality c (args.map (·.mapNames f app))
   | .method m r args => .method m (r.mapNames f app) (args.map (·.mapNames f app))
   | .matches r p re => .matches (r.mapNames f app) p re
@@ -2739,6 +2763,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .ite c a b => .ite (c.subst σ) (a.subst σ) (b.subst σ)
   | .app g args => .app g (args.map (·.subst σ))
   | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.subst σ)) (e.subst σ)
+  | .strict args e => .strict (args.map (·.subst σ)) (e.subst σ)
   | .cardinality c args => .cardinality c (args.map (·.subst σ))
   | .method m r args => .method m (r.subst σ) (args.map (·.subst σ))
   | .matches r p re => .matches (r.subst σ) p re
@@ -2763,6 +2788,144 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
     let σ' := σ.filter (!ns.contains ·.1)
     .quant file pos all ns (ds.map (·.map (·.subst σ'))) ts (b.subst σ')
   | .range lo hi => .range (lo.subst σ) (hi.subst σ)
+
+/-- The part of `e`, a scrutinee, that each binder of `p` is bound to where
+`p` matches it: `e` itself for a binder, and for a variant's payload, or a
+`match`'s vector of several scrutinees, the part at its position, as
+`.field`, or the vector's own component. Alternatives bind none. -/
+partial def Pat.parts (p : Pat) (e : Ex) : List (Name × Ex) :=
+  match p, e with
+  | .bind n, e => [(n, e)]
+  | .ctor _ ps, .ctor t _ xs =>
+    if t == Fren.Core.matchVectorPath && xs.size == ps.size then
+      (ps.zip xs).toList.flatMap fun (q, x) => q.parts x
+    else (ps.zipIdx).toList.flatMap fun (q, i) => q.parts (.field e i)
+  | .ctor _ ps, e => (ps.zipIdx).toList.flatMap fun (q, i) => q.parts (.field e i)
+  | _, _ => []
+
+/-- The indexes, tables and `match`es in `e`, as the questions that the
+checks ask of them, each with its position, the question about a table's
+rows or a `match`'s arms (`none` for an index's definedness), and its
+formula: that it holds wherever the conditions before it hold
+(`check::definedness`, `check::completeness`, `check::disjointness`,
+`check::reachability`). An index's position is its own, and a table's or
+a `match`'s question is at its `table` or `match` for completeness, at
+the later row for disjointness, and at the row's condition or `_`, or the
+arm's pattern, for reachability. The conditions are read left to right, as the
+elaborator reads them, through `when`, `unless`, `if`, `and`, `or`, the
+arms of `match` and the rows of tables; `wrap` puts a formula under those
+around `e`. An arm's guard and body are read with each binder as its part
+of the scrutinee (`Pat.parts`), so that each read of a binder of an index
+has the definedness goal that the elaborator records for it there. -/
+partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Option Fren.Core.TableGoal × Ex) :=
+  let go (e : Ex) (w : Ex → Ex := wrap) := e.siteGoals w
+  match e with
+  | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
+  -- Only evaluation reads what `Ex.compile` gives.
+  | .memo _ e | .lifted _ e | .dispatch _ e => go e
+  | .not a | .neg a | .field a _ | .card a => go a
+  | .update a fs => go a ++ fs.flatMap (go ·.2)
+  | .when negated c d => go c ++ go d (fun g => wrap (.when negated c g))
+  | .ite c a b => go c ++ go a (fun g => wrap (.when false c g)) ++ go b (fun g => wrap (.when true c g))
+  | .bin .and a b => go a ++ go b (fun g => wrap (.when false a g))
+  | .bin .or a b => go a ++ go b (fun g => wrap (.when true a g))
+  | .bin _ a b | .pair a b => go a ++ go b
+  | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (go ·)
+  | .method _ r args => go r ++ args.flatMap (go ·)
+  -- Its arguments' questions, then its preconditions', as the elaborator
+  -- records them.
+  | .pre pos f goals e => go e ++ goals.map fun (p, g) => (pos, some (.precondition f p), wrap g)
+  | .strict _ e => go e
+  | .matches r _ _ => go r
+  | .index q i pos _ =>
+    let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))
+    go q ++ go i ++ #[(pos, none, wrap bounds)]
+  -- An arm's guard is guarded by its pattern's matching where no earlier
+  -- arm is taken, and its body by its being the first arm taken: the same
+  -- `match`, with `g` in that arm and true in every other and where no arm
+  -- is taken. Then the `match`'s own questions.
+  | .match s arms pos armPos unspec? pairs? =>
+    let tt := Ex.lit (.bool true)
+    let others (j : Nat) := (arms.extract 0 j).map fun (p, g?, _) => (p, g?, tt)
+    let inGuard (j : Nat) (g : Ex) : Ex := .match s (others j ++ #[(arms[j]!.1, none, g), (.wild, none, tt)]) pos armPos none none
+    let inBody (j : Nat) (g : Ex) : Ex :=
+      .match s (others j ++ #[(arms[j]!.1, arms[j]!.2.1, g), (.wild, none, tt)]) pos armPos none none
+    -- Each read of a binder is a read of its part of the scrutinee, whose
+    -- indexes the elaborator records there, under the arm's guard or test:
+    -- so the guard and body are read with each binder as its part
+    -- (`Pat.parts`).
+    let inArms := (List.range arms.size).toArray.flatMap fun j =>
+      let σ := arms[j]!.1.parts s
+      (match arms[j]!.2.1 with | some c => go (c.subst σ) (fun g => wrap (inGuard j g)) | none => #[]) ++
+        go (arms[j]!.2.2.subst σ) (fun g => wrap (inBody j g))
+    -- Where each arm is taken, if no earlier one is: its pattern matches and
+    -- its guard holds; `none` for `_` or a binder without a guard.
+    let taken := arms.map fun (p, g?, _) => match p, g? with
+      | .wild, none | .bind _, none => none
+      | _, _ => some (Ex.match s #[(p, none, g?.getD tt), (.wild, none, .lit (.bool false))] pos #[] none none)
+    let guarded := arms.map (·.2.1.isSome)
+    let orF (cs : Array Ex) : Ex := if cs.isEmpty then .lit (.bool false) else cs.pop.foldr (fun c acc => .bin .or c acc) cs.back!
+    -- Completeness is asked exactly where no arm may be taken.
+    let split := Fren.Core.splitGoals (if pairs?.isSome then .tableMatch else .match) orF (.bin .and) .not tt taken
+      guarded (unspec?.isSome)
+    -- Of a table over a scrutinee, the disjointness of the pairs of its
+    -- arms that `Fren.Core.tableArmPair` asks about, between completeness
+    -- and reachability, as `Fren.Core.tableMatchGoals` orders them. That
+    -- the indexes in an arm's guard are in range reads its binders, so it
+    -- is put within the arm's own `match`, beside the guard.
+    let pairGoals := match pairs? with
+      | none => #[]
+      | some pairs =>
+        let both : Array (Option Ex) := arms.map fun (p, g?, _) =>
+          let d := g?.bind fun g =>
+            Fren.Core.allOf? (.bin .and) (g.siteGoals.filterMap fun (_, q?, f) => if q?.isNone then some f else none)
+          some (Ex.match s #[(p, none, Fren.Core.allOf? (.bin .and) (d.toArray ++ g?.toArray) |>.getD tt),
+            (.wild, none, .lit (.bool false))] pos #[] none none)
+        Fren.Core.disjointGoals .tableMatch (.bin .and) .not tt both #[] pairs
+    let goals := split.filter (·.1 matches .completeness _) ++ pairGoals ++ split.filter (·.1 matches .reachability ..)
+    go s ++ inArms ++ goals.map fun (g, f) =>
+      ((match g with | .reachability _ j | .disjointness _ _ j => armPos[j]! | _ => pos), some g, wrap f)
+  -- In every instance, whatever the quantifier: the instances do not guard
+  -- each other.
+  | .quant file pos _ names doms tys body => go body (fun g => wrap (.quant file pos true names doms tys g))
+  | .range lo hi => go lo ++ go hi
+  -- A row's condition is guarded by the earlier rows' not holding, and its
+  -- value by its own holding too; then the table's own questions.
+  -- A constant's indexes and tables are the constant's.
+  | .const .. => #[]
+  | .typed _ _ a => go a
+  | .table pos rows _ =>
+    let unlessAll (cs : Array Ex) (g : Ex) : Ex := cs.foldr (fun c g => .when true c g) g
+    let (inRows, _) := rows.foldl (init := ((#[] : Array (Nat × Option Fren.Core.TableGoal × Ex)), (#[] : Array Ex)))
+      fun (acc, before) (_, c?, v) =>
+        let inC := match c? with
+          | some c => go c (fun g => wrap (unlessAll before g))
+          | none => #[]
+        let inV := go v (fun g => wrap (unlessAll before (match c? with | some c => .when false c g | none => g)))
+        (acc ++ inC ++ inV, before ++ c?.toArray)
+    let conds := rows.filterMap (·.2.1)
+    let starts := rows.filterMap fun (p, c?, _) => c?.map fun _ => p
+    let orF (cs : Array Ex) : Ex := if cs.isEmpty then .lit (.bool false) else cs.pop.foldr (fun c acc => .bin .or c acc) cs.back!
+    let wild := (rows.back?.map (·.2.1.isNone)).getD false
+    -- That a condition's indexes are in range where it evaluates them.
+    let defined := conds.map fun c =>
+      Fren.Core.allOf? (.bin .and) (c.siteGoals.filterMap fun (_, g?, f) => if g?.isNone then some f else none)
+    inRows ++ (Fren.Core.tableGoals orF (.bin .and) .not (.lit (.bool true)) conds defined wild).map fun (g, f) =>
+      ((match g with
+        | .disjointness _ _ j => starts[j]!
+        | .reachability _ j => rows[j]!.1
+        | _ => pos), some g, wrap f)
+
+/-- The indexes in `e`, each with its position and its definedness: that
+its position is in range wherever the conditions before it hold
+(`check::definedness`), read as `Ex.siteGoals` reads them. -/
+def Ex.indexGoals (e : Ex) : Array (Nat × Ex) :=
+  e.siteGoals.filterMap fun (pos, g?, f) => if g?.isNone then some (pos, f) else none
+
+/-- The questions about the rows of the tables in `e`, each with where it
+is reported and its formula, read as `Ex.siteGoals` reads them. -/
+def Ex.tableGoals (e : Ex) : Array (Nat × Fren.Core.TableGoal × Ex) :=
+  e.siteGoals.filterMap fun (pos, g?, f) => g?.map (pos, ·, f)
 
 /-- `e` with each application of a function of `σ` replaced by its
 closure's body, with the closure's parameters standing for the arguments
@@ -2791,6 +2954,7 @@ partial def Ex.substFns (σ : List (Name × Array Name × Ex)) : Ex → Ex
   | .when negated c d => .when negated (c.substFns σ) (d.substFns σ)
   | .ite c a b => .ite (c.substFns σ) (a.substFns σ) (b.substFns σ)
   | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.substFns σ)) (e.substFns σ)
+  | .strict args e => .strict (args.map (·.substFns σ)) (e.substFns σ)
   | .cardinality c args => .cardinality c (args.map (·.substFns σ))
   | .method m r args => .method m (r.substFns σ) (args.map (·.substFns σ))
   | .matches r p re => .matches (r.substFns σ) p re
@@ -2881,6 +3045,7 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .lifted lets a => a.readsUnspecified || lets.any (·.any (·.readsUnspecified))
   | .dispatch _ a => a.readsUnspecified
   | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .pre _ _ _ a => a.readsUnspecified
+  | .strict args a => args.any (·.readsUnspecified) || a.readsUnspecified
   | .quant _ _ _ _ ds _ a => a.readsUnspecified || ds.any (·.any (·.readsUnspecified))
   | .range lo hi => lo.readsUnspecified || hi.readsUnspecified
   | .bin _ a b | .when _ a b | .pair a b => a.readsUnspecified || b.readsUnspecified
@@ -3274,7 +3439,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         if (← get).lowering == some path then
           modify fun s => { s with selfApplied := true }
           return (← withPres (.app path args), r)
-        return (← withPres (body.subst (ps.zip args).toList), r)
+        return (← withPres (.strict args (body.subst (ps.zip args).toList)), r)
       -- A generic function without a body, at its instance
       -- (`bodilessInstance`), a function of its own, with the instance's
       -- contract.

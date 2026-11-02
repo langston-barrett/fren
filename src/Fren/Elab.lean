@@ -3551,8 +3551,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let (q, bs, test) ← resolveTop cx types[j]! terms[j]! false p
       return (q, bs.map fun b => { b with source? := some scrutinees[j]! }, test)
     rows := rows.push (parts.map (·.1))
+    -- The arm's test, the conjunction of its patterns' tests, each of its
+    -- scrutinee on its own, but none of a pattern that tests nothing
+    -- (`Core.Pat.irrefutable`, `Core.armTest`), as the `fren` command has it.
     resolved := resolved.push (parts[0]!.1, parts.flatMap (·.2.1),
-      Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) (parts.filterMap (·.2.2)))
+      Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b))
+        (parts.filterMap fun (q, _, t?) => if q.irrefutable then none else t?))
   let baseSigs ← patSigs
   let (sigs, pty, pats) := if many then Core.matchVector baseSigs ptypes rows
     else (baseSigs, ptypes[0]!, rows.map (·[0]!))
@@ -3691,7 +3695,14 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   -- otherwise, where none is taken, the `match` is the index out of range
   -- of the empty sequence, as a table where no row holds is.
   let complete := !Core.completenessAsked unguardedExhaustive
-  let mut out ← if complete then pure widened.back! else `(Fren.Seq.nth (∅ : Fren.Seq _) 0)
+  -- An arm with a test or a guard that is last only by completeness is
+  -- marked with the scrutinees that its patterns test, so that a model's
+  -- confirmation knows it only where it knows them, as `lang::eval`'s
+  -- `match` (`Fren.lastArm`): not those of a pattern that tests nothing.
+  let tested := (terms.zip (rows.back?.getD #[])).filterMap fun (t, q) => if q.irrefutable then none else some t
+  let last ← if taken.back?.join.isSome then tested.foldrM (fun t b => `(Fren.lastArm $t $b)) widened.back!
+    else pure widened.back!
+  let mut out ← if complete then pure last else `(Fren.Seq.nth (∅ : Fren.Seq _) 0)
   for i in (List.range (if complete then bodies.size - 1 else bodies.size)).reverse do
     out ← match taken[i]! with
       | some t => `(if $t then $(widened[i]!) else $out)

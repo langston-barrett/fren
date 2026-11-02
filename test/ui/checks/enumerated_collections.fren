@@ -446,4 +446,37 @@ proc uncovered(q: Seq<Int>, n: Int): (ok?) {  --~ info: 1 check of `uncovered` h
     cover c: n > 100  --~ warning: note: enumeration searched every behaviour up to size 3, with each index out of range as `[][0]`, which does not decide it
 }
 
---@ summary: 100 passed (81 by bounded enumeration), 20 failed, 8 inconclusive, 0 redundant
+-- A table or a `match` whose condition or scrutinee may be an index out of
+-- range is known where the rows or arms that may be taken are known and
+-- equal, as their `if`s are, as a model's confirmation knows it too
+-- (`Reqs/Models#known-values`).
+set_option fren.evidence "enumerated" in
+proc equal_rows(a: Int, q: Seq<Int>) {  --~ info: 3 checks of `equal_rows` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `equal_rows` are not run by enumeration
+    expect t: table {  --~ warning: every row of this table has a value written the same
+        q[2] = 2 => a = a + 0,
+        _ => a = a + 0,
+    }
+    expect m: (match q[3] {
+        3 => a >= a,  --~ warning: both operands of `>=` are written the same
+        _ => a >= a,  --~ warning: both operands of `>=` are written the same
+    })
+}
+
+-- Likewise a table whose last row is `true`, which a proposition that it
+-- assumes then holds of: where no row holds, which never happens here, a
+-- proposition's value is unknown, as `lang::eval`'s `NoMatch` is.
+set_option fren.evidence "enumerated" in
+proc true_row(a: Int, q: Seq<Int>) {  --~ info: 5 checks of `true_row` hold for every behaviour up to size 3
+    --~^ info: the definedness checks of `true_row` are not run by enumeration
+    assume p: table {  --~ warning: every row of this table has a value written the same
+        q[2] = 0 => a > 1,
+        true => a > 1,  --~ error: rows 1 and 2 of a table in `true_row::p` may both hold
+    }
+    expect e: table {
+        q[3] = 0 => a > 1,
+        a > 1 => true,
+    }
+}
+
+--@ summary: 115 passed (89 by bounded enumeration), 21 failed, 8 inconclusive, 0 redundant

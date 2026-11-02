@@ -30,6 +30,10 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   whom they conflict with, which must then be the same in both, at the
   same lines.
 - Checks whose evidence is testing, which Lean does not run, are left out.
+- Under misread models (`--confirm`), two messages about a check are
+  compared only where both front ends read the same model
+  (`dropOtherModels`), and the summary and exit code only if every pair
+  was.
 - A static error, including a denied lint, stops both front ends'
   checks, so neither reports results or a summary. Both report the lints
   of an item with a static error.
@@ -125,10 +129,17 @@ def isCheckHeadline (h : String) : Bool :=
   let rest (pre : String) : Option String := (h.dropPrefix? (pre ++ "`")).map fun r => afterSubject ("`" ++ r.toString)
   let r := afterSubject h
   h.startsWith "could not decide whether "
+  -- A model that confirmation refuted, in place of the check's result.
+  || h.startsWith "internal error: the solver's model for "
   || (rest "the assumptions of ").any (·.startsWith " are unsatisfiable: ")
   || r == " is not realizable"
   || (rest "an index of ").any (· == " may be out of range")
   || (rest "a table in ").any (· == " may have no row that holds")
+  || ((rest "a `match` in ").any (· == " may have no arm that is taken"))
+  || ((rest "a table in ").any (· == " may have no arm that is taken"))
+  || (h.startsWith "row " && (h.splitOn " of a table in `").length > 1 && h.endsWith "` is never the first that holds")
+  || (h.startsWith "arm " && ((h.splitOn " of a `match` in `").length > 1 || (h.splitOn " of a table in `").length > 1)
+      && h.endsWith "` is never taken")
   || (h.startsWith "rows " && (h.splitOn " of a table in `").length > 1 && h.endsWith "` may both hold")
   || (rest "the assumption ").any (·.startsWith " of `")
   || (rest "expectation ").any (· == " does not hold")
@@ -167,6 +178,77 @@ def isUndecided (d : Diagnostic) : Bool :=
 which has no location: the binary's last, and Lean's at the
 `#fren_check` that ends the spec. -/
 def isStoppedTrailer (d : Diagnostic) : Bool := d.line == 0 && headOf d == Fren.Core.couldNotHeadline
+
+/-- The model that a check's message reports, as both front ends write
+it: the one that confirmation refuted (`Fren reads the model as …`), or its
+counterexample or witness. -/
+def modelOf? (d : Diagnostic) : Option String :=
+  (d.text.splitOn "\n").findSome? fun l =>
+    let l := l.trimAscii.toString
+    ["note: Fren reads the model as ", "counterexample: ", "witness: "].findSome? fun p =>
+      (l.dropPrefix? p).map (·.toString)
+
+/-- The subject of a message: the first name in backquotes in its first
+line that is qualified, as both a check's result and its refuted model's
+internal error name the check's subject, as in "a `match` in `m::p::c`
+may have no arm that is taken"; or the first name, if none is. -/
+def subjectOf? (d : Diagnostic) : Option String :=
+  let parts := (headOf d).splitOn "`"
+  -- The text between a backquote and the next.
+  let names := (List.range parts.length).filterMap fun k => if k % 2 == 1 && k + 1 < parts.length then parts[k]? else none
+  (names.find? (·.contains "::")) <|> names.head?
+
+/-- The kind of check whose result a message is, as `Fren.Core.kindName`
+names it: as a refuted model's internal error names it, or by the
+headline of the result that it stands for. None for an undecided check,
+and for any other message. -/
+def checkKindOf? (d : Diagnostic) : Option String :=
+  let h := headOf d
+  let has (t : String) := (h.splitOn t).length > 1
+  if let some r := h.dropPrefix? "internal error: the solver's model for the " then
+    (r.toString.splitOn " check of ").head?
+  else if h.startsWith "could not decide whether " then none
+  else if h.endsWith " may be out of range" then some "definedness"
+  else if h.endsWith " may have no row that holds" || h.endsWith " may have no arm that is taken" then some "completeness"
+  else if h.endsWith " may both hold" then some "disjointness"
+  else if has " is never the first that holds" || has " is never taken" then some "reachability"
+  else if h.startsWith "expectation `" then some "expectation"
+  else if h.startsWith "cover goal `" then some "cover"
+  else if h.startsWith "the postcondition `" then some "postcondition"
+  else if h.startsWith "the precondition `" then some "precondition"
+  else if h.startsWith "the assumption `" then some "call"
+  else if has " is not determined by the inputs" then some "determinism"
+  else if h.endsWith " is not realizable" then some "realizability"
+  else none
+
+/-- `cs` and `hs`, the front ends' messages, without each pair of checks'
+results about the same check, by position, subject and kind, whose front ends
+did not read the same model, and whether any pair
+was dropped. Under misread models (`Fren.Core.misreadModels`), a model is
+refuted by a front end that knows enough to contradict it, and shown by
+one that does not; since the front ends' solvers may give different
+models, and a front end may read none, as the `fren` command reads no
+witness that depends on functions' interpretations, two results of a check
+say something about what the front ends know only where both read the same
+model. -/
+def dropOtherModels (cs hs : Array Diagnostic) : Array Diagnostic × Array Diagnostic × Bool := Id.run do
+  let same (c h : Diagnostic) := isCheckResult h && h.line == c.line && h.col == c.col && subjectOf? h == subjectOf? c
+    && (checkKindOf? c).isSome && checkKindOf? h == checkKindOf? c && ((modelOf? c).isSome || (modelOf? h).isSome)
+  -- Each of `hs` pairs with one of `cs` at most, one that read the same
+  -- model first: a check may have several results at one position, as the
+  -- definedness checks of an index and of a binder bound to it have.
+  let mut used : Array Bool := hs.map fun _ => false
+  let mut dropH : Array Bool := hs.map fun _ => false
+  let mut outC := #[]
+  let mut dropped := false
+  for c in cs do
+    let free (j : Nat) := !used[j]! && same c hs[j]!
+    match (List.range hs.size).find? (fun j => free j && modelOf? hs[j]! == modelOf? c) with
+    | some j => used := used.set! j true; outC := outC.push c
+    | none => match (List.range hs.size).find? free with
+      | some j => used := used.set! j true; dropH := dropH.set! j true; dropped := true
+      | none => outC := outC.push c
+  return (outC, (hs.zip dropH).filterMap (fun (h, d) => if d then none else some h), dropped)
 
 /-- The 1-based line where the top-level item containing each line of
 `text` starts: an item starts at a line that is neither indented, blank, a
@@ -210,7 +292,7 @@ def Comparison.decided (c : Comparison) : Array String := c.found.filter (!c.tim
 
 /-- How the front ends' reports on `text` differ: each difference as a
 line, and which of them the solvers' time limits can explain. -/
-def comparison (text : String) (cli hosted : Report) : Comparison := Id.run do
+def comparison (text : String) (cli hosted : Report) (misread := false) : Comparison := Id.run do
   let items := itemOf text
   let itemAt (n : Nat) := items[n]?.getD 0
   let render (who : String) (d : Diagnostic) :=
@@ -269,6 +351,11 @@ def comparison (text : String) (cli hosted : Report) : Comparison := Id.run do
   let keep (d : Diagnostic) := keep d && !isConflictNote d
   let mut cs := cliDiags.filter keep
   let hs := hosted.diags.filter keep
+  -- Under misread models, only the checks whose models both read alike
+  -- (`dropOtherModels`), and then neither the summary nor the exit code,
+  -- which count the checks' results, if any were not.
+  let (cs', hs, otherModels) := if misread then dropOtherModels cs hs else (cs, hs, false)
+  cs := cs'
   -- The same message: same line, column, severity and normalized
   -- headline.
   let mut hostedOnly := #[]
@@ -287,7 +374,7 @@ def comparison (text : String) (cli hosted : Report) : Comparison := Id.run do
   let mut out := stopped ++ sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
   let mut timed := (cs.filter isUndecided).map (render "fren") ++ (hostedOnly.filter isUndecided).map (render "Lean")
   -- The summary, unless a check is tested.
-  let sumDiffers := !anyTested && cli.summary? != hosted.summary?
+  let sumDiffers := !anyTested && !otherModels && cli.summary? != hosted.summary?
   -- A summary or an exit code that differs is a matter of time only if
   -- some undecided check explains it.
   let explained := !timed.isEmpty
@@ -301,7 +388,7 @@ def comparison (text : String) (cli hosted : Report) : Comparison := Id.run do
   let leanWorst := if hosted.diags.any (·.severity == "error") then 1
     else if hosted.diags.any (·.severity == "warning") then 3 else 0
   let expected := if staticError then 2 else leanWorst
-  let exitDiffers := !anyTested && cli.exit?.any (· != expected)
+  let exitDiffers := !anyTested && !otherModels && cli.exit?.any (· != expected)
   if exitDiffers then
     let d := s!"exit: fren exits {cli.exit?.getD 0}, and Lean's messages call for {expected}"
     out := out.push d
@@ -310,8 +397,8 @@ def comparison (text : String) (cli hosted : Report) : Comparison := Id.run do
 
 /-- How the front ends' reports on `text` differ: each difference as a
 line, and whether the solvers' time limits can explain all of them. -/
-def compare (text : String) (cli hosted : Report) : Array String × Bool :=
-  let c := comparison text cli hosted
+def compare (text : String) (cli hosted : Report) (misread := false) : Array String × Bool :=
+  let c := comparison text cli hosted misread
   (c.found, c.flaky)
 
 end FrenTest.Frontends
