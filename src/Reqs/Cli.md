@@ -421,8 +421,10 @@ character that no Fren name has, or are chosen fresh:
   component starts with a digit, which no name's does, and is chosen
   where the formula does not have it.
 
-The Lean front end makes no symbol of its own for these but a bound
-name's and a copy's: lean-smt names each local by its name. Its locals
+Besides a bound name's and a copy's, the Lean front end makes only names
+that start with `#`, as `fren check` does: `#match{j}` and `#_{k}` for the
+parameters of a function given as a closure. lean-smt names each local by
+its name. Its locals
 for a `let`'s names are `x@k`, and for a closure's parameters
 `Fren.Core.boundSymbol` at their position, `x#k`, which the solver never
 sees, and which no two binders along one path share.
@@ -431,8 +433,10 @@ Both front ends name bound names and copies by `Fren.Core.boundSymbol`
 and `Fren.Core.primed`, and `fren check` closures' parameters by
 `Fren.Core.closureSymbol`. `cli::query_symbols` states each symbol's
 text, by `text`, and that two of them are the same only if they are of
-the same thing. Its `impl` binds `text` to `Fren.Core.QuerySymbol.text`,
-which those functions make, and is proved. Positions and numbers are
+the same thing. Its `impl` binds each symbol to `Fren.Core.QuerySymbol.text`,
+which those functions make, so that each symbol's text is pinned down
+exactly, and is proved; the checker proves `apart` from the symbols'
+definitions and `rule`. Positions and numbers are
 written in decimal, so the Req has them as their digits. That each front
 end names each symbol by these functions is backed by the ui tests and the
 front-end fuzzer, which declares variables named as bound names' symbols
@@ -477,13 +481,20 @@ pub fn decimal?(s: QuerySymbol) := match s {
 }
 
 set_option fren.lint.undecidable "allow" in
-pub proc query_symbols(a: QuerySymbol, b: QuerySymbol): (det same?) {   -- `a` and `b` have one symbol
+pub proc query_symbols(a: QuerySymbol, b: QuerySymbol): (
+    symbol_a: String,            -- `a`'s symbol
+    symbol_b: String,            -- `b`'s symbol
+    det same?,                   -- `a` and `b` have one symbol
+) {
     -- Each is of a name, which never contains `#`, and has its number in decimal.
     assume names: not base(a).contains?("#") and not base(b).contains?("#")
     assume numbers: decimal?(a) and decimal?(b)
 
-    ensure rule: same? iff text(a) = text(b)
-    ensure apart: same? iff a = b
+    out symbol_a := text(a)
+    out symbol_b := text(b)
+    ensure rule: same? iff symbol_a = symbol_b
+
+    expect apart: same? iff a = b
 
     expect bound_apart: when a is QuerySymbol::Bound(_, _) and b != a, not same?
     expect not_primed: when a = QuerySymbol::Bound("i", "0") and b = QuerySymbol::Name("i'0", false), not same?

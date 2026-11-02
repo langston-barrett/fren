@@ -742,17 +742,23 @@ theorem not_mem_of_not_contains {s : String} (h : ¬Fren.Str.contains s (Fren.St
 impl query_symbols: cli::query_symbols for (a b : Fren.Core.QuerySymbol) {
   a := toReqSymbol a,
   b := toReqSymbol b,
+  symbol_a := a.text,
+  symbol_b := b.text,
   same? := a.text == b.text,
 } by
-  intro a b h
-  simp only [fren_spec] at h ⊢
-  obtain ⟨⟨ca, cb⟩, -, -⟩ := h
-  have ha : '#' ∉ a.base.toList := by cases a <;> exact not_mem_of_not_contains ca
-  have hb : '#' ∉ b.base.toList := by cases b <;> exact not_mem_of_not_contains cb
-  refine ⟨?_, ⟨fun e => congrArg _ (QuerySymbols.text_inj ha hb (beq_iff_eq.mp e)),
-    fun e => by rw [toReqSymbol_inj e]; exact beq_self_eq_true _⟩⟩
-  rw [beq_iff_eq]
-  cases a <;> cases b <;> simp [toReqSymbol, Fren.Core.QuerySymbol.text, Fren.Core.smtName, Fren.Core.copySymbol,
-    Fren.Core.boundSymbol, Fren.Core.closureSymbol, Fren.Str.lit, String.append_assoc]
+  intro a b _
+  simp only [fren_spec]
+  refine ⟨⟨?_, ?_⟩, beq_iff_eq⟩
+  · cases a <;> simp [toReqSymbol, Fren.Core.QuerySymbol.text, Fren.Core.smtName, Fren.Core.copySymbol,
+      Fren.Core.boundSymbol, Fren.Core.closureSymbol, Fren.Str.lit, String.append_assoc]
+  · cases b <;> simp [toReqSymbol, Fren.Core.QuerySymbol.text, Fren.Core.smtName, Fren.Core.copySymbol,
+      Fren.Core.boundSymbol, Fren.Core.closureSymbol, Fren.Str.lit, String.append_assoc]
+
+/-- What the Req's `apart` says, which its checker proves from `forms` and
+`rule`: of names without `#`, symbols are the same only if they are of
+the same thing. -/
+theorem query_symbols_apart {a b : Fren.Core.QuerySymbol} (ha : '#' ∉ a.base.toList) (hb : '#' ∉ b.base.toList) :
+    a.text = b.text ↔ toReqSymbol a = toReqSymbol b :=
+  ⟨fun e => congrArg _ (QuerySymbols.text_inj ha hb e), fun e => by rw [toReqSymbol_inj e]⟩
 
 end Fren.Impls
