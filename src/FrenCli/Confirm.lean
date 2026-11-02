@@ -406,9 +406,13 @@ where
 
 /-- `b`, with each formula paired with its meaning, and each model
 evaluated; refuted models are recorded in `log`. `sy` is `Symbols.of sp`,
-which the caller builds once for the spec. -/
+which the caller builds once for the spec. `recursiveIn` gives the
+recursive functions that a formula applies as the solver has it, once its
+definitions are unfolded, which the evaluator's formula of it may not show,
+as of a subset type's obligation, which it has none of. -/
 def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKind) (log : IO.Ref (Array Refutation))
-    (b : Fren.Core.Backend IO String String) : Fren.Core.Backend IO (String × Fm) String :=
+    (b : Fren.Core.Backend IO String String) (recursiveIn : String → Array Name := fun _ => #[]) :
+    Fren.Core.Backend IO (String × Fm) String :=
   let vars := sp.flatVars ec
   let outs := vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let copied := vars.filter (fun v => (Fren.Core.Symbol.ofRole v.role).copied) |>.map (·.name)
@@ -438,16 +442,19 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
         let vals := hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys)
         let bad := vals.find? (·.2 == some false)
         let g := goal.2.eval sp sy I env tys
-        let recursive := (hyps.flatMap fun (_, f) => f.2.recursiveNames sp) ++ goal.2.recursiveNames sp
+        -- Each formula's recursive functions, as the evaluator's formula and
+        -- the solver's have them (`Fren.Core.counterexampleReported`).
+        let recsOf (f : String × Fm) := f.2.recursiveNames sp ++ recursiveIn f.1
+        let recursive := (hyps.flatMap fun (_, f) => recsOf f) ++ recsOf goal
         -- A formula without recursion that the model contradicts is a bug
         -- in Fren, which the refutation below reports, not evidence about
         -- the contracts (`Reqs/Models#reporting`).
         let plain := Fren.Core.plainContradiction
-          ((hyps.zip vals).map fun ((n, f), (_, v)) => (n, v, !(f.2.recursiveNames sp).isEmpty))
-          (g, !(goal.2.recursiveNames sp).isEmpty)
-        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty)
-            (bad.isNone && g == some false && vals.all (·.2 == some true))
-            false then
+          ((hyps.zip vals).map fun ((n, f), (_, v)) => (n, v, !(recsOf f).isEmpty))
+          (g, !(recsOf goal).isEmpty)
+        if !plain && !Fren.Core.counterexampleReported
+            ((hyps.zip vals).map fun ((_, f), (_, v)) => (!(recsOf f).isEmpty, v))
+            (!(recsOf goal).isEmpty, g) false then
           return .unknown (Fren.Core.recursiveReason recursive)
         -- Only a refuted model is reported (`eval::confirm`).
         if confirmation bad.isSome (g == some true) (vals.all (·.2.isSome) && g.isSome) == .Refuted then

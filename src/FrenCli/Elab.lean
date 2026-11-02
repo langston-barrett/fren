@@ -2647,6 +2647,10 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
       recursiveDefs := s.recursiveDefs.insert name
       contracts := s.contracts.insert name { k with pres := atInst k.pres, posts := atInst k.posts }
       recInstances := s.recInstances.insert name (path, domain.map (replaceSymbols · repl)) }
+    -- Its result type's constraint, at the instance: a type parameter's
+    -- argument brings none (`Reqs/Lang/Recursion#generic-recursion`).
+    let rp := Fren.Core.instanceResult g.resultP args
+    if Fren.Core.recursiveResultFact (rp.cons (← get).shapeOf).isSome then noteResultFactAt sym rp
   return sym
 
 /-- The quoted symbols that the prelude declares: a closure captures each
@@ -7358,6 +7362,10 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
   if recursion matches .structural _ then
     if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
     modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path }
+    -- Each of its applications is opaque, and brings its result type's
+    -- constraint, as its postconditions, a hypothesis at a recursive
+    -- application in its own body too (`lang::recursive_facts`).
+    if Fren.Core.recursiveResultFact (rp.cons (← get).shapeOf).isSome then noteResultFact path rp
   notePredicateClauses cx path vars body smt
   noteObligation cx .body body.span rp smt
   let bodyTables ← takeTables

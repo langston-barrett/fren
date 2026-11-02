@@ -86,6 +86,14 @@ Binder-dependent applications receive neither (`lang::recursive_facts`). -/
 def recursiveFacts (introduced : Bool) (bound : Bool := false) : Bool × Bool :=
   (!bound, !bound && !introduced)
 
+/-- Whether a recursive application brings its result type's constraint,
+where the function's declared result type has one (`constrained`): with
+its postconditions, wherever they are brought, so in the function's own
+body too, as an induction hypothesis at each recursive application
+(`lang::recursive_facts`). -/
+def recursiveResultFact (constrained : Bool) (bound : Bool := false) : Bool :=
+  constrained && (recursiveFacts true bound).1
+
 /-- A simultaneous induction cannot report a dependent success when another
 postcondition is unproved (`lang::recursive_post_result`). -/
 def recursivePostResult (passed unproved : Bool) : Bool := passed && !unproved
@@ -103,6 +111,21 @@ where the model is real, as `cover big: one(l) > 100` of `fn one(l: L):
 meets. -/
 def recursiveCounterexample (recursive confirms factsRecursive : Bool) : Bool :=
   !factsRecursive && (!recursive || confirms)
+
+/-- Whether a check reports the solver's model as a counterexample
+(`lang::counterexample_confirmed`), from the query's own hypotheses `hyps`
+and its goal `goal`, each as the solver has it: whether it applies a
+recursive function, and what evaluation of the real definitions gives it at
+the model, `none` where evaluation gives nothing. It applies a recursive
+function where any of them does, as the solver's formula has it, whether or
+not evaluation can read the formula, so a model that evaluation refutes or
+cannot evaluate is never a failure: the goal of a subset type's obligation
+at a recursive application, which the evaluator has no formula of, is one
+(#693). -/
+def counterexampleReported (hyps : Array (Bool × Option Bool)) (goal : Bool × Option Bool)
+    (factsRecursive : Bool) : Bool :=
+  recursiveCounterexample (hyps.any (·.1) || goal.1)
+    (hyps.all (·.2 == some true) && goal.2 == some false) factsRecursive
 
 /-- The formulas whose applications of recursive functions a query reflects,
 with their one-step equations and postconditions (`lang::recursion_formulas`):

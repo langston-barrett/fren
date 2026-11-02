@@ -3561,14 +3561,17 @@ impl prelude_sort: lang::prelude_sort for (s : String) {
 
 -- The shared policies used when constructing recursive queries and reporting
 -- their results; these bind the structured requirements to the real helpers.
-impl recursive_facts: lang::recursive_facts for (introduced bound : Bool) {
+impl recursive_facts: lang::recursive_facts for (introduced bound constrained : Bool) {
   bound? := bound,
   origin := if introduced then lang.RecApplication.Reflected else lang.RecApplication.Written,
-  facts := { posts? := (Fren.Core.recursiveFacts introduced bound).1,
+  constrained_result? := constrained,
+  facts := { result_type? := Fren.Core.recursiveResultFact constrained bound,
+             posts? := (Fren.Core.recursiveFacts introduced bound).1,
              equation? := (Fren.Core.recursiveFacts introduced bound).2 },
 } by
-  intro introduced bound _
-  cases introduced <;> cases bound <;> simp [fren_spec, Fren.Core.recursiveFacts]
+  intro introduced bound constrained _
+  cases introduced <;> cases bound <;> cases constrained <;>
+    simp [fren_spec, Fren.Core.recursiveFacts, Fren.Core.recursiveResultFact]
 
 impl recursive_post_result: lang::recursive_post_result for (r : lang.RecPost) (failed : Bool) {
   result := r,
@@ -3586,6 +3589,59 @@ impl recursive_counterexample: lang::recursive_counterexample for (recursive con
 } by
   intro recursive confirms facts _
   cases recursive <;> cases confirms <;> cases facts <;> simp [fren_spec, Fren.Core.recursiveCounterexample]
+
+/-- What evaluation gives a formula (`lang::Evaluated`). -/
+def evaluatedOf : Option Bool → lang.Evaluated
+  | some true => .Holds
+  | some false => .Fails
+  | none => .Unevaluated
+
+/-- A formula of a query as the solver has it (`lang::ModelFormula`). -/
+def modelFormulaOf (f : Bool × Option Bool) : lang.ModelFormula :=
+  { recursive? := f.1, value := evaluatedOf f.2 }
+
+/-- The value that evaluation gives a formula, of what it gives
+(`evaluatedOf`'s inverse). -/
+def ofEvaluated : lang.Evaluated → Option Bool
+  | .Holds => some true
+  | .Fails => some false
+  | .Unevaluated => none
+
+theorem evaluatedOf_eq (o : Option Bool) (v : lang.Evaluated) : evaluatedOf o = v ↔ o = ofEvaluated v := by
+  rcases o with _ | _ | _ <;> cases v <;> simp [evaluatedOf, ofEvaluated]
+
+theorem mem_modelFormulas (hs : List (Bool × Option Bool)) (r : Bool) (v : lang.Evaluated) :
+    ({ recursive? := r, value := v } : lang.ModelFormula) ∈ Fren.Seq.ofList (hs.map modelFormulaOf) ↔
+      (r, ofEvaluated v) ∈ hs := by
+  simp only [Fren.Seq.mem_iff, Fren.Seq.toList_ofList, List.mem_map]
+  constructor
+  · rintro ⟨⟨a, o⟩, ha, he⟩
+    have h1 : a = r := congrArg lang.ModelFormula.recursive? he
+    have h2 : evaluatedOf o = v := congrArg lang.ModelFormula.value he
+    rw [evaluatedOf_eq] at h2
+    subst h1 h2
+    exact ha
+  · intro h
+    refine ⟨(r, ofEvaluated v), h, ?_⟩
+    cases v <;> rfl
+
+-- Both front ends decide whether a check reports the solver's model with
+-- `counterexampleReported`, over any formulas of the query.
+impl counterexample_confirmed: lang::counterexample_confirmed
+    for (hs : List (Bool × Option Bool)) (g : Bool × Option Bool) (facts : Bool) {
+  hyps := Fren.Seq.ofList (hs.map modelFormulaOf),
+  goal := modelFormulaOf g,
+  facts_recursive? := facts,
+  report_counterexample? := Fren.Core.counterexampleReported hs.toArray g facts,
+} by
+  intro hs g facts _
+  obtain ⟨gr, gv⟩ := g
+  simp only [fren_spec, mem_modelFormulas, Fren.Core.counterexampleReported, Fren.Core.recursiveCounterexample,
+    modelFormulaOf, ofEvaluated]
+  cases facts <;> cases gr <;> rcases gv with _ | _ | _ <;> simp [evaluatedOf, Option.forall, and_assoc] <;>
+    by_cases a1 : (true, some true) ∈ hs <;> by_cases a2 : (true, some false) ∈ hs <;>
+    by_cases a3 : (true, none) ∈ hs <;> by_cases a4 : (false, some false) ∈ hs <;>
+    by_cases a5 : (false, none) ∈ hs <;> simp [a1, a2, a3, a4, a5]
 
 /-- The facts of the applications `brought`, of the pairs `rel` of each
 application and a formula of its facts, in order. -/
