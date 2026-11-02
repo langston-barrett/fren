@@ -2805,8 +2805,9 @@ messages, with the same counterexamples, for the checks set to
 and are compared like any other (see [Agreement with
 Lean](Cli.md#agreement-with-lean)).
 
-Methods must agree with each other too: no method may pass a check that
-another refutes. [Agreement of methods](Methods.md#agreement-of-methods)
+Methods must agree with each other too: no method may decide a pass of a
+check that another refutes, though a pass up to the size may stand beside
+a counterexample larger than the size. [Agreement of methods](Methods.md#agreement-of-methods)
 states when two verdicts contradict each other (`check::methods_agree`),
 and how every check of Fren's own requirements and tests is run under
 every method to compare them.

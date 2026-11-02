@@ -2480,9 +2480,16 @@ structure MethodCounts where
   excepted : Nat := 0
   /-- Specs with a static error, which no method checks. -/
   static : Nat := 0
-  /-- Runs that could not check, by a static error under their method alone
-  (exit 2), as `name: method`, such as `F0639` under random testing. -/
-  stopped : Array String := #[]
+  /-- Runs that reported an error under their method alone (exit 2), as
+  `name: method`, such as `F0639` under random testing or `F0645` under
+  enumeration: the checks of the procedures that the error names are
+  missing from that run, and counted under "not run", while its other
+  checks are compared. -/
+  errored : Array String := #[]
+  /-- Checks on which both the solver and enumeration, and both the solver
+  and random testing, contributed a verdict (`methodFloors`). -/
+  solverEnumerated : Nat := 0
+  solverRandom : Nat := 0
   deriving Inhabited
 
 /-- Compares the methods on `files`, checked together as `name`, `jobs?`
@@ -2496,7 +2503,7 @@ def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref Metho
   if runs[0]!.2 == 2 then counts.modify fun c => { c with static := c.static + 1 }
   else
     for (_, code) in runs, (_, value) in comparedMethods do
-      if code == 2 then counts.modify fun c => { c with stopped := c.stopped.push s!"{name}: {value}" }
+      if code == 2 then counts.modify fun c => { c with errored := c.errored.push s!"{name}: {value}" }
   -- Every check that some method ran, by its key, in order.
   let keys := (runs.foldl (init := (#[] : Array String)) fun acc (found, _) =>
     acc ++ found.toArray.map (·.1)).qsort (· < ·) |>.toList.eraseDups
@@ -2517,6 +2524,9 @@ def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref Metho
           if f.verdict == .inconclusive then c := { c with inconclusive := c.inconclusive.modify i (· + 1) }
           else c := { c with decided := c.decided.modify i (· + 1) }
       if (contributions.filter (· != .nothing)).length ≥ 2 then c := { c with compared := c.compared + 1 }
+      let said (i : Nat) := contributions[i]! != .nothing
+      if said 0 && said 1 then c := { c with solverEnumerated := c.solverEnumerated + 1 }
+      if said 0 && said 2 then c := { c with solverRandom := c.solverRandom + 1 }
       if contributions.contains .refuted && contributions.contains .bounded then
         c := { c with beyondSize := c.beyondSize + 1 }
       return c
@@ -2535,6 +2545,16 @@ def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref Metho
     failures := failures.push s!"{name}: `{key}`: the methods contradict each other: {"; ".intercalate said}"
   return failures
 
+/-- The fewest checks that each part of `methodsAgree` compares, between
+the solver and enumeration and between the solver and random testing, so
+that a change that silently stops a method, or makes its checks' keys
+differ from the solver's, fails the job rather than comparing nothing: some
+nine tenths of what each part compared when they were set (own 3314 and
+34, ui 3175 and 218, fuzz 575 and 184). Random testing compares few, as
+"no counterexample found" on a check that passes on a proof contributes
+nothing (`check::methods_agree`). -/
+def methodFloors : List (String × Nat × Nat) := [("own", (2982, 30)), ("ui", (2857, 196)), ("fuzz", (517, 165))]
+
 /-- The ui tests whose checks the methods are compared on: those that the
 binary checks, without a static error, as for `enumerationAgrees`. -/
 def methodsCorpus : IO (Array FilePath) := enumerationCorpus
@@ -2548,7 +2568,7 @@ def methodsAgree (part : List String) : IO (Array String) := do
   let all := part.isEmpty
   if all || part == ["own"] then
     -- Two at a time: the solver, asked the checks that the requirements set
-    -- to other methods, took some 9.4 GB at two, and 13.8 GB at four.
+    -- to other methods, took 9.4 GB at two, and 13.8 GB at four, on macOS.
     failures := failures ++ (← methodsAgreeOn "src/Reqs" ownSpecFiles counts (jobs? := some 2))
   let (k, n) := match part with
     | ["ui", k, n] => (k.toNat?.getD 0, n.toNat?.getD 1)
@@ -2569,10 +2589,25 @@ def methodsAgree (part : List String) : IO (Array String) := do
     s!"{comparedMethods[i]!.2} decided {c.decided[i]!}, inconclusive {c.inconclusive[i]!}, not run {c.notRun[i]!}"
   IO.println s!"methodsAgree: {c.checks} checks, {c.compared} compared by at least two methods; {"; ".intercalate byMethod}; \
     {c.beyondSize} counterexamples beside a pass up to the size; {c.excepted} excepted; {failures.size} contradictions"
-  IO.println s!"methodsAgree: {c.static} specs with static errors; {c.stopped.size} runs stopped by an error of their method alone\
-    {if c.stopped.isEmpty then "" else s!": {", ".intercalate c.stopped.toList}"}"
-  let least := if all then 1000 else 1
-  return if c.compared < least then failures.push s!"methodsAgree: only {c.compared} checks compared" else failures
+  IO.println s!"methodsAgree: {c.solverEnumerated} checks compared between the solver and enumeration, \
+    {c.solverRandom} between the solver and random testing"
+  IO.println s!"methodsAgree: {c.static} specs with static errors; {c.errored.size} runs reported an error under their \
+    method alone, whose named procedures' checks are not run\
+    {if c.errored.isEmpty then "" else s!": {", ".intercalate c.errored.toList}"}"
+  -- The floors of the parts run, added up.
+  let parts := if all then ["own", "ui", "fuzz"] else part.take 1
+  let (leastE, leastR) := parts.foldl (init := (0, 0)) fun (e, r) p =>
+    match methodFloors.lookup p with
+    -- A shard of the ui tests has about its share of them.
+    | some (e', r') => if p == "ui" then (e + e' / n, r + r' / n) else (e + e', r + r')
+    | none => (e, r)
+  if c.solverEnumerated < leastE then
+    failures := failures.push
+      s!"methodsAgree: only {c.solverEnumerated} checks compared between the solver and enumeration, fewer than {leastE}"
+  if c.solverRandom < leastR then
+    failures := failures.push
+      s!"methodsAgree: only {c.solverRandom} checks compared between the solver and random testing, fewer than {leastR}"
+  return failures
 
 /-! ## Jobs
 

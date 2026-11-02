@@ -291,8 +291,8 @@ jobs:
           local name="${*// /-}"
           lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out"
         }
-        # One part at a time: the solver took up to 13.8 GB on Fren's own
-        # requirements, and 8.8 GB on the ui tests, on macOS.
+        # One part at a time: on macOS, `own` (two procedures at once) took
+        # 9.4 GB and `ui` (as many as there are cores, 14 there) 8.8 GB.
         code=0
         part own || code=1
         part ui 0 1 || code=1

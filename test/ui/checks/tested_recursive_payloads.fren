@@ -14,3 +14,31 @@ proc chained(c: Chain) {  --~[hosted] info: the checks of `chained` set to rando
         _ => true,
     }
 }
+
+-- So does a generic one's payload of a subset type, at an instance: before,
+-- `Gen::Link(-1, false, Gen::Link(20, false, Gen::End))` was a counterexample.
+-- A subset type cannot be the type argument of a recursive enumeration
+-- (`F0389`), nor `Nat` a payload's type (`F0338`), so these are its only
+-- payloads that bring a constraint.
+set_option fren.lint.undecidable "allow" in
+enum Gen<T> { End, Link(Digit, T, Gen<T>) }
+
+set_option fren.evidence "random" in
+proc generic(c: Gen<Bool>) {  --~[hosted] info: the checks of `generic` set to random testing are run by `fren check`, not in Lean
+    expect heads: match c {
+        Gen::Link(d, _, Gen::Link(e, _, _)) => d + e <= 18,
+        _ => true,
+    }
+}
+
+-- And a recursive enumeration within a record: the record's type is checked
+-- whole too.
+struct Holder { chain: Chain }
+
+set_option fren.evidence "random" in
+proc held(h: Holder) {  --~[hosted] info: the checks of `held` set to random testing are run by `fren check`, not in Lean
+    expect heads: match h.chain {
+        Chain::Link(d, Chain::Link(e, _)) => d + e <= 18,
+        _ => true,
+    }
+}

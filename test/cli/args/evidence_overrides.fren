@@ -1,0 +1,9 @@
+--@ args: check --evidence solver
+-- `--evidence solver` asks the solver what the procedure's own setting
+-- leaves to random testing: its vacuity and redundancy too, which testing
+-- would skip, and no check is counted as passed by random testing.
+set_option fren.evidence "random" in
+proc p(x: Int): (y: Int) {
+    ensure d: y = x + 1
+    expect e: when x > 0, y > x
+}

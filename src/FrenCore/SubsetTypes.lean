@@ -163,7 +163,7 @@ private def guardPos : PTy := { ty := .int, invariants := #[{ name := `pos, pred
 
 /-- The shapes of `R(Pos)`, the newtype `N(Pos)`, the recursive
 enumerations `L { Nil, Cons(Int, L) }` and `P { Nil, Cons(Pos, P) }`,
-the generic record `G<T>(T)`, and `H(G<Pos>)`. -/
+the generic record `G<T>(T)`, `H(G<Pos>)`, and `RP(P)`. -/
 private def guardShapes : Name → Option DataShape
   | `R => some { isRecord := true, parts := #[#[guardPos]] }
   | `N => some { isRecord := true, isNewtype := true, parts := #[#[guardPos]] }
@@ -171,6 +171,7 @@ private def guardShapes : Name → Option DataShape
   | `P => some { recursive := true, parts := #[#[], #[guardPos, { ty := .enum `P [] }]] }
   | `G => some { isRecord := true, parts := #[#[{ ty := .param 0 `T }]] }
   | `H => some { isRecord := true, parts := #[#[{ ty := .record `G [.int], elems := #[guardPos] }]] }
+  | `RP => some { isRecord := true, parts := #[#[{ ty := .enum `P [] }]] }
   | _ => none
 
 #guard (PTy.plain .int).invariantFree guardShapes
@@ -306,6 +307,7 @@ partial def PTy.recursivelyConstrained (shapes : Name → Option DataShape) (t :
 #guard PTy.recursivelyConstrained guardShapes { ty := .set (.enum `P []), elems := #[{ ty := .enum `P [] }] }
 #guard !PTy.recursivelyConstrained guardShapes { ty := .enum `L [] }
 #guard !PTy.recursivelyConstrained guardShapes { ty := .record `R [] }
+#guard PTy.recursivelyConstrained guardShapes { ty := .record `RP [] }
 
 /-- The obligation of a value of type `ty`, of the pattern `top?`, if it
 has a pattern-test invariant, whose element types' obligations are `e1?`

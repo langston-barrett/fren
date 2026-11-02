@@ -316,7 +316,12 @@ pub proc methods_agree(
 }
 ```
 
-`methods_agree` is bound to `Fren.Core.methodsContradict`. The test job
+`bounded?` is an input, rather than computed by `enumerated_verdict` as
+`combined` computes it, because what is compared is each method's
+reported result, which already holds enumeration's verdict and whether it
+is bounded; `enumerated_verdict` is bound to the code that gives them
+(`enumeratedVerdict`). `methods_agree` is bound to
+`Fren.Core.methodsContradict`. The test job
 `methodsAgree`, which runs on `main` only, checks it of Fren's own
 requirements, of the ui tests and of the front-end fuzzer's corpus. It
 checks each of them three times, under `fren check --evidence` set to
