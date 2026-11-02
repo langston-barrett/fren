@@ -9,13 +9,19 @@ because `b` is not evaluated where `a` is false (see
 
 The semantics is big-step, in the style of the dynamic semantics of the
 Definition of Standard ML and of chapter 3 of Pierce's *Types and
-Programming Languages*: one function, `lang::eval`, gives the outcome of
-an expression in an interpretation and an environment, by one rule for
-each form of expression, over the outcomes of its immediate
-subexpressions. Its sections follow the Rust Reference's chapter on
-expressions. The forms of the source language that are not in the
-abstract syntax below are *derived forms*, defined by their translation
-into it, as the Definition's are (see [Derived forms](#derived-forms)).
+Programming Languages*. Its sections follow the Rust Reference's chapter
+on expressions, and [Rules of evaluation](EvaluationRules.md) states the
+rule of each form.
+
+r[semantics.eval.big-step]
+One function, `lang::eval`, gives the outcome of an expression in an
+interpretation and an environment. It has one rule for each form of
+expression, over the outcomes of the form's immediate subexpressions.
+
+r[semantics.derived-forms]
+A form of the source language that is not in the [abstract
+syntax](#abstract-syntax) is a *derived form*, defined by its translation
+into it (see [Derived forms](#derived-forms)).
 
 ```fren
 pub mod lang
@@ -23,21 +29,42 @@ pub mod lang
 
 ## Values
 
-`lang::Value` is the value of an expression, of any type:
+A value is the result of evaluating an expression that is well-defined.
 
-- `True` and `False` are the `Bool`s, as the constructors of `bool` are
-  in Standard ML, and `Integer(n)` and `Text(s)` an `Int` or a `Nat`, and
-  a `String`;
-- `Nil` and `Cons(v, rest)` are lists: a sequence is the list of its
-  elements, in order, and so are the values of a payload or of a record's
-  fields;
-- `Constructed(c, l)` is a value of an enumeration, record or newtype:
-  the variant, record or newtype `c`, by its full path, and the list `l` of
-  its payload's or fields' values, a record's in the order the record
-  declares its fields.
+**Dynamic semantics**
 
+r[semantics.value]
+`lang::Value` is the value of an expression, of any type.
+
+r[semantics.value.bool]
+`True` and `False` are the values of `Bool`.
+
+r[semantics.value.integer]
+`Integer(n)` is a value of `Int` or of `Nat`.
+
+r[semantics.value.text]
+`Text(s)` is a value of `String`.
+
+r[semantics.value.list]
+`Nil` and `Cons(v, rest)` are lists. The value of a sequence is the list
+of its elements, in order. The values of a payload, and those of a
+record's fields, are lists too.
+
+r[semantics.value.constructed]
+`Constructed(c, l)` is a value of an enumeration, record or newtype. `c` is
+the full path of the variant, record or newtype, and `l` is the list of the
+values of its payload or of its fields. A record's fields are in the order
+in which the record declares them.
+
+r[semantics.value.excluded]
 Sets, relations and values of abstract types are not values of this
-model: see [What the model leaves out](#what-the-model-leaves-out).
+model (see [What the model leaves out](#what-the-model-leaves-out)).
+
+r[semantics.value.truth]
+`truth(b?)` is `True` where `b?` holds, and `False` where it does not.
+
+> **Note:** `True` and `False` are constructors of `Value`, as those of
+> `bool` are in Standard ML.
 
 ```fren
 pub enum Value {
@@ -56,22 +83,40 @@ pub fn truth(b?): Value := if b? then Value::True else Value::False
 
 ## Outcomes and well-definedness
 
-An expression's *outcome* is `Defined(v)`, its value `v`, or `Undefined`.
-An expression is *well-defined* (WD) in an environment where its outcome
-is defined. An expression that is not WD, such as `[][0]` or a `match`
-where no arm is taken, still has a value in each behaviour, as in TLA+,
-where `[][0]` is a "silly expression": that value is unspecified, and the
-checks hold for every choice of it, as they hold for every interpretation
-of an uninterpreted function (see [Definedness](../Check.md#definedness)).
-So the outcome `Undefined` says only that the semantics does not fix the
-value, and a rule that holds of every defined outcome holds of the
-language's value there.
+An expression either has a value, or the semantics does not fix one.
 
-Evaluation is strict: an expression is WD only where each immediate
-subexpression that it evaluates is WD. The forms that do not evaluate
-every immediate subexpression are `And`, `Or`, `If`, `Match` and `Let`,
-whose definition is evaluated only where its name is
-(see [Let expressions](EvaluationRules.md#let-expressions)).
+**Dynamic semantics**
+
+r[semantics.outcome]
+An expression's *outcome* is `Defined(v)`, its value `v`, or `Undefined`
+(`lang::Outcome`).
+
+r[semantics.outcome.well-defined]
+An expression is *well-defined* (WD) in an environment where its outcome
+is defined.
+
+r[semantics.outcome.undefined]
+An expression that is not WD, such as `[][0]` or a `match` where no arm is
+taken, still has a value in each behaviour. That value is unspecified, and
+the checks hold for every choice of it, as they hold for every
+interpretation of an uninterpreted function (see
+[Definedness](../Check.md#definedness)).
+
+r[semantics.outcome.undefined.unfixed]
+The outcome `Undefined` says only that the semantics does not fix the
+value. A rule that holds of every defined outcome holds of the language's
+value there.
+
+r[semantics.outcome.strict]
+Evaluation is *strict*. An expression is WD only where each immediate
+subexpression that it evaluates is WD.
+
+r[semantics.outcome.lazy-forms]
+The forms that do not evaluate every immediate subexpression are `And`,
+`Or`, `If`, `Match` and `Let`. The definition of a `Let` is evaluated only
+where its name is (see [Let expressions](EvaluationRules.md#let-expressions)).
+
+> **Note:** TLA+ treats `[][0]` alike, as a "silly expression".
 
 ```fren
 pub enum Outcome { Defined(Value), Undefined }
@@ -79,37 +124,69 @@ pub enum Outcome { Defined(Value), Undefined }
 
 ## Abstract syntax
 
+The abstract syntax is the expression that the checker evaluates, once
+the source is elaborated.
+
+**Syntax**
+
+r[semantics.syntax]
 The abstract syntax is that of an expression after
-[elaboration](Types.md#checking-and-synthesis): every name is
+[elaboration](Types.md#checking-and-synthesis). Every name is
 [resolved](Scope.md), every type is checked, and every derived form is
-translated. A variant, record or newtype is named by its full path, as in
-`Shape::Circle`, and so are functions. A variable is named by a `V`: the
-abstract syntax is generic in the type of the names of variables, of
-which nothing is known but whether two of them are equal, so
-`lang::Pattern<V>`, `lang::Params<V>` and `lang::Expr<V>` take it as their
-type parameter. The semantics evaluates `Expr<Id>`, whose names are
-`Id`s, as they are written; another type of names, such as a
-[binding](Scope.md#bindings) for each, can stand for the names once they
-are resolved, with the same forms. A function that is generic in `V`
-knows of names only whether two are equal, and the type's `Inhabited`
-default, so renaming every name of an expression apart changes nothing
-that it computes but the names, as is proved of the [lints'
-rules](../Lint/Rewrites.md#renaming), each by its definition. A recursion over it, as `eval`
-is, takes one type of names, as `Id`, since a generic function is [not
-recursive](Recursion.md). No form needs a sequence of a type parameter,
-which a generic type cannot have yet ([Type
-parameters](Generics.md#type-parameters)): a form with a list of operands
-has a list expression for them, below.
+translated.
+
+r[semantics.syntax.paths]
+A variant, record, newtype or function is named by its full path, as in
+`Shape::Circle`.
+
+r[semantics.syntax.names]
+A variable is named by a `V`. The abstract syntax is generic in the type
+`V` of the names of variables, of which nothing is known but whether two
+of them are equal. `lang::Pattern<V>`, `lang::Params<V>` and
+`lang::Expr<V>` take it as their type parameter.
+
+r[semantics.syntax.names.id]
+The semantics evaluates `Expr<Id>`, whose names are `Id`s, as they are
+written. Another type of names, such as a [binding](Scope.md#bindings) for
+each, can stand for the names once they are resolved, with the same forms.
+
+r[semantics.syntax.names.generic]
+A function that is generic in `V` knows of names only whether two are
+equal, and the type's `Inhabited` default. Renaming every name of an
+expression apart changes nothing that such a function computes but the
+names.
+
+r[semantics.syntax.names.recursion]
+A recursion over the abstract syntax, as `eval` is, takes one type of
+names, as `Id`. A generic function is [not recursive](Recursion.md).
+
+r[semantics.syntax.lists]
+No form needs a sequence of a type parameter. A form with a list of
+operands has a list expression for them (see
+[Expressions](#expressions)).
+
+> **Note:** The renaming of `semantics.syntax.names.generic` is proved of
+> the [lints' rules](../Lint/Rewrites.md#renaming), each by its
+> definition. A generic type cannot have a sequence of a type parameter yet
+> ([Type parameters](Generics.md#type-parameters)).
 
 ### Patterns
 
-`lang::Pattern<V>` is a pattern of [Patterns](Patterns.md): `Wildcard`, a
-`Binder(x)`, a `Literal(v)`, the integer ranges `AtLeast(lo)`
-(`lo..`), `AtMost(hi)` (`..=hi`) and `Between(lo, hi)` (`lo..=hi`; `lo..hi`
-is `Between(lo, hi - 1)`), `Variant(c, ps)`, where `ps` is a list pattern
-for the payload's values, and an or-pattern `Or(a, b)`. A list pattern is
-`Nil` or `Cons(p, ps)`, as a list is; it also matches the list of the
-scrutinees of a `match` with [several
+**Syntax**
+
+r[semantics.syntax.pattern]
+`lang::Pattern<V>` is a pattern of [Patterns](Patterns.md). Its forms are
+`Wildcard`, a `Binder(x)`, a `Literal(v)`, the integer ranges
+`AtLeast(lo)` (`lo..`), `AtMost(hi)` (`..=hi`) and `Between(lo, hi)`
+(`lo..=hi`), `Variant(c, ps)`, where `ps` is a list pattern for the
+payload's values, and an or-pattern `Or(a, b)`.
+
+r[semantics.syntax.pattern.exclusive-range]
+The range `lo..hi` is `Between(lo, hi - 1)`.
+
+r[semantics.syntax.pattern.list]
+A list pattern is `Nil` or `Cons(p, ps)`, as a list is. It also matches the
+list of the scrutinees of a `match` with [several
 scrutinees](HigherOrder.md#lambda-matches-and-multiple-scrutinees).
 
 ```fren
@@ -129,9 +206,8 @@ pub enum Pattern<V> {
 
 ### Expressions
 
-`lang::Expr<V>` is an expression. A form with a list of operands, such as
-the arguments of a call, has a list expression for them, `Nil` or
-`Cons(e, rest)`, which evaluates to the list of their values.
+Each form of expression, an example of its source, and the section of
+[Rules of evaluation](EvaluationRules.md) that gives its rule:
 
 | Form | Source | Section |
 |---|---|---|
@@ -153,6 +229,16 @@ the arguments of a call, has a list expression for them, `Nil` or
 | `Apply(f, args, ps, body)` | `f(a)`, a constant `C` | [Call expressions](EvaluationRules.md#call-expressions) |
 | `Call(f, args)` | `f(a)`, `f` uninterpreted | [Call expressions](EvaluationRules.md#call-expressions) |
 | `Recur(f, args)` | `f(a)`, `f` a structural recursion | [Call expressions](EvaluationRules.md#call-expressions) |
+
+**Syntax**
+
+r[semantics.syntax.expr]
+`lang::Expr<V>` is an expression.
+
+r[semantics.syntax.expr.lists]
+A form with a list of operands, such as the arguments of a call, has a list
+expression for them, `Nil` or `Cons(e, rest)`, which evaluates to the list
+of their values.
 
 ```fren
 pub enum UnaryOp { Not, Neg }
@@ -194,74 +280,238 @@ pub enum Expr<V> {
 
 ### Derived forms
 
-Each form of the left column is the expression of the right, after its
-own subexpressions are translated. A translation that writes an
-expression twice, such as the scrutinee of a `match`, does not change its
-meaning, since evaluation has no effects and is deterministic.
+A derived form is written for convenience, and means what its translation
+means.
 
-| Derived form | Translation |
-|---|---|
-| `a != b` | `not (a = b)` |
-| `a > b`, `a >= b` | `b < a`, `b <= a` |
-| `a iff b` | `a = b` |
-| `when c, d` | `if c then d else true` |
-| `unless c, d` | `if c then true else d` |
-| `a < b < c`, and every [chained comparison](Expressions.md#chained-comparisons) | `a < b and b < c` |
-| `let x := d, y := e in b`; `b where x := d` | `let x := d in let y := e in b`; `let x := d in b` |
-| `match s { p if g => b, arms }` | `Match(s, p, g, b, match s { arms })`, with `g` `true` for an arm without a guard |
-| `match s {}`, after the last arm | `NoMatch` |
-| `match a, b { p, q => e, ... }` | `match [a, b] { [p, q] => e, ... }`, its patterns as list patterns |
-| `table { c => v, rows }` | `if c then v else table { rows }`; `table { _ => v }` is `v`, and `table {}` is `NoMatch` |
-| `table s { arms }` | `match s { arms }` |
-| `s is p and e`, where `e` reads a binder of `p` | `And(Is(s, p), Match(s, p, true, e, NoMatch))` |
-| `if s is p then t else f`, where `t` reads a binder of `p` | `If(Is(s, p), Match(s, p, true, t, NoMatch), f)` |
-| `when s is p, d`, where `d` reads a binder of `p` | `If(Is(s, p), Match(s, p, true, d, NoMatch), true)` |
-| a later operand of a chain of `and`s after `s is p`, as `s is p and a and e` | each operand that reads a binder of `p` within `Match(s, p, true, ·, NoMatch)`, at the places where [`lang::test_scope`](Expressions.md#pattern-tests) has the binders in scope: the `Match` is evaluated only where the test holds, so it never reaches `NoMatch` |
-| `[a, b]` | `Cons(a, Cons(b, Nil))` |
-| `C`, a variant without a payload | `Construct(C, Nil)` |
-| `C(a, b)`; `R { y := b, x := a }`; `N(a)` | `Construct(C, [a, b])`; `Construct(R, [a, b])`, in the order that `R` declares `x` and `y`; `Construct(N, [a])` |
-| `r.x`; `n.0` | `Project(r, R, k)`, where `x` is `R`'s field at position `k`; `Project(n, N, 0)` |
-| `{ r with x := a }` | `Construct(R, ...)` of `R`'s fields, `a` for `x` and `Project(r, R, k)` for each other field `k` |
-| `f(a, b)`, where `f` is a defined function that is not recursive, with the parameters `x` and `y` and the body `e` | `Apply(f, [a, b], [x, y], e)` |
-| `C`, a constant with the definition `e` | `Apply(C, Nil, Nil, e)` |
-| `f(a, b)`, where `f` is uninterpreted | `Call(f, [a, b])`; an instance of a [generic one](GenericFunctions.md#uninterpreted-generic-functions) is named with its type arguments, as `pick<Int>`, one unknown function for each instance |
-| `f(a, b)`, where `f` is a [structural recursion](Recursion.md) | `Recur(f, [a, b])` |
-| `h(c, a)`, where `h` is a [higher-order function](HigherOrder.md) with the function parameter `f`, the other parameter `x` and the body `e`, and `c` is the closure `\|y\| d` | `let #0 := z in let x := a in e'`, where `e'` is `e` with each application `f(b)` replaced by `let y := b in d'`, and `d'` is `d` with each name `z` that it captures renamed to its capture symbol `#0`, where the names captured are values, never a function parameter `g` of an enclosing higher-order function: a closure that applies `g` is translated within the enclosing application's unfolding, once `g` is replaced by its closure, as the last row states for `g` itself: a `let` of each capture symbol at its name and of each other parameter at its argument, around the body, as [Meaning](HigherOrder.md#meaning) states; the parameters are renamed apart from the names that the arguments mention, as the capture symbols are, so that each argument means what it means where `h` is applied |
-| `match { arms }`, given to a function parameter of `n` parameters | the closure `\|y1, ..., yn\| match y1, ..., yn { arms }`, with names `y1`, ..., `yn` that `arms` do not mention, as [Lambda matches](HigherOrder.md#lambda-matches-and-multiple-scrutinees) states |
-| `g`, the name of a defined function, given to a function parameter of `n` parameters | the closure `\|y1, ..., yn\| g(y1, ..., yn)`, which captures nothing; for a [generic](GenericFunctions.md) `g`, of the instance that the parameter's type gives |
-| `f`, a function parameter of the enclosing higher-order function, given to a function parameter of an application `h(f, a)` in its body | the closure that `f` stands for where the enclosing function is applied: `h(f, a)` is translated within that application's unfolding, once `f` is replaced by its closure, whose captures are already renamed to capture symbols, and not before, as the other forms' subexpressions are |
-| `exactly_one?(a, b)`, `at_most_one?(a, b)` | `Count(Exactly, [a, b])`, `Count(AtMost, [a, b])` |
+**Dynamic semantics**
+
+r[semantics.derived]
+Each derived form is the expression that its rule below gives, after its
+own subexpressions are translated.
+
+r[semantics.derived.repeated]
+A translation that writes an expression twice, such as the scrutinee of a
+`match`, does not change its meaning.
+
+r[semantics.derived.not-equal]
+`a != b` is `not (a = b)`.
+
+r[semantics.derived.greater]
+`a > b` is `b < a`, and `a >= b` is `b <= a`.
+
+r[semantics.derived.iff]
+`a iff b` is `a = b`.
+
+r[semantics.derived.when]
+`when c, d` is `if c then d else true`.
+
+r[semantics.derived.unless]
+`unless c, d` is `if c then true else d`.
+
+r[semantics.derived.chain]
+`a < b < c`, and every [chained comparison](Expressions.md#chained-comparisons)
+alike, is `a < b and b < c`.
+
+r[semantics.derived.let]
+`let x := d, y := e in b` is `let x := d in let y := e in b`, and
+`b where x := d` is `let x := d in b`.
+
+r[semantics.derived.match]
+`match s { p if g => b, arms }` is `Match(s, p, g, b, match s { arms })`.
+The guard `g` of an arm without a guard is `true`.
+
+r[semantics.derived.match.empty]
+`match s {}`, after the last arm, is `NoMatch`.
+
+r[semantics.derived.match.scrutinees]
+`match a, b { p, q => e, ... }` is `match [a, b] { [p, q] => e, ... }`, its
+patterns as list patterns.
+
+r[semantics.derived.table]
+`table { c => v, rows }` is `if c then v else table { rows }`.
+`table { _ => v }` is `v`, and `table {}` is `NoMatch`.
+
+r[semantics.derived.table.scrutinee]
+`table s { arms }` is `match s { arms }`.
+
+r[semantics.derived.test.and]
+`s is p and e`, where `e` reads a binder of `p`, is
+`And(Is(s, p), Match(s, p, true, e, NoMatch))`.
+
+r[semantics.derived.test.if]
+`if s is p then t else f`, where `t` reads a binder of `p`, is
+`If(Is(s, p), Match(s, p, true, t, NoMatch), f)`.
+
+r[semantics.derived.test.when]
+`when s is p, d`, where `d` reads a binder of `p`, is
+`If(Is(s, p), Match(s, p, true, d, NoMatch), true)`.
+
+r[semantics.derived.test.chain]
+In a chain of `and`s after `s is p`, as `s is p and a and e`, each later
+operand that reads a binder of `p` is within
+`Match(s, p, true, ·, NoMatch)`, at the places where
+[`lang::test_scope`](Expressions.md#pattern-tests) has the binders in
+scope. That `Match` is evaluated only where the test holds, and never
+reaches `NoMatch`.
+
+r[semantics.derived.list]
+`[a, b]` is `Cons(a, Cons(b, Nil))`.
+
+r[semantics.derived.variant]
+`C`, a variant without a payload, is `Construct(C, Nil)`.
+
+r[semantics.derived.construct]
+`C(a, b)` is `Construct(C, [a, b])`, and `N(a)` is `Construct(N, [a])`.
+
+r[semantics.derived.record]
+`R { y := b, x := a }` is `Construct(R, [a, b])`, in the order in which `R`
+declares `x` and `y`.
+
+r[semantics.derived.field]
+`r.x` is `Project(r, R, k)`, where `x` is `R`'s field at position `k`, and
+`n.0` is `Project(n, N, 0)`.
+
+r[semantics.derived.update]
+`{ r with x := a }` is `Construct(R, ...)` of `R`'s fields: `a` for `x`,
+and `Project(r, R, k)` for each other field `k`.
+
+r[semantics.derived.apply]
+`f(a, b)`, where `f` is a defined function that is not recursive, with
+the parameters `x` and `y` and the body `e`, is
+`Apply(f, [a, b], [x, y], e)`.
+
+r[semantics.derived.constant]
+`C`, a constant with the definition `e`, is `Apply(C, Nil, Nil, e)`.
+
+r[semantics.derived.call]
+`f(a, b)`, where `f` is uninterpreted, is `Call(f, [a, b])`.
+
+r[semantics.derived.call.generic]
+An instance of a [generic uninterpreted
+function](GenericFunctions.md#uninterpreted-generic-functions) is named
+with its type arguments, as `pick<Int>`. Each instance is an unknown
+function of its own.
+
+r[semantics.derived.recur]
+`f(a, b)`, where `f` is a [structural recursion](Recursion.md), is
+`Recur(f, [a, b])`.
+
+r[semantics.derived.higher-order]
+Let `h` be a [higher-order function](HigherOrder.md) with the function
+parameter `f`, the other parameter `x` and the body `e`, and let `c` be
+the closure `|y| d`. `h(c, a)` is `let #0 := z in let x := a in e'`. `e'`
+is `e` with each application `f(b)` replaced by `let y := b in d'`, and
+`d'` is `d` with each name `z` that it captures renamed to its capture
+symbol `#0`.
+
+r[semantics.derived.higher-order.captures]
+The names that a closure captures are values, never a function parameter
+`g` of an enclosing higher-order function. A closure that applies `g` is
+translated within the enclosing application's unfolding, once `g` is
+replaced by its closure, as `semantics.derived.function-parameter` states
+for `g` itself.
+
+r[semantics.derived.higher-order.unfolding]
+The unfolding of an application of a higher-order function is a `let` of
+each capture symbol at its name and of each other parameter at its
+argument, around the body, as [Meaning](HigherOrder.md#meaning) states.
+
+r[semantics.derived.higher-order.renaming]
+The parameters are renamed apart from the names that the arguments
+mention, as the capture symbols are. Each argument means what it means
+where `h` is applied.
+
+r[semantics.derived.lambda-match]
+`match { arms }`, given to a function parameter of `n` parameters, is the
+closure `|y1, ..., yn| match y1, ..., yn { arms }`, with names `y1`, ...,
+`yn` that `arms` do not mention, as [Lambda
+matches](HigherOrder.md#lambda-matches-and-multiple-scrutinees) states.
+
+r[semantics.derived.function-name]
+`g`, the name of a defined function, given to a function parameter of `n`
+parameters, is the closure `|y1, ..., yn| g(y1, ..., yn)`, which captures
+nothing. For a [generic](GenericFunctions.md) `g`, it is the closure of the
+instance that the parameter's type gives.
+
+r[semantics.derived.function-parameter]
+`f`, a function parameter of the enclosing higher-order function, given to
+a function parameter of an application `h(f, a)` in its body, is the
+closure that `f` stands for where the enclosing function is applied.
+`h(f, a)` is translated within that application's unfolding, once `f` is
+replaced by its closure, whose captures are already renamed to capture
+symbols. It is not translated before, as the other forms' subexpressions
+are.
+
+r[semantics.derived.count]
+`exactly_one?(a, b)` is `Count(Exactly, [a, b])`, and
+`at_most_one?(a, b)` is `Count(AtMost, [a, b])`.
+
+> **Note:** A translation may write an expression twice because evaluation
+> has no effects and is deterministic.
 
 ## Environments and interpretations
 
+An expression is evaluated in an environment, which gives its variables,
+and an interpretation, which gives its functions.
+
+**Dynamic semantics**
+
+r[semantics.env]
 An *environment*, `lang::Env`, binds variables to outcomes: those of a
 procedure and of its calls, the parameters of a function, the bound
 names of quantifiers, the names of `let`s, and the binders of patterns.
-`lookup(env, x)` is the outcome of the innermost binding of `x`, and an
-unbound variable, which a resolved expression never reads, is undefined.
 
-An *interpretation*, `lang::Interp`, gives three tables of values, which
-are kept apart because they vary differently between behaviours:
+r[semantics.env.lookup]
+`lookup(env, x)` is the outcome of the innermost binding of `x`
+(`lang::lookup`).
 
-- `functions`, the values of the spec's uninterpreted functions, which
-  differ between behaviours;
-- `recursions`, the values of its [structural recursions](Recursion.md),
-  which are the same in every behaviour: each is the least fixed point of
-  its equations (see [Call expressions](EvaluationRules.md#call-expressions));
-- `primitives`, the *primitive operations*, which Fren's own decidable
-  fragment cannot compute and which this chapter therefore takes as given,
-  as the Definition takes its basic values from `APPLY`: products and
-  quotients of two integers, `*`, `div` and `mod`, and concatenations of
-  two strings, `++`; they too are the same in every behaviour.
+r[semantics.env.unbound]
+An unbound variable is undefined. A resolved expression never reads one.
 
-Each is a `Graph`, a finite list
-of points `Point(f, args, r)`: `f` at the list of arguments `args` is `r`,
-the first point for them where there are several. An evaluation reads
-finitely many points, so every outcome under an interpretation of the
-language is that under a finite one, and the rules below are stated over
-finite ones. The language's interpretation gives each primitive its usual
-meaning, by Lean's `Int.mul`, `Int.ediv`, `Int.emod` and `String.append`,
-at every point that it has.
+r[semantics.interp]
+An *interpretation*, `lang::Interp`, gives three tables of values:
+`functions`, `recursions` and `primitives`.
+
+r[semantics.interp.functions]
+`functions` gives the values of the spec's uninterpreted functions, which
+differ between behaviours.
+
+r[semantics.interp.recursions]
+`recursions` gives the values of the spec's [structural
+recursions](Recursion.md), which are the same in every behaviour. Each is
+the least fixed point of its equations (see [Call
+expressions](EvaluationRules.md#call-expressions)).
+
+r[semantics.interp.primitives]
+`primitives` gives the *primitive operations*: products and quotients of
+two integers, `*`, `div` and `mod`, and concatenations of two strings,
+`++`. They are the same in every behaviour.
+
+r[semantics.interp.graph]
+Each table is a `Graph`, a finite list of points `Point(f, args, r)`: `f`
+at the list of arguments `args` is `r`. Where there are several points for
+the same arguments, the first counts.
+
+r[semantics.interp.finite]
+Every outcome under an interpretation of the language is that under a
+finite one. The rules of this chapter are stated over finite ones.
+
+r[semantics.interp.primitives.meaning]
+The language's interpretation gives each primitive its usual meaning, by
+Lean's `Int.mul`, `Int.ediv`, `Int.emod` and `String.append`, at every
+point that it has.
+
+r[semantics.interp.apply]
+`apply(g, f, args)` is `f`'s value at `args` in `g`, and undefined where
+the graph has no point for them.
+
+> **Note:** The three tables are kept apart because they vary differently
+> between behaviours. An evaluation reads finitely many points, which is
+> why a finite interpretation gives every outcome.
+
+> **Rationale:** Fren's own decidable fragment cannot compute the
+> primitive operations, so this chapter takes them as given, as the
+> Definition of Standard ML takes its basic values from `APPLY`.
 
 ```fren
 pub enum Env { Empty, Bind(Id, Outcome, Env) }
@@ -289,8 +539,8 @@ pub fn apply(g: Graph, f: Id, args: Value): Outcome := match g {
 }
 ```
 
-`lookup` finds the innermost binding, and one binding hides another of
-the same name:
+r[semantics.env.shadowing]
+One binding hides another of the same name (`lang::lookup_binding`).
 
 ```fren
 expect lookup_binding(env: Env, x: Id, y: Id, r: Outcome) {
@@ -321,13 +571,39 @@ where what it evaluates is, and the operation applies to the values:
 | `Call(f, args)` | the arguments | the interpretation's `functions` |
 | `Recur(f, args)` | the arguments | the interpretation's `recursions` |
 
+The functions of the next sections give each form's rule, and `lang::eval`
+applies them.
+
+**Dynamic semantics**
+
+r[semantics.eval.laws]
 [Rules of evaluation](EvaluationRules.md) states each row as laws over the
-outcomes of a form's immediate subexpressions, which `eval` meets: they are
-the readable rules, and `eval` refines them, with every case that they leave out, such
-as the outcome of `x + true`, which elaboration rejects: undefined. The
-functions below give each form's rule; `lang::eval` applies them.
+outcomes of a form's immediate subexpressions, and `eval` meets them. They
+are the readable rules, and `eval` refines them, with every case that
+they leave out.
+
+r[semantics.eval.ill-typed]
+The outcome of `x + true`, which elaboration rejects, is undefined.
 
 ### Operations on lists
+
+**Dynamic semantics**
+
+r[semantics.list.nth]
+`nth(list, k)` is the element of `list` at position `k`, from 0, and is
+undefined out of range.
+
+r[semantics.list.length]
+`length(list)` is the number of elements of `list`, and `append(a, b)` is
+the list of the elements of `a`, then those of `b`.
+
+r[semantics.list.element]
+`element?(v, list)` says that `v` is an element of `list`, and `list?(v)`
+that `v` is a list.
+
+r[semantics.list.trues]
+`trues(list)` is the number of elements of `list` that are `True`, and
+`booleans?(list)` says that `list` is a list of `Bool`s.
 
 ```fren
 -- The element at position `k`, from 0, and undefined out of range.
@@ -376,10 +652,24 @@ pub fn booleans?(list: Value) := match list {
 
 ### Pattern matching
 
-`matches_value?(p, v)` says that `p` matches `v`, and `bind(p, v, env)` is `env`
-with `p`'s binders bound to the parts of `v` that they match. An
-or-pattern binds nothing, since elaboration rejects one whose
-alternatives bind names (`F0333`).
+**Dynamic semantics**
+
+r[semantics.match.matches]
+`matches_value?(p, v)` says that `p` matches `v`.
+
+r[semantics.match.bind]
+`bind(p, v, env)` is `env` with `p`'s binders bound to the parts of `v`
+that they match.
+
+r[semantics.match.or]
+An or-pattern binds nothing.
+
+r[semantics.match.params]
+`bind_params(ps, args)`, the environment of a function's body, binds its
+parameters `ps` to the arguments `args`.
+
+> **Note:** An or-pattern binds nothing because elaboration rejects one
+> whose alternatives bind names (`F0333`).
 
 ```fren
 pub fn matches_value?(p: Pattern<Id>, v: Value) := match p {
@@ -425,6 +715,28 @@ pub fn bind_params(ps: Params<Id>, args: Value): Env := match ps {
 ```
 
 ### Operators and methods
+
+**Dynamic semantics**
+
+r[semantics.operator.unary]
+`unary_value(op, a)` is the outcome of the unary operator `op` at the
+outcome `a`.
+
+r[semantics.operator.primitive]
+`primitive(i, f, v, w)` is the primitive operation `f` of `i` at `v` and
+`w`.
+
+r[semantics.operator.binary]
+`binary_value(i, op, a, b)` is the outcome of the binary operator `op` at
+the outcomes `a` and `b`.
+
+r[semantics.operator.method]
+`method_value(m, receiver, args)` is the outcome of the method `m` at the
+outcomes of its receiver and its arguments.
+
+r[semantics.operator.count]
+`count_value(c, args)` is the outcome of the cardinality operator `c` at
+the outcome of its arguments.
 
 ```fren
 pub fn unary_value(op: UnaryOp, a: Outcome): Outcome := match op, a {
@@ -489,19 +801,30 @@ pub fn count_value(c: Cardinality, args: Outcome): Outcome := match args {
 
 ### Connectives, lists and calls
 
-The rules of the other forms are functions of the outcomes of their
-immediate subexpressions too, but for `Match` and `Apply`, which evaluate
-a subexpression in an environment that the value of another gives. Those
-of `and`, `or` and a conditional take the outcome of each operand, and
-use only those that the form evaluates: `and_value(a, b)` is `b` only
-where `a` is `true`, so that it is undefined where `b` is only where the
-form evaluates `b`. An arm of a `match` whose pattern matches is
-`if_value` of its guard, its body and the arms after it, the guard and
-body in the environment with the pattern's binders bound. Giving each
-rule its own function keeps `eval` small: compiling it, a structural
-recursion with an arm for each form, took 199M of Lean's raw heartbeats
-with these rules written within it, against a limit of 200M, and takes
-160M.
+**Dynamic semantics**
+
+r[semantics.eval.outcomes]
+The rule of each form is a function of the outcomes of its immediate
+subexpressions, but for `Match` and `Apply`. Those evaluate a
+subexpression in an environment that the value of another gives.
+
+r[semantics.connective]
+The rules of `and`, `or` and a conditional take the outcome of each
+operand, and use only those that the form evaluates.
+
+r[semantics.connective.and]
+`and_value(a, b)` is `b` only where `a` is `true`. It is undefined where
+`b` is only where the form evaluates `b`.
+
+r[semantics.connective.arm]
+An arm of a `match` whose pattern matches is `if_value` of its guard, its
+body and the arms after it, the guard and body in the environment with the
+pattern's binders bound.
+
+> **Rationale:** Giving each rule its own function keeps `eval` small.
+> Compiling it, a structural recursion with an arm for each form, took 199M
+> of Lean's raw heartbeats with these rules written within it, against a
+> limit of 200M, and takes 160M.
 
 ```fren
 -- The outcome of `a and b`, of `a or b`, and of a conditional, from those of their operands.
@@ -556,13 +879,25 @@ pub fn call_value(g: Graph, f: Id, args: Outcome): Outcome := match args {
 
 ### The evaluation function
 
+`eval` is written as a [function block](Items.md#function-blocks), whose
+`out` gives its body.
+
+**Dynamic semantics**
+
+r[semantics.eval]
 `eval(i, env, e)` is the outcome of `e` in the interpretation `i` and the
-environment `env`. It is a [structural recursion](Recursion.md) on `e`, so
-it is a function: the same expression in the same interpretation and
-environment always has the same outcome (*determinism*), which is why two
-expressions written the same have the same value (see [Expressions as
-written](../Lint/Meaning.md#expressions-as-written)). It is written as a
-[function block](Items.md#function-blocks), whose `out` gives its body.
+environment `env`.
+
+r[semantics.eval.structural]
+`eval` is a [structural recursion](Recursion.md) on `e`. It is a function.
+
+r[semantics.eval.determinism]
+The same expression in the same interpretation and environment always has
+the same outcome (*determinism*, `lang::determinism`).
+
+> **Note:** Determinism is why two expressions written the same have the
+> same value (see [Expressions as
+> written](../Lint/Meaning.md#expressions-as-written)).
 
 ```fren
 pub fn eval(i: Interp, env: Env, e: Expr<Id>): (r: Outcome) {
@@ -606,8 +941,6 @@ pub fn eval(i: Interp, env: Env, e: Expr<Id>): (r: Outcome) {
 }
 ```
 
-`determinism` states it:
-
 ```fren
 expect determinism(i: Interp, env: Env, e: Expr<Id>, e2: Expr<Id>) {
     expect same: when e2 = e, eval(i, env, e2) = eval(i, env, e)
@@ -616,11 +949,24 @@ expect determinism(i: Interp, env: Env, e: Expr<Id>, e2: Expr<Id>) {
 
 ## What the model leaves out
 
-The model covers the expressions without quantifiers, sets, relations
-or abstract types. [Quantifiers](Quantifiers.md) evaluate their bodies at
-every value of their bound names, which no structural recursion on the
-expression can do; their meaning is stated in their chapter. Sets and
-relations would need values compared up to the order of their members.
+**Dynamic semantics**
+
+r[semantics.excluded]
+The model covers the expressions without quantifiers, sets, relations or
+abstract types.
+
+r[semantics.excluded.quantifiers]
+[Quantifiers](Quantifiers.md) evaluate their bodies at every value of their
+bound names. Their meaning is stated in their chapter.
+
+r[semantics.excluded.abstract]
 A value of an abstract type is the interpretation's, and is compared only
-with `=`. The orders of ordered enumerations, records and strings, and the
-methods of strings but `len`, are not yet in it either.
+with `=`.
+
+r[semantics.excluded.orders]
+The orders of ordered enumerations, records and strings, and the methods
+of strings but `len`, are not yet in the model.
+
+> **Note:** No structural recursion on the expression can evaluate a
+> quantifier's body at every value of its bound names. Sets and relations
+> would need values compared up to the order of their members.
