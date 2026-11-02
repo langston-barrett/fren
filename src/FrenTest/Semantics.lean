@@ -530,7 +530,7 @@ def mayMatchCtorSound : Array String := Id.run do
     let ((p, v), s) := (do return (← genPat 3, ← genVal 2)).run seed
     seed := s
     let .ctor _ idx _ := v | continue
-    let m := p.matchInto v #[]
+    let m := p.matchInto v .nil
     if m.isSome then matched := matched + 1
     if !p.mayMatchCtor idx then
       excluded := excluded + 1
@@ -586,10 +586,10 @@ def matchSplitAgrees : Array String := Id.run do
         else pure (Pat.ctor (← next 3) #[← genSplitPat 2, ← genSplitPat 2])
       return (p, ← if (← next 2) == 0 then genValFor p else genVal 2, ← genVal 1)).run seed
     seed := s
-    let fr : Array FrenCli.Eval.Binding := if v == w then #[] else #[(`y, some w)]
+    let fr : FrenCli.Eval.Frame := if v == w then .nil else .bind `y (some w) .nil
     let split := if p.matches v then some (p.bindInto v fr) else none
     if split.isSome then matched := matched + 1
-    if split.any (·.size > fr.size + 1) then bound := bound + 1
+    if split.any (·.toList.length > fr.toList.length + 1) then bound := bound + 1
     if split != p.matchInto v fr then
       failures := failures.push s!"`Pat.matches` and `Pat.bindInto` disagree with `Pat.matchInto` on {repr v}"
   if matched < 1000 then failures := failures.push s!"only {matched} patterns matched"

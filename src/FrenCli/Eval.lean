@@ -191,14 +191,71 @@ inductive Pat where
   | alts (ps : Array Pat)
   deriving Inhabited
 
+/-- A binding of a binder of a `match` arm, a quantifier or a structural
+recursion's parameter: its name and its value. -/
+abbrev Binding := Name × Option Val
+
+/-- The bindings of the binders in scope, which `Ex.eval` keeps, the
+innermost first: `bind n v outer` binds `n` to `v` within the bindings of
+`outer`. Binding a name allocates one cell, which shares `outer`, so that
+neither binding nor dropping the bindings within copies those around them,
+as an array's would. -/
+inductive Frame where
+  | nil
+  | bind (n : Name) (v : Option Val) (outer : Frame)
+  deriving Inhabited, BEq, Repr
+
+/-- `fr`'s bindings, the innermost first. -/
+def Frame.toList : Frame → List Binding
+  | .nil => []
+  | .bind n v outer => (n, v) :: outer.toList
+
+/-- `fr` with the bindings `bs` within it, the first of `bs` innermost. -/
+def Frame.prepend (bs : List Binding) (fr : Frame) : Frame :=
+  bs.foldr (fun (n, v) fr => .bind n v fr) fr
+
+@[simp] theorem Frame.toList_prepend (bs : List Binding) (fr : Frame) :
+    (fr.prepend bs).toList = bs ++ fr.toList := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+    obtain ⟨n, v⟩ := b
+    show Frame.toList (.bind n v (Frame.prepend bs fr)) = _
+    rw [Frame.toList, ih]; rfl
+
+/-- The value of the innermost binding of `n` in `fr`, if it binds `n`:
+`fr.toList.lookup n` (`Frame.find?_eq`). -/
+def Frame.find? (n : Name) : Frame → Option (Option Val)
+  | .nil => none
+  | .bind m v outer => if n == m then some v else outer.find? n
+
+theorem Frame.find?_eq (n : Name) (fr : Frame) : fr.find? n = fr.toList.lookup n := by
+  induction fr with
+  | nil => rfl
+  | bind m v outer ih =>
+    simp only [Frame.find?, Frame.toList, List.lookup]
+    cases n == m <;> simp [ih]
+
+/-- The value of the `k`th binding of `fr` from the innermost, or none if
+it has no more than `k`: `fr.toList[k]?`'s (`Frame.get_eq`). -/
+def Frame.get : Frame → Nat → Option Val
+  | .nil, _ => none
+  | .bind _ v _, 0 => v
+  | .bind _ _ outer, k + 1 => outer.get k
+
+theorem Frame.get_eq (fr : Frame) (k : Nat) : fr.get k = (fr.toList[k]?.bind (·.2)) := by
+  induction fr generalizing k with
+  | nil => rfl
+  | bind m v outer ih => cases k <;> simp [Frame.get, Frame.toList, ih]
+
 /-- `fr`, a frame of bindings (`Ex.eval`), with each binder of `p` bound
 to the part of `v` that it matches, if `p` matches `v`, or `none` if it
-does not. The binders are pushed from the last to the first, so that the
+does not. The binders are bound from the last to the first, so that the
 first is innermost; a variant's payload is matched from its last value to
 its first. -/
-partial def Pat.matchInto : Pat → Val → Array (Name × Option Val) → Option (Array (Name × Option Val))
+partial def Pat.matchInto : Pat → Val → Frame → Option Frame
   | .wild, _, fr => some fr
-  | .bind n, v, fr => some (fr.push (n, some v))
+  | .bind n, v, fr => some (.bind n (some v) fr)
   | .bool b, .bool b', fr => if b == b' then some fr else none
   | .int lo hi, .int i, fr => if lo.all (· ≤ i) && hi.all (i ≤ ·) then some fr else none
   | .str s, .str s', fr => if s == s' then some fr else none
@@ -209,7 +266,7 @@ partial def Pat.matchInto : Pat → Val → Array (Name × Option Val) → Optio
 where
   /-- `fr` with the binders of the first `k` of `ps` bound to the values
   of `vs` that they match, the `k - 1`th first. -/
-  payload (ps : Array Pat) (vs : Array Val) : Nat → Array (Name × Option Val) → Option (Array (Name × Option Val))
+  payload (ps : Array Pat) (vs : Array Val) : Nat → Frame → Option Frame
     | 0, fr => some fr
     | k + 1, fr => do payload ps vs k (← ps[k]!.matchInto vs[k]! fr)
 
@@ -237,19 +294,23 @@ where `p` matches `v` (`Pat.matches`): the frame that `p.matchInto v fr`
 gives, without the `Option` around it and the frames between. That it
 gives `matchInto`'s frame is tested, by `matchSplitAgrees`, not proved, as
 for `Pat.matches`. -/
-partial def Pat.bindInto : Pat → Val → Array (Name × Option Val) → Array (Name × Option Val)
-  | .bind n, v, fr => fr.push (n, some v)
-  | .ctor _ ps, .ctor _ _ vs, fr => payload ps vs ps.size fr
-  | .alts ps, v, fr => match ps.find? (·.matches v) with
-    | some p => p.bindInto v fr
+partial def Pat.bindInto (p : @& Pat) (v : @& Val) (fr : Frame) : Frame :=
+  match p, v with
+  | .bind n, v => .bind n (some v) fr
+  | .ctor _ ps, .ctor _ _ vs => payload ps vs ps.size fr
+  | .alts ps, v => match ps.findIdx? (·.matches v) with
+    | some i => ps[i]!.bindInto v fr
     | none => fr
-  | _, _, fr => fr
+  | _, _ => fr
 where
   /-- `fr` with the binders of the first `k` of `ps` bound, the `k - 1`th
-  first, as `Pat.matchInto.payload` binds them. -/
-  payload (ps : Array Pat) (vs : Array Val) : Nat → Array (Name × Option Val) → Array (Name × Option Val)
-    | 0, fr => fr
-    | k + 1, fr => payload ps vs k (ps[k]!.bindInto vs[k]! fr)
+  first, as `Pat.matchInto.payload` binds them. Its arguments, as
+  `bindInto`'s pattern and value, are borrowed (`@&`), so that binding
+  counts no reference to the parts of either but the values bound. -/
+  payload (ps : @& Array Pat) (vs : @& Array Val) (k : Nat) (fr : Frame) : Frame :=
+    match k with
+    | 0 => fr
+    | k + 1 => payload ps vs k (ps[k]!.bindInto vs[k]! fr)
 
 /-- One more than the greatest index of a variant that `p`, or an
 alternative of it, is, or 0 if it is none. -/
@@ -977,10 +1038,6 @@ theorem firstCase_filter (xs : List α) (take : α → Option (Option β)) (keep
     · simp [List.filter, hk, ih, Fren.Core.firstCase, h c List.mem_cons_self hk]
     · simp only [List.filter, hk, Fren.Core.firstCase, ih]
 
-/-- A binding of a binder of a `match` arm or a quantifier, in the frame
-that `Ex.eval` keeps of them, the innermost last. -/
-abbrev Binding := Name × Option Val
-
 /-- `e`, or, if it is a defined variable, its definition, through those
 of the defined variables it is, `fuel` deep (`Interp.defined`): the term
 that the Lean-hosted front end sees, with definitions substituted. -/
@@ -1090,13 +1147,13 @@ theorem evalEach_eq_mapM (f : Ex → Option Val) (es : Array Ex) : evalEach f es
   simp only [evalEach, Array.mapM_eq_foldlM, Array.mkEmpty_eq]
   congr 1; funext vs e; cases f e <;> rfl
 
-/-- `fr` with the first `k` of `ps` pushed, the `k - 1`th first, each
-bound to `get` of its position. -/
-def frameFrom (ps : Array Name) (get : Nat → Option Val) : Nat → Array Binding → Array Binding
+/-- `fr` with the first `k` of `ps` bound, the `k - 1`th first, so that
+the first is innermost, each to `get` of its position. -/
+def frameFrom (ps : Array Name) (get : Nat → Option Val) : Nat → Frame → Frame
   | 0, fr => fr
-  | k + 1, fr => frameFrom ps get k (fr.push (ps[k]!, get k))
+  | k + 1, fr => frameFrom ps get k (.bind ps[k]! (get k) fr)
 
-theorem frameFrom_congr (ps : Array Name) (g g' : Nat → Option Val) (k : Nat) (fr : Array Binding)
+theorem frameFrom_congr (ps : Array Name) (g g' : Nat → Option Val) (k : Nat) (fr : Frame)
     (h : ∀ i < k, g i = g' i) : frameFrom ps g k fr = frameFrom ps g' k fr := by
   induction k generalizing fr with
   | zero => rfl
@@ -1105,31 +1162,29 @@ theorem frameFrom_congr (ps : Array Name) (g g' : Nat → Option Val) (k : Nat) 
     exact ih _ fun i hi => h i (by omega)
 
 /-- A frame (`Ex.eval`) that binds each of `ps` to the value of `vs` at
-its position, the first innermost: what pushing the pairs of `ps.zip vs`
-from the last to the first gives, without the pairs. -/
-def paramFrame (ps : Array Name) (vs : Array Val) : Array Binding :=
-  let n := min ps.size vs.size
-  frameFrom ps (fun i => some vs[i]!) n (Array.mkEmpty n)
+its position, the first innermost: the pairs of `ps.zip vs`
+(`paramFrame_eq`). -/
+def paramFrame (ps : Array Name) (vs : Array Val) : Frame :=
+  frameFrom ps (fun i => some vs[i]!) (min ps.size vs.size) .nil
 
-theorem frameFrom_eq (ps : Array Name) (g : Nat → Option Val) (k : Nat) (fr : Array Binding) :
-    frameFrom ps g k fr = fr ++ ((List.range k).reverse.map fun i => (ps[i]!, g i)).toArray := by
+theorem frameFrom_eq (ps : Array Name) (g : Nat → Option Val) (k : Nat) (fr : Frame) :
+    frameFrom ps g k fr = fr.prepend ((List.range k).map fun i => (ps[i]!, g i)) := by
   induction k generalizing fr with
-  | zero => simp [frameFrom]
-  | succ k ih => simp [frameFrom, ih, List.range_succ]
+  | zero => rfl
+  | succ k ih => simp [frameFrom, ih, List.range_succ, Frame.prepend, List.foldr_append]
 
 /-- `paramFrame` is what its docstring says: the pairs of `ps.zip vs`,
-each value in a `some`, from the last to the first. -/
+each value in a `some`, the first innermost. -/
 theorem paramFrame_eq (ps : Array Name) (vs : Array Val) :
-    paramFrame ps vs = ((ps.zip vs).map fun (p, v) => (p, some v)).reverse := by
-  rw [paramFrame, frameFrom_eq, Array.mkEmpty_eq]
-  apply Array.ext
-  · simp
+    (paramFrame ps vs).toList = (ps.zip vs).toList.map fun (p, v) => (p, some v) := by
+  rw [paramFrame, frameFrom_eq, Frame.toList_prepend]
+  apply List.ext_getElem
+  · simp [Frame.toList]
   · intro i h1 h2
     simp at h1 h2
-    simp [Array.getElem_reverse, List.getElem_reverse]
-    have hp : min ps.size vs.size - 1 - i < ps.size := by omega
-    have hv : min ps.size vs.size - 1 - i < vs.size := by omega
-    exact ⟨getElem!_pos ps _ hp, getElem!_pos vs _ hv⟩
+    have hp : i < ps.size := by omega
+    have hv : i < vs.size := by omega
+    simp [Frame.toList, getElem!_pos, hp, hv]
 
 /-- The values of `es`, in order, each as `f` gives it, or none at the
 first that has none: `evalEach`'s, each still in the `some` that `f`
@@ -1167,10 +1222,8 @@ parameters `ps` to `args`, at the values that `f` gives them, or none if
 one has none: `paramFrame` of `evalEach`'s values (`argFrame_eq`), with
 each value in the `some` that `f` gave it in, which is not allocated
 again. -/
-@[inline] def argFrame (f : Ex → Option Val) (ps : Array Name) (args : Array Ex) : Option (Array Binding) :=
-  (evalOpts f args).map fun os =>
-    let n := min ps.size os.size
-    frameFrom ps (fun i => os[i]!) n (Array.mkEmpty n)
+@[inline] def argFrame (f : Ex → Option Val) (ps : Array Name) (args : Array Ex) : Option Frame :=
+  (evalOpts f args).map fun os => frameFrom ps (fun i => os[i]!) (min ps.size os.size) .nil
 
 theorem argFrame_eq (f : Ex → Option Val) (ps : Array Name) (args : Array Ex) :
     argFrame f ps args = (evalEach f args).map (paramFrame ps) := by
@@ -1226,17 +1279,9 @@ evaluation cannot decide is not confirmed (`eval::confirm`), so a check
 that applies a recursion is inconclusive (`F0450`). -/
 @[noinline] def outOfFuel [Inhabited α] (_ : Unit) : α := panic! "Ex.eval ran out of fuel"
 
-/-- `x`, with a reference to it counted for the caller. Where a parameter
-of `Ex.eval` is passed to a function that takes it over, as `Array.push`
-does, the compiler takes the parameter itself over: every call of
-`Ex.eval` would count a reference to it, and uncount it. Passed through
-`own`, which borrows it, it stays borrowed (`@&`). `FrenTest.Borrowing`
-checks, from the IR, that it does. -/
-@[noinline] def own (x : @& α) : α := x
-
 /-- `x`, the value of an evaluation. A call of `Ex.eval` in tail position,
 with an argument that the caller made, would make the compiler take that
-parameter over, to keep the tail call (as for `own`). Passed through
+parameter over, to keep the tail call. Passed through
 `evalResult`, the call is not in tail position. `FrenTest.Borrowing`
 checks, from the IR, that the parameters stay borrowed. -/
 @[noinline] def evalResult (x : Option Val) : Option Val := x
@@ -1261,7 +1306,7 @@ recursion's body or a check of an invariant, spends a unit of `fuel`
 steps, a unit of `depth` (`evalDepth`), but not a quantifier's next bound
 name, and without either its value is `outOfFuel`'s. -/
 def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val))
-    (frame : @& Array Binding) (memos : @& Array (Thunk (Option Val))) (fuel depth : Nat) (e : @& Ex) : Option Val :=
+    (frame : @& Frame) (memos : @& Array (Thunk (Option Val))) (fuel depth : Nat) (e : @& Ex) : Option Val :=
   match depth with
   | 0 => outOfFuel ()
   | depth + 1 =>
@@ -1269,15 +1314,15 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
   | .lit v => some v
   | .var n => look n
   | .slot k => if h : k < slots.size then slots[k] else none
-  | .bound n => match frame.findRev? (·.1 == n) with
-    | some (_, v) => v
+  | .bound n => match frame.find? n with
+    | some v => v
     | none => locals.lookup n
-  | .boundAt k => if k < frame.size then frame[frame.size - 1 - k]!.2 else none
+  | .boundAt k => frame.get k
   | .shared k => if k < memos.size then memos[memos.size - 1 - k]!.get else none
   | .known v => v
   | .memo lets e =>
     -- The first of `lets` innermost, as `.shared 0`.
-    let ms := lets.foldr (init := own memos) fun x ms =>
+    let ms := lets.foldr (init := memos) fun x ms =>
       ms.push (Thunk.mk fun _ => x.evalIn I look locals slots frame memos fuel depth)
     evalResult (e.evalIn I look locals slots frame ms fuel depth)
   | .not a => notV (a.evalIn I look locals slots frame memos fuel depth)
@@ -1307,7 +1352,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     match if b.mayBeOne then Ex.countOfOne? I.defined I.definedCount op a b else none with
     | some (c, conds) =>
       truthV (c.holds? (conds.map fun (x, inDef) =>
-        match if inDef then x.evalIn I look [] #[] #[] #[] fuel depth else x.evalIn I look locals slots frame memos fuel depth with
+        match if inDef then x.evalIn I look [] #[] .nil #[] fuel depth else x.evalIn I look locals slots frame memos fuel depth with
         | some (.bool b) => someBool b
         | _ => none))
     | none => binV op (a.evalIn I look locals slots frame memos fuel depth) (b.evalIn I look locals slots frame memos fuel depth)
@@ -1457,7 +1502,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
       (fun v => v.evalIn I look locals slots frame memos fuel depth)
       fun _ => do I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
-  | .const _ e => evalResult (e.evalIn I (fun _ => none) [] #[] #[] #[] fuel depth)
+  | .const _ e => evalResult (e.evalIn I (fun _ => none) [] #[] .nil #[] fuel depth)
   | .typed t _ e => do truthV (typeV I fuel depth t (← e.evalIn I look locals slots frame memos fuel depth))
   -- The first arm whose pattern matches and whose guard holds; where none
   -- is taken, the interpretation's unspecified value of its type.
@@ -1471,7 +1516,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
       | false => some none
       -- The binders in the frame, the first innermost.
       | true =>
-        let fr := p.bindInto v (own frame)
+        let fr := p.bindInto v frame
         match g? with
         | none => some (some (fr, body))
         | some g => match g.evalIn I look locals slots fr memos fuel depth with
@@ -1485,12 +1530,12 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
   -- (`firstCase_filter`).
   | .dispatch byCtor (.match e arms _ _ unspec? _) => do
     let v ← e.evalIn I look locals slots frame memos fuel depth
-    let take (arm : Pat × Option Ex × Ex) : Option (Option (Array Binding × Ex)) :=
+    let take (arm : Pat × Option Ex × Ex) : Option (Option (Frame × Ex)) :=
       let (p, g?, body) := arm
       match p.matches v with
       | false => some none
       | true =>
-        let fr := p.bindInto v (own frame)
+        let fr := p.bindInto v frame
         match g? with
         | none => some (some (fr, body))
         | some g => match g.evalIn I look locals slots fr memos fuel depth with
@@ -1500,7 +1545,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     let ks? := match v with
       | .ctor _ idx _ => byCtor[idx]?
       | _ => none
-    let found (taken : Array Binding × Ex) : Option Val :=
+    let found (taken : Frame × Ex) : Option Val :=
       taken.2.evalIn I look locals slots taken.1 memos fuel depth
     match ks? with
     | some ks => firstCaseThen ks (fun k => take arms[k]!) found fun _ => do I.fn (← unspec?) #[]
@@ -1534,7 +1579,7 @@ where
       let (params, body, _) ← I.defs invariant.predicate
       let parameter ← params[0]?
       let fuel' + 1 := fuel | outOfFuel ()
-      let .bool holds ← body.evalIn I (fun _ => none) [(parameter, v)] #[] #[] #[] fuel' evalDepth | none
+      let .bool holds ← body.evalIn I (fun _ => none) [(parameter, v)] #[] .nil #[] fuel' evalDepth | none
       unless holds do return false
     match t.ty, v with
     | .set _, .set values | .seq _, .seq values =>
@@ -1577,13 +1622,13 @@ where
   `lets[k]` shared from where the `k`th is bound (`.lifted`). -/
   quantV (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val)) (fuel depth : Nat)
       (all : Bool) (names : @& Array Name) (doms : @& Array (Option Ex)) (tys : @& Array Fren.Core.PTy) (body : @& Ex)
-      (lets : @& Array (Array Ex)) (k : Nat) (frame : @& Array Binding) (memos : @& Array (Thunk (Option Val))) :
+      (lets : @& Array (Array Ex)) (k : Nat) (frame : @& Frame) (memos : @& Array (Thunk (Option Val))) :
       Option Val :=
     match depth with
     | 0 => outOfFuel ()
     | depth + 1 =>
     let memos := match lets[k]? with
-      | some ls => ls.foldl (init := own memos) fun ms x =>
+      | some ls => ls.foldl (init := memos) fun ms x =>
         ms.push (Thunk.mk fun _ => x.evalIn I look locals slots frame memos fuel depth)
       | none => memos
     if h : k < names.size then
@@ -1604,7 +1649,7 @@ where
             | none => some true
           match typed with
           | some true =>
-            let frame' := (own frame).push (names[k], some v)
+            let frame' := .bind names[k] (some v) frame
             match quantV I look locals slots fuel (depth + 1) all names doms tys body lets (k + 1) frame' memos with
             | some (.bool b) => someBool b
             | _ => none
@@ -1624,7 +1669,7 @@ expressions unless they are given, and with all of `evalFuel` and
 `evalDepth`. `Ex.evalIn` itself takes no defaults, since a parameter with
 a default is not borrowed (`@&`), whatever it is annotated. -/
 @[inline] def Ex.eval (I : @& Interp) (look : @& Look) (locals : List (Name × Val) := [])
-    (slots : Array (Option Val) := #[]) (frame : Array Binding := #[])
+    (slots : Array (Option Val) := #[]) (frame : Frame := .nil)
     (memos : Array (Thunk (Option Val)) := #[]) (fuel : Nat := evalFuel) (depth : Nat := evalDepth) (e : @& Ex) :
     Option Val :=
   e.evalIn I look locals slots frame memos fuel depth
@@ -1635,16 +1680,16 @@ no fuel; an application of a structural recursion spends a unit of fuel,
 and its body has a depth of its own, so that how deep the evaluator
 recurses between two steps cannot decide which evaluations run out. -/
 
-example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Array Binding)
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Frame)
     (m : Array (Thunk (Option Val))) (n : Nat) (e : Ex) : e.eval I look l s f m n 0 = none := by
   rw [Ex.eval, Ex.evalIn]; rfl
 
-example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Array Binding)
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Frame)
     (m : Array (Thunk (Option Val))) (n d : Nat) (a : Ex) :
     (Ex.not a).eval I look l s f m n (d + 1) = notV (a.eval I look l s f m n d) := by
   rw [Ex.eval, Ex.evalIn]; rfl
 
-example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Array Binding)
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Frame)
     (m : Array (Thunk (Option Val))) (n d : Nat) (g : Name) (args : Array Ex) (ps : Array Name) (body : Ex)
     (h : I.recDefs g = some (ps, body)) :
     (Ex.app g args).eval I look l s fr m (n + 1) (d + 1) =
@@ -1653,7 +1698,7 @@ example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option V
   rw [Ex.eval, Ex.evalIn]; simp only [h, argFrame_eq, Ex.eval]
   cases evalEach (·.evalIn I look l s fr m (n + 1) d) args <;> rfl
 
-example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Array Binding)
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Frame)
     (m : Array (Thunk (Option Val))) (d : Nat) (g : Name) (args : Array Ex) (ps : Array Name) (body : Ex)
     (h : I.recDefs g = some (ps, body)) :
     (Ex.app g args).eval I look l s fr m 0 (d + 1) = none := by
