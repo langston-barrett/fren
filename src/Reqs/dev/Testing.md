@@ -273,7 +273,8 @@ pub mod testing
   `.lake/fuzz`) with the differences and both reports in comments, and the
   differences are summarized by kind; those only in undecided checks,
   which time limits may explain, are counted apart. Specs run in worker
-  processes, so a crash of the solver is recorded against its spec, and a
+  processes, a fresh one every 100 specs, since a worker slows down as it
+  checks more, so a crash of the solver is recorded against its spec, and a
   spec that runs longer than `--spec-timeout` (default 30 s; a spec takes
   well under a second) is stopped and recorded as a timeout. Crashes and
   timeouts are findings, like differences: the run then exits nonzero. A
@@ -313,7 +314,10 @@ pub mod testing
   the `fren` command reports a static error at or before its line (an
   internal error, as the evaluator's, is none); and
   one that another difference explains, as the evaluator's internal error
-  explains an exit code, only alongside that difference (`alongside?`).
+  explains an exit code, only alongside that difference (`alongside?`),
+  and, where the entry says so, only at its line (`onItsLine`), as Lean's
+  failure to decide a check explains what only `fren` reports of that
+  check.
   `compare` masks only what may legitimately differ, above; a known
   difference is fixed, or listed in `knownDifferences` or `knownKinds`
   with its issue, and not masked. The known column differences of #555 are of static errors

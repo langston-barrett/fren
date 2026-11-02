@@ -1569,6 +1569,9 @@ structure KnownKind where
   its line, rather than against its kind: for a kind whose wording the
   `signature` masks whole, which only the names tell apart. -/
   ofDifference : Bool := false
+  /-- Whether the kind of `alongside?` must be at the same line, so that it
+  explains the difference at that check only. -/
+  onItsLine : Bool := false
 
 /-- The kind of Lean's failure, through lean-smt, on a query that has the
 same closed application twice under different binders (#493), whatever
@@ -1610,24 +1613,21 @@ def knownKinds : List KnownKind :=
    -- that nothing uses (F0792, #493).
    { kind := "only fren reports warning[F0792]: the assumption `_` constrains only parameters that nothing uses",
      issue := 493, seed := 1175274 },
+   -- and on other specs, only Lean does.
+   { kind := "only Lean reports warning: the assumption `_` constrains only parameters that nothing uses",
+     issue := 493, seed := 1182701 },
    -- The CLI's evaluator cannot read a formula that Lean counts the
    -- behaviours of, at any size bound (#493).
    { kind := "only Lean reports error: `_` has N behaviours up to size *, too many to enumerate", issue := 493,
      seed := 1164145, alongside? := some evaluatorUnread },
-   -- A trait's expectation: Lean cannot decide it (`leanSmtArrow`), and
-   -- `fren` warns that it rests on the trait's laws, so the summaries'
-   -- counts of inconclusive results differ (#493).
+   -- A trait's check that Lean cannot decide (`leanSmtArrow`): what only
+   -- `fren` reports of the check at its line, as that it rests on the
+   -- trait's laws (F0665), on its assumptions and calls (F0664), that its
+   -- assumptions contradict each other (F0602), or that an arm is never
+   -- taken (F0626), and so the summaries' counts (#493).
    { kind := leanSmtArrow, issue := 493, seed := 1179170 },
-   { kind := "only fren reports warning[F0665]: `_` rests on the laws of `_`, whose consistency is not checked",
-     issue := 493, seed := 1179170, alongside? := some leanSmtArrow },
+   { kind := "only fren reports *", issue := 493, seed := 1179170, alongside? := some leanSmtArrow, onItsLine := true },
    { kind := "summary: fren says …, Lean says …", issue := 493, seed := 1179061, alongside? := some leanSmtArrow },
-   -- What `fren` decides where Lean could not: that the expectation rests
-   -- on its assumptions and calls holding with the trait's laws, or that
-   -- those contradict each other.
-   { kind := "only fren reports warning[F0664]: `_` rests on the assumptions and calls of `_` holding together with \
-       its trait's laws, which did not pass", issue := 493, seed := 6000795, alongside? := some leanSmtArrow },
-   { kind := "only fren reports error[F0602]: the assumptions of `_` are unsatisfiable: `_` contradict each other",
-     issue := 493, seed := 6000265, alongside? := some leanSmtArrow },
    -- A trait's expectation rests on a contract whose realizability did
    -- not pass: only `fren` warns, and counts it inconclusive (#493).
    { kind := traitRestsOnContract, issue := 493, seed := 1179203 },
@@ -1667,9 +1667,10 @@ line, and one that holds only alongside another kind (`alongside?`) only
 where `found` has that kind. -/
 def knownIssue? (mode : Mode) (staticLines : Array Nat) (found : Array String) (f : String) : Option Nat :=
   let sig := signature f
-  let holds (afterStaticError : Bool) (alongside? : Option String) :=
+  let holds (afterStaticError : Bool) (alongside? : Option String) (onItsLine := false) :=
     (!afterStaticError || (differenceLine? f).any fun l => staticLines.any (· ≤ l))
-      && alongside?.all fun a => found.any (kindMatches a <| signature ·)
+      && alongside?.all fun a => found.any fun g =>
+        kindMatches a (signature g) && (!onItsLine || (differenceLine? f).isSome && differenceLine? g == differenceLine? f)
   if !mode.avoidKnown then none
   else match knownDifferences.find? (fun k =>
       k.mode.avoidKnown && signature k.difference == sig && holds k.afterStaticError k.alongside?) with
@@ -1679,7 +1680,8 @@ def knownIssue? (mode : Mode) (staticLines : Array Nat) (found : Array String) (
         | l :: rest => if l.startsWith "line " then ": ".intercalate rest else f
         | [] => f
       (knownKinds.find? fun k =>
-        kindMatches k.kind (if k.ofDifference then unplaced else sig) && holds k.afterStaticError k.alongside?).map
+        kindMatches k.kind (if k.ofDifference then unplaced else sig)
+          && holds k.afterStaticError k.alongside? k.onItsLine).map
         (·.issue)
 
 /-- Whether the difference `f` is of a known kind (`knownIssue?`). -/
@@ -1743,6 +1745,8 @@ private def summary : String := "summary: fren says `12 passed, 2 failed, 2 inco
 #guard known arrow
 #guard known laws (found := #[laws, arrow]) && known summary (found := #[laws, arrow, summary])
 #guard !known laws && !known summary (found := #[laws, summary])
+-- only at the line of Lean's failure.
+#guard !known laws (found := #[laws, arrow.replace "line 95:12" "line 96:12"])
 #guard knownIssue? { avoidKnown := true } #[] #[laws, arrow] laws == some 493
 #guard knownIssue? {} #[] #[laws, arrow] laws == none
 -- Lean's failure is known whatever it could not decide.
@@ -2095,6 +2099,12 @@ def outcomesIn (dir : System.FilePath) : IO (Array Outcome) := do
       out := out ++ parseOutcomes (← IO.FS.readFile e.path)
   return out
 
+/-- The most specs that one worker checks: a worker slows down as it
+checks more, until, on a CI machine with four of them, specs that take
+seconds take more than 20 s after some 150 specs each, and some time out,
+so a fresh worker takes over after these. -/
+def workerSpecs : Nat := 100
+
 /-- Runs workers until every seed is checked. The solver can abort the
 process (a failed assertion in cvc5), so specs run in a worker, and a
 crash is recorded as the outcome of the spec it was checking. A spec that
@@ -2110,7 +2120,8 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   let mut next := seed
   while next < seed + count do
     IO.FS.writeFile run.progress ""
-    let args := #["--worker", run.id, "--count", toString (seed + count - next), "--seed", toString next, "--out", dir]
+    let batch := min (seed + count - next) workerSpecs
+    let args := #["--worker", run.id, "--count", toString batch, "--seed", toString next, "--out", dir]
       ++ mode.args
     let child ← IO.Process.spawn { cmd := (← IO.appPath).toString, args, stdin := .null, stdout := .inherit, stderr := .inherit }
     -- Wait, and stop the worker if one spec takes too long.
@@ -2129,7 +2140,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
         timedOut := true
         break
       IO.sleep 200
-    if code? == some 0 then break
+    if code? == some 0 then next := next + batch; continue
     let some failed := (← IO.FS.readFile run.progress).trimAscii.toString.toNat?
       | let done := (← outcomesOf run).filter (fun o => next ≤ o.seed && o.seed < seed + count)
         let last? := done.foldl (fun m o => some (max (m.getD o.seed) o.seed)) none
