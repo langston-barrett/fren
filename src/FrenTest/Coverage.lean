@@ -13,8 +13,9 @@ namespace FrenTest.Coverage
 
 /-- A counted declaration fails the coverage if no test ran it, a compiled
 entry point reaches it, and `test/coverage.txt` does not list it. One that
-none reaches is used only by proofs, `#guard`s, `#eval`s or Lean's
-interpreter, and runs in no executable, so no test could run it. -/
+none reaches is used only by proofs and by what Lean interprets while a
+module builds, such as `#guard`s and `#eval`s, and runs in no executable,
+so no test could run it. -/
 def fails (ran reached listed : Bool) : Bool := !ran && reached && !listed
 
 /-- A listed declaration's line is stale if a test ran it, or no compiled

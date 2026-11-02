@@ -25,7 +25,9 @@ that a definition's `source?` keeps. `testing::fuzz_overdue`, proved of
 `FrenTest.SpecTimeout.overdue`, and `testing::solver_credit`, of
 `Fren.Core.Credit.step`, for any times. `testing::coverage`, proved of
 `FrenTest.Coverage.fails` and `stale`, by which `fren_coverage` judges each
-counted declaration. `testing::fresh` rests on Lake, so it is trusted. -/
+counted declaration; its inputs are trusted: `ran?` is gcov's counters and
+`reached?` is `FrenCoverage.reached`, which nothing proves or tests yet
+(#679). `testing::fresh` rests on Lake, so it is trusted. -/
 
 namespace Fren.Impls.Testing
 

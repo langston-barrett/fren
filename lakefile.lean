@@ -10,11 +10,18 @@ open System Lake DSL
 -- runs of the hosted front end look for them. A coverage build (below)
 -- uses it only when its key covers the worktree's directory, which its
 -- object files name.
+--
+-- `-Kcoverage_dir=DIR` if DIR is this worktree's own directory, where a
+-- coverage build's objects write their counters (below): another
+-- directory, as one copied from another worktree's command, turns the
+-- artifact cache off for the coverage build.
+def coverageDir? : Option String := (get_config? coverage_dir).filter (· == (__dir__).toString)
+
 package fren where
   srcDir := "src"
   testDriver := "fren_test"
   version := v!"0.1.0"
-  enableArtifactCache := (get_config? coverage).isNone || (get_config? coverage_dir).isSome
+  enableArtifactCache := (get_config? coverage).isNone || coverageDir?.isSome
   restoreAllArtifacts := true
 
 -- `lake -R -Kcoverage=RUNTIME build` compiles the code whose coverage is
@@ -22,10 +29,10 @@ package fren where
 -- with the profiling runtime at the path RUNTIME, which Lean's toolchain
 -- lacks (`Reqs/dev/Testing#coverage`). Its object files name the directory
 -- where they write their counters, so it uses the artifact cache only
--- with `-Kcoverage_dir=DIR`, the worktree's directory, which their key
--- then covers: no other worktree gets them.
+-- with `-Kcoverage_dir=DIR`, the worktree's own directory, which their key
+-- then covers (`coverageDir?`, above): no other worktree gets them.
 def coverageArgs : Array String := match get_config? coverage with
-  | some _ => #["--coverage"] ++ ((get_config? coverage_dir).map (s!"-DFREN_COVERAGE_DIR={·}")).toArray
+  | some _ => #["--coverage"] ++ (coverageDir?.map (s!"-DFREN_COVERAGE_DIR={·}")).toArray
   | none => #[]
 -- The compiler inlines small functions, whose code then runs in their
 -- callers, so that they would seem never to run.

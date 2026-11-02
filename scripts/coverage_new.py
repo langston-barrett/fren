@@ -10,13 +10,17 @@ merge base with BASE (`origin/main` by default) by the compiled code of
 the executables (`Reqs/dev/Testing#coverage`):
 
 - `UNREACHED`: no compiled entry point reaches it, so only proofs,
-  `#guard`s, `#eval`s or Lean's interpreter use it. It needs no test.
+  `#guard`s, `#eval`s or `run_cmd`s, which Lean interprets while a
+  module builds, use it. It needs no test.
 - `DEAD`: nothing refers to it, not even a proof. Delete it.
 - `REACHED`: it needs a test. Name the test in the pull request.
 
-Without `--run`, that is all: it reads the build that the worktree has, in
-seconds, and fails only on dead code. A normal build inlines small
-functions, so it counts as reached what any reached definition uses.
+A definition is new if its name is on a line that `git diff` against the
+merge base adds, or in a file that git does not track yet. Without
+`--run`, that is all: it brings the `.olean` files that `fren_coverage`
+reads up to date (`Fren` and every executable's root), which takes seconds
+on a built worktree, and fails only on dead code. A normal build inlines
+small functions, so it counts as reached what any reached definition uses.
 
 With `--run`, it also checks that the tests named run the reached ones:
 it builds `fren_test` with gcov's counters (`-Kcoverage`), using the
@@ -29,7 +33,7 @@ the backstop. The worktree's build is then the instrumented one, and
 
 On macOS the profiling runtime is Apple's and the counters are read with
 `xcrun llvm-cov gcov`; elsewhere set `COVERAGE_RUNTIME` and `LLVM_COV`, as
-CI does. Builds and jobs run through `heavy` when it is on the `PATH`.
+CI does. Builds and jobs run through `scripts/heavy`.
 """
 
 import argparse
@@ -43,8 +47,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
 def heavy(cmd):
-    """`cmd`, under `heavy` if there is one."""
-    return (["heavy"] if shutil.which("heavy") else []) + cmd
+    """`cmd`, under the repository's `scripts/heavy`, or `heavy` on the
+    `PATH`, if there is one."""
+    own = os.path.join(ROOT, "scripts", "heavy")
+    return ([own] if os.access(own, os.X_OK) else ["heavy"] if shutil.which("heavy") else []) + cmd
 
 
 def run(cmd):
@@ -71,24 +77,61 @@ def cache_dir():
     return env.stdout.strip()
 
 
+# The libraries compiled with the counters (`lakefile.lean`), as paths
+# under `.lake/build/ir`.
+COUNTED = ("FrenCore", "FrenCoreCodes", "Fren", "FrenCli")
+
+
 def stale_objects():
-    """The objects that the artifact cache gave back for notes (`.gcno`)
-    that a later compile wrote: an object written by an earlier compile of
-    the module, as after an edit and its revert. Compiling writes the
-    notes and the object together."""
+    """The objects of the counted libraries whose notes (`.gcno`) are not
+    theirs: missing, or written by a later compile. The artifact cache gives
+    back an object without its notes, which only compiling writes, together
+    with the object: after `.lake/build` was deleted, or after an edit and
+    its revert, the object is an earlier compile's."""
     stale = []
-    for d, _, files in os.walk(os.path.join(ROOT, ".lake", "build", "ir")):
-        for f in files:
-            if not f.endswith(".c.o.gcno"):
+    ir = os.path.join(ROOT, ".lake", "build", "ir")
+    for d, _, files in os.walk(ir):
+        top = os.path.relpath(os.path.join(d, "x"), ir).split(os.sep)[0]
+        for o in files:
+            if ".c.o" not in o or o.endswith((".gcno", ".gcda", ".hash", ".trace", ".json", ".rsp")):
                 continue
-            notes = os.stat(os.path.join(d, f)).st_mtime
-            base = f[: -len(".gcno")]
-            for o in files:
-                path = os.path.join(d, o)
-                if o.startswith(base + ".") and o.endswith(("export", ".o")) or o == base:
-                    if os.stat(path).st_mtime < notes - 2:
+            module = o[: o.index(".c.o")]
+            if (top if top != "x" else module) not in COUNTED:
+                continue
+            notes = os.path.join(d, module + ".c.o.gcno")
+            path = os.path.join(d, o)
+            if os.path.exists(notes):
+                if os.stat(path).st_mtime < os.stat(notes).st_mtime - 2:
+                    stale.append(path)
+            else:
+                # Only an object compiled with the counters names its
+                # `.gcda`: an executable's root is compiled without them.
+                with open(path, "rb") as h:
+                    if b".gcda" in h.read():
                         stale.append(path)
     return stale
+
+
+def exe_roots():
+    """The root modules of `lakefile.lean`'s executables, whose `.olean`
+    files `fren_coverage` reads: each `lean_exe`'s `root`, or its name."""
+    roots, name = [], None
+    with open(os.path.join(ROOT, "lakefile.lean")) as f:
+        for line in f:
+            decl = line.removeprefix("@[default_target] ")
+            if decl.startswith("lean_exe "):
+                if name:
+                    roots.append(name)
+                name = decl.split()[1]
+            elif name and line.strip().startswith("root := `"):
+                roots.append(line.strip().removeprefix("root := `"))
+                name = None
+            elif name and not line.startswith(" "):
+                roots.append(name)
+                name = None
+    if name:
+        roots.append(name)
+    return roots
 
 
 def evict(paths):
@@ -127,14 +170,19 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--base", default="origin/main", help="the branch's base (default: origin/main)")
     a = p.parse_args(rest)
+    # Every executable's root, and `Fren`, which `fren_coverage` reads, so
+    # that none of their `.olean` files is stale.
+    targets = ["Fren", *exe_roots(), "fren_coverage"]
     if not jobs:
+        if run(heavy(["lake", "build", *targets])) != 0:
+            sys.exit("coverage_new: the build failed")
         sys.exit(run(["lake", "exe", "fren_coverage", "--static", "--new", a.base]))
     runtime, gcov = toolchain()
     # `-Kcoverage_dir` puts the worktree's directory in the key of each
     # object in the artifact cache, since the object writes its counters
     # there (`lakefile.lean`).
     k = [f"-Kcoverage={runtime}", f"-Kcoverage_dir={ROOT}"]
-    build = heavy(["lake", "-R", *k, "build", "fren_test", "fren_coverage"])
+    build = heavy(["lake", "-R", *k, "build", "fren_test", *targets])
     if run(build) != 0:
         sys.exit("coverage_new: the instrumented build failed")
     stale = stale_objects()

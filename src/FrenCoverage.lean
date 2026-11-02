@@ -25,12 +25,13 @@ one, since the compiler shares them among declarations. The declarations
 counted are the definitions of `FrenCore`, `FrenCoreCodes`, `Fren` and
 `FrenCli` that are compiled to a function and written in the source: not
 theorems, constructors, recursors, matchers, projections, instances that
-`deriving` makes, constants, or `@[inline]` definitions, whose code runs in
-their callers.
+`deriving` makes, constants, `@[extern]` declarations, whose code is C, or
+`@[inline]` definitions, whose code runs in their callers.
 
 Only what the executables can run is a gap: a declaration that no
 compiled entry point of an executable of `lakefile.lean` reaches is used
-only by proofs, `#guard`s, `#eval`s or Lean's interpreter, and is not
+only by proofs and by what Lean interprets while a module builds, such
+as `#guard`s and `#eval`s, and is not
 counted against the tests (`reached`).
 
 The declarations that the executables can run but no test runs are listed
@@ -147,11 +148,20 @@ def namedIn (e : Expr) (consts : Bool) : IO (Array Name) := do
     else if consts then if let .const c _ := e then found.modify (·.push c)
   found.get
 
+/-- The modules whose definitions the Lean definitions that the hosted
+front end generates for a spec may call: the types and methods of Fren's
+values, the prelude's selectors, `decide`'s instances and the
+enumeration's decoders. Each of their definitions is an entry point. -/
+def specRuntime : List Name :=
+  [`Fren.Prelude, `Fren.Seq, `Fren.SeqElems, `Fren.FinSet, `Fren.Finite, `Fren.Enumerate,
+    `FrenCore.Prelude, `FrenCore.Str, `FrenCore.Regex]
+
 /-- The IR declarations that the compiled code of `env`, an executable's,
 can run, from its entry points: its `main`, the functions of `@[export]`
 declarations, which C may call, those whose type is a named function type,
-which Lean may look up by name and call, as attributes do, and the
-initialization of each of the modules in `ofPackage`, which runs their
+which Lean may look up by name and call, as attributes do, every
+definition of the modules of `specRuntime`, which the code that the hosted
+front end generates for a spec may call, and the initialization of each of the modules in `ofPackage`, which runs their
 `initialize` functions and computes their constants, the declarations
 without parameters. A closure that a constant's body makes (`pap`) is
 reached only through code that is reached and reads the constant:
@@ -160,9 +170,8 @@ declarations that its definition names, as the hosted front end names
 those that the terms it elaborates call, which Lean then runs; and, if
 `consts`, all those that its definition uses, which a build that inlines
 small functions (one without `-Kcoverage`) needs, since their calls are
-then gone from the compiled code. What runs only in Lean's interpreter,
-such as `#guard`s, `#eval`s and the definitions of Fren's tests, is no
-entry point. -/
+then gone from the compiled code. What Lean interprets only while a
+module builds, as `#guard`s, `#eval`s and `run_cmd`s, is no entry point. -/
 def reached (env : Environment) (ofPackage : Array ModuleIdx) (consts : Bool) : IO NameSet := do
   let callsOfDecl (n : Name) : Array Name × Array Name := match IR.findEnvDecl env n with
     | some (.fdecl _ _ _ b _) => callsOf b (#[], #[])
@@ -170,8 +179,14 @@ def reached (env : Environment) (ofPackage : Array ModuleIdx) (consts : Bool) : 
   let inPackage (n : Name) := (env.getModuleIdxFor? n).any ofPackage.contains
   let mut todo : Array Name := #[`main]
   for m in ofPackage do
+    let runtime := (env.header.moduleNames[m.toNat]?).any specRuntime.contains
     for d in IR.declMapExt.getModuleEntries env m do
       let n := d.name
+      -- What the Lean definitions generated for a spec may call, which the
+      -- hosted front end compiles and runs, in `lean` and in the tests: by
+      -- names built from strings, by instances that synthesis finds, or by
+      -- the spec's own identifiers, none of which the compiled code shows.
+      if runtime then todo := todo.push n
       if let some f := getInitFnNameFor? env n then todo := todo.push f
       if isIOUnitInitFn env n || (getExportNameFor? env n).isSome then todo := todo.push n
       -- What Lean looks up by name and calls through `evalConst`, as each
@@ -275,7 +290,9 @@ def isCounted (env : Environment) (n : Name) : Bool := Id.run do
   unless counted.contains modName.getRoot do return false
   let some ci := env.find? n | return false
   unless ci matches .defnInfo _ | .opaqueInfo _ do return false
-  if (IR.findEnvDecl env n).isNone then return false
+  -- An `@[extern]` declaration's code is C of its own, which gcov does
+  -- not count with Lean's.
+  unless (IR.findEnvDecl env n) matches some (.fdecl ..) do return false
   if isAuxRecursor env n || Meta.isMatcherCore env n || env.isProjectionFn n then return false
   if Compiler.hasInlineAttribute env n || Compiler.hasMacroInlineAttribute env n then return false
   -- Names that the user did not write, such as `instReprFoo` from
@@ -318,7 +335,14 @@ unsafe def reachedByExes (consts : Bool) : IO (Except String NameSet) := do
       let m := env.header.moduleNames[i]
       let path : System.FilePath := "src" / (System.mkFilePath (m.components.map (·.toString))) |>.addExtension "lean"
       if ← path.pathExists then ofPackage := ofPackage.push (i : ModuleIdx)
-    for n in ← reached env ofPackage consts do owners := owners.insert (ownerOf n)
+    for n in ← reached env ofPackage consts do
+      -- A lambda, join point or closed term may be shared with other
+      -- declarations whose code is alike (`declOf?`): reaching it reaches
+      -- none of them.
+      let shared := n.components.any fun
+        | .str _ s => s.startsWith "_lam" || s.startsWith "_elam" || s.startsWith "_jp" || s.startsWith "_closed"
+        | _ => false
+      unless shared do owners := owners.insert (ownerOf n)
   return .ok owners
 
 /-- The declarations of `decls` that nothing refers to, not even a proof:
@@ -387,14 +411,22 @@ def diffLines (diff : String) : Std.HashMap String (Array Nat × Array String) :
   == some (#[4, 5, 11], #["def h := 3"])
 
 /-- The declarations of `decls` that the working tree adds since its
-merge base with `base`: whose name is on a line that `git diff` adds, and
-on none that it removes from the same file. -/
+merge base with `base`: whose name is on a line that `git diff` adds, or
+in a file that git does not track yet, and on none that it removes from
+the same file. -/
 def newSince (env : Environment) (decls : Array Name) (base : String) : IO (Except String (Array Name)) := do
   let mb ← IO.Process.output { cmd := "git", args := #["merge-base", base, "HEAD"] }
   unless mb.exitCode == 0 do return .error s!"git merge-base {base} HEAD failed:\n{mb.stderr}"
   let out ← IO.Process.output { cmd := "git", args := #["diff", "-U0", "--no-color", mb.stdout.trimAscii.toString, "--", "src"] }
   unless out.exitCode == 0 do return .error s!"git diff failed:\n{out.stderr}"
-  let lines := diffLines out.stdout
+  let mut lines := diffLines out.stdout
+  -- A new file that is not yet tracked is in no diff: all of it is added.
+  let others ← IO.Process.output { cmd := "git", args := #["ls-files", "--others", "--exclude-standard", "--", "src"] }
+  unless others.exitCode == 0 do return .error s!"git ls-files failed:\n{others.stderr}"
+  for f in others.stdout.splitOn "\n" do
+    if f.endsWith ".lean" then
+      let n := ((← IO.FS.readFile f).splitOn "\n").length
+      lines := lines.insert f ((List.range (n + 1)).toArray, #[])
   return .ok <| decls.filter fun d => Id.run do
     let some m := env.getModuleIdxFor? d | return false
     let some modName := env.header.moduleNames[m.toNat]? | return false
@@ -459,7 +491,7 @@ unsafe def main (args : List String) : IO UInt32 := do
       if ← f.pathExists then return (← IO.FS.readBinFile f).extract 8 12 else return .empty
     let s ← stamp gcno
     if s.isEmpty || s.data != (← stamp gcda).data then
-      IO.eprintln s!"fren_coverage: {gcno} is not of the object that wrote {gcda}, which the artifact cache gave: rebuild without it, with `lake -R -Kcoverage=RUNTIME build` and no `-Kcoverage_dir`"
+      IO.eprintln s!"fren_coverage: {gcno} is not of the object that wrote {gcda}, which the artifact cache gave: `scripts/coverage_new.py --run` compiles it again"
       return 2
     -- Without the library path that `lake exe` sets to Lean's toolchain,
     -- whose LLVM libraries are not the ones that `GCOV` is linked with: on
@@ -530,7 +562,7 @@ unsafe def main (args : List String) : IO UInt32 := do
       else if !hasParams d then
         IO.println s!"CONSTANT {d}: computed when its module is initialized, not counted"
       else if !reachedBy d then
-        IO.println s!"UNREACHED {d}: no compiled entry point reaches it, so only proofs, `#guard`s, `#eval`s or Lean's interpreter use it: no test needed"
+        IO.println s!"UNREACHED {d}: no compiled entry point reaches it, so only proofs and `#guard`s, `#eval`s or `run_cmd`s, which Lean interprets while a module builds, use it: no test needed"
       else if o.static then
         IO.println s!"REACHED {d}: needs a test: name it in the pull request, and check that it runs it with `scripts/coverage_new.py --run JOB...`"
       else if ranBy d then
@@ -589,10 +621,14 @@ unsafe def main (args : List String) : IO UInt32 := do
   let covered := (decls.filter ranBy).size
   let counted := decls.size - (unreached.filter (!ranBy ·)).size
   let pct := if counted == 0 then 100 else 100 * covered / counted
-  let summary := s!"{covered} of {counted} declarations run by the tests ({pct}%), {(listed.filter (·.2.isSome)).size} never meant to run; {unreached.size - ranUnreached.size} more that no compiled entry point reaches, which only proofs, `#guard`s, `#eval`s or Lean's interpreter use"
+  let summary := s!"{covered} of {counted} declarations run by the tests ({pct}%), {(listed.filter (·.2.isSome)).size} never meant to run; {unreached.size - ranUnreached.size} more that no compiled entry point reaches, which only proofs and what Lean interprets while a module builds use"
   IO.println s!"fren_coverage: {summary}"
-  unless ranUnreached.isEmpty do
-    IO.println s!"fren_coverage: {ranUnreached.size} declarations ran although no compiled entry point reaches them, through calls that the compiled code does not show, such as the interpreter's: {ranUnreached.toList}"
+  -- Each shows a hole in the entry points, such as a module that
+  -- `specRuntime` should list.
+  for d in ranUnreached do
+    let msg := s!"{d}: ran, although no compiled entry point reaches it: a call that `FrenCoverage.reached` does not see"
+    IO.eprintln s!"WARN {msg}"
+    if annotate then IO.println s!"::warning title=fren_coverage::{msg}"
   -- On GitHub Actions, also as an annotation of the run.
   let lines := (current.splitOn "\n").map (·.trimAscii.toString)
   for (d, why) in stale do

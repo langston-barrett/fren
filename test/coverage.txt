@@ -4,21 +4,19 @@
 # counted declaration that a compiled entry point reaches, that does not
 # run and is not listed, and warns of a listed one that runs, that nothing
 # compiled reaches, or that is no longer counted, naming the line to
-# remove. One that only proofs, `#guard`s, `#eval`s or Lean's interpreter
-# use needs no line.
+# remove. One that only proofs, `#guard`s, `#eval`s or `run_cmd`s use needs
+# no line.
 Fren.Core.Enumeration.Shape.random.go
 Fren.Core.Enumeration.Shapes.random
 Fren.Core.Enumeration.charSize
 Fren.Core.Enumeration.notEnumerable
 Fren.Core.Enumeration.notEnumerableWhy
 Fren.Core.Pat.matchesVal
+Fren.Core.Re.mat
 Fren.Core.Re.matchD
 Fren.Core.Re.matches
-Fren.Core.STerm.binds?
-Fren.Core.checkBindings
 Fren.Core.firstFree -- runs only when a goal's bound name is already a symbol of the query, which no spec can make since bound names became `x#k` (#659)
 Fren.Core.goalCandidate -- runs only when a goal's bound name is already a symbol of the query, which no spec can make since bound names became `x#k` (#659)
-Fren.Core.narrowingMsg
 Fren.Core.notAFunctionMsg
 Fren.Core.quantifiedQueryReason
 Fren.Core.solverTimeoutMs -- runs only in fren_fuzz_frontends to track time in timed-out queries, outside lake test
@@ -35,17 +33,31 @@ Fren.FinSet.closure
 Fren.FinSet.closureList
 Fren.FinSet.closureLoop
 Fren.FinSet.image
+Fren.FinSet.instDecidableMemOfDecidableEq
 Fren.FinSet.instEmptyCollection
+Fren.FinSet.instHasSubset
+Fren.FinSet.instInhabited
+Fren.FinSet.instInsert
+Fren.FinSet.instInterOfDecidableEq
+Fren.FinSet.instMembership
+Fren.FinSet.instRepr
+Fren.FinSet.instSDiffOfDecidableEq
 Fren.FinSet.instSingleton
 Fren.FinSet.instUnion
 Fren.FinSet.join
 Fren.FinSet.joinList
 Fren.FinSet.nub
+Fren.FinSet.ofArray
 Fren.FinSet.ofList
+Fren.FinSet.setoid
+Fren.FinSet.square
+Fren.FinSet.toListUnsafe
 Fren.Lang.closeAngle.formatter
 Fren.Lang.closeAngle.parenthesizer
 Fren.Lang.contextualOne.formatter
 Fren.Lang.contextualOne.parenthesizer
+Fren.Lang.decExists
+Fren.Lang.decForall
 Fren.Lang.fieldDigits.formatter
 Fren.Lang.fieldDigits.parenthesizer
 Fren.Lang.frenIdent.formatter -- Lean calls it only to print Fren syntax, which no message does
@@ -56,7 +68,15 @@ Fren.Lang.notLeanKeyword.formatter
 Fren.Lang.notLeanKeyword.parenthesizer
 Fren.Lang.sameLineAsLeft.formatter -- Lean calls it only to print Fren syntax, which no message does
 Fren.Lang.sameLineAsLeft.parenthesizer -- Lean calls it only to print Fren syntax, which no message does
+Fren.Prelude.Except.error.x0
+Fren.Prelude.Except.ok.x0
+Fren.Prelude.Option.some.x0
 Fren.Seq.instAppend
+Fren.Seq.instDecidableEq
+Fren.Seq.instEmptyCollection
+Fren.Seq.instInhabited
+Fren.Seq.instMembership
+Fren.Seq.instRepr
 Fren.Seq.ofList
 Fren.Seq.toList
 Fren.Str.lit
@@ -65,6 +85,7 @@ Fren.casesOnArm
 Fren.contractProofOf
 Fren.contractStatement
 Fren.elabInterp
+Fren.elabPrelude
 Fren.interpAccepted
 Fren.memberMentions
 Fren.natResult
@@ -75,11 +96,9 @@ FrenCli.Eval.Spec.fits
 FrenCli.Eval.Spec.quickGlobal
 FrenCli.Eval.confirmedVerdict
 FrenCli.Eval.corePatSame
-FrenCli.Eval.smallInterleaved -- the reference of the `#guard` after `interleavedCounts` and of `FrenTest.SmallValues`'s `#eval`, which run in Lean's interpreter when the modules build; `smallValuesMemo` no longer calls it
 FrenCli.Fm.subject? -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
 FrenCli.Ident.pattern?
 FrenCli.Pattern.decode
-FrenCli.Pattern.encode
 FrenCli.Quote.antiquotations
 FrenCli.Quote.body.formatter
 FrenCli.Quote.body.parenthesizer
@@ -108,7 +127,6 @@ FrenCli.Refutation.about -- runs only when the evaluator refutes a model of the 
 FrenCli.Refutation.msg -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
 FrenCli.elaborate
 FrenCli.internal
-FrenCli.isVariant
 FrenCli.patSmt
 FrenCli.typeNames
 _private.FrenCli.Parse.0.FrenCli.atom
