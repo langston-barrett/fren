@@ -736,6 +736,8 @@ theorem io_site (hu : lint.usual? i.primitives = true) (env : Env) (e : Expr Str
           eval_step; simp only [binary_value]; outcomes (eval i env b) (eval i env b)
       · exact Le.refl _
   · exact Le.refl _
+
+/-- `neg_multiply` on a product, without its selectors. -/
 theorem nm_fires_mul (a b : Expr String) :
     lint.neg_multiply_fires? String (.Binary .Mul a b) = (lint.minus_one? String a || lint.minus_one? String b) := by
   simp [lint.neg_multiply_fires?, lint.minus_one?, decide_classical, lang.Expr.Binary.x0, lang.Expr.Binary.x1,

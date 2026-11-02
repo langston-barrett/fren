@@ -97,10 +97,12 @@ Four cases are left out, and the linter fires on them where these
 functions do not:
 
 - **`q ++ []`.** The model has lists that do not end in `Nil`, as
-  `Cons(a, 5)`, which no expression of the language evaluates to. On such
+  `Cons(a, 5)`. No expression that the language elaborates to evaluates
+  to one, but a `Literal` of one does, and so does a `Var` that an
+  environment, or a `Call` that an interpretation, binds to one. On such
   a list `q`, `q ++ []` drops the end: `append(q, Nil)` is not `q`. So
-  `q ++ []` agrees with `q` only where `q` is a list, which the
-  semantics does not keep. `[] ++ q` is `q` wherever it is defined.
+  `q ++ []` agrees with `q` only where `q` is a list that ends in `Nil`,
+  which the model does not keep. `[] ++ q` is `q` wherever it is defined.
 - **A `y` that is `0`.** The fix of `x + -0` is `x - 0`, which fires
   again.
 - **A `y` that is a negation.** The fix of `x - - -z` is `x + -z`, which
@@ -227,7 +229,8 @@ expect identity_op_elaborated(
     let e: lang::Expr<lang::Id> := Binary(binary_of(op), a, b)
     -- The four cases that `identity_op_fires?` leaves.
     let left_out? := (p.rewrite = KeepLeft and op = IdentityOperator::Concat and right = IdentityOperand::Empty and right_list?)
-        or (p.rewrite = Flip and (zero?(w) or (w is lang::Expr::Unary(lang::UnaryOp::Neg, _)) or left = IdentityOperand::Zero))
+        or (p.rewrite = Flip and (zero?(w) or (w is lang::Expr::Unary(lang::UnaryOp::Neg, _))
+        or (op = IdentityOperator::Sub and left = IdentityOperand::Zero)))
 
     expect fires: unless left_out?, (p.rewrite != Unchanged) iff identity_op_fires?(e)
     expect fix: unless left_out?, match p.rewrite {

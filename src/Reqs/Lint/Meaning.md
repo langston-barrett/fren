@@ -171,9 +171,12 @@ The language's interpretation gives each primitive its usual meaning at
 every point that it has. `usual?` states the part of that meaning that
 the lints rest on: a product with `1` or `-1` is the other operand or its
 negation, a quotient by `1` is the dividend, and a concatenation with
-`""` is the other string. Each is a fact of linear arithmetic or of
-strings, which the solver decides, as the whole product is not. A point
-at other arguments, or of another name, is not constrained. A lint whose
+`""` is the other string. A product or quotient of two integers is an
+integer. Each is a fact of linear arithmetic or of strings, which the
+solver decides, as the whole product is not. A point at other arguments,
+or of another name, is not constrained, and neither is a quotient by `0`,
+which the language's interpretation gives as `Int.ediv` does, `0`, though
+`eval` never reads it: `x div 0` is undefined before the graph is read. A lint whose
 fix rests on a primitive operation states that its fix agrees in each
 interpretation whose primitives are `usual?`, and not in every one. A
 graph with no point for the arguments leaves the primitive undefined
@@ -187,7 +190,7 @@ fn usual_product?(m: Int, n: Int, r: Int) :=
 -- The point `f` at `args` is `r` meets the usual meaning of `f` that the lints rest on.
 fn usual_point?(f: lang::Id, args: lang::Value, r: lang::Value) := match args, r {
     lang::Value::Cons(lang::Value::Integer(m), lang::Value::Cons(lang::Value::Integer(n), lang::Value::Nil)),
-    lang::Value::Integer(k) => (when f = "*", usual_product?(m, n, k)) and (when f = "div", n != 0 and (when n = 1, k = m)),
+    lang::Value::Integer(k) => (when f = "*", usual_product?(m, n, k)) and (when f = "div", (when n = 1, k = m)),
     lang::Value::Cons(lang::Value::Integer(_), lang::Value::Cons(lang::Value::Integer(_), lang::Value::Nil)),
     _ => not (f is "*" | "div"),
     lang::Value::Cons(lang::Value::Text(s), lang::Value::Cons(lang::Value::Text(t), lang::Value::Nil)),
@@ -199,5 +202,29 @@ fn usual_point?(f: lang::Id, args: lang::Value, r: lang::Value) := match args, r
 pub fn usual?(g: lang::Graph) := match g {
     lang::Graph::Empty => true,
     lang::Graph::Point(f, args, r, rest) => usual_point?(f, args, r) and usual?(rest),
+}
+```
+
+`usual?` must not ask more than the language's interpretation gives, or
+the claims that assume it would say nothing of that interpretation. That
+the whole of the usual meaning meets it cannot be stated, since the
+product is not linear. `usual_language` checks it at the language's own
+value of each point whose value is linear in its arguments: a product
+with `1` or `-1`, a quotient by `1`, `-1` or `0`, as `Int.ediv` gives it,
+and a concatenation with `""`.
+
+```fren
+expect usual_language(m: Int, n: Int, s: String, t: String) {
+    use lang::Value::{Cons, Integer, Nil, Text}
+
+    expect times_one: usual_point?("*", Cons(Integer(m), Cons(Integer(1), Nil)), Integer(m))
+        and usual_point?("*", Cons(Integer(1), Cons(Integer(n), Nil)), Integer(n))
+    expect times_minus_one: usual_point?("*", Cons(Integer(m), Cons(Integer(-1), Nil)), Integer(-m))
+        and usual_point?("*", Cons(Integer(-1), Cons(Integer(n), Nil)), Integer(-n))
+    expect by_one: usual_point?("div", Cons(Integer(m), Cons(Integer(1), Nil)), Integer(m))
+        and usual_point?("div", Cons(Integer(m), Cons(Integer(-1), Nil)), Integer(-m))
+    expect by_zero: usual_point?("div", Cons(Integer(m), Cons(Integer(0), Nil)), Integer(0))
+    expect empty: usual_point?("++", Cons(Text(s), Cons(Text(""), Nil)), Text(s))
+        and usual_point?("++", Cons(Text(""), Cons(Text(t), Nil)), Text(t))
 }
 ```
