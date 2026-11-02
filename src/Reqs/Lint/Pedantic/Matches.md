@@ -316,6 +316,200 @@ pub proc single_match_else(
 }
 ```
 
+### One pattern and `_`, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+a `match` of two arms without guards, of which the second is `_`, is
+`Match(s, p, true, a, Match(s, _, true, b, NoMatch))` ([Derived
+forms](../../Lang/Semantics.md#derived-forms)).
+`single_match_else_fires?` fires on it where `p` is a literal, a range,
+an or-pattern or a variant without a payload, each of which binds no
+name, and its fix is `If(Is(s, p), a, b)`. A variant whose payload is
+`_` for each of its values binds nothing either, but telling so looks
+along the payload, which needs a recursion, so the function leaves it.
+That is a rewrite, as [Fixes as rewrites](../Rewrites.md) states for
+every such lint:
+
+```fren
+-- `p` is a pattern other than `_` that binds no name: a literal, a range,
+-- an or-pattern, or a variant without a payload.
+pub fn tests_only?<V>(p: lang::Pattern<V>) := p is lang::Pattern::Literal(_)
+    | lang::Pattern::AtLeast(_)
+    | lang::Pattern::AtMost(_)
+    | lang::Pattern::Between(_, _)
+    | lang::Pattern::Or(_, _)
+    | lang::Pattern::Variant(_, lang::Pattern::Nil)
+
+-- `rest` is the arm `_ => b` of a `match` on `s`, and no arm after it.
+fn wildcard_arm?<V>(s: lang::Expr<V>, rest: lang::Expr<V>) := match rest {
+    lang::Expr::Match(t, q, h, _, r) => t = s and q = lang::Pattern::Wildcard and true?(h) and r = lang::Expr::NoMatch,
+    _ => false,
+}
+
+-- The body of the arm `rest`.
+fn arm_body<V>(rest: lang::Expr<V>): lang::Expr<V> := match rest {
+    lang::Expr::Match(_, _, _, b, _) => b,
+    _ => rest,
+}
+
+-- `match s { p => a, _ => b }`, of a `p` that `tests_only?`, with `s` as
+-- written in both arms.
+pub fn single_match_else_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Match(s, p, g, _, rest) => tests_only?(p) and true?(g) and wildcard_arm?(s, rest),
+    _ => false,
+}
+
+pub fn single_match_else_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Match(s, p, _, a, rest) =>
+        if single_match_else_fires?(e) then lang::Expr::If(lang::Expr::Is(s, p), a, arm_body(rest)) else e,
+    _ => e,
+}
+```
+
+`lint::single_match_else` binds this to the linter. Where the first
+arm's pattern is one of those, the front ends read it as a pattern other
+than `_` that binds nothing (`read`). Then, where the second arm is `_`,
+the scrutinee is not a `Bool` and no other lint reports the `match`, the
+linter fires, as the function does. The linter writes the test of a
+literal or a variant without a payload as `x = P`, which elaborates to
+`Binary(Eq, s, P)`. That has the outcome of `Is(s, P)` in every
+interpretation and environment (`single_match_else_equality`), so the
+fix the linter writes agrees with the function's. Several variants it
+writes as `x in {...}`, a membership in a set, which the model leaves
+out. That the front ends read the arms so, and the text of the fix, are
+trusted, and checked by the ui tests in `test/ui/lints/pedantic.fren`
+and `test/ui/lints/matches_table.fren`:
+
+```fren
+expect single_match_else_elaborated(
+    first: Pat,
+    a: Body,
+    b: Body,
+    others?,
+    x: Val,
+    o: Int,
+    s: lang::Expr<lang::Id>,
+    p: lang::Pattern<lang::Id>,
+    then_body: lang::Expr<lang::Id>,
+    else_body: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{If, Is, Literal, Match, NoMatch}
+    use lang::Value::True
+
+    assume read: when tests_only?(p), first != Pat::Wild and not pat_binds?(first)
+
+    call t := single_match_else(first, Pat::Wild, a, b, false, others?, x, o)
+
+    let two_arms: lang::Expr<lang::Id> := Match(
+        s,
+        p,
+        Literal(True),
+        then_body,
+        Match(
+            s,
+            lang::Pattern::Wildcard,
+            Literal(True),
+            else_body,
+            NoMatch
+        )
+    )
+
+    expect fires: when tests_only?(p) and not (others? or a = b),
+        t.fires? and single_match_else_fires?(two_arms)
+        and single_match_else_fix(two_arms) = If(Is(s, p), then_body, else_body)
+}
+
+set_option fren.evidence "random" in
+pub proc single_match_else_equality(
+    i: lang::Interp,
+    env: lang::Env,
+    s: lang::Expr<lang::Id>,
+    c: lang::Id,
+    w: lang::Value,
+) {
+    use lang::Expr::{Binary, Construct, Is, Literal, Nil}
+
+    ensure variant: lang::eval(i, env, Binary(lang::BinaryOp::Eq, s, Construct(c, Nil)))
+        = lang::eval(i, env, Is(s, lang::Pattern::Variant(c, lang::Pattern::Nil)))
+    ensure literal: lang::eval(i, env, Binary(lang::BinaryOp::Eq, s, Literal(w)))
+        = lang::eval(i, env, Is(s, lang::Pattern::Literal(w)))
+}
+```
+
+Where it fires, the fix [agrees](../Meaning.md#fixes-that-agree) with the
+`match`, in every interpretation and environment. Where the scrutinee is
+well-defined, the `match` is `a` where `p` matches it, in the environment
+as it is, since `p` binds nothing, and `b` elsewhere, as the `if` of its
+test is. Elsewhere both are undefined. `src/Impls/Rewrites.lean` proves
+this in Lean, for every expression, interpretation and environment;
+`fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc single_match_else_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure agrees: when single_match_else_fires?(e),
+        agrees?(
+            lang::eval(i, env, single_match_else_fix(e)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
+The fix writes a conditional, on which the lint does not fire, of a test
+of the scrutinee and the two bodies, an operand and an operand's operand.
+Once the operands are fixed, it does not fire, so the fix leaves nothing
+to fix. It fixes the lint at one place: the conditional does not fire
+(`kept`). But a `match` around it may start firing once it is fixed,
+since the lint compares the scrutinees of the two arms: where one is a
+`match` that fires and the other its fix, written as an `if`, the outer
+`match` fires only once the inner one is fixed (`around`).
+
+```fren
+expect single_match_else_refires(
+    z: lang::Expr<lang::Id>,
+    a: lang::Expr<lang::Id>,
+    b: lang::Expr<lang::Id>,
+    x: lang::Expr<lang::Id>,
+    y: lang::Expr<lang::Id>,
+    p: lang::Pattern<lang::Id>,
+) {
+    use lang::Expr::{If, Is, Literal, Match, NoMatch}
+    use lang::Pattern::Wildcard
+    use lang::Value::True
+
+    assume only: tests_only?(p)
+
+    let inner: lang::Expr<lang::Id> := Match(
+        z,
+        p,
+        Literal(True),
+        a,
+        Match(z, Wildcard, Literal(True), b, NoMatch)
+    )
+    let as_if: lang::Expr<lang::Id> := If(Is(z, p), a, b)
+
+    expect kept: not single_match_else_fires?(single_match_else_fix(inner))
+    expect around: not single_match_else_fires?(
+        Match(
+            inner,
+            p,
+            Literal(True),
+            x,
+            Match(as_if, Wildcard, Literal(True), y, NoMatch)
+        )
+    )
+        and single_match_else_fires?(
+            Match(
+                single_match_else_fix(inner),
+                p,
+                Literal(True),
+                x,
+                Match(as_if, Wildcard, Literal(True), y, NoMatch)
+            )
+        )
+}
+```
+
 ## Matches on a `Bool`
 
 `match_bool`, `allow` by default, fires on a `match` on a `Bool` of two
@@ -411,6 +605,215 @@ pub proc match_bool(
             -1,
             0,
             o
+        )
+}
+```
+
+### Matches on a `Bool`, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+`match c? { true => a, false => b }` is `Match(c?, true, true, a,
+Match(c?, false, true, b, NoMatch))` ([Derived
+forms](../../Lang/Semantics.md#derived-forms)). `match_bool_fires?` fires
+on two arms without guards whose patterns are the literals `true` and
+`false`, in either order, and its fix is the conditional whose `then`
+branch is the body of the arm of `true`. That is a rewrite, as [Fixes as
+rewrites](../Rewrites.md) states for every such lint:
+
+```fren
+-- `p` and `q` are the literals `true` and `false`, in either order.
+fn bool_pair?<V>(p: lang::Pattern<V>, q: lang::Pattern<V>) :=
+    (p = lang::Pattern::Literal(lang::Value::True) and q = lang::Pattern::Literal(lang::Value::False))
+    or (p = lang::Pattern::Literal(lang::Value::False) and q = lang::Pattern::Literal(lang::Value::True))
+
+-- `rest` is an arm of a `match` on `s` without a guard, whose pattern is
+-- the other of `true` and `false` than `p`, and no arm after it.
+fn bool_arm?<V>(s: lang::Expr<V>, p: lang::Pattern<V>, rest: lang::Expr<V>) := match rest {
+    lang::Expr::Match(t, q, h, _, r) => t = s and bool_pair?(p, q) and true?(h) and r = lang::Expr::NoMatch,
+    _ => false,
+}
+
+pub fn match_bool_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Match(s, p, g, _, rest) => true?(g) and bool_arm?(s, p, rest),
+    _ => false,
+}
+
+pub fn match_bool_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Match(s, p, _, a, rest) =>
+        if not match_bool_fires?(e) then e
+        else if p = lang::Pattern::Literal(lang::Value::True) then lang::Expr::If(s, a, arm_body(rest))
+        else lang::Expr::If(s, arm_body(rest), a),
+    _ => e,
+}
+
+-- The pattern of an arm of a `match` on a `Bool`.
+fn bool_pattern<V>(p: BoolPat): lang::Pattern<V> := match p {
+    BoolPat::True => lang::Pattern::Literal(lang::Value::True),
+    BoolPat::False => lang::Pattern::Literal(lang::Value::False),
+    BoolPat::Wild => lang::Pattern::Wildcard,
+}
+```
+
+`lint::match_bool` binds this to the linter, where the second arm is
+`true` or `false`: where the linter fires, so does the function, and the
+fix is the conditional that the linter writes. The second arm `_` is
+left out. It is taken at every value but the first arm's, and the
+conditional only at `true` and `false`, so the two agree only where the
+scrutinee is a `Bool`, which the static rules check and the model has no
+types to state. `match_bool_wildcard` states that they agree there.
+That the front ends read the arms so, and the text of the fix, are
+trusted, and checked by the ui tests in
+`test/ui/lints/patterns_tables.fren`:
+
+```fren
+expect match_bool_elaborated(
+    first: BoolPat,
+    second: BoolPat,
+    a: Body,
+    b: Body,
+    others?,
+    c?,
+    o: Int,
+    s: lang::Expr<lang::Id>,
+    x: lang::Expr<lang::Id>,
+    y: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{If, Literal, Match, NoMatch}
+
+    assume accepted: first = BoolPat::Wild or second = BoolPat::Wild or first != second
+
+    call t := match_bool(first, second, a, b, others?, c?, o)
+
+    let two_arms: lang::Expr<lang::Id> := Match(
+        s,
+        bool_pattern(first),
+        Literal(lang::Value::True),
+        x,
+        Match(
+            s,
+            bool_pattern(second),
+            Literal(lang::Value::True),
+            y,
+            NoMatch
+        )
+    )
+
+    expect fires: when t.fires? and second != BoolPat::Wild,
+        match_bool_fires?(two_arms)
+        and match_bool_fix(two_arms) = (if first = BoolPat::True then If(s, x, y) else If(s, y, x))
+}
+
+set_option fren.evidence "random" in
+pub proc match_bool_wildcard(
+    i: lang::Interp,
+    env: lang::Env,
+    first?,
+    s: lang::Expr<lang::Id>,
+    x: lang::Expr<lang::Id>,
+    y: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{If, Literal, Match, NoMatch}
+    use lang::Outcome::{Defined, Undefined}
+
+    assume boolean: lang::eval(i, env, s) is Defined(lang::Value::True) | Defined(lang::Value::False) | Undefined
+
+    ensure agrees: agrees?(
+        lang::eval(i, env, if first? then If(s, x, y) else If(s, y, x)),
+        lang::eval(
+            i,
+            env,
+            Match(
+                s,
+                lang::Pattern::Literal(lang::truth(first?)),
+                Literal(lang::Value::True),
+                x,
+                Match(
+                    s,
+                    lang::Pattern::Wildcard,
+                    Literal(lang::Value::True),
+                    y,
+                    NoMatch
+                )
+            )
+        )
+    )
+}
+```
+
+Where it fires, the fix [agrees](../Meaning.md#fixes-that-agree) with the
+`match`, in every interpretation and environment. Where the scrutinee is
+`true` or `false`, the `match` takes the arm of that literal, as the
+conditional takes its branch. Elsewhere the `match` reaches `NoMatch`, or
+the scrutinee is undefined, so the `match` is undefined.
+`src/Impls/Rewrites.lean` proves this and `match_bool_wildcard` in Lean,
+for every expression, interpretation and environment; `fren check` tests
+them:
+
+```fren
+set_option fren.evidence "random" in
+pub proc match_bool_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure agrees: when match_bool_fires?(e),
+        agrees?(lang::eval(i, env, match_bool_fix(e)), lang::eval(i, env, e))
+}
+```
+
+The fix writes a conditional, on which the lint does not fire, of the
+scrutinee and the two bodies, an operand and an operand's operand. Once
+the operands are fixed, it does not fire, so the fix leaves nothing to
+fix. It fixes the lint at one place (`kept`). But a `match` around it may
+start firing once it is fixed, as for
+[`single_match_else`](#one-pattern-and-_-over-the-syntax-of-the-semantics),
+since the lint compares the scrutinees of the two arms (`around`):
+
+```fren
+expect match_bool_refires(
+    z: lang::Expr<lang::Id>,
+    a: lang::Expr<lang::Id>,
+    b: lang::Expr<lang::Id>,
+    x: lang::Expr<lang::Id>,
+    y: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::{If, Literal, Match, NoMatch}
+    use lang::Value::{False, True}
+
+    let inner: lang::Expr<lang::Id> := Match(
+        z,
+        lang::Pattern::Literal(True),
+        Literal(True),
+        a,
+        Match(z, lang::Pattern::Literal(False), Literal(True), b, NoMatch)
+    )
+
+    expect kept: not match_bool_fires?(match_bool_fix(inner))
+    expect around: not match_bool_fires?(
+        Match(
+            inner,
+            lang::Pattern::Literal(True),
+            Literal(True),
+            x,
+            Match(
+                If(z, a, b),
+                lang::Pattern::Literal(False),
+                Literal(True),
+                y,
+                NoMatch
+            )
+        )
+    )
+        and match_bool_fires?(
+            Match(
+                match_bool_fix(inner),
+                lang::Pattern::Literal(True),
+                Literal(True),
+                x,
+                Match(
+                    If(z, a, b),
+                    lang::Pattern::Literal(False),
+                    Literal(True),
+                    y,
+                    NoMatch
+                )
+            )
         )
 }
 ```

@@ -7,12 +7,14 @@ import Reqs.Lint
 
 `overly_complex_bool_expr`, `double_neg`, `int_plus_one`, `manual_abs`,
 `manual_abs_diff`, `unless_not`, `collapsible_when`, `same_branches`,
-`neg_multiply`, `identity_op`, `manual_rem_euclid`, `trivial_guard` and
-`trivial_match` over `lang::Expr`: each fix agrees with the expression
-where it fires, `neg_multiply`, `identity_op` and `manual_rem_euclid` in
-an interpretation whose primitive operations are `usual?`; what the messages
-of `eq_op`, `erasing_op` and `modulo_one` say agrees with the expression,
-the last two in such an interpretation; and the
+`neg_multiply`, `identity_op`, `manual_rem_euclid`, `trivial_guard`,
+`trivial_match`, `single_match_else` and `match_bool` over `lang::Expr`:
+each fix agrees with the expression where it fires, `neg_multiply`,
+`identity_op` and `manual_rem_euclid` in an interpretation whose
+primitive operations are `usual?`; what the messages of `eq_op`,
+`erasing_op`, `modulo_one` and `irrefutable_is` say agrees with the
+expression, those of `erasing_op` and `modulo_one` in such an
+interpretation; and the
 linter's rule for `overly_complex_bool_expr`, `Core.overlyComplexRule`,
 meets `lint::overly_complex_bool_expr` at `lang::Expr`. Then the laws of
 fixing every lint everywhere (`lint::fix_all_laws`), by induction on the
@@ -1058,6 +1060,136 @@ theorem tm_site (env : Env) (e : Expr String) : Le (eval i env e) (eval i env (l
     · exact Le.refl _
   · exact Le.refl _
 
+/-! ### `single_match_else` and `match_bool` -/
+
+/-- A literal, a range, an or-pattern and a variant without a payload leave
+the environment as it is. -/
+theorem bind_tests (p : Pattern String) (h : lint.tests_only? String p = true) (v : Value) (env : Env) :
+    lang.bind p v env = env := by
+  cases p with
+  | Variant c ps =>
+    cases ps <;> simp [lint.tests_only?] at h
+    cases v <;> simp [lang.bind]
+  | Binder x => simp [lint.tests_only?] at h
+  | Cons a b => simp [lint.tests_only?] at h
+  | _ => simp [lang.bind]
+
+theorem sme_fires_match (s : Expr String) (p : Pattern String) (g a rest : Expr String) :
+    lint.single_match_else_fires? String (.Match s p g a rest) =
+      (lint.tests_only? String p && lint.true? String g && lint.wildcard_arm? String s rest) := by
+  cases rest <;> simp [lint.single_match_else_fires?, lint.tests_only?, lint.true?, lint.wildcard_arm?, decide_classical,
+    lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2,
+    lang.Expr.Match.x3, lang.Expr.Match.x4]
+
+theorem wildcard_arm_iff (s rest : Expr String) : lint.wildcard_arm? String s rest = true ↔
+    ∃ b, rest = .Match s .Wildcard (.Literal .True) b .NoMatch := by
+  cases rest <;> simp [lint.wildcard_arm?, lint.true?, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2,
+    lang.Expr.Match.x3, lang.Expr.Match.x4, and_assoc]
+
+/-- `single_match_else` fires only on an arm. -/
+theorem sme_fires_other (e : Expr String) (h : ∀ s p g a rest, e = .Match s p g a rest → False) :
+    lint.single_match_else_fires? String e = false := by
+  cases e with
+  | Match s p g a rest => exact absurd rfl (h s p g a rest)
+  | _ => simp [lint.single_match_else_fires?]
+
+theorem sme_unfired (e : Expr String) (h : lint.single_match_else_fires? String e = false) :
+    lint.single_match_else_fix String e = e := by
+  unfold lint.single_match_else_fix; split
+  · rw [if_neg (by simpa using h)]
+  · rfl
+
+/-- Where `single_match_else` fires, the fix and the facts that it rests on. -/
+theorem sme_fired (e : Expr String) (hf : lint.single_match_else_fires? String e = true) :
+    ∃ s p a b, e = .Match s p (.Literal .True) a (.Match s .Wildcard (.Literal .True) b .NoMatch) ∧
+      lint.tests_only? String p = true ∧ lint.single_match_else_fix String e = .If (.Is s p) a b := by
+  cases e with
+  | Match s p g a rest =>
+    have hf' := hf
+    rw [sme_fires_match] at hf'
+    simp only [Bool.and_eq_true] at hf'
+    obtain ⟨⟨hp, hg⟩, hw⟩ := hf'
+    obtain ⟨b, rfl⟩ := (wildcard_arm_iff s rest).1 hw
+    obtain rfl := (true_iff g).1 hg
+    refine ⟨s, p, a, b, rfl, hp, ?_⟩
+    simp only [lint.single_match_else_fix, hf, if_true]
+  | _ => simp [lint.single_match_else_fires?] at hf
+
+/-- `match s { p => a, _ => b }` is `a` where `p` matches the scrutinee, in
+the environment as it is, `b` where it does not, and undefined where the
+scrutinee is, as `if s is p then a else b` is. -/
+theorem sme_site (env : Env) (e : Expr String) :
+    Le (eval i env e) (eval i env (lint.single_match_else_fix String e)) := by
+  cases hf : lint.single_match_else_fires? String e
+  · rw [sme_unfired e hf]; exact Le.refl _
+  · obtain ⟨s, p, a, b, rfl, hp, hfix⟩ := sme_fired e hf
+    rw [hfix]
+    simp only [eval, is_value, if_value]
+    generalize eval i env s = S
+    rcases S with v | _
+    · simp only [bind_tests p hp]
+      by_cases hm : matches_value? p v = true <;> simp [hm, matches_value?, lang.bind, truth, Le]
+    · simp [Le]
+
+theorem bool_arm_iff (s : Expr String) (p : Pattern String) (rest : Expr String) :
+    lint.bool_arm? String s p rest = true ↔ ∃ q b, rest = .Match s q (.Literal .True) b .NoMatch ∧
+      ((p = .Literal .True ∧ q = .Literal .False) ∨ (p = .Literal .False ∧ q = .Literal .True)) := by
+  cases rest <;> simp [lint.bool_arm?, lint.bool_pair?, lint.true?, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2,
+    lang.Expr.Match.x3, lang.Expr.Match.x4, and_assoc]
+  intro _
+  exact ⟨fun ⟨h1, h2, h3⟩ => ⟨h2, h3, h1⟩, fun ⟨h2, h3, h1⟩ => ⟨h1, h2, h3⟩⟩
+
+theorem mb_fires_match (s : Expr String) (p : Pattern String) (g a rest : Expr String) :
+    lint.match_bool_fires? String (.Match s p g a rest) = (lint.true? String g && lint.bool_arm? String s p rest) := by
+  cases rest <;> simp [lint.match_bool_fires?, lint.true?, lint.bool_arm?, lint.bool_pair?, decide_classical,
+    lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2,
+    lang.Expr.Match.x3, lang.Expr.Match.x4]
+
+theorem mb_fires_other (e : Expr String) (h : ∀ s p g a rest, e = .Match s p g a rest → False) :
+    lint.match_bool_fires? String e = false := by
+  cases e with
+  | Match s p g a rest => exact absurd rfl (h s p g a rest)
+  | _ => simp [lint.match_bool_fires?]
+
+theorem mb_unfired (e : Expr String) (h : lint.match_bool_fires? String e = false) :
+    lint.match_bool_fix String e = e := by
+  unfold lint.match_bool_fix; split
+  · rw [if_pos (by simpa using h)]
+  · rfl
+
+/-- Where `match_bool` fires, the fix and the facts that it rests on. -/
+theorem mb_fired (e : Expr String) (hf : lint.match_bool_fires? String e = true) :
+    ∃ s a b, (e = .Match s (.Literal .True) (.Literal .True) a (.Match s (.Literal .False) (.Literal .True) b .NoMatch) ∧
+        lint.match_bool_fix String e = .If s a b) ∨
+      (e = .Match s (.Literal .False) (.Literal .True) a (.Match s (.Literal .True) (.Literal .True) b .NoMatch) ∧
+        lint.match_bool_fix String e = .If s b a) := by
+  cases e with
+  | Match s p g a rest =>
+    have hf' := hf
+    rw [mb_fires_match] at hf'
+    simp only [Bool.and_eq_true] at hf'
+    obtain ⟨hg, hb⟩ := hf'
+    obtain ⟨q, b, rfl, hpq⟩ := (bool_arm_iff s p rest).1 hb
+    obtain rfl := (true_iff g).1 hg
+    refine ⟨s, a, b, ?_⟩
+    rcases hpq with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · left; refine ⟨rfl, ?_⟩
+      simp [lint.match_bool_fix, hf, lint.arm_body]
+    · right; refine ⟨rfl, ?_⟩
+      simp [lint.match_bool_fix, hf, lint.arm_body]
+  | _ => simp [lint.match_bool_fires?] at hf
+
+/-- `match s { true => a, false => b }` takes the arm of the scrutinee's
+value where it is `true` or `false`, as `if s then a else b` does, and is
+undefined elsewhere. -/
+theorem mb_site (env : Env) (e : Expr String) : Le (eval i env e) (eval i env (lint.match_bool_fix String e)) := by
+  cases hf : lint.match_bool_fires? String e
+  · rw [mb_unfired e hf]; exact Le.refl _
+  · obtain ⟨s, a, b, ⟨rfl, hfix⟩ | ⟨rfl, hfix⟩⟩ := mb_fired e hf <;> rw [hfix] <;>
+      simp only [eval, if_value] <;>
+      generalize eval i env s = S <;> rcases S with w | _ <;> (try cases w) <;>
+      simp [matches_value?, lang.bind, Le]
+
 /-! ### The language's own primitives -/
 
 /-- The remainder by a positive `n` of an `m` within `n` of the range from `0` to `n`. -/
@@ -1178,6 +1310,16 @@ theorem fires_at_tm (e : Expr String) :
   show decide (lint.trivial_match_fires? String e = true) = _
   cases lint.trivial_match_fires? String e <;> rfl
 
+theorem fires_at_sme (e : Expr String) :
+    lint.fires_at? String .SingleMatchElse e = lint.single_match_else_fires? String e := by
+  show decide (lint.single_match_else_fires? String e = true) = _
+  cases lint.single_match_else_fires? String e <;> rfl
+
+theorem fires_at_mb (e : Expr String) :
+    lint.fires_at? String .MatchBool e = lint.match_bool_fires? String e := by
+  show decide (lint.match_bool_fires? String e = true) = _
+  cases lint.match_bool_fires? String e <;> rfl
+
 /-- `fits?` of a lint whose fix rests on the primitive operations: they are `usual?`. -/
 theorem fits_usual (l : lint.ExprLint) (hl : l = .NegMultiply ∨ l = .IdentityOp ∨ l = .ManualRemEuclid)
     (h : lint.fits? l i = true) : lint.usual? i.primitives = true := by
@@ -1200,6 +1342,8 @@ theorem fix_at_unfired (l : lint.ExprLint) (e : Expr String) (h : lint.fires_at?
   · rw [fires_at_mre] at h; exact mre_unfired e h
   · rw [fires_at_tg] at h; exact tg_unfired e h
   · rw [fires_at_tm] at h; exact tm_unfired e h
+  · rw [fires_at_sme] at h; exact sme_unfired e h
+  · rw [fires_at_mb] at h; exact mb_unfired e h
 
 /-- Each lint's fix agrees with the expression, where it fires and where not
 (`lint::fix_at_agrees`). Each new arm of `lint::ExprLint` owes this. -/
@@ -1227,6 +1371,8 @@ theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr String) (hl : lint.fit
   · exact mre_site (fits_usual _ (Or.inr (Or.inr rfl)) hl) env e
   · exact tg_site env e
   · exact tm_site env e
+  · exact sme_site env e
+  · exact mb_site env e
 
 /-! ### Fixing everywhere -/
 
@@ -1642,6 +1788,29 @@ theorem clean_at (l : lint.ExprLint) (e : Expr String) (ho : lint.operands_fixed
     · rename_i hne
       intro _ hf
       rw [tm_fires_other e hne] at hf; cases hf
+  · rw [fires_at_sme] at hf
+    show lint.fires_in? _ (lint.single_match_else_fix String e) = false
+    obtain ⟨s, p, a, b, rfl, _, hfix⟩ := sme_fired e hf
+    rw [hfix]
+    have hm := operands_match _ _ _ _ _ _ ho
+    have hb := (operands_match _ _ _ _ _ _ (operands_of_clean _ _ hm.2.2.2)).2.2.1
+    rw [fires_in_eq, fires_at_sme, sme_fires_other _ (fun _ _ _ _ _ h => by cases h)]
+    operands_simp
+    rw [fires_in_eq, fires_at_sme, sme_fires_other _ (fun _ _ _ _ _ h => by cases h)]
+    operands_simp
+    simp [hm.1, hm.2.2.1, hb]
+  · rw [fires_at_mb] at hf
+    show lint.fires_in? _ (lint.match_bool_fix String e) = false
+    have hif (c x y : Expr String) (hc : lint.fires_in? .MatchBool c = false)
+        (hx : lint.fires_in? .MatchBool x = false) (hy : lint.fires_in? .MatchBool y = false) :
+        lint.fires_in? .MatchBool (.If c x y) = false := by
+      rw [fires_in_eq, fires_at_mb, mb_fires_other _ (fun _ _ _ _ _ h => by cases h)]
+      operands_simp; simp [hc, hx, hy]
+    obtain ⟨s, a, b, ⟨rfl, hfix⟩ | ⟨rfl, hfix⟩⟩ := mb_fired e hf <;> rw [hfix] <;>
+      have hm := operands_match _ _ _ _ _ _ ho <;>
+      have hb := (operands_match _ _ _ _ _ _ (operands_of_clean _ _ hm.2.2.2)).2.2.1
+    · exact hif _ _ _ hm.1 hm.2.2.1 hb
+    · exact hif _ _ _ hm.1 hb hm.2.2.1
 
 /-- `lint::fix_all_laws::fixed`. -/
 theorem fixed (l : lint.ExprLint) (e : Expr String) : lint.fires_in? l (lint.fix_all l e) = false := by
@@ -1899,6 +2068,76 @@ impl fix_at_fixed: lint::fix_at_fixed for (l : lint.ExprLint) (e : lang.Expr Str
   unfold lint.fix_at_fixed.ensures lint.fix_at_fixed.ensure.fixed
   intro h
   simpa using clean_at l e (by simpa using h)
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the scrutinee.
+impl single_match_else_keeps_meaning: lint::single_match_else_keeps_meaning for (e : lang.Expr String)
+    (i : lang.Interp) (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.single_match_else_keeps_meaning.ensures lint.single_match_else_keeps_meaning.ensure.agrees
+  intro _
+  exact (agrees_iff _ _).2 (sme_site env e)
+
+open RewriteProof in
+-- For every scrutinee, interpretation and environment, by its value.
+impl single_match_else_equality: lint::single_match_else_equality for (i : lang.Interp) (env : lang.Env)
+    (s : lang.Expr String) (c : String) (w : lang.Value) {
+  i := i, env := env, s := s, c := c, w := w,
+} by
+  intro i env s c w _
+  unfold lint.single_match_else_equality.ensures lint.single_match_else_equality.ensure.variant
+    lint.single_match_else_equality.ensure.literal
+  simp only [lang.eval, lang.binary_value, lang.is_value, lang.construct_value]
+  generalize lang.eval i env s = S
+  rcases S with v | _
+  · cases v <;> simp [lang.matches_value?, eq_comm]
+  · simp
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the scrutinee.
+impl match_bool_keeps_meaning: lint::match_bool_keeps_meaning for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.match_bool_keeps_meaning.ensures lint.match_bool_keeps_meaning.ensure.agrees
+  intro _
+  exact (agrees_iff _ _).2 (mb_site env e)
+
+open RewriteProof in
+-- For every scrutinee whose outcome is a `Bool` or undefined, by its value.
+impl match_bool_wildcard: lint::match_bool_wildcard for (i : lang.Interp) (env : lang.Env) (f : Bool)
+    (s x y : lang.Expr String) {
+  i := i, env := env, «first?» := f, s := s, x := x, y := y,
+} by
+  intro i env f s x y hb
+  unfold lint.match_bool_wildcard.ensures lint.match_bool_wildcard.ensure.agrees
+  unfold lint.match_bool_wildcard.assumes lint.match_bool_wildcard.assume.boolean at hb
+  apply (agrees_iff _ _).2
+  revert hb
+  cases f <;> simp only [lang.eval, lang.if_value, if_true, if_false, Bool.false_eq_true] <;>
+    generalize lang.eval i env s = S <;> rcases S with v | _ <;> (try cases v) <;>
+    simp [lang.matches_value?, lang.bind, lang.truth, lang.Outcome.Defined.x0, Le]
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the scrutinee.
+impl irrefutable_is_said_agrees: lint::irrefutable_is_said_agrees for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.irrefutable_is_said_agrees.ensures lint.irrefutable_is_said_agrees.ensure.said
+  intro h
+  apply (agrees_iff _ _).2
+  cases e with
+  | Is s p =>
+    cases p <;> simp [lint.irrefutable_is_fires?] at h
+    simp only [lang.eval, lang.is_value]
+    generalize lang.eval i env s = S
+    rcases S with v | _ <;> simp [lang.matches_value?, lang.truth, Le]
+  | _ => simp [lint.irrefutable_is_fires?] at h
 
 open RewriteProof in
 -- For every expression, interpretation and environment, by evaluating the scrutinee.
