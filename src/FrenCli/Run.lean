@@ -222,6 +222,10 @@ structure Args where
   /-- `check --evidence`: the evidence of every check that the source could
   set, in place of its settings (`cli::evidence_in_effect`). -/
   evidence? : Option Fren.Core.Evidence := none
+  /-- Whether `check` and `quickcheck` mark what their threads share
+  `persistent`, which is then never freed: only the `fren` binary, whose
+  process ends with the command, sets it (`run`). Not an option. -/
+  persist : Bool := false
 
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
@@ -728,12 +732,12 @@ def symbolsOf (spec? : Except String Eval.Spec) : Symbols :=
 /-- The solver's results for `c`, a global expectation if `global`, with
 each model confirmed by the evaluator's `spec?` (`Reqs/Eval#confirming-models`);
 the results that a refuted model is about, with their internal errors; and
-an internal error if the evaluator has no counterpart of `c`. `sv` is the
-spec's `State`, `sv.st`, with what checking each item reads of it, its
-prelude, indexed, among it, built once for every item rather than for
-each (`State.forSolving`). `sy` is `symbolsOf spec?`, built once for the
-spec, and `cache` holds the answers to the queries asked before
-(`QueryCache`). -/
+an internal error if the evaluator has no counterpart of `c`. `sv` holds
+the spec's `State`, `sv.st`, together with what checking any item reads
+of it, such as the prelude of its queries, built once for all the items
+rather than for each (`State.forSolving`). `sy` is `symbolsOf spec?`,
+built once for the spec, and `cache` holds the answers to the queries
+asked before (`QueryCache`). -/
 partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
@@ -838,41 +842,63 @@ def enumerated (sp : Eval.Spec) (ec : Eval.Comp) (c : CComp) (global : Bool) (ki
   let keep (r : Fren.Core.CheckResult) := c.enumerated.covers r
   return Fren.Core.Enumeration.Enumerated.merge c.enumSize a? b? keep
 
+/-- `Runtime.markPersistent a`: unsafe only if another thread can
+already reach `a`. -/
+private unsafe def persistentImpl (a : α) : BaseIO α := Runtime.markPersistent a
+
+/-- `a`, marked persistent (`Runtime.markPersistent`): from then on, no
+reference to it or to anything it reaches is counted, and none of them is
+ever freed. As a function, it is `pure`, which is also the definition of
+`Runtime.markPersistent`; only the runtime's counting changes. Threads
+that share `a` then read it with no atomic counting, and so with no
+contention (`inParallel`). Call it only while no other thread can reach
+`a`, and only where the process ends with the command (`Args.persist`):
+what it marks, and the values later forced into thunks in it, are kept
+until the process exits. -/
+@[implemented_by persistentImpl]
+private def persistent (a : α) : BaseIO α := pure a
+
+/-- What `persistent` gives: `a` itself. -/
+private theorem persistent_eq_pure (a : α) : persistent a = pure a := rfl
+
+/-- `a`, marked `persistent` if `args.persist`: so only the `fren`
+binary marks what its threads share, and a process that runs `check` or
+`quickcheck` many times, such as the tests and the fuzzer, frees each
+run's reading as before. Unmarked, the threads share `a` with atomic
+counting. -/
+private def shared (args : Args) (a : α) : BaseIO α :=
+  if args.persist then persistent a else pure a
+
 /-- `f` of each of `xs`, taken by at most `jobs` threads at once, those
 that `first` selects before the others, and otherwise in order: for each,
 in the order of `xs`, an action that waits for it. Which is started first
 changes only when each finishes, not what it gives. With one job, each
-action runs `f` itself, in the thread that runs it, so that nothing is
-shared between threads.
+action runs `f` itself, in the thread that runs it.
 
-Each thread first makes `own`, its own copy of what `f` reads, which it
-gives `f`. Lean counts the references to an object
-that two threads share atomically, and threads that read the same objects
-contend for them: four tests of `lint::and_associates` at once, sharing
-one `Eval.Spec`, took 11.6 s, and 3.1 s each with a spec of its own. So
-`own` should build what `f` reads in the thread, not return an object
-made before. The copies cost memory: when this was measured (November
-2026), a reading of Fren's own spec took about 50 MB for each thread, and
-`fren quickcheck` of it peaked at 964 MB with a reading for each thread,
-against 248 MB with one shared, at many jobs. With one job, there is one
-thread, so `f` is given `single?`, what the caller has already made, if
-it gives it, rather than a copy of its own: that saves reading the spec
-again, but no memory was measured to be saved (the review of #587 saw
-220 MB against 174 MB for `fren quickcheck --jobs 1`, under load). -/
-def inParallelWith [Nonempty β] (jobs : Nat) (xs : Array α) (own : IO σ) (f : σ → α → IO β)
-    (first : α → Bool := fun _ => false) (single? : Option σ := none) : IO (Array (IO β)) := do
+`f` reads `s`, and each thread gets it from `copy?`, its own copy, if
+given, and otherwise shares `s` itself; with one job, `f` reads `s`. Lean
+counts the references to an object that two threads share atomically,
+and threads that read the same objects contend for them: four tests of
+`lint::and_associates` at once, sharing one `Eval.Spec`, took 11.6 s,
+and 3.1 s each with a spec of its own. So the `fren` binary marks `s`
+`persistent` first, which removes the counting, and gives no `copy?`
+(`shared`). Other callers, which must free what they read, give each
+thread a reading of its own: shared unmarked, Fren's own spec took twice
+the cycles of `fren check` with a warm query cache at 8 jobs, and 2.6
+times those of `fren quickcheck`. Each reading costs time and memory: a
+reading of Fren's own spec took about 50 MB, and with 8 jobs, the
+readings were 14 % of the instructions of that `fren check` (#689). -/
+def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (s : σ) (copy? : Option (IO σ)) (f : σ → α → IO β)
+    (first : α → Bool := fun _ => false) : IO (Array (IO β)) := do
   if jobs ≤ 1 then
-    let l ← match single? with
-      | some l => pure l
-      | none => own
-    return xs.map (f l)
+    return xs.map (f s)
   let promises ← xs.mapM fun _ => IO.Promise.new
   let firsts := xs.map first
   let idxs := Array.range xs.size
   let order := idxs.filter (firsts[·]?.getD false) ++ idxs.filter (!firsts[·]?.getD false)
   let next ← IO.mkRef 0
   let worker : IO Unit := do
-    let l ← own
+    let l ← copy?.getD (pure s)
     repeat
       let k ← next.modifyGet fun k => (k, k + 1)
       let some i := order[k]? | break
@@ -882,12 +908,12 @@ def inParallelWith [Nonempty β] (jobs : Nat) (xs : Array α) (own : IO σ) (f :
     discard <| IO.asTask worker .dedicated
   return promises.map fun p => IO.ofExcept p.result!.get
 
-/-- A reading of the spec of `files` (`specOf`), made when it is first
-needed. An action rather than a value, so that each thread that runs it
-(`inParallelWith`) gets one of its own. -/
-def ownSpecOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    IO (Thunk (Except String Eval.Spec)) :=
-  pure (Thunk.mk fun _ => specOf files callTargs)
+/-- A reading of the spec of `files` (`specOf`), made by the thread that
+runs it (`inParallel`). Not inlined, so that the compiler cannot share
+it with the caller's own reading of the same files. -/
+@[noinline] def ownSpecOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    IO (Except String Eval.Spec) :=
+  IO.lazyPure fun _ => specOf files callTargs
 
 /-- The report of `--timings` (`Reqs/Cli#timings`): for each procedure
 and global expectation, with its total time, the time of its solver's
@@ -926,8 +952,16 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.body, t.key)
   -- What checking each item reads of `st` that is the same for every
   -- item, such as where the contracts of instances of generic functions
-  -- are checked (`lang::instance_site`): built once for all of them.
-  let sv := st.forSolving
+  -- are checked (`lang::instance_site`): built once for all of them, and
+  -- shared by the threads that check them (`inParallel`).
+  -- Its prelude's thunks (`Prelude.used`, `smtTexts`, …) are forced
+  -- later, by whichever worker needs them first, maybe by several at once.
+  -- That is safe even when `sv` is persistent: `lean_thunk_get_core` takes
+  -- a thunk's closure with an atomic exchange, so one thread computes it,
+  -- and marks its value multi-threaded before publishing it. Such a value
+  -- is never freed either. A mutable field (an `IO.Ref`) added to
+  -- `Prelude`, `State` or `Eval.Spec` would be shared the same way.
+  let sv ← shared args st.forSolving
   let prelude := sv.prelude
   -- A query asked again, as some checks of a procedure share one, is
   -- answered once (`Reqs/Cli#solver-queries`), and one asked by an earlier
@@ -940,9 +974,10 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     unless ← System.FilePath.isDir dir do
       IO.eprintln (argError args.paint { code? := none, headline := s!"no query cache `{dir}` to compare with" })
       return exitCode false none
-  -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
-  let spec? := specOf files st.callTargs
-  let sy := symbolsOf spec?
+  -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`),
+  -- from one reading of the spec that the threads share.
+  let spec? ← shared args (specOf files st.callTargs)
+  let sy ← shared args (symbolsOf spec?)
   let mut internal := #[]
   let mut byTesting := 0
   let mut byBound := 0
@@ -958,9 +993,8 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- checks set to testing; reported below, in order
   -- (`Reqs/Cli#parallel-checking`). Only this thread prints, so that the
   -- output is the same as one at a time.
-  let solve := fun (spec? : Thunk (Except String Eval.Spec))
+  let solve := fun (spec? : Except String Eval.Spec)
       ((c, global, kinds, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × String) => do
-    let spec? := spec?.get
     let n ← IO.mkRef 0
     let dumped ← IO.mkRef ""
     let dump? := if args.dumpSmt then some fun script => do
@@ -990,9 +1024,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- Those with checks by testing or enumeration first: they are the
   -- slowest, and starting them last would leave them running alone at
   -- the end.
-  -- Each thread reads the spec itself, which gives the same `spec?`.
-  let solving ← (← inParallelWith (args.jobs?.getD (← jobsDefault)) todo (ownSpecOf files st.callTargs) solve
-    (first := fun (c, _) => c.tested.any || c.enumerated.any) (single? := some (Thunk.pure spec?))).mapM id
+  -- Each thread reads the spec itself, which gives the same `spec?`,
+  -- unless the threads share it marked persistent (`inParallel`).
+  let copy? := if args.persist then none else some (ownSpecOf files st.callTargs)
+  let solving ← (← inParallel (args.jobs?.getD (← jobsDefault)) todo spec? copy? solve
+    (first := fun (c, _) => c.tested.any || c.enumerated.any)).mapM id
   -- The contracts of the uninterpreted functions first, though their items
   -- come last, since what applies them rests on them
   -- (`Fren.Core.contractsEvidence`).
@@ -1116,7 +1152,8 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
 diagnostics and the summary to stderr; returns the exit code. -/
 def quickcheck (args : Args) : IO UInt32 := do
   let some (files, st) ← load args.paint args.files args.lints | return exitCode false none
-  let sp ← match specOf files st.callTargs with
+  -- One reading of the spec, which the threads share (`inParallel`).
+  let sp ← match ← shared args (specOf files st.callTargs) with
     | .ok sp => pure sp
     | .error e =>
       printDiag args.paint files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
@@ -1129,16 +1166,16 @@ def quickcheck (args : Args) : IO UInt32 := do
   -- The report of testing each, `--jobs` at a time, each from a random
   -- stream of its own (`testReport`); printed below, in order
   -- (`Reqs/Cli#parallel-checking`).
-  let test := fun (own : Thunk (Except String Eval.Spec)) ((c, global) : CComp × Bool) => do
-    let sp := own.get.toOption.getD sp
+  let test := fun (sp : Eval.Spec) ((c, global) : CComp × Bool) => do
     let rep := match sp.counterpart? c global with
       | some ec => if (sp.untestable? ec).isSome then {} else testReport sp ec c global args.seed args.nTests
       | none => {}
     -- Forced here, in this thread.
     IO.lazyPure fun _ => some rep
-  -- Each thread reads the spec itself, which gives the same `sp`.
-  let testing ← inParallelWith (args.jobs?.getD (← jobsDefault)) items (ownSpecOf files st.callTargs) test
-    (single? := some (Thunk.pure (.ok sp)))
+  -- Each thread reads the spec itself, which gives the same `sp`, unless
+  -- the threads share it marked persistent (`inParallel`).
+  let copy? := if args.persist then none else some ((·.toOption.getD sp) <$> ownSpecOf files st.callTargs)
+  let testing ← inParallel (args.jobs?.getD (← jobsDefault)) items sp copy? test
   for (c, global) in items, tested in testing do
     let rep := (← tested).getD {}
     let some ec := sp.counterpart? c global
@@ -1871,8 +1908,9 @@ def paintFor (choice : ColorChoice) (stream : IO.FS.Stream) : IO Paint := do
   return { on := useColor choice tty noColor dumb }
 
 /-- Runs `fren` with `args`, printing diagnostics and usage errors to
-stderr; returns the exit code. -/
-def run (args : List String) : IO UInt32 := do
+stderr; returns the exit code. `persist` only from the `fren` binary's
+`main`, whose process ends with the command (`Args.persist`). -/
+def run (args : List String) (persist : Bool := false) : IO UInt32 := do
   let (choice, args) ← match colorArg args with
     | .ok r => pure r
     | .error msg => IO.eprint (argError (← paintFor .auto (← IO.getStderr)) msg); return 2
@@ -1885,7 +1923,7 @@ def run (args : List String) : IO UInt32 := do
   | _ =>
     match parseArgs err args with
     | .ok a =>
-      let a := { a with paint := err }
+      let a := { a with paint := err, persist }
       match a.command with
       | .check => check a
       | .trace => trace a
