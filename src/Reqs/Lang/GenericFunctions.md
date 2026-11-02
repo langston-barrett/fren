@@ -32,11 +32,39 @@ declared-type := IDENT | IDENT"<" IDENT ("," IDENT)* ">"
 
 A function's type parameters follow the [rules of a generic
 type's](Generics.md#type-parameters): their names are distinct (`F0213`),
-none has the name of a built-in type or of an item that a path of one
-segment names where the function is declared (`F0388`), and none is an
-element type, as in `Set<T>`, for now (`F0387`). A type parameter may be
-an argument of an instance, as in `Option<T>`, and the whole type of a
-parameter or the result, as `d` and the result of `unwrap_or` are.
+and none has the name of a built-in type or of an item that a path of one
+segment names where the function is declared (`F0388`). A type parameter
+may be an argument of an instance, as in `Option<T>`, the whole type of a
+parameter or the result, as `d` and the result of `unwrap_or` are, and an
+element type of a set, a sequence or a relation, as in `Set<T>`, `Seq<T>`
+and `Rel<A, B>`, wherever the function writes a type: in its signature,
+its body and its contract. A generic type's type parameter is not an
+element type, for now (`F0387`, see [Type
+parameters](Generics.md#type-parameters)).
+
+```text
+fn grow<T>(s: Set<T>, x: T): Set<T> := s union {x}
+fn mentioned<V, B>(t: Term<V, B>): Set<V> := match t { Term::Var(x) => {x}, _ => {} }
+fn first_or<T>(q: Seq<T>, d: T): T := if q != [] then q[0] else d
+```
+
+`lang::element_parameter` states which type parameters may be element
+types, from whose they are:
+
+```fren
+pub mod lang
+
+-- Whose type parameter a type is: a generic enumeration's or record's,
+-- within its declaration, or a generic function's, within its signature,
+-- body and contract.
+pub enum ParamOwner { Datatype, Function }
+
+pub proc element_parameter(owner: ParamOwner): (det accepted?) {
+    ensure rule: accepted? iff owner = ParamOwner::Function
+
+    expect functions: when owner = ParamOwner::Function, accepted?
+}
+```
 
 Within the function, a type parameter is a type of its own, of which
 nothing is known but that it has values, and that two of them are equal or
@@ -52,12 +80,35 @@ parameter or result of type `T` is not named with `?`, though an
 application at `Bool` has a `Bool` (see [Boolean
 names](Types.md#boolean-names)), as `id(b?)` does with `fn id<T>(x: T): T`.
 
+Within the function, `Set<T>` is a set of values of `T`, and so on, and
+at an instance, a set of values of its type argument for `T`: with `x:
+Int`, `grow({1}, x)` is a `Set<Int>`. The body may apply to a set,
+sequence or relation of `T` every operation that it may apply to one of an
+abstract type: the operations on sets of [Sets](Decidability.md#sets),
+those on sequences of [Sequences](Decidability.md#sequences), and those on
+relations of [Relations](Decidability.md#relations), each in the core or
+not as those sections say, but for the rules on finiteness below.
+
 Since nothing is known of a type parameter's values, a quantifier over a
 type parameter, or over a type that mentions one, is outside the
 [decidable core](Decidability.md) (`F0714`), and testing cannot evaluate it
 (`F0639` for `quickcheck`), even where every instance that the spec applies
 the function at is finite: the body is checked once, for every type, which
-is conservative.
+is conservative. A quantifier over a sequence's elements of `T`, as
+`forall (x: T), when x in q, P`, is a [quantifier over
+elements](ElementQuantifiers.md), within the core as for any other element
+type. So is any operation on a `Set<T>` or `Seq<T>` that is within the core
+for an abstract type's, while a [relational
+operator](Decidability.md#relations) on a `Rel<A, B>` is outside it, since
+a type parameter is not known to be finite, and so is a quantifier over a
+set's members, as for any other set. An uninterpreted function with a
+parameter or result of type `Set<T>` is in the core at the type parameter's
+sort, as one of sets of an abstract type is, and at an instance as one of
+sets of the instance's element type is: outside the core at a finite one,
+such as an enumeration (see [Sets](Decidability.md#sets)).
+
+> **Note:** The Lean-hosted front end does not yet report an uninterpreted
+> function of sets of a finite type, at an instance or not (#437).
 
 A generic function may be defined or not, with a contract or without: a
 defined one's applications are [unfolded](#meaning), and each instance of
@@ -74,8 +125,6 @@ from how many it has, and whether one of them is mentioned by no
 parameter's type nor the result's, whether the function is defined or not:
 
 ```fren
-pub mod lang
-
 pub proc generic_function(
     params: Nat,          -- how many type parameters it has
     unmentioned?,         -- one of them is mentioned by no parameter's type nor the result's
@@ -487,16 +536,37 @@ the solver never sees a polymorphic function:
   arguments as they print, as `|::unwrap_or<Int>|`, whose sorts are the
   arguments', and one for the function itself, `|::unwrap_or|`, over a sort
   of its own for each type parameter, `|::unwrap_or::0::T|`, for the checks
-  of its body and its contract.
+  of its body and its contract. A `Set<T>` there is `(Set |::grow::0::T|)`,
+  and at an instance, `(Set Int)`, as a sequence and a relation of `T`
+  are.
 - The Lean-hosted front end gives a generic function a Lean definition with
   an explicit parameter of type `Type` for each type parameter, followed by
   an `Inhabited` instance for it (see [Generated
   Lean](../Generated.md#generic-functions)), and the solver sees its body
   at each application, unfolded with the type arguments given explicitly.
+  A `Set<T>` there is `Fren.FinSet T`, whose operations that need
+  `DecidableEq T` get it classically, as for an abstract type.
 
 Each type parameter is, for the checks of the function's body and
 contract, a sort of its own, of which the solver knows nothing: both front
 ends check the body and the contract once, for every type.
+
+An application of a generic function applies an *instance*: the whole
+function with each type parameter replaced by its type argument
+(`lang::instantiation`), every part of it at once: its parameters' and
+result's types, its body, its preconditions and its postconditions, each
+value that one of them leaves unspecified, and each instance of another
+generic function that one of them applies at the function's type
+parameters, included. The type arguments are those that
+`lang::call_type_argument` infers, in both front ends. So a check that
+holds at the sorts holds at every instance, and an item that applies an
+instance is enumerated at it wherever its type arguments are enumerable
+types. A value that the function leaves unspecified, as an index out of
+range of a `Seq<T>` or a table where no row holds, in its body or its
+contract, is the unspecified value of the instance's type: `q[0]` of an
+empty `Seq<T>`, at `T := Nm`, is `[][0]` of a `Seq<Nm>`, the value that an
+index out of range in the application's item has, and enumeration reads it
+from that type's hidden slot (see [Searching](../Check.md#searching)).
 
 An application of a generic function without a body is of its instance's
 unknown function:

@@ -1,0 +1,21 @@
+-- A generic function's contract that applies another generic function
+-- without a body, at the function's own type parameter: at an instance, it
+-- applies the other function's instance too, which random testing reads
+-- (`Reqs/Lang/GenericFunctions#meaning`). Random testing runs in the `fren`
+-- command only.
+--@ only: cli
+set_option fren.lint.dead_code "allow"
+
+mod generic_functions_tested
+
+pub fn other<T>(T): T
+pub fn others<T>(Seq<T>): T
+pub fn through<T>(x: T): (r: T) { ensure m: r = other(x) }
+pub fn through_seq<T>(q: Seq<T>): (r: T) { ensure m: r = others(q) }
+
+set_option fren.evidence "random" in
+proc by_testing(x: Int, q: Seq<Int>) {
+    expect same: through(x) = other(x)
+    expect same_seq: through_seq(q) = others(q)
+}
+--@ summary: 5 passed (3 by random testing), 0 failed, 0 inconclusive, 0 redundant

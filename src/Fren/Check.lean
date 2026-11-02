@@ -430,6 +430,23 @@ def unfoldDefined (e : Expr) : MetaM Expr := do
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
   Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains))
 
+/-- `e` with each decision that its definitions got classically, as a
+generic function's body gets one for its type parameter
+(`Reqs/Lang/GenericFunctions#meaning`), replaced by the instance that Lean
+finds for it, where it finds one that is not classical: at an instance of
+a generic function, unfolded, `Classical.propDecidable (a = b)` over the
+values of an enumeration is its own `DecidableEq`, which enumeration can
+compile. -/
+def computableDecisions (e : Expr) : MetaM Expr :=
+  if (e.find? (·.isConstOf ``Classical.propDecidable)).isNone then pure e else
+  Meta.transform e (post := fun x => do
+    if x.isAppOfArity ``Classical.propDecidable 1 then
+      let p := x.appArg!
+      if !p.hasLooseBVars then
+        if let some inst ← (try Meta.synthInstance? (mkApp (mkConst ``Decidable) p) catch _ => pure none) then
+          if (inst.find? (·.isConstOf ``Classical.propDecidable)).isNone then return .done inst
+    return .continue)
+
 /-- The recursive symbols a query uses, including dependencies needed by
 its one-step equations. Each becomes an uninterpreted local. -/
 def recursiveSolvers (es : Array Expr) : MetaM (Array Name) := do
@@ -984,6 +1001,13 @@ where
         else Name.mkSimple uses[i].getString!
       Meta.withLocalDecl name bi (if nat then intResult ty else ty) fun x => do
         let fns := if ty.isForall then fns.push (uses[i], x, ty.getForallArity, nat) else fns
+        -- An abstract type, or a type parameter's sort, whose `Inhabited`
+        -- instance the formulas do not use, has one as a local instance
+        -- all the same: an expansion over the elements of a sequence of it
+        -- indexes the sequence (`Reqs/Lang/ElementQuantifiers#expansion`).
+        if ty.isType && !uses.contains (inhabitedName uses[i]) then
+          return ← Meta.withLocalDecl (Name.mkSimple "#inhabited") .instImplicit
+            (mkApp (mkConst ``Inhabited [Level.one]) x) fun _ => go (i + 1) (reps.push x) fns
         if !nat then return ← go (i + 1) (reps.push x) fns
         let r ← Meta.forallTelescope ty fun xs _ => do mkLambdaFVars xs (mkApp (mkConst ``Fren.natResult) (mkAppN x xs))
         go (i + 1) (reps.push r) fns

@@ -961,6 +961,11 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   from which follow the instances whose contracts are checked, and where
   (`Fren.Core.instanceSites`). -/
   genericUses : Array Fren.Core.GenericUse := #[]
+  /-- The type arguments that each application of a generic function was
+  inferred at (`Fren.Core.inferCall`), by its file and the start of its
+  span, outside the prelude: the evaluator's lowering applies the instance
+  that they give (`Eval.LState.callTargs`). -/
+  callTargs : Std.HashMap (Nat × Nat) (Array Ty) := {}
   /-- The item being elaborated, by its path, which an application is in. -/
   item : Name := .anonymous
   /-- Some type is a set. -/
@@ -3510,17 +3515,19 @@ partial def elabBasePTy (segs : Array Ident) : M Fren.Core.PTy := do
   if segs.size == 1 && segs[0]!.name == "String" then
     modify fun s => { s with usesStrings := true }
     return .plain .string
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
-  -- parameter (`lang::type_parameter_place`), and whose constraint, if any,
-  -- quantifies over the elements, outside the decidable core
-  -- (`lang::subset_place`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
+  -- generic type's type parameter (`lang::element_parameter`), and whose
+  -- constraint, if any, quantifies over the elements, outside the
+  -- decidable core (`lang::subset_place`).
   let elem (segs : Array Ident) : M Fren.Core.PTy := do
     let t ← elabPTy segs
     if t.ty == .nat then err (typeSpan segs) (Fren.Core.natPlaceMsg .element)
-    if let .param _ p := t.ty then err (typeSpan segs) (Fren.Core.typeParamPlaceMsg p .element "")
+    if let .param _ p := t.ty then
+      unless Fren.Core.elementParamAccepted .datatype do err (typeSpan segs) (Fren.Core.typeParamPlaceMsg p .element "")
     if let .abstract p := t.ty then
       if let some n := Fren.Core.typeParamName? p then
-        err (typeSpan segs) (Fren.Core.typeParamPlaceMsg (Name.mkSimple n) .element "")
+        unless Fren.Core.elementParamAccepted .function do
+          err (typeSpan segs) (Fren.Core.typeParamPlaceMsg (Name.mkSimple n) .element "")
     if (← consOf t).isSome then
       modify fun s => { s with outsideCore := true }
       lint .undecidable (typeSpan segs) Fren.Core.undecidableElementsMsg
@@ -4955,6 +4962,8 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       noteObligation acx .argument a.span (ptys[k]?.getD default) x
     let sym ← instantiate path targs
     modify fun s => { s with genericCalls := s.genericCalls.push (path, targs)
+                             callTargs := if s.module == Fren.Core.preludeModule then s.callTargs
+                               else s.callTargs.insert (s.file, span.start) targs
                              genericUses := s.genericUses.push
                                { file := s.file, item := s.item, caller? := s.fnTypeParams.map (·.1), callee := path, targs } }
     notePreconditions cx fnSpan path smts targs
@@ -5139,6 +5148,9 @@ partial def elabHigherOrderApp (cx : ExprCtx) (expected? : Option Ty) (span fnSp
   let (targs, smts, closures) ← do
     let (targs, (smts, closures)) ← go.run (args.map fun _ => "", args.map fun _ => none)
     pure (targs, smts, closures)
+  -- Its type arguments, for the evaluator's lowering (`State.callTargs`).
+  unless h.typeParams.isEmpty || (← get).module == Fren.Core.preludeModule do
+    modify fun s => { s with callTargs := s.callTargs.insert (s.file, span.start) targs }
   let ptys := ((← get).funPTys.find? path).map (·.1) |>.getD #[]
   for a in args, x in smts, k in [0:args.size] do
     if h.params[k]!.2.2 matches .value _ then noteObligation cx .argument a.span (ptys[k]?.getD default) x

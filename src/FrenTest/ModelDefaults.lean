@@ -3,6 +3,7 @@
 import Fren.Check
 import Fren.View
 import FrenCli.Confirm
+import FrenCli.Run
 import Reqs.Models
 -- keep-sorted end
 open Fren.Lang
@@ -116,7 +117,9 @@ pub struct P { x: Int, on?, ms: Ms, s: Set<Int>, t: String }
 pub enum W { Wrapped(P, G), Bare }
 "
 
-def spec : Spec := (specOf #[("t.fren", src.toList.toArray)]).toOption.getD default
+def spec : Spec :=
+  let files := #[("t.fren", src.toList.toArray)]
+  (specOf files (FrenCli.elabText (FrenCli.initialState #[]) 0 files[0]!.2).callTargs).toOption.getD default
 
 /-- The type at `path`, as the `fren` command has it. -/
 def tyOf (sp : Spec) (path : Lean.Name) : VTy :=

@@ -104,3 +104,14 @@ proc through_function(q: Seq<Int>) {
     expect tail: when q.len > 3, q[3] > 0
     expect not_empty: q != []  --~ error: through_function::not_empty` does not hold
 }
+
+-- Over a sequence of an abstract type, whose expansion indexes it, though
+-- nothing else in the query does.
+type Atom
+
+fn all_in?(q: Seq<Atom>, s: Set<Atom>) := forall (x: Atom), when x in q, x in s
+
+proc abstract_elements(x: Atom, s: Set<Atom>, q: Seq<Atom>) {
+    expect grown: when all_in?(q, s), all_in?(q, s union {x})
+    expect any: all_in?(q, s union {x})  --~ error: abstract_elements::any` does not hold
+}

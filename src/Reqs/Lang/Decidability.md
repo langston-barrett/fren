@@ -184,9 +184,14 @@ solver for sets with cardinality is a decision procedure for it.
 
 A function of sets combines with the theory of sets only if the set sort
 has infinitely many values, which it has when `T` does: `Int`, `String`
-and sets of those. An abstract type may have a single value, and an
-enumeration finitely many, so `fn f(Set<Name>): Int` is outside the core.
-A relation's sort is infinite when either of its element types is.
+and sets of those. An enumeration has finitely many, so `fn f(Set<Mode>):
+Int` is outside the core. An abstract type, and a generic function's type
+parameter within the function, count as infinite here, as the solver
+takes an uninterpreted sort to be, so `fn f(Set<Name>): Int` is in the
+core. A relation's sort is infinite when either of its element types is.
+
+> **Note:** An abstract type may have a single value, so whether its sets
+> should count as infinite here is open (#437).
 
 ## Relations
 
