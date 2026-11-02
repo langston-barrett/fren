@@ -218,22 +218,21 @@ neither states what the condition compares.
 fn ordering?(op: lang::BinaryOp) := op is lang::BinaryOp::Lt | lang::BinaryOp::Le
 
 -- `abs` of `x`.
-fn abs_of<V>(x: lang::Expr<V>): lang::Expr<V> := lang::Expr::Method(
-    lang::MethodName::Abs,
-    x,
-    lang::Expr::Nil
-)
+fn abs_of<V>(x: lang::Expr<V>): lang::Expr<V> :=
+    lang::Expr::Method(lang::MethodName::Abs, x, lang::Expr::Nil)
 
 -- `if x OP 0 then -x else x`, of an `x` that is not an integer literal.
 fn abs_negated_then?<V>(c: lang::Expr<V>, t: lang::Expr<V>, f: lang::Expr<V>) := match c {
-    lang::Expr::Binary(op, x, z) => ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
+    lang::Expr::Binary(op, x, z) =>
+        ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
         and t = lang::Expr::Unary(lang::UnaryOp::Neg, x) and f = x,
     _ => false,
 }
 
 -- `if 0 OP x then x else -x`.
 fn abs_negated_else?<V>(c: lang::Expr<V>, t: lang::Expr<V>, f: lang::Expr<V>) := match c {
-    lang::Expr::Binary(op, z, x) => ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
+    lang::Expr::Binary(op, z, x) =>
+        ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
         and t = x and f = lang::Expr::Unary(lang::UnaryOp::Neg, x),
     _ => false,
 }
@@ -244,7 +243,8 @@ pub fn manual_abs_fires?<V>(e: lang::Expr<V>) := match e {
 }
 
 pub fn manual_abs_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
-    lang::Expr::If(c, t, f) => if abs_negated_then?(c, t, f) then abs_of(f)
+    lang::Expr::If(c, t, f) =>
+        if abs_negated_then?(c, t, f) then abs_of(f)
         else if abs_negated_else?(c, t, f) then abs_of(t)
         else e,
     _ => e,

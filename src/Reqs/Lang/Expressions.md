@@ -992,7 +992,8 @@ pub enum NewtypeOp { Equality, Order, Addition, Subtraction, Other }
 -- The chain of a newtype whose underlying type is `underlying`, where
 -- `(n, u)` is in `unders` when `u` is the underlying type of the newtype `n`.
 set_option fren.lint.undecidable "allow" in
-pub fn chain(underlying: Ty, unders: Rel<Ty, Ty>): Set<Ty> := unders.closure.image({underlying}) union {underlying}
+pub fn chain(underlying: Ty, unders: Rel<Ty, Ty>): Set<Ty> :=
+    unders.closure.image({underlying}) union {underlying}
 
 set_option fren.lint.undecidable "allow" in
 pub proc newtype_operator(
@@ -2482,17 +2483,21 @@ pub proc operator_type(
     ensure accepted: accepted? iff match op {
         Logic => kind(a) = BoolTy and kind(b) = BoolTy,
         Equality => a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}),
-        Ordering => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and order.ordered?),
+        Ordering =>
+            (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and order.ordered?),
         Addition | Subtraction => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})
             or (a = b and newtype?(a) and sums.accepted?),
         Multiplication | Negation => kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy},
         Concat => a = b and kind(a) in {StringTy, SeqTy},
-        Membership => kind(b) in {SetTy, SeqTy} and (elem(b) = a or (kind(a) = NatTy and kind(elem(b)) = IntTy)),
+        Membership =>
+            kind(b) in {SetTy, SeqTy} and (elem(b) = a or (kind(a) = NatTy and kind(elem(b)) = IntTy)),
         SetAlgebra | Subset => a = b and kind(a) in {SetTy, RelTy},
-        Conditional => kind(cond) = BoolTy and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})),
+        Conditional =>
+            kind(cond) = BoolTy and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})),
     }
     ensure results: result = match op {
-        Addition | Multiplication => if newtype?(a) then RecordTy else if kind(a) = NatTy and kind(b) = NatTy then NatTy else IntTy,
+        Addition | Multiplication =>
+            if newtype?(a) then RecordTy else if kind(a) = NatTy and kind(b) = NatTy then NatTy else IntTy,
         Subtraction => if newtype?(a) then RecordTy else IntTy,
         Negation => IntTy,
         Conditional => if a = b then kind(a) else IntTy,

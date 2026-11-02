@@ -73,11 +73,12 @@ pub struct Binding { name: Id, kind: BindingKind, target: Id, depth: Nat }
 
 -- A binding names a value, which a declaration may hide: every binding but
 -- the items that are not values, which are never named where a variable can be.
-pub fn names_value?(k: BindingKind) := not k in {
-    BindingKind::Module,
-    BindingKind::Enumeration,
-    BindingKind::Item,
-}
+pub fn names_value?(k: BindingKind) :=
+    not k in {
+        BindingKind::Module,
+        BindingKind::Enumeration,
+        BindingKind::Item,
+    }
 
 -- A binding names a variant.
 pub fn names_variant?(k: BindingKind) := k in {BindingKind::Variant, BindingKind::Opened}
@@ -150,7 +151,8 @@ pub struct Context {
 }
 
 -- `b` is the binding of the declaration `d` at depth `k`.
-pub fn binding_of?(d: Declared, k: Int, b: Binding) := b.name = d.name and b.kind = d.kind and b.target = d.target
+pub fn binding_of?(d: Declared, k: Int, b: Binding) :=
+    b.name = d.name and b.kind = d.kind and b.target = d.target
     and b.depth = k
 
 -- `b` is the binding of one of `imports`, at depth `k`, or `k + 1` for a glob's.
@@ -167,10 +169,11 @@ pub fn module_depth(cx: Context): Int := cx.locals.len + (if cx.component? then 
 
 -- `b` is a binding of the scope `cx`.
 set_option fren.lint.undecidable "allow" in
-pub fn in_scope?(cx: Context, b: Binding) := (exists (i: Int), 0 <= i < cx.locals.len and cx.locals[i].visible?
-    and binding_of?(cx.locals[i].declaration, cx.locals.len - 1 - i, b))
+pub fn in_scope?(cx: Context, b: Binding) :=
+    (exists (i: Int), 0 <= i < cx.locals.len and cx.locals[i].visible?
+        and binding_of?(cx.locals[i].declaration, cx.locals.len - 1 - i, b))
     or (exists (i: Int), 0 <= i < cx.builtins.len and b.kind = BindingKind::Builtin and b.name = cx.builtins[i]
-    and b.target = cx.builtins[i] and b.depth = cx.locals.len)
+        and b.target = cx.builtins[i] and b.depth = cx.locals.len)
     or (cx.component? and imported?(cx.component_imports, cx.locals.len + 1, b))
     or (exists (i: Int), 0 <= i < cx.items.len and i < cx.declared and binding_of?(cx.items[i], module_depth(cx), b))
     or imported?(cx.module_imports, module_depth(cx), b)

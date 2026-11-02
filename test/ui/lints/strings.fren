@@ -16,7 +16,8 @@ pub fn m3(s: String, i: Int): String := s.slice(i, 1) ++ (s ++ s).slice(-1, 1)
 --~^^ warning: this is a call of `at`
 --~^^^ warning: a negative position does not count from the end
 -- More than one character, another position, or another receiver.
-pub fn m4?(s: String, t: String) := s.at(0) = "ab" or s.at(1) = "a" or s.at(t.len - 1) = "a" or s.at(0) = t
+pub fn m4?(s: String, t: String) :=
+    s.at(0) = "ab" or s.at(1) = "a" or s.at(t.len - 1) = "a" or s.at(0) = t
 pub fn m5(s: String): String := s.slice(0, 2) ++ s.slice(1, 2)
 
 pub fn z1?(s: String, q: Seq<Int>) := s.at(0) = "" and q.at(0) != [] and "" = (s ++ s).at(0)
@@ -25,10 +26,12 @@ pub fn z1?(s: String, q: Seq<Int>) := s.at(0) = "" and q.at(0) != [] and "" = (s
 --~^^^ warning: say whether it is empty with `""`, not `at`
 pub fn z2?(s: String) := s.at(1) = "" or s.at(0) = " "  --~ warning: this is a call of `starts_with?`
 
-pub fn w1(s: String, q: Seq<Int>): Int := s.slice(0, s.len).len + (q ++ q).slice(0, (q ++ q).len).len
+pub fn w1(s: String, q: Seq<Int>): Int :=
+    s.slice(0, s.len).len + (q ++ q).slice(0, (q ++ q).len).len
 --~^ warning: this slice is the whole of its receiver
 --~^^ warning: this slice is the whole of its receiver
-pub fn w2(s: String, t: String): String := s.slice(0, t.len) ++ s.slice(1, s.len) ++ (s ++ t).slice(0, s.len)
+pub fn w2(s: String, t: String): String :=
+    s.slice(0, t.len) ++ s.slice(1, s.len) ++ (s ++ t).slice(0, s.len)
 
 pub fn r1(s: String, a: String): String := s.replace(a, a) ++ s.replace_all(a ++ "x", (a ++ "x"))
 --~^ warning: this `replace` has no effect

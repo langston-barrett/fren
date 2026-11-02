@@ -57,7 +57,7 @@
 -    ensure k: or { x = 1,  -- one
 -        x = 2 }
 +    ensure k: or {
-+        x = 1,             -- one
++        x = 1,  -- one
 +        x = 2,
 +    }
 @@ -51 +64,4 @@
@@ -95,8 +95,11 @@
 +            xx := 1,
 +            y := 2,
 +        }
-@@ -83 +114,10 @@
+@@ -82,2 +113,13 @@
+-fn exactly(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaaa: Int): Int := p0 + p1 + p2
 -fn longer(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaaaaa: Int): Int := p0 + p1 + p2
++fn exactly(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int, p6: Int, aaaaaaaaaaaa: Int): Int :=
++    p0 + p1 + p2
 +fn longer(
 +    p0: Int,
 +    p1: Int,
@@ -106,5 +109,6 @@
 +    p5: Int,
 +    p6: Int,
 +    aaaaaaaaaaaaaa: Int
-+): Int := p0 + p1 + p2
++): Int :=
++    p0 + p1 + p2
 exit=1

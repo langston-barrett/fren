@@ -164,7 +164,8 @@ pub proc generic_signature(
         or (declared.len > 1 and ty_mentions?(declared[1], 1)) or (declared.len > 2 and ty_mentions?(declared[2], 1))
     out in2? := ty_mentions?(result, 2) or (declared.len > 0 and ty_mentions?(declared[0], 2))
         or (declared.len > 1 and ty_mentions?(declared[1], 2)) or (declared.len > 2 and ty_mentions?(declared[2], 2))
-    out unmentioned? := (params > 0 and not in0?) or (params > 1 and not in1?) or (params > 2 and not in2?)
+    out unmentioned? :=
+        (params > 0 and not in0?) or (params > 1 and not in1?) or (params > 2 and not in2?)
 
     ensure rule: accepted? iff (params = 0 or not unmentioned?)
 
@@ -264,9 +265,12 @@ type gives no argument:
 set_option fren.lint.undecidable "allow" in
 pub fn call_waits?(values: Seq<ArgMode>, from_result: Seq<Bool>, j: Int) := 0 <= j < values.len
     and match values[j] {
-        ArgMode::Waits(Arg::P0) => not ArgMode::Gives(Arg::P0) in values.slice(0, j) and not (from_result != [] and from_result[0]),
-        ArgMode::Waits(Arg::P1) => not ArgMode::Gives(Arg::P1) in values.slice(0, j) and not (from_result.len > 1 and from_result[1]),
-        ArgMode::Waits(Arg::P2) => not ArgMode::Gives(Arg::P2) in values.slice(0, j) and not (from_result.len > 2 and from_result[2]),
+        ArgMode::Waits(Arg::P0) =>
+            not ArgMode::Gives(Arg::P0) in values.slice(0, j) and not (from_result != [] and from_result[0]),
+        ArgMode::Waits(Arg::P1) =>
+            not ArgMode::Gives(Arg::P1) in values.slice(0, j) and not (from_result.len > 1 and from_result[1]),
+        ArgMode::Waits(Arg::P2) =>
+            not ArgMode::Gives(Arg::P2) in values.slice(0, j) and not (from_result.len > 2 and from_result[2]),
         ArgMode::Waits(Arg::Other) => false,
         ArgMode::Gives(_) => false,
     }
@@ -479,7 +483,8 @@ pub proc instance_site(
     done?,                    -- an earlier run checked the instance
     users: Seq<ItemAt>,       -- the items that the run checks and whose checks use the instance, in order
 ): (det site: CheckSite) {
-    out site := if done? or users.len < 1 then CheckSite::Unchecked
+    out site :=
+        if done? or users.len < 1 then CheckSite::Unchecked
         else if function_checked? and users[0].file = function_file then CheckSite::AtFunction
         else CheckSite::AtItem(users[0])
 

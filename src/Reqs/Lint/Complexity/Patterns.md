@@ -130,17 +130,19 @@ does:
 
 ```fren
 -- Whether some alternative of `alts` matches the integer `v`.
-pub fn covers?(alts: Seq<Pat>, v: Int) := exists (s: Slot), pos(s) < alts.len and int_matches?(alts[pos(s)], v)
+pub fn covers?(alts: Seq<Pat>, v: Int) :=
+    exists (s: Slot), pos(s) < alts.len and int_matches?(alts[pos(s)], v)
 
 -- Whether some alternative of `alts` matches an integer above `h`.
 pub fn past?(alts: Seq<Pat>, h: Int) :=
     exists (s: Slot), pos(s) < alts.len and not upper_le?(upper_of(alts[pos(s)]), Bound::At(h))
 
 -- Whether the alternatives leave a gap after the one in slot `s`.
-pub fn gap_after?(alts: Seq<Pat>, s: Slot) := pos(s) < alts.len and match upper_of(alts[pos(s)]) {
-    Bound::At(h) => past?(alts, h) and not covers?(alts, h + 1),
-    Bound::Open => false,
-}
+pub fn gap_after?(alts: Seq<Pat>, s: Slot) :=
+    pos(s) < alts.len and match upper_of(alts[pos(s)]) {
+        Bound::At(h) => past?(alts, h) and not covers?(alts, h + 1),
+        Bound::Open => false,
+    }
 
 pub proc manual_range_patterns(alts: Seq<Pat>, v: Int): (det fires?) {
     assume size: 2 <= alts.len <= 4
@@ -150,7 +152,8 @@ pub proc manual_range_patterns(alts: Seq<Pat>, v: Int): (det fires?) {
 
     det let n_alternatives: Int := alts.len
     -- each alternative is an integer literal or a range whose bounds are literals
-    det let integers? := (forall (s: Slot), when pos(s) < alts.len, alts[pos(s)] is Pat::Lit(_) | Pat::Range(_, _))
+    det let integers? :=
+        (forall (s: Slot), when pos(s) < alts.len, alts[pos(s)] is Pat::Lit(_) | Pat::Range(_, _))
     -- one of them is a range
     det let range? := (exists (s: Slot), pos(s) < alts.len and alts[pos(s)] is Pat::Range(_, _))
     -- together they match the integers of one range, bounded on some side

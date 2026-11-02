@@ -67,13 +67,15 @@ pub fn absorbs_operand?<V>(conj?, k: Expr<V>, o: Expr<V>) := match k {
 pub fn negates_operand?<V>(k: Expr<V>, o: Expr<V>) := k = Expr::Unary(lang::UnaryOp::Not, o)
 
 -- An operand of the `and` (`conj?`) or the `or` of `a` and `b` can be dropped.
-pub fn drops?<V>(conj?, a: Expr<V>, b: Expr<V>) := absorbs_operand?(conj?, b, a) or absorbs_operand?(conj?, a, b)
+pub fn drops?<V>(conj?, a: Expr<V>, b: Expr<V>) :=
+    absorbs_operand?(conj?, b, a) or absorbs_operand?(conj?, a, b)
     or negates_operand?(a, b) or negates_operand?(b, a)
 
 -- What the fix of `e`, the `and` (`conj?`) or the `or` of `a` and `b`,
 -- writes: the operand that the absorption leaves, or the `Bool` that `e`
 -- always is; and `e` where no operand can be dropped.
-pub fn drop_fix<V>(conj?, a: Expr<V>, b: Expr<V>, e: Expr<V>): Expr<V> := if absorbs_operand?(conj?, b, a) then a
+pub fn drop_fix<V>(conj?, a: Expr<V>, b: Expr<V>, e: Expr<V>): Expr<V> :=
+    if absorbs_operand?(conj?, b, a) then a
     else if absorbs_operand?(conj?, a, b) then b
     else if negates_operand?(a, b) or negates_operand?(b, a) then Expr::Literal(lang::truth(not conj?))
     else e
@@ -171,16 +173,19 @@ pub enum Kept { Left, Right, Constant }
 
 -- The rule by which the lint fires on `e`, for the message.
 pub fn bool_rule<V>(e: Expr<V>): BoolRule := match e {
-    Expr::And(a, b) => if absorbs_operand?(true, b, a) or absorbs_operand?(true, a, b) then BoolRule::Absorption
+    Expr::And(a, b) =>
+        if absorbs_operand?(true, b, a) or absorbs_operand?(true, a, b) then BoolRule::Absorption
         else BoolRule::Contradiction,
-    Expr::Or(a, b) => if absorbs_operand?(false, b, a) or absorbs_operand?(false, a, b) then BoolRule::Absorption
+    Expr::Or(a, b) =>
+        if absorbs_operand?(false, b, a) or absorbs_operand?(false, a, b) then BoolRule::Absorption
         else BoolRule::ExcludedMiddle,
     _ => BoolRule::Absorption,
 }
 
 -- What the fix of an `and`, if `conj?`, or an `or` keeps, by the first test
 -- of `drop_fix` that holds.
-fn drop_kept<V>(conj?, a: Expr<V>, b: Expr<V>): Kept := if absorbs_operand?(conj?, b, a) then Kept::Left
+fn drop_kept<V>(conj?, a: Expr<V>, b: Expr<V>): Kept :=
+    if absorbs_operand?(conj?, b, a) then Kept::Left
     else if absorbs_operand?(conj?, a, b) then Kept::Right
     else Kept::Constant
 

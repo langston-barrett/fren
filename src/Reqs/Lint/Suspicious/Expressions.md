@@ -106,10 +106,12 @@ pub proc eq_op_values(op: InfixOp, x: Int, a?, s: Set<Int>) {
     expect said: when e.fires?, match e.value {
         AlwaysTrue => (op = Eq and x = x) or (op = Le and x <= x) or (op = Ge and x >= x)
             or (op = Iff and (a? iff a?)) or (op = Subset and s subset s),
-        AlwaysFalse => (op = Ne and not (x != x)) or (op = Lt and not (x < x)) or (op = Gt and not (x > x)),
+        AlwaysFalse =>
+            (op = Ne and not (x != x)) or (op = Lt and not (x < x)) or (op = Gt and not (x > x)),
         Zero => op = Sub and x - x = 0,
         Empty => op = Minus and s minus s = {},
-        EqOpValue::Operand => (op = And and ((a? and a?) iff a?)) or (op = Or and ((a? or a?) iff a?))
+        EqOpValue::Operand =>
+            (op = And and ((a? and a?) iff a?)) or (op = Or and ((a? or a?) iff a?))
             or (op = Union and s union s = s) or (op = Inter and s inter s = s),
     }
 }
@@ -591,7 +593,8 @@ expect erasing_division_elaborated(
 
     call p := erasing_division(literal?, if negated? then -n else n)
 
-    let a: lang::Expr<lang::Id> := if not literal? then x
+    let a: lang::Expr<lang::Id> :=
+        if not literal? then x
         else if negated? then Unary(lang::UnaryOp::Neg, Literal(Integer(n)))
         else Literal(Integer(n))
 
@@ -731,7 +734,8 @@ pub proc same_rows(
 
     det let n_rows: Int := rows.len
     -- the rows' values are written the same
-    det let same? := (forall (s: Slot), when pos(s) < rows.len, row_value(rows[pos(s)]) = row_value(rows[0]))
+    det let same? :=
+        (forall (s: Slot), when pos(s) < rows.len, row_value(rows[pos(s)]) = row_value(rows[0]))
 
     ensure rule: fires? iff (same? and (n_rows >= 2 or wildcard?))
     ensure fix: fixed? iff wildcard?

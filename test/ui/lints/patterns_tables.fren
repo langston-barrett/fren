@@ -189,10 +189,11 @@ proc bools(b?, x: Int): (det a: Int, det c: Int, det d?, det e: Int, det f: Int)
         false => 0,
     }
     --~^^^^ warning: this `match` on a `Bool` is an `if`
-    out c := 2 * match b? {
-        false => x,
-        _ => 1,
-    }
+    out c :=
+        2 * match b? {
+            false => x,
+            _ => 1,
+        }
     --~^^^^ warning: this `match` on a `Bool` is an `if`
     -- `match_like_membership`, and the same bodies.
     out d? := match b? {  --~ warning: this `match` only tests which of its patterns its scrutinee matches

@@ -60,6 +60,7 @@ def toFmtBracket : Bracket → fmt.Bracket
   | .square => .Square
   | .curly => .Curly
   | .pathCurly => .PathCurly
+  | .operator => .Operator
 
 /-- The brackets open at the start of a line, the innermost first. -/
 def toOpenBrackets : List OpenBracket → fmt.OpenBrackets
@@ -129,14 +130,15 @@ impl indent: fmt::indent for (o : List OpenBracket) (s : LineStart) (c : Bool) {
     cases hi : FrenCli.Fmt.bracketIndents b l <;> cases s <;> cases c <;>
       simp_all [fren_spec, FrenCli.Fmt.indent, FrenCli.Fmt.base, toFmtLineStart, toOpenBrackets] <;> omega
 
-impl comment_column: fmt::comment_column for (w o : Nat) {
+impl comment_column: fmt::comment_column for (w o : Nat) (p : Bool) {
   width := w,
   original := o,
-  column := FrenCli.Fmt.commentColumn w o,
+  split? := p,
+  column := FrenCli.Fmt.commentColumn w o p,
 } by
-  intro w o _
+  intro w o p _
   unfold FrenCli.Fmt.commentColumn
-  split <;> simp [fren_spec] <;> omega
+  cases p <;> split <;> simp_all [fren_spec] <;> omega
 
 impl blank_lines: fmt::blank_lines for (b : Nat) (f ao bc : Bool) {
   blank := b,
@@ -198,6 +200,7 @@ def toGap : FrenCli.Fmt.Role → fmt.Gap
   | .beforeClose => .BeforeClose
   | .joined => .UpdatedRecord
   | .blockBrace => .BlockBrace
+  | .rightSide => .RightSide
 
 impl line_break: fmt::line_break for (r : FrenCli.Fmt.Role) (v b l c : Bool) (n : Nat) {
   gap := toGap r,
@@ -210,6 +213,30 @@ impl line_break: fmt::line_break for (r : FrenCli.Fmt.Role) (v b l c : Bool) (n 
 } by
   intro r v b l c n _
   cases r <;> cases v <;> cases b <;> cases l <;> cases c <;> simp [fren_spec, FrenCli.Fmt.lineBreak, FrenCli.Fmt.Role.betweenElements, FrenCli.Fmt.Role.vertical, toGap]
+
+def toForm : FrenCli.RightForm → fmt.Form
+  | .arms => .Arms
+  | .conditional => .Conditional
+  | .bracketed => .Bracketed
+  | .other => .Other
+
+impl right_side: fmt::right_side for (f : FrenCli.RightForm) (h w l a b i : Bool) (e n x y : Nat) {
+  form := toForm f,
+  chained? := h,
+  written? := w,
+  ladder? := l,
+  after_close? := a,
+  broken? := b,
+  inner? := i,
+  line_end := e,
+  next_end := n,
+  first_end := x,
+  head_end := y,
+  next_line? := FrenCli.Fmt.rightSide f h w l a b i e n x y,
+} by
+  intro f h w l a b i e n x y _
+  cases f <;> cases h <;> cases w <;> cases l <;> cases a <;> cases b <;> cases i <;>
+    simp [fren_spec, FrenCli.Fmt.rightSide, FrenCli.Fmt.overflows, FrenCli.Fmt.maxWidth, toForm] <;> omega
 
 impl break_before: fmt::break_before for (n : Nat) (s : Bool) {
   comments := n,
