@@ -98,3 +98,27 @@ expect generic(s: S) { expect c: via_via(s, true) >= 1 }
 proc generic_low(s: S) {
     cover low: via_via(s, true) < 1   --~ error: cover goal `generic_low::low` cannot be met: no behaviour satisfies it
 }
+
+-- The facts of a variable's subset type are reflected too, and a model is
+-- confirmed against them (`lang::recursion_formulas`): `x = L::Nil`
+-- cannot hold of a `Big`, and `[1, 1, 1]`, whose `total` is 3, is not
+-- one, though the opaque `total` allows it. The second row keeps the
+-- type's inhabitation check from asking for a witness that only the
+-- opaque `total` gives (#493).
+pub type Big = l: L where invariant: total(l) >= 5 or l = L::Cons(5, L::Nil)
+
+proc big_nil(x: Big) {
+    cover nil: x = L::Nil   --~ error: cover goal `big_nil::nil` cannot be met: no behaviour satisfies it
+}
+
+proc big_small(x: Big) {
+    cover small: x = L::Cons(1, L::Cons(1, L::Cons(1, L::Nil)))   --~ warning: could not decide whether `big_small::small` can be met
+}
+
+-- An application whose fact applies a recursive function, beside its
+-- argument's value: never confirmed.
+pub fn plus_one(l: L): (r: Int) { ensure e: r = total(L::Cons(1, l)) }
+
+proc plus_small(x: L) {
+    cover small: plus_one(x) >= 5 and x = L::Cons(1, L::Cons(1, L::Nil))   --~ warning: could not decide whether `plus_small::small` can be met
+}

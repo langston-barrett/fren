@@ -775,6 +775,56 @@ theorem closeApps_reached {F α : Type} [BEq F] [LawfulBEq F] (brings : F → Bo
         · exact h3 x hx
         · exact hnext x hx
 
+/-- What `closeApps` ends with is supported: each of its applications is
+one of `init`, as each that `seen` has is, or is mentioned by a fact of
+another of them. -/
+theorem closeApps_supported {F α : Type} [BEq F] [LawfulBEq F] (brings : F → Bool) (inside : F → Id (α × List F))
+    (init : List F) :
+    ∀ (n : Nat) (seen work : List F) (acc r : List (F × α)),
+    (∀ x, x ∈ seen ↔ x ∈ acc.map (·.1) ∨ x ∈ work) →
+    (∀ x ∈ seen, x ∈ init ∨ ∃ a ∈ seen, x ∈ (inside a).run.2) →
+    (Fren.Core.closeApps brings inside n seen work acc).run = some r →
+    ∀ x ∈ r.map (·.1), x ∈ init ∨ ∃ a ∈ r.map (·.1), x ∈ (inside a).run.2 := by
+  intro n
+  induction n with
+  | zero =>
+    intro seen work acc r h1 h2 hr
+    cases work with
+    | nil =>
+      simp [Fren.Core.closeApps] at hr; subst hr
+      have e : ∀ x, x ∈ seen ↔ x ∈ acc.map (·.1) := fun x => by simpa using h1 x
+      intro x hx
+      rcases h2 x ((e x).mpr hx) with h | ⟨a, ha, h⟩
+      · exact .inl h
+      · exact .inr ⟨a, (e a).mp ha, h⟩
+    | cons w ws => simp [Fren.Core.closeApps] at hr
+  | succ n ih =>
+    intro seen work acc r h1 h2 hr
+    cases work with
+    | nil =>
+      simp [Fren.Core.closeApps] at hr; subst hr
+      have e : ∀ x, x ∈ seen ↔ x ∈ acc.map (·.1) := fun x => by simpa using h1 x
+      intro x hx
+      rcases h2 x ((e x).mpr hx) with h | ⟨a, ha, h⟩
+      · exact .inl h
+      · exact .inr ⟨a, (e a).mp ha, h⟩
+    | cons w ws =>
+      simp only [Fren.Core.closeApps, Id.run_bind, List.idRun_mapM] at hr
+      generalize hrs : (w :: ws).map (fun a => (inside a).run) = rs at hr
+      have hlen : (w :: ws).length ≤ (rs.map (·.1)).length := by subst hrs; simp
+      have hfst : ((w :: ws).zip (rs.map (·.1))).map (·.1) = w :: ws := List.map_fst_zip hlen
+      refine ih _ _ _ r (fun x => ?_) (fun x hx => ?_) hr
+      · rw [List.map_append, hfst, List.mem_append, List.mem_append, h1 x]
+      · rcases List.mem_append.mp hx with hx | hx
+        · rcases h2 x hx with h | ⟨a, ha, h⟩
+          · exact .inl h
+          · exact .inr ⟨a, List.mem_append_left _ ha, h⟩
+        · have hf := ((mem_newApps _ _ _ _).mp hx).1
+          subst hrs
+          simp only [List.mem_flatMap, List.mem_map] at hf
+          obtain ⟨_, ⟨a, ha, rfl⟩, hxa⟩ := hf
+          exact .inr ⟨a, List.mem_append_left _ ((h1 a).mpr (.inr ha)), hxa⟩
+
 /-- The applications that the facts of `a` mention, of the pairs `rel`. -/
 def insideOf (rel : List (Nat × Nat)) (a : Nat) : Id (Unit × List Nat) :=
   pure ((), (rel.filter (·.1 == a)).map (·.2))
@@ -818,8 +868,28 @@ impl fact_applications: check::fact_applications for (written : List Nat) (rel :
     induction h with
     | single h => exact .single (Fren.FinSet.mem_ofList.mpr (List.mem_map.mpr ⟨_, h, rfl⟩))
     | tail _ h ih => exact .tail ih (Fren.FinSet.mem_ofList.mpr (List.mem_map.mpr ⟨_, h, rfl⟩))
+  -- Each that it has is written and brings its facts, or is in a fact of
+  -- another.
+  have c5 := closeApps_supported brings (insideOf rel) (written.filter brings) rounds _ _ [] r
+    (fun x => by simp) (fun x hx => .inl hx) hr
   unfold check.fact_applications.ensures check.fact_applications.ensure.rule
-  refine ⟨fun _ => ⟨?abc, ?d⟩, fun _ => rfl⟩
+  refine ⟨fun _ => ⟨⟨?abc, ?e⟩, ?d⟩, fun _ => rfl⟩
+  case e =>
+    rw [Fren.FinSet.subset_def]
+    intro x hx
+    simp only [Fren.FinSet.mem_ofList, List.mem_map] at hx
+    obtain ⟨p, hp, rfl⟩ := hx
+    rw [Fren.FinSet.mem_union, Fren.FinSet.mem_inter, Fren.FinSet.mem_image]
+    rcases c5 p.1 (List.mem_map_of_mem hp) with h | ⟨a, ha, h⟩
+    · obtain ⟨hw, hb⟩ := List.mem_filter.mp h
+      refine .inl ⟨Fren.FinSet.mem_ofList.mpr (List.mem_map_of_mem hw), Fren.FinSet.mem_ofList.mpr ?_⟩
+      exact List.mem_map_of_mem (List.mem_filter.mpr ⟨List.mem_append_left _ (List.mem_append_left _ hw), hb⟩)
+    · refine .inr ⟨a, Fren.FinSet.mem_ofList.mpr ?_, Fren.FinSet.mem_ofList.mpr ?_⟩
+      · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp ha
+        exact List.mem_map.mpr ⟨q, hq, rfl⟩
+      · simp only [insideOf, Id.run_pure, List.mem_map, List.mem_filter, beq_iff_eq] at h
+        obtain ⟨q, ⟨hq, hqa⟩, hqe⟩ := h
+        exact List.mem_map.mpr ⟨q, hq, by rw [hqa, hqe]⟩
   case d =>
     rw [Fren.FinSet.subset_def]
     intro x hx

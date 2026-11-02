@@ -91,23 +91,37 @@ postcondition is unproved (`lang::recursive_post_result`). -/
 def recursivePostResult (passed unproved : Bool) : Bool := passed && !unproved
 
 /-- Recursive counterexamples require evaluation (`lang::recursive_counterexample`):
-where the query's formulas apply a recursive function (`recursive`), the
-evaluation of its real definition on the model must confirm it
-(`confirms`); and where the facts of the applications that the query has
-apply one (`factsRecursive`), it is never confirmed, as those facts are
-about applications of uninterpreted functions, which have no values to
-evaluate them at. -/
+where the formulas that `confirmedFormulas` gives apply a recursive
+function (`recursive`), the evaluation of its real definition on the model
+must confirm them (`confirms`); and where a fact of the applications that
+the query has applies one (`factsRecursive`), it is never confirmed. That
+is a conservative choice, not a necessity: the model gives the values of
+those facts' applications, at which the real definitions could evaluate
+them, but nothing evaluates them yet, so such a check is Inconclusive even
+where the model is real, as `cover big: one(l) > 100` of `fn one(l: L):
+(r: Int) { ensure e: r = total(L::Cons(1, l)) }`, which `l = [200]`
+meets. -/
 def recursiveCounterexample (recursive confirms factsRecursive : Bool) : Bool :=
   !factsRecursive && (!recursive || confirms)
 
 /-- The formulas whose applications of recursive functions a query reflects,
-with their one-step equations and postconditions, and whose recursive
-functions are those that its models are confirmed against
-(`lang::recursion_formulas`): the facts of the applications that it has,
-`facts` (`Fren.Core.appFactsWith`, `check::fact_applications`), and then
-its own hypotheses, `hyps`. Both front ends' query builders give these to
-their reflection. -/
-def recursionFormulas {F : Type} (facts hyps : Array (Lean.Name × F)) : Array (Lean.Name × F) := facts ++ hyps
+with their one-step equations and postconditions (`lang::recursion_formulas`):
+the facts that its variables' types bring, `varFacts`, those of the
+applications that it has, `appFacts` (`Fren.Core.appFactsWith`,
+`check::fact_applications`), and then its own hypotheses, `hyps`. Both
+front ends' query builders give these to their reflection, from the same
+three. -/
+def recursionFormulas {F : Type} (varFacts appFacts hyps : Array (Lean.Name × F)) : Array (Lean.Name × F) :=
+  varFacts ++ appFacts ++ hyps
+
+/-- The formulas that a model of a query is confirmed against, where they
+apply a recursive function (`lang::recursion_formulas`,
+`recursiveCounterexample`): the facts that its variables' types bring,
+`varFacts`, whose values are the model's variables', and its own
+hypotheses, `hyps`, with its goal. Not the facts of its applications, which
+`recursiveCounterexample` takes apart. -/
+def confirmedFormulas {F : Type} (varFacts hyps : Array (Lean.Name × F)) : Array (Lean.Name × F) :=
+  varFacts ++ hyps
 
 /-! ## Lean `match`es (`lang::recursive_match`) -/
 

@@ -374,8 +374,18 @@ partial def Fm.recursiveNames (sp : Spec) : Fm → Array Name
   | _ => #[]
 where
   names (e : Ex) : Array Name :=
-    (match e with | .app f _ => if sp.recDefs.contains f then #[f] else #[] | _ => #[])
+    (match e with
+      | .app f _ => if sp.recDefs.contains f then #[f] else #[]
+      -- And those of the invariants of a subset type that a value is
+      -- checked against, which evaluation applies.
+      | .typed t _ _ => typeNames t
+      | _ => #[])
       ++ e.children.flatMap names
+  typeNames (t : Fren.Core.PTy) : Array Name :=
+    t.invariants.flatMap (fun i => match sp.defs.find? i.predicate with
+      | some (_, body, _) => names body
+      | none => #[])
+      ++ t.elems.flatMap typeNames
 
 /-- `b`, with each formula paired with its meaning, and each model
 evaluated; refuted models are recorded in `log`. `sy` is `Symbols.of sp`,
@@ -392,6 +402,14 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
     Fren.Core.natBrought (v.role == .output) (ec.defs.any (·.1 == v.name)) == .guarantee
   let outputTypes : Fm := .atoms <| ec.typeConstraints.filterMap fun p =>
     if guaranteed.any (p.name == .num ·.name 0) then some { label := p.name, pfx := .anonymous, e := p.e } else none
+  -- What the variables' types bring, of both copies, which every query of
+  -- the solver assumes (`CComp.natFacts`), and a model is confirmed against
+  -- too (`Fren.Core.confirmedFormulas`).
+  let brought := vars.filter fun v =>
+    Fren.Core.natBrought (v.role == .output) (ec.defs.any (·.1 == v.name)) != .nothing
+  let varTypes : Fm := .atoms <| ec.typeConstraints.filterMap fun p =>
+    if brought.any (p.name == .num ·.name 0) then some { label := p.name, pfx := .anonymous, e := p.e } else none
+  let varFacts : Array (Lean.Name × Fm) := #[(`type, varTypes), (`type, .primed copied varTypes)]
   -- The variables that a model may leave free, and the second copy of each
   -- copied one, with their types: the procedure's own, without a
   -- definition, since a defined one's, or a call's, value follows from the
@@ -411,13 +429,16 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
         let vals := hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys)
         let bad := vals.find? (·.2 == some false)
         let g := goal.2.eval sp sy I env tys
-        let recursive := (hyps.flatMap fun (_, f) => f.2.recursiveNames sp) ++ goal.2.recursiveNames sp
+        let confirmed := Fren.Core.confirmedFormulas varFacts (hyps.map fun (n, f) => (n, f.2))
+        let confirmedVals := confirmed.map fun (_, f) => f.eval sp sy I env tys
+        let recursive := (confirmed.flatMap fun (_, f) => f.recursiveNames sp) ++ goal.2.recursiveNames sp
         -- A formula without recursion that the model contradicts is a bug
         -- in Fren, which the refutation below reports, not evidence about
         -- the contracts (`Reqs/Models#reporting`).
         let plain := (hyps.zip vals).any (fun ((_, f), (_, v)) => v == some false && (f.2.recursiveNames sp).isEmpty)
           || (g == some true && (goal.2.recursiveNames sp).isEmpty)
-        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty) (bad.isNone && g == some false && vals.all (·.2 == some true))
+        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty)
+            (bad.isNone && g == some false && confirmedVals.all (· == some true))
             false then
           return .unknown (Fren.Core.recursiveReason recursive)
         -- Only a refuted model is reported (`eval::confirm`).

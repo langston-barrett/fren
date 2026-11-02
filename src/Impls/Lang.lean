@@ -3536,34 +3536,55 @@ impl recursive_counterexample: lang::recursive_counterexample for (recursive con
   intro recursive confirms facts _
   cases recursive <;> cases confirms <;> cases facts <;> simp [fren_spec, Fren.Core.recursiveCounterexample]
 
--- Both front ends' query builders reflect the facts of the applications
--- that a query has and then its hypotheses (`recursionFormulas`), over any
--- hypotheses, any facts of any applications, and any applications that it
--- has.
-impl recursion_formulas: lang::recursion_formulas for (hyps : List Nat) (rel : List (Nat × Nat)) (brought : List Nat) {
+/-- The facts of the applications `brought`, of the pairs `rel` of each
+application and a formula of its facts, in order. -/
+def factsOfApps (rel : List (Nat × Nat)) (brought : List Nat) : List Nat :=
+  brought.flatMap fun a => (rel.filter (·.1 == a)).map (·.2)
+
+theorem mem_image_factsOfApps (rel : List (Nat × Nat)) (brought : List Nat) (x : Int) :
+    x ∈ Fren.FinSet.image (Fren.FinSet.ofList (rel.map fun (p : Nat × Nat) => ((p.1 : Int), (p.2 : Int))))
+      (Fren.FinSet.ofList (brought.map fun (a : Nat) => (a : Int))) ↔
+    ∃ b ∈ factsOfApps rel brought, (b : Int) = x := by
+  simp only [Fren.FinSet.mem_image, Fren.FinSet.mem_ofList, List.mem_map, factsOfApps, List.mem_flatMap,
+    List.mem_filter, beq_iff_eq]
+  constructor
+  · rintro ⟨_, ⟨a, ha, rfl⟩, q, hq, he⟩
+    simp only [Prod.mk.injEq] at he
+    exact ⟨q.2, ⟨a, ha, q, ⟨hq, Int.ofNat_inj.mp he.1⟩, rfl⟩, he.2⟩
+  · rintro ⟨b, ⟨a, ha, q, ⟨hq, hqa⟩, rfl⟩, rfl⟩
+    exact ⟨a, ⟨a, ha, rfl⟩, q, hq, by rw [hqa]⟩
+
+/-- The positions of `fs`, formulas named by nothing, as `Int`s. -/
+def positions (fs : Array (Lean.Name × Nat)) : Fren.FinSet Int :=
+  Fren.FinSet.ofList (fs.toList.map fun (p : Lean.Name × Nat) => (p.2 : Int))
+
+/-- `ns` as formulas named by nothing. -/
+def unnamed (ns : List Nat) : Array (Lean.Name × Nat) := ns.toArray.map ((Lean.Name.anonymous, ·))
+
+theorem mem_positions_unnamed (ns : List Nat) (x : Int) :
+    x ∈ Fren.FinSet.ofList ((unnamed ns).toList.map fun (p : Lean.Name × Nat) => (p.2 : Int)) ↔
+      ∃ b ∈ ns, (b : Int) = x := by
+  simp [unnamed]
+
+-- Both front ends' query builders reflect the facts of their variables and
+-- of the applications that a query has, and then its hypotheses
+-- (`recursionFormulas`), and confirm a model against its variables' facts
+-- and its hypotheses (`confirmedFormulas`), over any variables' facts,
+-- hypotheses, facts of any applications, and applications that it has.
+impl recursion_formulas: lang::recursion_formulas for (vars hyps : List Nat) (rel : List (Nat × Nat))
+    (brought : List Nat) {
+  variables := Fren.FinSet.ofList (vars.map fun (a : Nat) => (a : Int)),
   written := Fren.FinSet.ofList (hyps.map fun (a : Nat) => (a : Int)),
   facts := Fren.FinSet.ofList (rel.map fun (p : Nat × Nat) => ((p.1 : Int), (p.2 : Int))),
   brought := Fren.FinSet.ofList (brought.map fun (a : Nat) => (a : Int)),
-  reflected := Fren.FinSet.ofList ((Fren.Core.recursionFormulas
-    ((brought.flatMap fun a => (rel.filter (·.1 == a)).map (·.2)).toArray.map ((Lean.Name.anonymous, ·)))
-    (hyps.toArray.map ((Lean.Name.anonymous, ·)))).toList.map fun (p : Lean.Name × Nat) => (p.2 : Int)),
+  reflected := positions (Fren.Core.recursionFormulas (unnamed vars) (unnamed (factsOfApps rel brought))
+    (unnamed hyps)),
+  confirmed := positions (Fren.Core.confirmedFormulas (unnamed vars) (unnamed hyps)),
 } by
-  intro hyps rel brought _
-  refine ⟨?_, trivial⟩
-  unfold lang.recursion_formulas.defs
-  apply Fren.FinSet.ext
-  intro x
-  simp only [fren_spec, Fren.Core.recursionFormulas, Fren.FinSet.mem_ofList, Fren.FinSet.mem_union,
-    Fren.FinSet.mem_image, List.mem_map, Array.toList_append, Array.toList_map,
-    List.mem_append, List.mem_flatMap, List.mem_filter, beq_iff_eq]
-  constructor
-  · rintro ⟨_, (⟨b, ⟨a, ha, q, ⟨hq, hqa⟩, rfl⟩, rfl⟩ | ⟨b, hb, rfl⟩), rfl⟩
-    · exact .inr ⟨q.1, ⟨a, ha, by rw [hqa]⟩, q, hq, rfl⟩
-    · exact .inl ⟨b, hb, rfl⟩
-  · rintro (⟨b, hb, rfl⟩ | ⟨_, ⟨a, ha, rfl⟩, q, hq, he⟩)
-    · exact ⟨_, .inr ⟨b, hb, rfl⟩, rfl⟩
-    · simp only [Prod.mk.injEq] at he
-      have h1 : q.1 = a := Int.ofNat_inj.mp he.1
-      exact ⟨_, .inl ⟨q.2, ⟨a, ha, q, ⟨hq, h1⟩, rfl⟩, rfl⟩, he.2⟩
+  intro vars hyps rel brought _
+  refine ⟨⟨?_, ?_⟩, trivial⟩ <;> apply Fren.FinSet.ext <;> intro x <;>
+    simp only [positions, Fren.Core.recursionFormulas, Fren.Core.confirmedFormulas, Array.toList_append,
+      List.map_append, List.mem_append, Fren.FinSet.mem_ofList, Fren.FinSet.mem_union, mem_image_factsOfApps] <;>
+    simp [unnamed, or_assoc]
 
 end Fren.Impls

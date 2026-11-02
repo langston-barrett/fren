@@ -988,16 +988,16 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
       r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
     -- A procedure whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
-    -- The recursive functions that those facts apply, once their clauses
-    -- are unfolded, by path, whose models evaluation cannot confirm
-    -- (`Fren.Core.recursiveCounterexample`).
+    -- The recursive functions that the facts of its applications apply,
+    -- once their clauses are unfolded, by path, whose models are never
+    -- confirmed (`Fren.Core.recursiveCounterexample`).
     let factRecs := if recursiveSyms.isEmpty then #[] else appFacts.foldl (init := #[]) fun acc (_, f) =>
       (atomsOf ((SeqElems.parse f).unfold prelude.unfolds.get)).foldl (init := acc) fun acc a =>
         match recursiveSyms.get? a with
         | some p => if acc.contains p then acc else acc.push p
         | none => acc
     -- Reflected with the hypotheses (`Fren.Core.recursionFormulas`).
-    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas appFacts hyps) goal mentioned ++ hyps
+    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas facts appFacts hyps) goal mentioned ++ hyps
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
       -- The contract of a generic function without a body, at its type
       -- parameters' sorts, with finite-model finding.
@@ -1009,8 +1009,8 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
         solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations) vars hyps goal
           wantModel
       else runQuery logic options prelude vars limits dump? hyps goal wantModel cache? observations
-    -- A fact that applies a recursive function is never confirmed, as the
-    -- Lean front end decides it too.
+    -- A fact that applies a recursive function is never confirmed, a
+    -- conservative choice, as the Lean front end decides it too.
     let o := match o with
       | .sat _ => if Fren.Core.recursiveCounterexample false true (!factRecs.isEmpty) then o
         else .unknown (Fren.Core.recursiveReason factRecs)

@@ -277,31 +277,47 @@ only under the contracts of the named recursive functions, which may be
 too weak. Both front ends use this rule and diagnostic.
 
 The formulas whose recursive applications a query reflects, with their
-one-step equations, and whose recursive functions it confirms its models
-against, are its own and the facts of the applications that it has,
-transitively (`check::fact_applications`): of `fn one(l: L): (r: Int) {
-ensure e: r = total(L::Cons(1, l)) }`, a query that mentions `one(l)` has
-the one-step equation of `total(L::Cons(1, l))` too, so that `one(l) >= 1`
-follows where `total`'s body adds the absolute values of the list's
-elements. Evaluation cannot confirm a model of such a fact, which is about
-an application of an uninterpreted function, whose value is the model's
-alone: where a fact applies a recursive function, a model is never
-confirmed, and the check is Inconclusive (`F0450`), as it is where the
-query's own formulas apply one and evaluation refutes the model. So of `fn
-first(l: L): (r: Int) { ensure e: r = total(L::Cons(1, L::Cons(2,
-L::Cons(3, l)))) }`, `cover low: first(l) < 6` is not met by a model that
-only the opaque `total` allows. Both front ends take the formulas from
-`Fren.Core.recursionFormulas`, and decide with
-`Fren.Core.recursiveCounterexample`:
+one-step equations, are its own, the facts that its variables' types
+bring, and the facts of the applications that it has, transitively
+(`check::fact_applications`): of `fn one(l: L): (r: Int) { ensure e: r =
+total(L::Cons(1, l)) }`, a query that mentions `one(l)` has the one-step
+equation of `total(L::Cons(1, l))` too, so that `one(l) >= 1` follows where
+`total`'s body adds the absolute values of the list's elements; and of
+`type Big = l: L where invariant: total(l) >= 5`, a query over `x: Big`
+has the one-step equations of `total(x)`, so that `x is L::Nil` cannot
+hold.
+
+A model is confirmed against the query's own formulas and its variables'
+facts, `confirmed` below, whose values are the model's: where one of them
+applies a recursive function, evaluation of the real definitions on the
+model must confirm it, so that a model of `x: Big` with `x = L::Cons(1,
+L::Cons(1, L::Cons(1, L::Nil)))`, which only the opaque `total` allows,
+does not meet `cover small: x = L::Cons(1, L::Cons(1, L::Cons(1,
+L::Nil)))`. Where a fact of the applications that it has applies a
+recursive function, a model is never confirmed, and the check is
+Inconclusive (`F0450`), as it is where evaluation refutes the model. That
+is a conservative choice: the model gives the values of those facts'
+applications too, at which evaluation of the real definitions could
+confirm it, but none does yet. So of `fn first(l: L): (r: Int) { ensure e:
+r = total(L::Cons(1, L::Cons(2, L::Cons(3, l)))) }`, `cover low: first(l)
+< 6` is not met by a model that only the opaque `total` allows; but `cover
+big: one(l) > 100`, which `l = [200]` meets, is Inconclusive too. Both
+front ends take the formulas from `Fren.Core.recursionFormulas` and
+`Fren.Core.confirmedFormulas`, from the same three kinds, and decide with
+`Fren.Core.recursiveCounterexample`, where `applies_recursive?` is whether
+a formula of `confirmed` or the goal applies a recursive function, and
+`facts_recursive?` whether a formula of `facts.image(brought)` does:
 
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub proc recursion_formulas(
+    variables: Set<Int>,         -- the facts that the query's variables' types bring, by position
     written: Set<Int>,           -- the query's own hypotheses, by position
     facts: Rel<Int, Int>,        -- each application, with the formulas of its facts
     brought: Set<Int>,           -- the applications whose facts the query has (`check::fact_applications`)
-): (det reflected: Set<Int>) {
-    out reflected := written union facts.image(brought)
+): (det reflected: Set<Int>, det confirmed: Set<Int>) {
+    out reflected := variables union facts.image(brought) union written
+    out confirmed := variables union written
 }
 
 pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?, facts_recursive?):

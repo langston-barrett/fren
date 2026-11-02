@@ -800,16 +800,18 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       | some (us, _) => pure (hyps.zipWith (fun (n, _) u => (n, u)) us)
       | none => hyps.mapM fun (n, t) => return (n, ← unfoldDefined t)
     let appFacts ← appFacts.mapM fun (n, t) => return (n, ← unfoldDefined t)
-    -- The recursive functions that those facts apply, by path, whose
-    -- models evaluation cannot confirm (`Core.recursiveCounterexample`).
-    let st ← getState
-    let factRecs := appFacts.foldl (init := #[]) fun acc (_, t) => t.foldConsts acc fun k acc =>
-      match st.defined.foldl (init := none) fun r _ d => r <|> if d.recursive && d.solver? == some k then some d.path else none with
-      | some p => if acc.contains p then acc else acc.push p
-      | none => acc
     let unfoldedFacts ← facts.mapM fun (n, t) => return (n, ← unfoldDefined t)
+    -- The recursive functions that the facts of its applications apply,
+    -- by path, whose models are never confirmed
+    -- (`Core.recursiveCounterexample`).
+    let st ← getState
+    let factRecs := appFacts.foldl (init := #[]) fun acc (_, t) =>
+      t.foldConsts acc fun k acc =>
+        match st.defined.foldl (init := none) fun r _ d => r <|> if d.recursive && d.solver? == some k then some d.path else none with
+        | some p => if acc.contains p then acc else acc.push p
+        | none => acc
     -- Reflected with the hypotheses (`Core.recursionFormulas`).
-    let hyps ← (Core.recursionFormulas (unfoldedFacts ++ appFacts) unfoldedHyps).mapM
+    let hyps ← (Core.recursionFormulas unfoldedFacts appFacts unfoldedHyps).mapM
       fun (n, t) => return (n, ← contractBody c fvs t)
     let goal ← contractBody c fvs (← match unfolded? with | some (_, g) => pure g | none => unfoldDefined goal)
     let reflected ← recursiveQueryFacts hyps goal
@@ -838,8 +840,11 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let unfolded? ← if hasRecursion then
           pure (some (← hyps.mapM (unfoldDefined ·.2), ← unfoldDefined goal))
         else pure none
+      -- The formulas that a model is confirmed against: the variables'
+      -- facts too (`Core.confirmedFormulas`).
+      let confirmed := Core.confirmedFormulas facts hyps
       let recs ← match unfolded? with
-        | some (us, g) => recursiveSolvers (us.push g)
+        | some (_, g) => recursiveSolvers ((← confirmed.mapM (unfoldDefined ·.2)).push g)
         | none => pure #[]
       -- Even a query that needs only sat/unsat must obtain its inputs to
       -- confirm a recursive model, as the CLI's confirming backend does.
@@ -847,21 +852,21 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       record fns
       let o ← match o with
         | .sat model => do
-          -- A fact that applies a recursive function is never confirmed:
-          -- the check fails only under that function's contract, as the
-          -- binary's backend decides it too.
+          -- A fact that applies a recursive function is never confirmed, a
+          -- conservative choice: the check fails only under that function's
+          -- contract, as the binary's backend decides it too.
           if !factRecs.isEmpty then
             if Core.recursiveCounterexample (!recs.isEmpty) true true then pure o
             else pure (.unknown (Core.recursiveReason factRecs))
           else if recs.isEmpty then pure o else
-            if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes hyps goal model) false then pure o
+            if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes confirmed goal model) false then pure o
             else do
               let st ← getState
               -- A formula without recursion that the model contradicts is
               -- the report's internal error, not the contracts'.
               let recursive := st.defined.foldl (init := #[]) fun acc _ d =>
                 if d.recursive then (acc.push d.decl) ++ d.solver?.toArray else acc
-              if ← plainContradiction c fvs primes hyps goal model recursive then pure o else
+              if ← plainContradiction c fvs primes confirmed goal model recursive then pure o else
               let names := recs.filterMap fun r => st.defined.foldl (init := none) fun acc _ d =>
                 if d.solver? == some r then some d.path else acc
               pure (.unknown (Core.recursiveReason names))
