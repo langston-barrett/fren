@@ -16,9 +16,9 @@ for every two types of names, by its definition (`fires_at_rn`,
 `fix_at_rn`); `fires_in?` and `fix_all`, which look within the operands, by
 induction on the expression (`fires_in_rn`, `fix_all_rn`). `lint::renamed_apart`
 is these, for a swap of two names. `int_plus_one`, `double_neg`, `unless_not`,
-`collapsible_when`, `neg_multiply` and `identity_op` compare no operands, so
-they are invariant under every renaming, injective or not (their lemmas `omit`
-the injectivity). -/
+`collapsible_when`, `neg_multiply`, `identity_op`, `trivial_guard` and
+`trivial_match` compare no operands, so they are invariant under every
+renaming, injective or not (their lemmas `omit` the injectivity). -/
 
 open Fren.Generated
 open lang
@@ -324,6 +324,39 @@ theorem mre_fix_rn (e : Expr V) :
   rename_i op' p q; cases op' <;> try rfl
   simp only [lint.manual_rem_euclid_fix, expr, remainder_rn, rby_rn]; (repeat' split) <;> simp [expr]
 
+omit hr in
+theorem tg_fires_rn (e : Expr V) : lint.trivial_guard_fires? W (expr r e) = lint.trivial_guard_fires? V e := by
+  cases e <;> try rfl
+  rename_i s p g b rest
+  cases g <;> simp [lint.trivial_guard_fires?, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2,
+    lang.Expr.Match.x3, lang.Expr.Match.x4, expr]
+
+omit hr in
+theorem tg_fix_rn (e : Expr V) : lint.trivial_guard_fix W (expr r e) = expr r (lint.trivial_guard_fix V e) := by
+  cases e <;> try rfl
+  rename_i s p g b rest
+  cases g <;> simp only [lint.trivial_guard_fix, expr] <;> try rfl
+  rename_i v
+  by_cases h : v = .False <;> simp [h, expr]
+
+omit hr in
+theorem tm_fires_rn (e : Expr V) : lint.trivial_match_fires? W (expr r e) = lint.trivial_match_fires? V e := by
+  cases e <;> try rfl
+  rename_i s p g b rest
+  cases g <;> cases rest <;> simp [lint.trivial_match_fires?, lang.Expr.Match.x0, lang.Expr.Match.x1,
+    lang.Expr.Match.x2, lang.Expr.Match.x3, lang.Expr.Match.x4, expr] <;>
+    cases p <;> simp [pat] <;> rename_i ps <;> cases ps <;> simp [pat]
+
+omit hr in
+theorem tm_fix_rn (e : Expr V) : lint.trivial_match_fix W (expr r e) = expr r (lint.trivial_match_fix V e) := by
+  cases e <;> try rfl
+  rename_i s p g b rest
+  cases g <;> cases rest <;> simp [lint.trivial_match_fix, expr]
+  rename_i v
+  by_cases h : v = Value.True
+  · cases p <;> simp [h, pat, expr] <;> rename_i ps <;> cases ps <;> simp [pat, expr]
+  · simp [h, expr]
+
 theorem absorbs_rn (c : Bool) (k o : Expr V) :
     lint.absorbs_operand? W c (expr r k) (expr r o) = lint.absorbs_operand? V c k o := by
   cases k <;> simp [lint.absorbs_operand?, lang.Expr.Or.x0, lang.Expr.Or.x1, lang.Expr.And.x0, lang.Expr.And.x1]
@@ -351,11 +384,12 @@ changes neither whether it fires nor, but for the renaming, what its fix
 writes. -/
 theorem fires_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fires_at? W l (expr r e) = lint.fires_at? V l e := by
   cases l <;> simp only [lint.fires_at?, oc_fires_rn, dn_fires_rn, ipo_fires_rn, ma_fires_rn, mad_fires_rn,
-    un_fires_rn, cw_fires_rn, sb_fires_rn, nm_fires_rn, io_fires_rn, mre_fires_rn]
+    un_fires_rn, cw_fires_rn, sb_fires_rn, nm_fires_rn, io_fires_rn, mre_fires_rn, tg_fires_rn,
+    tm_fires_rn]
 
 theorem fix_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fix_at W l (expr r e) = expr r (lint.fix_at V l e) := by
   cases l <;> simp only [lint.fix_at, oc_fix_rn, dn_fix_rn, ipo_fix_rn, ma_fix_rn, mad_fix_rn, un_fix_rn, cw_fix_rn,
-    sb_fix_rn, nm_fix_rn, io_fix_rn, mre_fix_rn]
+    sb_fix_rn, nm_fix_rn, io_fix_rn, mre_fix_rn, tg_fix_rn, tm_fix_rn]
 
 end
 

@@ -894,6 +894,7 @@ pub proc ifs_same_cond_taken(
     expect taken: chain = (if p? then Outcome::Defined(a) else if q? then Outcome::Defined(b) else Outcome::Defined(d))
     expect never_taken: when (p? iff q?), chain = without
     cover second: not p? and q? and chain = Outcome::Defined(b)
+    cover same: (p? iff q?) and chain = without
 }
 ```
 

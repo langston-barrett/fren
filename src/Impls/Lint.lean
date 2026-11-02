@@ -2385,12 +2385,13 @@ impl manual_rem_euclid: lint::manual_rem_euclid for (p q : Fren.Core.Summand) (k
   rcases p with ⟨pt, _ | pd⟩ <;> rcases q with ⟨qt, _ | qd⟩ <;> simp [fren_spec, toSummand, Fren.Core.manualRemEuclidRule]
   done
 
-impl modulo_one: lint::modulo_one for (k : Int) {
-  divisor := k,
-  fires? := Fren.Core.moduloOne k,
+impl modulo_one: lint::modulo_one for (d : Option Int) {
+  literal? := d.isSome,
+  divisor := d.getD 0,
+  fires? := Fren.Core.moduloOne d,
 } by
-  intro k _
-  simp [fren_spec, Fren.Core.moduloOne]
+  intro d _
+  cases d <;> simp [fren_spec, Fren.Core.moduloOne]
 
 impl min_max: lint::min_max for (i o : Fren.Core.MinMax) (a b : Int) {
   inner := toMinMax i,
