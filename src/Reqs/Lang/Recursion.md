@@ -219,6 +219,7 @@ also on its preconditions.
 ```fren
 pub enum RecApplication { Written, Reflected }
 pub struct RecFacts { posts?, equation? }
+
 pub proc recursive_facts(origin: RecApplication, bound?): (det facts: RecFacts) {
     ensure posts: facts.posts? iff not bound?
     ensure equation: facts.equation? iff not bound? and origin = RecApplication::Written
@@ -254,6 +255,7 @@ hypotheses have not been established, so a dependent success is not a proof.
 
 ```fren
 pub enum RecPost { Passed, Failed, Inconclusive }
+
 pub proc recursive_post_result(result: RecPost, another_unproved?): (det reported: RecPost) {
     ensure rule: reported = (if result = RecPost::Passed and another_unproved?
         then RecPost::Inconclusive else result)

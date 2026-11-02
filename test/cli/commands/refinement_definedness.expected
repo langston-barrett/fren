@@ -9,18 +9,18 @@ error[F0611]: an index of `first::r` may be out of range
   = help: guard it with a bound, as in `i < q.len and q[i] = x`, before it in an `and`, or in a `when`
 
 error[F0603]: expectation `same::refines_1` does not hold
- --> test/cli/commands/refinement_definedness.fren:7:5
+ --> test/cli/commands/refinement_definedness.fren:8:5
   |
-7 |     refines concrete first(q)
+8 |     refines concrete first(q)
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ does not follow from the assumptions and calls
   |
   = counterexample: q = [], concrete.y = -1
   = help: correct the expectation, or assume what it needs
 
 error[F0611]: an index of `same::refines_1` may be out of range
- --> test/cli/commands/refinement_definedness.fren:7:5
+ --> test/cli/commands/refinement_definedness.fren:8:5
   |
-7 |     refines concrete first(q)
+8 |     refines concrete first(q)
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ may be out of range
   |
   = counterexample: q = [], concrete.y = 0

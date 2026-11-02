@@ -54,6 +54,7 @@ expect needless_update_sound(t: lint::Triple, n: Int) {
     call concrete := needless_update_fixed(t, n)
     refines concrete needless_update_written(t, n)
 }
+
 expect needless_update_complete(t: lint::Triple, n: Int) {
     use lint
     call concrete := needless_update_written(t, n)

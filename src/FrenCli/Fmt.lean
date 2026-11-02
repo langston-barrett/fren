@@ -22,12 +22,14 @@ starts the next line (`fmt::right_side`), and if so, indents it as inside a
 bracket. It keeps the other line breaks. It decides, for
 each line, its indentation (`fmt::indent`), the spaces between its tokens
 (`fmt::space`), where its trailing comment goes (`fmt::comment_column`),
-and how many blank lines precede it (`fmt::blank_lines`); and it adds or
-removes the trailing commas of lists (`fmt::trailing_comma`). The parser
-says which tokens start an item, a member or an element, which `-` are
-unary, where each list or block opens, separates its elements and closes,
-which other braces open lists, where the claims and imports are, and where
-each right side is (`Layout`).
+and how many blank lines precede it (`fmt::blank_lines`), once the
+lines are laid out for whether one sets it apart from the top-level item
+before it (`fmt::apart`); and it adds or removes the trailing commas of
+lists (`fmt::trailing_comma`). The parser says which tokens start an
+item, a member or an element, which `-` are unary, where each list or
+block opens, separates its elements and closes, which other braces open
+lists, where the top-level items, claims and imports are, and where each
+right side is (`Layout`).
 -/
 
 namespace FrenCli.Fmt
@@ -119,9 +121,25 @@ did not if `split` (`fmt::comment_column`). -/
 def commentColumn (width original : Nat) (split : Bool) : Nat :=
   if !split && original ≥ width + 2 then original else width + 2
 
+/-- How many of the lines between two top-level items go with the later
+one (`fmt::leading`), given from that item up, each with whether it is a
+`--~` annotation and the blank lines after it: the comments just above
+it, with no blank line after them, up to an annotation. -/
+def leading : List (Bool × Nat) → Nat
+  | [] => 0
+  | (annotation, blank) :: rest => if annotation || blank > 0 then 0 else 1 + leading rest
+
+/-- Whether a line `above` lines above the first line of a top-level item
+is set apart from the item before it by a blank line (`fmt::apart`): the
+item's tokens are on lines `first` to `last`, those of the item before on
+lines `previousFirst` to `previousLast`, and `between` are the lines
+between them, from the item up (`leading`). -/
+def apart (above : Nat) (between : List (Bool × Nat)) (previousFirst previousLast first last : Nat) : Bool :=
+  above == leading between && (previousLast > previousFirst || last > first)
+
 /-- The blank lines kept before a line (`fmt::blank_lines`). -/
-def blankLines (blank : Nat) (first afterOpen beforeClose : Bool) : Nat :=
-  if first || afterOpen || beforeClose || blank == 0 then 0 else 1
+def blankLines (blank : Nat) (first afterOpen beforeClose apart : Bool) : Nat :=
+  if first || afterOpen || beforeClose then 0 else if apart || blank > 0 then 1 else 0
 
 /-- The widest that a list of kind `k` may be on one line, its elements
 separated by `, `, as rustfmt's defaults have it (`fmt::width_limit`). -/
@@ -483,6 +501,11 @@ structure Line where
   /-- Its last piece opens a bracket that indents the lines after it, or is
   a record update's `with`. -/
   endsOpen : Bool := false
+  /-- What `fmt::blank_lines` decides `blank` from, but whether the line is
+  set apart: the blank lines before it in the source, and whether it is
+  the first of its file or block, follows a line that `endsOpen`, or starts
+  with a closing bracket. -/
+  blankFrom : Nat × Bool × Bool × Bool := (0, false, false, false)
   deriving Inhabited
 
 def isLineComment (s : String) : Bool := s.startsWith "--"
@@ -855,9 +878,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       let first := boundary i
       let afterOpen := out.back?.any (·.endsOpen)
       let beforeClose := p.tok?.any closesTop
-      let kept := blankLines (blankIn i) first afterOpen beforeClose
+      let kept := blankLines (blankIn i) first afterOpen beforeClose false
       out := out.push { blank := kept, indent := columns, pieces := #[], line := p.startLine
-                        fresh := first || inBreak i }
+                        fresh := first || inBreak i, blankFrom := (blankIn i, first, afterOpen, beforeClose) }
       lineFirst := none
       continues := start == .continuing || (next?.any fun (k, _) => linkStarts.contains k)
     -- A line that ends with a bracket that indents, or with a record
@@ -991,6 +1014,27 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
               rightStarts := rightStarts.insert t
               linkStarts := linkStarts.insert t
           out := out.modify (out.size - 1) fun l => { l with endsOpen := true }
+  -- A blank line before and after each top-level item that spans several
+  -- lines (`fmt::apart`), from the lines of each item's first and last
+  -- tokens, as laid out.
+  let lastLine (f l : Nat) : Option Nat :=
+    -- Its last token may be a trailing comma that the layout dropped.
+    (List.range (l + 1 - f)).findSome? fun d => outLine[l - d]?
+  let spans := lay.items.filterMap fun (f, l) => do
+    let a ← outLine[f]?
+    return (a, (lastLine f l).getD a)
+  for j in [1:spans.size] do
+    let (pf, pl) := spans[j - 1]!
+    let (f, l) := spans[j]!
+    if pl ≥ f || segment out[pl]!.line != segment out[f]!.line then continue
+    -- The lines between the two items, from the later one up: whether each
+    -- is a `--~` annotation, and the blank lines after it.
+    let annotation (x : Nat) : Bool :=
+      out[x]!.pieces[0]?.any fun (k, s) => k == .comment && s.startsWith "--~"
+    let between := (List.range (f - pl - 1)).map fun d => (annotation (f - 1 - d), out[f - d]!.blankFrom.1)
+    for x in [pl + 1:f + 1] do
+      let (b, first, afterOpen, beforeClose) := out[x]!.blankFrom
+      out := out.modify x fun ln => { ln with blank := blankLines b first afterOpen beforeClose (apart (f - x) between pf pl f l) }
   return out
 
 /-- An error that stops a file from being formatted. -/

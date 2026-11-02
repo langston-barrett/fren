@@ -190,6 +190,7 @@ expect manual_abs_sound(x: Int, y: Int) {
     call concrete := manual_abs_fixed(x, y)
     refines concrete manual_abs_written(x, y)
 }
+
 expect manual_abs_complete(x: Int, y: Int) {
     call concrete := manual_abs_written(x, y)
     refines concrete manual_abs_fixed(x, y)
@@ -590,6 +591,7 @@ expect manual_min_max_sound(x: Int, y: Int, n: Nat) {
     call concrete := manual_min_max_fixed(x, y, n)
     refines concrete manual_min_max_written(x, y, n)
 }
+
 expect manual_min_max_complete(x: Int, y: Int, n: Nat) {
     call concrete := manual_min_max_written(x, y, n)
     refines concrete manual_min_max_fixed(x, y, n)
@@ -660,6 +662,7 @@ expect manual_rem_euclid_sound(x: Int, n: Nat) {
     call concrete := manual_rem_euclid_fixed(x, n)
     refines concrete manual_rem_euclid_written(x, n)
 }
+
 expect manual_rem_euclid_complete(x: Int, n: Nat) {
     call concrete := manual_rem_euclid_written(x, n)
     refines concrete manual_rem_euclid_fixed(x, n)

@@ -25,8 +25,10 @@ proc Expected() {}
 
 -- A file-level setting stays in effect after a setting of its item.
 set_option fren.lint.non_camel_case_types "allow"
+
 set_option fren.lint.non_camel_case_types "warn" in
 pub enum mode_a { On, Off }  --~ warning: enum `mode_a` should have a camel case name
+
 pub enum mode_b { On, Off }
 
 -- A forbidden lint's setting decides whether a later one is accepted.

@@ -2,6 +2,7 @@
 -- front ends, and the default is used instead
 -- (`Reqs/Check#checking-by-enumeration`).
 type TwoBit = n: Int where invariant: n is 0..=3
+
 set_option fren.enumeration.size 100 in  --~ error: enumeration size 100 is too large
 set_option fren.evidence "enumerated" in
 proc c(x: TwoBit): (det y: Int) {

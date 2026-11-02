@@ -15,10 +15,12 @@ pub enum Kind { Small, Large }
 fn none(x: Int): Option<Int> := if x > 0 then Option::None else Option::Some(x)
 fn empty(x: Int): Set<Int> := if x > 0 then {} else {x}
 fn nothing(x: Int): Seq<Int> := if x > 0 then [] else [x]
+
 fn shape(k: Kind): Shape<String> := match k {
     Kind::Small => Shape::Box(1, 1),
     Kind::Large => Shape::Dot,
 }
+
 fn block(k: Kind): (s: Shape<String>) {
     out s := match k {
         Kind::Small => Shape::Box(1, 2),
@@ -43,6 +45,7 @@ proc branch_out(x: Int): (det s: Set<Int>) { out s := if x > 0 then {x} else ({}
 -- A generic result, which mentions the type parameter, with `:=` and as a
 -- function block.
 fn gnone<T>(o: Option<T>): Option<T> := if o = Option::None then Option::None else o
+
 fn gblock<T>(x: T, none?): (r: Option<T>) {
     out r := if none? then Option::None else Option::Some(x)
 }
@@ -61,6 +64,7 @@ fn too_big(x: Int): Byte := if x > 0 then 300 else 1
 
 -- A structural recursion whose base case takes its type from the result.
 enum Ints { Nil, Cons(Int, Ints) }
+
 fn last(l: Ints): Option<Int> := match l {
     Ints::Nil => Option::None,
     Ints::Cons(h, t) => if t = Ints::Nil then Option::Some(h) else last(t),

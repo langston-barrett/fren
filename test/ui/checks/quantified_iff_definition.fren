@@ -1,6 +1,7 @@
 -- Iff inside a defined, set-dependent existential keeps its logical
 -- meaning after the finite struct quantifier has been expanded.
 struct World { eligible?, within_budget?, retry? }
+
 proc retry_worlds(worlds: Set<World>): (det bad_input?) {
     assume all_worlds: forall (w: World), w in worlds
     out bad_input? :=

@@ -350,6 +350,7 @@ expect absorption_sound(a?, b?) {
     call concrete := absorption_fixed(a?, b?)
     refines concrete absorption_written(a?, b?)
 }
+
 expect absorption_complete(a?, b?) {
     call concrete := absorption_written(a?, b?)
     refines concrete absorption_fixed(a?, b?)
@@ -374,6 +375,7 @@ expect contradiction_sound(a?) {
     call concrete := contradiction_fixed(a?)
     refines concrete contradiction_written(a?)
 }
+
 expect contradiction_complete(a?) {
     call concrete := contradiction_written(a?)
     refines concrete contradiction_fixed(a?)
@@ -398,6 +400,7 @@ expect excluded_middle_sound(a?) {
     call concrete := excluded_middle_fixed(a?)
     refines concrete excluded_middle_written(a?)
 }
+
 expect excluded_middle_complete(a?) {
     call concrete := excluded_middle_written(a?)
     refines concrete excluded_middle_fixed(a?)

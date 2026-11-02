@@ -18,6 +18,7 @@ proc thermostat(mode: Mode, hot?): (det on?) {
 
 -- A record, a generic instance and a finite integer subset type.
 type Trit = n: Int where invariant: n is 0..=2
+
 set_option fren.evidence "enumerated" in
 proc sensor(r: Reading, o: Option<Bool>, k: Trit): (det alarm?) {
     ensure a: alarm? iff (r.valid? and r.level = Level::High and k > 0)
@@ -77,6 +78,7 @@ proc nd(a?): (o?, det d?) {  --~ error: `nd::d?` is not determined by the inputs
 -- A quantifier over a listed type of many values, and a global
 -- expectation, shown by its name.
 type SixBit = n: Int where invariant: n is 0..=63
+
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 proc wide_quantifier(x?) {
@@ -84,6 +86,7 @@ proc wide_quantifier(x?) {
 }
 
 type BoundedCount = n: Int where invariant: n is 0..=200
+
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 expect constant: forall (x: BoundedCount), x < 200  --~ error: expectation `constant` does not hold

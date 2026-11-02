@@ -575,6 +575,7 @@ this, from the number of parameters and of those written with a name:
 
 ```fren
 type Pos = n: Nat where invariant: n is 1..
+
 pub proc function_params(
     defined?,            -- written with `:= e`
     contract?,           -- it has a contract: an `assume` or an `ensure` clause
@@ -826,6 +827,7 @@ states which members a function's block takes:
 
 ```fren
 pub enum FnMemberKind { Use, Assumption, Exists, Let, Define, Call, Guarantee, Claim, Evidence }
+
 pub enum FnVerdict {
     Accepted,
     NotFunctions,    -- `F0442`

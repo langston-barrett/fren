@@ -55,6 +55,7 @@ is formatted as
 ```text
 use climate::Mode::Heat
 pub enum Mode { Heat, Cool }
+
 proc c(
     t: Int,  -- the temperature
 ): (mode: Mode) {
@@ -125,7 +126,8 @@ what it keeps. A file's *content* is what formatting keeps of it:
 - where it has [blank lines](#blank-lines) that formatting keeps: those
   that `fmt::blank_lines` keeps before a line, but not those in a gap that
   a list or block joins onto one line, such as one before a block's `{`
-  ([`fmt::line_break`](#lists-and-blocks));
+  ([`fmt::line_break`](#lists-and-blocks)), nor those before a line that
+  `fmt::apart` sets apart from the item before it, which always has one;
 - for now, its line breaks but those that a [list or block](#lists-and-blocks)
   decides, such as those between the members of a procedure and the one
   before a block's `{`, and those before the [right side](#right-sides) of
@@ -199,23 +201,26 @@ on, the spaces between tokens and the indentation of lines. It reaches the
 gaps of lists and blocks with blank lines too: one whose blank lines go
 (`fmt::line_break`) gets a space, a line break or a blank line, whatever
 it had, and one between two elements or members keeps its blank lines,
-with spaces on them. Other than moving a comma past a line comment, which
-keeps the comment's column, it leaves alone the lines with comments, and
-the gaps between two tokens with no space, where a space could change what
-the parser reads, as in `f(x)`. It changes no part of a file's content.
-The job checks that formatting keeps the order of the tokens and comments,
-computed by the implementation of `fmt::ordering`, with whether each
-comment starts its line, and the imports; that no comma of what it writes,
-trailing ones and those of `use` items included, follows a line break, a
-line comment or a block comment that starts its line; that its blank lines
-are those that formatting keeps: before each line it writes, what
-`fmt::blank_lines` keeps of the source's, and a blank line lost to a
-joined line only in a gap whose blank lines `fmt::line_break` drops, but
-for the lines after a `use` item, as imports are merged and sorted; that
-formatting the result again changes nothing; and that each file laid out
-again formats as the file does. It does not check that formatting keeps
-the rest of the content: the columns of comments, and whether imports span
-several lines.
+with spaces on them. The gap before a line that `fmt::apart` sets apart,
+as formatted, with no comment in it or on its lines, gets a line break or
+a blank line, whatever it had. Other than moving a comma past a line
+comment, which keeps the comment's column, it leaves alone the lines with
+comments, and the gaps between two tokens with no space, where a space
+could change what the parser reads, as in `f(x)`. It changes no part of a
+file's content. The job checks that formatting keeps the order of the
+tokens and comments, computed by the implementation of `fmt::ordering`,
+with whether each comment starts its line, and the imports; that no comma
+of what it writes, trailing ones and those of `use` items included,
+follows a line break, a line comment or a block comment that starts its
+line; that its blank lines are those that formatting keeps: before each
+line it writes, what `fmt::blank_lines` keeps of the source's, with
+whether `fmt::apart` sets the line apart, computed from what it writes,
+and a blank line lost to a joined line only in a gap whose blank lines
+`fmt::line_break` drops, but for the lines after a `use` item, as imports
+are merged and sorted; that formatting the result again changes nothing;
+and that each file laid out again formats as the file does. It does not
+check that formatting keeps the rest of the content: the columns of
+comments, and whether imports span several lines.
 
 The goal is rustfmt's: that a file's content is only its tokens, comments
 and blank lines, so that how it was laid out never matters, and that
@@ -874,11 +879,13 @@ there, one that does not hangs, and a literal after an operator moves:
 ```text
 fn abs_of<V>(x: lang::Expr<V>): lang::Expr<V> :=
     lang::Expr::Method(lang::MethodName::Abs, x, lang::Expr::Nil)
+
 let e: lang::Expr<lang::Id> := Binary(
     Mod,
     Binary(Add, summand_written(p.text), summand_written(q.text)),
     summand_written(k)
 )
+
 pub fn proof?(kind: Kind) :=
     not kind in {
         Kind::Cover,
@@ -914,10 +921,12 @@ indented four more:
 ```text
 pub fn innermost?(bindings: Set<Binding>, b: Binding, n: Id) := b in bindings and b.name = n
     and (forall (c: Binding), when c in bindings and c.name = n, b.depth <= c.depth)
+
 out target :=
     if declared != [] then declared.at(0)
     else if opened.len = 1 then opened
     else prelude.at(0)
+
 ) :=
     exists (k l: ChoiceVariant), k != l and VariantForcing { variant := k } in alone
     and VariantForcing { variant := l } in rest
@@ -1279,13 +1288,83 @@ At most one blank line separates two lines. There are none at the start of
 a file or of a ```` ```fren ```` block, after a line that ends with a
 bracket that [indents](#indentation), with a record update's `with` or
 with a `:=` or `=>` whose right side starts the next line, or before a
-line that starts with its closing bracket. A blank line is kept
-only where formatting ends a line: one in a gap that a list or block
-joins onto one line goes with the gap's line break, as one before a
-block's `{` does (`fmt::line_break`), and one between two elements or
-members of a list or block keeps the gap a line break. A file
-other than a Markdown spec ends with a single newline. `fmt::blank_lines`
-gives the number of blank lines kept before a line:
+line that starts with its closing bracket. A blank line is kept only where
+formatting ends a line: one in a gap that a list or block joins onto one
+line goes with the gap's line break, as one before a block's `{` does
+(`fmt::line_break`), and one between two elements or members of a list or
+block keeps the gap a line break. A file other than a Markdown spec ends
+with a single newline.
+
+A blank line goes before and after each top-level item that spans several
+lines (#546), as Black puts blank lines around a function, where rustfmt
+adds none and keeps those the author wrote. A run of one-line items keeps
+the blank lines it has, packed or not. An item spans the lines of its
+tokens as laid out, from those of the `set_option ... in` before it, which
+is part of it as an attribute is of a Rust function, so an item after one
+on a line of its own spans several lines. Whether an item spans several
+lines depends on its content, then, not on how the source lays it out. The
+comments just above an item, with no blank line between them and it, go
+with it, as a doc comment goes with a Rust function: the blank line goes
+above them, never between them and the item. A comment that starts with
+`--~`, a ui test's annotation of a line above it ([Testing](dev/Testing.md)),
+goes with that line instead, so no blank line comes between the two, and
+the comments above it are left as they are. Other comments, `--@` lines
+included, are alike to the formatter. `fmt::apart` decides whether a line
+between two items, or the first line of the later one, is set apart from
+the item before by a blank line, from the lines of the two items and the
+lines between them:
+
+```fren
+-- The lines between two top-level items, from the later one up: for each, whether it
+-- is a `--~` annotation, and the blank lines after it.
+pub enum Between { Nil, Line(Bool, Int, Between) }
+
+-- How many of the lines between two items go with the later one: the comments just
+-- above it, with no blank line after them, up to an annotation.
+pub fn leading(between: Between): Int := match between {
+    Between::Nil => 0,
+    Between::Line(annotation?, blank, rest) =>
+        if annotation? or blank > 0 then 0 else 1 + leading(rest),
+}
+
+pub proc apart(
+    above: Nat,              -- how many lines the line is above its item's first line
+    between: Between,        -- the lines between the item before and the item
+    previous_first: Nat,     -- the line of the first token of the item before
+    previous_last: Nat,      -- the line of its last token
+    first: Nat,              -- the line of the item's first token
+    last: Nat,               -- the line of its last token
+): (det apart?) {
+    -- Above an item and the comments that go with it, if it or the item before spans
+    -- several lines.
+    ensure rule: apart? iff above = leading(between) and (previous_last > previous_first or last > first)
+
+    expect packed: when previous_last = previous_first and last = first, not apart?
+    expect documented: when above < leading(between), not apart?
+    expect left_above: when above > leading(between), not apart?
+}
+```
+
+For example, the formatter writes
+
+```text
+-- A `set_option ... in` and the item after it span two lines.
+set_option fren.lint.constant_output "allow" in
+proc zero(): (r: Int) { out r := 0 }
+
+pub proc unit(): (r: Int) { out r := 1 }
+proc two(): (r: Int) { out r := 2 }
+
+pub proc unit_or_two(x?): (r: Int) {
+    ensure one: when x?, r = 1
+    ensure two: unless x?, r = 2
+}
+```
+
+with the blank lines that it adds, and keeps no other. `fmt::blank_lines`
+gives the number of blank lines kept before a line, with whether
+`fmt::apart` sets it apart. The formatter's decisions implement both,
+proved in Lean:
 
 ```fren
 pub proc blank_lines(
@@ -1293,11 +1372,13 @@ pub proc blank_lines(
     first?,                  -- the line is the first of its file or block
     after_open?,             -- the line before it ends with a bracket that indents, `with`, or `:=` or `=>`
     before_close?,           -- the line starts with the closing bracket of one
+    apart?,                  -- `fmt::apart` sets the line apart from the item before it
 ): (det kept: Int) {
-    ensure kept_rule: kept = if first? or after_open? or before_close? or blank = 0 then 0 else 1
+    ensure kept_rule: kept = if first? or after_open? or before_close? then 0 else if apart? or blank > 0 then 1 else 0
 
     expect at_most_one: kept <= 1
-    expect never_added: kept <= blank
+    expect never_added: when not apart?, kept <= blank
+    expect set_apart: when apart? and not (first? or after_open? or before_close?), kept = 1
 }
 
 -- The blank lines before a block's `{` go: the `{` joins the line before it, so no line starts

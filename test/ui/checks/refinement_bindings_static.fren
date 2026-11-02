@@ -4,6 +4,7 @@ proc c(x: Int, b?): (y: Int) {
     ensure r: y = (if b? then x else 0)
     ensure h: hidden = x
 }
+
 proc a(n: Int): (z: Int) { ensure r: z >= n }
 proc natural(n: Int): (z: Nat) { ensure r: z = (if n > 0 then 1 else 0) }
 proc empty(n: Int) {}  --~ warning: unused variable `n`
@@ -12,35 +13,43 @@ expect unknown(x: Int, b?) {
     call concrete := c(x, b?)
     refines concrete a(w)  --~ error: cannot find `w` in this scope
 }
+
 expect twice(x: Int, b?) {
     call concrete := c(x, b?)
     refines concrete a(x, x)  --~ error: too many arguments: `a` takes 1 argument, `n`
 }
+
 expect private_out(x: Int, b?) {
     call concrete := c(x, b?)
     refines concrete a(concrete.hidden)  --~ error: `concrete.hidden` is private to call `concrete`
 }
+
 expect unbound(x: Int, b?) {
     call concrete := c(x, b?)
     refines concrete a()  --~ error: too few arguments: `a` takes 1 argument, `n`
 }
+
 expect mistyped(x: Int, b?) {
     call concrete := c(x, b?)
     refines concrete a(b?)  --~ error: type mismatch: expected `Int`, found `Bool`
 }
+
 expect narrowing(x: Int, b?) {
     call concrete := c(x, b?)
     refines concrete natural(x)  --~ error: refinement result type mismatch at `z`: call result `y` cannot flow to the specification result
 }
+
 expect arity(x: Int, b?) {
     call concrete := c(x, b?)
     refines concrete empty(x)  --~ error: refinement result count mismatch: specification has 0, call has 1
 }
+
 -- A call cannot expose its nested call's variables.
 proc outer(n: Int): (z: Int) {
     call inner := c(n, true)
     ensure r: z = inner.y
 }
+
 expect instance_var(n: Int) {
     call concrete := outer(n)
     refines concrete a(inner.y)  --~ error: `inner.y` is not a single name

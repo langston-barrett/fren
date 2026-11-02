@@ -54,6 +54,7 @@ expect inconsistent_struct_constructor_sound(a: Int, b: Int, row: Int, column: I
     call concrete := inconsistent_struct_constructor_fixed(a, b, row, column)
     refines concrete inconsistent_struct_constructor_written(a, b, row, column)
 }
+
 expect inconsistent_struct_constructor_complete(a: Int, b: Int, row: Int, column: Int) {
     call concrete := inconsistent_struct_constructor_written(a, b, row, column)
     refines concrete inconsistent_struct_constructor_fixed(a, b, row, column)

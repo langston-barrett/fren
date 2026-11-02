@@ -165,6 +165,7 @@ expect manual_pattern_test_sound(s: lint::Shade, n: Int, t: String, q: Seq<Int>)
     call concrete := manual_pattern_test_fixed(s, n, t, q)
     refines concrete manual_pattern_test_written(s, n, t, q)
 }
+
 expect manual_pattern_test_complete(s: lint::Shade, n: Int, t: String, q: Seq<Int>) {
     use lint
     call concrete := manual_pattern_test_written(s, n, t, q)

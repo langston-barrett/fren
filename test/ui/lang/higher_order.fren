@@ -10,6 +10,7 @@ fn map<T, U>(o: Option<T>, f: fn(T) -> U): Option<U> := match o {
     Option::Some(x) => Option::Some(f(x)),
     Option::None => Option::None,
 }
+
 fn unwrap_or_else<T>(o: Option<T>, d: fn(Bool) -> T): T := match o {
     Option::Some(x) => x,
     Option::None => d(true),
@@ -87,6 +88,7 @@ proc quantified(o: Option<Int>) {
 proc guarded(x: Int): (det y: Int) {
     out y := positive_at(|n| n - 10, x)  --~ error: the precondition `positive` of `higher_order::positive_at` may not hold at this application in `higher_order::guarded::y`
 }
+
 proc guarded_ok(x: Int): (det y: Int) {
     assume big: x > 5
     out y := positive_at(|n| n - 5, x)

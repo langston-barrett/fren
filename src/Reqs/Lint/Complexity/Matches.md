@@ -327,6 +327,7 @@ expect trivial_guard_sound(m: lint::Mode) {
     call concrete := trivial_guard_fixed(m)
     refines concrete trivial_guard_written(m)
 }
+
 expect trivial_guard_complete(m: lint::Mode) {
     use lint
     call concrete := trivial_guard_written(m)
@@ -617,6 +618,7 @@ expect redundant_guards_sound(p: lint::Probe, k: Int) {
     call concrete := redundant_guards_fixed(p, k)
     refines concrete redundant_guards_written(p, k)
 }
+
 expect redundant_guards_complete(p: lint::Probe, k: Int) {
     use lint
     call concrete := redundant_guards_written(p, k)

@@ -1,11 +1,12 @@
 --- test/cli/fmt/contract.fren
 +++ test/cli/fmt/contract.fren
-@@ -5,3 +5 @@
+@@ -5,3 +5,2 @@
 -pub fn arity(n:Name): (r: Nat) {
 -ensure positive :r>0
 -}
 +pub fn arity(n: Name): (r: Nat) { ensure positive: r > 0 }
-@@ -9 +7 @@
++
+@@ -9 +8 @@
 -        assume in_range: 0 <= i < q.len
 +    assume in_range: 0 <= i < q.len
 exit=1

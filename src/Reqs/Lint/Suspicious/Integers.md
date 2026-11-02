@@ -84,6 +84,7 @@ expect integer_values_sound(x: Int) {
     call concrete := integer_values_fixed(x)
     refines concrete integer_values_written(x)
 }
+
 expect integer_values_complete(x: Int) {
     call concrete := integer_values_written(x)
     refines concrete integer_values_fixed(x)
@@ -192,6 +193,7 @@ expect eq_op_method_sound(x: Int) {
     call concrete := eq_op_method_fixed(x)
     refines concrete eq_op_method_written(x)
 }
+
 expect eq_op_method_complete(x: Int) {
     call concrete := eq_op_method_written(x)
     refines concrete eq_op_method_fixed(x)

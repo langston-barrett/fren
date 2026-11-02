@@ -15,6 +15,7 @@ pub proc band(
 }
 
 type Temperature = temperature: Int where invariant: temperature is 50..=90
+
 pub proc thermostat(temp: Int, target: Temperature): (det mode: Mode, alarm?) {
     use self::Mode::{Cool, Heat, Off}
 
@@ -46,6 +47,7 @@ pub enum Level { Low, High }
 
 -- A `use` member scopes over the parameters' and results' types too.
 mod climate::uses
+
 proc imported(l: Level): (h: Level) {
     use climate::levels::Level
 

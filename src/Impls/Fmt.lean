@@ -140,15 +140,41 @@ impl comment_column: fmt::comment_column for (w o : Nat) (p : Bool) {
   unfold FrenCli.Fmt.commentColumn
   cases p <;> split <;> simp_all [fren_spec] <;> omega
 
-impl blank_lines: fmt::blank_lines for (b : Nat) (f ao bc : Bool) {
+def toBetween : List (Bool × Nat) → fmt.Between
+  | [] => .Nil
+  | (a, b) :: rest => .Line a (b : Int) (toBetween rest)
+
+theorem leading_toBetween (xs : List (Bool × Nat)) :
+    fmt.leading (toBetween xs) = (FrenCli.Fmt.leading xs : Int) := by
+  induction xs with
+  | nil => simp [toBetween, fmt.leading, FrenCli.Fmt.leading]
+  | cons x xs ih =>
+    obtain ⟨a, b⟩ := x
+    cases a <;> rcases b with _ | b <;> simp_all [toBetween, fmt.leading, FrenCli.Fmt.leading] <;> omega
+
+impl apart: fmt::apart for (n : Nat) (xs : List (Bool × Nat)) (pf pl f l : Nat) {
+  above := n,
+  between := toBetween xs,
+  previous_first := pf,
+  previous_last := pl,
+  first := f,
+  last := l,
+  apart? := FrenCli.Fmt.apart n xs pf pl f l,
+} by
+  intro n xs pf pl f l _
+  simp only [fren_spec, FrenCli.Fmt.apart, leading_toBetween]
+  by_cases h : n = FrenCli.Fmt.leading xs <;> simp_all <;> omega
+
+impl blank_lines: fmt::blank_lines for (b : Nat) (f ao bc a : Bool) {
   blank := b,
   first? := f,
   after_open? := ao,
   before_close? := bc,
-  kept := FrenCli.Fmt.blankLines b f ao bc,
+  apart? := a,
+  kept := FrenCli.Fmt.blankLines b f ao bc a,
 } by
-  intro b f ao bc _
-  cases f <;> cases ao <;> cases bc <;> rcases b with _ | b <;> simp [fren_spec, FrenCli.Fmt.blankLines] <;> omega
+  intro b f ao bc a _
+  cases f <;> cases ao <;> cases bc <;> cases a <;> rcases b with _ | b <;> simp [fren_spec, FrenCli.Fmt.blankLines] <;> omega
 
 impl trailing_comma: fmt::trailing_comma for (e v a : Bool) {
   empty? := e,

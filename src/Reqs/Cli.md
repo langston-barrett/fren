@@ -1199,6 +1199,7 @@ The per-name scope decision is bound to the helper used by SMT substitution:
 
 ```fren
 pub struct SubstitutionName { bound_here?, mentioned_in_replacement? }
+
 pub proc substitution_scope(name: SubstitutionName): (det replace?, det rename?) {
     ensure shadowing: replace? iff not name.bound_here?
     ensure capture: rename? iff name.bound_here? and name.mentioned_in_replacement?

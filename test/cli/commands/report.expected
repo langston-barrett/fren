@@ -41,9 +41,9 @@ error[F0605]: `exit::negative` is vacuous: its condition can never hold, given `
   = help: correct the condition, or the constraints that rule it out
 
 error[F0601]: `uses` is not realizable
-  --> test/cli/commands/report.fren:16:6
+  --> test/cli/commands/report.fren:17:6
    |
-16 | proc uses(n_fail: Int): (ok?) {
+17 | proc uses(n_fail: Int): (ok?) {
    |      ^^^^ not realizable
    |
    = note: for the input
@@ -56,18 +56,18 @@ error[F0601]: `uses` is not realizable
    = note: call variables are part of the system: whatever the calls do, the procedure must cope
 
 error[F0604]: the assumption `counts` of `exit` may not hold for call `uses::first`
-  --> test/cli/commands/report.fren:17:10
+  --> test/cli/commands/report.fren:18:10
    |
-17 |     call first := exit(n_fail, 0)
+18 |     call first := exit(n_fail, 0)
    |          ^^^^^ may violate `exit::counts`
    |
    = counterexample: n_fail = -1
    = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
 
 error[F0604]: the assumption `counts` of `exit` may not hold for call `uses::second`
-  --> test/cli/commands/report.fren:18:10
+  --> test/cli/commands/report.fren:19:10
    |
-18 |     call second := exit(first.code, n_fail)
+19 |     call second := exit(first.code, n_fail)
    |          ^^^^^^ may violate `exit::counts`
    |
    = counterexample: n_fail = 0, first.code = -1

@@ -1,6 +1,8 @@
 --- test/cli/fmt/is.fren
 +++ test/cli/fmt/is.fren
-@@ -6,4 +6,4 @@
+@@ -4,0 +5 @@
++
+@@ -6,4 +7,4 @@
 -  ensure r :o? iff s is   Shape::Circle(_)|Shape::Rect(_,_)
 -  ensure l: o? iff s is
 -  | Shape::Circle(_)

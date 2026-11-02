@@ -1,7 +1,7 @@
 error[F0403]: `s.hidden` is private to call `s`
- --> test/cli/instances/f0403_private.fren:8:19
+ --> test/cli/instances/f0403_private.fren:9:19
   |
-8 |     ensure r: o = s.hidden
+9 |     ensure r: o = s.hidden
   |                   ^^^^^^^^ private
   |
   = note: only the parameters and results of a call can be mentioned

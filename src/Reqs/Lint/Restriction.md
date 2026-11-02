@@ -403,6 +403,7 @@ expect member_order_sound(group: lint::Group) {
     expect is_error_definition: (concrete.error?) = ((concrete.shown) = view::Severity::Error)
     expect error_definition: concrete.error? = (concrete.error?)
 }
+
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.lint.eq_op "allow" in
 set_option fren.lint.absurd_extreme_comparisons "allow" in

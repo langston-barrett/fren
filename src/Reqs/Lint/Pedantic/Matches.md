@@ -254,6 +254,7 @@ expect single_match_else_sound(light: lint::Light, lamp: lint::Lamp, n: Int, a: 
     call concrete := single_match_else_fixed(light, lamp, n, a, b)
     refines concrete single_match_else_written(light, lamp, n, a, b)
 }
+
 expect single_match_else_complete(light: lint::Light, lamp: lint::Lamp, n: Int, a: Int, b: Int) {
     use lint
     call concrete := single_match_else_written(light, lamp, n, a, b)
@@ -570,6 +571,7 @@ expect match_bool_sound(c?, a: Int, b: Int) {
     call concrete := match_bool_fixed(c?, a, b)
     refines concrete match_bool_written(c?, a, b)
 }
+
 expect match_bool_complete(c?, a: Int, b: Int) {
     call concrete := match_bool_written(c?, a, b)
     refines concrete match_bool_fixed(c?, a, b)
@@ -886,6 +888,7 @@ expect unnested_or_sound(lamp: lint::Lamp) {
     call concrete := unnested_or_fixed(lamp)
     refines concrete unnested_or_written(lamp)
 }
+
 expect unnested_or_complete(lamp: lint::Lamp) {
     use lint
     call concrete := unnested_or_written(lamp)
@@ -959,6 +962,7 @@ expect manual_table_sound(n: Int) {
     call concrete := manual_table_fixed(n)
     refines concrete manual_table_written(n)
 }
+
 expect manual_table_complete(n: Int) {
     call concrete := manual_table_written(n)
     refines concrete manual_table_fixed(n)
@@ -1087,6 +1091,7 @@ expect match_could_be_table_sound(s: lint::Sensor) {
     call concrete := match_could_be_table_fixed(s)
     refines concrete match_could_be_table_written(s)
 }
+
 expect match_could_be_table_complete(s: lint::Sensor) {
     use lint
     call concrete := match_could_be_table_written(s)

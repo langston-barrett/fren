@@ -203,6 +203,7 @@ expect branches_sharing_code_sound(c?, a: Int, b: Int, x: Int, p?, q?, y?) {
     call concrete := branches_sharing_code_fixed(c?, a, b, x, p?, q?, y?)
     refines concrete branches_sharing_code_written(c?, a, b, x, p?, q?, y?)
 }
+
 expect branches_sharing_code_complete(c?, a: Int, b: Int, x: Int, p?, q?, y?) {
     call concrete := branches_sharing_code_written(c?, a, b, x, p?, q?, y?)
     refines concrete branches_sharing_code_fixed(c?, a, b, x, p?, q?, y?)

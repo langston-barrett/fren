@@ -21,9 +21,9 @@ warning[F0810]: `b_target` is never negative, so it can be a `Nat`
    = help: declare `b_target: Nat`, and remove `0 <= b_target` from `b_sane`, where nothing binds `b_target` to an `Int`
 
 warning[F0810]: `a_target` is never negative, so it can be a `Nat`
-  --> test/cli/results/f0603_global.fren:19:20
+  --> test/cli/results/f0603_global.fren:20:20
    |
-19 |     assume a_sane: 0 <= a_target and a_target <= HIGH
+20 |     assume a_sane: 0 <= a_target and a_target <= HIGH
    |                    ^^^^^^^^^^^^^ `a_target` is at least 0 by this assumption
    |
    = note: a `Nat` parameter brings this assumption with its type
@@ -40,9 +40,9 @@ error[F0603]: expectation `same::same` does not hold
    = help: correct the expectation, or assume what it needs
 
 error[F0605]: `never::never` is vacuous: its condition can never hold, given `a`
-  --> test/cli/results/f0603_global.fren:21:19
+  --> test/cli/results/f0603_global.fren:22:19
    |
-21 |     expect never: when a.target > HIGH, a.too_cold?
+22 |     expect never: when a.target > HIGH, a.too_cold?
    |                   ^^^^^^^^^^^^^^^^^^^^ this condition is always false
    |
    = note: a constraint whose condition never holds says nothing

@@ -12,6 +12,7 @@ const MAX_ATTEMPTS: Nat := 5
 const MAX_DELAY: Seconds := Seconds(30)
 
 type Pos = n: Nat where invariant: n is 1..
+
 proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): (
     decision: Decision,
 ) {
