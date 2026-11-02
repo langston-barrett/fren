@@ -380,6 +380,77 @@ that lean-smt sets for its proofs, which Fren does not ask for, such as
 turning off cvc5's simplification, which leaves some queries undecided,
 except that it still asks for unsat cores, which lean-smt reads.
 
+### Goal introduction
+
+Before either front end gives a query to the solver, it introduces the
+goal's leading binders. Each bound name of a universal quantifier in front
+of the goal is replaced by a fresh constant, declared after the variables;
+each premise of an implication in front becomes a hypothesis, asserted
+after the others with the comment `; premise`; and a `let` in front has its
+definitions substituted into the rest. Then the solver is asked to refute
+the hypotheses with the negation of what is left. This keeps the query's
+validity: the hypotheses entail `forall (x: T), p(x)` exactly when they
+entail `p(c)` for a constant `c` of `T` that occurs nowhere else, and
+`when p, q` exactly when they and `p` entail `q`. A constant keeps its bound
+name's symbol, such as `|x'0|`, unless the query already has that symbol
+free, as a variable, a declaration, or an earlier constant, and is otherwise
+`|x'0#goal0|`, with the first number that the query does not have.
+
+Introducing them changes what cvc5 decides, though not what a query
+means. With the constants, the negated goal is ground, and cvc5 can
+instantiate a quantified hypothesis, such as a trait's law, with its
+terms; under the quantifier, it can fail to find them, and give up on a
+query that is unsatisfiable (#543). So both front ends introduce them, in
+the one function `Fren.Core.introduceGoal`, and lean-smt, which would
+otherwise introduce them itself, is told not to. Each front end reads only
+the heads of its own goals: the Lean-hosted front end reads `∀ x, b` as a
+premise if `x`'s type is a proposition, as lean-smt's own introduction
+would, and as a bound name otherwise, and `fren check` reads
+`(forall ((x S) ...) b)` as a bound name, `(=> p q ...)` as a premise and
+`(let (...) b)` as a `let`.
+
+`cli::head_introduction` states what becomes of each head when it is
+introduced, and `cli::goal_introduction` which heads are: every one in
+front of the goal, from the outermost, up to the first that is none of the
+three, so that a head is introduced exactly when it and every head in front
+of it can be. Their `impl`s bind `Fren.Core.GoalHead.introduced?` and
+`Fren.Core.introduceGoal`, and are proved; that the front ends read each
+head as it says is backed by the ui tests and the front-end fuzzer, not
+proved:
+
+```fren
+pub enum GoalHead { Universal, Premise, Definition, Other }
+
+pub enum Introduced { Constant, Hypothesis, Substituted }
+
+-- What a head becomes when it is introduced, if it is.
+pub fn introduced_as(h: GoalHead): Option<Introduced> := match h {
+    GoalHead::Universal => Option::Some(Introduced::Constant),
+    GoalHead::Premise => Option::Some(Introduced::Hypothesis),
+    GoalHead::Definition => Option::Some(Introduced::Substituted),
+    GoalHead::Other => Option::None,
+}
+
+pub proc head_introduction(head: GoalHead): (det introduced: Option<Introduced>) {
+    ensure rule: introduced = introduced_as(head)
+}
+
+-- `heads[i]` is a head of `heads`, and it and every one in front of it can be introduced.
+set_option fren.lint.undecidable "allow" in
+pub fn introducible_through?(heads: Seq<GoalHead>, i: Int) := 0 <= i < heads.len
+    and (forall (j: Int), when 0 <= j <= i, introduced_as(heads[j]) != Option::None)
+
+pub proc goal_introduction(
+    heads: Seq<GoalHead>,        -- the goal's heads, from the outermost; past its last, the rest is `Other`
+    i: Int,                      -- a position among them
+): (det introduced?) {           -- the head at `i` is introduced
+    -- At most `Fren.Core.goalIntroductionLimit` heads; a goal with more, which no spec writes, keeps the rest.
+    assume within_limit: heads.len <= 1024
+
+    ensure rule: introduced? iff introducible_through?(heads, i)
+}
+```
+
 ## Query cache
 
 With `--query-cache DIR`, `fren check` keeps the solver's answers in the

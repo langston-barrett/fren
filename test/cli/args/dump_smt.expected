@@ -72,7 +72,8 @@
 (declare-const |y| Int)
 (assert (> |x| 0)) ; pos
 (assert (=> (= |m| |Mode::Off|) (= |y| 0))) ; off
-(assert (not (=> (= |m| |Mode::On|) (= |y| |x|))))
+(assert (= |m| |Mode::On|)) ; premise
+(assert (not (= |y| |x|)))
 (check-sat)
 (reset)
 
@@ -86,7 +87,8 @@
 (declare-const |y| Int)
 (assert (> |x| 0)) ; pos
 (assert (=> (= |m| |Mode::On|) (= |y| |x|))) ; on
-(assert (not (=> (= |m| |Mode::Off|) (= |y| 0))))
+(assert (= |m| |Mode::Off|)) ; premise
+(assert (not (= |y| 0)))
 (check-sat)
 (reset)
 

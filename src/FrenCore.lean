@@ -8,6 +8,7 @@ import FrenCore.Diagnostic
 import FrenCore.Evidence
 import FrenCore.FnBlocks
 import FrenCore.Generics
+import FrenCore.Goals
 import FrenCore.Lexical
 import FrenCore.Lint
 import FrenCore.Literate

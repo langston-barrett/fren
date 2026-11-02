@@ -102,6 +102,24 @@ def binderOf? : SExpr → Option (Array String × SExpr)
     else none
   | _ => none
 
+/-- `a` without its `|` quotes, if it has them. -/
+def unquoted (a : String) : String :=
+  if a.length ≥ 2 && a.startsWith "|" && a.endsWith "|" then ((a.drop 1).dropEnd 1).toString else a
+
+/-- The atoms of `e` that no binder within it binds, but those of `bound`,
+without their `|` quotes (`unquoted`): a sort in a binder's declaration
+is not one, and a `let`'s definitions are outside its scope. -/
+partial def SExpr.freeAtoms (bound : Array String := #[]) (e : SExpr) : Array String :=
+  match e with
+  | .atom a => let a := unquoted a; if bound.contains a then #[] else #[a]
+  | .list ts =>
+    match binderOf? e, ts with
+    | some (xs, body), #[h, .list decls, _] =>
+      let defs := if h != .atom "let" then #[] else
+        decls.flatMap fun | .list #[_, d] => d.freeAtoms bound | _ => #[]
+      defs ++ body.freeAtoms (bound ++ xs.map unquoted)
+    | _, _ => ts.flatMap (·.freeAtoms bound)
+
 /-- Whether `e` mentions an atom of `xs`. -/
 partial def SExpr.mentions (xs : Array String) : SExpr → Bool
   | .atom a => xs.contains a

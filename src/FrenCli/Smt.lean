@@ -3,6 +3,7 @@ import FrenCli.Elab
 import FrenCli.QueryStore
 import FrenCli.SeqElems
 import FrenCore.Check
+import FrenCore.Goals
 import cvc5
 -- keep-sorted end
 
@@ -247,15 +248,83 @@ def Limits.options (limits : Limits) : String :=
   s!"(set-option :tlimit-per {limits.timeoutSecs * 1000})\n" ++
     if limits.resources == 0 then "" else s!"(set-option :rlimit-per {limits.resources})\n"
 
+open SeqElems (SExpr) in
+/-- The head of a goal of `fren check`, as `Fren.Core.introduceGoal` reads
+it (`Reqs/Cli#goal-introduction`): `(forall ((x S) ...) body)`,
+`(=> p q ...)` and `(let (...) body)`, the last with its definitions
+substituted. A bound name keeps its symbol, as the constant `(x, S)`,
+unless the state, the symbols that the query has, has it already, and is
+otherwise renamed to the first `x#goal{k}` that it does not; the state
+gets the symbol either way. -/
+def smtGoalHead (prelude : Prelude) (e : SExpr) : StateM (Std.HashSet String) (Fren.Core.GoalHead (String × String) SExpr) := do
+  match e with
+  | .list #[.atom "forall", .list decls, body] =>
+    let some (SExpr.list #[.atom x, sort]) := decls[0]? | return .other
+    let rest := if decls.size == 1 then body else .list #[.atom "forall", .list (decls.extract 1), body]
+    let taken ← get
+    let base := SeqElems.unquoted x
+    let free (s : String) := !taken.contains s && !prelude.owner.contains s
+    let name := if free base then base else Id.run do
+      let mut k := 0
+      while !free s!"{base}#goal{k}" do k := k + 1
+      return s!"{base}#goal{k}"
+    modify (·.insert name)
+    if name == base then return .universal (x, sort.toString) rest
+    return .universal (quote name, sort.toString) (rest.subst #[(x, .atom (quote name))])
+  | .list ts =>
+    match ts[0]? with
+    | some (SExpr.atom "=>") =>
+      if ts.size < 3 then return .other
+      return .premise ts[1]! (if ts.size == 3 then ts[2]! else .list (#[SExpr.atom "=>"] ++ ts.extract 2))
+    | some (SExpr.atom "let") =>
+      let #[_, .list binds, body] := ts | return .other
+      let σ := binds.filterMap fun | SExpr.list #[.atom x, d] => some (x, d) | _ => none
+      if σ.size != binds.size then return .other
+      return .definition (body.subst σ)
+    | _ => return .other
+  | _ => return .other
+
+/-- `goal`, a goal over `vars` with the hypotheses `hyps`, with its leading
+heads introduced (`Fren.Core.introduceGoal`, `smtGoalHead`): its constants,
+each with its sort, its premises, and the goal left. A goal with nothing
+to introduce is left as it is written. -/
+def introduceSmtGoal (prelude : Prelude) (vars : Array CVar) (hyps : Array (Lean.Name × String)) (goal : String) :
+    Array (String × String) × Array String × String :=
+  let parsed := SeqElems.parse goal
+  let taken : Std.HashSet String := .ofArray (vars.map (·.name.toString) ++
+    (hyps.flatMap fun (_, h) => (SeqElems.parse h).freeAtoms) ++ parsed.freeAtoms)
+  let r := (Fren.Core.introduceGoal (smtGoalHead prelude) parsed).run' taken
+  if r.steps.isEmpty then (#[], #[], goal)
+  else (r.constants, r.premises.map toString, toString r.goal)
+
+-- Bound names and premises in any order, through a `let`; a bound name
+-- that the hypotheses have free, or an earlier constant has, is renamed.
+#guard introduceSmtGoal default #[] #[] "(forall ((|x| Int) (|y| Int)) (=> (> |x| 0) (> |y| |x|)))" ==
+  (#[("|x|", "Int"), ("|y|", "Int")], #["(> |x| 0)"], "(> |y| |x|)")
+#guard introduceSmtGoal default #[] #[(`h, "(> |x| 1)")] "(forall ((|x| Int)) (> |x| 0))" ==
+  (#[("|x#goal0|", "Int")], #[], "(> |x#goal0| 0)")
+#guard introduceSmtGoal default #[] #[] "(forall ((|x| Int)) (=> (> |x| 0) (forall ((|x| Int)) (> |x| 1))))" ==
+  (#[("|x|", "Int"), ("|x#goal0|", "Int")], #["(> |x| 0)"], "(> |x#goal0| 1)")
+#guard introduceSmtGoal default #[] #[] "(let ((|d| 1)) (forall ((|x| Int)) (=> a b c)))" ==
+  (#[("|x|", "Int")], #["a", "b"], "c")
+-- A goal with nothing to introduce is left as it is written.
+#guard introduceSmtGoal default #[] #[] "(and  a b)" == (#[], #[], "(and  a b)")
+
 /-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
-hypothesis followed by a comment with its name; without `(check-sat)`. It
+hypothesis followed by a comment with its name; without `(check-sat)`. The
+goal's leading heads are introduced first (`introduceSmtGoal`): its
+constants are declared after the variables, and its premises asserted
+after the hypotheses, each followed by the comment `; premise`. It
 declares only what the prelude needs to (`Prelude.neededDecls`), and is in
 `logic`, but for `ALL` instead of `HO_ALL` if it projects no relation
 (`Fren.Core.queryLogic`). -/
 def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (hyps : Array (Lean.Name × String)) (goal : String) : String :=
+  let (constants, premises, goal) := introduceSmtGoal prelude vars hyps goal
   let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
+  let decls := decls ++ String.join (constants.toList.map fun (x, s) => s!"(declare-const {x} {s})\n")
   let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n}\n")
+  let asserts := asserts ++ String.join (premises.toList.map fun p => s!"(assert {p}) ; premise\n")
   let body := s!"{decls}{asserts}(assert (not {goal}))\n"
   -- `mapQuoted` of the whole script, piece by piece: each piece is whole
   -- commands, which close their quoted symbols and string literals, so

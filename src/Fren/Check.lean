@@ -4,6 +4,7 @@ import Fren.Model
 import Fren.SeqElems
 import Fren.SmtTranslate
 import FrenCore.Check
+import FrenCore.Goals
 import FrenCore.Ty
 import Smt
 -- keep-sorted end
@@ -675,6 +676,23 @@ def contractBody (c : CompInfo) (fvs : Array Expr) (e : Expr) : MetaM Expr := do
   let own := mkAppN (mkConst solver) fvs
   return e.replace fun t => if t == own then some (body.beta fvs) else none
 
+/-- The head of a goal, as `Core.introduceGoal` reads it
+(`Reqs/Cli#goal-introduction`), with each binder in front, a bound name or a
+premise, made a local of the state: `∀ x, b` and `p → b`, a premise if its
+type is a proposition, as lean-smt's own introduction tells them apart,
+and `let x := v; b`, with `v` substituted. -/
+def leanGoalHead (e : Expr) : StateT LocalContext MetaM (Core.GoalHead Expr Expr) := do
+  match e.consumeMData with
+  | .forallE n t b bi =>
+    let lctx ← get
+    let prop ← withLCtx lctx (← getLocalInstances) (Meta.isProp t)
+    let id ← mkFreshFVarId
+    set (lctx.mkLocalDecl id n t bi)
+    let x := Expr.fvar id
+    return if prop then .premise x (b.instantiate1 x) else .universal x (b.instantiate1 x)
+  | .letE _ _ v b _ => return .definition (b.instantiate1 v)
+  | _ => return .other
+
 /-- The lean-smt backend, for a procedure whose variables are the free variables
 `fvs`, and whose variables other than its parameters have second copies `primes`
 (`Core.primed`), answering from `cache` the queries asked before. `facts` are
@@ -729,6 +747,15 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- A procedure whose queries may quantify over a collection's
       -- elements sets `fmf-bound` (`Core.boundedOptions`).
       let bounded := if bounded then Core.boundedOptions else []
+      -- The goal's leading binders introduced, as the binary introduces
+      -- them (`Core.introduceGoal`): its bound names and premises are
+      -- locals, which lean-smt declares as constants and asserts as hints,
+      -- and it is told not to introduce any itself.
+      let (intro, lctx) ← (Core.introduceGoal leanGoalHead goal).run (← getLCtx)
+      withLCtx lctx (← getLocalInstances) do
+      let goal := intro.goal
+      -- The premises after the hypotheses, as the binary asserts them.
+      let premises := intro.premises
       -- Each attempt on a goal of its own.
       let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
         let mv ← mkFreshExprMVar goal
@@ -740,7 +767,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         -- into `Int`s, revert a recursive definition's `let` and give it
         -- back as a `have`, which they cannot then introduce
         -- (`withRecursiveDefs`).
-        match ← Smt.smt { trust := true, model, timeout := some timeout, embeddings := true
+        match ← Smt.smt { trust := true, model, timeout := some timeout, embeddings := true, intros := false
                           -- `fmf-bound` right after the options both front ends set, as the
                           -- binary sets it.
                           -- lean-smt's logic, `ALL`, quantifies (`Core.quantifierOptions`).
@@ -748,7 +775,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
                             ++ (if finiteModel then Core.finiteModelOptions else []) ++ Core.quantifierOptions "ALL"
                             ++ logic ++ cvc5Defaults
                             ++ resourceLimitOptions (← getOptions) ++ quietOptions }
-                  mv.mvarId! (hs.reverse ++ recFvs) with
+                  mv.mvarId! (premises.reverse ++ hs.reverse ++ recFvs) with
         | .sat (some m) =>
           let values := m.values.filterMap fun (k, v) =>
             match (vars.find? (·.2 == k)).map (·.1.name) with

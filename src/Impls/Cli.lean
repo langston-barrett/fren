@@ -372,3 +372,121 @@ impl substitution_scope: cli::substitution_scope for (bound mentioned : Bool) {
   intro bound mentioned _
   cases bound <;> cases mentioned <;> simp [fren_spec, FrenCli.SeqElems.substitutionScope]
 end Fren.Impls
+
+namespace Fren.Impls
+
+/-- A model goal, its heads as `cli::goal_introduction` names them, read as
+the front ends read theirs (`Fren.Core.GoalHead`): past its last head,
+the rest is `Other`. -/
+def modelGoalHead : List cli.GoalHead → Id (Fren.Core.GoalHead Unit (List cli.GoalHead))
+  | .Universal :: rest => pure (.universal () rest)
+  | .Premise :: rest => pure (.premise [] rest)
+  | .Definition :: rest => pure (.definition rest)
+  | _ => pure .other
+
+def toGoalHead : cli.GoalHead → Fren.Core.GoalHead Unit Unit
+  | .Universal => .universal () ()
+  | .Premise => .premise () ()
+  | .Definition => .definition ()
+  | .Other => .other
+
+def toIntroducedUnit : Fren.Core.Introduced Unit Unit → cli.Introduced
+  | .constant _ => .Constant
+  | .hypothesis _ => .Hypothesis
+  | .substituted => .Substituted
+
+instance : Fren.Finite cli.GoalHead := ⟨[.Universal, .Premise, .Definition, .Other], by intro x; cases x <;> simp⟩
+
+impl head_introduction: cli::head_introduction for (h : cli.GoalHead) {
+  head := h,
+  introduced := ((toGoalHead h).introduced?).map (toIntroducedUnit ·.1),
+}
+
+/-- Whether `h` can be introduced (`cli::introduced_as`). -/
+def introducible : cli.GoalHead → Bool
+  | .Other => false
+  | _ => true
+
+theorem introducible_iff (h : cli.GoalHead) :
+    (match h with
+      | cli.GoalHead.Universal => some cli.Introduced.Constant
+      | cli.GoalHead.Premise => some cli.Introduced.Hypothesis
+      | cli.GoalHead.Definition => some cli.Introduced.Substituted
+      | cli.GoalHead.Other => none) ≠ none ↔ introducible h = true := by
+  cases h <;> simp [introducible]
+
+/-- `introduceGoal` introduces the heads in front that can be, with the
+fuel for all of them. -/
+theorem introducedCount_eq (hs : List cli.GoalHead) (fuel : Nat) (hf : hs.length ≤ fuel) :
+    (Fren.Core.introduceGoal modelGoalHead hs fuel).run.steps.length = (hs.takeWhile introducible).length := by
+  induction hs generalizing fuel with
+  | nil => cases fuel <;> simp [Fren.Core.introduceGoal, modelGoalHead, Fren.Core.GoalHead.introduced?]
+  | cons h t ih =>
+    cases fuel with
+    | zero => simp at hf
+    | succ f =>
+      have e := ih f (by simp at hf; omega)
+      cases h <;> simp_all [Fren.Core.introduceGoal, modelGoalHead, Fren.Core.GoalHead.introduced?, introducible,
+        List.takeWhile]
+
+/-- `n` is within the heads in front that `p` holds of. -/
+theorem lt_takeWhile {α : Type} (p : α → Bool) (hs : List α) (n : Nat) :
+    n < (hs.takeWhile p).length ↔ ∃ hn : n < hs.length, ∀ k (hk : k ≤ n), p (hs[k]'(by omega)) = true := by
+  induction hs generalizing n with
+  | nil => simp
+  | cons h t ih =>
+    by_cases ph : p h
+    · cases n with
+      | zero =>
+        simp only [List.takeWhile, ph, List.length_cons]
+        refine ⟨fun _ => ⟨by simp, fun k hk => ?_⟩, fun _ => by omega⟩
+        obtain rfl : k = 0 := by omega
+        simpa using ph
+      | succ m =>
+        simp only [List.takeWhile, ph, List.length_cons, Nat.add_lt_add_iff_right, ih]
+        constructor
+        · rintro ⟨hm, hk⟩
+          refine ⟨by omega, fun k hk' => ?_⟩
+          cases k with
+          | zero => simpa using ph
+          | succ k => simpa using hk k (by omega)
+        · rintro ⟨hm, hk⟩
+          exact ⟨by omega, fun k hk' => by simpa using hk (k + 1) (by omega)⟩
+    · simp only [List.takeWhile, ph, List.length_nil, Nat.not_lt_zero, false_iff]
+      rintro ⟨_, hk⟩
+      simpa [ph] using hk 0 (by omega)
+
+/-- How many of the heads `hs` `Fren.Core.introduceGoal` introduces. -/
+def introducedCount (hs : List cli.GoalHead) : Nat :=
+  (Fren.Core.introduceGoal modelGoalHead hs).run.steps.length
+
+impl goal_introduction: cli::goal_introduction for (hs : List cli.GoalHead) (i : Int) {
+  heads := Fren.Seq.ofList hs,
+  i := i,
+  introduced? := decide (0 ≤ i ∧ i < introducedCount hs),
+} by
+  intro hs i h
+  simp only [fren_spec] at h ⊢
+  have hl : hs.length ≤ Fren.Core.goalIntroductionLimit := by
+    simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList] at h
+    simp only [Fren.Core.goalIntroductionLimit]; omega
+  simp only [introducedCount, introducedCount_eq hs _ hl, decide_eq_true_iff]
+  constructor
+  · rintro ⟨h0, hi⟩
+    obtain ⟨n, rfl⟩ := Int.eq_ofNat_of_zero_le h0
+    obtain ⟨hn, hk⟩ := (lt_takeWhile introducible hs n).mp (by omega)
+    refine ⟨⟨h0, by simpa using hn⟩, fun j ⟨hj0, hji⟩ => ?_⟩
+    obtain ⟨k, rfl⟩ := Int.eq_ofNat_of_zero_le hj0
+    rw [Fren.Seq.nth_of_lt _ _ hj0 (by simp; omega)]
+    exact (introducible_iff _).mpr (by simpa using hk k (by omega))
+  · rintro ⟨⟨h0, hi⟩, hj⟩
+    obtain ⟨n, rfl⟩ := Int.eq_ofNat_of_zero_le h0
+    refine ⟨h0, ?_⟩
+    have : n < (hs.takeWhile introducible).length := by
+      refine (lt_takeWhile introducible hs n).mpr ⟨by simpa using hi, fun k hk => ?_⟩
+      have := hj k ⟨by omega, by omega⟩
+      rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simp at hi ⊢; omega)] at this
+      simpa using (introducible_iff _).mp this
+    omega
+
+end Fren.Impls
