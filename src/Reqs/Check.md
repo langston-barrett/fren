@@ -1847,7 +1847,9 @@ second copy `y'`, `o'` of the call variables and outputs, and asks whether
 
   A(i) ∧ I(i, y) ∧ R(i, y, o) ∧ I(i, y') ∧ R(i, y', o')
 
-The call variables are copied too, so an output that depends on a
+To the solver, the copy of `x` is `x#'`, which no variable is named, as a
+variable may be named `x'` ([Symbols](Cli.md#symbols)). The call variables
+are copied too, so an output that depends on a
 call's output which is not itself determined is not determined either.
 The functions are not copied: both copies are under the same
 [interpretation](#interpretations), so an output that is a function of the

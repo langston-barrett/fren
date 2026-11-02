@@ -1318,7 +1318,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
         | some j => !defKnown[j]! env
         | none => false }
     let varTy (x : Name) : Expr :=
-      let base := if x.isStr && x.getString!.endsWith "'" then Name.mkStr x.getPrefix (x.getString!.dropEnd 1).toString else x
+      let base := (Fren.Core.unprimed? x).getD x
       ((c.vars.find? (·.name == base)).map (·.type)).getD (mkConst ``Bool)
     let renderSlot (s j : Nat) : MetaM String := do
       let some v ← slotVal s j | return "?"

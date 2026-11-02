@@ -181,7 +181,7 @@ theories, such as `abs`, `div`, `exp` or an instance's `str.len`, gets a
 `#` after its name, `|abs#|`, since `|abs|` is the theory's symbol; no
 Fren name contains `#`. A second
 copy of a variable, as used by the [determinism](Check.md#determinism)
-check, is primed: `|y'|`. A script declares every variable of its
+check, is `|y#'|`. A script declares every variable of its
 procedure, but of the spec's abstract types, enumerations, records and
 functions only those that its query mentions, directly or through
 another declaration: the others cannot change its answer, and declaring
@@ -233,9 +233,10 @@ whether the solver answers in time. Only the
 an [unbounded quantifier](Lang/Quantifiers.md#unbounded-quantifiers),
 which every query that reads it gives the solver as a quantifier: each
 bound name of a type that is not listed is declared by the quantifier at
-its type's sort, as `(forall ((|i'0| Int)) ...)`, where `'` and the
+its type's sort, as `(forall ((|i#0| Int)) ...)`, where `#` and the
 bound name's position among those in scope, from 0, keep it apart from
-every variable; a `Nat` is an `Int` there, with `(>= |n'0| 0)` before
+every variable and every other symbol (`cli::query_symbols`, below); a
+`Nat` is an `Int` there, with `(>= |n#0| 0)` before
 the body, as an implication for `forall` and a conjunct for `exists`, and
 a subset type's constraint likewise. Its bound names of listed types are
 expanded within it. So does a [refinement
@@ -380,6 +381,126 @@ that lean-smt sets for its proofs, which Fren does not ask for, such as
 turning off cvc5's simplification, which leaves some queries undecided,
 except that it still asks for unsat cores, which lean-smt reads.
 
+### Symbols
+
+Each symbol of a query names one thing. A variable's is its name, as
+above, with a `#` after it if a theory has that symbol. A quantifier's
+bound name `x`, of a type that is not listed, is `|x#k|`, with `k` its
+position among the bound names in scope; a variable's second copy is
+`|x#'|`; and `fren check` names the parameter `x` of a closure
+`|x#closure{n}|`, with `n` the closure's number in the spec. No Fren name
+contains `#` ([identifiers](Lang/Lexical.md#identifiers)), so what follows
+the first `#` tells these apart, and the name in front of it tells apart
+those of one kind. `cli::query_symbols` states that two symbols are the
+same only if they are of the same thing: in particular, a bound name's
+symbol is distinct from every variable's, every other bound name's, and
+every copy's and closure parameter's, so a quantifier never captures a
+variable, nor a variable a bound name. `'` would not do as the separator,
+since a name may contain it: a variable `i'0` had the symbol of a bound
+name `i` at position 0, so that `forall (i: Int), i = i'0` held.
+
+The other symbols are kept apart from these, and from variables, by a
+character that no Fren name has, or are chosen fresh:
+
+- a function's, type's, variant's or field's has `::` or `{`, as
+  `|::f|`, `|E::V|` or `|R{}|`, but for the prelude's types, written as
+  lean-smt writes them, which `query_symbols` leaves out;
+- a goal constant's is the first `x#goal{k}` that the query does not have
+  (`cli::goal_constant_name`);
+- a bound name `x` of a listed type, which each instance replaces, is
+  `|k x|`, with a space, at its position `k`;
+- a `let`'s name is `let@{n}`, and a record update's value
+  `|update@{n}|`, with an `@`, by a number of their own;
+- what has no name starts with `#`: the parameters of a function given
+  as a closure (`#{k}`, `#_{k}`, `#match{j}`), the element of a
+  constraint over a collection (`#e{d}`, `#a{d}`, `#b{d}`), a
+  refinement's internal variables (`#refines{i}.x`), and the values that a
+  model observes (`#member_observation_…`);
+- a bound name renamed apart where a definition is unfolded
+  (`cli::substitution_scope`) is `|fren.subst.{n}|`, whose last
+  component starts with a digit, which no name's does, and is chosen
+  where the formula does not have it.
+
+Besides a bound name's and a copy's, the Lean front end makes only names
+that start with `#`, as `fren check` does: `#match{j}` and `#_{k}` for the
+parameters of a function given as a closure. lean-smt names each local by
+its name. Its locals
+for a `let`'s names are `x@k`, and for a closure's parameters
+`Fren.Core.boundSymbol` at their position, `x#k`, which the solver never
+sees, and which no two binders along one path share.
+
+Both front ends name bound names and copies by `Fren.Core.boundSymbol`
+and `Fren.Core.primed`, and `fren check` closures' parameters by
+`Fren.Core.closureSymbol`. `cli::query_symbols` states each symbol's
+text, by `text`, and that two of them are the same only if they are of
+the same thing. Its `impl` binds each symbol to `Fren.Core.QuerySymbol.text`,
+which those functions make, so that each symbol's text is pinned down
+exactly, and is proved; the checker proves `apart` from the symbols'
+definitions and `rule`. Positions and numbers are
+written in decimal, so the Req has them as their digits. That each front
+end names each symbol by these functions is backed by the ui tests and the
+front-end fuzzer, which declares variables named as bound names' symbols
+were, not proved. That the determinism check is sound needs the same of
+copies: `Fren.Core.checkDeterminism_pass_plain` discharges the copies'
+distinctness from the variables and from each other for names without
+`#` (`primed_inj_plain`, `primed_ne_plain`). Copies were `y'`, which a
+variable could be named, and that premise of `checkDeterminism_pass` was
+nowhere checked.
+
+```fren
+-- What a symbol of a query is the symbol of.
+pub enum QuerySymbol {
+    Name(String, Bool),        -- a variable, by its name, and whether a theory has that symbol
+    Copy(String),              -- a variable's second copy, for determinism
+    Bound(String, String),     -- a quantifier's bound name, and its position among those in scope, in decimal
+    Closure(String, String),   -- a closure's parameter, and the closure's number, in decimal
+}
+
+-- The name that `s` is made from.
+pub fn base(s: QuerySymbol): String := match s {
+    QuerySymbol::Name(x, _) => x,
+    QuerySymbol::Copy(x) => x,
+    QuerySymbol::Bound(x, _) => x,
+    QuerySymbol::Closure(x, _) => x,
+}
+
+-- The symbol, as the solver is given it.
+set_option fren.lint.undecidable "allow" in
+pub fn text(s: QuerySymbol): String := match s {
+    QuerySymbol::Name(x, theory?) => if theory? then x ++ "#" else x,
+    QuerySymbol::Copy(x) => x ++ "#'",
+    QuerySymbol::Bound(x, k) => x ++ "#" ++ k,
+    QuerySymbol::Closure(x, n) => x ++ "#closure" ++ n,
+}
+
+-- Its number, if it has one, is written in decimal.
+pub fn decimal?(s: QuerySymbol) := match s {
+    QuerySymbol::Bound(_, k) => k.matches?(r"[0-9]+"),
+    QuerySymbol::Closure(_, n) => n.matches?(r"[0-9]+"),
+    _ => true,
+}
+
+set_option fren.lint.undecidable "allow" in
+pub proc query_symbols(a: QuerySymbol, b: QuerySymbol): (
+    symbol_a: String,            -- `a`'s symbol
+    symbol_b: String,            -- `b`'s symbol
+    det same?,                   -- `a` and `b` have one symbol
+) {
+    -- Each is of a name, which never contains `#`, and has its number in decimal.
+    assume names: not base(a).contains?("#") and not base(b).contains?("#")
+    assume numbers: decimal?(a) and decimal?(b)
+
+    out symbol_a := text(a)
+    out symbol_b := text(b)
+    ensure rule: same? iff symbol_a = symbol_b
+
+    expect apart: same? iff a = b
+
+    expect bound_apart: when a is QuerySymbol::Bound(_, _) and b != a, not same?
+    expect not_primed: when a = QuerySymbol::Bound("i", "0") and b = QuerySymbol::Name("i'0", false), not same?
+}
+```
+
 ### Goal introduction
 
 Before either front end gives a query to the solver, it introduces the
@@ -393,9 +514,9 @@ validity, as argued here and not checked: no Req states it, and no test
 compares the answers to a query with and without its introduction: the hypotheses entail `forall (x: T), p(x)` exactly when they
 entail `p(c)` for a constant `c` of `T` that occurs nowhere else, and
 `when p, q` exactly when they and `p` entail `q`. A constant keeps its bound
-name's symbol, such as `|x'0|`, unless the query already has that symbol
+name's symbol, such as `|x#0|`, unless the query already has that symbol
 free, as a variable, a declaration, or an earlier constant, and is otherwise
-`|x'0#goal0|`, with the first number that the query does not have
+`|x#0#goal0|`, with the first number that the query does not have
 (`cli::goal_constant_name`).
 
 Introducing them changes what cvc5 decides, though not what a query
