@@ -503,6 +503,124 @@ expect erasing_division_complete() {
 }
 ```
 
+### Erasing operations, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+`0` is a literal, `-0` is `Unary(Neg, Literal(0))`, and `[]` is `Nil`.
+`erasing_op_fires?` fires on `x * 0`, `0 * x`, `x in []`, and on `0 div
+k`, `0 mod k`, `-0 div k` and `-0 mod k`. Sets and relations are not in
+the model, so it leaves the operations of `{}`. `erasing_op_said` is the
+value that the message says the expression has. As for
+[`eq_op`](#operands-written-the-same-over-the-syntax-of-the-semantics),
+there is no fix, so the lint does not join the [rewrites](../Rewrites.md),
+and what it states is that its message is right.
+
+```fren
+-- `e` is `0`, possibly negated.
+fn zero_dividend?<V>(e: lang::Expr<V>) :=
+    zero?(e) or e = lang::Expr::Unary(
+        lang::UnaryOp::Neg,
+        lang::Expr::Literal(lang::Value::Integer(0))
+    )
+
+pub fn erasing_op_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Binary(lang::BinaryOp::Mul, a, b) => zero?(a) or zero?(b),
+    lang::Expr::Binary(lang::BinaryOp::Div, a, _) => zero_dividend?(a),
+    lang::Expr::Binary(lang::BinaryOp::Mod, a, _) => zero_dividend?(a),
+    lang::Expr::Binary(lang::BinaryOp::In, _, b) => b = lang::Expr::Nil,
+    _ => false,
+}
+
+-- What `e` is, where `erasing_op` fires on it.
+pub fn erasing_op_said<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Binary(lang::BinaryOp::In, _, _) => lang::Expr::Literal(lang::Value::False),
+    _ => lang::Expr::Literal(lang::Value::Integer(0)),
+}
+```
+
+`lint::erasing_op` and `lint::erasing_division` bind this to the linter.
+`operand_of` reads an operand as [`identity_op`'s
+binding](../Complexity/Operators.md#identities-over-the-syntax-of-the-semantics)
+does. On a product, and on a membership in `[]`, `erasing_op` fires
+exactly where `erasing_op_fires?` does. On a quotient or a remainder,
+`erasing_division` fires exactly where `erasing_op_fires?` does, whether
+the dividend is an integer literal, possibly negated, or not. That the
+front ends read the operands so, and the value that the message gives
+for each operator, are trusted, and checked by the ui tests in
+`test/ui/lints/operators.fren` and `test/ui/lints/integers.fren`.
+
+```fren
+expect erasing_op_elaborated(
+    op: InfixOp,
+    left: IdentityOperand,
+    right: IdentityOperand,
+    same?,
+    left_list?,
+    right_list?,
+    x: lang::Expr<lang::Id>,
+    y: lang::Expr<lang::Id>,
+    z: lang::Expr<lang::Id>,
+    w: lang::Expr<lang::Id>,
+) {
+    use lang::BinaryOp::{In, Mul}
+    use lang::Expr::Binary
+
+    assume plain: plain_operand?(x) and plain_operand?(z)
+
+    call p := erasing_op(op, left, right, same?)
+
+    let a: lang::Expr<lang::Id> := operand_of(left, left_list?, x, y)
+    let b: lang::Expr<lang::Id> := operand_of(right, right_list?, z, w)
+
+    expect product: when op = InfixOp::Mul, p.fires? iff erasing_op_fires?(Binary(Mul, a, b))
+    expect membership: when op = InfixOp::In and right_list?, p.fires? iff erasing_op_fires?(Binary(In, a, b))
+}
+
+expect erasing_division_elaborated(
+    literal?,
+    negated?,
+    n: Nat,
+    x: lang::Expr<lang::Id>,
+    k: lang::Expr<lang::Id>,
+) {
+    use lang::BinaryOp::{Div, Mod}
+    use lang::Expr::{Binary, Literal, Unary}
+    use lang::Value::Integer
+
+    assume plain: not (x is Literal(Integer(_)) | Unary(lang::UnaryOp::Neg, Literal(Integer(_))))
+
+    call p := erasing_division(literal?, if negated? then -n else n)
+
+    let a: lang::Expr<lang::Id> := if not literal? then x
+        else if negated? then Unary(lang::UnaryOp::Neg, Literal(Integer(n)))
+        else Literal(Integer(n))
+
+    expect fires: (p.fires? iff erasing_op_fires?(Binary(Div, a, k))) and (p.fires? iff erasing_op_fires?(Binary(Mod, a, k)))
+}
+```
+
+Where it fires, what the message says agrees with the expression. `x in
+[]` is `false` wherever `x` is well-defined, in every interpretation.
+`*`, `div` and `mod` are [primitive
+operations](../Meaning.md#primitive-operations), so the rest hold in each
+interpretation that gives them their usual meaning: a product with `0` is
+`0`, and so are a quotient and a remainder of `0`, where the divisor is
+not `0`, and where the graph has a point for the operands; elsewhere the
+expression is undefined. `src/Impls/Rewrites.lean` proves this in Lean,
+for every expression, interpretation whose primitives are `usual?`, and
+environment; `fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc erasing_op_said_agrees(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure said: when usual?(i.primitives) and erasing_op_fires?(e),
+        agrees?(
+            lang::eval(i, env, erasing_op_said(e)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
 ## Branches written the same
 
 `same_branches` fires on `if c then a else b`, where `a` and `b` are

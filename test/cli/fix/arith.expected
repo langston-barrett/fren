@@ -13,4 +13,7 @@
 +    out e? := x > y and y < x and x > y and y < x and x - 1 > y
 +    out g? := s != "" or q != [] or s != "" or q = [] or s = ""
 +    out h? := (not x in {1, 2, y}) or (q != [] and (y = 1 or y = q[0] or y = 2))
+@@ -19 +19 @@
+-pub proc again(x: Int, y: Int): (k: Int) { out k := f(x + -0) + f(x - - -y) + f(0 - -y) }
++pub proc again(x: Int, y: Int): (k: Int) { out k := f(x) + f(x - y) + f(y) }
 exit=1

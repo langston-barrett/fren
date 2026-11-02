@@ -14,3 +14,6 @@ pub proc c(x: Int, y: Int, s: String, q: Seq<Int>): (a?, b: Int, d: Int, e?, g?,
     out g? := 0 < s.len or 1 <= q.len or s.len != 0 or q.len < 1 or 0 = s.len
     out h? := (x != 1 and x != 2 and x != y) or (q != [] and (y = 1 or y = q[0] or y = 2))
 }
+
+-- The fixes of `identity_op` that fire again, which the next pass fixes.
+pub proc again(x: Int, y: Int): (k: Int) { out k := f(x + -0) + f(x - - -y) + f(0 - -y) }
