@@ -336,14 +336,16 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   -- `fnParamType` elaborates (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   -- `Set<T>`: `"Set" "<" T ">"`; `Rel<A, B>`: `"Rel" "<" A "," B ">"`.
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
-  -- parameter (`lang::type_parameter_place`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
+  -- generic type's type parameter (`lang::element_parameter`).
   let elem (e : Syntax) : m Expr := do
     let t ← elabType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
-    if let .bvar k := t then throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
+    if let .bvar k := t then
+      unless Core.elementParamAccepted .datatype do throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
     if let some n := t.constName?.bind (Core.typeParamName? ·) then
-      throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
+      unless Core.elementParamAccepted .function do
+        throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
     return t
   -- An instance of a generic type, `G<A, B>`, whose arguments are payloads'
   -- types (`Reqs/Lang/Generics#type-parameters`).
@@ -2695,16 +2697,18 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
   -- (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   let text := Core.typeText (exactText ty)
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a type
-  -- parameter (`lang::type_parameter_place`), and whose constraint, if any,
-  -- quantifies over the elements, outside the decidable core
-  -- (`lang::subset_place`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
+  -- generic type's type parameter (`lang::element_parameter`), and whose
+  -- constraint, if any, quantifies over the elements, outside the
+  -- decidable core (`lang::subset_place`).
   let elem (e : Syntax) : TermElabM (Expr × Core.PTy) := do
     let (t, pt) ← elabPType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
-    if let .bvar k := t then throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
+    if let .bvar k := t then
+      unless Core.elementParamAccepted .datatype do throwErrorAt e (Core.typeParamPlaceMsg params[k]! .element "").text
     if let some n := t.constName?.bind (Core.typeParamName? ·) then
-      throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
+      unless Core.elementParamAccepted .function do
+        throwErrorAt e (Core.typeParamPlaceMsg (Name.mkSimple n) .element "").text
     if (pt.cons (← getState).shapeOf).isSome then recordOutsideCore e Core.undecidableElementsMsg
     return (t, pt)
   if ty.isOfKind ``Lang.relType then
@@ -3720,9 +3724,8 @@ def isTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : 
       new := new.push (bn, term.raw, b.type, scrutinee, cx.binders.size)
     modifyLocal fun l => { l with bound := l.bound ++ new }
   if cx.noteIndexes then
-    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`):
-    -- not of a test that binds names, which it is needed for.
-    let irrefutable := bs.isEmpty && Core.irrefutableIs (Core.matchesEvery (← patSigs) pty q)
+    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
+    let irrefutable := Core.irrefutableIsAt (← patSigs) pty q
     if irrefutable then recordLint .irrefutableIs e (Core.irrefutableIsMsg (← patTypeName ty) (q matches .wild _))
     lintOrPatterns (orNode (topAlts e[2]).1 q)
     let texts := (topAlts e[2]).1.map exactText
@@ -7547,7 +7550,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
         let r : Core.HofParamRecord :=
           { path, index := j, name := x, generic := !tps.isEmpty, level := ← lintLevel .needlessHigherOrder }
         modifyLocal fun l => { l with hofParams := l.hofParams.push (r, ref) }
-    let source? := some (← getFileName, ← getFileMap)
+    let source? := some (← keptFileName (← getFileName), ← getFileMap)
     record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams

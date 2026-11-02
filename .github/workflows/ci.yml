@@ -8,21 +8,40 @@ on:
   push:
     branches:
     - main
+  # A run by hand, on any branch, may fuzz alone, and more seeds, to try a
+  # change to the fuzzer or to its known kinds.
   workflow_dispatch:
+    inputs:
+      fuzz-only:
+        description: Run only the fuzz-frontends job
+        type: boolean
+        default: false
+      fuzz-count:
+        description: Seeds for each of fuzz-frontends' four fuzzers
+        type: number
+        default: 150
 
 permissions:
   contents: read
 
-# A push to `main` waits for the run before it, rather than cancelling it,
-# so that pushes in quick succession still save a `.lake`.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
+# Each job of a push to `main` waits for the same job of the run before it,
+# rather than cancelling it: of pushes in quick succession, none cancels a
+# running job and the latest saves a `.lake`, though GitHub cancels a job
+# that is still pending when a later one of its group is queued, so that a
+# run in between may be cancelled, in part or whole. So shard 0 still
+# compares with the query cache that the previous shard 0 saved. No job
+# waits for the whole run before it, so the build job saves the `.lake`
+# from which pull requests start as soon as it has built, rather than once
+# the slowest job of the run before it has finished
+# (`Reqs/dev/Testing#continuous-integration`).
 jobs:
   build:
+    if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-build-${{ github.ref }}
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -40,7 +59,7 @@ jobs:
     # (`Examples`) and the `fren` binary; warnings, including
     # inconclusive checks and untraced requirements, fail it.
     - id: build
-      run: lake build --wfail
+      run: touch "$RUNNER_TEMP/build-start" && lake build --wfail
     # As soon as it is built, for the pull requests that start from it. Lake
     # saves no output of a module that failed, so a failed build's `.lake`
     # would serve as well, but a pull request that restores it would
@@ -50,6 +69,9 @@ jobs:
       with:
         path: .lake
         key: ${{ steps.lake.outputs.key }}
+    # No output that the build wrote names the checkout's directory, as in
+    # `pre-merge` (`Reqs/dev/Testing#shared-builds`).
+    - run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
     # A few mutants of Fren's own requirements on each push, a different few
     # each run (the seed is the run's number), so that over many pushes the
     # runs cover them: all of them, over 3000, are too many for one run.
@@ -81,8 +103,12 @@ jobs:
   # binary, and the others the rest (`Reqs/dev/Testing`).
   test:
     name: lake test (shard ${{ matrix.shard }} of 5)
+    if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-test-${{ matrix.shard }}-${{ github.ref }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -98,9 +124,9 @@ jobs:
     # Shard 0 asks every query of Fren's own requirements of the solver,
     # with an empty query cache, and compares each answer with the one that
     # the previous `main`'s run kept: a contradiction fails it, and so does
-    # comparing no answers, unless the previous cache holds no entry of
-    # this `queryCacheVersion` and cvc5, after a change that alters every
-    # key. It then saves exactly the answers of this run, from which pull
+    # comparing no answers, unless the previous cache has no entry of this
+    # `queryCacheVersion` and cvc5 (as after a change that alters every
+    # key). It then saves exactly the answers of this run, from which pull
     # requests answer their queries (`Reqs/dev/Testing#query-cache`).
     # `actions/cache` restores only a cache saved with the same `path`, to
     # that path, so the previous cache is restored where this run's is
@@ -148,8 +174,12 @@ jobs:
   # the binary's (`Reqs/dev/Testing#own-requirements`). It saves no `.lake`:
   # pull requests start from the build job's, without the checks.
   own-spec-agreement:
+    if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-own-spec-agreement-${{ github.ref }}
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -168,17 +198,26 @@ jobs:
       env:
         FREN_QUERY_CACHE: ""
   # The front-end fuzzer on seeds that no run used before, from the run's
-  # number, with `--avoid-known`: a difference of a kind that
-  # `knownDifferences` does not list for `--avoid-known`, a crash or a
-  # timeout fails it, and the specs that it found are uploaded, to be
-  # fixed or filed and listed (`Reqs/dev/Testing#continuous-integration`).
-  # The kinds listed for `--avoid-known` go unchecked here, with either
-  # generator: today Lean's extra `F0743` and kinds of #493 and #295, each
-  # listed at a seed of an earlier run (`knownDifferences`). `lake test`
+  # number, with `--avoid-known` (`Reqs/dev/Testing#continuous-integration`).
+  # Each difference is classified by its kind (`signature`). A kind is
+  # known if `knownDifferences` lists it for `--avoid-known`, or
+  # `knownKinds` lists it, each with the issue that tracks it, under the
+  # conditions that the entry states (after a static error, or alongside
+  # another kind). What fails the job is exactly this: a spec with a
+  # difference of a kind that is not known, a crash, or a timeout. A spec
+  # whose differences are all of known kinds, or only in inconclusive
+  # results, does not fail it. The job's summary lists every failure with
+  # its kinds, and every known kind found, with its issue and seeds; the
+  # specs are uploaded as the artifact `fuzz-frontends-RUN`, those of known
+  # kinds as `known-fe-seedN.fren`. A new kind is fixed, or recorded on its
+  # issue and listed in `knownKinds`; CI posts to no issue. `lake test`
   # checks the fixed corpus on every pull request.
   fuzz-frontends:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    concurrency:
+      group: ${{ github.workflow }}-fuzz-frontends-${{ github.ref }}
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -188,21 +227,37 @@ jobs:
         sha: ${{ github.sha }}
     - run: lake build fren_fuzz_frontends
     # Four fuzzers at once, one to a core, two of each generator, each on
-    # 150 seeds of the run's 1000, far from the corpus's.
+    # 150 seeds of the run's 1000, far from the corpus's (a run by hand may
+    # ask for more, which reach into later runs' seeds). Each exits nonzero
+    # on a failure, as above.
     - name: Fuzz the front ends
       env:
         RUN: ${{ github.run_number }}
+        COUNT: ${{ inputs.fuzz-count || 150 }}
       run: |
         set -euo pipefail
         base=$((1000000 + RUN * 1000))
         fuzz() { lake env .lake/build/bin/fren_fuzz_frontends --avoid-known --out fuzz "$@"; }
-        fuzz --count 150 --seed "$base" & a=$!
-        fuzz --count 150 --seed "$((base + 150))" & b=$!
-        fuzz --guards --count 150 --seed "$((base + 300))" & c=$!
-        fuzz --guards --count 150 --seed "$((base + 450))" & d=$!
+        fuzz --count "$COUNT" --seed "$base" & a=$!
+        fuzz --count "$COUNT" --seed "$((base + COUNT))" & b=$!
+        fuzz --guards --count "$COUNT" --seed "$((base + 2 * COUNT))" & c=$!
+        fuzz --guards --count "$COUNT" --seed "$((base + 3 * COUNT))" & d=$!
         code=0
         for pid in "$a" "$b" "$c" "$d"; do wait "$pid" || code=1; done
         exit "$code"
+    - name: Report the findings
+      if: ${{ !cancelled() && hashFiles('fuzz/results-*.jsonl') != '' }}
+      env:
+        RUN: ${{ github.run_number }}
+      run: |
+        set -euo pipefail
+        {
+          echo "### Front-end fuzzer"
+          echo
+          echo "The specs are in the artifact \`fuzz-frontends-$RUN\`."
+          echo
+          lake env .lake/build/bin/fren_fuzz_frontends --report fuzz
+        } >> "$GITHUB_STEP_SUMMARY"
     - if: ${{ !cancelled() }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
@@ -213,8 +268,12 @@ jobs:
   # Every declaration of Fren's code is run by `lake test`, or listed in
   # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
   coverage:
+    if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    concurrency:
+      group: ${{ github.workflow }}-coverage-${{ github.ref }}
+      cancel-in-progress: false
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:

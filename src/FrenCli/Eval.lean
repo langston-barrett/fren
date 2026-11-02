@@ -84,26 +84,6 @@ partial def VTy.subst (args : List VTy) : VTy → VTy
   | .data p as => .data p (as.map (·.subst args))
   | t => t
 
-/-- What matching the type `found` against `decl` gives the abstract types
-of `decl` that a generic function's type parameters are
-(`Fren.Core.typeParamName?`): each with its argument. -/
-partial def VTy.matchAbstract (decl found : VTy) : List (Name × VTy) :=
-  match decl, found with
-  | .abstract p, f => if (Fren.Core.typeParamName? p).isSome then [(p, f)] else []
-  | .set d, .set f | .seq d, .seq f => d.matchAbstract f
-  | .rel a b, .rel c d => a.matchAbstract c ++ b.matchAbstract d
-  | .data _ ds, .data _ fs => (ds.zip fs).flatMap fun (d, f) => d.matchAbstract f
-  | _, _ => []
-
-/-- `t`, with each abstract type of `σ` its argument. -/
-partial def VTy.substAbstract (σ : List (Name × VTy)) : VTy → VTy
-  | .abstract p => (σ.lookup p).getD (.abstract p)
-  | .set t => .set (t.substAbstract σ)
-  | .rel a b => .rel (a.substAbstract σ) (b.substAbstract σ)
-  | .seq t => .seq (t.substAbstract σ)
-  | .data p as => .data p (as.map (·.substAbstract σ))
-  | t => t
-
 /-- What matching the type `f` of an argument against the declared type `d`
 gives the type parameter `k`, as `Fren.Core.matchParam` matches them. -/
 partial def VTy.matchParam (k : Nat) : VTy → VTy → Option VTy
@@ -161,19 +141,23 @@ structure DataDef where
   ctors : Array Ctor
   deriving Inhabited
 
-/-- The type of a construction of the variant or record `idx` of `d` from
-values of the types `tys`: with the type arguments that matching them
-against the declared types gives (`VTy.matchParam`), as the elaborator
-infers them from values that synthesize their types, or with none if
-some type parameter has none. -/
-def DataDef.constructed (d : DataDef) (idx : Nat) (tys : Array VTy) : VTy :=
+/-- How many type parameters `d`'s payloads' or fields' types mention. -/
+def DataDef.nParams (d : DataDef) : Nat :=
   let rec params : VTy → Nat
     | .param k => k + 1
     | .set t | .seq t => params t
     | .rel a b => max (params a) (params b)
     | .data _ as => as.foldl (fun n a => max n (params a)) 0
     | _ => 0
-  let n := d.ctors.foldl (fun n c => c.fields.foldl (fun n (_, t) => max n (params t)) n) 0
+  d.ctors.foldl (fun n c => c.fields.foldl (fun n (_, t) => max n (params t)) n) 0
+
+/-- The type of a construction of the variant or record `idx` of `d` from
+values of the types `tys`: with the type arguments that matching them
+against the declared types gives (`VTy.matchParam`), as the elaborator
+infers them from values that synthesize their types, or with none if
+some type parameter has none. -/
+def DataDef.constructed (d : DataDef) (idx : Nat) (tys : Array VTy) : VTy :=
+  let n := d.nParams
   let fields := ((d.ctors[idx]?.map (·.fields)).getD #[]).map (·.2)
   match (List.range n).mapM fun k => (fields.zip tys).findSome? fun (f, t) => f.matchParam k t with
   | some args => .data d.path (args.map VTy.widen)
@@ -207,14 +191,71 @@ inductive Pat where
   | alts (ps : Array Pat)
   deriving Inhabited
 
+/-- A binding of a binder of a `match` arm, a quantifier or a structural
+recursion's parameter: its name and its value. -/
+abbrev Binding := Name × Option Val
+
+/-- The bindings of the binders in scope, which `Ex.eval` keeps, the
+innermost first: `bind n v outer` binds `n` to `v` within the bindings of
+`outer`. Binding a name allocates one cell, which shares `outer`, so that
+neither binding nor dropping the bindings within copies those around them,
+as an array's would. -/
+inductive Frame where
+  | nil
+  | bind (n : Name) (v : Option Val) (outer : Frame)
+  deriving Inhabited, BEq, Repr
+
+/-- `fr`'s bindings, the innermost first. -/
+def Frame.toList : Frame → List Binding
+  | .nil => []
+  | .bind n v outer => (n, v) :: outer.toList
+
+/-- `fr` with the bindings `bs` within it, the first of `bs` innermost. -/
+def Frame.prepend (bs : List Binding) (fr : Frame) : Frame :=
+  bs.foldr (fun (n, v) fr => .bind n v fr) fr
+
+@[simp] theorem Frame.toList_prepend (bs : List Binding) (fr : Frame) :
+    (fr.prepend bs).toList = bs ++ fr.toList := by
+  induction bs with
+  | nil => rfl
+  | cons b bs ih =>
+    obtain ⟨n, v⟩ := b
+    show Frame.toList (.bind n v (Frame.prepend bs fr)) = _
+    rw [Frame.toList, ih]; rfl
+
+/-- The value of the innermost binding of `n` in `fr`, if it binds `n`:
+`fr.toList.lookup n` (`Frame.find?_eq`). -/
+def Frame.find? (n : Name) : Frame → Option (Option Val)
+  | .nil => none
+  | .bind m v outer => if n == m then some v else outer.find? n
+
+theorem Frame.find?_eq (n : Name) (fr : Frame) : fr.find? n = fr.toList.lookup n := by
+  induction fr with
+  | nil => rfl
+  | bind m v outer ih =>
+    simp only [Frame.find?, Frame.toList, List.lookup]
+    cases n == m <;> simp [ih]
+
+/-- The value of the `k`th binding of `fr` from the innermost, or none if
+it has no more than `k`: `fr.toList[k]?`'s (`Frame.get_eq`). -/
+def Frame.get : Frame → Nat → Option Val
+  | .nil, _ => none
+  | .bind _ v _, 0 => v
+  | .bind _ _ outer, k + 1 => outer.get k
+
+theorem Frame.get_eq (fr : Frame) (k : Nat) : fr.get k = (fr.toList[k]?.bind (·.2)) := by
+  induction fr generalizing k with
+  | nil => rfl
+  | bind m v outer ih => cases k <;> simp [Frame.get, Frame.toList, ih]
+
 /-- `fr`, a frame of bindings (`Ex.eval`), with each binder of `p` bound
 to the part of `v` that it matches, if `p` matches `v`, or `none` if it
-does not. The binders are pushed from the last to the first, so that the
+does not. The binders are bound from the last to the first, so that the
 first is innermost; a variant's payload is matched from its last value to
 its first. -/
-partial def Pat.matchInto : Pat → Val → Array (Name × Option Val) → Option (Array (Name × Option Val))
+partial def Pat.matchInto : Pat → Val → Frame → Option Frame
   | .wild, _, fr => some fr
-  | .bind n, v, fr => some (fr.push (n, some v))
+  | .bind n, v, fr => some (.bind n (some v) fr)
   | .bool b, .bool b', fr => if b == b' then some fr else none
   | .int lo hi, .int i, fr => if lo.all (· ≤ i) && hi.all (i ≤ ·) then some fr else none
   | .str s, .str s', fr => if s == s' then some fr else none
@@ -225,9 +266,51 @@ partial def Pat.matchInto : Pat → Val → Array (Name × Option Val) → Optio
 where
   /-- `fr` with the binders of the first `k` of `ps` bound to the values
   of `vs` that they match, the `k - 1`th first. -/
-  payload (ps : Array Pat) (vs : Array Val) : Nat → Array (Name × Option Val) → Option (Array (Name × Option Val))
+  payload (ps : Array Pat) (vs : Array Val) : Nat → Frame → Option Frame
     | 0, fr => some fr
     | k + 1, fr => do payload ps vs k (← ps[k]!.matchInto vs[k]! fr)
+
+/-- Whether `p` matches `v`: whether `p.matchInto v fr` is a frame,
+whatever `fr` is, decided without binding anything or allocating. That it
+agrees with `Pat.matchInto` is tested, by `matchSplitAgrees` in
+`FrenTest.Semantics`, not proved: this, `Pat.bindInto` and `matchInto` are
+`partial`. -/
+partial def Pat.matches : Pat → Val → Bool
+  | .wild, _ | .bind _, _ => true
+  | .bool b, .bool b' => b == b'
+  | .int lo hi, .int i => lo.all (· ≤ i) && hi.all (i ≤ ·)
+  | .str s, .str s' => s == s'
+  | .ctor idx ps, .ctor _ idx' vs => idx == idx' && ps.size == vs.size && payload ps vs 0
+  | .alts ps, v => ps.any (·.matches v)
+  | _, _ => false
+where
+  /-- Whether each of `ps` from the `k`th matches the value of `vs` at its
+  position. -/
+  payload (ps : Array Pat) (vs : Array Val) (k : Nat) : Bool :=
+    if k < ps.size then ps[k]!.matches vs[k]! && payload ps vs (k + 1) else true
+
+/-- `fr` with each binder of `p` bound to the part of `v` that it matches,
+where `p` matches `v` (`Pat.matches`): the frame that `p.matchInto v fr`
+gives, without the `Option` around it and the frames between. That it
+gives `matchInto`'s frame is tested, by `matchSplitAgrees`, not proved, as
+for `Pat.matches`. -/
+partial def Pat.bindInto (p : @& Pat) (v : @& Val) (fr : Frame) : Frame :=
+  match p, v with
+  | .bind n, v => .bind n (some v) fr
+  | .ctor _ ps, .ctor _ _ vs => payload ps vs ps.size fr
+  | .alts ps, v => match ps.findIdx? (·.matches v) with
+    | some i => ps[i]!.bindInto v fr
+    | none => fr
+  | _, _ => fr
+where
+  /-- `fr` with the binders of the first `k` of `ps` bound, the `k - 1`th
+  first, as `Pat.matchInto.payload` binds them. Its arguments, as
+  `bindInto`'s pattern and value, are borrowed (`@&`), so that binding
+  counts no reference to the parts of either but the values bound. -/
+  payload (ps : @& Array Pat) (vs : @& Array Val) (k : Nat) (fr : Frame) : Frame :=
+    match k with
+    | 0 => fr
+    | k + 1 => payload ps vs k (ps[k]!.bindInto vs[k]! fr)
 
 /-- One more than the greatest index of a variant that `p`, or an
 alternative of it, is, or 0 if it is none. -/
@@ -481,9 +564,16 @@ structure Spec where
   `funs`, named after the function and its type arguments, as the solver
   names it (`Fren.Core.instanceText`). -/
   generics : Array (Name × Array Name × Array VTy × VTy) := #[]
-  /-- The generic function of each such instance, whose `results` and
-  `contracts` are the instance's. -/
+  /-- Each generic defined function's type parameters, with or without
+  function parameters, for the instance that an application applies
+  (`fnItem`). -/
+  defGenerics : NameMap (Array Name) := {}
+  /-- The generic function of each such instance, whose `results` are the
+  instance's. The instance's contract, at its type arguments, is in
+  `contracts` under the instance's own name (`fnItem`). -/
   instanceOf : NameMap Name := {}
+  /-- The type arguments of each such instance, by its name. -/
+  instanceArgs : NameMap (Array Fren.Core.Ty) := {}
   deriving Inhabited
 
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
@@ -559,9 +649,17 @@ instance : Inhabited Interp := ⟨{}⟩
 abbrev Look := Name → Option Val
 
 
+/-- `some (.bool true)`, allocated once. -/
+def trueV : Option Val := some (.bool true)
+
+/-- `some (.bool false)`, allocated once. -/
+def falseV : Option Val := some (.bool false)
+
 /-- `some (.bool b)`, without allocating it: each of the two values is a
-closed term, which the compiler allocates once. -/
-@[inline] def boolV (b : Bool) : Option Val := if b then some (.bool true) else some (.bool false)
+constant (`trueV`, `falseV`). Written as the two closed terms
+themselves, the compiler would join the two branches into one, which
+allocates `some (.bool b)`. -/
+@[inline] def boolV (b : Bool) : Option Val := if b then trueV else falseV
 
 /-- A value's truth, unknown unless it is a `Bool`'s. -/
 @[inline] def truthOf : Option Val → Option Bool
@@ -574,6 +672,9 @@ it (`boolV`). -/
   | some b => boolV b
   | none => none
 
+theorem truthV_eq_map (o : Option Bool) : truthV o = o.map .bool := by
+  rcases o with _ | _ | _ <;> rfl
+
 /-- The strong Kleene connectives, shared with the hosted front end
 (`Core.Enumeration.andTruth`, `check::partial_and`). -/
 def kleeneAnd (a b : Option Val) : Option Val := truthV (Fren.Core.Enumeration.andTruth (truthOf a) (truthOf b))
@@ -581,6 +682,50 @@ def kleeneAnd (a b : Option Val) : Option Val := truthV (Fren.Core.Enumeration.a
 def kleeneOr (a b : Option Val) : Option Val := truthV (Fren.Core.Enumeration.orTruth (truthOf a) (truthOf b))
 
 def notV (a : Option Val) : Option Val := truthV (Fren.Core.Enumeration.notTruth (truthOf a))
+
+/-! The connectives as they run: by cases on the values, without the
+truths between, each of which `truthOf` would allocate. -/
+
+def kleeneAndImpl : Option Val → Option Val → Option Val
+  | some (.bool false), _ => boolV false
+  | _, some (.bool false) => boolV false
+  | some (.bool true), some (.bool true) => boolV true
+  | _, _ => none
+
+def kleeneOrImpl : Option Val → Option Val → Option Val
+  | some (.bool true), _ => boolV true
+  | _, some (.bool true) => boolV true
+  | some (.bool false), some (.bool false) => boolV false
+  | _, _ => none
+
+def notVImpl : Option Val → Option Val
+  | some (.bool b) => boolV !b
+  | _ => none
+
+/-- A value, as the connectives read it: unknown, `true`, `false`, or of
+another type. -/
+private theorem kleeneCases (a : Option Val) :
+    a = none ∨ a = some (.bool true) ∨ a = some (.bool false) ∨
+      (truthOf a = none ∧ ∀ b, a ≠ some (.bool b)) := by
+  rcases a with _ | ⟨b | _ | _ | _ | _ | _ | _ | _⟩ <;> simp [truthOf]
+
+@[csimp] theorem kleeneAnd_eq_impl : @kleeneAnd = @kleeneAndImpl := by
+  funext a b
+  rcases kleeneCases a with rfl | rfl | rfl | ⟨ha, ha'⟩ <;>
+    rcases kleeneCases b with rfl | rfl | rfl | ⟨hb, hb'⟩ <;>
+    simp_all [kleeneAnd, kleeneAndImpl, truthOf, truthV, boolV, trueV, falseV, Fren.Core.Enumeration.andTruth]
+
+@[csimp] theorem kleeneOr_eq_impl : @kleeneOr = @kleeneOrImpl := by
+  funext a b
+  rcases kleeneCases a with rfl | rfl | rfl | ⟨ha, ha'⟩ <;>
+    rcases kleeneCases b with rfl | rfl | rfl | ⟨hb, hb'⟩ <;>
+    simp_all [kleeneOr, kleeneOrImpl, truthOf, truthV, boolV, trueV, falseV, Fren.Core.Enumeration.orTruth,
+      Fren.Core.Enumeration.andTruth, Fren.Core.Enumeration.notTruth]
+
+@[csimp] theorem notV_eq_impl : @notV = @notVImpl := by
+  funext a
+  rcases kleeneCases a with rfl | rfl | rfl | ⟨ha, ha'⟩ <;>
+    simp_all [notV, notVImpl, truthOf, truthV, boolV, trueV, falseV, Fren.Core.Enumeration.notTruth]
 
 @[inline] def intOp (f : Int → Int → Val) : Option Val → Option Val → Option Val
   | some (.int x), some (.int y) => some (f x y)
@@ -681,9 +826,15 @@ partial def cmpV : Val → Val → Option Ordering
     return Fren.Core.lexCompare (← (xs.zip ys).toList.mapM fun (x, y) => cmpV x y)
   | _, _ => none
 
-/-- An ordering, of values of an ordered type (`cmpV`). -/
+/-- An ordering, of values of an ordered type (`cmpV`). Two `Int`s are
+compared at once, as `cmpV` compares them, without the `Ordering` that it
+would allocate: the fast path is `cmpV`'s first clause, so the two agree
+by inspection; that is not proved, since `cmpV` is `partial`. -/
 @[inline] def ordV (f : Ordering → Bool) : Option Val → Option Val → Option Val
-  | some x, some y => (cmpV x y).bind (boolV ∘ f)
+  | some (.int x), some (.int y) => boolV (f (compare x y))
+  | some x, some y => match cmpV x y with
+    | some o => boolV (f o)
+    | none => none
   | _, _ => none
 
 /-- The pairs `(a, c)` for each `(a, b)` in `r` and `(b, c)` in `q`. -/
@@ -768,20 +919,6 @@ partial def typeHolds (shapes : Name → Option Fren.Core.DataShape) (t : Fren.C
       ((shapes p).bind (·.inst t.parts |>.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
     | _, _ => true
 
-/-- Whether checking that a value is of the declared type `t` evaluates
-no invariant (`Ex.eval.typeV`): `t` has none, nor do the types within it,
-nor, through `shapes`, the types of its records', enumerations' and
-newtypes' parts. `seen` is the types already being looked through, which
-a recursive type reaches again. Where it holds, the check reads none of
-the interpretation's definitions (`Interp.defs`), so `typeHolds` decides
-it. -/
-partial def _root_.Fren.Core.PTy.invariantFree (shapes : Name → Option Fren.Core.DataShape) (t : Fren.Core.PTy)
-    (seen : List Name := []) : Bool :=
-  t.invariants.isEmpty && t.elems.all (·.invariantFree shapes seen) && match t.ty with
-    | .record p _ | .enum p _ | .newtype p _ => seen.contains p ||
-      ((shapes p).map fun d => (d.inst t.parts).parts.all (·.all (·.invariantFree shapes (p :: seen)))).getD true
-    | _ => true
-
 /-- `Fren.Core.firstCase xs.toList take`, the case of `xs` that is taken,
 read from the array, from case `i` (`firstCaseIn_eq`): `take` of each
 case in turn, until one is taken or whether one is is unknown. -/
@@ -810,6 +947,79 @@ theorem firstCaseIn_eq (xs : Array α) (take : α → Option (Option β)) (i : N
     rw [firstCaseIn, dif_neg h, List.drop_eq_nil_of_le (by simpa using h)]
     rfl
 
+/-- What `firstCaseIn xs take i` gives, passed on (`firstCaseThen_eq`):
+`found r` of the case `r` that is taken, `otherwise ()` where none is,
+and nothing where whether one is is unknown. With `take` and `found`
+specialized into it, the case that is taken is passed on without being
+allocated. -/
+@[specialize] def firstCaseThen (xs : Array α) (take : α → Option (Option β)) (found : β → Option γ)
+    (otherwise : Unit → Option γ) (i : Nat := 0) : Option γ :=
+  if h : i < xs.size then
+    match take xs[i] with
+    | none => none
+    | some none => firstCaseThen xs take found otherwise (i + 1)
+    | some (some r) => found r
+  else otherwise ()
+termination_by xs.size - i
+
+theorem firstCaseThen_eq (xs : Array α) (take : α → Option (Option β)) (found : β → Option γ)
+    (otherwise : Unit → Option γ) (i : Nat) :
+    firstCaseThen xs take found otherwise i = match firstCaseIn xs take i with
+      | none => none
+      | some none => otherwise ()
+      | some (some r) => found r := by
+  induction h : xs.size - i generalizing i with
+  | zero =>
+    have hi : ¬ i < xs.size := by omega
+    rw [firstCaseThen, dif_neg hi, firstCaseIn, dif_neg hi]
+  | succ n ih =>
+    have hi : i < xs.size := by omega
+    rw [firstCaseThen, dif_pos hi, firstCaseIn, dif_pos hi]
+    cases take xs[i] with
+    | none => rfl
+    | some r => cases r with
+      | none => exact ih (i + 1) (by omega)
+      | some r => rfl
+
+/-- `some true`, allocated once (as `trueV`). -/
+def someTrue : Option Bool := some true
+
+/-- `some false`, allocated once. -/
+def someFalse : Option Bool := some false
+
+/-- `some b`, without allocating it, as `boolV`. -/
+@[inline] def someBool (b : Bool) : Option Bool := if b then someTrue else someFalse
+
+theorem someBool_eq (b : Bool) : someBool b = some b := by cases b <;> rfl
+
+/-- `Fren.Core.Enumeration.quantifiedTruth exact universal body
+(vs.toList.drop i)`, the truth of a quantifier, read from the array, from
+its `i`th value (`quantTruthIn_eq`): without the list of its values, nor
+the truths that it gives. -/
+def quantTruthIn {α : Type} (exact universal : Bool) (body : α → Option Bool) (vs : Array α) (i : Nat := 0) :
+    Option Bool :=
+  if h : i < vs.size then
+    match body vs[i] with
+    | some b => if b != universal then someBool b else quantTruthIn exact universal body vs (i + 1)
+    | none => if quantTruthIn exact universal body vs (i + 1) == some !universal then someBool !universal else none
+  else if exact then someBool universal else none
+termination_by vs.size - i
+
+theorem quantTruthIn_eq {α : Type} (exact universal : Bool) (body : α → Option Bool) (vs : Array α) (i : Nat) :
+    quantTruthIn exact universal body vs i =
+      Fren.Core.Enumeration.quantifiedTruth exact universal body (vs.toList.drop i) := by
+  induction h : vs.size - i generalizing i with
+  | zero =>
+    have hi : ¬ i < vs.size := by omega
+    rw [quantTruthIn, dif_neg hi, List.drop_eq_nil_of_le (by simp; omega)]
+    cases exact <;> simp [Fren.Core.Enumeration.quantifiedTruth, someBool_eq]
+  | succ n ih =>
+    have hi : i < vs.size := by omega
+    rw [quantTruthIn, dif_pos hi, List.drop_eq_getElem_cons (by simpa using hi)]
+    have ih := ih (i + 1) (by omega)
+    simp only [Fren.Core.Enumeration.quantifiedTruth, ih, Array.getElem_toList]
+    cases body vs[i] <;> simp [someBool_eq]
+
 /-- Leaving out cases that are not taken does not change which case is:
 `Ex.dispatch` tries only the arms of a `match` whose patterns may match
 the value. This proves only the filtering step. Its premise, that an arm
@@ -828,10 +1038,6 @@ theorem firstCase_filter (xs : List α) (take : α → Option (Option β)) (keep
     · simp [List.filter, hk, ih, Fren.Core.firstCase, h c List.mem_cons_self hk]
     · simp only [List.filter, hk, Fren.Core.firstCase, ih]
 
-/-- A binding of a binder of a `match` arm or a quantifier, in the frame
-that `Ex.eval` keeps of them, the innermost last. -/
-abbrev Binding := Name × Option Val
-
 /-- `e`, or, if it is a defined variable, its definition, through those
 of the defined variables it is, `fuel` deep (`Interp.defined`): the term
 that the Lean-hosted front end sees, with definitions substituted. -/
@@ -847,6 +1053,33 @@ def Ex.isInt (k : Int) (defined : Name → Option Ex) (fuel : Nat) (e : Ex) : Bo
   match (e.unfoldDefined defined fuel).1 with
   | .lit (.int i) | .known (some (.int i)) => i == k
   | _ => false
+
+/-- `Ex.isInt` as it runs, at each evaluation of a comparison
+(`Ex.countOfOne?`): without the pair, and the variable, that
+`Ex.unfoldDefined` allocates. -/
+def Ex.isIntImpl (k : Int) (defined : Name → Option Ex) : Nat → Ex → Bool
+  | fuel + 1, .var n => match defined n with
+    | some d => Ex.isIntImpl k defined fuel d
+    | none => false
+  | _, .lit (.int i) => i == k
+  | _, .known (some (.int i)) => i == k
+  | _, _ => false
+
+@[csimp] theorem Ex.isInt_eq_impl : @Ex.isInt = @Ex.isIntImpl := by
+  funext k defined fuel e
+  induction fuel generalizing e with
+  | zero =>
+    cases e <;> simp only [Ex.isInt, Ex.isIntImpl, Ex.unfoldDefined]
+    case lit v => cases v <;> rfl
+    case known v => rcases v with _ | ⟨_ | _ | _ | _ | _ | _ | _ | _⟩ <;> rfl
+  | succ n ih =>
+    cases e <;> simp only [Ex.isInt, Ex.isIntImpl, Ex.unfoldDefined]
+    case lit v => cases v <;> rfl
+    case known v => rcases v with _ | ⟨_ | _ | _ | _ | _ | _ | _ | _⟩ <;> rfl
+    case var x =>
+      cases defined x
+      · rfl
+      · rename_i d; simp only [← ih d, Ex.isInt]
 
 /-- The conditions of `e`, a sum of `if c then 1 else 0` and of integer
 literals and constants that are not negative, if it is one, each such
@@ -880,6 +1113,27 @@ def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : 
   | some c => if b.isInt 1 defined fuel then (Ex.indicators? defined fuel false a).map (c, ·) else none
   | none => none
 
+/-- Whether `e` may be the integer literal 1 (`Ex.isInt`): only the literal
+or known value 1, or a variable, which may be defined as one, may be. Unless it may be, a
+comparison with it is no count (`Ex.countOfOne?_of_not_mayBeOne`), which
+evaluation then does not look for. -/
+@[inline] def Ex.mayBeOne : Ex → Bool
+  | .lit (.int 1) | .known (some (.int 1)) | .var _ => true
+  | _ => false
+
+theorem Ex.countOfOne?_of_not_mayBeOne (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : Ex)
+    (h : b.mayBeOne = false) : Ex.countOfOne? defined fuel op a b = none := by
+  have : b.isInt 1 defined fuel = false := by
+    rw [Ex.isInt_eq_impl]
+    unfold Ex.mayBeOne at h
+    split at h
+    · simp at h
+    · simp at h
+    · simp at h
+    · rename_i hne1 hne2 hne3
+      cases fuel <;> unfold Ex.isIntImpl <;> split <;> simp_all
+  unfold Ex.countOfOne?; split <;> simp_all
+
 /-- `es.mapM f`: the values of `es` in order, or none at the first that
 has none. `Array.mapM` writes each value over its element of `es`, so,
 where `es` is shared, as an expression's parts are, it first copies `es`,
@@ -893,14 +1147,95 @@ theorem evalEach_eq_mapM (f : Ex → Option Val) (es : Array Ex) : evalEach f es
   simp only [evalEach, Array.mapM_eq_foldlM, Array.mkEmpty_eq]
   congr 1; funext vs e; cases f e <;> rfl
 
+/-- `fr` with the first `k` of `ps` bound, the `k - 1`th first, so that
+the first is innermost, each to `get` of its position. -/
+def frameFrom (ps : Array Name) (get : Nat → Option Val) : Nat → Frame → Frame
+  | 0, fr => fr
+  | k + 1, fr => frameFrom ps get k (.bind ps[k]! (get k) fr)
+
+theorem frameFrom_congr (ps : Array Name) (g g' : Nat → Option Val) (k : Nat) (fr : Frame)
+    (h : ∀ i < k, g i = g' i) : frameFrom ps g k fr = frameFrom ps g' k fr := by
+  induction k generalizing fr with
+  | zero => rfl
+  | succ k ih =>
+    simp only [frameFrom, h k (by omega)]
+    exact ih _ fun i hi => h i (by omega)
+
 /-- A frame (`Ex.eval`) that binds each of `ps` to the value of `vs` at
-its position, the first innermost: what pushing the pairs of `ps.zip vs`
-from the last to the first gives, without the pairs. -/
-def paramFrame (ps : Array Name) (vs : Array Val) : Array Binding := Id.run do
-  let n := min ps.size vs.size
-  let mut fr := Array.mkEmpty n
-  for k in [0:n] do fr := fr.push (ps[n - 1 - k]!, some vs[n - 1 - k]!)
-  return fr
+its position, the first innermost: the pairs of `ps.zip vs`
+(`paramFrame_eq`). -/
+def paramFrame (ps : Array Name) (vs : Array Val) : Frame :=
+  frameFrom ps (fun i => some vs[i]!) (min ps.size vs.size) .nil
+
+theorem frameFrom_eq (ps : Array Name) (g : Nat → Option Val) (k : Nat) (fr : Frame) :
+    frameFrom ps g k fr = fr.prepend ((List.range k).map fun i => (ps[i]!, g i)) := by
+  induction k generalizing fr with
+  | zero => rfl
+  | succ k ih => simp [frameFrom, ih, List.range_succ, Frame.prepend, List.foldr_append]
+
+/-- `paramFrame` is what its docstring says: the pairs of `ps.zip vs`,
+each value in a `some`, the first innermost. -/
+theorem paramFrame_eq (ps : Array Name) (vs : Array Val) :
+    (paramFrame ps vs).toList = (ps.zip vs).toList.map fun (p, v) => (p, some v) := by
+  rw [paramFrame, frameFrom_eq, Frame.toList_prepend]
+  apply List.ext_getElem
+  · simp [Frame.toList]
+  · intro i h1 h2
+    simp at h1 h2
+    have hp : i < ps.size := by omega
+    have hv : i < vs.size := by omega
+    simp [Frame.toList, getElem!_pos, hp, hv]
+
+/-- The values of `es`, in order, each as `f` gives it, or none at the
+first that has none: `evalEach`'s, each still in the `some` that `f`
+gave it in (`evalOpts_eq`), rather than taken out of it. -/
+@[inline] def evalOpts (f : Ex → Option Val) (es : Array Ex) : Option (Array (Option Val)) :=
+  es.foldlM (init := Array.mkEmpty es.size) fun os e =>
+    let o := f e
+    match o with
+    | some _ => some (os.push o)
+    | none => none
+
+theorem evalOpts_eq (f : Ex → Option Val) (es : Array Ex) :
+    evalOpts f es = (evalEach f es).map (·.map some) := by
+  rw [evalEach_eq_mapM]
+  simp only [evalOpts, Array.mapM_eq_foldlM, Array.mkEmpty_eq]
+  suffices h : ∀ (l : List Ex) (acc : Array Val),
+      List.foldlM (fun os e => match f e with | some _ => some (os.push (f e)) | none => none) (acc.map some) l =
+        (List.foldlM (fun vs e => (fun x => vs.push x) <$> f e) acc l).map (·.map some) by
+    simpa using h es.toList #[]
+  intro l
+  induction l with
+  | nil => intro acc; simp
+  | cons e l ih =>
+    intro acc
+    cases hf : f e with
+    | none => simp [hf]
+    | some v =>
+      simp only [List.foldlM_cons, hf]
+      have := ih (acc.push v)
+      simp only [Array.map_push] at this
+      simpa [hf] using this
+
+/-- The frame of an application of a structural recursion with the
+parameters `ps` to `args`, at the values that `f` gives them, or none if
+one has none: `paramFrame` of `evalEach`'s values (`argFrame_eq`), with
+each value in the `some` that `f` gave it in, which is not allocated
+again. -/
+@[inline] def argFrame (f : Ex → Option Val) (ps : Array Name) (args : Array Ex) : Option Frame :=
+  (evalOpts f args).map fun os => frameFrom ps (fun i => os[i]!) (min ps.size os.size) .nil
+
+theorem argFrame_eq (f : Ex → Option Val) (ps : Array Name) (args : Array Ex) :
+    argFrame f ps args = (evalEach f args).map (paramFrame ps) := by
+  rw [argFrame, evalOpts_eq]
+  cases evalEach f args with
+  | none => rfl
+  | some vs =>
+    simp only [Option.map_some, paramFrame, Array.size_map, Option.some.injEq]
+    apply frameFrom_congr
+    intro i hi
+    have : i < vs.size := by omega
+    simp [this]
 
 /-- How many steps of evaluation `Ex.eval` may take, one within another.
 A step is a unit of the semantics, not of the evaluator: each application
@@ -925,9 +1260,9 @@ the expression evaluated, with the definitions that it reads
 evaluation runs out of it rests on that, and on no source being anywhere
 near this deep, and is not tested. One that did would have an unknown
 value (`outOfFuel`), and its test would count as one without a value
-(`F0617`). In practice the native stack overflows long before `2^20`
-nested calls, so past any depth that a source reaches, evaluation
-crashes rather than runs out. -/
+(`F0617`). Long before the bound, at a depth that no source reaches,
+the native stack overflows, so evaluation crashes rather than leave a
+value unknown; that is not tested either. -/
 def evalDepth : Nat := 1 <<< 20
 
 /-- What evaluation gives when it runs out of fuel (`evalFuel`): an
@@ -943,6 +1278,13 @@ the check gets `F0617` (`eval::unreached`); and a model that
 evaluation cannot decide is not confirmed (`eval::confirm`), so a check
 that applies a recursion is inconclusive (`F0450`). -/
 @[noinline] def outOfFuel [Inhabited α] (_ : Unit) : α := panic! "Ex.eval ran out of fuel"
+
+/-- `x`, the value of an evaluation. A call of `Ex.eval` in tail position,
+with an argument that the caller made, would make the compiler take that
+parameter over, to keep the tail call. Passed through
+`evalResult`, the call is not in tail position. `FrenTest.Borrowing`
+checks, from the IR, that the parameters stay borrowed. -/
+@[noinline] def evalResult (x : Option Val) : Option Val := x
 
 /-- The value of an expression, as far as it is known: each variable as
 `look` gives it, each binder of an enclosing `match` arm or quantifier as
@@ -963,9 +1305,8 @@ recursion's body or a check of an invariant, spends a unit of `fuel`
 (`evalFuel`), and each call into an expression's parts, between two
 steps, a unit of `depth` (`evalDepth`), but not a quantifier's next bound
 name, and without either its value is `outOfFuel`'s. -/
-def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := [])
-    (slots : @& Array (Option Val) := #[]) (frame : @& Array Binding := #[])
-    (memos : @& Array (Thunk (Option Val)) := #[]) (fuel : Nat := evalFuel) (depth : Nat := evalDepth) (e : @& Ex) : Option Val :=
+def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val))
+    (frame : @& Frame) (memos : @& Array (Thunk (Option Val))) (fuel depth : Nat) (e : @& Ex) : Option Val :=
   match depth with
   | 0 => outOfFuel ()
   | depth + 1 =>
@@ -973,82 +1314,85 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
   | .lit v => some v
   | .var n => look n
   | .slot k => if h : k < slots.size then slots[k] else none
-  | .bound n => match frame.findRev? (·.1 == n) with
-    | some (_, v) => v
+  | .bound n => match frame.find? n with
+    | some v => v
     | none => locals.lookup n
-  | .boundAt k => if k < frame.size then frame[frame.size - 1 - k]!.2 else none
+  | .boundAt k => frame.get k
   | .shared k => if k < memos.size then memos[memos.size - 1 - k]!.get else none
   | .known v => v
   | .memo lets e =>
     -- The first of `lets` innermost, as `.shared 0`.
-    let ms := lets.foldr (init := memos) fun x ms => ms.push (Thunk.mk fun _ => x.eval I look locals slots frame memos fuel depth)
-    e.eval I look locals slots frame ms fuel depth
-  | .not a => notV (a.eval I look locals slots frame memos fuel depth)
-  | .neg a => match a.eval I look locals slots frame memos fuel depth with
+    let ms := lets.foldr (init := memos) fun x ms =>
+      ms.push (Thunk.mk fun _ => x.evalIn I look locals slots frame memos fuel depth)
+    evalResult (e.evalIn I look locals slots frame ms fuel depth)
+  | .not a => notV (a.evalIn I look locals slots frame memos fuel depth)
+  | .neg a => match a.evalIn I look locals slots frame memos fuel depth with
     | some (.int x) => some (.int (-x))
     | _ => none
   -- Membership in a set literal, without building the set, which does
   -- not change which values are members.
   | .bin .member a (.setLit es) => do
-    let x ← a.eval I look locals slots frame memos fuel depth
-    boolV ((← evalEach (·.eval I look locals slots frame memos fuel depth) es).contains x)
+    let x ← a.evalIn I look locals slots frame memos fuel depth
+    boolV ((← evalEach (·.evalIn I look locals slots frame memos fuel depth) es).contains x)
   -- `and`, `or` and `when` evaluate their second operand only when the
   -- first does not decide them, which gives the same value: `kleeneAnd`
   -- is `false` whatever its second operand when its first is `false`, and
   -- `kleeneOr` likewise `true`. Evaluation has no other effect.
-  | .bin .and a b => match a.eval I look locals slots frame memos fuel depth with
+  | .bin .and a b => match a.evalIn I look locals slots frame memos fuel depth with
     | some (.bool false) => some (.bool false)
-    | x => kleeneAnd x (b.eval I look locals slots frame memos fuel depth)
-  | .bin .or a b => match a.eval I look locals slots frame memos fuel depth with
+    | x => kleeneAnd x (b.evalIn I look locals slots frame memos fuel depth)
+  | .bin .or a b => match a.evalIn I look locals slots frame memos fuel depth with
     | some (.bool true) => some (.bool true)
-    | x => kleeneOr x (b.eval I look locals slots frame memos fuel depth)
+    | x => kleeneOr x (b.evalIn I look locals slots frame memos fuel depth)
   | .bin op a b =>
     -- A count written out, as `exactly_one?` and `at_most_one?` are
     -- defined (`Reqs/Lang/Expressions#cardinality`), is known where they
     -- are, as the Lean-hosted front end, which sees the same term for
     -- both, has it (`Ex.countOfOne?`).
-    match Ex.countOfOne? I.defined I.definedCount op a b with
+    match if b.mayBeOne then Ex.countOfOne? I.defined I.definedCount op a b else none with
     | some (c, conds) =>
-      (c.holds? (conds.map fun (x, inDef) =>
-        match if inDef then x.eval I look [] #[] #[] #[] fuel depth else x.eval I look locals slots frame memos fuel depth with
-        | some (.bool b) => some b
-        | _ => none)).map .bool
-    | none => binV op (a.eval I look locals slots frame memos fuel depth) (b.eval I look locals slots frame memos fuel depth)
+      truthV (c.holds? (conds.map fun (x, inDef) =>
+        match if inDef then x.evalIn I look [] #[] .nil #[] fuel depth else x.evalIn I look locals slots frame memos fuel depth with
+        | some (.bool b) => someBool b
+        | _ => none))
+    | none => binV op (a.evalIn I look locals slots frame memos fuel depth) (b.evalIn I look locals slots frame memos fuel depth)
   | .when negated c d =>
-    let c := c.eval I look locals slots frame memos fuel depth
+    let c := c.evalIn I look locals slots frame memos fuel depth
     match notV (if negated then notV c else c) with
     | some (.bool true) => some (.bool true)
-    | x => kleeneOr x (d.eval I look locals slots frame memos fuel depth)
-  | .ite c a b => match c.eval I look locals slots frame memos fuel depth with
-    | some (.bool true) => a.eval I look locals slots frame memos fuel depth
-    | some (.bool false) => b.eval I look locals slots frame memos fuel depth
+    | x => kleeneOr x (d.evalIn I look locals slots frame memos fuel depth)
+  | .ite c a b => match c.evalIn I look locals slots frame memos fuel depth with
+    | some (.bool true) => a.evalIn I look locals slots frame memos fuel depth
+    | some (.bool false) => b.evalIn I look locals slots frame memos fuel depth
     | _ =>
-      let x := a.eval I look locals slots frame memos fuel depth
-      if x.isSome && x == b.eval I look locals slots frame memos fuel depth then x else none
-  | .app f args => do
-    let vs ← evalEach (·.eval I look locals slots frame memos fuel depth) args
+      let x := a.evalIn I look locals slots frame memos fuel depth
+      if x.isSome && x == b.evalIn I look locals slots frame memos fuel depth then x else none
+  | .app f args =>
     -- A structural recursion's body, at the arguments' values, which ends
     -- (`Reqs/Lang/Recursion#meaning`).
     -- Its parameters bound in a frame of their own, the first innermost,
-    -- which gives each the value that `List.lookup` of them gives.
+    -- which gives each the value that `List.lookup` of them gives
+    -- (`paramFrame`, `argFrame_eq`).
     match I.recDefs f with
     -- An application of it is a step of evaluation (`evalFuel`), and
     -- its body has a depth of its own (`evalDepth`).
-    | some (ps, body) => match fuel with
+    | some (ps, body) => do
+      let fr ← argFrame (·.evalIn I look locals slots frame memos fuel depth) ps args
+      match fuel with
       | 0 => outOfFuel ()
-      | fuel + 1 => body.eval I look [] #[] (paramFrame ps vs) #[] fuel evalDepth
-    | none => I.fn f vs
-  | .pre _ _ _ e => e.eval I look locals slots frame memos fuel depth
+      | fuel + 1 => evalResult (body.evalIn I look [] #[] fr #[] fuel evalDepth)
+    | none => do I.fn f (← evalEach (·.evalIn I look locals slots frame memos fuel depth) args)
+  | .pre _ _ _ e => e.evalIn I look locals slots frame memos fuel depth
   -- Known once the unknown arguments cannot change it: with two `true`,
   -- whatever the rest are (`Cardinality.holds?`).
   | .cardinality c args =>
-    let vs := args.toList.map fun a => match a.eval I look locals slots frame memos fuel depth with
-      | some (.bool b) => some b
+    let vs := args.toList.map fun a => match a.evalIn I look locals slots frame memos fuel depth with
+      | some (.bool b) => someBool b
       | _ => none
-    (c.holds? vs).map .bool
+    truthV (c.holds? vs)
   | .method m recv args => do
-    let r ← recv.eval I look locals slots frame memos fuel depth
-    let args ← evalEach (·.eval I look locals slots frame memos fuel depth) args
+    let r ← recv.evalIn I look locals slots frame memos fuel depth
+    let args ← evalEach (·.evalIn I look locals slots frame memos fuel depth) args
     -- A relation's methods.
     if let .set ps := r then
       let fsts := ps.filterMap fun | .pair a _ => some a | _ => none
@@ -1118,96 +1462,98 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
       | .replaceAll => .str (Fren.Str.replaceAll s (str 0) (str 1))
       | _ => .int 0
   | .matches recv p re => do
-    let .str s ← recv.eval I look locals slots frame memos fuel depth | none
+    let .str s ← recv.evalIn I look locals slots frame memos fuel depth | none
     -- `re` is `p`'s parse, so a remembered answer is `re`'s.
     match I.matchMemo p s with
     | some b => boolV b
     | none => boolV (re.matches s)
-  | .pair a b => do return .pair (← a.eval I look locals slots frame memos fuel depth) (← b.eval I look locals slots frame memos fuel depth)
-  | .seqLit es => do return .seq (← evalEach (·.eval I look locals slots frame memos fuel depth) es)
+  | .pair a b => do return .pair (← a.evalIn I look locals slots frame memos fuel depth) (← b.evalIn I look locals slots frame memos fuel depth)
+  | .seqLit es => do return .seq (← evalEach (·.evalIn I look locals slots frame memos fuel depth) es)
   -- Out of range, an index is part of the interpretation, which may
   -- leave it unknown.
   | .index q i _ u => do
-    let .seq es ← q.eval I look locals slots frame memos fuel depth | none
-    let .int k ← i.eval I look locals slots frame memos fuel depth | none
+    let .seq es ← q.evalIn I look locals slots frame memos fuel depth | none
+    let .int k ← i.evalIn I look locals slots frame memos fuel depth | none
     if 0 ≤ k && k < es.size then es[k.toNat]? else I.outOfRange u
-  | .ctor ty idx args => do return .ctor ty idx (← evalEach (·.eval I look locals slots frame memos fuel depth) args)
-  | .setLit es => do return Val.setOf (← evalEach (·.eval I look locals slots frame memos fuel depth) es)
+  | .ctor ty idx args => do return .ctor ty idx (← evalEach (·.evalIn I look locals slots frame memos fuel depth) args)
+  | .setLit es => do return Val.setOf (← evalEach (·.evalIn I look locals slots frame memos fuel depth) es)
   | .card s => do
-    let .set ms ← s.eval I look locals slots frame memos fuel depth | none
+    let .set ms ← s.evalIn I look locals slots frame memos fuel depth | none
     return .int ms.size
-  | .field e idx => match e.eval I look locals slots frame memos fuel depth with
+  | .field e idx => match e.evalIn I look locals slots frame memos fuel depth with
     | some (.ctor _ _ vs) => vs[idx]?
     | _ => none
   | .update e fs => do
-    let .ctor ty idx vs ← e.eval I look locals slots frame memos fuel depth | none
+    let .ctor ty idx vs ← e.evalIn I look locals slots frame memos fuel depth | none
     let mut vs := vs
-    for (k, x) in fs do vs := vs.set! k (← x.eval I look locals slots frame memos fuel depth)
+    for (k, x) in fs do vs := vs.set! k (← x.evalIn I look locals slots frame memos fuel depth)
     return .ctor ty idx vs
   -- The first row whose condition holds; where none does, the
   -- interpretation's unspecified value of its type.
   -- As the arms `_ if C => v` and `_ => v` (`Fren.Core.firstCase`).
-  | .table _ rows unspec? => do
-    let taken? ← firstCaseIn rows fun (_, c?, v) => match c? with
+  -- `firstCaseIn`'s case, passed on (`firstCaseThen_eq`).
+  | .table _ rows unspec? =>
+    firstCaseThen rows (fun (_, c?, v) => match c? with
       | none => some (some v)
-      | some c => match c.eval I look locals slots frame memos fuel depth with
+      | some c => match c.evalIn I look locals slots frame memos fuel depth with
         | some (.bool true) => some (some v)
         | some (.bool false) => some none
-        | _ => none
-    match taken? with
-    | some v => v.eval I look locals slots frame memos fuel depth
-    | none => I.fn (← unspec?) #[]
+        | _ => none)
+      (fun v => v.evalIn I look locals slots frame memos fuel depth)
+      fun _ => do I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
-  | .const _ e => e.eval I (fun _ => none) [] #[] #[] #[] fuel depth
-  | .typed t _ e => return .bool (← typeV I fuel depth t (← e.eval I look locals slots frame memos fuel depth))
+  | .const _ e => evalResult (e.evalIn I (fun _ => none) [] #[] .nil #[] fuel depth)
+  | .typed t _ e => do truthV (typeV I fuel depth t (← e.evalIn I look locals slots frame memos fuel depth))
   -- The first arm whose pattern matches and whose guard holds; where none
   -- is taken, the interpretation's unspecified value of its type.
   -- The first arm that is taken: whose pattern matches and whose guard
   -- holds (`Fren.Core.firstCase`, `lang::guarded_match`).
   | .match e arms _ _ unspec? _ => do
-    let v ← e.eval I look locals slots frame memos fuel depth
-    let taken? ← firstCaseIn arms fun (p, g?, body) => match p.matchInto v frame with
-      | none => some none
+    let v ← e.evalIn I look locals slots frame memos fuel depth
+    -- Whether the pattern matches, decided first, so that an arm that
+    -- does not match binds nothing (`Pat.matches`, `Pat.bindInto`).
+    firstCaseThen arms (fun (p, g?, body) => match p.matches v with
+      | false => some none
       -- The binders in the frame, the first innermost.
-      | some fr =>
+      | true =>
+        let fr := p.bindInto v frame
         match g? with
         | none => some (some (fr, body))
-        | some g => match g.eval I look locals slots fr memos fuel depth with
+        | some g => match g.evalIn I look locals slots fr memos fuel depth with
           | some (.bool true) => some (some (fr, body))
           | some (.bool false) => some none
-          | _ => none
-    match taken? with
-    | some (fr, body) => body.eval I look locals slots fr memos fuel depth
-    | none => I.fn (← unspec?) #[]
+          | _ => none)
+      (fun (fr, body) => body.evalIn I look locals slots fr memos fuel depth)
+      fun _ => do I.fn (← unspec?) #[]
   -- The same arm as the `match` takes: those left out are those whose
   -- patterns do not match the value, which `firstCase` passes over
   -- (`firstCase_filter`).
   | .dispatch byCtor (.match e arms _ _ unspec? _) => do
-    let v ← e.eval I look locals slots frame memos fuel depth
-    let take (arm : Pat × Option Ex × Ex) : Option (Option (Array Binding × Ex)) :=
+    let v ← e.evalIn I look locals slots frame memos fuel depth
+    let take (arm : Pat × Option Ex × Ex) : Option (Option (Frame × Ex)) :=
       let (p, g?, body) := arm
-      match p.matchInto v frame with
-      | none => some none
-      | some fr =>
+      match p.matches v with
+      | false => some none
+      | true =>
+        let fr := p.bindInto v frame
         match g? with
         | none => some (some (fr, body))
-        | some g => match g.eval I look locals slots fr memos fuel depth with
+        | some g => match g.evalIn I look locals slots fr memos fuel depth with
           | some (.bool true) => some (some (fr, body))
           | some (.bool false) => some none
           | _ => none
     let ks? := match v with
       | .ctor _ idx _ => byCtor[idx]?
       | _ => none
-    let taken? ← match ks? with
-      | some ks => firstCaseIn ks fun k => take arms[k]!
-      | none => firstCaseIn arms take
-    match taken? with
-    | some (fr, body) => body.eval I look locals slots fr memos fuel depth
-    | none => I.fn (← unspec?) #[]
-  | .dispatch _ m => m.eval I look locals slots frame memos fuel depth
+    let found (taken : Frame × Ex) : Option Val :=
+      taken.2.evalIn I look locals slots taken.1 memos fuel depth
+    match ks? with
+    | some ks => firstCaseThen ks (fun k => take arms[k]!) found fun _ => do I.fn (← unspec?) #[]
+    | none => firstCaseThen arms take found fun _ => do I.fn (← unspec?) #[]
+  | .dispatch _ m => evalResult (m.evalIn I look locals slots frame memos fuel depth)
   | .range lo hi => do
-    let .int a ← lo.eval I look locals slots frame memos fuel depth | none
-    let .int b ← hi.eval I look locals slots frame memos fuel depth | none
+    let .int a ← lo.evalIn I look locals slots frame memos fuel depth | none
+    let .int b ← hi.evalIn I look locals slots frame memos fuel depth | none
     if b - a > Fren.Core.Enumeration.maxEnumerated then none
     return .seq ((Array.range (b - a).toNat).map fun (k : Nat) => Val.int (a + k))
   -- The conjunction or disjunction of its instances, decided when one
@@ -1216,7 +1562,7 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
   | .quant _ _ all names doms tys body => quantV I look locals slots fuel depth all names doms tys body #[] 0 frame memos
   | .lifted lets q => match q with
     | .quant _ _ all names doms tys body => quantV I look locals slots fuel depth all names doms tys body lets 0 frame memos
-    | q => q.eval I look locals slots frame memos fuel depth
+    | q => q.evalIn I look locals slots frame memos fuel depth
 termination_by (fuel, depth + 1, 0)
 where
   /-- Check actual invariant predicates as well as structural type facts.
@@ -1233,7 +1579,7 @@ where
       let (params, body, _) ← I.defs invariant.predicate
       let parameter ← params[0]?
       let fuel' + 1 := fuel | outOfFuel ()
-      let .bool holds ← body.eval I (fun _ => none) [(parameter, v)] #[] #[] #[] fuel' evalDepth | none
+      let .bool holds ← body.evalIn I (fun _ => none) [(parameter, v)] #[] .nil #[] fuel' evalDepth | none
       unless holds do return false
     match t.ty, v with
     | .set _, .set values | .seq _, .seq values =>
@@ -1276,18 +1622,19 @@ where
   `lets[k]` shared from where the `k`th is bound (`.lifted`). -/
   quantV (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val)) (fuel depth : Nat)
       (all : Bool) (names : @& Array Name) (doms : @& Array (Option Ex)) (tys : @& Array Fren.Core.PTy) (body : @& Ex)
-      (lets : @& Array (Array Ex)) (k : Nat) (frame : Array Binding) (memos : Array (Thunk (Option Val))) :
+      (lets : @& Array (Array Ex)) (k : Nat) (frame : @& Frame) (memos : @& Array (Thunk (Option Val))) :
       Option Val :=
     match depth with
     | 0 => outOfFuel ()
     | depth + 1 =>
     let memos := match lets[k]? with
-      | some ls => ls.foldl (init := memos) fun ms x => ms.push (Thunk.mk fun _ => x.eval I look locals slots frame memos fuel depth)
+      | some ls => ls.foldl (init := memos) fun ms x =>
+        ms.push (Thunk.mk fun _ => x.evalIn I look locals slots frame memos fuel depth)
       | none => memos
     if h : k < names.size then
       -- Its domain, or, without one, the values of its type up to the
       -- bound, if enumeration gives them.
-      let listed := match doms[k]?.bind id |>.bind (·.eval I look locals slots frame memos fuel depth) with
+      let listed := match doms[k]?.bind id |>.bind (·.evalIn I look locals slots frame memos fuel depth) with
         | some (.seq vs) | some (.set vs) => some (vs, true)
         | _ => if (doms[k]?.bind id).isSome then none else tys[k]?.bind I.domain
       match listed with
@@ -1295,18 +1642,37 @@ where
         -- A value outside the type, as its invariant has it, is no
         -- instance; one whose membership is unknown is an unknown instance.
         let inst (v : Val) : Option Bool :=
-          match (tys[k]?.map (typeV I fuel depth · v)).getD (some true) with
-          | some true => match quantV I look locals slots fuel (depth + 1) all names doms tys body lets (k + 1) (frame.push (names[k], some v)) memos with
-            | some (.bool b) => some b
+          -- `(tys[k]?.map (typeV I fuel depth · v)).getD (some true)`,
+          -- without the `some` that `map` allocates.
+          let typed := match tys[k]? with
+            | some t => typeV I fuel depth t v
+            | none => some true
+          match typed with
+          | some true =>
+            let frame' := .bind names[k] (some v) frame
+            match quantV I look locals slots fuel (depth + 1) all names doms tys body lets (k + 1) frame' memos with
+            | some (.bool b) => someBool b
             | _ => none
-          | some false => some all
+          | some false => someBool all
           | none => none
-        -- Shared with the hosted front end (`check::quantified_truth`):
-        -- the instances after a deciding one are not evaluated.
-        truthV (Fren.Core.Enumeration.quantifiedTruth exact all inst vs.toList)
+        -- Shared with the hosted front end (`check::quantified_truth`,
+        -- `quantTruthIn_eq`): the instances after a deciding one are not
+        -- evaluated.
+        truthV (quantTruthIn exact all inst vs)
       | none => none
-    else body.eval I look locals slots frame memos fuel depth
+    else evalResult (body.evalIn I look locals slots frame memos fuel depth)
   termination_by (fuel, depth + 1, names.size - k)
+
+
+/-- `Ex.evalIn`, from the top: with no locals, slots, binders or shared
+expressions unless they are given, and with all of `evalFuel` and
+`evalDepth`. `Ex.evalIn` itself takes no defaults, since a parameter with
+a default is not borrowed (`@&`), whatever it is annotated. -/
+@[inline] def Ex.eval (I : @& Interp) (look : @& Look) (locals : List (Name × Val) := [])
+    (slots : Array (Option Val) := #[]) (frame : Frame := .nil)
+    (memos : Array (Thunk (Option Val)) := #[]) (fuel : Nat := evalFuel) (depth : Nat := evalDepth) (e : @& Ex) :
+    Option Val :=
+  e.evalIn I look locals slots frame memos fuel depth
 
 /-! How `Ex.eval` spends `fuel` and `depth` (`evalFuel`, `evalDepth`):
 without depth it has no value; a part of an expression spends depth but
@@ -1314,28 +1680,29 @@ no fuel; an application of a structural recursion spends a unit of fuel,
 and its body has a depth of its own, so that how deep the evaluator
 recurses between two steps cannot decide which evaluations run out. -/
 
-example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Array Binding)
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Frame)
     (m : Array (Thunk (Option Val))) (n : Nat) (e : Ex) : e.eval I look l s f m n 0 = none := by
-  rw [Ex.eval]; rfl
+  rw [Ex.eval, Ex.evalIn]; rfl
 
-example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Array Binding)
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Frame)
     (m : Array (Thunk (Option Val))) (n d : Nat) (a : Ex) :
     (Ex.not a).eval I look l s f m n (d + 1) = notV (a.eval I look l s f m n d) := by
-  rw [Ex.eval]
+  rw [Ex.eval, Ex.evalIn]; rfl
 
-example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Array Binding)
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Frame)
     (m : Array (Thunk (Option Val))) (n d : Nat) (g : Name) (args : Array Ex) (ps : Array Name) (body : Ex)
     (h : I.recDefs g = some (ps, body)) :
     (Ex.app g args).eval I look l s fr m (n + 1) (d + 1) =
       (evalEach (·.eval I look l s fr m (n + 1) d) args).bind fun vs =>
         body.eval I look [] #[] (paramFrame ps vs) #[] n evalDepth := by
-  rw [Ex.eval]; simp only [h]; rfl
+  rw [Ex.eval, Ex.evalIn]; simp only [h, argFrame_eq, Ex.eval]
+  cases evalEach (·.evalIn I look l s fr m (n + 1) d) args <;> rfl
 
-example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Array Binding)
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Frame)
     (m : Array (Thunk (Option Val))) (d : Nat) (g : Name) (args : Array Ex) (ps : Array Name) (body : Ex)
     (h : I.recDefs g = some (ps, body)) :
     (Ex.app g args).eval I look l s fr m 0 (d + 1) = none := by
-  rw [Ex.eval]; simp only [h]; cases evalEach (·.eval I look l s fr m 0 d) args <;> rfl
+  rw [Ex.eval, Ex.evalIn]; simp only [h, argFrame_eq]; cases evalEach (·.evalIn I look l s fr m 0 d) args <;> rfl
 
 /-- The expressions directly within `e`. -/
 def Ex.children : Ex → Array Ex
@@ -1764,12 +2131,18 @@ where
       if n == 0 then e else
       .dispatch ((Array.range n).map fun idx => (Array.range arms.size).filter fun k => arms[k]!.1.mayMatchCtor idx) e
     | e => e
-  /-- An expression all of whose parts are known is too, unless it applies
-  a function, or is a constant, a table or `match` without a value where
-  nothing holds, an index, which may be out of range, or a type check, or
-  a quantifier over a bound name of a type, that may evaluate an invariant
-  (`PTy.invariantFree`), whose values are the interpretation's: its value,
-  whatever the environment, under any interpretation with `shapes`. -/
+  /-- An expression all of whose parts are known is too: its value,
+  whatever the environment, under any interpretation with `shapes`. That
+  holds unless its own evaluation reads the interpretation, as it does
+  when it
+  - reads functions: it applies a function, or is a constant, or a table
+    or `match` without a value where nothing holds;
+  - reads the values of indexes out of range (`Interp.outOfRange`): it is
+    an index, which may be out of range;
+  - reads definitions: it is a type check, or a quantifier over bound names
+    of types, that may evaluate an invariant (`PTy.invariantFree`);
+  - reads the domain: it is a quantifier with a bound name without a
+    domain. -/
   fold (e : Ex) : Ex :=
     let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index ..
     -- A type check, or a quantifier's of each instance, that may evaluate
@@ -2008,6 +2381,10 @@ structure LState where
   /-- The generic function being lowered, with its type parameters, which
   are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   fnTypeParams : Option (Name × Array Name) := none
+  /-- The type arguments that the elaborator inferred for each application
+  of a generic function, by its file and the start of its span
+  (`FrenCli.State.callTargs`): the instance that lowering applies. -/
+  callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty) := {}
   /-- The higher-order functions: each parameter's type, or a function
   parameter's parameters' and result's types (`Reqs/Lang/HigherOrder`). -/
   hofs : NameMap (Array (VTy ⊕ (Array VTy × VTy))) := {}
@@ -2254,6 +2631,47 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.substVars f)
 
+/-- `e` with each function of an unspecified value (`unspecifiedFn`) that it
+reads, where an index is out of range or no row of a table or arm of a
+`match` holds, renamed by `f`, and each function that it applies renamed
+by `app`. -/
+partial def Ex.mapNames (f app : Name → Name) : Ex → Ex
+  | .lit v => .lit v
+  | .var n => .var n
+  | .slot k => .slot k
+  | .boundAt k => .boundAt k
+  | .shared k => .shared k
+  | .known v => .known v
+  | .bound n => .bound n
+  | .lifted lets q => .lifted (lets.map (·.map (·.mapNames f app))) (q.mapNames f app)
+  | .dispatch ks m => .dispatch ks (m.mapNames f app)
+  | .memo lets e => .memo (lets.map (·.mapNames f app)) (e.mapNames f app)
+  | .not a => .not (a.mapNames f app)
+  | .neg a => .neg (a.mapNames f app)
+  | .bin op a b => .bin op (a.mapNames f app) (b.mapNames f app)
+  | .when negated c d => .when negated (c.mapNames f app) (d.mapNames f app)
+  | .ite c a b => .ite (c.mapNames f app) (a.mapNames f app) (b.mapNames f app)
+  | .app g args => .app (app g) (args.map (·.mapNames f app))
+  | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.mapNames f app)) (e.mapNames f app)
+  | .cardinality c args => .cardinality c (args.map (·.mapNames f app))
+  | .method m r args => .method m (r.mapNames f app) (args.map (·.mapNames f app))
+  | .matches r p re => .matches (r.mapNames f app) p re
+  | .setLit es => .setLit (es.map (·.mapNames f app))
+  | .pair a b => .pair (a.mapNames f app) (b.mapNames f app)
+  | .seqLit es => .seqLit (es.map (·.mapNames f app))
+  | .index q i pos u => .index (q.mapNames f app) (i.mapNames f app) pos (f u)
+  | .card e => .card (e.mapNames f app)
+  | .ctor ty idx args => .ctor ty idx (args.map (·.mapNames f app))
+  | .field e idx => .field (e.mapNames f app) idx
+  | .update e fs => .update (e.mapNames f app) (fs.map fun (k, x) => (k, x.mapNames f app))
+  | .match e arms pos ps u t =>
+    .match (e.mapNames f app) (arms.map fun (p, g?, b) => (p, g?.map (·.mapNames f app), b.mapNames f app)) pos ps (u.map f) t
+  | .quant file pos all ns ds ts b => .quant file pos all ns (ds.map (·.map (·.mapNames f app))) ts (b.mapNames f app)
+  | .range lo hi => .range (lo.mapNames f app) (hi.mapNames f app)
+  | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.mapNames f app), v.mapNames f app)) (u.map f)
+  | .const p e => .const p e
+  | .typed t is a => .typed t is (a.mapNames f app)
+
 /-- `e` with the binders of `σ` that are free in it replaced by their
 expressions. -/
 partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
@@ -2400,6 +2818,11 @@ in enumeration, where an index is out of range: not a Fren name, so it is
 no item's. -/
 def unspecifiedFn (t : VTy) : Name := .str .anonymous s!"[][0] : {reprStr t}"
 
+/-- Whether `u` names the unspecified value of a type (`unspecifiedFn`). -/
+def isUnspecifiedName (u : Name) : Bool := match u with
+  | .str .anonymous s => s.startsWith "[][0]"
+  | _ => false
+
 /-- Whether `e` reads an index or a table without a `_` row, whose value
 may be unknown without an interpretation. -/
 partial def Ex.readsUnspecified : Ex → Bool
@@ -2436,6 +2859,100 @@ partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
   | .abstract p => .abstract p
   | .newtype p u => .newtype p (u.core sp)
   | .param k => .param k .anonymous
+
+/-- The type arguments that the elaborator inferred for the application at
+`span` of the generic function at `path`, in the file being lowered
+(`LState.callTargs`, `lang::call_type_argument`). Lowering never infers
+them itself: every spec that it lowers was elaborated, and recorded them. -/
+def elaboratedArgs (path : Name) (span : Span) : L (Array Fren.Core.Ty) := do
+  let st ← get
+  match st.callTargs[(st.file, span.start)]? with
+  | some targs => return targs
+  | none => throw s!"no type arguments were recorded for the application of `{showPath path}`"
+
+/-- A function's item, as an application reads it: the types that the
+function writes, its definition (its parameters, body and result type), if
+it has a body, its preconditions, and its contract, as `Spec.defs`,
+`Spec.pres` and `Spec.contracts` hold them. -/
+structure FnItem where
+  ty : VTy → VTy := id
+  defn? : Option (Array Name × Ex × VTy) := none
+  pres? : Option (Array Name × Array (Name × Ex)) := none
+  contract? : Option (Array Name × Array Ex × Array Ex) := none
+
+mutual
+/-- The item of the function at `path` at the type arguments `targs?`: of
+a generic function, the whole function at that instance
+(`lang::instantiation`), every part of it at once: each type that it
+writes, and its body, preconditions and contract, each with the
+unspecified values that it reads, whose types mention a type parameter,
+the instance's type's, whose hidden slot they read, as in the Lean-hosted
+front end, which unfolds the instance, and with each instance of a
+generic function without a body that it applies at its own type
+parameters at that instance too (`bodilessInstance`); of any other
+function, or with no type arguments, the function itself. -/
+partial def fnItemAt (path : Name) (targs? : Option (Array Fren.Core.Ty)) : L FnItem := do
+  let sp := (← get).spec
+  let item : FnItem := { defn? := sp.defs.find? path, pres? := sp.pres.find? path, contract? := sp.contracts.find? path }
+  let tps? := (sp.defGenerics.find? path).orElse fun _ => (sp.generics.find? (·.1 == path)).map (·.2.1)
+  let (some tps, some targs) := (tps?, targs?) | return item
+  let targs := targs.map some
+  let atCore (t : Fren.Core.Ty) : Fren.Core.Ty := Fren.Core.instanceType path tps targs t
+  let atInstance (t : VTy) : VTy := VTy.ofCore (atCore (t.core sp))
+  let mut renamed : List (Name × Name) := []
+  for (u, (us, t)) in sp.funs do
+    if us.isEmpty && isUnspecifiedName u then
+      let t' := atInstance t
+      if t' != t then
+        renamed := (u, unspecifiedFn t') :: renamed
+        modify fun s => { s with spec.funs := s.spec.funs.insert (unspecifiedFn t') (#[], t') }
+  -- The instances of generic functions without a body at this function's
+  -- type parameters, at this instance.
+  let mut apps : List (Name × Name) := []
+  for (inst, base) in sp.instanceOf do
+    let some iargs := sp.instanceArgs.find? inst | continue
+    let iargs' := iargs.map atCore
+    if iargs' != iargs then
+      apps := (inst, ((← bodilessInstance base iargs').getD base)) :: apps
+  let rename (e : Ex) : Ex := e.mapNames (fun u => (renamed.lookup u).getD u) (fun g => (apps.lookup g).getD g)
+  return {
+    ty := atInstance
+    defn? := item.defn?.map fun (ps, body, r) => (ps, rename body, atInstance r)
+    pres? := item.pres?.map fun (ps, pres) => (ps, pres.map fun (n, g) => (n, rename g))
+    contract? := item.contract?.map fun (ps, pres, posts) => (ps, pres.map rename, posts.map rename) }
+
+/-- The instance of the generic function without a body at `path` at the
+type arguments `targs`, a function of its own, with its parameters' and
+result's types and its contract at the instance (`fnItemAt`): its name,
+or none at the function's own type parameters, where it is the function
+itself. -/
+partial def bodilessInstance (path : Name) (targs : Array Fren.Core.Ty) : L (Option Name) := do
+  let some (_, tps, declared, result) := (← get).spec.generics.find? (·.1 == path) | return none
+  let own := tps.mapIdx fun k p => Fren.Core.Ty.abstract (Fren.Core.typeParamPath path k p)
+  if targs == own then return none
+  let inst := Name.str path.getPrefix (path.getString! ++ Fren.Core.instanceText targs)
+  if ((← get).spec.instanceArgs.find? inst).isSome then return some inst
+  let vargs := targs.toList.map VTy.ofCore
+  modify fun s => { s with
+    spec.funs := s.spec.funs.insert inst (declared.map (·.subst vargs), result.subst vargs)
+    spec.instanceOf := s.spec.instanceOf.insert inst path
+    spec.instanceArgs := s.spec.instanceArgs.insert inst targs }
+  let item ← fnItemAt path (some targs)
+  if let some c := item.contract? then
+    modify fun s => { s with spec.contracts := s.spec.contracts.insert inst c }
+  return some inst
+end
+
+/-- The item of the function at `path` that the application at `span`
+applies (`fnItemAt`): of a generic function, at the type arguments that
+the elaborator inferred (`elaboratedArgs`, `lang::instantiation`). Every
+lowering of an application of a function reads its item through this,
+and nothing else of it. -/
+def fnItem (path : Name) (span : Span) : L FnItem := do
+  let sp := (← get).spec
+  let generic := sp.defGenerics.contains path || sp.generics.any (·.1 == path)
+  let targs? ← if generic then some <$> elaboratedArgs path span else pure none
+  fnItemAt path targs?
 
 /-- The declared type written `segs`, with the patterns of the subset
 types within it, as the elaborator's `elabPTy` has it. -/
@@ -2657,39 +3174,30 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       return (.cardinality c args, .bool)
     match ← resolve segs with
     | .item { kind := .fnItem, path, .. } =>
+      -- The function's item at the application: of a generic function, the
+      -- whole function at its instance (`fnItem`).
+      let item ← fnItem path span
       -- With its preconditions at its arguments, if it has any.
       let withPres (x : Ex) : L Ex := do
-        let some (ps, pres) := (← get).spec.pres.find? path | return x
+        let some (ps, pres) := item.pres? | return x
         let σ := (ps.zip args).toList
         return .pre segs[0]!.span.start path (pres.map fun (n, g) => (n, g.subst σ)) x
       -- A defined function's body, with its parameters standing for the
       -- arguments.
-      if let some (ps, body, r) := (← get).spec.defs.find? path then
+      if let some (ps, body, r) := item.defn? then
         -- An application of itself, in a structural recursion: applied
         -- when evaluated, not unfolded here.
         if (← get).lowering == some path then
           modify fun s => { s with selfApplied := true }
           return (← withPres (.app path args), r)
         return (← withPres (body.subst (ps.zip args).toList), r)
-      -- A generic function without a body, at the instance that its
-      -- arguments' types give it, a function of its own.
-      if let some (_, tps, declared, result) := (← get).spec.generics.find? (·.1 == path) then
-        let found := (List.range tps.size).map fun k =>
-          (declared.zip typed).findSome? fun (d, (_, t)) => d.matchParam k t
-        let targs := found.mapIdx fun k t? => (t?.map VTy.widen).getD (.param k)
-        let r := result.subst targs
-        -- Its type arguments not known here, as the type expected of it
-        -- may give them: a function that has no value, which the
-        -- evaluator does not know (`Reqs/Eval#searching-for-behaviours`).
-        if found.any (·.isNone) then return (← withPres (.app (Name.str path "<?>") args), r)
-        -- At its own type parameters, in its contract, the function itself.
-        let own := (List.range tps.size).map fun k => VTy.abstract (Fren.Core.typeParamPath path k tps[k]!)
-        if targs == own then return (← withPres (.app path args), r)
-        let sp := (← get).spec
-        let inst := Name.str path.getPrefix (path.getString! ++ Fren.Core.instanceText (targs.toArray.map (·.core sp)))
-        modify fun s => { s with
-          spec.funs := s.spec.funs.insert inst (declared.map (·.subst targs), r)
-          spec.instanceOf := s.spec.instanceOf.insert inst path }
+      -- A generic function without a body, at its instance
+      -- (`bodilessInstance`), a function of its own, with the instance's
+      -- contract.
+      if let some (_, _, _, result) := (← get).spec.generics.find? (·.1 == path) then
+        let targs ← elaboratedArgs path span
+        let r := result.subst (targs.toList.map VTy.ofCore)
+        let some inst ← bodilessInstance path targs | return (← withPres (.app path args), r)
         return (← withPres (.app inst args), r)
       let some (_, r) := (← get).spec.funs.find? path | throw s!"unknown function `{showPath path}`"
       return (← withPres (.app path args), r)
@@ -2891,29 +3399,27 @@ its argument, and each function parameter for its closure
 so that neither captures the other's. -/
 partial def lowerHigherOrder (cx : Cx) (span : Span) (path : Name) (ts : Array (VTy ⊕ (Array VTy × VTy)))
     (args : Array Expr) : L (Ex × VTy) := do
-  let some (ps, body, r) := (← get).spec.defs.find? path | throw s!"unknown function `{showPath path}`"
+  -- The function's item at the application: of a generic function, the
+  -- whole function at its instance (`fnItem`).
+  let item ← fnItem path span
+  let some (ps, body, r) := item.defn? | throw s!"unknown function `{showPath path}`"
   let k := (← get).fresh
   modify fun s => { s with fresh := s.fresh + 1 }
   let ren (n : Name) : Name := Name.mkNum n k
-  -- The value arguments first, whose types give the type parameters'.
   let mut σ : List (Name × Ex) := []
-  let mut tσ : List (Name × VTy) := []
   for a in args, t in ts, p in ps do
-    if let .inl d := t then
-      let (x, tx) ← lowerExpr cx a
-      σ := σ ++ [(ren p, x)]
-      tσ := tσ ++ d.matchAbstract tx
+    if t matches .inl _ then σ := σ ++ [(ren p, (← lowerExpr cx a).1)]
   let mut fσ : List (Name × Array Name × Ex) := []
   for a in args, t in ts, p in ps do
     if let .inr (pts, _) := t then
-      fσ := fσ ++ [(p, ← lowerFnArg cx span (pts.map (·.substAbstract tσ)) a)]
+      fσ := fσ ++ [(p, ← lowerFnArg cx span (pts.map item.ty) a)]
   let x := ((body.renameBound ren).subst σ).substFns fσ
   -- With its preconditions at its arguments, if it has any.
   -- Its preconditions are over its value parameters, as its body is.
-  let x := match (← get).spec.pres.find? path with
+  let x := match item.pres? with
     | some (_, pres) => Ex.pre span.start path (pres.map fun (n, g) => (n, ((g.renameBound ren).subst σ).substFns fσ)) x
     | none => x
-  return (x, r.substAbstract tσ)
+  return (x, r)
 
 /-- A closure, or a function's name `g`, which is the closure `|x1, ...,
 xn| g(x1, ..., xn)`, given for a function parameter whose parameters have
@@ -3447,6 +3953,7 @@ partial def lowerItem : Item → L Unit
           ps := ps.push (x, t)
           ts := ts.push (.inl t)
       if !fnParams.isEmpty then modify fun s => { s with hofs := s.hofs.insert path ts }
+      if !tps.isEmpty then modify fun s => { s with spec.defGenerics := s.spec.defGenerics.insert path tps }
       -- Its parameters in order, for an application.
       let all := params.map fun (p, _) => declName p[0]!
       -- In scope in its own body, which may apply it in a structural
@@ -3599,8 +4106,9 @@ where
 
 /-- The state after the files' items, from the state `st` of the files
 before them. Each file starts at the root module. -/
-def lowerFrom (st : LState) (files : Array (Array Item)) : Except String LState := do
-  let mut st := st
+def lowerFrom (st : LState) (files : Array (Array Item)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Except String LState := do
+  let mut st := { st with callTargs }
   for items in files do
     st := { st with module := .anonymous, scope := .anonymous }
     for item in items do
@@ -3625,12 +4133,13 @@ def preludeState : Except String LState := do
   return { st with module := .anonymous, scope := .anonymous }
 
 /-- The spec of the files' items, which the elaborator accepted, with the
-names it declares. Lowering files one after another is lowering them
-together: `lowerFrom st (a ++ b)` is `lowerFrom st a >>= (lowerFrom · b)`,
-which `fren mutate` relies on to lower only the files from a mutant's. -/
-def lowerAll (files : Array (Array Item)) : Except String LState := do lowerFrom (← preludeState) files
-
-def lowerFiles (files : Array (Array Item)) : Except String Spec := (·.spec) <$> lowerAll files
+names it declares, with the type arguments that the elaborator inferred
+for its applications of generic functions, `callTargs`. Lowering files one
+after another is lowering them together: `lowerFrom st (a ++ b) t` is
+`lowerFrom st a t >>= (lowerFrom · b t)`, which `fren mutate` relies on to
+lower only the files from a mutant's. -/
+def lowerAll (files : Array (Array Item)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Except String LState := do lowerFrom (← preludeState) files callTargs
 
 def VTy.show : VTy → String
   | .bool => "Bool"

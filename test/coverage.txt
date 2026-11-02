@@ -163,14 +163,25 @@ Fren.proveContract
 Fren.resolveUsePath
 Fren.unreadableValue
 Fren.varType
+FrenCli.Eval.Ex.isInt
+FrenCli.Eval.Frame.prepend -- used only in the proofs of `Frame.toList_prepend`, `frameFrom_eq` and `paramFrame_eq`; the evaluator never calls it
+FrenCli.Eval.Frame.toList -- used only in the proofs of `Frame.find?_eq`, `Frame.get_eq` and `paramFrame_eq`; the evaluator never calls it
+FrenCli.Eval.Pat.matchInto
+FrenCli.Eval.Pat.matchInto.payload
 FrenCli.Eval.Spec.fits
 FrenCli.Eval.Spec.quickGlobal
 FrenCli.Eval.confirmedVerdict
 FrenCli.Eval.conflictOf
 FrenCli.Eval.corePatSame
+FrenCli.Eval.firstCaseIn
+FrenCli.Eval.kleeneAnd
+FrenCli.Eval.kleeneOr
 FrenCli.Eval.lowerFiles
+FrenCli.Eval.notV
+FrenCli.Eval.paramFrame
 FrenCli.Eval.resolveComp
 FrenCli.Eval.resumesAt
+FrenCli.Eval.smallInterleaved -- the reference of the `#guard` after `interleavedCounts` and of `FrenTest.SmallValues`'s `#eval`, which run in Lean's interpreter when the modules build; `smallValuesMemo` no longer calls it
 FrenCli.Fm.subject? -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
 FrenCli.Ident.isPatternSeg
 FrenCli.Ident.pattern?
@@ -234,4 +245,5 @@ _private.FrenCli.Parse.0.FrenCli.nextSegs
 _private.FrenCli.Parse.0.FrenCli.nextSpan
 _private.FrenCli.Parse.0.FrenCli.segAtoms
 _private.FrenCli.Parse.0.FrenCli.spanAtoms
+_private.FrenCore.SubsetTypes.0.Fren.Core.guardShapes -- a fixture of the `#guard`s on `PTy.invariantFree`, which run in Lean's interpreter when the module builds
 main -- the entry point of `fren`, which only calls `FrenCli.run`; the tests call `run` itself

@@ -2,10 +2,20 @@ import Lake
 
 open System Lake DSL
 
+-- Lake's artifact cache, one for each toolchain on a machine, which every
+-- worktree shares: a step whose inputs, by their content, are those of a
+-- step that a build on the machine ran before takes that step's outputs
+-- from the cache instead of running (`Reqs/dev/Testing#shared-builds`).
+-- They are linked into `.lake/build` too, where `lake env` and the tests'
+-- runs of the hosted front end look for them. Not for a coverage build
+-- (below), whose object files name the directory where they write their
+-- counters.
 package fren where
   srcDir := "src"
   testDriver := "fren_test"
   version := v!"0.1.0"
+  enableArtifactCache := (get_config? coverage).isNone
+  restoreAllArtifacts := true
 
 -- `lake -R -Kcoverage=RUNTIME build` compiles the code whose coverage is
 -- measured with gcov's counters, and links the executables that run it
@@ -262,7 +272,8 @@ extern_lib glibc_c23 pkg := do
 -- so the library is its modules.
 --
 -- Unlike `Fren.Elab`, `FrenCli.Elab` keeps `-O3`, although clang takes
--- 23–30 s on its C code, most of it on `elabExpr`. At `-O0` (3 s), the
+-- some 40 s on its C code (on a Mac), spread over its functions since no
+-- function elaborates every kind of item (`FrenCli.elabItem`). At `-O0` (3 s), the
 -- binary elaborates 40–50% slower, and `lake test`, whose mutation jobs
 -- elaborate Fren's own requirements once for each mutant, took about 25%
 -- more CPU; `-O1 -fno-inline` (12 s) still costs a mutation job 10%.

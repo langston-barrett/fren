@@ -1032,13 +1032,13 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   let substDefs (e : Expr) : Expr := defined.foldr (init := e) fun (_, fv, de) acc => acc.replaceFVar fv de
   -- Each index reads its element type's unspecified value out of range,
   -- and which atoms, a type's facts too, have one (`Atoms.readsIndex`).
-  let atoms ← atoms0.mapM fun a => do readIndexes (← unfoldDefined (substDefs a))
+  let atoms ← atoms0.mapM fun a => do readIndexes (← computableDecisions (← unfoldDefined (substDefs a)))
   let atomIndexed := atoms.map (·.2)
   let atoms := atoms.map (·.1)
   -- And each defined output's definition, which `same` reads, and whose
   -- unspecified values and functions are enumerated as the atoms' are,
   -- as the `fren` command's are.
-  let defExprs ← defined.mapM fun (_, fv, _) => do readIndexes (← unfoldDefined (substDefs fv))
+  let defExprs ← defined.mapM fun (_, fv, _) => do readIndexes (← computableDecisions (← unfoldDefined (substDefs fv)))
   let defIndexed := defExprs.map (·.2)
   let defExprs := defExprs.map (·.1)
   let scanned := atoms ++ defExprs

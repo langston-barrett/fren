@@ -653,7 +653,11 @@ whose result is a [subset type](Types.md#subset-types) matches its
 pattern, and an application of a function with postconditions meets each
 of them wherever it meets the preconditions: each application brings these
 constraints where it is written, and no constraint quantifies over the
-function's arguments. So it relates values
+function's arguments. The applications that those constraints mention
+bring theirs too, transitively: of `fn b(s: S): (r: Int) { ensure e: r =
+a(s) + 1 }`, `b(s)` brings `a(s)`'s constraints, so that `b(s) > 0`
+follows where `a`'s postcondition is `r >= 0`. That ends, as a contract
+applies only the functions declared before its own. So it relates values
 consistently wherever it is applied, across the constraints of a
 procedure, its calls, and the behaviours of a [global
 expectation](Global.md). What its values are is given by an

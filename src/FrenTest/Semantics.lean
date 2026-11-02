@@ -34,11 +34,14 @@ says changes nothing, and, where it mentions nothing, in the empty
 environment, which `lang::closed` says changes nothing either. Each is
 compiled too (`Ex.compile`), which keeps its value in every interpretation,
 one with values for the indexes out of range among them, and compiled
-again, and so does each integer one checked to be of a subset type, or
-compared with the bound name of a quantifier over one. Compiling a structural recursion's body, as testing does, keeps
-the value of its applications (`compiledRecursion`), and a pattern that
-`Pat.mayMatchCtor` says matches no variant of an index matches none
-(`mayMatchCtorSound`), which `Ex.dispatch` rests on. Last,
+again, and so does each integer one checked to be of a subset type,
+directly or as the field of a record, or compared with the bound name of
+a quantifier over one. Compiling a structural recursion's body, as
+testing does, keeps the value of its applications (`compiledRecursion`),
+and a pattern that `Pat.mayMatchCtor` says matches no variant of an index
+matches none (`mayMatchCtorSound`), which `Ex.dispatch` rests on, and
+deciding whether a pattern matches before binding it gives the frame that
+matching gives (`matchSplitAgrees`), which `Ex.eval`'s arms rest on. Last,
 expressions of the semantics alone are evaluated under interpretations
 that differ in the functions that they do not mention. Both lemmas are
 proved in `Impls/Semantics.lean`; these tests cross-check the proofs'
@@ -386,6 +389,11 @@ def posTy : Fren.Core.PTy := { ty := .int, invariants := #[{ name := `pos, predi
 def posDefs (f : Lean.Name) : Option (Array Lean.Name × Ex × FrenCli.Eval.VTy) :=
   if f == `pos? then some (#[`x], .bin .gt (.bound `x) (.lit (.int 0)), .bool) else none
 
+/-- The shape of the record `RP(Pos)`, whose field's type has an invariant
+that only `Fren.Core.PTy.invariantFree`'s descent through shapes sees. -/
+def posShapes (p : Lean.Name) : Option Fren.Core.DataShape :=
+  if p == `RP then some { isRecord := true, parts := #[#[posTy]] } else none
+
 /-- The problems found on 3000 random expressions. -/
 def run : Array String := Id.run do
   let mut failures := #[]
@@ -450,6 +458,12 @@ def run : Array String := Id.run do
       for (what, x) in checks do
         unless (x.compile (fun _ => none) none).eval I look == x.eval I look do
           failures := failures.push s!"{repr e.2} in {repr b}, {what}, changes its value when compiled"
+      -- And a check that a record is of its type, whose field's type is
+      -- `Pos`, which only the record's shape says (`posShapes`).
+      let rp : Ex := .typed { ty := .record `RP [] } #[] (.ctor `RP 0 #[e.1])
+      let I := { I with shapes := posShapes }
+      unless (rp.compile posShapes none).eval I look == rp.eval I look do
+        failures := failures.push s!"{repr e.2} in {repr b}, as the field of a record of a subset type, changes its value when compiled"
     -- A variable that the expression does not mention, rebound, changes nothing.
     for x in ["x", "y", "p", "q"] do
       unless decide (lang.Mention.Var x ∈ lang.free_vars e.2) do
@@ -516,13 +530,70 @@ def mayMatchCtorSound : Array String := Id.run do
     let ((p, v), s) := (do return (← genPat 3, ← genVal 2)).run seed
     seed := s
     let .ctor _ idx _ := v | continue
-    let m := p.matchInto v #[]
+    let m := p.matchInto v .nil
     if m.isSome then matched := matched + 1
     if !p.mayMatchCtor idx then
       excluded := excluded + 1
       if m.isSome then failures := failures.push s!"a pattern that `mayMatchCtor {idx}` rules out matches a variant of index {idx}"
   if excluded < 1000 then failures := failures.push s!"only {excluded} patterns were ruled out"
   if matched < 1000 then failures := failures.push s!"only {matched} patterns matched"
+  return failures
+
+/-- A random pattern for `matchSplitAgrees`, at most `d` deep: as
+`genPat`'s, but with integer ranges open at either end, and binders of two
+names, so that two binders pushed in the wrong order are told apart. -/
+partial def genSplitPat (d : Nat) : R Pat := do
+  match ← next (if d == 0 then 7 else 9) with
+  | 0 => return .wild
+  | 1 => return .bind (if (← next 2) == 0 then `z else `w)
+  | 2 => return .bool ((← next 2) == 0)
+  | 3 =>
+    let lo ← small
+    let hi := lo + (← next 3)
+    return match ← next 4 with
+      | 0 => .int (some lo) (some hi)
+      | 1 => .int none (some hi)
+      | 2 => .int (some lo) none
+      | _ => .int none none
+  | 4 => return .str (if (← next 2) == 0 then "a" else "b")
+  | 5 => return .ctor (← next 3) #[]
+  | 6 => return .bind `w
+  | 7 => return .ctor (← next 3) (← (List.range (← next 3)).toArray.mapM fun _ => genSplitPat (d - 1))
+  | _ => return .alts (← (List.range (1 + (← next 3))).toArray.mapM fun _ => genSplitPat (d - 1))
+
+/-- A random value that `p` matches, but where a binder or `_` takes any
+value, so that a pattern's binders are bound often. -/
+partial def genValFor : Pat → R Val
+  | .wild | .bind _ => genVal 1
+  | .bool b => return .bool b
+  | .int lo hi => return .int ((lo.orElse fun _ => hi).getD (← small))
+  | .str t => return .str t
+  | .ctor idx ps => return .ctor `E idx (← ps.mapM genValFor)
+  | .alts ps => do genValFor (ps[← next ps.size]?.getD .wild)
+
+/-- How `Ex.eval` takes a `match` arm: `Pat.matches` decides whether the
+pattern matches, and `Pat.bindInto` binds it, as `Pat.matchInto` does
+both, on random patterns (`genSplitPat`), values and frames. -/
+def matchSplitAgrees : Array String := Id.run do
+  let mut failures := #[]
+  let mut seed := 13
+  let mut matched := 0
+  let mut bound := 0
+  for _ in [0:20000] do
+    let ((p, v, w), s) := (do
+      -- Half are a variant of two parts, so that two binders often match.
+      let p ← if (← next 2) == 0 then genSplitPat 3
+        else pure (Pat.ctor (← next 3) #[← genSplitPat 2, ← genSplitPat 2])
+      return (p, ← if (← next 2) == 0 then genValFor p else genVal 2, ← genVal 1)).run seed
+    seed := s
+    let fr : FrenCli.Eval.Frame := if v == w then .nil else .bind `y (some w) .nil
+    let split := if p.matches v then some (p.bindInto v fr) else none
+    if split.isSome then matched := matched + 1
+    if split.any (·.toList.length > fr.toList.length + 1) then bound := bound + 1
+    if split != p.matchInto v fr then
+      failures := failures.push s!"`Pat.matches` and `Pat.bindInto` disagree with `Pat.matchInto` on {repr v}"
+  if matched < 1000 then failures := failures.push s!"only {matched} patterns matched"
+  if bound < 300 then failures := failures.push s!"only {bound} matches bound two or more names"
   return failures
 
 /-- The recursion `g(a, b)` of `compiledRecursion`: a `match` on `a`, an
@@ -683,7 +754,7 @@ def constantOfRecursion : Bool :=
 #guard constantOfRecursion
 
 #eval show IO Unit from do
-  let failures := run ++ runInterp ++ mayMatchCtorSound ++ compiledRecursion
+  let failures := run ++ runInterp ++ mayMatchCtorSound ++ matchSplitAgrees ++ compiledRecursion
   unless failures.isEmpty do
     throw (IO.userError s!"`lang::eval` and `Ex.eval` disagree:\n{"\n".intercalate (failures.toList.take 5)}")
 

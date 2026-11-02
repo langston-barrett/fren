@@ -485,7 +485,7 @@ impl wildcard_single_variant: lint::wildcard_single_variant for (n : Nat) {
   omega
 
 -- Both front ends decide `is_equality` and `irrefutable_is` with
--- `isEquality` and `irrefutableIs`, where they elaborate the test.
+-- `isEquality` and `irrefutableIsAt`, where they elaborate the test.
 impl is_equality: lint::is_equality for (n : Nat) (e i : Bool) {
   n_alternatives := n,
   equatable? := e,
@@ -495,12 +495,17 @@ impl is_equality: lint::is_equality for (n : Nat) (e i : Bool) {
   intro n e i _
   cases e <;> cases i <;> simp [fren_spec, Fren.Core.isEquality] <;> omega
 
-impl irrefutable_is: lint::irrefutable_is for (m : Bool) {
-  matches_every? := m,
-  fires? := Fren.Core.irrefutableIs m,
+-- Both front ends call `irrefutableIsAt` with the test's pattern, which
+-- reads whether it binds a name from the pattern itself.
+impl irrefutable_is: lint::irrefutable_is for (sigs : Fren.Core.Sigs) (ty : Fren.Core.PatTy) (p : Fren.Core.Pat) {
+  binds? := p.bindsName,
+  matches_every? := Fren.Core.matchesEvery sigs ty p,
+  fires? := Fren.Core.irrefutableIsAt sigs ty p,
 } by
-  intro m _
-  cases m <;> simp [fren_spec, Fren.Core.irrefutableIs]
+  intro sigs ty p _
+  simp only [Fren.Core.irrefutableIsAt, Fren.Core.irrefutableIs]
+  generalize p.bindsName = b; generalize Fren.Core.matchesEvery sigs ty p = m
+  cases b <;> cases m <;> simp [fren_spec]
 
 /-! ## Matches and bindings -/
 
@@ -2385,12 +2390,13 @@ impl manual_rem_euclid: lint::manual_rem_euclid for (p q : Fren.Core.Summand) (k
   rcases p with ⟨pt, _ | pd⟩ <;> rcases q with ⟨qt, _ | qd⟩ <;> simp [fren_spec, toSummand, Fren.Core.manualRemEuclidRule]
   done
 
-impl modulo_one: lint::modulo_one for (k : Int) {
-  divisor := k,
-  fires? := Fren.Core.moduloOne k,
+impl modulo_one: lint::modulo_one for (d : Option Int) {
+  literal? := d.isSome,
+  divisor := d.getD 0,
+  fires? := Fren.Core.moduloOne d,
 } by
-  intro k _
-  simp [fren_spec, Fren.Core.moduloOne]
+  intro d _
+  cases d <;> simp [fren_spec, Fren.Core.moduloOne]
 
 impl min_max: lint::min_max for (i o : Fren.Core.MinMax) (a b : Int) {
   inner := toMinMax i,

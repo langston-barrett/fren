@@ -810,6 +810,33 @@ def ownSpecMessage? (level : String) (message : String) : Option (String × Diag
 #guard (ownSpecMessage? "trace" "src/Reqs/Fmt.lean:9:0: Fmt.md:461:0: x").isNone
 #guard (ownSpecMessage? "info" "stderr:\nCould not evaluate").isNone
 
+/-- The level and text of each message in the log of the Lake trace `text`. -/
+def traceEntries (text : String) : Array (String × String) :=
+  let log : Array Json := match Json.parse text >>= (·.getObjValAs? (Array Json) "log") with
+    | .ok l => l
+    | .error _ => #[]
+  log.filterMap fun e =>
+    match e.getObjValAs? String "level", e.getObjValAs? String "message" with
+    | .ok level, .ok message => some (level, message)
+    | _, _ => none
+
+/-- Why the trace `trace` of `Reqs.stem`, of log `entries`, cannot show
+Lean's checks of it: it was built without them, or its log has no command,
+which Lake logs first, as when the module was taken from the artifact cache
+(`Reqs/dev/Testing#shared-builds`). -/
+def traceProblem (trace stem : String) (entries : Array (String × String)) : Option String :=
+  match entries.find? (·.1 == "trace") with
+  | some (_, cmd) =>
+    if cmd.contains "fren.runChecks=false".toSlice then
+      some s!"{trace}: `Reqs.{stem}` was built without its checks; run `lake -R -Kcheck_reqs=1 build Reqs` first"
+    else none
+  | none => some s!"{trace}: no command in its log, so whether its checks ran is unknown"
+
+#guard (traceProblem "t" "Lang" (traceEntries "{\"log\": [{\"level\": \"trace\", \"message\": \"lean -Dweak.fren.runChecks=false x.lean\"}]}")).isSome
+#guard (traceProblem "t" "Lang" (traceEntries "{\"log\": [{\"level\": \"trace\", \"message\": \"lean x.lean\"}, {\"level\": \"info\", \"message\": \"m\"}]}")).isNone
+#guard (traceProblem "t" "Lang" (traceEntries "{\"log\": [{\"level\": \"info\", \"message\": \"m\"}]}")).isSome
+#guard (traceProblem "t" "Lang" (traceEntries "{}")).isSome
+
 /-- The Lean front end's messages about the Markdown specs of Fren's own
 requirements, from the logs that Lake kept in the traces of the modules of
 `src/Reqs` (`ownSpecMessage?`), with the problems: a module without a trace,
@@ -827,19 +854,8 @@ def hostedOwnSpec : IO (Array (String × Diagnostic) × Array String) := do
       | .error _ =>
         problems := problems.push s!"{trace}: no trace; run `lake -R -Kcheck_reqs=1 build Reqs` first"
         continue
-    let log : Array Json := match Json.parse text >>= (·.getObjValAs? (Array Json) "log") with
-      | .ok l => l
-      | .error _ => #[]
-    let entries : Array (String × String) := log.filterMap fun e =>
-      match e.getObjValAs? String "level", e.getObjValAs? String "message" with
-      | .ok level, .ok message => some (level, message)
-      | _, _ => none
-    -- The command that built it, which Lake logs first.
-    match entries.find? (·.1 == "trace") with
-    | some (_, cmd) =>
-      if cmd.contains "fren.runChecks=false".toSlice then
-        problems := problems.push s!"{trace}: `Reqs.{stem}` was built without its checks; run `lake -R -Kcheck_reqs=1 build Reqs` first"
-    | none => problems := problems.push s!"{trace}: no command in its log, so whether its checks ran is unknown"
+    let entries := traceEntries text
+    if let some p := traceProblem trace.toString stem entries then problems := problems.push p
     msgs := msgs ++ entries.filterMap fun (level, message) => ownSpecMessage? level message
   return (msgs, problems)
 
@@ -890,7 +906,8 @@ def ownSpecExample : Array Diagnostic × Array Diagnostic :=
 from `fren check` over `ownSpecFiles`, compared spec by spec as the
 front-end fuzzer compares them (`FrenTest.Frontends.comparison`), without
 the summaries, which Lean gives for each `#fren_check`, and without what
-only the binary runs (`ownSpecReports`). Run on `main` only,
+only the binary runs (`ownSpecReports`): its messages in an item that Lean
+notes it leaves checks of to `fren check`, all of them. Run on `main` only,
 by the `lean ci` workflow: `lake build` does not check `Reqs`, and `lake
 test`'s `ownSpec` job checks them with the binary. -/
 def ownSpecAgreement : IO (Array String) := do
@@ -2243,7 +2260,7 @@ def backjumpingOf (paths : Array String) : IO (Array String × Nat) := do
   let st := files.zipIdx.foldl (init := FrenCli.initialState #[]) fun st ((_, chars), i) =>
     FrenCli.elabParsed st i chars (FrenCli.parseText chars)
   if st.diags.any (·.severity == .error) then return (#[], 0)
-  let .ok sp := FrenCli.specOf files | return (#[], 0)
+  let .ok sp := FrenCli.specOf files st.callTargs | return (#[], 0)
   let mut failures := #[]
   let mut problems := 0
   for c in sp.comps do

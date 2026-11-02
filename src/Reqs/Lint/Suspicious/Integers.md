@@ -17,10 +17,12 @@ has no fix, as for [`eq_op`](Expressions.md#operands-written-the-same). A diviso
 literal is left as it is. It follows Clippy's `modulo_one`, in
 `correctness`, which Fren puts in `suspicious` (see
 [Groups](../../Lint.md#groups)). `lint::modulo_one` states when it fires,
-from the divisor:
+from whether the divisor is such a literal, and its value if it is:
 
 ```fren
-pub proc modulo_one(divisor: Int): (det fires?) { ensure rule: fires? iff divisor is 1 | -1 }
+pub proc modulo_one(literal?, divisor: Int): (det fires?) {
+    ensure rule: fires? iff (literal? and divisor is 1 | -1)
+}
 ```
 
 `min_max` fires on `x.min(a).max(b)` where `a < b`, and on
@@ -103,19 +105,31 @@ pub fn modulo_one_fires?<V>(e: lang::Expr<V>) := match e {
 }
 ```
 
-`lint::modulo_one` binds this to the linter: for a divisor that is an
-integer literal `n`, possibly negated, it fires exactly where
-`modulo_one_fires?` does. That the front ends read the divisor so is
-trusted, and checked by the ui tests in `test/ui/lints/integers.fren`.
+`lint::modulo_one` binds this to the linter: it fires exactly where
+`modulo_one_fires?` does, whether the divisor is an integer literal `n`,
+possibly negated, or not. That the front ends read the divisor so, and
+the `0` that the message gives, which is not an output of
+`lint::modulo_one`, are trusted, and checked by the ui tests in
+`test/ui/lints/integers.fren`.
 
 ```fren
-expect modulo_one_elaborated(negated?, n: Nat, x: lang::Expr<lang::Id>) {
+expect modulo_one_elaborated(
+    literal?,
+    negated?,
+    n: Nat,
+    x: lang::Expr<lang::Id>,
+    k: lang::Expr<lang::Id>,
+) {
     use lang::Expr::{Binary, Literal, Unary}
     use lang::Value::Integer
 
-    call p := modulo_one(if negated? then -n else n)
+    assume plain: not (k is Literal(Integer(_)) | Unary(lang::UnaryOp::Neg, Literal(Integer(_))))
 
-    let b: lang::Expr<lang::Id> := if negated? then Unary(lang::UnaryOp::Neg, Literal(Integer(n))) else Literal(Integer(n))
+    call p := modulo_one(literal?, if negated? then -n else n)
+
+    let b: lang::Expr<lang::Id> := if not literal? then k
+        else if negated? then Unary(lang::UnaryOp::Neg, Literal(Integer(n)))
+        else Literal(Integer(n))
 
     expect fires: p.fires? iff modulo_one_fires?(Binary(lang::BinaryOp::Mod, x, b))
 }

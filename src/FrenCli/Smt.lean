@@ -3,6 +3,7 @@ import FrenCli.Elab
 import FrenCli.QueryStore
 import FrenCli.SeqElems
 import FrenCore.Check
+import FrenCore.Goals
 import cvc5
 -- keep-sorted end
 
@@ -247,15 +248,82 @@ def Limits.options (limits : Limits) : String :=
   s!"(set-option :tlimit-per {limits.timeoutSecs * 1000})\n" ++
     if limits.resources == 0 then "" else s!"(set-option :rlimit-per {limits.resources})\n"
 
+open SeqElems (SExpr) in
+/-- The head of a goal of `fren check`, as `Fren.Core.introduceGoal` reads
+it (`Reqs/Cli#goal-introduction`): `(forall ((x S) ...) body)`,
+`(=> p q ...)` and `(let (...) body)`, the last with its definitions
+substituted. A bound name becomes the constant `(x', S)`, where `x'` is
+`Fren.Core.goalConstantName` of the symbols that the state has, the
+query's, and the prelude's declarations; the state gets `x'`. The state
+is computed only when a bound name needs it. -/
+def smtGoalHead (prelude : Prelude) (e : SExpr) :
+    StateM (Thunk (Std.HashSet String)) (Fren.Core.GoalHead (String × String) SExpr) := do
+  match e with
+  | .list #[.atom "forall", .list decls, body] =>
+    let some (SExpr.list #[.atom x, sort]) := decls[0]? | return .other
+    let rest := if decls.size == 1 then body else .list #[.atom "forall", .list (decls.extract 1), body]
+    let taken := (← get).get
+    let base := SeqElems.unquoted x
+    let name := Fren.Core.goalConstantName (fun s => taken.contains s || prelude.owner.contains s) base
+      (taken.size + prelude.owner.size + 1)
+    set (Thunk.pure (taken.insert name))
+    if name == base then return .universal (x, sort.toString) rest
+    return .universal (quote name, sort.toString) (rest.subst #[(x, .atom (quote name))])
+  | .list ts =>
+    match ts[0]? with
+    | some (SExpr.atom "=>") =>
+      if ts.size < 3 then return .other
+      return .premise ts[1]! (if ts.size == 3 then ts[2]! else .list (#[SExpr.atom "=>"] ++ ts.extract 2))
+    | some (SExpr.atom "let") =>
+      let #[_, .list binds, body] := ts | return .other
+      let σ := binds.filterMap fun | SExpr.list #[.atom x, d] => some (x, d) | _ => none
+      if σ.size != binds.size then return .other
+      return .definition (body.subst σ)
+    | _ => return .other
+  | _ => return .other
+
+/-- `goal`, a goal over `vars` with the hypotheses `hyps`, with its leading
+heads introduced (`Fren.Core.introduceGoal`, `smtGoalHead`): its constants,
+each with its sort, its premises, and the goal left. The hypotheses are
+read only if a bound name is introduced. A goal with nothing to introduce
+is left as it is written. -/
+def introduceSmtGoal (prelude : Prelude) (vars : Array CVar) (hyps : Array (Lean.Name × String)) (goal : String) :
+    Array (String × String) × Array String × String :=
+  let parsed := SeqElems.parse goal
+  let taken : Thunk (Std.HashSet String) := Thunk.mk fun _ => .ofArray (vars.map (·.name.toString) ++
+    (hyps.flatMap fun (_, h) => (SeqElems.parse h).freeAtoms) ++ parsed.freeAtoms)
+  let r := (Fren.Core.introduceGoal (smtGoalHead prelude) parsed).run' taken
+  if r.steps.isEmpty then (#[], #[], goal)
+  else (r.constants, r.premises.map toString, toString r.goal)
+
+-- Bound names and premises in any order, through a `let`; a bound name
+-- that the hypotheses have free, or an earlier constant has, is renamed.
+#guard introduceSmtGoal default #[] #[] "(forall ((|x| Int) (|y| Int)) (=> (> |x| 0) (> |y| |x|)))" ==
+  (#[("|x|", "Int"), ("|y|", "Int")], #["(> |x| 0)"], "(> |y| |x|)")
+#guard introduceSmtGoal default #[] #[(`h, "(> |x| 1)")] "(forall ((|x| Int)) (> |x| 0))" ==
+  (#[("|x#goal0|", "Int")], #[], "(> |x#goal0| 0)")
+#guard introduceSmtGoal default #[] #[] "(forall ((|x| Int)) (=> (> |x| 0) (forall ((|x| Int)) (> |x| 1))))" ==
+  (#[("|x|", "Int"), ("|x#goal0|", "Int")], #["(> |x| 0)"], "(> |x#goal0| 1)")
+#guard introduceSmtGoal default #[] #[] "(let ((|d| 1)) (forall ((|x| Int)) (=> a b c)))" ==
+  (#[("|x|", "Int")], #["a", "b"], "c")
+-- A goal with nothing to introduce is left as it is written.
+#guard introduceSmtGoal default #[] #[] "(and  a b)" == (#[], #[], "(and  a b)")
+
 /-- The SMT-LIB script that asserts `hyps` and the negation of `goal`, each
-hypothesis followed by a comment with its name; without `(check-sat)`. It
+hypothesis followed by a comment with its name; without `(check-sat)`. The
+goal's leading heads are introduced first (`introduceSmtGoal`): its
+constants are declared after the variables, and its premises asserted
+after the hypotheses, each followed by the comment `; premise`. It
 declares only what the prelude needs to (`Prelude.neededDecls`), and is in
 `logic`, but for `ALL` instead of `HO_ALL` if it projects no relation
 (`Fren.Core.queryLogic`). -/
 def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (hyps : Array (Lean.Name × String)) (goal : String) : String :=
+  let (constants, premises, goal) := introduceSmtGoal prelude vars hyps goal
   let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote v.name.toString} {v.ty.sort})\n")
+  let decls := decls ++ String.join (constants.toList.map fun (x, s) => s!"(declare-const {x} {s})\n")
   let asserts := String.join (hyps.toList.map fun (n, h) => s!"(assert {h}) ; {n}\n")
+  let asserts := asserts ++ String.join (premises.toList.map fun p => s!"(assert {p}) ; premise\n")
   let body := s!"{decls}{asserts}(assert (not {goal}))\n"
   -- `mapQuoted` of the whole script, piece by piece: each piece is whole
   -- commands, which close their quoted symbols and string literals, so
@@ -728,6 +796,45 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashM
   let typed := (types.get? head).map fun t => (`type, pre ++ t.replace factHole inner ++ post)
   (if nat then #[(`nat, pre ++ s!"(>= {inner} 0)" ++ post)] else #[]) ++ typed.toArray ++ posts.map fun (n, f) => (n, pre ++ f ++ post)
 
+/-- The atoms of the SMT-LIB term `e`, each once, in order. -/
+partial def atomsOf (e : SeqElems.SExpr) (acc : Array String := #[]) : Array String :=
+  match e with
+  | .atom a => if acc.contains a then acc else acc.push a
+  | .list xs => xs.foldl (fun acc x => atomsOf x acc) acc
+
+/-- The applications of the symbols `heads` in the SMT-LIB term `e`, each
+once, after `acc`, as the Lean front end's `natApps` finds them: an
+application before its arguments, and they from left to right. One that
+mentions a name that a quantifier around it within `e` binds, of those
+`bound`, is closed over those names with a `forall`, outermost first, as
+an unbounded quantifier's applications are (`peelLets`): its facts hold
+for every value of them. -/
+partial def factAppsIn (heads : Std.HashSet String) (e : SeqElems.SExpr) (bound : Array (String × String) := #[])
+    (acc : Array String := #[]) : Array String :=
+  match e with
+  | .atom _ => acc
+  | .list xs =>
+    match SeqElems.binderOf? e, xs with
+    | some _, #[_, .list decls, body] =>
+      -- A `let`'s definitions are outside its scope; `unfold` leaves none.
+      let acc := decls.foldl (init := acc) fun acc d => match d with
+        | .list #[_, v] => if xs[0]! == .atom "let" then factAppsIn heads v bound acc else acc
+        | _ => acc
+      let names := decls.filterMap fun
+        | SeqElems.SExpr.list #[.atom x, t] => some (x, toString t)
+        | _ => none
+      factAppsIn heads body ((bound.filter fun (x, _) => !names.any (·.1 == x)) ++ names) acc
+    | _, _ =>
+      let acc := match xs[0]? with
+        | some (SeqElems.SExpr.atom h) =>
+          if !heads.contains h then acc else
+          let used := bound.filter fun (x, _) => e.mentions #[x]
+          let t := if used.isEmpty then toString e
+            else s!"(forall ({" ".intercalate (used.toList.map fun (x, t) => s!"({x} {t})")}) {e})"
+          if acc.contains t then acc else acc.push t
+        | _ => acc
+      xs.foldl (fun acc x => factAppsIn heads x bound acc) acc
+
 /-- Whether a query of the formulas `fs` has a quantifier over elements to
 expand, directly or in a `define-fun` of `marked` that it applies. -/
 def needsExpansion (marked : Std.HashMap String (Array String × SeqElems.SExpr)) (fs : Array String) : Bool :=
@@ -871,7 +978,8 @@ the scripts asked before (`runQuery`). -/
 def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
     (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (quantified : Bool := false)
     (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind)
-    (contractFns : Std.HashMap String Lean.Name := {}) (applied? : Option (IO.Ref (Array Lean.Name)) := none) :
+    (contractFns : Std.HashMap String Lean.Name := {}) (applied? : Option (IO.Ref (Array Lean.Name)) := none)
+    (recursiveSyms : Std.HashMap String Lean.Name := {}) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
   -- has what the `Nat` variables bring, of both copies, and what the
@@ -906,7 +1014,6 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
     let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
     let mentioned : Std.HashSet String := .ofArray (formulas.flatMap quotedSymbols)
-    let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
     -- A model shows those that the formulas mention once their definitions
     -- are unfolded, as Lean's does (`termMentions`).
     let used := prelude.used.get
@@ -926,13 +1033,39 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     let fnOf (app : String) : Option Lean.Name :=
       let inner := (splitLets app).2.1
       contractFns.get? ((inner.drop 1).takeWhile (· != ' ')).toString
-    let (appFacts, fns) := Fren.Core.appFactsWith (m := Id) appsOf (appFactsOf funs c.funFacts) fnOf
-      (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal) c.fn?
+    -- And those of the applications in those facts, once their clauses
+    -- are unfolded, of the functions whose applications bring facts
+    -- (`Fren.Core.closeApps`).
+    let factHeads : Std.HashSet String := funs.fold (init := .ofList (c.funFacts.toList.map (·.1)))
+      fun acc h (nat, k) => if nat || !k.posts.isEmpty then acc.insert h else acc
+    let factAppsOf (f : String) : Id (Array String) :=
+      (factAppsIn factHeads ((SeqElems.parse f).unfold prelude.unfolds.get)).map fun t =>
+        ((peeled.idxOf? t).map (apps[·]!)).getD t
+    let some (appFacts, fns) := Fren.Core.appFactsWith (m := Id) appsOf (appFactsOf funs c.funFacts) fnOf factAppsOf
+        (factHeads.size + 1) (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal) c.fn?
+      | throw (IO.userError Fren.Core.factRoundsMsg)
+    -- Without the `let`s of their applications that they do not use, as
+    -- Lean's `zetaReduce` drops them; and the query declares the variables
+    -- that they mention too, which a fact of an application in a `let` may
+    -- where the formulas do not, as of a parameter that a contract does not
+    -- mention.
+    let appFacts := appFacts.map fun (n, f) => (n, dropUnusedLets f)
+    let mentioned := appFacts.foldl (init := mentioned) fun m (_, f) => (quotedSymbols f).foldl (·.insert ·) m
+    let vars := (c.vars ++ primes c).filter (mentioned.contains ·.name.toString)
     if let some r := applied? then
       r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
     -- A procedure whose queries may quantify sets `fmf-bound`
     -- (`State.bounded`).
-    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts hyps goal mentioned ++ hyps
+    -- The recursive functions that the facts of its applications apply,
+    -- once their clauses are unfolded, by path, whose models are never
+    -- confirmed (`Fren.Core.recursiveCounterexample`).
+    let factRecs := if recursiveSyms.isEmpty then #[] else appFacts.foldl (init := #[]) fun acc (_, f) =>
+      (atomsOf ((SeqElems.parse f).unfold prelude.unfolds.get)).foldl (init := acc) fun acc a =>
+        match recursiveSyms.get? a with
+        | some p => if acc.contains p then acc else acc.push p
+        | none => acc
+    -- Reflected with the hypotheses (`Fren.Core.recursionFormulas`).
+    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas facts appFacts hyps) goal mentioned ++ hyps
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
       -- The contract of a generic function without a body, at its type
       -- parameters' sorts, with finite-model finding.
@@ -944,6 +1077,12 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
         solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations) vars hyps goal
           wantModel
       else runQuery logic options prelude vars limits dump? hyps goal wantModel cache? observations
+    -- A fact that applies a recursive function is never confirmed, a
+    -- conservative choice, as the Lean front end decides it too.
+    let o := match o with
+      | .sat _ => if Fren.Core.recursiveCounterexample false true (!factRecs.isEmpty) then o
+        else .unknown (Fren.Core.recursiveReason factRecs)
+      | o => o
     return match o with
       | .sat m => .sat (m.filter fun (n, _) => shown.contains n.toString || n.toString.startsWith "#member_observation_")
       | o => o

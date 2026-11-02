@@ -4,8 +4,8 @@ warning[F0450]: could not decide whether the postcondition `not_minus_one` of `s
 8 |     ensure not_minus_one: r != -1
   |            ^^^^^^^^^^^^^ contracts may be too weak
   |
-  = note: this check fails only under the contracts of `size`
-  = note: evaluation of the recursive definitions does not confirm the counterexample
+  = note: this check fails under the contracts of `size`
+  = note: evaluation of the recursive definitions does not confirm the counterexample: it refutes it, or cannot evaluate it
   = help: strengthen those functions' contracts
 
 fren: 0 passed, 0 failed, 1 inconclusive, 0 redundant

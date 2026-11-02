@@ -1,5 +1,6 @@
-# Fren's reference manual: the requirements in `src/Reqs`, which are also
-# checked by `lake build`. `mdbook build` writes it to `book/`.
+# Fren's reference manual: the requirements in `src/Reqs`, which `lake
+# build` elaborates, `fren check` checks in `lake test`, and Lean checks on
+# `main`. `mdbook build` writes it to `book/`.
 [book]
 title = "Fren"
 src = "src/Reqs"

@@ -751,9 +751,10 @@ the fix agrees with the expression only in an interpretation that gives
 an integer `n` that is not `0`, the remainder `r` of `a` by `n` is at least
 `0` and below `n.abs`. So `r + n` is within `n.abs` above that range,
 where `n` is positive, or below it, where `n` is negative, and its
-remainder by `n` is `r`. Where the graph has no point for either
-remainder, the expression is undefined, and elsewhere `a mod k` is
-undefined too. The solver unfolds
+remainder by `n` is `r`. Where the graph has no point for one of the
+remainders, the expression is undefined; and where `a` is not an integer,
+or `k` not an integer other than `0`, `a mod k` and the expression are
+both undefined. The solver unfolds
 [`eval`](../../Lang/Semantics.md#the-evaluation-function) one step, and the
 graph of the primitives is a list of any length, so
 `src/Impls/Rewrites.lean` proves it in Lean, for every expression,

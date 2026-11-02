@@ -374,8 +374,18 @@ partial def Fm.recursiveNames (sp : Spec) : Fm → Array Name
   | _ => #[]
 where
   names (e : Ex) : Array Name :=
-    (match e with | .app f _ => if sp.recDefs.contains f then #[f] else #[] | _ => #[])
+    (match e with
+      | .app f _ => if sp.recDefs.contains f then #[f] else #[]
+      -- And those of the invariants of a subset type that a value is
+      -- checked against, which evaluation applies.
+      | .typed t _ _ => typeNames t
+      | _ => #[])
       ++ e.children.flatMap names
+  typeNames (t : Fren.Core.PTy) : Array Name :=
+    t.invariants.flatMap (fun i => match sp.defs.find? i.predicate with
+      | some (_, body, _) => names body
+      | none => #[])
+      ++ t.elems.flatMap typeNames
 
 /-- `b`, with each formula paired with its meaning, and each model
 evaluated; refuted models are recorded in `log`. `sy` is `Symbols.of sp`,
@@ -415,9 +425,12 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
         -- A formula without recursion that the model contradicts is a bug
         -- in Fren, which the refutation below reports, not evidence about
         -- the contracts (`Reqs/Models#reporting`).
-        let plain := (hyps.zip vals).any (fun ((_, f), (_, v)) => v == some false && (f.2.recursiveNames sp).isEmpty)
-          || (g == some true && (goal.2.recursiveNames sp).isEmpty)
-        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty) (bad.isNone && g == some false && vals.all (·.2 == some true)) then
+        let plain := Fren.Core.plainContradiction
+          ((hyps.zip vals).map fun ((n, f), (_, v)) => (n, v, !(f.2.recursiveNames sp).isEmpty))
+          (g, !(goal.2.recursiveNames sp).isEmpty)
+        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty)
+            (bad.isNone && g == some false && vals.all (·.2 == some true))
+            false then
           return .unknown (Fren.Core.recursiveReason recursive)
         -- Only a refuted model is reported (`eval::confirm`).
         if confirmation bad.isSome (g == some true) (vals.all (·.2.isSome) && g.isSome) == .Refuted then
@@ -622,16 +635,18 @@ def applyRefutations (results : Array Fren.Core.CheckResult) (log : Array Refuta
   return (out, errs)
 
 /-- The evaluator's reading of files that the elaborator accepted. -/
-def specStateOf (files : Array (String × Array Char)) : Except String LState := do
+def specStateOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Except String LState := do
   let items ← files.mapM fun (_, chars) =>
     match lex chars with
     | .error e => throw e.msg.headline
     | .ok toks => match parse toks chars with
       | .error e => throw e.msg.headline
       | .ok items => pure items
-  lowerAll items
+  lowerAll items callTargs
 
-def specOf (files : Array (String × Array Char)) : Except String Spec := (·.spec) <$> specStateOf files
+def specOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Except String Spec := (·.spec) <$> specStateOf files callTargs
 
 /-- The evaluator's procedure for the elaborator's, matched by path, for a
 global expectation by its module and name, or for the body of a function

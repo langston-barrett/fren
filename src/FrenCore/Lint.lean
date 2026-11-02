@@ -2420,9 +2420,21 @@ def membershipMsg (replacement : String) (test : Bool) : Msg :=
 after it, as for an arm after it (`Reqs/Lang/Patterns`). -/
 def matchesEvery (sigs : Sigs) (ty : PatTy) (p : Pat) : Bool := !useful sigs [ty] #[[p]] [.wild]
 
-/-- Whether `irrefutable_is` fires on `e is P`, from whether `P` matches
-every value of `e`'s type (`lint::irrefutable_is`). -/
-def irrefutableIs (matchesEvery : Bool) : Bool := matchesEvery
+/-- Whether the pattern `p` contains a binder. -/
+partial def Pat.bindsName : Pat → Bool
+  | .wild b => b
+  | .ctor _ args => args.any (·.bindsName)
+  | .or alts => alts.any (·.bindsName)
+  | _ => false
+
+/-- Whether `irrefutable_is` fires on `e is P`, from whether `P` binds a
+name, which what follows the test needs, and whether it matches every
+value of `e`'s type (`lint::irrefutable_is`). -/
+def irrefutableIs (binds matchesEvery : Bool) : Bool := !binds && matchesEvery
+
+/-- `irrefutable_is` on `e is p`, where `e` is a `ty`: both front ends call
+this, with the pattern (`lint::irrefutable_is`). -/
+def irrefutableIsAt (sigs : Sigs) (ty : PatTy) (p : Pat) : Bool := irrefutableIs p.bindsName (matchesEvery sigs ty p)
 
 /-- `e is P` that is always `true`, where `e` is a `ty`. -/
 def irrefutableIsMsg (ty : String) (wildcard : Bool) : Msg :=
@@ -5746,9 +5758,9 @@ def manualRemEuclidMsg (fixed : String) : Msg :=
     notes := #["note: `mod` is Euclidean, so `a mod k` is at least 0 and below the size of `k`, even where `a` is negative"]
     fixes := #[{ msg := s!"write `{fixed}`", replacement := fixed }] }
 
-/-- Whether `modulo_one` fires on `x mod k`, where `k` is an integer
-literal (`lint::modulo_one`). -/
-def moduloOne (k : Int) : Bool := k == 1 || k == -1
+/-- Whether `modulo_one` fires on `x mod k`, from the value of `k` if it
+is an integer literal, possibly negated (`lint::modulo_one`). -/
+def moduloOne (divisor : Option Int) : Bool := divisor == some 1 || divisor == some (-1)
 
 def moduloOneMsg (k : String) : Msg :=
   { code? := some Lint.moduloOne.code, headline := s!"the remainder by `{k}` is always `0`", label? := some "always `0`"
@@ -5902,7 +5914,7 @@ def manualRemEuclidAt? (src : Array Char) (n : BNode α) (slot : Option Slot) (p
 def moduloOneAt? (src : Array Char) (n : BNode α) : Option (OpReport α) := do
   guard (n.kind == .bin "mod")
   let #[_, k] := n.kids | none
-  guard (moduloOne (← intLiteral? src k))
+  guard (moduloOne (intLiteral? src k))
   return { lint := .moduloOne, ref := n.ref, msg := moduloOneMsg (writtenForm (textOf src k.range)) }
 
 /-- `min_max` on `n`, a call of `min` or `max` (`lint::min_max`). -/
