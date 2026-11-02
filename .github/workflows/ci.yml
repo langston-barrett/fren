@@ -187,8 +187,9 @@ jobs:
       with:
         sha: ${{ github.sha }}
     - run: lake build fren_fuzz_frontends
-    # Four fuzzers at once, one to a core, two of each generator, each on
-    # 150 seeds of the run's 1000, far from the corpus's.
+    # Four fuzzers at once, one to a core, each on seeds of the run's 1000,
+    # far from the corpus's: two of the default generator, one of
+    # `--guards`, and one of `--sites` and then `--confirm`.
     - name: Fuzz the front ends
       env:
         RUN: ${{ github.run_number }}
@@ -199,7 +200,7 @@ jobs:
         fuzz --count 150 --seed "$base" & a=$!
         fuzz --count 150 --seed "$((base + 150))" & b=$!
         fuzz --guards --count 150 --seed "$((base + 300))" & c=$!
-        fuzz --guards --count 150 --seed "$((base + 450))" & d=$!
+        { fuzz --sites --count 75 --seed "$((base + 450))" && fuzz --confirm --count 75 --seed "$((base + 525))"; } & d=$!
         code=0
         for pid in "$a" "$b" "$c" "$d"; do wait "$pid" || code=1; done
         exit "$code"

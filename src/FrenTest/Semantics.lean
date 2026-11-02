@@ -3,6 +3,7 @@
 import FrenCli.Eval
 import FrenCli.Search
 import Reqs.Lang
+import Reqs.Models
 -- keep-sorted end
 
 /-!
@@ -141,6 +142,13 @@ def matchE (s : lang.Expr String) : List ((lang.Pattern String) × (lang.Expr St
   | [] => .NoMatch
   | (p, g, b) :: arms => .Match s p g b (matchE s arms)
 
+/-- `C0`, as lowering gives a constant: the literal of its value where it is
+an integer, and its expression otherwise (`Spec.consts`). -/
+def constPair (P : Prog) : Pair :=
+  match lang.eval ⟨.Empty, .Empty, .Empty⟩ .Empty P.c0.2 with
+  | .Defined (.Integer k) => (.lit (.int k), .Apply "C0" .Nil .Nil P.c0.2)
+  | _ => (.const `C0 P.c0.1, .Apply "C0" .Nil .Nil P.c0.2)
+
 mutual
 /-- An expression of type `t`, at most `d` deep. -/
 partial def gen (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
@@ -164,7 +172,9 @@ partial def gen (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
     | 8 =>
       if sc.fn then
         let a ← gen P sc .int (d - 1)
-        return (subst a.1 P.f.1, .Apply "f" (list [a.2]) (.Cons "n" .Nil) P.f.2)
+        -- With its argument beside the body, as lowering applies a defined
+        -- function (`Ex.strict`).
+        return (.strict #[a.1] (subst a.1 P.f.1), .Apply "f" (list [a.2]) (.Cons "n" .Nil) P.f.2)
       else genLeaf P sc t
     | 9 =>
       if sc.apps then
@@ -174,7 +184,7 @@ partial def gen (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
       else genLeaf P sc t
     | _ => genLeaf P sc t
   | .bool =>
-    match ← next 11 with
+    match ← next 16 with
     | 0 => let a ← gen P sc .bool (d - 1); return (.not a.1, .Unary .Not a.2)
     | 1 => return bin (← pick #[Op.and, .or, .iff, .eq, .ne]) (← gen P sc .bool (d - 1)) (← gen P sc .bool (d - 1))
     | 2 => return bin (← pick #[Op.lt, .le, .gt, .ge, .eq, .ne]) (← gen P sc .int (d - 1)) (← gen P sc .int (d - 1))
@@ -194,7 +204,22 @@ partial def gen (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
         .Count (if c == .atMostOne then .AtMost else .Exactly) (list (xs.map (·.2))))
     | 8 => let r ← gen P sc .r (d - 1); return (.field r.1 1, .Project r.2 "R" 1)
     | 9 => genMatch P sc t d
-    | _ => genTable P sc t d
+    | 10 => genTable P sc t d
+    | 11 | 12 => genSpelled P sc d
+    -- A pattern test, as lowering writes it: a `match` of two arms.
+    | 13 =>
+      let s ← gen P sc .e (d - 1)
+      let (p, q) ← pick #[(Pat.ctor 0 #[.wild], lang.Pattern.Variant "E::A" (.Cons .Wildcard .Nil)),
+        (Pat.ctor 1 #[], .Variant "E::B" .Nil),
+        (Pat.alts #[.ctor 1 #[], .ctor 0 #[.wild]], .Or (.Variant "E::B" .Nil) (.Variant "E::A" (.Cons .Wildcard .Nil)))]
+      return (.match s.1 #[(p, none, .lit (.bool true)), (.wild, none, .lit (.bool false))] 0 #[] none none, .Is s.2 q)
+    -- A `let`, as lowering writes it: its name stands for its definition.
+    | 14 =>
+      let y := Lean.Name.mkSimple s!"l{d}"
+      let dfn ← gen P sc .int (d - 1)
+      let b ← gen P { sc with binders := y :: sc.binders } .bool (d - 1)
+      return (b.1.subst [(y, dfn.1)], .Let y.toString dfn.2 b.2)
+    | _ => genOneMatch P sc t d
   | .str =>
     match ← next 2 with
     | 0 => genIte P sc t d
@@ -222,7 +247,7 @@ partial def genLeaf (P : Prog) (sc : Scope) (t : Ty) : R Pair := do
       let x ← pick #["x", "y"]
       return (.var (Lean.Name.mkSimple x), .Var x)
     else if k = 1 ∧ sc.param then return (.var `n, .Var "n")
-    else if k = 2 ∧ sc.const then return (.const `C0 P.c0.1, .Apply "C0" .Nil .Nil P.c0.2)
+    else if k = 2 ∧ sc.const then return constPair P
     else if k = 3 ∧ bs.length > 0 then
       let n := bs[← next bs.length]!
       return (.bound n, .Var n.toString)
@@ -239,6 +264,46 @@ partial def genLeaf (P : Prog) (sc : Scope) (t : Ty) : R Pair := do
   | .seq => return (.seqLit #[], .Nil)
   | .e => return (.ctor `E 1 #[], .Construct "E::B" .Nil)
   | .r => return (.ctor `R 0 #[(intLit 0).1, (boolLit true).1], .Construct "R" (list [(intLit 0).2, (boolLit true).2]))
+
+/-- A count spelled out: a sum of `if c then 1 else 0`, of literals that are
+not negative, of `C0` and of applications of `f`, compared with `1` or with
+`C0` by `=`, `<=` or `1 >= …` (`model::known_eval`'s `counts?`). -/
+partial def genSpelled (P : Prog) (sc : Scope) (d : Nat) : R Pair := do
+  let leaf : R Pair := do
+    match ← next 6 with
+    | 0 | 1 | 2 =>
+      let c ← gen P sc .bool (d - 1)
+      return (.ite c.1 (intLit 1).1 (intLit 0).1, .If c.2 (intLit 1).2 (intLit 0).2)
+    | 3 =>
+      let k := intLit (← next 3)
+      -- Negated too, which both front ends read as the integer it is.
+      if (← next 3) == 0 then return (.neg k.1, .Unary .Neg k.2) else return k
+    | 4 => if sc.const then return constPair P else return intLit 1
+    | _ =>
+      if sc.fn then
+        let a ← gen P sc .int (d - 1)
+        return (.strict #[a.1] (subst a.1 P.f.1), .Apply "f" (list [a.2]) (.Cons "n" .Nil) P.f.2)
+      else return intLit 0
+  let mut sum ← leaf
+  for _ in [0:← next 3] do sum := bin .add sum (← leaf)
+  let one ← if (← next 3) == 0 && sc.const then pure (constPair P) else pure (intLit 1)
+  match ← next 3 with
+  | 0 => return bin .eq sum one
+  | 1 => return bin .le sum one
+  | _ => return bin .ge one sum
+
+/-- A `match` over the enumeration `O { A(Int) }`, of one variant, whose one
+arm covers it. -/
+partial def genOneMatch (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
+  let a ← gen P sc .int (d - 1)
+  let y := Lean.Name.mkSimple s!"o{d}"
+  let sc' := { sc with binders := y :: sc.binders }
+  let (p, q) ← pick #[(Pat.ctor 0 #[.bind y], lang.Pattern.Variant "O::A" (.Cons (.Binder y.toString) .Nil)),
+    (Pat.ctor 0 #[.wild], .Variant "O::A" (.Cons .Wildcard .Nil))]
+  let g ← genGuard P sc' d
+  let b ← gen P sc' t (d - 1)
+  return (.match (.ctor `O 0 #[a.1]) #[(p, g.1, b.1)] 0 #[] none none,
+    matchE (.Construct "O::A" (list [a.2])) [(q, g.2, b.2)])
 
 partial def genIte (P : Prog) (sc : Scope) (t : Ty) (d : Nat) : R Pair := do
   let c ← gen P sc .bool (d - 1)
@@ -370,6 +435,49 @@ the integers `rs`, where it is their successor, as its body says. -/
 def semanticInterp (us : List (Int × Int)) (rs : List Int) : lang.Interp :=
   ⟨graphOf "u" us, graphOf "r" (rs.map fun k => (k, k + 1)), .Empty⟩
 
+/-- Whether `e` applies a structural recursion, whose body the binary
+evaluates where the semantics' graph has no point. -/
+def appliesRecursion : lang.Expr String → Bool
+  | .Recur _ _ => true
+  | .Unary _ a | .Is a _ | .Project a _ _ | .Construct _ a | .Count _ a | .Apply _ a _ _ | .Call _ a => appliesRecursion a
+  | .Binary _ a b | .And a b | .Or a b | .Cons a b | .Index a b | .Let _ a b | .Method _ a b =>
+    appliesRecursion a || appliesRecursion b
+  | .If a b c => appliesRecursion a || appliesRecursion b || appliesRecursion c
+  | .Match a _ b c d => appliesRecursion a || appliesRecursion b || appliesRecursion c || appliesRecursion d
+  | _ => false
+
+/-- Whether a part of `e` has `f`. -/
+partial def anyPart (f : lang.Expr String → Bool) (e : lang.Expr String) : Bool :=
+  f e || match e with
+    | .Unary _ a | .Is a _ | .Project a _ _ | .Construct _ a | .Count _ a | .Apply _ a _ _ | .Call _ a | .Recur _ a =>
+      anyPart f a
+    | .Binary _ a b | .And a b | .Or a b | .Cons a b | .Index a b | .Let _ a b | .Method _ a b => anyPart f a || anyPart f b
+    | .If a b c => anyPart f a || anyPart f b || anyPart f c
+    | .Match a _ b c d => anyPart f a || anyPart f b || anyPart f c || anyPart f d
+    | _ => false
+
+/-- The forms that the strict comparison must see, each with its name. -/
+def strictForms : List (String × (lang.Expr String → Bool)) :=
+  [("a count spelled out", fun
+      | .Binary .Eq (.Binary .Add _ _) _ | .Binary .Le (.Binary .Add _ _) _ => true
+      | .Binary .Eq (.If _ _ _) _ | .Binary .Le (.If _ _ _) _ => true
+      | _ => false),
+   ("a count spelled out against a constant", fun
+      | .Binary .Eq _ (.Apply _ .Nil _ _) | .Binary .Le _ (.Apply _ .Nil _ _) => true
+      | _ => false),
+   ("an application of `f` in a sum", fun
+      | .Binary .Add (.Apply "f" _ _ _) _ | .Binary .Add _ (.Apply "f" _ _ _) => true
+      | _ => false),
+   ("a negated literal in a sum", fun
+      | .Binary .Add (.Unary .Neg (.Literal _)) _ | .Binary .Add _ (.Unary .Neg (.Literal _)) => true
+      | _ => false),
+   ("a pattern test", fun | .Is _ _ => true | _ => false),
+   ("a `let`", fun | .Let _ _ _ => true | _ => false),
+   ("an or-pattern", fun | .Match _ (.Or _ _) _ _ _ => true | _ => false),
+   ("a `match` of a one-variant enumeration", fun | .Match (.Construct "O::A" _) _ _ _ _ => true | _ => false),
+   ("a count", fun | .Count _ _ => true | _ => false),
+   ("an application of `u`", fun | .Call _ _ => true | _ => false)]
+
 /-- Whether `e` applies an uninterpreted function or a structural recursion. -/
 def applies : lang.Expr String → Bool
   | .Call _ _ | .Recur _ _ => true
@@ -396,6 +504,8 @@ def run : Array String := Id.run do
   let mut closedOnes := 0
   let mut applied := 0
   let mut typedKnown := 0
+  let mut strictOnes := 0
+  let mut formCounts : List Nat := strictForms.map fun _ => 0
   for k in [0:3000] do
     let ((_, e, b, us, rs), s) := (do
       let P ← genProg
@@ -417,6 +527,28 @@ def run : Array String := Id.run do
     | none, .Defined _ =>
       failures := failures.push s!"{repr e.2} in {repr b} is well-defined by `lang::eval`, but `Ex.eval` does not know it"
     | none, .Undefined => unknown := unknown + 1
+    -- Evaluated strictly, as a model's confirmation evaluates, the binary's
+    -- evaluator is `model::known_eval`: `lang::eval` with the extensions of
+    -- `Reqs/Models#known-values`, and no other. Not where the expression
+    -- applies `r`, whose body the binary evaluates where the semantics'
+    -- graph has no point; `u`'s graphs are the same in both.
+    let strict : FrenCli.Eval.Interp := { binaryInterp us with strict := true }
+    unless appliesRecursion e.2 do
+      strictOnes := strictOnes + 1
+      formCounts := (strictForms.zip formCounts).map fun ((_, has), n) => if anyPart has e.2 then n + 1 else n
+      let k := model.known_eval i env e.2
+      match e.1.eval strict look, k with
+      | some v, .Defined w =>
+        unless toValue v == some w do
+          failures := failures.push s!"{repr e.2} in {repr b} is {repr v} by strict `Ex.eval`, but {repr w} by `model::known_eval`"
+      | some v, .Undefined =>
+        failures := failures.push s!"{repr e.2} in {repr b} is {repr v} by strict `Ex.eval`, which `model::known_eval` does not know"
+      | none, .Defined w =>
+        failures := failures.push s!"{repr e.2} in {repr b} is {repr w} by `model::known_eval`, which strict `Ex.eval` does not know"
+      | none, .Undefined => pure ()
+      let once := e.1.compile (fun _ => none) none
+      unless once.eval strict look == e.1.eval strict look do
+        failures := failures.push s!"{repr e.2} in {repr b} changes its strict value when compiled"
     -- An expression that mentions nothing has one outcome in every environment.
     if lang.free_vars e.2 = ∅ then
       closedOnes := closedOnes + 1
@@ -480,6 +612,9 @@ def run : Array String := Id.run do
   if closedOnes < 100 then failures := failures.push s!"only {closedOnes} expressions mentioned nothing"
   if applied < 300 then failures := failures.push s!"only {applied} expressions applied `u` or `r`"
   if typedKnown < 50 then failures := failures.push s!"only {typedKnown} subset-type checks were of a known integer"
+  if strictOnes < 1000 then failures := failures.push s!"only {strictOnes} expressions were evaluated strictly"
+  for (name, _) in strictForms, n in formCounts do
+    if n < 30 then failures := failures.push s!"only {n} expressions evaluated strictly had {name}"
   return failures
 
 /-- A random pattern, at most `d` deep, over `Bool`s, integers, strings

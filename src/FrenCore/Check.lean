@@ -71,6 +71,24 @@ def contradiction? (hyps : Array (Name × Option Bool)) (goal : Option Bool) : O
   | some (h, _) => some (.hypothesis h)
   | none => if goal == some true then some .goal else none
 
+/-- Whether an application's value is known in a model's confirmation,
+where `args` says whether each argument's value is known, and `body`
+whether the body's is at them: evaluation is strict, so not where an
+argument's is unknown, even one that the body never reads
+(`model::known_application`). Both front ends' evaluators decide by it. -/
+def appliedKnown (args : List Bool) (body : Bool) : Bool := args.all id && body
+
+/-- Whether an `if`'s value is known in a model's confirmation, where `cond`
+is its condition's truth, `none` being unknown, `yes` and `no` say whether
+its branches' values are known, and `same` whether they are equal: the
+branch taken's, or, where the condition is unknown, both branches', if they
+are equal (`model::known_if`). Both front ends' evaluators decide by it. -/
+def iteKnown (cond : Option Bool) (yes no same : Bool) : Bool :=
+  match cond with
+  | some true => yes
+  | some false => no
+  | none => yes && no && same
+
 /-- Whether the readers of both front ends misread every integer of a
 model that a check reports as one more than it is, a bug that the ui tests inject, with
 the environment variable `FREN_MISREAD_MODELS`, to see that confirmation

@@ -198,7 +198,7 @@ partial def Ex.lits : Ex → Array Int
   | .memo lets e => e.lits ++ lets.flatMap (·.lits)
   | .lifted lets e => e.lits ++ lets.flatten.flatMap (·.lits)
   | .dispatch _ m => m.lits
-  | .not a | .neg a | .field a _ | .pre _ _ _ a => a.lits
+  | .not a | .neg a | .field a _ | .pre _ _ _ a | .strict _ a => a.lits
   | .bin _ a b | .when _ a b => a.lits ++ b.lits
   | .ite c a b => c.lits ++ a.lits ++ b.lits
   | .app _ args | .cardinality _ args | .ctor _ _ args => args.flatMap (·.lits)
@@ -226,7 +226,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .memo lets e => e.equated x ++ lets.flatMap (·.equated x)
   | .lifted lets e => e.equated x ++ lets.flatten.flatMap (·.equated x)
   | .dispatch _ m => m.equated x
-  | .not a | .neg a | .field a _ | .pre _ _ _ a => a.equated x
+  | .not a | .neg a | .field a _ | .pre _ _ _ a | .strict _ a => a.equated x
   | .bin _ a b | .when _ a b => a.equated x ++ b.equated x
   | .ite c a b => c.equated x ++ a.equated x ++ b.equated x
   | .app _ args | .cardinality _ args | .ctor _ _ args => args.flatMap (·.equated x)
@@ -381,7 +381,7 @@ partial def Ex.vars : Ex → Array Name
   | .memo lets e => e.vars ++ lets.flatMap (·.vars)
   | .lifted lets e => e.vars ++ lets.flatten.flatMap (·.vars)
   | .dispatch _ m => m.vars
-  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.vars
+  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a | .strict _ a => a.vars
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
@@ -615,6 +615,7 @@ partial def Ex.slots : Ex → Array Nat
   | .range lo hi => lo.slots ++ hi.slots
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.slots)).getD #[] ++ v.slots
   | .pre _ _ gs e => gs.flatMap (·.2.slots) ++ e.slots
+  | .strict _ e => e.slots
   | .typed _ _ e => e.slots
 
 /-- What `Problem.search` computes of `p` before it reads its environment,
@@ -826,7 +827,7 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .lifted lets e => join (lets.flatten.push e)
   | .dispatch _ m => m.strLits
   | .method .matches r #[.lit (.str p)] | .matches r p _ => let (ls, ps) := r.strLits; (ls, ps.push p)
-  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a => a.strLits
+  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a | .strict _ a => a.strLits
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => join #[a, b]
   | .ite c a b => join #[c, a, b]
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => join args
