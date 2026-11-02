@@ -1379,9 +1379,9 @@ structure Known where
   difference : String
   issue : Nat
   /-- As a kind for `--avoid-known` (`knownKind`), it is known only after a
-  static error: on a spec where the `fren` command reports one at or
-  before the difference's line, which its recovery from the error
-  explains. -/
+  static error: on a spec where both front ends report one, at the same
+  line and column (`sharedStaticErrorLines`), at or before the
+  difference's line, which their recovery from the error explains. -/
   afterStaticError : Bool := false
   /-- As a kind, it is known only on a spec that also has a difference of
   this kind (a `signature`), which explains it. -/
@@ -1644,12 +1644,35 @@ def unreadProcedure? (g : String) : Option String := do
   let name ← (g.splitOn "a formula of `")[1]?
   (name.dropSuffix? "`").map (·.toString)
 
-/-- The difference `f` names a procedure, or one of its items, that the
-`fren` command's evaluator cannot read a formula of, by a difference
-among `found`: what Lean reports of that procedure (#484). -/
+/-- The subject of the message of the difference `f`: its first name in
+backticks. -/
+def subject? (f : String) : Option String := (f.splitOn "`")[1]?
+
+/-- The difference `f` is about the procedure `p`, or one of its items: its
+subject is `p` or a name in `p`. -/
+def isAbout (p f : String) : Bool := (subject? f).any fun n => n == p || n.startsWith s!"{p}::"
+
+/-- The difference `f` is about a procedure that the `fren` command's
+evaluator cannot read a formula of, by a difference among `found`: what
+Lean reports of that procedure (#484). -/
 def aboutUnreadProcedure (found : Array String) (f : String) : Bool :=
-  found.any fun g => (unreadProcedure? g).any fun p =>
-    (f.splitOn s!"`{p}`").length > 1 || (f.splitOn s!"`{p}::").length > 1
+  found.any fun g => (unreadProcedure? g).any (isAbout · f)
+
+/-- The procedure that Lean fails to enumerate, in a difference of the
+kind `leanEnumerationFails`. -/
+def enumerationFailedProcedure? (g : String) : Option String := do
+  guard (signature g == leanEnumerationFails)
+  let name ← (g.splitOn "enumerating `")[1]?
+  return (name.splitOn "`")[0]!
+
+/-- The difference `f` is about a procedure that Lean fails to enumerate,
+by a difference among `found`: what only `fren` reports of it (#485). -/
+def aboutUnenumeratedProcedure (found : Array String) (f : String) : Bool :=
+  found.any fun g => (enumerationFailedProcedure? g).any (isAbout · f)
+
+/-- The difference `f` is a check's result, of an `F06xx` code. -/
+def checkResult (_ : Array String) (f : String) : Bool := (f.splitOn "reports warning[F06").length > 1
+  || (f.splitOn "reports error[F06").length > 1 || (f.splitOn "reports info[F06").length > 1
 
 section
 private def unread : String :=
@@ -1659,8 +1682,9 @@ private def unread : String :=
   `fz::c0`, which did not pass"
 #guard aboutUnreadProcedure #[unread] "line 13:10: only Lean reports error: `fz::c0` is not realizable"
 -- Not what Lean reports of another procedure, nor of one whose name only
--- starts the same.
+-- starts the same, nor of one that only mentions it.
 #guard !aboutUnreadProcedure #[unread] "line 50:10: only Lean reports error: `fz::c1` is not realizable"
+#guard !aboutUnreadProcedure #[unread] "line 50:10: only Lean reports error: `fz::c1` calls `fz::c0`, so x"
 #guard !aboutUnreadProcedure #[unread] "line 50:10: only Lean reports error: `fz::c01` is not realizable"
 #guard !aboutUnreadProcedure #[] "line 13:10: only Lean reports error: `fz::c0` is not realizable"
 end
@@ -1712,7 +1736,8 @@ def knownKinds : List KnownKind :=
    -- assumptions contradict each other (F0602), or that an arm is never
    -- taken (F0626), and so the summaries' counts (#493).
    { kind := leanSmtArrow, issue := 493, seed := 1179170 },
-   { kind := "only fren reports *", issue := 493, seed := 1179170, alongside? := some leanSmtArrow, onItsLine := true },
+   { kind := "only fren reports *", issue := 493, seed := 1179170, alongside? := some leanSmtArrow, onItsLine := true,
+     test? := some checkResult },
    { kind := "summary: fren says …, Lean says …", issue := 493, seed := 1179061, alongside? := some leanSmtArrow },
    -- A trait's expectation rests on a contract whose realizability did
    -- not pass: only `fren` warns, and counts it inconclusive (#493).
@@ -1723,11 +1748,11 @@ def knownKinds : List KnownKind :=
    -- what enumerating it found, and what rests on it.
    { kind := leanEnumerationFails, issue := 485, seed := 1175253 },
    { kind := "only fren reports warning[F0608]: could not decide whether *", issue := 485, seed := 1175253,
-     alongside? := some leanEnumerationFails },
+     alongside? := some leanEnumerationFails, test? := some aboutUnenumeratedProcedure },
    { kind := "only fren reports info[F0646]: * checks of `_` hold for every behaviour up to size *", issue := 485,
-     seed := 1175253, alongside? := some leanEnumerationFails },
+     seed := 1175253, alongside? := some leanEnumerationFails, test? := some aboutUnenumeratedProcedure },
    { kind := "only fren reports warning[F0664]: * rests on the realizability of `_`, which did not pass",
-     issue := 485, seed := 1175253, alongside? := some leanEnumerationFails },
+     issue := 485, seed := 1175253, alongside? := some leanEnumerationFails, test? := some aboutUnenumeratedProcedure },
    { kind := "summary: fren says …, Lean says …", issue := 485, seed := 1175253,
      alongside? := some leanEnumerationFails }]
 
@@ -1837,6 +1862,12 @@ private def summary : String := "summary: fren says `12 passed, 2 failed, 2 inco
 #guard !known laws && !known summary (found := #[laws, summary])
 -- only at the line of Lean's failure.
 #guard !known laws (found := #[laws, arrow.replace "line 95:12" "line 96:12"])
+-- and only a check's result: not a static error nor a lint at its line.
+#guard !known "line 95:40: only fren reports error[F0307]: nonlinear arithmetic is not supported"
+  (found := #["line 95:40: only fren reports error[F0307]: nonlinear arithmetic is not supported", arrow])
+#guard !known "line 95:40: only fren reports warning[F0806]: this guard is always `false`, so the arm is never taken"
+  (found := #["line 95:40: only fren reports warning[F0806]: this guard is always `false`, so the arm is never taken",
+    arrow])
 #guard knownIssue? { avoidKnown := true } #[] #[laws, arrow] laws == some 493
 #guard knownIssue? {} #[] #[laws, arrow] laws == none
 -- Lean's failure is known whatever it could not decide.
@@ -1855,11 +1886,25 @@ end
   does not know the meaning of a formula of `fz::c0`"])
 #guard !known "line 40:12: only Lean reports warning: `fz::c0::x0` rests on the realizability of `fz::c0`, which did \
   not pass"
--- Lean's failure to enumerate explains what only `fren` reports of the
--- procedure, at any size bound, and is #485's.
-#guard knownIssue? { avoidKnown := true } #[] #[leanEnumerationFails, "line 31:10: only fren reports info[F0646]: \
-    7 checks of `fz::c0` hold for every behaviour up to size 3"]
-  "line 31:10: only fren reports info[F0646]: 7 checks of `fz::c0` hold for every behaviour up to size 3" == some 485
+-- Lean's failure to enumerate explains what only `fren` reports of that
+-- procedure, at any size bound, and is #485's; but not of another.
+section
+private def enumFails : String :=
+  "line 31:10: only Lean reports error: internal error: enumerating `fz::c0` in Lean failed: failed to synthesize"
+private def ofEnum (f : String) : Option Nat := knownIssue? { avoidKnown := true } #[] #[enumFails, f] f
+#guard enumerationFailedProcedure? enumFails == some "fz::c0"
+#guard ofEnum "line 31:10: only fren reports info[F0646]: 7 checks of `fz::c0` hold for every behaviour up to size 3"
+  == some 485
+#guard ofEnum "line 31:10: only fren reports info[F0646]: 7 checks of `fz::c9` hold for every behaviour up to size 3"
+  == none
+#guard ofEnum "line 43:12: only fren reports warning[F0608]: could not decide whether `fz::c0::x0` is vacuous: no \
+  witness up to size 2, but a larger one may exist" == some 485
+#guard ofEnum "line 43:12: only fren reports warning[F0608]: could not decide whether `fz::c9` holds: INCOMPLETE" == none
+#guard ofEnum "line 41:12: only fren reports warning[F0664]: `fz::c0::cx0` rests on the realizability of `fz::c0`, \
+  which did not pass" == some 485
+#guard ofEnum "line 41:12: only fren reports warning[F0664]: `fz::c9::cx0` rests on the realizability of `fz::c9`, \
+  which did not pass" == none
+end
 end
 
 -- The numbers that place a difference or count what the spec has are
