@@ -4,8 +4,11 @@ name: pre-merge
 # Fren's own requirements, which the `lean ci` workflow checks on `main`
 # (`Reqs/dev/Testing#continuous-integration`). Each job starts from the
 # `.lake` of `main`'s last build, so that it rebuilds only what the pull
-# request changes. Its last job, `pre-merge`, passes only if all the others
-# did: it is the status to rely on, and the one the merge queue requires.
+# request changes. On a pull request, its `book` job builds the book with
+# the test driver of shard 0 (`book.yml`). Its last job, `pre-merge`, passes
+# only if the build and every shard did, and, on a pull request, the book
+# was built and passed: it is the status to rely on, and the one the merge
+# queue requires, where the book is not built.
 #
 # On a pull request, it also uploads stripped copies of the binaries it
 # built, `fren` from the build and `fren_test` from shard 0, as the
@@ -152,7 +155,8 @@ jobs:
         FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
   # The book, with the page of the rules that shard 0's test driver writes
   # (`book.yml`), on a pull request only, which has that artifact. It shows
-  # on the pull request as `book / book`, and is no part of `pre-merge`.
+  # on the pull request as `book / book`. Where shard 0 uploaded no driver,
+  # it builds nothing and passes, and the shard's failure fails `pre-merge`.
   book:
     needs: test
     if: ${{ github.event_name == 'pull_request' && !cancelled() }}
@@ -160,12 +164,19 @@ jobs:
     with:
       artifact: fren_test-${{ github.event.pull_request.head.sha }}
   pre-merge:
-    needs: [build, test]
+    needs: [build, test, book]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-    - run: test "$BUILD" = success && test "$TEST" = success
+    - run: |
+        test "$BUILD" = success && test "$TEST" = success
+        if [ "$EVENT" = pull_request ]; then
+          test "$BOOK" = success && test "$BUILT" = true
+        fi
       env:
         BUILD: ${{ needs.build.result }}
         TEST: ${{ needs.test.result }}
+        EVENT: ${{ github.event_name }}
+        BOOK: ${{ needs.book.result }}
+        BUILT: ${{ needs.book.outputs.built }}

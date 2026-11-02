@@ -1,7 +1,8 @@
 name: lean ci
 # On `main`, everything: `lake build --wfail`, the whole `lake test`, a
 # sample of the mutants of Fren's own requirements, their checks in Lean,
-# compared with the binary's, and the coverage. It
+# compared with the binary's, the coverage, and the book, with the test
+# driver that shard 0 uploads as `fren_test-SHA` (`book.yml`). It
 # saves `main`'s `.lake`, from which each pull request's `pre-merge`
 # workflow starts (`Reqs/dev/Testing#continuous-integration`).
 on:

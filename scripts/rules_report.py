@@ -31,6 +31,8 @@ This page is written from the test driver when the book is built. Run
 
 def report(root):
     driver = os.environ.get("FREN_TEST")
+    if driver and not os.path.exists(driver):
+        sys.exit(f"rules_report: FREN_TEST names {driver}, which does not exist")
     if not driver:
         driver = os.path.join(root, ".lake", "build", "bin", "fren_test")
         if not os.path.exists(driver):
@@ -76,7 +78,9 @@ def main():
         "number": None,
         "sub_items": [],
         "path": PATH,
-        "source_path": None,
+        # mdbook-spec reads every chapter's `source_path`, as a key and the
+        # base of its links, and panics on none.
+        "source_path": PATH,
         "parent_names": [],
     }
     if not add(book["items"], chapter):
