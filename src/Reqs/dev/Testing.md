@@ -1079,11 +1079,12 @@ an environment that only `main` can use. Run by hand (`gh workflow run
 pr-review -f pr=N`), it posts only on the pull request that its `post`
 input names.
 
-Pull requests merge through GitHub's merge queue. The queue merges each
-pull request into the current `main`, behind any pull requests ahead of it
-in the queue, and runs `pre-merge` and `lint` on that merge commit. It
-merges the pull request only if both pass there, so that two pull requests
-that each pass on their own cannot break `main` together.
+A pull request merges once `pre-merge` and `lint` pass on its head. Its
+branch need not be up to date with `main`: `pre-merge` tests the head
+merged into `main` as `main` was when the run started. So two pull
+requests that each pass on their own, and merge cleanly, can still break
+`main` together. `main`'s own CI is the last check, and when it fails,
+fixing or reverting the cause comes before any other merge.
 
 ## Query cache
 
