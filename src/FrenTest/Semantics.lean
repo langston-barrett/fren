@@ -770,7 +770,8 @@ partial def genMember (d : Nat) : R Val := do
 (`Val.union`, `Val.setFilter`): as `Val.setOf` of their members would,
 on random sets, which share members often, so that one often has every
 member of the other, each made by `Val.setOf`, `Val.setOfKeyed` or
-`smallSets`, the ways that sets are made with more than one member. -/
+`smallSets`, the ways that a search makes sets. `smallSets` makes only
+the empty set and singletons. -/
 def setOpsAgree : Array String := Id.run do
   let mut failures := #[]
   let mut seed := 17

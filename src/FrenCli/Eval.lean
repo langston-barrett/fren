@@ -2297,8 +2297,10 @@ structure Atom where
 
 /-- `a`, compiled for searches whose interpretations' shapes are
 `shapes` (`Ex.compile`), so that the searches that share it compile it
-once. Compiled at once: each atom compiled is a constraint of a problem
-that is prepared at once (`Spec.quickComp`). -/
+once. Compiled at once, once for each procedure: the constraints of the
+problems that are prepared at once (`Spec.quickComp`), and admission's
+atoms (`Spec.admitAtoms`), which include those of every call, even one
+that no test reaches. -/
 def Atom.compiled (shapes : Name → Option Fren.Core.DataShape) (a : Atom) : Atom :=
   { a with run? := some (a.e.compile shapes (some [])) }
 
