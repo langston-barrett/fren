@@ -27,6 +27,11 @@ def parsed (src : String) : Array (Nat × String × String × Option String × B
   | .ok s => s.summary? == some "1 passed, 0 failed, 0 inconclusive" && s.exit? == some 3 && s.only? == some "cli"
   | .error _ => false
 
+-- `--@ reference:` cites a rule, and expects nothing.
+#guard match parse "--@ reference: quantifier.limit" with
+  | .ok s => s.expectations.isEmpty && s.summary?.isNone
+  | .error _ => false
+
 -- A caret above the first line, an unknown severity or directive is an error.
 #guard (parse "--~^ error: x" matches .error _)
 #guard (parse "--~ note: x" matches .error _)

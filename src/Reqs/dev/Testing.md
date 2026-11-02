@@ -50,6 +50,21 @@ pub mod testing
   `src/Reqs/**/*.md` outside a code block that starts with `r[` is a
   well-formed rule identifier, and no two are the same (see [Writing the
   reference](Style.md#rule-identifiers)).
+- **Rules and their requirements** (`lake test`, `ruleReqs`): each rule of
+  **Legality rules** or **Dynamic semantics** has a requirement or is
+  listed in `test/unformalized_rules.txt`, with why where its chapter's
+  section is not "(Interlock pending)", and a rule that is only partly
+  formalized is listed too, saying what is missing once its chapter's
+  section is done; every item and clause that a marker names exists, and
+  the clauses that it names alone are clauses of the item they resolve to;
+  a block that formalizes a rule of
+  its chapter follows it; each item of a module named as one of its
+  chapter's constructs has a rule of its name, or, if it has clauses, each
+  of them does, where the name is shaped as a rule identifier; and every
+  rule that a test cites with `--@ reference: ID` exists
+  (see [Writing the reference](Style.md#rules-and-requirements)). The
+  report of these links, a page of the book under [Writing the
+  reference](Style.md), is written when the book is built.
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
   `test/cli/**/X.expected` exactly, for formatting that annotations don't cover.
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).
@@ -934,9 +949,18 @@ static error (#493, #295), and the kinds of #493, #484 and #485 that
 generator are checked there. A run of `lean ci` by hand
 (`workflow_dispatch`), on any branch, may run that job alone
 (`fuzz-only`) and on more seeds (`fuzz-count`). The `lint` workflow runs `lun run --check` on
-both. The `pre-merge` workflow's last job, also named `pre-merge`, passes
-only if its build and every shard passed: it is the status that reviewers
-and the coordinator rely on.
+both. The book is built by the `book` job, with no Lean: it runs the
+stripped test driver that its run's shard 0 built and uploaded as
+`fren_test-SHA`, to write the page of the rules ([Writing the
+reference](Style.md#rules-and-requirements)). On a pull request it is a job
+of `pre-merge`, shown as `book / book`; on `main`, a job of `lean ci`,
+shown as `book / book` in that run, after its shards. Where shard 0 was
+cancelled or failed before it uploaded the driver, `book` builds nothing
+and passes, with a notice. The `pre-merge` workflow's last job, also named
+`pre-merge`, passes only if its build and every shard passed and, on a
+pull request, the book was built and passed (`scripts/pre_merge_verdict.py`,
+which `lint` tests on every combination of its jobs' results): it is the
+status that reviewers and the coordinator rely on.
 
 Where each check runs, and why. The rule is the speed of development as a
 whole: a check that is cheap gates every pull request, and one that is
@@ -951,6 +975,7 @@ request of its own rather than slowing every pull request down.
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
 | Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
 | `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen, on macOS: more than a `lake test` shard can spare |
+| The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-merge`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
 On a pull request, `pre-merge` also uploads stripped copies of the
@@ -960,6 +985,9 @@ without building it: `fren`, once the build has passed, as the artifact
 `fren_test-SHA`, where SHA is the full sha of the pull request's head.
 They are kept for 3 days. They are Linux binaries, built on
 `ubuntu-24.04`, which run on Linux machines such as sky but not on macOS.
+On `main`, `lean ci`'s shard 0 uploads its stripped `fren_test` as
+`fren_test-SHA` too, where SHA is `main`'s commit, for the book; that one
+has no `MERGE_SHA`, since it is built from that commit itself.
 
 They are built from the head merged into `main`, as the tests are, not
 from the head itself, so each artifact holds the merge commit's sha in

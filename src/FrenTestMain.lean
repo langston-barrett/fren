@@ -345,6 +345,576 @@ def ruleIds : IO (Array String) := do
         failures := failures.push s!"{md}:{line}: `{c}` cites no rule"
   return failures
 
+/-! ## Rules and their requirements -/
+
+/-- A rule of the reference: its identifier, without `r[` and `]`; the line
+of the identifier; the label that it is under, such as `Legality rules`, or
+`""`; and its text, the rest of its paragraph. -/
+structure Rule where
+  id : String
+  line : Nat
+  label : String
+  text : String
+  deriving Inhabited
+
+/-- The labels whose rules each have a requirement, or are listed in
+`unformalizedFile` (`Reqs/dev/Style#rules-and-requirements`). -/
+def formalLabels : Array String := #["Legality rules", "Dynamic semantics"]
+
+/-- The rules of a Markdown text, each under the last label before it: a
+line that is a bold run-in label (`**Legality rules**`), or a `Syntax`
+heading, which is the label `Syntax`. Any other heading ends a label. -/
+def rulesOf (md : String) : Array Rule := Id.run do
+  let lines := (md.splitOn "\n").toArray
+  let mut label := ""
+  let mut out := #[]
+  for (i, line) in proseLines md do
+    let t := line.trimAscii.toString
+    if t.startsWith "#" then
+      label := if (t.dropWhile (· == '#')).trimAscii.toString == "Syntax" then "Syntax" else ""
+    else if t.startsWith "**" && t.endsWith "**" && t.length > 4 then
+      label := ((t.drop 2).dropEnd 2).toString
+    else if line.startsWith "r[" && isRuleId t then
+      let para := (lines.extract i lines.size).toList.takeWhile fun l =>
+        !l.trimAscii.isEmpty && !l.startsWith "```"
+      out := out.push { id := ((t.drop 2).dropEnd 1).toString, line := i, label, text := " ".intercalate para }
+  return out
+
+#guard (rulesOf "## Syntax\n\nr[a.syntax]\nx\n\n## B\n\n**Legality rules**\n\nr[a.b]\nOne `p::q`\ntwo.\n\nr[a.c]\n```fren\n```\n").map
+    (fun r => (r.id, r.line, r.label, r.text)) ==
+  #[("a.syntax", 3, "Syntax", "x"), ("a.b", 10, "Legality rules", "One `p::q` two."), ("a.c", 14, "Legality rules", "")]
+
+/-- An item of a ```` ```fren ```` block of the reference, a requirement:
+its path, such as `lang::guard_bound`; the Markdown file and line where it
+is declared; and the names of its clauses: a procedure's or a block
+expectation's `ensure`s, `expect`s and `cover`s, and a function's
+postconditions. -/
+structure ReqItem where
+  path : String
+  file : String
+  line : Nat
+  clauses : Array String
+  deriving Inhabited
+
+/-- The name of an item, and the names of its clauses. -/
+partial def itemDecl : FrenCli.Item → Option (FrenCli.Ident × Array String)
+  | .enum _ n .. | .record _ n .. | .newtype _ n .. | .abstractType _ n | .typeAlias _ n _
+  | .subsetType _ n .. | .const _ n .. | .global n .. | .trait _ n .. => some (n, #[])
+  | .function _ n _ _ _ _ clauses .. => some (n, clauses.filterMap fun (post, c, _) => if post then some c.name else none)
+  | .comp _ n _ members .. | .globalBlock n _ members .. =>
+    some (n, members.filterMap fun
+      | .prop kind c _ => if kind == .assume then none else some c.name
+      | _ => none)
+  | .lintSetting _ _ _ _ _ (some item) => itemDecl item
+  | _ => none
+
+/-- The items of the ```` ```fren ```` blocks of the Markdown file `file`,
+whose text is `md`, each in the module that the last `mod` before it
+enters. -/
+def reqItemsOf (file md : String) : Except String (Array ReqItem) := do
+  let chars := (Fren.Core.unwrapMarkdown md).toList.toArray
+  let lineOf (p : Nat) := ((chars.extract 0 p).filter (· == '\n')).size + 1
+  match FrenCli.parseText chars with
+  | .error (span, _) => throw s!"{file}:{lineOf span.start}: its ```` ```fren ```` blocks do not parse"
+  | .ok (_, items, _, _) =>
+    let mut current := #[]
+    let mut out := #[]
+    for item in items do
+      if let .mod _ path := item then current := path.map (·.name)
+      else if let some (n, clauses) := itemDecl item then
+        out := out.push { path := "::".intercalate (current.push n.name).toList, file, line := lineOf n.span.start, clauses }
+    return out
+
+#guard ((reqItemsOf "f" "```fren\npub mod a::b\n\nproc p(x?): (y?) {\n    assume a: x?\n    ensure c: y? = x?\n    expect d: y?\n}\n```\n").toOption.getD #[]).map
+    (fun i => (i.path, i.line, i.clauses)) == #[("a::b::p", 4, #["c", "d"])]
+
+/-- The path of the requirement that is named as the rule `id` is: its
+segments joined by `::`, with each `-` an `_`. -/
+def reqPathOf (id : String) : String := "::".intercalate ((id.replace "-" "_").splitOn ".")
+
+#guard reqPathOf "quantifier.type.not-listed" == "quantifier::type::not_listed"
+
+/-- Whether `s` is shaped as a segment of a rule identifier is, once each
+`-` is an `_`: lowercase words and digits joined by `_`. -/
+def ruleShaped (s : String) : Bool :=
+  !s.isEmpty && s.all fun c => c.isLower || c.isDigit || c == '_'
+
+/-- A piece of Markdown prose: text, or a code span's content. -/
+inductive Piece where
+  | text (s : String)
+  | code (s : String)
+  deriving BEq, Repr, Inhabited
+
+/-- A text as its pieces, one character of text at a time: a code span
+opens with a run of backticks and closes with the next run of as many, and
+a run that nothing closes is text. -/
+def pieces (s : String) : Array Piece := Id.run do
+  let cs := s.toList.toArray
+  let runAt (i : Nat) : Nat := ((cs.extract i cs.size).toList.takeWhile (· == '`')).length
+  let mut out := #[]
+  let mut i := 0
+  while i < cs.size do
+    if cs[i]! != '`' then
+      out := out.push (.text (String.singleton cs[i]!))
+      i := i + 1
+      continue
+    let n := runAt i
+    let mut j := i + n
+    let mut close := none
+    while j < cs.size && close.isNone do
+      if cs[j]! == '`' then
+        if runAt j == n then close := some j
+        j := j + runAt j
+      else
+        j := j + 1
+    match close with
+    | some k =>
+      let body := String.ofList (cs.extract (i + n) k).toList
+      let body := if body.length ≥ 2 && body.startsWith " " && body.endsWith " " then ((body.drop 1).dropEnd 1).toString else body
+      out := out.push (.code body)
+      i := k + n
+    | none =>
+      for c in cs.extract i (i + n) do out := out.push (.text (String.singleton c))
+      i := i + n
+  return out
+
+/-- The parenthesized groups of `ps`, the pieces of a rule's text, each as
+the pieces between its parentheses, the inner ones first. A parenthesis in
+a code span does not count. -/
+def groupsOf (ps : Array Piece) : Array (Array Piece) := Id.run do
+  let mut opens : Array Nat := #[]
+  let mut out := #[]
+  for h : k in [0:ps.size] do
+    match ps[k] with
+    | .text "(" => opens := opens.push k
+    | .text ")" =>
+      if let some o := opens.back? then
+        opens := opens.pop
+        out := out.push (ps.extract (o + 1) k)
+    | _ => pure ()
+  return out
+
+/-- An element of a parenthesized group, as a reference to requirements:
+an item, by its path (`lang::guard_bound`), or a clause by its item's path
+and its name (`lang::lazy_rules::and_true`); clauses of an item (`taken` of
+`lang::match_rules`); or clauses alone (`falls_through`), of the last item
+that the group names, or else of the last item that the latest marker
+before it in the chapter names. -/
+inductive Ref where
+  | item (path : String)
+  | clauses (names : Array String) (path : Option String)
+  deriving BEq, Repr, Inhabited
+
+/-- Whether a code span is a path, such as `lang::guard_bound`. -/
+def isPath (c : String) : Bool :=
+  (c.splitOn "::").length > 1 && (c.splitOn "::").all fun s =>
+    !s.isEmpty && s.all fun ch => ch.isAlphanum || ch == '_' || ch == '?'
+
+/-- Whether a code span names a clause, such as `and_true`. -/
+def isClauseName (c : String) : Bool :=
+  match c.toList with
+  | first :: _ => (first.isLower || first == '_') && (c.dropEnd (if c.endsWith "?" then 1 else 0)).all fun ch =>
+      ch.isLower || ch.isDigit || ch == '_'
+  | [] => false
+
+/-- The element `ps` of a group, which commas and semicolons separate, as a reference:
+`none` if it is not one, and `some none` if it is a code span that names no
+requirement, such as an error code (`F0356`). -/
+def refOf (ps : Array Piece) : Option (Option Ref) := Id.run do
+  -- Its words and code spans, without blanks, and without a leading `and`.
+  let mut toks : Array Piece := #[]
+  let mut word := ""
+  for p in ps.push (.text " ") do
+    match p with
+    | .text t =>
+      if t.trimAscii.isEmpty then
+        unless word.isEmpty do toks := toks.push (.text word)
+        word := ""
+      else word := word ++ t
+    | .code c =>
+      unless word.isEmpty do toks := toks.push (.text word)
+      word := ""
+      toks := toks.push (.code c)
+  if toks[0]? == some (.text "and") then toks := toks.extract 1 toks.size
+  match toks.toList with
+  | [.code c] =>
+    if isPath c then return some (some (.item c))
+    if isClauseName c then return some (some (.clauses #[c] none))
+    return some none
+  | _ =>
+    let (names, path) := match toks.toList.reverse with
+      | .code p :: .text "of" :: rest => if isPath p then (rest.reverse, some p) else (toks.toList, none)
+      | _ => (toks.toList, none)
+    -- Clause names, joined by `and`.
+    let ok := names.length % 2 == 1 && (names.zipIdx.all fun (p, i) => match p with
+      | .code c => i % 2 == 0 && isClauseName c
+      | .text t => i % 2 == 1 && (t == "and" || t == "or"))
+    if !ok then return none
+    return some (some (.clauses (names.filterMap fun | .code c => some c | _ => none).toArray path))
+
+/-- Whether the path `q` is in a module that the reference declares an
+item in, such as `lang`, unlike an example such as `Shape::Circle`. -/
+def inDeclaredModule (items : Array ReqItem) (q : String) : Bool :=
+  items.any fun i => (i.path.splitOn "::").head! == (q.splitOn "::").head!
+
+/-- Whether the reference `ref` is a marker's among `items`: one that names
+a path in a module that the reference declares (`inDeclaredModule`), or
+clauses alone, in a group that names such a path (`pathGroup`) or that are
+clauses of some item. So "(`true` or `false`)" and "(`Shape::Circle`)"
+are no reference. -/
+def isMarkerRef (items : Array ReqItem) (pathGroup : Bool) : Ref → Bool
+  | .item q | .clauses _ (some q) => inDeclaredModule items q
+  | .clauses names none => pathGroup || names.all fun c => items.any (·.clauses.contains c)
+
+/-- The references of a parenthesized group, if it is a marker: one with
+an element, between its commas and semicolons, that is a reference and
+nothing else (`isMarkerRef`). A code span within prose, as in "(over
+`lang::q`)", is no reference. -/
+def markerRefs (items : Array ReqItem) (g : Array Piece) : Option (Array Ref) := do
+  let elements := g.foldl (init := #[#[]]) fun acc p =>
+    if p == .text "," || p == .text ";" then acc.push #[] else acc.modify (acc.size - 1) (·.push p)
+  let all := elements.filterMap fun e => (refOf e).bind id
+  let pathGroup := all.any fun
+    | .item q | .clauses _ (some q) => inDeclaredModule items q
+    | _ => false
+  let refs := all.filter (isMarkerRef items pathGroup)
+  guard !refs.isEmpty
+  return refs
+
+/-- Items for the `#guard`s below, each with its clauses. -/
+def guardItems (is : List (String × List String)) : Array ReqItem :=
+  is.toArray.map fun (path, cs) => { path, file := "c", line := 100, clauses := cs.toArray }
+
+#guard (groupsOf (pieces "x (`F0356`, `lang::size`) and (`a_b` and `c` of `lang::rules`) (`x::y` is (`z`)) (`g`)")).filterMap
+    (markerRefs (guardItems [("lang::size", []), ("lang::rules", ["a_b", "c", "z"]), ("x::y", [])])) ==
+  #[#[.item "lang::size"], #[.clauses #["a_b", "c"] (some "lang::rules")], #[.clauses #["z"] none]]
+#guard (groupsOf (pieces "(see [`lang::m`](M.md#a)) (`lang::p`, over `lang::q`) (``a`b``) (`c`; see [S](S.md)) (`true` or `false`) (`lang::none`)")).filterMap
+    (markerRefs (guardItems [("lang::m", []), ("lang::p", ["c"]), ("lang::q", [])])) ==
+  #[#[.item "lang::p"], #[.clauses #["c"] none], #[.item "lang::none"]]
+-- Example paths in prose are no marker; a misspelt clause beside a path is
+-- one (the review of #688).
+#guard (groupsOf (pieces "(`Shape::Circle`, `m::f`) (`a` of `E::V`) (`lang::p`, `conditon`) (`skiped`)")).filterMap
+    (markerRefs (guardItems [("lang::p", ["condition"]), ("lang::q", ["skipped"])])) ==
+  #[#[.item "lang::p", .clauses #["conditon"] none]]
+
+/-- The requirements that formalize each rule of the chapter `md`, in
+order, each item with the clauses named, and the problems of its markers:
+the item named as the rule is, or whose clause is (`quantifier::guard`
+with `ensure strict` for `quantifier.guard.strict`); and the items and
+clauses that the rule names in a marker, a parenthesized group with a
+reference (`markerRefs`). Clauses alone are of the last item that their
+group names, or else of the last item that the latest marker before names,
+which must have them (`Reqs/dev/Style#rules-and-requirements`). -/
+def reqsOfChapter (md : String) (items : Array ReqItem) (rules : Array Rule) :
+    Array (Rule × Array (ReqItem × Array String)) × Array String := Id.run do
+  let find (p : String) := items.find? (·.path == p)
+  let code (names : Array String) := ", ".intercalate (names.map (s!"`{·}`")).toList
+  -- The last item that the latest marker names.
+  let mut context : Option String := none
+  let mut out := #[]
+  let mut problems := #[]
+  for r in rules do
+    let here := s!"{md}:{r.line}"
+    let p := reqPathOf r.id
+    let mut links : Array (ReqItem × Array String) := #[]
+    for i in items do
+      if i.path == p then links := links.push (i, #[])
+      for c in i.clauses do
+        if s!"{i.path}::{c}" == p then links := links.push (i, #[c])
+    for g in groupsOf (pieces r.text) do
+      let some refs := markerRefs items g | continue
+      let groupItem := refs.foldl (init := none) fun acc ref => match ref with
+        | .item q | .clauses _ (some q) => some q
+        | _ => acc
+      for ref in refs do
+        let (q?, names) := match ref with
+          | .item q => (some q, #[])
+          | .clauses names q => (q <|> groupItem <|> context, names)
+        let some q := q?
+          | problems := problems.push s!"{here}: the rule `{r.id}` names {code names} alone, and no marker before it names an item"
+            continue
+        -- A clause written as its item's path and its name.
+        let segs := q.splitOn "::"
+        let pre := "::".intercalate segs.dropLast
+        let (q, names) := match ref, find q, find pre with
+          | .item _, none, some j => if j.clauses.contains segs.getLast! then (pre, #[segs.getLast!]) else (q, names)
+          | _, _, _ => (q, names)
+        let some i := find q
+          | problems := problems.push s!"{here}: the rule `{r.id}` names `{q}`, which is no item of the reference, nor a clause of one"
+            continue
+        let missing := names.filter (!i.clauses.contains ·)
+        if missing.isEmpty then links := links.push (i, names)
+        else
+          for c in missing do
+            let other := items.find? (·.clauses.contains c)
+            let hint := other.map (fun j => s!": write \"`{c}` of `{j.path}`\" for that item's") |>.getD ""
+            problems := problems.push s!"{here}: the rule `{r.id}` names `{c}`, which is no clause of `{q}`{hint}"
+      if let some q := groupItem then
+        if (find q).isSome then context := some q
+    -- One entry for each item, with the clauses of all of its links.
+    let merged := links.foldl (init := #[]) fun (acc : Array (ReqItem × Array String)) (i, cs) =>
+      match acc.findIdx? (·.1.path == i.path) with
+      | some k => acc.modify k fun (j, ds) => (j, ds ++ cs.filter (!ds.contains ·))
+      | none => acc.push (i, cs)
+    out := out.push (r, merged)
+  return (out, problems)
+
+/-- The links and problems of `reqsOfChapter` on rules with these texts,
+for the `#guard`s below: each link as its item's path and clauses. -/
+def guardLinks (items : List (String × List String)) (texts : List String) :
+    Array (Array (String × Array String)) × Array String :=
+  let rules := texts.toArray.zipIdx.map fun (text, k) => ({ id := s!"r.r{k}", line := k + 1, label := "", text } : Rule)
+  let (out, problems) := reqsOfChapter "c" (guardItems items) rules
+  (out.map fun (_, ls) => ls.map fun (i, cs) => (i.path, cs), problems)
+
+-- A clause of another item than the latest marker's says which, though the
+-- latest one has a clause of that name too (the review of #688).
+#guard guardLinks [("lang::if_rules", ["then_branch", "condition"]), ("lang::guards_evaluation", ["one_branch", "condition"])]
+    ["(`then_branch` of `lang::if_rules`)", "(`one_branch` of `lang::guards_evaluation`)", "(`condition` of `lang::if_rules`)", "(`condition`)"] ==
+  (#[#[("lang::if_rules", #["then_branch"])], #[("lang::guards_evaluation", #["one_branch"])],
+     #[("lang::if_rules", #["condition"])], #[("lang::if_rules", #["condition"])]], #[])
+-- Clauses alone are of the latest marker's last item only, and of no
+-- earlier one.
+#guard guardLinks [("lang::if_rules", ["then_branch", "condition"]), ("lang::guards_evaluation", ["one_branch"])]
+    ["(`then_branch` of `lang::if_rules`)", "(`one_branch` of `lang::guards_evaluation`)", "(`condition`)"] ==
+  (#[#[("lang::if_rules", #["then_branch"])], #[("lang::guards_evaluation", #["one_branch"])], #[]],
+   #["c:3: the rule `r.r2` names `condition`, which is no clause of `lang::guards_evaluation`: write \"`condition` of `lang::if_rules`\" for that item's"])
+#guard guardLinks [("lang::method_rules", []), ("lang::call_rules", ["recursive"])]
+    ["(`lang::method_rules`, `lang::call_rules`)", "(`recursive`)", "(`a` alone)", "x (`recursive`)"] ==
+  (#[#[("lang::method_rules", #[]), ("lang::call_rules", #[])], #[("lang::call_rules", #["recursive"])], #[],
+     #[("lang::call_rules", #["recursive"])]], #[])
+-- A misspelt marker fails where it is written, and leaves the context to
+-- the markers that name an item (the review of #688).
+#guard guardLinks [("lang::lazy_rules", ["and_false", "and_unevaluated", "and_true"])]
+    ["(`and_false` of `lang::lazy_rules`)", "(`and_unevaluatd` of `lang::lazy_rules`)", "(`lang::lazy_rule`)", "(`and_true`)"] ==
+  (#[#[("lang::lazy_rules", #["and_false"])], #[], #[], #[("lang::lazy_rules", #["and_true"])]],
+   #["c:2: the rule `r.r1` names `and_unevaluatd`, which is no clause of `lang::lazy_rules`",
+     "c:3: the rule `r.r2` names `lang::lazy_rule`, which is no item of the reference, nor a clause of one"])
+-- A misspelt clause beside a path fails; a clause written as a path links.
+#guard guardLinks [("lang::if_rules", ["condition"]), ("lang::lazy_rules", ["and_true"])]
+    ["(`lang::if_rules`, `conditon`)", "(`lang::lazy_rules::and_true`)"] ==
+  (#[#[("lang::if_rules", #[])], #[("lang::lazy_rules", #["and_true"])]],
+   #["c:1: the rule `r.r0` names `conditon`, which is no clause of `lang::if_rules`"])
+#guard (guardLinks [("lang::p", ["c"])] ["(`c`)"]).2 == #["c:1: the rule `r.r0` names `c` alone, and no marker before it names an item"]
+
+/-- The requirements of `reqs`, which formalize the rule `r` of the chapter
+`md`, that are declared in `md` before it: a ```` ```fren ```` block
+follows the rules that it formalizes (`Reqs/dev/Style#checked-blocks`). -/
+def declaredBefore (md : String) (r : Rule) (reqs : Array ReqItem) : Array ReqItem :=
+  reqs.filter fun i => i.file == md && i.line < r.line
+
+#guard (declaredBefore "c" { id := "a", line := 5, label := "", text := "" }
+    #[{ path := "x::p", file := "c", line := 4, clauses := #[] }, { path := "x::q", file := "c", line := 6, clauses := #[] },
+      { path := "x::r", file := "d", line := 1, clauses := #[] }]).map (·.path) == #["x::p"]
+
+/-- The rules of the reference's Legality rules and Dynamic semantics that
+no requirement formalizes yet (`Reqs/dev/Style#rules-and-requirements`). -/
+def unformalizedFile : FilePath := "test" / "unformalized_rules.txt"
+
+/-- The mark of a section of `unformalizedFile` whose chapter's Interlock
+step is still to come, after the chapter's path in its heading. -/
+def pendingMark : String := " (Interlock pending)"
+
+/-- What a line of `unformalizedFile` says of a rule whose markers link
+only some of what it states, which stays listed until they link all of it. -/
+def partlyMark : String := "partly formalized"
+
+/-- Whether `why`, the reason on a line of `unformalizedFile`, says
+`partlyMark`, alone or followed by `:` and what is missing. -/
+def isPartly (why : String) : Bool := why == partlyMark || why.startsWith s!"{partlyMark}:"
+
+#guard isPartly "partly formalized" && isPartly "partly formalized: no claim for max"
+#guard !isPartly "partly formalized max" && !isPartly "unformalized"
+
+/-- An entry of a list such as `unformalizedFile`: its line, the rule's
+identifier, why it has no requirement (`""` if it does not say), the
+chapter of the section that it is in (`""` before any), and whether that
+section is marked `pendingMark`. -/
+structure Listed where
+  line : Nat
+  id : String
+  why : String
+  chapter : String
+  pending : Bool
+  deriving BEq, Repr
+
+/-- The entries of a list such as `unformalizedFile`: each line but a blank
+one or a comment, `#`, as the rule's identifier, then ` -- ` and why, if it
+says. A comment `# src/...md` starts the section of that chapter. -/
+def listedRules (text : String) : Array Listed := Id.run do
+  let mut chapter := ""
+  let mut pending := false
+  let mut out := #[]
+  for l in text.splitOn "\n", i in [1:text.length + 2] do
+    if let some h := l.dropPrefix? "# src/" then
+      let h := h.toString
+      pending := h.endsWith pendingMark
+      chapter := "src/" ++ (if pending then (h.dropEnd pendingMark.length).toString else h)
+      continue
+    let id := ((l.splitOn " -- ").head!).trimAscii.toString
+    if id.isEmpty || id.startsWith "#" then continue
+    out := out.push { line := i, id, why := " -- ".intercalate ((l.splitOn " -- ").drop 1), chapter, pending }
+  return out
+
+#guard listedRules "# x\n# src/A.md (Interlock pending)\na.b\n\n# src/B.md\nc.d -- why\n" ==
+  #[{ line := 3, id := "a.b", why := "", chapter := "src/A.md", pending := true },
+    { line := 6, id := "c.d", why := "why", chapter := "src/B.md", pending := false }]
+
+/-- The rules that a test cites, each with its line: `--@ reference: ID`
+(`Reqs/dev/Style#rules-and-requirements`). A line with `--@ reference`
+that is not so written cites `""`, which is no rule. -/
+def citedRules (src : String) : Array (Nat × String) :=
+  ((src.splitOn "\n").zipIdx.filterMap fun (l, i) =>
+    (l.splitOn "--@ reference")[1]?.map fun rest =>
+      (i + 1, ((rest.dropPrefix? ": ").map (·.toString.trimAscii.toString)).getD "")).toArray
+
+#guard citedRules "a\n--@ reference: q.r\n--@ reference:q.s\n" == #[(2, "q.r"), (3, "")]
+
+/-- The `impl`s of `src/Impls`, each with its name, the path of the
+requirement that it is bound to, and its file. -/
+def implBindings : IO (Array (String × String × String)) := do
+  let mut out := #[]
+  for f in ← sortedFiles ("src" / "Impls") "lean" do
+    for line in (← IO.FS.readFile f).splitOn "\n" do
+      if let some rest := line.dropPrefix? "impl " then
+        if let name :: after :: _ := rest.toString.splitOn ": " then
+          out := out.push (name, (after.splitOn " ").head!, f.toString)
+  return out
+
+/-- The rules of the reference with their requirements, by chapter, the
+rules that tests cite, each with the test, and the problems that
+`ruleReqs` finds (`Reqs/dev/Style#rules-and-requirements`). -/
+def ruleLinks : IO (Array (String × Array (Rule × Array (ReqItem × Array String))) × Array (String × String) × Array String) := do
+  let texts ← (← manualFiles).mapM fun md => return (md.toString, ← IO.FS.readFile md)
+  let mut failures := #[]
+  let mut items := #[]
+  for (md, text) in texts do
+    match reqItemsOf md text with
+    | .ok is => items := items ++ is
+    | .error e => failures := failures.push e
+  let mut chapters := #[]
+  for (md, text) in texts do
+    let rules := rulesOf text
+    if rules.isEmpty then continue
+    let (linked, problems) := reqsOfChapter md items rules
+    failures := failures ++ problems
+    chapters := chapters.push (md, linked)
+  let rules := chapters.flatMap fun (md, rs) => rs.map fun (r, reqs) => (md, r, reqs)
+  -- Each rule of Legality rules or Dynamic semantics has a requirement, or
+  -- is listed, and not both.
+  let listed := listedRules (← IO.FS.readFile unformalizedFile)
+  for e in listed, k in [0:listed.size] do
+    let here := s!"{unformalizedFile}:{e.line}"
+    if (listed.extract 0 k).any (·.id == e.id) then
+      failures := failures.push s!"{here}: `{e.id}` is listed already"
+      continue
+    match rules.find? (·.2.1.id == e.id) with
+    | none => failures := failures.push s!"{here}: `{e.id}` is no rule"
+    | some (md, r, reqs) =>
+      if !formalLabels.contains r.label then
+        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) is not under **Legality rules** or **Dynamic semantics**, so it needs no requirement: remove its line"
+      else if !reqs.isEmpty && !isPartly e.why then
+        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) is formalized by `{reqs[0]!.1.path}`: remove its line, or say ` -- {partlyMark}` if that is only part of the rule"
+      else if reqs.isEmpty && isPartly e.why then
+        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) has no requirement at all, so it is not `{partlyMark}`"
+      else if e.chapter != md then
+        failures := failures.push s!"{here}: `{e.id}` is a rule of {md}, so it is listed under `# {md}`"
+      else if e.why == partlyMark && !e.pending then
+        failures := failures.push s!"{here}: `{e.id}` says it is `{partlyMark}`, but not what is missing, though its chapter's Interlock step is done: write ` -- {partlyMark}: WHAT`"
+      else if e.why.isEmpty && !e.pending then
+        failures := failures.push s!"{here}: `{e.id}` says no reason, after ` -- `, though its chapter's Interlock step is done (no `{pendingMark.trimAscii}`)"
+  for (md, r, reqs) in rules do
+    let here := s!"{md}:{r.line}"
+    if formalLabels.contains r.label && reqs.isEmpty && !listed.any (·.id == r.id) then
+      failures := failures.push s!"{here}: the rule `{r.id}` has no requirement: name one in a marker, \"(`lang::p`)\", or give one its name (`{reqPathOf r.id}`), or list it in {unformalizedFile}"
+    -- The block that formalizes a rule follows it.
+    for i in declaredBefore md r (reqs.map (·.1)) do
+      failures := failures.push s!"{here}: the rule `{r.id}` is formalized by `{i.path}`, which is declared before it, at line {i.line}"
+  -- An item of a chapter that is in a module named as one of the chapter's
+  -- constructs, and each of its clauses, has a rule of its name, where the
+  -- name is shaped as a rule identifier is.
+  let ruleIds := rules.map (·.2.1.id)
+  for (md, rs) in chapters do
+    let constructs := (rs.map fun (r, _) => (r.id.splitOn ".").head!).toList.eraseDups
+    for i in items do
+      unless i.file == md && constructs.contains ((i.path.splitOn "::").head!) do continue
+      let names := if i.clauses.isEmpty then #[i.path] else i.clauses.map (s!"{i.path}::{·}")
+      for n in names do
+        if (n.splitOn "::").all ruleShaped && !ruleIds.any (reqPathOf · == n) then
+          failures := failures.push s!"{i.file}:{i.line}: `{n}` is named as a rule, but no rule is named `{(n.replace "::" ".").replace "_" "-"}`"
+  -- Every rule that a test cites exists.
+  let mut tests := #[]
+  let cite (here id : String) : StateT (Array (String × String) × Array String) IO Unit := modify fun (ts, fs) =>
+    if ruleIds.contains id then (ts.push (here, id), fs)
+    else (ts, fs.push s!"{here}: `{id}` is no rule: a test cites one with a line `--@ reference: ID`")
+  let ((), (ts, fs)) ← (do
+      for f in (← sortedFiles "test" "fren") ++ (← sortedFiles "examples" "fren") do
+        for (line, id) in citedRules (← IO.FS.readFile f) do cite s!"{f}:{line}" id
+      for (md, text) in texts do
+        for (start, src) in exampleBlocks text do
+          for (line, id) in citedRules src do cite s!"{md}:{start + line}" id
+    : StateT _ IO Unit).run (tests, failures)
+  tests := ts.map fun (here, id) => ((here.splitOn ":").head!, id)
+  return (chapters, tests, fs)
+
+/-- The text of the page of the book that reports, for each rule, its
+requirements, the `impl`s bound to them and the tests that cite it,
+`dev/Rules.md`, which `scripts/rules_report.py` writes when the book is
+built. -/
+def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem × Array String))))
+    (impls : Array (String × String × String)) (tests : Array (String × String)) (partly : Array String) : String := Id.run do
+  let rel (md : String) := "../" ++ ((md.dropPrefix? "src/Reqs/").map (·.toString)).getD md
+  let mut out := "# Rules and their requirements\n\n"
+    ++ "For each rule of a chapter of the reference that has rule identifiers:\n"
+    ++ "the requirements that formalize it, the `impl`s bound to them, and the\n"
+    ++ "tests that cite it (see [Writing the reference](Style.md#rules-and-requirements)).\n"
+    ++ "A rule of **Legality rules** or **Dynamic semantics** with no\n"
+    ++ "requirement, or any rule with no test, says **none**, and one whose\n"
+    ++ "requirements formalize only part of it says *partly*. This page is\n"
+    ++ "written when the book is built.\n"
+  for (md, rules) in chapters do
+    let formal := rules.filter (formalLabels.contains ·.1.label)
+    let untested := rules.filter fun (r, _) => !tests.any (·.2 == r.id)
+    out := out ++ s!"\n## [{md}]({rel md})\n\n{rules.size} rules, {formal.size} of them of legality or dynamic semantics, "
+      ++ s!"{(formal.filter fun (r, reqs) => reqs.isEmpty || partly.contains r.id).size} of which have no requirement "
+      ++ s!"or only part of one; {untested.size} rules have no test.\n\n"
+      ++ "| Rule | Label | Requirements | `impl`s | Tests |\n|---|---|---|---|---|\n"
+    for (r, reqs) in rules do
+      let reqCell := if reqs.isEmpty then (if formalLabels.contains r.label then "**none**" else "")
+        else ", ".intercalate (reqs.map fun (i, cs) =>
+          if cs.isEmpty then s!"`{i.path}`" else s!"`{i.path}` ({", ".intercalate (cs.map (s!"`{·}`")).toList})").toList
+          ++ (if partly.contains r.id then ", *partly*" else "")
+      let implCell := ", ".intercalate ((impls.filter fun (_, p, _) => reqs.any (·.1.path == p)).map
+        fun (n, _, f) => s!"`{n}` ({f})").toList
+      let cited := (tests.filter (·.2 == r.id)).map (·.1)
+      let testCell := if cited.isEmpty then "**none**" else ", ".intercalate (cited.toList.eraseDups.map (s!"`{·}`"))
+      out := out ++ s!"| [`{r.id}`]({rel md}#r-{r.id}) | {r.label} | {reqCell} | {implCell} | {testCell} |\n"
+  return out
+
+/-- The rules of the reference and their requirements and tests
+(`Reqs/dev/Style#rules-and-requirements`): every rule of **Legality rules**
+or **Dynamic semantics** has a requirement, or is listed in
+`unformalizedFile`, and not both unless the line says `partlyMark`
+(`isPartly`); a
+listed rule is in its chapter's section, and says why it has none once
+its chapter's Interlock step is done; the clauses that a marker names
+alone are clauses of the item that they resolve to, and every item and
+clause that a marker names exists; each requirement that
+formalizes a rule and is declared in its chapter is declared after it;
+each item of a module named as one of its chapter's constructs, whose
+name is shaped as a rule identifier, is named as a rule, or, if it has
+clauses, each of them whose name is so shaped is; and every rule that a
+test cites exists. -/
+def ruleReqs : IO (Array String) := return (← ruleLinks).2.2
+
+/-- The text of the report of the rules (`rulesReportText`), for
+`fren_test --rules-report`. -/
+def rulesReport : IO String := do
+  let (chapters, tests, _) ← ruleLinks
+  let partly := (listedRules (← IO.FS.readFile unformalizedFile)).filterMap fun e =>
+    if isPartly e.why then some e.id else none
+  return rulesReportText chapters (← implBindings) tests partly
+
 /-! ## Fren's own requirements -/
 
 /-! ## Error codes -/
@@ -2754,7 +3324,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["panicGuard"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
@@ -2780,6 +3350,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     initSearchPath (← findSysroot)
     manualExamples (← importModules #[{ module := `Fren }] {} (loadExts := true))
   | ["ruleIds"] => ruleIds
+  | ["ruleReqs"] => ruleReqs
   | ["markdownFences"] => do
     enableInitializersExecution
     initSearchPath (← findSysroot)
@@ -2889,6 +3460,9 @@ def runJobs (bless timed : Bool) (jobs : Array (List String)) : IO (Array String
 
 unsafe def main (args : List String) : IO UInt32 := do
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
+  if args == ["--rules-report"] then
+    IO.print (← rulesReport)
+    return 0
   if let "--job" :: job := args then
     IO.println (toJson (← runJob bless (job.filter (· != "--bless")))).compress
     return 0

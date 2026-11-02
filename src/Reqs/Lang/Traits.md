@@ -25,7 +25,7 @@ pub mod lang
 
 ## Syntax
 
-r[trait.syntax]
+r[traits.syntax]
 ```
 trait        := ["pub"] "trait" IDENT "{" trait-member* "}"
 trait-member := method | law | expectation | lint-setting "in" trait-member
@@ -34,10 +34,10 @@ method       := "fn" IDENT"(" type ("," type)* ")" [":" type]
 law          := "law" IDENT"(" [variable ("," variable)* [","]] ")" ":" top
 ```
 
-r[trait.syntax.item]
+r[traits.syntax.item]
 A trait is an [item](Items.md) of its module.
 
-r[trait.syntax.keywords]
+r[traits.syntax.keywords]
 `trait` is a [reserved word](Lexical.md#keywords). `law` is a contextual
 keyword: it starts a law only where a member of a trait starts.
 
@@ -48,28 +48,28 @@ order.
 
 **Legality rules**
 
-r[trait.member.kinds]
+r[traits.member.kinds]
 A *method* is an [uninterpreted function](Items.md#uninterpreted-functions),
 written with its types alone or with its parameters' names and a
 [contract](Items.md#contracts). An *expectation* of a trait is a [global
 expectation](Global.md), in either of its forms. A *law* is written `law`.
 
-r[trait.member.other]
+r[traits.member.other]
 A member of any other kind is an error (`F0222`).
 
-r[trait.member.pub]
+r[traits.member.pub]
 A member written `pub` is an error (`F0222`).
 
-r[trait.member.default]
+r[traits.member.default]
 A method with a body is an error (`F0222`).
 
-r[trait.member.generic]
+r[traits.member.generic]
 A method with type parameters is an error (`F0222`).
 
-r[trait.member.use]
+r[traits.member.use]
 A `use` in the block of a member is an error (`F0222`).
 
-r[trait.member.rule]
+r[traits.member.rule]
 `lang::trait_member` states which members a trait accepts, from what the
 member is as written, and whether it is written `pub`, has type
 parameters, or has a `use` in its block.
@@ -95,7 +95,7 @@ pub proc trait_member(
 }
 ```
 
-r[trait.member.order]
+r[traits.member.order]
 The messages about a trait's members come by their phase, and in the
 order written within a phase: those of the methods first, then those of
 the laws, then those of the expectations (`lang::trait_member_phase`). A
@@ -127,36 +127,36 @@ pub proc trait_member_phase(member: TraitMemberKind): (det phase: Int) {
 
 **Legality rules**
 
-r[trait.carrier]
+r[traits.carrier]
 Within a trait, `Self` names the trait's *carrier*, an [abstract
 type](Types.md#abstract-types) of the trait's own.
 
-r[trait.carrier.payload]
+r[traits.carrier.payload]
 A field or payload whose type is the carrier is an error (`F0310`), as for
 any abstract type.
 
-r[trait.carrier.outside]
+r[traits.carrier.outside]
 Outside its trait, `Self` names nothing.
 
 ## Scope
 
 **Legality rules**
 
-r[trait.scope.shadowing]
+r[traits.scope.shadowing]
 Within a trait, `Self` and the trait's methods, each by its name alone,
 shadow the names of the trait's module, without a `!`, as a [procedure's
 imports](Modules.md#use-in-a-procedure) do. Every other name is the
 module's.
 
-r[trait.scope.order]
+r[traits.scope.order]
 A method's signature and contract see the methods declared before it, and
 its contract sees the method itself, as a function's contract does. The
 laws and the expectations see every method.
 
-r[trait.scope.distinct]
+r[traits.scope.distinct]
 `Self` and the names of a trait's members are distinct (`F0213`).
 
-r[trait.scope.outside]
+r[traits.scope.outside]
 The members of a trait are not items of its module.
 
 ## Laws
@@ -165,33 +165,33 @@ A law states what holds of the methods for all values of its variables.
 
 **Legality rules**
 
-r[trait.law.type]
+r[traits.law.type]
 A law's equation is a `Bool`.
 
-r[trait.law.variables]
+r[traits.law.variables]
 A law's variables are distinct (`F0213`). A variable's type is written,
 but for a `Bool`, which may be written `x?` alone.
 
-r[trait.law.mentions]
+r[traits.law.mentions]
 A law mentions no variable but its own. It may mention constants,
 functions and the trait's methods.
 
-r[trait.law.names]
+r[traits.law.names]
 A law's name is not written with `?` or `!`.
 
 **Dynamic semantics**
 
-r[trait.law.meaning]
+r[traits.law.meaning]
 `law n(x: T, y?): e` means `forall (x: T) (y?: Bool), e`.
 
-r[trait.law.interpretation]
+r[traits.law.interpretation]
 An [interpretation](Procedures.md#interpretations) of a trait gives its
 carrier and its methods. An interpretation *meets* the trait when its
 methods meet their contracts and every law holds.
 
 **Proof obligations**
 
-r[trait.law.undecidable]
+r[traits.law.undecidable]
 A law with a variable of a type that is not listed is outside the
 [decidable core](Decidability.md): its variables are an [unbounded
 quantifier](Quantifiers.md#unbounded-quantifiers), which
@@ -206,7 +206,7 @@ what the author means, as Larch's `implies` does.
 
 **Dynamic semantics**
 
-r[trait.expect.meaning]
+r[traits.expect.meaning]
 An expectation of a trait holds when its claims hold in every
 interpretation that meets the trait (`lang::trait_expectation`).
 
@@ -233,13 +233,13 @@ pub proc trait_expectation(
 
 **Proof obligations**
 
-r[trait.expect.checks]
+r[traits.expect.checks]
 An expectation of a trait has the checks of a [global
 expectation](../Check.md#global-expectations), each with the trait's laws
 among its hypotheses, but for its realizability, whose queries ask of its
 own assumptions and calls alone.
 
-r[trait.expect.core]
+r[traits.expect.core]
 An expectation of a trait is in the decidable core where it is and every
 law of its trait is, and `undecidable` is an error in it where it is in
 the expectation or in a law (`lang::law_flags`, one law at a time).
@@ -261,7 +261,7 @@ pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: Che
 }
 ```
 
-r[trait.expect.lawful]
+r[traits.expect.lawful]
 An expectation of a trait with laws, and with assumptions or calls, has a
 vacuity check of its own: whether its assumptions and calls can hold
 together with the laws. A call contributes to it as to the item's other
@@ -276,7 +276,7 @@ pass, a pass of a proof check is inconclusive (`F0664`), and a witness
 check's verdict stands ([Evidence](../Evidence.md#the-laws-of-a-trait)).
 Laws that contradict each other fail it too.
 
-r[trait.expect.laws-unchecked]
+r[traits.expect.laws-unchecked]
 A verdict of an expectation of a trait with laws that comes from an
 `unsat` query, such as a pass of an expectation or a failure of a cover
 goal, rests on the laws. Where the expectation has no assumptions or
@@ -288,14 +288,14 @@ that check, since its checks are always the solver's (`F0215`). A verdict that c
 counterexample, rests on nothing more, since the model meets the laws.
 Realizability's queries have no laws (`check::query_hypotheses`).
 
-r[trait.expect.once]
+r[traits.expect.once]
 An expectation of a trait is checked once, in the trait.
 
-r[trait.law.setting]
+r[traits.law.setting]
 `fren.evidence` or `fren.enumeration.size` set before a law is an error
 (`F0215`): a law has no checks of its own.
 
-r[trait.expect.evidence]
+r[traits.expect.evidence]
 `fren.evidence` set to testing or enumeration for an expectation of a
 trait is an error (`F0215`, `lang::trait_expectation_evidence`).
 
