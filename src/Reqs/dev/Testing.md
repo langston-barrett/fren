@@ -25,8 +25,8 @@ pub mod testing
   for a line that no longer differs); `--~[cli]` and `--~[hosted]` mark the
   only messages that may differ, parse errors, which the Lean front end gets
   from Lean's parser, and a known disagreement that a test pins until it is
-  fixed, with its issue, as `checks/simp_recursion_depth.fren` does for
-  #417. `--~$` expects a message with no line, such as the Lean front end's
+  fixed, with its issue, as `lang/traits_frontends.fren` does for
+  #493. `--~$` expects a message with no line, such as the Lean front end's
   error at the `#fren_check` that the test adds, and `--~?` allows a
   message without expecting it, for one that may be in one of several
   places, such as a conflict's
@@ -36,8 +36,12 @@ pub mod testing
   [Expectations](#expectations) for when a file passes.
 - **Example specs** (`lake test`): each `examples/**/*.fren` is a complete
   spec for readers, and is checked as a ui test, so its annotations
-  (usually none) must match both front ends' messages. The example specs
-  are also in the ui tests' backjumping and enumeration corpora.
+  (usually none) must match both front ends' messages. An example that one
+  front end cannot check, for a known limit with its issue, may be checked
+  by the other alone (`--@ only: cli`), with a comment that names the issue
+  and says to drop the line once it is fixed, as `examples/filesystem.fren`
+  does for #417. The example specs are also in the ui tests' backjumping and
+  enumeration corpora.
   An example's Lean implementation, such as `examples/Rle.lean`, reads its
   spec with `#fren_md` and proves it meets the spec; `lake build` checks
   the proofs of those listed in the `Examples` library.
@@ -240,7 +244,7 @@ pub mod testing
   summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
-  [--spec-timeout SECONDS]`): generates random specs and checks each
+  [--confirm] [--spec-timeout SECONDS]`): generates random specs and checks each
   with both front ends, the `fren` command's pipeline and the Lean front
   end (in an environment that imports `Fren`, as the ui tests do), whose
   reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
@@ -268,8 +272,15 @@ pub mod testing
   types, at each kind of [site](../Lang/Types.md#checking-and-synthesis)
   where they are checked, and, at the end, one where they are not, an
   error that stops the spec's other checks, which the default generator
-  therefore never writes. Only what may legitimately differ is not
-  compared:
+  therefore never writes. `--confirm` generates what the [confirmation of
+  models](../Models.md#known-values) evaluates: `div` and `mod` by a
+  literal, an index in an argument that a function's body never reads,
+  and the formulas whose value confirmation knows where an index is out
+  of range. It checks them with both front ends misreading models, as
+  `FREN_MISREAD_MODELS` makes them ([Testing](../Models.md#testing)), so
+  that what one front end knows and the other does not is a message that
+  differs: one refutes the model, and the other shows it. Only what may
+  legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
     the parse error's line, or on the last line before it that is not blank
@@ -294,6 +305,13 @@ pub mod testing
     guarantees.
   - Checks by testing, which Lean does not run, are left out, and so are
     the summary and exit status of a spec that has them.
+  - Under `--confirm`'s misread models, the front ends' solvers may give
+    different models, and a model's confirmation says something about what
+    a front end knows only of that model. So two results of a check, at
+    the same position and of the same subject, are compared only where both front ends
+    read the same model (`Fren reads the model as …`, or the
+    counterexample or witness), and the summary and exit status only if
+    every pair was.
   - Both front ends must say that a static error stopped the checks
     (`could not check due to previous errors`, which has no location), or
     neither, even after a parse error. Any other message without a location
@@ -367,8 +385,8 @@ pub mod testing
   given files, and `--print SEED` prints a generated spec. The comparison
   itself is tested in `FrenTest/FrontendsCompare.lean`.
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
-  fixed set of seeds, from its generators, the default one, `--guards`
-  and `--sites` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  fixed set of seeds, from its generators, the default one, `--guards`,
+  `--sites` and `--confirm` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of a
   few dozen seeds each. Every difference must be listed in
   `knownDifferences`, beside the corpus, by its generator, its seed and

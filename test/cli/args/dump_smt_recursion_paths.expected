@@ -1,0 +1,116 @@
+; weaker: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not false))
+(check-sat)
+(reset)
+
+; weaker: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not true))
+(check-sat)
+(reset)
+
+; weaker: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |a?| Bool)
+(assert (=> (not (not |a?|)) (>= (|::depth| |t|) 0))) ; e
+(assert (=> (not (not |a?|)) (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|))))))) ; equation
+(assert (=> (and (not (not |a?|)) (not (= |t| |T::Leaf|))) (>= (|::depth| (|T::Node::0| |t|)) 0))) ; e
+(assert (not (and (or (not |a?|) (>= (|::depth| |t|) 0)) (or (not |a?|) (> (|::depth| |t|) (- 1))))))
+(check-sat)
+(reset)
+
+; either: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not false))
+(check-sat)
+(reset)
+
+; either: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not true))
+(check-sat)
+(reset)
+
+; either: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |a?| Bool)
+(declare-const |b?| Bool)
+(assert (=> (or (not (not |a?|)) (and (or (not |a?|) (>= (|::depth| |t|) 0)) (not (not |b?|)))) (>= (|::depth| |t|) 0))) ; e
+(assert (=> (or (not (not |a?|)) (and (or (not |a?|) (>= (|::depth| |t|) 0)) (not (not |b?|)))) (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|))))))) ; equation
+(assert (=> (or (and (not (not |a?|)) (not (= |t| |T::Leaf|))) (and (or (not |a?|) (>= (|::depth| |t|) 0)) (not (not |b?|)) (not (= |t| |T::Leaf|)))) (>= (|::depth| (|T::Node::0| |t|)) 0))) ; e
+(assert (not (and (or (not |a?|) (>= (|::depth| |t|) 0)) (or (not |b?|) (> (|::depth| |t|) (- 1))))))
+(check-sat)
+(reset)
+
+; anywhere: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not false))
+(check-sat)
+(reset)
+
+; anywhere: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not true))
+(check-sat)
+(reset)
+
+; anywhere: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(declare-const |a?| Bool)
+(assert (>= (|::depth| |t|) 0)) ; e
+(assert (= (|::depth| |t|) (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))))) ; equation
+(assert (=> (not (= |t| |T::Leaf|)) (>= (|::depth| (|T::Node::0| |t|)) 0))) ; e
+(assert (not (and (> (|::depth| |t|) (- 1)) (or (not |a?|) (>= (|::depth| |t|) 0)))))
+(check-sat)
+(reset)
+
+; [anonymous]: query 1
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-datatype |T| ((|T::Leaf|) (|T::Node| (|T::Node::0| |T|))))
+(declare-fun |::depth| (|T|) Int)
+(declare-const |t| |T|)
+(assert (=> (not (= |t| |T::Leaf|)) (>= (|::depth| (|T::Node::0| |t|)) 0))) ; e
+(assert (=> (not (= |t| |T::Leaf|)) (= (|::depth| (|T::Node::0| |t|)) (ite (= (|T::Node::0| |t|) |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| (|T::Node::0| |t|)))))))) ; equation
+(assert (=> (and (not (= |t| |T::Leaf|)) (not (= (|T::Node::0| |t|) |T::Leaf|))) (>= (|::depth| (|T::Node::0| (|T::Node::0| |t|))) 0))) ; e
+(assert (not (>= (ite (= |t| |T::Leaf|) 0 (+ 1 (|::depth| (|T::Node::0| |t|)))) 0)))
+(check-sat)
+(reset)
+
+fren: 7 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

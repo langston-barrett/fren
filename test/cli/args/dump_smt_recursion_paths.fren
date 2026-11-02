@@ -1,0 +1,25 @@
+--@ args: check --dump-smt
+-- `--dump-smt` of queries that find a recursive application on several
+-- paths, each with its guards: each of its facts is asserted once, where it
+-- is first found, under the guards of its weakest paths
+-- (`lang::merged_facts`). In `weaker`, `depth(t)` is found under `a?`, and
+-- again under the first conjunct and `a?`, so its facts are asserted under
+-- `a?` alone. In `either`, it is found under `a?`, and under the first
+-- conjunct and `b?`, neither within the other, so under their disjunction.
+-- In `anywhere`, it is found with no guard first, so its facts hold
+-- unconditionally.
+pub enum T { Leaf, Node(T) }
+
+pub fn depth(t: T): (r: Int) {
+    out r := match t {
+        T::Leaf => 0,
+        T::Node(u) => 1 + depth(u),
+    }
+    ensure e: r >= 0
+}
+
+proc weaker(t: T, a?) { expect c: (not a? or depth(t) >= 0) and (not a? or depth(t) > -1) }
+
+proc either(t: T, a?, b?) { expect c: (not a? or depth(t) >= 0) and (not b? or depth(t) > -1) }
+
+proc anywhere(t: T, a?) { expect c: depth(t) > -1 and (not a? or depth(t) >= 0) }

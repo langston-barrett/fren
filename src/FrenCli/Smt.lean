@@ -989,27 +989,23 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
     let text := toString app
     if ancestors.contains text then continue
     let ancestors := ancestors.push text
-    let guarded (f : String) := if gs.isEmpty then f else s!"(=> {conj gs} {f})"
     let domain := ((prelude.byQuoted.get[head]?.bind (prelude.decls[·]?)).map fun d =>
       let ps := (d.recursion?.map (·.1)).getD #[]
       d.domain.map fun f => toString ((SeqElems.parse f).subst (ps.zip args))).getD #[]
     for (n, f) in appFactsOf funs types text do
       let f := expand f
-      out := out.push (n, guarded (if domain.isEmpty then toString f else s!"(=> {conj domain} {f})"))
+      out := out.push ((n, if domain.isEmpty then toString f else s!"(=> {conj domain} {f})"), gs)
       work := work ++ scan recs f gs introduced ancestors
     if (Fren.Core.recursiveFacts introduced).2 then
       if let some (_, ps, body) := recs.find? (·.1 == head) then
         let body := (body.subst (ps.zip args)).unfold defs
-        out := out.push (`equation, guarded s!"(= {text} {body})")
+        out := out.push ((`equation, s!"(= {text} {body})"), gs)
         work := work ++ scan recs body gs true ancestors
-  -- Each fact once, where it first occurs.
-  let mut kept : Std.HashSet (Lean.Name × String) := {}
-  let mut facts := #[]
-  for f in out do
-    unless kept.contains f do
-      kept := kept.insert f
-      facts := facts.push f
-  return facts
+  -- Each fact once, where it is first found, under its weakest paths.
+  let implies (gs : Array String) (f : String) := if gs.isEmpty then f else s!"(=> {conj gs} {f})"
+  let disj (ps : List (Array String)) := s!"(or {" ".intercalate (ps.map conj)})"
+  return (Fren.Core.mergeGuarded Fren.Core.guardsWithin out.toList).toArray.map fun ((n, f), ps) =>
+    (n, Fren.Core.guardedFact implies disj f ps)
 where
   scan (recs : Array (String × Array String × SeqElems.SExpr)) (e : SeqElems.SExpr)
       (gs : Array String) (introduced : Bool) (ancestors : Array String) (bound : Array String := #[]) :

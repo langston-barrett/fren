@@ -270,7 +270,62 @@ def conflict : String :=
 #guard !isCheckResult (err 3 "expectation `c::x` does not hold here, but is a lint")
 #guard isCheckResult (err 3 "a table in `c::r` may have no row that holds")
 #guard isCheckResult (err 3 "rows 1 and 2 of a table in `c::r` may both hold")
+#guard isCheckResult (err 3 "a `match` in `c::r` may have no arm that is taken")
+#guard isCheckResult (err 3 "row 2 of a table in `c::r` is never the first that holds")
+#guard isCheckResult (err 3 "arm 2 of a `match` in `c::r` is never taken")
 #guard isCheckResult (err 3 "could not decide whether rows 1 and 2 of a table in `c::r` are disjoint: timeout")
 #guard !isCheckResult (err 3 "rows 1 and 2 of a table in `c::r` may both hold, but is a lint")
+
+/-! ## Misread models (`--confirm`) -/
+
+-- A check whose model one front end refutes and the other shows, both
+-- having read the same model: one knows what the other does not.
+def misreadSpec : String := "proc p(a: Int) {\n    expect e: a = 3\n}\n"
+
+def refuted (m : String) : Diagnostic :=
+  err 2 s!"internal error: the solver's model for the expectation check of `p::e` makes its hypothesis `pinned` false in Fren's semantics\nnote: Fren reads the model as {m}"
+
+def shown (m : String) : Diagnostic :=
+  err 2 s!"expectation `p::e` does not hold\ncounterexample: {m}" "F0603"
+
+#guard !(compare misreadSpec { diags := #[refuted "a = 2"] } { diags := #[shown "a = 2"] } (misread := true)).1.isEmpty
+
+-- With another model, which the other front end's solver gave, nothing is
+-- compared, not even the summaries, which count the results.
+#guard (compare misreadSpec { diags := #[refuted "a = 2"], summary? := some "0 passed, 0 failed, 1 inconclusive" }
+  { diags := #[shown "a = 4"], summary? := some "0 passed, 1 failed" } (misread := true)).1.isEmpty
+
+-- Nor where one front end read no model, as the `fren` command reads no
+-- witness that depends on functions' interpretations.
+#guard (compare misreadSpec { diags := #[err 2 "expectation `p::e` does not hold" "F0603"] }
+  { diags := #[refuted "a = 2"] } (misread := true)).1.isEmpty
+
+-- A refuted model and the result that it stands for are of the same kind
+-- of check; a table's disjointness and reachability at the same row are not.
+#guard checkKindOf? (refuted "a = 2") == some "expectation"
+#guard checkKindOf? (shown "a = 2") == some "expectation"
+#guard checkKindOf? (err 2 "rows 1 and 2 of a table in `p::e` may both hold") == some "disjointness"
+#guard checkKindOf? (err 2 "row 2 of a table in `p::e` is never the first that holds") == some "reachability"
+
+-- Two results of one kind at one position, as the definedness checks of an
+-- index and of a binder bound to it, each pair with the other front end's
+-- result of the same model, once.
+def defShown : Diagnostic :=
+  err 2 "an index of `p::e` may be out of range\ncounterexample: q = []" "F0611"
+
+def defRefuted : Diagnostic :=
+  err 2 "internal error: the solver's model for the definedness check of `p::e` makes the check's claim true in Fren's semantics\nnote: Fren reads the model as q = [], a = 2"
+
+#guard (compare misreadSpec { diags := #[defShown, defRefuted] } { diags := #[defShown, defRefuted] } (misread := true)).1.isEmpty
+
+-- A check's subject is the qualified name, not a keyword before it.
+#guard subjectOf? (err 2 "a `match` in `p::e` may have no arm that is taken") == some "p::e"
+
+-- A refuted model is a check's result, not a static error, so the exit
+-- code that Lean's messages call for is 1.
+#guard isCheckResult (refuted "a = 2")
+
+-- Without misread models, the messages are compared as they are.
+#guard !(compare misreadSpec { diags := #[refuted "a = 2"] } { diags := #[shown "a = 4"] }).1.isEmpty
 
 end FrenTest.FrontendsCompare

@@ -90,6 +90,29 @@ inductive Pat where
   | or (alts : Array Pat)
   deriving Inhabited
 
+/-- Whether `p` tests nothing: `_`, a binder, or an or-pattern with an
+alternative that tests nothing, each of which matches every value
+(`model::irrefutable?`). Both front ends read an arm's patterns by it,
+each pattern of a `match` of several scrutinees on its own (`armTest`). -/
+partial def Pat.irrefutable : Pat → Bool
+  | .wild _ => true
+  | .or alts => alts.any Pat.irrefutable
+  | _ => false
+
+/-- An arm's test where a scrutinee's value may be unknown: of the truth of
+each of its patterns' tests that tests its scrutinee (`Pat.irrefutable`),
+`none` where the scrutinee is unknown, their strong Kleene conjunction, so
+`true` where none tests (`model::arm_test_of`). A `match` of several
+scrutinees tests each on its own, so knowing one decides an arm whose
+pattern there is refuted, whatever the others are. Both front ends choose
+the tested patterns by `Pat.irrefutable`. The `fren` command combines their
+truths by this function (`armCase`); the Lean-hosted front end writes their
+tests as a conjunction, `∧`, in the Lean definition, which
+`Enumerate.knownOf` reads by `Enumeration.andTruth`, the same strong Kleene
+conjunction. -/
+def armTest (tests : List (Option Bool)) : Option Bool :=
+  if tests.contains (some false) then some false else if tests.contains none then none else some true
+
 /-! ## Ranges -/
 
 /-- The bounds of the range `lo..=hi`, or of `lo..hi` unless `inclusive`,
