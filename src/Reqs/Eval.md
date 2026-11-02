@@ -196,7 +196,9 @@ quantifiers, `match`es and the definitions read through
 known outcome under an approximation is the recursion's own, and running
 out only leaves a value unknown, which the test then neither refutes nor
 reaches a check by (see below). Fren's evaluator has `2^20` units of fuel
-(`evalFuel`), far more than any evaluation needs.
+(`evalFuel`), far more than any evaluation needs. It also bounds how deeply
+it nests between two steps (`evalDepth`), only to be total, at a depth that
+no spec reaches; that rests on source size and is not tested.
 
 ## Searching for behaviours
 

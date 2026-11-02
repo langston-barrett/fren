@@ -901,13 +901,19 @@ the solver allow too: 20000 nested recursions evaluated fine, and with
 100000 the solver timed out first. -/
 def evalFuel : Nat := 1 <<< 20
 
-/-- How deep `Ex.eval` may recurse between two steps (`evalFuel`): into
-an expression's parts, a quantifier's next bound name or a newtype's
-underlying type. It only makes `Ex.eval` total. Between two steps,
-evaluation recurses no deeper than the expression evaluated, with the
-definitions that it reads (`Interp.defined`), is nested, and no source is
-anywhere near this deep, so no evaluation runs out of
-it: only `evalFuel` decides which do. -/
+/-- How deep `Ex.eval` may recurse between two steps (`evalFuel`). Each
+call into an expression's parts, and `typeV`'s into a newtype's
+underlying type, spends a unit, but a quantifier's next bound name and
+`typeV`'s descent into a value's elements spend none. It only makes
+`Ex.eval` total. Between two steps, evaluation recurses no deeper than
+the expression evaluated, with the definitions that it reads
+(`Interp.defined`), is nested, and the newtypes it checks are. That no
+evaluation runs out of it rests on that, and on no source being anywhere
+near this deep, and is not tested. One that did would have an unknown
+value (`outOfFuel`), and its test would count as one without a value
+(`F0617`). In practice the native stack overflows long before `2^20`
+nested calls, so past any depth that a source reaches, evaluation
+crashes rather than runs out. -/
 def evalDepth : Nat := 1 <<< 20
 
 /-- What evaluation gives when it runs out of fuel (`evalFuel`): an
@@ -940,8 +946,9 @@ recursion's body its parameters, the first innermost.
 
 It is total: each step of evaluation, an application of a structural
 recursion's body or a check of an invariant, spends a unit of `fuel`
-(`evalFuel`), and each call within it, between two steps, a unit of
-`depth` (`evalDepth`), and without either its value is `outOfFuel`'s. -/
+(`evalFuel`), and each call into an expression's parts, between two
+steps, a unit of `depth` (`evalDepth`), but not a quantifier's next bound
+name, and without either its value is `outOfFuel`'s. -/
 def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := [])
     (slots : @& Array (Option Val) := #[]) (frame : @& Array Binding := #[])
     (memos : @& Array (Thunk (Option Val)) := #[]) (fuel : Nat := evalFuel) (depth : Nat := evalDepth) (e : @& Ex) : Option Val :=
@@ -1199,9 +1206,10 @@ def Ex.eval (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val) := 
 termination_by (fuel, depth + 1, 0)
 where
   /-- Check actual invariant predicates as well as structural type facts.
-  Every recursive call inspects a contained finite value, or, for a
-  newtype, the same value at its underlying type, which spends a unit of
-  `depth`. Checking an invariant is a step of evaluation (`evalFuel`). -/
+  Every recursive call inspects a contained finite value, which spends no
+  `depth`, or, for a newtype, the same value at its underlying type, which
+  spends a unit. Checking an invariant is a step of evaluation
+  (`evalFuel`). -/
   typeV (I : @& Interp) (fuel depth : Nat) (t : Fren.Core.PTy) (v : Val) : Option Bool :=
     match depth with
     | 0 => outOfFuel ()
@@ -1716,7 +1724,8 @@ interpretation whose records', newtypes' and enumerations' parts are
   bound name are evaluated once for each value of the names that they
   read, when first read, rather than at each instance (`.lifted`).
 - An expression whose parts are all known is known, but for one that
-  reads the interpretation's functions: its value, which needs no
+  reads the interpretation's functions, or its definitions, as a subset
+  type's invariant does: its value, which needs no
   environment, is computed once (`.known`). -/
 partial def Ex.compile (shapes : Name → Option Fren.Core.DataShape) (scope : Option (List Name)) (e : Ex) : Ex :=
   match e with
@@ -1741,11 +1750,13 @@ where
     | e => e
   /-- An expression all of whose parts are known is too, unless it applies
   a function, or is a constant, a table or `match` without a value where
-  nothing holds, or an index, which may be out of range, whose values are
-  the interpretation's: its value, whatever the environment, under any
+  nothing holds, an index, which may be out of range, or a type check,
+  which may evaluate the definitions of invariants, in its type or in the
+  parts' types that `shapes` gives, whose values are the
+  interpretation's: its value, whatever the environment, under any
   interpretation with `shapes`. -/
   fold (e : Ex) : Ex :=
-    let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index ..
+    let readsFns := e matches .app .. | .const .. | .table _ _ (some _) | .match _ _ _ _ (some _) _ | .index .. | .typed ..
     -- A quantifier without a domain reads the interpretation's domain.
     let readsDomain := match e with
       | .quant _ _ _ _ domains _ _ => domains.any Option.isNone

@@ -34,7 +34,7 @@ says changes nothing, and, where it mentions nothing, in the empty
 environment, which `lang::closed` says changes nothing either. Each is
 compiled too (`Ex.compile`), which keeps its value in every interpretation,
 one with values for the indexes out of range among them, and compiled
-again. Compiling a structural recursion's body, as testing does, keeps
+again, and so does each integer one checked to be of a subset type. Compiling a structural recursion's body, as testing does, keeps
 the value of its applications (`compiledRecursion`), and a pattern that
 `Pat.mayMatchCtor` says matches no variant of an index matches none
 (`mayMatchCtorSound`), which `Ex.dispatch` rests on. Last,
@@ -378,6 +378,13 @@ def applies : lang.Expr String → Bool
   | .Match a _ b c d => applies a || applies b || applies c || applies d
   | _ => false
 
+/-- The subset type `Pos` of the integers, whose invariant is `pos?`. -/
+def posTy : Fren.Core.PTy := { ty := .int, invariants := #[{ name := `pos, predicate := `pos? }] }
+
+/-- The definition of `pos?(x) := x > 0`. -/
+def posDefs (f : Lean.Name) : Option (Array Lean.Name × Ex × FrenCli.Eval.VTy) :=
+  if f == `pos? then some (#[`x], .bin .gt (.bound `x) (.lit (.int 0)), .bool) else none
+
 /-- The problems found on 3000 random expressions. -/
 def run : Array String := Id.run do
   let mut failures := #[]
@@ -387,6 +394,7 @@ def run : Array String := Id.run do
   let mut rebound := 0
   let mut closedOnes := 0
   let mut applied := 0
+  let mut typedKnown := 0
   for k in [0:3000] do
     let ((_, e, b, us, rs), s) := (do
       let P ← genProg
@@ -423,6 +431,15 @@ def run : Array String := Id.run do
       -- Compiling again, which sees through `.dispatch`, keeps it too.
       unless (once.compile (fun _ => none) none).eval I look == e.1.eval I look do
         failures := failures.push s!"{repr e.2} in {repr b} changes its value when compiled twice"
+    -- So does compiling a check that an integer is of the subset type
+    -- `Pos`, whose invariant is a definition of the interpretation, which
+    -- compiling may not fold without (`Ex.compile.fold`).
+    if k % 4 == 1 then
+      let I := { binaryInterp us with defs := posDefs }
+      let typed := Ex.typed posTy #[] e.1
+      if e.1.compile (fun _ => none) none matches .known (some _) then typedKnown := typedKnown + 1
+      unless (typed.compile (fun _ => none) none).eval I look == typed.eval I look do
+        failures := failures.push s!"{repr e.2} in {repr b}, checked to be of a subset type, changes its value when compiled"
     -- A variable that the expression does not mention, rebound, changes nothing.
     for x in ["x", "y", "p", "q"] do
       unless decide (lang.Mention.Var x ∈ lang.free_vars e.2) do
@@ -452,6 +469,7 @@ def run : Array String := Id.run do
   if rebound < 1000 then failures := failures.push s!"only {rebound} variables were rebound"
   if closedOnes < 100 then failures := failures.push s!"only {closedOnes} expressions mentioned nothing"
   if applied < 300 then failures := failures.push s!"only {applied} expressions applied `u` or `r`"
+  if typedKnown < 50 then failures := failures.push s!"only {typedKnown} subset-type checks were of a known value"
   return failures
 
 /-- A random pattern, at most `d` deep, over `Bool`s, integers, strings
