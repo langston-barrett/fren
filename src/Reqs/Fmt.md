@@ -1298,25 +1298,30 @@ with a single newline.
 A blank line goes before and after each top-level item that spans several
 lines (#546), as Black puts blank lines around a function, where rustfmt
 adds none and keeps those the author wrote. A run of one-line items keeps
-the blank lines it has, packed or not. An item spans the lines of its
-tokens as laid out, from those of the `set_option ... in` before it, which
-is part of it as an attribute is of a Rust function, so an item after one
-on a line of its own spans several lines. Whether an item spans several
-lines depends on its content, then, not on how the source lays it out. The
-comments just above an item, with no blank line between them and it, go
-with it, as a doc comment goes with a Rust function: the blank line goes
-above them, never between them and the item. A comment that starts with
-`--~`, a ui test's annotation of a line above it ([Testing](dev/Testing.md)),
-goes with that line instead, so no blank line comes between the two, and
-the comments above it are left as they are. Other comments, `--@` lines
+the blank lines it has, packed or not. An item spans the lines that its
+tokens are written on as laid out, from those of the `set_option ... in`
+before it, which is part of it as an attribute is of a Rust function, so
+an item after one on a line of its own spans several lines. Each line of a
+token or comment that spans several counts, as of a block comment. Whether
+an item spans several lines depends on its content, then, not on how the
+source lays it out. The comments just above an item, with no blank line
+between them and it in the source, go with it, as a doc comment goes with
+a Rust function: the blank line goes above them, never between them and
+the item. A comment that starts with `--~`, a ui test's annotation of the
+line as many lines above it as it has `^` ([Testing](dev/Testing.md)),
+goes with that line instead, and the comments above it are left as they
+are. No blank line comes between an annotation and its line: an item is
+not set apart where an annotation on or below its first line, before the
+next item, reaches above where the blank line would go, as `--~^^` under a
+one-line item reaches the line before it. Other comments, `--@` lines
 included, are alike to the formatter. `fmt::apart` decides whether a line
 between two items, or the first line of the later one, is set apart from
-the item before by a blank line, from the lines of the two items and the
-lines between them:
+the item before by a blank line, from the lines of the two items, the
+lines between them and the annotations after the later one:
 
 ```fren
 -- The lines between two top-level items, from the later one up: for each, whether it
--- is a `--~` annotation, and the blank lines after it.
+-- is a `--~` annotation, and the blank lines after it in the source.
 pub enum Between { Nil, Line(Bool, Int, Between) }
 
 -- How many of the lines between two items go with the later one: the comments just
@@ -1327,21 +1332,36 @@ pub fn leading(between: Between): Int := match between {
         if annotation? or blank > 0 then 0 else 1 + leading(rest),
 }
 
+-- The `--~` annotations on or below an item's first line, before the next item: for
+-- each, how many lines it is below that line, blank lines counted, and how many lines
+-- up it reaches, its count of `^`.
+pub enum Annotations { Nil, At(Int, Int, Annotations) }
+
+-- Some annotation reaches above the line `above` lines above the item's first line.
+pub fn reaches_above?(annotations: Annotations, above: Int) := match annotations {
+    Annotations::Nil => false,
+    Annotations::At(distance, reach, rest) =>
+        reach > distance + above or reaches_above?(rest, above),
+}
+
 pub proc apart(
     above: Nat,              -- how many lines the line is above its item's first line
     between: Between,        -- the lines between the item before and the item
+    annotations: Annotations,  -- the annotations on or below the item's first line
     previous_first: Nat,     -- the line of the first token of the item before
     previous_last: Nat,      -- the line of its last token
     first: Nat,              -- the line of the item's first token
     last: Nat,               -- the line of its last token
 ): (det apart?) {
     -- Above an item and the comments that go with it, if it or the item before spans
-    -- several lines.
+    -- several lines, and no annotation reaches past there.
     ensure rule: apart? iff above = leading(between) and (previous_last > previous_first or last > first)
+        and not reaches_above?(annotations, above)
 
     expect packed: when previous_last = previous_first and last = first, not apart?
     expect documented: when above < leading(between), not apart?
     expect left_above: when above > leading(between), not apart?
+    expect annotated: when reaches_above?(annotations, above), not apart?
 }
 ```
 

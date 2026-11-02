@@ -1756,19 +1756,36 @@ def blankPieces (src : String) : Option (Array BlankPiece × Array FrenCli.Token
     sawUse := false
   return (out, toks, lay)
 
+/-- The blank lines before each line of `out`, formatted from `src`, in
+`src`: before the token or comment that starts the line, as `blankPieces`
+reads them, each by its line in `out`. -/
+def sourceBlanks (src out : String) : Std.HashMap Nat Nat := Id.run do
+  let some (ps, _, _) := blankPieces src | return {}
+  let some (qs, _, _) := blankPieces out | return {}
+  if ps.size != qs.size then return {}
+  let mut m : Std.HashMap Nat Nat := {}
+  for h : i in [0:qs.size] do
+    if qs[i].startsLine then m := m.insert qs[i].line ps[i]!.blank
+  return m
+
 /-- The lines of Fren source `out`, as formatted, that `fmt::apart` sets
-apart from the top-level item before them, computed from `out` itself:
-from the lines of each item's first and last tokens, and the lines between
-two items, each a `--~` annotation or not and with the blank lines after
-it. -/
-def apartLines (out : String) : Std.HashSet Nat := Id.run do
+apart from the top-level item before them, computed from `out` and from
+`blanks`, the blank lines before each of its lines in the source
+(`sourceBlanks`): from the lines of each item's first and last tokens, the
+lines between two items, each a `--~` annotation or not and with the
+blank lines after it in the source, and the annotations on or below an
+item's first line, before the next item, each with how many lines it is
+below that line and how far it reaches. -/
+def apartLines (out : String) (blanks : Std.HashMap Nat Nat) : Std.HashSet Nat := Id.run do
   let chars := out.toList.toArray
-  let .ok (toks, _) := FrenCli.lexWithComments chars | return {}
+  let .ok (toks, comments) := FrenCli.lexWithComments chars | return {}
   let .ok lay := FrenCli.parseLayout toks chars | return {}
   let (lineOf, starts) := FrenCli.Fmt.lineTable chars
   let text (l : Nat) : String :=
     String.ofList (chars.extract starts[l]! ((starts[l + 1]?.map (· - 1)).getD chars.size)).toList
   let spans := lay.items.map fun (f, l) => (lineOf[toks[f]!.span.start]!, lineOf[toks[l]!.span.stop - 1]!)
+  let annotations := comments.filterMap fun c =>
+    (FrenCli.Fmt.annotationReach (FrenCli.Fmt.text chars c)).map (lineOf[c.start]!, ·)
   let mut apart : Std.HashSet Nat := {}
   for j in [1:spans.size] do
     let (pf, pl) := spans[j - 1]!
@@ -1778,22 +1795,26 @@ def apartLines (out : String) : Std.HashSet Nat := Id.run do
     -- one up, and what `fmt::apart` reads of each.
     let mut lines := #[f]
     let mut between := #[]
-    let mut blanks := 0
+    let mut blankCount := 0
     for d in [1:f - pl] do
       let t := (text (f - d)).trimAscii
-      if t.isEmpty then blanks := blanks + 1
+      if t.isEmpty then blankCount := blankCount + 1
       else
-        between := between.push (t.startsWith "--~", blanks)
+        between := between.push (t.startsWith "--~", blanks.getD lines.back! blankCount)
         lines := lines.push (f - d)
-        blanks := 0
+        blankCount := 0
+    let stop? := spans[j + 1]?.map (·.1)
+    let below := annotations.toList.filterMap fun (line, r) =>
+      if line ≥ f && stop?.all (line < ·) then some (line - f, r) else none
     for h : a in [0:lines.size] do
-      if FrenCli.Fmt.apart a between.toList pf pl f l then apart := apart.insert lines[a]
+      if FrenCli.Fmt.apart a between.toList below pf pl f l then apart := apart.insert lines[a]
   return apart
 
 /-- Where formatting `src` as `out` loses or adds a blank line: before each
 token or comment that starts a line of `out`, the blank lines are those
 that `fmt::blank_lines` keeps of `src`'s, with whether `fmt::apart` sets
-the line apart, computed from `out` (`apartLines`); and a token or comment after a
+the line apart, computed from the lines of `out` and the blank lines of
+`src` (`apartLines`); and a token or comment after a
 blank line of `src` that does not start a line of `out` is after a gap
 whose line break a list or block decides and whose blank lines go
 (`fmt::line_break`): after an opening bracket, a record update's `{` or
@@ -1831,7 +1852,7 @@ def fmtBlanksKept (src out : String) : Array String := Id.run do
           closes := closes.insert k
         unclosed := unclosed.pop
     | _ => pure ()
-  let apart := apartLines out
+  let apart := apartLines out (sourceBlanks src out)
   let mut failures := #[]
   for h : i in [1:ps.size] do
     let p := ps[i]!
@@ -2140,7 +2161,7 @@ def apartTokens (src formatted : String) : Std.HashSet Nat := Id.run do
   let some (ps, _, _) := blankPieces src | return {}
   let some (qs, _, _) := blankPieces formatted | return {}
   if ps.size != qs.size then return {}
-  let apart := apartLines formatted
+  let apart := apartLines formatted (sourceBlanks src formatted)
   let mut toks : Std.HashSet Nat := {}
   for h : i in [0:qs.size] do
     if qs[i].startsLine && apart.contains qs[i].line then
@@ -2186,6 +2207,14 @@ def formatting : IO (Array String) := do
         if (FrenCli.Fmt.formatFren again).toOption != some again then
           failures := failures.push s!"{f}: laid out again, formatting it twice changes it again"
   if !relaidSome then failures := failures.push "laying out the specs again at random changes none of them"
+  -- The check of blank lines catches one between a comment and the item it
+  -- documents, which `fmt::apart` puts above the comment.
+  let tall := "proc tall(m: Mode): (on?) {\n    ensure r: on? iff m = Mode::Heat\n    ensure s: on?\n}\n"
+  let documented (before after : String) := s!"enum Mode \{ Heat, Cool }\n{before}-- doc\n{after}{tall}"
+  if !(fmtBlanksKept (documented "" "") (documented "\n" "")).isEmpty then
+    failures := failures.push "the check of blank lines rejects a blank line above a doc comment"
+  if (fmtBlanksKept (documented "" "") (documented "" "\n")).isEmpty then
+    failures := failures.push "the check of blank lines misses a blank line between a doc comment and its item"
   -- Every other spec is formatted, as `fren fmt --check` says.
   let ignore := (fmtIgnore ++ fmtPending).flatMap (["--ignore", ·])
   let (out, code) ← runFren (["fmt", "--check"] ++ ignore ++ (← specFiles).toList)

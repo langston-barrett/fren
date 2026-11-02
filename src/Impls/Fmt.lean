@@ -152,17 +152,33 @@ theorem leading_toBetween (xs : List (Bool × Nat)) :
     obtain ⟨a, b⟩ := x
     cases a <;> rcases b with _ | b <;> simp_all [toBetween, fmt.leading, FrenCli.Fmt.leading] <;> omega
 
-impl apart: fmt::apart for (n : Nat) (xs : List (Bool × Nat)) (pf pl f l : Nat) {
+def toAnnotations : List (Nat × Nat) → fmt.Annotations
+  | [] => .Nil
+  | (d, r) :: rest => .At (d : Int) (r : Int) (toAnnotations rest)
+
+theorem reaches_toAnnotations (xs : List (Nat × Nat)) (n : Nat) :
+    fmt.«reaches_above?» (toAnnotations xs) (n : Int) = FrenCli.Fmt.reachesAbove xs n := by
+  induction xs with
+  | nil => simp [toAnnotations, fmt.«reaches_above?», FrenCli.Fmt.reachesAbove]
+  | cons x xs ih =>
+    obtain ⟨d, r⟩ := x
+    simp only [toAnnotations, fmt.«reaches_above?», ih, FrenCli.Fmt.reachesAbove, List.any_cons]
+    by_cases h : r > d + n
+    · simp [h, show (r : Int) > d + n by omega]
+    · simp [h, show ¬ ((r : Int) > d + n) by omega]
+
+impl apart: fmt::apart for (n : Nat) (xs : List (Bool × Nat)) (ys : List (Nat × Nat)) (pf pl f l : Nat) {
   above := n,
   between := toBetween xs,
+  annotations := toAnnotations ys,
   previous_first := pf,
   previous_last := pl,
   first := f,
   last := l,
-  apart? := FrenCli.Fmt.apart n xs pf pl f l,
+  apart? := FrenCli.Fmt.apart n xs ys pf pl f l,
 } by
-  intro n xs pf pl f l _
-  simp only [fren_spec, FrenCli.Fmt.apart, leading_toBetween]
+  intro n xs ys pf pl f l _
+  simp only [fren_spec, FrenCli.Fmt.apart, leading_toBetween, reaches_toAnnotations]
   by_cases h : n = FrenCli.Fmt.leading xs <;> simp_all <;> omega
 
 impl blank_lines: fmt::blank_lines for (b : Nat) (f ao bc a : Bool) {

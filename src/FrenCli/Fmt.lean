@@ -123,19 +123,36 @@ def commentColumn (width original : Nat) (split : Bool) : Nat :=
 
 /-- How many of the lines between two top-level items go with the later
 one (`fmt::leading`), given from that item up, each with whether it is a
-`--~` annotation and the blank lines after it: the comments just above
-it, with no blank line after them, up to an annotation. -/
+`--~` annotation and the blank lines after it in the source: the
+comments just above it, with no blank line after them, up to an
+annotation. -/
 def leading : List (Bool × Nat) → Nat
   | [] => 0
   | (annotation, blank) :: rest => if annotation || blank > 0 then 0 else 1 + leading rest
 
+/-- How many lines up a `--~` annotation reaches, its count of `^`, or
+`none` for another comment. -/
+def annotationReach (comment : String) : Option Nat :=
+  if comment.startsWith "--~" then
+    some (((comment.toList.drop 3).takeWhile (· == '^')).length)
+  else none
+
+/-- Whether an annotation at or below the first line of an item reaches
+above the line `above` lines above that line (`fmt::reaches_above?`):
+each is given by how many lines it is below the item's first line, blank
+lines counted, and how far it reaches. -/
+def reachesAbove (annotations : List (Nat × Nat)) (above : Nat) : Bool :=
+  annotations.any fun (distance, reach) => reach > distance + above
+
 /-- Whether a line `above` lines above the first line of a top-level item
 is set apart from the item before it by a blank line (`fmt::apart`): the
 item's tokens are on lines `first` to `last`, those of the item before on
-lines `previousFirst` to `previousLast`, and `between` are the lines
-between them, from the item up (`leading`). -/
-def apart (above : Nat) (between : List (Bool × Nat)) (previousFirst previousLast first last : Nat) : Bool :=
-  above == leading between && (previousLast > previousFirst || last > first)
+lines `previousFirst` to `previousLast`, `between` are the lines between
+them, from the item up (`leading`), and `annotations` those at or below
+the item's first line, before the next item (`reachesAbove`). -/
+def apart (above : Nat) (between : List (Bool × Nat)) (annotations : List (Nat × Nat))
+    (previousFirst previousLast first last : Nat) : Bool :=
+  above == leading between && (previousLast > previousFirst || last > first) && !reachesAbove annotations above
 
 /-- The blank lines kept before a line (`fmt::blank_lines`). -/
 def blankLines (blank : Nat) (first afterOpen beforeClose apart : Bool) : Nat :=
@@ -506,7 +523,13 @@ structure Line where
   the first of its file or block, follows a line that `endsOpen`, or starts
   with a closing bracket. -/
   blankFrom : Nat × Bool × Bool × Bool := (0, false, false, false)
+  /-- The line breaks inside its pieces, as in a block comment that spans
+  several lines: it is written on one more line than it has. -/
+  breaks : Nat := 0
   deriving Inhabited
+
+/-- The line breaks in a piece's text. -/
+def lineBreaks (s : String) : Nat := (s.toList.filter (· == '\n')).length
 
 def isLineComment (s : String) : Bool := s.startsWith "--"
 
@@ -831,6 +854,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   let mut last? : Option (Nat × Nat × Nat) := none
   -- The line in `out` of each token placed so far.
   let mut outLine : Std.HashMap Nat Nat := {}
+  -- For each token placed so far, the rows of its line that it starts and
+  -- ends on, from 0, where a piece before it spans several.
+  let mut tokRows : Std.HashMap Nat (Nat × Nat) := {}
   -- The first token of the last line, and whether that line continues an
   -- item, a member or an element.
   let mut lineFirst : Option Nat := none
@@ -886,11 +912,13 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     -- A line that ends with a bracket that indents, or with a record
     -- update's `with`, has no blank line after it (`fmt::blank_lines`).
     let opens := p.tok?.any fun k => indents k || listAtLead.contains k
+    let breaksBefore := out.back!.breaks
     out := out.modify (out.size - 1) fun l =>
       { l with pieces := l.pieces.push (kinds[i]!, p.text), commentCol := if p.tok?.isNone then p.col else l.commentCol
                commentLine := if p.tok?.isNone then p.startLine else l.commentLine
-               endsOpen := opens }
+               endsOpen := opens, breaks := l.breaks + lineBreaks p.text }
     let some k := p.tok? | continue
+    tokRows := tokRows.insert k (breaksBefore, breaksBefore + lineBreaks p.text)
     last? := some (out.size - 1, out.back!.pieces.size - 1, k)
     outLine := outLine.insert k (out.size - 1)
     if lineFirst.isNone then lineFirst := some k
@@ -1015,26 +1043,74 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
               linkStarts := linkStarts.insert t
           out := out.modify (out.size - 1) fun l => { l with endsOpen := true }
   -- A blank line before and after each top-level item that spans several
-  -- lines (`fmt::apart`), from the lines of each item's first and last
-  -- tokens, as laid out.
-  let lastLine (f l : Nat) : Option Nat :=
-    -- Its last token may be a trailing comma that the layout dropped.
-    (List.range (l + 1 - f)).findSome? fun d => outLine[l - d]?
+  -- lines (`fmt::apart`), from the lines that each item's first and last
+  -- tokens are written on: each line of a piece that spans several counts,
+  -- as in a block comment.
+  -- The rows of the output before each line, not counting blank lines, and
+  -- counting them, as laid out so far.
+  let mut rowOf : Array Nat := #[]
+  let mut writtenOf : Array Nat := #[]
+  let mut rows := 0
+  let mut written := 0
+  for ln in out do
+    written := written + ln.blank
+    rowOf := rowOf.push rows
+    writtenOf := writtenOf.push written
+    rows := rows + ln.breaks + 1
+    written := written + ln.breaks + 1
+  let rowAt (k : Nat) (endRow : Bool) : Option Nat := do
+    let x ← outLine[k]?
+    let (s, e) ← tokRows[k]?
+    return rowOf[x]! + if endRow then e else s
+  -- Each item: its first token's line in `out`, and the rows of its first
+  -- and last tokens.
   let spans := lay.items.filterMap fun (f, l) => do
-    let a ← outLine[f]?
-    return (a, (lastLine f l).getD a)
+    let x ← outLine[f]?
+    let first ← rowAt f false
+    -- Its last token may be a trailing comma that the layout dropped.
+    let last := ((List.range (l + 1 - f)).findSome? fun d => rowAt (l - d) true).getD first
+    return (x, first, last)
+  -- The `--~` annotations, each with its line in `out`, the row it is
+  -- written on, blank lines counted, and how far it reaches.
+  let mut annotations : Array (Nat × Nat × Nat) := #[]
+  for h : x in [0:out.size] do
+    let mut b := 0
+    for (k, t) in out[x].pieces do
+      if k == .comment then
+        if let some r := annotationReach t then annotations := annotations.push (x, writtenOf[x]! + b, r)
+      b := b + lineBreaks t
+  let mut decided : Array (Nat × Bool) := #[]
   for j in [1:spans.size] do
-    let (pf, pl) := spans[j - 1]!
-    let (f, l) := spans[j]!
-    if pl ≥ f || segment out[pl]!.line != segment out[f]!.line then continue
-    -- The lines between the two items, from the later one up: whether each
-    -- is a `--~` annotation, and the blank lines after it.
-    let annotation (x : Nat) : Bool :=
-      out[x]!.pieces[0]?.any fun (k, s) => k == .comment && s.startsWith "--~"
-    let between := (List.range (f - pl - 1)).map fun d => (annotation (f - 1 - d), out[f - d]!.blankFrom.1)
-    for x in [pl + 1:f + 1] do
-      let (b, first, afterOpen, beforeClose) := out[x]!.blankFrom
-      out := out.modify x fun ln => { ln with blank := blankLines b first afterOpen beforeClose (apart (f - x) between pf pl f l) }
+    let (px, pf, pl) := spans[j - 1]!
+    let (fx, f, l) := spans[j]!
+    if pl ≥ f || segment out[px]!.line != segment out[fx]!.line then continue
+    -- The rows between the two items, from the later one up: whether each
+    -- starts a `--~` annotation, and the blank lines after it in the
+    -- source.
+    let mut rowsBetween : Array (Bool × Nat) := #[]
+    for x in [px:fx] do
+      for o in [0:out[x]!.breaks + 1] do
+        let r := rowOf[x]! + o
+        if r ≤ pl then continue
+        let annotation := o == 0 && out[x]!.pieces[0]?.any fun (k, t) => k == .comment && (annotationReach t).isSome
+        let after := if o == out[x]!.breaks then out[x + 1]!.blankFrom.1 else 0
+        rowsBetween := rowsBetween.push (annotation, after)
+    let between := rowsBetween.toList.reverse
+    -- The annotations at or below the item's first line, before the next
+    -- item in its file or block: how many rows each is below that line,
+    -- and how far it reaches.
+    let top := writtenOf[fx]!
+    let stop? := spans[j + 1]?.bind fun (nx, _, _) =>
+      if segment out[nx]!.line == segment out[fx]!.line then some writtenOf[nx]! else none
+    let below := annotations.toList.filterMap fun (x, w, r) =>
+      if w ≥ top && stop?.all (w < ·) && segment out[x]!.line == segment out[fx]!.line then some (w - top, r) else none
+    for x in [px + 1:fx + 1] do
+      let r := rowOf[x]!
+      if r ≤ pl then continue
+      decided := decided.push (x, apart (f - r) between below pf pl f l)
+  for (x, a) in decided do
+    let (b, first, afterOpen, beforeClose) := out[x]!.blankFrom
+    out := out.modify x fun ln => { ln with blank := blankLines b first afterOpen beforeClose a }
   return out
 
 /-- An error that stops a file from being formatted. -/

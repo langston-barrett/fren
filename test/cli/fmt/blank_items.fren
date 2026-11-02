@@ -3,7 +3,9 @@
 -- several lines, as laid out, and a run of one-line items keeps the blank
 -- lines it has. The comments just above an item go with it, so the blank
 -- line goes above them; a `--~` annotation goes with the line above it; a
--- `set_option ... in` is part of the item after it.
+-- `set_option ... in` is part of the item after it. An item spans each line
+-- of a block comment in it, and no blank line comes between an annotation
+-- and the line it reaches.
 pub enum Mode { Heat, Cool }
 proc packed(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
 proc tall(m: Mode): (on?) {
@@ -43,4 +45,15 @@ proc after_comment(m: Mode): (on?) {
     ensure s: on? iff m != Mode::Cool
 }
 -- A comment just after an item goes with the item after it.
+fn documented_fn(m: Mode) := m = Mode::Heat
+enum F { X, Y }
+const W: Int := /- five
+six -/ 1
+enum I { X, Y }
+proc tall_again(m: Mode): (on?) {
+    ensure r: on? iff m = Mode::Heat
+    ensure s: on? iff m != Mode::Cool
+}
+fn reached(m: Mode) := m = Mode::Heat
+--~^^ an annotation of the `}` two lines up, which no blank line comes between
 fn last(m: Mode) := m = Mode::Heat
