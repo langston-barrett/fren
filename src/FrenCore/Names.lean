@@ -1324,10 +1324,12 @@ def contractSelfMsg (f : Name) (precondition : Bool) : Msg :=
 
 /-- The name of the value of the uninterpreted function `f`, whose
 parameters are `params`, an output of the procedure that checks its contract's
-realizability: `f`, or `f'` if a parameter is named `f`
-(`Reqs/Check#contracts-of-uninterpreted-functions`). -/
+realizability: `f`, or `f#value` if a parameter is named `f`
+(`Reqs/Check#contracts-of-uninterpreted-functions`), which no parameter
+can be, as `f'` could. Both front ends reject a parameter named as its
+function (F0210) before they get here, so the second is not reached. -/
 def contractValueName (f : Name) (params : Array Name) : Name :=
-  if params.contains f then f.appendAfter "'" else f
+  if params.contains f then f.appendAfter "#value" else f
 
 /-- A contract clause named as a parameter or another clause of its
 function (`lang::distinct_names`). -/

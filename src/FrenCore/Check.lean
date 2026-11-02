@@ -476,7 +476,9 @@ def VarSig.isIn (v : VarSig) : Bool := v.role.isUniversal
 whose text, unescaped, is `copySymbol` of `n`'s. No Fren identifier
 contains `#`, so it is no variable's name (`cli::query_symbols`); `n'`
 was, since an identifier may contain `'`. -/
-def primed (n : Name) : Name := n.appendAfter "#'"
+def primed : Name → Name
+  | .str p s => .str p (s ++ "#'")
+  | n => .str n "#'"
 
 /-- The variable that `n` is the second copy of (`primed`), if it is one. -/
 def unprimed? (n : Name) : Option Name :=

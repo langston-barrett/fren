@@ -720,37 +720,39 @@ theorem text_inj {a b : Fren.Core.QuerySymbol} (ha : '#' ∉ a.base.toList) (hb 
 
 end QuerySymbols
 
-/-- A symbol of the Req, as `Fren.Core` has it. -/
-def toQuerySymbol : cli.QuerySymbol → Fren.Core.QuerySymbol
-  | .Name x => .name x
-  | .Copy x => .copy x
-  | .Bound x k => .bound x k
-  | .Closure x n => .closure x n
+/-- A symbol as the Req has it: whether a theory has a variable's name,
+and numbers in decimal. -/
+def toReqSymbol : Fren.Core.QuerySymbol → cli.QuerySymbol
+  | .name x => .Name x (Fren.Core.theorySymbols.contains x)
+  | .copy x => .Copy x
+  | .bound x k => .Bound x (toString k)
+  | .closure x n => .Closure x (toString n)
 
-theorem toQuerySymbol_inj {a b : cli.QuerySymbol} (h : toQuerySymbol a = toQuerySymbol b) : a = b := by
-  cases a <;> cases b <;> simp_all [toQuerySymbol]
+theorem toReqSymbol_inj {a b : Fren.Core.QuerySymbol} (h : toReqSymbol a = toReqSymbol b) : a = b := by
+  cases a <;> cases b <;> simp only [toReqSymbol, reduceCtorEq, cli.QuerySymbol.Name.injEq,
+    cli.QuerySymbol.Copy.injEq, cli.QuerySymbol.Bound.injEq, cli.QuerySymbol.Closure.injEq] at h
+  all_goals first
+    | exact congrArg _ h.1
+    | (obtain ⟨rfl, h⟩ := h; exact congrArg _ (Nat.repr_injective h))
+    | (rw [h])
 
 theorem not_mem_of_not_contains {s : String} (h : ¬Fren.Str.contains s (Fren.Str.lit "#") = true) : '#' ∉ s.toList :=
   QuerySymbols.not_mem_of_contains (by simpa using h)
 
-theorem same_iff {a b : cli.QuerySymbol} (ha : '#' ∉ (toQuerySymbol a).base.toList)
-    (hb : '#' ∉ (toQuerySymbol b).base.toList) :
-    ((toQuerySymbol a).text == (toQuerySymbol b).text) = true ↔ a = b := by
-  constructor
-  · intro e
-    exact toQuerySymbol_inj (QuerySymbols.text_inj ha hb (beq_iff_eq.mp e))
-  · rintro rfl
-    exact beq_self_eq_true _
-
-impl query_symbols: cli::query_symbols for (a b : cli.QuerySymbol) {
-  a := a,
-  b := b,
-  same? := (toQuerySymbol a).text == (toQuerySymbol b).text,
+impl query_symbols: cli::query_symbols for (a b : Fren.Core.QuerySymbol) {
+  a := toReqSymbol a,
+  b := toReqSymbol b,
+  same? := a.text == b.text,
 } by
   intro a b h
   simp only [fren_spec] at h ⊢
-  obtain ⟨-, -, ca, cb⟩ := h
-  cases a <;> cases b <;> simp only at ca cb <;>
-    exact same_iff (not_mem_of_not_contains ca) (not_mem_of_not_contains cb)
+  obtain ⟨⟨ca, cb⟩, -, -⟩ := h
+  have ha : '#' ∉ a.base.toList := by cases a <;> exact not_mem_of_not_contains ca
+  have hb : '#' ∉ b.base.toList := by cases b <;> exact not_mem_of_not_contains cb
+  refine ⟨?_, ⟨fun e => congrArg _ (QuerySymbols.text_inj ha hb (beq_iff_eq.mp e)),
+    fun e => by rw [toReqSymbol_inj e]; exact beq_self_eq_true _⟩⟩
+  rw [beq_iff_eq]
+  cases a <;> cases b <;> simp [toReqSymbol, Fren.Core.QuerySymbol.text, Fren.Core.smtName, Fren.Core.copySymbol,
+    Fren.Core.boundSymbol, Fren.Core.closureSymbol, Fren.Str.lit, String.append_assoc]
 
 end Fren.Impls

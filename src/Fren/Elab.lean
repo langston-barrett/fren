@@ -5210,8 +5210,10 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
       liftMsg y (Core.checkVarName y.getId (some (t == .bool)))
       lintName .binder y.getId y
       pure y.getId
-    -- Named apart from every local around it, as the solver never sees it.
-    let local_ := Name.mkSimple s!"{bn.toString (escape := false)}#{cx.binders.size + i}"
+    -- Named apart from every local around it, as a bound name at its
+    -- position is (`Core.boundSymbol`): one binder has each position along
+    -- a path. The solver never sees it.
+    let local_ := Name.mkSimple (Core.boundSymbol (bn.toString (escape := false)) (cx.binders.size + i))
     named := named.push (bn, local_, t, ← leanTypeOf t)
   withLocalDeclsD (named.map fun (_, l, _, ty) => (l, fun _ => pure ty)) fun _ => do
     let new := named.mapIdx fun i (bn, l, _, ty) =>
