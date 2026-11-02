@@ -364,21 +364,144 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   let head := s!"(set-logic {logic})\n(set-option :produce-models true)\n{limits.options}{options}"
   solverText head ++ defs ++ solverText body
 
+/-- How many maps `QueryCache` splits its answers into. The threads of
+`fren check` share the cache, and so each map is multi-threaded: reading
+one takes it from its reference with an atomic exchange, and a map that
+another thread can reach is never updated in place, so adding an answer
+copies the map's buckets and marks the copy multi-threaded. With one
+map, a warm `fren check` of Fren's own spec at 8 jobs spent about 8 % of
+its cycles there: 5.7 % in reading and taking it, where threads wait for
+each other, and the rest in copying and marking it (#701). With 64, two
+threads seldom want the same map at once, and each copy is of about a
+64th of the answers. -/
+def answerShards : Nat := 64
+
+/-- Which of the `answerShards` maps holds `k`: by its hash, as a map
+picks a bucket, so that keys that are equal are in the same one. -/
+def answerShard [Hashable α] (k : α) : Fin answerShards :=
+  ⟨(hash k).toNat % answerShards, Nat.mod_lt _ (by decide)⟩
+
+/-- Maps split by `answerShard`, as values: what `QueryCache.answers`
+holds. `get?` and `insert` are what `QueryCache.find?` and
+`QueryCache.insert` do, and they behave as one map does
+(`Shards.get?_insert`, `Shards.get?_empty`, `Shards.get?_foldl`). -/
+abbrev Shards (α β : Type) [BEq α] [Hashable α] := Vector (Std.HashMap α β) answerShards
+
+/-- No key, in any map. -/
+def Shards.empty [BEq α] [Hashable α] : Shards α β := Vector.replicate answerShards {}
+
+/-- What `k` maps to, from its map. -/
+def Shards.get? [BEq α] [Hashable α] (s : Shards α β) (k : α) : Option β :=
+  s[answerShard k][k]?
+
+/-- `k` mapped to `v`, in its map. -/
+def Shards.insert [BEq α] [Hashable α] (s : Shards α β) (k : α) (v : β) : Shards α β :=
+  s.set (answerShard k) (s[answerShard k].insert k v)
+
+/-- As in one map (`Std.HashMap.getElem?_insert`): a key gets the last
+value inserted for an equal key. -/
+theorem Shards.get?_insert [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α] (s : Shards α β) (k k' : α)
+    (v : β) : (s.insert k v).get? k' = if k == k' then some v else s.get? k' := by
+  simp only [Shards.get?, Shards.insert, Fin.getElem_fin, Vector.getElem_set]
+  split
+  · next h => rw [Std.HashMap.getElem?_insert]; simp only [h]
+  · next h =>
+    have hne : (k == k') = false := by
+      cases hb : k == k'
+      · rfl
+      · exact absurd (by simp [answerShard, hash_eq hb]) h
+    simp [hne]
+
+/-- As in one map (`Std.HashMap.getElem?_empty`). -/
+theorem Shards.get?_empty [BEq α] [Hashable α] (k : α) : (Shards.empty : Shards α β).get? k = none := by
+  simp [Shards.get?, Shards.empty]
+
+/-- The same answers as one map that is given the same insertions, as
+`QueryCache.answers` was before it was split. -/
+theorem Shards.get?_foldl [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α] (kvs : List (α × β)) (k : α) :
+    (kvs.foldl (fun s (k, v) => s.insert k v) Shards.empty).get? k
+      = (kvs.foldl (fun m (k, v) => m.insert k v) ({} : Std.HashMap α β))[k]? := by
+  suffices h : ∀ (s : Shards α β) (m : Std.HashMap α β), (∀ k, s.get? k = m[k]?) →
+      ∀ k, (kvs.foldl (fun s (k, v) => s.insert k v) s).get? k = (kvs.foldl (fun m (k, v) => m.insert k v) m)[k]? from
+    h _ _ (fun k => by simp [Shards.get?_empty]) k
+  induction kvs with
+  | nil => intro s m h; exact h
+  | cons kv kvs ih =>
+    intro s m h
+    apply ih
+    intro k'
+    rw [Shards.get?_insert, Std.HashMap.getElem?_insert, h]
+
+/-- A key with its hash, computed once (`Hashed.of`): a map that holds it
+neither hashes it again to look it up, to add it nor to grow, which for a
+query's script is a pass over the whole text each time. Two are equal only
+if their hashes are, so the hash is lawful whatever `α`'s is. -/
+structure Hashed (α : Type) [Hashable α] where
+  key : α
+  code : UInt64
+
+/-- `k`, with its hash. -/
+def Hashed.of [Hashable α] (k : α) : Hashed α := ⟨k, hash k⟩
+
+instance [Hashable α] : Hashable (Hashed α) := ⟨Hashed.code⟩
+
+instance [Hashable α] [BEq α] : BEq (Hashed α) := ⟨fun a b => a.code == b.code && a.key == b.key⟩
+
+theorem Hashed.beq_iff [Hashable α] [BEq α] (a b : Hashed α) : (a == b) = true ↔ a.code = b.code ∧ (a.key == b.key) = true := by
+  show (a.code == b.code && a.key == b.key) = true ↔ _
+  simp
+
+instance [Hashable α] [BEq α] : LawfulHashable (Hashed α) where
+  hash_eq a b h := ((Hashed.beq_iff a b).1 h).1
+
+instance [Hashable α] [BEq α] [EquivBEq α] : EquivBEq (Hashed α) where
+  rfl := (Hashed.beq_iff _ _).2 ⟨rfl, BEq.rfl⟩
+  symm h := by
+    have ⟨h₁, h₂⟩ := (Hashed.beq_iff _ _).1 h
+    exact (Hashed.beq_iff _ _).2 ⟨h₁.symm, BEq.symm h₂⟩
+  trans h h' := by
+    have ⟨h₁, h₂⟩ := (Hashed.beq_iff _ _).1 h
+    have ⟨h₁', h₂'⟩ := (Hashed.beq_iff _ _).1 h'
+    exact (Hashed.beq_iff _ _).2 ⟨h₁.trans h₁', BEq.trans h₂ h₂'⟩
+
+/-- Keys with their hashes are equal as the keys are, when equal keys
+have equal hashes. -/
+theorem Hashed.of_beq [Hashable α] [BEq α] [LawfulHashable α] (a b : α) :
+    (Hashed.of a == Hashed.of b) = (a == b) := by
+  cases h : a == b
+  · exact Bool.eq_false_iff.2 fun h' => by
+      have : (a == b) = true := ((Hashed.beq_iff _ _).1 h').2
+      simp [this] at h
+  · exact (Hashed.beq_iff _ _).2 ⟨hash_eq h, h⟩
+
+/-- The key of a query's answer: the script and the observations of its
+model, which are every input of `solveScript` but its variables, which
+the script declares. -/
+abbrev QueryKey := String × Array ModelObservation
+
 /-- The answers to the queries asked so far, by script, each with whether
 it has a model: a script asked again gets the same answer without the
 solver (`Reqs/Cli#solver-queries`). The script is the whole query, with its
 logic, options and limits, so the same script means the same question. The
 checks of several components may share it at once (`Reqs/Cli#parallel-checking`). -/
 structure QueryCache where
-  /-- By the script and the observations of its model, which are every
-  input of `solveScript` but its variables, which the script declares. -/
-  answers : IO.Ref (Std.HashMap (String × Array ModelObservation) (Outcome String × Bool))
+  /-- By `QueryKey`, hashed once, in the map of `answerShard` (`Shards`):
+  each map is updated atomically, as the one map was. -/
+  answers : Vector (IO.Ref (Std.HashMap (Hashed QueryKey) (Outcome String × Bool))) answerShards
   /-- The answers kept across runs, if any (`Reqs/Cli#query-cache`). -/
   store? : Option QueryStore := none
 
 /-- A cache with no answers yet, over the persistent `store?`, if any. -/
 def QueryCache.new (store? : Option QueryStore := none) : IO QueryCache := do
-  return { answers := ← IO.mkRef {}, store? }
+  return { answers := ← (Shards.empty : Shards (Hashed QueryKey) _).mapM fun m => IO.mkRef m, store? }
+
+/-- The answer to `k`, if it was asked (`Shards.get?`). -/
+def QueryCache.find? (c : QueryCache) (k : Hashed QueryKey) : BaseIO (Option (Outcome String × Bool)) :=
+  return (← c.answers[answerShard k].get)[k]?
+
+/-- Keeps `a` as the answer to `k` (`Shards.insert`). -/
+def QueryCache.insert (c : QueryCache) (k : Hashed QueryKey) (a : Outcome String × Bool) : BaseIO Unit :=
+  c.answers[answerShard k].modify (·.insert k a)
 
 def observationsOf (c : CComp) : Array ModelObservation := Id.run do
   let mut out := #[]
@@ -488,10 +611,10 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
   unless Fren.Core.queryAsked logic (Fren.Core.hasQuantifier script) do
     return .unknown (Fren.Core.quantifiedQueryReason logic)
   if let some dump := dump? then dump script
-  let key := (script, observations)
+  let key := Hashed.of (script, observations)
   let some cache := cache? | solveScript script vars wantModel observations limits.timeoutSecs
   -- A model's variables are those that the script declares, which are `vars`.
-  match (← cache.answers.get)[key]? with
+  match ← cache.find? key with
   | some (o@(.sat _), hasModel) =>
     if !wantModel then return .sat #[]
     if hasModel then return o
@@ -500,10 +623,10 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
   -- Then from the answers kept across runs (`cli::query_cache`).
   if let some store := cache.store? then
     if let some (o, hasModel) ← store.lookup? script observations wantModel then
-      cache.answers.modify (·.insert key (o, hasModel))
+      cache.insert key (o, hasModel)
       return if wantModel then o else match o with | .sat _ => .sat #[] | _ => o
   let o ← solveScript script vars wantModel observations limits.timeoutSecs
-  cache.answers.modify (·.insert key (o, wantModel))
+  cache.insert key (o, wantModel)
   if let some store := cache.store? then store.record script observations o wantModel
   return o
 

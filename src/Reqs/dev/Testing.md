@@ -199,6 +199,17 @@ pub mod testing
   `ALL` ones crashed about one run in three while their solvers
   initialized and were freed at the same time; the linear ones take no
   lock (`FrenCli.Cvc5`).
+- **The binary's shared reading** (`lake test`, `sharedSpec`): only the
+  `fren` binary reads the spec once, marks it and what else the threads
+  read persistent, and shares it with every thread (`FrenCli.Args.persist`);
+  the other jobs call `check` and `quickcheck` within the test driver,
+  which gives each thread a reading of its own. So `sharedSpec` runs the
+  binary's path, each run in a process of its own, since what it marks is
+  never freed: `fren check` of Fren's own requirements, with a fresh query
+  cache, and `fren check` and `fren quickcheck` of ui tests that fail and
+  leave checks undecided, at `--jobs 4`. Each must give the same output
+  and exit status as the tests' path at `--jobs 1` (see [Parallel
+  checking](../Cli.md#parallel-checking)).
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that

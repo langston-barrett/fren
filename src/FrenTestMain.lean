@@ -1360,6 +1360,53 @@ def ownSpecCaches : IO (Option String × Option String) := do
   let verify? := (← IO.getEnv "FREN_VERIFY_QUERY_CACHE").filter (· != "")
   return (dir?, verify?)
 
+/-- What `sharedSpec` runs on the `fren` binary's path, each in a process
+of its own: Fren's own requirements, with a query cache, and ui tests that
+fail checks (exit 1) and leave checks undecided (exit 3), under `check`
+and `quickcheck`. -/
+def sharedSpecCases (cache : String) : Array (List String) :=
+  let ui := ["enumerated_collections", "enumerated_quantifiers", "contracts", "quantifier_facts"].map
+    (s!"test/ui/checks/{·}.fren")
+  #[["check", "--query-cache", cache] ++ ownSpecFiles.toList]
+    ++ (ui.toArray.map (["check", ·])) ++ (ui.toArray.map (["quickcheck", ·]))
+
+/-- Run by `sharedSpec` in a process of its own: `fren ARGS` as the `fren`
+binary runs it, marking what its threads share persistent
+(`FrenCli.Args.persist`), with its output (stdout and stderr) and exit
+code. Once in the process, since what it marks is never freed. -/
+def persistentRun (args : List String) : IO (Array String) := do
+  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.run args (persist := true))
+  return #[toString code, out]
+
+/-- The `fren` binary's path through `check` and `quickcheck`, where the
+spec and what else the threads read is read once, marked persistent and
+shared by every thread (`FrenCli.inParallel`), gives the same output and
+exit code at `--jobs 4` as the path of the tests, unmarked, at `--jobs 1`
+(`Reqs/Cli#parallel-checking`). Each run of that path is a process of its
+own (`persistentRun`). Fren's own requirements are checked with a fresh
+query cache, which the run at `--jobs 4` fills and the one at `--jobs 1`
+answers from. -/
+def sharedSpec : IO (Array String) := do
+  let root : FilePath := ".lake" / "shared-spec-test" / s!"{← IO.monoNanosNow}"
+  let mut failures := #[]
+  for case in sharedSpecCases root.toString do
+    let cmd :: rest := case | continue
+    let out ← IO.Process.output
+      { cmd := (← IO.appPath).toString, args := #["--job", "persistentRun", cmd, "--jobs", "4"] ++ rest.toArray }
+    let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+    let (one, oneCode) ← runFren (cmd :: "--jobs" :: "1" :: rest)
+    let name := " ".intercalate (cmd :: (rest.filter (!·.startsWith "src/Reqs/")))
+    match (Json.parse last >>= fromJson? : Except String (Array String)) with
+    | .ok #[code, shared] =>
+      unless code == toString oneCode && shared == one do
+        failures := failures.push
+          s!"`fren {name}`: the binary's shared path at --jobs 4 (exit {code}) differs from --jobs 1 (exit {oneCode}):\n{shared}\n---\n{one}"
+    | _ => failures := failures.push s!"`fren {name}` on the binary's shared path crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"
+    unless out.stderr.isEmpty do
+      failures := failures.push s!"`fren {name}` on the binary's shared path wrote to stderr:\n{out.stderr}"
+  if ← root.pathExists then IO.FS.removeDirAll root
+  return failures
+
 /-- Fren's own requirements pass under the binary, and it checks every
 chapter that the Lean front end does; and Lean checks every chapter too
 (`hostedChecks`). -/
@@ -3418,7 +3465,7 @@ def jobs : IO (Array (List String)) := do
   -- Every `n`th file, so that the slow ones spread over the batches.
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
-  return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
+  return #[["ownSpec"], ["sharedSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["panicGuard"]]
@@ -3454,6 +3501,9 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["ownSpec"] => ownSpec
+  | ["sharedSpec"] => sharedSpec
+  -- Spawned by `sharedSpec` only: what it marks is never freed.
+  | "persistentRun" :: args => persistentRun args
   -- Not among `jobs`: on `main` only, after a build of `Reqs` with its
   -- checks (`ownSpecAgreement`).
   | ["ownSpecAgreement"] => ownSpecAgreement
