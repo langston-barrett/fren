@@ -1,6 +1,6 @@
 name: lint
-# `lun run --check` on `main`, on each pull request, and in the merge queue,
-# on the queue's merge commit of the pull request into the current `main`:
+# `lun run --check`, and the tests of the scripts, on `main`, on each pull
+# request, and in the merge queue, on the queue's merge commit of the pull request into the current `main`:
 # its `lint` status gates merges, like `pre-merge`'s, since two pull
 # requests that each pass can fail together, for example two imports added
 # out of order to one sorted block.
@@ -27,6 +27,11 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+    - name: Test the scripts
+      run: |
+        set -euo pipefail
+        python3 -I scripts/heavy_test.py
+        python3 -I scripts/lake_cache.py test
     - uses: langston-barrett/gha/.github/actions/install-linters@d0cdf249a9684185d96083c87d078679cd373b28
     - name: Install keep-sorted
       run: | # zizmor: ignore[github-env]

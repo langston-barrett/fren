@@ -2,7 +2,8 @@
 """The size of Lake's artifact cache, and pruning it.
 
     python3 scripts/lake_cache.py size [--cache DIR]
-    heavy python3 scripts/lake_cache.py prune [--days N] [--grace SECONDS] [--cache DIR]
+    scripts/heavy python3 scripts/lake_cache.py prune [--days N] [--grace SECONDS]
+        [--cache DIR]
     python3 scripts/lake_cache.py test
 
 The cache is the one that the repository's builds use: `LAKE_CACHE_DIR`
@@ -19,7 +20,11 @@ Link counts tell which artifacts a worktree uses only when the worktree
 and the cache are on one filesystem: across filesystems, Lake copies
 instead of linking, every artifact has a link count of 1, and the
 worktree's outputs take disk twice. Both commands check that the
-repository is on the cache's filesystem, and `prune` refuses otherwise.
+worktree that runs them is on the cache's filesystem, and `prune` refuses
+otherwise. They check only that worktree: another one on another
+filesystem holds copies, which pruning leaves alone, but they count as no
+link, so the entries of its steps may be pruned, and a build that would
+take them from the cache runs them again.
 
 `size` prints how much the cache holds, and how much of it no worktree
 links to, which pruning can free.
@@ -35,9 +40,10 @@ is still the one scanned. A build that finds a step's entry gone runs the
 step and saves its outputs again; Lake then changes the artifact's access
 rights, or links it, either of which changes its `ctime`, so the second
 check keeps an artifact that a build used or saved again during the
-grace. An entry that names an artifact already gone, or that cannot be
+grace, all but one that a build links in the microseconds between that
+check and the deletion. An entry that names an artifact already gone, or that cannot be
 read, which would make a build warn and so fail `--wfail`, is deleted
-too. Run it under `heavy`, so that fewer builds run while it does.
+too. Run it under `scripts/heavy`, so that fewer builds run while it does.
 
 `test` runs the checks of `prune` on a scratch cache.
 """
@@ -198,7 +204,8 @@ def test():
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="mode", required=True)
     s = sub.add_parser("size")
     s.add_argument("--cache")
