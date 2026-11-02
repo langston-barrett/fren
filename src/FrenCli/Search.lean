@@ -496,7 +496,9 @@ structure Problem where
   compute it again. A value rather than a `Thunk`, whose value Lean
   marks as shared between threads, so that every reference counted to
   the parts of the constraints, such as their literals, would be counted
-  atomically (`Problem.search`). -/
+  atomically (`Problem.search`); so are their compiled atoms
+  (`Atom.run?`). The cost: a problem is prepared when it is made, even
+  if it is never searched. -/
   prepared? : Option Prepared := none
   /-- For some types, `Problem.fixedPool?`'s values in every world, with
   these `strs`, computed once for the problems that share them
@@ -717,7 +719,7 @@ def Problem.prepare (shapes : Name → Option Fren.Core.DataShape) (p : Problem)
   -- atom was for searches like this one; what is read of the constraints
   -- is read of `full`.
   let run := p.atoms.map fun a =>
-    ((a.run?.map (·.get)).getD (a.e.compile shapes (some []))).substVars fun n => .slot index[a.pfx ++ n]!
+    (a.run?.getD (a.e.compile shapes (some []))).substVars fun n => .slot index[a.pfx ++ n]!
   let varSlot := p.vars.map fun (x, _) => index[x]!
   { names, index, byVar, full, run, varSlot
     fullSlots := full.map (·.slots)
@@ -808,7 +810,9 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
   -- when the search first reaches each variable, draws the same values.
   -- As values rather than `Thunk`s, whose values Lean would mark as
   -- shared between threads, so that every reference counted to a
-  -- candidate would be counted atomically (`Problem.prepared?`).
+  -- candidate would be counted atomically (`Problem.prepared?`). The
+  -- cost: a search that fails early has made the pools of the variables
+  -- it never reached.
   let pools : Array (Array Val) := p.vars.mapIdx fun i (_, ty) =>
     if slots[varSlot[i]!]!.isSome then #[] else (p.pool sp w ty (p.fixedPoolIn sp w ty)).run' ⟨mix seed i.toUInt64⟩
   -- Returns whether it found values, the conflict set if it did not, and
@@ -994,7 +998,9 @@ def Spec.withCompiledRecs (sp : Spec) (shapes : Name → Option Fren.Core.DataSh
 own shapes (`Spec.compiledRecs?`), compiled once, as it is read: what
 `Spec.withCompiledRecs` gives of `sp` with those shapes, which are every
 search's (`World.interp`), and with which testing each procedure would
-compile them again (`Spec.quickComp`). -/
+compile them again (`Spec.quickComp`). `specOf` calls it, so that every
+reading compiles its recursions, even for a command that tests nothing:
+a cost of one compilation of each recursion. -/
 def Spec.keepCompiledRecs (sp : Spec) : Spec :=
   let shapes := sp.shapeMap
   { sp with compiledRecs? := some (sp.withCompiledRecs fun p => shapes[p]?).recDefs }

@@ -115,7 +115,12 @@ inductive Val where
   | bool (b : Bool)
   | int (i : Int)
   | str (s : String)
-  /-- A set, its members in the order of `Val.setOf`, without repeats. -/
+  /-- A set, its members in the order of `Val.setOf`, without repeats.
+  That is kept by convention, not checked: every set is made by
+  `Val.setOf` or `Val.setOfKeyed`, or has at most one member, or is a
+  filter of another set's members. Equality of sets (`==`), `Val.union`
+  and `Val.setFilter` rest on it; `setOpsAgree` in `FrenTest.Semantics`
+  tests the latter two on sets made each of those ways. -/
   | set (members : Array Val)
   /-- A pair, a member of a relation. -/
   | pair (a b : Val)
@@ -543,7 +548,12 @@ structure Spec where
   /-- `recDefs` with each body compiled for the shapes of `shapes`, as
   every search's are (`Spec.withCompiledRecs`, `Spec.keepCompiledRecs`),
   kept with this reading of the spec, so that testing each of its
-  procedures does not compile them again. -/
+  procedures does not compile them again. Only `specOf` sets it, once
+  lowering has read every file; a mutant's spec (`mutantSpec`,
+  `specOfParsed`) leaves it unset, and each procedure compiles them as
+  before. It agrees with `recDefs` only because nothing changes
+  `recDefs` or `shapes` after lowering, which `FrenTest.CompiledRecs`
+  checks of the specs of its files. -/
   compiledRecs? : Option (NameMap (Array Name × Ex)) := none
   /-- Each constant's value, as a literal, or as its expression where the
   value is unknown: an index out of range, or a table where no row holds. -/
@@ -2277,15 +2287,20 @@ structure Atom where
   e : Ex
   /-- `e` as a search evaluates it (`Ex.compile`), if it is compiled
   already, for searches whose interpretations have the shapes that it was
-  compiled with (`Atom.compiled`); else each search compiles it. -/
-  run? : Option (Thunk Ex) := none
+  compiled with (`Atom.compiled`); else each search compiles it. A value
+  rather than a `Thunk`, whose value Lean would mark as shared between
+  threads, so that every reference counted to its literals, at each
+  evaluation of a search, would be counted atomically
+  (`Problem.prepared?`). -/
+  run? : Option Ex := none
   deriving Inhabited
 
 /-- `a`, compiled for searches whose interpretations' shapes are
-`shapes`, when a search first needs it (`Ex.compile`), so that the
-searches that share it compile it once. -/
+`shapes` (`Ex.compile`), so that the searches that share it compile it
+once. Compiled at once: each atom compiled is a constraint of a problem
+that is prepared at once (`Spec.quickComp`). -/
 def Atom.compiled (shapes : Name → Option Fren.Core.DataShape) (a : Atom) : Atom :=
-  { a with run? := some (Thunk.mk fun _ => a.e.compile shapes (some [])) }
+  { a with run? := some (a.e.compile shapes (some [])) }
 
 def Atom.eval (a : Atom) (I : Interp) (look : Look) (fuel : Nat := evalFuel) : Option Bool :=
   match a.e.eval I (fun n => look (a.pfx ++ n)) (fuel := fuel) with

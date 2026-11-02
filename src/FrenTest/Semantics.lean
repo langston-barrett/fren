@@ -769,7 +769,8 @@ partial def genMember (d : Nat) : R Val := do
 /-- How `binV` takes the union, intersection and difference of two sets
 (`Val.union`, `Val.setFilter`): as `Val.setOf` of their members would,
 on random sets, which share members often, so that one often has every
-member of the other. -/
+member of the other, each made by `Val.setOf`, `Val.setOfKeyed` or
+`smallSets`, the ways that sets are made with more than one member. -/
 def setOpsAgree : Array String := Id.run do
   let mut failures := #[]
   let mut seed := 17
@@ -781,7 +782,16 @@ def setOpsAgree : Array String := Id.run do
       let pick : R (Array Val) := do
         let n ← next 5
         (List.range n).toArray.mapM fun _ => do return pool[← next pool.size]!
-      return (Val.setOf (← pick), Val.setOf (← pick))).run seed
+      -- Each set made one of the ways a search makes them: `Val.setOf`,
+      -- `Val.setOfKeyed` as `Problem.pool` calls it, or `smallSets`.
+      let keyed : Array (Thunk String × Val) := pool.map fun (v : Val) => (Thunk.mk fun _ => v.setKey, v)
+      let make : R Val := do
+        match ← next 3 with
+        | 0 => return Val.setOf (← pick)
+        | 1 => return Val.setOfKeyed (← (List.range (← next 5)).toArray.mapM fun _ => do
+            return keyed[← next keyed.size]!)
+        | _ => let small := FrenCli.Eval.smallSets pool; return small[← next small.size]!
+      return (← make, ← make)).run seed
     seed := s
     let .set a := a | continue
     let .set b := b | continue
