@@ -7,8 +7,9 @@ import Reqs.Lint
 
 `overly_complex_bool_expr`, `double_neg`, `int_plus_one`, `manual_abs`,
 `manual_abs_diff`, `unless_not`, `collapsible_when`, `same_branches`,
-`neg_multiply`, `identity_op` and `manual_rem_euclid` over `lang::Expr`:
-each fix agrees with the expression where it fires, the last three in an
+`neg_multiply`, `identity_op`, `manual_rem_euclid`, `trivial_guard` and
+`trivial_match` over `lang::Expr`: each fix agrees with the expression where it fires,
+`neg_multiply`, `identity_op` and `manual_rem_euclid` in an
 interpretation whose primitive operations are `usual?`; what the messages
 of `eq_op`, `erasing_op` and `modulo_one` say agrees with the expression,
 the last two in such an interpretation; and the
@@ -962,6 +963,101 @@ theorem mre_unfired (e : Expr String) (h : lint.manual_rem_euclid_fires? String 
     split <;> rename_i hp <;> simp only [hp, if_true, if_false, Bool.false_eq_true] at h <;> simp [h]
   · rfl
 
+/-! ### `trivial_guard` -/
+
+theorem tg_fires_match (s : Expr String) (p : Pattern String) (g b rest : Expr String) :
+    lint.trivial_guard_fires? String (.Match s p g b rest) = decide (g = .Literal .False) := by
+  simp [lint.trivial_guard_fires?, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2, lang.Expr.Match.x3,
+    lang.Expr.Match.x4]
+
+/-- `trivial_guard` fires only on an arm. -/
+theorem tg_fires_other (e : Expr String) (h : ∀ s p g b rest, e = .Match s p g b rest → False) :
+    lint.trivial_guard_fires? String e = false := by
+  cases e with
+  | Match s p g b rest => exact absurd rfl (h s p g b rest)
+  | _ => simp [lint.trivial_guard_fires?]
+
+/-- Where `trivial_guard` does not fire, its fix is the expression. -/
+theorem tg_unfired (e : Expr String) (h : lint.trivial_guard_fires? String e = false) :
+    lint.trivial_guard_fix String e = e := by
+  unfold lint.trivial_guard_fix; split
+  · rename_i s p g b rest
+    rw [tg_fires_match] at h
+    rw [if_neg (by simpa using h)]
+  · rfl
+
+/-- An arm whose guard is `false` goes on to `rest` where the scrutinee is
+well-defined, whether its pattern matches or not, and is undefined
+elsewhere. -/
+theorem tg_site (env : Env) (e : Expr String) : Le (eval i env e) (eval i env (lint.trivial_guard_fix String e)) := by
+  unfold lint.trivial_guard_fix; split
+  · rename_i s p g b rest
+    split
+    · rename_i h
+      subst h
+      simp only [eval]
+      generalize eval i env s = S
+      rcases S with v | _
+      · split <;> simp [if_value, Le]
+      · simp [Le]
+    · exact Le.refl _
+  · exact Le.refl _
+
+/-! ### `trivial_match` -/
+
+theorem tm_fires_match (s : Expr String) (p : Pattern String) (g b rest : Expr String) :
+    lint.trivial_match_fires? String (.Match s p g b rest) =
+      (decide (g = .Literal .True) && decide (rest = .NoMatch) && lint.binds_none? String p) := by
+  simp [lint.trivial_match_fires?, lang.Expr.Match.x0, lang.Expr.Match.x1, lang.Expr.Match.x2, lang.Expr.Match.x3,
+    lang.Expr.Match.x4]
+
+/-- `trivial_match` fires only on an arm. -/
+theorem tm_fires_other (e : Expr String) (h : ∀ s p g b rest, e = .Match s p g b rest → False) :
+    lint.trivial_match_fires? String e = false := by
+  cases e with
+  | Match s p g b rest => exact absurd rfl (h s p g b rest)
+  | _ => simp [lint.trivial_match_fires?]
+
+/-- Where `trivial_match` does not fire, its fix is the expression. -/
+theorem tm_unfired (e : Expr String) (h : lint.trivial_match_fires? String e = false) :
+    lint.trivial_match_fix String e = e := by
+  unfold lint.trivial_match_fix; split
+  · rename_i s p g b rest
+    rw [tm_fires_match] at h
+    rw [if_neg (by simpa using h)]
+  · rfl
+
+/-- `_`, an or-pattern and a variant without a payload leave the environment as it is. -/
+theorem bind_none (p : Pattern String) (h : lint.binds_none? String p = true) (v : Value) (env : Env) :
+    lang.bind p v env = env := by
+  cases p with
+  | Wildcard => simp [lang.bind]
+  | Or a b => simp [lang.bind]
+  | Variant c ps =>
+    cases ps <;> simp [lint.binds_none?] at h
+    cases v <;> simp [lang.bind]
+  | _ => simp [lint.binds_none?] at h
+
+/-- A `match` of one arm, whose pattern binds nothing and which has no
+guard, is its body where the scrutinee is well-defined and the pattern
+matches it, and undefined elsewhere. -/
+theorem tm_site (env : Env) (e : Expr String) : Le (eval i env e) (eval i env (lint.trivial_match_fix String e)) := by
+  unfold lint.trivial_match_fix; split
+  · rename_i s p g b rest
+    split
+    · rename_i h
+      simp only [decide_eq_true_eq] at h
+      obtain ⟨⟨rfl, rfl⟩, hp⟩ := h
+      have hp : lint.binds_none? String p = true := by simpa [lint.binds_none?] using hp
+      simp only [eval]
+      generalize eval i env s = S
+      rcases S with v | _
+      · simp only [bind_none p hp v env]
+        split <;> simp [if_value, Le]
+      · simp [Le]
+    · exact Le.refl _
+  · exact Le.refl _
+
 /-! ### The language's own primitives -/
 
 /-- The remainder by a positive `n` of an `m` within `n` of the range from `0` to `n`. -/
@@ -1072,6 +1168,16 @@ theorem fires_at_mre (e : Expr String) :
   cases lint.manual_rem_euclid_fires? String e <;> rfl
 
 /-- `fits?` of a lint whose fix rests on the primitive operations: they are `usual?`. -/
+theorem fires_at_tg (e : Expr String) :
+    lint.fires_at? String .TrivialGuard e = lint.trivial_guard_fires? String e := by
+  show decide (lint.trivial_guard_fires? String e = true) = _
+  cases lint.trivial_guard_fires? String e <;> rfl
+
+theorem fires_at_tm (e : Expr String) :
+    lint.fires_at? String .TrivialMatch e = lint.trivial_match_fires? String e := by
+  show decide (lint.trivial_match_fires? String e = true) = _
+  cases lint.trivial_match_fires? String e <;> rfl
+
 theorem fits_usual (l : lint.ExprLint) (hl : l = .NegMultiply ∨ l = .IdentityOp ∨ l = .ManualRemEuclid)
     (h : lint.fits? l i = true) : lint.usual? i.primitives = true := by
   rcases hl with rfl | rfl | rfl <;> simpa [lint.fits?, lint.uses_primitives?] using h
@@ -1091,6 +1197,8 @@ theorem fix_at_unfired (l : lint.ExprLint) (e : Expr String) (h : lint.fires_at?
   · rw [fires_at_nm] at h; exact nm_unfired e h
   · rw [fires_at_io] at h; exact io_unfired e h
   · rw [fires_at_mre] at h; exact mre_unfired e h
+  · rw [fires_at_tg] at h; exact tg_unfired e h
+  · rw [fires_at_tm] at h; exact tm_unfired e h
 
 /-- Each lint's fix agrees with the expression, where it fires and where not
 (`lint::fix_at_agrees`). Each new arm of `lint::ExprLint` owes this. -/
@@ -1116,6 +1224,8 @@ theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr String) (hl : lint.fit
   · exact nm_site (fits_usual _ (Or.inl rfl) hl) env e
   · exact io_site (fits_usual _ (Or.inr (Or.inl rfl)) hl) env e
   · exact mre_site (fits_usual _ (Or.inr (Or.inr rfl)) hl) env e
+  · exact tg_site env e
+  · exact tm_site env e
 
 /-! ### Fixing everywhere -/
 
@@ -1158,6 +1268,12 @@ theorem operands_if (l : lint.ExprLint) (c t f : Expr String) :
     lint.operands_fixed? l (.If c t f) = true →
     lint.fires_in? l c = false ∧ lint.fires_in? l t = false ∧ lint.fires_in? l f = false := by
   operands_simp; simp; exact fun hc ht hf => ⟨hc, ht, hf⟩
+
+theorem operands_match (l : lint.ExprLint) (s : Expr String) (p : Pattern String) (g b rest : Expr String) :
+    lint.operands_fixed? l (.Match s p g b rest) = true →
+    lint.fires_in? l s = false ∧ lint.fires_in? l g = false ∧ lint.fires_in? l b = false ∧
+      lint.fires_in? l rest = false := by
+  operands_simp; simp; exact fun hs hg hb hr => ⟨hs, hg, hb, hr⟩
 
 /-- Where the lint fires nowhere within an expression, it fires within no operand. -/
 theorem operands_of_clean (l : lint.ExprLint) (e : Expr String) (h : lint.fires_in? l e = false) :
@@ -1501,6 +1617,30 @@ theorem clean_at (l : lint.ExprLint) (e : Expr String) (ho : lint.operands_fixed
     · rename_i hne
       intro _ hf
       rw [mre_fires_other e hne] at hf; cases hf
+  · rw [fires_at_tg] at hf
+    show lint.fires_in? _ (lint.trivial_guard_fix String e) = false
+    revert ho hf
+    unfold lint.trivial_guard_fix; split
+    · rename_i s p g b rest
+      intro ho hf
+      rw [tg_fires_match] at hf
+      rw [if_pos (of_decide_eq_true hf)]
+      exact (operands_match _ s p g b rest ho).2.2.2
+    · rename_i hne
+      intro _ hf
+      rw [tg_fires_other e hne] at hf; cases hf
+  · rw [fires_at_tm] at hf
+    show lint.fires_in? _ (lint.trivial_match_fix String e) = false
+    revert ho hf
+    unfold lint.trivial_match_fix; split
+    · rename_i s p g b rest
+      intro ho hf
+      rw [tm_fires_match] at hf
+      rw [if_pos (by simpa using hf)]
+      exact (operands_match _ s p g b rest ho).2.2.1
+    · rename_i hne
+      intro _ hf
+      rw [tm_fires_other e hne] at hf; cases hf
 
 /-- `lint::fix_all_laws::fixed`. -/
 theorem fixed (l : lint.ExprLint) (e : Expr String) : lint.fires_in? l (lint.fix_all l e) = false := by
@@ -1758,6 +1898,28 @@ impl fix_at_fixed: lint::fix_at_fixed for (l : lint.ExprLint) (e : lang.Expr Str
   unfold lint.fix_at_fixed.ensures lint.fix_at_fixed.ensure.fixed
   intro h
   simpa using clean_at l e (by simpa using h)
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the scrutinee.
+impl trivial_match_keeps_meaning: lint::trivial_match_keeps_meaning for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.trivial_match_keeps_meaning.ensures lint.trivial_match_keeps_meaning.ensure.agrees
+  intro _
+  exact (agrees_iff _ _).2 (tm_site env e)
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the scrutinee.
+impl trivial_guard_keeps_meaning: lint::trivial_guard_keeps_meaning for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.trivial_guard_keeps_meaning.ensures lint.trivial_guard_keeps_meaning.ensure.agrees
+  intro _
+  exact (agrees_iff _ _).2 (tg_site env e)
 
 open RewriteProof in
 -- For every expression, interpretation and environment, by evaluating the condition.
