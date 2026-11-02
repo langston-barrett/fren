@@ -7,8 +7,10 @@ The first form is the `post` job's, run from the workflow's own commit on
 the `review` artifact. The review must:
 
 - start with a first line that the brief allows for KIND (`verdicts`);
-- mark each numbered finding (a line that starts with `N.`) with exactly
-  one of `[blocking]`, `[non-blocking]` and `[non-blocking, …]`;
+- mark each numbered finding (a line that starts with `N.` or `N)`, after
+  at most two spaces) with exactly one of `[blocking]`, `[non-blocking]`
+  and `[non-blocking, …]`, and, under a clean verdict, have no
+  `[blocking]` mark anywhere;
 - have a `[blocking]` finding if and only if its verdict is `blocking
   issues`;
 - say which probes it ran and which it could not, in a paragraph that
@@ -21,8 +23,10 @@ the `review` artifact. The review must:
 Names of machines are replaced: those in the file NAMES (the review job's
 host and runner, one per line), and any word whose SHA-256 is in
 machines.sha256. If the review fails a check, the comment says why
-instead, with the run's URL, and does not start with the verdict's prefix,
-so that it counts as no review; the script then fails.
+instead, with the run's URL and no text of the review, and does not start
+with the verdict's prefix, so that it counts as no review; the script then
+fails. Whatever the comment is, it is checked again as posted: it loads
+nothing from outside github.com, and no `@` in it mentions anyone.
 
 The second form is the `review` job's, which holds the secrets, run before
 the review leaves it: it fails if the review holds any of the values of
@@ -79,30 +83,46 @@ def github_host(host):
     return host == "github.com" or host.endswith(".github.com")
 
 
+def loading(decoded):
+    """Why the decoded text could load from outside github.com when shown,
+    or None."""
+    if IMAGE.search(decoded):
+        return "it holds an image or something that could be HTML, which could load from elsewhere"
+    if any(not github_host(h) for h in URL.findall(decoded) + RELATIVE.findall(decoded)):
+        return "it links to a host other than github.com"
+    return None
+
+
+def unmention(text):
+    """`text` with every `@` before a login's character followed by a
+    zero-width space, so that the comment notifies no one."""
+    return re.sub(r"@(?=[A-Za-z0-9_-])", "@\u200b", text)
+
+
 def problem(text, head, kind):
     """What is wrong with the review, or None."""
     lines = text.splitlines()
     first = lines[0] if lines else ""
+    # The reasons quote nothing of the review: the note that gives one is
+    # posted unchecked.
     if first not in verdicts(head, kind):
-        return f"its first line is not a verdict that this review allows: `{first}`"
+        return "its first line is not a verdict that this review allows"
     # Markdown decodes entities, in a destination too (`h&#116;tps:`), so
     # the checks read the decoded text, applying it twice to catch
     # `&amp;#116;`.
     decoded = html.unescape(html.unescape(text))
     if TOKEN.search(decoded):
         return "it holds something that looks like a token"
-    if IMAGE.search(decoded):
-        return "it holds an image or something that could be HTML, which could load from elsewhere"
-    for host in URL.findall(decoded) + RELATIVE.findall(decoded):
-        if not github_host(host):
-            return f"it links to a host other than github.com: `{host}`"
+    loads = loading(decoded)
+    if loads:
+        return loads
     blocking = False
-    for line in lines[1:]:
+    for number, line in enumerate(lines[1:], start=2):
         if not ITEM.match(line):
             continue
         marks = MARK.findall(line)
         if len(marks) != 1 or len(LOOSE_MARK.findall(line)) != 1:
-            return f"a finding is not marked with exactly one of [blocking] and [non-blocking]: `{line[:80]}`"
+            return f"the finding on its line {number} is not marked with exactly one of [blocking] and [non-blocking]"
         blocking |= marks[0] == "blocking"
     if blocking != first.endswith(": blocking issues"):
         return "its verdict does not agree with its [blocking] findings"
@@ -134,12 +154,19 @@ def scrub(text, names, hashes=frozenset()):
 
 
 def comment(text, head, kind, run_url, names, hashes=frozenset()):
-    """The comment to post, and whether the review passed."""
+    """The comment to post, and whether the review passed. Whatever it is,
+    the comment that leaves here loads nothing from outside github.com and
+    mentions no one: the checks run on it as it is posted, not only on the
+    review."""
     reason = problem(text, head, kind) if text else "it wrote no `review.md`"
     if reason is None:
-        return scrub(text, names, hashes) + "\n", True
-    note = f"The `pr-review` workflow did not review {head}: {reason}. Its run is {run_url}.\n"
-    return scrub(note, names, hashes), False
+        body, ok = scrub(text, names, hashes) + "\n", True
+    else:
+        body, ok = f"The `pr-review` workflow did not review {head}: {reason}. Its run is {run_url}.\n", False
+    body = unmention(body)
+    if loading(html.unescape(html.unescape(body))):
+        body, ok = f"The `pr-review` workflow did not review {head}: see its run's log.\n", False
+    return body, ok
 
 
 def alnum(text):

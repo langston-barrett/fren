@@ -29,7 +29,9 @@ Anyone who can read the repository can comment, so only the comments of
 those who can push count, as reviews and as requests: those whose
 `authorAssociation` is OWNER, MEMBER or COLLABORATOR, as in claude.yml.
 Any other comment is ignored, so an outsider's forged verdict or request
-changes nothing. Whether the head is only an update from `main` of a reviewed head is
+changes nothing.
+
+Whether the head is only an update from `main` of a reviewed head is
 decided by prepare.sh, which has the commits.
 """
 

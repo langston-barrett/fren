@@ -24,12 +24,20 @@ name: pr-review
 #   and passes on as text (probe.sh). `lint` runs test_sandbox.sh, which
 #   checks each of these with a hostile stand-in for `fren`.
 # - `review` holds the Claude token, and runs nothing of the pull request.
-#   It checks out the head, which nothing executes, removes its CLAUDE.md,
-#   .claude, .mcp.json and symbolic links, and runs the model with Read,
-#   Grep and Glob allowed only in the checkout, and Write only for
-#   `review.md`: no shell, no network tool. A review that holds a copy of
-#   a token, plain or encoded, is withheld.
+#   It checks out the workflow's own scripts, then the head, which nothing
+#   executes, removes its AGENTS.md, CLAUDE.md, .claude, .mcp.json and
+#   symbolic links, and runs the model with Read, Grep and Glob allowed
+#   only in the checkout, and Write only for `review.md`: no shell, no
+#   network tool. A review that holds a copy of a token, plain or encoded,
+#   is withheld.
 # - `post` runs the workflow's own check.py on the review, and posts it.
+#
+# The Claude token is a repository secret, so anyone who can push a branch
+# can read it with a workflow of their own, without this one, until it is
+# moved to an environment that only `main` can use (on #551). So the
+# defenses here are less against the pull request's author than against
+# text that the author did not write but carried in: an issue's text, a
+# dependency, an outsider's comment.
 #
 # No job saves or restores a cache. The comment counts as the pull
 # request's review, for everything, as the user decided, so it says which
@@ -40,11 +48,11 @@ name: pr-review
 # Only comments by the repository's owner, members and collaborators count
 # as reviews or requests for a light check (kind.py).
 #
-# The scripts and brief in .github/pr-review and AGENTS.md come from the workflow's own commit: on a workflow_run,
-# `main`'s. A workflow_run fires only from `main`'s copy of this file. To
-# try a branch's, run it by hand (`gh workflow run pr-review --ref BRANCH -f
-# pr=N`), with `post` empty, so that the review goes only to the run's
-# summary.
+# The scripts and brief in .github/pr-review and AGENTS.md come from the
+# workflow's own commit: on a workflow_run, `main`'s. A workflow_run fires
+# only from `main`'s copy of this file. To try a branch's, run it by hand
+# (`gh workflow run pr-review --ref BRANCH -f pr=N`), with `post` empty, so
+# that the review goes only to the run's summary.
 on:
   # zizmor: ignore[dangerous-triggers] only the binaries that pre-merge
   # built run, in a job with no secret; see the threat model above.
@@ -152,20 +160,24 @@ jobs:
       actions: read
       contents: read
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        persist-credentials: false
-        ref: ${{ needs.prepare.outputs.head }}
     # check.py, from the workflow's own commit, for the check of the review
-    # for copies of the tokens.
+    # for copies of the tokens. Checked out first, into an empty workspace,
+    # and moved out of it, before the pull request's tree is there: so no
+    # `.trusted` that the pull request commits, such as a symbolic link, can
+    # be in its way (test_workflow.py).
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
         path: .trusted
         sparse-checkout: .github/pr-review
+    - name: Keep the workflow's own scripts outside the workspace
+      run: mv .trusted "$RUNNER_TEMP/trusted"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ needs.prepare.outputs.head }}
     - name: Remove what would configure the reviewer, and the symbolic links
       run: |
-        mv .trusted "$RUNNER_TEMP/trusted"
         # The brief has the workflow commit's AGENTS.md, and diff.patch shows
         # any change to it, so no copy of the checkout's is loaded as memory.
         find . -path ./.git -prune -o \( -name CLAUDE.md -o -name CLAUDE.local.md -o -name AGENTS.md \

@@ -9,9 +9,12 @@
 # container: as `nobody`, with no network, a read-only root and read-only
 # mounts of the checkout and the binaries, no capabilities, no variable of
 # the runner, and no docker socket (test_sandbox.sh checks each). This
-# script captures what the probe prints, and writes probes.md, with its
-# header and fences, and `$GITHUB_OUTPUT` itself, in this one step, in
-# places that the container cannot reach.
+# script captures what the probe prints, at most PER_PROBE bytes of it
+# while it runs, and writes probes.md and `$GITHUB_OUTPUT` itself, in this
+# one step, in places that the container cannot reach. frame.py puts each
+# probe's output in an indented code block that nothing in it can close
+# (test_frame.py), and the shas of the artifact, which the pull request's
+# own `pre-merge.yml` writes, must be shas before anything uses them.
 #
 # The probes: `fren check` of each spec that the pull request adds or
 # changes (`*.fren`, and the chapters under `src/Reqs` and `examples`), at
@@ -49,9 +52,17 @@ trap publish EXIT
 gh run download "$RUN" --repo "$REPO" -n "fren-$HEAD" -D /tmp/fren
 chmod -R a+rX /tmp/fren
 chmod a+x /tmp/fren/fren
-merge=$(cat /tmp/fren/MERGE_SHA)
-base=$(sed -n 1p /tmp/fren/MERGE_PARENTS)
-if [ "$(sed -n 2p /tmp/fren/MERGE_PARENTS)" != "$HEAD" ]; then
+# The artifact is written by the pull request's own `pre-merge.yml`, so each
+# sha in it must be one before git or probes.md sees it.
+sha() { [[ $1 =~ ^[0-9a-f]{40}$ ]]; }
+merge=$(head -c 100 /tmp/fren/MERGE_SHA)
+base=$(sed -n 1p /tmp/fren/MERGE_PARENTS | head -c 100)
+parent=$(sed -n 2p /tmp/fren/MERGE_PARENTS | head -c 100)
+if ! sha "$merge" || ! sha "$base" || ! sha "$parent" || [ "$(wc -l < /tmp/fren/MERGE_PARENTS)" -gt 2 ]; then
+  note "The probes did not run: the artifact's MERGE_SHA or MERGE_PARENTS is not a sha."
+  exit 1
+fi
+if [ "$parent" != "$HEAD" ]; then
   note "The probes did not run: the binary of run $RUN is not of $HEAD."
   exit 1
 fi
@@ -81,19 +92,16 @@ if [ "${#files[@]}" = 0 ]; then
   exit 0
 fi
 for file in "${files[@]}"; do
-  note "## \`fren check $file\`"
-  note ""
-  # A fence of tildes, which no line of the output can close.
-  note '~~~~~text'
-  status=0
-  bash "$sandbox" /tmp/fren "$work" /bin-pr/fren check "$file" > "$RUNNER_TEMP/probe.txt" 2>&1 || status=$?
-  head -c "$PER_PROBE" "$RUNNER_TEMP/probe.txt" | sed 's/^\( *\)~~~/\1 ~~~/' >> "$out"
-  note ""
-  [ "$(wc -c < "$RUNNER_TEMP/probe.txt")" -le "$PER_PROBE" ] || note "[cut at $PER_PROBE bytes]"
-  note '~~~~~'
-  note ""
-  note "Exit status: $status."
-  note ""
+  # At most one byte past the limit is kept while the probe runs, so that
+  # frame.py can tell that it was cut.
+  set +o pipefail
+  bash "$sandbox" /tmp/fren "$work" /bin-pr/fren check "$file" 2>&1 \
+    | head -c "$((PER_PROBE + 1))" > "$RUNNER_TEMP/probe.txt"
+  status=${PIPESTATUS[0]}
+  set -o pipefail
+  # Indented four spaces, as one code block that no line can close.
+  python3 -I "$TRUSTED/.github/pr-review/frame.py" "$file" "$status" "$PER_PROBE" \
+    < "$RUNNER_TEMP/probe.txt" >> "$out"
   if [ "$(wc -c < "$out")" -gt "$TOTAL" ]; then
     note "[The rest of the probes were not run: their output reached $TOTAL bytes.]"
     break

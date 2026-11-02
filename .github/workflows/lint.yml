@@ -33,7 +33,11 @@ jobs:
         set -euo pipefail
         python3 -I -B scripts/heavy_test.py
         python3 -I -B scripts/lake_cache.py test
-        python3 -I -B -m unittest discover -s .github/pr-review
+        # pr-review's, with the CommonMark parser that test_frame.py needs.
+        python3 -m venv "$RUNNER_TEMP/venv"
+        "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes --no-deps \
+          -r .github/pr-review/requirements-test.txt
+        "$RUNNER_TEMP/venv/bin/python" -I -B -m unittest discover -s .github/pr-review
     # That pr-review's probe container lets a hostile binary affect nothing
     # but its own output.
     - name: Test pr-review's sandbox
