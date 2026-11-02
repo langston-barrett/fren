@@ -313,9 +313,11 @@ Where one front end decides a formula that the other leaves undefined,
 they may disagree about a model, but only about one that the semantics
 contradicts. That neither finds a correct model contradicted rests on the
 evidence above: tested for the `fren` command, trusted for the Lean-hosted
-front end. Beyond that, the ui tests and the specs that `lake build`
-checks run both front ends over every model that they report, so a
-confirmation that refuted a correct model would fail them.
+front end. Beyond that, the ui tests and Fren's own requirements, which
+`fren check` checks in `lake test` and Lean on `main` ([Own
+requirements](dev/Testing.md#own-requirements)), run both front ends over
+every model that they report, so a confirmation that refuted a correct
+model would fail them.
 
 ## Reporting
 
@@ -464,4 +466,6 @@ that both front ends report the same. The ui tests in
 expect the internal errors above where the misread values contradict the
 query, and the misread values as the counterexample where they do not.
 
+```fren
 #fren_check
+```
