@@ -113,6 +113,9 @@ trusted lang::named: "no front end elaborates a name into the semantics' abstrac
 -- (`Reqs/Lang/ModulesAndInterfaces`), are a design that no front end
 -- implements yet (#669), so there is no code to bind them to.
 trusted lang::morphism_status: "the design of modules as theories and implementations as morphisms (#669, stage 3); nothing implements it yet, and its expectations are checked by testing"
+trusted lang::morphism_obligations: "the design of morphisms as the one primitive between modules (#669); nothing implements extends or views yet, and its expectations are checked by enumeration"
+trusted lang::owed_laws: "the design of extends (#669); nothing implements it yet, and its expectations are checked by testing"
+trusted lang::view_choice: "the design of named views (#669); their keyword is not decided and nothing implements them yet, and its expectations are checked by testing"
 trusted lang::sentence_place: "the design of lemma, assume and law items (#669); no front end reads them yet, and its expectations are checked by enumeration"
 trusted lang::sentence_member: "the design of lemma, assume and law items (#669); no front end reads lemma or assume blocks yet, and its expectations are checked by enumeration"
 trusted lang::sentence_role: "the design of lemma, assume and law items (#669); no front end classifies these items yet, and its expectations are checked by testing"
