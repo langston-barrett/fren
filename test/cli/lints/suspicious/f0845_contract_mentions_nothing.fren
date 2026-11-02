@@ -1,0 +1,12 @@
+-- `contract_mentions_nothing`: a clause of a contract that mentions
+-- nothing of its function's, and `assertions_on_constants` on one that
+-- mentions nothing.
+const LIMIT: Int := 10
+
+pub fn limit(Int): Int
+
+pub fn scale(n: Int): (r: Int) {
+    assume sane: LIMIT > 0
+    ensure grows: r >= n
+    ensure positive: limit(0) > 0
+}

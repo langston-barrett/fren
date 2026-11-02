@@ -1,0 +1,15 @@
+warning[F0846]: procedure `colder_is_cold` has no outputs
+ --> test/cli/lints/pedantic/f0846_proc_without_outputs.fren:7:6
+  |
+7 | proc colder_is_cold(a: Int, b: Int) {
+  |      ^^^^^^^^^^^^^^ constrains nothing
+  |
+  = note: it has no results and no guarantees, and nothing in this file calls it, so it is a claim about its parameters
+  = help: write it as a global expectation, `expect` in place of `proc`
+  = help: `fren fix` can fix this
+  = note: `proc_without_outputs` is set to `warn`
+
+fren: 6 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0846`.
+exit=3

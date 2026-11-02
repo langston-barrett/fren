@@ -1270,6 +1270,79 @@ def patternTests : R String := do
   if results.isEmpty then return ""
   return decls ++ s!"pub proc zpt(t: Zt, o: Zo, w: Zw, v: Zn, q: Zq, n: Int): ({", ".intercalate results.toList}) \{\n{body}}\n"
 
+/-- Private procedures that only claim (`lint::proc_without_outputs`), each
+with members of every kind a global expectation's block accepts but an
+evidence setting, and now
+and then one it does not, a result, a guarantee, an `exists` or a `det`
+`let`, and named or not by a later call, refinement or claim; and
+functions whose contract clauses mention their own names, another
+function's, a constant's, or nothing (`lint::contract_mentions_nothing`). -/
+def claimProcs : R String := do
+  -- The lint is allowed by default, so warn of it from here on.
+  let mut out := "set_option fren.lint.proc_without_outputs \"warn\"\npub const ZK: Int := 3\npub fn zg(Int): Int\npub proc zb(x: Int): (y?) { ensure r: y? iff x > ZK }\n"
+  let mut procs : Array (String × Nat × Bool) := #[]
+  for k in [0:(← below 3) + 1] do
+    let nIn ← below 3
+    let ins := (List.range nIn).map (s!"zx{·}")
+    let int (d : Nat) : R String := do
+      let a ← if ins.isEmpty || (← chance 30) then pure (toString (← below 5)) else pick ins.toArray
+      if d > 0 && (← chance 40) then return s!"{a} + {← below 3}"
+      return a
+    let mut body := ""
+    let mut results := ""
+    if !ins.isEmpty && (← chance 40) then body := body ++ s!"    assume za: {← int 1} >= 0\n"
+    let hasLet ← chance 40
+    if hasLet then body := body ++ s!"    {if ← chance 15 then "det " else ""}let zl: Int := {← int 1}\n"
+    let hasCall ← chance 40
+    if hasCall then body := body ++ s!"    call zw := zb({← int 1})\n"
+    -- A refinement cannot name a procedure with an `exists`.
+    let kind ← below 8
+    match kind with
+    | 0 =>
+      results := s!": (zo: Int)"
+      body := body ++ s!"    out zo := {← int 1}\n"
+    | 1 => body := body ++ s!"    ensure zq: {← int 1} > zg({← int 0})\n"
+    | 2 => body := body ++ "    exists zv?\n    expect zu: zv? or not zv?\n"
+    | _ => pure ()
+    let atom : R String := do
+      match ← below 4 with
+      | 0 => if hasLet then return s!"zl > {← int 0}" else return s!"{← int 1} > 0"
+      | 1 => if hasCall then return "zw.y?" else return s!"{← int 0} < ZK"
+      | 2 => return s!"zg({← int 0}) >= {← int 1}"
+      | _ => return s!"{← int 1} != {← int 0}"
+    -- No evidence setting: only `fren check` tests an expectation set to
+    -- random testing, so the front ends would differ in its result. The ui
+    -- test `lints/procedures.fren` has one.
+    body := body ++ s!"    expect ze: {← atom} or {← atom}\n"
+    if ← chance 40 then body := body ++ s!"    cover zc: {← atom}\n"
+    let params := ", ".intercalate (ins.map (s!"{·}: Int"))
+    out := out ++ s!"proc zp{k}({params}){results} \{\n{body}}\n"
+    procs := procs.push (s!"zp{k}", nIn, kind != 2)
+  -- A later item that names one of them, now and then.
+  if ← chance 50 then
+    let (p, nIn, refinable) ← pick procs
+    let args := ", ".intercalate ((List.range nIn).map fun _ => "zy")
+    match ← below 3 with
+    | 0 => out := out ++ s!"pub proc zcaller(zy: Int): (zr: Int) \{\n    call zc := {p}({args})\n    out zr := zy\n}\n"
+    | 1 => if refinable then out := out ++ s!"expect zrefines(zy: Int) \{\n    call zc := {p}({args})\n    refines zc {p}({args})\n}\n"
+    | _ => out := out ++ s!"trusted {p}: \"a claim\"\n"
+  -- Contract clauses, each mentioning its own, another's, or nothing.
+  for k in [0:(← below 2) + 1] do
+    let clause : R String := do
+      match ← below 7 with
+      | 0 => return "zn > 0"
+      | 1 => return "zr >= zn"
+      | 2 => return s!"zg({← below 3}) > 0"
+      | 3 => return "ZK > 0"
+      | 4 => return "zh > ZK"
+      | 5 => return s!"zf{k}(zn) = zr"
+      | _ => return "true"
+    let pre ← clause
+    let pre := if pre.startsWith "zr" || pre.startsWith s!"zf{k}" then "zn > ZK" else pre
+    out := out ++ s!"pub fn zf{k}(zn: Int): (zr: Int) \{\n    let zh: Int := zg(1)\n    assume zpre: {pre}\n" ++
+      s!"    ensure zpost: {← clause}\n}\n"
+  return out
+
 /-- A goal with leading binders (`cli::goal_introduction`), whose terms
 mention `outer`, its body the first of them: one to three heads, each a universal quantifier over one
 or two bound names, of an infinite type, `Nat`, an abstract type, or a
@@ -2066,6 +2139,10 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- Structural recursions with subset results, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← recursiveSubsets)
+  -- Procedures that only claim, and contract clauses about other names,
+  -- last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← claimProcs)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)

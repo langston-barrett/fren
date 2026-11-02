@@ -634,6 +634,27 @@ structure CClaim where
 
 def toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
+/-- Where the keyword `kw` is in `src`, if it ends at `pos` but for
+whitespace and block comments, as `proc` does before a procedure's name. -/
+def keywordBefore (src : Array Char) (pos : Nat) (kw : String) : Option Span := Id.run do
+  let mut stop := min pos src.size
+  let mut more := true
+  while more do
+    while stop > 0 && src[stop - 1]!.isWhitespace do stop := stop - 1
+    more := false
+    -- A block comment `/- ... -/` before it, back to its `/-`.
+    if stop ≥ 2 && src[stop - 1]! == '/' && src[stop - 2]! == '-' then
+      let mut i := stop - 2
+      while i ≥ 2 && !(src[i - 2]! == '/' && src[i - 1]! == '-') do i := i - 1
+      if i ≥ 2 then
+        stop := i - 2
+        more := true
+  if stop < kw.length then return none
+  let start := stop - kw.length
+  if String.ofList (src.extract start stop).toList != kw then return none
+  if start > 0 && (src[start - 1]!.isAlphanum || src[start - 1]! == '_') then return none
+  return some { start, stop }
+
 /-- The kind of a constraint, or cover goal, that `duplicate_constraint`
 compares. -/
 def PropKind.core : PropKind → Fren.Core.ConstraintKind
@@ -920,6 +941,9 @@ structure State where
   hofParams : Array (Fren.Core.HofParamRecord × Span) := #[]
   fnArgs : Array (Fren.Core.FnArgRecord × Span) := #[]
   usedItems : Array Name := #[]
+  /-- The current file's private procedures that `proc_without_outputs` may
+  fire on, unless a path in it resolves to one. -/
+  procs : Array (Fren.Core.ProcRecord × Span) := #[]
   /-- The edits that fix the lints whose message suggests a replacement:
   the collection, membership, index, rewriting and match lints. -/
   lintFixes : Array LintFix := #[]
@@ -5779,6 +5803,19 @@ def lintConstant (cx : ExprCtx) (kind : String) (e : Expr) : M Unit := do
   if Fren.Core.assertionOnConstant (← mentionedNames cx e) then
     lint .assertionsOnConstants e.span (Fren.Core.assertionOnConstantMsg kind (match e with | .bool _ b => some b | _ => none))
 
+/-- Reports `assertions_on_constants` on the clause `e` of the contract of
+the function `f`, a postcondition if `post`, if it mentions nothing, and
+otherwise `contract_mentions_nothing` if it mentions nothing of `f`'s own
+(`lint::contract_mentions_nothing`). -/
+def lintContractClause (cx : ExprCtx) (post : Bool) (f : Name) (params : Array Name) (e : Expr) : M Unit := do
+  let mentioned ← mentionedNames cx e
+  if Fren.Core.assertionOnConstant mentioned then
+    lint .assertionsOnConstants e.span (Fren.Core.assertionOnConstantMsg (if post then "postcondition" else "precondition")
+      (match e with | .bool _ b => some b | _ => none))
+  else if Fren.Core.contractMentionsNothing mentioned
+      (Fren.Core.contractOwn (f.toString (escape := false)) (params.toList.map (·.toString (escape := false)))) then
+    lint .contractMentionsNothing e.span (Fren.Core.contractMentionsNothingMsg post (f.toString (escape := false)) mentioned)
+
 /-- The conditions of a top-level `when`/`unless` chain, and their span. -/
 partial def trigger? (cx : ExprCtx) : Expr → M (Option (String × Span))
   | .when span neg c d => do
@@ -6575,9 +6612,10 @@ def lintUnrelatedCalls (name : Ident) (members : Array Member) : M Unit := do
   if Fren.Core.unrelatedBinders groups.size then
     lint .unrelatedBinders name.span (Fren.Core.unrelatedBindersMsg name.name groups)
 
-/-- A member of a global expectation's block that it does not accept
-(`lang::block_member`), with where it is reported. -/
-def blockMemberError? (header body : Array Member) (spans : Array Span) : Option (Span × Fren.Core.Msg) :=
+/-- The results and members of a procedure or global expectation, as
+`lang::block_member` reads them, each with whether it is written with
+`det` and where it is reported. -/
+def blockMembers (header body : Array Member) (spans : Array Span) : Array (Span × Fren.Core.BlockMember × Bool) :=
   let results := header.filterMap fun
     | .var false _ det x _ _ => some (x.span, Fren.Core.BlockMember.result, det)
     | _ => none
@@ -6593,7 +6631,12 @@ def blockMemberError? (header body : Array Member) (spans : Array Span) : Option
     | .use .. | .useGroup .. => some (sp, .use, false)
     | .refines .. => some (sp, .refines, false)
     | .evidence .. => none
-  (results ++ others).findSome? fun (sp, m, det) => (Fren.Core.blockMemberReport? m det).map (sp, ·)
+  results ++ others
+
+/-- A member of a global expectation's block that it does not accept
+(`lang::block_member`), with where it is reported. -/
+def blockMemberError? (header body : Array Member) (spans : Array Span) : Option (Span × Fren.Core.Msg) :=
+  (blockMembers header body spans).findSome? fun (sp, m, det) => (Fren.Core.blockMemberReport? m det).map (sp, ·)
 
 /-- Claims an abstract procedure's guarantees with positional inputs and
 results. Abstract local definitions are substituted in dependency order. -/
@@ -6757,6 +6800,16 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
       table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
       scope := s.module
       comps := s.comps.push c }
+    -- `proc_without_outputs`, once the file's paths are known
+    -- (`finishLints`), fixed by writing `expect` for `proc`.
+    unless isPub do
+      let members := (blockMembers header body spans).toList.map (·.2)
+      if Fren.Core.procWithoutOutputs false members 0 then
+        let r : Fren.Core.ProcRecord := { path, members, level := (← get).levels.get .procWithoutOutputs }
+        modify fun s => { s with procs := s.procs.push (r, name.span) }
+        if let some kw := keywordBefore (← get).src written.start "proc" then
+          let fix : LintFix := { lint := .procWithoutOutputs, span := name.span, edits := #[(toRange kw, "expect")] }
+          modify fun s => { s with lintFixes := s.lintFixes.push fix }
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
@@ -6902,6 +6955,7 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
     let tables ← takeTables
     let place := if post then Fren.Core.IndexPlace.body else .assume
     lintBools e (← hidesIn cx)
+    lintContractClause cx post n params e
     let app := s!"({itemSym path} {" ".intercalate (vars.toList.map fun v => quote v.name.toString)})"
     let value := quote (Fren.Core.contractValueName n (vars.map (·.name))).toString
     let output (formula : String) := if post && !defined then formula.replace app value else formula
@@ -8031,6 +8085,7 @@ def finishLints : StateM State Unit := do
       ++ Fren.Core.unusedAssumptionReports s.assumptions s.globalReads
       ++ Fren.Core.unusedSettingReports s.settings s.seenSettings atEnd true
       ++ Fren.Core.singleCallReports s.items s.usedItems
+      ++ Fren.Core.procWithoutOutputsReports s.procs s.usedItems true
       ++ Fren.Core.needlessHigherOrderReports s.hofParams (s.fnArgs.map (·.1)))
   let (unfulfilled, _) := Fren.Core.finishReports (Fren.Core.expectationReports s.expectations fulfilled true)
   let all := reports ++ unfulfilled
@@ -8070,7 +8125,7 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
   modify fun s => { s with file, src, fixing, module, scope := module, levels := s.cliLevels, useRecords := #[], evidence? := none,
                            enumSize := Fren.Core.Enumeration.defaultSize,
                            used := #[], expectations := #[], lintReports := #[], useLocs := #[],
-                           expectationRemovals := #[], items := #[], usedItems := #[], lintFixes := #[],
+                           expectationRemovals := #[], items := #[], usedItems := #[], procs := #[], lintFixes := #[],
                            hofParams := #[], fnArgs := #[],
                            globalTexts := #[], natReports := #[], natKept := #[], settings := #[], settingRemovals := #[], seenSettings := #[],
                            assumptions := #[], globalReads := #[], trailingCommas }

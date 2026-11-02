@@ -1,0 +1,9 @@
+--- test/cli/fix/proc_without_outputs.fren
++++ test/cli/fix/proc_without_outputs.fren
+@@ -9 +9 @@
+-proc colder_is_cold(a: Int, b: Int) {
++expect colder_is_cold(a: Int, b: Int) {
+@@ -16 +16 @@
+-proc /- spaced -/ spaced(t: Int) { expect warm: t + 1 > t }
++expect /- spaced -/ spaced(t: Int) { expect warm: t + 1 > t }
+exit=1

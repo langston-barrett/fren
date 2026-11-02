@@ -3041,6 +3041,7 @@ deriving instance BEq for Fren.Core.ExpectationRecord
 deriving instance BEq for Fren.Core.LintReport
 deriving instance BEq for FrenCli.UseLoc
 deriving instance BEq for Fren.Core.ItemRecord
+deriving instance BEq for Fren.Core.ProcRecord
 deriving instance BEq for Fren.Core.HofParamRecord
 deriving instance BEq for Fren.Core.FnArgRecord
 deriving instance BEq for FrenCli.LintFix

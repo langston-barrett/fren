@@ -1,0 +1,69 @@
+-- `proc_without_outputs`, in both front ends: a private procedure with no
+-- results and no guarantees, which nothing in its file names.
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.proc_without_outputs "warn"
+
+pub proc band(temp: Int): (cold?) { ensure rule: cold? iff temp < 18 }
+
+enum Mode { Heat, Cool }
+
+-- Each member that a global expectation's block accepts.
+proc colder_is_cold(a: Int, b: Int, m: Mode) {  --~ warning: procedure `colder_is_cold` has no outputs
+    use self::Mode::Heat
+    assume sorted: a <= b
+    let gap: Int := b - a
+    call x := band(a)
+    call y := band(b)
+    expect colder: when y.cold?, x.cold? and gap >= 0
+    cover both: x.cold? and y.cold? and m = Heat  --~ info: cover goal `colder_is_cold::both` is met
+}
+
+-- With no members, or no parameters.
+proc nothing() {}  --~ warning: procedure `nothing` has no outputs
+proc freezing() {  --~ warning: procedure `freezing` has no outputs
+    call b := band(0)
+    expect cold: b.cold?
+}
+
+-- With an evidence setting on a member.
+proc tested_claim(n: Int) {  --~ warning: procedure `tested_claim` has no outputs
+    --~^[hosted] info: the checks of `tested_claim` set to random testing are run by `fren check`, not in Lean
+    set_option fren.evidence "random" in
+    expect e: n + 1 > n
+}
+
+-- Not fired: `pub`, so other files may call it.
+pub proc public_claim(n: Int) { expect e: n + 1 > n }
+
+-- Not fired: it has a result, a guarantee, an `exists`, or a `det` `let`.
+proc with_result(n: Int): (m: Int) { out m := n }
+proc with_guarantee(n: Int) {
+    assume small: n < 3
+    ensure e: n + 1 > n  --~ warning: `with_guarantee::e` is redundant: it always holds
+}
+proc with_exists(n: Int) {
+    exists k: Mode
+    expect e: k != Mode::Heat or n + 1 > n
+}
+proc with_det_let(n: Int) {
+    det let k: Int := n + 1
+    expect e: k > n
+}
+
+-- Not fired: a call, a refinement or a claim names it.
+proc called(n: Int) { expect e: n + 1 > n }
+proc caller(n: Int): (m: Int) {
+    call c := called(n)
+    out m := n
+}
+proc refined(n: Int) {
+    assume big: n > 0
+    expect positive: n >= 1
+}
+expect refines_it(n: Int) {
+    assume big: n > 1
+    call c := called(n)
+    refines c refined(n)
+}
+proc claimed(n: Int) { expect e: n + 1 > n }
+trusted claimed: "each integer is less than the next"

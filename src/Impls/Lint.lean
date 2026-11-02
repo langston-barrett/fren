@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Impls.Global
 import Impls.Lang
 import Impls.View
 import Reqs.Lint
@@ -1769,6 +1770,72 @@ impl single_call_fn: lint::single_call_fn for (p d : Bool) (n : Nat) {
 } by
   intro p d n _
   cases p <;> cases d <;> rcases n with _ | _ | n <;> simp [fren_spec, Fren.Core.singleCallFn] <;> omega
+
+theorem block_accepts_toBlockMember (m : Fren.Core.BlockMember) (d : Bool) :
+    lang.«block_accepts?» (toBlockMember m) d = Fren.Core.blockMemberAccepted m d := by
+  cases m <;> cases d <;> simp [fren_spec, toBlockMember, Fren.Core.blockMemberAccepted]
+
+-- Both front ends decide `proc_without_outputs` with `procWithoutOutputs`,
+-- for every list of results and members.
+impl proc_without_outputs: lint::proc_without_outputs for (p : Bool) (ms : List (Fren.Core.BlockMember × Bool)) (n : Nat) {
+  pub? := p,
+  members := Fren.FinSet.ofList (ms.map fun (m, d) => (toBlockMember m, d)),
+  n_uses := n,
+  fires? := Fren.Core.procWithoutOutputs p ms n,
+} by
+  intro p ms n _
+  unfold lint.proc_without_outputs.ensures lint.proc_without_outputs.ensure.rule
+  have h : (∀ (m : lang.BlockMember) (d : Bool), (m, d) ∈ Fren.FinSet.ofList (ms.map fun (m, d) => (toBlockMember m, d)) →
+      lang.«block_accepts?» m d = true) ↔ ms.all (fun (m, d) => Fren.Core.blockMemberAccepted m d) = true := by
+    simp only [Fren.FinSet.mem_ofList, List.mem_map, List.all_eq_true, Prod.exists, Prod.mk.injEq]
+    constructor
+    · intro h ⟨m, d⟩ hm
+      rw [← block_accepts_toBlockMember]
+      exact h _ _ ⟨m, d, hm, rfl, rfl⟩
+    · rintro h _ _ ⟨m, d, hm, rfl, rfl⟩
+      rw [block_accepts_toBlockMember]
+      exact h (m, d) hm
+  -- The quantifier over the finitely many members and `det`s is written
+  -- out, one conjunct for each.
+  constructor
+  · intro hf
+    simp only [Fren.Core.procWithoutOutputs, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hf
+    obtain ⟨⟨rfl, rfl⟩, hall⟩ := hf
+    have A := h.mpr hall
+    simp (config := { contextual := true }) [A]
+  · rintro ⟨⟨hp, hn⟩, hc⟩
+    have A : ∀ (m : lang.BlockMember) (d : Bool),
+        (m, d) ∈ Fren.FinSet.ofList (ms.map fun (m, d) => (toBlockMember m, d)) → lang.«block_accepts?» m d = true := by
+      intro m d hm
+      cases m <;> cases d <;> simp_all
+    have hall := h.mp A
+    cases p
+    · simp only [Fren.Core.procWithoutOutputs, hall, Bool.not_false, Bool.true_and, Bool.and_true, beq_iff_eq]
+      omega
+    · simp at hp
+
+-- Both front ends decide `contract_mentions_nothing` with
+-- `contractMentionsNothing`, for every two lists of mentions.
+impl contract_mentions_nothing: lint::contract_mentions_nothing for (ms own : List Fren.Core.Mention) {
+  mentioned := mentionSet ms,
+  own := mentionSet own,
+  fires? := Fren.Core.contractMentionsNothing ms own,
+} by
+  intro ms own
+  unfold lint.contract_mentions_nothing.ensures lint.contract_mentions_nothing.ensure.rule
+  have inj : ∀ a b : Fren.Core.Mention, toMention a = toMention b ↔ a = b := by
+    intro a b; cases a <;> cases b <;> simp [toMention]
+  have h : mentionSet ms ∩ mentionSet own = ∅ ↔ ms.any own.contains = false := by
+    simp only [Fren.FinSet.ext_iff, Fren.FinSet.mem_inter, mentionSet, Fren.FinSet.mem_ofList, List.mem_map,
+      Fren.FinSet.not_mem_empty, iff_false, not_and, List.any_eq_false]
+    constructor
+    · intro h a ha hown
+      exact h (toMention a) ⟨a, ha, rfl⟩ ⟨a, List.contains_iff_mem.mp hown, rfl⟩
+    · rintro h _ ⟨a, ha, rfl⟩ ⟨b, hb, hab⟩
+      have hba : b = a := (inj b a).mp hab
+      subst hba
+      exact h b ha (List.contains_iff_mem.mpr hb)
+  simp [Fren.Core.contractMentionsNothing, mentionSet_eq_empty, h]
 
 trusted lint::zero_prefixed_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::zero_prefixed_fixed: "a model of an expression, checked by the refinements in its section"

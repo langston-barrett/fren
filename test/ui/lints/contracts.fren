@@ -1,0 +1,47 @@
+-- The lints of contract clauses, in both front ends:
+-- `contract_mentions_nothing`, on a clause that mentions nothing of its
+-- function's, and `assertions_on_constants`, on one that mentions nothing.
+const LIMIT: Int := 10
+
+pub fn limit(n: Int): (r: Int) { ensure positive: r > 0 }
+
+pub fn known?(Int)
+
+-- About another function.
+pub fn scale(n: Int): (r: Int) {
+    ensure grows: r >= n
+    ensure positive: limit(0) > 0  --~ warning: this postcondition says nothing about `scale`
+}
+
+pub fn shift(n: Int): (r: Int) {
+    assume known: known?(0)  --~ warning: this precondition says nothing about `shift`
+    out r := n + 1
+}
+
+-- Through a `let` of the block, which mentions what its definition does.
+pub fn twice(n: Int): (r: Int) {
+    let base: Int := limit(1)
+    ensure based: base > 0  --~ warning: this postcondition says nothing about `twice`
+    let own: Int := n + 1
+    ensure owned: r > own or r <= own
+}
+
+-- Mentioning nothing.
+pub fn clamp(n: Int): (r: Int) {
+    assume sane: LIMIT > 0  --~ warning: this precondition mentions no variable
+    ensure trivially: true  --~ warning: this postcondition mentions no variable
+    ensure bounded: r <= LIMIT
+}
+
+-- Not fired: the clause mentions a parameter, the value, or the function.
+pub fn steps(n: Int): (r: Int) {
+    assume small: n < LIMIT
+    ensure applied: steps(n) >= 0
+    ensure with_other: r > limit(n)
+}
+
+-- A function parameter is the function's too, whether read or applied.
+pub fn apply(g: fn(Int) -> Int, n: Int): (r: Int) {
+    assume zero_ok: g(0) >= limit(0)
+    out r := g(n)
+}

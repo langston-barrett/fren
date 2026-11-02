@@ -975,7 +975,9 @@ pub proc disallowed_names(name: String): (det fires?) {
 ## Constant constraints
 
 `assertions_on_constants` fires on an assumption, guarantee,
-expectation or cover goal, of a procedure or [global](../Lang/Global.md), whose
+expectation or cover goal, of a procedure or [global](../Lang/Global.md),
+or a precondition or postcondition of a function's
+[contract](../Lang/Items.md#contracts), whose
 expression mentions no variable and no uninterpreted function (see
 [Mentions](../Lang/Expressions.md#mentions)), as
 [`constant_output`](Complexity.md#constant-outputs) does on a

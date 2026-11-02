@@ -924,6 +924,9 @@ structure LocalState where
   paths in it resolve to (`dead_code`). -/
   items : Array (Core.ItemRecord × Syntax) := #[]
   usedItems : Array Name := #[]
+  /-- The file's private procedures that `proc_without_outputs` may fire
+  on, unless a path in it resolves to one. -/
+  procs : Array (Core.ProcRecord × Syntax) := #[]
   /-- The function parameters of the file's private higher-order functions,
   and what the applications give them, by where each is written
   (`needless_higher_order`). -/

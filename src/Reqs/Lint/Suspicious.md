@@ -2,8 +2,8 @@
 
 The lints of the `suspicious` group find what is probably not what the
 writer meant. This chapter has the lints of names, of constraints, of
-the spacing of negations, of the calls of global expectations and of
-definitions, and
+the spacing of negations, of the calls of global expectations, of
+contracts and of definitions, and
 its subchapters the others: those of
 [expressions](Suspicious/Expressions.md), of [methods and
 indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md), of
@@ -189,6 +189,51 @@ pub proc unrelated_binders(
     n_groups: Nat,       -- groups of the calls that atoms, arguments and parameters relate
 ): (det fires?) {
     ensure rule: fires? iff n_groups >= 2
+}
+```
+
+## Contract clauses about other names
+
+`contract_mentions_nothing` fires on a clause of a function's
+[contract](../Lang/Items.md#contracts) that mentions something, but
+nothing of its function's: none of its parameters, and neither its result
+nor the function itself, as a postcondition may mention its value, by
+[`lang::mentions`](../Lang/Expressions.md#mentions). A function parameter
+of a [higher-order function](../Lang/HigherOrder.md) is one of its
+parameters, whether the clause reads it or applies it. So `ensure positive:
+limit(0) > 0` on `fn scale(n: Int): (r: Int)` fires: it holds or fails
+whatever `scale` is applied to, so it says something about `limit`, and is
+probably in the wrong place. A precondition that mentions none of the
+parameters does not say where the function may be applied, and a
+postcondition that mentions none of them, nor the value, says nothing
+about the function. A clause that mentions nothing at all is
+[`assertions_on_constants`](Style.md#constant-constraints)'s instead, so
+the two never fire on one clause. A `let` of the function's block mentions
+what its definition mentions, as anywhere.
+
+It has no fix: the clause belongs in the contract of what it mentions, or
+in a global expectation, and which one is the writer's choice. It is in
+`suspicious`, `warn`, and has no Clippy counterpart. It is reported at the
+clause's expression. `lint::contract_mentions_nothing` states when it fires,
+from what the clause mentions and the function's own names, its parameters
+and result as `Var`s, its function parameters as `Fn`s too, and the
+function as a `Fn`:
+
+```fren
+pub proc contract_mentions_nothing(
+    mentioned: Set<lang::Mention>,    -- what the clause mentions
+    own: Set<lang::Mention>,          -- what of its function's it may mention
+): (det fires?) {
+    ensure rule: fires? iff (mentioned != {} and mentioned inter own = {})
+
+    expect own_quiet: when mentioned subset own, not fires?
+    expect constants_quiet: when mentioned = {}, not fires?
+}
+
+expect contract_lints_apart(mentioned: Set<lang::Mention>, own: Set<lang::Mention>) {
+    call c := contract_mentions_nothing(mentioned, own)
+    call k := assertions_on_constants(mentioned)
+    expect apart: not (c.fires? and k.fires?)
 }
 ```
 

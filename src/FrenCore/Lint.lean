@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Quote
 import FrenCore.Ctors
+import FrenCore.Global
 import FrenCore.Lexical
 import FrenCore.Mentions
 import FrenCore.Names
@@ -75,6 +76,7 @@ inductive Lint where
   | collapsibleWhen
   | constIsEmpty
   | constantOutput
+  | contractMentionsNothing
   | contradictoryComparisons
   | deadCode
   | definableOutput
@@ -150,6 +152,7 @@ inductive Lint where
   | nonminimalBool
   | overlyComplexBoolExpr
   | precedence
+  | procWithoutOutputs
   | redundantBindings
   | redundantBoolType
   | redundantClosure
@@ -259,6 +262,7 @@ def Lint.info : Lint → String × String × Group
   | .collapsibleWhen => ("collapsible_when", "F0723", .style)
   | .constIsEmpty => ("const_is_empty", "F0755", .suspicious)
   | .constantOutput => ("constant_output", "F0719", .complexity)
+  | .contractMentionsNothing => ("contract_mentions_nothing", "F0845", .suspicious)
   | .contradictoryComparisons => ("contradictory_comparisons", "F0766", .suspicious)
   | .deadCode => ("dead_code", "F0711", .unused)
   | .definableOutput => ("definable_output", "F0720", .pedantic)
@@ -334,6 +338,7 @@ def Lint.info : Lint → String × String × Group
   | .nonminimalBool => ("nonminimal_bool", "F0712", .complexity)
   | .overlyComplexBoolExpr => ("overly_complex_bool_expr", "F0773", .pedantic)
   | .precedence => ("precedence", "F0787", .restriction)
+  | .procWithoutOutputs => ("proc_without_outputs", "F0846", .pedantic)
   | .redundantBindings => ("redundant_bindings", "F0735", .style)
   | .redundantBoolType => ("redundant_bool_type", "F0746", .style)
   | .redundantClosure => ("redundant_closure", "F0821", .style)
@@ -1657,6 +1662,44 @@ def singleCallReports (items : Array (ItemRecord × α)) (used : Array Name) : A
   items.filterMap fun (i, ref) => i.singleCall?.bind fun level =>
     if singleCallFn true false (used.count i.path) then
       some { lint := .singleCallFn, level, ref, msg := singleCallFnMsg i.path }
+    else none
+
+/-! ## Procedures that only claim -/
+
+/-- Whether `proc_without_outputs` fires on a procedure, from whether it is
+`pub`, its results and members, each with whether it is written with
+`det`, and the paths in its file that resolve to it
+(`lint::proc_without_outputs`): a private procedure that nothing in its
+file names, whose every result and member a global expectation's block
+accepts (`blockMemberAccepted`), so that it has no results. -/
+def procWithoutOutputs (isPub : Bool) (members : List (BlockMember × Bool)) (nUses : Nat) : Bool :=
+  !isPub && nUses == 0 && members.all fun (m, det) => blockMemberAccepted m det
+
+def procWithoutOutputsMsg (n : Name) (fixable : Bool) : Msg :=
+  let msg : Msg :=
+    { code? := some Lint.procWithoutOutputs.code, headline := s!"procedure `{n.getString!}` has no outputs"
+      label? := some "constrains nothing"
+      notes := #["note: it has no results and no guarantees, and nothing in this file calls it, \
+          so it is a claim about its parameters",
+        "help: write it as a global expectation, `expect` in place of `proc`"] }
+  if fixable then msg.note fixHelp else msg
+
+/-- A private procedure that `proc_without_outputs` may fire on, once the
+file's paths are known: its path, its results and members, and the level
+of the lint at it. -/
+structure ProcRecord where
+  path : Name
+  members : List (BlockMember × Bool)
+  level : LevelInEffect
+  deriving Inhabited, Repr
+
+/-- The `proc_without_outputs` messages of a file's procedures, given the
+items that paths in it resolve to: its calls, refinements and claims. -/
+def procWithoutOutputsReports (procs : Array (ProcRecord × α)) (used : Array Name) (fixable : Bool) :
+    Array (LintReport α) :=
+  procs.filterMap fun (p, ref) =>
+    if procWithoutOutputs false p.members (used.count p.path) then
+      some { lint := .procWithoutOutputs, level := p.level, ref, msg := procWithoutOutputsMsg p.path fixable }
     else none
 
 /-! ## Simpler `Bool` expressions -/
@@ -7096,18 +7139,52 @@ def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
     | "assume" => "assumption"
     | "ensure" => "guarantee"
     | "cover" => "cover goal"
+    | "precondition" => "precondition"
+    | "postcondition" => "postcondition"
     | _ => "expectation"
   let (label, note) := match literal?, kind with
     | some true, "assume" => ("always `true`", "it rules out no input")
     | some true, "ensure" => ("always `true`", "it constrains nothing")
+    | some true, "precondition" => ("always `true`", "it rules out no argument")
+    | some true, "postcondition" => ("always `true`", "it says nothing of the function")
     | some true, _ => ("always `true`", "it claims nothing")
     | some false, "assume" => ("always `false`", "no input meets it, so every guarantee holds vacuously")
     | some false, "ensure" => ("always `false`", "no behaviour meets it, so the procedure is not realizable")
+    | some false, "precondition" => ("always `false`", "no argument meets it, so no application is defined")
+    | some false, "postcondition" => ("always `false`", "no value meets it")
     | some false, _ => ("always `false`", "it always fails")
     | none, _ => ("the same in every behaviour",
       "it is either always true, and says nothing, or always false")
   { code? := some Lint.assertionsOnConstants.code, headline := s!"this {what} mentions no variable"
     label? := some label, notes := #[s!"note: {note}"] }
+
+/-! ## Contract clauses about other names -/
+
+/-- Whether `contract_mentions_nothing` fires on a clause of a function's
+contract, where `mentioned` is what its expression mentions and `own` the
+function's parameters and result, as variables, and the function itself
+(`lint::contract_mentions_nothing`): it mentions something, but nothing of
+its own. A clause that mentions nothing is `assertions_on_constants`'s. -/
+def contractMentionsNothing (mentioned own : List Mention) : Bool :=
+  !mentioned.isEmpty && !mentioned.any own.contains
+
+/-- What of the function `f`'s own, with the parameters `params`, a clause
+of its contract may mention (`lint::contract_mentions_nothing`): `f`
+itself, and each parameter, as a variable and, as a function parameter is
+applied, as a function. The result is the function applied to its
+parameters, which mentions what that mentions. -/
+def contractOwn (f : String) (params : List String) : List Mention :=
+  .fn f :: params.flatMap fun p => [.var p, .fn p]
+
+/-- A precondition, if `post` is false, or a postcondition, of the function
+`f`, that mentions `mentioned` but nothing of `f`'s own. -/
+def contractMentionsNothingMsg (post : Bool) (f : String) (mentioned : List Mention) : Msg :=
+  let what := if post then "postcondition" else "precondition"
+  let shown := ", ".intercalate (mentioned.eraseDups.map (·.describe))
+  { code? := some Lint.contractMentionsNothing.code, headline := s!"this {what} says nothing about `{f}`"
+    label? := some s!"mentions no parameter of `{f}`{if post then ", nor its value" else ""}"
+    notes := #[s!"note: it mentions only {shown}",
+      "help: state it in the contract of what it is about, or as a global expectation"] }
 
 /-! ## Restricted settings and paths -/
 
