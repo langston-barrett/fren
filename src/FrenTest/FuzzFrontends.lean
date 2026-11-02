@@ -1624,13 +1624,9 @@ def knownKinds : List KnownKind :=
    { kind := "only Lean reports error: `_` has N behaviours up to size *, too many to enumerate", issue := 493,
      seed := 1164145, alongside? := some evaluatorUnread },
    -- and so only Lean reports what enumerating the procedure found, and
-   -- what rests on it, and the summaries differ.
-   { kind := "only Lean reports warning: could not decide whether *: no * up to size *", issue := 493,
-     seed := 1187360, alongside? := some evaluatorUnread },
-   { kind := "only Lean reports info: * checks of `_` hold for every behaviour up to size *", issue := 493,
-     seed := 1187360, alongside? := some evaluatorUnread },
-   { kind := "only Lean reports warning: * rests on the realizability of `_`, which did not pass", issue := 493,
-     seed := 1187360, alongside? := some evaluatorUnread },
+   -- what rests on it: any verdict, note or warning of its own; and the
+   -- summaries differ.
+   { kind := "only Lean reports *", issue := 493, seed := 1187360, alongside? := some evaluatorUnread },
    { kind := "summary: fren says …, Lean says …", issue := 493, seed := 1187360, alongside? := some evaluatorUnread },
    -- A trait's check that Lean cannot decide (`leanSmtArrow`): what only
    -- `fren` reports of the check at its line, as that it rests on the
