@@ -34,8 +34,9 @@ pub mod testing
   `cli::agreement` is tested. The Lean front end runs them with
   `fren.checkTypeCache`, under which each type that it takes from its
   cache of the types of terms (`typeOf`) is checked against the term's
-  type elaborated again, an error where they differ, at some 10% more
-  time in the ui jobs. See `src/FrenTest/Ui.lean` for the format, and
+  type elaborated again, an error where they differ: on a Mac, in one
+  run each, the ui tests of `test/ui/lang` took 61 s of CPU with it and
+  57 s without. See `src/FrenTest/Ui.lean` for the format, and
   [Expectations](#expectations) for when a file passes.
 - **Example specs** (`lake test`): each `examples/**/*.fren` is a complete
   spec for readers, and is checked as a ui test, so its annotations
@@ -942,11 +943,13 @@ the code, the tests, the examples and the binaries, among them the C code
 that the first needs none of. The chain from `Fren.Elab` through
 `Reqs.Lang`, `Reqs.Lint` and `Impls.Lint` is the build's critical path,
 and on one machine its modules shared the runner's four cores with the
-rest, which took some 2,400 of the build's CPU seconds where everything
-was rebuilt, so that they ran at about half speed: on 2026-11-02, in one
-run where both were rebuilt from `FrenCore`, the single build took 729 s
-and the build of the requirements 361 s, on runners that started
-together. Both build what both import, from `FrenCore` to `Fren`, and
+rest: where everything was rebuilt, the build's steps took some 2,400
+CPU seconds, so that the chain's ran at about half speed. On 2026-11-02, in
+three runs of one commit, which rebuilt from `FrenCore` up, with the old
+single build job beside the two, the single build took 729, 705 and 679
+s, the build of the requirements 361, 443 and 316 s, and that of the
+rest 321, 392 and 297 s; so the build no longer outlasts the test
+shards. Both build what both import, from `FrenCore` to `Fren`, and
 `lake test`'s `libraries` job checks that the two lists of targets
 together are `lakefile.lean`'s default targets. On
 `main`, the `lean ci` workflow runs `lake build --wfail` and the whole
