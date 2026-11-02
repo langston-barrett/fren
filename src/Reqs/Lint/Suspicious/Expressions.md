@@ -210,6 +210,160 @@ expect eq_op_cardinality_complete(a?, b?) {
 }
 ```
 
+### Operands written the same, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+two operands written the same in the same scope are one expression: a
+pattern test's binders are not names in scope beside it, but a `match`
+around each operand that reads them, as [Derived
+forms](../../Lang/Semantics.md#derived-forms) states. So the operands of
+`(v > 1 and r is Reply::Value(v!)) and (v > 1 and r is Reply::Value(v!))`
+differ: the right `v > 1` is in a `match`. Comparing the operands in their
+scopes is equality of their elaborations, which `eq_op_fires?` tests.
+Elaboration writes `!=` as the negation of `=`, `>` and `>=` as `<` and
+`<=` with the operands swapped, and `iff` as `=`. So `eq_op_fires?` fires
+on `a = a`, `a < a`, `a <= a`, `a - a`, `not (a = a)`, `a and a` and
+`a or a`, and on `when c, c` and `unless c, c`, which are `if c then c
+else true` and `if c then true else c`. `eq_op_said` is what the message
+says the expression is. `lint::infix_of` is an operator as elaborated.
+`in` and the operators of sets and relations are not in the model, and
+`modelled?` leaves them out:
+
+```fren
+-- `a OP b` as elaborated, for an `OP` in the model; `NoMatch` for the rest.
+pub fn infix_of<V>(op: InfixOp, a: lang::Expr<V>, b: lang::Expr<V>): lang::Expr<V> := match op {
+    InfixOp::Iff | InfixOp::Eq => lang::Expr::Binary(lang::BinaryOp::Eq, a, b),
+    InfixOp::Ne => lang::Expr::Unary(
+        lang::UnaryOp::Not,
+        lang::Expr::Binary(lang::BinaryOp::Eq, a, b)
+    ),
+    InfixOp::Lt => lang::Expr::Binary(lang::BinaryOp::Lt, a, b),
+    InfixOp::Le => lang::Expr::Binary(lang::BinaryOp::Le, a, b),
+    InfixOp::Gt => lang::Expr::Binary(lang::BinaryOp::Lt, b, a),
+    InfixOp::Ge => lang::Expr::Binary(lang::BinaryOp::Le, b, a),
+    InfixOp::And => lang::Expr::And(a, b),
+    InfixOp::Or => lang::Expr::Or(a, b),
+    InfixOp::Add => lang::Expr::Binary(lang::BinaryOp::Add, a, b),
+    InfixOp::Sub => lang::Expr::Binary(lang::BinaryOp::Sub, a, b),
+    InfixOp::Mul => lang::Expr::Binary(lang::BinaryOp::Mul, a, b),
+    InfixOp::Concat => lang::Expr::Binary(lang::BinaryOp::Concat, a, b),
+    _ => lang::Expr::NoMatch,
+}
+
+-- `op` is an operator of the model.
+pub fn modelled?(op: InfixOp) :=
+    not op in {
+        InfixOp::In,
+        InfixOp::Subset,
+        InfixOp::Union,
+        InfixOp::Minus,
+        InfixOp::Inter,
+        InfixOp::Join,
+    }
+
+pub fn eq_op_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Binary(op, a, b) =>
+        a = b and op in {
+            lang::BinaryOp::Eq,
+            lang::BinaryOp::Lt,
+            lang::BinaryOp::Le,
+            lang::BinaryOp::Sub,
+        },
+    lang::Expr::Unary(lang::UnaryOp::Not, lang::Expr::Binary(lang::BinaryOp::Eq, a, b)) => a = b,
+    lang::Expr::And(a, b) => a = b,
+    lang::Expr::Or(a, b) => a = b,
+    lang::Expr::If(c, t, f) => (t = c and true?(f)) or (true?(t) and f = c),
+    _ => false,
+}
+
+-- What `e` is, where `eq_op` fires on it.
+pub fn eq_op_said<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::Binary(lang::BinaryOp::Lt, _, _) => lang::Expr::Literal(lang::Value::False),
+    lang::Expr::Binary(lang::BinaryOp::Sub, _, _) => lang::Expr::Literal(lang::Value::Integer(0)),
+    lang::Expr::Binary(_, _, _) => lang::Expr::Literal(lang::Value::True),
+    lang::Expr::Unary(_, _) => lang::Expr::Literal(lang::Value::False),
+    lang::Expr::And(a, _) => a,
+    lang::Expr::Or(a, _) => a,
+    lang::Expr::If(c, t, _) => if true?(t) then c else lang::Expr::Literal(lang::Value::True),
+    _ => e,
+}
+
+-- What a `lint::EqOpValue` says the expression is, of its left operand
+-- `a`; `NoMatch` for `{}`, which is not in the model.
+pub fn value_of<V>(v: EqOpValue, a: lang::Expr<V>): lang::Expr<V> := match v {
+    EqOpValue::AlwaysTrue => lang::Expr::Literal(lang::Value::True),
+    EqOpValue::AlwaysFalse => lang::Expr::Literal(lang::Value::False),
+    EqOpValue::Zero => lang::Expr::Literal(lang::Value::Integer(0)),
+    EqOpValue::Empty => lang::Expr::NoMatch,
+    EqOpValue::Operand => a,
+}
+```
+
+`lint::eq_op` and `lint::eq_op_conditional` bind this to the linter.
+Where `eq_op` fires on an operator of the model, `eq_op_fires?` fires on
+its elaboration, and says what the message says. On `+`, `*` and `++`,
+neither fires. Where `eq_op` fires on `when C, D` or `unless C, D`,
+`eq_op_fires?` fires on its elaboration, and says what the message says.
+That `written(x)` is `x`'s elaboration where it is written, a `match`
+around it included, is what [Expressions as
+written](../Meaning.md#expressions-as-written) assumes. The front ends'
+reading of the operator and the keyword is trusted, and checked by the ui
+tests in `test/ui/lints/suspicious.fren` and `test/ui/lints/mistakes.fren`. The linter fires only where
+`eq_op_fires?` does, not everywhere it does. On `a != a`, the linter
+fires once, and `eq_op_fires?` fires on both the negation and the `=`
+within it. It also fires on `if c then c else true`, which the linter
+sees as an `if`.
+
+```fren
+expect eq_op_elaborated(op: InfixOp, left: Scoped, right: Scoped) {
+    call p := eq_op(op, left, right)
+
+    expect fires: when p.fires? and modelled?(op),
+        eq_op_fires?(infix_of(op, written(left), written(right)))
+        and eq_op_said(infix_of(op, written(left), written(right))) = value_of(p.value, written(left))
+    expect others: when op in {InfixOp::Add, InfixOp::Mul, InfixOp::Concat},
+        not p.fires? and not eq_op_fires?(infix_of(op, written(left), written(right)))
+}
+
+expect eq_op_conditional_elaborated(unless?, condition: Scoped, body: Scoped) {
+    call p := eq_op_conditional(unless?, condition, body)
+
+    expect fires: when p.fires?,
+        eq_op_fires?(conditional_of(unless?, written(condition), written(body)))
+        and eq_op_said(conditional_of(unless?, written(condition), written(body)))
+        = value_of(p.value, written(condition))
+}
+```
+
+`eq_op` has no fix, so it does not join the [rewrites](../Rewrites.md).
+What it states is that its message is right. Where it fires, what the
+message says the expression is [agrees](../Meaning.md#fixes-that-agree)
+with the expression, in every interpretation and environment. Where the
+operand is well-defined, the expression has the value that the message
+says. `x = x` is `true` wherever `x` is well-defined, and `when c, c`
+wherever `c` is a `Bool`. `x < x` and `x - x` are `false` and `0`
+wherever `x` is an integer. `a and a`, `a or a` and `unless c, c` have the
+operand's outcome wherever it is a `Bool`. Elsewhere the expression is
+undefined. `not (a = a)` is two layers deep, and the solver unfolds
+[`eval`](../../Lang/Semantics.md#the-evaluation-function) only one step,
+so `src/Impls/Rewrites.lean` proves this in Lean, for every expression,
+interpretation and environment; `fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc eq_op_said_agrees(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure said: when eq_op_fires?(e), agrees?(lang::eval(i, env, eq_op_said(e)), lang::eval(i, env, e))
+}
+```
+
+`eq_op` on the arguments of a cardinality operator stays on its model
+for now. Finding an argument written the same as an earlier one looks
+along the list of arguments, which needs a recursion, and a generic
+function cannot be one. So does `eq_op` on `x.min(x)` and `x.max(x)`
+([Idempotent methods](Integers.md#idempotent-methods)), whose model
+compares texts without their scopes; it moves with the other lints of
+`min` and `max`.
+
 ## Erasing operations
 
 `erasing_op` fires on an operation whose value ignores an operand: `x * 0`
@@ -618,5 +772,112 @@ pub proc ifs_same_cond_taken(
     expect taken: chain = (if p? then Outcome::Defined(a) else if q? then Outcome::Defined(b) else Outcome::Defined(d))
     expect never_taken: when (p? iff q?), chain = without
     cover second: not p? and q? and chain = Outcome::Defined(b)
+}
+```
+
+### Branches written the same, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+`same_branches` fires on `If(c, a, a)`, and its fix is `a`. That is a
+rewrite, as [Fixes as rewrites](../Rewrites.md) states for every such
+lint. A branch that reads a binder of the condition's pattern tests is
+elaborated within a `match` ([Derived
+forms](../../Lang/Semantics.md#derived-forms)). So in `if r is
+Reply::Value(v!) then v else v` the branches differ, and
+`same_branches_fires?` does not fire:
+
+```fren
+pub fn same_branches_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::If(_, t, f) => t = f,
+    _ => false,
+}
+
+pub fn same_branches_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
+    lang::Expr::If(_, t, f) => if t = f then t else e,
+    _ => e,
+}
+```
+
+`lint::same_branches` binds this to the linter. For every condition `c`
+and branches as written, where `same_branches` fires on `if c then t else
+f`, `same_branches_fires?` fires on its elaboration, and the fix is
+`written(t)`. The linter leaves a conditional whose condition binds names
+even where the branches read none of them. There the function fires, so
+the linter fires only where the function does, and not everywhere it
+does. A table is a nest of conditionals ([Derived
+forms](../../Lang/Semantics.md#derived-forms)). With a `_` row, `table {
+c => v, d => v, _ => v }` is `If(c, v, If(d, v, v))`. Fixing the inner
+conditional, as [fixing everywhere](../Rewrites.md#fixing-everywhere)
+does first, makes the outer one `If(c, v, v)`, whose fix is `v`, the fix
+the linter writes (`rows`). Without a `_` row, the last conditional's
+`else` branch is `NoMatch`, so where `v` is not `NoMatch`,
+`same_branches_fires?` fires on none of the conditionals (`no_wildcard`). The linter fires there, without a fix, and
+`lint::same_rows` states that. The front ends' reading of the branches
+and the rows, and the text of the fix, are trusted, and checked by the ui
+tests in `test/ui/lints/suspicious.fren` and
+`test/ui/lints/patterns_tables.fren`.
+
+```fren
+expect same_branches_elaborated(
+    binders: Set<lang::Id>,
+    t: Scoped,
+    f: Scoped,
+    c: lang::Expr<lang::Id>,
+    d: lang::Expr<lang::Id>,
+    v: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::If
+
+    call p := same_branches(binders, t, f)
+
+    expect fires: when p.fires?, same_branches_fires?(If(c, written(t), written(f)))
+        and same_branches_fix(If(c, written(t), written(f))) = written(t)
+    expect rows: same_branches_fix(If(c, v, same_branches_fix(If(d, v, v)))) = v
+    expect no_wildcard: unless v = lang::Expr::NoMatch,
+        not same_branches_fires?(If(c, v, If(d, v, lang::Expr::NoMatch)))
+        and not same_branches_fires?(If(d, v, lang::Expr::NoMatch))
+}
+```
+
+Where it fires, the fix [agrees](../Meaning.md#fixes-that-agree) with the
+conditional, in every interpretation and environment. Where the
+condition is `true` or `false`, the conditional has the branch's outcome,
+and that is the fix's. Elsewhere the conditional is undefined. The fix
+may be well-defined there, so it agrees, but need not have the same
+outcome. `src/Impls/Rewrites.lean` proves this in Lean, for every
+expression, interpretation and environment, as it proves the other
+rewrites; `fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc same_branches_keeps_meaning(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure agrees: when same_branches_fires?(e),
+        agrees?(
+            lang::eval(i, env, same_branches_fix(e)),
+            lang::eval(i, env, e)
+        )
+}
+```
+
+The fix writes a branch. Once the operands are fixed, the branch does not
+fire, so the fix leaves nothing to fix. The fix alone need not. For every
+`c`, `d` and `v`, the fix of `if c then (if d then v else v) else (if d
+then v else v)` is `if d then v else v`, which fires again (`kept`). And
+an expression around it may start firing once it is fixed. `if c then v
+else (if d then v else v)` does not fire, but the fix of its `else`
+branch makes it `if c then v else v`, which does (`around`). This is the
+table above.
+
+```fren
+expect same_branches_refires(
+    c: lang::Expr<lang::Id>,
+    d: lang::Expr<lang::Id>,
+    v: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::If
+
+    expect kept: same_branches_fires?(same_branches_fix(If(c, If(d, v, v), If(d, v, v))))
+    expect around: not same_branches_fires?(If(c, v, If(d, v, v)))
+        and same_branches_fires?(If(c, v, same_branches_fix(If(d, v, v))))
 }
 ```

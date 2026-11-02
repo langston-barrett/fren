@@ -220,6 +220,14 @@ theorem cw_fix_rn (e : Expr V) : lint.collapsible_when_fix W (expr r e) = expr r
   all_goals (cases f <;> simp only [expr] <;> try rfl)
   all_goals (simp only [apply_ite (expr r)]; split <;> split <;> simp_all [lint.true?])
 
+theorem sb_fires_rn (e : Expr V) : lint.same_branches_fires? W (expr r e) = lint.same_branches_fires? V e := by
+  cases e <;> simp [lint.same_branches_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2]
+
+theorem sb_fix_rn (e : Expr V) : lint.same_branches_fix W (expr r e) = expr r (lint.same_branches_fix V e) := by
+  cases e <;> simp only [lint.same_branches_fix, expr] <;> try rfl
+  rename_i c t f
+  by_cases h : t = f <;> simp [h]
+
 theorem absorbs_rn (c : Bool) (k o : Expr V) :
     lint.absorbs_operand? W c (expr r k) (expr r o) = lint.absorbs_operand? V c k o := by
   cases k <;> simp [lint.absorbs_operand?, lang.Expr.Or.x0, lang.Expr.Or.x1, lang.Expr.And.x0, lang.Expr.And.x1]
@@ -247,10 +255,11 @@ changes neither whether it fires nor, but for the renaming, what its fix
 writes. -/
 theorem fires_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fires_at? W l (expr r e) = lint.fires_at? V l e := by
   cases l <;> simp only [lint.fires_at?, oc_fires_rn, dn_fires_rn, ipo_fires_rn, ma_fires_rn, mad_fires_rn,
-    un_fires_rn, cw_fires_rn]
+    un_fires_rn, cw_fires_rn, sb_fires_rn]
 
 theorem fix_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fix_at W l (expr r e) = expr r (lint.fix_at V l e) := by
-  cases l <;> simp only [lint.fix_at, oc_fix_rn, dn_fix_rn, ipo_fix_rn, ma_fix_rn, mad_fix_rn, un_fix_rn, cw_fix_rn]
+  cases l <;> simp only [lint.fix_at, oc_fix_rn, dn_fix_rn, ipo_fix_rn, ma_fix_rn, mad_fix_rn, un_fix_rn, cw_fix_rn,
+    sb_fix_rn]
 
 end
 

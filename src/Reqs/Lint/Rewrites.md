@@ -26,7 +26,8 @@ functions:
 - [`double_neg`](Style.md#negations-over-the-syntax-of-the-semantics);
 - [`int_plus_one`](Complexity/Comparisons.md#off-by-one-comparisons-over-the-syntax-of-the-semantics);
 - [`manual_abs` and `manual_abs_diff`](Complexity/Integers.md#absolute-values-over-the-syntax-of-the-semantics);
-- [`unless_not` and `collapsible_when`](Style.md#conditionals-over-the-syntax-of-the-semantics).
+- [`unless_not` and `collapsible_when`](Style.md#conditionals-over-the-syntax-of-the-semantics);
+- [`same_branches`](Suspicious/Expressions.md#branches-written-the-same-over-the-syntax-of-the-semantics).
 
 `fix_all` below applies `fix_at` in each of its arms, and `fires_in?`
 applies `fires_at?`, and each lint's functions are definitions of their
@@ -51,6 +52,7 @@ pub enum ExprLint {
     ManualAbsDiff,
     UnlessNot,
     CollapsibleWhen,
+    SameBranches,
 }
 
 pub fn fires_at?<V>(l: ExprLint, e: Expr<V>) := match l {
@@ -61,6 +63,7 @@ pub fn fires_at?<V>(l: ExprLint, e: Expr<V>) := match l {
     ExprLint::ManualAbsDiff => manual_abs_diff_fires?(e),
     ExprLint::UnlessNot => unless_not_fires?(e),
     ExprLint::CollapsibleWhen => collapsible_when_fires?(e),
+    ExprLint::SameBranches => same_branches_fires?(e),
 }
 
 pub fn fix_at<V>(l: ExprLint, e: Expr<V>): Expr<V> := match l {
@@ -71,6 +74,7 @@ pub fn fix_at<V>(l: ExprLint, e: Expr<V>): Expr<V> := match l {
     ExprLint::ManualAbsDiff => manual_abs_diff_fix(e),
     ExprLint::UnlessNot => unless_not_fix(e),
     ExprLint::CollapsibleWhen => collapsible_when_fix(e),
+    ExprLint::SameBranches => same_branches_fix(e),
 }
 ```
 
@@ -92,7 +96,8 @@ That of `unless_not` writes a conditional of an operand's operand and an
 operand, whose `else` branch is `true`, on which it does not fire. Those
 of `collapsible_when` write a conditional of a new `and` or `or` and of
 the nested conditional's body, on which it fires only where that body is
-another nested conditional, which would make the nested one fire.
+another nested conditional, which would make the nested one fire. That
+of `same_branches` writes an operand.
 
 A lint whose fix may write something that it fires on, from operands
 that are fixed, does not meet the last fact. The De Morgan rewrites of
@@ -221,8 +226,8 @@ written, in every interpretation and environment (`keeps_meaning`). These
 follow from the [facts about each lint](#each-lint-where-it-fires) at the
 place where it fires: `fix_at_unfired`, `fix_at_agrees` and
 `fix_at_fixed`. The fix at one place alone need not fix the lint, as
-`overly_complex_refires`, `double_neg_refires`, `manual_abs_refires` and
-`collapsible_when_refires` show: these laws are of fixing everywhere. For
+`overly_complex_refires`, `double_neg_refires`, `manual_abs_refires`,
+`collapsible_when_refires` and `same_branches_refires` show: these laws are of fixing everywhere. For
 `int_plus_one` and `unless_not` it does, as `int_plus_one_once` and
 `unless_not_once` show. That the passes of `fren fix` end where `fix_all`
 does is a property of the passes, which these laws do not state.

@@ -6,8 +6,9 @@ import Reqs.Lint
 /-! # Lints over the syntax of the semantics (`Reqs/Lint/Rewrites`)
 
 `overly_complex_bool_expr`, `double_neg`, `int_plus_one`, `manual_abs`,
-`manual_abs_diff`, `unless_not` and `collapsible_when` over `lang::Expr`:
-each fix agrees with the expression where it fires, and the
+`manual_abs_diff`, `unless_not`, `collapsible_when` and `same_branches`
+over `lang::Expr`: each fix agrees with the expression where it fires,
+what the message of `eq_op` says agrees with the expression, and the
 linter's rule for `overly_complex_bool_expr`, `Core.overlyComplexRule`,
 meets `lint::overly_complex_bool_expr` at `lang::Expr`. Then the laws of
 fixing every lint everywhere (`lint::fix_all_laws`), by induction on the
@@ -518,6 +519,88 @@ theorem cw_site (env : Env) (e : Expr String) : eval i env (lint.collapsible_whe
     · rfl
   · rfl
 
+/-! ### `same_branches` and `eq_op` -/
+
+theorem sb_fires_if (c t f : Expr String) : lint.same_branches_fires? String (.If c t f) = decide (t = f) := by
+  simp [lint.same_branches_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2]
+
+/-- `same_branches` fires only on a conditional. -/
+theorem sb_fires_other (e : Expr String) (h : ∀ c t f, e = .If c t f → False) :
+    lint.same_branches_fires? String e = false := by
+  cases e with
+  | If c t f => exact absurd rfl (h c t f)
+  | _ => simp [lint.same_branches_fires?]
+
+/-- Where `same_branches` does not fire, its fix is the expression. -/
+theorem sb_unfired (e : Expr String) (h : lint.same_branches_fires? String e = false) :
+    lint.same_branches_fix String e = e := by
+  unfold lint.same_branches_fix; split
+  · rename_i c t f
+    rw [sb_fires_if] at h
+    rw [if_neg (by simpa using h)]
+  · rfl
+
+/-- `if c then a else a` is `a` where `c` is a `Bool`, and undefined elsewhere. -/
+theorem sb_site (env : Env) (e : Expr String) : Le (eval i env e) (eval i env (lint.same_branches_fix String e)) := by
+  unfold lint.same_branches_fix; split
+  · rename_i c t f
+    split
+    · rename_i h
+      subst h
+      eval_step
+      generalize eval i env c = C
+      rcases C with v | _ <;> (try cases v) <;> simp [Le]
+    · exact Le.refl _
+  · exact Le.refl _
+
+/-- Where `eq_op` fires, what its message says agrees with the expression:
+`a = a` is `true`, `a < a` `false`, `a - a` `0`, and `a and a`, `a or a`
+and `unless a, a` are `a`, where `a` is well-defined and of the type the
+form applies to, and the form is undefined elsewhere. -/
+theorem eo_said (env : Env) (e : Expr String) (h : lint.eq_op_fires? String e = true) :
+    Le (eval i env e) (eval i env (lint.eq_op_said String e)) := by
+  cases e with
+  | Binary op a b =>
+    cases op <;> simp [lint.eq_op_fires?, lang.Expr.Binary.x0, lang.Expr.Binary.x1,
+      lang.Expr.Binary.x2] at h <;> subst h <;> simp only [lint.eq_op_said] <;> eval_step <;>
+      simp only [binary_value] <;> generalize eval i env a = A <;> rcases A with v | _ <;> (try cases v) <;>
+      simp [Le, truth]
+  | Unary op x =>
+    cases op <;> cases x <;> simp [lint.eq_op_fires?, lang.Expr.Unary.x0, lang.Expr.Unary.x1,
+      lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2] at h
+    rename_i op a b
+    cases op <;> simp at h
+    subst h; simp only [lint.eq_op_said]; eval_step
+    simp only [binary_value]
+    generalize eval i env a = A
+    rcases A with v | _ <;> simp [Le, truth, unary_value]
+  | And a b =>
+    simp [lint.eq_op_fires?, lang.Expr.And.x0, lang.Expr.And.x1] at h
+    subst h; simp only [lint.eq_op_said]; eval_step
+    generalize eval i env a = A
+    rcases A with v | _ <;> (try cases v) <;> simp [Le]
+  | Or a b =>
+    simp [lint.eq_op_fires?, lang.Expr.Or.x0, lang.Expr.Or.x1] at h
+    subst h; simp only [lint.eq_op_said]; eval_step
+    generalize eval i env a = A
+    rcases A with v | _ <;> (try cases v) <;> simp [Le]
+  | If c t f =>
+    simp [lint.eq_op_fires?, lang.Expr.If.x0, lang.Expr.If.x1, lang.Expr.If.x2] at h
+    rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · simp only [lint.eq_op_said]
+      split
+      · rename_i ht
+        obtain rfl := (true_iff _).1 ht
+        eval_step; simp [Le]
+      · eval_step
+        generalize eval i env t = C
+        rcases C with v | _ <;> (try cases v) <;> simp [Le]
+    · simp only [lint.eq_op_said, true_lit, if_true]
+      eval_step
+      generalize eval i env f = C
+      rcases C with v | _ <;> (try cases v) <;> simp [Le]
+  | _ => simp [lint.eq_op_fires?] at h
+
 /-! ### Each lint at the place where it fires -/
 
 theorem fires_at_overly (e : Expr String) : lint.fires_at? String .OverlyComplexBoolExpr e = lint.overly_complex_fires? String e := by
@@ -548,6 +631,10 @@ theorem fires_at_cw (e : Expr String) : lint.fires_at? String .CollapsibleWhen e
   show decide (lint.collapsible_when_fires? String e = true) = _
   cases lint.collapsible_when_fires? String e <;> rfl
 
+theorem fires_at_sb (e : Expr String) : lint.fires_at? String .SameBranches e = lint.same_branches_fires? String e := by
+  show decide (lint.same_branches_fires? String e = true) = _
+  cases lint.same_branches_fires? String e <;> rfl
+
 /-- Where a lint does not fire, its fix is the expression
 (`lint::fix_at_unfired`). Each new arm of `lint::ExprLint` owes this. -/
 theorem fix_at_unfired (l : lint.ExprLint) (e : Expr String) (h : lint.fires_at? String l e = false) : lint.fix_at String l e = e := by
@@ -559,6 +646,7 @@ theorem fix_at_unfired (l : lint.ExprLint) (e : Expr String) (h : lint.fires_at?
   · rw [fires_at_mad] at h; exact mad_unfired e h
   · rw [fires_at_un] at h; exact un_unfired e h
   · rw [fires_at_cw] at h; exact cw_unfired e h
+  · rw [fires_at_sb] at h; exact sb_unfired e h
 
 /-- Each lint's fix agrees with the expression, where it fires and where not
 (`lint::fix_at_agrees`). Each new arm of `lint::ExprLint` owes this. -/
@@ -579,6 +667,7 @@ theorem site_le (l : lint.ExprLint) (env : Env) (e : Expr String) : Le (eval i e
     rw [un_site env e]; exact Le.refl _
   · show Le _ (eval i env (lint.collapsible_when_fix String e))
     rw [cw_site env e]; exact Le.refl _
+  · exact sb_site env e
 
 /-! ### Fixing everywhere -/
 
@@ -819,6 +908,18 @@ theorem clean_at (l : lint.ExprLint) (e : Expr String) (ho : lint.operands_fixed
           nu_not_if t f (fun b u d h => h2 c t b u d (by rw [h]))] at hf
         cases hf
       | _ => rw [cw_fires_other _ (fun _ _ _ h => by cases h)] at hf; cases hf
+  · rw [fires_at_sb] at hf
+    show lint.fires_in? _ (lint.same_branches_fix String e) = false
+    revert ho hf
+    unfold lint.same_branches_fix; split
+    · rename_i c t f
+      intro ho hf
+      rw [sb_fires_if] at hf
+      rw [if_pos (of_decide_eq_true hf)]
+      exact (operands_if _ c t f ho).2.1
+    · rename_i hne
+      intro _ hf
+      rw [sb_fires_other e hne] at hf; cases hf
 
 /-- `lint::fix_all_laws::fixed`. -/
 theorem fixed (l : lint.ExprLint) (e : Expr String) : lint.fires_in? l (lint.fix_all l e) = false := by
@@ -1075,3 +1176,24 @@ impl fix_at_fixed: lint::fix_at_fixed for (l : lint.ExprLint) (e : lang.Expr Str
   unfold lint.fix_at_fixed.ensures lint.fix_at_fixed.ensure.fixed
   intro h
   simpa using clean_at l e (by simpa using h)
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the condition.
+impl same_branches_keeps_meaning: lint::same_branches_keeps_meaning for (e : lang.Expr String) (i : lang.Interp)
+    (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.same_branches_keeps_meaning.ensures lint.same_branches_keeps_meaning.ensure.agrees
+  intro _
+  exact (agrees_iff _ _).2 (sb_site env e)
+
+open RewriteProof in
+-- For every expression, interpretation and environment, by evaluating the operands.
+impl eq_op_said_agrees: lint::eq_op_said_agrees for (e : lang.Expr String) (i : lang.Interp) (env : lang.Env) {
+  e := e, i := i, env := env,
+} by
+  intro e i env _
+  unfold lint.eq_op_said_agrees.ensures lint.eq_op_said_agrees.ensure.said
+  intro h
+  exact (agrees_iff _ _).2 (eo_said env e (by simpa using h))
