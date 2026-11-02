@@ -8027,6 +8027,12 @@ def State.appFuns (s : State) : Std.HashMap String (Bool × Contract) :=
   (s.funs ++ s.defs.filterMap (fun (p, ps, r, _) => if s.recursiveDefs.contains p then some (p, ps.map (·.2), r) else none)).foldl (init := {}) fun m (p, _, r) =>
     m.insert ((s.instSyms.find? p).getD (itemSym p)) (r == .nat, (s.contracts.find? p).getD {})
 
+/-- Of each recursive function, by its SMT-LIB symbol, its path: those that
+a fact may apply, which evaluation cannot confirm a model of
+(`Fren.Core.recursiveCounterexample`). -/
+def State.recursiveSyms (s : State) : Std.HashMap String Name :=
+  s.recursiveDefs.fold (init := {}) fun m p => m.insert ((s.instSyms.find? p).getD (itemSym p)) p
+
 /-- Of each uninterpreted function with postconditions, by its SMT-LIB
 symbol, its path: the function whose contract's realizability the checks
 whose queries apply it rest on (`Fren.Core.appFactsWith`). Not instances

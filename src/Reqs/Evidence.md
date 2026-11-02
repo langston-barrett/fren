@@ -888,6 +888,48 @@ pub proc query_facts(
 }
 ```
 
+`check::fact_applications` states which applications bring their facts
+to a query: those that its hypotheses and goal mention, and those that
+the facts of one it has mention, transitively, as
+[Uninterpreted functions](Lang/Items.md#uninterpreted-functions) says,
+each that `query_facts` lets bring them. So of `fn a(s: S): (r: Int) {
+ensure e: r >= 0 }` and `fn b(s: S): (r: Int) { ensure e: r = a(s) + 1
+}`, a query that mentions `b(s)` has `a(s) >= 0` too, and `b(s) > 0`
+follows: without it, the expectation would fail, and a cover goal `b(s)
+<= 0` would pass, which no interpretation that meets the contracts allows
+(#619). Each round's new applications are of functions declared before
+those of the round before, as a contract applies only those
+([Contracts](Lang/Items.md#contracts)), so the rounds end. Both front ends
+take them from `Fren.Core.closeApps`, inside `Fren.Core.appFactsWith`,
+each finding the applications in a fact once its clauses are unfolded,
+and what they take is `closed?`: the query has every such application, and
+no other. Each that it has brings its facts, and is one of its own or is
+mentioned by a fact of another that it has, so that it is reached from one
+of its own that brings its facts through ones that do; that the chain of
+those ends at one of its own, rather than running round a cycle, follows
+from the order of contracts, and the last conjunct states it of the
+applications that facts mention, whatever brings. Images of relations over `Int` are outside
+the [decidable core](Lang/Decidability.md), so the procedure opts out:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc fact_applications(
+    written: Set<Int>,           -- the applications that the query's hypotheses and goal mention
+    inside: Rel<Int, Int>,       -- each application, with those that its facts mention
+    brings: Set<Int>,            -- the applications that bring their facts (`query_facts`)
+    brought: Set<Int>,           -- the applications whose facts the query has
+): (det closed?) {
+    ensure rule: closed? iff (written inter brings subset brought
+        and inside.image(brought) inter brings subset brought and brought subset brings
+        and brought subset written inter brings union inside.image(brought)
+        and brought subset written union inside.closure.image(written))
+
+    -- `b(s)` brings `a(s)`'s facts, and `c(s)`, whose fact mentions `b(s)`, both.
+    expect transitive: forall (x: Int) (y: Int) (z: Int), when closed? and x in written and (x, y) in inside
+        and (y, z) in inside and {x, y, z} subset brings, z in brought
+}
+```
+
 `check::check_applies` states which functions' contracts a check rests
 on: those whose applications in its queries bring a postcondition as a
 fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,

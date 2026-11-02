@@ -278,10 +278,64 @@ of the named recursive functions, which may be too weak, and the message
 says only that evaluation did not confirm it, not which. Both front ends
 use this rule and diagnostic.
 
+The formulas whose recursive applications a query reflects, with their
+one-step equations, are its own, the facts that its variables' types
+bring, and the facts of the applications that it has, transitively
+(`check::fact_applications`): of `fn one(l: L): (r: Int) { ensure e: r =
+total(L::Cons(1, l)) }`, a query that mentions `one(l)` has the one-step
+equation of `total(L::Cons(1, l))` too, so that `one(l) >= 1` follows where
+`total`'s body adds the absolute values of the list's elements; and of
+`type Big = l: L where invariant: total(l) >= 5`, a query over `x: Big`
+has the one-step equations of `total(x)`, so that `x is L::Nil` cannot
+hold.
+
+A model is confirmed against the query's own hypotheses and goal: where
+they apply a recursive function, evaluation of the real definitions on the
+model must confirm it. Where a fact of the applications that the query has
+applies a recursive function, a model is never confirmed, and the check is
+Inconclusive (`F0450`), as it is where evaluation refutes the model. That
+is a conservative choice: the model gives the values of those facts'
+applications too, at which evaluation of the real definitions could
+confirm it, but none does yet. So of `fn first(l: L): (r: Int) { ensure e:
+r = total(L::Cons(1, L::Cons(2, L::Cons(3, l)))) }`, `cover low: first(l)
+< 6` is not met by a model that only the opaque `total` allows; but `cover
+big: one(l) > 100`, which `l = [200]` meets, is Inconclusive too. Both
+front ends take the formulas they reflect from
+`Fren.Core.recursionFormulas`, from the same three kinds, and decide with
+`Fren.Core.recursiveCounterexample`, where `applies_recursive?` is whether
+the query's own hypotheses or goal apply a recursive function, and
+`facts_recursive?` whether a formula of `facts.image(brought)` does.
+
+A model is not yet confirmed against the facts of the query's variables'
+types, though they are reflected. That is a known gap, not the rule meant:
+a check can rest on a model that only an opaque recursive function allows,
+as the assumptions `x = 0` of `x: BigI`, where `type BigI = n: Int where
+invariant: total(L::Cons(n, L::Nil)) >= 5 or n = 5`, which no `BigI`
+meets, pass as consistent, and `cover small: x = L::Cons(1, L::Cons(1,
+L::Cons(1, L::Nil)))` of `x: Big` is met. Confirming against those facts
+needs a model that evaluation does not refute wherever a real one exists,
+or the verdict would depend on which model each front end's solver gives:
+the values of the recursive applications that a refuted model leaves open,
+as `total(L::Nil)` above, added as facts, and the query asked again (#634).
+The binary already confirms a model against the type of a call's output,
+which is part of the call's hypothesis there, and the Lean front end does
+not: there, too, the front ends agree only where the solver's model is a
+real one (#634).
+
 ```fren
-pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?):
+set_option fren.lint.undecidable "allow" in
+pub proc recursion_formulas(
+    variables: Set<Int>,         -- the facts that the query's variables' types bring, by position
+    written: Set<Int>,           -- the query's own hypotheses, by position
+    facts: Rel<Int, Int>,        -- each application, with the formulas of its facts
+    brought: Set<Int>,           -- the applications whose facts the query has (`check::fact_applications`)
+): (det reflected: Set<Int>) {
+    out reflected := variables union facts.image(brought) union written
+}
+
+pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?, facts_recursive?):
     (det report_counterexample?) {
-        ensure rule: report_counterexample? iff (not applies_recursive? or evaluation_confirms?)
+        ensure rule: report_counterexample? iff (not facts_recursive? and (not applies_recursive? or evaluation_confirms?))
     }
 ```
 
@@ -297,5 +351,6 @@ functions to quantifier-free queries.
 #fren_check recursive_match
 #fren_check recursive_facts
 #fren_check recursive_post_result
+#fren_check recursion_formulas
 #fren_check recursive_counterexample
 ```
