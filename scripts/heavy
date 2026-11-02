@@ -19,13 +19,14 @@ group, summed about every second. A job waits to start while the running
 ones use more than 60% of the cap. When they use more than the cap, the most
 recently started job is killed (TERM, then KILL) and heavy exits with 137,
 saying so. The files are re-read on every use, so changing one takes effect
-for running jobs too. An unset, empty, invalid or non-positive setting
-falls through to the next.
+for running jobs too. An unset, empty, invalid, infinite or non-positive
+setting falls through to the next, with a warning unless it is unset.
 
 `--offline` runs COMMAND with no network: on Linux in a new user and
-network namespace (`unshare -rn`), which has only loopback, and on macOS
-under `sandbox-exec` with a profile that denies all IP networking,
-loopback included, but allows Unix sockets. When it cannot cut the
+network namespace (`unshare -rn`), whose only interface is loopback, which
+is down, and in which COMMAND runs as uid 0, mapped to the user; and on
+macOS under `sandbox-exec` with a profile that denies all IP networking,
+loopback included, and name lookups, but allows other Unix sockets. When it cannot cut the
 network, heavy fails (exit 126) rather than run COMMAND online. Use it
 for what never needs the network: binaries that a pull request built,
 fuzzers and mutation runs. Builds and `lake test` stay online, since
@@ -35,6 +36,7 @@ Lake fetches packages and elan fetches toolchains.
 and the order of the overrides.
 """
 import fcntl
+import math
 import os
 import platform
 import shutil
@@ -50,14 +52,17 @@ START_FRACTION = 0.6
 USAGE = "usage: heavy [--offline] [--] <command> [args...]"
 
 # Denies all IP networking, inbound and outbound, loopback included, and
-# allows everything else, Unix sockets too, since they are local IPC. Later
-# rules take precedence.
+# name lookups through mDNSResponder, which would send DNS queries for the
+# command, and allows everything else, other Unix sockets too, since they
+# are local IPC. Later rules take precedence.
 MACOS_OFFLINE_PROFILE = """\
 (version 1)
 (allow default)
 (deny network*)
 (allow network* (local unix-socket))
 (allow network* (remote unix-socket))
+(deny network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
+(deny mach-lookup (global-name "com.apple.dnssd.service"))
 """
 
 
@@ -115,39 +120,59 @@ def physical_memory_kb(system=None, meminfo="/proc/meminfo"):
 
 def positive(kind, text):
     value = kind(text)
-    if not value > 0:
-        raise ValueError(f"{text!r} is not positive")
+    if not (math.isfinite(value) and value > 0):
+        raise ValueError(f"{text.strip()!r} is not a positive finite number")
     return value
 
 
-def setting(env, name, kind, environ=None, state=STATE):
-    """The positive `kind` that the environment variable `env` holds, else
-    the one in the file `name` in the state directory, else None; read on
-    every call."""
+_warned = set()
+
+
+def warn_once(where, text, warn):
+    if (where, text) not in _warned:
+        _warned.add((where, text))
+        warn(f"heavy: ignoring {where}={text.strip()!r}, which is not a positive finite number")
+
+
+def setting(env, name, kind, environ=None, state=STATE, warn=None):
+    """The positive finite `kind` that the environment variable `env` holds,
+    else the one in the file `name` in the state directory, else None; read
+    on every call. A value that is set but rejected is reported once, by
+    `warn`, on stderr by default."""
     environ = os.environ if environ is None else environ
+    warn = warn or (lambda m: print(m, file=sys.stderr))
+    text = environ.get(env)
+    if text is not None:
+        try:
+            return positive(kind, text)
+        except ValueError:
+            warn_once(env, text, warn)
+    path = os.path.join(state, name)
     try:
-        return positive(kind, environ[env])
-    except (KeyError, ValueError):
-        pass
+        with open(path) as f:
+            text = f.read()
+    except OSError:
+        return None
     try:
-        with open(os.path.join(state, name)) as f:
-            return positive(kind, f.read())
-    except (OSError, ValueError):
+        return positive(kind, text)
+    except ValueError:
+        if text.strip():
+            warn_once(path, text, warn)
         return None
 
 
-def slot_count(environ=None, state=STATE):
-    n = setting("HEAVY_SLOTS", "slots", int, environ, state)
+def slot_count(environ=None, state=STATE, warn=None):
+    n = setting("HEAVY_SLOTS", "slots", int, environ, state, warn)
     return DEFAULT_SLOTS if n is None else n
 
 
 _physical = []
 
 
-def mem_cap_kb(environ=None, state=STATE, physical=None):
+def mem_cap_kb(environ=None, state=STATE, physical=None, warn=None):
     """The memory cap, in KB: `HEAVY_MEM_GB`, else the file `mem_gb`, else
     80% of `physical()`, the physical memory in KB."""
-    gb = setting("HEAVY_MEM_GB", "mem_gb", float, environ, state)
+    gb = setting("HEAVY_MEM_GB", "mem_gb", float, environ, state, warn)
     if gb is not None:
         return int(gb * 1024 * 1024)
     if physical is None:

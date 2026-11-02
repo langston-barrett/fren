@@ -13,6 +13,9 @@ import os
 import sys
 import tempfile
 
+# Loading `heavy` must leave no `__pycache__` in the checkout.
+sys.dont_write_bytecode = True
+
 HERE = os.path.dirname(os.path.realpath(__file__))
 
 
@@ -62,8 +65,9 @@ def test_physical_memory():
 def test_overrides():
     physical = lambda: 20 * GB
     with tempfile.TemporaryDirectory() as state:
-        cap = lambda env: heavy.mem_cap_kb(env, state, physical)
-        slots = lambda env: heavy.slot_count(env, state)
+        warnings = []
+        cap = lambda env: heavy.mem_cap_kb(env, state, physical, warnings.append)
+        slots = lambda env: heavy.slot_count(env, state, warnings.append)
 
         # The defaults: 80% of physical memory, and 2 slots.
         assert cap({}) == 16 * GB
@@ -93,14 +97,33 @@ def test_overrides():
             f.write("")
         assert cap({}) == 16 * GB
         assert cap({"HEAVY_MEM_GB": "nan"}) == 16 * GB
+        assert cap({"HEAVY_MEM_GB": "inf"}) == 16 * GB
+        assert cap({"HEAVY_MEM_GB": "1e400"}) == 16 * GB
         os.remove(os.path.join(state, "slots"))
         assert slots({"HEAVY_SLOTS": "x"}) == 2
         assert slots({"HEAVY_SLOTS": "0"}) == 2
 
+        # A setting that is set but rejected is reported, once for each value.
+        del warnings[:]
+        cap({"HEAVY_MEM_GB": "-7"})
+        cap({"HEAVY_MEM_GB": "-7"})
+        assert len(warnings) == 1 and "HEAVY_MEM_GB='-7'" in warnings[0], warnings
+        with open(os.path.join(state, "mem_gb"), "w") as f:
+            f.write("14GB\n")
+        assert cap({}) == 16 * GB
+        assert len(warnings) == 2 and "'14GB'" in warnings[1], warnings
+        # An empty file, like an unset variable, is not reported.
+        with open(os.path.join(state, "mem_gb"), "w") as f:
+            f.write("\n")
+        assert cap({}) == 16 * GB and len(warnings) == 2, warnings
+
         # The default reads the physical memory only when nothing overrides it.
+        ignore = lambda m: None
+
         def unreadable():
             raise AssertionError("read the physical memory")
-        assert heavy.mem_cap_kb({"HEAVY_MEM_GB": "1"}, state, unreadable) == GB
+        assert heavy.mem_cap_kb({"HEAVY_MEM_GB": "1"}, state, unreadable,
+                                ignore) == GB
 
 
 def test_offline_command():
@@ -113,6 +136,7 @@ def test_offline_command():
     mac = heavy.offline_command(["fuzz"], "Darwin", ok)
     assert mac == ["sandbox-exec", "-p", heavy.MACOS_OFFLINE_PROFILE, "fuzz"]
     assert "(deny network*)" in heavy.MACOS_OFFLINE_PROFILE
+    assert "mDNSResponder" in heavy.MACOS_OFFLINE_PROFILE
     # Where it cannot cut the network, it refuses rather than run online.
     for system in ("Linux", "Darwin"):
         assert raises(lambda: heavy.offline_command(["fuzz"], system, no), RuntimeError)

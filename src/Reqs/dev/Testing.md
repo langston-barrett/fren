@@ -714,10 +714,14 @@ takes effect at once, without a restart:
   running ones use more than 60% of the cap; when they use more than
   the cap, heavy kills the newest and exits with 137.
 
-`scripts/heavy --offline COMMAND` runs COMMAND with no network, in a new
-user and network namespace on Linux (`unshare -rn`, which needs
-unprivileged user namespaces) and under `sandbox-exec` with a profile
-that denies IP networking on macOS. Where it cannot cut the network, it
+A setting that is set but is not a positive finite number is ignored,
+with a warning.
+
+`scripts/heavy --offline COMMAND` runs COMMAND with no network. On Linux
+it runs in a new user and network namespace (`unshare -rn`, which needs
+unprivileged user namespaces), whose loopback is down, as uid 0 mapped
+to the user. On macOS it runs under `sandbox-exec` with a profile that
+denies IP networking, loopback included, and name lookups. Where it cannot cut the network, it
 fails rather than run COMMAND online. Use it to run binaries that a pull
 request built, the fuzzers and mutation runs, which never need the
 network. Builds and `lake test` stay online: Lake fetches packages and
@@ -783,20 +787,21 @@ checks it on a scratch cache, and the `lint` workflow runs that test.
 `lake cache clean`, which empties the cache at
 once, is safe only while no build runs.
 
-A step's outputs must then not depend on where it ran, or a worktree would
-get another's. Lean names a module's source by its absolute path, and a
-definition's `source?` (`Fren.DefinedInfo`) keeps the name of the file
-that declares it, for the messages about it. It keeps the name relative to
-the directory that Lean runs in (`Fren.keptFileName`, which
+A step's outputs must then not depend on where it ran, or a worktree
+would get another's. Lean names a module's source by its absolute path,
+and a definition's `source?` (`Fren.DefinedInfo`) keeps the name of the
+file that declares it, for the messages about it. It keeps the name
+relative to the directory that Lean runs in (`Fren.keptFileName`, which
 `testing::portable_name` states, with that directory as its input). Lake
 runs Lean in the directory that Lake was started in, which is the
 package's root for `lake build` and `lake test` run there, as
-`scripts/heavy` runs them and CI does. A build started elsewhere, as `lake -d ROOT build`, keeps
-absolute names, and its outputs, which another worktree may take from the
-cache, then differ only in the names that messages about other files'
-definitions show. A message about the definition names the current file as
-Lean names it, if the definition is in it, and the other file by the kept
-name otherwise (`Fren.shownFileName`).
+`scripts/heavy` runs them and CI does. A build started elsewhere, as
+`lake -d ROOT build`, keeps absolute names, and its outputs, which
+another worktree may take from the cache, then differ only in the names
+that messages about other files' definitions show. A message about the
+definition names the current file as Lean names it, if the definition is
+in it, and the other file by the kept name otherwise
+(`Fren.shownFileName`).
 
 `scripts/relocatable.py` checks that no `.olean` or `.ilean` file, and no
 file of C code or object code under `.lake/build/ir`, that a build wrote
@@ -943,7 +948,7 @@ gh run download RUN -n fren-SHA -D /tmp/fren-SHA
 chmod +x /tmp/fren-SHA/fren
 git fetch origin "$(cat /tmp/fren-SHA/MERGE_SHA)"
 git checkout --detach "$(cat /tmp/fren-SHA/MERGE_SHA)"
-/tmp/fren-SHA/fren check FILE
+scripts/heavy --offline /tmp/fren-SHA/fren check FILE
 ```
 
 `fren` needs nothing else, for `fren check`, `quickcheck`, `mutate` and
@@ -951,13 +956,16 @@ git checkout --detach "$(cat /tmp/fren-SHA/MERGE_SHA)"
 checkout, and writes scratch files under its `.lake`. Its jobs `ui`,
 `uiMisread`, `smtAgreement` and `leanTokens` load the hosted front end,
 the `.olean` files of `Fren` and its dependencies; for them, run
-`scripts/heavy lake build Fren` in the checkout, which compiles no C code and links
-nothing, and then `lake env /tmp/fren_test-SHA/fren_test --job ui FILE`.
-The other jobs, such as `snapshots`, `errorCodes` and `mutation`, need
-only the binary. On CI, `fren` is 161 MB, 116 MB stripped and 45 MB
-compressed, and `fren_test` is 320 MB, 235 MB stripped and 78 MB
-compressed. The `.olean` files are not uploaded: those of `Fren` and its
-dependencies came to some 340 MB, 96 MB compressed, on macOS.
+`scripts/heavy lake build Fren` in the checkout, which compiles no C
+code and links nothing, and then `scripts/heavy --offline lake env
+/tmp/fren_test-SHA/fren_test --job ui FILE`. Run the binaries that CI
+built under `scripts/heavy --offline` ([Heavy jobs](#heavy-jobs)), since
+they never need the network. The other jobs, such as `snapshots`,
+`errorCodes` and `mutation`, need only the binary. On CI, `fren` is 161
+MB, 116 MB stripped and 45 MB compressed, and `fren_test` is 320 MB, 235
+MB stripped and 78 MB compressed. The `.olean` files are not uploaded:
+those of `Fren` and its dependencies came to some 340 MB, 96 MB
+compressed, on macOS.
 
 Pull requests merge through GitHub's merge queue. The queue merges each
 pull request into the current `main`, behind any pull requests ahead of it
