@@ -86,7 +86,7 @@ for file in "${files[@]}"; do
   # A fence of tildes, which no line of the output can close.
   note '~~~~~text'
   status=0
-  "$sandbox" /tmp/fren "$work" /bin-pr/fren check "$file" > "$RUNNER_TEMP/probe.txt" 2>&1 || status=$?
+  bash "$sandbox" /tmp/fren "$work" /bin-pr/fren check "$file" > "$RUNNER_TEMP/probe.txt" 2>&1 || status=$?
   head -c "$PER_PROBE" "$RUNNER_TEMP/probe.txt" | sed 's/^\( *\)~~~/\1 ~~~/' >> "$out"
   note ""
   [ "$(wc -c < "$RUNNER_TEMP/probe.txt")" -le "$PER_PROBE" ] || note "[cut at $PER_PROBE bytes]"

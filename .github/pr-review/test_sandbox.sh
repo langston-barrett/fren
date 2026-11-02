@@ -26,7 +26,7 @@ fingerprint() {
 }
 before=$(fingerprint)
 docker pull --quiet ubuntu:24.04 > /dev/null
-out=$("$here/sandbox.sh" "$scratch/bin" "$scratch/work" /bin-pr/fren check x.fren 2>&1) || true
+out=$(bash "$here/sandbox.sh" "$scratch/bin" "$scratch/work" /bin-pr/fren check x.fren 2>&1) || true
 after=$(fingerprint)
 printf '%s\n' "$out"
 
