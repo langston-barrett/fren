@@ -976,6 +976,18 @@ MB stripped and 78 MB compressed. The `.olean` files are not uploaded:
 those of `Fren` and its dependencies came to some 340 MB, 96 MB
 compressed, on macOS.
 
+The `pr-review` workflow reviews each pull request's head with Claude once
+`pre-merge` has passed on it, as the reviews by separate agents do: a full
+review, or a light check when the author's last comment starts with
+"fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
+an update from `main` of a reviewed head. Its reviewer probes with these
+binaries, in a checkout of their merge commit, and builds nothing. It
+runs the hosted front end's jobs only when `main`'s restored `.lake` is up
+to date with the checkout (`lake build --no-build Fren`); otherwise it
+suggests them in a finding. The workflow posts the review as one comment,
+whose first line it checks. Run by hand (`gh workflow run pr-review -f
+pr=N`), it posts only on the pull request that its `post` input names.
+
 Pull requests merge through GitHub's merge queue. The queue merges each
 pull request into the current `main`, behind any pull requests ahead of it
 in the queue, and runs `pre-merge` and `lint` on that merge commit. It
