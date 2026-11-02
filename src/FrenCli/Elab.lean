@@ -5612,9 +5612,8 @@ partial def elabIsExpr (cx : ExprCtx) (test : Fren.Core.TestContext × Option (N
       new := new.push { name := bn, smt := b.smt, ty := b.ty, scrutinee := some scrutinee, outer := cx.binders.size }
     modify fun s => { s with bound := s.bound ++ new }
   if cx.noteIndexes then
-    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`):
-    -- not of a test that binds names, which it is needed for.
-    let irrefutable := bs.isEmpty && Fren.Core.irrefutableIs (Fren.Core.matchesEvery (← patSigs) ts.patTy q)
+    -- `irrefutable_is` and `is_equality` (`lint::irrefutable_is`, `lint::is_equality`).
+    let irrefutable := Fren.Core.irrefutableIsAt (← patSigs) ts.patTy q
     if irrefutable then lint .irrefutableIs span (Fren.Core.irrefutableIsMsg ts.show (q matches .wild _))
     lintOrPatterns (patNode (← get).src p q)
     let texts ← p.alts.mapM (srcAt ·.span)

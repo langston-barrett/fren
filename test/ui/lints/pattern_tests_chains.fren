@@ -23,12 +23,15 @@ proc tests(s: Shade, o: Single): (a?, b?, c?, d?, e?, f?, g?, h?, k: Int) {
     --~^^ warning: this pattern test is an equation
 }
 
-proc binders(s: Shade): (a?) {
+proc binders(s: Shade, n: Int): (a?, b: Int) {
     -- A pattern that binds a name is left as it is.
     ensure r1: a? iff match s {
         Shade::Tinted(r) => true,
         _ => false,
     }
+    -- A binder matches every value, but `irrefutable_is` leaves a test that
+    -- binds a name, which what follows needs.
+    ensure r2: b = if n is m then m else 0
 }
 
 proc chains(i: Int, n: Int, m: Int, p?): (a?, b?, c?, d?, e?, f?, g?, h?, j?, k?, l?) {

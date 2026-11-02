@@ -378,7 +378,7 @@ literal, and the linter leaves the `match` to
 [`match_bool`](#matches-on-a-bool); the two fixes agree. The linter
 writes the test of a literal or a variant without a payload as `x = P`,
 which elaborates to `Binary(Eq, s, P)`, or, for a negative integer
-literal `-n`, to `Binary(Eq, s, Unary(Neg, Literal(n)))`. Each has the
+literal `-n`, to `Binary(Eq, s, Unary(Neg, Literal(Integer(n))))`. Each has the
 outcome of `Is(s, P)` in every interpretation and environment
 (`single_match_else_equality`), so the
 fix the linter writes agrees with the function's. Several variants it

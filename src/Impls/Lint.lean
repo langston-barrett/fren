@@ -495,12 +495,17 @@ impl is_equality: lint::is_equality for (n : Nat) (e i : Bool) {
   intro n e i _
   cases e <;> cases i <;> simp [fren_spec, Fren.Core.isEquality] <;> omega
 
-impl irrefutable_is: lint::irrefutable_is for (m : Bool) {
-  matches_every? := m,
-  fires? := Fren.Core.irrefutableIs m,
+-- Both front ends call `irrefutableIsAt` with the test's pattern, which
+-- reads whether it binds a name from the pattern itself.
+impl irrefutable_is: lint::irrefutable_is for (sigs : Fren.Core.Sigs) (ty : Fren.Core.PatTy) (p : Fren.Core.Pat) {
+  binds? := p.bindsName,
+  matches_every? := Fren.Core.matchesEvery sigs ty p,
+  fires? := Fren.Core.irrefutableIsAt sigs ty p,
 } by
-  intro m _
-  cases m <;> simp [fren_spec, Fren.Core.irrefutableIs]
+  intro sigs ty p _
+  simp only [Fren.Core.irrefutableIsAt, Fren.Core.irrefutableIs]
+  generalize p.bindsName = b; generalize Fren.Core.matchesEvery sigs ty p = m
+  cases b <;> cases m <;> simp [fren_spec]
 
 /-! ## Matches and bindings -/
 

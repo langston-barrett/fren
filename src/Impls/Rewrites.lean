@@ -2133,9 +2133,10 @@ impl irrefutable_is_said_agrees: lint::irrefutable_is_said_agrees for (e : lang.
   apply (agrees_iff _ _).2
   cases e with
   | Is s p =>
-    cases p <;> simp [lint.irrefutable_is_fires?, lang.Expr.Is.x0, lang.Expr.Is.x1, lang.Pattern.Binder.x0] at h <;>
-      simp only [lang.eval, lang.is_value] <;>
-      generalize lang.eval i env s = S <;> rcases S with v | _ <;> simp [lang.matches_value?, lang.truth, Le]
+    cases p <;> simp [lint.irrefutable_is_fires?] at h
+    simp only [lang.eval, lang.is_value]
+    generalize lang.eval i env s = S
+    rcases S with v | _ <;> simp [lang.matches_value?, lang.truth, Le]
   | _ => simp [lint.irrefutable_is_fires?] at h
 
 open RewriteProof in
