@@ -255,17 +255,57 @@ def smallSeqs (elems : Array Val) : Array Val :=
   let vs := elems.extract 0 3
   #[.seq #[]] ++ vs.map (Val.seq #[·]) ++ (vs.zip (vs.extract 1)).map fun (a, b) => .seq #[a, b]
 
-/-- All of `each`, if they are at most `cap`; otherwise the first `cap` of
-them taken in turn, the first of each, then the second of each, and so on,
-so that each has some within `cap` (`smallValues`). -/
-def smallInterleaved (cap : Nat) (each : Array (Array Val)) : Array Val := Id.run do
-  if each.foldl (· + ·.size) 0 ≤ cap then return each.flatten
+/-- The first `cap` of `each` taken in turn, the first of each, then the
+second of each, and so on (`smallInterleaved`). -/
+def roundRobin (cap : Nat) (each : Array (Array Val)) : Array Val := Id.run do
   let mut out := #[]
   for k in [0:cap] do
     for vs in each do
       if let some v := vs[k]? then out := out.push v
     if out.size ≥ cap then break
   return out.extract 0 cap
+
+/-- All of `each`, if they are at most `cap`; otherwise the first `cap` of
+them taken in turn, the first of each, then the second of each, and so on,
+so that each has some within `cap`. Only the reference that the
+`#guard` after `interleavedCounts` compares against: `smallValuesMemo`
+no longer calls it, and gives a data type's values as it would of each
+variant's, `each`, making only those of each variant that it reads
+(`interleavedCounts`). That they agree is tested, not proved. -/
+def smallInterleaved (cap : Nat) (each : Array (Array Val)) : Array Val :=
+  if each.foldl (· + ·.size) 0 ≤ cap then each.flatten else roundRobin cap each
+
+/-- How many of each of `each` `smallInterleaved cap each` reads, from
+how many each has, `sizes`, alone: all of each, where they are at most
+`cap` in all, and otherwise as many as the turns that `roundRobin` takes
+reach. So `roundRobin` of the first that many of each is `roundRobin` of
+`each`, and `smallValuesMemo` makes only those. That is tested, not
+proved: by the `#guard` below, at every `cap` up to 9 and up to four
+arrays of up to six values, and, with `combosSize` and `extendCombos`,
+end to end against `smallValuesMemo`'s old formulation on generated data
+types (`FrenTest.SmallValues`). -/
+def interleavedCounts (cap : Nat) (sizes : Array Nat) : Array Nat := Id.run do
+  if sizes.foldl (· + ·) 0 ≤ cap then return sizes
+  let mut counts := sizes.map fun _ => 0
+  let mut out := 0
+  for k in [0:cap] do
+    for j in [0:sizes.size] do
+      if k < sizes[j]! then
+        counts := counts.set! j (k + 1)
+        out := out + 1
+    if out ≥ cap then break
+  return counts
+
+-- Each of `each` cut to its count gives the same values, at every `cap`
+-- up to 9 and up to four arrays of up to 6 values each.
+#guard (List.range 10).all fun cap => (List.range 1296).all fun code =>
+  let sizes := (Array.range 4).map fun k => code / 6 ^ k % 6
+  let each := sizes.mapIdx fun j n => (Array.range n).map fun i => Val.int (Int.ofNat (10 * j + i))
+  let counts := interleavedCounts cap sizes
+  counts.size == each.size &&
+    smallInterleaved cap each ==
+      (if sizes.foldl (· + ·) 0 ≤ cap then each.flatten
+       else roundRobin cap (each.mapIdx fun j vs => vs.extract 0 counts[j]!))
 
 /-- The first `cap` of the combinations of each of `combos` with one more
 value, from `vs`, in order: `(combos.flatMap fun pre => vs.map pre.push).extract 0 cap`,
@@ -284,6 +324,21 @@ def extendCombos (cap : Nat) (combos : Array (Array Val)) (vs : Array Val) : Arr
   let combos := (Array.range m).map fun k => #[Val.int (Int.ofNat k), .int (Int.ofNat k * 7)]
   let vs := (Array.range n).map fun k => Val.int (100 + Int.ofNat k)
   extendCombos cap combos vs == (combos.flatMap fun pre => vs.map pre.push).extract 0 cap
+
+/-- The number of combinations that extending `#[#[]]` by each of `pools`
+in turn gives (`extendCombos`), at most `cap`, without making them. -/
+def combosSize (cap : Nat) (pools : Array (Array Val)) : Nat :=
+  pools.foldl (fun n vs => min cap (n * vs.size)) 1
+
+-- Extending by each pool with a smaller cap `n` gives the first `n` of the
+-- combinations that `cap` gives, and `combosSize` is how many those are,
+-- for up to three pools of up to 4 values each. (Without pools, the one
+-- empty combination is there at any cap.)
+#guard (List.range 8).all fun cap => (List.range (cap + 1)).all fun n => (List.range 125).all fun code =>
+  let pools := (Array.range (code % 4)).map fun k =>
+    (Array.range (code / 4 ^ k % 5)).map fun i => Val.int (Int.ofNat (10 * k + i))
+  let all := pools.foldl (extendCombos cap) #[#[]]
+  all.size == combosSize cap pools && (pools.foldl (extendCombos n) #[#[]]).extract 0 n == all.extract 0 n
 
 /-- `smallValues`, with the values of each type at each depth computed
 once, however many fields have that type: a pure function of them. -/
@@ -324,14 +379,21 @@ partial def smallValuesMemo (sp : Spec) (w : World) (ints : Array Int) (strs : A
       match sp.data.find? p with
       | none => pure #[]
       | some d => do
-        let mut each : Array (Array Val) := #[]
+        -- Each variant's fields' values, then only as many of its
+        -- combinations of them as `smallInterleaved` reads
+        -- (`interleavedCounts`, `combosSize`).
+        let mut fields : Array (Nat × Array (Array Val)) := #[]
         for c in d.ctors, idx in [0:d.ctors.size] do
           if depth == 0 && !c.fields.isEmpty then continue
-          let mut combos : Array (Array Val) := #[#[]]
+          let mut pools := #[]
           for (_, t) in c.fields do
-            combos := extendCombos cap combos (← go (depth - 1) (t.subst targs))
-          each := each.push (combos.map (.ctor p idx ·))
-        pure (smallInterleaved cap each)
+            pools := pools.push (← go (depth - 1) (t.subst targs))
+          fields := fields.push (idx, pools)
+        let sizes := fields.map fun (_, pools) => combosSize cap pools
+        let counts := interleavedCounts cap sizes
+        let each := fields.mapIdx fun j (idx, pools) =>
+          ((pools.foldl (extendCombos counts[j]!) #[#[]]).extract 0 counts[j]!).map (.ctor p idx ·)
+        pure (if sizes.foldl (· + ·) 0 ≤ cap then each.flatten else roundRobin cap each)
   modify (·.insert (depth, ty) vs)
   return vs
 

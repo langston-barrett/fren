@@ -6,12 +6,13 @@ import Lean.Compiler.IR.CompilerM
 /-! Which parameters of the evaluator the compiled code borrows (`@&`),
 read from its IR. Whether an annotation holds depends on the compiler: Lean
 drops `@&` from a parameter with a default, and owns a parameter that a
-self tail call passes an owned value, or that is passed to a function that
-takes it over. `Ex.evalIn` has no defaults, and `own` and `evalResult`
-keep the rest from owning its parameters. Owned, each would be counted at
-every call of `Ex.evalIn`, which made testing about 30 % slower (runtime
-round 11), so a compiler that undid them fails this check, and the build.
--/
+self tail call passes an owned value. `Ex.evalIn` has no defaults, and
+`evalResult` keeps its self calls out of tail position where they pass an
+owned value; `Pat.bindInto` finds an or-pattern's alternative by its index,
+so that the alternative it binds is borrowed too. Owned, each parameter
+would be counted at every call, which made testing about 30 % slower
+(runtime round 11), so a compiler that undid them fails this check, and
+the build. -/
 
 namespace Fren.Test.Borrowing
 
@@ -34,5 +35,15 @@ def borrows (n : Name) : CoreM (Array Bool) := do
   let bs ← borrows ``FrenCli.Eval.Ex.evalIn.quantV
   unless bs.size ≥ 2 && bs[bs.size - 2]! && bs[bs.size - 1]! do
     throwError "`Ex.evalIn.quantV` borrows {bs}, not `frame` and `memos`"
+
+-- `Pat.bindInto`'s pattern and value borrowed, and its frame owned, which
+-- the binding it makes takes over; likewise its payload's.
+#eval show CoreM Unit from do
+  let bs ← borrows ``FrenCli.Eval.Pat.bindInto
+  unless bs == #[true, true, false] do
+    throwError "`Pat.bindInto` borrows {bs}, not its pattern and value"
+  let bs ← borrows ``FrenCli.Eval.Pat.bindInto.payload
+  unless bs == #[true, true, false, false] do
+    throwError "`Pat.bindInto.payload` borrows {bs}, not its patterns and values"
 
 end Fren.Test.Borrowing
