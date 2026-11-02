@@ -16,7 +16,7 @@ import FrenCoreCodes
 
 ```
 fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
-    [--seed N] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
+    [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
@@ -57,7 +57,7 @@ open Fren.Core (Msg Paint)
 
 def usage : String :=
   "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]\n              \
-  [--seed N] [--query-cache DIR] [--verify-query-cache DIR] [LINT OPTIONS] [--color WHEN] FILE...\n       \
+  [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
   fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [LINT OPTIONS] [--color WHEN] FILE...\n       \
@@ -72,6 +72,9 @@ def usage : String :=
   inconclusive, some constraint redundant or some lint warned. `--dump-smt` writes each solver\n\
   query to stdout, as SMT-LIB; diagnostics go to stderr. `--tests N` and\n\
   `--seed N` are as for `quickcheck`, for checks set to testing.\n\
+  `--evidence METHOD` sets every check that `set_option fren.evidence`\n\
+  could set to METHOD, in place of the spec's own settings: `solver`,\n\
+  `random`, `enumerated` or `enumerated+random`.\n\
   `--timeout` limits each solver query's wall-clock time (default 10), and\n\
   `--resource-limit` its work, in cvc5's resource units, which unlike time\n\
   does not depend on the machine's load (default none); 0 is no limit.\n\
@@ -216,11 +219,14 @@ structure Args where
   shard? : Option (Nat × Nat) := none
   /-- `mutate --list`. -/
   listOnly : Bool := false
+  /-- `check --evidence`: the evidence of every check that the source could
+  set, in place of its settings (`cli::evidence_in_effect`). -/
+  evidence? : Option Fren.Core.Evidence := none
 
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--query-cache", "--verify-query-cache", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
@@ -342,6 +348,15 @@ where
       | none => .error (argError p {
           code? := none, headline := s!"invalid shard `{k}`",
           notes := #["note: a shard is `K/N`, the `K`th of `N` from 0, with `K < N`, such as `--shard 0/4`"] })
+    | "--evidence" :: v :: rest, a =>
+      if a.command != .check then only "--evidence" "check" else
+      match Fren.Core.evidenceOf? v with
+      | some ev => go rest { a with evidence? := some ev }
+      | none => .error (argError p {
+          code? := none, headline := s!"invalid evidence `{v}`",
+          notes := #["note: `--evidence` is `solver`, `random`, `enumerated` or `enumerated+random`"]
+          fixes := (Fren.Core.similarStr v #["solver", "random", "enumerated", "enumerated+random"]).toArray.map fun c =>
+            { msg := s!"a value with a similar name exists: `{c}`", replacement := c } })
     | "--dump-smt" :: rest, a =>
       if a.command == .check then go rest { a with dumpSmt := true }
       else only "--dump-smt" "check"
@@ -383,6 +398,7 @@ where
     | opt@"-D" :: n :: rest, a | opt@"--deny" :: n :: rest, a => do go rest (← addLint opt .deny n a)
     | opt@"-F" :: n :: rest, a | opt@"--forbid" :: n :: rest, a => do go rest (← addLint opt .forbid n a)
     | [opt@"--timeout"], _ | [opt@"--resource-limit"], _ | [opt@"--examples"], _ | [opt@"--jobs"], _ | [opt@"--tests"], _ | [opt@"--ignore"], _ | [opt@"--require"], _
+    | [opt@"--evidence"], _
     | [opt@"--only"], _ | [opt@"--skip"], _
     | [opt@"--proc"], _ | [opt@"--set"], _ | [opt@"--seed"], _
     | [opt@"--by"], _ | [opt@"--mutant"], _ | [opt@"--sample"], _ | [opt@"--diff"], _ | [opt@"--shard"], _
@@ -471,19 +487,22 @@ def elabParsed (st : State) (file : Nat) (chars : Array Char) (p : Parsed) : Sta
   | .ok (toks, items, starts, found) => (elabFile file chars items starts (trailingCommas toks) found |>.run st).2
 
 /-- The state before any file, with the lint levels `lints`. -/
-def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) : State :=
-  ({ cliLevels := Fren.Core.Levels.ofFlags lints } : State).withPrelude
+def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (evidence? : Option Fren.Core.Evidence := none) : State :=
+  ({ cliLevels := Fren.Core.Levels.ofFlags lints, evidenceOverride? := evidence? } : State).withPrelude
 
 /-- Elaborates the files at `paths`, whose contents are `srcs`, with the
 state before each file and after the last, before the claims are checked,
 from which `fren mutate` elaborates its mutants (`mutantsWith`). `fren fix`
-fixes the lints `fixing` in the files that `ignored` does not match. -/
+fixes the lints `fixing` in the files that `ignored` does not match.
+`evidence?` is that of `fren check --evidence`. -/
 def elaborateSourcesBefore (paths srcs : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
+    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false)
+    (evidence? : Option Fren.Core.Evidence := none) :
     IO (Array (String × Array Char) × Array State × State) := do
   let mut files := #[]
   let mut states := #[]
-  let mut st := initialState lints
+  let mut st := initialState lints evidence?
   for path in paths, src in srcs do
     let md := Fren.Core.isMarkdownFile path
     let text := if md then Fren.Core.unwrapMarkdown src else src
@@ -512,13 +531,14 @@ def elaborateSources (paths srcs : Array String) (lints : Array (Fren.Core.LintT
 `elaborateSourcesBefore`; `none` if one cannot be read. `fren fix` fixes
 the lints `fixing` in the files that `ignored` does not match. -/
 def elaborateBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false) :
+    (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false)
+    (evidence? : Option Fren.Core.Evidence := none) :
     IO (Option (Array (String × Array Char) × Array State × State)) := do
   let mut srcs := #[]
   for path in paths do
     let some src ← readSpec p path | return none
     srcs := srcs.push src
-  return some (← elaborateSourcesBefore paths srcs lints fixing ignored)
+  return some (← elaborateSourcesBefore paths srcs lints fixing ignored evidence?)
 
 /-- Reads and elaborates the files; `none` if one cannot be read. `fren fix`
 fixes the lints `fixing` in the files that `ignored` does not match. -/
@@ -537,9 +557,10 @@ def printStopped (p : Paint) (diags : Array Diag) (what := "check") : IO Unit :=
 
 /-- Reads and elaborates the files, printing any static errors, with the
 states of `elaborateSourcesBefore`. -/
-def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
+def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (evidence? : Option Fren.Core.Evidence := none) :
     IO (Option (Array (String × Array Char) × Array State × State)) := do
-  let some (files, states, st) ← elaborateBefore p paths lints | return none
+  let some (files, states, st) ← elaborateBefore p paths lints (evidence? := evidence?) | return none
   let starts := linesOf files
   for d in st.diags do printDiag p files d starts
   let errors := st.diags.filter (·.severity == .error) |>.size
@@ -548,10 +569,12 @@ def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.Lint
     return none
   return some (files, states, st)
 
-/-- Reads and elaborates the files, printing any static errors. -/
-def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel)) :
+/-- Reads and elaborates the files, printing any static errors, with the
+evidence of `fren check --evidence`, `evidence?`. -/
+def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
+    (evidence? : Option Fren.Core.Evidence := none) :
     IO (Option (Array (String × Array Char) × State)) := do
-  return (← loadBefore p paths lints).map fun (files, _, st) => (files, st)
+  return (← loadBefore p paths lints evidence?).map fun (files, _, st) => (files, st)
 
 /-- Prints the messages of result `r` of `c`, at the positions of the items
 they are about; returns them. -/
@@ -705,21 +728,25 @@ def symbolsOf (spec? : Except String Eval.Spec) : Symbols :=
 /-- The solver's results for `c`, a global expectation if `global`, with
 each model confirmed by the evaluator's `spec?` (`Reqs/Eval#confirming-models`);
 the results that a refuted model is about, with their internal errors; and
-an internal error if the evaluator has no counterpart of `c`. `sy` is
-`symbolsOf spec?`, built once for the spec. `prelude` is `st`'s, indexed
-(`State.queryPrelude`), and `cache` holds the answers to the queries asked
-before (`QueryCache`). -/
-partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
+an internal error if the evaluator has no counterpart of `c`. `sv` is the
+spec's `State`, `sv.st`, with what checking each item reads of it, its
+prelude, indexed, among it, built once for every item rather than for
+each (`State.forSolving`). `sy` is `symbolsOf spec?`, built once for the
+spec, and `cache` holds the answers to the queries asked before
+(`QueryCache`). -/
+partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
     (examples : Option Nat := some 1) (instances : Bool := true) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
+  let st := sv.st
+  let prelude := sv.prelude
   -- The functions whose contracts each check's queries apply, recorded by
   -- the backend, and taken by `checkComp` after each check
   -- (`Fren.Core.withApplies`).
   let applied ← IO.mkRef (#[] : Array Lean.Name)
   let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } limits dump? (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection cache st.quantified
-    st.appFuns (contractFns := st.contractFns) (applied? := some applied) (recursiveSyms := st.recursiveSyms)
+    sv.appFuns (contractFns := sv.contractFns) (applied? := some applied) (recursiveSyms := sv.recursiveSyms)
   let take : IO (Array Lean.Name) := applied.modifyGet fun a => (a, #[])
   -- Whether a formula uses an abstract type or an uninterpreted function,
   -- for the values that a realizability conflict's notes may show
@@ -747,19 +774,18 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
   -- its type parameters' sorts does not pass: its check at each instance
   -- that the spec applies, in order of their names (`lang::generic_contract`).
   if !instances then return (markInterpreted prelude c results, refuted, missing?)
-  let sites := st.instanceSites
   -- The contract of the instance of `f` at `targs`, where `f`'s check at its
   -- type parameters' sorts, `r`'s, does not pass: its realizability check.
   let atInstance (f : Lean.Name) (targs : Array Fren.Core.Ty) : IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg)) := do
     let some (_, ic) := ((st.instContracts.find? f).getD #[]).find? (·.1 == targs) | return (#[], #[])
-    let (rs, ref, _) ← solveComp st prelude spec? sy ic global #[.realizable] limits cache dump? body examples false
+    let (rs, ref, _) ← solveComp sv spec? sy ic global #[.realizable] limits cache dump? body examples false
     return (rs.filter (·.kind == .realizable), ref)
   let mut results := results
   let mut refuted := refuted
   if let (true, some f, some r) := (c.generic, c.fn?, results.find? (·.kind == .realizable)) then
     if r.verdict != .pass then
       let mut instResults := #[]
-      for (site, g, targs) in sites do
+      for (site, g, targs) in sv.instanceSites do
         unless site == .function && g == f do continue
         let (rs, ref) ← atInstance f targs
         instResults := instResults ++ rs
@@ -772,10 +798,10 @@ partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Ev
   -- at the item, without notes at the clauses, which another file has.
   let key := if body then c.path ++ c.bodyOf?.getD .anonymous
     else if global then c.path ++ ((c.props[0]?.map (·.name)).getD .anonymous) else c.path
-  for (site, f, targs) in sites do
+  for (site, f, targs) in sv.instanceSites do
     unless site == .item c.file key do continue
     let some b := st.bodies.find? fun b => b.fn? == some f && b.generic | continue
-    let (rs, _, _) ← solveComp st prelude spec? sy b false #[.realizable] limits cache dump? true examples false
+    let (rs, _, _) ← solveComp sv spec? sy b false #[.realizable] limits cache dump? true examples false
     unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue
     let (rs, ref) ← atInstance f targs
     results := results ++ rs.map fun r => { r with clashes := #[] }
@@ -886,17 +912,23 @@ def jobsDefault : BaseIO Nat :=
 
 /-- Runs `fren check`, printing diagnostics and the summary to stderr and
 any solver queries to stdout; returns the exit code. `record?` collects the
-results of each item, by its key (`Mutate.Todo.key`), for the tests of
-`fren mutate`'s decisions. -/
-def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.CheckResult))) := none) : IO UInt32 := do
-  let some (files, st) ← load args.paint args.files args.lints | return exitCode false none
+results of each item, by its key (`Mutate.Todo.key`), each with the method
+that ran it, for the tests of `fren mutate`'s decisions and of the
+agreement of methods (`check::methods_agree`). -/
+def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.CheckResult × Fren.Core.ProofMethod))) := none) :
+    IO UInt32 := do
+  let some (files, st) ← load args.paint args.files args.lints args.evidence? | return exitCode false none
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)
   -- Each procedure and global expectation,
   -- with the checks that run on it.
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.body, t.key)
-  let prelude := st.queryPrelude
+  -- What checking each item reads of `st` that is the same for every
+  -- item, such as where the contracts of instances of generic functions
+  -- are checked (`lang::instance_site`): built once for all of them.
+  let sv := st.forSolving
+  let prelude := sv.prelude
   -- A query asked again, as some checks of a procedure share one, is
   -- answered once (`Reqs/Cli#solver-queries`), and one asked by an earlier
   -- run, from `--query-cache` (`Reqs/Cli#query-cache`).
@@ -937,7 +969,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         dumped.modify (· ++ s!"; {c.path}: query {k}\n{script}(check-sat)\n(reset)\n\n")
       else none
     let start ← IO.monoNanosNow
-    let r ← solveComp st prelude spec? sy c global kinds args.limits cache dump? body args.examples
+    let r ← solveComp sv spec? sy c global kinds args.limits cache dump? body args.examples
     let solved ← IO.monoNanosNow
     -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
     let tested? := if !(c.tested.minus c.enumerated).any then none else match spec? with
@@ -964,7 +996,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- The contracts of the uninterpreted functions first, though their items
   -- come last, since what applies them rests on them
   -- (`Fren.Core.contractsEvidence`).
-  let contractFns := st.contractFns
+  let contractFns := sv.contractFns
   let bodies := (todo.zip solving).filterMap fun ((c, global, _, body, _), ((results, _, _), _)) =>
     c.fn?.map fun f => (c.path, f, Fren.Core.CheckedItem.of body (c.vars.any (·.role == .output)) (global || c.global) global, results)
   for (f, e) in Fren.Core.contractsEvidence realizability.get? bodies do
@@ -985,6 +1017,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- Each of its results, with the caveats of the method that ran it.
     let mut item : Array (Fren.Core.CheckResult × List Fren.Core.Caveat) :=
       results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
+    let mut methods : Array Fren.Core.ProofMethod := results.map fun _ => .solver
     -- The evaluator's internal error, printed above, explains why the
     -- checks set to testing are missing from the summary.
     if let (.ok sp, some (ec, rep)) := (spec?, tested?) then
@@ -994,6 +1027,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       -- A witness found by testing is a real witness: only a proof check's
       -- pass by testing has the caveat `Random` (`Reqs/Evidence`).
       item := item ++ tested.map fun r => (r, Fren.Core.ownCaveatsOf r true)
+      methods := methods ++ tested.map fun _ => .random
     -- The checks set to enumeration (`Reqs/Check#checking-by-enumeration`).
     match enumerated? with
     | some (.error msg) =>
@@ -1004,6 +1038,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       for r in e.results do
         shown := shown ++ (← printResult args.paint files c r st.vias)
       item := item ++ e.results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
+      methods := methods ++ e.results.map fun _ => .enumerated
       if let some msg := e.boundedMsg? (subjectOf c global) c.tested then
         printDiag args.paint files { file := c.file, span := c.span, severity := .info, msg }
         shown := shown.push msg
@@ -1027,7 +1062,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     -- Shared with Lean, which reads the placeholders that the item uses
     -- instead (`Fren.Core.itemContracts`).
     let itemApplies := Fren.Core.itemContracts c.natApps fun app =>
-      contractFns.get? (((peelLets app).drop 1).takeWhile (· != ' ')).toString
+      contractFns.get? (headSymbol ((peelLets app).drop 1).toString)
     let functions := Fren.Core.functionPremises realizability.get? (Fren.Core.appliedOf item itemApplies) c.fn?
     let reported := Fren.Core.itemEvidence c.path what c.subsetInvariant?.isSome calls
       (item.map fun (r, own) => (r, r.site names assumptions c.fn?.isSome false (refinements.map (·.1)), own))
@@ -1051,7 +1086,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     all := all ++ final
     -- The tests compare each method's own verdicts, before the evidence of
     -- what they rest on changes how they are shown.
-    if let some r := record? then r.modify (· ++ item.map fun (x, _) => (key, x))
+    if let some r := record? then r.modify (· ++ (item.zip methods).map fun ((x, _), m) => (key, x, m))
   -- A fresh answer that contradicts `--verify-query-cache`'s
   -- (`cli::contradicts`), with no position: it is about the cache, not
   -- about a file.
@@ -1665,20 +1700,21 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   -- as its assumptions' consistency, is often one of the spec's
   -- (`Reqs/Cli#solver-queries`).
   let cache ← QueryCache.new
-  let prelude := st.queryPrelude
+  let sv := st.forSolving
+  let prelude := sv.prelude
   -- As `fren check` checks `c`: with the solver, and the checks set to
   -- testing by testing; with the internal errors, each at its place in `c`.
-  let solve (s : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+  let solve (sv : Solving) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
     -- A procedure's checks share the symbols of its spec.
-    let (rs, refuted, missing?) ← solveComp s prelude spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
+    let (rs, refuted, missing?) ← solveComp sv spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
       (examples := args.examples)
     let tested := if t.comp.tested.any then testing spec? t.comp t.global (testedKeeps t.comp t.kinds) else #[]
     let errors := refuted.map fun (r, msg) =>
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
     return (rs ++ tested, missing?.toArray.map (t.comp.span, ·) ++ errors)
   -- As `fren quickcheck` tests `c`.
-  let test (_ : State) (_ : Prelude) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+  let test (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
     -- A body has no checks that testing runs.
     pure (if t.body then #[] else testing spec? t.comp t.global fun _ => true, #[])
@@ -1698,13 +1734,13 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   -- The checks of one way of checking that kill the mutant `st'`, and
   -- whether some check was inconclusive on it, checking only the
   -- procedures it changes, and stopping at the first that kills it,
-  -- unless `probe?` is exhaustive;
-  -- `run s prelude spec? t` checks `t` of the spec `s`, whose prelude,
-  -- indexed, is `prelude`, and whose prelude's text is `preludeText'`.
-  -- Internal errors about the spec are printed as `fren check` prints
-  -- them, and those about the mutant given to `onMutant`.
-  let killedBy (base : Baseline) (st' : State) (prelude' : Prelude) (preludeText' : String) (spec'? : Except String Eval.Spec)
-      (run : State → Prelude → Except String Eval.Spec → Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
+  -- unless `probe?` is exhaustive; `run t` checks `t` of the spec, and
+  -- `run' t` checks `t` of the mutant, whose prelude's text is
+  -- `preludeText'`. Internal errors about the spec are printed as
+  -- `fren check` prints them, and those about the mutant given to
+  -- `onMutant`.
+  let killedBy (base : Baseline) (st' : State) (preludeText' : String)
+      (run run' : Mutate.Todo → IO (Array Fren.Core.CheckResult × Array (Span × Msg)))
       (onMutant : Msg → IO Unit) : IO (Array (String × String) × Bool) := do
     let exhaustive := probe?.any (·.exhaustive)
     let mut killers := #[]
@@ -1715,14 +1751,14 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       let rs ← match (← base.get)[t.key]? with
         | some rs => pure rs
         | none =>
-          let (rs, errors) ← run st prelude spec? t₀
+          let (rs, errors) ← run t₀
           for (span, msg) in errors do
             printDiag p files { file := t₀.comp.file, span, msg }
             shown.modify (·.push msg)
             sevs.modify (·.push .error)
           base.modify (·.insert t.key rs)
           pure rs
-      let (rs', errors) ← run st' prelude' spec'? t
+      let (rs', errors) ← run' t
       for (_, msg) in errors do onMutant msg
       let rs := Mutate.keyed rs
       let rs' := Mutate.keyed rs'
@@ -1752,11 +1788,13 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       if let .error e := spec'? then
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
-      let prelude' := st'.queryPrelude
       let preludeText' := st'.preludeText
-      let (killers₁, inconclusive₁) ← if args.checker.solves then killedBy solved st' prelude' preludeText' spec'? solve onMutant
+      -- The mutant's maps and prelude for checking (`State.forSolving`),
+      -- built once for all of its items.
+      let (killers₁, inconclusive₁) ← if args.checker.solves then
+          killedBy solved st' preludeText' (solve sv spec?) (solve st'.forSolving spec'?) onMutant
         else pure (#[], false)
-      let (killers₂, inconclusive₂) ← if args.checker.tests then killedBy tested st' prelude' preludeText' spec'? test onMutant
+      let (killers₂, inconclusive₂) ← if args.checker.tests then killedBy tested st' preludeText' (test spec?) (test spec'?) onMutant
         else pure (#[], false)
       let bySolver := !killers₁.isEmpty
       let byTesting := !killers₂.isEmpty

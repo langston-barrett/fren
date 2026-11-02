@@ -326,6 +326,13 @@ def evidenceOf? : String → Option Evidence
   | "enumerated+random" => some { tested := true, enumerated := true }
   | _ => none
 
+/-- The evidence of a check that the source can set: `override?`, that of
+`fren check --evidence`, if it is given, and otherwise `source?`, that of
+the `set_option fren.evidence` in effect, or the solver if there is none
+(`cli::evidence_in_effect`). -/
+def evidenceInEffect (override? source? : Option Evidence) : Evidence :=
+  override?.getD (source?.getD {})
+
 /-- The value of `set_option fren.evidence`: whether it is testing, or
 `none` if the value is invalid. -/
 def evidenceTested? (v : String) : Option Bool := (evidenceOf? v).map (·.tested)
@@ -986,5 +993,41 @@ which only such checks give the caveat `Random` in Lean, or where it fails,
 and is not itself one that Lean stands for (`own` has `Random`). -/
 def hostedReported (caveats : List Caveat) (failed : Bool) (ownRandom : Bool) : Bool :=
   !caveats.contains .random || (failed && !ownRandom)
+
+/-! ### Methods agree (`check::methods_agree`) -/
+
+/-- What a method's own verdict on a check contributes to comparing it
+with the others' (`check::contribution`): a counterexample, a pass that is
+a decision, a pass that holds only up to the size, or nothing. A one-sided
+method contributes only what its cell allows (`check::method_cell`):
+random testing's "no counterexample found" for a check that passes on a
+proof is nothing, and so is a failure it could never find of one that
+passes on a witness. -/
+inductive Contribution where
+  | refuted
+  | passed
+  | bounded
+  | nothing
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- What `method`'s verdict `verdict` on a check of kind `kind`
+contributes; `bounded` is whether a pass of enumeration's holds only up to
+the size (`check::methods_agree`). -/
+def contributionOf (kind : CheckKind) (method : ProofMethod) (verdict : Verdict) (bounded : Bool) : Contribution :=
+  let refutesOnly := method == .random && kind.proof
+  let confirmsOnly := method == .random && !kind.proof
+  match verdict with
+  | .fail => if confirmsOnly then .nothing else .refuted
+  | .pass => if refutesOnly then .nothing else if bounded then .bounded else .passed
+  | .inconclusive => .nothing
+
+/-- Whether the verdicts of the solver, enumeration and random testing on
+one check contradict each other (`check::methods_agree`): one contributes
+a counterexample and another a pass that is a decision. A method that did
+not run the check gives it `inconclusive`. -/
+def methodsContradict (kind : CheckKind) (solver enumerated : Verdict) (bounded : Bool) (random : Verdict) : Bool :=
+  let cs := [contributionOf kind .solver solver false, contributionOf kind .enumerated enumerated bounded,
+    contributionOf kind .random random false]
+  cs.contains .refuted && cs.contains .passed
 
 end Fren.Core

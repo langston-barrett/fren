@@ -513,9 +513,11 @@ pub proc generic_contract(
 }
 ```
 
-A generic defined function's body applies no uninterpreted function,
-generic or not (`F0331`), so that its values are fully known (see
-[Defined functions](Items.md#defined-functions)), but its contract may
+A generic defined function may be a [structural
+recursion](Recursion.md#generic-recursion), as a function that is not
+generic may. Its body applies no uninterpreted function, generic or not
+(`F0331`), so that its values are fully known (see [Defined
+functions](Items.md#defined-functions)), but its contract may
 apply one: there, at its own type parameters, the generic function is the
 instance at their sorts, for the checks of the contract, and at each of
 its instances, at that instance. A component that applies a generic
@@ -567,6 +569,41 @@ contract, is the unspecified value of the instance's type: `q[0]` of an
 empty `Seq<T>`, at `T := Nm`, is `[][0]` of a `Seq<Nm>`, the value that an
 index out of range in the application's item has, and enumeration reads it
 from that type's hidden slot (see [Searching](../Check.md#searching)).
+
+`lang::applied_instance` states which instance an application within a
+generic function applies at one of the function's instances: the one whose
+type arguments are the application's own, as the function has them, over
+its type parameters, each instantiated (`lang::instantiation`) with the
+instance's. So an application of the function itself, at its own type
+parameters, applies the same instance, which is how a [generic structural
+recursion](Recursion.md#generic-recursion) recurses at its instance. Both
+front ends' instances of generic functions, and `Core.instancesThrough`,
+take them from `Core.appliedInstance`, which is `Core.instantiatedArgs`,
+bound to it with an `impl`, over the application's type arguments with the
+function's type parameters as `Ty.param` (`Ty.asParams`). The Req is a
+bounded check: it states the rule, and the `impl` proves it, for an
+application with three type arguments at most, since Fren cannot yet define
+a sequence of unbounded length element by element; `Core.instantiatedArgs`
+is the same map for any number:
+
+```fren
+-- `inner.len > 0` rather than `inner != []`, which compares sequences of
+-- an abstract type, whose equality Lean does not decide.
+set_option fren.lint.undecidable "allow" in
+set_option fren.lint.length_zero "allow" in
+pub proc applied_instance(
+    inner: Seq<Ty>,      -- the application's type arguments, over the function's type parameters
+    outer: Seq<Ty>,      -- the type arguments of the function's instance
+): (det applied: Seq<Ty>) {
+    assume few: inner.len <= 3
+
+    out applied := (if inner.len > 0 then [instantiated(inner[0], outer)] else [])
+        ++ (if inner.len > 1 then [instantiated(inner[1], outer)] else [])
+        ++ (if inner.len > 2 then [instantiated(inner[2], outer)] else [])
+
+    expect each: applied.len = inner.len
+}
+```
 
 An application of a generic function without a body is of its instance's
 unknown function:

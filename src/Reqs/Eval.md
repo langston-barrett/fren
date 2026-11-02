@@ -52,7 +52,12 @@ assumptions, an output's among the guarantees, and a call's input's
 among the assumptions of the called procedure, which the call
 check asks of the arguments. A value is of a type if it matches the
 type's pattern, and so do all its fields, payloads and elements, at every
-depth, and each `Nat` within it is at least 0. An uninterpreted function's
+depth, and each `Nat` within it is at least 0. That includes the payloads
+of a recursive enumeration, which bring their constraints to the solver
+only where a query reads them ([Subset
+types](Lang/SubsetTypes.md#static-types-assumptions-and-obligations)): a
+value with a payload outside its type at any depth is no value of the
+enumeration, read or not. An uninterpreted function's
 values are of its result type. In `fren eval`, such a constraint is shown
 as `type x`, after the variable it is about. In the notation of
 [Procedures](Lang/Procedures.md#meaning), a behaviour is *admissible* if

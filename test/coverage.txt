@@ -1,88 +1,27 @@
-# The declarations of FrenCore, Fren and FrenCli that `lake test` does not
-# run (`Reqs/dev/Testing#coverage`). One that is never meant to run says why,
-# after ` -- `. `fren_coverage` fails on a counted declaration that does not
-# run and is not listed, and warns of a listed one that runs or is no longer
-# counted, naming the line to remove.
-Fren.Core.CheckResult.isRedundant
-Fren.Core.Enumeration.Shape.count
+# The declarations of FrenCore, Fren and FrenCli that the executables can
+# run but `lake test` does not (`Reqs/dev/Testing#coverage`). One that is
+# never meant to run says why, after ` -- `. `fren_coverage` fails on a
+# counted declaration that a compiled entry point reaches, that does not
+# run and is not listed, and warns of a listed one that runs, that nothing
+# compiled reaches, or that is no longer counted, naming the line to
+# remove. One that no entry point reaches (used only by proofs, `#guard`s
+# or `#eval`s, inlined into its callers, or replaced by `@[csimp]`) needs no
+# line.
 Fren.Core.Enumeration.Shape.random.go
 Fren.Core.Enumeration.Shapes.random
-Fren.Core.Enumeration.Space.levelOf
 Fren.Core.Enumeration.charSize
-Fren.Core.Enumeration.methodOf
 Fren.Core.Enumeration.notEnumerable
 Fren.Core.Enumeration.notEnumerableWhy
-Fren.Core.Ex.eval
-Fren.Core.Ex.kids
-Fren.Core.Ex.pick
-Fren.Core.Ex.simp
-Fren.Core.Ex.simp.finish
-Fren.Core.Ex.withKids
-Fren.Core.Forced.blanks
-Fren.Core.HoParam.mentions
-Fren.Core.Nodes.toList
 Fren.Core.Pat.matchesVal
-Fren.Core.PatTy.kind
-Fren.Core.Pick.get
-Fren.Core.Re.mat
+Fren.Core.Re.mat -- the reference of `Re.matchD`, which runs in its place (`Re.mat_eq_matchD`, `@[csimp]`)
 Fren.Core.Re.matchD
 Fren.Core.Re.matches
-Fren.Core.STerm.binds?
-Fren.Core.Shape.build
-Fren.Core.Ty.Flat.unflat
-Fren.Core.Ty.FlatList.unflat
-Fren.Core.Ty.asAbstract
-Fren.Core.Ty.node
-Fren.Core.Ty.sameShape
-Fren.Core.Ty.withParts
-Fren.Core.Val.sameType
-Fren.Core.applicationAccepted
-Fren.Core.argumentAccepted
-Fren.Core.binV
-Fren.Core.bindingOk
-Fren.Core.bindingsAccepted
-Fren.Core.checkBindings
-Fren.Core.cmpV
-Fren.Core.doubleNeg
-Fren.Core.editDistance
-Fren.Core.effectiveLevel
-Fren.Core.elementInstances
-Fren.Core.elementTuples
-Fren.Core.evidenceEnumerated?
-Fren.Core.firstCase
-Fren.Core.functionBodyAccepted
-Fren.Core.genericFunctionAccepted
-Fren.Core.ifsSameCond
-Fren.Core.indexAfterUse
-Fren.Core.inferArgs
-Fren.Core.inputsOf
-Fren.Core.intervalIndex?
-Fren.Core.intervalsHold
-Fren.Core.iteV
-Fren.Core.lineAt
-Fren.Core.memberText
-Fren.Core.narrowingMsg
-Fren.Core.negV
-Fren.Core.newtypeUnbounded
-Fren.Core.noEffectReplace
+Fren.Core.firstFree -- runs only when a goal's bound name is already a symbol of the query, which no spec can make since bound names became `x#k` (#659)
+Fren.Core.goalCandidate -- runs only when a goal's bound name is already a symbol of the query, which no spec can make since bound names became `x#k` (#659)
 Fren.Core.notAFunctionMsg
-Fren.Core.notV
-Fren.Core.patternFinite
-Fren.Core.projAt
-Fren.Core.project
 Fren.Core.quantifiedQueryReason
-Fren.Core.quantifierBinder
-Fren.Core.rangeMatches
-Fren.Core.redundantSlicing
-Fren.Core.siteHolds
 Fren.Core.solverTimeoutMs -- runs only in fren_fuzz_frontends to track time in timed-out queries, outside lake test
-Fren.Core.subsetPlaceDecidable
-Fren.Core.subsetWidening
-Fren.Core.trustedAccepted
 Fren.Core.unknownSetMethodMsg
-Fren.Core.valueAlt?
-Fren.Core.whenV
-Fren.Core.wildcardInOr
 Fren.Enum.index
 Fren.Enum.iteLazy
 Fren.Enum.iteValue
@@ -145,51 +84,22 @@ Fren.Str.lit
 Fren.Str.matches
 Fren.casesOnArm
 Fren.contractProofOf
-Fren.contractRecorded
 Fren.contractStatement
 Fren.elabInterp
 Fren.elabPrelude
-Fren.enumDecl
 Fren.interpAccepted
-Fren.isEmptySeq
-Fren.isVariant
 Fren.memberMentions
-Fren.mentionsOutput
 Fren.natResult
-Fren.numberOperand
-Fren.paramVars
 Fren.patTerm
 Fren.proveContract
-Fren.resolveUsePath
 Fren.unreadableValue
-Fren.varType
-FrenCli.Eval.Ex.isInt
-FrenCli.Eval.Frame.prepend -- used only in the proofs of `Frame.toList_prepend`, `frameFrom_eq` and `paramFrame_eq`; the evaluator never calls it
-FrenCli.Eval.Frame.toList -- used only in the proofs of `Frame.find?_eq`, `Frame.get_eq` and `paramFrame_eq`; the evaluator never calls it
-FrenCli.Eval.Pat.matchInto
-FrenCli.Eval.Pat.matchInto.payload
 FrenCli.Eval.Spec.fits
 FrenCli.Eval.Spec.quickGlobal
 FrenCli.Eval.confirmedVerdict
-FrenCli.Eval.conflictOf
 FrenCli.Eval.corePatSame
-FrenCli.Eval.firstCaseIn
-FrenCli.Eval.kleeneAnd
-FrenCli.Eval.kleeneOr
-FrenCli.Eval.notV
-FrenCli.Eval.paramFrame
-FrenCli.Eval.resolveComp
-FrenCli.Eval.resumesAt
-FrenCli.Eval.smallInterleaved -- the reference of the `#guard` after `interleavedCounts` and of `FrenTest.SmallValues`'s `#eval`, which run in Lean's interpreter when the modules build; `smallValuesMemo` no longer calls it
 FrenCli.Fm.subject? -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
-FrenCli.Ident.isPatternSeg
 FrenCli.Ident.pattern?
-FrenCli.Parser.isNames
-FrenCli.Parser.patternNames
-FrenCli.Parser.srcText
 FrenCli.Pattern.decode
-FrenCli.Pattern.encode
-FrenCli.Pattern.seg
 FrenCli.Quote.antiquotations
 FrenCli.Quote.body.formatter
 FrenCli.Quote.body.parenthesizer
@@ -216,24 +126,10 @@ FrenCli.Quote.textTerm
 FrenCli.Quote.treeOf
 FrenCli.Refutation.about -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
 FrenCli.Refutation.msg -- runs only when the evaluator refutes a model of the solver, a bug in Fren or cvc5
-FrenCli.elabTy
 FrenCli.elaborate
-FrenCli.evidenceInEffect
-FrenCli.instSameArray
-FrenCli.instSameHashMap
-FrenCli.instSameHashSet
-FrenCli.instSameList
-FrenCli.instSameNameMap
-FrenCli.instSameOfBEq
-FrenCli.instSameOption
-FrenCli.instSameProd
 FrenCli.internal
-FrenCli.isVariant
 FrenCli.patSmt
-FrenCli.sameCheck
-FrenCli.termsIn
 FrenCli.typeNames
-FrenCli.varTy
 _private.FrenCli.Parse.0.FrenCli.atom
 _private.FrenCli.Parse.0.FrenCli.atomsOf
 _private.FrenCli.Parse.0.FrenCli.decodeAt
@@ -242,7 +138,4 @@ _private.FrenCli.Parse.0.FrenCli.nextInt
 _private.FrenCli.Parse.0.FrenCli.nextNat
 _private.FrenCli.Parse.0.FrenCli.nextSegs
 _private.FrenCli.Parse.0.FrenCli.nextSpan
-_private.FrenCli.Parse.0.FrenCli.segAtoms
-_private.FrenCli.Parse.0.FrenCli.spanAtoms
-_private.FrenCore.SubsetTypes.0.Fren.Core.guardShapes -- a fixture of the `#guard`s on `PTy.invariantFree`, which run in Lean's interpreter when the module builds
 main -- the entry point of `fren`, which only calls `FrenCli.run`; the tests call `run` itself

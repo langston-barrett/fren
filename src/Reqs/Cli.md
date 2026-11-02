@@ -2,7 +2,7 @@
 
 ```
 fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
-    [--seed N] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
+    [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
 fren fix [--check] [--fmt] [--only LINT]... [--skip LINT]... [--ignore GLOB]... [-A|-W|-D|-F LINT]... FILE...
@@ -42,6 +42,7 @@ installation. It is built by `lake build fren`.
 | `--jobs N` | `check` and `quickcheck`: how many procedures to check or test at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--timings` | `check`: report how long each procedure's checks took; see [Timings](#timings) |
+| `--evidence METHOD` | `check`: check every check that `set_option fren.evidence` could set by `METHOD`, in place of the spec's own settings; see [Evidence](#evidence) |
 | `--query-cache DIR` | `check`: keep the solver's answers in `DIR`, and answer the queries asked before from it; see [Query cache](#query-cache) |
 | `--verify-query-cache DIR` | `check`: fail if the solver's answer contradicts one kept in `DIR`; see [Query cache](#query-cache) |
 | `--tests GLOB` | `trace`: scan the matching files for markers; may be repeated |
@@ -904,6 +905,43 @@ share the machine, so each time is longer than it would be alone, and
 the total is more than the run's wall-clock time; `--jobs 1` times each
 alone. Only these lines differ between two runs that differ only in
 `--timings`.
+
+## Evidence
+
+`fren check --evidence METHOD` checks the spec as though `set_option
+fren.evidence "METHOD"` were set before every procedure, global
+expectation and [refinement](Lang/Refinement.md), and before every member
+that a setting can precede, in place of the spec's own settings (see
+[Checking by testing](Check.md#checking-by-testing)). `METHOD` is one of
+the values of `fren.evidence`: `solver`, `random`, `enumerated` or
+`enumerated+random`; any other is an error of the arguments, and nothing is
+checked. The spec's own settings are still read, and an invalid or
+misplaced one is still an error (`F0214`, `F0215`, `F0216`), but none of
+them sets a check's evidence. The checks of functions and constants stay
+the solver's, as do those of values given where subset types are declared
+(`check::method_run`), and a method that does not run a check still skips
+it, as it says (`F0654`). Enumeration's size is the one that the spec sets,
+or the default. The option is how the test job `methodsAgree` runs every
+check under every method that applies, to compare them
+([Agreement of methods](Methods.md#agreement-of-methods)).
+`cli::evidence_in_effect` states which evidence a check has:
+
+```fren
+pub proc evidence_in_effect(
+    given?,                  -- `--evidence` is given
+    given_random?,           -- it sets random testing
+    given_enumerated?,       -- it sets enumeration
+    set?,                    -- a `set_option fren.evidence` is in effect for the check
+    set_random?,             -- it sets random testing
+    set_enumerated?,         -- it sets enumeration
+): (det random?, det enumerated?) {
+    ensure random_rule: random? iff (if given? then given_random? else set? and set_random?)
+    ensure enumerated_rule: enumerated? iff (if given? then given_enumerated? else set? and set_enumerated?)
+
+    expect option_first: when given?, random? = given_random? and enumerated? = given_enumerated?
+    expect solver_default: when not given? and not set?, not random? and not enumerated?
+}
+```
 
 ## Exit status
 

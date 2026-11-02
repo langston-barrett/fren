@@ -93,6 +93,71 @@ def escapeLine (s : String) : String :=
 def unescapeLine (s : String) : String :=
   String.ofList (unescapeChars [] s.toList)
 
+/-! `escapeLine`, `unescapeLine` and `textLines` as they run: a character at
+a time onto a string, rather than through a list of characters, which takes
+a cell for each. Each lookup in the cache escapes its script, of thousands
+of characters, to hash its key, and reads an entry's lines back. -/
+
+/-- `acc` with `c` escaped after it (`escapeChar`). -/
+def escapeOnto (acc : String) (c : Char) : String :=
+  match c with
+  | '\\' => acc ++ "\\\\"
+  | '\n' => acc ++ "\\n"
+  | c => acc.push c
+
+theorem toList_escapeOnto (acc : String) (c : Char) : (escapeOnto acc c).toList = acc.toList ++ escapeChar c := by
+  unfold escapeOnto escapeChar; split <;> simp
+
+theorem toList_foldl_escapeOnto : (l : List Char) → (acc : String) →
+    (l.foldl escapeOnto acc).toList = acc.toList ++ l.flatMap escapeChar
+  | [], _ => by simp
+  | c :: l, acc => by simp [toList_foldl_escapeOnto l, toList_escapeOnto]
+
+def escapeLineImpl (s : String) : String := s.foldl escapeOnto ""
+
+@[csimp] theorem escapeLine_eq_impl : @escapeLine = @escapeLineImpl := by
+  funext s
+  apply String.toList_injective
+  simp [escapeLine, escapeLineImpl, toList_foldl_escapeOnto]
+
+/-- `unescapeChars`' step: `acc`, and whether a `\` is pending, after `c`. -/
+def unescapeStep (st : String × Bool) (c : Char) : String × Bool :=
+  if st.2 then (st.1.push (if c == 'n' then '\n' else c), false)
+  else if c == '\\' then (st.1, true) else (st.1.push c, false)
+
+theorem unescapeStep_backslash (acc : String) : unescapeStep (acc, false) '\\' = (acc, true) := rfl
+
+theorem unescapeStep_pending (acc : String) (c : Char) :
+    unescapeStep (acc, true) c = (acc.push (if c == 'n' then '\n' else c), false) := rfl
+
+theorem unescapeStep_other {c : Char} (h : c ≠ '\\') (acc : String) :
+    unescapeStep (acc, false) c = (acc.push c, false) := by
+  simp [unescapeStep, h]
+
+theorem toList_foldl_unescapeStep : (l : List Char) → (acc : String) →
+    (l.foldl unescapeStep (acc, false)).1.toList = unescapeChars acc.toList.reverse l
+  | [], _ => by simp [unescapeChars]
+  | c :: l, acc => by
+    by_cases h : c = '\\'
+    · subst h
+      cases l with
+      | nil => simp [unescapeStep_backslash, unescapeChars]
+      | cons d l =>
+        rw [List.foldl_cons, List.foldl_cons, unescapeStep_backslash, unescapeStep_pending, toList_foldl_unescapeStep l]
+        simp [unescapeChars]
+    · rw [List.foldl_cons, unescapeStep_other h, toList_foldl_unescapeStep l]
+      cases l with
+      | nil => unfold unescapeChars; split <;> simp_all [unescapeChars]
+      | cons d l => conv => rhs; unfold unescapeChars
+                    split <;> simp_all
+
+def unescapeLineImpl (s : String) : String := (s.foldl unescapeStep ("", false)).1
+
+@[csimp] theorem unescapeLine_eq_impl : @unescapeLine = @unescapeLineImpl := by
+  funext s
+  apply String.toList_injective
+  simp [unescapeLine, unescapeLineImpl, toList_foldl_unescapeStep]
+
 /-- The rest of `s` after `p`, if `s` starts with it. -/
 def afterPrefix? (p s : String) : Option String :=
   go p.toList s.toList
@@ -106,6 +171,34 @@ where
 has an empty last line. -/
 def textLines (s : String) : List String :=
   (s.toList.splitOn '\n').map String.ofList
+
+/-- `textLines`' step: the lines ended, and the line so far, after `c`. -/
+def textLinesStep (st : Array String × String) (c : Char) : Array String × String :=
+  if c == '\n' then (st.1.push st.2, "") else (st.1, st.2.push c)
+
+theorem foldl_textLinesStep : (l : List Char) → (ls : Array String) → (cur : String) →
+    (let r := l.foldl textLinesStep (ls, cur); (r.1.push r.2).toList) =
+      ls.toList ++ (l.splitOnPPrepend (· == '\n') cur.toList.reverse).map String.ofList
+  | [], ls, cur => by simp
+  | c :: l, ls, cur => by
+    by_cases h : c = '\n'
+    · subst h
+      simp only [List.foldl_cons, textLinesStep, if_true, beq_self_eq_true]
+      rw [foldl_textLinesStep l, List.splitOnPPrepend_cons_pos (by simp)]
+      simp
+    · simp only [List.foldl_cons, textLinesStep, beq_iff_eq, h, if_false]
+      rw [foldl_textLinesStep l, List.splitOnPPrepend_cons_neg (by simp [h])]
+      simp
+
+def textLinesImpl (s : String) : List String :=
+  let r := s.foldl textLinesStep (#[], "")
+  (r.1.push r.2).toList
+
+@[csimp] theorem textLines_eq_impl : @textLines = @textLinesImpl := by
+  funext s
+  simp only [textLines, textLinesImpl, String.foldl_eq_foldl_toList]
+  rw [foldl_textLinesStep]
+  simp [List.splitOn]
 
 /-- A component of a name: its text, or its number. -/
 inductive NamePart where

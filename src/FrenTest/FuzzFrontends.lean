@@ -1406,6 +1406,82 @@ def primedNames : R String := do
       s!"pub proc zpk(zm': Zpe, zm: Zpf): (det zo?) \{\n    ensure r: zo? iff {rel}\n    expect e: {exp}\n}\n"
   return out
 
+/-- Generic structural recursions (`Reqs/Lang/Recursion#generic-recursion`):
+over a generic list and a tree with two type parameters, with an `Int`, a
+`Nat`, a `Bool` and a `Set<T>` result, with a contract that holds by
+induction or fails, nested (one applying another at its own type parameter
+and at a list of it), applied in a closure given to a generic higher-order
+function and in a generic function that is not recursive, and a procedure
+that applies them at two instances, of `Int`, `Bool`, `String`, `E` if the
+spec has it, or `Option<Int>`, at constant arguments too. Now and then, at
+`Bool` or `E`, the procedure is enumerated, with one list of that type as
+its only input. A check may fail or be inconclusive, but nothing here is a
+static error. -/
+def genericRecursion (sc : WScope) : R String := do
+  let post ← pick #["r >= 0", "r >= 1", "r = gr_len(l)", "r <= gr_len(l)"]
+  let mut out := "pub enum Gl<T> { Nil, Cons(T, Gl<T>) }\n" ++
+    "pub enum Gt<A, B> { Leaf(A), Node(B, Gt<A, B>, Gt<A, B>) }\n" ++
+    "pub fn gr_len<T>(l: Gl<T>): Int := match l { Gl::Nil => 0, Gl::Cons(_, r) => 1 + gr_len(r) }\n" ++
+    "pub fn gr_nlen<T>(l: Gl<T>): Nat := match l { Gl::Nil => 0, Gl::Cons(_, r) => 1 + gr_nlen(r) }\n" ++
+    "pub fn gr_has?<T>(l: Gl<T>, x: T) := match l { Gl::Nil => false, Gl::Cons(y, r) => y = x or gr_has?(r, x) }\n" ++
+    "pub fn gr_elems<T>(l: Gl<T>): Set<T> := match l { Gl::Nil => {}, Gl::Cons(y, r) => {y} union gr_elems(r) }\n" ++
+    "pub fn gr_count<T>(l: Gl<T>): (r: Int) {\n    out r := match l { Gl::Nil => 0, Gl::Cons(_, t) => 1 + gr_count(t) }\n" ++
+    s!"    ensure e: {post}\n}\n" ++
+    "pub fn gr_total<T>(ls: Gl<Gl<T>>): Int := match ls { Gl::Nil => 0, Gl::Cons(l, r) => gr_len(l) + gr_total(r) }\n" ++
+    "pub fn gr_size<A, B>(t: Gt<A, B>): (r: Int) {\n" ++
+    "    out r := match t { Gt::Leaf(_) => 1, Gt::Node(_, a, b) => 1 + gr_size(a) + gr_size(b) }\n    ensure pos: r >= 1\n}\n" ++
+    "pub fn gr_leaves<A, B>(t: Gt<A, B>): Set<A> := match t {\n" ++
+    "    Gt::Leaf(x) => {x},\n    Gt::Node(_, a, b) => gr_leaves(a) union gr_leaves(b),\n}\n" ++
+    "pub fn gr_holds?<T>(l: Gl<T>, p: fn(Gl<T>) -> Bool) := p(l)\n" ++
+    "pub fn gr_nonempty?<T>(l: Gl<T>) := gr_len(l) > 0\n"
+  let tys := #[("Int", "1", "2"), ("Bool", "true", "false"), ("String", "\"a\"", "\"b\""),
+    ("Option<Int>", "Option::Some(1)", "Option::Some(0)")] ++
+    (if sc.nVariants > 0 then #[("E", "E::V0", "E::V1")] else #[])
+  let (ty, a, b) ← pick tys
+  let (ty2, _, _) ← pick tys
+  let enumerated := (ty == "Bool" || ty == "E") && (← chance 40)
+  let cons (v : String) (l : String) := s!"Gl::Cons({v}, {l})"
+  let lst : R String := do
+    if enumerated then pick #["l", cons a "l", cons a "Gl::Nil"]
+    else pick #["l", "m", cons a "l", cons b (cons a "Gl::Nil"), cons b "Gl::Nil"]
+  let mut body := ""
+  for k in [0:(← below 4) + 2] do
+    let e ← match ← below 14 with
+      | 0 => pure s!"gr_len({← lst}) >= 0"
+      | 1 => pure s!"when l is Gl::Cons(_, r), gr_len(l) = 1 + gr_len(r)"
+      | 2 => pure s!"gr_nlen({← lst}) {← pick #[">=", "<", "="]} {← below 3}"
+      | 3 => pure s!"gr_has?({cons a "l"}, {a})"
+      | 4 => pure s!"gr_has?({← lst}, {b}) {← pick #["iff", "or"]} {b} in gr_elems({← lst})"
+      | 5 => pure s!"gr_count({← lst}) {← pick #[">=", ">", "="]} {← pick #["0", "gr_len(l)"]}"
+      -- The same list on both sides: a check that holds, whatever model
+      -- the solver gives where it needs more than one step (#634).
+      | 6 =>
+        let x ← lst
+        pure s!"gr_total({cons x "Gl::Nil"}) = gr_len({x})"
+      | 7 => pure s!"gr_holds?({← lst}, |z| gr_len(z) >= {← below 2})"
+      | 8 => pure s!"when l is Gl::Cons(_, _), gr_nonempty?(l)"
+      | 9 => pure s!"gr_len({cons a "Gl::Nil"}) = 1 or l = Gl::Nil"
+      | 10 =>
+        if enumerated then pure s!"gr_elems(l) subset gr_elems({cons a "l"})"
+        else pure s!"gr_size(t) >= {← pick #["1", "2"]}"
+      | 11 =>
+        if enumerated then pure s!"gr_len(l) = gr_count(l)"
+        else
+          let x := if ty == "Bool" then "x?" else "x"
+          pure s!"when t is Gt::Leaf({x}), gr_leaves(t) = \{{x}}"
+      | 12 =>
+        if enumerated then pure s!"not gr_has?(Gl::Nil, {a})"
+        else pure s!"gr_len(w) >= 0 and gr_count(w) {← pick #[">=", "<"]} 0"
+      | _ => pure s!"gr_elems({← lst}) = gr_elems({← lst})"
+    body := body ++ s!"    expect gr{k}: {e}\n"
+  -- Every input mentioned, so that none is unused.
+  body := body ++ (if enumerated then "    expect grm: gr_len(l) >= 0\n"
+    else "    expect grm: gr_len(l) + gr_len(m) + gr_len(w) >= 0 and gr_size(t) >= 1\n")
+  if enumerated then
+    return out ++ "set_option fren.enumeration.size 3 in\nset_option fren.evidence \"enumerated\" in\n" ++
+      s!"pub proc gr_apps(l: Gl<{ty}>) \{\n{body}}\n"
+  return out ++ s!"pub proc gr_apps(l: Gl<{ty}>, m: Gl<{ty}>, t: Gt<{ty}, {ty2}>, w: Gl<{ty2}>) \{\n{body}}\n"
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1635,6 +1711,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- Variables named as bound names' and copies' symbols were, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← primedNames)
+  -- Generic structural recursions, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← genericRecursion sc)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)

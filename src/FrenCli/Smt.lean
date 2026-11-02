@@ -204,6 +204,32 @@ payloads bring facts, which every front end of the CLI asks with. -/
 def State.queryPrelude (st : State) : Prelude :=
   Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
 
+/-- A `State`, `st`, with what checking each of its items reads of it that
+is the same for every item (`FrenCli.solveComp`), built once for all of
+them (`State.forSolving`) rather than for each. Each field is, by its
+proof, what the `State` function of its name gives of `st`, and
+`prelude` what `State.queryPrelude` gives, so none can be another
+`State`'s, such as a mutant's. -/
+structure Solving where
+  st : State
+  appFuns : Std.HashMap String (Bool × Contract)
+  contractFns : Std.HashMap String Lean.Name
+  recursiveSyms : Std.HashMap String Lean.Name
+  instanceSites : Array (Fren.Core.InstanceSite × Lean.Name × Array Fren.Core.Ty)
+  prelude : Prelude
+  appFuns_eq : appFuns = st.appFuns
+  contractFns_eq : contractFns = st.contractFns
+  recursiveSyms_eq : recursiveSyms = st.recursiveSyms
+  instanceSites_eq : instanceSites = st.instanceSites
+  prelude_eq : prelude = st.queryPrelude
+
+/-- `s`, with its maps and prelude for checking its items, each computed
+once. -/
+def State.forSolving (s : State) : Solving :=
+  { st := s, appFuns := s.appFuns, contractFns := s.contractFns, recursiveSyms := s.recursiveSyms
+    instanceSites := s.instanceSites, prelude := s.queryPrelude, appFuns_eq := rfl, contractFns_eq := rfl
+    recursiveSyms_eq := rfl, instanceSites_eq := rfl, prelude_eq := rfl }
+
 /-- The positions of the declarations that a script whose quoted symbols
 are `syms` needs: those of its symbols, and of theirs in turn, in the
 order of the prelude.
@@ -812,6 +838,13 @@ partial def splitLets (t : String) : String × String × String :=
   let closes := (t.toList.reverse.takeWhile (· == ')')).length - (inner.toList.reverse.takeWhile (· == ')')).length
   ((t.take (n - closes)).toString, inner, (t.takeEnd closes).toString)
 
+/-- The symbol at the start of `s`, the inside of an SMT-LIB application:
+a quoted one whole, which may have spaces, as an instance of a generic
+function with two type arguments, `|::f<Int, Bool>|`, does. -/
+def headSymbol (s : String) : String :=
+  if s.startsWith "|" then "|" ++ ((s.drop 1).takeWhile (· != '|')).toString ++ "|"
+  else (s.takeWhile (· != ' ')).toString
+
 /-- The facts that the application `app`, of an uninterpreted function into
 `Nat`, into a subset type or with postconditions, or a read of a
 recursive enumeration's payload of a subset type, brings
@@ -825,7 +858,7 @@ def appFactsOf (funs : Std.HashMap String (Bool × Contract)) (types : Std.HashM
     Array (Lean.Name × String) :=
   let (pre, inner, post) := splitLets app
   -- `(SYM ARGS)`.
-  let head := ((inner.drop 1).takeWhile (· != ' ')).toString
+  let head := headSymbol (inner.drop 1).toString
   let args := ((inner.drop (head.length + 2)).dropEnd 1).toString
   let (nat, k) := funs.getD head (false, {})
   let implies (ps : Array String) (q : String) := if ps.isEmpty then q else s!"(=> {conj ps} {q})"
@@ -876,7 +909,7 @@ partial def factAppsIn (heads : Std.HashSet String) (e : SeqElems.SExpr) (bound 
 /-- Whether a query of the formulas `fs` has a quantifier over elements to
 expand, directly or in a `define-fun` of `marked` that it applies. -/
 def needsExpansion (marked : Std.HashMap String (Array String × SeqElems.SExpr)) (fs : Array String) : Bool :=
-  fs.any fun f => SeqElems.hasMarker f || marked.keys.any fun g => (f.splitOn g).length > 1
+  fs.any fun f => SeqElems.hasMarker f || marked.keys.any (Fren.Core.occursIn · f)
 
 /-- The answer to the query of `hyps` and `goal`, with its quantifiers over
 elements expanded (`SeqElems.expandQuery`), asked by `ask` of its
@@ -1070,7 +1103,7 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- (`Fren.Core.appFactsWith`).
     let fnOf (app : String) : Option Lean.Name :=
       let inner := (splitLets app).2.1
-      contractFns.get? ((inner.drop 1).takeWhile (· != ' ')).toString
+      contractFns.get? (headSymbol (inner.drop 1).toString)
     -- And those of the applications in those facts, once their clauses
     -- are unfolded, of the functions whose applications bring facts
     -- (`Fren.Core.closeApps`).

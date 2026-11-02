@@ -2130,7 +2130,7 @@ def checkResultsOf (files : Array String) :
   let record ← IO.mkRef #[]
   let (_, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files } (some record))
   let byItem := (← record.get).foldl (init := ({} : Std.HashMap String (Array Fren.Core.CheckResult)))
-    fun m (k, r) => m.insert k ((m.getD k #[]).push r)
+    fun m (k, r, _) => m.insert k ((m.getD k #[]).push r)
   return (byItem.map fun _ rs => FrenCli.Mutate.keyed rs, code)
 
 /-- The checks that pass in `before` and fail in `after`, as `item|check`. -/
@@ -2385,11 +2385,8 @@ def enumerationAgrees : IO (Array String) := do
       for (k, r) in rs do
         let some (_, s) := ss.find? (·.1 == k) | continue
         compared := compared + 1
-        let bad := match r.verdict, s.verdict with
-          | .fail, .pass => true
-          | .pass, .fail => r.bounded?.isNone
-          | _, _ => false
-        if bad then
+        -- As `methodsAgree` compares them, with no verdict of random testing.
+        if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
           let bounded := if r.bounded?.isSome then " up to the bound" else ""
           failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
     -- A value given where a subset type is declared stays the solver's
@@ -2400,6 +2397,217 @@ def enumerationAgrees : IO (Array String) := do
         let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
         unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
   return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
+
+/-! ## Methods agree
+
+Every check of Fren's own requirements, of the ui tests and of the
+front-end fuzzer's corpus runs under each method that applies, the solver,
+enumeration up to the size and random testing, each set by `fren check
+--evidence`, in place of the specs' own settings; and no two methods'
+verdicts on a check contradict each other (`check::methods_agree`). Model
+confirmation checks every counterexample and witness that the solver
+reports (`Reqs/Models`); this checks the other direction, a pass that rests
+on the solver's `unsat` alone, which a wrong encoding can make of a false
+claim. On `main` only (`methods-agree` in `ci.yml`). -/
+
+/-- The methods that `methodsAgree` compares, each with the value of
+`fren check --evidence` that sets it. -/
+def comparedMethods : Array (Fren.Core.ProofMethod × String) :=
+  #[(.solver, "solver"), (.enumerated, "enumerated"), (.random, "random")]
+
+/-- A check's key across runs of the same files: its item's, and every
+field that tells it from the item's other checks. -/
+def methodKey (item : String) (r : Fren.Core.CheckResult) : String :=
+  let goal := match r.goal? with | some g => s!"{repr g}" | none => "-"
+  s!"{item}|{repr r.kind}|{r.prop?}|{r.target?}|{r.index?}|{r.site?}|{r.rows?}|{goal}|{r.subsetTy?}"
+
+/-- What a method reached on a check: its verdict, whether a pass holds
+only up to the size, and what it reported, as text. -/
+structure MethodFound where
+  kind : Fren.Core.CheckKind
+  verdict : Fren.Core.Verdict
+  bounded : Bool := false
+  detail : String := ""
+  deriving Inhabited
+
+/-- What a check's detail shows: its counterexample, witness, or core. -/
+def detailText : Fren.Core.Detail → String
+  | .counterexample vals => s!"counterexample {Fren.Core.showAssignment vals}"
+  | .witness vals => s!"witness {Fren.Core.showAssignment vals}"
+  | .conflict input core => s!"no outputs for {Fren.Core.showAssignment input}, by {Fren.Core.showNames core}"
+  | .nondeterministic input a b => s!"for {Fren.Core.showAssignment input}, `{a}` or `{b}`"
+  | .vacuous core => s!"ruled out by {Fren.Core.showNames core}"
+  | .redundant core => s!"follows from {Fren.Core.showNames core}"
+  | .vacuousAssumptions core => s!"contradictory assumptions {Fren.Core.showNames core}"
+  | .refuted _ vals => s!"refuted model {Fren.Core.showAssignment vals}"
+  | .unknown reason => reason
+  | .outOfRange => "an index out of range"
+  | .undecidedQuantifier n => s!"a quantifier undecided up to {n}"
+  | .none => ""
+
+/-- The checks of `files` that `method` runs itself under `fren check
+--evidence value`, by `methodKey`, and the run's exit code. A check that
+the method does not run, such as one that it skips (`check::method_run`),
+or one of a function, which only the solver runs, is not among them. -/
+def methodResults (files : Array String) (method : Fren.Core.ProofMethod) (value : String) (jobs? : Option Nat) :
+    IO (Std.HashMap String MethodFound × UInt32) := do
+  let record ← IO.mkRef #[]
+  let args : FrenCli.Args := { files, evidence? := Fren.Core.evidenceOf? value, jobs? }
+  let (_, code) ← IO.FS.withIsolatedStreams (FrenCli.check args (some record))
+  let found := (← record.get).foldl (init := ({} : Std.HashMap String MethodFound)) fun acc (item, r, m) =>
+    if m != method then acc else
+    acc.insert (methodKey item r) { kind := r.kind, verdict := r.verdict, bounded := r.bounded?.isSome, detail := detailText r.detail }
+  return (found, code)
+
+/-- The contradictions that `methodsAgree` expects, each a check by its file
+and `methodKey`, with why: a known bug, by its issue, or a difference that
+is not one. Each is narrow: a single check. -/
+def methodExceptions : Array (String × String × String) := #[]
+
+/-- What `methodsAgree` counted. -/
+structure MethodCounts where
+  checks : Nat := 0
+  /-- Checks on which at least two methods contributed a verdict. -/
+  compared : Nat := 0
+  /-- By method: checks it ran and decided, ran and left inconclusive, and
+  did not run. -/
+  decided : Array Nat := #[0, 0, 0]
+  inconclusive : Array Nat := #[0, 0, 0]
+  notRun : Array Nat := #[0, 0, 0]
+  /-- A counterexample beside a pass of enumeration's that holds only up to
+  the size: no contradiction, as the counterexample may be larger. -/
+  beyondSize : Nat := 0
+  excepted : Nat := 0
+  /-- Specs with a static error, which no method checks. -/
+  static : Nat := 0
+  /-- Runs that reported an error under their method alone (exit 2), as
+  `name: method`, such as `F0639` under random testing or `F0645` under
+  enumeration: the checks of the procedures that the error names are
+  missing from that run, and counted under "not run", while its other
+  checks are compared. -/
+  errored : Array String := #[]
+  /-- Checks on which both the solver and enumeration, and both the solver
+  and random testing, contributed a verdict (`methodFloors`). -/
+  solverEnumerated : Nat := 0
+  solverRandom : Nat := 0
+  deriving Inhabited
+
+/-- Compares the methods on `files`, checked together as `name`, `jobs?`
+procedures at once, adding to `counts`; returns the contradictions. -/
+def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref MethodCounts)
+    (jobs? : Option Nat := none) : IO (Array String) := do
+  let mut runs := #[]
+  for (m, value) in comparedMethods do
+    let (found, code) ← methodResults files m value jobs?
+    runs := runs.push (found, code)
+  if runs[0]!.2 == 2 then counts.modify fun c => { c with static := c.static + 1 }
+  else
+    for (_, code) in runs, (_, value) in comparedMethods do
+      if code == 2 then counts.modify fun c => { c with errored := c.errored.push s!"{name}: {value}" }
+  -- Every check that some method ran, by its key, in order.
+  let keys := (runs.foldl (init := (#[] : Array String)) fun acc (found, _) =>
+    acc ++ found.toArray.map (·.1)).qsort (· < ·) |>.toList.eraseDups
+  let mut failures := #[]
+  for key in keys do
+    let found := runs.map fun (f, _) => f.get? key
+    let verdictOf (i : Nat) := ((found[i]!).map (·.verdict)).getD .inconclusive
+    let bounded := ((found[1]!).map (·.bounded)).getD false
+    let some kind := (found.findSome? id).map (·.kind) | continue
+    let contributions := (List.range comparedMethods.size).map fun i =>
+      Fren.Core.contributionOf kind comparedMethods[i]!.1 (verdictOf i) (i == 1 && bounded)
+    counts.modify fun c => Id.run do
+      let mut c := { c with checks := c.checks + 1 }
+      for i in [0:comparedMethods.size] do
+        match found[i]! with
+        | none => c := { c with notRun := c.notRun.modify i (· + 1) }
+        | some f =>
+          if f.verdict == .inconclusive then c := { c with inconclusive := c.inconclusive.modify i (· + 1) }
+          else c := { c with decided := c.decided.modify i (· + 1) }
+      if (contributions.filter (· != .nothing)).length ≥ 2 then c := { c with compared := c.compared + 1 }
+      let said (i : Nat) := contributions[i]! != .nothing
+      if said 0 && said 1 then c := { c with solverEnumerated := c.solverEnumerated + 1 }
+      if said 0 && said 2 then c := { c with solverRandom := c.solverRandom + 1 }
+      if contributions.contains .refuted && contributions.contains .bounded then
+        c := { c with beyondSize := c.beyondSize + 1 }
+      return c
+    unless Fren.Core.methodsContradict kind (verdictOf 0) (verdictOf 1) bounded (verdictOf 2) do continue
+    if methodExceptions.any fun (f, k, _) => f == name && k == key then
+      counts.modify fun c => { c with excepted := c.excepted + 1 }
+      continue
+    let said := (List.range comparedMethods.size).map fun i =>
+      let m := comparedMethods[i]!.2
+      match found[i]! with
+      | none => s!"{m}: not run"
+      | some f =>
+        let up := if f.bounded then " up to the size" else ""
+        let d := if f.detail.isEmpty then "" else s!" ({f.detail})"
+        s!"{m}: {repr f.verdict}{up}{d}"
+    failures := failures.push s!"{name}: `{key}`: the methods contradict each other: {"; ".intercalate said}"
+  return failures
+
+/-- The fewest checks that each part of `methodsAgree` compares, between
+the solver and enumeration and between the solver and random testing, so
+that a change that silently stops a method, or makes its checks' keys
+differ from the solver's, fails the job rather than comparing nothing: some
+nine tenths of what each part compared when they were set (own 3314 and
+34, ui 3175 and 218, fuzz 575 and 184). Random testing compares few, as
+"no counterexample found" on a check that passes on a proof contributes
+nothing (`check::methods_agree`). -/
+def methodFloors : List (String × Nat × Nat) := [("own", (2982, 30)), ("ui", (2857, 196)), ("fuzz", (517, 165))]
+
+/-- The ui tests whose checks the methods are compared on: those that the
+binary checks, without a static error, as for `enumerationAgrees`. -/
+def methodsCorpus : IO (Array FilePath) := enumerationCorpus
+
+/-- The parts of `methodsAgree`'s corpus: `own`, Fren's own requirements;
+`ui K N`, the `K`th of `N` shards of the ui tests; `fuzz`, the front-end
+fuzzer's corpus (`FrenTest.FuzzFrontends.corpus`). -/
+def methodsAgree (part : List String) : IO (Array String) := do
+  let counts ← IO.mkRef ({} : MethodCounts)
+  let mut failures := #[]
+  let all := part.isEmpty
+  if all || part == ["own"] then
+    -- Two at a time: the solver, asked the checks that the requirements set
+    -- to other methods, took 9.4 GB at two, and 13.8 GB at four, on macOS.
+    failures := failures ++ (← methodsAgreeOn "src/Reqs" ownSpecFiles counts (jobs? := some 2))
+  let (k, n) := match part with
+    | ["ui", k, n] => (k.toNat?.getD 0, n.toNat?.getD 1)
+    | _ => (0, 1)
+  if all || part.head? == some "ui" then
+    let ui ← methodsCorpus
+    for f in ui, i in [0:ui.size] do
+      if i % n != k then continue
+      failures := failures ++ (← methodsAgreeOn f.toString #[f.toString] counts)
+  if all || part == ["fuzz"] then
+    for (mode, start, count) in FrenTest.FuzzFrontends.corpus do
+      for s in [start:start + count] do
+        let name := s!"fuzz seed {s}{FrenTest.FuzzFrontends.flags mode}"
+        failures := failures ++ (← withText "spec.fren" (mode.spec s).toList.toArray fun p =>
+          methodsAgreeOn name #[p] counts)
+  let c ← counts.get
+  let byMethod := (List.range comparedMethods.size).map fun i =>
+    s!"{comparedMethods[i]!.2} decided {c.decided[i]!}, inconclusive {c.inconclusive[i]!}, not run {c.notRun[i]!}"
+  IO.println s!"methodsAgree: {c.checks} checks, {c.compared} compared by at least two methods; {"; ".intercalate byMethod}; \
+    {c.beyondSize} counterexamples beside a pass up to the size; {c.excepted} excepted; {failures.size} contradictions"
+  IO.println s!"methodsAgree: {c.solverEnumerated} checks compared between the solver and enumeration, \
+    {c.solverRandom} between the solver and random testing"
+  IO.println s!"methodsAgree: {c.static} specs with static errors; {c.errored.size} runs reported an error under their \
+    method alone, whose named procedures' checks are not run\
+    {if c.errored.isEmpty then "" else s!": {", ".intercalate c.errored.toList}"}"
+  -- The floors of the parts run, added up.
+  let parts := if all then ["own", "ui", "fuzz"] else part.take 1
+  let (leastE, leastR) := parts.foldl (init := (0, 0)) fun (e, r) p =>
+    match methodFloors.lookup p with
+    -- A shard of the ui tests has about its share of them.
+    | some (e', r') => if p == "ui" then (e + e' / n, r + r' / n) else (e + e', r + r')
+    | none => (e, r)
+  if c.solverEnumerated < leastE then
+    failures := failures.push
+      s!"methodsAgree: only {c.solverEnumerated} checks compared between the solver and enumeration, fewer than {leastE}"
+  if c.solverRandom < leastR then
+    failures := failures.push
+      s!"methodsAgree: only {c.solverRandom} checks compared between the solver and random testing, fewer than {leastR}"
+  return failures
 
 /-! ## Jobs
 
@@ -2562,6 +2770,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
   | ["enumeration"] => enumerationAgrees
+  -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
+  | "methodsAgree" :: part => methodsAgree part
   | ["smtAgreement"] => do
     enableInitializersExecution
     initSearchPath (← findSysroot)

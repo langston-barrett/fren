@@ -2,6 +2,7 @@
 import Fren.Impl
 import Fren.Trace
 import FrenCore.SolverTime
+import FrenTest.Coverage
 import FrenTest.Jobs
 import FrenTest.SpecTimeout
 import FrenTest.Ui
@@ -22,8 +23,11 @@ from the search of `assignable` otherwise (`assignable_iff`).
 `testing::portable_name`, proved of `Fren.portableName`, the name of a file
 that a definition's `source?` keeps. `testing::fuzz_overdue`, proved of
 `FrenTest.SpecTimeout.overdue`, and `testing::solver_credit`, of
-`Fren.Core.Credit.step`, for any times. `testing::fresh` rests on Lake, so it
-is trusted. -/
+`Fren.Core.Credit.step`, for any times. `testing::coverage`, proved of
+`FrenTest.Coverage.fails` and `stale`, by which `fren_coverage` judges each
+counted declaration; its inputs are trusted: `ran?` is gcov's counters and
+`reached?` is `FrenCoverage.reached`, which nothing proves or tests yet
+(#679). `testing::fresh` rests on Lake, so it is trusted. -/
 
 namespace Fren.Impls.Testing
 
@@ -676,6 +680,19 @@ impl fuzz_overdue: testing::fuzz_overdue for (limit elapsed timedOut : Nat) {
   intro limit elapsed timedOut _
   simp only [fren_spec, FrenTest.SpecTimeout.overdue, decide_eq_true_eq]
   omega
+
+-- What `fren_coverage` makes of a counted declaration,
+-- `FrenTest.Coverage.fails` and `stale`.
+impl coverage_verdict: testing::coverage for (ran reached listed : Bool) {
+  ran? := ran,
+  reached? := reached,
+  listed? := listed,
+  fails? := FrenTest.Coverage.fails ran reached listed,
+  stale? := FrenTest.Coverage.stale ran reached listed,
+} by
+  intro ran reached listed _
+  simp only [fren_spec, FrenTest.Coverage.fails, FrenTest.Coverage.stale]
+  cases ran <;> cases reached <;> cases listed <;> decide
 
 -- The name that `Fren.keptFileName` keeps, of the directory that Lean runs in.
 impl portable_name: testing::portable_name for (root file : String) {

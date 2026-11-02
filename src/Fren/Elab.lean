@@ -6515,7 +6515,8 @@ definition, only its body with the defined functions it applies unfolded
 (`DefinedInfo.recBody?`), so the definition is not that body: the body of
 a recursion that applies large functions in each arm, as `lint::fix_all`
 does, is large, and Lean's structural recursion over it costs as much. -/
-def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean : Expr) : TermElabM Unit := do
+def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean : Expr) (typeParams : Array Name := #[]) :
+    TermElabM Expr := do
   let type := recLean.bindingDomain!
   let solver := solverName decl
   let tmp := leanDeclName decl
@@ -6544,8 +6545,15 @@ def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean :
     return (← mkForallFVars xs (replaceUses uses xs type), ← mkLambdaFVars xs (replaceUses uses xs body))
   addRecursiveDef ref decl gType gValue
   let sv := mkAppN (Lean.mkConst decl) args
+  -- A generic one's over its type parameters' placeholders, `typeParams`,
+  -- each a type and an `Inhabited` instance, which it takes first: each
+  -- instance is the solver form at its type arguments
+  -- (`Reqs/Lang/Recursion#generic-recursion`).
+  let (type, sv) ← if typeParams.isEmpty then pure (type, sv) else withUses typeParams fun xs => do
+    return (← mkForallFVars xs (replaceUses typeParams xs type), ← mkLambdaFVars xs (replaceUses typeParams xs sv))
   addDecl (.defnDecl { name := solver, levelParams := [], type, value := sv, hints := .abbrev, safety := .safe })
   compileGenerated solver type sv
+  return body
 
 /-! ## Abstract types and functions -/
 
@@ -7405,19 +7413,25 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let fnVars := fnPs.map fun (_, x, _, ft, lty) => (x, ft, lty, placeholderName (path ++ x))
     let phs : Array Expr := fnVars.map fun p => Lean.mkConst p.2.2.2
     modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
-    -- A first-order function that is not generic may apply itself, in a
-    -- structural recursion (`lang::structural_recursion`): within the
-    -- body, a local of its type stands for it, which its definitions
-    -- replace with themselves.
+    -- A first-order function, generic or not, may apply itself, in a
+    -- structural recursion (`lang::self_application`,
+    -- `lang::structural_recursion`): within the body, a local of its type
+    -- stands for it, which its definitions replace with themselves. A
+    -- generic one's solver form takes its type parameters' types and
+    -- `Inhabited` instances first, and applies itself at the placeholders
+    -- of its own (`addRecursiveDefs`).
     let selfName := n.appendAfter "#self"
-    let recursive := tps.isEmpty && fnPs.isEmpty
+    let recursive := Core.selfApplicable (!tps.isEmpty) (!fnPs.isEmpty)
+    let tpConsts := (typeParamPlaceholders path tps).map (Lean.mkConst ·)
     let selfTy := vars.foldr (fun v acc => .forallE v.name v.type acc .default) result
     let withSelf {α : Type} (k : Option Expr → TermElabM α) : TermElabM α :=
       if recursive then withLocalDeclD selfName selfTy fun s => k (some s) else k none
     let (lam, tables, obls, leanLam?, recLeanLam?, recIdx?, selfApps) ← withLocalDeclsD (fnVars.map fun p => (p.1, fun _ => pure p.2.2.1)) fun fnFvs =>
         withSelf fun self? => withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
       let all := fvs ++ fnFvs
-      let selfRec? := if recursive then some (vars.map (·.name), ({ params := declared, result := resultTy } : Core.FnTy),
+      -- A generic one's at its own type parameters, abstract types there.
+      let selfRec? := if recursive then some (vars.map (·.name),
+        ({ params := declared.map (·.asAbstract path tps), result := resultTy.asAbstract path tps } : Core.FnTy),
         (⟨(mkIdent selfName).raw⟩ : Term)) else none
       -- The body is checked against the result type (`lang::checked`).
       let cx : ExprCtx := { modName := scope, vars, insts := #[], place := .prop
@@ -7439,7 +7453,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       -- A structural recursion's applications of itself are of its solver
       -- form there (`DefinedInfo.recursive`).
       let selfFor (x : Expr) : Expr := match self? with
-        | some s => x.replaceFVar s (Lean.mkConst (solverName decl))
+        | some s => x.replaceFVar s (mkAppN (Lean.mkConst (solverName decl)) tpConsts)
         | none => x
       let tables := (← takeIndexes fvs (fun (x : Expr) => selfFor (x.replaceFVars fnFvs phs))).filter fun (_, q, g) => q.isSome || (obligationTy? g).isSome
       checkDeclared body t result fun ty => s!"note: `{n}` returns `{ty}`"
@@ -7509,7 +7523,10 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       return out
     for (x, ref) in Core.unmentioned paramRefs mentioned do
       recordLint .unusedVariables ref (Core.unusedParamMsg x)
-    let uses ← usesOf #[lam]
+    -- A generic structural recursion's take every type parameter's
+    -- placeholder and that of its `Inhabited` instance, which its solver
+    -- form takes first (`addRecursiveDefs`).
+    let uses ← usesOf (#[lam] ++ if recLeanLam?.isSome then tpConsts else #[])
     -- Where its Lean definition is a Lean `match`, the solver's is beside it
     -- (`DefinedInfo.solver?`).
     -- A structural recursion's body as the solver reads it, with the
@@ -7518,8 +7535,12 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       let st ← getState
       let ds := st.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
       some <$> Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined st lam ds.contains))
+    let recValue ← IO.mkRef (none : Option Expr)
     let solver? ← match recLeanLam?, leanLam? with
-      | some recLean, _ => addRecursiveDefs nameStx uses decl recLean; pure (some (solverName decl))
+      | some recLean, _ =>
+        let v ← addRecursiveDefs nameStx uses decl recLean (typeParamPlaceholders path tps)
+        unless tps.isEmpty do recValue.set (some v)
+        pure (some (solverName decl))
       | none, none => addUsesDef uses decl lam; pure none
       | none, some leanLam =>
         let saved ← saveState
@@ -7557,7 +7578,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     record (.definedInfo { path, decl, uses, nParams := vars.size + fnPs.size, ptys := (ptys, rp)
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
-                           oblDecls, solver?, namedMembers, namedBranchGroups, namedMemberGroups, source?, recursive := recLeanLam?.isSome, recBody?, decreasing? := recIdx?
+                           oblDecls, solver?, namedMembers, namedBranchGroups, namedMemberGroups, source?, recursive := recLeanLam?.isSome, recBody?, recValue? := ← recValue.get, decreasing? := recIdx?
                            fact? := ← if recIdx?.isSome then (← resultFact? result rp).mapM instantiateMVars else pure none })
     let (_, props, sites) ← if contract then elabContract scope path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
     let selfSites ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do

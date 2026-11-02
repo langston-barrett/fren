@@ -3004,6 +3004,42 @@ impl uninterpreted_instance: lang::uninterpreted_instance
   · simp only [hfact, Fren.Core.instanceSig, Fren.Core.instanceNat, subst_nat_iff _ hargs, beq_iff_eq]
     simp
 
+-- For every application with at most three type arguments, within an
+-- instance with any type arguments: the instance it applies, as both front
+-- ends find it (`Core.instantiatedArgs`, which `Core.appliedInstance` gives
+-- once the function's type parameters are `Ty.param`s).
+impl applied_instance: lang::applied_instance for (d : Fin 4) (ts : Fin 3 → Fren.Core.Ty) (outer : List Fren.Core.Ty) {
+  inner := Fren.Seq.ofList (firstTys d ts),
+  outer := Fren.Seq.ofList outer,
+  applied := Fren.Seq.ofList (Fren.Core.instantiatedArgs outer.toArray (firstArr d ts)).toList,
+} by
+  intro d ts outer _
+  simp only [fren_spec, Fren.Seq.ext_iff]
+  obtain ⟨_ | _ | _ | _ | d, hd⟩ := d <;> first | omega | skip
+  all_goals simp [Fren.Core.instantiatedArgs, firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
+
+/-- An application of a generic function within itself, at its own type
+parameters, applies the same instance: a generic structural recursion
+recurses at its instance (`Reqs/Lang/Recursion#generic-recursion`). -/
+theorem instantiatedArgs_own (outer : Array Fren.Core.Ty) (ns : Array Lean.Name) (h : ns.size = outer.size) :
+    Fren.Core.instantiatedArgs outer (ns.mapIdx fun k n => Fren.Core.Ty.param k n) = outer := by
+  apply Array.ext
+  · simp [Fren.Core.instantiatedArgs, h]
+  · intro i h1 h2
+    simp [Fren.Core.instantiatedArgs, Fren.Core.Ty.subst]
+    simp_all
+
+-- For every generic function and whether it has a function parameter: the
+-- check that both front ends make before a body may apply its own function
+-- (`Core.selfApplicable`).
+impl self_application: lang::self_application for (g h : Bool) {
+  generic? := g,
+  higher_order? := h,
+  may_recurse? := Fren.Core.selfApplicable g h,
+} by
+  intro g h _
+  cases g <;> cases h <;> simp [fren_spec, Fren.Core.selfApplicable]
+
 /-- A check's verdict, as `lang::generic_contract` has it. -/
 def decidedOf : Fren.Core.Verdict → lang.Decided
   | .pass => .Holds

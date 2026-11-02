@@ -2940,8 +2940,8 @@ partial def fnItemAt (path : Name) (targs? : Option (Array Fren.Core.Ty)) : L Fn
   let sp := (← get).spec
   let item : FnItem := { defn? := sp.defs.find? path, pres? := sp.pres.find? path, contract? := sp.contracts.find? path }
   let tps? := (sp.defGenerics.find? path).orElse fun _ => (sp.generics.find? (·.1 == path)).map (·.2.1)
-  let (some tps, some targs) := (tps?, targs?) | return item
-  let targs := targs.map some
+  let (some tps, some outer) := (tps?, targs?) | return item
+  let targs := outer.map some
   let atCore (t : Fren.Core.Ty) : Fren.Core.Ty := Fren.Core.instanceType path tps targs t
   let atInstance (t : VTy) : VTy := VTy.ofCore (atCore (t.core sp))
   let mut renamed : List (Name × Name) := []
@@ -2951,14 +2951,22 @@ partial def fnItemAt (path : Name) (targs? : Option (Array Fren.Core.Ty)) : L Fn
       if t' != t then
         renamed := (u, unspecifiedFn t') :: renamed
         modify fun s => { s with spec.funs := s.spec.funs.insert (unspecifiedFn t') (#[], t') }
-  -- The instances of generic functions without a body at this function's
-  -- type parameters, at this instance.
+  -- The instances of generic functions without a body, and of generic
+  -- structural recursions, at this function's type parameters, at this
+  -- instance (`lang::applied_instance`).
   let mut apps : List (Name × Name) := []
   for (inst, base) in sp.instanceOf do
     let some iargs := sp.instanceArgs.find? inst | continue
-    let iargs' := iargs.map atCore
+    let iargs' := Fren.Core.appliedInstance path tps outer iargs
     if iargs' != iargs then
-      apps := (inst, ((← bodilessInstance base iargs').getD base)) :: apps
+      let at? ← if sp.recDefs.contains base then recursiveInstance base iargs' else bodilessInstance base iargs'
+      apps := (inst, at?.getD base) :: apps
+  -- A structural recursion's applications of itself, at its own type
+  -- parameters, apply this instance (`Reqs/Lang/Recursion#generic-recursion`).
+  if sp.recDefs.contains path then
+    let own := tps.mapIdx fun k p => Fren.Core.Ty.abstract (Fren.Core.typeParamPath path k p)
+    if let some inst ← recursiveInstance path (Fren.Core.appliedInstance path tps outer own) then
+      apps := (path, inst) :: apps
   let rename (e : Ex) : Ex := e.mapNames (fun u => (renamed.lookup u).getD u) (fun g => (apps.lookup g).getD g)
   return {
     ty := atInstance
@@ -2985,6 +2993,33 @@ partial def bodilessInstance (path : Name) (targs : Array Fren.Core.Ty) : L (Opt
   let item ← fnItemAt path (some targs)
   if let some c := item.contract? then
     modify fun s => { s with spec.contracts := s.spec.contracts.insert inst c }
+  return some inst
+
+/-- The instance of the generic structural recursion at `path` at the type
+arguments `targs`, a structural recursion of its own: its body, with its
+preconditions and contract, at the instance (`fnItemAt`), whose
+applications of itself apply the instance
+(`Reqs/Lang/Recursion#generic-recursion`). Its name, or none at the
+function's own type parameters, where it is the function itself. -/
+partial def recursiveInstance (path : Name) (targs : Array Fren.Core.Ty) : L (Option Name) := do
+  let sp := (← get).spec
+  let some tps := sp.defGenerics.find? path | return none
+  let own := tps.mapIdx fun k p => Fren.Core.Ty.abstract (Fren.Core.typeParamPath path k p)
+  if targs == own then return none
+  let inst := Fren.Core.instanceName path targs
+  if (sp.instanceArgs.find? inst).isSome then return some inst
+  -- Recorded first, so that the instance's own applications of itself
+  -- find it.
+  modify fun s => { s with
+    spec.instanceOf := s.spec.instanceOf.insert inst path
+    spec.instanceArgs := s.spec.instanceArgs.insert inst targs }
+  let item ← fnItemAt path (some targs)
+  let some (ps, body, r) := item.defn? | return some inst
+  modify fun s => { s with
+    spec.defs := s.spec.defs.insert inst (ps, body, r)
+    spec.recDefs := s.spec.recDefs.insert inst (ps, body)
+    spec.pres := match item.pres? with | some p => s.spec.pres.insert inst p | none => s.spec.pres
+    spec.contracts := match item.contract? with | some c => s.spec.contracts.insert inst c | none => s.spec.contracts }
   return some inst
 end
 
@@ -3220,8 +3255,10 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
     match ← resolve segs with
     | .item { kind := .fnItem, path, .. } =>
       -- The function's item at the application: of a generic function, the
-      -- whole function at its instance (`fnItem`).
-      let item ← fnItem path span
+      -- whole function at its instance (`fnItem`); in a structural
+      -- recursion's own body, the function itself, at its own type
+      -- parameters (`Reqs/Lang/Recursion#generic-recursion`).
+      let item ← if (← get).lowering == some path then fnItemAt path none else fnItem path span
       -- With its preconditions at its arguments, if it has any.
       let withPres (x : Ex) : L Ex := do
         let some (ps, pres) := item.pres? | return x
@@ -3563,7 +3600,10 @@ partial def lowerPredicateClauses (cx : Cx) (expression : Expr) (splitConjunctio
 type brings, as a constraint (`Reqs/Lang/Procedures#subset-types`). -/
 def typeConstraint (kind : PropKind) (x : Name) (t : Fren.Core.PTy) : L (Option Constraint) := do
   let sp := (← get).spec
-  if (t.cons sp.shapes.find?).isNone then return none
+  -- A recursive enumeration's payloads bring no constraint here, but where
+  -- they are read, for the solver; a value is of its type only if they are
+  -- of theirs, at every depth (`Reqs/Eval`), which `.typed` checks.
+  if (t.cons sp.shapes.find?).isNone && !t.recursivelyConstrained sp.shapes.find? then return none
   -- The bounds of its patterns, and of those within it, to search among.
   let rec ints (fuel : Nat) (t : Fren.Core.PTy) : Array Int :=
     match fuel with

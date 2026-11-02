@@ -265,6 +265,43 @@ jobs:
         path: fuzz
         if-no-files-found: ignore
         retention-days: 30
+  # Every check of Fren's own requirements, the ui tests and the front-end
+  # fuzzer's corpus, under the solver, enumeration and random testing, each
+  # set by `fren check --evidence`; it fails where two methods' verdicts on
+  # a check contradict each other (`check::methods_agree`,
+  # `Reqs/Methods#agreement-of-methods`).
+  methods-agree:
+    if: ${{ !inputs.fuzz-only }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-methods-agree-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ github.sha }}
+    - run: lake build fren_test
+    - run: |
+        set -euo pipefail
+        part() {
+          local name="${*// /-}"
+          lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out"
+        }
+        # One part at a time: on macOS, `own` (two procedures at once) took
+        # 9.4 GB and `ui` (as many as there are cores, 14 there) 8.8 GB.
+        code=0
+        part own || code=1
+        part ui 0 1 || code=1
+        part fuzz || code=1
+        for f in "$RUNNER_TEMP"/methods-*.out; do
+          cat "$f"
+          test "$(tail -n 1 "$f")" = "[]" || code=1
+        done
+        exit "$code"
   # Every declaration of Fren's code is run by `lake test`, or listed in
   # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
   coverage:
@@ -302,7 +339,9 @@ jobs:
         runtime=$(find "/usr/lib/llvm-$version" -name 'libclang_rt.profile*.a' | grep -E 'x86_64|linux/libclang_rt.profile.a' | head -n 1)
         printf 'COVERAGE_RUNTIME=%s\nLLVM_COV=%s\n' "$runtime" "/usr/lib/llvm-$version/bin/llvm-cov" >> "$GITHUB_ENV"
     - name: Build with coverage
-      run: lake -R -Kcoverage="$COVERAGE_RUNTIME" build fren fren_test fren_coverage
+      # The `.olean` files of every executable's root, which `fren_coverage`
+      # reads to follow each one's compiled code, too.
+      run: lake -R -Kcoverage="$COVERAGE_RUNTIME" build fren fren_test fren_coverage FrenFuzz FrenFuzzFrontends
     - name: Run the tests
       run: lake -Kcoverage="$COVERAGE_RUNTIME" test
     - name: Report what the tests did not run
