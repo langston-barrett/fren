@@ -1,66 +1,210 @@
 name: pr-review
-
+# Claude's review of a pull request's head, as AGENTS.md describes the
+# reviews by separate agents, once `pre-merge` has passed on it: a full
+# review, or, when the author's last comment starts with "fixes only" or
+# "rebase only" and a previous head has a review, a light check of the new
+# head against that head (.github/pr-review/kind.py). An
+# update from `main` of a reviewed head gets none. The reviewer probes with
+# the binaries that `pre-merge` built, in a checkout of the merge commit
+# that they were built from, and builds no Lean.
+#
+# The brief and scripts in .github/pr-review are this workflow's own, from
+# the commit that defines it, never from the pull request's checkout: on a
+# workflow_run, `main`'s. The review is posted as one comment by the second
+# job, so that the reviewer's token can only read.
+#
+# A workflow_run fires only from `main`'s copy of this file. To try a
+# branch's, run it by hand on an already reviewed pull request, with `post`
+# empty, so that the review goes only to the run's summary, or the number of
+# a scratch pull request to post it on:
+# `gh workflow run pr-review --ref BRANCH -f pr=N`.
 on:
-  pull_request:
-    types: [opened, synchronize, ready_for_review]
+  # zizmor: ignore[dangerous-triggers] the job checks out only heads of this
+  # repository's own pull requests, and its token can only read.
+  workflow_run:
+    workflows: [pre-merge]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: The pull request to review
+        required: true
+        type: number
+      post:
+        description: The pull request to post the review on (empty for none)
+        required: false
+        type: string
+        default: ""
+  # The same, from another workflow.
+  workflow_call:
+    inputs:
+      pr:
+        description: The pull request to review
+        required: true
+        type: number
+      post:
+        description: The pull request to post the review on (empty for none)
+        required: false
+        type: string
+        default: ""
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
 
+# A newer head's review cancels an older one's.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr || github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 permissions: {}
 
 jobs:
   review:
-    # Secrets aren't available to PRs from forks.
-    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    # Only after `pre-merge` passed on a pull request of this repository:
+    # secrets aren't available to pull requests from forks, and the merge
+    # queue's runs are of no pull request's head.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     permissions:
+      actions: read
       contents: read
-      pull-requests: write
-      issues: read
-      id-token: write
+      pull-requests: read
+    outputs:
+      kind: ${{ steps.prepare.outputs.kind }}
+      pr: ${{ steps.prepare.outputs.pr }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-      - uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6  # v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # The report, in the step summary, shows the tools used and denied.
-          # The repository is private and the input is its own PRs.
-          display_report: "true"
-          # Logs the whole conversation, to find what is denied when a review
-          # posts nothing. The repository is private and the reviewer has no
-          # secrets in reach; remove once reviews post reliably.
-          show_full_output: "true"
-          prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
-
-            Review this pull request. Focus on correctness bugs, edge cases,
-            and clarity; skip nitpicks that linters already catch. Fren's
-            requirements are in src/Reqs; check that changes to behaviour
-            are specified there first, and that the code and its
-            requirements agree.
-
-            Do the review yourself, in this session: don't delegate it to
-            agents or subagents. The run ends when you stop, so anything
-            left running in the background is lost and nothing is posted.
-
-            Use `gh pr comment` to post a single summary comment with your
-            findings, and inline comments for specific issues. Read the
-            changed files in the checkout with Read, Grep and Glob, rather
-            than piping `gh pr diff`. Write the summary with Write to
-            `review.md` in the current directory (Write is denied outside
-            it, such as in /tmp), then post it with
-            `gh pr comment <number> --body-file review.md`: a command
-            substitution such as `--body "$(cat ...)"` is denied.
-            If you cannot complete the review, still post a summary comment
-            saying why, so that a review never ends without a trace.
-          claude_args: >-
-            --model claude-opus-5-5
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob,Write"
-            --disallowedTools "Agent,Task"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Keep this workflow's brief and scripts
+      run: cp -R .github/pr-review "$RUNNER_TEMP/trusted"
+    - id: prepare
+      name: Find the head, its binaries and the kind of review
+      run: bash "$RUNNER_TEMP/trusted/prepare.sh"
+      env:
+        EVENT: ${{ github.event_name }}
+        GH_TOKEN: ${{ github.token }}
+        PR_INPUT: ${{ inputs.pr }}
+        REPO: ${{ github.repository }}
+        RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        RUN_ID: ${{ github.event.workflow_run.id }}
+        RUN_PULL: ${{ github.event.workflow_run.pull_requests[0].number }}
+        RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        TRUSTED: ${{ runner.temp }}/trusted
+    # `main`'s `.lake`, for the hosted front end's jobs of `fren_test`, used
+    # only if it is up to date with the checkout: nothing is built.
+    - if: ${{ steps.prepare.outputs.kind != 'skip' }}
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ steps.prepare.outputs.base }}
+        restore-keys: |
+          lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+    - if: ${{ steps.prepare.outputs.kind != 'skip' }}
+      uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
+      with:
+        auto-config: "false"
+        build: "false"
+        test: "false"
+        lint: "false"
+        use-github-cache: "false"
+        use-mathlib-cache: "false"
+    - id: hosted
+      if: ${{ steps.prepare.outputs.kind != 'skip' }}
+      name: Check whether the hosted front end's files need a build
+      timeout-minutes: 10
+      run: |
+        if lake build --no-build Fren; then
+          echo "hosted=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "hosted=false" >> "$GITHUB_OUTPUT"
+        fi
+    - id: brief
+      if: ${{ steps.prepare.outputs.kind != 'skip' }}
+      name: Write the brief
+      run: |
+        # The checkout's own file of that name is not the review.
+        rm -f review.md
+        python3 -I "$RUNNER_TEMP/trusted/compose.py" "$RUNNER_TEMP" "$KIND" "$HOSTED" > "$RUNNER_TEMP/brief.md"
+        cat "$RUNNER_TEMP/brief.md"
+        delimiter="brief-$(openssl rand -hex 16)"
+        {
+          echo "brief<<$delimiter"
+          cat "$RUNNER_TEMP/brief.md"
+          echo "$delimiter"
+        } >> "$GITHUB_OUTPUT"
+      env:
+        BASE: ${{ steps.prepare.outputs.base }}
+        BRANCH: ${{ steps.prepare.outputs.branch }}
+        HEAD: ${{ steps.prepare.outputs.head }}
+        HOSTED: ${{ steps.hosted.outputs.hosted }}
+        KIND: ${{ steps.prepare.outputs.kind }}
+        MERGE: ${{ steps.prepare.outputs.merge }}
+        PR: ${{ steps.prepare.outputs.pr }}
+        PREVIOUS: ${{ steps.prepare.outputs.previous }}
+        REPO: ${{ github.repository }}
+        RUN: ${{ steps.prepare.outputs.run }}
+    - if: ${{ steps.prepare.outputs.kind != 'skip' }}
+      uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1
+      env:
+        GH_TOKEN: ${{ github.token }}
+      with:
+        claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        # The job's own token, which can only read, rather than the app's.
+        github_token: ${{ github.token }}
+        # The report, in the step summary, shows the tools used and denied.
+        # The repository is private and the input is its own pull requests.
+        display_report: "true"
+        prompt: ${{ steps.brief.outputs.brief }}
+        # Bash only for git's reading commands, gh's reading commands, the
+        # downloaded binaries, alone or under `lake env`, and python3.
+        claude_args: >-
+          --model claude-opus-5-5
+          --allowedTools "Read,Grep,Glob,Write,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git range-diff:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git grep:*),Bash(git blame:*),Bash(git status:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh run list:*),Bash(gh run view:*),Bash(/tmp/fren/fren:*),Bash(/tmp/fren_test/fren_test:*),Bash(lake env /tmp/fren/fren:*),Bash(lake env /tmp/fren_test/fren_test:*),Bash(python3:*)"
+          --disallowedTools "Agent,Task,WebFetch,WebSearch"
+    - if: ${{ always() && steps.prepare.outputs.kind != '' && steps.prepare.outputs.kind != 'skip' }}
+      name: Check the review
+      run: |
+        mkdir "$RUNNER_TEMP/comment"
+        status=0
+        python3 -I "$RUNNER_TEMP/trusted/check.py" review.md "$HEAD" "$KIND" "$RUN_URL" "$RUNNER_TEMP/comment/comment.md" || status=$?
+        cat "$RUNNER_TEMP/comment/comment.md" >> "$GITHUB_STEP_SUMMARY"
+        exit "$status"
+      env:
+        HEAD: ${{ steps.prepare.outputs.head }}
+        KIND: ${{ steps.prepare.outputs.kind }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    - if: ${{ always() && steps.prepare.outputs.kind != '' && steps.prepare.outputs.kind != 'skip' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: review
+        path: ${{ runner.temp }}/comment/comment.md
+        if-no-files-found: ignore
+  post:
+    needs: review
+    # A run by hand posts only where its `post` input says.
+    if: >-
+      !cancelled() &&
+      needs.review.outputs.kind != '' && needs.review.outputs.kind != 'skip' &&
+      (github.event_name == 'workflow_run' || inputs.post != '')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      pull-requests: write
+    steps:
+    - run: |
+        gh run download "$RUN" --repo "$REPO" -n review -D "$RUNNER_TEMP/review"
+        gh pr comment "${POST:-$PR}" --repo "$REPO" --body-file "$RUNNER_TEMP/review/comment.md"
+      env:
+        GH_TOKEN: ${{ github.token }}
+        POST: ${{ inputs.post }}
+        PR: ${{ needs.review.outputs.pr }}
+        REPO: ${{ github.repository }}
+        RUN: ${{ github.run_id }}
