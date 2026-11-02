@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.SeqElems
+import FrenCore.Text
 -- keep-sorted end
 
 /-!
@@ -84,7 +85,7 @@ def parse (s : String) : SExpr := ((parseAt s.toList.toArray 0).1)[0]?.getD (.at
 def markerHeads : List String := ["fren.forall", "fren.exists"]
 
 /-- Whether the SMT-LIB text `s` has a marked quantifier. -/
-def hasMarker (s : String) : Bool := markerHeads.any fun h => (s.splitOn h).length > 1
+def hasMarker (s : String) : Bool := markerHeads.any (Fren.Core.occursIn · s)
 
 /-- Of a marked quantifier's head, after `scan` numbers it as
 `fren.forall#k`: whether it is a `forall`, and its number. -/

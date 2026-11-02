@@ -204,6 +204,32 @@ payloads bring facts, which every front end of the CLI asks with. -/
 def State.queryPrelude (st : State) : Prelude :=
   Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
 
+/-- A `State`, `st`, with what checking each of its items reads of it that
+is the same for every item (`FrenCli.solveComp`), built once for all of
+them (`State.forSolving`) rather than for each. Each field is, by its
+proof, what the `State` function of its name gives of `st`, and
+`prelude` what `State.queryPrelude` gives, so none can be another
+`State`'s, such as a mutant's. -/
+structure Solving where
+  st : State
+  appFuns : Std.HashMap String (Bool × Contract)
+  contractFns : Std.HashMap String Lean.Name
+  recursiveSyms : Std.HashMap String Lean.Name
+  instanceSites : Array (Fren.Core.InstanceSite × Lean.Name × Array Fren.Core.Ty)
+  prelude : Prelude
+  appFuns_eq : appFuns = st.appFuns
+  contractFns_eq : contractFns = st.contractFns
+  recursiveSyms_eq : recursiveSyms = st.recursiveSyms
+  instanceSites_eq : instanceSites = st.instanceSites
+  prelude_eq : prelude = st.queryPrelude
+
+/-- `s`, with its maps and prelude for checking its items, each computed
+once. -/
+def State.forSolving (s : State) : Solving :=
+  { st := s, appFuns := s.appFuns, contractFns := s.contractFns, recursiveSyms := s.recursiveSyms
+    instanceSites := s.instanceSites, prelude := s.queryPrelude, appFuns_eq := rfl, contractFns_eq := rfl
+    recursiveSyms_eq := rfl, instanceSites_eq := rfl, prelude_eq := rfl }
+
 /-- The positions of the declarations that a script whose quoted symbols
 are `syms` needs: those of its symbols, and of theirs in turn, in the
 order of the prelude.
@@ -876,7 +902,7 @@ partial def factAppsIn (heads : Std.HashSet String) (e : SeqElems.SExpr) (bound 
 /-- Whether a query of the formulas `fs` has a quantifier over elements to
 expand, directly or in a `define-fun` of `marked` that it applies. -/
 def needsExpansion (marked : Std.HashMap String (Array String × SeqElems.SExpr)) (fs : Array String) : Bool :=
-  fs.any fun f => SeqElems.hasMarker f || marked.keys.any fun g => (f.splitOn g).length > 1
+  fs.any fun f => SeqElems.hasMarker f || marked.keys.any (Fren.Core.occursIn · f)
 
 /-- The answer to the query of `hyps` and `goal`, with its quantifiers over
 elements expanded (`SeqElems.expandQuery`), asked by `ask` of its
