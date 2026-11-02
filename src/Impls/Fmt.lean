@@ -199,14 +199,17 @@ def toGap : FrenCli.Fmt.Role → fmt.Gap
   | .joined => .UpdatedRecord
   | .blockBrace => .BlockBrace
 
-impl line_break: fmt::line_break for (r : FrenCli.Fmt.Role) (v f : Bool) {
+impl line_break: fmt::line_break for (r : FrenCli.Fmt.Role) (v b l c : Bool) (n : Nat) {
   gap := toGap r,
   vertical? := v,
-  forced? := f,
-  break? := FrenCli.Fmt.lineBreak r v f,
+  blank := n,
+  boundary? := b,
+  after_line_comment? := l,
+  comment_follows? := c,
+  break? := FrenCli.Fmt.lineBreak r v b l c n,
 } by
-  intro r v f _
-  cases r <;> cases v <;> cases f <;> simp [fren_spec, FrenCli.Fmt.lineBreak, toGap]
+  intro r v b l c n _
+  cases r <;> cases v <;> cases b <;> cases l <;> cases c <;> simp [fren_spec, FrenCli.Fmt.lineBreak, FrenCli.Fmt.Role.betweenElements, FrenCli.Fmt.Role.vertical, toGap]
 
 impl break_before: fmt::break_before for (n : Nat) (s : Bool) {
   comments := n,

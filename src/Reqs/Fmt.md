@@ -82,7 +82,10 @@ what it keeps. A file's *content* is what formatting keeps of it:
 - whether each comment starts its line, and the column of one at the end
   of a line where [`fmt::comment_column`](#comments-at-the-end-of-lines)
   keeps it;
-- where it has [blank lines](#blank-lines) that formatting keeps;
+- where it has [blank lines](#blank-lines) that formatting keeps: those
+  that `fmt::blank_lines` keeps before a line, but not those in a gap that
+  a list or block joins onto one line, such as one before a block's `{`
+  ([`fmt::line_break`](#lists-and-blocks));
 - for now, its line breaks but those that a [list or block](#lists-and-blocks)
   decides, such as those between the members of a procedure and the one
   before a block's `{`, a line break before a
@@ -238,11 +241,18 @@ ensure r: q = { p with
 A block's `{` goes on the line of what comes before it, unless a line
 comment ends that line, as rustfmt puts a function's `{` on the line of
 its signature. So `proc c(x: Int): (y: Int)`, then `{` on the next line,
-is written `proc c(x: Int): (y: Int) {`. `fmt::line_break` says where a
-list or block ends a line: where it is vertical, after its opening
-bracket, between its elements and before its closing bracket, and
-elsewhere only where a line must end whatever the layout, as after a line
-comment. The formatter's decision implements it, proved in Lean:
+is written `proc c(x: Int): (y: Int) {`, and a blank line before the `{`
+goes with the line break, as rustfmt drops it. `fmt::line_break` says
+where a list or block ends a line: where it is vertical, after its
+opening bracket, between its elements and before its closing bracket, and
+elsewhere only where a line must end whatever the layout: after a line
+comment, before a comment that starts its line, between two blocks of a
+Markdown spec, and at a blank line between two elements or members, which
+keeps them on lines of their own. The blank lines of any other gap that a
+list or block decides go where the gap has no line break, and are not
+kept after an opening bracket or before a closing one where it has one
+([Blank lines](#blank-lines)). The formatter's decision implements it,
+proved in Lean:
 
 ```fren
 -- A gap between two pieces whose line break a list or block decides.
@@ -254,16 +264,26 @@ pub enum Gap {
     BlockBrace,              -- before a block's `{`
 }
 
+-- A line must end at the gap whatever the layout.
+pub fn forced?(gap: Gap, blank: Nat, boundary?, after_line_comment?, comment_follows?) := boundary?
+    or after_line_comment? or comment_follows? or (gap = Gap::AfterComma and blank > 0)
+
 pub proc line_break(
     gap: Gap,
     vertical?,               -- the list or block is vertical
-    forced?,                 -- a line must end there whatever the layout
+    blank: Nat,              -- the blank lines in the gap
+    boundary?,               -- the gap is between two blocks of a Markdown spec
+    after_line_comment?,     -- a line comment ends the line before the gap
+    comment_follows?,        -- a comment that starts its line follows the gap
 ): (det break?) {
-    ensure rule: break? iff (forced?
+    ensure rule: break? iff (forced?(gap, blank, boundary?, after_line_comment?, comment_follows?)
         or (vertical? and gap is Gap::AfterOpen | Gap::AfterComma | Gap::BeforeClose))
 
-    -- `{ p with` and `) {` stay on their lines.
-    expect joined: when gap is Gap::UpdatedRecord | Gap::BlockBrace, break? iff forced?
+    -- `{ p with` and `) {` stay on their lines, blank lines or not.
+    expect joined: when gap is Gap::UpdatedRecord | Gap::BlockBrace and not boundary?
+        and not after_line_comment? and not comment_follows?, not break?
+    -- A blank line between two elements or members keeps them on lines of their own.
+    expect blank_between: when gap = Gap::AfterComma and blank > 0, break?
 }
 ```
 
@@ -725,7 +745,7 @@ proved in Lean:
 pub proc break_before(
     comments: Nat,           -- the comments before the element on its line, after any token
     starts_line?,            -- the first of those comments starts its line
-): (det before: Int) {
+): (det before: Nat) {
     ensure rule: before = (if starts_line? then comments else 0)
 
     -- `/- lead -/ x` stays together.
@@ -983,8 +1003,12 @@ pub proc comment_column(
 
 At most one blank line separates two lines. There are none at the start of
 a file or of a ```` ```fren ```` block, after a line that ends with a
-bracket that [indents](#indentation), or before a line that starts with
-its closing bracket. A file
+bracket that [indents](#indentation) or with a record update's `with`, or
+before a line that starts with its closing bracket. A blank line is kept
+only where formatting ends a line: one in a gap that a list or block
+joins onto one line goes with the gap's line break, as one before a
+block's `{` does (`fmt::line_break`), and one between two elements or
+members of a list or block keeps the gap a line break. A file
 other than a Markdown spec ends with a single newline. `fmt::blank_lines`
 gives the number of blank lines kept before a line:
 
@@ -992,13 +1016,22 @@ gives the number of blank lines kept before a line:
 pub proc blank_lines(
     blank: Nat,              -- blank lines before the line in the input
     first?,                  -- the line is the first of its file or block
-    after_open?,             -- the line before it ends with a bracket that indents
+    after_open?,             -- the line before it ends with a bracket that indents, or `with`
     before_close?,           -- the line starts with the closing bracket of one
 ): (det kept: Int) {
     ensure kept_rule: kept = if first? or after_open? or before_close? or blank = 0 then 0 else 1
 
     expect at_most_one: kept <= 1
     expect never_added: kept <= blank
+}
+
+-- The blank lines before a block's `{` go: the `{` joins the line before it, so no line starts
+-- there for `fmt::blank_lines` to keep them before. Between two members, they keep the line break.
+expect blank_lines_with_breaks(blank: Nat, vertical?) {
+    call brace := line_break(Gap::BlockBrace, vertical?, blank, false, false, false)
+    call between := line_break(Gap::AfterComma, vertical?, blank, false, false, false)
+    expect brace_joined: not brace.break?
+    expect members_apart: when blank > 0, between.break?
 }
 ```
 

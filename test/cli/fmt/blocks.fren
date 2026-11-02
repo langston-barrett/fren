@@ -139,3 +139,18 @@ pub proc brace_after_comment(m: Mode): (on?)  -- the signature
 {
     ensure r: on? iff m = Mode::Heat
 }
+
+-- A blank line before a block's `{` goes with the line break (`fmt::line_break`).
+pub proc brace_after_blank(m: Mode): (on?)
+
+{
+    ensure r: on? iff m = Mode::Heat
+}
+
+-- A block comment between the signature and `{`, on a line of its own, keeps its line, and `{`
+-- joins it.
+pub proc brace_after_block_comment(m: Mode): (on?)
+/- the signature -/
+{
+    ensure r: on? iff m = Mode::Heat
+}

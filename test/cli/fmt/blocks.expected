@@ -125,4 +125,16 @@
 -pub proc brace_line_empty()
 -{}
 +pub proc brace_line_empty() {}
+@@ -144 +145 @@
+-pub proc brace_after_blank(m: Mode): (on?)
++pub proc brace_after_blank(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
+@@ -146,4 +146,0 @@
+-{
+-    ensure r: on? iff m = Mode::Heat
+-}
+-
+@@ -153,2 +150 @@
+-/- the signature -/
+-{
++/- the signature -/ {
 exit=1

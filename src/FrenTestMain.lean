@@ -1068,6 +1068,105 @@ def fmtCommasPlaced (path src : String) : Bool :=
   (fmtPieces path src (all := true)).any fun (stream, _) =>
     FrenCli.Fmt.placeSeparators Prod.fst stream == stream
 
+/-- A token or comment of a file, for comparing blank lines: the token's
+index, if it is one, its text, its first and last lines, whether it starts
+its line, the blank lines between it and the piece kept before it, whether
+a `use` item comes between them, and the piece just before it, kept or not. -/
+structure BlankPiece where
+  tok? : Option Nat
+  text : String
+  endLine : Nat
+  startsLine : Bool
+  blank : Nat
+  afterUse : Bool
+  prev? : Option (Option Nat)
+  deriving Inhabited
+
+/-- The tokens and comments of Fren source, but its commas and the tokens
+of its `use` items, which formatting moves or rewrites, with its tokens and
+layout. -/
+def blankPieces (src : String) : Option (Array BlankPiece × Array FrenCli.Token × FrenCli.Layout) := do
+  let chars := src.toList.toArray
+  let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
+  let lay ← (FrenCli.parseLayout toks chars).toOption
+  let (lineOf, starts) := FrenCli.Fmt.lineTable chars
+  let blankLine (l : Nat) : Bool :=
+    (chars.extract starts[l]! ((starts[l + 1]?.map (· - 1)).getD chars.size)).all Char.isWhitespace
+  let inUse (k : Nat) : Bool := lay.uses.any fun (f, l) => f ≤ k && k ≤ l
+  let mut all : Array (FrenCli.Span × Option Nat) := #[]
+  for k in [0:toks.size - 1] do all := all.push (toks[k]!.span, some k)
+  for c in comments do all := all.push (c, none)
+  all := all.qsort fun a b => a.1.start < b.1.start
+  let mut out := #[]
+  let mut lastKept : Option Nat := none
+  let mut sawUse := false
+  for h : i in [0:all.size] do
+    let (s, tok?) := all[i]
+    if tok?.any (fun k => inUse k || toks[k]!.tok == .kw ",") then
+      if tok?.any inUse then sawUse := true
+      continue
+    let line := lineOf[s.start]!
+    let blank := match lastKept with
+      | some e => ((List.range (line - e - 1)).filter fun d => blankLine (e + 1 + d)).length
+      | none => 0
+    let startsLine := (chars.extract starts[line]! s.start).all Char.isWhitespace
+    out := out.push { tok?, text := FrenCli.Fmt.text chars s, endLine := lineOf[s.stop - 1]!, startsLine, blank,
+                      afterUse := sawUse, prev? := if i == 0 then none else some all[i - 1]!.2 }
+    lastKept := some lineOf[s.stop - 1]!
+    sawUse := false
+  return (out, toks, lay)
+
+/-- Where formatting `src` as `out` loses or adds a blank line: before each
+token or comment that starts a line of `out`, the blank lines are those
+that `fmt::blank_lines` keeps of `src`'s; and a token or comment after a
+blank line of `src` that does not start a line of `out` is after a gap
+whose line break a list or block decides and whose blank lines go
+(`fmt::line_break`): after an opening bracket, a record update's `{` or
+`with`, before a closing bracket, or before a block's `{`. Pieces after a
+`use` item are left out, as imports are merged and sorted. -/
+def fmtBlanksKept (src out : String) : Array String := Id.run do
+  let some (ps, _, lay) := blankPieces src | return #[]
+  let some (qs, toks', lay') := blankPieces out | return #[]
+  if ps.size != qs.size then return #["formatting changes its tokens and comments"]
+  -- Gaps of `src` whose blank lines go where a list or block joins them.
+  let mut joinable : Std.HashSet Nat := {}
+  for b in lay.bracketed do
+    if b.kind == .members then joinable := joinable.insert b.opening
+    joinable := (joinable.insert (b.lead + 1)).insert b.closing
+    if b.lead != b.opening then joinable := joinable.insert (b.opening + 1)
+  -- Tokens of `out` after which a line has no blank line after it, and
+  -- the closing brackets of those that indent.
+  let mut opens : Std.HashSet Nat := {}
+  for b in lay'.bracketed do opens := (opens.insert b.opening).insert b.lead
+  for h : k in [0:toks'.size] do
+    if toks'[k].tok == .kw "{" || toks'[k].tok == .kw "::{" then opens := opens.insert k
+  let mut closes : Std.HashSet Nat := {}
+  let mut unclosed : Array Nat := #[]
+  for h : k in [0:toks'.size] do
+    match toks'[k].tok with
+    | .kw "(" | .kw "[" | .kw "{" | .kw "::{" => unclosed := unclosed.push k
+    | .kw ")" | .kw "]" | .kw "}" =>
+      if let some o := unclosed.back? then
+        if toks'[o]!.tok == .kw "{" || toks'[o]!.tok == .kw "::{" || lay'.bracketed.any (·.opening == o) then
+          closes := closes.insert k
+        unclosed := unclosed.pop
+    | _ => pure ()
+  let mut failures := #[]
+  for h : i in [1:ps.size] do
+    let p := ps[i]!
+    let q := qs[i]!
+    if p.text != q.text then return #["formatting changes its tokens and comments"]
+    if p.afterUse || q.afterUse then continue
+    if q.startsLine then
+      let afterOpen := q.prev?.any (·.any opens.contains)
+      let beforeClose := q.tok?.any closes.contains
+      let kept := FrenCli.Fmt.blankLines p.blank false afterOpen beforeClose
+      if q.blank != kept then
+        failures := failures.push s!"{q.blank} blank lines before `{q.text}` (line {q.endLine + 1}), where `fmt::blank_lines` keeps {kept} of {p.blank}"
+    else if p.blank > 0 && !p.tok?.any joinable.contains then
+      failures := failures.push s!"a blank line before `{p.text}` (line {p.endLine + 1}) is lost, as its line is joined"
+  return failures
+
 /-! ## Conformance corpus (`Reqs/Lang/Decidability`) -/
 
 /-- Random components whose constraints are all in the decidable core of
@@ -1186,20 +1285,25 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
 
 /-- `src` laid out again at random, from `seed`, as `fmt::layout_free`
 allows: each gap whose line break a list or block decides, with no comment
-or blank line in it and none on its lines, gets a line break or a space; the
-trailing comma of a list that may end with one, on a line without a comment,
-is dropped or added; a comma that a line comment follows on its line may
-move to a line of its own after the comment, a space taking its place, and
-one in a list, on a line without a comment, may start the next line, as the
-line break before a comma is not content (`fmt::separators`); each gap of
-one or more spaces between two tokens on a line without a comment gets 1 to
-3 spaces; and then each line without a comment, and not inside a token, is
-indented by 0 to 12 spaces. `none` if `src` does not parse.
+in it and none on its lines, is laid out again. One whose blank lines go
+(`fmt::line_break`, `fmt::blank_lines`: after an opening bracket, a record
+update's `{` or `with`, before a closing bracket, or before a block's `{`)
+gets a space, a line break or a blank line, whatever it had; one between
+two elements or members gets a space or a line break if it has no blank
+line, and otherwise keeps its blank lines, with spaces on them at random.
+The trailing comma of a list that may end with one, on a line without a
+comment, is dropped or added; a comma that a line comment follows on its
+line may move to a line of its own after the comment, a space taking its
+place, and one in a list, on a line without a comment, may start the next
+line, as the line break before a comma is not content (`fmt::separators`);
+each gap of one or more spaces between two tokens on a line without a
+comment gets 1 to 3 spaces; and then each line without a comment, and not
+inside a token, is indented by 0 to 12 spaces. `none` if `src` does not
+parse.
 
 It leaves alone what is content (`fmt::safe`), and some of what is not:
-the gaps and indentation of lines with comments, gaps with a blank line,
-and gaps with no space, where one could change what the parser reads, as
-in `f(x)` or `0..=9`. -/
+the gaps and indentation of lines with comments, and gaps with no space,
+where one could change what the parser reads, as in `f(x)` or `0..=9`. -/
 def relaid (src : String) (seed : Nat) : Option String := do
   let chars := src.toList.toArray
   let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
@@ -1213,30 +1317,30 @@ def relaid (src : String) (seed : Nat) : Option String := do
   let mut edits : Array (Nat × Nat × String) := #[]
   let mut seen : Std.HashSet Nat := {}
   for b in lay.bracketed do
-    -- The gap before a block's `{`.
-    if b.kind == .members && b.opening > 0 then
-      let start := toks[b.opening - 1]!.span.stop
-      let stop := toks[b.opening]!.span.start
-      let between := chars.extract start stop
-      if !seen.contains start && between.all Char.isWhitespace && between.count '\n' ≤ 1
-          && !commented.contains lineOf[start]! && !commented.contains lineOf[stop]! then
-        seen := seen.insert start
-        rng := (rng * 1103515245 + 12345) % 2147483648
-        edits := edits.push (start, stop, if (rng / 65536) % 2 == 0 then "\n" else " ")
-    if b.closing == b.opening + 1 then continue
-    let mut gaps := #[(b.lead, b.lead + 1), (b.closing - 1, b.closing)]
-    if b.lead != b.opening then gaps := gaps.push (b.opening, b.opening + 1)
-    for k in b.commas do
-      if k + 1 != b.closing then gaps := gaps.push (k, k + 1)
-    for (a, c) in gaps do
+    -- The gaps, each with whether its blank lines go.
+    let mut gaps : Array (Nat × Nat × Bool) := #[]
+    if b.kind == .members && b.opening > 0 then gaps := gaps.push (b.opening - 1, b.opening, true)
+    if b.closing != b.opening + 1 then
+      gaps := gaps ++ #[(b.lead, b.lead + 1, true), (b.closing - 1, b.closing, true)]
+      if b.lead != b.opening then gaps := gaps.push (b.opening, b.opening + 1, true)
+      for k in b.commas do
+        if k + 1 != b.closing then gaps := gaps.push (k, k + 1, false)
+    for (a, c, goes) in gaps do
       let start := toks[a]!.span.stop
       let stop := toks[c]!.span.start
       let between := chars.extract start stop
-      if seen.contains start || !between.all Char.isWhitespace || between.count '\n' > 1 then continue
+      if seen.contains start || !between.all Char.isWhitespace then continue
       if commented.contains lineOf[start]! || commented.contains lineOf[stop]! then continue
       seen := seen.insert start
       rng := (rng * 1103515245 + 12345) % 2147483648
-      edits := edits.push (start, stop, if (rng / 65536) % 2 == 0 then "\n" else " ")
+      let pick := (rng / 65536) % 3
+      let breaks := between.count '\n'
+      let gap := if goes then (if pick == 0 then " " else if pick == 1 then "\n" else "\n\n")
+        else if breaks > 1 then
+          (List.range (breaks - 1)).foldl (fun acc d => acc.pushn ' ' ((pick + d) % 3) ++ "\n") "\n"
+        else if pick == 0 then " " else "\n"
+      edits := edits.push (start, stop, gap)
+    if b.closing == b.opening + 1 then continue
     -- The trailing comma, where the syntax allows one.
     if FrenCli.Fmt.endsWithComma b.kind && !commented.contains lineOf[toks[b.closing - 1]!.span.start]! then
       rng := (rng * 1103515245 + 12345) % 2147483648
@@ -1327,12 +1431,14 @@ def formatting : IO (Array String) := do
     -- Its Fren source, laid out again.
     let code := FrenCli.Fmt.parsedText f src
     let .ok formatted := FrenCli.Fmt.formatFren code | continue
+    for d in fmtBlanksKept code formatted do failures := failures.push s!"{f}: {d}"
     for seed in [1, 2] do
       let some other := relaid code (seed * 7919 + f.length) | failures := failures.push s!"{f}: laid out again, it does not parse"; continue
       if other != code then relaidSome := true
       match FrenCli.Fmt.formatFren other with
       | .error _ => failures := failures.push s!"{f}: laid out again, it does not parse"
       | .ok again =>
+        for d in fmtBlanksKept other again do failures := failures.push s!"{f}: laid out again (seed {seed}), {d}"
         if fmtKept "x.fren" other != fmtKept "x.fren" again then
           failures := failures.push s!"{f}: laid out again, formatting changes its tokens and comments, their order, or its imports"
         if !fmtCommasPlaced "x.fren" again then
