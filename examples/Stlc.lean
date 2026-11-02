@@ -24,9 +24,9 @@ sections:
   and big-step preservation (`type_safety`); and normalization, by Tait's
   method as in chapter 12 of TAPL, proved here alone, since `stlc.fren` has
   no check that states it (`normalization`).
-- **Nameless terms**: the round trip (`nameless_round_trip`), and
-  alpha-equivalence: substitution commutes with the nameless form, renaming
-  a binder, and typing (`alpha_laws`).
+- **Nameless terms**: the round trip (`nameless_round_trip`).
+  - **Alpha-equivalence**: substitution commutes with the nameless form,
+    renaming a binder, and typing (`alpha_laws`).
 - **One layer of a term**: `size` is the fold of `size_alg` (`layer_laws`).
 
 Tested only, not proved: the round trip of the concrete syntax

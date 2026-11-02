@@ -863,17 +863,18 @@ pub proc alpha_laws(  --~ info: the vacuity and redundancy checks of `stlc::alph
     ensure typed_alpha: when alpha_eq?(Names::Nil, t, t2), typeof(Ctx::Empty, t) = typeof(Ctx::Empty, t2)
 }
 
+-- `[x := z] (\y. x)`, and `\. 1`, the nameless form of `\y. x`.
+pub const SUBSTITUTED: Named := subst("x", Var("z"), Lam("y", Boolean, Var("x")))
+pub const LAM_ONE: Nameless := Lam(Anon::Anon, Boolean, Var(1))
+
 -- `substituted_under_binder`: `[x := z] (\y. x)` under the name `z` converts
 -- to `[0 := 0] (\. 1)`, so the conversion commutes with substitution;
 -- `shifted`: only the indices at or above the cutoff move; `decremented`:
 -- the indices above the one substituted for move down.
-pub const RENAMED: Named := subst("x", Var("z"), Lam("y", Boolean, Var("x")))
-pub const LAM_ONE: Nameless := Lam(Anon::Anon, Boolean, Var(1))
-
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 pub proc nameless_examples() {
-    expect substituted_under_binder: to_nameless(Names::Cons("z", Names::Nil), RENAMED) = Some(nsubst(0, Var(0), LAM_ONE))
+    expect substituted_under_binder: to_nameless(Names::Cons("z", Names::Nil), SUBSTITUTED) = Some(nsubst(0, Var(0), LAM_ONE))
         and nsubst(0, Var(0), LAM_ONE) = LAM_ONE
     expect shifted: shift(1, 0, Lam(Anon::Anon, Boolean, App(Var(0), Var(1)))) = Lam(Anon::Anon, Boolean, App(Var(0), Var(2)))
     expect decremented: nsubst(0, True, Lam(Anon::Anon, Boolean, Var(2))) = Lam(Anon::Anon, Boolean, Var(1))
