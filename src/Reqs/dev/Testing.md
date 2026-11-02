@@ -273,11 +273,12 @@ pub mod testing
   `.lake/fuzz`) with the differences and both reports in comments, and the
   differences are summarized by kind; those only in undecided checks,
   which time limits may explain, are counted apart. Specs run in worker
-  processes, a fresh one every 100 specs, since a worker slows down as it
-  checks more, so a crash of the solver is recorded against its spec, and a
+  processes, so a crash of the solver is recorded against its spec, and a
   spec that runs longer than `--spec-timeout` (default 30 s; a spec takes
   well under a second) is stopped and recorded as a timeout. Crashes and
   timeouts are findings, like differences: the run then exits nonzero. A
+  fresh worker takes over every 100 specs, since a worker slows down as it
+  checks more (on CI, past some 150 specs, until specs time out). A
   worker that dies while checking no spec is blamed on none. Each run's
   work files are its own, but the findings are named by seed, so runs with
   overlapping seeds in one `DIR` overwrite each other's. `--avoid-known`
@@ -306,13 +307,16 @@ pub mod testing
   check (`fren says …, Lean says …`) is, listed as a kind on its own: it is a
   disagreement on a verdict, to be fixed, and is known only alongside a
   kind that explains it, as Lean's failure to decide a check explains the
-  summary's count of inconclusive results, or by the difference itself,
-  names kept, in the form that its issue records (`ofDifference`), as a
-  conflict core where Lean's has more clauses than `fren`'s. A kind that a static error
+  summary's count of inconclusive results, or where the difference itself
+  passes a test of what the kind masks (`test?`), as a conflict core whose
+  clauses, by name, are `fren`'s and more on Lean's side
+  (`leanCoreHasMore`). A kind that a static error
   explains, as the front ends' different recovery from it does, is
   listed as such (`afterStaticError`), and is known only on a spec where
-  the `fren` command reports a static error at or before its line (an
-  internal error, as the evaluator's, is none); and
+  both front ends report a static error, at the same place, at or before
+  its line (an internal error, as the evaluator's, is none): a static
+  error that only one front end reports is a difference itself, and
+  explains nothing; and
   one that another difference explains, as the evaluator's internal error
   explains an exit code, only alongside that difference (`alongside?`),
   and, where the entry says so, only at its line (`onItsLine`), as Lean's
@@ -657,7 +661,7 @@ or its kind is recorded on its issue and listed in `knownKinds`; CI posts
 to no issue. The known kinds go unchecked on those seeds, of either
 generator: today Lean's extra report of a chain of methods that has a
 shorter form (`F0743`, #493), the front ends' different recovery after a
-static error (#493, #295), and the kinds of #493 and #485 that
+static error (#493, #295), and the kinds of #493, #484 and #485 that
 `knownKinds`'s comments name. The kinds listed only for the default
 generator are checked there. A run of `lean ci` by hand
 (`workflow_dispatch`), on any branch, may run that job alone
