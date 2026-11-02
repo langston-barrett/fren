@@ -114,6 +114,49 @@ three. -/
 def recursionFormulas {F : Type} (varFacts appFacts hyps : Array (Lean.Name × F)) : Array (Lean.Name × F) :=
   varFacts ++ appFacts ++ hyps
 
+/-! ## Merging the facts found on several paths (`lang::merged_facts`) -/
+
+/-- The weakest of the paths `ps`, with one more, `p`, to the same fact,
+where `within q p` says that `q`'s guards are among `p`'s, so that where
+`p`'s hold, `q`'s do (`mergeGuarded`): unchanged if one of them is within
+`p`, and otherwise those of them that `p` is not within, then `p`. -/
+def addPath {P : Type} (within : P → P → Bool) (ps : List P) (p : P) : List P :=
+  if ps.any (within · p) then ps else ps.filter (!within p ·) ++ [p]
+
+/-- The facts merged so far, `acc`, with one more found on a path, `x`
+(`mergeGuarded`). -/
+def mergeStep {F P : Type} [BEq F] (within : P → P → Bool) (acc : List (F × List P)) (x : F × P) :
+    List (F × List P) :=
+  if acc.any (·.1 == x.1) then acc.map fun e => (e.1, if e.1 == x.1 then addPath within e.2 x.2 else e.2)
+  else acc ++ [(x.1, [x.2])]
+
+/-- The facts `found` of a query's recursive applications, each with a path
+on which its reflection finds it (`recursiveQueryFacts`), merged
+(`lang::merged_facts`): each fact once, in the order in which it is first
+found, with the weakest of its paths, under the disjunction of whose guards
+the query asserts it (`guardedFact`). A path whose guards are within
+another's is weaker: where the other's hold, its own do, so the fact under
+the other's follows from it under its own, and the merged facts are
+equivalent to `found`. The reflection finds an application once on each
+path to it, so without this, a fact of an application that many facts
+mention would be asserted once on each of their paths, though those paths
+mostly only add guards to the first. -/
+def mergeGuarded {F P : Type} [BEq F] (within : P → P → Bool) (found : List (F × P)) : List (F × List P) :=
+  found.foldl (mergeStep within) []
+
+/-- Whether every guard of `g` is one of `h`'s, so that where `h`'s hold,
+`g`'s do: `mergeGuarded`'s `within` for paths given by their guards. -/
+def guardsWithin {G : Type} [BEq G] (g h : Array G) : Bool := g.all h.contains
+
+/-- The fact `f` under the paths `ps` that `mergeGuarded` keeps: under the
+guards of its only path, as `implies` puts them, or under the disjunction
+`disj` of its paths' guards. A path without guards is the only one kept, so
+the fact then holds unconditionally. -/
+def guardedFact {F G : Type} (implies : Array G → F → F) (disj : List (Array G) → G) (f : F) :
+    List (Array G) → F
+  | [g] => implies g f
+  | ps => implies #[disj ps] f
+
 /-! ## Lean `match`es (`lang::recursive_match`) -/
 
 /-- Whether the pattern `p` is one that a Lean `match` has as it is, as
