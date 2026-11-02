@@ -218,8 +218,11 @@ pattern test's binders are not names in scope beside it, but a `match`
 around each operand that reads them, as [Derived
 forms](../../Lang/Semantics.md#derived-forms) states. So the operands of
 `(v > 1 and r is Reply::Value(v!)) and (v > 1 and r is Reply::Value(v!))`
-differ: the right `v > 1` is in a `match`. Comparing the operands in their
-scopes is equality of their elaborations, which `eq_op_fires?` tests.
+differ: the right `v > 1` is in a `match`. Operands written the same in
+the same scope have equal elaborations, which `eq_op_fires?` tests. The
+converse need not hold: an operand written in two scopes that differ only
+by a binder it does not read elaborates alike, and the linter does not
+fire on it. So the scope is still an input of the linter's rule.
 Elaboration writes `!=` as the negation of `=`, `>` and `>=` as `<` and
 `<=` with the operands swapped, and `iff` as `=`. So `eq_op_fires?` fires
 on `a = a`, `a < a`, `a <= a`, `a - a`, `not (a = a)`, `a and a` and
@@ -304,11 +307,12 @@ Where `eq_op` fires on an operator of the model, `eq_op_fires?` fires on
 its elaboration, and says what the message says. On `+`, `*` and `++`,
 neither fires. Where `eq_op` fires on `when C, D` or `unless C, D`,
 `eq_op_fires?` fires on its elaboration, and says what the message says.
-That `written(x)` is `x`'s elaboration where it is written, a `match`
-around it included, is what [Expressions as
-written](../Meaning.md#expressions-as-written) assumes. The front ends'
-reading of the operator and the keyword is trusted, and checked by the ui
-tests in `test/ui/lints/suspicious.fren` and `test/ui/lints/mistakes.fren`. The linter fires only where
+`written(x)` is `x`'s elaboration where it is written, with the `match`
+around it, as [Expressions as
+written](../Meaning.md#expressions-as-written) states. The front ends'
+reading of the operator and the keyword is trusted, and checked by the
+ui tests in `test/ui/lints/suspicious.fren` and
+`test/ui/lints/mistakes.fren`. The linter fires only where
 `eq_op_fires?` does, not everywhere it does. On `a != a`, the linter
 fires once, and `eq_op_fires?` fires on both the negation and the `=`
 within it. It also fires on `if c then c else true`, which the linter
@@ -811,8 +815,12 @@ conditional, as [fixing everywhere](../Rewrites.md#fixing-everywhere)
 does first, makes the outer one `If(c, v, v)`, whose fix is `v`, the fix
 the linter writes (`rows`). Without a `_` row, the last conditional's
 `else` branch is `NoMatch`, so where `v` is not `NoMatch`,
-`same_branches_fires?` fires on none of the conditionals (`no_wildcard`). The linter fires there, without a fix, and
-`lint::same_rows` states that. The front ends' reading of the branches
+`same_branches_fires?` fires on none of the conditionals (`no_wildcard`).
+The linter fires there, without a fix, and `lint::same_rows` states that.
+These two facts, `same_branches_tables`, are about the functions alone:
+`lint::same_rows` models a row's value as a `Body`, not as an
+expression, so that its fix is the value `rows` reaches is stated in
+this prose, and not as a check. The front ends' reading of the branches
 and the rows, and the text of the fix, are trusted, and checked by the ui
 tests in `test/ui/lints/suspicious.fren` and
 `test/ui/lints/patterns_tables.fren`.
@@ -823,8 +831,6 @@ expect same_branches_elaborated(
     t: Scoped,
     f: Scoped,
     c: lang::Expr<lang::Id>,
-    d: lang::Expr<lang::Id>,
-    v: lang::Expr<lang::Id>,
 ) {
     use lang::Expr::If
 
@@ -832,6 +838,15 @@ expect same_branches_elaborated(
 
     expect fires: when p.fires?, same_branches_fires?(If(c, written(t), written(f)))
         and same_branches_fix(If(c, written(t), written(f))) = written(t)
+}
+
+expect same_branches_tables(
+    c: lang::Expr<lang::Id>,
+    d: lang::Expr<lang::Id>,
+    v: lang::Expr<lang::Id>,
+) {
+    use lang::Expr::If
+
     expect rows: same_branches_fix(If(c, v, same_branches_fix(If(d, v, v)))) = v
     expect no_wildcard: unless v = lang::Expr::NoMatch,
         not same_branches_fires?(If(c, v, If(d, v, lang::Expr::NoMatch)))
