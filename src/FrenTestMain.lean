@@ -185,7 +185,9 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
         failures := failures.push s!"{f} (binary): {e}"
       cliStopped := some (out.contains s!"error: {Fren.Core.couldNotHeadline}")
     if spec.only? != some "cli" then
-      let (diags, summary) ← hostedDiagnostics env f.toString src
+      -- Each type that the hosted front end takes from its cache checked
+      -- against the term's elaborated again (`Fren.typeOf`).
+      let (diags, summary) ← hostedDiagnostics env f.toString src (Fren.fren.checkTypeCache.set {} true)
       let stopped := diags.any isStopped
       for e in check "hosted" spec (diags.filter (!isStopped ·)) summary none do
         failures := failures.push s!"{f} (Lean): {e}"
