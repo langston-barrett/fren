@@ -36,8 +36,12 @@ pub mod testing
   [Expectations](#expectations) for when a file passes.
 - **Example specs** (`lake test`): each `examples/**/*.fren` is a complete
   spec for readers, and is checked as a ui test, so its annotations
-  (usually none) must match both front ends' messages. The example specs
-  are also in the ui tests' backjumping and enumeration corpora.
+  (usually none) must match both front ends' messages. An example that one
+  front end cannot check, for a known limit with its issue, may be checked
+  by the other alone (`--@ only: cli`), with a comment that names the issue
+  and says to drop the line once it is fixed, as `examples/filesystem.fren`
+  does for #417. The example specs are also in the ui tests' backjumping and
+  enumeration corpora.
   An example's Lean implementation, such as `examples/Rle.lean`, reads its
   spec with `#fren_md` and proves it meets the spec; `lake build` checks
   the proofs of those listed in the `Examples` library.
