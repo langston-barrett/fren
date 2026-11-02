@@ -4,9 +4,11 @@ import FrenCore.Generics
 
 /-! A test of `Core.instanceSites`, which groups the applications by the
 generic function they are in (`Core.usesByCaller`) and by the item they
-are in, once, rather than scanning every application at each instance
-and each item: over random applications, it gives what the scans gave,
-in the same order. -/
+are in (`Core.usesByItem`), once, rather than scanning every application
+at each instance and each item. That each grouping gives what its scan
+gave, in order, is proved (`usesByCaller_getD`, `usesByCaller_map`,
+`usesByItem_getD`); `instancesThrough` is `partial`, so this checks the
+whole, over random applications, against the scans as they were. -/
 
 namespace Fren.Test.InstanceSites
 

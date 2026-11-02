@@ -708,8 +708,11 @@ the results that a refuted model is about, with their internal errors; and
 an internal error if the evaluator has no counterpart of `c`. `sy` is
 `symbolsOf spec?`, built once for the spec. `prelude` is `st`'s, indexed
 (`State.queryPrelude`), and `cache` holds the answers to the queries asked
-before (`QueryCache`). `sites?` is `st.instanceSites`, if it is given,
-computed once for the checks of every item rather than for each. -/
+before (`QueryCache`). `sites?`, if it is given, must be
+`st.instanceSites` of this same `st`, computed once for the checks of
+every item rather than for each: sites of another `State`, such as a
+mutant's, would check the wrong instances' contracts. Only `check` passes
+it, for the one `State` of its run. -/
 partial def solveComp (st : State) (prelude : Prelude) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
@@ -900,7 +903,8 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   let todo := (Mutate.todo st).map fun t => (t.comp, t.global, t.kinds, t.body, t.key)
   let prelude := st.queryPrelude
   -- Where the contracts of instances of generic functions are checked,
-  -- the same for every item (`lang::instance_site`).
+  -- the same for every item (`lang::instance_site`): `st`'s, which
+  -- `solveComp` is given with `st` itself.
   let sites := st.instanceSites
   -- A query asked again, as some checks of a procedure share one, is
   -- answered once (`Reqs/Cli#solver-queries`), and one asked by an earlier
