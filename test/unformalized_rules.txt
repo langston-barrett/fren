@@ -6,8 +6,9 @@
 # requirement, removes its line and the mark. A rule that is to keep no
 # requirement says why, after ` -- `, which every line of a section without
 # the mark must. A rule whose markers link only part of what it states is
-# listed too, with ` -- partly formalized` (or `: ` and what is missing
-# after it), until they link all of it. The
+# listed too, with ` -- partly formalized: ` and what is missing (or, in a
+# pending section, ` -- partly formalized` alone), until they link all of
+# it. The
 # `ruleReqs` job fails on a rule of those labels that has no requirement and
 # is not listed, and on a listed one that has one (but for `partly
 # formalized`), is of another label, is in another chapter's section, or is
@@ -19,8 +20,8 @@ evaluation.constant
 evaluation.variant
 evaluation.operator.defined
 evaluation.operator.not
-evaluation.operator.arithmetic -- partly formalized
-evaluation.operator.division -- partly formalized
+evaluation.operator.arithmetic -- partly formalized: no claim for the operators but `+`
+evaluation.operator.division -- partly formalized: no claim for `mod`
 evaluation.operator.concatenation
 evaluation.operator.membership
 evaluation.operator.order
@@ -31,12 +32,12 @@ evaluation.lazy.undefined
 evaluation.match
 evaluation.match.order
 evaluation.list.nil
-evaluation.construct -- partly formalized
-evaluation.project -- partly formalized
-evaluation.index -- partly formalized
-evaluation.method -- partly formalized
-evaluation.method.min-max -- partly formalized
-evaluation.method.len -- partly formalized
+evaluation.construct -- partly formalized: no claim for more than one argument
+evaluation.project -- partly formalized: no claim for a position after 0, or for a value of another constructor
+evaluation.index -- partly formalized: no claim for a position after 0 of a nonempty list
+evaluation.method -- partly formalized: strictness only for the receiver of `abs`, and none for the arguments
+evaluation.method.min-max -- partly formalized: no claim for `max`
+evaluation.method.len -- partly formalized: no claim for a list
 evaluation.method.excluded
 evaluation.apply
 evaluation.apply.caller
@@ -76,7 +77,7 @@ evaluation.guard.evaluation.rest
 quantifier.type.body
 quantifier.type.binder
 quantifier.type.not-listed
-quantifier.type.subset -- partly formalized
+quantifier.type.subset -- partly formalized: no claim for its second sentence, the values of a subset type
 quantifier.type.alias
 quantifier.type.unbounded
 quantifier.meaning.reported-once

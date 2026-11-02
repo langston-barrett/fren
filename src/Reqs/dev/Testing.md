@@ -54,8 +54,10 @@ pub mod testing
   **Legality rules** or **Dynamic semantics** has a requirement or is
   listed in `test/unformalized_rules.txt`, with why where its chapter's
   section is not "(Interlock pending)", and a rule that is only partly
-  formalized is listed too; the clauses that a marker names alone are
-  clauses of the item they resolve to; a block that formalizes a rule of
+  formalized is listed too, saying what is missing once its chapter's
+  section is done; every item and clause that a marker names exists, and
+  the clauses that it names alone are clauses of the item they resolve to;
+  a block that formalizes a rule of
   its chapter follows it; each item of a module named as one of its
   chapter's constructs has a rule of its name, or, if it has clauses, each
   of them does, where the name is shaped as a rule identifier; and every

@@ -9,8 +9,9 @@ It reads the results of the workflow's jobs from the environment: `BUILD`,
 `TEST` and `BOOK`, each `success`, `failure`, `cancelled` or `skipped`;
 `BUILT`, the `book` job's output, `true` if it built the book; and `EVENT`,
 the event that the run is of. It exits 0 if the build and every shard
-passed and, on a pull request, the book was built and passed, and 1
-otherwise, saying why. In the merge queue, the book is not built.
+passed and, unless the run is in the merge queue (`merge_group`), where
+the book is not built, the book was built and passed; and 1 otherwise,
+saying why. Any other event, or none, needs the book.
 
 `test` checks the verdict on every combination of the jobs' results, by
 running this script as the workflow does.
@@ -30,11 +31,11 @@ def reasons(env):
     for job in ["BUILD", "TEST"]:
         if env.get(job) != "success":
             out.append(f"{job.lower()}: {env.get(job)}")
-    if env.get("EVENT") == "pull_request":
+    if env.get("EVENT") != "merge_group":
         if env.get("BOOK") != "success":
             out.append(f"book: {env.get('BOOK')}")
         elif env.get("BUILT") != "true":
-            out.append("book: passed without building the book, since shard 0 uploaded no test driver")
+            out.append("book: passed without building the book, since no test driver was downloaded")
     return out
 
 
@@ -61,14 +62,18 @@ def test():
             failures.append(f"{env}: exit {got}, expected {code}")
 
     # Every combination: it passes exactly where the build and the tests
-    # passed and, on a pull request, the book passed and was built.
+    # passed and, but in the merge queue, the book passed and was built. An
+    # event of `None` is unset; any event but `merge_group` needs the book.
     for event, build, tests, book, built in itertools.product(
-        ["pull_request", "merge_group"], RESULTS, RESULTS, RESULTS, ["true", "false", ""]
+        ["pull_request", "merge_group", "push", "workflow_dispatch", "PULL_REQUEST", "", None],
+        RESULTS, RESULTS, RESULTS, ["true", "false", ""],
     ):
         green = build == "success" and tests == "success"
-        if event == "pull_request":
+        if event != "merge_group":
             green = green and book == "success" and built == "true"
-        env = {"EVENT": event, "BUILD": build, "TEST": tests, "BOOK": book, "BUILT": built}
+        env = {"BUILD": build, "TEST": tests, "BOOK": book, "BUILT": built}
+        if event is not None:
+            env["EVENT"] = event
         expect(env, 0 if green else 1)
     # The cases of the review of #688, written out: a failed build fails,
     # whatever the book did.
@@ -76,8 +81,9 @@ def test():
     expect({"EVENT": "merge_group", "BUILD": "failure", "TEST": "success", "BOOK": "skipped", "BUILT": ""}, 1)
     expect({"EVENT": "pull_request", "BUILD": "success", "TEST": "success", "BOOK": "success", "BUILT": "false"}, 1)
     expect({"EVENT": "merge_group", "BUILD": "success", "TEST": "success", "BOOK": "skipped", "BUILT": ""}, 0)
-    # An unset result is no success.
+    # An unset result is no success, and an unset event needs the book.
     expect({"EVENT": "pull_request"}, 1)
+    expect({"BUILD": "success", "TEST": "success"}, 1)
     for f in failures:
         print(f, file=sys.stderr)
     if failures:

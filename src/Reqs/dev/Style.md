@@ -129,11 +129,14 @@ quote, so it needs no label.
   `ensure strict`, for `quantifier.guard.strict`).
 - Where the structures differ, the rule names its requirement in a
   *marker* instead: a parenthesized group with an element, between its
-  commas and semicolons, that is only the path of an existing item,
-  "(`F0356`, `lang::quantifier_size`)", or only clauses of one, "(`and_false`
-  and `and_unevaluated` of `lang::lazy_rules`)". A path elsewhere in the
-  rule, as in "`lang::eval` gives", and a code span that names no item or
-  clause, as in "(`true` or `false`)", are no marker.
+  commas and semicolons, that is only a path in a module that the
+  reference declares, which must name an item, "(`F0356`,
+  `lang::quantifier_size`)", or a clause, "(`lang::lazy_rules::and_true`)";
+  or only clauses of one, "(`and_false` and `and_unevaluated` of
+  `lang::lazy_rules`)", which must be its clauses. A path elsewhere in the
+  rule, as in "`lang::eval` gives", an example path, as in
+  "(`Shape::Circle`)", and, in a group with no such path, code spans that
+  are no item's clauses, as in "(`true` or `false`)", are no marker.
 - Clauses alone, "(`and_true`)", are of the last item that their group
   names, or else of the last item that the latest marker before them in the
   chapter names, and it must have them. A clause of another item says
@@ -149,8 +152,9 @@ quote, so it needs no label.
   requirement, removes its line, and removes the mark. A rule that is to
   keep no requirement says why on its line, after ` -- `, which every line
   of a section without the mark must. A rule whose markers link only part
-  of what it states stays listed, with ` -- partly formalized`, or
-  ` -- partly formalized: ` and what is missing, until they link all of it.
+  of what it states stays listed, with ` -- partly formalized: ` and what
+  is missing, until they link all of it; in a section that is still
+  "(Interlock pending)", ` -- partly formalized` alone will do.
   What a message or a help says, which a rule may state, is left to the ui
   tests: a rule whose requirement states all but its message counts as
   formalized.

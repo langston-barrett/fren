@@ -495,10 +495,11 @@ def groupsOf (ps : Array Piece) : Array (Array Piece) := Id.run do
   return out
 
 /-- An element of a parenthesized group, as a reference to requirements:
-an item, by its path (`lang::guard_bound`); clauses of an item (`taken` of
-`lang::match_rules`); or clauses alone (`falls_through`), of the item that
-the group names, or else of the latest item that a marker before it in the
-chapter names that has them. -/
+an item, by its path (`lang::guard_bound`), or a clause by its item's path
+and its name (`lang::lazy_rules::and_true`); clauses of an item (`taken` of
+`lang::match_rules`); or clauses alone (`falls_through`), of the last item
+that the group names, or else of the last item that the latest marker
+before it in the chapter names. -/
 inductive Ref where
   | item (path : String)
   | clauses (names : Array String) (path : Option String)
@@ -551,13 +552,19 @@ def refOf (ps : Array Piece) : Option (Option Ref) := Id.run do
     if !ok then return none
     return some (some (.clauses (names.filterMap fun | .code c => some c | _ => none).toArray path))
 
+/-- Whether the path `q` is in a module that the reference declares an
+item in, such as `lang`, unlike an example such as `Shape::Circle`. -/
+def inDeclaredModule (items : Array ReqItem) (q : String) : Bool :=
+  items.any fun i => (i.path.splitOn "::").head! == (q.splitOn "::").head!
+
 /-- Whether the reference `ref` is a marker's among `items`: one that names
-an item, which must exist, or clauses alone that are clauses of some item.
-Code spans alone that are no item's clauses, as in "(`true` or `false`)",
+a path in a module that the reference declares (`inDeclaredModule`), or
+clauses alone, in a group that names such a path (`pathGroup`) or that are
+clauses of some item. So "(`true` or `false`)" and "(`Shape::Circle`)"
 are no reference. -/
-def isMarkerRef (items : Array ReqItem) : Ref → Bool
-  | .clauses names none => names.all fun c => items.any (·.clauses.contains c)
-  | _ => true
+def isMarkerRef (items : Array ReqItem) (pathGroup : Bool) : Ref → Bool
+  | .item q | .clauses _ (some q) => inDeclaredModule items q
+  | .clauses names none => pathGroup || names.all fun c => items.any (·.clauses.contains c)
 
 /-- The references of a parenthesized group, if it is a marker: one with
 an element, between its commas and semicolons, that is a reference and
@@ -566,7 +573,11 @@ nothing else (`isMarkerRef`). A code span within prose, as in "(over
 def markerRefs (items : Array ReqItem) (g : Array Piece) : Option (Array Ref) := do
   let elements := g.foldl (init := #[#[]]) fun acc p =>
     if p == .text "," || p == .text ";" then acc.push #[] else acc.modify (acc.size - 1) (·.push p)
-  let refs := elements.filterMap fun e => ((refOf e).bind id).filter (isMarkerRef items)
+  let all := elements.filterMap fun e => (refOf e).bind id
+  let pathGroup := all.any fun
+    | .item q | .clauses _ (some q) => inDeclaredModule items q
+    | _ => false
+  let refs := all.filter (isMarkerRef items pathGroup)
   guard !refs.isEmpty
   return refs
 
@@ -580,6 +591,11 @@ def guardItems (is : List (String × List String)) : Array ReqItem :=
 #guard (groupsOf (pieces "(see [`lang::m`](M.md#a)) (`lang::p`, over `lang::q`) (``a`b``) (`c`; see [S](S.md)) (`true` or `false`) (`lang::none`)")).filterMap
     (markerRefs (guardItems [("lang::m", []), ("lang::p", ["c"]), ("lang::q", [])])) ==
   #[#[.item "lang::p"], #[.clauses #["c"] none], #[.item "lang::none"]]
+-- Example paths in prose are no marker; a misspelt clause beside a path is
+-- one (the review of #688).
+#guard (groupsOf (pieces "(`Shape::Circle`, `m::f`) (`a` of `E::V`) (`lang::p`, `conditon`) (`skiped`)")).filterMap
+    (markerRefs (guardItems [("lang::p", ["condition"]), ("lang::q", ["skipped"])])) ==
+  #[#[.item "lang::p", .clauses #["conditon"] none]]
 
 /-- The requirements that formalize each rule of the chapter `md`, in
 order, each item with the clauses named, and the problems of its markers:
@@ -617,12 +633,22 @@ def reqsOfChapter (md : String) (items : Array ReqItem) (rules : Array Rule) :
         let some q := q?
           | problems := problems.push s!"{here}: the rule `{r.id}` names {code names} alone, and no marker before it names an item"
             continue
+        -- A clause written as its item's path and its name.
+        let segs := q.splitOn "::"
+        let pre := "::".intercalate segs.dropLast
+        let (q, names) := match ref, find q, find pre with
+          | .item _, none, some j => if j.clauses.contains segs.getLast! then (pre, #[segs.getLast!]) else (q, names)
+          | _, _, _ => (q, names)
         let some i := find q
-          | problems := problems.push s!"{here}: the rule `{r.id}` names `{q}`, which is no item of the reference"
+          | problems := problems.push s!"{here}: the rule `{r.id}` names `{q}`, which is no item of the reference, nor a clause of one"
             continue
         let missing := names.filter (!i.clauses.contains ·)
         if missing.isEmpty then links := links.push (i, names)
-        else problems := problems.push s!"{here}: the rule `{r.id}` names {code missing}, which `{q}` has no clause of: write \"of `ITEM`\" after a clause of another item"
+        else
+          for c in missing do
+            let other := items.find? (·.clauses.contains c)
+            let hint := other.map (fun j => s!": write \"`{c}` of `{j.path}`\" for that item's") |>.getD ""
+            problems := problems.push s!"{here}: the rule `{r.id}` names `{c}`, which is no clause of `{q}`{hint}"
       if let some q := groupItem then
         if (find q).isSome then context := some q
     -- One entry for each item, with the clauses of all of its links.
@@ -652,7 +678,7 @@ def guardLinks (items : List (String × List String)) (texts : List String) :
 #guard guardLinks [("lang::if_rules", ["then_branch", "condition"]), ("lang::guards_evaluation", ["one_branch"])]
     ["(`then_branch` of `lang::if_rules`)", "(`one_branch` of `lang::guards_evaluation`)", "(`condition`)"] ==
   (#[#[("lang::if_rules", #["then_branch"])], #[("lang::guards_evaluation", #["one_branch"])], #[]],
-   #["c:3: the rule `r.r2` names `condition`, which `lang::guards_evaluation` has no clause of: write \"of `ITEM`\" after a clause of another item"])
+   #["c:3: the rule `r.r2` names `condition`, which is no clause of `lang::guards_evaluation`: write \"`condition` of `lang::if_rules`\" for that item's"])
 #guard guardLinks [("lang::method_rules", []), ("lang::call_rules", ["recursive"])]
     ["(`lang::method_rules`, `lang::call_rules`)", "(`recursive`)", "(`a` alone)", "x (`recursive`)"] ==
   (#[#[("lang::method_rules", #[]), ("lang::call_rules", #[])], #[("lang::call_rules", #["recursive"])], #[],
@@ -662,8 +688,13 @@ def guardLinks (items : List (String × List String)) (texts : List String) :
 #guard guardLinks [("lang::lazy_rules", ["and_false", "and_unevaluated", "and_true"])]
     ["(`and_false` of `lang::lazy_rules`)", "(`and_unevaluatd` of `lang::lazy_rules`)", "(`lang::lazy_rule`)", "(`and_true`)"] ==
   (#[#[("lang::lazy_rules", #["and_false"])], #[], #[], #[("lang::lazy_rules", #["and_true"])]],
-   #["c:2: the rule `r.r1` names `and_unevaluatd`, which `lang::lazy_rules` has no clause of: write \"of `ITEM`\" after a clause of another item",
-     "c:3: the rule `r.r2` names `lang::lazy_rule`, which is no item of the reference"])
+   #["c:2: the rule `r.r1` names `and_unevaluatd`, which is no clause of `lang::lazy_rules`",
+     "c:3: the rule `r.r2` names `lang::lazy_rule`, which is no item of the reference, nor a clause of one"])
+-- A misspelt clause beside a path fails; a clause written as a path links.
+#guard guardLinks [("lang::if_rules", ["condition"]), ("lang::lazy_rules", ["and_true"])]
+    ["(`lang::if_rules`, `conditon`)", "(`lang::lazy_rules::and_true`)"] ==
+  (#[#[("lang::if_rules", #[])], #[("lang::lazy_rules", #["and_true"])]],
+   #["c:1: the rule `r.r0` names `conditon`, which is no clause of `lang::if_rules`"])
 #guard (guardLinks [("lang::p", ["c"])] ["(`c`)"]).2 == #["c:1: the rule `r.r0` names `c` alone, and no marker before it names an item"]
 
 /-- The requirements of `reqs`, which formalize the rule `r` of the chapter
@@ -788,6 +819,8 @@ def ruleLinks : IO (Array (String × Array (Rule × Array (ReqItem × Array Stri
         failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) has no requirement at all, so it is not `{partlyMark}`"
       else if e.chapter != md then
         failures := failures.push s!"{here}: `{e.id}` is a rule of {md}, so it is listed under `# {md}`"
+      else if e.why == partlyMark && !e.pending then
+        failures := failures.push s!"{here}: `{e.id}` says it is `{partlyMark}`, but not what is missing, though its chapter's Interlock step is done: write ` -- {partlyMark}: WHAT`"
       else if e.why.isEmpty && !e.pending then
         failures := failures.push s!"{here}: `{e.id}` says no reason, after ` -- `, though its chapter's Interlock step is done (no `{pendingMark.trimAscii}`)"
   for (md, r, reqs) in rules do
