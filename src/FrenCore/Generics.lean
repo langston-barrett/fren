@@ -2,6 +2,7 @@
 import FrenCore.Checking
 import FrenCore.Quantifier
 import FrenCore.Typing
+import Std.Data.HashMap.Lemmas
 -- keep-sorted end
 
 /-!
@@ -639,14 +640,88 @@ structure GenericUse where
   targs : Array Ty
   deriving Inhabited, BEq
 
+/-- Of each generic function, by its path, the applications of `uses`
+within it (`GenericUse.caller?`), in order: what `instancesThrough` looks
+up at each instance, grouped once rather than found by a scan of every
+application at each. -/
+def usesByCaller (uses : Array GenericUse) : Std.HashMap Name (Array GenericUse) :=
+  uses.foldl (init := {}) fun m u => match u.caller? with
+    | some g => m.alter g fun us? => some ((us?.getD #[]).push u)
+    | none => m
+
+/-- The applications of `uses` within the generic function `g`, in order,
+as `usesByCaller` groups them: those that a scan of `uses` finds. -/
+theorem usesByCaller_getD (uses : Array GenericUse) (g : Name) :
+    (usesByCaller uses).getD g #[] = uses.filter (·.caller? == some g) := by
+  suffices h : ∀ (l : List GenericUse) (m : Std.HashMap Name (Array GenericUse)),
+      (l.foldl (fun m u => match u.caller? with
+        | some g => m.alter g fun us? => some ((us?.getD #[]).push u)
+        | none => m) m).getD g #[] = m.getD g #[] ++ (l.filter (·.caller? == some g)).toArray by
+    rw [usesByCaller, ← Array.foldl_toList, h, Std.HashMap.getD_empty, Array.empty_append, ← Array.toArray_toList (xs := uses.filter _),
+      Array.toList_filter]
+  intro l
+  induction l with
+  | nil => intro m; simp
+  | cons u l ih =>
+    intro m
+    rw [List.foldl_cons, ih]
+    cases hc : u.caller? with
+    | none => simp [hc]
+    | some g' =>
+      simp only [Std.HashMap.getD_alter, beq_iff_eq]
+      by_cases h : g' = g
+      · subst h; simp [hc, Std.HashMap.getD_eq_getD_getElem?]
+      · simp [hc, h]
+
+/-- What `instancesThrough` reads of the applications within `g`, each
+mapped by `f`: what its scan of `uses` found before they were grouped. -/
+theorem usesByCaller_map {α : Type} (uses : Array GenericUse) (g : Name) (f : GenericUse → α) :
+    ((usesByCaller uses).getD g #[]).map f = uses.filterMap fun u => if u.caller? == some g then some (f u) else none := by
+  rw [usesByCaller_getD]
+  apply Array.toList_inj.mp
+  simp only [Array.toList_map, Array.toList_filter, Array.toList_filterMap]
+  induction uses.toList with
+  | nil => rfl
+  | cons u l ih => by_cases h : (u.caller? == some g) = true <;> simp_all
+
+/-- Of each item, by its file and path, the applications of `uses` in it,
+each by its function and type arguments, in order: what `instanceSites`
+looks up at each item, grouped once rather than found by a scan of every
+application at each. -/
+def usesByItem (uses : Array GenericUse) : Std.HashMap (Nat × Name) (Array (Name × Array Ty)) :=
+  uses.foldl (init := {}) fun m u => m.alter (u.file, u.item) fun d? => some ((d?.getD #[]).push (u.callee, u.targs))
+
+/-- The applications in the item `item` of the file `file`, as
+`usesByItem` groups them: those that a scan of `uses` finds. -/
+theorem usesByItem_getD (uses : Array GenericUse) (file : Nat) (item : Name) :
+    (usesByItem uses).getD (file, item) #[] =
+      uses.filterMap fun u => if u.file == file && u.item == item then some (u.callee, u.targs) else none := by
+  suffices h : ∀ (l : List GenericUse) (m : Std.HashMap (Nat × Name) (Array (Name × Array Ty))),
+      (l.foldl (fun m u => m.alter (u.file, u.item) fun d? => some ((d?.getD #[]).push (u.callee, u.targs))) m).getD
+        (file, item) #[] = m.getD (file, item) #[] ++
+          (l.filterMap fun u => if u.file == file && u.item == item then some (u.callee, u.targs) else none).toArray by
+    rw [usesByItem, ← Array.foldl_toList, h, Std.HashMap.getD_empty, Array.empty_append,
+      ← Array.toArray_toList (xs := uses.filterMap _), Array.toList_filterMap]
+  intro l
+  induction l with
+  | nil => intro m; simp
+  | cons u l ih =>
+    intro m
+    rw [List.foldl_cons, ih]
+    simp only [Std.HashMap.getD_alter, beq_iff_eq, Prod.mk.injEq]
+    by_cases h : u.file = file ∧ u.item = item
+    · obtain ⟨rfl, rfl⟩ := h; simp [Std.HashMap.getD_eq_getD_getElem?]
+    · simp [h]
+
 /-- The instances that applying the instances `start` applies, them
 included: each, and, for an instance of a generic function, its
 applications within the function at that instance, and so on, each once,
 in the order found, where `tps` gives each generic function's type
-parameters. A function's applications at its own type parameters are its
-own, and lead nowhere else. -/
-partial def instancesThrough (uses : Array GenericUse) (tps : Name → Array Name) (start : Array (Name × Array Ty)) :
-    Array (Name × Array Ty) :=
+parameters and `byCaller` the applications within each, in order
+(`usesByCaller`). A function's applications at its own type parameters
+are its own, and lead nowhere else. -/
+partial def instancesThrough (byCaller : Std.HashMap Name (Array GenericUse)) (tps : Name → Array Name)
+    (start : Array (Name × Array Ty)) : Array (Name × Array Ty) :=
   go start #[]
 where
   go (todo all : Array (Name × Array Ty)) : Array (Name × Array Ty) :=
@@ -658,8 +733,8 @@ where
       let ps := tps g
       let own := ps.mapIdx fun k p => Ty.abstract (typeParamPath g k p)
       if targs == own then go todo all else
-      let more := uses.filterMap fun u =>
-        if u.caller? == some g then some (u.callee, u.targs.map fun t => (t.asParams g ps).subst targs) else none
+      -- What a scan of the applications within `g` finds (`usesByCaller_map`).
+      let more := (byCaller.getD g #[]).map fun u => (u.callee, u.targs.map fun t => (t.asParams g ps).subst targs)
       go (todo ++ more) all
     else all
 
@@ -697,11 +772,16 @@ def instanceSites (uses : Array GenericUse) (tps : Name → Array Name) (fileOf 
     Array (InstanceSite × Name × Array Ty) := Id.run do
   let items := uses.foldl (init := #[]) fun acc u =>
     if !checked u.item || acc.contains (u.file, u.item) then acc else acc.push (u.file, u.item)
+  -- The applications within each generic function and in each item, in
+  -- order, grouped once: exactly what scans of `uses` would find
+  -- (`usesByCaller_getD`, `usesByItem_getD`).
+  let byCaller := usesByCaller uses
+  let byItem := usesByItem uses
   let mut out : Array (InstanceSite × Name × Array Ty) := #[]
   let mut seen : Array (Name × Array Ty) := #[]
   for (file, item) in items do
-    let direct := uses.filterMap fun u => if u.file == file && u.item == item then some (u.callee, u.targs) else none
-    for (f, targs) in instancesThrough uses tps direct do
+    let direct := byItem.getD (file, item) #[]
+    for (f, targs) in instancesThrough byCaller tps direct do
       let some ff := fileOf f | continue
       let own := (tps f).mapIdx fun k p => Ty.abstract (typeParamPath f k p)
       if targs == own || seen.contains (f, targs) then continue
