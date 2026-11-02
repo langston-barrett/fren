@@ -368,7 +368,7 @@ def observationsOf (c : CComp) : Array ModelObservation := Id.run do
 from the solver, it drops before it returns, and so before the solver is
 freed (`FrenCli.Cvc5`). -/
 def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wantModel : Bool)
-    (observations : Array ModelObservation) (limitSecs : Nat) : cvc5.Env (Outcome String) := do
+    (observations : Array ModelObservation) (limitSecs : Nat) (shared : Bool) : cvc5.Env (Outcome String) := do
   -- cvc5 warns on stderr when a model's value of a quantified formula
   -- cannot be evaluated (`Could not evaluate ... in getValue.`), which the
   -- model then holds as that formula: the warning is not an outcome, and
@@ -378,7 +378,8 @@ def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wan
   let sm ← Cvc5.getSymbolManager parser
   Cvc5.setStringInput parser script .SMT_LIB_2_6 "lean-cvc5"
   -- The first command that initializes the solver's theories runs
-  -- exclusively (`FrenCli.Cvc5.exclusively`).
+  -- exclusively if its logic shares libpoly's state, and so does
+  -- `checkSat` if none did (`FrenCli.Cvc5.exclusively`).
   let mut initialized := false
   repeat
     let cmd ← Cvc5.nextCommand parser
@@ -386,14 +387,15 @@ def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wan
     let initializes := !initialized && Cvc5.initializes (Cvc5.commandName cmd)
     -- A command that fails reports an error as its output, rather than
     -- throwing; ignoring it could let a dropped assertion give `sat`.
-    let out ← if initializes then Cvc5.exclusively (Cvc5.invoke cmd solver sm) else Cvc5.invoke cmd solver sm
+    let out ← if initializes then Cvc5.exclusively shared (Cvc5.invoke cmd solver sm) else Cvc5.invoke cmd solver sm
     initialized := initialized || initializes
     if out.trimAscii.toString.startsWith "(error" then
       throw (.error out)
   -- The time of a query that reaches its time limit is recorded
   -- (`Fren.Core.solverCredit`).
   let res ← Fren.Core.timeQuery limitSecs (fun (res : cvc5.Result) => Cvc5.isUnknown res &&
-    Fren.Core.timedOutExplanation (toString (Cvc5.unknownExplanation res))) (Cvc5.checkSat solver)
+    Fren.Core.timedOutExplanation (toString (Cvc5.unknownExplanation res)))
+    (if initialized then Cvc5.checkSat solver else Cvc5.exclusively shared (Cvc5.checkSat solver))
   if Cvc5.isUnsat res then return Outcome.unsat
   if !Cvc5.isSat res then return .unknown s!"the solver returned unknown ({Cvc5.unknownExplanation res})"
   if !wantModel then return .sat #[]
@@ -422,20 +424,22 @@ frees the solver before it returns, and so before the term manager is
 (`FrenCli.Cvc5`). -/
 @[noinline] def solveWith (tm : @& cvc5.TermManager) (script : String) (vars : Array CVar) (wantModel : Bool)
     (observations : Array ModelObservation) (limitSecs : Nat) : cvc5.Env (Outcome String) := do
+  let shared := Cvc5.sharesLibpoly (Cvc5.scriptLogic script)
   -- Only `cell` holds the solver once `solveOn` returns, so that emptying
-  -- it frees the solver, exclusively (`FrenCli.Cvc5.exclusively`), even
-  -- after an error.
+  -- it frees the solver, exclusively if its logic shares libpoly's state
+  -- (`FrenCli.Cvc5.exclusively`), even after an error.
   let cell ← IO.mkRef (some (← Cvc5.solverNew tm))
   ExceptT.mk do
     let r ← match ← cell.get with
-      | some solver => (solveOn solver script vars wantModel observations limitSecs).run
-      | none => pure (.ok (.unknown "no solver"))
-    let _ ← (Cvc5.exclusively (cell.set none)).run
+      | some solver => (solveOn solver script vars wantModel observations limitSecs shared).run
+      -- Not reached: `cell` was just set to the solver.
+      | none => pure (.error (.error "the solver was freed before its query"))
+    let _ ← (Cvc5.exclusively shared (cell.set none)).run
     return r
 
 /-- Checks the satisfiability of `script`, a query over `vars`, with values
-of `vars` if `wantModel`, with a solver of its own, which is freed with
-all that it holds once it is answered (`FrenCli.Cvc5`). -/
+of `vars` if `wantModel`, with a solver of its own, which is freed once
+it is answered (`FrenCli.Cvc5`). -/
 def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observations : Array ModelObservation := #[])
     (limitSecs : Nat := 0) : IO (Outcome String) := do
   let r ← cvc5.Env.run do

@@ -727,11 +727,17 @@ def queryCache : IO (Array String) := do
   IO.FS.removeDirAll root
   return failures
 
-/-- A query in `ALL`, a logic with nonlinear arithmetic, whose solver
-initializes its theories at a definition: satisfiable. -/
-def lifetimeScript (k : Nat) : String :=
-  s!"(set-logic ALL)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-    s!"(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
+/-- A satisfiable query whose solver initializes its theories at a
+definition: in `ALL`, a logic with nonlinear arithmetic, whose solvers
+take `FrenCli.Cvc5.solverLock`, or, if `linear`, in `QF_UFDTLIA`, whose
+solvers do not. -/
+def lifetimeScript (k : Nat) (linear : Bool := false) : String :=
+  if linear then
+    s!"(set-logic QF_UFDTLIA)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
+      s!"(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
+  else
+    s!"(set-logic ALL)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
+      s!"(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
 
 /-- This process's resident memory, in kB, as `ps` reports it. -/
 def residentKb : IO Nat := do
@@ -744,8 +750,8 @@ of a logic with nonlinear arithmetic answer correctly on several threads
 at once, which they share libpoly's state for (`FrenCli.Cvc5`). -/
 def solverLifetime : IO (Array String) := do
   let mut failures := #[]
-  let solve (k : Nat) : IO Bool := do
-    return (← FrenCli.solveScript (lifetimeScript k) #[] false) matches .sat _
+  let solve (k : Nat) (linear : Bool := false) : IO Bool := do
+    return (← FrenCli.solveScript (lifetimeScript k linear) #[] false) matches .sat _
   -- Warm up the allocator first, so that what it keeps does not count.
   for k in [0:100] do discard <| solve k
   let before ← residentKb
@@ -758,14 +764,17 @@ def solverLifetime : IO (Array String) := do
     failures := failures.push s!"500 queries grew the memory by {grown / 1024} MB: their solvers are not freed"
   -- Sixteen threads at once, each initializing and freeing its solvers:
   -- without `FrenCli.Cvc5.exclusively`, this crashed one run in three.
+  -- After every third, each thread asks one in a linear logic, whose
+  -- solvers take no lock and must answer correctly beside those that do.
   let tasks ← (List.range 16).mapM fun t => IO.asTask (prio := .dedicated) do
     let mut n := 0
     for k in [0:300] do
       if ← solve (1000 * t + k) then n := n + 1
+      if k % 3 == 0 then if ← solve (1000 * t + k) (linear := true) then n := n + 1
     return n
   for t in tasks do
     match ← IO.wait t with
-    | .ok n => wrong := wrong + (300 - n)
+    | .ok n => wrong := wrong + (400 - n)
     | .error e => failures := failures.push s!"a thread of queries failed: {e}"
   if wrong > 0 then failures := failures.push s!"{wrong} satisfiable queries were not answered `sat`"
   return failures

@@ -33,11 +33,28 @@ logic with nonlinear arithmetic, such as `ALL`, takes a reference when it
 initializes its theories, at its first assertion or definition, and drops
 it when it is freed. Solvers that are never freed only ever add to the
 count, but once they are, two threads that change it at once can lose a
-change, and the database is then freed while it is in use. So solvers
-initialize and are freed one at a time (`exclusively`), and parse and
-solve in parallel. A solver that never initializes, such as `version`'s,
-takes no reference. The Lean front end's solvers, which lean-smt makes,
-are never freed, and no process runs them while the binary's run.
+change, and the database is then freed while it is in use. So a solver of
+such a logic (`sharesLibpoly`) initializes and is freed while it holds
+`solverLock` (`exclusively`): the first command that `initializes` it, or
+its `checkSat` if no command did. Solvers parse and solve in parallel,
+and those of a linear logic, such as `QF_UFDTLIA`, take no lock. A
+solver that never initializes, such as `version`'s, takes no reference.
+
+That `checkSat` and `getValue` need no lock rests on what cvc5 1.3.2 was
+observed to do, not on anything that cvc5 promises: in a nonlinear logic
+whose integers are used, such as `ALL`, cvc5 turns its coverings solver
+(`nl-cov`) off, and nothing else in solving creates libpoly's variables.
+A query over the reals, setting `nl-cov`, or another cvc5 could make
+solving use libpoly too, and then `checkSat` would need the lock, or a
+solver of its own process.
+
+The Lean front end's solvers, which lean-smt makes, are never freed, and
+take no lock: they only ever take a reference. `fren_test` runs both
+front ends in one process, one after the other (`uiTests`), never at
+once. If they ran at once, a binary solver's free under the lock could
+race with a hosted solver's unlocked initialization while the count was
+1, and free the database. So freeing lean-smt's solvers too, to fix its
+leak, needs them to take `solverLock` as these do.
 -/
 
 namespace FrenCli.Cvc5
@@ -47,12 +64,31 @@ open cvc5
 /-- Held while a solver initializes its theories or is freed. -/
 initialize solverLock : Std.BaseMutex ← Std.BaseMutex.new
 
-/-- `act`, while no other solver initializes its theories or is freed. -/
-def exclusively (act : Env α) : Env α := ExceptT.mk do
+/-- `act`, if `shared`, while no other solver initializes its theories or
+is freed; otherwise `act` alone. -/
+def exclusively (shared : Bool) (act : Env α) : Env α := if !shared then act else ExceptT.mk do
   Std.BaseMutex.lock solverLock
   let r ← act.run
   Std.BaseMutex.unlock solverLock
   return r
+
+/-- The logic that `script` sets: the symbol after its first
+`(set-logic `, or `ALL`, which shares libpoly's state, if it sets none. -/
+def scriptLogic (script : String) : String :=
+  match script.splitOn "(set-logic " with
+  | _ :: rest :: _ => (rest.takeWhile (fun c => c != ')' && !c.isWhitespace)).toString
+  | _ => "ALL"
+
+/-- Whether a solver of the SMT-LIB logic `logic` has nonlinear
+arithmetic, and so takes a reference to libpoly's state: `ALL` and the
+`*_ALL` logics, and those of nonlinear integer or real arithmetic. -/
+def sharesLibpoly (logic : String) : Bool :=
+  logic == "ALL" || logic.endsWith "_ALL" || logic.contains "NIA" || logic.contains "NRA" || logic.contains "NIRA"
+
+#guard scriptLogic "(set-logic QF_UFDTLIA)\n(set-option :produce-models true)\n" == "QF_UFDTLIA"
+#guard scriptLogic "(declare-const x Int)\n" == "ALL"
+#guard sharesLibpoly "ALL" && sharesLibpoly "HO_ALL" && sharesLibpoly "QF_NIA" && sharesLibpoly "QF_UFNRA"
+#guard !sharesLibpoly "QF_UFDTLIA" && !sharesLibpoly "UFDTLIA" && !sharesLibpoly "QF_LIA"
 
 /-- Whether the command named `name` may initialize its solver's theories:
 an assertion or a definition does, by cvc5's `SolverEngine::beginCall`. -/
