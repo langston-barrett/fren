@@ -190,66 +190,71 @@ pub mod testing
   `test/ui/misread/` run with `FREN_MISREAD_MODELS` set, which makes both
   readers misread every integer, to check that the confirmation catches it.
 - **Differential fuzzing** (`lake exe fren_fuzz [--count N] [--seed N]
-  [--out DIR]`): generates random specs and compares each verdict of `fren
-  check` with one computed by brute force from the evaluator. The specs stay
-  in a fragment where brute force is exact: `Bool`s, enumerations,
-  ordered or not, `Int`s that constraints named `range_*` bound to a few
-  values, and values of a [newtype](../Lang/Items.md#newtypes) of `Int`
-  that they bound so, abstract types,
-  and functions from them to `Bool`s, sets and relations of an enumeration
-  or of `Bool`, and sequences of one that `range_*` constraints bound to
-  two elements, with calls, `det` outputs, cover goals, global
-  expectations, quantifiers over the enumeration and over `Bool`, and
-  `Bool` tables, by conditions and over a `Bool` or an `Int`. Each index is guarded, before or after it, so that every
+  [--out DIR]`): generates random specs and compares each verdict of
+  `fren check` with one computed by brute force from the evaluator. The
+  specs stay in a fragment where brute force is exact: `Bool`s,
+  enumerations, ordered or not, `Int`s that constraints named `range_*`
+  bound to a few values, and values of a
+  [newtype](../Lang/Items.md#newtypes) of `Int` that they bound so,
+  abstract types, and functions from them to `Bool`s, sets and relations
+  of an enumeration or of `Bool`, and sequences of one that `range_*`
+  constraints bound to two elements, with calls, `det` outputs, cover
+  goals, global expectations, quantifiers over the enumeration and over
+  `Bool`, and `Bool` tables, by conditions and over a `Bool` or an
+  `Int`. Each index is guarded, before or after it, so that every
   constraint has a value whatever an index out of range is; a table has
   one even where no row holds, which is the interpretation's unspecified
-  value of its type. Its constraints include
-  pattern tests and `match`es with literal and range patterns on `Bool`s
-  and `Int`s, and on the one enumeration with payloads, `P { A, B(Bool),
-  C(Bool) }`, pattern tests of its variants and `match`es that read its
-  payloads; deeper nested patterns are left to the ui tests. Brute force enumerates every behaviour and interpretation
-  of that fragment, and decides each check from its definition in
-  [Checks](../Check.md). It also confirms that each reported set of
-  constraints (a conflict, a vacuity or a redundancy) entails what the
-  message says and is minimal, and that each counterexample can be
-  completed to a behaviour with the reported values, and each witness of a
-  cover goal to a behaviour in which the goal holds, and that each clash
-  note's sides [force](../Check.md#forced-outputs) what it says, a whole
-  value or only a variant, and clash. Each disagreement is
-  written to `DIR` (default `.lake/fuzz`) as a `.fren` file, with what
-  differed in a comment. The verdicts of redundancy for `range_*`
-  constraints are not compared, since without them brute force is not
-  exact. A procedure with too many behaviours to enumerate is skipped,
-  and counted in the summary.
+  value of its type. Its constraints include pattern tests and `match`es
+  with literal and range patterns on `Bool`s and `Int`s, and on the one
+  enumeration with payloads, `P { A, B(Bool), C(Bool) }`, pattern tests
+  of its variants and `match`es that read its payloads; deeper nested
+  patterns are left to the ui tests. Brute force enumerates every
+  behaviour and interpretation of that fragment, and decides each check
+  from its definition in [Checks](../Check.md). It also confirms that
+  each reported set of constraints (a conflict, a vacuity or a
+  redundancy) entails what the message says and is minimal, and that
+  each counterexample can be completed to a behaviour with the reported
+  values, and each witness of a cover goal to a behaviour in which the
+  goal holds, and that each clash note's sides
+  [force](../Check.md#forced-outputs) what it says, a whole value or
+  only a variant, and clash. Each disagreement is written to `DIR`
+  (default `.lake/fuzz`) as a `.fren` file, with what differed in a
+  comment. The verdicts of redundancy for `range_*` constraints are not
+  compared, since without them brute force is not exact. A procedure
+  with too many behaviours to enumerate is skipped, and counted in the
+  summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
-  [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--spec-timeout SECONDS]`):
-  generates random specs and checks each with both front ends, the `fren`
-  command's pipeline and the Lean front end (in an environment that
-  imports `Fren`, as the ui tests do), whose reports must agree
-  (`cli::agreement`, `cli::agrees_with_build`): the same errors, warnings
-  and notes at the same lines and columns, the same summary, and the exit status
-  that Lean's messages call for: 2 after a static error, else 1 when Lean
-  reports an error, 3 when it reports a warning, and 0 otherwise. The specs aim at the
-  analyses that each front end implements on its own: constants, definitions
-  of results and `let` variables, defined and uninterpreted functions, calls, `match`, tables,
-  string methods and `++`, products, orderings and `min` and `max` of an ordered
-  enumeration, a newtype of `Int` and its operators, an enumeration with
-  payloads, whose outputs' variants clash notes may give, and sets and
-  relations with `card`, so as to reach `linear_product`, the [decidable core](../Lang/Decidability.md)
-  and the lints; and quantifiers whose [guards](../Lang/Quantifiers.md#guards) each
-  front end reads on its own: over `Int`, `Nat`, a pattern type,
-  newtypes over each, a newtype over a newtype, one that is not ordered,
-  an ordered record, an ordered enumeration and `String`, read through
-  their fields, with ranges with one or both bounds, chains, memberships
-  in sets and sequences, and each comparison on either side; and
-  [traits](../Lang/Traits.md), with methods in both forms, laws, and
-  expectations in both forms over them. `--guards`
-  generates those quantifiers alone, so that many specs run fast.
-  `--sites` generates expressions that do not synthesize their types, at
-  each kind of [site](../Lang/Types.md#checking-and-synthesis) where they
-  are checked, and, at the end, one where they are not, an error that
-  stops the spec's other checks, which the default generator therefore
-  never writes. Only what may legitimately differ is not compared:
+  [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
+  [--spec-timeout SECONDS]`): generates random specs and checks each
+  with both front ends, the `fren` command's pipeline and the Lean front
+  end (in an environment that imports `Fren`, as the ui tests do), whose
+  reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
+  same errors, warnings and notes at the same lines and columns, the
+  same summary, and the exit status that Lean's messages call for: 2
+  after a static error, else 1 when Lean reports an error, 3 when it
+  reports a warning, and 0 otherwise. The specs aim at the analyses that
+  each front end implements on its own: constants, definitions of
+  results and `let` variables, defined and uninterpreted functions,
+  calls, `match`, tables, string methods and `++`, products, orderings
+  and `min` and `max` of an ordered enumeration, a newtype of `Int` and
+  its operators, an enumeration with payloads, whose outputs' variants
+  clash notes may give, and sets and relations with `card`, so as to
+  reach `linear_product`, the [decidable core](../Lang/Decidability.md)
+  and the lints; and quantifiers whose
+  [guards](../Lang/Quantifiers.md#guards) each front end reads on its
+  own: over `Int`, `Nat`, a pattern type, newtypes over each, a newtype
+  over a newtype, one that is not ordered, an ordered record, an ordered
+  enumeration and `String`, read through their fields, with ranges with
+  one or both bounds, chains, memberships in sets and sequences, and
+  each comparison on either side; and [traits](../Lang/Traits.md), with
+  methods in both forms, laws, and expectations in both forms over them.
+  `--guards` generates those quantifiers alone, so that many specs run
+  fast. `--sites` generates expressions that do not synthesize their
+  types, at each kind of [site](../Lang/Types.md#checking-and-synthesis)
+  where they are checked, and, at the end, one where they are not, an
+  error that stops the spec's other checks, which the default generator
+  therefore never writes. Only what may legitimately differ is not
+  compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
     the parse error's line, or on the last line before it that is not blank
@@ -515,9 +520,9 @@ reports nothing until it ends. A query that is still running counts in
 full. A hang that runs at the same time as a query that times out, in
 another check or the other front end's, is hidden while they overlap, by
 at most that query's time (its time limit and the slack): what is left
-out is wall time, which the hang shares. The spec is stopped once the time since it started, less what was
-left out since then (`timed_out`), is more than the limit
-(`testing::fuzz_overdue`).
+out is wall time, which the hang shares. The spec is stopped once the
+time since it started, less what was left out since then (`timed_out`),
+is more than the limit (`testing::fuzz_overdue`).
 
 ```fren
 pub proc solver_credit(
@@ -699,6 +704,40 @@ pub proc fresh(
 #fren_check
 ```
 
+## Heavy jobs
+
+`lake build`, `lake test`, the fuzzers and mutation runs each use every
+core, so parallel jobs on one machine slow each other down and can run
+it out of memory. `scripts/heavy COMMAND` runs COMMAND while it holds
+one of a few slots shared by the whole machine, waiting for a free one,
+and keeps the jobs that hold them under a memory cap. Its state is in
+`~/.cache/heavy/`, so every worktree and every copy of the script share
+the slots. Both limits are read again while jobs run, so changing a file
+takes effect at once, without a restart:
+
+- **Slots:** `HEAVY_SLOTS`, else the number in `~/.cache/heavy/slots`,
+  else 2.
+- **Memory:** `HEAVY_MEM_GB` gigabytes, else the number in
+  `~/.cache/heavy/mem_gb`, else 80% of the machine's physical memory,
+  summed over each job's process group. A job waits to start while the
+  running ones use more than 60% of the cap; when they use more than
+  the cap, heavy kills the newest and exits with 137.
+
+A setting that is set but is not a positive finite number is ignored,
+with a warning.
+
+`scripts/heavy --offline COMMAND` runs COMMAND with no network. On Linux
+it runs in a new user and network namespace (`unshare -rn`, which needs
+unprivileged user namespaces), whose loopback is down, as uid 0 mapped
+to the user. On macOS it runs under `sandbox-exec` with a profile that
+denies IP networking, loopback included, and name lookups. Where it cannot cut the network, it
+fails rather than run COMMAND online. Use it to run binaries that a pull
+request built, the fuzzers and mutation runs, which never need the
+network. Builds and `lake test` stay online: Lake fetches packages and
+elan fetches toolchains. `python3 scripts/heavy_test.py` tests its
+argument parsing, its memory cap and the order of its overrides, and
+the `lint` workflow runs it.
+
 ## Shared builds
 
 Lake keeps an artifact cache for each toolchain on a machine, which
@@ -730,41 +769,48 @@ runs, several hundred MB to some 1 GB for a head that changes `Fren` or
 worktree's `.lake` breaks nothing but frees almost nothing either: the
 cache keeps the outputs, and frees them only when pruned. That holds when
 the worktrees are on the filesystem of the toolchain's directory, as
-`/tmp` and `~/.elan` are on sky: across filesystems, Lake copies the
+`/tmp` and `~/.elan` often are: across filesystems, Lake copies the
 outputs instead of linking them, so they take disk twice and link counts
 say nothing of which a worktree uses. The cache is per toolchain, so
 after a toolchain bump the old one's cache stays until it is pruned with
 `--cache DIR` or deleted, once no worktree builds with that toolchain.
 
 `scripts/lake_cache.py size` prints how much the cache holds, and how much
-of it no worktree links to. `heavy python3 scripts/lake_cache.py prune`
+of it no worktree links to. `scripts/heavy python3 scripts/lake_cache.py prune`
 deletes the outputs that no worktree links to and whose links have not
 changed for 7 days (`--days`), and the cache's entries that name them: the
 entries first, so that a build that finds an entry gone runs the step and
 saves its outputs again, and then, after a grace of a minute, each output
 whose link count and `ctime` are still those it scanned, so that one that
-a build linked or saved again in the meantime stays. A build that finds
+a build linked or saved again in the meantime stays, but for one that a
+build links in the microseconds between that check and the deletion. A build that finds
 an entry whose outputs are gone warns, which fails `--wfail`, and runs
 the step; pruning deletes such entries too. It refuses to prune a cache on
-another filesystem than the repository's. Run it under `heavy`, when the
-disk is short or once a week; `python3 scripts/lake_cache.py test` checks
-it on a scratch cache. `lake cache clean`, which empties the cache at
+another filesystem than the worktree that runs it. It checks only that
+worktree: another on another filesystem holds copies of its outputs, which
+pruning leaves alone, but they count as no link, so the entries of its
+steps may be pruned, and a build that would take them from the cache runs
+them again. Run it under `scripts/heavy`, when
+the disk is short or once a week; `python3 scripts/lake_cache.py test`
+checks it on a scratch cache, and the `lint` workflow runs that test.
+`lake cache clean`, which empties the cache at
 once, is safe only while no build runs.
 
-A step's outputs must then not depend on where it ran, or a worktree would
-get another's. Lean names a module's source by its absolute path, and a
-definition's `source?` (`Fren.DefinedInfo`) keeps the name of the file
-that declares it, for the messages about it. It keeps the name relative to
-the directory that Lean runs in (`Fren.keptFileName`, which
+A step's outputs must then not depend on where it ran, or a worktree
+would get another's. Lean names a module's source by its absolute path,
+and a definition's `source?` (`Fren.DefinedInfo`) keeps the name of the
+file that declares it, for the messages about it. It keeps the name
+relative to the directory that Lean runs in (`Fren.keptFileName`, which
 `testing::portable_name` states, with that directory as its input). Lake
 runs Lean in the directory that Lake was started in, which is the
-package's root for `lake build` and `lake test` run there, as `heavy` runs
-them and CI does. A build started elsewhere, as `lake -d ROOT build`, keeps
-absolute names, and its outputs, which another worktree may take from the
-cache, then differ only in the names that messages about other files'
-definitions show. A message about the definition names the current file as
-Lean names it, if the definition is in it, and the other file by the kept
-name otherwise (`Fren.shownFileName`).
+package's root for `lake build` and `lake test` run there, as
+`scripts/heavy` runs them and CI does. A build started elsewhere, as
+`lake -d ROOT build`, keeps absolute names, and its outputs, which
+another worktree may take from the cache, then differ only in the names
+that messages about other files' definitions show. A message about the
+definition names the current file as Lean names it, if the definition is
+in it, and the other file by the kept name otherwise
+(`Fren.shownFileName`).
 
 `scripts/relocatable.py` checks that no `.olean` or `.ilean` file, and no
 file of C code or object code under `.lake/build/ir`, that a build wrote
@@ -881,7 +927,7 @@ request of its own rather than slowing every pull request down.
 | `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
-| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (on sky, one run each) |
+| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
 On a pull request, `pre-merge` also uploads stripped copies of the
@@ -911,21 +957,24 @@ gh run download RUN -n fren-SHA -D /tmp/fren-SHA
 chmod +x /tmp/fren-SHA/fren
 git fetch origin "$(cat /tmp/fren-SHA/MERGE_SHA)"
 git checkout --detach "$(cat /tmp/fren-SHA/MERGE_SHA)"
-/tmp/fren-SHA/fren check FILE
+scripts/heavy --offline /tmp/fren-SHA/fren check FILE
 ```
 
 `fren` needs nothing else, for `fren check`, `quickcheck`, `mutate` and
 `fmt`. `fren_test --job JOB` reads the test files and specs of the
 checkout, and writes scratch files under its `.lake`. Its jobs `ui`,
 `uiMisread`, `smtAgreement` and `leanTokens` load the hosted front end,
-the `.olean` files of `Fren` and its dependencies; for them, run `heavy
-lake build Fren` in the checkout, which compiles no C code and links
-nothing, and then `lake env /tmp/fren_test-SHA/fren_test --job ui FILE`.
-The other jobs, such as `snapshots`, `errorCodes` and `mutation`, need
-only the binary. On CI, `fren` is 161 MB, 116 MB stripped and 45 MB
-compressed, and `fren_test` is 320 MB, 235 MB stripped and 78 MB
-compressed. The `.olean` files are not uploaded: those of `Fren` and its
-dependencies came to some 340 MB, 96 MB compressed, on macOS.
+the `.olean` files of `Fren` and its dependencies; for them, run
+`scripts/heavy lake build Fren` in the checkout, which compiles no C
+code and links nothing, and then `scripts/heavy --offline lake env
+/tmp/fren_test-SHA/fren_test --job ui FILE`. Run the binaries that CI
+built under `scripts/heavy --offline` ([Heavy jobs](#heavy-jobs)), since
+they never need the network. The other jobs, such as `snapshots`,
+`errorCodes` and `mutation`, need only the binary. On CI, `fren` is 161
+MB, 116 MB stripped and 45 MB compressed, and `fren_test` is 320 MB, 235
+MB stripped and 78 MB compressed. The `.olean` files are not uploaded:
+those of `Fren` and its dependencies came to some 340 MB, 96 MB
+compressed, on macOS.
 
 Pull requests merge through GitHub's merge queue. The queue merges each
 pull request into the current `main`, behind any pull requests ahead of it
@@ -1066,24 +1115,24 @@ when it finds no counters, when `GCOV` fails on one module's, or when the
 counters show that nothing ran: each means that the counters were not
 read, and a report would list every declaration as never run.
 
-A declaration ran if one of its entry points ran: its own function, or its
-boxed or reduced-arity version, which callers may call instead. An
+A declaration ran if one of its entry points ran: its own function, or
+its boxed or reduced-arity version, which callers may call instead. An
 executable's `main` is emitted as `_lean_main`, and is `main`'s. A
-specialization
-`f._at_.g.spec_N` is an entry point of `f`, with arguments from `g`, and
-`g` may itself be one. Lambdas, join points and closed terms are no
-declaration's: the compiler shares them among declarations whose code is
-alike, so that running one would seem to run another. Calls made while a
-module is initialized count, as when a closed term applies a function. The declarations counted are the compiled definitions
-of `FrenCore`, `Fren` and `FrenCli` that are written in the source and
-compile to a function: not theorems, constructors, recursors, matchers,
-projections, `@[inline]` definitions, instances that `deriving` makes, or
-definitions without arguments, which are constants computed at
-initialization. A definition of a function type written without
-parameters, as `def f : Nat → Nat := g`, compiles with its parameters, so
-it is counted. A declaration that compiles to a function that gcov does
-not report did not run. The proofs of `impl`s are not code, but the
-definitions they are about are counted.
+specialization `f._at_.g.spec_N` is an entry point of `f`, with
+arguments from `g`, and `g` may itself be one. Lambdas, join points and
+closed terms are no declaration's: the compiler shares them among
+declarations whose code is alike, so that running one would seem to run
+another. Calls made while a module is initialized count, as when a
+closed term applies a function. The declarations counted are the
+compiled definitions of `FrenCore`, `Fren` and `FrenCli` that are
+written in the source and compile to a function: not theorems,
+constructors, recursors, matchers, projections, `@[inline]` definitions,
+instances that `deriving` makes, or definitions without arguments, which
+are constants computed at initialization. A definition of a function
+type written without parameters, as `def f : Nat → Nat := g`, compiles
+with its parameters, so it is counted. A declaration that compiles to a
+function that gcov does not report did not run. The proofs of `impl`s
+are not code, but the definitions they are about are counted.
 
 Only compiled code is measured. The Lean-hosted front end's elaborators
 run in Lean's interpreter where a test elaborates Fren in Lean, so some of
