@@ -485,7 +485,7 @@ impl wildcard_single_variant: lint::wildcard_single_variant for (n : Nat) {
   omega
 
 -- Both front ends decide `is_equality` and `irrefutable_is` with
--- `isEquality` and `irrefutableIs`, where they elaborate the test.
+-- `isEquality` and `irrefutableIsAt`, where they elaborate the test.
 impl is_equality: lint::is_equality for (n : Nat) (e i : Bool) {
   n_alternatives := n,
   equatable? := e,

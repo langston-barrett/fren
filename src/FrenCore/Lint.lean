@@ -2420,11 +2420,11 @@ def membershipMsg (replacement : String) (test : Bool) : Msg :=
 after it, as for an arm after it (`Reqs/Lang/Patterns`). -/
 def matchesEvery (sigs : Sigs) (ty : PatTy) (p : Pat) : Bool := !useful sigs [ty] #[[p]] [.wild]
 
-/-- Whether the pattern `p` binds a name: a binder, or one within a
-payload; an or-pattern's alternatives bind none (`F0333`). -/
+/-- Whether the pattern `p` contains a binder. -/
 partial def Pat.bindsName : Pat → Bool
   | .wild b => b
   | .ctor _ args => args.any (·.bindsName)
+  | .or alts => alts.any (·.bindsName)
   | _ => false
 
 /-- Whether `irrefutable_is` fires on `e is P`, from whether `P` binds a

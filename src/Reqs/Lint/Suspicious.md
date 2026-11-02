@@ -210,8 +210,13 @@ mistake and hide it. Clippy has no exact analogue; rustc's
 `if let`. Fren has no `correctness` group, so it is in `suspicious`. It
 does not fire on a test whose pattern binds a name, as `if n is m then m
 else 0`: what follows the test needs the binding, and the test is how a
-binder is written. `lint::irrefutable_is` states when it fires, from the
-pattern, which both front ends give to one function:
+binder is written. `lint::irrefutable_is` states when it fires. Both front
+ends give the test's pattern to one function, `Core.irrefutableIsAt`,
+which computes both inputs from it. Whether the pattern contains a binder
+(`Pat.bindsName`) is trusted, and checked by the ui tests in
+`test/ui/lints/pattern_tests_chains.fren`, with a binder at the top and
+within a payload. The pattern tests that `fren_fuzz_frontends` generates
+check only that the two front ends agree on them:
 
 ```fren
 set_option fren.evidence "enumerated" in
