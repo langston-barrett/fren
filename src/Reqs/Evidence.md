@@ -160,7 +160,8 @@ realizability check of the procedure that the item's call `j` calls,
 `CallAssumptions(j)` is call `j`'s assumption checks, one for each
 assumption of the called procedure and for each of its parameters whose
 type brings a constraint (`Lang/SubsetTypes`), `OwnRealizability` is the
-item's own realizability check, `AbstractionRealizability(a)` is the
+item's own realizability check, with, for an expectation of a trait, its
+vacuity under the laws (below), `AbstractionRealizability(a)` is the
 realizability check of the abstraction of the item's refinement claim `a`,
 by the claim's position among the item's refinement claims, `ContractRealizability(f)` is uninterpreted
 function `f`'s contract's realizability check, `InstanceContract(i)` is
@@ -943,6 +944,104 @@ reported as a pass while another is unproved. That relation is cyclic, so
 it stays apart from `check::pass_evidence`, whose premises are earlier
 checks: from outside the function, its postcondition checks are one
 premise, settled where all of them pass.
+
+### The laws of a trait
+
+A check of an [expectation of a trait](Lang/Traits.md#expectations) has
+the trait's laws among the hypotheses of its queries, as it has the
+contracts of the uninterpreted functions that its queries apply.
+`check::query_hypotheses` states which hypotheses the queries of each kind
+of check have: the laws, the item's assumptions, and of each call its
+bindings and its procedure's behaviour, with its procedure's assumptions
+among the hypotheses or only as the premise of its guarantees. Every check
+but realizability has the laws, and every check has each call's procedure's
+assumptions. Realizability asks of the assumptions alone, and then of the
+assumptions and calls, without the laws. The vacuity of an expectation of a
+trait under the laws (below, `lawful?`) has the laws, and of a call only
+what its procedure guarantees where its assumptions hold: whether those
+hold is the call's own check (`F0604`), which the checks that rest on it
+say, so a failed one is not a second error:
+
+```fren
+-- Whether the queries of a check of this kind have the laws.
+pub fn query_laws?(kind: Kind) := kind != Kind::Realizability
+
+pub proc query_hypotheses(
+    kind: Kind,
+    lawful?,                 -- the vacuity of an expectation of a trait under its laws
+): (det laws?, det call_assumptions?) {
+    ensure laws_rule: laws? iff (lawful? or query_laws?(kind))
+    ensure calls_rule: call_assumptions? iff not lawful?
+
+    expect realizability_alone: when kind = Kind::Realizability and not lawful?, not laws?
+    expect expectations: when kind = Kind::Expectation, laws?
+    expect lawful_guarantees: when lawful?, laws? and not call_assumptions?
+}
+```
+
+Where the laws cannot hold together with the item's assumptions and
+calls, each query that has them is unsatisfiable, whatever else it asks.
+So a verdict that comes from an `unsat` query rests on their holding
+together: an expectation's pass, or a cover goal's failure. A verdict that
+comes from a model does not, since the model meets them.
+
+An item whose trait has laws, and that has assumptions or calls, has a
+check of its own of this, its *vacuity under the laws*: whether the laws,
+its assumptions and its calls can hold together, which a model shows. Its
+checks rest on it as they rest on its realizability (`OwnRealizability`),
+and so are reported as those of an item whose assumptions are about
+uninterpreted functions with contracts are:
+
+- Where it passes, no verdict rests on more than its proof.
+- Where it fails, the assumptions and calls cannot hold with the laws
+  (`F0602`). A pass of a proof check that rests on it is inconclusive
+  (`F0664`), and a witness check's verdict stands.
+- Where it is not decided, which, with quantified laws, it seldom is, it
+  is a warning of its own (`F0608`), and a pass of a proof check that rests
+  on it is inconclusive (`F0664`), as where an item's realizability is not
+  decided.
+
+An item that has no such check, one without assumptions or calls, rests
+on the laws in a way that nothing settles: on their consistency, which
+Fren does not check yet (#594). Each of its constraints whose verdict
+comes from an `unsat` query says so, once (`F0665`). An item with
+assumptions or calls always has the check: its checks are the solver's,
+since `fren.evidence` cannot be set otherwise for an expectation of a
+trait (`F0215`). `check::law_premise` states which verdicts carry
+`F0665`:
+
+```fren
+-- A pass of a check of this kind comes from an `unsat` query, not a
+-- model: all but a cover goal's, a vacuity check's, a redundancy check's
+-- and a reachability question's.
+pub fn pass_from_unsat?(kind: Kind) := not kind in {
+    Kind::Cover,
+    Kind::Vacuity,
+    Kind::Redundancy,
+    Kind::Reachability,
+}
+
+-- The verdict comes from an `unsat` query.
+pub fn from_unsat?(kind: Kind, verdict: Verdict) := match verdict {
+    Verdict::Pass => pass_from_unsat?(kind),
+    Verdict::Fail => not pass_from_unsat?(kind),
+    Verdict::Inconclusive => false,
+}
+
+pub proc law_premise(
+    kind: Kind,
+    verdict: Verdict,
+    laws?,
+    asked?,                  -- the item has a vacuity under the laws
+): (det rests?) {
+    ensure rule: rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict) and not asked?
+
+    expect lawless: when not laws?, not rests?
+    expect counterexamples: when kind = Kind::Expectation and verdict = Verdict::Fail, not rests?
+    expect alone: when laws? and kind = Kind::Expectation and verdict = Verdict::Pass and not asked?, rests?
+    expect asked: when asked?, not rests?
+}
+```
 
 ## Reports
 

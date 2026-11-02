@@ -26,6 +26,7 @@ import FrenCore.SubsetTypes
 import FrenCore.Syntax
 import FrenCore.Table
 import FrenCore.Trace
+import FrenCore.Traits
 import FrenCore.Ty
 import FrenCoreCodes
 -- keep-sorted end

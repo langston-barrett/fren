@@ -231,7 +231,9 @@ pub mod testing
   newtypes over each, a newtype over a newtype, one that is not ordered,
   an ordered record, an ordered enumeration and `String`, read through
   their fields, with ranges with one or both bounds, chains, memberships
-  in sets and sequences, and each comparison on either side. `--guards`
+  in sets and sequences, and each comparison on either side; and
+  [traits](../Lang/Traits.md), with methods in both forms, laws, and
+  expectations in both forms over them. `--guards`
   generates those quantifiers alone, so that many specs run fast.
   `--sites` generates expressions that do not synthesize their types, at
   each kind of [site](../Lang/Types.md#checking-and-synthesis) where they

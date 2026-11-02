@@ -52,7 +52,8 @@ quantifier over the integers alone is Presburger arithmetic, which is
 decidable, but not with uninterpreted functions, strings, sets or
 sequences beside it, and a guard that bounds it bounds it by a term, not
 by a constant. The `undecidable` lint reports it at each binder whose
-type is not listed (`Quantifier`).
+type is not listed (`Quantifier`). So it reports each [law of a
+trait](Traits.md#laws), for now, whose variables are such a quantifier.
 
 A [table](Expressions.md#tables) is in the core when its rows' conditions
 and values are: it is a chain of conditionals, and where no row of one

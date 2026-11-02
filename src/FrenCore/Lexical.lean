@@ -18,7 +18,7 @@ namespace Fren.Core
 `else`, `match`, `forall`, `exists`, `with`, `let` and `where`): `lang::reserved_word`. Other Fren keywords
 (`when`, `out`, `ensure`, ...) are contextual and lexed as identifiers. -/
 def reservedWords : List String :=
-  ["mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "with", "let", "where", "table"]
+  ["mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "trait", "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter", "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall", "exists", "with", "let", "where", "table"]
 
 /-- `[A-Za-z_]`: starts an identifier (`lang::identifier`). -/
 def isIdStart (c : Char) : Bool := ('A' ≤ c && c ≤ 'Z') || ('a' ≤ c && c ≤ 'z') || c == '_'

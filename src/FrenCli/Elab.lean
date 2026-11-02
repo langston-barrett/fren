@@ -18,6 +18,7 @@ import FrenCore.Regex
 import FrenCore.SeqElems
 import FrenCore.SubsetTypes
 import FrenCore.Trace
+import FrenCore.Traits
 import FrenCore.Ty
 import FrenCore.TypeFacts
 import FrenCore.Typing
@@ -393,6 +394,10 @@ structure CComp where
   short : Bool := false
   /-- A global expectation with a block (`Fren.Core.Comp.global`). -/
   global : Bool := false
+  /-- For an expectation of a trait: the trait's laws, each a closed
+  formula (`Fren.Core.Comp.laws`), and the trait. -/
+  laws : Array (Name × String) := #[]
+  lawsOf : Name := .anonymous
   /-- Its own variables in declaration order, then each call's. -/
   vars : Array CVar
   props : Array CProp
@@ -767,6 +772,13 @@ structure State where
   constInts : NameMap Int := {}
   /-- The abstract types, in order. -/
   sorts : Array Name := #[]
+  /-- The laws of the trait being elaborated so far, each with its closed
+  formula, whether it is in the decidable core, the applications in it
+  that bring facts, whether it sets `fmf-bound`, and whether `undecidable`
+  is an error in it (`Reqs/Lang/Traits`). -/
+  traitLaws : Array (Name × String × Bool × Array String × Bool × Bool) := #[]
+  /-- A trait's members are being elaborated. -/
+  inTrait : Bool := false
   /-- Each uninterpreted function's parameter and result types, in order. -/
   funs : Array (Name × Array Ty × Ty) := #[]
   /-- Each defined function's parameters and result type, and its body over
@@ -6726,6 +6738,54 @@ def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit :=
                                 enumerated := Fren.Core.Tested.ofSettings all.enumerated #[] #[(n, none)] #[] #[]
                                 enumSize := s.enumSize } }
 
+/-- Whether `undecidable` is an error in what reported `reports`, as the
+Lean-hosted front end records it (`undecidableDenied`). -/
+def undecidableDenied (reports : Array (Fren.Core.LintReport Span)) : Bool :=
+  reports.any fun r => r.lint == .undecidable && r.level.level.severity? == some .error
+
+/-- Elaborates a law of the trait being elaborated (`Reqs/Lang/Traits#laws`):
+its variables are a quantifier around its equation, and it mentions no
+variables, as a global expectation in the short form does. Records it in
+`traitLaws`. -/
+def elabLaw (name : Ident) (params : Array (Ident × Option (Array Ident))) (body : Expr) : M Unit := do
+  -- Only variables, parameters, calls and binders are written with `!`.
+  liftMsg name.span (Fren.Core.checkNoBang (Name.mkSimple name.name))
+  let name := (declaredIdent name).1
+  let n := Name.mkSimple name.name
+  if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
+  modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[] }
+  let reportsBefore := (← get).lintReports.size
+  lintName .law n name.span
+  startDeclared
+  -- Distinct names (`lang::distinct_names`), without the `!` of shadowing.
+  let declared := params.map fun (x, _) => Name.mkSimple (declaredIdent x).1.name
+  if let some k := (Fren.Core.repeatsAt declared)[0]? then
+    err params[k]!.1.span (Fren.Core.dupParamMsg declared[k]!)
+  -- Each variable has its type written, but a `Bool`, which may be written
+  -- `x?` alone, as a function's parameter may.
+  let mut binders : Array Binder := #[]
+  for (x, ty?) in params do
+    let ty ← match ty? with
+      | some segs => pure segs
+      | none =>
+        discard (varPTy none x)
+        pure #[({ name := "Bool", span := x.span } : Ident)]
+    binders := binders.push { names := #[x], ty, span := x.span.to ((ty.back?.map (·.span)).getD x.span) }
+  let cx : ExprCtx := { vars := #[], place := .prop }
+  discard takeIndexes
+  discard takeTables
+  let quantified := if binders.isEmpty then body
+    else .quant { start := binders[0]!.span.start, stop := body.span.stop } true binders body
+  let (smt, t) ← elabExpr cx quantified
+  discard takeIndexes
+  discard takeTables
+  liftMsg body.span (Fren.Core.checkType .bool t (some "note: a law is a `Bool`"))
+  lintBools body (← hidesIn cx (declared.map (·, .boundName)))
+  lintDeclared .law n name.span
+  discard checkCounts
+  let denied := undecidableDenied ((← get).lintReports.extract reportsBefore)
+  modify fun s => { s with traitLaws := s.traitLaws.push (n, smt, !s.outsideCore, s.natApps, s.guardedUsed, denied) }
+
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
 whose parameters are `vars`, and records the contract, and each clause's
 definition for the prelude (`Reqs/Lang/Items#contracts`). Gives each
@@ -6890,6 +6950,7 @@ def noteSettingsSeen (lints : Array Lint := Lint.all) : M Unit :=
     | some i => if acc.contains i then acc else acc.push i
     | none => acc }
 
+mutual
 partial def elabItem (item : Item) : M Unit := do
   -- Paths resolve in the module, but in a procedure's or a function's
   -- block with `use`s, which sets its own scope.
@@ -7465,7 +7526,9 @@ partial def elabItem (item : Item) : M Unit := do
     unless isPub do
       modify fun s =>
         let r : Fren.Core.ItemRecord :=
-          { what := .function, path, level := s.levels.get .deadCode, singleCall? := body.map fun _ => s.levels.get .singleCallFn }
+          -- A trait's method is never dead (`lint::dead_item`).
+          { what := if s.inTrait then .method else .function, path, level := s.levels.get .deadCode
+            singleCall? := body.map fun _ => s.levels.get .singleCallFn }
         { s with items := s.items.push (r, name.span) }
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
   | .comp isPub name header members close spans openStop => do
@@ -7537,6 +7600,11 @@ partial def elabItem (item : Item) : M Unit := do
       throw { e with state := ← get }
     lintDeclared .global (Name.mkSimple shown.name) shown.span
     lintLines .global (Name.mkSimple shown.name) shown.span close
+  | .law name params body => do
+    -- Only a trait's members are laws, which the parser reads only there.
+    modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
+    elabLaw name params body
+  | .«trait» isPub name members _ => elabTrait isPub name members
   | .claim tested segs texts => do
     let path ← match ← resolve segs with
       | .item { kind := .compItem, path, .. } => pure path
@@ -7617,6 +7685,124 @@ partial def elabItem (item : Item) : M Unit := do
       modify fun s => { s with settingStart? := some (settingStart?.getD stx.start) }
       elabItem body
       modify fun s => { s with levels, settingStart? }
+
+/-- Elaborates a trait (`Reqs/Lang/Traits`): its carrier `Self`, an
+abstract type; its methods, uninterpreted functions, each seen by those
+after it; its laws; and its expectations, global expectations whose checks
+have the laws among their hypotheses (`Fren.Core.Comp.laws`). Each member
+is in the trait's scope, whose names shadow its module's, and reports its
+own first static error. -/
+partial def elabTrait (isPub : Bool) (name : Ident) (members : Array Item) : M Unit := do
+  let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
+  let n := Name.mkSimple name.name
+  liftMsg name.span (Fren.Core.checkItemName "trait" n)
+  let module := (← get).module
+  liftMsg written ((← get).table.checkFreshItem module n bang)
+  lintName .trait n name.span
+  let path := module ++ n
+  let selfPath := path ++ Fren.Core.selfName
+  -- What each member is, under its settings (`lang::trait_member`).
+  let rec under : Item → Item
+    | .lintSetting _ _ _ _ _ (some b) => under b
+    | i => i
+  let kindOf : Item → Fren.Core.TraitMember × Bool × Bool × Bool × Option Ident
+    | .function isPub f tps _ _ body _ _ block =>
+      (if body.isSome then .definedFunction else .method, isPub, !tps.isEmpty, !block.uses.isEmpty, some f)
+    | .law f .. => (.law, false, false, false, some f)
+    | .global f .. => (.expectation, false, false, false, some f)
+    | .globalBlock f _ ms .. => (.expectation, false, false, ms.any (· matches .use .. | .useGroup ..), some f)
+    | .comp isPub f .. => (.other "procedures", isPub, false, false, some f)
+    | .enum .. | .record .. | .newtype .. => (.other "enums or structs", false, false, false, none)
+    | .abstractType .. | .typeAlias .. | .subsetType .. => (.other "types", false, false, false, none)
+    | .const .. => (.other "constants", false, false, false, none)
+    | .mod .. => (.other "modules", false, false, false, none)
+    | .use .. | .useGroup .. => (.other "`use`s", false, false, false, none)
+    | .trait .. => (.other "traits", false, false, false, none)
+    | .claim .. => (.other "claims", false, false, false, none)
+    | .check .. | .lintSetting .. => (.other "commands", false, false, false, none)
+  let spanOf : Item → Span
+    | .function _ f .. | .law f .. | .global f .. | .globalBlock f .. | .comp _ f .. | .enum _ f .. | .record _ f ..
+    | .newtype _ f .. | .abstractType _ f | .typeAlias _ f _ | .subsetType _ f .. | .const _ f .. | .trait _ f .. => f.span
+    | .mod _ segs => segs[0]!.span
+    | .use sp .. | .useGroup sp .. => sp
+    | .claim _ segs _ => segs[0]!.span
+    | _ => name.span
+  for m in members do
+    let (kind, isPubM, generic, uses, _) := kindOf (under m)
+    if let some msg := Fren.Core.traitMemberMsg? path kind isPubM generic uses then err (spanOf (under m)) msg
+  -- Distinct names, with the carrier's (`lang::distinct_names`).
+  let named := members.filterMap fun m => (kindOf (under m)).2.2.2.2
+  let declared := #[Fren.Core.selfName] ++ named.map fun x => Name.mkSimple (declaredIdent x).1.name
+  if let some k := (Fren.Core.repeatsAt declared)[0]? then
+    err named[k - 1]!.span (Fren.Core.dupTraitMemberMsg declared[k]!)
+  -- The trait, and its carrier, which its members see first.
+  let traitItem : Fren.Core.Item := { kind := .traitItem, path, isPub, owner := module }
+  let selfItem : Fren.Core.Item := { kind := .typeItem, path := selfPath, isPub := true, owner := path }
+  let selfUse : Fren.Core.UseDef := { module, scope := path, target := selfPath, glob := false }
+  modify fun s => { s with
+    table := ((s.table.addItem traitItem).addItem selfItem).addUse selfUse
+    sorts := s.sorts.push selfPath
+    traitLaws := #[] }
+  -- Each member, in the trait's scope, reporting its own first error, and
+  -- without the item's trailing commas, which the trait reported.
+  let commas := (← get).trailingCommas
+  let member (m : Item) : M Unit := do
+    -- Its own errors alone stop what follows them in it, as an item's do.
+    let errors := (← get).itemErrors
+    modify fun s => { s with module := path, scope := path, trailingCommas := #[], itemErrors := #[], inTrait := true }
+    discard (attempt (elabItem m))
+    modify fun s => { s with module, scope := module, trailingCommas := commas, itemErrors := errors ++ s.itemErrors
+                             inTrait := false }
+  -- The methods, each in scope after it, then the laws, then the
+  -- expectations, each checked with the laws among its hypotheses
+  -- (`Fren.Core.traitOrder`).
+  for i in Fren.Core.traitOrder (members.map fun m => (kindOf (under m)).1) do
+    let m := members[i]!
+    let (kind, _, _, _, f?) := kindOf (under m)
+    match kind with
+    | .method =>
+      let before := (← get).itemErrors.size
+      member m
+      if let some f := f? then
+        if (← get).itemErrors.size == before then
+          let u : Fren.Core.UseDef := { module, scope := path, target := path ++ Name.mkSimple (declaredIdent f).1.name, glob := false }
+          modify fun s => { s with table := s.table.addUse u }
+    | .law =>
+      -- The settings before it, which a law takes only if every one is a
+      -- lint's (`Fren.Core.lawSettingsMsg?`).
+      let rec settings : Item → Array (String × String × Span)
+        | .lintSetting stx opt value _ _ (some b) =>
+          #[(opt.name, if opt.name == "fren.enumeration.size" then value else s!"\"{value}\"", stx)] ++ settings b
+        | _ => #[]
+      let ss := settings m
+      match Fren.Core.lawSettingsMsg? (ss.toList.map fun (o, v, _) => (o, v)) with
+      | some (k, msg) =>
+        -- Its own error alone, as a member's.
+        let errors := (← get).itemErrors
+        modify fun s => { s with itemErrors := #[] }
+        discard (attempt (α := Unit) (err ss[k]!.2.2 msg))
+        modify fun s => { s with itemErrors := errors ++ s.itemErrors }
+      | none => member m
+    | _ =>
+      let laws := (← get).traitLaws
+      let before := (← get).globals.size
+      let reportsBefore := (← get).lintReports.size
+      member m
+      let denied := undecidableDenied ((← get).lintReports.extract reportsBefore)
+      let st ← get
+      if st.globals.size > before then
+        let c := st.globals.back!
+        -- Its checks are the solver's (`F0215`).
+        if let some msg := Fren.Core.traitEvidenceMsg? c.tested.any c.enumerated.any then
+          discard (attempt (α := Unit) (err ((f?.map (·.span)).getD name.span) msg))
+        let flags := Fren.Core.CheckFlags.withLaws { inCore := c.decidable, denied, fmfBound := c.guarded }
+          (laws.map fun (_, _, inCore, _, fmfBound, denied) => { inCore, denied, fmfBound })
+        let c := { c with laws := laws.map fun (l, f, _) => (l, f), lawsOf := path
+                          decidable := flags.inCore, guarded := flags.fmfBound
+                          natApps := c.natApps ++ laws.flatMap (·.2.2.2.1) }
+        modify fun s => { s with globals := s.globals.pop.push c }
+  modify fun s => { s with traitLaws := #[] }
+end
 
 /-- The text of the current file at `sp`. -/
 def State.text (s : State) (sp : Span) : String := String.ofList (s.src.extract sp.start sp.stop).toList

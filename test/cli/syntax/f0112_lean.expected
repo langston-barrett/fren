@@ -4,7 +4,7 @@ error[F0112]: Lean code is not supported in .fren files
 2 | def limit := 10
   | ^^^ Lean, not Fren
   |
-  = note: only Fren items (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `proc`, `expect`, `tested`, `trusted`) may appear
+  = note: only Fren items (`mod`, `use`, `enum`, `struct`, `type`, `fn`, `const`, `proc`, `trait`, `expect`, `tested`, `trusted`) may appear
   = help: move the `def` to a Lean file that opens `Fren.Lang`, and check it with `lake build`
 
 error: could not check due to previous errors

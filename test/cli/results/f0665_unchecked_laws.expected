@@ -1,0 +1,13 @@
+warning[F0665]: `Store::read_back::c` rests on the laws of `Store`, whose consistency is not checked
+  --> test/cli/results/f0665_unchecked_laws.fren:10:56
+   |
+10 |     expect read_back(s: Self, k: Key, v: Int) { expect c: get(put(s, k, v), k) = Option::Some(v) }
+   |                                                        ^ rests on unchecked laws
+   |
+   = note: its verdict comes from the laws of `Store`; if no interpretation meets them all, it would be the same whatever it says
+   = note: Fren does not check yet that a trait's laws can hold together (#594)
+
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0665`.
+exit=0

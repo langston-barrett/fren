@@ -8,6 +8,7 @@ import FrenCore.Patterns
 import FrenCore.Regex
 import FrenCore.SubsetTypes
 import FrenCore.Table
+import FrenCore.Traits
 import FrenCore.TypeFacts
 -- keep-sorted end
 
@@ -3525,6 +3526,37 @@ partial def lowerItem : Item → L Unit
   -- nothing calls it (`Reqs/Lang/Global#meaning`).
   | .globalBlock name header members .. => lowerComp false name header members
   | .claim .. | .check _ => pure ()
+  -- A trait, as the elaborator has it (`FrenCli.elabTrait`): its carrier,
+  -- an abstract type, its methods and its expectations, in its scope. Its
+  -- laws are quantified, which the evaluator does not decide, so it leaves
+  -- them out, and a model of an expectation's query is not confirmed
+  -- (`Confirm.pairCore`).
+  | .trait isPub name members _ => do
+    let module := (← get).module
+    let path := module ++ itemName name
+    let selfPath := path ++ Fren.Core.selfName
+    let traitItem : Fren.Core.Item := { kind := .traitItem, path, isPub, owner := module }
+    let selfItem : Fren.Core.Item := { kind := .typeItem, path := selfPath, isPub := true, owner := path }
+    let selfUse : Fren.Core.UseDef := { module, scope := path, target := selfPath, glob := false }
+    modify fun s => { s with
+      table := ((s.table.addItem traitItem).addItem selfItem).addUse selfUse
+      spec.sorts := s.spec.sorts.push selfPath }
+    let rec under : Item → Item
+      | .lintSetting _ _ _ _ _ (some b) => under b
+      | i => i
+    let inTrait (m : Item) : L Unit := do
+      modify fun s => { s with module := path, scope := path }
+      lowerItem m
+      modify fun s => { s with module, scope := module }
+    for m in members do
+      if let .function _ f .. := under m then
+        -- In scope in its own contract too, which may apply it.
+        let u : Fren.Core.UseDef := { module, scope := path, target := path ++ itemName f, glob := false }
+        modify fun s => { s with table := s.table.addUse u }
+        inTrait m
+    for m in members do
+      if under m matches .global .. | .globalBlock .. then inTrait m
+  | .law .. => pure ()
   | .lintSetting _ _ _ _ _ body? => do if let some b := body? then lowerItem b
 where
   declareUse (segs : Array Ident) (glob : Bool) : L Unit := declareUseIn segs glob none
