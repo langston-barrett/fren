@@ -14,6 +14,7 @@
   - [Structural recursion](Lang/Recursion.md)
   - [The prelude](Lang/Prelude.md)
   - [Traits](Lang/Traits.md)
+  - [Modules](Lang/ModulesAndInterfaces.md)
 - [Scope](Lang/Scope.md)
   - [Laws of scope](Lang/ScopeLaws.md)
 - [Procedures](Lang/Procedures.md)

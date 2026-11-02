@@ -472,6 +472,10 @@ available. Recursion itself never raises `undecidable`: its applications,
 ground facts and finite one-step equations add only uninterpreted
 functions to quantifier-free queries.
 
+[Modules](ModulesAndInterfaces.md#induction-by-unfolding) designs induction by
+unfolding, which proves such a fact of a lemma without a contract that
+states it.
+
 ```fren
 #fren_check self_application
 #fren_check structural_recursion
