@@ -63,8 +63,16 @@ proc identities(x: Int, y: Int, s: String, q: Seq<Int>, u: Set<Int>): (
     ensure r1: a = (x - y) * 1                  --~ warning: this operation has no effect
     ensure r2: b = 0 + x                        --~ warning: this operation has no effect
     ensure r3: c = x + -y                       --~ warning: this negation can be the other operator
+    -- The fix of each of these fires again, and the next pass fixes it
+    -- (`test/cli/fix/arith.fren`).
+    expect e2: when x + -0 = 1, true            --~ warning: this negation can be the other operator
+    expect e3: when x - - -y = 1, true
+    --~^ warning: this negation can be the other operator
+    --~^^ warning: negating twice is the operand itself
+    expect e4: when 0 - -y = 1, true            --~ warning: this negation can be the other operator
     -- Not identities: they ignore an operand.
     expect e1: when x - 0 * y >= 1 - x or {} minus u = u, true
     --~^ warning: this `*` is always `0`
     --~^^ warning: this `minus` is always `{}`
+    expect e5: unless x in [], true             --~ warning: this `in` is always `false`
 }

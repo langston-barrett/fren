@@ -299,6 +299,31 @@ theorem io_fix_rn (e : Expr V) : lint.identity_op_fix W (expr r e) = expr r (lin
       | (exfalso; simp_all [empty_text_rn, expr_nil]; done)
       | (simp [expr]; done))
 
+omit hr in
+@[local simp] theorem remainder_rn (e : Expr V) : lint.remainder? W (expr r e) = lint.remainder? V e := by
+  cases e <;> try rfl
+  rename_i op _ _; cases op <;> rfl
+
+theorem rby_rn (a b k : Expr V) :
+    lint.remainder_by? W (expr r a) (expr r b) (expr r k) = lint.remainder_by? V a b k := by
+  cases a <;> simp [lint.remainder_by?, lang.Expr.Binary.x0, lang.Expr.Binary.x1, lang.Expr.Binary.x2]
+
+theorem mre_fires_rn (e : Expr V) :
+    lint.manual_rem_euclid_fires? W (expr r e) = lint.manual_rem_euclid_fires? V e := by
+  cases e <;> try rfl
+  rename_i op a k; cases op <;> try rfl
+  cases a <;> try rfl
+  rename_i op' p q; cases op' <;> try rfl
+  simp only [lint.manual_rem_euclid_fires?, expr, remainder_rn, rby_rn]
+
+theorem mre_fix_rn (e : Expr V) :
+    lint.manual_rem_euclid_fix W (expr r e) = expr r (lint.manual_rem_euclid_fix V e) := by
+  cases e <;> try rfl
+  rename_i op a k; cases op <;> try rfl
+  cases a <;> try rfl
+  rename_i op' p q; cases op' <;> try rfl
+  simp only [lint.manual_rem_euclid_fix, expr, remainder_rn, rby_rn]; (repeat' split) <;> simp [expr]
+
 theorem absorbs_rn (c : Bool) (k o : Expr V) :
     lint.absorbs_operand? W c (expr r k) (expr r o) = lint.absorbs_operand? V c k o := by
   cases k <;> simp [lint.absorbs_operand?, lang.Expr.Or.x0, lang.Expr.Or.x1, lang.Expr.And.x0, lang.Expr.And.x1]
@@ -326,11 +351,11 @@ changes neither whether it fires nor, but for the renaming, what its fix
 writes. -/
 theorem fires_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fires_at? W l (expr r e) = lint.fires_at? V l e := by
   cases l <;> simp only [lint.fires_at?, oc_fires_rn, dn_fires_rn, ipo_fires_rn, ma_fires_rn, mad_fires_rn,
-    un_fires_rn, cw_fires_rn, sb_fires_rn, nm_fires_rn, io_fires_rn]
+    un_fires_rn, cw_fires_rn, sb_fires_rn, nm_fires_rn, io_fires_rn, mre_fires_rn]
 
 theorem fix_at_rn (l : lint.ExprLint) (e : Expr V) : lint.fix_at W l (expr r e) = expr r (lint.fix_at V l e) := by
   cases l <;> simp only [lint.fix_at, oc_fix_rn, dn_fix_rn, ipo_fix_rn, ma_fix_rn, mad_fix_rn, un_fix_rn, cw_fix_rn,
-    sb_fix_rn, nm_fix_rn, io_fix_rn]
+    sb_fix_rn, nm_fix_rn, io_fix_rn, mre_fix_rn]
 
 end
 
