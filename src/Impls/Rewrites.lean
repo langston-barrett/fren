@@ -2083,13 +2083,13 @@ impl single_match_else_keeps_meaning: lint::single_match_else_keeps_meaning for 
 open RewriteProof in
 -- For every scrutinee, interpretation and environment, by its value.
 impl single_match_else_equality: lint::single_match_else_equality for (i : lang.Interp) (env : lang.Env)
-    (s : lang.Expr String) (c : String) (w : lang.Value) {
-  i := i, env := env, s := s, c := c, w := w,
+    (s : lang.Expr String) (c : String) (w : lang.Value) (n : Int) {
+  i := i, env := env, s := s, c := c, w := w, n := n,
 } by
-  intro i env s c w _
+  intro i env s c w n _
   unfold lint.single_match_else_equality.ensures lint.single_match_else_equality.ensure.variant
-    lint.single_match_else_equality.ensure.literal
-  simp only [lang.eval, lang.binary_value, lang.is_value, lang.construct_value]
+    lint.single_match_else_equality.ensure.literal lint.single_match_else_equality.ensure.negative
+  simp only [lang.eval, lang.binary_value, lang.is_value, lang.construct_value, lang.unary_value]
   generalize lang.eval i env s = S
   rcases S with v | _
   · cases v <;> simp [lang.matches_value?, eq_comm]
@@ -2133,10 +2133,9 @@ impl irrefutable_is_said_agrees: lint::irrefutable_is_said_agrees for (e : lang.
   apply (agrees_iff _ _).2
   cases e with
   | Is s p =>
-    cases p <;> simp [lint.irrefutable_is_fires?] at h
-    simp only [lang.eval, lang.is_value]
-    generalize lang.eval i env s = S
-    rcases S with v | _ <;> simp [lang.matches_value?, lang.truth, Le]
+    cases p <;> simp [lint.irrefutable_is_fires?, lang.Expr.Is.x0, lang.Expr.Is.x1, lang.Pattern.Binder.x0] at h <;>
+      simp only [lang.eval, lang.is_value] <;>
+      generalize lang.eval i env s = S <;> rcases S with v | _ <;> simp [lang.matches_value?, lang.truth, Le]
   | _ => simp [lint.irrefutable_is_fires?] at h
 
 open RewriteProof in

@@ -125,9 +125,11 @@ negation, on which it does not fire, of an operand. That of `identity_op`
 writes an operand, or an operation of an operand and an operand's operand
 on which it does not fire. That of `manual_rem_euclid` writes an
 operand's operand. Those of `trivial_guard` and `trivial_match` write an
-operand. Those of `single_match_else` and `match_bool` write a
-conditional, on which they do not fire, of an operand and an operand's
-operand.
+operand. That of `single_match_else` writes a conditional, on which it
+does not fire, of a test of an operand, on which it does not fire either,
+and of an operand and an operand's operand. That of `match_bool` writes a
+conditional, on which it does not fire, of an operand, an operand and an
+operand's operand.
 
 The fixes of `neg_multiply`, `identity_op` and `manual_rem_euclid` rest
 on [primitive operations](Meaning.md#primitive-operations), `*`, `div`,

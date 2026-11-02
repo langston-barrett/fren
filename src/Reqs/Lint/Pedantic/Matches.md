@@ -324,9 +324,11 @@ a `match` of two arms without guards, of which the second is `_`, is
 forms](../../Lang/Semantics.md#derived-forms)).
 `single_match_else_fires?` fires on it where `p` is a literal, a range,
 an or-pattern or a variant without a payload, each of which binds no
-name, and its fix is `If(Is(s, p), a, b)`. A variant whose payload is
-`_` for each of its values binds nothing either, but telling so looks
-along the payload, which needs a recursion, so the function leaves it.
+name, and its fix is `If(Is(s, p), a, b)`. A variant with a payload
+binds nothing where no part of the payload is a binder, as in
+`Lamp::Lit(Light::Red | Light::Amber)`, but telling so looks along the
+payload, which needs a recursion, so the function leaves every variant
+with a payload, and the linter fires on some of them besides.
 That is a rewrite, as [Fixes as rewrites](../Rewrites.md) states for
 every such lint:
 
@@ -370,10 +372,15 @@ pub fn single_match_else_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
 arm's pattern is one of those, the front ends read it as a pattern other
 than `_` that binds nothing (`read`). Then, where the second arm is `_`,
 the scrutinee is not a `Bool` and no other lint reports the `match`, the
-linter fires, as the function does. The linter writes the test of a
-literal or a variant without a payload as `x = P`, which elaborates to
-`Binary(Eq, s, P)`. That has the outcome of `Is(s, P)` in every
-interpretation and environment (`single_match_else_equality`), so the
+linter fires, as the function does. On a `Bool` scrutinee, as in `match
+c? { true => a, _ => b }`, the function fires too, since `true` is a
+literal, and the linter leaves the `match` to
+[`match_bool`](#matches-on-a-bool); the two fixes agree. The linter
+writes the test of a literal or a variant without a payload as `x = P`,
+which elaborates to `Binary(Eq, s, P)`, or, for a negative integer
+literal `-n`, to `Binary(Eq, s, Unary(Neg, Literal(n)))`. Each has the
+outcome of `Is(s, P)` in every interpretation and environment
+(`single_match_else_equality`), so the
 fix the linter writes agrees with the function's. Several variants it
 writes as `x in {...}`, a membership in a set, which the model leaves
 out. That the front ends read the arms so, and the text of the fix, are
@@ -426,13 +433,27 @@ pub proc single_match_else_equality(
     s: lang::Expr<lang::Id>,
     c: lang::Id,
     w: lang::Value,
+    n: Int,
 ) {
-    use lang::Expr::{Binary, Construct, Is, Literal, Nil}
+    use lang::Expr::{Binary, Construct, Is, Literal, Nil, Unary}
 
     ensure variant: lang::eval(i, env, Binary(lang::BinaryOp::Eq, s, Construct(c, Nil)))
         = lang::eval(i, env, Is(s, lang::Pattern::Variant(c, lang::Pattern::Nil)))
     ensure literal: lang::eval(i, env, Binary(lang::BinaryOp::Eq, s, Literal(w)))
         = lang::eval(i, env, Is(s, lang::Pattern::Literal(w)))
+    ensure negative: lang::eval(
+        i,
+        env,
+        Binary(
+            lang::BinaryOp::Eq,
+            s,
+            Unary(lang::UnaryOp::Neg, Literal(lang::Value::Integer(n)))
+        )
+    ) = lang::eval(
+        i,
+        env,
+        Is(s, lang::Pattern::Literal(lang::Value::Integer(-n)))
+    )
 }
 ```
 
@@ -659,8 +680,11 @@ fn bool_pattern<V>(p: BoolPat): lang::Pattern<V> := match p {
 fix is the conditional that the linter writes. The second arm `_` is
 left out. It is taken at every value but the first arm's, and the
 conditional only at `true` and `false`, so the two agree only where the
-scrutinee is a `Bool`, which the static rules check and the model has no
-types to state. `match_bool_wildcard` states that they agree there.
+scrutinee is a `Bool`. The static rules check its type, but the model has
+no types, and no result that a scrutinee they type as `Bool` evaluates
+to `true`, `false` or nothing. That link is trusted:
+`match_bool_wildcard` assumes it (`boolean`) rather than proving it, and
+states that they agree there.
 That the front ends read the arms so, and the text of the fix, are
 trusted, and checked by the ui tests in
 `test/ui/lints/patterns_tables.fren`:
@@ -745,8 +769,9 @@ Where it fires, the fix [agrees](../Meaning.md#fixes-that-agree) with the
 `true` or `false`, the `match` takes the arm of that literal, as the
 conditional takes its branch. Elsewhere the `match` reaches `NoMatch`, or
 the scrutinee is undefined, so the `match` is undefined.
-`src/Impls/Rewrites.lean` proves this and `match_bool_wildcard` in Lean,
-for every expression, interpretation and environment; `fren check` tests
+`src/Impls/Rewrites.lean` proves this in Lean, for every expression,
+interpretation and environment, and `match_bool_wildcard` for every
+scrutinee whose outcome is a `Bool` or undefined; `fren check` tests
 them:
 
 ```fren
