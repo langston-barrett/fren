@@ -21,6 +21,7 @@ import FrenCore.Quantifier
 import FrenCore.Recursion
 import FrenCore.Regex
 import FrenCore.SeqElems
+import FrenCore.SolverTime
 import FrenCore.Sound
 import FrenCore.Str
 import FrenCore.SubsetTypes
