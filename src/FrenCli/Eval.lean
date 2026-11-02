@@ -540,6 +540,11 @@ structure Spec where
   its body, in which its applications of itself are `Ex.app`s of it, which
   evaluation applies (`Interp.recDefs`). -/
   recDefs : NameMap (Array Name × Ex) := {}
+  /-- `recDefs` with each body compiled for the shapes of `shapes`, as
+  every search's are (`Spec.withCompiledRecs`, `Spec.keepCompiledRecs`),
+  kept with this reading of the spec, so that testing each of its
+  procedures does not compile them again. -/
+  compiledRecs? : Option (NameMap (Array Name × Ex)) := none
   /-- Each constant's value, as a literal, or as its expression where the
   value is unknown: an index out of range, or a table where no row holds. -/
   consts : NameMap (Ex × VTy) := {}
@@ -806,6 +811,27 @@ def Val.setOfKeyed (kvs : Array (Thunk String × Val)) : Val :=
   if ms.size ≤ 1 then .set (ms.map (·.2)) else
     .set ((ms.map fun (k, v) => (k.get, v)).qsort (·.1 < ·.1) |>.map (·.2))
 
+/-- `Val.setOf (a ++ b)`, the union of two sets' members, each in
+`Val.setOf`'s order without repeats, as every set's members are
+(`Val.set`): where one has every member of the other, such as where the
+other has none, that one, which needs no member printed. It is the same
+set, its members in the same order: `setOf` drops the repeats, which
+leaves the members of the one, in some order, and sorts them by their
+keys, which are distinct for distinct values (`reprStr` tells them
+apart), so that the one's own order is the only order it can give.
+`setOpsAgree` in `FrenTest.Semantics` tests that, over random sets. -/
+def Val.union (a b : Array Val) : Val :=
+  if b.all a.contains then .set a
+  else if a.all b.contains then .set b
+  else Val.setOf (a ++ b)
+
+/-- `Val.setOf (a.filter keep)`, for `a` a set's members, in `setOf`'s
+order without repeats (`Val.set`): those that `keep` keeps, in the same
+order, which has no repeats and is sorted by the members' distinct keys
+already, so that `setOf` would give it unchanged (`Val.union`,
+`setOpsAgree`). -/
+@[inline] def Val.setFilter (a : Array Val) (keep : Val → Bool) : Val := .set (a.filter keep)
+
 @[inline] def setOp (f : Array Val → Array Val → Val) : Option Val → Option Val → Option Val
   | some (.set a), some (.set b) => some (f a b)
   | _, _ => none
@@ -877,9 +903,10 @@ def binV (op : Op) (x y : Option Val) : Option Val :=
     | some x, some (.set s) => boolV (s.contains x)
     | some x, some (.seq q) => boolV (q.contains x)
     | _, _ => none
-  | .union => setOp (fun a b => Val.setOf (a ++ b)) x y
-  | .inter => setOp (fun a b => Val.setOf (a.filter b.contains)) x y
-  | .minus => setOp (fun a b => Val.setOf (a.filter (!b.contains ·))) x y
+  -- Of sets in `Val.setOf`'s order, which every set is (`Val.set`).
+  | .union => setOp Val.union x y
+  | .inter => setOp (fun a b => Val.setFilter a b.contains) x y
+  | .minus => setOp (fun a b => Val.setFilter a (!b.contains ·)) x y
   | .subset => setOp (fun a b => .bool (a.all b.contains)) x y
   | .join => setOp (fun a b => Val.setOf (joinPairs a b)) x y
   | .add => intOp (fun x y => .int (x + y)) x y
@@ -995,8 +1022,11 @@ theorem someBool_eq (b : Bool) : someBool b = some b := by cases b <;> rfl
 /-- `Fren.Core.Enumeration.quantifiedTruth exact universal body
 (vs.toList.drop i)`, the truth of a quantifier, read from the array, from
 its `i`th value (`quantTruthIn_eq`): without the list of its values, nor
-the truths that it gives. -/
-def quantTruthIn {α : Type} (exact universal : Bool) (body : α → Option Bool) (vs : Array α) (i : Nat := 0) :
+the truths that it gives. Specialized at its call in `Ex.evalIn.quantV`,
+so that `body`, a closure of the quantifier's dozen parts, is neither
+allocated nor applied at each instance, where applying it counted a
+reference to each part and uncounted it again. -/
+@[specialize] def quantTruthIn {α : Type} (exact universal : Bool) (body : α → Option Bool) (vs : Array α) (i : Nat := 0) :
     Option Bool :=
   if h : i < vs.size then
     match body vs[i] with

@@ -478,9 +478,8 @@ structure Prepared where
   /-- Each variable to choose's slot. -/
   varSlot : Array Nat
   /-- For each variable to choose, what the constraints equate it with,
-  compiled and as written, and the slots that those expressions read,
-  computed when a search first reaches it. -/
-  equated : Array (Thunk (Array (Ex × Ex) × Array Nat))
+  compiled and as written, and the slots that those expressions read. -/
+  equated : Array (Array (Ex × Ex) × Array Nat)
 
 structure Problem where
   /-- The variables to choose, in order, with their types. -/
@@ -494,12 +493,15 @@ structure Problem where
   /-- `Problem.prepare` of this problem, with the shapes of the
   interpretations that it is searched under, if it is searched more than
   once: a function of `vars` and `atoms`, so that each search need not
-  compute it again. -/
-  prepared? : Option (Thunk Prepared) := none
+  compute it again. A value rather than a `Thunk`, whose value Lean
+  marks as shared between threads, so that every reference counted to
+  the parts of the constraints, such as their literals, would be counted
+  atomically (`Problem.search`). -/
+  prepared? : Option Prepared := none
   /-- For some types, `Problem.fixedPool?`'s values in every world, with
   these `strs`, computed once for the problems that share them
   (`Spec.fixedPools`). -/
-  fixedPools : Std.HashMap VTy (Thunk (Array Val)) := {}
+  fixedPools : Std.HashMap VTy (Array Val) := {}
   deriving Inhabited
 
 abbrev Env := Std.HashMap Name Val
@@ -525,19 +527,20 @@ def Problem.fixedPool? (sp : Spec) (w : World) (p : Problem) (ty : VTy) : Option
 every world and for any integers, with the strings `strs`: those that
 are not sequences or sets, and from which `smallValues` reads neither the
 integers nor the world (`VTy.readsInts`, `VTy.readsSorts`). Each is
-computed when a search first needs it, once for every problem whose
-strings are `strs` (`Problem.fixedPools`). -/
-def Spec.fixedPools (sp : Spec) (strs : Array String) (tys : Array VTy) : Std.HashMap VTy (Thunk (Array Val)) :=
+computed once for every problem whose strings are `strs`
+(`Problem.fixedPools`), as a value rather than a `Thunk`, whose value
+Lean would mark as shared between threads (`Problem.prepared?`). -/
+def Spec.fixedPools (sp : Spec) (strs : Array String) (tys : Array VTy) : Std.HashMap VTy (Array Val) :=
   tys.foldl (init := {}) fun m ty => match ty with
     | .seq _ | .set _ => m
     | _ =>
       if m.contains ty || ty.readsInts sp || ty.readsSorts sp then m
-      else m.insert ty (Thunk.mk fun _ => smallValues sp default #[] strs 24 2 ty)
+      else m.insert ty (smallValues sp default #[] strs 24 2 ty)
 
 /-- `Problem.fixedPool? sp w p ty`, from `p.fixedPools` where it has it. -/
 def Problem.fixedPoolIn (sp : Spec) (w : World) (p : Problem) (ty : VTy) : Option (Array Val) :=
   match p.fixedPools[ty]? with
-  | some pool => some pool.get
+  | some pool => some pool
   | none => p.fixedPool? sp w ty
 
 /-- A condition on a search's environment under which an expression's value
@@ -718,7 +721,7 @@ def Problem.prepare (shapes : Name → Option Fren.Core.DataShape) (p : Problem)
   let varSlot := p.vars.map fun (x, _) => index[x]!
   { names, index, byVar, full, run, varSlot
     fullSlots := full.map (·.slots)
-    equated := varSlot.map fun x => Thunk.mk fun _ =>
+    equated := varSlot.map fun x =>
       let es := full.flatMap fun e => e.equated x
       (es.map fun e => (e.compile shapes (some []), e), es.flatMap (·.slots)) }
 
@@ -764,7 +767,7 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
     (backjump := true) : R (Option Env × Nat) := do
   let seed ← rand
   let { names, byVar, full, run, fullSlots, varSlot, equated, .. } :=
-    (p.prepared?.map (·.get)).getD (p.prepare I.shapes)
+    p.prepared?.getD (p.prepare I.shapes)
   -- When each constraint is surely unknown, so that it need not be evaluated.
   let unknown := full.map (·.unknownIf)
   let slots : Slots := names.map (env[·]?)
@@ -796,14 +799,18 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
       | none => pure ()
     return .ok newly
   -- What the constraints equate each variable with (`Prepared.equated`),
-  -- and the set of the variables that those expressions read, computed
-  -- when the search first reaches it.
-  let eqsOf : Array (Thunk (Array (Ex × UnknownIf))) :=
-    equated.map fun t => Thunk.mk fun _ => t.get.1.map fun (c, e) => (c, e.unknownIf)
-  let eqReadsOf : Array (Thunk Nat) := equated.map fun t => Thunk.mk fun _ => readsOf t.get.2
-  -- Each variable's pool, likewise.
-  let pools : Array (Thunk (Array Val)) := p.vars.mapIdx fun i (_, ty) => Thunk.mk fun _ =>
-    (p.pool sp w ty (p.fixedPoolIn sp w ty)).run' ⟨mix seed i.toUInt64⟩
+  -- and the set of the variables that those expressions read.
+  let eqsOf : Array (Array (Ex × UnknownIf)) := equated.map fun t => t.1.map fun (c, e) => (c, e.unknownIf)
+  let eqReadsOf : Array Nat := equated.map fun t => readsOf t.2
+  -- Each variable's pool, but for a variable that `env` gives a value,
+  -- which the search does not choose. Each is drawn from a random
+  -- stream of its own, so that computing them all here, rather than
+  -- when the search first reaches each variable, draws the same values.
+  -- As values rather than `Thunk`s, whose values Lean would mark as
+  -- shared between threads, so that every reference counted to a
+  -- candidate would be counted atomically (`Problem.prepared?`).
+  let pools : Array (Array Val) := p.vars.mapIdx fun i (_, ty) =>
+    if slots[varSlot[i]!]!.isSome then #[] else (p.pool sp w ty (p.fixedPoolIn sp w ty)).run' ⟨mix seed i.toUInt64⟩
   -- Returns whether it found values, the conflict set if it did not, and
   -- the steps left, with `slots` and `known` as they were given if it did
   -- not, and with the values found if it did. Every member of the
@@ -816,10 +823,10 @@ partial def Problem.search (sp : Spec) (w : World) (I : Interp) (p : Problem) (e
       let (_, ty) := p.vars[i]
       let x := varSlot[i]!
       if slots[x]!.isSome then return go (i + 1) h slots known left
-      let eqs := (eqsOf[i]!).get
-      let eqReads := (eqReadsOf[i]!).get
+      let eqs := eqsOf[i]!
+      let eqReads := eqReadsOf[i]!
       -- The pool, in an order drawn from the values chosen so far.
-      let pool := (shuffle (pools[i]!).get).run' ⟨mix h i.toUInt64⟩
+      let pool := (shuffle pools[i]!).run' ⟨mix h i.toUInt64⟩
       let mut left := left
       let mut slots := slots
       let mut known := known
@@ -982,6 +989,24 @@ each by its position there, as `Ex.compile` resolves a binder that its
 scope names; it gives the same value from that frame as the body did. -/
 def Spec.withCompiledRecs (sp : Spec) (shapes : Name → Option Fren.Core.DataShape) : Spec :=
   { sp with recDefs := sp.recDefs.foldl (init := sp.recDefs) fun m f (ps, b) => m.insert f (ps, b.compile shapes (some ps.toList)) }
+
+/-- `sp`, which keeps its structural recursions' bodies compiled for its
+own shapes (`Spec.compiledRecs?`), compiled once, as it is read: what
+`Spec.withCompiledRecs` gives of `sp` with those shapes, which are every
+search's (`World.interp`), and with which testing each procedure would
+compile them again (`Spec.quickComp`). -/
+def Spec.keepCompiledRecs (sp : Spec) : Spec :=
+  let shapes := sp.shapeMap
+  { sp with compiledRecs? := some (sp.withCompiledRecs fun p => shapes[p]?).recDefs }
+
+/-- `sp.withCompiledRecs` with `sp`'s own shapes, `shapes`
+(`Spec.shapeMap`): those kept (`Spec.keepCompiledRecs`), if `sp` keeps
+them, which are what compiling them again would give, since nothing
+changes `recDefs` or `shapes` after the spec is read. -/
+def Spec.withOwnCompiledRecs (sp : Spec) (shapes : Std.HashMap Name Fren.Core.DataShape) : Spec :=
+  match sp.compiledRecs? with
+  | some recDefs => { sp with recDefs }
+  | none => sp.withCompiledRecs fun p => shapes[p]?
 
 /-- The defined outputs of `c` that the inputs alone give, in an order in
 which each mentions only inputs and earlier such outputs. Members may
