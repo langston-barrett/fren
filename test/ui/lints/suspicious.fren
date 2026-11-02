@@ -26,13 +26,15 @@ proc ops(x: Int, y: Int, a?, t: Set<Int>, q: Seq<Int>): (
 }
 
 -- The operators that elaboration writes as others: `!=` as the negation
--- of `=`, `>=` as `<=` with the operands swapped, and `iff` as `=`.
-proc elaborated_ops(x: Int, a?): (p1?, p2?, p3?, p4?, p5?) {
+-- of `=`, `>` and `>=` as `<` and `<=` with the operands swapped, and `iff`
+-- as `=`.
+proc elaborated_ops(x: Int, a?): (p1?, p2?, p3?, p4?, p5?, p6?) {
     ensure r1: p1? iff x != x  --~ warning: both operands of `!=` are written the same
     ensure r2: p2? iff x <= x  --~ warning: both operands of `<=` are written the same
     ensure r3: p3? iff x >= x  --~ warning: both operands of `>=` are written the same
     ensure r4: p4? iff (a? iff a?)  --~ warning: both operands of `iff` are written the same
     ensure r5: p5? iff a? or a?  --~ warning: both operands of `or` are written the same
+    ensure r6: p6? iff x > x  --~ warning: both operands of `>` are written the same
 }
 
 enum E { A, B }

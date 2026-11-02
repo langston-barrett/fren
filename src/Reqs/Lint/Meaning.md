@@ -47,7 +47,10 @@ pub struct Scoped { text: Operand, scope: Set<lang::Id> }
 An expression as written elaborates to one [expression of the
 semantics](../Lang/Semantics.md#abstract-syntax), `written(x)`: with the
 same text and the same binders, an expression has the same names, of the
-same declarations, and so elaborates alike.
+same declarations, and so elaborates alike. It is the elaboration where
+the expression is written. Where it reads a binder of a pattern test in
+scope, that includes the `match` around it that [Derived
+forms](../Lang/Semantics.md#derived-forms) writes.
 
 ```fren
 pub fn written(Scoped): lang::Expr<lang::Id>
@@ -155,4 +158,46 @@ with `agrees?`, at the outcomes of `lang::eval`:
 
 ```fren
 pub fn agrees?(fix: lang::Outcome, original: lang::Outcome) := original = lang::Outcome::Undefined or fix = original
+```
+
+## Primitive operations
+
+Products and quotients of integers, `*`, `div` and `mod`, and
+concatenations of strings, `++`, are [primitive
+operations](../Lang/Semantics.md#environments-and-interpretations): an
+interpretation gives them, as a finite graph, and `eval` reads only its
+points. In an arbitrary interpretation, `x * 1` and `x` need not agree.
+The language's interpretation gives each primitive its usual meaning at
+every point that it has. `usual?` states the part of that meaning that
+the lints rest on: a product with `1` or `-1` is the other operand or its
+negation, a quotient by `1` is the dividend, and a concatenation with
+`""` is the other string. Each is a fact of linear arithmetic or of
+strings, which the solver decides, as the whole product is not. A point
+at other arguments, or of another name, is not constrained. A lint whose
+fix rests on a primitive operation states that its fix agrees in each
+interpretation whose primitives are `usual?`, and not in every one. A
+graph with no point for the arguments leaves the primitive undefined
+there, so the expression is undefined too, and the fix agrees with it.
+
+```fren
+-- `r` is the product of `m` and `n`, where one of them is `1` or `-1`.
+fn usual_product?(m: Int, n: Int, r: Int) :=
+    (when n = 1, r = m) and (when m = 1, r = n) and (when n = -1, r = -m) and (when m = -1, r = -n)
+
+-- The point `f` at `args` is `r` meets the usual meaning of `f` that the lints rest on.
+fn usual_point?(f: lang::Id, args: lang::Value, r: lang::Value) := match args, r {
+    lang::Value::Cons(lang::Value::Integer(m), lang::Value::Cons(lang::Value::Integer(n), lang::Value::Nil)),
+    lang::Value::Integer(k) => (when f = "*", usual_product?(m, n, k)) and (when f = "div", n != 0 and (when n = 1, k = m)),
+    lang::Value::Cons(lang::Value::Integer(_), lang::Value::Cons(lang::Value::Integer(_), lang::Value::Nil)),
+    _ => not (f is "*" | "div"),
+    lang::Value::Cons(lang::Value::Text(s), lang::Value::Cons(lang::Value::Text(t), lang::Value::Nil)),
+    _ => (when f = "++", (when t = "", r = lang::Value::Text(s)) and (when s = "", r = lang::Value::Text(t))),
+    _, _ => true,
+}
+
+-- Each point of `g` meets the usual meaning of its primitive operation that the lints rest on.
+pub fn usual?(g: lang::Graph) := match g {
+    lang::Graph::Empty => true,
+    lang::Graph::Point(f, args, r, rest) => usual_point?(f, args, r) and usual?(rest),
+}
 ```

@@ -214,9 +214,6 @@ test of being written the same. The model orders only integers, so
 neither states what the condition compares.
 
 ```fren
--- `e` is the literal `0`.
-fn zero?<V>(e: lang::Expr<V>) := e = lang::Expr::Literal(lang::Value::Integer(0))
-
 -- `op` is `<` or `<=`, the orderings that elaboration writes.
 fn ordering?(op: lang::BinaryOp) := op is lang::BinaryOp::Lt | lang::BinaryOp::Le
 
