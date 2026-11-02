@@ -25,7 +25,8 @@ ui tests, checked against the messages of either front end:
 - Every message must be expected: unexpected messages fail the test.
 - `--@ summary: N passed, M failed, K inconclusive` expects the checks'
   summary; `--@ exit: N` the binary's exit code; `--@ only: cli` (or
-  `hosted`) restricts the file to one front end.
+  `hosted`) restricts the file to one front end. `--@ reference: ID` says
+  that the test tests the reference's rule `ID`, and checks nothing itself.
 -/
 
 namespace FrenTest.Ui
@@ -72,6 +73,8 @@ def parse (src : String) : Except String Spec := do
       | ["summary", v] => spec := { spec with summary? := some v.trimAscii.toString }
       | ["exit", v] => spec := { spec with exit? := v.trimAscii.toString.toNat? }
       | ["only", v] => spec := { spec with only? := some v.trimAscii.toString }
+      -- Read by the `ruleReqs` job (`Reqs/dev/Style#rules-and-requirements`).
+      | ["reference", _] => pure ()
       | _ => throw s!"line {i}: unknown directive `--@ {rest}`"
     let some ann := (line.splitOn "--~")[1]? | continue
     let atEnd := ann.startsWith "$"

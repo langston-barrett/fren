@@ -1784,7 +1784,7 @@ def lawPremise (k : CheckKind) (v : Verdict) (hasLaws : Bool) (asked : Bool := f
   hasLaws && k.queryHasLaws && fromUnsat k v && !asked
 
 /-- The vacuity of an item whose trait has laws, under the laws
-(`r[trait.expect.lawful]`, `Reqs/Evidence#the-laws-of-a-trait`): whether
+(`r[traits.expect.lawful]`, `Reqs/Evidence#the-laws-of-a-trait`): whether
 its assumptions and calls can hold together with the laws, which the
 queries of its checks but realizability have. A model shows that they can.
 Where they cannot, it fails, and the item's checks rest on it as they rest
