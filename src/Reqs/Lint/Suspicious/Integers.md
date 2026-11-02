@@ -88,6 +88,58 @@ expect integer_values_complete(x: Int) {
 }
 ```
 
+### Remainders by `1`, over the syntax of the semantics
+
+In the [syntax of the semantics](../../Lang/Semantics.md#abstract-syntax),
+`-1` is `Unary(Neg, Literal(1))`, so `modulo_one` fires on `Binary(Mod,
+x, b)` where `b` is `1` or that negation, and the message says that it
+is `0`. As for [`eq_op`](Expressions.md#operands-written-the-same), there
+is no fix, and what the lint states is that its message is right.
+
+```fren
+pub fn modulo_one_fires?<V>(e: lang::Expr<V>) := match e {
+    lang::Expr::Binary(lang::BinaryOp::Mod, _, b) => one?(b) or minus_one?(b),
+    _ => false,
+}
+```
+
+`lint::modulo_one` binds this to the linter: for a divisor that is an
+integer literal `n`, possibly negated, it fires exactly where
+`modulo_one_fires?` does. That the front ends read the divisor so is
+trusted, and checked by the ui tests in `test/ui/lints/integers.fren`.
+
+```fren
+expect modulo_one_elaborated(negated?, n: Nat, x: lang::Expr<lang::Id>) {
+    use lang::Expr::{Binary, Literal, Unary}
+    use lang::Value::Integer
+
+    call p := modulo_one(if negated? then -n else n)
+
+    let b: lang::Expr<lang::Id> := if negated? then Unary(lang::UnaryOp::Neg, Literal(Integer(n))) else Literal(Integer(n))
+
+    expect fires: p.fires? iff modulo_one_fires?(Binary(lang::BinaryOp::Mod, x, b))
+}
+```
+
+`mod` is a [primitive operation](../Meaning.md#primitive-operations), so
+the remainder is `0` only in an interpretation that gives `mod` its usual
+meaning. In one that does, the remainder by `1` or `-1` is at least `0`
+and below `1`, so it is `0`, where the graph has a point for the
+operands, and undefined elsewhere. `src/Impls/Rewrites.lean` proves this
+in Lean, for every expression, interpretation whose primitives are
+`usual?`, and environment; `fren check` tests it:
+
+```fren
+set_option fren.evidence "random" in
+pub proc modulo_one_said_agrees(e: lang::Expr<lang::Id>, i: lang::Interp, env: lang::Env) {
+    ensure said: when usual?(i.primitives) and modulo_one_fires?(e),
+        agrees?(
+            lang::eval(i, env, lang::Expr::Literal(lang::Value::Integer(0))),
+            lang::eval(i, env, e)
+        )
+}
+```
+
 ## Idempotent methods
 
 `eq_op` also fires on a call of `min` or `max` of `Int`, whose receiver
