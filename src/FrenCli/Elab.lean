@@ -7182,9 +7182,11 @@ def elabAbstractType (isPub : Bool) (name : Ident) : M Unit := do
 
 /-- Records the clauses of the function at `path`, whose parameters are
 `vars` and whose body `body` elaborates to `smt`, in `namedPredicates`
-when they are a conjunction or a predicate's clauses: each conjunction leaf
-is elaborated independently at the definition site, rather than its raw
-source syntax being substituted into a caller's scope. -/
+when the body is a conjunction, observes members (`observedMembers`) or
+is a predicate's clauses: each conjunction leaf is elaborated
+independently at the definition site, rather than its raw source syntax
+being substituted into a caller's scope. It then restores the state from
+before those elaborations, so that only `namedPredicates` changes. -/
 def notePredicateClauses (cx : ExprCtx) (path : Name) (vars : Array CVar) (body : Expr) (smt : String) : M Unit := do
   if body.conjunctionRoot || (observedMembers body).isSome || (← predicateClauses cx body).isSome then
     let leaves := if body.conjunctionRoot then body.clauseLeaves { name := "", span := body.span } else #[({ name := "", span := body.span }, body)]
@@ -7237,8 +7239,9 @@ def notePredicateClauses (cx : ExprCtx) (path : Name) (vars : Array CVar) (body 
       set { saved with namedPredicates := saved.namedPredicates.insert path { sourcePath := path, params := vars.map (fun (v : CVar) => v.name), clauses := templates, whole? := some whole } }
 
 /-- The parameters of a function, declared like a procedure's parameters, but
-for the function parameters, each with its position in the state, which
-only a defined function has (`lang::function_type_place`). -/
+for the function parameters, which are pushed, each with its position, to
+the `StateT`'s array, and which only a defined function has
+(`lang::function_type_place`). -/
 def fnParamsOf (params : Array (Array Ident × Option (Array Ident))) (defined : Bool) :
     StateT (Array (Nat × Name × Span × Fren.Core.FnTy)) M (Array CVar) := do
   let mut vars : Array CVar := #[]
