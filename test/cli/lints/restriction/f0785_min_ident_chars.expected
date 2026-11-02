@@ -16,10 +16,10 @@ warning[F0785]: variable `n` has a name of one character
   = help: give it a name that says what it is
 
 warning[F0785]: binder `r` has a name of one character
- --> test/cli/lints/restriction/f0785_min_ident_chars.fren:8:46
+ --> test/cli/lints/restriction/f0785_min_ident_chars.fren:9:23
   |
-8 |     ensure rule: n = match s { Shape::Circle(r) => r, Shape::Dot => 0 }
-  |                                              ^ too short to say what it is
+9 |         Shape::Circle(r) => r,
+  |                       ^ too short to say what it is
   |
   = help: give it a name that says what it is
 

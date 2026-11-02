@@ -35,20 +35,19 @@
 @@ -37 +33 @@
 -        , y
 +        y,
-@@ -41,2 +37,3 @@
+@@ -41,2 +37,2 @@
 -        x
 -        /- the second -/, y
 +        x,
-+        /- the second -/
-+        y,
-@@ -46 +43 @@
++        /- the second -/ y,
+@@ -46 +42 @@
 -        x  -- the first
 +        x,  -- the first
-@@ -48,2 +45 @@
+@@ -48,2 +44 @@
 -        , y  -- the second
 -        ,
 +        y,   -- the second
-@@ -51,2 +47,4 @@
+@@ -51,2 +46,4 @@
 -    expect r5: P { x := x  -- a comment
 -            , y := y }.x = x
 +    expect r5: P {

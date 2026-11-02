@@ -3,4 +3,9 @@
 enum Signal { Stop, Slow, Go }
 enum Light { On(Signal), Off }
 
-proc c(l: Light): (m: Int) { ensure r: m = match l { Light::On(Signal::Stop | _) => 1, _ => 0 } }
+proc c(l: Light): (m: Int) {
+    ensure r: m = match l {
+        Light::On(Signal::Stop | _) => 1,
+        _ => 0,
+    }
+}
