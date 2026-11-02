@@ -30,17 +30,20 @@ take a command take it as owned, as lean-cvc5 declares them.
 cvc5's solvers also share one object across threads: libpoly's default
 variable database, whose reference count is not atomic. A solver of a
 logic with nonlinear arithmetic, such as `ALL`, takes a reference when it
-initializes its theories, at its first assertion or definition, and drops
-it when it is freed. Solvers that are never freed only ever add to the
+initializes its theories, at its first command that `initializes` lists
+(an assertion, a definition, a `push` or a `check-sat`), or at its
+`checkSat`, and drops it when it is freed. Solvers that are never freed only ever add to the
 count, but once they are, two threads that change it at once can lose a
 change, and the database is then freed while it is in use. So a solver of
 such a logic (`sharesLibpoly`) initializes and is freed while it holds
 `solverLock` (`exclusively`): every command up to and including the first
 that `initializes` lists, or its `checkSat` too if no command did. So a
 command that initializes the solver without being on that list still
-holds the lock, and the list only decides when the lock is let go: the
-declarations before the first assertion, which are cheap, are the only
-ones that wait for it. Solvers parse and solve in parallel,
+holds the lock, and the list only decides when the lock is let go, which
+is safe only because each command on it always initializes the solver.
+The commands before the first one on it (`set-logic`, the options and the
+declarations), which are cheap, are the only ones that wait for the lock
+beyond initialization itself. Solvers parse and solve in parallel,
 and those of a linear logic, such as `QF_UFDTLIA`, take no lock. A
 solver that never initializes, such as `version`'s, takes no reference.
 
@@ -94,10 +97,22 @@ def sharesLibpoly (logic : String) : Bool :=
 #guard sharesLibpoly "ALL" && sharesLibpoly "HO_ALL" && sharesLibpoly "QF_NIA" && sharesLibpoly "QF_UFNRA"
 #guard !sharesLibpoly "QF_UFDTLIA" && !sharesLibpoly "UFDTLIA" && !sharesLibpoly "QF_LIA"
 
-/-- Whether the command named `name` may initialize its solver's theories:
-an assertion or a definition does, by cvc5's `SolverEngine::beginCall`. -/
+/-- The names of the commands that always initialize their solver's
+theories (`initializes`), as cvc5 1.3.2's parser names them. -/
+def initializingCommands : Array String :=
+  #["assert", "define-fun", "define-fun-rec", "define-funs-rec", "define-const", "push", "check-sat",
+    "check-sat-assuming"]
+
+/-- Whether the command named `name` always initializes its solver's
+theories, by cvc5's `SolverEngine::beginCall`: an assertion, a definition,
+a `push` or a check. `FrenCli.solveOn` lets `solverLock` go after the first
+such command, so a command listed here that did not always initialize
+would let a later one initialize unlocked: `solverLifetime` checks each
+against cvc5. One missing from the list only holds the lock longer. -/
 def initializes (name : String) : Bool :=
-  name == "assert" || name == "define-fun" || name == "define-fun-rec"
+  initializingCommands.contains name
+
+
 
 @[extern "solver_new"]
 opaque solverNew (tm : @& TermManager) : Env Solver

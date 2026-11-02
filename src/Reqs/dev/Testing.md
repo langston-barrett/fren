@@ -199,8 +199,9 @@ pub mod testing
   `ALL` ones crashed about one run in three while their solvers
   initialized and were freed at the same time; the linear ones take no
   lock (`FrenCli.Cvc5`). Half of the `ALL` ones initialize their solvers
-  at a `push`, which is not a command that the lock is let go after, and
-  must hold the lock all the same.
+  at a `push` before their definition, and must hold the lock all the
+  same. And each command that the lock is let go after must initialize a
+  solver in cvc5, and the declarations and options before it must not.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that

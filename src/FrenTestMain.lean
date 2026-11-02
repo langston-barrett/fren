@@ -1311,6 +1311,50 @@ def lifetimeScript (k : Nat) (linear : Bool := false) (pushed : Bool := false) :
     s!"(set-logic ALL)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
       s!"{push}(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
 
+/-- The name that cvc5 gives the last command of `cmds`, run after
+`(set-logic ALL)` and `(declare-const x Int)`, and whether it initialized
+the solver: `(set-option :produce-models true)` after it then fails. On
+`solver`, which it borrows (`FrenCli.Cvc5`). -/
+def initializationOn (solver : @& cvc5.Solver) (cmds : String) : cvc5.Env (String × Bool) := do
+  let parser ← FrenCli.Cvc5.parserNew solver
+  let sm ← FrenCli.Cvc5.getSymbolManager parser
+  FrenCli.Cvc5.setStringInput parser s!"(set-logic ALL)\n(declare-const x Int)\n{cmds}\n(set-option :produce-models true)\n"
+    .SMT_LIB_2_6 "lean-cvc5"
+  let mut names := #[]
+  let mut outs := #[]
+  repeat
+    let cmd ← FrenCli.Cvc5.nextCommand parser
+    if FrenCli.Cvc5.isNull cmd then break
+    names := names.push (FrenCli.Cvc5.commandName cmd)
+    outs := outs.push (← FrenCli.Cvc5.invoke cmd solver sm)
+  return (names[names.size - 2]!, (outs.back!.trimAscii.toString.startsWith "(error"))
+
+/-- `initializationOn` on a solver of `tm`, freed before it returns. -/
+@[noinline] def initializationWith (tm : @& cvc5.TermManager) (cmds : String) : cvc5.Env (String × Bool) := do
+  initializationOn (← FrenCli.Cvc5.solverNew tm) cmds
+
+/-- The commands of `FrenCli.Cvc5.initializingCommands` each always
+initialize their solver, and the commands that `FrenCli.queryScript` writes
+before them do not, as cvc5 names them: `FrenCli.solveOn` lets
+`FrenCli.Cvc5.solverLock` go after the first of the former. -/
+def initializingCommandsHold : IO (Array String) := do
+  let initializing := #["(assert (> x 0))", "(define-fun f () Int 1)", "(define-fun f ((n Int)) Int n)",
+    "(define-fun-rec g ((n Int)) Int (ite (<= n 0) 0 (g (- n 1))))",
+    "(define-funs-rec ((h ((n Int)) Int)) ((ite (<= n 0) 0 (h (- n 1)))))", "(define-const c Int 1)",
+    "(push 1)", "(check-sat)", "(check-sat-assuming (true))"]
+  let other := #["(declare-const y Int)", "(declare-fun u (Int) Int)", "(declare-sort S 0)", "(define-sort T () Int)",
+    "(declare-datatype D ((A) (B (b Int))))", "(set-option :strings-exp true)"]
+  let mut failures := #[]
+  for (cmds, expected) in initializing.map (·, true) ++ other.map (·, false) do
+    match ← cvc5.Env.run (do initializationWith (← cvc5.TermManager.new) cmds) with
+    | .error e => failures := failures.push s!"`{cmds}` failed: {e}"
+    | .ok (name, initialized) =>
+      if initialized != expected then
+        failures := failures.push s!"`{cmds}` {if expected then "does not initialize" else "initializes"} the solver"
+      if FrenCli.Cvc5.initializes name != expected then
+        failures := failures.push s!"`{cmds}`, which cvc5 names `{name}`, is {if expected then "not " else ""}one that `FrenCli.Cvc5.initializes` lists"
+  return failures
+
 /-- This process's resident memory, in kB, as `ps` reports it. -/
 def residentKb : IO Nat := do
   let out ← IO.Process.output { cmd := "ps", args := #["-o", "rss=", "-p", toString (← IO.Process.getPID)] }
@@ -1319,9 +1363,11 @@ def residentKb : IO Nat := do
 /-- Each query's solver is freed once it is answered, so that the memory
 of `fren check` does not grow with the number of its queries; and solvers
 of a logic with nonlinear arithmetic answer correctly on several threads
-at once, which they share libpoly's state for (`FrenCli.Cvc5`). -/
+at once, which they share libpoly's state for (`FrenCli.Cvc5`), each
+command that the lock is let go after always initializing its solver
+(`initializingCommandsHold`). -/
 def solverLifetime : IO (Array String) := do
-  let mut failures := #[]
+  let mut failures ← initializingCommandsHold
   let solve (k : Nat) (linear : Bool := false) (pushed : Bool := false) : IO Bool := do
     return (← FrenCli.solveScript (lifetimeScript k linear pushed) #[] false) matches .sat _
   -- Warm up the allocator first, so that what it keeps does not count.

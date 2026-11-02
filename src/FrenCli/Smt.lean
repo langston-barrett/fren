@@ -422,24 +422,25 @@ def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wan
   -- state, and so does `checkSat` if none did
   -- (`FrenCli.Cvc5.exclusively`). So a command that initializes the
   -- solver without being one that `Cvc5.initializes` lists still runs
-  -- under the lock: the list only decides when the lock is let go.
-  let mut initialized := false
+  -- under the lock: the list only decides when the lock is let go
+  -- (`released`), after a command that always initializes the solver.
+  let mut released := false
   repeat
     let cmd ← Cvc5.nextCommand parser
     if Cvc5.isNull cmd then break
     let initializes := Cvc5.initializes (Cvc5.commandName cmd)
     -- A command that fails reports an error as its output, rather than
     -- throwing; ignoring it could let a dropped assertion give `sat`.
-    let out ← if initialized then Cvc5.invoke cmd solver sm
+    let out ← if released then Cvc5.invoke cmd solver sm
       else Cvc5.exclusively shared (Cvc5.invoke cmd solver sm)
-    initialized := initialized || initializes
+    released := released || initializes
     if out.trimAscii.toString.startsWith "(error" then
       throw (.error out)
   -- The time of a query that reaches its time limit is recorded
   -- (`Fren.Core.solverCredit`).
   let res ← Fren.Core.timeQuery limitSecs (fun (res : cvc5.Result) => Cvc5.isUnknown res &&
     Fren.Core.timedOutExplanation (toString (Cvc5.unknownExplanation res)))
-    (if initialized then Cvc5.checkSat solver else Cvc5.exclusively shared (Cvc5.checkSat solver))
+    (if released then Cvc5.checkSat solver else Cvc5.exclusively shared (Cvc5.checkSat solver))
   if Cvc5.isUnsat res then return Outcome.unsat
   if !Cvc5.isSat res then return .unknown s!"the solver returned unknown ({Cvc5.unknownExplanation res})"
   if !wantModel then return .sat #[]
