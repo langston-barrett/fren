@@ -817,7 +817,16 @@ the current namespace and the open namespaces. The same term in the same
 scope has the same type, unless that type has a metavariable, which a
 caller may assign: `typeOf` keeps only the types without one. Its syntax
 is compared without its positions (`Syntax.structEq`), which only an error
-message would read. -/
+message would read.
+
+The declarations are left out, though a command adds some (`addDecl`,
+`addInstance`): only a type found is kept, so a name that did not resolve
+is never cached, and the translation's global names are resolved already
+(`mkCIdent`), so a later declaration cannot change what a kept term means.
+A hit also skips the rest of what the elaboration did: its metavariable
+assignments, info trees and messages. The first elaboration's stay in the
+same state as the cache, which lives in the environment, so a `restore`
+rolls both back together. -/
 structure TypedTerm where
   fvars : Array FVarId
   currNamespace : Name
@@ -1007,9 +1016,12 @@ structure LocalState where
   staticErrors : Array (String × Nat × Nat) := #[]
   /-- How many errors `#fren_check` has logged, which are not static. -/
   checkErrors : Nat := 0
-  /-- The types without metavariables that `typeOf` has found in the
-  command being elaborated, which `recordingErrors` starts with none, each
-  with its term. -/
+  /-- The types without metavariables that `typeOf` has found, each with
+  its term, since the start of the last command that `recordingErrors`
+  wraps, which empties it. Others, such as `newtype`, `impl`, `interp`,
+  `trace` and `open`, do not, which is harmless: local variables are new
+  in each command, so only a closed term can be found again across
+  commands, and its type does not change. -/
   types : Std.HashMap TypedTerm Expr := {}
   deriving Inhabited
 

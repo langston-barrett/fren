@@ -766,9 +766,10 @@ def unwrapTerm (chain : Array NewtypeInfo) (x : Term) : TermElabM Term :=
 /-- The Lean type of the Fren expression `t`, elaborated with the procedure's
 variables in scope. The translation asks for the types of the same terms
 again and again, as of an operand for each check of it, so each one's is
-elaborated once in a command (`LocalState.types`): two of every three
-were asked for again, and elaborating them took about a quarter of the
-time of `Reqs.Lint`. Only a type without metavariables is kept. One with a
+elaborated once in each command that `recordingErrors` wraps
+(`LocalState.types`; its key, `TypedTerm`, says why that is sound): two
+of every three were asked for again, and elaborating them took about a
+quarter of the time of `Reqs.Lint`. Only a type without metavariables is kept. One with a
 metavariable, as `[]`'s `Seq<?>`, is elaborated afresh each time: a caller
 may assign the metavariable, as `isDefEq` against a sequence's element
 type does, and a kept copy would then give the next asker that assignment

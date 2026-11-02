@@ -32,18 +32,23 @@ def keyOf (pos : Nat) (x : Name := `x) (fvars : Array FVarId := #[⟨`a⟩]) (op
 #guard !(keyOf 3 == keyOf 3 (opens := [.simple `Fren.Lang []]))
 #guard !(keyOf 3 == { keyOf 3 with currNamespace := `Fren.Generated })
 
-/-- `[]`'s type, `Seq<?>`, assigned `Seq<Int>` by its first asker, as a
-sequence method's check of its argument does: the second asker still gets a
-metavariable, not `Seq<Int>`. And a type without one is kept. -/
+/-- `[]`'s type, `Seq<?>`, unified with `Seq<Int>` by its first asker, as a
+sequence method's check of its argument does: the second asker can still
+unify the type it gets with `Seq<Bool>`, where a stale copy would be
+`Seq<Int>`. -/
 def emptyTypeFresh : TermElabM Bool := do
   let t ← `((∅ : Fren.Seq _))
-  let first ← typeOf t
-  unless ← isDefEq first (← elabType (← `(Fren.Seq Int))) do return false
-  let second ← typeOf t
-  let n ← `((1 : Int))
-  discard (typeOf n)
-  return first.hasMVar && second.hasMVar && (← getLocal).types.size == 1
+  unless ← isDefEq (← typeOf t) (← elabType (← `(Fren.Seq Int))) do return false
+  isDefEq (← typeOf t) (← elabType (← `(Fren.Seq Bool)))
+
+/-- A type without metavariables is kept, and one with a metavariable is
+not: after `[]`'s and `1`'s, the cache holds `1`'s alone. -/
+def closedTypeKept : TermElabM Bool := do
+  discard (typeOf (← `((∅ : Fren.Seq _))))
+  discard (typeOf (← `((1 : Int))))
+  return (← getLocal).types.size == 1
 
 #guard_msgs in
 #eval show TermElabM Unit from do
   unless ← emptyTypeFresh do throwError "a type with a metavariable was served stale"
+  unless ← closedTypeKept do throwError "the cache does not hold exactly the type without a metavariable"
