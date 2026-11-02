@@ -24,9 +24,9 @@ sections:
   and big-step preservation (`type_safety`); and normalization, by Tait's
   method as in chapter 12 of TAPL, proved here alone, since `stlc.fren` has
   no check that states it (`normalization`).
-- **Nameless terms**: the round trip (`nameless_round_trip`).
-- **Alpha-equivalence**: substitution commutes with the nameless form,
-  renaming a binder, and typing (`alpha_laws`).
+- **Nameless terms**: the round trip (`nameless_round_trip`), and
+  alpha-equivalence: substitution commutes with the nameless form, renaming
+  a binder, and typing (`alpha_laws`).
 - **One layer of a term**: `size` is the fold of `size_alg` (`layer_laws`).
 
 Tested only, not proved: the round trip of the concrete syntax
@@ -1533,7 +1533,7 @@ theorem to_named_some : ∀ (n : Term Int Anon) (names names' : Names) (t : Name
   | True => intro names names' t _ _; exact ⟨Term.True, by simp [to_named]⟩
   | False => intro names names' t _ _; exact ⟨Term.False, by simp [to_named]⟩
 
-/-! ## Alpha-equivalence
+/-! ### Alpha-equivalence
 
 Substitution commutes with the nameless form (`to_nameless_subst_all`): a
 substitution `σ` on names is a parallel substitution `ρ` on indices
@@ -1840,7 +1840,7 @@ theorem rename_binder {names : Names} {y z : String} {body : Named} {nb : Term I
   rw [napply_var] at this
   exact this
 
-/-! ### Typing is invariant under alpha-equivalence -/
+/-! #### Typing is invariant under alpha-equivalence -/
 
 /-- The names a context declares, innermost first, and their types. -/
 def ctxNames : Ctx → Names
