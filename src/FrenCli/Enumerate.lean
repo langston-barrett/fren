@@ -132,9 +132,7 @@ end
 partial def Eval.Ex.appsOf (e : Ex) (sp : Spec) : Array Name := e.appsIn sp {} {}
 
 /-- Whether `u` names the unspecified value of a type (`unspecifiedFn`). -/
-def isUnspecified (u : Name) : Bool := match u with
-  | .str .anonymous s => s.startsWith "[][0]"
-  | _ => false
+def isUnspecified (u : Name) : Bool := isUnspecifiedName u
 
 /-- The value `v` of the type `ty`, as the evaluator has it. -/
 partial def evalOf (sp : Spec) (ty : VTy) (v : EVal) : Val :=
@@ -186,10 +184,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   -- Nor of a generic function without a body, whose instances are
   -- functions of their own, the first in declaration order.
   let generics := fnNames.filterMap fun f => (sp.instanceOf.find? f).orElse fun _ =>
-    let g := match f with
-      | .str p "<?>" => p
-      | f => f
-    if sp.generics.any (·.1 == g) then some g else none
+    if sp.generics.any (·.1 == f) then some f else none
   if let some (g, _, _, _) := sp.generics.find? (generics.contains ·.1) then
     throw (notEnumerableMsg subject (genericNotEnumerable g))
   if let some f := contractBlocker? fnNames fun f => ((sp.contracts.find? f).map (·.2.2.size)).getD 0 then

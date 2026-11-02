@@ -859,8 +859,9 @@ def inParallelWith [Nonempty β] (jobs : Nat) (xs : Array α) (own : IO σ) (f :
 /-- A reading of the spec of `files` (`specOf`), made when it is first
 needed. An action rather than a value, so that each thread that runs it
 (`inParallelWith`) gets one of its own. -/
-def ownSpecOf (files : Array (String × Array Char)) : IO (Thunk (Except String Eval.Spec)) :=
-  pure (Thunk.mk fun _ => specOf files)
+def ownSpecOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    IO (Thunk (Except String Eval.Spec)) :=
+  pure (Thunk.mk fun _ => specOf files callTargs)
 
 /-- The report of `--timings` (`Reqs/Cli#timings`): for each procedure
 and global expectation, with its total time, the time of its solver's
@@ -908,7 +909,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       IO.eprintln (argError args.paint { code? := none, headline := s!"no query cache `{dir}` to compare with" })
       return exitCode false none
   -- Each model is confirmed with the evaluator (`Reqs/Eval#confirming-models`).
-  let spec? := specOf files
+  let spec? := specOf files st.callTargs
   let sy := symbolsOf spec?
   let mut internal := #[]
   let mut byTesting := 0
@@ -958,7 +959,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- slowest, and starting them last would leave them running alone at
   -- the end.
   -- Each thread reads the spec itself, which gives the same `spec?`.
-  let solving ← (← inParallelWith (args.jobs?.getD (← jobsDefault)) todo (ownSpecOf files) solve
+  let solving ← (← inParallelWith (args.jobs?.getD (← jobsDefault)) todo (ownSpecOf files st.callTargs) solve
     (first := fun (c, _) => c.tested.any || c.enumerated.any) (single? := some (Thunk.pure spec?))).mapM id
   -- The contracts of the uninterpreted functions first, though their items
   -- come last, since what applies them rests on them
@@ -1080,7 +1081,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
 diagnostics and the summary to stderr; returns the exit code. -/
 def quickcheck (args : Args) : IO UInt32 := do
   let some (files, st) ← load args.paint args.files args.lints | return exitCode false none
-  let sp ← match specOf files with
+  let sp ← match specOf files st.callTargs with
     | .ok sp => pure sp
     | .error e =>
       printDiag args.paint files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
@@ -1101,7 +1102,7 @@ def quickcheck (args : Args) : IO UInt32 := do
     -- Forced here, in this thread.
     IO.lazyPure fun _ => some rep
   -- Each thread reads the spec itself, which gives the same `sp`.
-  let testing ← inParallelWith (args.jobs?.getD (← jobsDefault)) items (ownSpecOf files) test
+  let testing ← inParallelWith (args.jobs?.getD (← jobsDefault)) items (ownSpecOf files st.callTargs) test
     (single? := some (Thunk.pure (.ok sp)))
   for (c, global) in items, tested in testing do
     let rep := (← tested).getD {}
@@ -1124,9 +1125,9 @@ def quickcheck (args : Args) : IO UInt32 := do
 stdout; returns the exit code (`eval::eval_exit`). -/
 def evalCmd (args : Args) : IO UInt32 := do
   let fail (msg : Msg) : IO UInt32 := do IO.eprint (argError args.paint msg); return 2
-  let some (files, _) ← load args.paint args.files args.lints | return 2
+  let some (files, st) ← load args.paint args.files args.lints | return 2
   let some compText := args.comp? | fail { code? := none, headline := "`fren eval` needs `--proc PATH`" }
-  let lst ← match specStateOf files with
+  let lst ← match specStateOf files st.callTargs with
     | .ok s => pure s
     | .error e =>
       printDiag args.paint files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
@@ -1546,11 +1547,12 @@ def itemsOf (parsed : Array Parsed) : Except String (Array (Array Item)) :=
 /-- The evaluator's state before each file, lowering the files in turn
 (`Eval.lowerFrom`), and after the last; past a file that does not parse,
 an error that no mutant reads (`mutantSpec`). -/
-def lowerPrefixes (parsed : Array Parsed) : Array (Except String Eval.LState) := Id.run do
+def lowerPrefixes (parsed : Array Parsed) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Array (Except String Eval.LState) := Id.run do
   let mut out : Array (Except String Eval.LState) := #[Eval.preludeState]
   for p in parsed do
     out := out.push <| match out.back!, p with
-      | .ok st, .ok (_, items, _) => Eval.lowerFrom st #[items]
+      | .ok st, .ok (_, items, _) => Eval.lowerFrom st #[items] callTargs
       | .error e, _ => .error e
       | .ok _, .error (_, msg) => .error msg.headline
   return out
@@ -1568,10 +1570,10 @@ items (`itemsOf`), and lowering from the state before `m`'s file
 (`lowerPrefixes`), which is that of lowering the files before it, all of
 which parse if every file does (`Eval.lowerAll`). -/
 def mutantSpec (parsed : Array Parsed) (prefixes : Array (Except String Eval.LState)) (m : Mutate.Mutant)
-    (parsed' : Parsed) : Except String Eval.Spec := do
+    (parsed' : Parsed) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) : Except String Eval.Spec := do
   let items ← itemsOf (parsed.set! m.file parsed')
   let st ← prefixes[m.file]!
-  return (← Eval.lowerFrom st (items.extract m.file)).spec
+  return (← Eval.lowerFrom st (items.extract m.file) callTargs).spec
 
 /-- The rest of `s`, as text. -/
 partial def readAll (s : IO.FS.Stream) (acc : String := "") : IO String := do
@@ -1680,7 +1682,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
     -- A body has no checks that testing runs.
     pure (if t.body then #[] else testing spec? t.comp t.global fun _ => true, #[])
-  let prefixes := lowerPrefixes parsed
+  let prefixes := lowerPrefixes parsed st.callTargs
   let spec? := specOfParsed parsed prefixes
   if let .error e := spec? then
     printDiag p files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
@@ -1746,7 +1748,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       tally := tally.add .unviable
       if let some probe := probe? then probe.decisions.modify (·.push { id := m.id, outcome := .unviable, killers := #[] })
     else
-      let spec'? := mutantSpec parsed prefixes m parsed'
+      let spec'? := mutantSpec parsed prefixes m parsed' st'.callTargs
       if let .error e := spec'? then
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error

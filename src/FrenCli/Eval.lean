@@ -84,26 +84,6 @@ partial def VTy.subst (args : List VTy) : VTy → VTy
   | .data p as => .data p (as.map (·.subst args))
   | t => t
 
-/-- What matching the type `found` against `decl` gives the abstract types
-of `decl` that a generic function's type parameters are
-(`Fren.Core.typeParamName?`): each with its argument. -/
-partial def VTy.matchAbstract (decl found : VTy) : List (Name × VTy) :=
-  match decl, found with
-  | .abstract p, f => if (Fren.Core.typeParamName? p).isSome then [(p, f)] else []
-  | .set d, .set f | .seq d, .seq f => d.matchAbstract f
-  | .rel a b, .rel c d => a.matchAbstract c ++ b.matchAbstract d
-  | .data _ ds, .data _ fs => (ds.zip fs).flatMap fun (d, f) => d.matchAbstract f
-  | _, _ => []
-
-/-- `t`, with each abstract type of `σ` its argument. -/
-partial def VTy.substAbstract (σ : List (Name × VTy)) : VTy → VTy
-  | .abstract p => (σ.lookup p).getD (.abstract p)
-  | .set t => .set (t.substAbstract σ)
-  | .rel a b => .rel (a.substAbstract σ) (b.substAbstract σ)
-  | .seq t => .seq (t.substAbstract σ)
-  | .data p as => .data p (as.map (·.substAbstract σ))
-  | t => t
-
 /-- What matching the type `f` of an argument against the declared type `d`
 gives the type parameter `k`, as `Fren.Core.matchParam` matches them. -/
 partial def VTy.matchParam (k : Nat) : VTy → VTy → Option VTy
@@ -161,19 +141,23 @@ structure DataDef where
   ctors : Array Ctor
   deriving Inhabited
 
-/-- The type of a construction of the variant or record `idx` of `d` from
-values of the types `tys`: with the type arguments that matching them
-against the declared types gives (`VTy.matchParam`), as the elaborator
-infers them from values that synthesize their types, or with none if
-some type parameter has none. -/
-def DataDef.constructed (d : DataDef) (idx : Nat) (tys : Array VTy) : VTy :=
+/-- How many type parameters `d`'s payloads' or fields' types mention. -/
+def DataDef.nParams (d : DataDef) : Nat :=
   let rec params : VTy → Nat
     | .param k => k + 1
     | .set t | .seq t => params t
     | .rel a b => max (params a) (params b)
     | .data _ as => as.foldl (fun n a => max n (params a)) 0
     | _ => 0
-  let n := d.ctors.foldl (fun n c => c.fields.foldl (fun n (_, t) => max n (params t)) n) 0
+  d.ctors.foldl (fun n c => c.fields.foldl (fun n (_, t) => max n (params t)) n) 0
+
+/-- The type of a construction of the variant or record `idx` of `d` from
+values of the types `tys`: with the type arguments that matching them
+against the declared types gives (`VTy.matchParam`), as the elaborator
+infers them from values that synthesize their types, or with none if
+some type parameter has none. -/
+def DataDef.constructed (d : DataDef) (idx : Nat) (tys : Array VTy) : VTy :=
+  let n := d.nParams
   let fields := ((d.ctors[idx]?.map (·.fields)).getD #[]).map (·.2)
   match (List.range n).mapM fun k => (fields.zip tys).findSome? fun (f, t) => f.matchParam k t with
   | some args => .data d.path (args.map VTy.widen)
@@ -481,9 +465,16 @@ structure Spec where
   `funs`, named after the function and its type arguments, as the solver
   names it (`Fren.Core.instanceText`). -/
   generics : Array (Name × Array Name × Array VTy × VTy) := #[]
-  /-- The generic function of each such instance, whose `results` and
-  `contracts` are the instance's. -/
+  /-- Each generic defined function's type parameters, with or without
+  function parameters, for the instance that an application applies
+  (`fnItem`). -/
+  defGenerics : NameMap (Array Name) := {}
+  /-- The generic function of each such instance, whose `results` are the
+  instance's. The instance's contract, at its type arguments, is in
+  `contracts` under the instance's own name (`fnItem`). -/
   instanceOf : NameMap Name := {}
+  /-- The type arguments of each such instance, by its name. -/
+  instanceArgs : NameMap (Array Fren.Core.Ty) := {}
   deriving Inhabited
 
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
@@ -2000,6 +1991,10 @@ structure LState where
   /-- The generic function being lowered, with its type parameters, which
   are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   fnTypeParams : Option (Name × Array Name) := none
+  /-- The type arguments that the elaborator inferred for each application
+  of a generic function, by its file and the start of its span
+  (`FrenCli.State.callTargs`): the instance that lowering applies. -/
+  callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty) := {}
   /-- The higher-order functions: each parameter's type, or a function
   parameter's parameters' and result's types (`Reqs/Lang/HigherOrder`). -/
   hofs : NameMap (Array (VTy ⊕ (Array VTy × VTy))) := {}
@@ -2246,6 +2241,47 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.substVars f)
 
+/-- `e` with each function of an unspecified value (`unspecifiedFn`) that it
+reads, where an index is out of range or no row of a table or arm of a
+`match` holds, renamed by `f`, and each function that it applies renamed
+by `app`. -/
+partial def Ex.mapNames (f app : Name → Name) : Ex → Ex
+  | .lit v => .lit v
+  | .var n => .var n
+  | .slot k => .slot k
+  | .boundAt k => .boundAt k
+  | .shared k => .shared k
+  | .known v => .known v
+  | .bound n => .bound n
+  | .lifted lets q => .lifted (lets.map (·.map (·.mapNames f app))) (q.mapNames f app)
+  | .dispatch ks m => .dispatch ks (m.mapNames f app)
+  | .memo lets e => .memo (lets.map (·.mapNames f app)) (e.mapNames f app)
+  | .not a => .not (a.mapNames f app)
+  | .neg a => .neg (a.mapNames f app)
+  | .bin op a b => .bin op (a.mapNames f app) (b.mapNames f app)
+  | .when negated c d => .when negated (c.mapNames f app) (d.mapNames f app)
+  | .ite c a b => .ite (c.mapNames f app) (a.mapNames f app) (b.mapNames f app)
+  | .app g args => .app (app g) (args.map (·.mapNames f app))
+  | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.mapNames f app)) (e.mapNames f app)
+  | .cardinality c args => .cardinality c (args.map (·.mapNames f app))
+  | .method m r args => .method m (r.mapNames f app) (args.map (·.mapNames f app))
+  | .matches r p re => .matches (r.mapNames f app) p re
+  | .setLit es => .setLit (es.map (·.mapNames f app))
+  | .pair a b => .pair (a.mapNames f app) (b.mapNames f app)
+  | .seqLit es => .seqLit (es.map (·.mapNames f app))
+  | .index q i pos u => .index (q.mapNames f app) (i.mapNames f app) pos (f u)
+  | .card e => .card (e.mapNames f app)
+  | .ctor ty idx args => .ctor ty idx (args.map (·.mapNames f app))
+  | .field e idx => .field (e.mapNames f app) idx
+  | .update e fs => .update (e.mapNames f app) (fs.map fun (k, x) => (k, x.mapNames f app))
+  | .match e arms pos ps u t =>
+    .match (e.mapNames f app) (arms.map fun (p, g?, b) => (p, g?.map (·.mapNames f app), b.mapNames f app)) pos ps (u.map f) t
+  | .quant file pos all ns ds ts b => .quant file pos all ns (ds.map (·.map (·.mapNames f app))) ts (b.mapNames f app)
+  | .range lo hi => .range (lo.mapNames f app) (hi.mapNames f app)
+  | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.mapNames f app), v.mapNames f app)) (u.map f)
+  | .const p e => .const p e
+  | .typed t is a => .typed t is (a.mapNames f app)
+
 /-- `e` with the binders of `σ` that are free in it replaced by their
 expressions. -/
 partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
@@ -2392,6 +2428,11 @@ in enumeration, where an index is out of range: not a Fren name, so it is
 no item's. -/
 def unspecifiedFn (t : VTy) : Name := .str .anonymous s!"[][0] : {reprStr t}"
 
+/-- Whether `u` names the unspecified value of a type (`unspecifiedFn`). -/
+def isUnspecifiedName (u : Name) : Bool := match u with
+  | .str .anonymous s => s.startsWith "[][0]"
+  | _ => false
+
 /-- Whether `e` reads an index or a table without a `_` row, whose value
 may be unknown without an interpretation. -/
 partial def Ex.readsUnspecified : Ex → Bool
@@ -2428,6 +2469,100 @@ partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
   | .abstract p => .abstract p
   | .newtype p u => .newtype p (u.core sp)
   | .param k => .param k .anonymous
+
+/-- The type arguments that the elaborator inferred for the application at
+`span` of the generic function at `path`, in the file being lowered
+(`LState.callTargs`, `lang::call_type_argument`). Lowering never infers
+them itself: every spec that it lowers was elaborated, and recorded them. -/
+def elaboratedArgs (path : Name) (span : Span) : L (Array Fren.Core.Ty) := do
+  let st ← get
+  match st.callTargs[(st.file, span.start)]? with
+  | some targs => return targs
+  | none => throw s!"no type arguments were recorded for the application of `{showPath path}`"
+
+/-- A function's item, as an application reads it: the types that the
+function writes, its definition (its parameters, body and result type), if
+it has a body, its preconditions, and its contract, as `Spec.defs`,
+`Spec.pres` and `Spec.contracts` hold them. -/
+structure FnItem where
+  ty : VTy → VTy := id
+  defn? : Option (Array Name × Ex × VTy) := none
+  pres? : Option (Array Name × Array (Name × Ex)) := none
+  contract? : Option (Array Name × Array Ex × Array Ex) := none
+
+mutual
+/-- The item of the function at `path` at the type arguments `targs?`: of
+a generic function, the whole function at that instance
+(`lang::instantiation`), every part of it at once: each type that it
+writes, and its body, preconditions and contract, each with the
+unspecified values that it reads, whose types mention a type parameter,
+the instance's type's, whose hidden slot they read, as in the Lean-hosted
+front end, which unfolds the instance, and with each instance of a
+generic function without a body that it applies at its own type
+parameters at that instance too (`bodilessInstance`); of any other
+function, or with no type arguments, the function itself. -/
+partial def fnItemAt (path : Name) (targs? : Option (Array Fren.Core.Ty)) : L FnItem := do
+  let sp := (← get).spec
+  let item : FnItem := { defn? := sp.defs.find? path, pres? := sp.pres.find? path, contract? := sp.contracts.find? path }
+  let tps? := (sp.defGenerics.find? path).orElse fun _ => (sp.generics.find? (·.1 == path)).map (·.2.1)
+  let (some tps, some targs) := (tps?, targs?) | return item
+  let targs := targs.map some
+  let atCore (t : Fren.Core.Ty) : Fren.Core.Ty := Fren.Core.instanceType path tps targs t
+  let atInstance (t : VTy) : VTy := VTy.ofCore (atCore (t.core sp))
+  let mut renamed : List (Name × Name) := []
+  for (u, (us, t)) in sp.funs do
+    if us.isEmpty && isUnspecifiedName u then
+      let t' := atInstance t
+      if t' != t then
+        renamed := (u, unspecifiedFn t') :: renamed
+        modify fun s => { s with spec.funs := s.spec.funs.insert (unspecifiedFn t') (#[], t') }
+  -- The instances of generic functions without a body at this function's
+  -- type parameters, at this instance.
+  let mut apps : List (Name × Name) := []
+  for (inst, base) in sp.instanceOf do
+    let some iargs := sp.instanceArgs.find? inst | continue
+    let iargs' := iargs.map atCore
+    if iargs' != iargs then
+      apps := (inst, ((← bodilessInstance base iargs').getD base)) :: apps
+  let rename (e : Ex) : Ex := e.mapNames (fun u => (renamed.lookup u).getD u) (fun g => (apps.lookup g).getD g)
+  return {
+    ty := atInstance
+    defn? := item.defn?.map fun (ps, body, r) => (ps, rename body, atInstance r)
+    pres? := item.pres?.map fun (ps, pres) => (ps, pres.map fun (n, g) => (n, rename g))
+    contract? := item.contract?.map fun (ps, pres, posts) => (ps, pres.map rename, posts.map rename) }
+
+/-- The instance of the generic function without a body at `path` at the
+type arguments `targs`, a function of its own, with its parameters' and
+result's types and its contract at the instance (`fnItemAt`): its name,
+or none at the function's own type parameters, where it is the function
+itself. -/
+partial def bodilessInstance (path : Name) (targs : Array Fren.Core.Ty) : L (Option Name) := do
+  let some (_, tps, declared, result) := (← get).spec.generics.find? (·.1 == path) | return none
+  let own := tps.mapIdx fun k p => Fren.Core.Ty.abstract (Fren.Core.typeParamPath path k p)
+  if targs == own then return none
+  let inst := Name.str path.getPrefix (path.getString! ++ Fren.Core.instanceText targs)
+  if ((← get).spec.instanceArgs.find? inst).isSome then return some inst
+  let vargs := targs.toList.map VTy.ofCore
+  modify fun s => { s with
+    spec.funs := s.spec.funs.insert inst (declared.map (·.subst vargs), result.subst vargs)
+    spec.instanceOf := s.spec.instanceOf.insert inst path
+    spec.instanceArgs := s.spec.instanceArgs.insert inst targs }
+  let item ← fnItemAt path (some targs)
+  if let some c := item.contract? then
+    modify fun s => { s with spec.contracts := s.spec.contracts.insert inst c }
+  return some inst
+end
+
+/-- The item of the function at `path` that the application at `span`
+applies (`fnItemAt`): of a generic function, at the type arguments that
+the elaborator inferred (`elaboratedArgs`, `lang::instantiation`). Every
+lowering of an application of a function reads its item through this,
+and nothing else of it. -/
+def fnItem (path : Name) (span : Span) : L FnItem := do
+  let sp := (← get).spec
+  let generic := sp.defGenerics.contains path || sp.generics.any (·.1 == path)
+  let targs? ← if generic then some <$> elaboratedArgs path span else pure none
+  fnItemAt path targs?
 
 /-- The declared type written `segs`, with the patterns of the subset
 types within it, as the elaborator's `elabPTy` has it. -/
@@ -2649,39 +2784,30 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       return (.cardinality c args, .bool)
     match ← resolve segs with
     | .item { kind := .fnItem, path, .. } =>
+      -- The function's item at the application: of a generic function, the
+      -- whole function at its instance (`fnItem`).
+      let item ← fnItem path span
       -- With its preconditions at its arguments, if it has any.
       let withPres (x : Ex) : L Ex := do
-        let some (ps, pres) := (← get).spec.pres.find? path | return x
+        let some (ps, pres) := item.pres? | return x
         let σ := (ps.zip args).toList
         return .pre segs[0]!.span.start path (pres.map fun (n, g) => (n, g.subst σ)) x
       -- A defined function's body, with its parameters standing for the
       -- arguments.
-      if let some (ps, body, r) := (← get).spec.defs.find? path then
+      if let some (ps, body, r) := item.defn? then
         -- An application of itself, in a structural recursion: applied
         -- when evaluated, not unfolded here.
         if (← get).lowering == some path then
           modify fun s => { s with selfApplied := true }
           return (← withPres (.app path args), r)
         return (← withPres (body.subst (ps.zip args).toList), r)
-      -- A generic function without a body, at the instance that its
-      -- arguments' types give it, a function of its own.
-      if let some (_, tps, declared, result) := (← get).spec.generics.find? (·.1 == path) then
-        let found := (List.range tps.size).map fun k =>
-          (declared.zip typed).findSome? fun (d, (_, t)) => d.matchParam k t
-        let targs := found.mapIdx fun k t? => (t?.map VTy.widen).getD (.param k)
-        let r := result.subst targs
-        -- Its type arguments not known here, as the type expected of it
-        -- may give them: a function that has no value, which the
-        -- evaluator does not know (`Reqs/Eval#searching-for-behaviours`).
-        if found.any (·.isNone) then return (← withPres (.app (Name.str path "<?>") args), r)
-        -- At its own type parameters, in its contract, the function itself.
-        let own := (List.range tps.size).map fun k => VTy.abstract (Fren.Core.typeParamPath path k tps[k]!)
-        if targs == own then return (← withPres (.app path args), r)
-        let sp := (← get).spec
-        let inst := Name.str path.getPrefix (path.getString! ++ Fren.Core.instanceText (targs.toArray.map (·.core sp)))
-        modify fun s => { s with
-          spec.funs := s.spec.funs.insert inst (declared.map (·.subst targs), r)
-          spec.instanceOf := s.spec.instanceOf.insert inst path }
+      -- A generic function without a body, at its instance
+      -- (`bodilessInstance`), a function of its own, with the instance's
+      -- contract.
+      if let some (_, _, _, result) := (← get).spec.generics.find? (·.1 == path) then
+        let targs ← elaboratedArgs path span
+        let r := result.subst (targs.toList.map VTy.ofCore)
+        let some inst ← bodilessInstance path targs | return (← withPres (.app path args), r)
         return (← withPres (.app inst args), r)
       let some (_, r) := (← get).spec.funs.find? path | throw s!"unknown function `{showPath path}`"
       return (← withPres (.app path args), r)
@@ -2883,29 +3009,27 @@ its argument, and each function parameter for its closure
 so that neither captures the other's. -/
 partial def lowerHigherOrder (cx : Cx) (span : Span) (path : Name) (ts : Array (VTy ⊕ (Array VTy × VTy)))
     (args : Array Expr) : L (Ex × VTy) := do
-  let some (ps, body, r) := (← get).spec.defs.find? path | throw s!"unknown function `{showPath path}`"
+  -- The function's item at the application: of a generic function, the
+  -- whole function at its instance (`fnItem`).
+  let item ← fnItem path span
+  let some (ps, body, r) := item.defn? | throw s!"unknown function `{showPath path}`"
   let k := (← get).fresh
   modify fun s => { s with fresh := s.fresh + 1 }
   let ren (n : Name) : Name := Name.mkNum n k
-  -- The value arguments first, whose types give the type parameters'.
   let mut σ : List (Name × Ex) := []
-  let mut tσ : List (Name × VTy) := []
   for a in args, t in ts, p in ps do
-    if let .inl d := t then
-      let (x, tx) ← lowerExpr cx a
-      σ := σ ++ [(ren p, x)]
-      tσ := tσ ++ d.matchAbstract tx
+    if t matches .inl _ then σ := σ ++ [(ren p, (← lowerExpr cx a).1)]
   let mut fσ : List (Name × Array Name × Ex) := []
   for a in args, t in ts, p in ps do
     if let .inr (pts, _) := t then
-      fσ := fσ ++ [(p, ← lowerFnArg cx span (pts.map (·.substAbstract tσ)) a)]
+      fσ := fσ ++ [(p, ← lowerFnArg cx span (pts.map item.ty) a)]
   let x := ((body.renameBound ren).subst σ).substFns fσ
   -- With its preconditions at its arguments, if it has any.
   -- Its preconditions are over its value parameters, as its body is.
-  let x := match (← get).spec.pres.find? path with
+  let x := match item.pres? with
     | some (_, pres) => Ex.pre span.start path (pres.map fun (n, g) => (n, ((g.renameBound ren).subst σ).substFns fσ)) x
     | none => x
-  return (x, r.substAbstract tσ)
+  return (x, r)
 
 /-- A closure, or a function's name `g`, which is the closure `|x1, ...,
 xn| g(x1, ..., xn)`, given for a function parameter whose parameters have
@@ -3439,6 +3563,7 @@ partial def lowerItem : Item → L Unit
           ps := ps.push (x, t)
           ts := ts.push (.inl t)
       if !fnParams.isEmpty then modify fun s => { s with hofs := s.hofs.insert path ts }
+      if !tps.isEmpty then modify fun s => { s with spec.defGenerics := s.spec.defGenerics.insert path tps }
       -- Its parameters in order, for an application.
       let all := params.map fun (p, _) => declName p[0]!
       -- In scope in its own body, which may apply it in a structural
@@ -3591,8 +3716,9 @@ where
 
 /-- The state after the files' items, from the state `st` of the files
 before them. Each file starts at the root module. -/
-def lowerFrom (st : LState) (files : Array (Array Item)) : Except String LState := do
-  let mut st := st
+def lowerFrom (st : LState) (files : Array (Array Item)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Except String LState := do
+  let mut st := { st with callTargs }
   for items in files do
     st := { st with module := .anonymous, scope := .anonymous }
     for item in items do
@@ -3617,12 +3743,13 @@ def preludeState : Except String LState := do
   return { st with module := .anonymous, scope := .anonymous }
 
 /-- The spec of the files' items, which the elaborator accepted, with the
-names it declares. Lowering files one after another is lowering them
-together: `lowerFrom st (a ++ b)` is `lowerFrom st a >>= (lowerFrom · b)`,
-which `fren mutate` relies on to lower only the files from a mutant's. -/
-def lowerAll (files : Array (Array Item)) : Except String LState := do lowerFrom (← preludeState) files
-
-def lowerFiles (files : Array (Array Item)) : Except String Spec := (·.spec) <$> lowerAll files
+names it declares, with the type arguments that the elaborator inferred
+for its applications of generic functions, `callTargs`. Lowering files one
+after another is lowering them together: `lowerFrom st (a ++ b) t` is
+`lowerFrom st a t >>= (lowerFrom · b t)`, which `fren mutate` relies on to
+lower only the files from a mutant's. -/
+def lowerAll (files : Array (Array Item)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Except String LState := do lowerFrom (← preludeState) files callTargs
 
 def VTy.show : VTy → String
   | .bool => "Bool"

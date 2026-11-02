@@ -843,7 +843,7 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
   let some (files, st) ← elaborate {} #[path.toString] lints | return (#["cannot read the spec"], 0, 0, 0)
   let errors := st.diags.filter (·.severity == .error)
   unless errors.isEmpty do return (#[s!"generator: static error: {(errors[0]?.map (·.msg.headline)).getD ""}"], 0, 0, 0)
-  let lst ← match specStateOf files with
+  let lst ← match specStateOf files st.callTargs with
     | .ok s => pure s
     | .error e => return (#[s!"the evaluator cannot read the spec: {e}"], 0, 0, 0)
   let sp := lst.spec

@@ -1,0 +1,190 @@
+-- A generic function's type parameter as an element type
+-- (`Reqs/Lang/GenericFunctions#type-parameters`), in both front ends: a
+-- set, sequence or relation of the parameter in the signature, the body
+-- and the contract, checked once at the parameter's sort and unfolded at
+-- each instance. In a module, since Lean has an `Option` of its own.
+set_option fren.lint.dead_code "allow"
+
+mod generic_functions_elements
+
+-- From the STLC example (#602): the names a term's variable mentions.
+pub enum Term<V, B> { Var(V), Lam(B, Term<V, B>), App(Term<V, B>, Term<V, B>) }
+
+pub fn mentioned<V, B>(t: Term<V, B>): Set<V> := match t {
+    Term::Var(x) => {x},
+    _ => {},
+}
+
+-- From the Alloy port (#631): Alloy's `lone` and a functional relation,
+-- once for every element type. A quantifier over a set's members, and a
+-- relation's, is outside the decidable core, as for any set.
+set_option fren.lint.undecidable "allow" in
+pub fn lone?<X>(s: Set<X>) := forall (a: X) (b: X), when a in s and b in s, a = b
+set_option fren.lint.undecidable "allow" in
+pub fn functional?<X, Y>(r: Rel<X, Y>) := forall (a: X) (b: Y) (c: Y), when (a, b) in r and (a, c) in r, b = c
+
+-- Within the core: the operations on a set and a sequence of the
+-- parameter, and a quantifier over a sequence's elements.
+pub fn has?<T>(s: Set<T>, x: T) := x in s
+pub fn single?<T>(s: Set<T>) := s.card <= 1
+pub fn first_or<T>(q: Seq<T>, d: T): T := if q != [] then q[0] else d
+pub fn all_in?<T>(q: Seq<T>, s: Set<T>) := forall (x: T), when x in q, x in s
+pub fn nested<T>(s: Set<Set<T>>, x: T): Set<Set<T>> := s union {{x}}
+pub fn wrapped<T>(s: Set<T>): Option<Set<T>> := if s = {} then Option::None else Option::Some(s)
+pub fn put<T>(q: Seq<Option<T>>, x: T): Seq<Option<T>> := q.update(0, Option::Some(x))
+
+-- A contract over sets of the parameter, checked once, for every type.
+pub fn grow<T>(s: Set<T>, x: T): (r: Set<T>) {
+    out r := s union {x}
+    ensure has: x in r
+    ensure keeps: s subset r
+    ensure bigger: r.card >= s.card
+}
+
+-- A contract that fails, with a counterexample at the parameter's sort.
+pub fn shrink<T>(s: Set<T>, x: T): (r: Set<T>) {
+    out r := s minus {x}
+    ensure same: r = s  --~ error: the postcondition `same` of `generic_functions_elements::shrink` does not hold
+}
+
+-- A generic function without a body, over a set of the parameter.
+pub fn choose<T>(s: Set<T>): (r: T) {
+    assume nonempty: s != {}
+    ensure member: r in s
+}
+
+pub enum Nm { A, B, C }
+
+proc instances(t: Term<Int, Bool>, n: Nm, s: Set<Nm>, k: Set<Int>, w: Seq<Nm>): (
+    det m: Set<Int>,
+    det g: Set<Nm>,
+    det c: Int,
+) {
+    assume some: k != {}
+    out m := mentioned(t)
+    out g := grow(s, n)
+    out c := choose(k)
+
+    expect var: when t = Term::Var(3), m = {3}
+    expect lam: when t is Term::Lam(_, _), m = {}
+    expect grown: n in g and has?(g, n)
+    expect lone: lone?({n}) and single?({n})
+    expect function: functional?({(1, n), (2, n)})
+    expect not_function: when n != Nm::A, not functional?({(1, Nm::A), (1, n)})
+    expect first: first_or([n], Nm::C) = n and first_or([], 0) = 0
+    expect all: when w = [n], all_in?(w, g)
+    expect nest: {n} in nested({}, n)
+    expect wrap: wrapped(s) = Option::None iff s = {}
+    expect put_first: put([Option::None], n) = [Option::Some(n)]
+    expect chosen: c in k
+
+    -- A wrong expectation, at an instance: the counterexample is of `Int`s.
+    expect wrong: m = {}  --~ error: expectation `generic_functions_elements::instances::wrong` does not hold
+}
+
+-- An index out of range, in an instance, is its element type's
+-- unspecified value, as one in the procedure is, whichever argument gives
+-- the instance its type argument, and though another is a nested empty
+-- literal, which gives none.
+pub fn at_first<T>(q: Seq<T>): T := q[0]
+pub fn deep<T>(q: Seq<Seq<T>>, d: T): T := if q = [] then d else q[0][0]
+pub fn deep_last<T>(d: T, q: Seq<Seq<T>>): T := if q = [] then d else q[0][0]
+
+-- Equality of sequences of the parameter, and of sequences of sets of it,
+-- under enumeration, which compiles the instance at `Nm`.
+pub fn sets?<T>(q: Seq<Set<T>>, s: Set<T>) := q = [s]
+
+set_option fren.evidence "enumerated" in
+proc enumerated(s: Set<Nm>, n: Nm): (det g: Set<Nm>) {
+    out g := grow(s, n)
+
+    expect has: n in g and lone?({n})
+    expect one_set: sets?([{n}], {n}) and not sets?([s, s], s)
+}
+
+set_option fren.enumeration.size 2 in
+set_option fren.evidence "enumerated" in
+proc out_of_range(q: Seq<Nm>, r: Seq<Nm>, n: Nm) {
+    --~^ info: the definedness checks of `generic_functions_elements::out_of_range` are not run by enumeration
+    --~^^ info: 2 checks of `generic_functions_elements::out_of_range` hold for every behaviour up to size 2
+    expect unspecified: when q = [] and r = [], at_first(q) = r[0]
+    --~^ warning: could not decide whether `generic_functions_elements::out_of_range::unspecified` holds: an index out of range may decide it
+    expect first: when r != [], first_or(r, n) = r[0]
+    expect nested: when r = [], deep([[]], n) = r[0]
+    --~^ warning: could not decide whether `generic_functions_elements::out_of_range::nested` holds: an index out of range may decide it
+    expect nested_last: when r = [], deep_last(n, [[]]) = r[0]
+    --~^ warning: could not decide whether `generic_functions_elements::out_of_range::nested_last` holds: an index out of range may decide it
+    expect different: when r = [], deep([[]], n) != r[0]
+    --~^ error: expectation `generic_functions_elements::out_of_range::different` does not hold
+    expect different_last: when r = [], deep_last(n, [[]]) != r[0]
+    --~^ error: expectation `generic_functions_elements::out_of_range::different_last` does not hold
+}
+
+-- An instance whose type argument only what is expected gives: the
+-- elaborator's, which lowering applies, so `at_first([])` at `Nm` is the
+-- `[][0]` of a `Seq<Nm>`, which `r[0]` is too.
+set_option fren.enumeration.size 2 in
+set_option fren.evidence "enumerated" in
+proc expected(r: Seq<Nm>): (det v: Nm) {
+    --~^ info: the definedness checks of `generic_functions_elements::expected` are not run by enumeration
+    --~^^ info: 2 checks of `generic_functions_elements::expected` hold for every behaviour up to size 2
+    --~^^^ warning: defined output `v` is the same in every behaviour
+    out v := at_first([])
+    expect same: when r = [], v = r[0]
+    --~^ warning: could not decide whether `generic_functions_elements::expected::same` holds: an index out of range may decide it
+    expect differ: when r = [], v != r[0]
+    --~^ error: expectation `generic_functions_elements::expected::differ` does not hold
+    expect eq_same: when r = [], at_first([]) = r[0]
+    --~^ warning: could not decide whether `generic_functions_elements::expected::eq_same` holds: an index out of range may decide it
+    expect eq_differ: when r = [], at_first([]) != r[0]
+    --~^ error: expectation `generic_functions_elements::expected::eq_differ` does not hold
+    expect rev_same: when r = [], r[0] = at_first([])
+    --~^ warning: could not decide whether `generic_functions_elements::expected::rev_same` holds: an index out of range may decide it
+    expect rev_differ: when r = [], r[0] != at_first([])
+    --~^ error: expectation `generic_functions_elements::expected::rev_differ` does not hold
+}
+-- A generic function with a function parameter, given a closure and a
+-- named function: at the instance that the elaborator inferred, too.
+pub fn apply_first?<T>(q: Seq<T>, f: fn(T) -> Bool) := f(q[0])
+pub fn is_a?(x: Nm) := x = Nm::A
+
+set_option fren.enumeration.size 2 in
+set_option fren.evidence "enumerated" in
+proc higher_order(r: Seq<Nm>) {
+    --~^ info: the definedness checks of `generic_functions_elements::higher_order` are not run by enumeration
+    --~^^ info: 1 check of `generic_functions_elements::higher_order` holds for every behaviour up to size 2
+    expect closure_same: when r = [], apply_first?(r, |x| x = Nm::B) iff r[0] = Nm::B
+    --~^ warning: could not decide whether `generic_functions_elements::higher_order::closure_same` holds: an index out of range may decide it
+    expect named_same: when r = [], apply_first?(r, is_a?) iff is_a?(r[0])
+    --~^ warning: could not decide whether `generic_functions_elements::higher_order::named_same` holds: an index out of range may decide it
+}
+-- A precondition over an element of a `Seq<T>`, of a function with a body
+-- and of one with a function parameter: read at the instance, as the body
+-- is.
+pub fn pick_first<T>(q: Seq<T>, d: T): (r: T) {
+    assume first: q[0] = d
+    out r := d
+}
+pub fn apply_at?<T>(q: Seq<T>, d: T, f: fn(T) -> Bool): (r?) {
+    assume first: q[0] = d
+    out r? := f(d)
+}
+
+set_option fren.enumeration.size 2 in
+set_option fren.evidence "enumerated" in
+proc preconditions(r: Seq<Nm>, n: Nm) {
+    --~^ info: the definedness checks of `generic_functions_elements::preconditions` are not run by enumeration
+    --~^^ info: 3 checks of `generic_functions_elements::preconditions` hold for every behaviour up to size 2
+    expect same: when r = [], pick_first(r, r[0]) = r[0]
+    --~^ warning: could not decide whether `generic_functions_elements::preconditions::same` holds: an index out of range may decide it
+    --~^^ warning: could not decide whether the precondition `first` of `generic_functions_elements::pick_first` holds at an application in `generic_functions_elements::preconditions::same`: an index out of range may decide it
+    expect same_higher: when r = [], apply_at?(r, r[0], |x| x = Nm::A) iff r[0] = Nm::A
+    --~^ warning: could not decide whether `generic_functions_elements::preconditions::same_higher` holds: an index out of range may decide it
+    --~^^ warning: could not decide whether the precondition `first` of `generic_functions_elements::apply_at?` holds at an application in `generic_functions_elements::preconditions::same_higher`: an index out of range may decide it
+    expect differ: when r = [], pick_first(r, n) = n
+    --~^ error: the precondition `first` of `generic_functions_elements::pick_first` may not hold at this application in `generic_functions_elements::preconditions::differ`
+    expect differ_higher: when r = [], apply_at?(r, n, |x| x = Nm::A) iff n = Nm::A
+    --~^ error: the precondition `first` of `generic_functions_elements::apply_at?` may not hold at this application in `generic_functions_elements::preconditions::differ_higher`
+}
+--@ summary: 56 passed (8 by bounded enumeration), 9 failed, 12 inconclusive, 0 redundant
+--@ exit: 1

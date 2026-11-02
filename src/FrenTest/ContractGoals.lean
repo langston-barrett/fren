@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Confirm
+import FrenCli.Run
 -- keep-sorted end
 
 /-!
@@ -27,7 +28,9 @@ proc c(
 }
 "
 
-def contractSpec : Spec := (specOf #[("t.fren", contractSrc.toList.toArray)]).toOption.getD default
+def contractSpec : Spec :=
+  let files := #[("t.fren", contractSrc.toList.toArray)]
+  (specOf files (FrenCli.elabText (FrenCli.initialState #[]) 0 files[0]!.2).callTargs).toOption.getD default
 
 /-- The value of `e` where `q` is `vals`, and `y` and `i` are 0. -/
 def valueAt (e : Ex) (vals : Array Int) : Option Val :=

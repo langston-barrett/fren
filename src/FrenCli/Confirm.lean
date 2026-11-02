@@ -635,16 +635,18 @@ def applyRefutations (results : Array Fren.Core.CheckResult) (log : Array Refuta
   return (out, errs)
 
 /-- The evaluator's reading of files that the elaborator accepted. -/
-def specStateOf (files : Array (String × Array Char)) : Except String LState := do
+def specStateOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Except String LState := do
   let items ← files.mapM fun (_, chars) =>
     match lex chars with
     | .error e => throw e.msg.headline
     | .ok toks => match parse toks chars with
       | .error e => throw e.msg.headline
       | .ok items => pure items
-  lowerAll items
+  lowerAll items callTargs
 
-def specOf (files : Array (String × Array Char)) : Except String Spec := (·.spec) <$> specStateOf files
+def specOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
+    Except String Spec := (·.spec) <$> specStateOf files callTargs
 
 /-- The evaluator's procedure for the elaborator's, matched by path, for a
 global expectation by its module and name, or for the body of a function

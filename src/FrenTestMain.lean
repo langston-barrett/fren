@@ -2182,7 +2182,7 @@ def backjumpingOf (paths : Array String) : IO (Array String × Nat) := do
   let st := files.zipIdx.foldl (init := FrenCli.initialState #[]) fun st ((_, chars), i) =>
     FrenCli.elabParsed st i chars (FrenCli.parseText chars)
   if st.diags.any (·.severity == .error) then return (#[], 0)
-  let .ok sp := FrenCli.specOf files | return (#[], 0)
+  let .ok sp := FrenCli.specOf files st.callTargs | return (#[], 0)
   let mut failures := #[]
   let mut problems := 0
   for c in sp.comps do

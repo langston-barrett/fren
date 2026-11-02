@@ -147,7 +147,8 @@ partial def World.value (sp : Spec) (w : World) (f : Name) (args : Array Val) (d
   let valueAt (h : UInt64) : Val := match sp.results.find? base with
     | some t => typedValueOf sp w h r t
     | none => valueOf sp w h 2 r
-  let contract := sp.contracts.find? base
+  -- Its contract at its instance (`Eval.fnItem`), or the function's own.
+  let contract := (sp.contracts.find? f).orElse fun _ => sp.contracts.find? base
   let others : Interp := { defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find?, fn := fun g as => if depth == 0 then none else w.value sp g as (depth - 1) }
   let checkPosts := contract.any fun (ps, pres, _) =>
     pres.all (·.eval others (fun _ => none) (ps.zip args).toList == some (.bool true))

@@ -139,14 +139,16 @@ right: a generic type's parametric datatype declares its parameters with
 would capture the sort `Int`, so that a payload of type `Int` would mean
 the parameter instead.
 
-For now, a type parameter is not an element type, as in `Set<T>`,
-`Seq<T>` or `Rel<T, Int>`, and a generic enumeration's payload of its own
-type gives it its own parameters, in order, as `List<T>` does within
-`List<T>`, rather than other arguments, as in
-`enum Nested<T> { Leaf(T), Node(Nested<Pair<T, T>>) }` (`F0387`). Each of
-these needs more of the solver or of Lean than an enumeration's parameters
-being types. `lang::type_parameter_place` states where a type parameter
-is accepted, from where it is written:
+For now, a generic type's type parameter is not an element type, as in
+`Set<T>`, `Seq<T>` or `Rel<T, Int>`, and a generic enumeration's payload
+of its own type gives it its own parameters, in order, as `List<T>` does
+within `List<T>`, rather than other arguments, as in `enum Nested<T> {
+Leaf(T), Node(Nested<Pair<T, T>>) }` (`F0387`). Each of these needs more
+of the solver or of Lean than an enumeration's parameters being types. A
+[generic function's](GenericFunctions.md#type-parameters) type parameter
+may be an element type (`lang::element_parameter`).
+`lang::type_parameter_place` states where a type parameter is accepted,
+from where it is written:
 
 ```fren
 pub mod lang
