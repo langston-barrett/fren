@@ -20,6 +20,7 @@ proc colder_is_cold(a: Int, b: Int, m: Mode) {  --~ warning: procedure `colder_i
 
 -- With no members, or no parameters.
 proc nothing() {}  --~ warning: procedure `nothing` has no outputs
+
 proc freezing() {  --~ warning: procedure `freezing` has no outputs
     call b := band(0)
     expect cold: b.cold?
@@ -37,14 +38,17 @@ pub proc public_claim(n: Int) { expect e: n + 1 > n }
 
 -- Not fired: it has a result, a guarantee, an `exists`, or a `det` `let`.
 proc with_result(n: Int): (m: Int) { out m := n }
+
 proc with_guarantee(n: Int) {
     assume small: n < 3
     ensure e: n + 1 > n  --~ warning: `with_guarantee::e` is redundant: it always holds
 }
+
 proc with_exists(n: Int) {
     exists k: Mode
     expect e: k != Mode::Heat or n + 1 > n
 }
+
 proc with_det_let(n: Int) {
     det let k: Int := n + 1
     expect e: k > n
@@ -52,18 +56,22 @@ proc with_det_let(n: Int) {
 
 -- Not fired: a call, a refinement or a claim names it.
 proc called(n: Int) { expect e: n + 1 > n }
+
 proc caller(n: Int): (m: Int) {
     call c := called(n)
     out m := n
 }
+
 proc refined(n: Int) {
     assume big: n > 0
     expect positive: n >= 1
 }
+
 expect refines_it(n: Int) {
     assume big: n > 1
     call c := called(n)
     refines c refined(n)
 }
+
 proc claimed(n: Int) { expect e: n + 1 > n }
 trusted claimed: "each integer is less than the next"

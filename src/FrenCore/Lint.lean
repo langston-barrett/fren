@@ -7164,9 +7164,10 @@ def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
 contract, where `mentioned` is what its expression mentions and `own` the
 function's parameters and result, as variables, and the function itself
 (`lint::contract_mentions_nothing`): it mentions something, but nothing of
-its own. A clause that mentions nothing is `assertions_on_constants`'s. -/
+its own, each variable by its root, so that `q.len` is `q`'s. A clause that
+mentions nothing is `assertions_on_constants`'s. -/
 def contractMentionsNothing (mentioned own : List Mention) : Bool :=
-  !mentioned.isEmpty && !mentioned.any own.contains
+  !mentioned.isEmpty && !(mentioned.map Mention.root).any own.contains
 
 /-- What of the function `f`'s own, with the parameters `params`, a clause
 of its contract may mention (`lint::contract_mentions_nothing`): `f`

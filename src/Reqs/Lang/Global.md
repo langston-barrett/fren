@@ -59,15 +59,16 @@ pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cove
 pub enum MemberReport { NoReport, F0417 }
 
 -- Whether the block accepts `member`, written with `det` if `det?`.
-pub fn block_accepts?(member: BlockMember, det?) := not det? and member in {
-    BlockMember::Let,
-    BlockMember::Assume,
-    BlockMember::Expect,
-    BlockMember::Cover,
-    BlockMember::Call,
-    BlockMember::Refines,
-    BlockMember::Use,
-}
+pub fn block_accepts?(member: BlockMember, det?) :=
+    not det? and member in {
+        BlockMember::Let,
+        BlockMember::Assume,
+        BlockMember::Expect,
+        BlockMember::Cover,
+        BlockMember::Call,
+        BlockMember::Refines,
+        BlockMember::Use,
+    }
 
 pub proc block_member(
     member: BlockMember,

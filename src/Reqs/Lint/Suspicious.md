@@ -200,7 +200,8 @@ nothing of its function's: none of its parameters, and neither its result
 nor the function itself, as a postcondition may mention its value, by
 [`lang::mentions`](../Lang/Expressions.md#mentions). A function parameter
 of a [higher-order function](../Lang/HigherOrder.md) is one of its
-parameters, whether the clause reads it or applies it. So `ensure positive:
+parameters, whether the clause reads it or applies it. A field read from a
+parameter, such as `q.len`, is the parameter's. So `ensure positive:
 limit(0) > 0` on `fn scale(n: Int): (r: Int)` fires: it holds or fails
 whatever `scale` is applied to, so it says something about `limit`, and is
 probably in the wrong place. A precondition that mentions none of the
@@ -221,7 +222,7 @@ function as a `Fn`:
 
 ```fren
 pub proc contract_mentions_nothing(
-    mentioned: Set<lang::Mention>,    -- what the clause mentions
+    mentioned: Set<lang::Mention>,    -- what the clause mentions, each variable by its root
     own: Set<lang::Mention>,          -- what of its function's it may mention
 ): (det fires?) {
     ensure rule: fires? iff (mentioned != {} and mentioned inter own = {})

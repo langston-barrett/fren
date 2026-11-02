@@ -1815,9 +1815,10 @@ impl proc_without_outputs: lint::proc_without_outputs for (p : Bool) (ms : List 
     · simp at hp
 
 -- Both front ends decide `contract_mentions_nothing` with
--- `contractMentionsNothing`, for every two lists of mentions.
+-- `contractMentionsNothing`, for every two lists of mentions, the clause's
+-- read by their roots (`Mention.root`).
 impl contract_mentions_nothing: lint::contract_mentions_nothing for (ms own : List Fren.Core.Mention) {
-  mentioned := mentionSet ms,
+  mentioned := mentionSet (ms.map Fren.Core.Mention.root),
   own := mentionSet own,
   fires? := Fren.Core.contractMentionsNothing ms own,
 } by
@@ -1825,7 +1826,8 @@ impl contract_mentions_nothing: lint::contract_mentions_nothing for (ms own : Li
   unfold lint.contract_mentions_nothing.ensures lint.contract_mentions_nothing.ensure.rule
   have inj : ∀ a b : Fren.Core.Mention, toMention a = toMention b ↔ a = b := by
     intro a b; cases a <;> cases b <;> simp [toMention]
-  have h : mentionSet ms ∩ mentionSet own = ∅ ↔ ms.any own.contains = false := by
+  have h : ∀ l : List Fren.Core.Mention, mentionSet l ∩ mentionSet own = ∅ ↔ l.any own.contains = false := by
+    intro ms
     simp only [Fren.FinSet.ext_iff, Fren.FinSet.mem_inter, mentionSet, Fren.FinSet.mem_ofList, List.mem_map,
       Fren.FinSet.not_mem_empty, iff_false, not_and, List.any_eq_false]
     constructor
@@ -1835,7 +1837,8 @@ impl contract_mentions_nothing: lint::contract_mentions_nothing for (ms own : Li
       have hba : b = a := (inj b a).mp hab
       subst hba
       exact h b ha (List.contains_iff_mem.mpr hb)
-  simp [Fren.Core.contractMentionsNothing, mentionSet_eq_empty, h]
+  rw [h]
+  cases ms <;> simp [Fren.Core.contractMentionsNothing, mentionSet_eq_empty]
 
 trusted lint::zero_prefixed_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::zero_prefixed_fixed: "a model of an expression, checked by the refinements in its section"

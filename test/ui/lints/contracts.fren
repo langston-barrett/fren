@@ -40,6 +40,12 @@ pub fn steps(n: Int): (r: Int) {
     ensure with_other: r > limit(n)
 }
 
+-- A field read from a parameter is the parameter's.
+pub fn first(q: Seq<Int>): (r: Int) {
+    assume long: q.len > 1
+    out r := q[1]
+}
+
 -- A function parameter is the function's too, whether read or applied.
 pub fn apply(g: fn(Int) -> Int, n: Int): (r: Int) {
     assume zero_ok: g(0) >= limit(0)

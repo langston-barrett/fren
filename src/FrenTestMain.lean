@@ -1137,6 +1137,7 @@ def ownSpecFiles : Array String :=
     "Lint/Pedantic/Comparisons",
     "Lint/Pedantic/Conditionals",
     "Lint/Pedantic/Booleans",
+    "Lint/Pedantic/Procedures",
     "Lint/Restriction",
     "Lint/Decidability",
     "Lint/Printing",
