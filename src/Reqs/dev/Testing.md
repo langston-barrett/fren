@@ -31,8 +31,11 @@ pub mod testing
   message without expecting it, for one that may be in one of several
   places, such as a conflict's
   note at whichever guarantee the solver's model picks. This is how
-  `cli::agreement` is tested. See
-  `src/FrenTest/Ui.lean` for the format, and
+  `cli::agreement` is tested. The Lean front end runs them with
+  `fren.checkTypeCache`, under which each type that it takes from its
+  cache of the types of terms (`typeOf`) is checked against the term's
+  type elaborated again, an error where they differ, at some 10% more
+  time in the ui jobs. See `src/FrenTest/Ui.lean` for the format, and
   [Expectations](#expectations) for when a file passes.
 - **Example specs** (`lake test`): each `examples/**/*.fren` is a complete
   spec for readers, and is checked as a ui test, so its annotations
