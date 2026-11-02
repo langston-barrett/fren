@@ -1,0 +1,34 @@
+--@ args: fmt --check
+-- A block comment that starts an element's line stays with the element's
+-- code, and the line break that the list decides goes before it
+-- (`fmt::break_before`).
+proc sub(x: Int, y: Int): (o?) { ensure r: o? iff x > y }
+
+proc c(
+    /- lead -/ x: Int, y: Int,
+): (p?, n: Int) {
+    -- The first element.
+    call a := sub(
+        /- lead -/ x, y,
+    )
+    -- After a comma.
+    call b := sub(
+        x,
+        /- lead -/ y, /- after the comma -/ x,
+    )
+    -- Two comments, and one over two lines.
+    call d := sub(
+        /- one -/ /- two -/ x,
+        /- over
+           two lines -/ y,
+    )
+    -- After the opening bracket, on its line: it stays there.
+    call e := sub(/- after -/
+        x, y,
+    )
+    -- A member of a block, and an arm.
+    /- lead -/ ensure r: p? iff x > y
+    ensure s: n = match x {
+        /- lead -/ 0 => 1, _ => 2,
+    }
+}

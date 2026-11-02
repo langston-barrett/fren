@@ -18,6 +18,7 @@ import FrenCore.Patterns
 import FrenCore.Procedures
 import FrenCore.Quantifier
 import FrenCore.Regex
+import FrenCore.Symbols
 import FrenCore.Syntax
 import FrenCore.Traits
 import FrenCore.Ty
@@ -5209,8 +5210,10 @@ def closureTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
       liftMsg y (Core.checkVarName y.getId (some (t == .bool)))
       lintName .binder y.getId y
       pure y.getId
-    -- Named apart from every local around it, as the solver never sees it.
-    let local_ := Name.mkSimple s!"{bn.toString (escape := false)}#{cx.binders.size + i}"
+    -- Named apart from every local around it, as a bound name at its
+    -- position is (`Core.boundSymbol`): one binder has each position along
+    -- a path. The solver never sees it.
+    let local_ := Name.mkSimple (Core.boundSymbol (bn.toString (escape := false)) (cx.binders.size + i))
     named := named.push (bn, local_, t, ← leanTypeOf t)
   withLocalDeclsD (named.map fun (_, l, _, ty) => (l, fun _ => pure ty)) fun _ => do
     let new := named.mapIdx fun i (bn, l, _, ty) =>
@@ -5940,7 +5943,7 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let values ← bound.filterMapM fun (_, ty, _, vs?) => vs?.mapM (·.mapM (elabProp · ty))
   let combos := values.foldl (fun acc vs => acc.flatMap fun pre => vs.map pre.push) #[#[]]
   let localName (k : Nat) (bn : Name) (listed : Bool) : Name :=
-    if listed then bn else .mkSimple s!"{bn.getString!}'{cx.binders.size + k}"
+    if listed then bn else .mkSimple (Core.boundSymbol bn.getString! (cx.binders.size + k))
   withLocalDeclsD (bound.mapIdx fun k (bn, ty, _, vs?) => (localName k bn vs?.isSome, fun _ => pure ty)) fun fvs => do
     let new ← (bound.zip fvs).mapIdxM fun i ((bn, ty, _, vs?), fv) => do
       return { name := bn, term := ← exprToSyntax fv, «type» := ty, scrutinee := none, outer := cx.binders.size + i

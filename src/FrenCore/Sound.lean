@@ -1066,6 +1066,41 @@ theorem checkDeterminism_pass (x : Name) (hx : IsOut c.vars x)
      (s.holds_behaves (kd := .determinism) rfl (s.typed_primeEnv glue_typed)).2 ((hprimes _ _ prime_other).2 h₂)⟩
   rwa [s.samePrimed glue_typed, glue_primed x (copied_of_out hx), glue_other x hfresh] at this
 
+/-- A name as Fren declares a variable: its last component is text that
+has no `#`, which no identifier has (`isIdRest`). -/
+def PlainName (n : Name) : Prop := ∃ p s, n = .str p s ∧ '#' ∉ s.toList
+
+/-- Copies of plain names are distinct (`determinism`'s `hinj`). -/
+theorem primed_inj_plain {m n : Name} (hm : PlainName m) (hn : PlainName n) (h : primed m = primed n) : m = n := by
+  obtain ⟨p, a, rfl, -⟩ := hm
+  obtain ⟨q, b, rfl, -⟩ := hn
+  simp only [primed, Name.str.injEq, String.append_left_inj] at h
+  rw [h.1, h.2]
+
+/-- No plain name is a copy of one (`determinism`'s `hfresh`): a copy's
+last component has a `#`. Copies were `n'`, and a variable could be named
+so. -/
+theorem primed_ne_plain {m x : Name} (hm : PlainName m) (hx : PlainName x) : primed m ≠ x := by
+  obtain ⟨p, a, rfl, -⟩ := hm
+  obtain ⟨q, b, rfl, hb⟩ := hx
+  intro h
+  simp only [primed, Name.str.injEq] at h
+  exact hb (h.2 ▸ by simp [String.toList_append])
+
+/-- `checkDeterminism_pass` for a procedure whose copied variables have
+plain names, as every Fren variable has: their copies are distinct and
+none is `x`. That behaviours do not depend on the copies is still a
+premise. -/
+theorem checkDeterminism_pass_plain (x : Name) (hx : IsOut c.vars x)
+    (hplain : ∀ n, IsCopied c.vars n → PlainName n)
+    (hprimes : ∀ ρ ρ', (∀ n, ¬IsPrimed c.vars n → ρ n = ρ' n) → (s.Behaves ρ ↔ s.Behaves ρ'))
+    (h : (checkDeterminism b c x).run.verdict = .pass) :
+    ∀ ρ₁ ρ₂, s.Typed ρ₁ → s.Typed ρ₂ → (∀ n, ¬IsCopied c.vars n → ρ₁ n = ρ₂ n) →
+      s.Behaves ρ₁ → s.Behaves ρ₂ → ρ₁ x = ρ₂ x :=
+  checkDeterminism_pass s x hx hprimes
+    (fun ⟨m, hm, e⟩ => primed_ne_plain (hplain m hm) (hplain x (copied_of_out hx)) e)
+    (fun m n hm hn e => primed_inj_plain (hplain m hm) (hplain n hn) e) h
+
 /-! ## Which checks run -/
 
 private theorem mem_ite {p : Prop} [Decidable p] {x : Array α} {r : α} (h : r ∈ (if p then x else #[])) :

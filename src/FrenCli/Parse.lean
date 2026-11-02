@@ -2014,7 +2014,9 @@ mutual
 (`traitMember`). -/
 partial def item (inTrait := false) : P Item := do
   markStart
-  -- An item is in another only after its `set_option ... in`, at its end.
+  -- This item's first token. An item is inside another only as the item
+  -- that the other's `set_option ... in` ends with; `file` starts the list
+  -- anew for each top-level item.
   modify fun s => { s with items := s.items.push s.pos }
   let first := (← get).pos
   let t ← peek

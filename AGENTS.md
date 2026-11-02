@@ -1,0 +1,55 @@
+# Issue labels
+
+Set or change issue priority labels only at the user's explicit behest. Requests to triage issues or apply labels do not authorize setting or changing priority labels.
+
+# Reviews by separate agents
+
+Each author agent does one whole PR, from the first commit until it merges, then ends. New work goes to a new agent. Keep PRs small: one lint, one spec chapter or one fix per PR. Split larger work into a stack of PRs that each build and pass on their own. If the author finds a bug while writing the PR, it fixes the bug in that PR, with a test, rather than only filing an issue.
+
+Each PR head gets a review from a fresh agent that has no earlier context, never from the author. The reviewer reads the full diff against the base and judges it skeptically, without trusting the PR body. When the change touches code or proofs, it relies on CI rather than building and testing itself, once the `pre-merge` workflow has run on the head: `gh pr checks <number>` shows its `pre-merge` check, which passes only if `lake build --wfail` and `lake test` (all but the mutants of Fren's own requirements, which CI checks on `main`) passed on the head merged into main. Check that the run is of the current head (`gh run list --workflow pre-merge --branch <branch> --json headSha,conclusion`), and treat a failed run as a blocking finding. A new front-end difference that `fren_fuzz_frontends` finds in a construct the PR touches is blocking too, as a failing test is, whether the corpus in `lake test` caught it or the reviewer's own fuzzing did. The reviewer may still build and run targeted probes, such as one test job, to check a suspicion. Where CI's binaries run, probe with them rather than building. `gh run list --workflow pre-merge --branch <branch> --json headSha,databaseId` gives the run of the head, and `gh run download <id> -n fren-<full head sha> -D /tmp/fren-<sha>` (or `-n fren_test-<full head sha>`) fetches the stripped binary that CI built from the head merged into main, with that merge commit's sha in `MERGE_SHA`. Probe in a checkout of exactly that commit (`git fetch origin <sha>`, then `git checkout --detach <sha>`), not of the head: once main has moved, the head's tests, specs and `.olean` files no longer match the binary. If GitHub no longer serves the commit, merge the head into main's commit as `MERGE_PARENTS` names them. `chmod +x` the binary if the download lost the executable bit. The artifacts are kept for 3 days. `fren_test`'s `ui`, `uiMisread`, `smtAgreement` and `leanTokens` jobs also need `heavy lake build Fren` in that checkout, then `lake env <dir>/fren_test --job ...`. Where they don't run, build as before. When CI hasn't run on the head, the reviewer builds and runs the tests itself. It posts one PR comment whose first line is exactly `Review of <full head sha>: no blocking issues` or `Review of <full head sha>: blocking issues`, followed by numbered findings, each marked [blocking] or [non-blocking].
+
+When a review has blocking findings, or the PR conflicts with main, the PR's author handles it:
+
+1. Fix every [blocking] finding. If you disagree with one, reply on the PR with your reasoning instead.
+2. Rebase onto main if needed, and run the checks.
+3. Push with `--force-with-lease`, after confirming the PR is still open.
+4. Post a comment that says what changed for each finding.
+
+When a review finds a bug, the review says why the spec did or didn't catch it. Was the property stated at all? Was it stated but checked only by tests, or checked over a bounded domain? Was the spec too abstract, or did it take the deciding fact as a precomputed input? The fix then strengthens the spec so that it would catch the bug, or the author's comment explains why no reasonable spec could. Check a reported bug before fixing it: the review of #385 showed that a "bug" an author filed was the intended behaviour.
+
+The new head then gets a fresh review. One exception: when the previous head's review was clean and the new head only rebases it, the author says so in a comment ("rebase only"), listing the resolutions. That head gets a light check instead of a full review. The checker reads `git range-diff <old base>..<old head> <new base>..<new head>`, confirms the patch is unchanged apart from the conflict resolutions, and judges those resolutions. It then checks that the `pre-merge` CI run of the new head passed, or, when CI hasn't run on it, runs `heavy lake build --wfail` and `heavy lake test`. It posts `Review of <full head sha>: no blocking issues (rebase only)` or `Review of <full head sha>: blocking issues`. Any change beyond the rebase gets a full review.
+
+A PR is ready to merge when the review of its current head says no blocking issues. Don't merge a head whose review hasn't been posted. `main` requires the `pre-merge` and `lint` checks to pass on a branch that is up to date with `main`. So the coordinator updates the PR's branch from `main` (`gh pr update-branch <number>`) and queues it with `gh pr merge <number> --squash --auto`. GitHub then merges it once both checks pass on the updated head. An update that only merges `main` into the branch leaves the PR's own patch unchanged and needs no new review. If the update conflicts, or the checks fail on the updated head, the author rebases or fixes it, and the new head gets a fresh review, or a rebase check if it only rebases. A check that fails because of a known flaky timeout is rerun on the same head, and that needs no new review. Fix the small non-blocking findings (wording, comments, a missing test, a small spec tightening) in the PR before it merges, in the same push as any blocking fix. Only substantive non-blocking findings, which are real work in their own right, become a follow-up issue labelled `note/follow-up`, and only once per PR. Smaller leftovers go as a checklist item on the area's tracking issue ("Area: <name> — queue"), not as a new issue. A new finding that belongs to an existing umbrella issue, such as the one for front-end differences, goes on that issue. Every open issue is a sub-issue of exactly one area's tracking issue, in queue order. Issues should not pile up faster than they are resolved: when an area has more than 5 open follow-ups, its next author works on those before starting new work. The fixer agent works only on these already-filed follow-up issues, one small PR each, and owns those PRs like any author.
+
+# Saving build work across worktrees
+
+Each worktree has its own `.lake`, and building one from scratch compiles every module and dependency. Seed a new worktree from one that is already built before you build it:
+
+```sh
+git worktree add <dir>/fren-<topic> -b <topic> origin/main
+cp -R <a built worktree>/.lake <dir>/fren-<topic>/.lake
+```
+
+Copy-on-write copies, where the filesystem supports them, are fast and use almost no disk. Lake's traces survive the copy, so Lake rebuilds only the modules that differ.
+
+Every worktree needs its own `.lake/packages`, never a symlink to another worktree's. Lake checks out each worktree's pinned lean-smt in its packages directory, so worktrees that share one fight over it: a branch that pins another revision checks it out under everyone else, and with an `insteadOf` rule for GitHub, Lake then reports "URL has changed", deletes the shared clone and clones it again. `cp -R` copies a symlink as a symlink, so check the source first, and seed from one whose `.lake/packages` is a directory, such as the main checkout's:
+
+```sh
+test -L <a built worktree>/.lake/packages && echo "symlink: seed from another worktree"
+```
+
+Reviewers and fixers reuse one worktree for each PR, checking out each new head, rather than adding a new worktree for each head. A built `.lake` takes about 2 GB, and the disk fills: when your PR merges, or you finish a review whose PR has merged, delete your worktree's `.lake` (`rm -rf <worktree>/.lake`), never another agent's.
+
+`lake build` and `lake test` each use every core. Run them, and other all-core commands such as `lun run --check`, mutation runs and fuzzers, through `heavy`, for example `heavy lake test`. It waits for a free one of a few machine-wide slots, so parallel agents don't pile up. Other agents' commands run on the same machine, so stop only your own processes, by pid. Never use `pkill -f` or `killall` with a pattern such as `lake build`, which also matches theirs. While iterating, run only the affected tests. Before pushing, run `heavy lake build --wfail` and the test jobs your change affects; CI's `pre-merge` runs the full `lake test` on the PR, and its result is the gate.
+
+To run one test job, build the driver with `lake build fren_test` — plain `lake build` does not build it, and a stale driver silently reproduces the results of whatever head it was built from — then run `lake env .lake/build/bin/fren_test --job NAME ARG...`, which prints the job's failures as JSON (`[]` if it passed). Examples: `--job ui test/ui/lints/names.fren` runs ui tests through both front ends; `--job snapshots`, `--job libraries` and `--job errorCodes` run those checks; `--job mutation 0 3 8` runs one slice of the mutants of Fren's own requirements. `lake build Reqs.Lint` (or any module) rebuilds just that module and what it imports.
+
+# Keeping the front ends together
+
+Both front ends must give the same messages for every spec. Two rules keep them so:
+
+- A decision both front ends make, such as which guards bound a quantifier, which expressions are a count, which checks an item has, or what a pass rests on, is one function in `Fren.Core` that both call. It is bound to the Req that states it with an `impl`. Each front end only extracts that function's inputs from its own representation. A deciding fact is never handed to a Req as a precomputed input when the Req could compute it.
+- A PR that changes how the front ends read or check a construct extends `fren_fuzz_frontends` to generate that construct in all its forms (every type, nesting, definition and comparison it can take). It then runs a few thousand specs, and fixes every difference the PR causes before pushing. Differences that predate the PR go to the issue that tracks them. `lake test` checks a fixed corpus of the fuzzer's seeds, so an extension must leave every existing seed's spec unchanged: make its random draws after all the existing ones, or from a generator of its own split off the seed. What it appends must not add an error, since an error stops every check of the spec: put deliberate errors in a mode or spec of their own. Never relist `knownDifferences` to absorb a changed corpus.
+
+Avoid stacking a PR on another that is still under review: base it on main, or wait until the lower PR is close to merging.
+

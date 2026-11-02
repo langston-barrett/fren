@@ -1,3 +1,7 @@
 -- `trivial_match`.
 pub enum E { A, B }
-pub proc c(e: E, x: Int): (y: Int) { ensure r: y = 2 * match e { _ => x + 1 } }
+pub proc c(e: E, x: Int): (y: Int) {
+    ensure r: y = 2 * match e {
+        _ => x + 1,
+    }
+}

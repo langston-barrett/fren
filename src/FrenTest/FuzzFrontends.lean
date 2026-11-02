@@ -3,6 +3,7 @@ import Fren
 import FrenCli.Run
 import FrenTest.Frontends
 import FrenTest.Messages
+import FrenTest.SpecTimeout
 import Lean.Elab.Frontend
 -- keep-sorted end
 
@@ -1330,6 +1331,81 @@ def goalHeads : R String := do
     out := out ++ s!"\n{undecidable}pub trait Zgr \{\n{body}}\n"
   return out
 
+/-- The bound names of a quantifier of `primedNames`, from position `k`:
+one or two, each with its position and type, `zi` or `zj` at position 0
+and the other at 1, as a list of binders and as written. -/
+def primedBinders (tys : Array String) (first : String) (k : Nat) : R (Array (String × Nat × String)) := do
+  let other := if first == "zi" then "zj" else "zi"
+  let names := if k == 0 then #[first, other] else #[other]
+  let n := if names.size == 2 && (← chance 50) then 2 else 1
+  return (names.extract 0 n).mapIdx fun i x => (x, k + i, tys[k + i]!)
+
+/-- A comparison of the bound name `x`, of type `t`, with a variable of
+`primedNames` of a type it compares with, or another bound name of
+`bound`, or a literal. -/
+def primedAtom (tys : Array String) (bound : Array (String × Nat × String)) (x : String) (t : String) : R String := do
+  let numeric (u : String) := u != "String"
+  let fits (u : String) := if t == "String" then u == "String" else numeric u
+  let vars := (#["zi", "zj"].flatMap fun n => #[0, 1].map fun k => (s!"{n}'{k}", tys[k]!)).filter (fits ·.2)
+  let others := (bound.filter fun (y, _, u) => y != x && fits u).map (·.1)
+  let rhs ← match ← below 4 with
+    | 0 | 1 => pure (← pick vars).1
+    | 2 => if others.isEmpty then pure (← pick vars).1 else pick others
+    | _ => if t == "String" then pure "\"a\"" else do pure (toString (← below 3))
+  let op ← if t == "String" then pick #["=", "!="] else pick #["=", "!=", "<", ">=", ">"]
+  return s!"{x} {op} {rhs}"
+
+/-- A quantifier of `primedNames` from position `k`, over bound names
+whose symbols were those of its variables: one or two bound names, under
+`forall` or `exists`, with or without a guard, and a quantifier within it
+at the next position, now and then. -/
+partial def primedQuant (tys : Array String) (first : String) (k : Nat) (outer : Array (String × Nat × String)) :
+    R String := do
+  let bs ← primedBinders tys first k
+  let all ← chance 50
+  let bound := outer ++ bs
+  let binders := " ".intercalate (bs.toList.map fun (x, _, t) => s!"({x}: {t})")
+  let atom : R String := do
+    let (x, _, t) ← pick bound
+    primedAtom tys bound x t
+  let inner ← if bs.size == 1 && k == 0 && (← chance 40) then primedQuant tys first 1 bound else atom
+  let body ← if ← chance 50 then pure s!"{← atom} {← pick #["and", "or"]} ({inner})" else pure inner
+  let guard ← if all && (← chance 50) then pure s!"when {← atom}, " else pure ""
+  return s!"{if all then "forall" else "exists"} {binders}, {guard}{body}"
+
+/-- Variables named as the symbols of bound names and of second copies
+were, `x'k` and `x'`, beside quantifiers whose bound names are `x` at
+position `k`, of each type that is not listed, in expectations,
+guarantees and a defined output, and a `det` output beside a variable
+named as its copy was; and an enumerated procedure, whose variable `zm'`
+was read as the copy of its `zm` (`cli::query_symbols`). -/
+def primedNames : R String := do
+  let tys ← #[0, 1].mapM fun _ => pick #["Int", "Nat", "String"]
+  let first ← pick #["zi", "zj"]
+  let params := ", ".intercalate ((#["zi", "zj"].flatMap fun n => #[0, 1].map fun k => s!"{n}'{k}: {tys[k]!}").toList)
+  let mut body := ""
+  for k in [0:(← below 3) + 1] do
+    body := body ++ s!"    expect zpe{k}: {← primedQuant tys first 0 #[]}\n"
+  if ← chance 50 then body := body ++ s!"    ensure zpq: {← primedQuant tys first 0 #[]}\n"
+  let mut results := #[]
+  if ← chance 50 then
+    results := results.push "zd?"
+    body := body ++ s!"    out zd? := {← primedQuant tys first 0 #[]}\n"
+  if ← chance 60 then
+    results := results ++ #["det zy: Int", "zy': Int"]
+    let num := (#["zi'0", "zi'1", "zj'0", "zj'1"].zip (tys ++ tys)).filterMap fun (v, t) => if t != "String" then some v else none
+    let e ← if num.isEmpty then do pure (toString (← below 3)) else pick num
+    body := body ++ (← pick #[s!"    ensure zya: zy = zy' + {e}\n",
+      s!"    ensure zya: zy' = {e}\n    ensure zyb: zy = zy'\n", s!"    ensure zya: zy = {e}\n"])
+  let resultList := if results.isEmpty then "" else s!": ({", ".intercalate results.toList})"
+  let mut out := s!"set_option fren.lint.undecidable \"allow\" in\npub proc zpn({params}){resultList} \{\n{body}}\n"
+  if ← chance 50 then
+    let rel ← pick #["zm' = Zpe::A", "zm' != Zpe::B", "zm = Zpf::C"]
+    let exp ← pick #["when zo?, zm' = Zpe::A", "when zo?, zm' = Zpe::B", "zo? or zm = Zpf::D"]
+    out := out ++ "\npub enum Zpe { A, B }\npub enum Zpf { C, D, F }\n\nset_option fren.evidence \"enumerated\" in\n" ++
+      s!"pub proc zpk(zm': Zpe, zm: Zpf): (det zo?) \{\n    ensure r: zo? iff {rel}\n    expect e: {exp}\n}\n"
+  return out
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1556,6 +1632,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- Goals with leading binders of each form, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← goalHeads)
+  -- Variables named as bound names' and copies' symbols were, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← primedNames)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
@@ -2423,6 +2502,9 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
   try IO.FS.removeFile path catch _ => pure ()
   return failures
 
+/-- How long a spec runs, in milliseconds, before it is reported as slow. -/
+def slowMs : Nat := 20000
+
 /-- What a worker found on one spec, one JSON object per line of the run's
 results file, so that a worker that crashes loses nothing. -/
 structure Outcome where
@@ -2438,6 +2520,10 @@ structure Outcome where
   /-- For each of `signatures`, the issue of its known kind
   (`knownIssue?`), or 0 if it is of none. -/
   issues : Array Nat := #[]
+  /-- How long the spec took, in milliseconds, and how much of that was in
+  solver queries that ended at their time limit (`Fren.Core.solverTimeoutMs`). -/
+  ms : Nat := 0
+  solverTimeoutMs : Nat := 0
   deriving ToJson, FromJson
 
 /-- A run's work files, named after the driver's process, so that runs
@@ -2449,6 +2535,23 @@ structure Run where
 def Run.results (r : Run) : System.FilePath := r.dir / s!"results-{r.id}.jsonl"
 def Run.progress (r : Run) : System.FilePath := r.dir / s!"current-{r.id}.seed"
 def Run.spec (r : Run) : System.FilePath := r.dir / s!"current-{r.id}.fren"
+/-- The worker's `Fren.Core.solverTimeoutMs`, which it writes as it grows. -/
+def Run.solver (r : Run) : System.FilePath := r.dir / s!"current-{r.id}.solver"
+
+/-- Writes the worker's `Fren.Core.solverTimeoutMs` to `Run.solver` whenever
+it grows, until cancelled, on a thread of its own, so that it is written
+while a spec's check runs, or hangs. The file is replaced whole, so that
+the driver never reads half of it. -/
+def reportSolverTime (r : Run) : IO Unit := do
+  let mut last := 0
+  let tmp := r.solver.addExtension "tmp"
+  while !(← IO.checkCanceled) do
+    let ms ← Fren.Core.solverTimeoutMs
+    if ms != last then
+      IO.FS.writeFile tmp (toString ms)
+      IO.FS.rename tmp r.solver
+      last := ms
+    IO.sleep 100
 
 def record (r : Run) (o : Outcome) : IO Unit := do
   let h ← IO.FS.Handle.mk r.results .append
@@ -2459,15 +2562,19 @@ def record (r : Run) (o : Outcome) : IO Unit := do
 writing each one's outcome to the results file. -/
 unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
   let env ← loadFren
+  let reporter ← IO.asTask (prio := .dedicated) (reportSolverTime run)
   for i in [0:count] do
     let s := seed + i
-    IO.FS.writeFile run.progress (toString s)
+    -- The spec, and the time in queries that timed out before it.
+    let solver0 ← Fren.Core.solverTimeoutMs
+    IO.FS.writeFile run.progress s!"{s}\n{solver0}"
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
     let ran ← runFrontends env run.spec text
     let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
     let elapsed := (← IO.monoMsNow) - t0
-    if elapsed > 20000 then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s"
+    let timedOut := (← Fren.Core.solverTimeoutMs) - solver0
+    if elapsed > slowMs then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s, {timedOut / 1000}s of it in queries that timed out"
     let issues := found.map fun f => (knownIssue? mode (sharedStaticErrorLines ran.cli ran.hosted) found f).getD 0
     let status := if found.isEmpty then "ok" else if flaky then "inconclusive"
       else if mode.avoidKnown && issues.all (· != 0) then "known" else "differ"
@@ -2483,9 +2590,11 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
       IO.eprintln s!"seed {s}: front ends differ{why}, written to {file}"
       for f in found.extract 0 4 do IO.eprintln s!"  {f}"
     record run { seed := s, status, flags := flags mode, errors := errs.toList.eraseDups.toArray,
-                 signatures := found.map signature, issues }
+                 signatures := found.map signature, issues, ms := elapsed, solverTimeoutMs := timedOut }
     -- Between specs, a crash is no spec's.
     IO.FS.writeFile run.progress ""
+  IO.cancel reporter
+  let _ ← IO.wait reporter
   return 0
 
 /-- Counts `x` in a tally. -/
@@ -2527,9 +2636,10 @@ def Outcome.kinds (o : Outcome) : String :=
     (if issue == 0 then "**new**: " else s!"#{issue}: ") ++ mdCell g)
 
 /-- A Markdown report of a run's outcomes, for the job's summary: how many
-specs of each outcome; each one that fails it, with its kinds; and each
-known kind, with its issue, how many specs had it, and their seeds. The
-specs are named as the run writes them. -/
+specs of each outcome; each one that fails it, with its kinds; each
+known kind, with its issue, how many specs had it, and their seeds; and
+each slow spec (`slowMs`), with how long it took in queries that timed
+out. The specs are named as the run writes them. -/
 def report (outcomes : Array Outcome) : String := Id.run do
   let n (st : String) := (outcomes.filter (·.status == st)).size
   let mut out := s!"{outcomes.size} specs: {n "differ"} differ in a kind that is not known, {n "crash"} crashed and \
@@ -2561,6 +2671,15 @@ def report (outcomes : Array Outcome) : String := Id.run do
   unless inconclusive.isEmpty do
     let seeds := ", ".intercalate (inconclusive.toList.map (toString ·.seed))
     out := out ++ s!"\nOnly in inconclusive results: seeds {seeds}.\n"
+  -- The slow specs, slowest first, with the time in queries that timed out,
+  -- which the time limit leaves out (`SpecTimeout.overdue`).
+  let slow := outcomes.filter (·.ms > slowMs) |>.qsort (·.ms > ·.ms)
+  unless slow.isEmpty do
+    out := out ++ "\n#### Slow specs\n\n| Seed | Flags | Outcome | Time | In queries that timed out |\n|---|---|---|---|---|\n"
+    for o in slow do
+      let fl := o.flags.trimAscii.toString
+      let fl := if fl.isEmpty then "" else s!"`{fl}`"
+      out := out ++ s!"| {o.seed} | {fl} | {o.status} | {o.ms / 1000} s | {o.solverTimeoutMs / 1000} s |\n"
   return out
 
 section
@@ -2579,6 +2698,11 @@ private def df : Outcome :=
   "", "#### Known kinds", "", "| Kind | Issue | Specs | Seeds |", "|---|---|---|---|",
   "| k | #493 | 2 | 5, 7 |", ""]
 #guard !kn.fails && df.fails
+-- A slow spec is listed, with the time in queries that timed out.
+#guard ((report #[{ seed := 3, status := "ok", ms := 41000, solverTimeoutMs := 40000 },
+  { seed := 4, status := "ok", ms := 19000 }]).splitOn "\n").drop 2 == [
+  "#### Slow specs", "", "| Seed | Flags | Outcome | Time | In queries that timed out |", "|---|---|---|---|---|",
+  "| 3 |  | ok | 41 s | 40 s |", ""]
 end
 
 /-- The outcomes of every run whose results are in `dir`. -/
@@ -2589,11 +2713,15 @@ def outcomesIn (dir : System.FilePath) : IO (Array Outcome) := do
       out := out ++ parseOutcomes (← IO.FS.readFile e.path)
   return out
 
-/-- The most specs that one worker checks: a worker slows down as it
-checks more, until, on a CI machine with four of them, specs that take
-seconds take more than 20 s after some 150 specs each, and some time out,
-so a fresh worker takes over after these. -/
-def workerSpecs : Nat := 100
+/-- The most specs that one worker checks, a workaround for #650: a
+worker slows down as it checks more, since the hosted front end's memory
+grows by some 90 MB a spec (on macOS; the binary's stays level), so that
+four workers of 100 specs would need more than a CI runner's 16 GB. On
+CI, a worker's 97th and 98th specs, which take under a second on their
+own, took 22 s and more than 30 s (seeds 1202247 and 1202248). A fresh
+worker, which takes a few seconds to start, takes over after these. Once
+#650 is fixed, this is to be raised, or the replacement dropped. -/
+def workerSpecs : Nat := 25
 
 /-- Runs workers until every seed is checked. The solver can abort the
 process (a failed assertion in cvc5), so specs run in a worker, and a
@@ -2613,25 +2741,33 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
     let batch := min (seed + count - next) workerSpecs
     let args := #["--worker", run.id, "--count", toString batch, "--seed", toString next, "--out", dir]
       ++ mode.args
+    for f in [run.solver, run.solver.addExtension "tmp"] do
+      try IO.FS.removeFile f catch _ => pure ()
     let child ← IO.Process.spawn { cmd := (← IO.appPath).toString, args, stdin := .null, stdout := .inherit, stderr := .inherit }
-    -- Wait, and stop the worker if one spec takes too long.
+    -- Wait, and stop the worker if one spec takes too long, leaving out its
+    -- queries that timed out (`SpecTimeout.overdue`).
     let mut current := ""
     let mut since ← IO.monoMsNow
+    let mut solver := 0
     let mut code? : Option UInt32 := none
     let mut timedOut := false
+    let mut spent := (0, 0)
     repeat
       if let some c ← child.tryWait then code? := some c; break
       let now ← IO.monoMsNow
       let cur := (← (IO.FS.readFile run.progress).toBaseIO).toOption.getD current
+      solver := (← (IO.FS.readFile run.solver).toBaseIO).toOption.bind (·.trimAscii.toString.toNat?) |>.getD solver
+      let atStart := (((current.splitOn "\n")[1]?).bind (·.toNat?)).getD 0
       if cur != current then current := cur; since := now
-      else if now - since > limit * 1000 && !current.isEmpty then
+      else if FrenTest.SpecTimeout.overdue limit (now - since) (solver - atStart) && !current.isEmpty then
         child.kill
         let _ ← child.wait
         timedOut := true
+        spent := (now - since, solver - atStart)
         break
       IO.sleep 200
     if code? == some 0 then next := next + batch; continue
-    let some failed := (← IO.FS.readFile run.progress).trimAscii.toString.toNat?
+    let some failed := ((← IO.FS.readFile run.progress).splitOn "\n").head!.trimAscii.toString.toNat?
       | let done := (← outcomesOf run).filter (fun o => next ≤ o.seed && o.seed < seed + count)
         let last? := done.foldl (fun m o => some (max (m.getD o.seed) o.seed)) none
         let some last := last?
@@ -2640,15 +2776,16 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
         IO.eprintln s!"seed {last + 1}: the worker exited ({code?.getD 0}) between specs; resuming"
         next := last + 1
         continue
-    let what := if timedOut then s!"took more than {limit}s" else s!"crashed (exit {code?.getD 0})"
+    let what := if timedOut then s!"took more than {limit}s, leaving out {spent.2 / 1000}s in queries that timed out"
+      else s!"crashed (exit {code?.getD 0})"
     IO.eprintln s!"seed {failed}: the worker {what}"
     let text : String := mode.spec failed
     let kind := if timedOut then "timeout" else "crash"
     IO.FS.writeFile (dir / s!"{kind}-seed{failed}.fren") (s!"-- fren_fuzz_frontends{flags mode} --seed {failed}: {what}\n" ++ text)
-    record run { seed := failed, status := kind, flags := flags mode }
+    record run { seed := failed, status := kind, flags := flags mode, ms := spent.1, solverTimeoutMs := spent.2 }
     next := failed + 1
   let outcomes ← outcomesOf run
-  for f in [run.progress, run.spec] do
+  for f in [run.progress, run.spec, run.solver, run.solver.addExtension "tmp"] do
     try IO.FS.removeFile f catch _ => pure ()
   let mut sigs := #[]
   let mut codes := #[]
@@ -2664,7 +2801,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   IO.eprintln s!"fren_fuzz_frontends: {outcomes.size} specs in {((← IO.monoMsNow) - start) / 1000}s, {n "differ"} where \
     the front ends differ, {n "inconclusive"} more only in inconclusive results, \
     {n "known"} more only in known kinds, {n "crash"} crashed, \
-    {n "timeout"} took more than {limit}s (results in {run.results})"
+    {n "timeout"} took more than {limit}s outside queries that timed out (results in {run.results})"
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=

@@ -2,7 +2,8 @@
 
 The test driver's rules are stated here as the module `testing`, and
 `Impls.Testing` proves the driver's code meets them, for any jobs and any
-messages: which jobs each shard runs ([Shards](#shards)), when a ui test
+messages: which jobs each shard runs ([Shards](#shards)), when the
+front-end fuzzer stops a spec ([Fuzzer time limit](#fuzzer-time-limit)), when a ui test
 passes ([Expectations](#expectations)), and, trusted to Lake, when a
 test's result is that of the files it reads ([Fresh
 results](#fresh-results)).
@@ -275,10 +276,15 @@ pub mod testing
   which time limits may explain, are counted apart. Specs run in worker
   processes, so a crash of the solver is recorded against its spec, and a
   spec that runs longer than `--spec-timeout` (default 30 s; a spec takes
-  well under a second) is stopped and recorded as a timeout. Crashes and
+  well under a second), leaving out its solver queries that reached their
+  time limit ([Fuzzer time limit](#fuzzer-time-limit)), is stopped and
+  recorded as a timeout. Crashes and
   timeouts are findings, like differences: the run then exits nonzero. A
-  fresh worker takes over every 100 specs, since a worker slows down as it
-  checks more (on CI, past some 150 specs, until specs time out). A
+  fresh worker takes over every 25 specs, a workaround for #650, to be
+  raised or dropped once it is fixed: a worker slows down as it checks
+  more, since the hosted front end's memory grows with each spec, and on
+  CI, with four workers, a worker's 97th and 98th specs, which take under
+  a second on their own, took 22 s and more than 30 s. A
   worker that dies while checking no spec is blamed on none. Each run's
   work files are its own, but the findings are named by seed, so runs with
   overlapping seeds in one `DIR` overwrite each other's. `--avoid-known`
@@ -296,7 +302,8 @@ pub mod testing
   recorded in the run's results (`results-ID.jsonl`), and `--report DIR`
   gives every result in `DIR` as Markdown: the specs that fail, each with
   its kinds, new or known, and each known kind, with its issue and the
-  seeds of the specs that have it. A
+  seeds of the specs that have it, and each spec that took more than 20 s,
+  with how long it spent in queries that reached their time limit. A
   kind is the difference without its line, names and values, as the
   fuzzer's summary gives it (`signature`). Of its numbers, only those that
   place it or count what the spec happens to have are values: a line, a
@@ -464,6 +471,85 @@ pub proc shard(
 
     expect one_shard: when n = 1 and runs?, k = 0
     expect others_kept: unless skip?, runs?
+}
+```
+
+## Fuzzer time limit
+
+The front-end fuzzer stops a spec that runs longer than `--spec-timeout`
+and records it as a timeout, a finding. A solver query that reaches its
+time limit (10 s by default, in both front ends) is slow by design, and
+a spec whose checks leave three or more undecided that way, one after
+another, can take more than 30 s on any machine, with nothing wrong
+(seed 1198158 has four). So the time that counts leaves out the
+wall-clock time that queries which ended at their time limit cover. Each
+front end records it as it goes (`Fren.Core.solverCredit`), and the
+worker reports it while a spec runs.
+
+Queries run in parallel, in both front ends, so what is left out is not
+the sum of their durations, which would leave out 40 s for four queries
+that time out together in 10 s, and so hide 30 s of anything else. Each
+query that times out leaves out only its part after the latest end of
+the queries left out before it (`testing::solver_credit`): every part
+left out is within its query and after every earlier part, whatever
+order the queries end in, so the parts never overlap, and the time left
+out is at most the length of the union of the queries, and never more
+than the wall time from the first one's start. A query counts from its
+start, but for at most its own time limit and a second
+(`Fren.Core.slackMs`) before it ended: what a front end does before the
+solver starts, such as lean-smt's translation of the goal in Lean, still
+counts, though the binary times only cvc5's `checkSat`.
+
+What still counts is a hang: a loop of Fren's own, in the evaluator or
+anywhere else, and a query that runs on past its time limit, which
+reports nothing until it ends. A query that is still running counts in
+full. A hang that runs at the same time as a query that times out, in
+another check or the other front end's, is hidden while they overlap, by
+at most that query's time (its time limit and the slack): what is left
+out is wall time, which the hang shares. The spec is stopped once the time since it started, less what was
+left out since then (`timed_out`), is more than the limit
+(`testing::fuzz_overdue`).
+
+```fren
+pub proc solver_credit(
+    credit: Nat,                -- the milliseconds left out so far
+    covered: Nat,               -- the latest end of a query left out so far
+    start: Nat,                 -- when a query that ended at its time limit started, or its limit and the slack before it ended, if later
+    stop: Nat,                  -- when it ended
+    first: Nat,                 -- when the first query left out started
+): (det credit_after: Nat, det covered_after: Nat) {
+    assume times: first <= start <= stop
+
+    ensure new_time: credit_after = credit + (if stop > start.max(covered) then stop - start.max(covered) else 0)
+    ensure covers: covered_after = covered.max(stop)
+
+    -- What a query leaves out lies within it...
+    expect within_query: credit_after <= credit + (stop - start)
+    -- ...and after all that was left out before, so the parts never overlap.
+    expect after_covered: credit_after <= credit + (if stop > covered then stop - covered else 0)
+    -- So, by induction over the queries from nothing left out, with
+    -- `within_query`, `after_covered` and `covers`, the time left out is at
+    -- most the length of the union of the queries, and never more than the
+    -- wall time since the first one started.
+    expect within_wall_time: when credit + first <= covered.max(first), credit_after + first <= covered_after.max(first)
+    -- Four queries at once leave out the time of one.
+    expect parallel: when credit = 10000 and covered = 10000 and start = 0 and stop = 10000, credit_after = 10000
+    -- The 5 s between two queries are not left out, so a hang there counts.
+    expect gap: when credit = 10000 and covered = 10000 and start = 15000 and stop = 25000,
+        credit_after = 20000 and covered_after - credit_after = 5000
+    cover overlapping: start < covered < stop
+}
+
+pub proc fuzz_overdue(
+    limit: Nat,                 -- `--spec-timeout`, in seconds
+    elapsed: Nat,               -- milliseconds since the spec started
+    timed_out: Nat,             -- how much `solver_credit` left out since then
+): (det overdue?) {
+    ensure rule: overdue? iff elapsed > limit * 1000 + timed_out
+
+    expect no_timeouts: when timed_out = 0, overdue? iff elapsed > limit * 1000
+    expect left_out: when elapsed <= timed_out, not overdue?
+    cover hang: overdue? and timed_out > 0
 }
 ```
 

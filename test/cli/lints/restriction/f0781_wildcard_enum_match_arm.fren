@@ -4,5 +4,8 @@ set_option fren.lint.wildcard_enum_match_arm "warn"
 enum Shape { Circle(Int), Rect(Int, Int), Dot }
 
 proc area(shape: Shape): (size: Int) {
-    ensure rule: size = match shape { Shape::Circle(radius) => radius, _ => 1 }
+    ensure rule: size = match shape {
+        Shape::Circle(radius) => radius,
+        _ => 1,
+    }
 }

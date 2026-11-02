@@ -228,7 +228,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   -- Each slot's values, as the evaluator has them.
   let flat := sp.flatVars ec
   let tyOf (x : Name) : VTy :=
-    let base := if x.isStr && x.getString!.endsWith "'" then Name.mkStr x.getPrefix (x.getString!.dropEnd 1).toString else x
+    let base := (Fren.Core.unprimed? x).getD x
     match (flat.find? (·.name == base)) with
     | some v => v.ty
     | none => ((sp.funs.find? x).map (·.2)).getD .bool
