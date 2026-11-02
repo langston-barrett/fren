@@ -814,8 +814,10 @@ def State.recordOf? (s : State) (ty : Expr) : Option RecordInfo := ty.getAppFn.c
 /-- A term elaborated alone for its type (`typeOf`), with what its
 elaboration reads besides the declarations: the local variables in scope,
 the current namespace and the open namespaces. The same term in the same
-scope has the same type. Its syntax is compared without its positions
-(`Syntax.structEq`), which only an error message would read. -/
+scope has the same type, unless that type has a metavariable, which a
+caller may assign: `typeOf` keeps only the types without one. Its syntax
+is compared without its positions (`Syntax.structEq`), which only an error
+message would read. -/
 structure TypedTerm where
   fvars : Array FVarId
   currNamespace : Name
@@ -833,6 +835,8 @@ partial def syntaxHash : Syntax → UInt64
   | .atom _ v => hash v
   | .ident _ _ v _ => hash v
 
+-- Without `openDecls`, which `List OpenDecl` has no hash for: keys that are
+-- equal still hash alike, and keys in one command rarely differ only there.
 instance : Hashable TypedTerm := ⟨fun k => mixHash (mixHash (hash k.fvars) (hash k.currNamespace)) (syntaxHash k.term)⟩
 
 /-- Per-file state; not visible to importing files. -/
@@ -1003,8 +1007,9 @@ structure LocalState where
   staticErrors : Array (String × Nat × Nat) := #[]
   /-- How many errors `#fren_check` has logged, which are not static. -/
   checkErrors : Nat := 0
-  /-- The types that `typeOf` has found in the command being elaborated,
-  which `recordingErrors` starts with none, each with its term. -/
+  /-- The types without metavariables that `typeOf` has found in the
+  command being elaborated, which `recordingErrors` starts with none, each
+  with its term. -/
   types : Std.HashMap TypedTerm Expr := {}
   deriving Inhabited
 

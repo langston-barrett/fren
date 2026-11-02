@@ -1,0 +1,9 @@
+-- `[]` as a sequence method's argument has a type with a metavariable,
+-- `Seq<?>`, which each check of it assigns: once `Seq<Int>` for `q`, it is
+-- still `Seq<?>` for `r`, in the same procedure.
+proc p(q: Seq<Int>, r: Seq<Bool>): (a?, b?, c?) {
+    ensure e1: a? iff q.starts_with?([])  --~ warning: every sequence starts with `[]`
+    ensure e2: b? iff r.starts_with?([])  --~ warning: every sequence starts with `[]`
+    ensure e3: c? iff q.starts_with?([]) and r.starts_with?([])  --~ warning: every sequence starts with `[]`
+    --~^ warning: every sequence starts with `[]`
+}
