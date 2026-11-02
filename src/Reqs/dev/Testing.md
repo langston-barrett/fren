@@ -503,7 +503,10 @@ counts, though the binary times only cvc5's `checkSat`.
 What still counts is a hang: a loop of Fren's own, in the evaluator or
 anywhere else, and a query that runs on past its time limit, which
 reports nothing until it ends. A query that is still running counts in
-full. The spec is stopped once the time since it started, less what was
+full. A hang that runs at the same time as a query that times out, in
+another check or the other front end's, is hidden while they overlap, by
+at most that query's time (its time limit and the slack): what is left
+out is wall time, which the hang shares. The spec is stopped once the time since it started, less what was
 left out since then (`timed_out`), is more than the limit
 (`testing::fuzz_overdue`).
 
@@ -524,11 +527,16 @@ pub proc solver_credit(
     expect within_query: credit_after <= credit + (stop - start)
     -- ...and after all that was left out before, so the parts never overlap.
     expect after_covered: credit_after <= credit + (if stop > covered then stop - covered else 0)
-    -- So the time left out is never more than the wall time since the first
-    -- query started, step after step, from nothing left out.
+    -- So, by induction over the queries from nothing left out, with
+    -- `within_query`, `after_covered` and `covers`, the time left out is at
+    -- most the length of the union of the queries, and never more than the
+    -- wall time since the first one started.
     expect within_wall_time: when credit + first <= covered.max(first), credit_after + first <= covered_after.max(first)
     -- Four queries at once leave out the time of one.
     expect parallel: when credit = 10000 and covered = 10000 and start = 0 and stop = 10000, credit_after = 10000
+    -- The 5 s between two queries are not left out, so a hang there counts.
+    expect gap: when credit = 10000 and covered = 10000 and start = 15000 and stop = 25000,
+        credit_after = 20000 and covered_after - credit_after = 5000
     cover overlapping: start < covered < stop
 }
 
