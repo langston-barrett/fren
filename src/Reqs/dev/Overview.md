@@ -33,5 +33,12 @@ cargo install --locked --git https://github.com/rust-lang/reference \
   --rev 3989fe91f1a601b51684a582ad17b2503f221787 mdbook-spec
 ```
 
-The `book` workflow builds the book on every pull request and on `main`,
-and publishes nothing.
+The book's page "Rules and their requirements" is written when it is
+built, by `scripts/rules_report.py`, from the test driver,
+`.lake/build/bin/fren_test`: run `lake build fren_test` before `mdbook
+build`, or the page is a placeholder that says so. A driver built from an
+older checkout writes that checkout's report.
+
+The `book` job builds the book on every pull request, in `pre-merge`, and
+on `main`, in `lean ci`, and publishes nothing. It builds no Lean: it runs
+the test driver that its run's `lake test` built, which shard 0 uploads.

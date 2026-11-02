@@ -1,6 +1,8 @@
 -- Quantifiers over finite types: `forall` is the conjunction of its
 -- instances, and `exists` their disjunction.
 -- fren-covers: lang::quantifier, lang::quantified_type, lang::quantifier_size
+--@ reference: quantifier.meaning.expansion
+--@ reference: quantifier.type.listed
 
 enum Method { Len, Card, Rev }
 

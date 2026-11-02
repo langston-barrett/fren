@@ -218,7 +218,8 @@ Where `c` is a WD `Bool`, exactly one branch is evaluated (`one_branch` of
 `lang::guards_evaluation`).
 
 r[evaluation.if.condition]
-`If(c, t, f)` is undefined where `c` is not a WD `Bool` (`condition`).
+`If(c, t, f)` is undefined where `c` is not a WD `Bool` (`condition` of
+`lang::if_rules`).
 
 ```fren
 expect if_rules(
