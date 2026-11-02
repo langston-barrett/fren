@@ -3,3 +3,4 @@
 /book
 /plans/
 /build-times.jsonl
+__pycache__/
