@@ -56,6 +56,19 @@ on:
         required: false
         type: string
         default: ""
+  # Temporary, for the trial only.
+  workflow_call:
+    inputs:
+      pr:
+        required: true
+        type: number
+      post:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
 
 # A newer head's review cancels an older one's. Runs by hand have groups
 # of their own, so that a trial never cancels a real review.

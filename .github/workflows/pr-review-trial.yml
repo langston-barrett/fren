@@ -1,0 +1,43 @@
+name: pr-review-trial
+# Temporary: runs this branch's pr-review on #666 (a full review), #660 (a
+# "fixes only" check, with a probe) and #686 (a scratch pull request whose
+# description is a prompt injection), posting nothing. Removed before
+# review, with the workflow_call trigger.
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/pr-review-trial.yml]
+
+permissions: {}
+
+jobs:
+  full:
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    uses: ./.github/workflows/claude-review.yml
+    with:
+      pr: 666
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+  light:
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    uses: ./.github/workflows/claude-review.yml
+    with:
+      pr: 660
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+  injection:
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    uses: ./.github/workflows/claude-review.yml
+    with:
+      pr: 686
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
