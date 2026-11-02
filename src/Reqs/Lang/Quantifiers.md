@@ -521,9 +521,10 @@ values.
 
 r[quantifier.guard.name.model] lang::name_alone
 `name_alone` is stated over the type model of [Types](Types.md#types),
-from the bound name that an operand reads and the fields read from it. Its
-result is the `alone` of the operand's `GuardSide`
-(`quantifier.guard.domain.inputs`).
+from the position of the bound name that an operand reads, or -1 if it
+reads none, its type and the underlying type of each newtype it is, and
+the fields read from it, outermost last. Its result is the `alone` of the
+operand's `GuardSide` (`quantifier.guard.domain.inputs`).
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -573,8 +574,10 @@ has no lower bound; otherwise none.
 
 r[quantifier.guard.domain.inputs] lang::guard_domain
 `guard_domain` is computed from the conjuncts as written, each side of each
-as a `GuardSide`. The bound names and the conjuncts are named by their
-positions, from 0.
+as a `GuardSide`: the position of the bound name that the side is, written
+alone, or -1 if it is none, and the positions of the bound names that it
+names. The bound names and the conjuncts are named by their positions,
+from 0.
 
 ```fren
 set_option fren.lint.undecidable "allow" in

@@ -91,6 +91,7 @@ quantifier.guard.free
 quantifier.guard.operand
 quantifier.guard.strict
 quantifier.guard.name.members
+quantifier.guard.name.model -- partly formalized: not that its result is the `alone` of the operand's `GuardSide`
 quantifier.guard.range.other
 quantifier.guard.meaning
 quantifier.guard.evaluation

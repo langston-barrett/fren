@@ -496,6 +496,38 @@ def linkPaths (s : String) : Except String (Array String) := do
 #guard linkPaths "lang::p::{a,b}" == .error "`lang::p::{` has no `}`"
 #guard linkPaths "lang::p (`x`)" == .error "` (`x`)` follows the links"
 
+/-- The code spans of a rule's text that are within parentheses, outside
+code spans: a code span opens with a run of backticks and closes with the
+next run of as many. -/
+def codeSpansInParens (s : String) : Array String := Id.run do
+  let cs := s.toList.toArray
+  let runAt (i : Nat) : Nat := ((cs.extract i cs.size).toList.takeWhile (· == '`')).length
+  let mut depth := 0
+  let mut out := #[]
+  let mut i := 0
+  while i < cs.size do
+    match cs[i]! with
+    | '(' => depth := depth + 1; i := i + 1
+    | ')' => depth := depth - 1; i := i + 1
+    | '`' =>
+      let n := runAt i
+      let mut j := i + n
+      let mut close := none
+      while j < cs.size && close.isNone do
+        if cs[j]! == '`' then
+          if runAt j == n then close := some j
+          j := j + runAt j
+        else j := j + 1
+      match close with
+      | some k =>
+        if depth > 0 then out := out.push (String.ofList (cs.extract (i + n) k).toList).trimAscii.toString
+        i := k + n
+      | none => i := i + n
+    | _ => i := i + 1
+  return out
+
+#guard codeSpansInParens "a `x::y` (b `p::q`, ``r`s``) [`m::n`](M.md) (`c`)" == #["p::q", "r`s", "c"]
+
 /-- Items for the `#guard`s below, each with its clauses. -/
 def guardItems (is : List (String × List String)) : Array ReqItem :=
   is.toArray.map fun (path, cs) => { path, file := "c", line := 100, clauses := cs.toArray }
@@ -524,7 +556,13 @@ def reqsOfChapter (md : String) (items : Array ReqItem) (rules : Array Rule) :
       | .error e =>
         problems := problems.push s!"{here}: the links of the rule `{r.id}` are not a list of paths, as `lang::p::\{c, d}, lang::q`: {e}"
         pure #[]
-    for q in paths do
+    for q in paths, k in [0:paths.size] do
+      if q == p then
+        problems := problems.push s!"{here}: the rule `{r.id}` links `{q}`, which its name links already: remove the link"
+        continue
+      if (paths.extract 0 k).contains q then
+        problems := problems.push s!"{here}: the rule `{r.id}` links `{q}` twice"
+        continue
       -- An item, or a clause: its item's path and its name.
       let segs := q.splitOn "::"
       match find q, find ("::".intercalate segs.dropLast) with
@@ -533,10 +571,18 @@ def reqsOfChapter (md : String) (items : Array ReqItem) (rules : Array Rule) :
         if i.clauses.contains segs.getLast! then links := links.push (i, #[segs.getLast!])
         else problems := problems.push s!"{here}: the rule `{r.id}` links `{q}`, but `{segs.getLast!}` is no clause of `{i.path}`"
       | none, none => problems := problems.push s!"{here}: the rule `{r.id}` links `{q}`, which is no item of the reference, nor a clause of one"
-    -- One entry for each item, with the clauses of all of its links.
+    -- The prose links nothing: a requirement named in parentheses is a
+    -- marker of the old format (#620), which reads as a link and is none.
+    for c in codeSpansInParens r.text do
+      let segs := c.splitOn "::"
+      let named := (find c).isSome || (find ("::".intercalate segs.dropLast)).any (·.clauses.contains segs.getLast!)
+      if segs.length > 1 && named then
+        problems := problems.push s!"{here}: the rule `{r.id}` names `{c}` in parentheses in its prose: link it on its identifier's line, `r[{r.id}] {c}`, and remove it from the prose"
+    -- One entry for each item, with the clauses of all of its links; a link
+    -- to the whole item, no clauses, takes in its clauses.
     let merged := links.foldl (init := #[]) fun (acc : Array (ReqItem × Array String)) (i, cs) =>
       match acc.findIdx? (·.1.path == i.path) with
-      | some k => acc.modify k fun (j, ds) => (j, ds ++ cs.filter (!ds.contains ·))
+      | some k => acc.modify k fun (j, ds) => (j, if ds.isEmpty || cs.isEmpty then #[] else ds ++ cs.filter (!ds.contains ·))
       | none => acc.push (i, cs)
     out := out.push (r, merged)
   return (out, problems)
@@ -559,6 +605,17 @@ def guardLinks (items : List (String × List String)) (links : List String) :
     "c:2: the rule `r.r1` links `lang::if_rule`, which is no item of the reference, nor a clause of one",
     "c:3: the rule `r.r2` links `if_rules::condition`, which is no item of the reference, nor a clause of one",
     "c:4: the links of the rule `r.r3` are not a list of paths, as `lang::p::{c, d}, lang::q`: `lang::if_rules::{` has no `}`"]
+-- A link that repeats another, or the rule's own name, fails; a link to
+-- the whole item keeps it whole beside a link to its clause.
+#guard guardLinks [("lang::p", ["a", "b"]), ("r::r1", [])] ["lang::p, lang::p", "lang::p::{a, a}, r::r1", "lang::p, lang::p::a", "lang::p::a, lang::p"] ==
+  (#[#[("lang::p", #[])], #[("r::r1", #[]), ("lang::p", #["a"])], #[("lang::p", #[])], #[("lang::p", #[])]],
+   #["c:1: the rule `r.r0` links `lang::p` twice", "c:2: the rule `r.r1` links `lang::p::a` twice",
+     "c:2: the rule `r.r1` links `r::r1`, which its name links already: remove the link"])
+-- A requirement named in parentheses in the prose fails; other code spans,
+-- and a path outside parentheses, do not.
+#guard (reqsOfChapter "c" (guardItems [("lang::p", ["a"])])
+    #[{ id := "r.r0", line := 1, label := "", text := "As `lang::p` says (`lang::p::a`; `Shape::Circle`, `a`, `true`).", links := "" }]).2 ==
+  #["c:1: the rule `r.r0` names `lang::p::a` in parentheses in its prose: link it on its identifier's line, `r[r.r0] lang::p::a`, and remove it from the prose"]
 -- A rule named as a requirement or its clause needs no link.
 #guard (reqsOfChapter "c" (guardItems [("r::r0", []), ("r", ["r1"])])
     #[{ id := "r.r0", line := 1, label := "", text := "", links := "" }, { id := "r.r1", line := 2, label := "", text := "", links := "" }]).1.map
@@ -764,8 +821,9 @@ or **Dynamic semantics** has a requirement, or is listed in
 `unformalizedFile`, and not both unless the line says `partlyMark`
 (`isPartly`); a listed rule is in its chapter's section, and says why it
 has none once its chapter's Interlock step is done; the links of each
-rule's identifier line are well formed, and every item and clause that
-they name exists; each requirement that
+rule's identifier line are well formed, name nothing twice nor what the
+rule's name links, and every item and clause that they name exists; no
+rule's prose names a requirement in parentheses; each requirement that
 formalizes a rule and is declared in its chapter is declared after it;
 each item of a module named as one of its chapter's constructs, whose
 name is shaped as a rule identifier, is named as a rule, or, if it has

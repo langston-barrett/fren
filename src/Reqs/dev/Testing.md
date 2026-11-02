@@ -61,7 +61,9 @@ pub mod testing
   section is not "(Interlock pending)", and a rule that is only partly
   formalized is listed too, saying what is missing once its chapter's
   section is done; the links on each rule's identifier line are well
-  formed, and every item and clause that they name exists; a block that
+  formed, name nothing twice nor what the rule's name links, and every
+  item and clause that they name exists; no rule's prose names a
+  requirement in parentheses; a block that
   formalizes a rule of its chapter follows it; each item of a module named as one of its
   chapter's constructs has a rule of its name, or, if it has clauses, each
   of them does, where the name is shaped as a rule identifier; and every

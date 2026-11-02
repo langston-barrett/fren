@@ -105,7 +105,10 @@ quote, so it needs no label.
   and the clause's name (`lang::operator_rules::list_concatenation`). A
   path may end in `::{...}`, which stands for its prefix followed by each
   of the links between the braces, separated by `, `, as in a Rust `use`
-  declaration: `lang::p::{a, b}` is `lang::p::a, lang::p::b`.
+  declaration: `lang::p::{a, b}` is `lang::p::a, lang::p::b`. Braces nest,
+  as in `lang::{p::{a, b}, q}`, and a name may end in `?`, as
+  `lang::respects?` does. A rule links nothing twice, nor the requirement
+  that its own name links.
 - mdbook-spec reads only `r[...]` alone on its line, and renders it as an
   anchor. The book's preprocessor `scripts/rules_report.py` first moves
   the links to a line of their own, rendered small, at the start of the
@@ -156,7 +159,7 @@ quote, so it needs no label.
   `r[evaluation.and.false] lang::lazy_rules::{and_false, and_unevaluated}`.
   Every link names an item or a clause that exists. A code span in a
   rule's prose is never a link, and the prose names no requirement in
-  parentheses.
+  parentheses, which `ruleReqs` checks.
 - An item of a chapter in a module named as one of the chapter's
   constructs, such as `quantifier`, has a rule of its name, or, if it has
   clauses, each of them does, where the name is shaped as a rule

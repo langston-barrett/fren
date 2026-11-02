@@ -125,8 +125,9 @@ r[evaluation.operator.concatenation] lang::operator_rules::{binary_defined, list
 elements of the first, then those of the second.
 
 r[evaluation.operator.membership] lang::operator_rules::{binary_defined, membership}
-`in` applies where its right operand is a list, and says whether the left
-operand's value is one of its elements.
+`in` applies, to any left operand, exactly where its right operand is a
+list, and says whether the left operand's value is one of the list's
+elements.
 
 r[evaluation.operator.equality] lang::operator_rules::equality
 `=` applies to any two values, and says whether they are equal.
