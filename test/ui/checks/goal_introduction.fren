@@ -41,10 +41,11 @@ proc bounded(n: Int): (ok?) {
     expect wrong: forall (x: Int), x > n  --~ error: expectation `goal_introduction::bounded::wrong` does not hold
 }
 
--- A bound name whose constant's symbol the query already has: `i`, the
--- first bound name, is `i'0` to the solver, which is also the variable's
--- symbol, free in `r`. Its constant is `i'0#goal0` instead
--- (`cli::goal_constant_name`).
+-- A variable named as a bound name's symbol once was: `i`, the first bound
+-- name, was `i'0` to the solver, the variable's symbol, free in `r`, and
+-- its constant was renamed. It is `i#0` now (`cli::query_symbols`), which no
+-- variable can be, so the two stay apart without a renaming, and no spec
+-- reaches the renaming of `cli::goal_constant_name` (`test/coverage.txt`).
 set_option fren.lint.undecidable "allow" in
 proc renamed(i'0: Int): (y: Int) {
     ensure r: y = i'0 + 1
