@@ -272,7 +272,8 @@ extern_lib glibc_c23 pkg := do
 -- so the library is its modules.
 --
 -- Unlike `Fren.Elab`, `FrenCli.Elab` keeps `-O3`, although clang takes
--- 23–30 s on its C code, most of it on `elabExpr`. At `-O0` (3 s), the
+-- some 40 s on its C code (on a Mac), spread over its functions since no
+-- function elaborates every kind of item (`FrenCli.elabItem`). At `-O0` (3 s), the
 -- binary elaborates 40–50% slower, and `lake test`, whose mutation jobs
 -- elaborate Fren's own requirements once for each mutant, took about 25%
 -- more CPU; `-O1 -fno-inline` (12 s) still costs a mutation job 10%.
