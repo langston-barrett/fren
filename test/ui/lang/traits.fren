@@ -175,6 +175,39 @@ trait Lawless {
     }
 }
 
+-- A call whose procedure's assumption fails is that call's error alone:
+-- the vacuity under the laws asks of what the call guarantees where the
+-- assumption holds, as the item's other checks do, so it is not also a
+-- contradiction, and the trait reports as its twin over a contract does.
+proc bump(x: Int): (y: Int) {
+    assume nonneg: x >= 0
+    ensure up: y = x + 1
+}
+
+trait Called {
+    fn v(Self): Int
+
+    law one(): level(true) = 1
+
+    expect call_bad(s: Self) {  --~ warning: unused variable `s`
+        --~^ warning: the realizability of `traits::Called::call_bad` rests on the assumption `traits::bump::nonneg` of call `b`, which did not pass
+        assume big: level(true) > 0
+        call b := bump(level(true) - 5)  --~ error: the assumption `nonneg` of `traits::bump` may not hold for call `traits::Called::call_bad::b`
+        expect c: b.y = 2  --~ warning: `traits::Called::call_bad::c` rests on the assumption `traits::bump::nonneg` of call `b`, which did not pass
+    }
+}
+
+type T
+
+fn level_of(b?): (r: Int) { ensure one: not b? or r = 1 }
+
+expect call_bad_twin(s: T) {  --~ warning: unused variable `s`
+    --~^ warning: the realizability of `traits::call_bad_twin` rests on the assumption `traits::bump::nonneg` of call `b`, which did not pass
+    assume big: level_of(true) > 0
+    call b := bump(level_of(true) - 5)  --~ error: the assumption `nonneg` of `traits::bump` may not hold for call `traits::call_bad_twin::b`
+    expect c: b.y = 2  --~ warning: `traits::call_bad_twin::c` rests on the assumption `traits::bump::nonneg` of call `b`, which did not pass
+}
+
 -- `law` is a name like any other outside a trait.
 fn law(Int): Int
---@ summary: 24 passed, 6 failed, 7 inconclusive, 0 redundant
+--@ summary: 29 passed, 8 failed, 11 inconclusive, 0 redundant

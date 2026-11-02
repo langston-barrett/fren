@@ -296,9 +296,8 @@ structure CheckResult where
   has none. -/
   applies : Array Name := #[]
   /-- The trait whose laws its queries have among their hypotheses, which
-  no check of the item showed can hold (`check::law_premise`), and whether
-  the item has assumptions or calls, which they would hold together with. -/
-  restsOnLaws? : Option (Name × Bool) := none
+  no check of the item showed can hold (`check::law_premise`). -/
+  restsOnLaws? : Option Name := none
   deriving Inhabited
 
 /-- The behaviour that a report shows of the procedure (`view::Shown`): a
@@ -734,10 +733,32 @@ realizability's, both of whose queries ask of the item's own assumptions
 and calls alone. -/
 def CheckKind.queryHasLaws (k : CheckKind) : Bool := k != .realizable
 
-/-- `c` as the checks of kind `k` see it: without its laws where their
-queries do not have them (`CheckKind.queryHasLaws`). -/
+/-- What a check's queries have among their hypotheses
+(`check::query_hypotheses`): the item's trait's laws, its assumptions, and
+of each call, its bindings and the called procedure's behaviour, with the
+called procedure's assumptions or only what follows from them. -/
+structure HypParts where
+  laws : Bool
+  /-- Each call's procedure's assumptions as hypotheses, not only as the
+  premise of its guarantees. -/
+  callAssumptions : Bool
+  deriving Inhabited, DecidableEq, Repr
+
+/-- What the queries of a check of kind `k` have among their hypotheses,
+or, `lawful`, those of an item's vacuity under its trait's laws
+(`check::query_hypotheses`): every check's queries have the laws but
+realizability's, and each call's procedure's assumptions; the vacuity
+under the laws has the laws, and of a call only what its procedure
+guarantees where its assumptions hold, which the call checks apart
+(`checkInst`), as the item's realizability does not ask them either. -/
+def hypParts (k : CheckKind) (lawful : Bool) : HypParts :=
+  if lawful then { laws := true, callAssumptions := false }
+  else { laws := k.queryHasLaws, callAssumptions := true }
+
+/-- The item as the queries of a check of kind `k` see it: without its
+trait's laws where `hypParts` leaves them out. -/
 def Comp.forKind (c : Comp F) (k : CheckKind) : Comp F :=
-  if k.queryHasLaws then c else { c with laws := #[] }
+  if (hypParts k false).laws then c else { c with laws := #[] }
 
 /-- The laws, the assumptions, then what each call contributes (`I`). -/
 def Comp.hyps (c : Comp F) (b : Backend m F V) (upTo : Nat := c.insts.size) : Array (Name × F) :=
@@ -1705,7 +1726,13 @@ def checkLawful (c : Comp F) : m CheckResult := do
   let result (verdict : Verdict) (detail : Detail := .none) : CheckResult :=
     { kind := .vacuity, comp := c.path, prop? := none, verdict, detail, global := true }
   let base := c.defEqs .vacuity
-  let hyps := c.hyps b
+  let parts := hypParts .vacuity true
+  -- Of each call, its bindings, and its procedure's behaviour where its
+  -- assumptions hold (`HypParts.callAssumptions`).
+  let call (i : Inst F) : Name × F :=
+    if parts.callAssumptions then (i.name, b.conj #[i.bindings, i.behaviour])
+    else (i.name, b.conj #[i.bindings, b.notF (b.conj #[b.conj (i.assumes.map (·.2)), b.notF i.behaviour])])
+  let hyps := (if parts.laws then c.laws else #[]) ++ c.assumes ++ c.insts.map call
   match ← b.query (base ++ hyps) b.falseF false with
   | .sat _ => return result .pass
   | .unsat => return result .fail (.vacuousAssumptions (← minimize b base hyps b.falseF))
@@ -1729,19 +1756,17 @@ def checkCompLawful (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Arr
 
 /-- `rs`, of an item whose trait has laws, with the first result at each
 constraint that rests on the laws (`lawPremise`) marked, for the one
-message there that says so (`lawsMsg`), with whether the item has
-assumptions or calls; none is marked where the item's vacuity
+message there that says so (`lawsMsg`); none is marked where the item's vacuity
 under the laws was asked. -/
 def withLaws (c : Comp F) (rs : Array CheckResult) : Array CheckResult := Id.run do
   if c.laws.isEmpty then return rs
   let asked := rs.any (·.isLawful)
-  let own := !c.assumes.isEmpty || !c.insts.isEmpty
   let mut seen : Array (Option Name) := #[]
   let mut out := #[]
   for r in rs do
     if !r.isLawful && lawPremise r.kind r.verdict true asked && !seen.contains r.prop? then
       seen := seen.push r.prop?
-      out := out.push { r with restsOnLaws? := some (c.lawsOf, own) }
+      out := out.push { r with restsOnLaws? := some c.lawsOf }
     else out := out.push r
   return out
 
@@ -2282,14 +2307,7 @@ def memberMessages (r : CheckResult) : Array Message := Id.run do
 consistency is not checked (`F0665`, `check::law_premise`): laws that
 contradict each other would give that verdict whatever the constraint
 says. -/
-def lawsMsg (what : String) (t : Name) (own : Bool) : Msg :=
-  if own then
-    { code? := some "F0665"
-      headline := s!"{what} rests on the laws of `{showComp t}` holding together with its assumptions and calls, which this run did not check"
-      label? := some "rests on unchecked laws"
-      notes := #[s!"note: its verdict comes from the laws of `{showComp t}` and the item's assumptions and calls together; if no interpretation meets them all, it would be the same whatever it says",
-        "note: the check of their holding together runs with the item's vacuity checks"] }
-  else
+def lawsMsg (what : String) (t : Name) : Msg :=
     { code? := some "F0665"
       headline := s!"{what} rests on the laws of `{showComp t}`, whose consistency is not checked"
       label? := some "rests on unchecked laws"
@@ -2300,11 +2318,11 @@ def lawsMsg (what : String) (t : Name) (own : Bool) : Msg :=
 its constraint, or none. -/
 def lawsMessages (r : CheckResult) : Array Message :=
   match r.restsOnLaws? with
-  | some (t, own) =>
+  | some t =>
     let subject := match r.prop? with
       | some n => s!"`{showComp (r.comp ++ n)}`"
       | none => s!"`{showComp r.comp}`"
-    #[{ severity := .warning, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?, msg := lawsMsg subject t own }]
+    #[{ severity := .warning, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?, msg := lawsMsg subject t }]
   | none => #[]
 
 /-- The messages of one result, which both front ends report. The result

@@ -264,7 +264,12 @@ pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: Che
 r[trait.expect.lawful]
 An expectation of a trait with laws, and with assumptions or calls, has a
 vacuity check of its own: whether its assumptions and calls can hold
-together with the laws. Where they cannot, it is an error (`F0602`). Where
+together with the laws. A call contributes to it as to the item's other
+checks: its bindings, and what its procedure guarantees where the
+procedure's assumptions hold. Whether those assumptions hold is the call's
+own check (`F0604`), so a call whose assumptions fail is not also a
+contradiction here (`check::query_hypotheses`). Where the assumptions and
+calls cannot hold with the laws, it is an error (`F0602`). Where
 the solver does not decide it, it is a warning (`F0608`). Its other checks
 rest on this check as they rest on its realizability: where it does not
 pass, a pass of a proof check is inconclusive (`F0664`), and a witness
@@ -274,13 +279,12 @@ Laws that contradict each other fail it too.
 r[trait.expect.laws-unchecked]
 A verdict of an expectation of a trait with laws that comes from an
 `unsat` query, such as a pass of an expectation or a failure of a cover
-goal, rests on the laws. Where the expectation has no vacuity check under
-the laws, the verdict rests on what no check settles: on the laws'
-consistency, which Fren does not check yet (#594), where it has no
-assumptions or calls, and on their holding together with its assumptions
-and calls where it has some and the run leaves out vacuity checks. Either
-way, its constraint says so once, whatever its other checks give (`F0665`,
-`check::law_premise`). A verdict that comes from a model, such as a
+goal, rests on the laws. Where the expectation has no assumptions or
+calls, and so no vacuity check under the laws, the verdict rests on what
+no check settles, the laws' consistency, which Fren does not check yet
+(#594), and its constraint says so once, whatever its other checks give
+(`F0665`, `check::law_premise`). One with assumptions or calls always has
+that check, since its checks are always the solver's (`F0215`). A verdict that comes from a model, such as a
 counterexample, rests on nothing more, since the model meets the laws.
 Realizability's queries have no laws (`check::query_hypotheses`).
 

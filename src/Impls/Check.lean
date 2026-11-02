@@ -789,18 +789,18 @@ impl law_premise: check::law_premise for (k : CheckKind) (v : Verdict) (l a : Bo
   cases k <;> cases v <;> cases l <;> cases a <;> simp [fren_spec, Fren.Core.lawPremise, Fren.Core.fromUnsat,
     Fren.Core.CheckKind.passFromUnsat, Fren.Core.CheckKind.queryHasLaws, toCheckKind, toVerdict]
 
-/-- An item with one law, for `check::query_hypotheses`. -/
-def lawfulComp : Fren.Core.Comp Unit :=
-  { path := .anonymous, vars := #[], assumes := #[], reqs := #[], expects := #[], triggers := #[], laws := #[(`law, ())] }
-
--- For every kind of check, whether the item that each of its checks sees,
--- `Comp.forKind`, which `checkComp` gives it, still has the laws.
-impl query_hypotheses: check::query_hypotheses for (k : CheckKind) {
+-- For every kind of check, and the vacuity under the laws, what both
+-- front ends' queries have among their hypotheses (`Core.hypParts`, which
+-- `checkLawful` reads, and whose `laws` is `CheckKind.queryHasLaws`, which
+-- `Comp.forKind` reads for every other check).
+impl query_hypotheses: check::query_hypotheses for (k : CheckKind) (l : Bool) {
   kind := toCheckKind k,
-  laws? := !(lawfulComp.forKind k).laws.isEmpty,
+  lawful? := l,
+  laws? := (Fren.Core.hypParts k l).laws,
+  call_assumptions? := (Fren.Core.hypParts k l).callAssumptions,
 } by
-  intro k _
-  cases k <;> simp [fren_spec, lawfulComp, Fren.Core.Comp.forKind, Fren.Core.CheckKind.queryHasLaws, toCheckKind]
+  intro k l _
+  cases k <;> cases l <;> simp [fren_spec, Fren.Core.hypParts, Fren.Core.CheckKind.queryHasLaws, toCheckKind]
 
 impl copied: check::copied for (s : Fren.Core.Symbol) {
   symbol := toSymbol s,

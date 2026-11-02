@@ -497,18 +497,35 @@ pub proc severity(kind: Kind, verdict: Verdict): (det level: Severity) {
 ```
 
 `view::inconclusive_reported` states that the summary counts no
-inconclusive result in silence: every undecided result of a check, of any
-kind, about a constraint or about the whole item, as the vacuity of an
-expectation of a trait under the laws is, has a warning among its messages:
+inconclusive result in silence: an undecided result of a check, whatever
+its kind, about a constraint or about the whole item, as the vacuity of an
+expectation of a trait under the laws is, has a warning among its
+messages, whatever made it undecided, but for one cause. A result whose
+solver model Fren's semantics refutes has instead the internal error that
+reports the refuted model (see [Check results](#check-results)), and no
+warning. Neither the kind nor the place changes the messages' severity,
+so the Req is over the cause alone; `src/FrenTest/InconclusiveReported.lean`
+runs `Fren.Core.messages` over every kind, place and cause:
 
 ```fren
--- The same for every kind, and either place, as it should be.
-set_option fren.lint.unused_variables "allow" in
-pub proc inconclusive_reported(
-    kind: Kind,
-    whole?,                  -- about the whole item, not one constraint
-): (det warned?) {
-    ensure rule: warned?
+-- Why a check is undecided.
+pub enum Undecided {
+    Unknown,                 -- the solver's `unknown`, or no answer in time
+    Quantifier,              -- a quantifier enumeration did not decide up to its bound
+    OutOfRange,              -- an index out of range, which enumeration reads as `[][0]`
+    Induction,               -- another postcondition of a simultaneous induction did not pass
+    RecursiveContracts,      -- a counterexample that only recursive functions' contracts allow
+    Elements,                -- an expansion over sequences' elements too large, or refuted
+    Refuted,                 -- a model that Fren's semantics refutes
+}
+
+use self::Undecided::Refuted
+
+pub proc inconclusive_reported(why: Undecided): (det warned?, det errored?) {
+    ensure warned_rule: warned? iff why != Refuted
+    ensure errored_rule: errored? iff why = Refuted
+
+    expect reported: warned? or errored?
 }
 ```
 

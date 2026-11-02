@@ -951,19 +951,31 @@ A check of an [expectation of a trait](Lang/Traits.md#expectations) has
 the trait's laws among the hypotheses of its queries, as it has the
 contracts of the uninterpreted functions that its queries apply.
 `check::query_hypotheses` states which hypotheses the queries of each kind
-of check have: the laws, the item's assumptions and its calls. Every check
-but realizability has all three. Realizability asks of the assumptions
-alone, and then of the assumptions and calls, without the laws:
+of check have: the laws, the item's assumptions, and of each call its
+bindings and its procedure's behaviour, with its procedure's assumptions
+among the hypotheses or only as the premise of its guarantees. Every check
+but realizability has the laws, and every check has each call's procedure's
+assumptions. Realizability asks of the assumptions alone, and then of the
+assumptions and calls, without the laws. The vacuity of an expectation of a
+trait under the laws (below, `lawful?`) has the laws, and of a call only
+what its procedure guarantees where its assumptions hold: whether those
+hold is the call's own check (`F0604`), which the checks that rest on it
+say, so a failed one is not a second error:
 
 ```fren
 -- Whether the queries of a check of this kind have the laws.
 pub fn query_laws?(kind: Kind) := kind != Kind::Realizability
 
-pub proc query_hypotheses(kind: Kind): (det laws?) {
-    ensure rule: laws? iff query_laws?(kind)
+pub proc query_hypotheses(
+    kind: Kind,
+    lawful?,                 -- the vacuity of an expectation of a trait under its laws
+): (det laws?, det call_assumptions?) {
+    ensure laws_rule: laws? iff (lawful? or query_laws?(kind))
+    ensure calls_rule: call_assumptions? iff not lawful?
 
-    expect realizability_alone: when kind = Kind::Realizability, not laws?
+    expect realizability_alone: when kind = Kind::Realizability and not lawful?, not laws?
     expect expectations: when kind = Kind::Expectation, laws?
+    expect lawful_guarantees: when lawful?, laws? and not call_assumptions?
 }
 ```
 
@@ -989,12 +1001,13 @@ uninterpreted functions with contracts are:
   on it is inconclusive (`F0664`), as where an item's realizability is not
   decided.
 
-An item that has no such check rests on the laws in a way that nothing
-settles. Each of its constraints whose verdict comes from an `unsat` query
-says so, once (`F0665`): where it has no assumptions or calls, that the
-laws' consistency is not checked yet (#594), and where it has some, as in
-a run that leaves out vacuity checks, that their holding together with the
-laws was not checked. `check::law_premise` states which verdicts carry
+An item that has no such check, one without assumptions or calls, rests
+on the laws in a way that nothing settles: on their consistency, which
+Fren does not check yet (#594). Each of its constraints whose verdict
+comes from an `unsat` query says so, once (`F0665`). An item with
+assumptions or calls always has the check: its checks are the solver's,
+since `fren.evidence` cannot be set otherwise for an expectation of a
+trait (`F0215`). `check::law_premise` states which verdicts carry
 `F0665`:
 
 ```fren
