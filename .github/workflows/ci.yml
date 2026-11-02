@@ -25,9 +25,11 @@ permissions:
   contents: read
 
 # Each job of a push to `main` waits for the same job of the run before it,
-# rather than cancelling it, so that pushes in quick succession still save
-# a `.lake`, and shard 0 compares with the query cache that the shard 0
-# before it saved. It does not wait for the whole run before it: the build
+# rather than cancelling it: of pushes in quick succession, none cancels a
+# running job and the latest saves a `.lake`, though GitHub cancels a job
+# that is still pending when a later one of its group is queued, so that a
+# run in between may be cancelled, in part or whole. Shard 0 compares with
+# the query cache that the shard 0 before it saved. It does not wait for the whole run before it: the build
 # job saves the `.lake` from which pull requests start as soon as it has
 # built, rather than once the slowest job of the run before it has finished
 # (`Reqs/dev/Testing#continuous-integration`).
@@ -56,7 +58,7 @@ jobs:
     # (`Examples`) and the `fren` binary; warnings, including
     # inconclusive checks and untraced requirements, fail it.
     - id: build
-      run: lake build --wfail
+      run: touch "$RUNNER_TEMP/build-start" && lake build --wfail
     # As soon as it is built, for the pull requests that start from it. Lake
     # saves no output of a module that failed, so a failed build's `.lake`
     # would serve as well, but a pull request that restores it would
@@ -66,6 +68,9 @@ jobs:
       with:
         path: .lake
         key: ${{ steps.lake.outputs.key }}
+    # No output that the build wrote names the checkout's directory, as in
+    # `pre-merge` (`Reqs/dev/Testing#shared-builds`).
+    - run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
     # A few mutants of Fren's own requirements on each push, a different few
     # each run (the seed is the run's number), so that over many pushes the
     # runs cover them: all of them, over 3000, are too many for one run.

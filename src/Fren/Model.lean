@@ -325,9 +325,11 @@ def portableName (root file : String) : String :=
   else file
 
 /-- The name of `file` that the environment keeps, in a definition's
-`source?`: relative to the directory that Lean runs in, which Lake makes
-the package's root, so that a module's `.olean` names no directory of the
-worktree that built it, and is the same wherever it was built
+`source?`: relative to the directory that Lean runs in, so that a module's
+`.olean` names no directory of the worktree that built it, and is the same
+wherever it was built. Lake runs Lean in the directory that Lake was
+started in, which is the package's root for `lake build` run there; under
+`lake -d ROOT` started elsewhere, the names stay absolute
 (`Reqs/dev/Testing#shared-builds`). -/
 def keptFileName (file : String) : IO String :=
   return portableName (← IO.currentDir).toString file

@@ -629,26 +629,47 @@ messages from the traces, reports a module taken from the cache as one
 whose checks it cannot tell ran. `pre-merge` stays the gate: each of CI's
 machines starts with an empty cache.
 
-The cache's files are read-only, and each build links its outputs to them,
-so deleting a worktree's `.lake` leaves the cache whole, and `lake cache
-clean` empties the cache without breaking any worktree's build. Clean it
-only while no build runs: a build that finds a step's key in the cache
-without its outputs warns, which fails `--wfail`, and runs the step.
+The cache only grows. Each build adds the outputs of every step that it
+runs, several hundred MB to some 1 GB for a head that changes `Fren` or
+`FrenCore`, and its `.lake/build` links to them, read-only. So deleting a
+worktree's `.lake` breaks nothing but frees almost nothing either: the
+cache keeps the outputs, and frees them only when pruned.
+`scripts/lake_cache.py size` prints how much the cache holds, and how much
+of it no worktree links to. `heavy python3 scripts/lake_cache.py prune`
+deletes the outputs that no worktree links to and that no build has
+linked for 7 days (`--days`), and the cache's entries that name them,
+safely while other agents build: entries first, so that a build that
+finds an entry gone runs the step, and then, after a grace of a minute,
+each output that still has no other link. A build that finds an entry
+whose outputs are gone warns, which fails `--wfail`, and runs the step;
+pruning deletes such entries too. Run it under `heavy`, when the disk is
+short or once a week. `lake cache clean`, which empties the cache at once,
+is safe only while no build runs.
 
 A step's outputs must then not depend on where it ran, or a worktree would
 get another's. Lean names a module's source by its absolute path, and a
 definition's `source?` (`Fren.DefinedInfo`) keeps the name of the file
 that declares it, for the messages about it. It keeps the name relative to
-the directory that Lean runs in, which Lake makes the package's root
-(`Fren.keptFileName`, which `testing::portable_name` states). A message
-about the definition names the current file as Lean names it, if the
-definition is in it, and the other file by that relative name otherwise
-(`Fren.shownFileName`). The `relocatable` job checks that no `.olean` or
-`.ilean` file of the build names the worktree's directory, which it would
-if anything else kept an absolute path. A test shard checks only the
-outputs of `main`'s build and of its own, so a pull request that adds such
-a path in a module that only the build job rebuilds fails `main`'s next
-run, not its own.
+the directory that Lean runs in (`Fren.keptFileName`, which
+`testing::portable_name` states, with that directory as its input). Lake
+runs Lean in the directory that Lake was started in, which is the
+package's root for `lake build` and `lake test` run there, as `heavy` runs
+them and CI does. A build started elsewhere, as `lake -d ROOT build`, keeps
+absolute names, and its outputs, which another worktree may take from the
+cache, then differ only in the names that messages about other files'
+definitions show. A message about the definition names the current file as
+Lean names it, if the definition is in it, and the other file by the kept
+name otherwise (`Fren.shownFileName`).
+
+`scripts/relocatable.py` checks that no `.olean` or `.ilean` file that a
+build wrote names the worktree's directory, which it would if anything else
+kept an absolute path. The build jobs of `pre-merge` and `lean ci` run it
+after `lake build --wfail`, over the outputs written after the build began:
+the others are `main`'s, checked by the build that wrote them, or stale
+files of modules that the build no longer has. It checks Fren's own
+outputs, not the dependencies' in `.lake/packages`: lean-smt's shared
+libraries keep the absolute install name of the directory that built them,
+which nothing reads, since Lean loads each of them by its path.
 
 ```fren
 set_option fren.lint.undecidable "allow" in

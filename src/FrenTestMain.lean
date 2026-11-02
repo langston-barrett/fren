@@ -1697,35 +1697,6 @@ def libraries : IO (Array String) := do
           todo := todo.push path
   return failures
 
-/-- Whether `needle`, which is not empty, occurs in `hay`. -/
-def bytesContain (hay needle : ByteArray) : Bool := Id.run do
-  let first := needle[0]!
-  for i in [0:hay.size + 1 - needle.size] do
-    if hay[i]! == first then
-      let mut j := 1
-      while j < needle.size && hay[i + j]! == needle[j]! do j := j + 1
-      if j == needle.size then return true
-  return false
-
-#guard bytesContain "a/tmp/w/b".toUTF8 "/tmp/w".toUTF8
-#guard !bytesContain "a/tmp/x/b".toUTF8 "/tmp/w".toUTF8
-#guard bytesContain "/tmp/w".toUTF8 "/tmp/w".toUTF8
-#guard !bytesContain "/tmp".toUTF8 "/tmp/w".toUTF8
-
-/-- No `.olean` or `.ilean` file of the build names the directory of the
-worktree that it is in, so that the build is the same wherever it was
-built, and another worktree can take its outputs from the artifact cache
-(`Reqs/dev/Testing#shared-builds`). -/
-def relocatable : IO (Array String) := do
-  let root := (← IO.currentDir).toString
-  let dir : FilePath := ".lake" / "build" / "lib" / "lean"
-  let mut failures := #[]
-  for f in (← dir.walkDir).qsort (·.toString < ·.toString) do
-    unless f.extension == some "olean" || f.extension == some "ilean" do continue
-    if bytesContain (← IO.FS.readBinFile f) (root ++ "/").toUTF8 then
-      failures := failures.push s!"{f}: names the worktree's directory `{root}`"
-  return failures
-
 /-! ## Mutants
 
 The properties of `fren mutate`'s mutants (`Reqs/dev/Testing`), over the
@@ -2430,7 +2401,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["relocatable"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["queryCache"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["panicGuard"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
@@ -2473,7 +2444,6 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["formatting"] => formatting
   | ["fixing"] => fixing
   | ["libraries"] => libraries
-  | ["relocatable"] => relocatable
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
