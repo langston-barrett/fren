@@ -43,7 +43,11 @@ matches none (`mayMatchCtorSound`), which `Ex.dispatch` rests on, and
 deciding whether a pattern matches before binding it gives the frame that
 matching gives (`matchSplitAgrees`), which `Ex.eval`'s arms rest on, and
 the union, intersection and difference of two sets are those that
-`Val.setOf` gives (`setOpsAgree`), which `binV` rests on. Last,
+`Val.setOf` gives (`setOpsAgree`), which `binV` rests on. The operators
+are also evaluated alone, on operands of every type, in an interpretation
+that gives the primitive operations their usual meaning, and the binary
+knows their values exactly where `lang::applies?` and
+`lang::unary_applies?` say that they apply (`operatorsAgree`). Last,
 expressions of the semantics alone are evaluated under interpretations
 that differ in the functions that they do not mention. Both lemmas are
 proved in `Impls/Semantics.lean`; these tests cross-check the proofs'
@@ -808,8 +812,188 @@ def setOpsAgree : Array String := Id.run do
   if long < 300 then failures := failures.push s!"only {long} pairs of sets had a member printed over 120 characters"
   return failures
 
+/-- A random value of an operand for `operatorsAgree`: a `Bool`, an
+integer, `0` often, a string, a value of `E`, `A(k)` or `B`, or of the
+record `R(Int, Bool)`, or a sequence of any of these, sequences among
+them, so that every operator meets operands of every type, nested ones
+too. -/
+partial def genOperand (d : Nat := 2) : R Val := do
+  match ← next (if d == 0 then 6 else 7) with
+  | 0 => return .bool ((← next 2) == 0)
+  | 1 => return .int 0
+  | 2 => return .int (← small)
+  | 3 => return .str (← pick #["", "a", "ab"])
+  | 4 => if (← next 2) == 0 then return .ctor `E 0 #[.int (← small)] else return .ctor `E 1 #[]
+  | 5 => return .ctor `R 0 #[.int (← small), .bool ((← next 2) == 0)]
+  | _ =>
+    -- Of integers often, so that the sequences share elements.
+    let ints := (← next 2) == 0
+    return .seq (← (List.range (← next 3)).toArray.mapM fun _ => do
+      if ints then return Val.int ((← next 3 : Nat) : Int) else genOperand (d - 1))
+
+/-- An operand: its value, or `none` for one that is not well-defined, an
+index out of range, as the binary and the semantics have it. -/
+def operand (v : Option Val) : Ex × lang.Expr String :=
+  match v, v.bind toValue with
+  | some v, some w => (.lit v, .Literal w)
+  | _, _ => (.index (.seqLit #[]) (.lit (.int 0)) 0 (FrenCli.Eval.unspecifiedFn .int), .Index .Nil (.Literal (.Integer 0)))
+
+/-- A random operand: `genOperand`'s, an integer often, so that each
+arithmetic operator is often well-defined, or one that is not
+well-defined. -/
+def genOperandOrUndefined : R (Option Val) := do
+  match ← next 8 with
+  | 0 => return none
+  | 1 | 2 | 3 => return some (.int (← small))
+  | _ => return some (← genOperand)
+
+/-- A binary operator of `binV` as the semantics has it, if it is one of
+`lang::BinaryOp`'s. -/
+def binaryOp? : Op → Option lang.BinaryOp
+  | .eq => some .Eq | .lt => some .Lt | .le => some .Le | .add => some .Add | .sub => some .Sub
+  | .mul => some .Mul | .div => some .Div | .mod => some .Mod | .concat => some .Concat | .member => some .In
+  | _ => none
+
+/-- The semantics' primitive operations at `v` and `w`, with their usual
+meaning (`semantics.interp.primitives.meaning`): `Int.mul`, `Int.ediv`,
+`Int.emod` and `String.append`. -/
+def primitivesAt : Option Val → Option Val → lang.Graph
+  | some (.int x), some (.int y) =>
+    let args : lang.Value := .Cons (.Integer x) (.Cons (.Integer y) .Nil)
+    .Point "*" args (.Integer (x * y)) (.Point "div" args (.Integer (Int.ediv x y))
+      (.Point "mod" args (.Integer (Int.emod x y)) .Empty))
+  | some (.str x), some (.str y) => .Point "++" (.Cons (.Text x) (.Cons (.Text y) .Nil)) (.Text (x ++ y)) .Empty
+  | _, _ => .Empty
+
+/-- Every way of giving each unknown truth a value. -/
+def completions : List (Option Bool) → List (List Bool)
+  | [] => [[]]
+  | t :: ts => (completions ts).flatMap fun rest => match t with
+    | some b => [b :: rest]
+    | none => [true :: rest, false :: rest]
+
+/-- The operators of `Reqs/Lang/EvaluationRules#operator-expressions` and
+`#lazy-boolean-expressions`, as the binary evaluates them (`binV`,
+`Ex.evalIn`) and as `lang::eval` does, on random operands of every type,
+nested values among them, and on operands that are not well-defined, in an
+interpretation whose primitive operations have their usual meaning:
+
+- Where the semantics finds an operation well-defined, the binary gives it
+  the same value.
+- An operator but `and` and `or` is strict in the binary too: an operand
+  that is not well-defined leaves its value unknown.
+- The binary knows the value of a binary or unary operator of two
+  well-defined operands exactly where `lang::applies?` and
+  `lang::unary_applies?` say that it applies, but where the semantics
+  leaves the value unspecified: `div` and `mod` by `0`, which the
+  definedness check rules out, and the orders of other types than the
+  integers (`evaluation.operator.order.excluded`).
+- The binary's connectives and cardinality operators are Kleene's, so
+  they may know more than the semantics, but only where the known
+  operands decide the value: an `and` whose left operand is not a `Bool`
+  is known only where its right operand is `false`, an `or` only where it
+  is `true`, and a cardinality operator only where every `Bool` for the
+  unknown arguments gives the same value. Their right operands are `Bool`s
+  or not well-defined, as in a spec that type-checks.
+
+Each operator is well-defined in some of the cases, so that one dropped
+from the test is noticed. -/
+def operatorsAgree : Array String := Id.run do
+  let mut failures := #[]
+  let mut seed := 620
+  let mut defined : Array (String × Nat) := #[]
+  let mut undefined := 0
+  let ops : Array Op := #[.eq, .lt, .le, .add, .sub, .mul, .div, .mod, .concat, .member]
+  let binary (e : Ex) : Option Val := e.eval (binaryInterp []) (fun _ => none)
+  let agree (what : String) (b : Option Val) (o : lang.Outcome) : Array String :=
+    match b, o with
+    | some v, .Defined w => if toValue v == some w then #[] else #[s!"{what} is {repr v} by `Ex.eval`, but {repr w} by `lang::eval`"]
+    | none, .Defined w => #[s!"{what} is {repr w} by `lang::eval`, but `Ex.eval` does not know it"]
+    | _, .Undefined => #[]
+  let bump (counts : Array (String × Nat)) (name : String) : Array (String × Nat) :=
+    match counts.findIdx? (·.1 == name) with
+    | some k => counts.modify k fun (n, c) => (n, c + 1)
+    | none => counts.push (name, 1)
+  let truth : Option Val → Option Bool
+    | some (.bool b) => some b
+    | _ => none
+  for _ in [0:16000] do
+    let ((op, v, w, c, args), s) := (do
+      let op ← pick ops
+      -- The operands of an operator that is strict are well-defined most often.
+      let v ← genOperandOrUndefined
+      -- The same as the left one at times, so that `++` of two strings or
+      -- two sequences is common.
+      let w ← if (← next 4) == 0 then pure v else genOperandOrUndefined
+      let c ← if (← next 6) == 0 then pure none else pure (some (Val.bool ((← next 2) == 0)))
+      let args ← (List.range (← next 4)).mapM fun _ => do
+        if (← next 5) == 0 then genOperandOrUndefined else pure (some (Val.bool ((← next 2) == 0)))
+      return (op, v, w, c, args)).run seed
+    seed := s
+    let some bop := binaryOp? op | continue
+    let i : lang.Interp := ⟨.Empty, .Empty, primitivesAt v w⟩
+    let (a, a') := operand v
+    let (b, b') := operand w
+    let what := s!"`{repr op}` of {repr v} and {repr w}"
+    let r := binary (.bin op a b)
+    let o := lang.eval i .Empty (.Binary bop a' b')
+    if o matches .Defined _ then defined := bump defined (toString (repr op)) else undefined := undefined + 1
+    failures := failures ++ agree what r o
+    match v, w with
+    | some x, some y =>
+      let (some x', some y') := (toValue x, toValue y) | continue
+      let unspecified := match op, x, y with
+        | .div, .int _, .int 0 | .mod, .int _, .int 0 => true
+        | .lt, _, _ | .le, _, _ => !(x matches .int _ && y matches .int _)
+        | _, _, _ => false
+      unless unspecified || r.isSome == lang.applies? i bop x' y' do
+        failures := failures.push s!"{what}: `Ex.eval` {if r.isSome then "knows" else "does not know"} its value, but `lang::applies?` is {lang.applies? i bop x' y'}"
+    | _, _ =>
+      if r.isSome || o matches .Defined _ then
+        failures := failures.push s!"{what}: an operand is not well-defined, but the operation is {repr r} by `Ex.eval` and {repr o} by `lang::eval`"
+    for (uop, u, e) in [(lang.UnaryOp.Not, "not", Ex.not a), (.Neg, "-", .neg a)] do
+      let r := binary e
+      let o := lang.eval i .Empty (.Unary uop a')
+      if o matches .Defined _ then defined := bump defined u
+      failures := failures ++ agree s!"`{u}` of {repr v}" r o
+      let applies := match v.bind toValue with
+        | some x => lang.unary_applies? uop x
+        | none => false
+      unless r.isSome == applies do
+        failures := failures.push s!"`{u}` of {repr v}: `Ex.eval` {if r.isSome then "knows" else "does not know"} its value, but it {if applies then "applies" else "does not apply"}"
+    -- The connectives, with any left operand, and a right one that is a
+    -- `Bool` or not well-defined.
+    let (cr, cr') := operand c
+    for (cop, u, lazy, decides) in [(Op.and, "and", lang.Expr.And a' cr', false), (.or, "or", .Or a' cr', true)] do
+      let r := binary (.bin cop a cr)
+      let o := lang.eval i .Empty lazy
+      if o matches .Defined _ then defined := bump defined u
+      failures := failures ++ agree s!"`{u}` of {repr v} and {repr c}" r o
+      if o matches .Undefined && r.isSome && !(truth c == some decides && r == some (.bool decides)) then
+        failures := failures.push s!"`{u}` of {repr v} and {repr c} is undefined by `lang::eval`, but `Ex.eval` knows it, {repr r}, though the right operand does not decide it"
+    -- The cardinality operators, of `Bool`s, other values and arguments
+    -- that are not well-defined.
+    let es := args.map operand
+    for (cc, cc') in [(Fren.Core.Cardinality.atMostOne, lang.Cardinality.AtMost), (.exactlyOne, .Exactly)] do
+      let r := binary (.cardinality cc (es.map (·.1)).toArray)
+      let o := lang.eval i .Empty (.Count cc' (list (es.map (·.2))))
+      if o matches .Defined _ then defined := bump defined (toString (repr cc))
+      failures := failures ++ agree s!"`{repr cc}` of {repr args}" r o
+      if o matches .Undefined then
+        if let some known := r then
+          unless (completions (args.map truth)).all fun bs => known == .bool (cc.holds (bs.count true)) do
+            failures := failures.push s!"`{repr cc}` of {repr args} is undefined by `lang::eval`, but `Ex.eval` knows it, {repr known}, though its `Bool`s do not decide it"
+  for name in ["FrenCli.Eval.Op.eq", "FrenCli.Eval.Op.lt", "FrenCli.Eval.Op.le", "FrenCli.Eval.Op.add",
+      "FrenCli.Eval.Op.sub", "FrenCli.Eval.Op.mul", "FrenCli.Eval.Op.div", "FrenCli.Eval.Op.mod",
+      "FrenCli.Eval.Op.concat", "FrenCli.Eval.Op.member", "not", "-", "and", "or",
+      "Fren.Core.Cardinality.atMostOne", "Fren.Core.Cardinality.exactlyOne"] do
+    let n := ((defined.find? (·.1 == name)).map (·.2)).getD 0
+    if n < 30 then failures := failures.push s!"only {n} operations of `{name}` were well-defined"
+  if undefined < 1000 then failures := failures.push s!"only {undefined} binary operations were undefined"
+  return failures
+
 #eval show IO Unit from do
-  let failures := run ++ runInterp ++ mayMatchCtorSound ++ matchSplitAgrees ++ compiledRecursion ++ setOpsAgree
+  let failures := run ++ runInterp ++ mayMatchCtorSound ++ matchSplitAgrees ++ compiledRecursion ++ setOpsAgree ++ operatorsAgree
   unless failures.isEmpty do
     throw (IO.userError s!"`lang::eval` and `Ex.eval` disagree:\n{"\n".intercalate (failures.toList.take 5)}")
 

@@ -18,17 +18,7 @@
 evaluation.laws
 evaluation.constant
 evaluation.variant
-evaluation.operator.defined
-evaluation.operator.not
-evaluation.operator.arithmetic -- partly formalized: no claim for the operators but `+`
-evaluation.operator.division -- partly formalized: no claim for `mod`
-evaluation.operator.concatenation
-evaluation.operator.membership
-evaluation.operator.order
-evaluation.operator.order.excluded
-evaluation.operator.count
-evaluation.or.false
-evaluation.lazy.undefined
+evaluation.operator.order.excluded -- defers to `semantics.excluded.orders`, which the Interlock of Semantics closes by modelling the orders
 evaluation.match
 evaluation.match.order
 evaluation.list.nil
