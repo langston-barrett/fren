@@ -268,9 +268,10 @@ their binders are not in scope, by
 those chains are a part of. So every member of the literal is the value
 of an element that the fix keeps. `lint::duplicate_elements_members`
 states this at each position, over the elements as written in their
-scope and their outcomes by Fren's own evaluation, and checks the one
-scope against `lang::test_scope`, for a pattern test of any element; the
-solver checks it, for any number of elements:
+scope and their outcomes by Fren's own evaluation. It assumes the one
+scope, and checks the fact that it rests on against `lang::test_scope`,
+for a pattern test of any element; the solver checks it, for any number
+of elements:
 
 ```fren
 set_option fren.lint.undecidable "allow" in

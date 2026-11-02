@@ -36,14 +36,9 @@ functions:
 applies `fires_at?`, and each lint's functions are definitions of their
 own, so the cost of compiling either does not grow with the lints. It did
 while the solver's copy of a structural recursion was its body with the
-functions it applies unfolded, which put all of `fix_at` in each arm:
-compiling `fix_all` took 83M of Lean's raw heartbeats with one lint and
-126M with five, against a limit of 200M, and each lint whose test is a
-conditional added about 14M. That copy is now the recursion itself
-([Generated](../Generated.md#matches)), and compiling `fix_all` took 57M,
-with five lints or seven. Over `Expr<V>`, whose constructions and
-selectors carry the type of names, it takes 97M, and `fires_in?` 104M,
-with seven.
+functions it applies unfolded, which put all of `fix_at` in each arm.
+That copy is now the recursion itself
+([Generated](../Generated.md#matches)).
 
 ```fren
 -- The lints stated over the syntax of the semantics.
@@ -264,8 +259,9 @@ place where it fires: `fix_at_unfired`, `fix_at_agrees` and
 `overly_complex_refires`, `double_neg_refires`, `manual_abs_refires`,
 `collapsible_when_refires`, `same_branches_refires`,
 `neg_multiply_refires`, `identity_op_refires` and
-`manual_rem_euclid_refires` show: these laws are of fixing everywhere. For `int_plus_one` and `unless_not` it does, as
-`int_plus_one_once` and `unless_not_once` show. That the passes of `fren
+`manual_rem_euclid_refires` show: these laws are of fixing everywhere.
+For `int_plus_one` and `unless_not` it does, as `int_plus_one_once` and
+`unless_not_once` show. That the passes of `fren
 fix` end where `fix_all` does is a property of the passes, which these
 laws do not state.
 

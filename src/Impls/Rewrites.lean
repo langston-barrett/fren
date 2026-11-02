@@ -1010,6 +1010,20 @@ theorem usual_language_text (s t : String) :
     lint.usual_point? (Fren.Str.lit "++") (.Cons (.Text s) (.Cons (.Text t) .Nil)) (.Text (s ++ t)) = true := by
   simp [lint.usual_point?, lang.Value.Cons.x0, lang.Value.Cons.x1, lang.Value.Text.x0, Fren.Str.lit]
 
+-- The language's products, quotients and remainders are `Int.mul`,
+-- `Int.ediv` and `Int.emod`, by `usual_language_points`.
+impl usual_primitives: lint::usual_primitives for (m n : Int) (s t : String) {
+  m := m, n := n, s := s, t := t,
+  product := m * n,
+  quotient := m / n,
+  remainder := m % n,
+} by
+  intro m n s t _
+  obtain ⟨hp, hq, hr⟩ := usual_language_points m n
+  unfold lint.usual_primitives.ensures lint.usual_primitives.ensure.times lint.usual_primitives.ensure.divides
+    lint.usual_primitives.ensure.modulo
+  simp [lint.integers, hp, hq, hr]
+
 /-! ### Each lint at the place where it fires -/
 
 theorem fires_at_overly (e : Expr String) : lint.fires_at? String .OverlyComplexBoolExpr e = lint.overly_complex_fires? String e := by
