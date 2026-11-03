@@ -83,7 +83,9 @@ def dumpSymbols (st : State) : Std.HashMap String String := Id.run do
       out := out.insert (toString (ctor ++ f)) (Core.ItemSymbol.field r.path f).text
   -- A newtype, which `fren check` erases, as its underlying type, and its
   -- constructor and its field, as lean-smt names its selector, erased
-  -- (`Core.erasedSymbol`).
+  -- (`Core.erasedSymbol`). Only a newtype whose underlying type, through
+  -- any newtypes, is `Int`, `Nat`, `Bool` or `String` gets that type's sort;
+  -- any other keeps lean-smt's name, so that its dumps differ.
   -- A newtype over a newtype is the underlying type of that one.
   let rec base (fuel : Nat) (t : Expr) : Expr := match fuel, t.constName?.bind st.newtypeOfDecl? with
     | k + 1, some m => base k m.under
@@ -111,7 +113,7 @@ def queryShown (act : MetaM α) : MetaM (Option α × String) := do
   let saved := (← getThe Core.State).messages
   modifyThe Core.State fun s => { s with messages := {} }
   let (a?, failed?) ← try pure (some (← act), none) catch ex => do
-    pure (none, some s!"(error \"{(← ex.toMessageData.toString).replace "\"" "\"\""}\")")
+    pure (none, some (Core.errorScript (← ex.toMessageData.toString)))
   let logged := (← getThe Core.State).messages
   modifyThe Core.State fun s => { s with messages := saved }
   -- The query that lean-smt showed, even if it threw after showing it.
@@ -1831,10 +1833,13 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     -- it, from a cache of its own, so that no answer is taken for it
     -- (`Core.obligationsOf`).
     if let some r := obligations? then
+      -- A script that cannot be built is an `(error ...)` command, which the
+      -- dump shows: the dump changes no result.
       let script (k : CheckKind) (hyps : Array (Name × Expr)) (goal : Expr) : MetaM String := do
         let text ← IO.mkRef ""
         let fresh : QueryCache ← IO.mkRef {}
-        discard <| (mkBk k fresh (some text)).query hyps goal false
+        try discard <| (mkBk k fresh (some text)).query hyps goal false
+        catch ex => text.set (Core.errorScript (← ex.toMessageData.toString))
         text.get
       let fileMap ← getFileMap
       let spanOf (n? : Option Name) : Option String :=
@@ -1846,9 +1851,11 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       let symbols := c.uses.foldl (init := dumpSymbols st) fun acc u =>
         if (Core.typeParamName? u).isSome then acc
         else acc.insert u.getString! (Core.ItemSymbol.item (u.replacePrefix `Fren.Abstract .anonymous)).text
-      let os ← withoutModifyingState <| Core.obligationsOf (mkBk · cache) script full kinds0 c.tested c.enumerated interprets spanOf
-        symbols
-      r.modify (·.push os)
+      try
+        let os ← withoutModifyingState <| Core.obligationsOf (mkBk · cache) script full kinds0 c.tested c.enumerated interprets
+          spanOf symbols
+        r.modify (·.push os)
+      catch _ => pure ()
     let bk (k : CheckKind) :=
       let b := mkBk k cache
       if k != .cover then b else

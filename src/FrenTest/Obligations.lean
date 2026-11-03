@@ -111,6 +111,16 @@ private def script (lines : List String) : String := "\n".intercalate lines ++ "
 #guard (canonical (script ["(define-fun f ((x Int)) Bool (and (> x 0) (forall ((x Int)) (> x 1))))",
     "(assert (not (f n)))"]) false).goal == "(and (> n 0) (forall ((x Int)) (> x 1)))"
 
+-- A definition is unfolded without capture: the bound name that would
+-- capture its argument's free name is renamed apart.
+#guard (canonical (script ["(define-fun f ((y Int)) Bool (forall ((x Int)) (> x y)))", "(assert (not (f x)))"]) false).goal ==
+  "(forall ((x#s0 Int)) (> x#s0 x))"
+-- Quantifiers are merged only where no name would be bound twice.
+#guard (canonical (script ["(assert (not (forall ((x Int)) (forall ((x Int)) (> x 0)))))"]) false).goal ==
+  "(forall ((x Int)) (forall ((x Int)) (> x 0)))"
+#guard (canonical (script ["(assert (not (forall ((x Int)) (forall ((y Int)) (> x y)))))"]) false).goal ==
+  "(forall ((x Int) (y Int)) (> x y))"
+
 /-! The canonical names of symbols are those of `fren check`'s queries,
 without their `|`s. -/
 

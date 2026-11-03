@@ -1,0 +1,12 @@
+-- `set_option fren.dump "obligations"`: `#fren_check` logs the obligations
+-- dump as one message at the `#fren_check`, as `fren check
+-- --dump=obligations` prints it (`Reqs/Cli#obligations`).
+--@ only: hosted
+set_option fren.dump "obligations"
+
+proc c(n: Int): (m: Int) {
+    assume a: n > 0
+    ensure r: m = n + 1
+}
+--~$ info: ; obligations
+--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant

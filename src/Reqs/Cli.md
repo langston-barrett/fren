@@ -612,8 +612,8 @@ pub proc goal_constant_name(
 
 With `--dump=obligations`, `fren check` writes what each of its checks
 asks to standard output, before the results: for each check, its
-obligation, the monomorphic, first-order context that its query may use,
-its goal, and its evidence. It is the level of an intermediate
+obligation, the context that its query may use, after instantiation and
+desugaring, its goal, and its evidence. It is the level of an intermediate
 verification language, such as Boogie's, Viper's or Why3's tasks, after
 the instantiation of generic functions and types and the desugaring of
 the spec into formulas, as the solver is given them. The Lean-hosted
@@ -671,7 +671,9 @@ they would give it to the solver, without asking it, and print them with
 - what either front end could write in two ways is written one way
   (`Fren.Core.Sx.normalize`), such as a conjunction of conjunctions, a
   `let`, whose definitions are substituted, or `<=`; a conjunction in the
-  context is as many sentences;
+  context is as many sentences. A definition is unfolded and a `let`
+  substituted without capture: a bound name that would capture a free
+  name of what is substituted is renamed apart, as `x#s0`;
 - the declarations and the sentences are each printed once, in order of
   their text (`cli::canonical_sentences`), so that neither their order
   nor a repeated one changes the dump;
@@ -689,12 +691,18 @@ into Lean terms and proving with them: its dump is printed from the
 query that lean-smt is given, in which a Lean term that is not Fren's is a
 symbol of its own.
 
+The dump is printed from scripts that are never asked, so it changes no
+result; a script that a front end cannot build is an `(error ...)`
+command among its obligation's declarations.
+
 `cli::canonical_sentences` states the order: a context's sentences, each
-by the place of its text in the order of texts, `String`'s, which is
-total, as a front end gives them
+by the place of its text in the order of texts, as a front end gives them
 and as the dump prints them, are printed in ascending order, each once,
 and are exactly those that the front end gives. Its `impl` is proved of
-`Fren.Core.sortedOnce`, which prints them, over every sequence:
+`Fren.Core.sortedOnce`, which prints them, over every sequence of places.
+That the places are those of an order on texts is assumed: the dump
+orders texts by `String`'s order (`Fren.Core.textLe`), which is total, and
+under which two texts are in the same place only if they are equal:
 
 ```fren
 set_option fren.lint.undecidable "allow" in

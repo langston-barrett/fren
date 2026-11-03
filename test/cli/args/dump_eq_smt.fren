@@ -1,0 +1,7 @@
+--@ args: check --dump=smt
+-- `--dump=smt`: the same as `--dump-smt`, each solver query as SMT-LIB
+-- (`Reqs/Cli#solver-queries`).
+proc c(n: Int): (m: Int) {
+    assume a: n > 0
+    ensure r: m = n + 1
+}

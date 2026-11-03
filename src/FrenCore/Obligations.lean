@@ -214,23 +214,6 @@ def Sx.binds : Sx → Array String
     bs.filterMap fun | .list xs => (match xs[0]? with | some (Sx.atom x) => some x | _ => none) | _ => none
   | _ => #[]
 
-/-- `e` with each free atom of `σ` replaced by its value. -/
-partial def Sx.subst (σ : Array (String × Sx)) (e : Sx) : Sx :=
-  if σ.isEmpty then e else
-  match e with
-  | .atom a => ((σ.find? (·.1 == a)).map (·.2)).getD e
-  | .list #[.atom "let", .list bs, body] =>
-    -- A `let`'s definitions are outside its scope; its body inside.
-    let bs' := bs.map fun | .list #[x, v] => .list #[x, v.subst σ] | b => b
-    let bound := (Sx.list #[.atom "let", .list bs, body]).binds
-    .list #[.atom "let", .list bs', body.subst (σ.filter (!bound.contains ·.1))]
-  | .list xs =>
-    let bound := e.binds
-    if bound.isEmpty then .list (xs.map (·.subst σ))
-    else
-      let σ' := σ.filter (!bound.contains ·.1)
-      .list (xs.mapIdx fun i x => if i + 1 == xs.size then x.subst σ' else x)
-
 /-- The atoms of `e` that no binder within it binds. -/
 partial def Sx.freeAtoms (e : Sx) (bound : Array String := #[]) (acc : Std.HashSet String := {}) : Std.HashSet String :=
   match e with
@@ -244,6 +227,63 @@ partial def Sx.freeAtoms (e : Sx) (bound : Array String := #[]) (acc : Std.HashS
     let names := e.binds
     if names.isEmpty then xs.foldl (init := acc) fun acc x => x.freeAtoms bound acc
     else (xs.back?.map (·.freeAtoms (bound ++ names) acc)).getD acc
+
+/-- The first of `x#s0`, `x#s1`, … that `avoid` does not have: a bound
+name renamed apart. No Fren name has `#`, and no front end writes `#s`. -/
+def freshName (x : String) (avoid : Std.HashSet String) : String := Id.run do
+  for k in [0:avoid.size + 1] do
+    let c := s!"{x}#s{k}"
+    unless avoid.contains c do return c
+  return s!"{x}#s{avoid.size + 1}"
+
+/-- `e` with each free atom of `σ` replaced by its value, without capture:
+a binder that would capture a free name of a value has its bound name
+renamed apart (`freshName`). -/
+partial def Sx.subst (σ : Array (String × Sx)) (e : Sx) : Sx :=
+  if σ.isEmpty then e else
+  match e with
+  | .atom a => ((σ.find? (·.1 == a)).map (·.2)).getD e
+  | .list #[.atom "let", .list bs, body] =>
+    -- A `let`'s definitions are outside its scope; its body inside.
+    let bs' : Array Sx := bs.map fun (b : Sx) => match b with
+      | .list #[x, v] => Sx.list #[x, v.subst σ]
+      | b => b
+    let names := (Sx.list #[.atom "let", .list bs, body]).binds
+    let (names', body) := apart σ names body
+    let bs' : Array Sx := bs'.zipWith (fun (b : Sx) (x : String) => match b with
+      | .list #[_, v] => Sx.list #[.atom x, v]
+      | b => b) names'
+    .list #[.atom "let", .list bs', body.subst (σ.filter (!names.contains ·.1))]
+  | .list xs =>
+    let names := e.binds
+    if names.isEmpty then .list (xs.map (·.subst σ))
+    else match xs with
+      | #[q, .list bs, body] =>
+        let (names', body) := apart σ names body
+        let bs : Array Sx := bs.zipWith (fun (b : Sx) (x : String) => match b with
+          | .list #[_, t] => Sx.list #[.atom x, t]
+          | b => b) names'
+        .list #[q, .list bs, body.subst (σ.filter (!names.contains ·.1))]
+      | _ => e
+where
+  /-- `names`, bound around `body`, with those that a value of `σ` that
+  `body` uses has free renamed apart, in `body` too. -/
+  apart (σ : Array (String × Sx)) (names : Array String) (body : Sx) : Array String × Sx := Id.run do
+    let free := body.freeAtoms
+    let used := σ.filter fun (x, _) => !names.contains x && free.contains x
+    let captured := used.foldl (init := ({} : Std.HashSet String)) fun acc (_, v) => v.freeAtoms #[] acc
+    let mut avoid := used.foldl (init := free) fun acc (_, v) => v.freeAtoms #[] acc
+    avoid := names.foldl (·.insert ·) avoid
+    let mut out := #[]
+    let mut ren : Array (String × Sx) := #[]
+    for x in names do
+      if captured.contains x then
+        let x' := freshName x avoid
+        avoid := avoid.insert x'
+        out := out.push x'
+        ren := ren.push (x, .atom x')
+      else out := out.push x
+    return (out, body.subst ren)
 
 /-- The integer that `e` is, if it is a literal: a numeral or its negation. -/
 def Sx.int? : Sx → Option Int
@@ -279,7 +319,7 @@ implication whose conclusion is an implication, `(=> a (=> b c))`, as
 `(=> (and a b) c)`; each `let`'s definitions
 substituted into its body, as Lean's `zetaReduce` substitutes them; and
 each quantifier directly over another of its kind as one over both's
-bound names; each application of an associative operator to an
+bound names, where they are distinct; each application of an associative operator to an
 application of itself as one application; a binary `distinct` as the
 negation of `=`, and a double negation as what it negates; an equation
 with `true` or `false` as the other side or its negation; and `<=` and
@@ -304,9 +344,11 @@ partial def Sx.normalize (symbols : Std.HashMap String String) : Sx → Sx
     | #[.atom "let", .list bs, body] =>
       let σ := bs.filterMap fun | .list #[.atom x, v] => some (x, v) | _ => none
       if σ.size == bs.size then body.subst σ else .list xs
-    | #[q@(.atom "forall"), .list bs, .list #[.atom q', .list bs', body]]
-    | #[q@(.atom "exists"), .list bs, .list #[.atom q', .list bs', body]] =>
-      if q == .atom q' then .list #[q, .list (bs ++ bs'), body] else .list xs
+    | #[q@(.atom "forall"), .list bs, inner@(.list #[.atom q', .list bs', body])]
+    | #[q@(.atom "exists"), .list bs, inner@(.list #[.atom q', .list bs', body])] =>
+      -- Only where no name is bound twice, which would be no binder list.
+      let outer := (Sx.list #[q, .list bs, .atom "true"]).binds
+      if q == .atom q' && !inner.binds.any outer.contains then .list #[q, .list (bs ++ bs'), body] else .list xs
     | #[.atom "distinct", a, b] => (Sx.list #[.atom "not", .list #[.atom "=", a, b]]).normalize {}
     | #[.atom "not", .list #[.atom "not", a]] => a
     | #[.atom "=", a, .atom "true"] | #[.atom "=", .atom "true", a] => a
@@ -558,6 +600,10 @@ def Obligation.render (o : Obligation) : String :=
   s!"(obligation\n" ++ ((o.span?.map (s!"  ; at {·}\n")).getD "")
     ++ s!"  (item {showComp o.comp})\n  {o.checkText}\n  (evidence {o.evidence})\n"
     ++ block "signature" cx.signature ++ block "context" cx.sentences ++ s!"  (goal {cx.goal})\n)\n"
+
+/-- The script of a query that a front end could not build, with why: an
+`(error ...)` command, which the dump shows among the declarations. -/
+def errorScript (why : String) : String := s!"(error \"{why.replace "\"" "\"\""}\")"
 
 /-- The first line of a dump of obligations, and its last, by which a
 dump is found in a front end's output. -/

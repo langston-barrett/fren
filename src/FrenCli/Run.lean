@@ -370,9 +370,9 @@ where
           notes := #["note: `--evidence` is `solver`, `random`, `enumerated` or `enumerated+random`"]
           fixes := (Fren.Core.similarStr v #["solver", "random", "enumerated", "enumerated+random"]).toArray.map fun c =>
             { msg := s!"a value with a similar name exists: `{c}`", replacement := c } })
-    | "--dump-smt" :: rest, a | "--dump=smt" :: rest, a =>
+    | opt@"--dump-smt" :: rest, a | opt@"--dump=smt" :: rest, a =>
       if a.command == .check then go rest { a with dumpSmt := true }
-      else only "--dump-smt" "check"
+      else only opt "check"
     | "--dump=obligations" :: rest, a =>
       if a.command == .check then go rest { a with dumpObligations := true }
       else only "--dump=obligations" "check"
@@ -775,8 +775,13 @@ partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Sym
   -- query's script as `backend` would ask it (`Fren.Core.obligationsOf`).
   if let some r := obligations? then
     let c' := { c with funFacts := st.funFacts, bounded := st.bounded c }
-    let script (k : Fren.Core.CheckKind) := queryText prelude c' limits (st.usesStrings || st.usesSeqs)
-      (st.usesSets || st.usesSeqs) st.usesProjection st.quantified sv.appFuns k sv.contractFns sv.recursiveSyms
+    -- A script that cannot be built is an `(error ...)` command, which the
+    -- dump shows: the dump changes no result.
+    let script (k : Fren.Core.CheckKind) (hyps : Array (Lean.Name × String)) (goal : String) : IO String :=
+      try
+        queryText prelude c' limits (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection
+          st.quantified sv.appFuns k sv.contractFns sv.recursiveSyms hyps goal
+      catch e => pure (Fren.Core.errorScript (toString e))
     let spanOf (n? : Option Lean.Name) : Option String :=
       let span := (n?.bind fun n => (c.props.find? (·.name == n)).map (·.span)
         <|> (c.insts.find? (·.name == n)).map (·.span)).getD c.span
