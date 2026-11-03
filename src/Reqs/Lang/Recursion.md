@@ -518,13 +518,15 @@ pub enum Evaluated { Holds, Fails, Unevaluated }
 pub struct ModelFormula { recursive?, value: Evaluated }
 
 -- Whether a formula of `hyps`, or `goal`, applies a recursive function.
+set_option fren.lint.undecidable "allow" in
 pub fn applies_recursive?(hyps: Seq<ModelFormula>, goal: ModelFormula) :=
-    goal.recursive? or (exists (h: ModelFormula), h in hyps and h.recursive?)
+    goal.recursive? or (exists (k: Int), 0 <= k < hyps.len and hyps[k].recursive?)
 
 -- Whether evaluation confirms the model: every hypothesis holds and the
 -- goal fails.
+set_option fren.lint.undecidable "allow" in
 pub fn evaluation_confirms?(hyps: Seq<ModelFormula>, goal: ModelFormula) :=
-    goal.value = Evaluated::Fails and (forall (h: ModelFormula), when h in hyps, h.value = Evaluated::Holds)
+    goal.value = Evaluated::Fails and (forall (k: Int), when 0 <= k < hyps.len, hyps[k].value = Evaluated::Holds)
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
@@ -539,7 +541,7 @@ pub proc counterexample_confirmed(
 
     -- A model that evaluation refutes is never a failure.
     expect refuted: when applies_recursive?(hyps, goal)
-        and (goal.value = Holds or (exists (h: ModelFormula), h in hyps and h.value = Fails)),
+        and (goal.value = Holds or (exists (k: Int), 0 <= k < hyps.len and hyps[k].value = Fails)),
         not report_counterexample?
     -- Nor one that it cannot evaluate.
     expect unevaluated: when goal.recursive? and goal.value = Unevaluated, not report_counterexample?
@@ -547,7 +549,11 @@ pub proc counterexample_confirmed(
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
-expect counterexample_confirmed_refines(hyps: Seq<lang::ModelFormula>, goal: lang::ModelFormula, facts_recursive?) {
+expect counterexample_confirmed_refines(
+    hyps: Seq<lang::ModelFormula>,
+    goal: lang::ModelFormula,
+    facts_recursive?,
+) {
     use lang
     call concrete := counterexample_confirmed(hyps, goal, facts_recursive?)
     refines concrete recursive_counterexample(

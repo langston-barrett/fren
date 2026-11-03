@@ -3610,20 +3610,31 @@ def ofEvaluated : lang.Evaluated → Option Bool
 theorem evaluatedOf_eq (o : Option Bool) (v : lang.Evaluated) : evaluatedOf o = v ↔ o = ofEvaluated v := by
   rcases o with _ | _ | _ <;> cases v <;> simp [evaluatedOf, ofEvaluated]
 
-theorem mem_modelFormulas (hs : List (Bool × Option Bool)) (r : Bool) (v : lang.Evaluated) :
-    ({ recursive? := r, value := v } : lang.ModelFormula) ∈ Fren.Seq.ofList (hs.map modelFormulaOf) ↔
-      (r, ofEvaluated v) ∈ hs := by
-  simp only [Fren.Seq.mem_iff, Fren.Seq.toList_ofList, List.mem_map]
+theorem modelFormulas_exists_nth (l : List lang.ModelFormula) (P : lang.ModelFormula → Prop) :
+    (∃ k : Int, (0 ≤ k ∧ k < (Fren.Seq.ofList l).len) ∧ P ((Fren.Seq.ofList l).nth k)) ↔ ∃ x ∈ l, P x := by
   constructor
-  · rintro ⟨⟨a, o⟩, ha, he⟩
-    have h1 : a = r := congrArg lang.ModelFormula.recursive? he
-    have h2 : evaluatedOf o = v := congrArg lang.ModelFormula.value he
-    rw [evaluatedOf_eq] at h2
-    subst h1 h2
-    exact ha
-  · intro h
-    refine ⟨(r, ofEvaluated v), h, ?_⟩
-    cases v <;> rfl
+  · rintro ⟨k, ⟨h0, h1⟩, hp⟩
+    simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList] at h1
+    rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)] at hp
+    exact ⟨_, List.getElem_mem _, hp⟩
+  · rintro ⟨x, hx, hp⟩
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+    refine ⟨i, ⟨by omega, by simp [hi]⟩, ?_⟩
+    rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simpa using hi)]
+    simpa using hp
+
+theorem modelFormulas_forall_nth (l : List lang.ModelFormula) (P : lang.ModelFormula → Prop) :
+    (∀ k : Int, 0 ≤ k ∧ k < (Fren.Seq.ofList l).len → P ((Fren.Seq.ofList l).nth k)) ↔ ∀ x ∈ l, P x := by
+  constructor
+  · intro h x hx
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
+    have := h i ⟨by omega, by simp [hi]⟩
+    rw [Fren.Seq.nth_of_lt _ _ (by omega) (by simpa using hi)] at this
+    simpa using this
+  · rintro h k ⟨h0, h1⟩
+    simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList] at h1
+    rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)]
+    exact h _ (List.getElem_mem _)
 
 -- Both front ends decide whether a check reports the solver's model with
 -- `counterexampleReported`, over any formulas of the query.
@@ -3636,12 +3647,26 @@ impl counterexample_confirmed: lang::counterexample_confirmed
 } by
   intro hs g facts _
   obtain ⟨gr, gv⟩ := g
-  simp only [fren_spec, mem_modelFormulas, Fren.Core.counterexampleReported, Fren.Core.recursiveCounterexample,
-    modelFormulaOf, ofEvaluated]
-  cases facts <;> cases gr <;> rcases gv with _ | _ | _ <;> simp [evaluatedOf, Option.forall, and_assoc] <;>
-    by_cases a1 : (true, some true) ∈ hs <;> by_cases a2 : (true, some false) ∈ hs <;>
-    by_cases a3 : (true, none) ∈ hs <;> by_cases a4 : (false, some false) ∈ hs <;>
-    by_cases a5 : (false, none) ∈ hs <;> simp [a1, a2, a3, a4, a5]
+  have e1 := modelFormulas_exists_nth (hs.map modelFormulaOf) (fun x => x.recursive? = true)
+  have e2 := modelFormulas_forall_nth (hs.map modelFormulaOf) (fun x => x.value = lang.Evaluated.Holds)
+  have r1 : (∃ x, x ∈ hs.map modelFormulaOf ∧ x.recursive? = true) ↔ ∃ a ∈ hs, a.1 = true := by
+    simp only [List.mem_map]
+    constructor
+    · rintro ⟨_, ⟨a, ha, rfl⟩, h⟩
+      exact ⟨a, ha, h⟩
+    · rintro ⟨a, ha, h⟩
+      exact ⟨_, ⟨a, ha, rfl⟩, h⟩
+  have r2 : (∀ x, x ∈ hs.map modelFormulaOf → x.value = lang.Evaluated.Holds) ↔ ∀ a ∈ hs, a.2 = some true := by
+    simp only [List.mem_map]
+    constructor
+    · intro h a ha
+      exact (evaluatedOf_eq _ _).mp (h _ ⟨a, ha, rfl⟩)
+    · rintro h _ ⟨a, ha, rfl⟩
+      exact (evaluatedOf_eq _ _).mpr (h a ha)
+  simp only [fren_spec, e1, e2, r1, r2]
+  cases facts <;> cases gr <;> rcases gv with _ | _ | _ <;>
+    simp [Fren.Core.counterexampleReported, Fren.Core.recursiveCounterexample, modelFormulaOf, evaluatedOf_eq,
+      ofEvaluated, List.all_eq_true]
 
 /-- The facts of the applications `brought`, of the pairs `rel` of each
 application and a formula of its facts, in order. -/
