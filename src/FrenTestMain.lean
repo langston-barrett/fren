@@ -41,6 +41,8 @@ import Lean.Elab.Frontend
   reads back as each tree, by the parser of the `fren` command, and needs
   each pair of parentheses that it adds, but those of its exceptions
   (`printing`, `lint::printing`).
+- **Sets in models:** the binary's fallback renderer of solver models
+  shows sets and relations as literals (`renderedSets`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
@@ -1837,6 +1839,29 @@ def ownSpecAgreement : IO (Array String) := do
   for (g, d) in hosted do
     unless ownSpecFiles.contains g do
       failures := failures.push s!"{g}:{d.line}: Lean reports about a spec that `ownSpecFiles` lacks: {FrenTest.Frontends.headOf d}"
+  return failures
+
+/-! ## Models as the solver writes them -/
+
+/-- How `FrenCli.renderValue` shows a model's value, as cvc5 writes it,
+where the evaluator cannot read it (`FrenCli.confirming`'s `render`). A set
+is a union or insertion of singletons of 1-tuples, and is shown as a
+literal of its members, sorted as text, so `10` comes before `2`. A
+relation's members are pairs, and are shown as pairs. The empty set is
+shown as `{}`. The evaluator reads every set in the tests' models, so only
+this job runs this rendering. -/
+def renderedSets : Array String := Id.run do
+  let cases : Array (String × String) := #[
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 0)))", "{0, 2}"),
+    ("(set.insert (tuple 3) (tuple 1) (set.singleton (tuple 2)))", "{1, 2, 3}"),
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 10)))", "{10, 2}"),
+    ("(set.singleton (tuple 1 (- 2)))", "{(1, -2)}"),
+    ("(as set.empty (Set (Tuple Int)))", "{}")]
+  let mut failures := #[]
+  for (v, shown) in cases do
+    let got := FrenCli.renderValue #[] v
+    unless got == shown do
+      failures := failures.push s!"renderValue {v} is `{got}`, not `{shown}`"
   return failures
 
 /-! ## Formatting -/
@@ -3776,7 +3801,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"]]
+      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -3811,6 +3836,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["smallValues"] => pure (Fren.Test.SmallValues.differences 300)
+  | ["renderedSets"] => pure renderedSets
   | ["ownSpec"] => ownSpec
   -- Run by `ownSpec` too, after it, with its query cache.
   | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
