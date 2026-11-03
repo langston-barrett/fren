@@ -801,8 +801,8 @@ it out of memory. `scripts/heavy COMMAND` runs COMMAND while it holds
 one of a few slots shared by the whole machine, waiting for a free one,
 and keeps the jobs that hold them under a memory cap. Its state is in
 `~/.cache/heavy/`, so every worktree and every copy of the script share
-the slots. Both limits are read again while jobs run, so changing a file
-takes effect at once, without a restart:
+the slots. The settings are read again while jobs wait or run, so changing
+a file takes effect without a restart:
 
 - **Slots:** `HEAVY_SLOTS`, else the number in `~/.cache/heavy/slots`,
   else 2.
@@ -811,9 +811,102 @@ takes effect at once, without a restart:
   summed over each job's process group. A job waits to start while the
   running ones use more than 60% of the cap; when they use more than
   the cap, heavy kills the newest and exits with 137.
+- **Load (off by default):** `HEAVY_MAX_LOAD`, else the number in
+  `~/.cache/heavy/max_load`. A waiting job also needs the 1-minute load
+  to be below this value. After 10 minutes waiting it may start whatever
+  the load, since the load includes unrelated work and decays slowly;
+  it still needs a slot and memory. An unavailable load reading lets it
+  start too. `HEAVY_MAX_LOAD=off` disables even a value in the file.
 
 A setting that is set but is not a positive finite number is ignored,
 with a warning.
+
+Each completed job appends one JSON line to `~/.cache/heavy/log.jsonl`,
+or `HEAVY_LOG` if set. It records the shortened command, worktree,
+enqueue, start and end times (Unix seconds), monotonic wait and run
+durations, exit status, peak RSS in KB, and the 1-minute load at start
+and about every 30 seconds, with its mean and maximum. Peak RSS is the
+larger of the process group's sampled sum and the kernel's high-water
+mark for the child and its waited-for descendants; a short overlap of
+workers between samples can be missed. A log failure never fails the
+job. Each job also records its admission policy: the `max_load` value
+or `"off"`, and the slot count, rechecked after acquiring its slot. Its
+admission timestamp and policy are recorded together before execution;
+later flips cannot reassign the job. It also records `enqueued_max_load`,
+`enqueued_slots` and `wait_policy_changed` to diagnose a change observed
+while waiting. Enqueue settings never decide the job's accounting label. Its
+job kind is computed from the full command before shortening it, removing
+paths, seeds and numbers while retaining executable and script basenames,
+flags and job names. Tests use scratch directories, including for logs.
+A missing bare command exits with 127 before waiting or taking a slot;
+it has no admission and produces no job record.
+
+The log has no automatic size limit or rotation, and `--stats` reads it
+all, including the load samples of long jobs. Keep the raw log for the
+trial. Archive it between trials while the controller and heavy jobs
+are stopped; preserve the flip records with their jobs so that exposure
+can still be measured. Automatic retention remains future work.
+
+`scripts/heavy --stats [HOURS]` compares completions in the last HOURS
+(default 24), grouped by admission policy and slot count: jobs per hour,
+wait, run and total latency percentiles, and mean sampled load. It divides
+each policy's `rate_jobs` by that policy's active hours in the window,
+including idle time, from the flip records below. Only completions whose
+admission falls in a matching logged policy interval within the window
+count toward `rate_jobs`. Jobs admitted before the first flip, outside
+the window or under a different policy do not inflate that rate.
+Without flip records its policy rate is `null`, rather than an estimate
+from first and last jobs.
+A completion stays attributed to its admission policy if a flip happened
+while it ran. For policy comparisons, waits that span an observed change
+of load threshold or slot count are excluded from wait and total-latency
+percentiles and from `rate_jobs`. Records without enough information about
+the wait are excluded too. `wait_jobs` counts the jobs used for these percentiles;
+`excluded_waits` reports the other jobs with their admission and enqueue
+policies, timestamps, durations and reason. This keeps a backlog released
+by a flip from inflating the new policy's comparison waits or completion rate.
+Failed jobs are counted separately. Samples from overlapping
+jobs both count toward mean load. Malformed and incomplete lines are skipped.
+At the top level, `hours` is the requested window, while `observed_hours`
+is the total logged exposure across policies. Its `rate_jobs` is the sum
+of the policy numerators, and its `jobs_per_hour` divides that sum by
+the total exposure, using the same admission rule as the policy entries.
+With no logged exposure the rate is `null`. Raw counts and run times retain
+the admission policy; these and the top-level wait and latency summaries
+include every completion in the requested window.
+
+`by_kind` compares successful run-time percentiles within each job kind.
+For each load threshold it also reports the ratio of its median run time
+to off's median for each kind with the same slot count. The aggregate
+`normalized_run_ratio_vs_off` is the geometric mean of these ratios,
+giving every kind observed under both policies equal weight. A value
+below 1 means faster runs with load admission. It reports the number of
+matched kinds and excludes kinds missing from either policy and failed
+runs. This controls for different frequencies of job kinds; differences
+in the amount of work within a kind can still affect the comparison.
+
+`scripts/heavy --alternate MINUTES VALUE` runs one controller for all
+agents on the machine. It immediately writes VALUE to `max_load`, then
+removes the file after MINUTES, repeating on and off until stopped. The
+writes are atomic and every flip appends a policy record with its time
+and slot count. A lock prevents a second controller. SIGINT, SIGTERM or SIGHUP
+removes the file and logs off before exiting, unless inherited as ignored.
+In particular, SIGHUP remains ignored under `nohup`. Further signals cannot
+interrupt cleanup, and inherited handlers are restored afterwards. An abrupt
+kill can leave the last setting in place. Run it directly, without holding
+a heavy slot.
+Unset `HEAVY_MAX_LOAD` on every agent so that all use the shared file;
+use the same slot count and memory limit on every agent and keep them
+constant throughout the trial.
+
+The load policy stays off by default until a field A/B on this machine
+shows better development throughput. To judge the setting, run
+`scripts/heavy --alternate 60 8` for about a day of alternating hourly
+blocks across all agents, then compare the real log with
+`scripts/heavy --stats 24`: jobs per active policy hour, mean load,
+wait and run time percentiles, and the comparisons by job kind. Inspect
+failures, sparse kinds and jobs crossing block or trial boundaries when
+judging the result; lower load alone does not show better throughput.
 
 `scripts/heavy --offline COMMAND` runs COMMAND with no network. On Linux
 it runs in a new user and network namespace (`unshare -rn`, which needs
@@ -824,7 +917,8 @@ fails rather than run COMMAND online. Use it to run binaries that a pull
 request built, the fuzzers and mutation runs, which never need the
 network. Builds and `lake test` stay online: Lake fetches packages and
 elan fetches toolchains. `python3 scripts/heavy_test.py` tests its
-argument parsing, its memory cap and the order of its overrides, and
+argument parsing, overrides, admission with injected load, job logs,
+policy comparisons and flips without sleeping, and
 the `lint` workflow runs it.
 
 ## Shared builds
