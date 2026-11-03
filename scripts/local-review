@@ -13,11 +13,13 @@ latest commit's subject and the messages of the branch's commits.
 
 Codex runs in a scratch copy of HEAD's tree, its blobs as they are, outside
 the repository, with no `.git`, and with AGENTS.md, CLAUDE.md, `.claude`,
-`.mcp.json`, a top-level `review.md` and symbolic links removed, as on CI;
+`.mcp.json`, a top-level `review.md` and symbolic links removed, as on CI,
+and Codex's own AGENTS.override.md, `.codex` and `.agents` removed too;
 `.review` holds the texts that the brief names. Its sandbox is read-only,
-which also cuts its commands off the network; web search, apps and the
-browsers are disabled, and the user's Codex configuration is not loaded.
-Uncommitted changes are not reviewed.
+which stops its commands from writing and cuts them off the network, but
+not from reading elsewhere: only the preamble keeps its reads in the copy.
+Web search, apps and the browsers are disabled, and the user's Codex
+configuration is not loaded. Uncommitted changes are not reviewed.
 
 The review is printed on stdout and saved, with the prompt and Codex's log,
 in `.lake/local-review/<head>/`. Nothing is posted. Its first line starts
@@ -50,9 +52,12 @@ TRUSTED = [
     ".github/pr-review/check.py",
     ".github/pr-review/compose.py",
 ]
-# What CI removes from the reviewer's checkout (claude-review.yml).
-REMOVED_FILES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "AGENTS.local.md", ".mcp.json"}
-REMOVED_DIRS = {".claude"}
+# What CI removes from the reviewer's checkout (claude-review.yml), and what
+# steers Codex: `AGENTS.override.md`, read before AGENTS.md, a project's
+# `.codex` (its config.toml, agents and hooks) and `.agents` (its skills).
+REMOVED_FILES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "AGENTS.local.md",
+                 "AGENTS.override.md", ".mcp.json"}
+REMOVED_DIRS = {".claude", ".codex", ".agents"}
 # The flags that keep Codex off the web and the network, and out of the
 # user's own configuration.
 OFFLINE = [

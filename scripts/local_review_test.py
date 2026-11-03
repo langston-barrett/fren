@@ -83,8 +83,9 @@ def make_repo(root):
     run("git", "-C", repo, "checkout", "-q", "-b", "topic")
     with open(os.path.join(repo, "new.txt"), "w") as f:
         f.write("a new line\n")
-    os.makedirs(os.path.join(repo, ".claude"))
-    for path in ["CLAUDE.md", ".claude/settings.json"]:
+    for path in ["CLAUDE.md", ".claude/settings.json", "AGENTS.override.md",
+                 ".codex/config.toml", ".agents/skills/x/SKILL.md"]:
+        os.makedirs(os.path.dirname(os.path.join(repo, path)), exist_ok=True)
         with open(os.path.join(repo, path), "w") as f:
             f.write("{}\n")
     os.symlink("new.txt", os.path.join(repo, "link.txt"))
@@ -147,7 +148,8 @@ def test_dry_run():
                     assert f.read() == text, path
             assert os.access(os.path.join(work, "run.sh"), os.X_OK)
             assert not os.access(os.path.join(work, "new.txt"), os.X_OK)
-            for gone in ["CLAUDE.md", ".claude", "AGENTS.md", "link.txt", ".git", "review.md"]:
+            for gone in ["CLAUDE.md", ".claude", "AGENTS.md", "AGENTS.override.md", ".codex",
+                         ".agents", "link.txt", ".git", "review.md"]:
                 assert not os.path.lexists(os.path.join(work, gone)), gone
             with open(os.path.join(work, ".review", "diff.patch")) as f:
                 assert "+a new line" in f.read()

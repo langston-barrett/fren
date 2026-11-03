@@ -1177,13 +1177,15 @@ input names.
 OpenAI's Codex CLI, before CI's review (AGENTS.md says when). It composes
 the brief with `compose.py` and `brief.md` as `origin/main` (or `--base
 REF`) has them, adds a preamble that says where the check differs from
-CI's review, and runs Codex in a scratch copy of the head's tree, without
-the files that CI removes (AGENTS.md, CLAUDE.md, `.claude`, `.mcp.json`,
-`review.md`, `.review` and symbolic links), with a read-only sandbox, and
-with no network, web search, apps, browsers or user configuration. It prints
-the result, whose first line starts "Pre-push check of", never "Review
-of", and saves it in `.lake/local-review/`; it posts nothing. `--dry-run`
-prints the prompt and runs no model, and `python3 -I -B
+CI's review, and runs Codex in a scratch copy of the head's tree. The copy
+lacks the files that CI removes (AGENTS.md, CLAUDE.md, `.claude`,
+`.mcp.json`, `review.md`, `.review` and symbolic links) and those that
+steer Codex (AGENTS.override.md, `.codex` and `.agents`). Codex runs with a
+read-only sandbox, which stops writes and the network but not reads
+elsewhere, and with no web search, apps, browsers or user configuration.
+It prints the result, whose first line starts "Pre-push check of", never
+"Review of", and saves it in `.lake/local-review/`; it posts nothing.
+`--dry-run` prints the prompt and runs no model, and `python3 -I -B
 scripts/local_review_test.py` tests the script with a stand-in for Codex.
 
 A pull request merges once `pre-merge` and `lint` pass on its head. Its
