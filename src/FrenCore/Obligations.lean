@@ -245,6 +245,17 @@ partial def Sx.freeAtoms (e : Sx) (bound : Array String := #[]) (acc : Std.HashS
     if names.isEmpty then xs.foldl (init := acc) fun acc x => x.freeAtoms bound acc
     else (xs.back?.map (·.freeAtoms (bound ++ names) acc)).getD acc
 
+/-- The integer that `e` is, if it is a literal: a numeral or its negation. -/
+def Sx.int? : Sx → Option Int
+  | .atom a => a.toNat?.map Int.ofNat
+  | .list #[.atom "-", .atom a] => a.toNat?.map fun n => -Int.ofNat n
+  | _ => none
+
+/-- `e` with each atom renamed by `symbols`. -/
+partial def Sx.rename (symbols : Std.HashMap String String) : Sx → Sx
+  | .atom a => .atom (symbols.getD a a)
+  | .list xs => .list (xs.map (Sx.rename symbols))
+
 /-- The conjuncts of `e`, with those of each conjunction in it. -/
 partial def Sx.conjuncts : Sx → Array Sx
   | .list xs => if xs[0]? == some (.atom "and") then (xs.extract 1).flatMap Sx.conjuncts else #[.list xs]
@@ -253,7 +264,7 @@ partial def Sx.conjuncts : Sx → Array Sx
 /-- The canonical name of a newtype's constructor and of its field, which
 `fren check` erases (`Reqs/Lang/Items#newtypes`): `Sx.normalize` writes
 an application of either as its argument, and `canonical` leaves out a
-declaration that mentions it. A front end that does not erase newtypes
+datatype's declaration that mentions it, the newtype's. A front end that does not erase newtypes
 maps them to it, and the newtype itself to its underlying type's sort. -/
 def erasedSymbol : String := "#erased"
 
@@ -272,8 +283,11 @@ bound names; each application of an associative operator to an
 application of itself as one application; a binary `distinct` as the
 negation of `=`, and a double negation as what it negates; an equation
 with `true` or `false` as the other side or its negation; and `<=` and
-`<` as `>=` and `>`, with their sides swapped. None of these changes what
-the formula means. -/
+`<` as `>=` and `>`, with their sides swapped; and a comparison of two
+integer literals, a negation, a conjunction or disjunction with `true` or
+`false`, and a conditional on `true` or `false`, as what it is, as
+lean-smt's preprocessing simplifies them. None of these changes what the
+formula means. -/
 partial def Sx.normalize (symbols : Std.HashMap String String) : Sx → Sx
   | .atom a => .atom (withoutDagger (unguillemet (symbols.getD a a)))
   | .list xs =>
@@ -297,16 +311,35 @@ partial def Sx.normalize (symbols : Std.HashMap String String) : Sx → Sx
     | #[.atom "not", .list #[.atom "not", a]] => a
     | #[.atom "=", a, .atom "true"] | #[.atom "=", .atom "true", a] => a
     | #[.atom "=", a, .atom "false"] | #[.atom "=", .atom "false", a] => .list #[.atom "not", a]
-    | #[.atom "<=", a, b] => .list #[.atom ">=", b, a]
-    | #[.atom "<", a, b] => .list #[.atom ">", b, a]
+    | #[.atom "<=", a, b] => (Sx.list #[.atom ">=", b, a]).normalize {}
+    | #[.atom "<", a, b] => (Sx.list #[.atom ">", b, a]).normalize {}
+    | #[.atom ">=", a, b] => match a.int?, b.int? with
+      | some i, some j => .atom (if i ≥ j then "true" else "false")
+      | _, _ => .list xs
+    | #[.atom ">", a, b] => match a.int?, b.int? with
+      | some i, some j => .atom (if i > j then "true" else "false")
+      | _, _ => .list xs
+    | #[.atom "not", .atom "true"] => .atom "false"
+    | #[.atom "not", .atom "false"] => .atom "true"
+    | #[.atom "ite", .atom "true", a, _] => a
+    | #[.atom "ite", .atom "false", _, b] => b
     | xs => match xs[0]? with
       | some (Sx.atom op) =>
         -- An associative operator applied to an application of itself, as
         -- one application.
         if associative.contains op then
-          .list (#[.atom op] ++ (xs.extract 1).flatMap fun
+          let args := (xs.extract 1).flatMap fun
             | .list ys => if ys[0]? == some (.atom op) then ys.extract 1 else #[.list ys]
-            | y => #[y])
+            | y => #[y]
+          -- A conjunction or disjunction with a literal `true` or `false`.
+          if op == "and" || op == "or" then
+            let (unit, zero) := if op == "and" then ("true", "false") else ("false", "true")
+            if args.contains (.atom zero) then .atom zero else
+            match args.filter (· != .atom unit) with
+            | #[] => .atom unit
+            | #[a] => a
+            | args => .list (#[.atom op] ++ args)
+          else .list (#[.atom op] ++ args)
         else .list xs
       | _ => .list xs
 
@@ -403,11 +436,20 @@ def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap Stri
   let mut defs : Std.HashMap String (Array String × Sx) := {}
   let mut sig : Array Sx := #[]
   let mut asserts : Array Sx := #[]
-  for cmd in (Sx.parseAll script).map (·.normalize symbols) do
+  for raw in Sx.parseAll script do
+    -- A newtype's declaration, which `fren check` erases, goes, as its
+    -- renamed symbols show (`erasedSymbol`).
+    let declares := match raw with
+      | .list xs => xs[0]? == some (.atom "declare-datatypes") || xs[0]? == some (.atom "declare-datatype")
+      | _ => false
+    if declares && (raw.rename symbols).freeAtoms.contains erasedSymbol then continue
+    let cmd := raw.normalize symbols
     let .list xs := cmd | continue
     let some (Sx.atom head) := xs[0]? | continue
     if solverCommands.contains head then continue
     match head, xs.toList with
+    -- A sort's definition, as a definition without parameters.
+    | "define-sort", [_, .atom f, .list #[], body] => defs := defs.insert f (#[], body)
     | "define-fun", [_, .atom f, .list ps, _, body] =>
       let ps := ps.filterMap fun | .list #[.atom x, _] => some x | _ => none
       defs := defs.insert f (ps, (body.unfold defs).normalize {})
@@ -433,7 +475,7 @@ def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap Stri
     | .list xs => if xs[0]? == some (.atom "declare-const") || xs[0]? == some (.atom "declare-fun") then acc
       else d.freeAtoms #[] acc
     | _ => acc
-  let declared := sig.filter fun d => !(d.freeAtoms.contains erasedSymbol) && match d with
+  let declared := sig.filter fun d => match d with
     | .list xs => !(xs[0]? == some (.atom "declare-const") || xs[0]? == some (.atom "declare-fun"))
       || (match xs[1]? with | some (Sx.atom f) => used.contains f | _ => true)
     | _ => true

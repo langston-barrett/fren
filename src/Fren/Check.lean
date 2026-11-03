@@ -84,10 +84,15 @@ def dumpSymbols (st : State) : Std.HashMap String String := Id.run do
   -- A newtype, which `fren check` erases, as its underlying type, and its
   -- constructor and its field, as lean-smt names its selector, erased
   -- (`Core.erasedSymbol`).
+  -- A newtype over a newtype is the underlying type of that one.
+  let rec base (fuel : Nat) (t : Expr) : Expr := match fuel, t.constName?.bind st.newtypeOfDecl? with
+    | k + 1, some m => base k m.under
+    | _, _ => t
   for (_, n) in st.newtypes do
-    let under? := if n.under.isConstOf ``Int || n.under.isConstOf ``Nat then some "Int"
-      else if n.under.isConstOf ``Bool then some "Bool"
-      else if n.under.isConstOf ``String then some "String" else none
+    let u := base st.newtypes.size n.under
+    let under? := if u.isConstOf ``Int || u.isConstOf ``Nat then some "Int"
+      else if u.isConstOf ``Bool then some "Bool"
+      else if u.isConstOf ``String then some "String" else none
     if let some u := under? then out := out.insert (toString n.decl) u
     out := out.insert (toString n.ctor) Core.erasedSymbol
     out := out.insert (toString (n.ctor ++ Name.mkSimple "0")) Core.erasedSymbol
