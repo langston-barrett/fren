@@ -141,9 +141,18 @@ class Decide(unittest.TestCase):
             p = pr(review("01:00", OLD), comment("02:00", f"wording only: {HEAD}"))
             d = decide(p, event)
             self.assertEqual(d["kind"], "skip", event)
-            self.assertIn(OLD, d["reason"])
+            # The line that the coordinator looks for in prepare.sh's log.
+            self.assertTrue(d["reason"].startswith(f"wording only: {OLD} "), d["reason"])
             # prepare.sh checks that the head is one commit on it.
             self.assertEqual(d["previous"], OLD)
+
+    def test_only_wording_skips_say_so(self):
+        # The skip of a head that already has a review, even one that a
+        # wording-only request names, does not read as a wording-only skip.
+        p = pr(review("01:00", OLD), comment("02:00", f"wording only: {HEAD}"), review("03:00", HEAD))
+        d = decide(p, "workflow_run")
+        self.assertEqual(d["kind"], "skip")
+        self.assertFalse(d["reason"].startswith("wording only"), d["reason"])
 
     def test_wording_after_blocking_review(self):
         p = pr(review("01:00", OLD, clean=False), comment("02:00", f"**Wording only**: {HEAD}"))

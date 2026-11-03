@@ -4,11 +4,12 @@ name: pr-review
 # check ("fixes only" or "rebase only") when the last comment that names
 # the head asks for one (.github/pr-review/kind.py). An update from `main`
 # of a reviewed head gets none, and nor does a head whose last comment that
-# names it starts with "wording only", if it is one commit on top of the
-# reviewed head and changes neither AGENTS.md nor `.github/`: the
-# coordinator confirms that each of its changes answers a listed finding
-# and changes only prose as AGENTS.md defines it, and that nothing else
-# changed.
+# names it starts with "wording only", if the head's only parent is the
+# head of the last clean review before that comment and it changes neither
+# AGENTS.md nor `.github/`. That skip's log says "Nothing to review:
+# wording only:", and the coordinator, who looks for that line, confirms
+# that each change answers a listed finding and changes only prose as
+# AGENTS.md defines it, and that nothing else changed.
 #
 # Threat model. A workflow_run runs in `main`'s context, with the Claude
 # token, while the pull request's author controls its files, its

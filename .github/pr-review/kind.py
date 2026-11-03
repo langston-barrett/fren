@@ -31,17 +31,19 @@ than this one, and whose review must have found no blocking issues.
 Otherwise the head gets a full review. A workflow_run skips a head that
 already has a review.
 
-A "wording only" request skips the head on any event, with `previous`
-set, so that prepare.sh can check what it can of the rule mechanically:
-the head is one commit on top of `previous` and changes neither AGENTS.md
-nor anything under `.github/` (`wording_problem`); otherwise the head
-gets a full review. The rest is the coordinator's to confirm before the
-merge: that each change answers a "fix before merge" finding of the
-previous review that the request lists and changes only prose as
-AGENTS.md defines it, which leaves out text that decides behaviour or
-process, and that nothing else changed. A
-later comment that names the head without starting with one of the three
-gets it a full review, as for a light check.
+A "wording only" request gives `skip` on any event, with `previous` set
+and a reason that starts with `WORDING`, so that prepare.sh can check
+what it can of the rule mechanically: the head's only parent is
+`previous`, and the head changes neither AGENTS.md nor anything under
+`.github/` (`wording_problem`). If it passes, prepare.sh prints
+"Nothing to review: wording only: ...", a line that no other skip
+prints; otherwise the head gets a full review. The rest is the
+coordinator's to confirm before the merge: that each change answers a
+"fix before merge" finding of the previous review that the request
+lists and changes only prose as AGENTS.md defines it, which leaves out
+text that decides behaviour or process, and that nothing else changed.
+A later comment that names the head without starting with one of the
+three gets it a full review, as for a light check.
 
 Anyone who can read the repository can comment, so only the comments of
 those who can push count, as reviews and as requests: those whose
@@ -62,6 +64,9 @@ REVIEW = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues|blocking iss
 LIGHT = {"fixes only": "fixes", "rebase only": "rebase", "wording only": "wording"}
 PUSHERS = {"OWNER", "MEMBER", "COLLABORATOR"}
 SHA = re.compile(r"\b[0-9a-f]{7,40}\b")
+# How the reason of a wording-only skip starts, and so the line that
+# prepare.sh prints for it, which no other skip prints.
+WORDING = "wording only:"
 
 
 def first_line(body):
@@ -124,10 +129,12 @@ def decide(pr, event):
     if not clean:
         return {"kind": "full", "reason": f"the review of {previous} found blocking issues, so the head gets a fresh review"}
     if kind == "wording":
+        # prepare.sh adds what `wording_problem` found and prints it as
+        # "Nothing to review: wording only: ...", the line that AGENTS.md
+        # has the coordinator look for.
         kind, reason = "skip", (
-            f"the last comment that names the head says it only fixes the wording of the clean review of {previous}; "
-            "the coordinator confirms that each change answers a fix-before-merge finding that the comment lists "
-            "and changes only prose as AGENTS.md defines it, and that nothing else changed")
+            f"{WORDING} {previous} has a clean review, and the last comment that names the head says "
+            "that the head only fixes that review's wording")
     else:
         reason = f"the last comment that names the head starts with \"{kind} only\""
     return {
@@ -151,10 +158,11 @@ def git(*args):
 
 def wording_problem(previous, head):
     """Why `head` cannot skip as wording only after `previous`, or None:
-    it must be one commit on top of `previous` and change neither AGENTS.md
-    nor anything under `.github/`. Runs git in the current directory."""
+    its only parent must be `previous`, and it must change neither
+    AGENTS.md nor anything under `.github/`. Runs git in the current
+    directory."""
     if git("rev-list", "--parents", "-n", "1", head).split() != [head, previous]:
-        return f"{head} is not one commit on top of {previous}"
+        return f"{head} is not one commit on top of {previous}: its only parent must be {previous}"
     changed = git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z",
                   previous, head).split("\0")
     # The process and the workflow, whose prose decides how reviews go.

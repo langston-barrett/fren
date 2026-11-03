@@ -113,14 +113,17 @@ if [ -n "$previous" ] && ! auth_fetch "$previous"; then
   reason="$previous, the reviewed head, can no longer be fetched"
   previous=
 fi
-# As AGENTS.md says, a wording-only head is one commit on top of the
-# reviewed head, with no rebase, and changes neither AGENTS.md nor
-# `.github/`; any other gets a full review.
+# As AGENTS.md says, a wording-only head has the reviewed head as its only
+# parent and changes neither AGENTS.md nor `.github/`; any other gets a
+# full review. Only this skip has a `previous`, and its message starts
+# "Nothing to review: wording only:", which the coordinator looks for.
 if [ "$kind" = skip ] && [ -n "$previous" ]; then
   problem=$(python3 -I "$here/kind.py" wording "$previous" "$head")
   if [ -n "$problem" ]; then
     kind=full
     reason="the head asks to skip as wording only, but $problem"
+  else
+    reason="$reason; its only parent is $previous, and it changes neither AGENTS.md nor .github/, so the coordinator confirms the rest of AGENTS.md's conditions before the merge"
   fi
   previous=
 fi
