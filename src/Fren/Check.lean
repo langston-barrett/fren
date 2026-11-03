@@ -799,10 +799,13 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     if d.result == .nat then out := out.push ((`nat, ← atLeast0 app), gs)
     -- Newly reflected type facts need the same solver forms as explicit
     -- clauses: their subset helpers may have executable Lean matches.
-    if let (true, some fact) := (Core.recursiveResultFact d.fact?.isSome, d.fact?) then
-      let value := if d.result == .nat then
-        mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
-      out := out.push ((`type, ← unfoldDefined ((atI fact).beta #[value])), gs)
+    -- An application that `scan` found has nothing bound, so only the
+    -- declared result type decides (`Core.recursiveResultFact`).
+    if let some fact := d.fact? then
+      if Core.recursiveResultFact (constrained := true) then
+        let value := if d.result == .nat then
+          mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
+        out := out.push ((`type, ← unfoldDefined ((atI fact).beta #[value])), gs)
     let k := st.contracts.get? d.path
     let domain := ((st.bodies.get? d.path).map fun b => (b.vars.zip args).filterMap fun (v, x) => v.fact?.map fun f => (atI f).beta #[x]).getD #[]
     let pres ← ((k.map (·.pres)).getD #[]).mapM fun c => unfoldDefined (atI (c.at args))

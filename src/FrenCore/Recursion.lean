@@ -90,7 +90,10 @@ def recursiveFacts (introduced : Bool) (bound : Bool := false) : Bool × Bool :=
 where the function's declared result type has one (`constrained`): with
 its postconditions, wherever they are brought, so in the function's own
 body too, as an induction hypothesis at each recursive application
-(`lang::recursive_facts`). -/
+(`lang::recursive_facts`). Both front ends call it with `constrained`
+alone: the application's `bound` is decided with its postconditions, by
+`recursiveFacts`, where the work queue finds applications, which gives the
+result type's fact only to those that bring postconditions. -/
 def recursiveResultFact (constrained : Bool) (bound : Bool := false) : Bool :=
   constrained && (recursiveFacts true bound).1
 

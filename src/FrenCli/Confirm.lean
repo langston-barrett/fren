@@ -444,17 +444,20 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
         let g := goal.2.eval sp sy I env tys
         -- Each formula's recursive functions, as the evaluator's formula and
         -- the solver's have them (`Fren.Core.counterexampleReported`).
+        -- Each computed once, since unfolding can make a formula large.
         let recsOf (f : String × Fm) := f.2.recursiveNames sp ++ recursiveIn f.1
-        let recursive := (hyps.flatMap fun (_, f) => recsOf f) ++ recsOf goal
+        let hypRecs := hyps.map fun (_, f) => recsOf f
+        let goalRecs := recsOf goal
+        let recursive := hypRecs.flatten ++ goalRecs
         -- A formula without recursion that the model contradicts is a bug
         -- in Fren, which the refutation below reports, not evidence about
         -- the contracts (`Reqs/Models#reporting`).
         let plain := Fren.Core.plainContradiction
-          ((hyps.zip vals).map fun ((n, f), (_, v)) => (n, v, !(recsOf f).isEmpty))
-          (g, !(recsOf goal).isEmpty)
+          ((vals.zip hypRecs).map fun ((n, v), rs) => (n, v, !rs.isEmpty))
+          (g, !goalRecs.isEmpty)
         if !plain && !Fren.Core.counterexampleReported
-            ((hyps.zip vals).map fun ((_, f), (_, v)) => (!(recsOf f).isEmpty, v))
-            (!(recsOf goal).isEmpty, g) false then
+            ((vals.zip hypRecs).map fun ((_, v), rs) => (!rs.isEmpty, v))
+            (!goalRecs.isEmpty, g) false then
           return .unknown (Fren.Core.recursiveReason recursive)
         -- Only a refuted model is reported (`eval::confirm`).
         if confirmation bad.isSome (g == some true) (vals.all (·.2.isSome) && g.isSome) == .Refuted then

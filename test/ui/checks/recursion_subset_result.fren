@@ -53,7 +53,7 @@ expect callers(p: Pos, l: L) {
 
 -- Wrong, but evaluation has no formula of a subset type's obligation, so
 -- it cannot confirm the counterexample, which is Inconclusive, not a
--- failure.
+-- failure, until #736 gives it one.
 pub fn wrong(p: Pos, l: L): Pos := match l {  --~ warning: does not confirm the counterexample: it refutes it, or cannot evaluate it
     L::Nil => p - 1,
     L::Cons(_, rest) => wrong(p, rest),

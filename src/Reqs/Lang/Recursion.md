@@ -221,7 +221,9 @@ also on its preconditions. The result type's constraint, where the
 function's declared result type has one, comes with the postconditions,
 wherever they do: so in the function's own body too, where it is an
 induction hypothesis at each recursive application, beside the
-postconditions ([Contracts](#contracts)). Of
+postconditions ([Contracts](#contracts)). For example, of `keep` below,
+the obligation that the body is a `Pos` follows, at `keep(p, rest)`, from
+that application's being one:
 
 ```text
 pub type Pos = n: Int where positive: n >= 1
@@ -232,8 +234,10 @@ pub fn keep(p: Pos, l: L): Pos := match l {
 }
 ```
 
-the obligation that the body is a `Pos` follows, at `keep(p, rest)`, from
-that application's being one.
+An application's `bound?` is decided with its postconditions, where the
+work queue finds it: both front ends decide the result type's fact from
+`constrained_result?` alone, for the applications that bring
+postconditions.
 
 ```fren
 pub enum RecApplication { Written, Reflected }
@@ -308,8 +312,9 @@ Inconclusive with the same `F0450` diagnostic.
 A recursive function's contract is checked once against its body by
 Hoare's rule. At actual recursive applications in that body all of the
 function's postconditions, and its result type's constraint, may be
-assumed simultaneously, guarded by the application's conditions. No hypotheses are added at arbitrary payloads:
-only the applications actually made bring facts. Structural recursion
+assumed simultaneously, guarded by the application's conditions. No
+hypotheses are added at arbitrary payloads: only the applications
+actually made bring facts. Structural recursion
 makes the induction sound, because each such application decreases.
 The other arguments are those at the application, not necessarily the
 original parameters. The invariants of the parameters' subset types and
@@ -529,7 +534,7 @@ pub fn evaluation_confirms?(hyps: Seq<ModelFormula>, goal: ModelFormula) :=
     goal.value = Evaluated::Fails and (forall (k: Int), when 0 <= k < hyps.len, hyps[k].value = Evaluated::Holds)
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
+set_option fren.evidence "solver" in
 pub proc counterexample_confirmed(
     hyps: Seq<ModelFormula>,     -- the query's own hypotheses
     goal: ModelFormula,          -- its goal, which a counterexample makes false
@@ -548,7 +553,7 @@ pub proc counterexample_confirmed(
 }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
+set_option fren.evidence "solver" in
 expect counterexample_confirmed_refines(
     hyps: Seq<lang::ModelFormula>,
     goal: lang::ModelFormula,
