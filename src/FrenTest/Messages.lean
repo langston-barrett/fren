@@ -79,12 +79,12 @@ def cliDiagnostics (file : String) (out : String) (keepUnlocated := false) : Arr
   return (diags.filterMap fun (d, k) => if k then some d else none, summary)
 
 /-- The Lean front end's messages about the Fren source `src`, and its
-summary. Its messages have no codes. -/
-def hostedDiagnostics (env : Environment) (file : String) (src : String) :
+summary, under the options `opts`. Its messages have no codes. -/
+def hostedDiagnostics (env : Environment) (file : String) (src : String) (opts : Options := {}) :
     IO (Array Diagnostic × Option String) := do
   -- One line of header; message lines are shifted back below.
   let input := "open Fren.Lang\n" ++ src ++ "\n#fren_check\n"
-  let (_, log) ← Elab.process input env {} file
+  let (_, log) ← Elab.process input env opts file
   -- The lines of `src`; a message below them is at the `#fren_check` added
   -- above, which has no line in `src`.
   let lines := (src.splitOn "\n").length

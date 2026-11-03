@@ -8,6 +8,7 @@ import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.OutOfFuel
 import FrenTest.Quote
+import FrenTest.SmallValues
 import FrenTest.Ui
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -184,7 +185,9 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
         failures := failures.push s!"{f} (binary): {e}"
       cliStopped := some (out.contains s!"error: {Fren.Core.couldNotHeadline}")
     if spec.only? != some "cli" then
-      let (diags, summary) ← hostedDiagnostics env f.toString src
+      -- Each type that the hosted front end takes from its cache checked
+      -- against the term's elaborated again (`Fren.typeOf`).
+      let (diags, summary) ← hostedDiagnostics env f.toString src (Fren.fren.checkTypeCache.set {} true)
       let stopped := diags.any isStopped
       for e in check "hosted" spec (diags.filter (!isStopped ·)) summary none do
         failures := failures.push s!"{f} (Lean): {e}"
@@ -2496,13 +2499,64 @@ def specsOf (src : String) : Array String :=
 #guard specsOf "#fren_md \"a.md\"\n#guard_msgs in #fren_md \"b.md\"\n  #fren_md \"c/d.md\"\n" == #["a.md", "b.md", "c/d.md"]
 #guard specsOf "-- `#fren_md` with no file\n" == #[]
 
+/-- The default targets of the lakefile `lakefile`: the names of its
+`lean_lib`s and `lean_exe`s marked `@[default_target]`, the attribute on
+the declaration's line or on a line of its own before it; or, as an
+error, the first `@[default_target]` that it cannot read, so that no
+default target is missed. -/
+def defaultTargets (lakefile : String) : Except String (Array String) := do
+  let lines := (lakefile.splitOn "\n").toArray
+  let mut out := #[]
+  for i in [0:lines.size] do
+    let line := lines[i]!.trimAscii.toString
+    unless line.startsWith "@[default_target]" do continue
+    let after := (line.drop "@[default_target]".length).trimAscii.toString
+    let decl := if after.isEmpty then ((lines[i + 1]?).getD "").trimAscii.toString else after
+    let rest := (decl.dropPrefix? "lean_lib ").orElse fun _ => decl.dropPrefix? "lean_exe "
+    let name := (rest.bind fun r => (r.toString.splitOn " ").head?).getD ""
+    unless !name.isEmpty && name.all (fun c => c.isAlphanum || c == '_') do
+      throw s!"lakefile.lean:{i + 1}: `lake test`'s `libraries` job cannot read the default target `{line}`"
+    out := out.push name
+  return out
+
+#guard defaultTargets "@[default_target] lean_lib A where\n  x := 1\nlean_lib B\n@[default_target] lean_exe c where\n" == .ok #["A", "c"]
+#guard defaultTargets "@[default_target]\nlean_lib A where\n" == .ok #["A"]
+#guard (defaultTargets "@[default_target] lean_lib «a b» where\n" matches .error _)
+#guard (defaultTargets "@[default_target] target x where\n" matches .error _)
+
+/-- The targets that the job `build` of the workflow `workflow` builds in
+its matrix: the names after each `targets:` from the job's line to the
+next job's (a line indented by two spaces). -/
+def matrixTargets (workflow : String) : Array String := Id.run do
+  let mut out := #[]
+  let mut inBuild := false
+  for line in workflow.splitOn "\n" do
+    if line.startsWith "  " && !line.startsWith "   " && !line.startsWith "  #" then
+      inBuild := line == "  build:"
+    else if inBuild then
+      if let some rest := line.trimAscii.toString.dropPrefix? "targets: " then
+        out := out ++ (rest.toString.splitOn " ").toArray.filter (!·.isEmpty)
+  return out
+
+#guard matrixTargets "jobs:\n  build:\n    strategy:\n      matrix:\n        - part: a\n          targets: A B\n        - part: b\n          targets: c\n  test:\n    targets: D\n" == #["A", "B", "c"]
+
 /-- Each copy of a root's imports is the root's; no module is in the globs
 of two libraries; each module of Reqs reads only the specs that its
 library needs; only modules whose library needs the tests make `tested`
 claims; and only the tests whose library needs the files that they read,
-`FrenTestFiles`, read files with `#fren_md`. -/
+`FrenTestFiles`, read files with `#fren_md`; and `pre-merge`'s build
+jobs together build exactly the default targets. -/
 def libraries : IO (Array String) := do
   let mut failures := #[]
+  -- `lake build --wfail` runs on two machines, each building some of the
+  -- default targets, so that a new one would otherwise go unbuilt.
+  let built := ((matrixTargets (← IO.FS.readFile ".github/workflows/pre-merge.yml")).qsort (· < ·)).toList.eraseDups.toArray
+  match defaultTargets (← IO.FS.readFile "lakefile.lean") with
+  | .error e => failures := failures.push e
+  | .ok ts =>
+    let want := ts.qsort (· < ·)
+    if want != built then
+      failures := failures.push s!".github/workflows/pre-merge.yml: its build jobs build {built.toList}, but the default targets of `lakefile.lean` are {want.toList}"
   for (root, copies) in rootCopies do
     let ofRoot (ms : Array String) := (ms.filter (·.startsWith s!"{root}.")).qsort (· < ·)
     let want := ofRoot (← importsOf root)
@@ -3480,7 +3534,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["panicGuard"]]
+      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -3512,6 +3566,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     markdownFences (← importModules #[{ module := `Fren }] {} (loadExts := true))
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
+  | ["smallValues"] => pure (Fren.Test.SmallValues.differences 300)
   | ["ownSpec"] => ownSpec
   -- Not among `jobs`: on `main` only, after a build of `Reqs` with its
   -- checks (`ownSpecAgreement`).

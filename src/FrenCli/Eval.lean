@@ -1536,7 +1536,15 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
       -- A length needs no table: it is the number of elements, which the
       -- numbering keeps.
       if let .len := m then return .int es.size
-      let table := (es ++ args.flatMap fun | .seq a => a | v => #[v]).toList.eraseDups.toArray
+      -- The values that the arguments bring: a sequence argument's
+      -- elements, and `update`'s value, which is an element itself, even
+      -- if it is a sequence, as in a `Seq<Seq<Int>>`: its elements alone
+      -- would leave it out of the table, and numbered as the first value.
+      let brought (k : Nat) (v : Val) : Array Val := match m, k, v with
+        | .update, 1, v => #[v]
+        | _, _, .seq a => a
+        | _, _, v => #[v]
+      let table := (es ++ args.zipIdx.flatMap fun (v, k) => brought k v).toList.eraseDups.toArray
       let num (v : Val) : Nat := (table.findIdx? (· == v)).getD 0
       let q := Fren.Seq.ofList (es.toList.map num)
       let back (q : Fren.Seq Nat) : Val := .seq (q.toList.toArray.map (table[·]!))

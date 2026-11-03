@@ -455,6 +455,7 @@ contract, so random testing checks them, as it does `lang::coincidence`.
 
 ```fren
 use check::{CountOp, Truth, cardinality_truth, partial_and, partial_not}
+
 use lang::{
     BinaryOp,
     Cardinality,
