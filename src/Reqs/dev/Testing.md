@@ -840,8 +840,7 @@ each policy's `rate_jobs` by that policy's active hours in the window,
 including idle time, from the flip records below. Only completions whose
 admission falls in a matching logged policy interval within the window
 count toward `rate_jobs`. Jobs admitted before the first flip, outside
-the window or under a different policy do not inflate that rate. Raw job
-counts and run time summaries still include every completion in the window.
+the window or under a different policy do not inflate that rate.
 Without flip records its policy rate is `null`, rather than an estimate
 from first and last jobs.
 A completion stays attributed to its admission policy if a flip happened
@@ -850,18 +849,17 @@ of load threshold or slot count are excluded from wait and total-latency
 percentiles and from `rate_jobs`. Records without enough information about
 the wait are excluded too. `wait_jobs` counts the jobs used for these percentiles;
 `excluded_waits` reports the other jobs with their admission and enqueue
-policies, timestamps, durations and reason. Their raw counts and run times
-remain under the recorded admission policy, and top-level wait summaries
-still include every completion. This keeps a backlog released by a flip
-from inflating the new policy's comparison waits or completion rate.
+policies, timestamps, durations and reason. This keeps a backlog released
+by a flip from inflating the new policy's comparison waits or completion rate.
 Failed jobs are counted separately. Samples from overlapping
 jobs both count toward mean load. Malformed and incomplete lines are skipped.
 At the top level, `hours` is the requested window, while `observed_hours`
 is the total logged exposure across policies. Its `rate_jobs` is the sum
 of the policy numerators, and its `jobs_per_hour` divides that sum by
 the total exposure, using the same admission rule as the policy entries.
-With no logged exposure the rate is `null`; raw counts and timings still
-describe every completion in the requested window.
+With no logged exposure the rate is `null`. Raw counts and run times retain
+the admission policy; these and the top-level wait and latency summaries
+include every completion in the requested window.
 
 `by_kind` compares successful run-time percentiles within each job kind.
 For each load threshold it also reports the ratio of its median run time
