@@ -895,6 +895,21 @@ def leanGoalHead (e : Expr) : StateT LocalContext MetaM (Core.GoalHead Expr Expr
   | .letE _ _ v b _ => return .definition (b.instantiate1 v)
   | _ => return .other
 
+/-- `b` with each of its steps, a query or a reading of a model, under
+Lean's heartbeat limit of its own, as each query has a time limit of its own
+(`fren.timeout`): a procedure never reaches the limit only by having many
+clauses, which the `fren` command, with no such limit, checks
+(`Reqs/View#check-results`). -/
+def Core.Backend.ownHeartbeats (b : Core.Backend MetaM Expr Expr) : Core.Backend MetaM Expr Expr :=
+  { b with
+    query := fun hyps goal wantModel => withCurrHeartbeats (b.query hyps goal wantModel)
+    modelBool? := b.modelBool?.map fun f model formula => withCurrHeartbeats (f model formula)
+    existsOutputs := fun body => withCurrHeartbeats (b.existsOutputs body)
+    pin := fun n val => withCurrHeartbeats (b.pin n val)
+    pinVariant := fun n val => withCurrHeartbeats (b.pinVariant n val)
+    render := fun n val => withCurrHeartbeats (b.render n val)
+    confirm? := b.confirm?.map fun f hyps goal model => withCurrHeartbeats (f hyps goal model) }
+
 /-- The lean-smt backend, for a procedure whose variables are the free variables
 `fvs`, and whose variables other than its parameters have second copies `primes`
 (`Core.primed`), answering from `cache` the queries asked before. `facts` are
@@ -1075,13 +1090,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     let hyps := hyps.map fun (n, t) => (n, instances t)
     if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then return (← askElems hyps goal wantModel, fns, factRecs)
     else return (← askSmt hyps goal wantModel, fns, factRecs)
-  -- Each query has Lean's heartbeat budget of its own, as it has a time
-  -- limit of its own (`fren.timeout`), so that a procedure's check never
-  -- reaches the limit only for having many clauses
-  -- (`Reqs/View#check-results`). `lang::operator_rules`'s 40 queries take
-  -- about 406,000 heartbeats (in `maxHeartbeats`'s thousands) in all,
-  -- against a limit of 200,000, and none of them more than 19,000 (#710).
-  { query := fun hyps goal wantModel => withCurrHeartbeats do
+  Core.Backend.ownHeartbeats <|
+  { query := fun hyps goal wantModel => do
       -- The same formulas, in the same local context and with the same
       -- options, are the same query.
       let key := (hyps.map (·.2), goal, wantModel)
@@ -1698,7 +1708,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         let mut instResults := #[]
         for targs in own do
           let ic ← instanceContract hooks elaborated f targs
-          let (rs, _, _, _) ← checkComp ic #[.realizable] none hooks?
+          let (rs, _, _, _) ← withCurrHeartbeats (checkComp ic #[.realizable] none hooks?)
           instResults := instResults ++ rs.filter (·.kind == .realizable)
         let checked := Core.genericContract (·.verdict) r instResults
         pure (results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x)
@@ -1712,10 +1722,10 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     if let some hooks := hooks? then
       for (f, targs) in foreign do
         let some b := st0.bodies.get? f | continue
-        let (rs, _, _, _) ← checkComp b #[.realizable]
+        let (rs, _, _, _) ← withCurrHeartbeats (checkComp b #[.realizable])
         unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue
         let ic ← instanceContract hooks b f targs
-        let (rs, _, _, _) ← checkComp ic #[.realizable] none hooks?
+        let (rs, _, _, _) ← withCurrHeartbeats (checkComp ic #[.realizable] none hooks?)
         results := results ++ (rs.filter (·.kind == .realizable)).map fun r => { r with clashes := #[] }
     let mut witnesses := #[]
     for g in c.covers do
@@ -1723,7 +1733,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       let goal := mkNot (← beta g.body)
       if let some (_, model) := (← models.get).find? (·.1 == goal) then
         if passed then
-          if let some d ← coverWitness c fvs g model then witnesses := witnesses.push d
+          if let some d ← withCurrHeartbeats (coverWitness c fvs g model) then witnesses := witnesses.push d
     return (results, witnesses, enumerated, skipped)
 
 end Fren
