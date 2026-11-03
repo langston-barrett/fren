@@ -980,14 +980,14 @@ build --wfail Reqs Impls`), the other the rest of the default targets:
 the code, the tests, the examples and the binaries, among them the C code
 that the first needs none of. The chain from `Fren.Elab` through
 `Reqs.Lang`, `Reqs.Lint` and `Impls.Lint` is the build's critical path,
-and on one machine its modules shared the runner's four cores with the
-rest: where everything was rebuilt, the build's steps took some 2,400
-CPU seconds, so that the chain's ran at about half speed. On 2026-11-02, in
-three runs of one commit, which rebuilt from `FrenCore` up, with the old
-single build job beside the two, the single build took 729, 705 and 679
-s, the build of the requirements 361, 443 and 316 s, and that of the
-rest 321, 392 and 297 s; so the build no longer outlasts the test
-shards. Both build what both import, from `FrenCore` to `Fren`, and
+and on one machine its modules shared the runner's four logical CPUs
+with the rest: where everything was rebuilt, the build's steps took some
+2,400 CPU seconds, so that the chain's ran at about half speed. On
+2026-11-02, in three runs of one commit, which rebuilt from `FrenCore`
+up, with the old single build job beside the two, the single build took
+729, 705 and 679 s, the build of the requirements 361, 443 and 316 s,
+and that of the rest 321, 392 and 297 s; so the build no longer outlasts
+the test shards. Both build what both import, from `FrenCore` to `Fren`, and
 `lake test`'s `libraries` job checks that the two lists of targets
 together are `lakefile.lean`'s default targets. On
 `main`, the `lean ci` workflow runs `lake build --wfail` and the whole
@@ -1004,10 +1004,41 @@ for the one before it, the median time from a push to `main` to its
 `.lake` being saved would have been some 6 minutes instead of 13, and a
 fifth would have. The runners' artifact caches ([Shared
 builds](#shared-builds)) start empty, so on CI every step that `.lake`
-does not have runs, and reports its messages. It also compares the methods on every check that each can run
-(`methodsAgree`, [Agreement of methods](../Methods.md#agreement-of-methods)), and runs the
-front-end fuzzer on seeds that no run used before, from the run's number,
-with `--avoid-known`, of both generators. What fails that job is exactly a
+does not have runs, and reports its messages.
+
+Before it saves the `.lake`, `main`'s build job also builds the test
+driver, as `lake test` does. Of the C code of `Fren` and `FrenTest`, the
+default targets link only `Fren.Seq`'s (through `fren`), so without it
+the `.lake` had the object files of none of their other modules, and each
+test shard of each pull request compiled them all again: on 2026-11-03,
+on a runner, `lake build fren_test` from `main`'s `.lake` took 71 and 74
+s where nothing had changed, and 0 and 1 s once the objects were
+there. Lake recompiles a module's C code only if the code differs, and
+`lean` writes the same C code for the same module: after a comment at the
+end of `Fren/Check.lean`, the shard rebuilt the `.olean` files of
+`Fren.Check` and of what imports it (66 and 67 s), but compiled no C code,
+since `Check.c` came out byte for byte the same. So a cache of compiled C
+code such as ccache would add nothing to the objects in the `.lake`. Each
+`.lake` is about 470 MB, and the repository's caches share 10 GB, past
+which GitHub evicts the least recently used. So once the build job has
+saved one, the `prune-lake-caches` job, the only one that may delete the
+repository's caches, deletes all but the newest three that `main` saved,
+which keeps the small caches, the query cache and mdbook's, from being
+evicted. A pull request whose base's `.lake` was deleted restores the
+newest, and Lake rebuilds what differs.
+
+The requirements' chain is the critical path of most `pre-merge` runs
+that rebuild it, and the runners slow it: they have four logical CPUs, two
+cores of two threads each. On 2026-11-03, on a runner, elaborating
+`Reqs/Lint.lean` alone took 82 and 83 s, with one other module elaborated
+beside it 90 and 95 s, and with three others 112 and 123 s, while in the
+build, beside the rest of `Reqs` and `Impls`, it takes 121 to 152 s.
+
+The `lean ci` workflow also compares the methods on every check that
+each can run (`methodsAgree`, [Agreement of
+methods](../Methods.md#agreement-of-methods)), and runs the front-end
+fuzzer on seeds that no run used before, from the run's number, with
+`--avoid-known`, of both generators. What fails that job is exactly a
 spec with a difference of a kind that is not known, a crash, or a
 timeout; a spec whose differences are all of known kinds
 (`knownDifferences` for `--avoid-known`, and `knownKinds`), or only in

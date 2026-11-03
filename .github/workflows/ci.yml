@@ -61,24 +61,40 @@ jobs:
     # inconclusive checks and untraced requirements, fail it.
     - id: build
       run: touch "$RUNNER_TEMP/build-start" && lake build --wfail
+    # The test driver too, as `lake test` builds it, not a default target:
+    # it links the C code of `Fren` and `FrenTest`, of which the default
+    # targets link only `Fren.Seq` (through `fren`), so that without it the
+    # `.lake` saved below has the object files of none of their other
+    # modules, and every test shard of every pull request compiles them all
+    # again. Lake recompiles a module's C code only if the code differs, so
+    # a shard that starts from this `.lake` compiles only what its pull
+    # request changes (`Reqs/dev/Testing#continuous-integration`).
+    - id: driver
+      run: lake build fren_test
     # As soon as it is built, for the pull requests that start from it. Lake
     # saves no output of a module that failed, so a failed build's `.lake`
     # would serve as well, but a pull request that restores it would
     # rebuild the modules that failed.
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: ${{ steps.build.outcome == 'success' && steps.lake.outputs.cache-hit != 'true' }}
+      if: >-
+        ${{ steps.build.outcome == 'success' &&
+        steps.driver.outcome == 'success' &&
+        steps.lake.outputs.cache-hit != 'true' }}
       with:
         path: .lake
         key: ${{ steps.lake.outputs.key }}
     # No output that the build wrote names the checkout's directory, as in
-    # `pre-merge` (`Reqs/dev/Testing#shared-builds`).
-    - run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
+    # `pre-merge` (`Reqs/dev/Testing#shared-builds`). Like the mutation
+    # sample below, it runs even if only the test driver failed to build.
+    - if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
     # A few mutants of Fren's own requirements on each push, a different few
     # each run (the seed is the run's number), so that over many pushes the
     # runs cover them: all of them, over 3000, are too many for one run.
     # Survivors are warnings, and the step never fails the build, since the
     # survivors are not triaged yet.
     - name: Mutate a few requirements
+      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
       continue-on-error: true
       timeout-minutes: 2
       env:
@@ -99,6 +115,40 @@ jobs:
           1) echo "::error title=fren mutate::an internal error (seed $SEED); see the step's log"; exit 1 ;;
           *) echo "::error title=fren mutate::could not run (exit $code); see the step's log"; exit "$code" ;;
         esac
+  # Once the build has saved its `.lake`, deletes all but the newest three
+  # that `main` saved. Each is about 470 MB, and the repository's caches
+  # share 10 GB, past which GitHub evicts the least recently used, so that
+  # without this the old `.lake`s, which only a pull request based on an
+  # old commit of `main` would restore, push out the small caches, such as
+  # the query cache and mdbook's. A pull request whose base's `.lake` was
+  # deleted restores the newest, and Lake rebuilds what differs. Its own
+  # job, since it alone has `actions: write`, with which it may delete the
+  # repository's caches, and it runs no code from the checkout.
+  prune-lake-caches:
+    needs: build
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    concurrency:
+      group: ${{ github.workflow }}-prune-lake-caches
+      cancel-in-progress: false
+    steps:
+    - env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        mapfile -t old < <(gh cache list --ref refs/heads/main --key lake- \
+          --sort created_at --order desc --limit 100 \
+          --json id --jq '.[3:][].id')
+        for id in "${old[@]}"; do
+          gh cache delete "$id"
+        done
+        echo "deleted ${#old[@]} old .lake caches"
+        gh cache list --ref refs/heads/main --key lake- \
+          --sort created_at --order desc --json key,createdAt,sizeInBytes
   # The whole of `lake test`, the mutants of Fren's own requirements too,
   # split over machines: shard 0 checks Fren's own requirements with the
   # binary, and the others the rest (`Reqs/dev/Testing`).
@@ -253,10 +303,10 @@ jobs:
       with:
         sha: ${{ github.sha }}
     - run: lake build fren_fuzz_frontends
-    # Four fuzzers at once, one to a core, two of each generator, each on
-    # 150 seeds of the run's 1000, far from the corpus's (a run by hand may
-    # ask for more, which reach into later runs' seeds). Each exits nonzero
-    # on a failure, as above.
+    # Four fuzzers at once, one to a logical CPU, two of each generator,
+    # each on 150 seeds of the run's 1000, far from the corpus's (a run by
+    # hand may ask for more, which reach into later runs' seeds). Each exits
+    # nonzero on a failure, as above.
     - name: Fuzz the front ends
       env:
         RUN: ${{ github.run_number }}
