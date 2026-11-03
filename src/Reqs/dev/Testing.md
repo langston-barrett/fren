@@ -202,7 +202,11 @@ pub mod testing
   `QF_UFDTLIA`, a linear one, at once must get every answer right. The
   `ALL` ones crashed about one run in three while their solvers
   initialized and were freed at the same time; the linear ones take no
-  lock (`FrenCli.Cvc5`).
+  lock (`FrenCli.Cvc5`). Half of the `ALL` ones initialize their solvers
+  at a `push` before their definition, and let the lock go there. And
+  each command that the lock is let go after must initialize a solver in
+  cvc5, each must be tried, and the declarations and options before it
+  must not initialize one.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
@@ -212,6 +216,35 @@ pub mod testing
   that their readers read (see [Reading models](../Models.md)). The ui tests in
   `test/ui/misread/` run with `FREN_MISREAD_MODELS` set, which makes both
   readers misread every integer, to check that the confirmation catches it.
+- **The binary's shared reading** (`lake test`, `ownSpec`, which runs
+  `sharedSpec` after its own check): only the `fren` binary reads the spec
+  once, marks it and what else the threads read persistent, and shares it
+  with every thread (`FrenCli.Args.persist`); the other jobs call `check`
+  and `quickcheck` within the test driver, which gives each thread a
+  reading of its own. So `sharedSpec` runs the binary's path, each run in
+  a process of its own, since what it marks is never freed: `fren check`
+  of Fren's own requirements, and `fren check` and `fren quickcheck` of ui
+  tests that fail and leave checks undecided, at `--jobs 4`. Each must
+  give the same output and exit status as the tests' path (see [Parallel
+  checking](../Cli.md#parallel-checking)): for Fren's own requirements,
+  `ownSpec`'s own run, at the default `--jobs`, and for the ui tests, a
+  run at `--jobs 1`. Fren's own requirements are checked with a copy of
+  `ownSpec`'s [query cache](#query-cache), if it has one, taken once that
+  run has filled it, so that their queries are answered from it rather
+  than solved under load, where one could reach its time limit; with no
+  cache (`FREN_QUERY_CACHE` empty), they are checked with an empty one, so
+  solved. So the shared path's own-spec run is not independent of the
+  tests' path's solver answers: it answers from the cache that `ownSpec`'s
+  run filled, and a wrong answer that the solver gave there would be given
+  again. Only a difference in a query's script, which changes its key, is
+  solved anew. Run alone (`--job sharedSpec`), the tests' path is a run at
+  `--jobs 1` with a copy of the cache of its own, so it does not answer
+  from the shared path's answers either; and the ui tests' runs keep no
+  answers. A case whose outputs differ only where queries reached their
+  time limit (each block that differs says so, is at the place of a check
+  that one of those is about, or is a line of the summary) runs again
+  once, and is skipped if it still differs so; `lake test` shows each skip
+  as a `skipped: …` line. Any other difference fails.
 - **Differential fuzzing** (`lake exe fren_fuzz [--count N] [--seed N]
   [--out DIR]`): generates random specs and compares each verdict of
   `fren check` with one computed by brute force from the evaluator. The
@@ -1110,18 +1143,20 @@ fixing or reverting the cause comes before any other merge.
 cache](../Cli.md#query-cache), so that a query asked by an earlier run is
 answered without the solver. The test driver's `ownSpec` job reads the
 directory from `FREN_QUERY_CACHE`, which is `.lake/query-cache` if it is
-not set, and keeps no answers if it is empty. `FREN_VERIFY_QUERY_CACHE`, if
-set, is the directory to compare with (`--verify-query-cache`): the job
+not set, and keeps no answers if it is empty. `FREN_VERIFY_QUERY_CACHE`,
+if set, is the directory to compare with (`--verify-query-cache`): the job
 fails if `fren check` compared no answers with it, unless it holds no
 entry of the current `queryCacheVersion` and cvc5, which no answer could
-be compared with. Only that job uses the cache, and the `queryCache` job
-tests the cache itself: the same output cold, in a fresh directory, as
-warm, a warm run that writes no entry, so that it answered every query
-from the cache, the same entries from two cold runs, a comparison that
-compares answers and finds no contradiction, one with entries whose
-answers are flipped that reports each as a contradiction with no
-position, and a `sat` entry without a model that does not answer a query
-that wants one.
+be compared with. Only that job uses the cache, and `sharedSpec`, which it
+runs, a copy of it. The `queryCache` job tests the cache itself: the same
+output cold, in a fresh directory, as warm, a warm run that writes no
+entry, so that it answered every query from the cache, the same entries
+from two cold runs, a comparison that compares answers and finds no
+contradiction, one with entries whose answers are flipped that reports
+each as a contradiction with no position, and a `sat` entry without a
+model that does not answer a query that wants one; and, in memory, a
+script asked again gets the answer that it got first, whichever of the
+cache's maps holds it.
 
 Locally, the cache grows with each run: copying a worktree's `.lake`
 copies it too, and deleting `.lake/query-cache` clears it. An answer from
