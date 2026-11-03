@@ -86,16 +86,15 @@ Binder-dependent applications receive neither (`lang::recursive_facts`). -/
 def recursiveFacts (introduced : Bool) (bound : Bool := false) : Bool × Bool :=
   (!bound, !bound && !introduced)
 
-/-- Whether a recursive application brings its result type's constraint,
-where the function's declared result type has one (`constrained`): with
-its postconditions, wherever they are brought, so in the function's own
-body too, as an induction hypothesis at each recursive application
-(`lang::recursive_facts`). Both front ends call it with `constrained`
-alone: the application's `bound` is decided with its postconditions, by
-`recursiveFacts`, where the work queue finds applications, which gives the
-result type's fact only to those that bring postconditions. -/
-def recursiveResultFact (constrained : Bool) (bound : Bool := false) : Bool :=
-  constrained && (recursiveFacts true bound).1
+/-- Whether a recursive function's applications bring its result type's
+constraint: where its declared result type has one (`constrained`). Which
+applications bring it is not decided here: it comes with the
+postconditions, wherever they are brought, so in the function's own body
+too, as an induction hypothesis at each recursive application, and not at
+an application that mentions a quantifier-bound variable, which
+`recursiveFacts` excludes for both (`lang::recursive_facts`,
+`expect with_posts`). -/
+def recursiveResultFact (constrained : Bool) : Bool := constrained
 
 /-- A simultaneous induction cannot report a dependent success when another
 postcondition is unproved (`lang::recursive_post_result`). -/

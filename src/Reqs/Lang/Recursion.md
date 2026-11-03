@@ -257,9 +257,12 @@ pub proc recursive_facts(
 }
 ```
 
-Both front ends decide the result type's fact with
-`Fren.Core.recursiveResultFact`, and the others with
-`Fren.Core.recursiveFacts`.
+Both front ends decide whether a function's applications bring its result
+type's fact with `Fren.Core.recursiveResultFact`, from its declared result
+type alone, and which applications bring facts with
+`Fren.Core.recursiveFacts`: the result type's fact rides on the
+postconditions' gate, as `with_posts` states, so `result_type?` is the
+conjunction of the two.
 
 The work queue finds an application once on each path to it: within the
 formulas of the query, and through the facts and equations that bring it.

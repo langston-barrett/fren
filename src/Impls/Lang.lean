@@ -3565,7 +3565,7 @@ impl recursive_facts: lang::recursive_facts for (introduced bound constrained : 
   bound? := bound,
   origin := if introduced then lang.RecApplication.Reflected else lang.RecApplication.Written,
   constrained_result? := constrained,
-  facts := { result_type? := Fren.Core.recursiveResultFact constrained bound,
+  facts := { result_type? := Fren.Core.recursiveResultFact constrained && (Fren.Core.recursiveFacts introduced bound).1,
              posts? := (Fren.Core.recursiveFacts introduced bound).1,
              equation? := (Fren.Core.recursiveFacts introduced bound).2 },
 } by

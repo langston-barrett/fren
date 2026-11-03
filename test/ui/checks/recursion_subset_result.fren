@@ -67,6 +67,68 @@ expect callers(p: Pos, l: L) {
     expect generic: keep_generic(p, true, l) >= 1
 }
 
+-- Result types that bring a subset type's constraint through data: a
+-- record's field, a newtype's, an enumeration's payload, an option's, and
+-- every element of a set or a sequence, which quantifies over them.
+pub struct Rec { v: Pos, k: Int }
+pub struct Nt(Pos)
+pub enum Ch { A(Pos), Z }
+
+pub fn k_rec(x: Rec, l: L): Rec := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_rec(x, rest),
+}
+
+pub fn k_nt(x: Nt, l: L): Nt := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_nt(x, rest),
+}
+
+pub fn k_ch(x: Ch, l: L): Ch := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_ch(x, rest),
+}
+
+pub fn k_opt(x: Option<Pos>, l: L): Option<Pos> := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_opt(x, rest),
+}
+
+set_option fren.lint.undecidable "allow" in
+pub fn k_set(x: Set<Pos>, l: L): Set<Pos> := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_set(x, rest) union x,
+}
+
+set_option fren.lint.undecidable "allow" in
+pub fn k_seq(x: Seq<Pos>, l: L): Seq<Pos> := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_seq(x, rest),
+}
+
+set_option fren.lint.undecidable "allow" in
+expect data_callers(r: Rec, t: Nt, c: Ch, o: Option<Pos>, s: Set<Pos>, q: Seq<Pos>, l: L) {
+    expect rec: k_rec(r, l).v >= 1
+    expect nt: k_nt(t, l).0 >= 1
+    expect ch: match k_ch(c, l) {
+        Ch::A(n) => n >= 1,
+        Ch::Z => true,
+    }
+    expect opt: match k_opt(o, l) {
+        Option::Some(n) => n >= 1,
+        Option::None => true,
+    }
+    expect set: forall (n: Int), when n in k_set(s, l), n >= 1
+    expect seq: forall (n: Int), when n in k_seq(q, l), n >= 1
+}
+
+-- A caller's check that is false still fails: the result type's fact is
+-- reflected with the query's recursive applications, not a fact of an
+-- application that the query has, so evaluation confirms the model.
+expect false_caller(p: Pos, l: L) {
+    expect c: when l = L::Nil, keep(p, l) >= 2  --~ error: expectation `r::false_caller::c` does not hold
+}
+
 -- Wrong, but evaluation has no formula of a subset type's obligation, so
 -- it cannot confirm the counterexample, which is Inconclusive, not a
 -- failure, until #736 gives it one.

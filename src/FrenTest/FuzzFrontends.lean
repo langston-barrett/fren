@@ -1790,9 +1790,39 @@ def recursiveSubsets : R String := do
   -- whose payload has the subset type: its instance's result brings no
   -- fact, in both front ends.
   if ← chance 50 then
-    return out ++ s!"pub enum Rsb \{ B({ty}) }\n" ++
+    out := out ++ s!"pub enum Rsb \{ B({ty}) }\n" ++
       "pub fn rs_rep<T>(x: T, l: Rsl): T := match l {\n    Rsl::Nil => x,\n    Rsl::Cons(_, r) => rs_rep(x, r),\n}\n" ++
       s!"pub proc rs_reps(b: Rsb, l: Rsl) \{\n    expect rr: match rs_rep(b, l) \{\n        Rsb::B(n) => {inv "n"},\n    }\n}\n"
+  -- Result types that bring the subset type's constraint through data,
+  -- each now and then: a record's field, a newtype's, an enumeration's
+  -- payload, an option's, and every element of a set or a sequence, which
+  -- quantifies over them. Each body meets its type, and a caller reads the
+  -- constraint.
+  let forms : Array (String × String × String × String) := #[
+    ("rs_rec", "Rsr", s!"pub struct Rsr \{ v: {ty}, k: Int }\n", inv "rs_rec(v, l).v"),
+    ("rs_nt", "Rsn", s!"pub struct Rsn({ty})\n", inv "rs_nt(v, l).0"),
+    ("rs_ch", "Rse", s!"pub enum Rse \{ A({ty}), Z }\n",
+      s!"match rs_ch(v, l) \{ Rse::A(n) => {inv "n"}, Rse::Z => true }"),
+    ("rs_opt", s!"Option<{ty}>", "",
+      s!"match rs_opt(v, l) \{ Option::Some(n) => {inv "n"}, Option::None => true }"),
+    ("rs_set", s!"Set<{ty}>", "", s!"forall (n: {base}), when n in rs_set(v, l), {inv "n"}"),
+    ("rs_seq", s!"Seq<{ty}>", "", s!"forall (n: {base}), when n in rs_seq(v, l), {inv "n"}")]
+  for (f, rt, decl, read) in forms do
+    unless ← chance 30 do continue
+    -- A `Nat`, or a subset type of one, is no type argument or element type.
+    if base == "Nat" && rt.contains '<' then continue
+    -- A collection's constraint quantifies over its elements.
+    let opt := if rt.startsWith "Set" || rt.startsWith "Seq" then "set_option fren.lint.undecidable \"allow\" in\n" else ""
+    let (x, a) ← pick #[("_", s!"{f}(v, r)"), ("x", s!"if x > 0 then {f}(v, r) else v")]
+    out := out ++ decl ++ opt ++ s!"pub fn {f}(v: {rt}, l: Rsl): {rt} := match l \{\n" ++
+      s!"    Rsl::Nil => v,\n    Rsl::Cons({x}, r) => {a},\n}\n" ++
+      opt ++ s!"pub proc {f}_apps(v: {rt}, l: Rsl) \{\n    expect c: {read}\n}\n"
+  -- A body wrong only at its induction step, which no caller applies: its
+  -- obligation's model, at a recursive application, is never confirmed,
+  -- so it is Inconclusive in both front ends, never `F0661`.
+  if base != "Nat" && (← chance 30) then
+    out := out ++ s!"pub fn rs_bad(p: {ty}, l: Rsl): {ty} := match l \{\n" ++
+      "    Rsl::Nil => p,\n    Rsl::Cons(x, r) => if x > 0 then rs_bad(p, r) - 1 else p,\n}\n"
   return out
 
 /-- A spec with constants, functions, and components over them, and its

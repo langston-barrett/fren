@@ -228,11 +228,10 @@ procedures that the item calls. They do not apply the rule yet to
 check to know which instances, recursive functions and subset types'
 invariants its query has, as [Checks](Check.md#global-expectations) says
 too; that is #522. Until then, a pass that rests only on one of those can be
-vacuous where that check does not pass, as before: a caller of a recursive
-function whose body does not meet its result type passes on that type's
-fact, as `wrong_caller` in `test/ui/checks/recursion_subset_result.fren`
-does, which enumeration, evaluating the body, fails; `methodsAgree`
-records it as an exception, by #522.
+vacuous where that check does not pass, as before: a caller's pass on a
+recursive function's result-type fact can be vacuous where the function's
+body does not meet its result type, as one on its postconditions can where
+they do not hold.
 
 ## Resting on checks
 
