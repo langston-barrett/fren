@@ -411,7 +411,7 @@ recursive functions that a formula applies as the solver has it, once its
 definitions are unfolded, which the evaluator's formula of it may not show,
 as of a subset type's obligation, which it has none of. -/
 def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKind) (log : IO.Ref (Array Refutation))
-    (b : Fren.Core.Backend IO String String) (recursiveIn : String → Array Name := fun _ => #[]) :
+    (b : Fren.Core.Backend IO String String) (recursiveIn : String → Array Name) :
     Fren.Core.Backend IO (String × Fm) String :=
   let vars := sp.flatVars ec
   let outs := vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
