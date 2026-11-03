@@ -1,0 +1,7 @@
+-- A denied expression lint is a static error in both front ends.
+set_option fren.lint.duplicate_scrutinee "deny"
+
+pub fn copied(a?): Int := match a?, a? {  --~ error: written the same as scrutinee 1
+    true, false => 1,
+    _, _ => 0,
+}

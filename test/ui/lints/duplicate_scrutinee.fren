@@ -1,0 +1,120 @@
+-- fren-covers: lint::duplicate_scrutinee
+-- Each later occurrence names the first earlier column, in both front ends.
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.let_and_return "allow"
+
+pub enum Color { Red, Green, Blue }
+pub enum Shape { Empty, Circle(Int), Rect(Int, Int) }
+pub ordered enum Rank { Low, Mid, High }
+pub struct Pair { left: Color, right: Color }
+pub fn unknown(Int): Int
+pub fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
+
+pub fn copied(c: Color): Int := match c, c {  --~ warning: written the same as scrutinee 1
+    Color::Red, Color::Green => 1,
+    _, _ => 0,
+}
+
+-- Non-adjacent repeats, and three copies: one diagnostic per later column.
+pub fn three(a?, b?): Int := match a?, b?, (a?), a? {  --~ warning: written the same as scrutinee 1
+    --~^ warning: written the same as scrutinee 1
+    true, _, false, _ => 1,
+    _, _, _, _ => 0,
+}
+pub fn second(a?, b?): Int := table a?, b?, b? {  --~ warning: written the same as scrutinee 2
+    _, true, false => 1,
+    _, _, _ => 0,
+}
+
+-- Ranges, payloads, guards, literals, a newtype's field and generic types.
+pub struct Count(Int)
+pub fn ranges(c: Count): Int := table c.0, c.0 {  --~ warning: written the same as scrutinee 1
+    0..=2, 3..=5 => 1,
+    _, _ => 0,
+}
+pub fn payload(s: Shape, a?): Int := match s, s {  --~ warning: written the same as scrutinee 1
+    Shape::Circle(0), Shape::Circle(1) if a? => 1,  --~ error: arm 1 of a `match` in `payload` is never taken
+    _, _ => 0,
+}
+pub fn generic<T>(o: Option<T>): Int := match o, o {  --~ warning: written the same as scrutinee 1
+    Option::Some(_), Option::None => 1,
+    _, _ => 0,
+}
+pub fn natural(n: Nat): Int := match n, n {  --~ warning: written the same as scrutinee 1
+    0, 1 => 1,
+    _, _ => 0,
+}
+pub fn ranks(r: Rank): Int := match r, r {  --~ warning: written the same as scrutinee 1
+    Rank::Low, Rank::High => 1,
+    _, _ => 0,
+}
+pub fn text(s: String): Int := match s.at(0), s.at(0) {  --~ warning: written the same as scrutinee 1
+    "a", "b" => 1,
+    _, _ => 0,
+}
+pub fn alternatives(c: Color): Int := match c, c {  --~ warning: written the same as scrutinee 1
+    Color::Red | Color::Green, Color::Blue => 1,
+    _, _ => 0,
+}
+pub fn literal(ignored: Int): Int := match "a b", ("a b") {  --~ warning: written the same as scrutinee 1
+    "a", "b" => 1,
+    _, _ => 0,
+}
+pub proc calls(n: Int): (result: Int) {
+    ensure value: result = match unknown(n), unknown( n /- same -/ ) {  --~ warning: written the same as scrutinee 1
+        0, 1 => 1,
+        _, _ => 0,
+    }
+}
+pub fn indexed(n: Int): Int := match [n][0], [n][0] {  --~ warning: written the same as scrutinee 1
+    0, 1 => 1,
+    _, _ => 0,
+}
+pub fn definitions(n: Int): Int := match (let x := n + 1 in x), (let x := n + 1 in x) {  --~ warning: written the same as scrutinee 1
+    0, 1 => 1,
+    _, _ => 0,
+}
+pub fn nested(n: Int): Int := apply(|arg| match arg, arg {  --~ warning: written the same as scrutinee 1
+    0, 1 => 1,
+    _, _ => n,
+}, n)
+
+-- Repeated values need not have a disjoint row. The lint still fires.
+pub fn compatible(a?): Int := match a?, a? {  --~ warning: written the same as scrutinee 1
+    true, true => 1,
+    _, _ => 0,
+}
+
+-- Distinct expressions, different literal contents, fields, calls,
+-- and bindings: no new lint. Equality of values alone does not count.
+pub fn distinct(a: Color, b: Color): Int := match a, b {
+    Color::Red, Color::Green => 1,
+    _, _ => 0,
+}
+pub fn fields(p: Pair): Int := match p.left, p.right {
+    Color::Red, Color::Green => 1,
+    _, _ => 0,
+}
+pub fn strings(ignored: Int): Int := match "a b", "ab" {
+    "a", "b" => 1,
+    _, _ => 0,
+}
+pub proc different_calls(n: Int, m: Int): (result: Int) {
+    ensure value: result = match unknown(n), unknown(m) {
+        0, 1 => 1,
+        _, _ => 0,
+    }
+}
+pub fn different_scopes(n: Int): Int := match (let x := n in x), n {
+    0, 1 => 1,
+    _, _ => 0,
+}
+pub fn implicit(Bool, Bool): Int := match {
+    true, false => 1,
+    _, _ => 0,
+}
+
+set_option fren.lint.duplicate_scrutinee "expect" in
+pub fn expected(a?): Int := match a?, a? { true, false => 1, _, _ => 0 }
+set_option fren.lint.duplicate_scrutinee "allow" in
+pub fn allowed(a?): Int := match a?, a? { true, false => 1, _, _ => 0 }

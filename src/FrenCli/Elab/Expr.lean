@@ -1570,6 +1570,12 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     | .error (some (i, none), msg) => err arms[i]!.1.span (if many?.isSome then Fren.Core.vectorMsg msg else msg)
     | .error (none, msg) => err span (if many?.isSome then Fren.Core.vectorMsg msg else msg)
   let implicitArg := match scrutinee with | .path _ #[n] => n.name.startsWith "#match" | _ => false
+  if cx.noteIndexes then
+    -- A lambda match writes no scrutinees; its generated parameters have
+    -- no source texts to compare.
+    let texts ← if implicitArg then pure #[] else scrutinees.mapM (srcAt ·.span)
+    for (j, i, row?) in Fren.Core.duplicateScrutinees texts baseSigs (values.map (·.2.patTy)) rows do
+      lint .duplicateScrutinee scrutinees[j]!.span (Fren.Core.duplicateScrutineeMsg i row?)
   if cx.noteIndexes && many?.isNone && !implicitArg then
     lintMatch cx e ts pats (parent?.bind (Expr.operandSlot (← get).src · e))
     lintCouldBeTable e sigs pty pats

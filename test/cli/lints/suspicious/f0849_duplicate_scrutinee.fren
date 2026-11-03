@@ -1,0 +1,21 @@
+set_option fren.lint.unused_variables "allow"
+
+pub enum Color { Red, Green, Blue }
+
+pub fn copied(c: Color): Int := match c, c {
+    Color::Red, Color::Green => 1,
+    _, _ => 0,
+}
+
+-- The note identifies the second row, and the first copy of b?.
+pub fn later(a?, b?): Int := table a?, b?, (b?) {
+    true, true, true => 1,
+    _, true, false => 2,
+    _, _, _ => 0,
+}
+
+-- No row has disjoint patterns in the repeated columns.
+pub fn compatible(a?): Int := match a?, a?, a? {
+    true, true, true => 1,
+    _, _, _ => 0,
+}
