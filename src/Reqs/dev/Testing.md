@@ -439,13 +439,17 @@ pub mod testing
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
   `--sites` and `--confirm` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
-  with both front ends and compared as above, in `frontendFuzz` jobs of a
-  few dozen seeds each. Every difference must be listed in
-  `knownDifferences`, beside the corpus, by its generator, its seed and
-  the difference itself, line, column and names included, with the issue
-  that tracks it; each entry stands for one occurrence, so a difference
-  that occurs more often than it is listed fails too; and every listed one
-  must still occur, so that the list only shrinks, as
+  with both front ends and compared as above, in `frontendFuzz` jobs of at
+  most five specs each, including those listed outside the ranges. Each
+  job imports `Fren` once; small batches spread the work over the shards
+  and keep a large batch from outlasting their other jobs. The flattened
+  jobs must keep the corpus's modes and seeds in order, exactly once,
+  which `#guard`s beside `corpusJobs` check. Every difference must be
+  listed in `knownDifferences`, beside the corpus, by its generator, its
+  seed and the difference itself, line, column and names included, with
+  the issue that tracks it; each entry stands for one occurrence, so a
+  difference that occurs more often than it is listed fails too; and every
+  listed one must still occur, so that the list only shrinks, as
   `knownColumnDifferences` does for the ui tests' columns. The
   differences that time limits may explain, each about an undecided
   check, and the summary's and exit status's when one of those is among
