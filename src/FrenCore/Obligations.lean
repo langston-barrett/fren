@@ -1,0 +1,525 @@
+-- keep-sorted start
+import FrenCore.Check
+import FrenCore.Evidence
+-- keep-sorted end
+
+/-!
+# Obligations
+
+What each check asks (`Reqs/Cli#obligations`): its context, the signature
+and the sentences that its query may use, and its goal, after each front
+end's instantiation and desugaring, with its evidence. `fren check
+--dump=obligations` prints them, and so does the Lean-hosted front end with
+`set_option fren.dump "obligations"`.
+
+Both front ends take each check's question from `questionsOf`, give its
+query's script as they would ask it, without asking it, and print them all
+with `dump`, which makes every decision about their canonical form: which
+commands are kept, how definitions are unfolded, and the order of
+everything. So for the same spec, two front ends that build the same
+queries print the same dump, and a difference between their dumps is a
+difference between their queries.
+-/
+
+open Lean
+
+namespace Fren.Core
+
+/-! ## Questions -/
+
+/-- A check's question: the hypotheses and goal of the query that it asks
+first, of a kind `kind`, about `prop?`, with `part` telling apart the
+questions of one check, such as an index's position. A `consistency`
+question asks whether its hypotheses can hold together: its goal is the
+backend's `falseF`. -/
+structure Question (F : Type) where
+  kind : CheckKind
+  prop? : Option Name := none
+  part : String := ""
+  hyps : Array (Name × F)
+  goal : F
+  consistency : Bool := false
+
+/-- Whether two questions are of the same check, and the same part of it. -/
+def Question.same {F G : Type} (a : Question F) (b : Question G) : Bool :=
+  a.kind == b.kind && a.prop? == b.prop? && a.part == b.part
+
+variable {m : Type → Type} [Monad m] {F V : Type}
+
+/-- The questions of the checks of `c` of the kinds `kinds`, in the order in
+which `checkCompLawful` runs them, each with the hypotheses and goal of the
+query that the check asks: the same as the check functions' own
+(`checkRealizable`, `checkInst`, ...), which `FrenTest.Obligations` checks
+against the queries that they ask. A question that a check asks only after
+an answer, such as redundancy's after its consistency, is among them all
+the same: the questions are what the checks ask, not what one run asked.
+-/
+def questionsOf (bk : CheckKind → Backend m F V) (c : Comp F) (kinds : Array CheckKind := CheckKind.all)
+    (interprets : F → Bool := fun _ => false) : m (Array (Question F)) := do
+  let mut out : Array (Question F) := #[]
+  if kinds.contains .realizable then
+    let b := bk .realizable
+    let c := c.forKind .realizable
+    if c.fixedInhabitation interprets then
+      out := out.push { kind := .realizable, part := "inhabitation", hyps := c.defEqs .realizable ++ c.hyps b ++ c.reqs
+                        goal := b.falseF, consistency := true }
+    else
+      let sub := c.substHyps b
+      out := out.push { kind := .realizable, part := "assumptions", hyps := sub c.assumes, goal := b.falseF, consistency := true }
+      out := out.push { kind := .realizable, part := "outputs", hyps := sub (c.hyps b)
+                        goal := ← b.existsOutputs (c.subst b .realizable (b.conj (c.reqs.map (·.2)))) }
+  if kinds.contains .inst then
+    let b := bk .inst
+    for (i, k) in c.insts.zipIdx do
+      for a in i.assumes do
+        out := out.push { kind := .inst, prop? := some i.name, part := s!"assumption {a.1}"
+                          hyps := c.defEqs .inst ++ (c.hyps b k).push (i.name, i.bindings), goal := a.2 }
+  if kinds.contains .expect then
+    let b := bk .expect
+    for e in c.expects do
+      out := out.push { kind := .expect, prop? := some e.1, hyps := c.defEqs .expect ++ (c.hyps b ++ c.reqs), goal := e.2 }
+  if kinds.contains .cover then
+    let b := bk .cover
+    for g in c.covers do
+      out := out.push { kind := .cover, prop? := some g.1, hyps := c.defEqs .cover ++ (c.hyps b ++ c.reqs), goal := b.notF g.2 }
+  if kinds.contains .vacuity then
+    let b := bk .vacuity
+    for t in c.triggers do
+      out := out.push { kind := .vacuity, prop? := some t.1, hyps := c.defEqs .vacuity ++ (c.hyps b ++ c.reqs)
+                        goal := b.notF t.2 }
+  if kinds.contains .redundancy then
+    let b := bk .redundancy
+    let base := c.defEqs .redundancy
+    if !(base ++ c.assumes).isEmpty then
+      out := out.push { kind := .redundancy, part := "assumptions", hyps := base ++ c.assumes, goal := b.falseF
+                        consistency := true }
+    for a in c.assumes do
+      out := out.push { kind := .redundancy, prop? := some a.1, hyps := base ++ c.assumes.filter (·.1 != a.1), goal := a.2 }
+    if !c.reqs.isEmpty then
+      out := out.push { kind := .redundancy, part := "constraints", hyps := base ++ (c.hyps b ++ c.reqs), goal := b.falseF
+                        consistency := true }
+    for r in c.reqs do
+      out := out.push { kind := .redundancy, prop? := some r.1, hyps := base ++ (c.hyps b ++ c.reqs.filter (·.1 != r.1))
+                        goal := r.2 }
+  if kinds.contains .determinism then
+    let b := bk .determinism
+    for v in c.vars do
+      if v.isDet then
+        let once := c.defEqs .determinism ++ (c.hyps b ++ c.reqs)
+        out := out.push { kind := .determinism, prop? := some v.name, hyps := once ++ once.map fun (n, f) => (primed n, b.prime f)
+                          goal := b.samePrimed v.name }
+  if kinds.contains .definedness then
+    let b := bk .definedness
+    for s in c.indexes do
+      out := out.push { kind := .definedness, prop? := some s.prop, part := s!"index {s.k}"
+                        hyps := c.defEqs .definedness ++ c.siteHyps b s, goal := s.goal }
+  for k in [CheckKind.completeness, .disjointness, .precondition] do
+    if kinds.contains k then
+      let b := bk k
+      for t in c.tablesOf k do
+        out := out.push { kind := k, prop? := some t.site.prop, part := s!"site {t.site.k}", hyps := c.tableHyps b t
+                          goal := t.site.goal }
+  if kinds.contains .postcondition then
+    for p in c.posts do
+      out := out.push { kind := .postcondition, prop? := some p.1, hyps := c.assumes, goal := p.2 }
+  if kinds.contains .reachability then
+    let b := bk .reachability
+    for t in c.tablesOf .reachability do
+      out := out.push { kind := .reachability, prop? := some t.site.prop, part := s!"site {t.site.k}"
+                        hyps := c.reachHyps b t.site, goal := t.site.goal }
+  -- The vacuity under a trait's laws, where `checkCompLawful` asks it.
+  if !(c.laws.isEmpty || (c.assumes.isEmpty && c.insts.isEmpty) || !kinds.contains .vacuity) then
+    let b := bk .vacuity
+    let parts := hypParts .vacuity true
+    let call (i : Inst F) : Name × F :=
+      if parts.callAssumptions then (i.name, b.conj #[i.bindings, i.behaviour])
+      else (i.name, b.conj #[i.bindings, b.notF (b.conj #[b.conj (i.assumes.map (·.2)), b.notF i.behaviour])])
+    let hyps := (if parts.laws then c.laws else #[]) ++ c.assumes ++ c.insts.map call
+    out := out.push { kind := .vacuity, part := "laws", hyps := c.defEqs .vacuity ++ hyps, goal := b.falseF, consistency := true }
+  return out
+
+/-! ## S-expressions -/
+
+/-- An SMT-LIB term or command, as the dump reads a query's script: an atom,
+with any `|` quotes removed, or a list. -/
+inductive Sx where
+  | atom (s : String)
+  | list (xs : Array Sx)
+  deriving Inhabited, BEq, Hashable
+
+partial def Sx.toString : Sx → String
+  | .atom s => s
+  | .list xs => "(" ++ " ".intercalate (xs.toList.map Sx.toString) ++ ")"
+
+instance : ToString Sx := ⟨Sx.toString⟩
+
+/-- The S-expressions of `cs` from `i`, up to an unmatched `)`, and where
+they end, skipping comments, from `;` to the end of the line. -/
+partial def Sx.parseAt (cs : Array Char) (i : Nat) : Array Sx × Nat := Id.run do
+  let mut i := i
+  let mut out := #[]
+  while h : i < cs.size do
+    let c := cs[i]
+    if c.isWhitespace then i := i + 1
+    else if c == ';' then
+      while i < cs.size && cs[i]! != '\n' do i := i + 1
+    else if c == ')' then return (out, i + 1)
+    else if c == '(' then
+      let (xs, j) := Sx.parseAt cs (i + 1)
+      out := out.push (.list xs)
+      i := j
+    else if c == '"' then
+      -- A string literal, in which `""` is a `"`.
+      let mut j := i + 1
+      while j < cs.size && !(cs[j]! == '"' && cs[j + 1]? != some '"') do
+        j := if cs[j]! == '"' then j + 2 else j + 1
+      out := out.push (.atom (String.ofList (cs.extract i (j + 1)).toList))
+      i := j + 1
+    else if c == '|' then
+      let mut j := i + 1
+      while j < cs.size && cs[j]! != '|' do j := j + 1
+      out := out.push (.atom (String.ofList (cs.extract (i + 1) j).toList))
+      i := j + 1
+    else
+      let mut j := i
+      while j < cs.size && !(cs[j]!.isWhitespace || cs[j]! == '(' || cs[j]! == ')' || cs[j]! == ';') do j := j + 1
+      out := out.push (.atom (String.ofList (cs.extract i j).toList))
+      i := j
+  return (out, i)
+
+/-- `a` without Lean's `«»`, if they quote all of it, as lean-smt writes a
+symbol that Lean's names quote, such as `«i#0»`. -/
+def unguillemet (a : String) : String :=
+  if a.startsWith "«" && a.endsWith "»" && a.length ≥ 2 && !((a.drop 1).dropEnd 1).contains '«' then
+    ((a.drop 1).dropEnd 1).toString
+  else a
+
+/-- `a` without the `✝` that Lean's names of inaccessible locals end in, as
+lean-smt names the locals that its preprocessing introduces, with any
+superscript digits after it. -/
+def withoutDagger (a : String) : String :=
+  let t := (a.toList.reverse.dropWhile fun c => "⁰¹²³⁴⁵⁶⁷⁸⁹".toList.contains c).reverse
+  match t.reverse with
+  | '✝' :: rest@(_ :: _) => String.ofList rest.reverse
+  | _ => a
+
+/-- The S-expressions of `s`. -/
+def Sx.parseAll (s : String) : Array Sx := (Sx.parseAt s.toList.toArray 0).1
+
+/-- The names that a binder of `e` binds, if it is one: a quantifier's, a
+`let`'s or a `lambda`'s. -/
+def Sx.binds : Sx → Array String
+  | .list #[.atom "forall", .list bs, _] | .list #[.atom "exists", .list bs, _]
+  | .list #[.atom "lambda", .list bs, _] | .list #[.atom "let", .list bs, _] =>
+    bs.filterMap fun | .list xs => (match xs[0]? with | some (Sx.atom x) => some x | _ => none) | _ => none
+  | _ => #[]
+
+/-- `e` with each free atom of `σ` replaced by its value. -/
+partial def Sx.subst (σ : Array (String × Sx)) (e : Sx) : Sx :=
+  if σ.isEmpty then e else
+  match e with
+  | .atom a => ((σ.find? (·.1 == a)).map (·.2)).getD e
+  | .list #[.atom "let", .list bs, body] =>
+    -- A `let`'s definitions are outside its scope; its body inside.
+    let bs' := bs.map fun | .list #[x, v] => .list #[x, v.subst σ] | b => b
+    let bound := (Sx.list #[.atom "let", .list bs, body]).binds
+    .list #[.atom "let", .list bs', body.subst (σ.filter (!bound.contains ·.1))]
+  | .list xs =>
+    let bound := e.binds
+    if bound.isEmpty then .list (xs.map (·.subst σ))
+    else
+      let σ' := σ.filter (!bound.contains ·.1)
+      .list (xs.mapIdx fun i x => if i + 1 == xs.size then x.subst σ' else x)
+
+/-- The atoms of `e` that no binder within it binds. -/
+partial def Sx.freeAtoms (e : Sx) (bound : Array String := #[]) (acc : Std.HashSet String := {}) : Std.HashSet String :=
+  match e with
+  | .atom a => if bound.contains a then acc else acc.insert a
+  | .list #[.atom "let", .list bs, body] =>
+    let acc := bs.foldl (init := acc) fun acc b => match b with
+      | .list #[_, v] => v.freeAtoms bound acc
+      | _ => acc
+    body.freeAtoms (bound ++ (Sx.list #[.atom "let", .list bs, body]).binds) acc
+  | .list xs =>
+    let names := e.binds
+    if names.isEmpty then xs.foldl (init := acc) fun acc x => x.freeAtoms bound acc
+    else (xs.back?.map (·.freeAtoms (bound ++ names) acc)).getD acc
+
+/-- The conjuncts of `e`, with those of each conjunction in it. -/
+partial def Sx.conjuncts : Sx → Array Sx
+  | .list xs => if xs[0]? == some (.atom "and") then (xs.extract 1).flatMap Sx.conjuncts else #[.list xs]
+  | e => #[e]
+
+/-- The operators whose nested applications `Sx.normalize` flattens. -/
+def associative : List String := ["and", "or", "+", "*", "seq.++", "str.++"]
+
+/-- `e` written as both front ends could: with each atom renamed by
+`symbols`, then without `«»` (`unguillemet`) or `✝` (`withoutDagger`);
+each `declare-datatype` as the `declare-datatypes` of one datatype, as
+lean-smt declares them; each conjunction of conjunctions as one; each
+implication whose conclusion is an implication, `(=> a (=> b c))`, as
+`(=> (and a b) c)`; each `let`'s definitions
+substituted into its body, as Lean's `zetaReduce` substitutes them; and
+each quantifier directly over another of its kind as one over both's
+bound names; each application of an associative operator to an
+application of itself as one application; a binary `distinct` as the
+negation of `=`, and a double negation as what it negates; an equation
+with `true` or `false` as the other side or its negation; and `<=` and
+`<` as `>=` and `>`, with their sides swapped. None of these changes what
+the formula means. -/
+partial def Sx.normalize (symbols : Std.HashMap String String) : Sx → Sx
+  | .atom a => .atom (withoutDagger (unguillemet (symbols.getD a a)))
+  | .list xs =>
+    let xs := xs.map (Sx.normalize symbols)
+    match xs with
+    | #[.atom "declare-datatype", n, body] =>
+      let arity : Nat := match body with
+        | Sx.list #[Sx.atom "par", Sx.list ps, _] => ps.size
+        | _ => 0
+      .list #[.atom "declare-datatypes", .list #[.list #[n, .atom s!"{arity}"]], .list #[body]]
+    | #[.atom "=>", a, .list #[.atom "=>", b, c]] =>
+      .list #[.atom "=>", .list (#[.atom "and"] ++ a.conjuncts ++ b.conjuncts), c]
+    | #[.atom "let", .list bs, body] =>
+      let σ := bs.filterMap fun | .list #[.atom x, v] => some (x, v) | _ => none
+      if σ.size == bs.size then body.subst σ else .list xs
+    | #[q@(.atom "forall"), .list bs, .list #[.atom q', .list bs', body]]
+    | #[q@(.atom "exists"), .list bs, .list #[.atom q', .list bs', body]] =>
+      if q == .atom q' then .list #[q, .list (bs ++ bs'), body] else .list xs
+    | #[.atom "distinct", a, b] => (Sx.list #[.atom "not", .list #[.atom "=", a, b]]).normalize {}
+    | #[.atom "not", .list #[.atom "not", a]] => a
+    | #[.atom "=", a, .atom "true"] | #[.atom "=", .atom "true", a] => a
+    | #[.atom "=", a, .atom "false"] | #[.atom "=", .atom "false", a] => .list #[.atom "not", a]
+    | #[.atom "<=", a, b] => .list #[.atom ">=", b, a]
+    | #[.atom "<", a, b] => .list #[.atom ">", b, a]
+    | xs => match xs[0]? with
+      | some (Sx.atom op) =>
+        -- An associative operator applied to an application of itself, as
+        -- one application.
+        if associative.contains op then
+          .list (#[.atom op] ++ (xs.extract 1).flatMap fun
+            | .list ys => if ys[0]? == some (.atom op) then ys.extract 1 else #[.list ys]
+            | y => #[y])
+        else .list xs
+      | _ => .list xs
+
+/-- `e` with each application of a definition of `defs`, by its name, to as
+many arguments as it has parameters, and each mention of one without
+parameters, replaced by its body. The bodies are unfolded already. -/
+partial def Sx.unfold (defs : Std.HashMap String (Array String × Sx)) (e : Sx) : Sx :=
+  if defs.isEmpty then e else
+  match e with
+  | .atom a => match defs[a]? with
+    | some (#[], body) => body
+    | _ => e
+  | .list xs =>
+    let xs := xs.map (·.unfold defs)
+    match xs[0]? with
+    | some (Sx.atom f) => match defs[f]? with
+      | some (ps, body) =>
+        if ps.size + 1 == xs.size && !ps.isEmpty then body.subst (ps.zip (xs.extract 1)) else .list xs
+      | none => .list xs
+    | _ => .list xs
+
+/-! ## Canonical names -/
+
+/-- What a symbol of a query that is not a variable stands for: a spec's
+type, constructor, selector, function or abstract type. -/
+inductive ItemSymbol where
+  /-- An enumeration or a record. -/
+  | datatype (path : Name)
+  /-- A variant of an enumeration. -/
+  | variant (path : Name) (v : Name)
+  /-- The `k`th value of a variant's payload. -/
+  | payload (path : Name) (v : Name) (k : Nat)
+  /-- A record's constructor. -/
+  | record (path : Name)
+  | field (path : Name) (f : Name)
+  /-- A function, or an abstract type. -/
+  | item (path : Name)
+
+/-- The canonical name of a symbol, which the dump prints for it
+(`Reqs/Cli#obligations`): the one that `fren check` gives the solver
+(`FrenCli.ctorSym` and the others), without its `|`s, which
+`FrenTest.Obligations` checks. -/
+def ItemSymbol.text : ItemSymbol → String
+  | .datatype p => ((userSortSym (showPath p)).drop 1 |>.dropEnd 1).toString
+  | .variant p v => s!"{showPath p}::{v}"
+  | .payload p v k => s!"{showPath p}::{v}::{k}"
+  | .record p => s!"{showPath p}\{}"
+  | .field p f => s!"{showPath p}::{f}"
+  | .item p => s!"::{showPath p}"
+
+/-! ## Canonical obligations -/
+
+/-- A query's context and goal, as the dump prints them (`canonical`). -/
+structure QueryContext where
+  /-- Its declarations: of sorts, datatypes, constants, functions and
+  recursive definitions, each once, in order of their text. -/
+  signature : Array String
+  /-- Its sentences, each once, in order of their text. -/
+  sentences : Array String
+  goal : String
+  deriving Inhabited, BEq
+
+/-- `l` with each run of equal neighbours as one. -/
+def dedupAdjacent {α : Type} [BEq α] : List α → List α
+  | a :: b :: rest => if a == b then dedupAdjacent (b :: rest) else a :: dedupAdjacent (b :: rest)
+  | l => l
+
+/-- Each of `xs` once, in the order `le` (`cli::canonical_sentences`): how
+the dump prints a context's declarations and sentences, which neither
+their order nor a repeated one changes. -/
+def sortedOnce {α : Type} [BEq α] (le : α → α → Bool) (xs : Array α) : Array α :=
+  (dedupAdjacent (xs.toList.mergeSort le)).toArray
+
+/-- Texts in order: by their characters. -/
+def textLe (a b : String) : Bool := !(b < a)
+
+/-- The commands of a script that say nothing of what a query asks: its
+logic, options and the solver's commands. -/
+def solverCommands : List String :=
+  ["set-logic", "set-option", "set-info", "check-sat", "reset", "get-model", "get-value", "exit", "push", "pop"]
+
+/-- What the script `script` of a query asks, canonically: without its
+logic, options and solver commands; with each non-recursive definition
+(`define-fun`) unfolded where it is used, and dropped, since one front end
+gives the solver a function's definition and the other its body; with its
+declarations and its sentences each once and sorted, since neither their
+order nor a repeated one changes the query; and with its goal apart. The
+goal is the last assertion, `(not G)`, of a question that is not one of
+`consistency`, whose goal, `false`, a front end may leave out, as it
+leaves out every sentence `true` or `(not false)`. -/
+def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap String String := {}) : QueryContext := Id.run do
+  let mut defs : Std.HashMap String (Array String × Sx) := {}
+  let mut sig : Array Sx := #[]
+  let mut asserts : Array Sx := #[]
+  for cmd in (Sx.parseAll script).map (·.normalize symbols) do
+    let .list xs := cmd | continue
+    let some (Sx.atom head) := xs[0]? | continue
+    if solverCommands.contains head then continue
+    match head, xs.toList with
+    | "define-fun", [_, .atom f, .list ps, _, body] =>
+      let ps := ps.filterMap fun | .list #[.atom x, _] => some x | _ => none
+      defs := defs.insert f (ps, (body.unfold defs).normalize {})
+    -- Written again as both front ends could, once unfolded: an argument
+    -- may make a new instance of a rule of `Sx.normalize`.
+    | "assert", [_, t] => asserts := asserts.push ((t.unfold defs).normalize {})
+    | _, _ => sig := sig.push ((cmd.unfold defs).normalize {})
+  let trivial (t : Sx) := t == .atom "true" || t == .list #[.atom "not", .atom "false"]
+  let (goal, sentences) := if consistency then (Sx.atom "false", asserts) else
+    match asserts.back? with
+    | some (.list #[.atom "not", g]) => (g, asserts.pop)
+    | _ => (.atom "false", asserts)
+  -- A conjunction is as many sentences, as lean-smt splits a hypothesis.
+  let sentences := (sentences.flatMap Sx.conjuncts).filter (!trivial ·)
+  -- A constant or function that nothing else mentions cannot change the
+  -- query, and one front end declares some of those that the other does
+  -- not, such as an output that only a binder names.
+  let used := sentences.foldl (init := goal.freeAtoms) fun acc t => t.freeAtoms #[] acc
+  let used := sig.foldl (init := used) fun acc d => match d with
+    | .list xs => if xs[0]? == some (.atom "declare-const") || xs[0]? == some (.atom "declare-fun") then acc
+      else d.freeAtoms #[] acc
+    | _ => acc
+  let declared := sig.filter fun d => match d with
+    | .list xs => !(xs[0]? == some (.atom "declare-const") || xs[0]? == some (.atom "declare-fun"))
+      || (match xs[1]? with | some (Sx.atom f) => used.contains f | _ => true)
+    | _ => true
+  return { signature := sortedOnce textLe (declared.map toString), sentences := sortedOnce textLe (sentences.map toString)
+           goal := toString goal }
+
+/-- An obligation, as a front end gives it to `dump`: a question of the item
+`comp`, the script of its query as the front end would ask it, its
+evidence, as `set_option fren.evidence` writes it, and where it is
+written, as metadata. -/
+structure Obligation where
+  comp : Name
+  kind : CheckKind
+  prop? : Option Name := none
+  part : String := ""
+  consistency : Bool := false
+  evidence : String := "solver"
+  script : String
+  /-- Where its constraint, or its item, is written, as `line:column`:
+  metadata, which `withoutMetadata` drops. -/
+  span? : Option String := none
+  /-- The canonical name (`ItemSymbol.text`) of each symbol of the script
+  that the front end names otherwise. -/
+  symbols : Std.HashMap String String := {}
+  deriving Inhabited
+
+/-- The obligation of the question `q` of `comp`, with the script of its
+query. -/
+def Question.obligation (q : Question F) (comp : Name) (script : String) (evidence := "solver") (span? : Option String := none)
+    (symbols : Std.HashMap String String := {}) : Obligation :=
+  { comp, kind := q.kind, prop? := q.prop?, part := q.part, consistency := q.consistency, evidence, script, span?, symbols }
+
+/-- The evidence of a check, as `set_option fren.evidence` writes it: the
+solver's, if `solver` (its question is among those that the solver is
+asked, once its checks set to testing and enumeration are taken out,
+`Comp.untested`), and otherwise by whether `tested` and `enumerated` cover
+it. -/
+def evidenceName (solver tested enumerated : Bool) : String :=
+  if solver then "solver"
+  else if tested && enumerated then "enumerated+random"
+  else if enumerated then "enumerated"
+  else if tested then "random"
+  else "solver"
+
+/-- The obligations of `c`, with the checks `kinds`, of which those set to
+testing or enumeration, `tested` and `enumerated`, have their evidence:
+`questionsOf` of `c`, with their scripts, as `script` gives them for each
+kind. `spanOf` gives where a constraint, or the item itself, is written,
+and `symbols` the canonical name of each of the front end's symbols that
+`ItemSymbol.text` names otherwise. -/
+def obligationsOf (bk : CheckKind → Backend m F V) (script : CheckKind → Array (Name × F) → F → m String)
+    (c : Comp F) (kinds : Array CheckKind) (tested enumerated : Tested) (interprets : F → Bool := fun _ => false)
+    (spanOf : Option Name → Option String := fun _ => none) (symbols : Std.HashMap String String := {}) :
+    m (Array Obligation) := do
+  let all ← questionsOf bk c kinds interprets
+  let (solved, solverKinds) := c.untested (tested.union enumerated) kinds
+  let bySolver ← questionsOf bk solved solverKinds interprets
+  all.mapM fun q => do
+    let r : CheckResult := { kind := q.kind, comp := c.path, prop? := q.prop?, verdict := .pass }
+    let evidence := evidenceName (bySolver.any (·.same q)) (tested.covers r) (enumerated.covers r)
+    return q.obligation c.path (← script q.kind q.hyps q.goal) evidence (spanOf q.prop?) symbols
+
+/-- The check that an obligation is of, as the dump names it:
+`(check KIND [PROP] [PART])`. -/
+def Obligation.checkText (o : Obligation) : String :=
+  let prop := (o.prop?.map fun n => s!" {n.toString (escape := false)}").getD ""
+  let part := if o.part.isEmpty then "" else s!" ({o.part})"
+  s!"(check {kindName o.kind}{prop}{part})"
+
+/-- An obligation as the dump prints it: its item, its check, its evidence,
+then its context and goal (`canonical`), with where it is written as a
+comment. -/
+def Obligation.render (o : Obligation) : String :=
+  let cx := canonical o.script o.consistency o.symbols
+  let block (name : String) (xs : Array String) : String :=
+    if xs.isEmpty then s!"  ({name})\n" else s!"  ({name}\n" ++ String.join (xs.toList.map (s!"    {·}\n")) ++ "  )\n"
+  s!"(obligation\n" ++ ((o.span?.map (s!"  ; at {·}\n")).getD "")
+    ++ s!"  (item {showComp o.comp})\n  {o.checkText}\n  (evidence {o.evidence})\n"
+    ++ block "signature" cx.signature ++ block "context" cx.sentences ++ s!"  (goal {cx.goal})\n)\n"
+
+/-- The first line of a dump of obligations, and its last, by which a
+dump is found in a front end's output. -/
+def dumpStart : String := "; obligations"
+def dumpEnd : String := "; end of obligations"
+
+/-- The obligations dump of a spec, from each front end's obligations of
+its items: each obligation rendered (`Obligation.render`), in order of its
+item's path, then of its place among its item's, which `questionsOf`
+gives; an item checked twice, as a function's body and its contract are,
+in order of their checks, then of their text. -/
+def dump (items : Array (Array Obligation)) : String :=
+  let keyed := items.filterMap fun os => os[0]?.map fun o =>
+    (showComp o.comp, String.join (os.toList.map (·.checkText)), String.join (os.toList.map (·.render)))
+  let sorted := keyed.qsort fun (p, k, a) (q, l, b) => p < q || (p == q && (k < l || (k == l && a < b)))
+  s!"{dumpStart}\n" ++ String.join (sorted.toList.map (·.2.2 ++ "\n")) ++ s!"{dumpEnd}\n"
+
+/-- `text`, a dump, without its metadata: its comments, but its first and
+last lines. Two front ends' dumps of a spec are compared so. -/
+def withoutMetadata (text : String) : String :=
+  "\n".intercalate ((text.splitOn "\n").filter fun l => !l.trimAscii.toString.startsWith "; at ")
+
+end Fren.Core

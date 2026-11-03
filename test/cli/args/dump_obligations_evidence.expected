@@ -1,0 +1,142 @@
+; obligations
+(obligation
+  ; at 14:6
+  (item c)
+  (check realizability (assumptions))
+  (evidence solver)
+  (signature
+    (declare-const p P)
+    (declare-datatypes ((P 0)) (((P{} (P::a Int) (P::b? Bool)))))
+  )
+  (context
+    (> (P::a p) 0)
+  )
+  (goal false)
+)
+(obligation
+  ; at 14:6
+  (item c)
+  (check realizability (outputs))
+  (evidence solver)
+  (signature
+    (declare-const e E)
+    (declare-const p P)
+    (declare-datatypes ((E 0)) (((E::A (E::A::0 Int)) (E::B))))
+    (declare-datatypes ((P 0)) (((P{} (P::a Int) (P::b? Bool)))))
+  )
+  (context
+    (> (P::a p) 0)
+  )
+  (goal (exists ((y Int)) (= y (+ (P::a p) (ite (= e (E::A (E::A::0 e))) (E::A::0 e) 0)))))
+)
+(obligation
+  ; at 18:12
+  (item c)
+  (check expectation big)
+  (evidence random)
+  (signature
+    (declare-const e E)
+    (declare-const p P)
+    (declare-const y Int)
+    (declare-datatypes ((E 0)) (((E::A (E::A::0 Int)) (E::B))))
+    (declare-datatypes ((P 0)) (((P{} (P::a Int) (P::b? Bool)))))
+  )
+  (context
+    (= y (+ (P::a p) (ite (= e (E::A (E::A::0 e))) (E::A::0 e) 0)))
+    (> (P::a p) 0)
+  )
+  (goal (or (P::b? p) (> y (- 100))))
+)
+(obligation
+  ; at 20:12
+  (item c)
+  (check expectation small)
+  (evidence enumerated)
+  (signature
+    (declare-const e E)
+    (declare-const p P)
+    (declare-const y Int)
+    (declare-datatypes ((E 0)) (((E::A (E::A::0 Int)) (E::B))))
+    (declare-datatypes ((P 0)) (((P{} (P::a Int) (P::b? Bool)))))
+  )
+  (context
+    (= y (+ (P::a p) (ite (= e (E::A (E::A::0 e))) (E::A::0 e) 0)))
+    (> (P::a p) 0)
+  )
+  (goal (or (> 1000 y) (> (P::a p) 900)))
+)
+(obligation
+  ; at 14:6
+  (item c)
+  (check redundancy (assumptions))
+  (evidence solver)
+  (signature
+    (declare-const p P)
+    (declare-datatypes ((P 0)) (((P{} (P::a Int) (P::b? Bool)))))
+  )
+  (context
+    (> (P::a p) 0)
+  )
+  (goal false)
+)
+(obligation
+  ; at 15:12
+  (item c)
+  (check redundancy pos)
+  (evidence solver)
+  (signature
+    (declare-const p P)
+    (declare-datatypes ((P 0)) (((P{} (P::a Int) (P::b? Bool)))))
+  )
+  (context)
+  (goal (> (P::a p) 0))
+)
+(obligation
+  ; at 14:6
+  (item c)
+  (check redundancy (constraints))
+  (evidence solver)
+  (signature
+    (declare-const e E)
+    (declare-const p P)
+    (declare-const y Int)
+    (declare-datatypes ((E 0)) (((E::A (E::A::0 Int)) (E::B))))
+    (declare-datatypes ((P 0)) (((P{} (P::a Int) (P::b? Bool)))))
+  )
+  (context
+    (= y (+ (P::a p) (ite (= e (E::A (E::A::0 e))) (E::A::0 e) 0)))
+    (> (P::a p) 0)
+  )
+  (goal false)
+)
+(obligation
+  ; at 16:12
+  (item c)
+  (check redundancy r)
+  (evidence solver)
+  (signature
+    (declare-const e E)
+    (declare-const p P)
+    (declare-const y Int)
+    (declare-datatypes ((E 0)) (((E::A (E::A::0 Int)) (E::B))))
+    (declare-datatypes ((P 0)) (((P{} (P::a Int) (P::b? Bool)))))
+  )
+  (context
+    (> (P::a p) 0)
+  )
+  (goal (= y (+ (P::a p) (ite (= e (E::A (E::A::0 e))) (E::A::0 e) 0))))
+)
+
+; end of obligations
+note[F0646]: 1 check of `c` holds for every behaviour up to size 3
+  --> test/cli/args/dump_obligations_evidence.fren:14:6
+   |
+14 | proc c(p: P, e: E): (y: Int) {
+   |      ^
+   |
+   = note: not every behaviour was enumerated, so this is weaker than a proof
+
+fren: 5 passed (1 by random testing, 1 by bounded enumeration), 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0646`.
+exit=0

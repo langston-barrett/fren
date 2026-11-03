@@ -8,6 +8,7 @@ import FrenCli.Quick
 import FrenCli.Same
 import FrenCli.Smt
 import FrenCore.Literate
+import FrenCore.Obligations
 import FrenCoreCodes
 -- keep-sorted end
 
@@ -15,7 +16,7 @@ import FrenCoreCodes
 # Running `fren`
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=obligations|smt] [--timings] [--tests N]
     [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
@@ -47,8 +48,9 @@ applies the edits that the elaborator finds for lints (`State.fixes`).
 (`Reqs/Mutate`, `FrenCli.Mutate`).
 
 Standard output holds only what was asked for: `trace`'s evidence report,
-`mutate`'s kill rates, and the solver queries of `check --dump-smt`, as SMT-LIB separated by
-`(reset)`, so that the whole stream can be replayed.
+`mutate`'s kill rates, the solver queries of `check --dump-smt`, as SMT-LIB separated by
+`(reset)`, so that the whole stream can be replayed, and the obligations of
+`check --dump=obligations` (`Fren.Core.dump`).
 -/
 
 namespace FrenCli
@@ -56,7 +58,7 @@ namespace FrenCli
 open Fren.Core (Msg Paint)
 
 def usage : String :=
-  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]\n              \
+  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=obligations|smt] [--timings] [--tests N]\n              \
   [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
@@ -69,9 +71,11 @@ def usage : String :=
   fren --explain CODE\n\n\
   `check` checks Fren specs. Exit status: 0 all checks passed, 1 some check\n\
   failed, 2 the checks could not run, 3 no failures but some check was\n\
-  inconclusive, some constraint redundant or some lint warned. `--dump-smt` writes each solver\n\
-  query to stdout, as SMT-LIB; diagnostics go to stderr. `--tests N` and\n\
-  `--seed N` are as for `quickcheck`, for checks set to testing.\n\
+  inconclusive, some constraint redundant or some lint warned.\n\
+  `--dump=smt` (or `--dump-smt`) writes each solver query to stdout, as\n\
+  SMT-LIB, and `--dump=obligations` what each check asks; diagnostics go\n\
+  to stderr. `--tests N` and `--seed N` are as for `quickcheck`, for\n\
+  checks set to testing.\n\
   `--evidence METHOD` sets every check that `set_option fren.evidence`\n\
   could set to METHOD, in place of the spec's own settings: `solver`,\n\
   `random`, `enumerated` or `enumerated+random`.\n\
@@ -178,7 +182,10 @@ structure Args where
   /-- `check --jobs` and `quickcheck --jobs`; by default, the number of cores
   (`Reqs/Cli#parallel-checking`). -/
   jobs? : Option Nat := none
+  /-- `check --dump-smt`, or `--dump=smt` (`Reqs/Cli#solver-queries`). -/
   dumpSmt : Bool := false
+  /-- `check --dump=obligations` (`Reqs/Cli#obligations`). -/
+  dumpObligations : Bool := false
   /-- `check --timings` (`Reqs/Cli#timings`). -/
   timings : Bool := false
   /-- `check --query-cache` and `check --verify-query-cache` (`Reqs/Cli#query-cache`). -/
@@ -232,7 +239,7 @@ structure Args where
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--dump=obligations", "--dump=smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
@@ -363,9 +370,12 @@ where
           notes := #["note: `--evidence` is `solver`, `random`, `enumerated` or `enumerated+random`"]
           fixes := (Fren.Core.similarStr v #["solver", "random", "enumerated", "enumerated+random"]).toArray.map fun c =>
             { msg := s!"a value with a similar name exists: `{c}`", replacement := c } })
-    | "--dump-smt" :: rest, a =>
+    | "--dump-smt" :: rest, a | "--dump=smt" :: rest, a =>
       if a.command == .check then go rest { a with dumpSmt := true }
       else only "--dump-smt" "check"
+    | "--dump=obligations" :: rest, a =>
+      if a.command == .check then go rest { a with dumpObligations := true }
+      else only "--dump=obligations" "check"
     | "--timings" :: rest, a =>
       if a.command == .check then go rest { a with timings := true }
       else only "--timings" "check"
@@ -743,7 +753,8 @@ asked before (`QueryCache`). -/
 partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
-    (examples : Option Nat := some 1) (instances : Bool := true) :
+    (examples : Option Nat := some 1) (instances : Bool := true)
+    (obligations? : Option (IO.Ref (Array (Array Fren.Core.Obligation))) := none) (src : Array Char := #[]) :
     IO (Array Fren.Core.CheckResult × Array (Fren.Core.CheckResult × Msg) × Option Msg) := do
   let st := sv.st
   let prelude := sv.prelude
@@ -760,6 +771,27 @@ partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Sym
   let interprets (f : String) : Bool := f.contains "(seq.nth (as seq.empty" || prelude.interprets (quotedSymbols f)
   let typesInterpreted := c.vars.any (fun v => interprets v.ty.sort || v.fact?.any interprets)
   let log ← IO.mkRef #[]
+  -- What each of its checks asks, for `--dump=obligations`, with its
+  -- query's script as `backend` would ask it (`Fren.Core.obligationsOf`).
+  if let some r := obligations? then
+    let c' := { c with funFacts := st.funFacts, bounded := st.bounded c }
+    let script (k : Fren.Core.CheckKind) := queryText prelude c' limits (st.usesStrings || st.usesSeqs)
+      (st.usesSets || st.usesSeqs) st.usesProjection st.quantified sv.appFuns k sv.contractFns sv.recursiveSyms
+    let spanOf (n? : Option Lean.Name) : Option String :=
+      let span := (n?.bind fun n => (c.props.find? (·.name == n)).map (·.span)
+        <|> (c.insts.find? (·.name == n)).map (·.span)).getD c.span
+      let (line, col) := Fren.Core.position src span.start
+      if src.isEmpty then none else some s!"{line}:{col}"
+    -- A generic type's constructors, which are simple symbols with `~`
+    -- (`DataDecl.ctorSym`), by their canonical names.
+    let symbols : Std.HashMap String String := st.datatypes.foldl (init := {}) fun acc d =>
+      if d.params.isEmpty || d.lean?.isSome then acc else
+      d.ctors.foldl (init := acc) fun acc (v, _) =>
+        acc.insert (d.ctorSym v) (if d.isRecord then (Fren.Core.ItemSymbol.record d.path).text
+          else (Fren.Core.ItemSymbol.variant d.path v).text)
+    let os ← Fren.Core.obligationsOf bk script { toCore c with typesInterpreted } kinds c.tested c.enumerated interprets spanOf
+      symbols
+    r.modify (·.push os)
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
     | .ok sp => match sp.counterpart? c global body with
@@ -1005,7 +1037,10 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
         dumped.modify (· ++ s!"; {c.path}: query {k}\n{script}(check-sat)\n(reset)\n\n")
       else none
     let start ← IO.monoNanosNow
+    -- And what its checks ask, for `--dump=obligations`.
+    let obligations ← IO.mkRef #[]
     let r ← solveComp sv spec? sy c global kinds args.limits cache dump? body args.examples
+      (obligations? := if args.dumpObligations then some obligations else none) (src := (files[c.file]?.map (·.2)).getD #[])
     let solved ← IO.monoNanosNow
     -- The checks set to testing, tested (`Reqs/Check#checking-by-testing`).
     let tested? := if !(c.tested.minus c.enumerated).any then none else match spec? with
@@ -1021,7 +1056,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     let tested? ← IO.lazyPure fun _ => tested?
     let enumerated? ← IO.lazyPure fun _ => enumerated?
     let timing := (solved - start, (← IO.monoNanosNow) - solved)
-    return (r, ← dumped.get, tested?, enumerated?, timing)
+    return (r, (← dumped.get, ← obligations.get), tested?, enumerated?, timing)
   let mut timings := #[]
   -- Those with checks by testing or enumeration first: they are the
   -- slowest, and starting them last would leave them running alone at
@@ -1039,8 +1074,11 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     c.fn?.map fun f => (c.path, f, Fren.Core.CheckedItem.of body (c.vars.any (·.role == .output)) (global || c.global) global, results)
   for (f, e) in Fren.Core.contractsEvidence realizability.get? bodies do
     realizability := realizability.insert f e
+  -- What every check asks, before any result (`Reqs/Cli#obligations`).
+  if args.dumpObligations then
+    IO.print (Fren.Core.dump (solving.flatMap fun (_, (_, os), _) => os))
   for (c, global, kinds, body, key) in todo, solved in solving do
-    let ((results, refuted, missing?), dumped, tested?, enumerated?, (solverNs, restNs)) := solved
+    let ((results, refuted, missing?), (dumped, _), tested?, enumerated?, (solverNs, restNs)) := solved
     timings := timings.push (solverNs + restNs, solverNs, restNs, subjectOf c global, key)
     IO.print dumped
     if let some msg := missing? then

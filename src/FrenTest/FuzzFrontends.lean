@@ -2092,23 +2092,42 @@ structure Ran where
   cli : Array Diagnostic
   /-- The Lean front end's diagnostics. -/
   hosted : Array Diagnostic := #[]
+  /-- With `obligations`, both front ends' obligations dumps, the `fren`
+  command's first (`Fren.Core.dump`). -/
+  obligations? : Option (String × String) := none
+
+/-- `out` without its obligations dump, and the dump, if it has one
+(`Fren.Core.dumpStart`). -/
+def splitDump (out : String) : String × Option String := Id.run do
+  let lines := out.splitOn "\n"
+  let some i := lines.idxOf? Fren.Core.dumpStart | return (out, none)
+  let some j := (lines.drop i).idxOf? Fren.Core.dumpEnd | return (out, none)
+  let dump := "\n".intercalate ((lines.drop i).take (j + 1))
+  return ("\n".intercalate (lines.take i ++ lines.drop (i + j + 1)), some dump)
 
 /-- The `fren` command's diagnostics and summary on `text`, and its exit
-code. -/
-def runCli (path : System.FilePath) (text : String) : IO (Array Diagnostic × Option String × UInt32) := do
+code, and with `obligations`, its obligations dump. -/
+def runCli (path : System.FilePath) (text : String) (obligations := false) :
+    IO (Array Diagnostic × Option String × UInt32 × Option String) := do
   IO.FS.writeFile path text
-  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := #[path.toString] })
+  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := #[path.toString], dumpObligations := obligations })
+  let (out, dump?) := splitDump out
   let (cli, cliSum) := FrenTest.Ui.cliDiagnostics path.toString out (keepUnlocated := true)
-  return (cli, cliSum, code)
+  return (cli, cliSum, code, dump?)
 
 /-- Checks `text` with both front ends, both misreading models if
 `misread`, as `--confirm` has them (`Fren.Core.misreadSet`), or if
-`FREN_MISREAD_MODELS` is set. -/
-def runFrontends (env : Environment) (path : System.FilePath) (text : String) (misread := false) : IO Ran := do
+`FREN_MISREAD_MODELS` is set; with `obligations`, with their obligations
+dumps, which are not among their diagnostics. -/
+def runFrontends (env : Environment) (path : System.FilePath) (text : String) (misread := false) (obligations := false) :
+    IO Ran := do
   Fren.Core.misreadSet.set misread
   let misread ← Fren.Core.misreadModels
-  let (cli, cliSum, code) ← runCli path text
-  let (hosted, hostedSum) ← FrenTest.Ui.hostedDiagnostics env path.toString text
+  let (cli, cliSum, code, cliDump?) ← runCli path text obligations
+  let opts : Options := if obligations then Fren.fren.dump.set {} "obligations" else {}
+  let (hosted, hostedSum) ← FrenTest.Ui.hostedDiagnostics env path.toString text opts
+  let (dumps, hosted) := hosted.partition (·.text.startsWith Fren.Core.dumpStart)
+  let obligations? := if obligations then some (cliDump?.getD "", (dumps[0]?.map (·.text)).getD "") else none
   let comparison := FrenTest.Frontends.comparison text
     { diags := cli, summary? := cliSum, exit? := some code.toNat } { diags := hosted, summary? := hostedSum } misread
   let render (ds : Array Diagnostic) (s : Option String) :=
@@ -2116,7 +2135,7 @@ def runFrontends (env : Environment) (path : System.FilePath) (text : String) (m
       ++ s!"--   summary: {s.getD "(none)"}\n"
   return { comparison, reports := s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
            errors := cli.filterMap fun d => if d.severity == "error" then d.code? else none,
-           cli, hosted }
+           cli, hosted, obligations? }
 
 unsafe def loadFren : IO Environment := do
   enableInitializersExecution
@@ -2957,6 +2976,13 @@ structure Outcome where
   solver queries that ended at their time limit (`Fren.Core.solverTimeoutMs`). -/
   ms : Nat := 0
   solverTimeoutMs : Nat := 0
+  /-- Whether the front ends' obligations dumps differ, without their
+  metadata (`Fren.Core.withoutMetadata`): reported, but not a failure
+  (`obligationsDiffer`). -/
+  obligations : Bool := false
+  /-- And whether they differ other than in the names of their constants
+  (`obligationsDifferBeyondNames`). -/
+  obligationsBeyondNames : Bool := false
   deriving ToJson, FromJson
 
 /-- A run's work files, named after the driver's process, so that runs
@@ -2991,6 +3017,54 @@ def record (r : Run) (o : Outcome) : IO Unit := do
   h.putStrLn (toJson o).compress
   h.flush
 
+/-- Whether two front ends' obligations dumps of a spec differ, but for
+their metadata (`Fren.Core.withoutMetadata`): an early signal of a
+difference between their queries (`Reqs/Cli#obligations`), which a run
+reports, but which fails nothing yet, since many dumps differ in what
+predates the dump, such as the names that lean-smt's embeddings give
+`Nat` and `Bool` variables (#493). -/
+def obligationsDiffer (cli hosted : String) : Bool :=
+  Fren.Core.withoutMetadata cli != Fren.Core.withoutMetadata hosted
+
+/-- `line` with each of its symbols that `names` has written `_`. -/
+def collapseNames (names : Array String) (line : String) : String := Id.run do
+  let mut out := ""
+  let mut tok := ""
+  for c in line.toList do
+    if c == ' ' || c == '(' || c == ')' then
+      out := out ++ (if names.contains tok then "_" else tok) |>.push c
+      tok := ""
+    else tok := tok.push c
+  return out ++ (if names.contains tok then "_" else tok)
+
+/-- A dump's obligations, each as its lines, sorted, with the names of the
+constants and functions that it declares written `_` (`collapseNames`): two dumps whose
+obligations are the same so differ only in the names of their constants,
+as where lean-smt's embeddings rename a `Nat` or `Bool` variable. -/
+def namelessObligations (dump : String) : Array (Array String) := Id.run do
+  let mut blocks : Array (Array String) := #[]
+  for l in (Fren.Core.withoutMetadata dump).splitOn "\n" do
+    if l == "(obligation" then blocks := blocks.push #[]
+    else if let some b := blocks.back? then blocks := blocks.pop.push (b.push l)
+  return blocks.map fun b =>
+    let names := b.filterMap fun l =>
+      let l := l.trimAscii.toString
+      ((l.dropPrefix? "(declare-const ").orElse fun _ => l.dropPrefix? "(declare-fun ").map
+        fun r => ((r.toString.splitOn " ")[0]?).getD ""
+    (b.map (collapseNames names)).qsort (· < ·)
+
+/-- Whether two front ends' obligations dumps differ other than in the
+names of their constants (`namelessObligations`). -/
+def obligationsDifferBeyondNames (cli hosted : String) : Bool :=
+  namelessObligations cli != namelessObligations hosted
+
+#guard !obligationsDifferBeyondNames
+  "(obligation\n  (signature\n    (declare-const n Int)\n  )\n  (context\n    (>= n 0)\n  )\n  (goal (> n 1))\n)"
+  "(obligation\n  (signature\n    (declare-const f Int)\n  )\n  (context\n    (>= f 0)\n  )\n  (goal (> f 1))\n)"
+#guard obligationsDifferBeyondNames
+  "(obligation\n  (signature\n    (declare-const n Int)\n  )\n  (goal (> n 1))\n)"
+  "(obligation\n  (signature\n    (declare-const f Int)\n  )\n  (goal (> f 2))\n)"
+
 /-- Checks the specs of seeds `[seed, seed + count)` in this process,
 writing each one's outcome to the results file. -/
 unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
@@ -3003,8 +3077,20 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
     IO.FS.writeFile run.progress s!"{s}\n{solver0}"
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
-    let ran ← runFrontends env run.spec text mode.confirm
+    let ran ← runFrontends env run.spec text mode.confirm (obligations := true)
     let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
+    -- The obligations dumps, compared without their metadata, and both
+    -- written where they differ.
+    let obligations := match ran.obligations? with
+      | some (a, b) => obligationsDiffer a b
+      | none => false
+    let obligationsBeyondNames := match ran.obligations? with
+      | some (a, b) => obligations && obligationsDifferBeyondNames a b
+      | none => false
+    if let (true, some (a, b)) := (obligations, ran.obligations?) then
+      IO.FS.writeFile (run.dir / s!"obligations-seed{s}.fren") (s!"-- fren_fuzz_frontends{flags mode} --seed {s}\n" ++ text)
+      IO.FS.writeFile (run.dir / s!"obligations-seed{s}.cli") a
+      IO.FS.writeFile (run.dir / s!"obligations-seed{s}.lean") b
     let elapsed := (← IO.monoMsNow) - t0
     let timedOut := (← Fren.Core.solverTimeoutMs) - solver0
     if elapsed > slowMs then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s, {timedOut / 1000}s of it in queries that timed out"
@@ -3023,7 +3109,8 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
       IO.eprintln s!"seed {s}: front ends differ{why}, written to {file}"
       for f in found.extract 0 4 do IO.eprintln s!"  {f}"
     record run { seed := s, status, flags := flags mode, errors := errs.toList.eraseDups.toArray,
-                 signatures := found.map signature, issues, ms := elapsed, solverTimeoutMs := timedOut }
+                 signatures := found.map signature, issues, ms := elapsed, solverTimeoutMs := timedOut, obligations,
+                 obligationsBeyondNames }
     -- Between specs, a crash is no spec's.
     IO.FS.writeFile run.progress ""
   IO.cancel reporter
@@ -3078,6 +3165,11 @@ def report (outcomes : Array Outcome) : String := Id.run do
   let mut out := s!"{outcomes.size} specs: {n "differ"} differ in a kind that is not known, {n "crash"} crashed and \
     {n "timeout"} took too long, which fail the job; {n "known"} differ only in known kinds, and \
     {n "inconclusive"} only in inconclusive results.\n"
+  let dumps := outcomes.filter (·.obligations)
+  unless dumps.isEmpty do
+    out := out ++ s!"\n{dumps.size} specs' obligations dumps differ, {(dumps.filter (·.status == "ok")).size} of them \
+      where the messages agree, and {(dumps.filter (·.obligationsBeyondNames)).size} other than in the names of their \
+      constants, which fails nothing (`obligations-seed*`).\n"
   let failed := outcomes.filter (·.fails) |>.qsort (·.seed < ·.seed)
   unless failed.isEmpty do
     out := out ++ "\n#### Failures\n\n| Seed | Flags | Outcome | Spec | Kinds |\n|---|---|---|---|---|\n"
@@ -3123,6 +3215,11 @@ private def df : Outcome :=
 -- A clean run reports only its counts.
 #guard report #[{ seed := 1, status := "ok" }] == "1 specs: 0 differ in a kind that is not known, 0 crashed and \
   0 took too long, which fail the job; 0 differ only in known kinds, and 0 only in inconclusive results.\n"
+-- Specs whose obligations dumps differ are counted, but fail nothing.
+#guard report #[{ seed := 1, status := "ok", obligations := true }, { seed := 2, status := "known", obligations := true }] ==
+  "2 specs: 0 differ in a kind that is not known, 0 crashed and 0 took too long, which fail the job; 1 differ only in \
+  known kinds, and 0 only in inconclusive results.\n\n2 specs' obligations dumps differ, 1 of them where the messages \
+  agree, and 0 other than in the names of their constants, which fails nothing (`obligations-seed*`).\n"
 -- A failing spec is listed with its kinds, new or known, and every known
 -- kind with its issue and seeds, of the failing specs too.
 #guard ((report #[kn, df, { seed := 9, status := "crash" }]).splitOn "\n").drop 6 == [
@@ -3231,6 +3328,11 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   let n (st : String) := (outcomes.filter (·.status == st)).size
   let codeList := ", ".intercalate ((codes.qsort (·.2.1 > ·.2.1)).toList.map fun (e, k, _) => s!"{e} ×{k}")
   IO.eprintln s!"specs with errors from `fren check`: {(outcomes.filter (!·.errors.isEmpty)).size} ({codeList})"
+  let dumps := outcomes.filter (·.obligations)
+  IO.eprintln s!"specs whose obligations dumps differ, which fails nothing: {dumps.size}, \
+    {(dumps.filter (·.status == "ok")).size} of them where the messages agree, \
+    {(dumps.filter (·.obligationsBeyondNames)).size} other than in the names of their constants \
+    (`obligations-seed*` in {dir})"
   IO.eprintln s!"fren_fuzz_frontends: {outcomes.size} specs in {((← IO.monoMsNow) - start) / 1000}s, {n "differ"} where \
     the front ends differ, {n "inconclusive"} more only in inconclusive results, \
     {n "known"} more only in known kinds, {n "crash"} crashed, \

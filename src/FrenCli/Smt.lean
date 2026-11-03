@@ -1224,6 +1224,117 @@ def recursiveIn (prelude : Prelude) (recursiveSyms : Std.HashMap String Lean.Nam
     | some p => if acc.contains p then acc else acc.push p
     | none => acc
 
+/-- A query as `backend` asks it, once its hypotheses have the facts that
+its formulas bring: its variables, hypotheses, goal, logic and options,
+the observations of its model, the symbols that the model shows, and the
+recursive functions that its facts apply (`prepare`). -/
+structure Prepared where
+  vars : Array CVar
+  hyps : Array (Lean.Name × String)
+  goal : String
+  logic : String
+  options : String
+  observations : Array ModelObservation
+  shown : Std.HashSet String
+  factRecs : Array Lean.Name
+
+/-- The query of `hyps` and `goal` that `backend` asks, as it asks it
+(`Prepared`), but for its quantifiers over elements, which it expands as
+it asks it (`solveExpanded`). -/
+def prepare (prelude : Prelude) (c : CComp) (strings sets : Bool) (projection : Bool) (quantified : Bool)
+    (funs : Std.HashMap String (Bool × Contract)) (kind : Fren.Core.CheckKind)
+    (contractFns : Std.HashMap String Lean.Name) (applied? : Option (IO.Ref (Array Lean.Name)))
+    (recursiveSyms : Std.HashMap String Lean.Name) (hyps : Array (Lean.Name × String)) (goal : String)
+    (requery : Bool := false) : IO Prepared := do
+  let hasRecursion := prelude.decls.any (·.recursion?.isSome)
+  let expand (f : String) : String := Id.run do
+    if !hasRecursion then return f
+    let e := (SeqElems.parse f).unfold prelude.unfolds.get
+    let some fn := c.fn? | return toString e
+    let some d := prelude.decls.find? (·.syms.contains ((itemSym fn).drop 1 |>.dropEnd 1 |>.toString)) | return toString e
+    let some (ps, body) := d.recursion? | return toString e
+    let own := SeqElems.SExpr.list (#[.atom (itemSym fn)] ++ ps.map SeqElems.SExpr.atom)
+    return toString (contractBody own (SeqElems.parse body) e)
+  let hyps := hyps.map fun (n, f) => (n, expand f)
+  let goal := expand goal
+  -- Observe the same unfolded terms in the primary model. Keys retain
+  -- their source identity for `backend`'s `modelBool?`.
+  let observations := (observationsOf c).map fun observation =>
+    { observation with formula := expand observation.formula }
+  let facts := c.natFacts false ++ c.natFacts true
+  let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
+  let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
+  let mentioned : Std.HashSet String := .ofArray (formulas.flatMap quotedSymbols)
+  -- A model shows those that the formulas mention once their definitions
+  -- are unfolded, as Lean's does (`termMentions`).
+  let used := prelude.used.get
+  let shown : Std.HashSet String :=
+    .ofArray (formulas.flatMap fun f => (parseTerms f.toList.toArray 0).1.flatMap (termMentions used))
+  let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
+  -- An application within a `let` or `where` is found as it is written
+  -- there, and its fact is within the clause's `let`s.
+  let peeled := apps.map peelLets
+  -- And each read of a recursive enumeration's payload whose type brings
+  -- a constraint, by its selector (`State.funFacts`).
+  let heads := c.funFacts.toArray.filterMap fun (h, _) => if h.startsWith "|::" then none else some h
+  let appsOf (f : String) := (factTermsIn peeled heads f).map fun t => ((peeled.idxOf? t).map (apps[·]!)).getD t
+  -- And the functions whose contracts those facts have, which its check
+  -- rests on, but its own function's, in its own contract
+  -- (`Fren.Core.appFactsWith`).
+  let fnOf (app : String) : Option Lean.Name :=
+    let inner := (splitLets app).2.1
+    contractFns.get? (headSymbol (inner.drop 1).toString)
+  -- And those of the applications in those facts, once their clauses
+  -- are unfolded, of the functions whose applications bring facts
+  -- (`Fren.Core.closeApps`).
+  let factHeads : Std.HashSet String := funs.fold (init := .ofList (c.funFacts.toList.map (·.1)))
+    fun acc h (nat, k) => if nat || !k.posts.isEmpty then acc.insert h else acc
+  let factAppsOf (f : String) : Id (Array String) :=
+    (factAppsIn factHeads ((SeqElems.parse f).unfold prelude.unfolds.get)).map fun t =>
+      ((peeled.idxOf? t).map (apps[·]!)).getD t
+  let some (appFacts, fns) := Fren.Core.appFactsWith (m := Id) appsOf (appFactsOf funs c.funFacts) fnOf factAppsOf
+      (factHeads.size + 1) (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal) c.fn?
+    | throw (IO.userError Fren.Core.factRoundsMsg)
+  -- Without the `let`s of their applications that they do not use, as
+  -- Lean's `zetaReduce` drops them; and the query declares the variables
+  -- that they mention too, which a fact of an application in a `let` may
+  -- where the formulas do not, as of a parameter that a contract does not
+  -- mention.
+  let appFacts := appFacts.map fun (n, f) => (n, dropUnusedLets f)
+  let mentioned := appFacts.foldl (init := mentioned) fun m (_, f) => (quotedSymbols f).foldl (·.insert ·) m
+  let vars := (c.vars ++ primes c).filter (fun v => mentioned.contains (v.name.toString (escape := false)))
+  if let some r := applied? then
+    r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
+  -- A procedure whose queries may quantify sets `fmf-bound`
+  -- (`State.bounded`).
+  -- The recursive functions that the facts of its applications apply,
+  -- once their clauses are unfolded, by path, whose models are never
+  -- confirmed (`Fren.Core.recursiveCounterexample`).
+  let factRecs := appFacts.foldl (init := #[]) fun acc (_, f) =>
+    (recursiveIn prelude recursiveSyms f).foldl (init := acc) fun acc p => if acc.contains p then acc else acc.push p
+  -- Reflected with the hypotheses (`Fren.Core.recursionFormulas`).
+  let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas facts appFacts hyps) goal mentioned ++ hyps
+  let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
+    -- The contract of a generic function without a body, at its type
+    -- parameters' sorts, with finite-model finding.
+    ++ (if c.generic || c.finiteModel then Fren.Core.finiteModelOptions else [])
+    -- Asked again, for a model that confirmation contradicts
+    -- (`Fren.Core.askedAgain`).
+    ++ (if requery then Fren.Core.requeryOptions else [])
+  -- A recursive definition needs a logic with quantifiers.
+  let logic := Fren.Core.logic kind (strings || sets) projection quantified
+  let options := String.join ((options ++ Fren.Core.quantifierOptions logic).map fun (o, v) => s!"(set-option :{o} {v})\n")
+  return { vars, hyps, goal, logic, options, observations, shown, factRecs }
+
+/-- The script of the query of `hyps` and `goal` that `backend` would ask,
+without asking it: what `--dump=obligations` prints (`Fren.Core.dump`). -/
+def queryText (prelude : Prelude) (c : CComp) (limits : Limits) (strings sets : Bool := false) (projection : Bool := false)
+    (quantified : Bool := false) (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind)
+    (contractFns : Std.HashMap String Lean.Name := {}) (recursiveSyms : Std.HashMap String Lean.Name := {})
+    (hyps : Array (Lean.Name × String)) (goal : String) : IO String := do
+  let p ← prepare prelude c strings sets projection quantified funs kind contractFns none recursiveSyms hyps goal
+  return queryScript p.logic p.options prelude p.vars limits p.hyps p.goal
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite, which puts in `HO_ALL` those of its queries that
@@ -1249,84 +1360,8 @@ def backendWith (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits :
       | some "false" => some false
       | _ => none
   query hyps goal wantModel := do
-    let hasRecursion := prelude.decls.any (·.recursion?.isSome)
-    let expand (f : String) : String := Id.run do
-      if !hasRecursion then return f
-      let e := (SeqElems.parse f).unfold prelude.unfolds.get
-      let some fn := c.fn? | return toString e
-      let some d := prelude.decls.find? (·.syms.contains ((itemSym fn).drop 1 |>.dropEnd 1 |>.toString)) | return toString e
-      let some (ps, body) := d.recursion? | return toString e
-      let own := SeqElems.SExpr.list (#[.atom (itemSym fn)] ++ ps.map SeqElems.SExpr.atom)
-      return toString (contractBody own (SeqElems.parse body) e)
-    let hyps := hyps.map fun (n, f) => (n, expand f)
-    let goal := expand goal
-    -- Observe the same unfolded terms in the primary model. Keys retain
-    -- their source identity for modelBool? above.
-    let observations := (observationsOf c).map fun observation =>
-      { observation with formula := expand observation.formula }
-    let facts := c.natFacts false ++ c.natFacts true
-    let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
-    let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
-    let mentioned : Std.HashSet String := .ofArray (formulas.flatMap quotedSymbols)
-    -- A model shows those that the formulas mention once their definitions
-    -- are unfolded, as Lean's does (`termMentions`).
-    let used := prelude.used.get
-    let shown : Std.HashSet String :=
-      .ofArray (formulas.flatMap fun f => (parseTerms f.toList.toArray 0).1.flatMap (termMentions used))
-    let apps := c.natApps ++ (c.natApps.map (prime c)).filter (!c.natApps.contains ·)
-    -- An application within a `let` or `where` is found as it is written
-    -- there, and its fact is within the clause's `let`s.
-    let peeled := apps.map peelLets
-    -- And each read of a recursive enumeration's payload whose type brings
-    -- a constraint, by its selector (`State.funFacts`).
-    let heads := c.funFacts.toArray.filterMap fun (h, _) => if h.startsWith "|::" then none else some h
-    let appsOf (f : String) := (factTermsIn peeled heads f).map fun t => ((peeled.idxOf? t).map (apps[·]!)).getD t
-    -- And the functions whose contracts those facts have, which its check
-    -- rests on, but its own function's, in its own contract
-    -- (`Fren.Core.appFactsWith`).
-    let fnOf (app : String) : Option Lean.Name :=
-      let inner := (splitLets app).2.1
-      contractFns.get? (headSymbol (inner.drop 1).toString)
-    -- And those of the applications in those facts, once their clauses
-    -- are unfolded, of the functions whose applications bring facts
-    -- (`Fren.Core.closeApps`).
-    let factHeads : Std.HashSet String := funs.fold (init := .ofList (c.funFacts.toList.map (·.1)))
-      fun acc h (nat, k) => if nat || !k.posts.isEmpty then acc.insert h else acc
-    let factAppsOf (f : String) : Id (Array String) :=
-      (factAppsIn factHeads ((SeqElems.parse f).unfold prelude.unfolds.get)).map fun t =>
-        ((peeled.idxOf? t).map (apps[·]!)).getD t
-    let some (appFacts, fns) := Fren.Core.appFactsWith (m := Id) appsOf (appFactsOf funs c.funFacts) fnOf factAppsOf
-        (factHeads.size + 1) (hyps.map fun (n, f) => (n, dropUnusedLets f)) (dropUnusedLets goal) c.fn?
-      | throw (IO.userError Fren.Core.factRoundsMsg)
-    -- Without the `let`s of their applications that they do not use, as
-    -- Lean's `zetaReduce` drops them; and the query declares the variables
-    -- that they mention too, which a fact of an application in a `let` may
-    -- where the formulas do not, as of a parameter that a contract does not
-    -- mention.
-    let appFacts := appFacts.map fun (n, f) => (n, dropUnusedLets f)
-    let mentioned := appFacts.foldl (init := mentioned) fun m (_, f) => (quotedSymbols f).foldl (·.insert ·) m
-    let vars := (c.vars ++ primes c).filter (fun v => mentioned.contains (v.name.toString (escape := false)))
-    if let some r := applied? then
-      r.modify fun acc => fns.foldl (init := acc) fun acc f => if acc.contains f then acc else acc.push f
-    -- A procedure whose queries may quantify sets `fmf-bound`
-    -- (`State.bounded`).
-    -- The recursive functions that the facts of its applications apply,
-    -- once their clauses are unfolded, by path, whose models are never
-    -- confirmed (`Fren.Core.recursiveCounterexample`).
-    let factRecs := appFacts.foldl (init := #[]) fun acc (_, f) =>
-      (recursiveIn prelude recursiveSyms f).foldl (init := acc) fun acc p => if acc.contains p then acc else acc.push p
-    -- Reflected with the hypotheses (`Fren.Core.recursionFormulas`).
-    let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas facts appFacts hyps) goal mentioned ++ hyps
-    let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
-      -- The contract of a generic function without a body, at its type
-      -- parameters' sorts, with finite-model finding.
-      ++ (if c.generic || c.finiteModel then Fren.Core.finiteModelOptions else [])
-      -- Asked again, for a model that confirmation contradicts
-      -- (`Fren.Core.askedAgain`).
-      ++ (if requery then Fren.Core.requeryOptions else [])
-    -- A recursive definition needs a logic with quantifiers.
-    let logic := Fren.Core.logic kind (strings || sets) projection quantified
-    let options := String.join ((options ++ Fren.Core.quantifierOptions logic).map fun (o, v) => s!"(set-option :{o} {v})\n")
+    let { vars, hyps, goal, logic, options, observations, shown, factRecs } ← prepare prelude c strings sets projection
+      quantified funs kind contractFns applied? recursiveSyms hyps goal requery
     let o ← if needsExpansion prelude.marked (hyps.map (·.2) |>.push goal) then
         solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations) vars hyps goal
           wantModel

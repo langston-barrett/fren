@@ -28,6 +28,12 @@ scoped syntax (name := checkCmd) "#fren_check" (ppSpace notLeanKeyword fren_path
 
 end Lang
 
+register_option fren.dump : String := {
+  defValue := ""
+  descr := "with \"obligations\", `#fren_check` logs what each check asks, as `fren check --dump=obligations` prints it \
+    (`Reqs/Cli#obligations`)"
+}
+
 register_option fren.runChecks : Bool := {
   defValue := true
   descr := "whether `#fren_check` runs the checks; false only elaborates what it would check, as \
@@ -295,18 +301,20 @@ from the current state. Each runs as `liftTermElabM` would run it here,
 with a heartbeat budget of its own, as each `liftTermElabM` has, and with
 nothing logged yet: what it logs is kept for `awaitCheck`. -/
 def checkItems (items : Array (Name × CompInfo × Array CheckKind)) (sites : Array (Core.InstanceSite × Name × Array Core.Ty))
-    (cancel : IO.CancelToken) : CommandElabM (Array (Task (Except Exception CheckOutcome))) := do
-  let run ← wrapAsync (cancelTk? := some cancel) fun ((p, c, kinds) : Name × CompInfo × Array CheckKind) => do
+    (cancel : IO.CancelToken) (obligations : Array (Option (IO.Ref (Array (Array Core.Obligation))))) :
+    CommandElabM (Array (Task (Except Exception CheckOutcome))) := do
+  let run ← wrapAsync (cancelTk? := some cancel) fun (((p, c, kinds), obligations?) :
+      (Name × CompInfo × Array CheckKind) × Option (IO.Ref (Array (Array Core.Obligation)))) => do
     modify fun s => { s with messages := {}, traceState.traces := {}, infoState.trees := {} }
     -- The instances whose contracts it checks (`lang::instance_site`): a
     -- function's own, with its contract, and an item's.
     let own := sites.filterMap fun (site, f, targs) => if site == .function && f == p then some targs else none
     let foreign := sites.filterMap fun (site, f, targs) => if site == .item 1 p then some (f, targs) else none
-    let r ← try .ok <$> liftTermElabM (checkComp c kinds (some Enumerate.enumerate) (some elabHooks) own foreign)
+    let r ← try .ok <$> liftTermElabM (checkComp c kinds (some Enumerate.enumerate) (some elabHooks) own foreign obligations?)
       catch ex => pure (.error ex)
     let s ← get
     return (r, s.messages, s.traceState.traces, s.infoState.trees)
-  items.mapM fun i => (EIO.asTask (run i) : BaseIO _)
+  (items.zip obligations).mapM fun i => (EIO.asTask (run i) : BaseIO _)
 
 /-- Waits for a task of `checkItems`, adds what it logged to the current
 state, and gives its results, or throws its exception, as `liftTermElabM`
@@ -414,7 +422,11 @@ where
   let keys := items.map (·.1)
   let sites := s.instanceSites (← getMainModule) (keys.contains ·)
   for (_, f, targs) in sites do record (.instanceChecked f targs)
-  let tasks ← checkItems items sites cancel
+  -- What each check asks, with `fren.dump` set to `"obligations"`, of the
+  -- items that this run reports (`Core.dump`).
+  let dumping := fren.dump.get (← getOptions) == "obligations"
+  let obligations ← items.mapIdxM fun k _ => if dumping && k ≥ silent then some <$> IO.mkRef #[] else pure none
+  let tasks ← checkItems items sites cancel obligations
   -- The evidence of the contracts of the functions among them first, though
   -- they are reported last, since what applies them rests on them
   -- (`Core.contractsEvidence`). Their results are read here, and their
@@ -523,6 +535,9 @@ where
         logAbout p ref msg.text (if rep.unsettled then .warning else .information)
       if rep.byBound then byBound := byBound + 1
       all := all.push { r with verdict := rep.shown }
+  if dumping then
+    let os ← obligations.filterMapM fun r? => r?.mapM (·.get)
+    logInfo (Core.dump os.flatten)
   match Core.summarySeverity all with
   | .info => logInfo (Core.summary all 0 byBound)
   | .warning => logWarning (Core.summary all 0 byBound)
