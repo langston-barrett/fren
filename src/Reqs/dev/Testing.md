@@ -1343,6 +1343,10 @@ them.
 declaration (`FrenTest.Coverage.fails` and `stale`). Its inputs are
 trusted: `ran?` is gcov's counters, and `reached?` is
 `FrenCoverage.reached`, which no Req states and no evidence backs (#679).
+`testing::coverage` comes after the chapter's last `#fren_check`, so it is
+named, and the Lean-hosted front end then checks it, as the `fren` command
+checks every procedure. `lake test`'s `ownSpec` job fails on an item that
+no `#fren_check` checks in Lean (`hostedChecks`):
 
 ```fren
 pub proc coverage(
@@ -1363,6 +1367,8 @@ pub proc coverage(
     expect line_needed: when listed?, not stale? iff not ran? and reached?
     cover failing: fails?
 }
+
+#fren_check coverage
 ```
 
 A counted definition that nothing refers to at all, not even a proof, is

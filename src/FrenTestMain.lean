@@ -1180,13 +1180,25 @@ def chapterChecks (md : String) : Array String :=
 
 #guard chapterChecks "```fren\nproc p() {}\n#fren_check p\n```\n\n#fren_check\n" == #["#fren_check p"]
 
-/-- The problems of Lean's checks of `src/Reqs`: each chapter that a Lean file
-reads by `#fren_md`, and that declares procedures or global expectations, is
-checked by a `#fren_check` without a path in it or in a later chapter of
-that file, or by a `#fren_check` of each of them in it. A `#fren_check`
-checks what is declared before it in its file (`Reqs/Lean#commands`), so a
-chapter after a file's last one is not checked in Lean at all: the hosted
-counterpart of `ownSpecFiles`. -/
+/-- The procedures and global expectations that the `fren` block lines
+`ls` declare after their last `#fren_check` without a path, which none of
+those checks: a `#fren_check` checks what is declared before it in its file
+(`Reqs/Lean#commands`). -/
+def afterLastCheck (ls : Array String) : Array String :=
+  ls.foldl (init := #[]) fun pending l =>
+    if l.trimAscii.toString == "#fren_check" then #[] else pending ++ checkedItems #[l]
+
+#guard afterLastCheck #["proc p() {}", "#fren_check", "proc q() {}"] == #["q"]
+#guard afterLastCheck #["proc p() {}", "#fren_check"] == #[]
+#guard afterLastCheck #["proc p() {}", "#fren_check p", "pub proc q() {}", "expect e: true"] == #["p", "q", "e"]
+
+/-- The problems of Lean's checks of `src/Reqs`: each procedure or global
+expectation that a chapter declares, which a Lean file reads by
+`#fren_md`, is checked by a `#fren_check` without a path after it in its
+chapter or in a later chapter of that file, or by a `#fren_check` of it in
+its chapter. A `#fren_check` checks what is declared before it in its file
+(`Reqs/Lean#commands`), so an item after a file's last one is not checked in
+Lean at all: the hosted counterpart of `ownSpecFiles`. -/
 def hostedChecks : IO (Array String) := do
   let mut failures := #[]
   for entry in ← System.FilePath.readDir "src/Reqs" do
@@ -1198,13 +1210,13 @@ def hostedChecks : IO (Array String) := do
     let texts ← chapters.toArray.mapM fun (c : String) => IO.FS.readFile (("src" : FilePath) / "Reqs" / c)
     let checks := texts.map chapterChecks
     for c in chapters.toArray, t in texts, k in [0:texts.size] do
-      let items := checkedItems (frenBlockLines t)
-      if items.isEmpty then continue
-      let bare := (checks.extract k checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
+      let pending := afterLastCheck (frenBlockLines t)
+      if pending.isEmpty then continue
+      let later := (checks.extract (k + 1) checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
       let named := checks[k]!.filterMap fun l => (l.trimAscii.toString.dropPrefix? "#fren_check ").map (·.toString.trimAscii.toString)
-      for i in items do
-        unless bare || named.contains i do
-          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as the chapter comes after its file's last `#fren_check` in a `fren` block: name it, as `#fren_check {i}`"
+      for i in pending do
+        unless later || named.contains i do
+          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as it comes after its file's last `#fren_check` in a `fren` block: name it, as `#fren_check {i}`"
   return failures
 
 /-- `QueryCache`'s answers in memory: a script asked again gets the answer
