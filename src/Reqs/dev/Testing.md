@@ -1239,15 +1239,16 @@ solver's speed, not a feature of the `fren` command for users: it is
 left out of its `--help` and of [the command's chapter](../Cli.md), and
 what it prints may change with any cvc5. It reports, on standard error
 after the summary and any [timings](../Cli.md#timings), where the time of
-each query that the solver answered went (`FrenCli.SolverStats`):
+each query that the solver answered went (`FrenCli.SolverStats`), as in
+this report of Fren's own requirements, shortened where it shows `…`:
 
 ```text
-solver-stats: 6267 queries asked of the solver, 16318.8 ms (setup 1537.6, init 1776.8, assert 1422.8, check 9831.8, model 522.7, free 1227.1 ms)
-solver-stats: logic ALL: 6247 queries, 16295.9 ms (setup 1533.4, init 1771.2, assert 1422.0, check 9823.3, model 521.6, free 1224.5 ms)
-solver-stats: checkSat by cvc5's timers: SAT search and the rest 4379 ms, strings 1147 ms, datatypes 1060 ms, …
-solver-stats: 1. 322.8 ms: `cli::query_symbols` (expectation), ALL, 3.0 KB, unsat, dominated by SAT search and the rest
-solver-stats:   phases: setup 0.2, init 0.3, assert 0.1, check 319.4, model 0.0, free 2.7 ms
-solver-stats:   checkSat 319 ms: SAT search and the rest 108 ms, strings 98 ms, arith 92 ms, datatypes 11 ms, clausal form 10 ms
+solver-stats: 6267 queries asked of the solver, 15922.7 ms (setup 1504.0, init 1733.5, assert 1391.8, check 9587.8, model 509.5, free 1196.1 ms)
+solver-stats: logic ALL: 6247 queries, 15900.4 ms (setup 1499.9, init 1728.2, assert 1391.0, check 9579.3, model 508.4, free 1193.6 ms)
+solver-stats: checkSat of the 360 queries of 5 ms or more, 6566.2 ms, by cvc5's timers: SAT search and the rest 2260 ms, datatypes 1036 ms, strings 1012 ms, …
+solver-stats: 1. 311.3 ms: `cli::query_symbols` (expectation), ALL, 3.0 KB, unsat, dominated by SAT search and the rest
+solver-stats:   phases: setup 0.2, init 0.3, assert 0.1, check 308.2, model 0.0, free 2.4 ms
+solver-stats:   checkSat 308 ms: SAT search and the rest 107 ms, strings 94 ms, arith 88 ms, datatypes 10 ms, clausal form 9 ms
 solver-stats:   counts: 6306 decisions, 58 conflicts, 53715 propagations; 35505 theory checks, 28965 rewrites, 455 lemmas, 0 instantiations, 80509 resource units
 solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_I_NORM_S 127, …
 ```
@@ -1274,11 +1275,17 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   timers to be disjoint, which is not read from cvc5's source: no query
   of Fren's own requirements had timed parts that summed to more than its
   `checkSat`, but timers that overlap in part, as the clausal form of a
-  theory's lemmas may within its check, would still meet that bound, so
-  `SAT search and the rest` is a lower bound. A query whose timed parts
+  theory's lemmas may within its check, would still meet that bound, and
+  make `SAT search and the rest` too small. A query whose timed parts
   exceed its `checkSat` says by how much, and the summed line says how
-  many did. The
-  theories' checks are made from within the search, so a query that
+  many did. The timers are also read in whole milliseconds, so the rest
+  takes in what they leave out, which makes it too large: of the queries
+  of Fren's own requirements whose `checkSat` took under 5 ms, it was
+  2,054 ms of their 2,485 ms. So the summed line sums only the queries
+  whose `checkSat` took 5 ms or more (`summedMs`), and the rest is
+  rough for a short query that is listed. In cvc5 1.3.2, each theory has
+  one `checkTime`, the arrays' as
+  `theory::arrays::theory::arrays::checkTime`. The theories' checks are made from within the search, so a query that
   makes tens of thousands of cheap theory checks, as `cli::query_symbols`'
   do, shows its search's cost spread over the search and the theories. A
   query is `dominated by` its largest part. cvc5 has no timer of its own

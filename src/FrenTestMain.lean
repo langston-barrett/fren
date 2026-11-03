@@ -1255,7 +1255,8 @@ def answersInMemory : IO (Array String) := do
 /-- `fren check --solver-stats` (`Reqs/dev/Testing#solver-statistics`)
 adds only lines that start with `solver-stats: `, and the output without
 them, its exit status and the answers and models that a query cache keeps
-are those without the flag. It reports every query that it asked, and
+are those without the flag. It reports every query that it asked, with
+some of cvc5's counts and inferences, so that it read them, and
 lists each, with its item and the kind of its check, or `N` of them for
 `--solver-stats=N`; a warm run, which asks the solver nothing, reports no
 query. -/
@@ -1305,6 +1306,12 @@ def solverStats : IO (Array String) := do
   unless listedIn one == 1 do failures := failures.push s!"--solver-stats=1 lists {listedIn one} queries:\n{one}"
   unless listedIn none_ == 0 && none_.contains " queries asked of the solver" do
     failures := failures.push s!"--solver-stats=0 lists {listedIn none_} queries, or no count:\n{none_}"
+  -- cvc5's statistics were read: a renamed statistic, or a `get-info`
+  -- that failed, would read as all 0.
+  let counted := stats.any fun l => (l.dropPrefix? "solver-stats:   counts: ").any fun r =>
+    !(r.toString.splitOn " rewrites").head!.endsWith " 0" && !(r.toString.splitOn " resource units").head!.endsWith " 0"
+  unless counted && stats.any (·.startsWith "solver-stats:   inferences: ") do
+    failures := failures.push s!"--solver-stats read no rewrites, resource units or inferences of cvc5's:\n{withStats}"
   unless warm.contains "solver-stats: 0 queries asked of the solver" do
     failures := failures.push s!"a warm run reports queries that it did not ask:\n{warm}"
   return failures

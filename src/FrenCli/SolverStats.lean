@@ -208,10 +208,13 @@ cvc5 1.3.2, no query's timed parts summed to more than its `checkSat`,
 but timers that overlap in part would still meet that bound: the clausal
 form of a lemma that a theory sends during its check, for one, may count
 both in the theory's `checkTime` and in `cnfConversionTime`. Time counted
-twice makes the rest too small, so it is a lower bound of the time that
-no timer accounts for. `report` says of a query whose timed parts exceed
-its `checkSat` by how much (`overMs`), rather than hide that in the
-subtraction. -/
+twice makes the rest too small. And every timer is read in whole
+milliseconds, so the rest also takes in what they leave out: in a short
+query, a part under a millisecond shows as 0 and goes to the rest, which
+is then too large. Neither error averages out over queries, so `report`
+sums the parts only over queries of `summedMs` or more, and says of a
+query whose timed parts exceed its `checkSat` by how much (`overMs`),
+rather than hide that in the subtraction. -/
 def Cvc5Stats.searchMs (s : Cvc5Stats) (checkMs : Nat) : Nat :=
   checkMs - s.timedMs
 
@@ -277,13 +280,18 @@ none. -/
 def showParts (xs : Array (String × Nat)) : String :=
   if xs.isEmpty then "no timer over 0 ms" else showCounts xs " ms"
 
-/-- `ns` nanoseconds in whole milliseconds, rounded, as cvc5's timers are. -/
+/-- `ns` nanoseconds in whole milliseconds, rounded. -/
 def wholeMs (ns : Nat) : Nat := (ns + 500000) / 1000000
 
 /-- The sums of `xs`'s counts, by name, largest first. -/
 def sumCounts (xs : Array (String × Nat)) : Array (String × Nat) :=
   let m : Std.HashMap String Nat := xs.foldl (init := {}) fun m (k, n) => m.insert k (m.getD k 0 + n)
   m.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)
+
+/-- The shortest `checkSat`, in milliseconds, whose parts the report sums:
+in a shorter one, what cvc5's whole-millisecond timers leave out is too
+large a share (`Cvc5Stats.searchMs`). -/
+def summedMs : Nat := 5
 
 /-- How many of the slowest queries the report lists unless told
 otherwise (`--solver-stats=N`). -/
@@ -308,8 +316,12 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
     let these := qs.filter (·.logic == l)
     let ph := these.foldl (fun (acc : Phases) (q : QueryStats) => acc.add q.phases) {}
     out := out ++ s!"{p}logic {l}: {these.size} queries, {ms ph.total} ms ({ph.show})\n"
-  -- Where `checkSat` went, by cvc5's timers, summed over the queries.
-  let parts := sumCounts (qs.flatMap fun q => q.cvc5.parts (wholeMs q.phases.check))
+  -- Where `checkSat` went, by cvc5's timers, summed over the queries
+  -- long enough that their timers' whole milliseconds say much
+  -- (`Cvc5Stats.searchMs`).
+  let long := qs.filter fun q => wholeMs q.phases.check ≥ summedMs
+  let parts := sumCounts (long.flatMap fun q => q.cvc5.parts (wholeMs q.phases.check))
+  let longMs := long.foldl (fun acc q => acc + q.phases.check) 0
   -- And of how many queries' the timed parts exceed their `checkSat`,
   -- listed or not (`Cvc5Stats.overMs`).
   let overs := qs.filterMap fun q =>
@@ -317,7 +329,8 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
     if over == 0 then none else some over
   let overNote := if overs.isEmpty then "" else
     s!" (queries whose timed parts exceed their checkSat: {overs.size}, by {overs.foldl (· + ·) 0} ms)"
-  out := out ++ s!"{p}checkSat by cvc5's timers{overNote}: {showParts parts}\n"
+  out := out ++ s!"{p}checkSat of the {long.size} queries of {summedMs} ms or more, {ms longMs} ms, by cvc5's timers\
+    {overNote}: {showParts parts}\n"
   let sorted := qs.qsort fun a b => a.phases.total > b.phases.total ||
     (a.phases.total == b.phases.total && Fren.Core.showPath a.item ++ " " ++ a.kind.noun < Fren.Core.showPath b.item ++ " " ++ b.kind.noun)
   let shown := listed?.getD sorted.size
@@ -348,5 +361,8 @@ private def testQuery (checkMs : Nat) (cvc5 : Cvc5Stats) : QueryStats :=
 
 #guard (report #[testQuery 3 { preprocessMs := 2, cnfMs := 3 }, testQuery 9 {}] (some 0)).contains
   "(queries whose timed parts exceed their checkSat: 1, by 2 ms)"
+-- The parts are summed over the queries of `summedMs` or more only.
+#guard (report #[testQuery 3 { preprocessMs := 1 }, testQuery 9 { preprocessMs := 2 }] (some 0)).contains
+  "checkSat of the 1 queries of 5 ms or more, 9.0 ms, by cvc5's timers: SAT search and the rest 7 ms, preprocessing 2 ms"
 
 end FrenCli.SolverStats
