@@ -1847,7 +1847,10 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     -- (`Core.obligationsOf`).
     if let some r := obligations? then
       -- A script that cannot be built is an `(error ...)` command, which the
-      -- dump shows: the dump changes no result.
+      -- dump shows, so that the dump asks the solver nothing and changes no
+      -- verdict; but its work counts towards the item's heartbeats, and a
+      -- limit of Lean's that building it reaches, heartbeats or recursion
+      -- depth, is the item's failure to check (`Reqs/Cli#obligations`).
       let script (k : CheckKind) (hyps : Array (Name × Expr)) (goal : Expr) : MetaM String := do
         let text ← IO.mkRef ""
         let fresh : QueryCache ← IO.mkRef {}

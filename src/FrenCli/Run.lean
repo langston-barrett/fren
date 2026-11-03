@@ -776,7 +776,8 @@ partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Sym
   if let some r := obligations? then
     let c' := { c with funFacts := st.funFacts, bounded := st.bounded c }
     -- A script that cannot be built is an `(error ...)` command, which the
-    -- dump shows: the dump changes no result.
+    -- dump shows: the dump changes no result of `fren check`
+    -- (`Reqs/Cli#obligations`).
     let script (k : Fren.Core.CheckKind) (hyps : Array (Lean.Name × String)) (goal : String) : IO String :=
       try
         queryText prelude c' limits (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs) st.usesProjection
