@@ -774,13 +774,28 @@ metavariable, as `[]`'s `Seq<?>`, is elaborated afresh each time: a caller
 may assign the metavariable, as `isDefEq` against a sequence's element
 type does, and a kept copy would then give the next asker that assignment
 rather than a fresh metavariable. Nor is an error kept: it is thrown each
-time. -/
+time. With `fren.checkTypeCache`, which `lake test`'s ui jobs set, each
+type taken from the cache is checked against the term's type elaborated
+again, and an error is thrown where they differ. -/
 def typeOf (t : Term) : TermElabM Expr := do
   let key : TypedTerm :=
     { fvars := (← getLCtx).getFVarIds, currNamespace := ← getCurrNamespace, openDecls := ← getOpenDecls, term := t.raw }
-  if let some ty := (← getLocal).types.get? key then return ty
-  let e ← withoutErrToSorry <| Term.withSynthesize <| elabTerm (← `(open Classical in $t)) none
-  let ty ← whnfR (← instantiateMVars (← inferType e))
+  let elaborate : TermElabM Expr := do
+    let e ← withoutErrToSorry <| Term.withSynthesize <| elabTerm (← `(open Classical in $t)) none
+    whnfR (← instantiateMVars (← inferType e))
+  if let some ty := (← getLocal).types.get? key then
+    -- With `fren.checkTypeCache`, the kept type against the term's type
+    -- elaborated again, with everything that this elaboration did rolled
+    -- back, the cache, messages and info trees among it.
+    if fren.checkTypeCache.get (← getOptions) then
+      let s ← Term.saveState
+      let again ← try some <$> elaborate catch _ => pure none
+      s.restore (restoreInfo := true)
+      unless again == some ty do
+        throwError m!"`fren.checkTypeCache`: the type of `{t}` kept in `typeOf`'s cache, `{ty}`, is not the one it has \
+          when elaborated again, {(again.map (m!"`{·}`")).getD m!"an error"}"
+    return ty
+  let ty ← elaborate
   unless ty.hasMVar do modifyLocal fun l => { l with types := l.types.insert key ty }
   return ty
 

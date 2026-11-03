@@ -98,15 +98,16 @@ def genSpec : StateM Nat (Spec × Nat) := do
     data := data.insert (dName j) { path := dName j, isRecord := false, ctors }
   return ({ data }, n)
 
-/-- Where the old and the new `smallValues` differ on 300 generated specs,
-for each of their data types, generic or not, at caps 0, 1, 2, 5, 9 and
-24 and depths 0 to 3, and too few that `cap` cut, which `roundRobin`
-alone decides. -/
-def differences : Array String := Id.run do
+/-- Where the old and the new `smallValues` differ on `specs` generated
+specs (300 in `lake test`'s `smallValues` job), for each of their data
+types, generic or not, at caps 0, 1, 2, 5, 9 and 24 and depths 0 to 3,
+and, at 300 specs, too few that `cap` cut, which `roundRobin` alone
+decides. -/
+def differences (specs : Nat) : Array String := Id.run do
   let mut failures := #[]
   let mut seed := 17
   let mut cut := 0
-  for _ in [0:300] do
+  for _ in [0:specs] do
     let ((sp, n), s) := genSpec.run seed
     seed := s
     let w : World := { seed := 0 }
@@ -118,12 +119,14 @@ def differences : Array String := Id.run do
             let old := (oldMemo sp w #[0, 1, -2] #["x"] cap depth ty).run' {}
             if 0 < cap && new.size == cap then cut := cut + 1
             if new != old then
-              failures := failures.push s!"{repr ty} at cap {cap}, depth {depth}: {new.size} values, not {old.size}"
-  if cut < 1000 then failures := failures.push s!"only {cut} cases were cut to `cap`"
+              failures := failures.push (s!"`smallValues` differs from its old formulation on {repr ty} " ++
+                s!"at cap {cap}, depth {depth}: {new.size} values, not {old.size}")
+  if specs ≥ 300 && cut < 1000 then failures := failures.push s!"only {cut} cases were cut to `cap`"
   return failures
 
-#eval show Lean.Core.CoreM Unit from do
-  let fs := differences
-  unless fs.isEmpty do throwError "`smallValuesMemo` differs from its old formulation:\n{fs.extract 0 5}"
+-- A few specs at build time, that it runs at all; the job checks 300,
+-- compiled, rather than in the interpreter in every `lake build`, where
+-- they took some 25 s on a Mac and 30 to 80 s on CI.
+#guard differences 3 == #[]
 
 end Fren.Test.SmallValues

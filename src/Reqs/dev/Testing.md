@@ -31,8 +31,12 @@ pub mod testing
   message without expecting it, for one that may be in one of several
   places, such as a conflict's
   note at whichever guarantee the solver's model picks. This is how
-  `cli::agreement` is tested. See
-  `src/FrenTest/Ui.lean` for the format, and
+  `cli::agreement` is tested. The Lean front end runs them with
+  `fren.checkTypeCache`, under which each type that it takes from its
+  cache of the types of terms (`typeOf`) is checked against the term's
+  type elaborated again, an error where they differ: on a Mac, in one
+  run each, the ui tests of `test/ui/lang` took 61 s of CPU with it and
+  57 s without. See `src/FrenTest/Ui.lean` for the format, and
   [Expectations](#expectations) for when a file passes.
 - **Example specs** (`lake test`): each `examples/**/*.fren` is a complete
   spec for readers, and is checked as a ui test, so its annotations
@@ -930,9 +934,24 @@ request's.
 ## Continuous integration
 
 On a pull request, the `pre-merge` workflow checks the head merged into
-`main`, starting from the `.lake` that `main`'s last build left: one
-machine runs `lake build --wfail`, and others run `lake test --
---skip-own-mutants --shard K/N`, each building only the test driver. On
+`main`, starting from the `.lake` that `main`'s last build left: two
+machines run `lake build --wfail`, and others run `lake test --
+--skip-own-mutants --shard K/N`, each building only the test driver. One
+build machine builds Fren's own requirements and their `impl`s (`lake
+build --wfail Reqs Impls`), the other the rest of the default targets:
+the code, the tests, the examples and the binaries, among them the C code
+that the first needs none of. The chain from `Fren.Elab` through
+`Reqs.Lang`, `Reqs.Lint` and `Impls.Lint` is the build's critical path,
+and on one machine its modules shared the runner's four cores with the
+rest: where everything was rebuilt, the build's steps took some 2,400
+CPU seconds, so that the chain's ran at about half speed. On 2026-11-02, in
+three runs of one commit, which rebuilt from `FrenCore` up, with the old
+single build job beside the two, the single build took 729, 705 and 679
+s, the build of the requirements 361, 443 and 316 s, and that of the
+rest 321, 392 and 297 s; so the build no longer outlasts the test
+shards. Both build what both import, from `FrenCore` to `Fren`, and
+`lake test`'s `libraries` job checks that the two lists of targets
+together are `lakefile.lean`'s default targets. On
 `main`, the `lean ci` workflow runs `lake build --wfail` and the whole
 `lake test`, samples mutants of Fren's own requirements, checks them in
 Lean and compares the front ends' messages about them ([Own
@@ -987,7 +1006,7 @@ request of its own rather than slowing every pull request down.
 
 | Check | `pre-merge` | `lean ci` | Why |
 |---|---|---|---|
-| `lake build --wfail`: the code, the regression tests, the `impl`s' proofs, the examples, and Fren's own requirements elaborated | yes | yes | it is the build |
+| `lake build --wfail`: the code, the regression tests, the `impl`s' proofs, the examples, and Fren's own requirements elaborated | yes, on two machines | yes | it is the build |
 | `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
@@ -998,7 +1017,8 @@ request of its own rather than slowing every pull request down.
 
 On a pull request, `pre-merge` also uploads stripped copies of the
 binaries that it built and tested, so that a reviewer can probe the head
-without building it: `fren`, once the build has passed, as the artifact
+without building it: `fren`, once the build of all but the requirements
+has passed, as the artifact
 `fren-SHA`, and `fren_test`, once shard 0 has built it, as
 `fren_test-SHA`, where SHA is the full sha of the pull request's head.
 They are kept for 3 days. They are Linux binaries, built on
@@ -1077,11 +1097,12 @@ an environment that only `main` can use. Run by hand (`gh workflow run
 pr-review -f pr=N`), it posts only on the pull request that its `post`
 input names.
 
-Pull requests merge through GitHub's merge queue. The queue merges each
-pull request into the current `main`, behind any pull requests ahead of it
-in the queue, and runs `pre-merge` and `lint` on that merge commit. It
-merges the pull request only if both pass there, so that two pull requests
-that each pass on their own cannot break `main` together.
+A pull request merges once `pre-merge` and `lint` pass on its head. Its
+branch need not be up to date with `main`: `pre-merge` tests the head
+merged into `main` as `main` was when the run started. So two pull
+requests that each pass on their own, and merge cleanly, can still break
+`main` together. `main`'s own CI is the last check, and when it fails,
+fixing or reverting the cause comes before any other merge.
 
 ## Query cache
 
