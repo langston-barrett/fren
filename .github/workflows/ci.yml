@@ -64,10 +64,11 @@ jobs:
     # The test driver too, as `lake test` builds it, not a default target:
     # it links the C code of `Fren` and `FrenTest`, of which the default
     # targets link only `Fren.Seq` (through `fren`), so that without it the
-    # `.lake` saved below has the object files of no other of their modules,
-    # and every test shard of every pull request compiles them all again. Lake recompiles a module's C code only if the code
-    # differs, so a shard that starts from this `.lake` compiles only what
-    # its pull request changes (`Reqs/dev/Testing#continuous-integration`).
+    # `.lake` saved below has the object files of none of their other
+    # modules, and every test shard of every pull request compiles them all
+    # again. Lake recompiles a module's C code only if the code differs, so
+    # a shard that starts from this `.lake` compiles only what its pull
+    # request changes (`Reqs/dev/Testing#continuous-integration`).
     - id: driver
       run: lake build fren_test
     # As soon as it is built, for the pull requests that start from it. Lake
@@ -75,7 +76,10 @@ jobs:
     # would serve as well, but a pull request that restores it would
     # rebuild the modules that failed.
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: ${{ steps.build.outcome == 'success' && steps.driver.outcome == 'success' && steps.lake.outputs.cache-hit != 'true' }}
+      if: >-
+        ${{ steps.build.outcome == 'success' &&
+        steps.driver.outcome == 'success' &&
+        steps.lake.outputs.cache-hit != 'true' }}
       with:
         path: .lake
         key: ${{ steps.lake.outputs.key }}
@@ -137,13 +141,14 @@ jobs:
       run: |
         set -euo pipefail
         mapfile -t old < <(gh cache list --ref refs/heads/main --key lake- \
-          --sort created_at --order desc --limit 100 --json id --jq '.[3:][].id')
+          --sort created_at --order desc --limit 100 \
+          --json id --jq '.[3:][].id')
         for id in "${old[@]}"; do
           gh cache delete "$id"
         done
         echo "deleted ${#old[@]} old .lake caches"
-        gh cache list --ref refs/heads/main --key lake- --sort created_at --order desc \
-          --json key,createdAt,sizeInBytes
+        gh cache list --ref refs/heads/main --key lake- \
+          --sort created_at --order desc --json key,createdAt,sizeInBytes
   # The whole of `lake test`, the mutants of Fren's own requirements too,
   # split over machines: shard 0 checks Fren's own requirements with the
   # binary, and the others the rest (`Reqs/dev/Testing`).
