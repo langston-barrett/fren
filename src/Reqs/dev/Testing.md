@@ -1286,10 +1286,11 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   timers are also read in whole milliseconds, so the rest takes in what
   they leave out, which makes it too large: of the queries of Fren's own
   requirements whose `checkSat` took under 5 ms, it was 2,054 ms of their
-  2,485 ms. So the summed line sums only the queries whose `checkSat` took
-  5 ms or more (`summedMs`), and the rest is rough for a short query that
-  is listed. In cvc5 1.3.2, each theory has one `checkTime`, the arrays'
-  as `theory::arrays::theory::arrays::checkTime`. The theories' checks are
+  2,485 ms, with cvc5 1.3.2, when the report was added (#757). So the
+  summed line sums only the queries whose `checkSat` took 5 ms or more
+  (`summedMs`), and the rest is rough for a short query that is listed. In
+  cvc5 1.3.2, each theory has one `checkTime`, the arrays' as
+  `theory::arrays::theory::arrays::checkTime`. The theories' checks are
   made from within the search, so a query that makes tens of thousands of
   cheap theory checks, as `cli::query_symbols`' do, shows its search's
   cost spread over the search and the theories. A query is `dominated by`
@@ -1309,28 +1310,29 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
 It lists the 20 slowest queries; `--solver-stats=N` lists `N` of them, and
 `--solver-stats=all` every one. The value is written after `=`, not as the
 next argument as other options' are, so that the bare flag needs none. The
-flag is in no help text, but `fren` suggests it for a misspelled option,
-as it does every option. A query answered from the [query
-cache](#query-cache), or by the same script that another item asked
-earlier in the run, asks the solver nothing and is not reported. Under
-`--jobs` more than 1, two items can ask the same script at once, before
-either answer is kept, and both are then reported. So measure with no
-`--query-cache` and with `--jobs 1`, which times each query alone and asks
-each script once.
+flag is in no help text, but `fren` suggests the bare flag for a
+misspelled option, as it does every option, without its `=N`. A query
+answered from the [query cache](#query-cache), or by the same script that
+another item asked earlier in the run, asks the solver nothing and is not
+reported. Under `--jobs` more than 1, two items can ask the same script at
+once, before either answer is kept, and both are then reported. So measure
+with no `--query-cache` and with `--jobs 1`, which times each query alone
+and asks each script once.
 
 Without the flag, nothing of this runs: Fren reads no clock of its own,
 only the one around `checkSat` that every query reads
 (`Fren.Core.timeQuery`), and asks cvc5 nothing more. A check of Fren's own
 requirements took the same instructions, within 0.02 %, and the same time
-as before the report was added. With it, each query reads cvc5's
-statistics once, after its answer and model, so that the answers, models
-and messages are the same, which the `solverStats` test checks. cvc5 keeps
-the statistics whether or not they are read (#742), but writing them as
-text is not cheap: it tries each value as a number, and throws an
-exception for each that is not, so a cold check of Fren's own requirements
-at `--jobs 1` takes some 40 % more instructions with the flag. That time
-is outside every phase that the report measures. lean-cvc5 does not bind
-cvc5's `getStatistics`, which would read them without the text.
+as before the report was added, with cvc5 1.3.2 (#757). With it, each
+query reads cvc5's statistics once, after its answer and model, so that
+the answers, models and messages are the same, which the `solverStats`
+test checks. cvc5 keeps the statistics whether or not they are read
+(#742), but writing them as text is not cheap: it tries each value as a
+number, and throws an exception for each that is not, so a cold check of
+Fren's own requirements at `--jobs 1` takes some 40 % more instructions
+with the flag. That time is outside every phase that the report measures.
+lean-cvc5 does not bind cvc5's `getStatistics`, which would read them
+without the text.
 
 ## Learning from review
 

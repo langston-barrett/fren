@@ -55,6 +55,9 @@ structure Probe where
   stop : Nat := 0
   /-- cvc5's `(get-info :all-statistics)`, or empty if it was not read. -/
   stats : String := ""
+  /-- Whether the query ended in an error of the solver's, a command that
+  answered with one or a throw, rather than an answer. -/
+  failed : Bool := false
   deriving Inhabited
 
 /-- How long each phase of a query took, in nanoseconds. -/
@@ -96,13 +99,13 @@ def Probe.phases (p : Probe) : Phases :=
     check := checkEnd - checkStart, model := modelEnd - checkEnd, free := stop - statsEnd }
 
 -- The 18 ns of reading the statistics count for no phase.
-#guard (Probe.mk 10 15 25 30 70 72 90 95 "").phases.total == 67
+#guard (Probe.mk 10 15 25 30 70 72 90 95 "" false).phases.total == 67
 -- A query that threw in its first command that initializes, which began
 -- at 15: the time since that mark is in `free`.
-#guard (Probe.mk 10 15 0 0 0 0 0 20 "").phases == { setup := 5, free := 5 }
+#guard (Probe.mk 10 15 0 0 0 0 0 20 "" true).phases == { setup := 5, free := 5 }
 -- A query whose assertion failed, at 40, after the first command
 -- initialized at 15–25: its assertions are in `assert`, not `free`.
-#guard (Probe.mk 10 15 25 40 40 40 40 50 "").phases == { setup := 5, init := 10, assert := 15, free := 10 }
+#guard (Probe.mk 10 15 25 40 40 40 40 50 "" true).phases == { setup := 5, init := 10, assert := 15, free := 10 }
 
 /-- What the report shows of cvc5's statistics of one query. Times are
 cvc5's, in whole milliseconds. -/

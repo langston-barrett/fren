@@ -1312,6 +1312,11 @@ def solverStats : IO (Array String) := do
     !(r.toString.splitOn " rewrites").head!.endsWith " 0" && !(r.toString.splitOn " resource units").head!.endsWith " 0"
   unless counted && stats.any (·.startsWith "solver-stats:   inferences: ") do
     failures := failures.push s!"--solver-stats read no rewrites, resource units or inferences of cvc5's:\n{withStats}"
+  -- A script that the solver cannot read is recorded as an `error`.
+  let sink ← IO.mkRef #[]
+  let _ ← FrenCli.solveRecorded sink `bad .expect "(set-logic ALL)\n(assert (no_such_symbol))\n" #[] false #[] 0
+  unless ((← sink.get).map (·.outcome)) == #["error"] do
+    failures := failures.push s!"a query that the solver cannot read is not recorded once as an error: {(← sink.get).map (·.outcome)}"
   unless warm.contains "solver-stats: queries asked of the solver: 0," do
     failures := failures.push s!"a warm run reports queries that it did not ask:\n{warm}"
   return failures

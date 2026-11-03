@@ -689,7 +689,7 @@ def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observ
     solveWith (← cvc5.TermManager.new) script vars wantModel observations limitSecs probe?
   if let some probe := probe? then
     let t ← IO.monoNanosNow
-    probe.modify ({ · with stop := t })
+    probe.modify ({ · with stop := t, failed := r matches .error _ })
   match r with
   | .ok o => return o
   | .error e => return .unknown s!"solver error: {e}"
@@ -705,7 +705,7 @@ def solveRecorded (sink : IO.Ref (Array SolverStats.QueryStats)) (item : Lean.Na
   let outcome := match o with
     | .sat _ => "sat"
     | .unsat => "unsat"
-    | .unknown m => if m.startsWith "solver error" then "error" else "unknown"
+    | .unknown _ => if p.failed then "error" else "unknown"
   let stats : SolverStats.QueryStats :=
     { item, kind, logic := Cvc5.scriptLogic script, bytes := script.utf8ByteSize, outcome, phases := p.phases, cvc5 := SolverStats.parse p.stats }
   sink.modify (·.push stats)
