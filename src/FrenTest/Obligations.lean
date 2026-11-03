@@ -141,6 +141,20 @@ private def script (lines : List String) : String := "\n".intercalate lines ++ "
 #guard (canonical (script ["(define-fun T () Int 7)", "(declare-datatypes ((L 1)) ((par (T) ((nil) (cons (hd T) (tl (L T)))))))",
     "(declare-const l (L Int))", "(assert (not (= l (as nil (L Int)))))"]) false).signature ==
   #["(declare-const l (L Int))", "(declare-datatypes ((L 1)) ((par (T) ((nil) (cons (hd T) (tl (L T)))))))"]
+-- A `match` case binds its pattern's variables: unfolding a definition
+-- into a case, and substituting an argument into one, rename a variable
+-- that would capture, and a constant that only a pattern names is not used.
+#guard (canonical (script ["(define-fun d () Int x)", "(declare-const l L)",
+    "(assert (not (= 0 (match l ((nil 0) ((cons x r) (+ x d)))))))"]) false).goal ==
+  "(= 0 (match l ((nil 0) ((cons x#s0 r) (+ x#s0 x)))))"
+#guard (canonical (script ["(define-fun f ((y Int)) Int (match l ((nil y) ((cons x r) (+ x y)))))",
+    "(assert (not (> (f x) 0)))"]) false).goal == "(> (match l ((nil x) ((cons x#s0 r) (+ x#s0 x)))) 0)"
+-- And so does one whose scrutinee is an application.
+#guard (canonical (script ["(define-fun d () Int x)", "(declare-fun g (Int) L)",
+    "(assert (not (= 0 (match (g 1) ((nil 0) ((cons x r) (+ x d)))))))"]) false).goal ==
+  "(= 0 (match (g 1) ((nil 0) ((cons x#s0 r) (+ x#s0 x)))))"
+#guard (canonical (script ["(declare-const x Int)", "(declare-const l L)",
+    "(assert (not (= 0 (match l ((nil 0) ((cons x r) x))))))"]) false).signature == #["(declare-const l L)"]
 -- Lean's `✝` and `«»` go, but not where two names would be one.
 #guard (canonical (script ["(declare-const x✝ Int)", "(assert (not (> x✝ 0)))"]) false).goal == "(> x 0)"
 #guard (canonical (script ["(declare-const x✝ Int)", "(declare-const x Int)", "(assert (not (> x✝ x)))"]) false).goal ==

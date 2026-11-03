@@ -206,27 +206,72 @@ def withoutDagger (a : String) : String :=
 /-- The S-expressions of `s`. -/
 def Sx.parseAll (s : String) : Array Sx := (Sx.parseAt s.toList.toArray 0).1
 
-/-- The names that a binder of `e` binds, if it is one: a quantifier's, a
-`let`'s or a `lambda`'s. -/
-def Sx.binds : Sx → Array String
-  | .list #[.atom "forall", .list bs, _] | .list #[.atom "exists", .list bs, _]
-  | .list #[.atom "lambda", .list bs, _] | .list #[.atom "let", .list bs, _] =>
-    bs.filterMap fun | .list xs => (match xs[0]? with | some (Sx.atom x) => some x | _ => none) | _ => none
+/-- One of SMT-LIB's binding constructs, as a dump's scripts can contain
+them, which every function below that knows of binding reads
+(`Sx.binder?`): its `names`, its parts, each a term with the names bound
+in it, and how to build it again with its names renamed and its parts
+replaced. The constructs are:
+
+- `forall`, `exists` and `lambda`, whose sorted variables are bound in
+  their body, and whose sorts are parts in which nothing is bound;
+- `let`, whose names are bound in its body, but not in its definitions;
+- `match`, each of whose cases binds its pattern's variables, `x` in
+  `((C x y) body)`, in its body; a pattern that is a symbol alone is
+  taken for a constructor, which binds nothing.
+
+The others bind only in declarations: a parametric datatype's `par` its
+sort parameters, and a recursive definition, `define-fun-rec` or
+`define-funs-rec`, its parameters, which `unfoldDecl` binds. -/
+structure Binder where
+  names : Array String
+  parts : Array (Array String × Sx)
+  rebuild : (String → String) → Array Sx → Sx
+
+/-- The names of a pattern of a `match` case: its variables. -/
+def patternVars : Sx → Array String
+  | .list xs => (xs.extract 1).filterMap fun | .atom x => some x | _ => none
   | _ => #[]
 
-/-- The atoms of `e` that no binder within it binds. -/
+/-- `e` as a binding construct (`Binder`), if it is one. -/
+def Sx.binder? : Sx → Option Binder
+  -- First, since a `match` on a list has the shape of the others.
+  | .list #[q@(.atom "match"), t, .list cs] =>
+    let cases := cs.filterMap fun | .list #[pat, b] => some (pat, b) | _ => none
+    if cases.size != cs.size then none else
+    let names := cases.foldl (init := #[]) fun acc (pat, _) =>
+      (patternVars pat).foldl (fun acc x => if acc.contains x then acc else acc.push x) acc
+    some { names, parts := #[(#[], t)] ++ cases.map fun (pat, b) => (patternVars pat, b)
+           rebuild := fun f ps =>
+             let renamePat : Sx → Sx := fun
+               | .list xs => .list (xs.mapIdx fun i x => if i == 0 then x else match x with | .atom v => .atom (f v) | x => x)
+               | pat => pat
+             .list #[q, ps[0]?.getD t, .list (cases.zipWith (fun c b => Sx.list #[renamePat c.1, b]) (ps.extract 1))] }
+  | .list #[q@(.atom k), .list bs, body] =>
+    if k == "forall" || k == "exists" || k == "lambda" then
+      let vs := bs.filterMap fun | .list #[.atom x, t] => some (x, t) | _ => none
+      if vs.size != bs.size then none else
+      let names := vs.map (·.1)
+      some { names, parts := vs.map (fun v => (#[], v.2)) |>.push (names, body)
+             rebuild := fun f ps => .list #[q, .list (vs.zipWith (fun v t => Sx.list #[.atom (f v.1), t]) ps), ps.back?.getD body] }
+    else if k == "let" then
+      let ds := bs.filterMap fun | .list #[.atom x, v] => some (x, v) | _ => none
+      if ds.size != bs.size then none else
+      let names := ds.map (·.1)
+      some { names, parts := ds.map (fun d => (#[], d.2)) |>.push (names, body)
+             rebuild := fun f ps => .list #[q, .list (ds.zipWith (fun d v => Sx.list #[.atom (f d.1), v]) ps), ps.back?.getD body] }
+    else none
+  | _ => none
+
+/-- The names that `e` binds, if it is a binding construct (`Sx.binder?`). -/
+def Sx.binds (e : Sx) : Array String := ((e.binder?).map (·.names)).getD #[]
+
+/-- The atoms of `e` that no binder within it binds (`Sx.binder?`). -/
 partial def Sx.freeAtoms (e : Sx) (bound : Array String := #[]) (acc : Std.HashSet String := {}) : Std.HashSet String :=
   match e with
   | .atom a => if bound.contains a then acc else acc.insert a
-  | .list #[.atom "let", .list bs, body] =>
-    let acc := bs.foldl (init := acc) fun acc b => match b with
-      | .list #[_, v] => v.freeAtoms bound acc
-      | _ => acc
-    body.freeAtoms (bound ++ (Sx.list #[.atom "let", .list bs, body]).binds) acc
-  | .list xs =>
-    let names := e.binds
-    if names.isEmpty then xs.foldl (init := acc) fun acc x => x.freeAtoms bound acc
-    else (xs.back?.map (·.freeAtoms (bound ++ names) acc)).getD acc
+  | .list xs => match e.binder? with
+    | some b => b.parts.foldl (init := acc) fun acc (ns, p) => p.freeAtoms (bound ++ ns) acc
+    | none => xs.foldl (init := acc) fun acc x => x.freeAtoms bound acc
 
 /-- The first of `x#s0`, `x#s1`, … that `avoid` does not have: a bound
 name renamed apart. No Fren name has `#`, and no front end writes `#s`. -/
@@ -236,54 +281,40 @@ def freshName (x : String) (avoid : Std.HashSet String) : String := Id.run do
     unless avoid.contains c do return c
   return s!"{x}#s{avoid.size + 1}"
 
+/-- `b`'s names renamed apart where they are in `captured`, avoiding
+`avoid`: the renaming, as a function and as a substitution. -/
+def Binder.apart (b : Binder) (captured avoid : Std.HashSet String) : (String → String) × Array (String × Sx) := Id.run do
+  let mut avoid := b.names.foldl (·.insert ·) avoid
+  let mut ren : Array (String × String) := #[]
+  for x in b.names do
+    if captured.contains x then
+      let x' := freshName x avoid
+      avoid := avoid.insert x'
+      ren := ren.push (x, x')
+  let f := fun x => ((ren.find? (·.1 == x)).map (·.2)).getD x
+  return (f, ren.map fun (x, x') => (x, .atom x'))
+
 /-- `e` with each free atom of `σ` replaced by its value, without capture:
-a binder that would capture a free name of a value has its bound name
-renamed apart (`freshName`). -/
+a binder (`Sx.binder?`) that would capture a free name of a value that a
+part of it uses has its bound name renamed apart (`freshName`). -/
 partial def Sx.subst (σ : Array (String × Sx)) (e : Sx) : Sx :=
   if σ.isEmpty then e else
   match e with
   | .atom a => ((σ.find? (·.1 == a)).map (·.2)).getD e
-  | .list #[.atom "let", .list bs, body] =>
-    -- A `let`'s definitions are outside its scope; its body inside.
-    let bs' : Array Sx := bs.map fun (b : Sx) => match b with
-      | .list #[x, v] => Sx.list #[x, v.subst σ]
-      | b => b
-    let names := (Sx.list #[.atom "let", .list bs, body]).binds
-    let (names', body) := apart σ names body
-    let bs' : Array Sx := bs'.zipWith (fun (b : Sx) (x : String) => match b with
-      | .list #[_, v] => Sx.list #[.atom x, v]
-      | b => b) names'
-    .list #[.atom "let", .list bs', body.subst (σ.filter (!names.contains ·.1))]
-  | .list xs =>
-    let names := e.binds
-    if names.isEmpty then .list (xs.map (·.subst σ))
-    else match xs with
-      | #[q, .list bs, body] =>
-        let (names', body) := apart σ names body
-        let bs : Array Sx := bs.zipWith (fun (b : Sx) (x : String) => match b with
-          | .list #[_, t] => Sx.list #[.atom x, t]
-          | b => b) names'
-        .list #[q, .list bs, body.subst (σ.filter (!names.contains ·.1))]
-      | _ => e
-where
-  /-- `names`, bound around `body`, with those that a value of `σ` that
-  `body` uses has free renamed apart, in `body` too. -/
-  apart (σ : Array (String × Sx)) (names : Array String) (body : Sx) : Array String × Sx := Id.run do
-    let free := body.freeAtoms
-    let used := σ.filter fun (x, _) => !names.contains x && free.contains x
-    let captured := used.foldl (init := ({} : Std.HashSet String)) fun acc (_, v) => v.freeAtoms #[] acc
-    let mut avoid := used.foldl (init := free) fun acc (_, v) => v.freeAtoms #[] acc
-    avoid := names.foldl (·.insert ·) avoid
-    let mut out := #[]
-    let mut ren : Array (String × Sx) := #[]
-    for x in names do
-      if captured.contains x then
-        let x' := freshName x avoid
-        avoid := avoid.insert x'
-        out := out.push x'
-        ren := ren.push (x, .atom x')
-      else out := out.push x
-    return (out, body.subst ren)
+  | .list xs => match e.binder? with
+    | none => .list (xs.map (·.subst σ))
+    | some b =>
+      -- The values that a part uses, where its names do not hide them, and
+      -- the bound names of that part that they have free.
+      let captured := b.parts.foldl (init := ({} : Std.HashSet String)) fun acc (ns, p) =>
+        let free := p.freeAtoms
+        (σ.filter fun (x, _) => !ns.contains x && free.contains x).foldl (init := acc) fun acc (_, v) =>
+          (v.freeAtoms #[]).fold (fun acc y => if ns.contains y then acc.insert y else acc) acc
+      let avoid := b.parts.foldl (init := σ.foldl (init := {}) fun acc (_, v) => v.freeAtoms #[] acc)
+        fun acc (_, p) => p.freeAtoms #[] acc
+      let (f, ren) := b.apart captured avoid
+      b.rebuild f (b.parts.map fun (ns, p) =>
+        (p.subst (ren.filter fun (x, _) => ns.contains x)).subst (σ.filter fun (x, _) => !ns.contains x))
 
 /-- The integer that `e` is, if it is a literal: a numeral or its negation. -/
 def Sx.int? : Sx → Option Int
@@ -405,36 +436,18 @@ partial def Sx.unfold (defs : Std.HashMap String (Array String × Sx)) (e : Sx) 
     | some (#[], body) => body
     | _ => e
   | .list xs =>
-    let names := e.binds
-    if !names.isEmpty then
-      match xs with
-      | #[q, .list bs, body] => Id.run do
-        -- The definitions that the body uses, and the free names of their
-        -- bodies, which a binder here would capture.
-        let inner := bound ++ names
-        let usedFree := body.freeAtoms inner |>.fold (init := ({} : Std.HashSet String)) fun acc a =>
-          match defs[a]? with
-          | some (ps, b) => (b.freeAtoms ps).fold (·.insert ·) acc
+    if let some b := e.binder? then
+      -- The definitions that a part uses, and the free names of their
+      -- bodies, which a name bound in that part would capture.
+      let captured := b.parts.foldl (init := ({} : Std.HashSet String)) fun acc (ns, p) =>
+        (p.freeAtoms (bound ++ ns)).fold (init := acc) fun acc a => match defs[a]? with
+          | some (ps, body) => (body.freeAtoms ps).fold (fun acc y => if ns.contains y then acc.insert y else acc) acc
           | none => acc
-        let mut avoid := (body.freeAtoms).fold (·.insert ·) usedFree
-        avoid := inner.foldl (·.insert ·) avoid
-        let mut σ : Array (String × Sx) := #[]
-        let mut names' := #[]
-        for x in names do
-          if usedFree.contains x then
-            let x' := freshName x avoid
-            avoid := avoid.insert x'
-            σ := σ.push (x, .atom x')
-            names' := names'.push x'
-          else names' := names'.push x
-        let body := body.subst σ
-        let bs := bs.zipWith (fun (b : Sx) (x : String) => match b with
-          -- A `let`'s definition is outside its scope; a bound name's sort is
-          -- unfolded, as a sort's definition may be.
-          | .list #[_, v] => Sx.list #[.atom x, v.unfold defs bound]
-          | b => b) names'
-        return .list #[q, .list bs, body.unfold defs (bound ++ names')]
-      | _ => e
+      let avoid := b.parts.foldl (init := bound.foldl (·.insert ·) {}) fun acc (_, p) => p.freeAtoms #[] acc
+      let avoid := defs.fold (init := avoid) fun acc _ (ps, body) => body.freeAtoms ps acc
+      let (f, ren) := b.apart captured avoid
+      b.rebuild f (b.parts.map fun (ns, p) =>
+        (p.subst (ren.filter fun (x, _) => ns.contains x)).unfold defs (bound ++ ns.map f))
     else
     let xs := xs.map (·.unfold defs bound)
     match xs[0]? with

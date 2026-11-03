@@ -707,7 +707,12 @@ their canonical form:
   `let`, whose definitions are substituted, or `<=`; a conjunction in the
   context is as many sentences. A definition is unfolded and a `let`
   substituted without capture: a bound name that would capture a free
-  name of what is substituted is renamed apart, as `x#s0`;
+  name of what is substituted is renamed apart, as `x#s0`. The names
+  bound are those of SMT-LIB's binding constructs, which one function
+  lists (`Fren.Core.Sx.binder?`): `forall`, `exists` and `lambda`'s
+  variables, a `let`'s names in its body, and a `match` case's pattern
+  variables in its body; in declarations, a recursive definition's
+  parameters and a parametric datatype's `par` sort parameters;
 - the declarations and the sentences are each printed once, in order of
   their text (`cli::canonical_sentences`), so that neither their order
   nor a repeated one changes the dump;
