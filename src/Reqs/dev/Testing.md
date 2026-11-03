@@ -212,8 +212,10 @@ pub mod testing
 - **Solver statistics** (`lake test`, `solverStats`): `fren check
   --solver-stats` adds only its own lines to the output, and with it the
   output, the exit status and the answers and models of the query cache
-  are those without it; it lists every query it asked, with its item and
-  check, and a warm run, which asks nothing, reports none (see [Solver
+  are those without it; with `--solver-stats=all` it lists every query it
+  asked, with its item and check, `--solver-stats=N` lists `N`, its counts
+  and inferences show that cvc5's statistics were read, and a warm run,
+  which asks nothing, reports none (see [Solver
   statistics](#solver-statistics)).
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
