@@ -206,7 +206,9 @@ pub mod testing
   at a `push` before their definition, and let the lock go there. And
   each command that the lock is let go after must initialize a solver in
   cvc5, each must be tried, and the declarations and options before it
-  must not initialize one.
+  must not initialize one. On Linux, a block that glibc allocates for
+  itself must be mimalloc's, which `c/mimalloc_malloc.c` makes every
+  executable's `malloc` (see [Architecture](Architecture.md)).
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
