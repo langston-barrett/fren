@@ -554,9 +554,11 @@ partial def matchSorts (declared actual : Expr) (acc : Array (FVarId × Expr)) :
   else acc
 
 /-- Evaluate a model using real definitions, before reporting a recursive
-counterexample. Failure to evaluate is not confirmation. -/
+counterexample: the value of each of `hyps` at it, and then the goal's
+negation's, or none where evaluation fails, which is not confirmation
+(`Core.counterexampleReported`). -/
 def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
-    (hyps : Array (Name × Expr)) (goal : Expr) (model : Array (Name × Expr)) : MetaM Bool := do
+    (hyps : Array (Name × Expr)) (goal : Expr) (model : Array (Name × Expr)) : MetaM (Option (Array Bool)) := do
   try
     let read ← modelValues c fvs primes model
     let vars := read.map (·.1)
@@ -592,9 +594,8 @@ def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
     let bools ← ps.mapM fun p => do
       if p.hasFVar || p.hasMVar then throwError "model leaves free values"
       pure (mkApp2 (mkConst ``Decidable.decide) p (← synthInstance (mkApp (mkConst ``Decidable) p)))
-    let values ← compileValues Bool (mkConst ``Bool) bools
-    return values.all id
-  catch _ => return false
+    return some (← compileValues Bool (mkConst ``Bool) bools)
+  catch _ => return none
 
 /-- The structural recursions in the state, each by its solver form. -/
 def recursiveInfos : MetaM (Array (Name × DefinedInfo)) := do
@@ -820,10 +821,16 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     if d.result == .nat then out := out.push ((`nat, ← atLeast0 app), gs)
     -- Newly reflected type facts need the same solver forms as explicit
     -- clauses: their subset helpers may have executable Lean matches.
-    if let some fact := d.fact? then
-      let value := if d.result == .nat then
-        mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
-      out := out.push ((`type, ← unfoldDefined ((atI fact).beta #[value])), gs)
+    -- An application that `scan` found has nothing bound, so only the
+    -- declared result type decides (`Core.recursiveResultFact`): whether
+    -- it has a fact is the shared decision's input, which the binary
+    -- extracts from the declared type too, and the fact itself is read
+    -- after it.
+    if Core.recursiveResultFact d.fact?.isSome then
+      if let some fact := d.fact? then
+        let value := if d.result == .nat then
+          mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
+        out := out.push ((`type, ← unfoldDefined ((atI fact).beta #[value])), gs)
     let k := st.contracts.get? d.path
     let domain := ((st.bodies.get? d.path).map fun b => (b.vars.zip args).filterMap fun (v, x) => v.fact?.map fun f => (atI f).beta #[x]).getD #[]
     let pres ← ((k.map (·.pres)).getD #[]).mapM fun c => unfoldDefined (atI (c.at args))
@@ -1144,7 +1151,15 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
             if Core.recursiveCounterexample (!recs.isEmpty) true true then pure o
             else pure (.unknown (Core.recursiveReason factRecs))
           else if recs.isEmpty then pure o else
-            if Core.recursiveCounterexample true (← confirmRecursiveModel c fvs primes hyps goal model) false then pure o
+            -- Each of its own formulas, as the solver has it: whether it
+            -- applies a recursive function, and its value at the model.
+            let infos ← recursiveInfos
+            let applies (e : Expr) : Bool := !(recInstancesIn infos e #[]).isEmpty
+            let (us, g) := unfolded?.getD (hyps.map (·.2), goal)
+            let vals ← confirmRecursiveModel c fvs primes hyps goal model
+            let own := us.mapIdx fun i u => (applies u, vals.bind (·[i]?))
+            let goalF := (applies g, (vals.bind (·[us.size]?)).map (!·))
+            if Core.counterexampleReported own goalF false then pure o
             else do
               let st ← getState
               -- A formula without recursion that the model contradicts is
