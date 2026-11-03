@@ -316,7 +316,16 @@ jobs:
         set -euo pipefail
         part() {
           local name="${*// /-}"
-          lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out"
+          local status=0
+          lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out" || status=$?
+          # A part that crashes prints no summary, so say how it ended: by
+          # its exit status, or the signal that killed it.
+          if [ "$status" -ne 0 ]; then
+            local how="exit status $status"
+            if [ "$status" -gt 128 ]; then how="$how, signal SIG$(kill -l $((status - 128)))"; fi
+            echo "::error::methodsAgree $* ended with $how"
+            return 1
+          fi
         }
         # One part at a time: on macOS, `own` (two procedures at once) took
         # 9.4 GB and `ui` (as many as there are cores, 14 there) 8.8 GB.
