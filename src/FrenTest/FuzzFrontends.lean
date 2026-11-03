@@ -1341,6 +1341,27 @@ def claimProcs : R String := do
     let pre := if pre.startsWith "zr" || pre.startsWith s!"zf{k}" then "zn > ZK" else pre
     out := out ++ s!"pub fn zf{k}(zn: Int): (zr: Int) \{\n    let zh: Int := zg(1)\n    assume zpre: {pre}\n" ++
       s!"    ensure zpost: {← clause}\n}\n"
+  -- Drawn after the above, so that a spec the group wrote before keeps it:
+  -- clauses that read a field of a parameter, of a sequence or a record,
+  -- that mention only the value, that are a labelled conjunction, or a
+  -- quantifier over another function; and a higher-order function's
+  -- precondition, which reads or applies its function parameter. A
+  -- procedure's `out` member always defines a result, which the block
+  -- rejects anyway, so the results above stand for it.
+  out := out ++ "pub struct Zs { za: Int }\n"
+  let fieldClause (post : Bool) : R String := do
+    match ← below (if post then 7 else 5) with
+    | 0 => return "zq.len > 1"
+    | 1 => return "zs.za > ZK"
+    | 2 => return s!"zg({← below 3}) > zs.za"
+    | 3 => return "and { zl1: zq.len > 1, zl2: zg(0) > 0 }"
+    | 4 => return "forall (zb?: Bool), zg(if zb? then 1 else 0) > 0"
+    | 5 => return "zr > 0"
+    | _ => return "and { zl1: zr > ZK, zl2: zg(1) > 0 }"
+  out := out ++ s!"pub fn zfs(zq: Seq<Int>, zs: Zs): (zr: Int) \{\n    assume zpre: {← fieldClause false}\n" ++
+    s!"    ensure zpost: {← fieldClause true}\n}\n"
+  let hoClause ← pick #["zk(0) > ZK", "zk(zn) >= zn", "zn > 0", "zg(0) > 0", "and { zl1: zk(1) > 0, zl2: zg(1) > 0 }"]
+  out := out ++ s!"pub fn zho(zk: fn(Int) -> Int, zn: Int): (zr: Int) \{\n    assume zpre: {hoClause}\n    out zr := zk(zn)\n}\n"
   return out
 
 /-- A goal with leading binders (`cli::goal_introduction`), whose terms

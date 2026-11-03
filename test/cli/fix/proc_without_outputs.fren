@@ -15,6 +15,19 @@ proc colder_is_cold(a: Int, b: Int) {
 
 proc /- spaced -/ spaced(t: Int) { expect warm: t + 1 > t }
 
+proc /- outer /- inner -/ -/ nested(t: Int) { expect warm: t + 1 > t }
+
+proc -- a line comment
+lined(t: Int) { expect warm: t + 1 > t }
+
+-- Without parameters.
+proc nothing() {}
+
+proc freezing() {
+    call b := band(0)
+    expect cold: b.cold?
+}
+
 proc called(t: Int) { expect warm: t + 1 > t }
 
 pub proc caller(t: Int): (u: Int) {

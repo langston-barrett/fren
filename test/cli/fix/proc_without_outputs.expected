@@ -6,4 +6,16 @@
 @@ -16 +16 @@
 -proc /- spaced -/ spaced(t: Int) { expect warm: t + 1 > t }
 +expect /- spaced -/ spaced(t: Int) { expect warm: t + 1 > t }
+@@ -18 +18 @@
+-proc /- outer /- inner -/ -/ nested(t: Int) { expect warm: t + 1 > t }
++expect /- outer /- inner -/ -/ nested(t: Int) { expect warm: t + 1 > t }
+@@ -20 +20 @@
+-proc -- a line comment
++expect -- a line comment
+@@ -24 +24 @@
+-proc nothing() {}
++expect nothing() {}
+@@ -26 +26 @@
+-proc freezing() {
++expect freezing() {
 exit=1

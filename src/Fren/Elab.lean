@@ -1837,7 +1837,7 @@ def lintContractClause (cx : ExprCtx) (post : Bool) (f : Name) (params : Array N
     let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
     recordLint .assertionsOnConstants e (Core.assertionOnConstantMsg (if post then "postcondition" else "precondition") literal?)
   else if Core.contractMentionsNothing mentioned
-      (Core.contractOwn (f.toString (escape := false)) (params.toList.map (·.toString (escape := false)))) then
+      (f.toString (escape := false)) (params.toList.map (·.toString (escape := false))) then
     recordLint .contractMentionsNothing e (Core.contractMentionsNothingMsg post (f.toString (escape := false)) mentioned)
 
 /-- The integer literals in `e`, its patterns' among them. -/

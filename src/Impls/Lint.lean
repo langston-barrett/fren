@@ -1814,31 +1814,36 @@ impl proc_without_outputs: lint::proc_without_outputs for (p : Bool) (ms : List 
       omega
     · simp at hp
 
+-- Which mentions are the function's own, as both front ends decide with
+-- `ownMention`, for every mention, function and list of parameters.
+theorem own_mention_toMention (m : Fren.Core.Mention) (f : String) (ps : List String) :
+    lint.«own_mention?» (toMention m) f (Fren.FinSet.ofList ps) = Fren.Core.ownMention f ps m := by
+  cases m <;> simp only [fren_spec, toMention, Fren.Core.ownMention] <;> rw [Bool.eq_iff_iff] <;>
+    simp [List.any_eq_true, Fren.Str.lit]
+
 -- Both front ends decide `contract_mentions_nothing` with
--- `contractMentionsNothing`, for every two lists of mentions, the clause's
--- read by their roots (`Mention.root`).
-impl contract_mentions_nothing: lint::contract_mentions_nothing for (ms own : List Fren.Core.Mention) {
-  mentioned := mentionSet (ms.map Fren.Core.Mention.root),
-  own := mentionSet own,
-  fires? := Fren.Core.contractMentionsNothing ms own,
+-- `contractMentionsNothing`, for every list of mentions, function and list
+-- of parameters.
+impl contract_mentions_nothing: lint::contract_mentions_nothing for (ms : List Fren.Core.Mention) (f : String)
+    (ps : List String) {
+  mentioned := mentionSet ms,
+  function := f,
+  params := Fren.FinSet.ofList ps,
+  fires? := Fren.Core.contractMentionsNothing ms f ps,
 } by
-  intro ms own
+  intro ms f ps
   unfold lint.contract_mentions_nothing.ensures lint.contract_mentions_nothing.ensure.rule
-  have inj : ∀ a b : Fren.Core.Mention, toMention a = toMention b ↔ a = b := by
-    intro a b; cases a <;> cases b <;> simp [toMention]
-  have h : ∀ l : List Fren.Core.Mention, mentionSet l ∩ mentionSet own = ∅ ↔ l.any own.contains = false := by
-    intro ms
-    simp only [Fren.FinSet.ext_iff, Fren.FinSet.mem_inter, mentionSet, Fren.FinSet.mem_ofList, List.mem_map,
-      Fren.FinSet.not_mem_empty, iff_false, not_and, List.any_eq_false]
+  intro _
+  have h : (∃ m, m ∈ mentionSet ms ∧ lint.«own_mention?» m f (Fren.FinSet.ofList ps) = true) ↔
+      ms.any (Fren.Core.ownMention f ps) = true := by
+    simp only [mentionSet, Fren.FinSet.mem_ofList, List.mem_map, List.any_eq_true]
     constructor
-    · intro h a ha hown
-      exact h (toMention a) ⟨a, ha, rfl⟩ ⟨a, List.contains_iff_mem.mp hown, rfl⟩
-    · rintro h _ ⟨a, ha, rfl⟩ ⟨b, hb, hab⟩
-      have hba : b = a := (inj b a).mp hab
-      subst hba
-      exact h b ha (List.contains_iff_mem.mpr hb)
+    · rintro ⟨_, ⟨m, hm, rfl⟩, hown⟩
+      exact ⟨m, hm, (own_mention_toMention m f ps) ▸ hown⟩
+    · rintro ⟨m, hm, hown⟩
+      exact ⟨toMention m, ⟨m, hm, rfl⟩, (own_mention_toMention m f ps).symm ▸ hown⟩
   rw [h]
-  cases ms <;> simp [Fren.Core.contractMentionsNothing, mentionSet_eq_empty]
+  simp [Fren.Core.contractMentionsNothing, mentionSet_eq_empty]
 
 trusted lint::zero_prefixed_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::zero_prefixed_fixed: "a model of an expression, checked by the refinements in its section"

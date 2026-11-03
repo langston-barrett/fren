@@ -196,12 +196,16 @@ pub proc unrelated_binders(
 
 `contract_mentions_nothing` fires on a clause of a function's
 [contract](../Lang/Items.md#contracts) that mentions something, but
-nothing of its function's: none of its parameters, and neither its result
-nor the function itself, as a postcondition may mention its value, by
-[`lang::mentions`](../Lang/Expressions.md#mentions). A function parameter
-of a [higher-order function](../Lang/HigherOrder.md) is one of its
-parameters, whether the clause reads it or applies it. A field read from a
-parameter, such as `q.len`, is the parameter's. So `ensure positive:
+nothing of its function's own, by
+[`lang::mentions`](../Lang/Expressions.md#mentions). Its own are its
+parameters and the function itself. A parameter is the function's whether
+the clause reads it whole or by a field, as `q.len`, which `lang::mentions`
+gives as the variable `q.len`, or applies it, as a function parameter of a
+[higher-order function](../Lang/HigherOrder.md) is. A postcondition may
+mention the function's value, through its result or as the function
+applied to its parameters. Both front ends read the result as that
+application, so it mentions the function if the function is
+uninterpreted, and its parameters if it is defined. So `ensure positive:
 limit(0) > 0` on `fn scale(n: Int): (r: Int)` fires: it holds or fails
 whatever `scale` is applied to, so it says something about `limit`, and is
 probably in the wrong place. A precondition that mentions none of the
@@ -215,24 +219,50 @@ what its definition mentions, as anywhere.
 It has no fix: the clause belongs in the contract of what it mentions, or
 in a global expectation, and which one is the writer's choice. It is in
 `suspicious`, `warn`, and has no Clippy counterpart. It is reported at the
-clause's expression. `lint::contract_mentions_nothing` states when it fires,
-from what the clause mentions and the function's own names, its parameters
-and result as `Var`s, its function parameters as `Fn`s too, and the
-function as a `Fn`:
+clause's expression. `lint::own_mention?` states which mentions are the
+function's own, and `lint::contract_mentions_nothing` when the lint fires,
+from what the clause mentions, the function's name and its parameters. A
+quantifier over a set's members is outside the decidable core, so the
+procedure is tested, and its `impl` proves its rule:
 
 ```fren
-pub proc contract_mentions_nothing(
-    mentioned: Set<lang::Mention>,    -- what the clause mentions, each variable by its root
-    own: Set<lang::Mention>,          -- what of its function's it may mention
-): (det fires?) {
-    ensure rule: fires? iff (mentioned != {} and mentioned inter own = {})
-
-    expect own_quiet: when mentioned subset own, not fires?
-    expect constants_quiet: when mentioned = {}, not fires?
+-- Whether the mention `m` is of the function `function`'s own, with the
+-- parameters `params`: a parameter, read whole or by a field, or applied,
+-- or the function itself.
+set_option fren.lint.undecidable "allow" in
+pub fn own_mention?(m: lang::Mention, function: lang::Id, params: Set<lang::Id>) := match m {
+    lang::Mention::Var(x) =>
+        (exists (p: lang::Id), p in params and (x = p or x.starts_with?(p ++ "."))),
+    lang::Mention::Fn(g) => g = function or g in params,
 }
 
-expect contract_lints_apart(mentioned: Set<lang::Mention>, own: Set<lang::Mention>) {
-    call c := contract_mentions_nothing(mentioned, own)
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc contract_mentions_nothing(
+    mentioned: Set<lang::Mention>,    -- what the clause mentions
+    function: lang::Id,               -- the function
+    params: Set<lang::Id>,            -- its parameters, function parameters among them
+): (det fires?) {
+    ensure rule: fires? iff (mentioned != {}
+        and not (exists (m: lang::Mention), m in mentioned and own_mention?(m, function, params)))
+
+    expect constants_quiet: when mentioned = {}, not fires?
+    expect field_own: when mentioned = {lang::Mention::Var("q.len")} and params = {"q"}, not fires?
+    expect prefix_other: when mentioned = {lang::Mention::Var("qq")} and params = {"q"}, fires?
+    expect applied_own: when mentioned = {lang::Mention::Fn("g")} and params = {"g", "n"}, not fires?
+    expect value_own: when mentioned = {lang::Mention::Fn("scale")} and function = "scale", not fires?
+    expect other_fires: when mentioned = {lang::Mention::Fn("limit")} and function = "scale" and params = {"n"},
+        fires?
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+expect contract_lints_apart(
+    mentioned: Set<lang::Mention>,
+    function: lang::Id,
+    params: Set<lang::Id>,
+) {
+    call c := contract_mentions_nothing(mentioned, function, params)
     call k := assertions_on_constants(mentioned)
     expect apart: not (c.fires? and k.fires?)
 }

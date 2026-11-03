@@ -1,5 +1,6 @@
 -- `proc_without_outputs`, in both front ends: a private procedure with no
--- results and no guarantees, which nothing in its file names.
+-- results, whose members a global expectation accepts, and which nothing in its
+-- file names.
 set_option fren.lint.dead_code "allow"
 set_option fren.lint.proc_without_outputs "warn"
 

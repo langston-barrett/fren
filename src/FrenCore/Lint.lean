@@ -1679,18 +1679,19 @@ def procWithoutOutputsMsg (n : Name) (fixable : Bool) : Msg :=
   let msg : Msg :=
     { code? := some Lint.procWithoutOutputs.code, headline := s!"procedure `{n.getString!}` has no outputs"
       label? := some "constrains nothing"
-      notes := #["note: it has no results and no guarantees, and nothing in this file calls it, \
-          so it is a claim about its parameters",
+      notes := #["note: it has no results, and each of its members is one a global expectation accepts, \
+          and nothing in this file calls, refines or names it, so it is a claim about its parameters",
         "help: write it as a global expectation, `expect` in place of `proc`"] }
   if fixable then msg.note fixHelp else msg
 
 /-- A private procedure that `proc_without_outputs` may fire on, once the
-file's paths are known: its path, its results and members, and the level
-of the lint at it. -/
+file's paths are known: its path, its results and members, the level of
+the lint at it, and whether the front end found where to fix it. -/
 structure ProcRecord where
   path : Name
   members : List (BlockMember × Bool)
   level : LevelInEffect
+  fixable : Bool := true
   deriving Inhabited, Repr
 
 /-- The `proc_without_outputs` messages of a file's procedures, given the
@@ -1699,7 +1700,7 @@ def procWithoutOutputsReports (procs : Array (ProcRecord × α)) (used : Array N
     Array (LintReport α) :=
   procs.filterMap fun (p, ref) =>
     if procWithoutOutputs false p.members (used.count p.path) then
-      some { lint := .procWithoutOutputs, level := p.level, ref, msg := procWithoutOutputsMsg p.path fixable }
+      some { lint := .procWithoutOutputs, level := p.level, ref, msg := procWithoutOutputsMsg p.path (fixable && p.fixable) }
     else none
 
 /-! ## Simpler `Bool` expressions -/
@@ -7160,22 +7161,22 @@ def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
 
 /-! ## Contract clauses about other names -/
 
-/-- Whether `contract_mentions_nothing` fires on a clause of a function's
-contract, where `mentioned` is what its expression mentions and `own` the
-function's parameters and result, as variables, and the function itself
-(`lint::contract_mentions_nothing`): it mentions something, but nothing of
-its own, each variable by its root, so that `q.len` is `q`'s. A clause that
-mentions nothing is `assertions_on_constants`'s. -/
-def contractMentionsNothing (mentioned own : List Mention) : Bool :=
-  !mentioned.isEmpty && !(mentioned.map Mention.root).any own.contains
-
-/-- What of the function `f`'s own, with the parameters `params`, a clause
-of its contract may mention (`lint::contract_mentions_nothing`): `f`
-itself, and each parameter, as a variable and, as a function parameter is
-applied, as a function. The result is the function applied to its
+/-- Whether the mention `m` of a clause of the contract of the function `f`,
+with the parameters `params`, is of `f`'s own (`lint::own_mention?`): a
+parameter, read whole or by a field (`q` or `q.len`), or applied, as a
+function parameter is, or `f` itself. The result is `f` applied to its
 parameters, which mentions what that mentions. -/
-def contractOwn (f : String) (params : List String) : List Mention :=
-  .fn f :: params.flatMap fun p => [.var p, .fn p]
+def ownMention (f : String) (params : List String) : Mention → Bool
+  | .var x => params.any fun p => x == p || Fren.Str.startsWith x (p ++ ".")
+  | .fn g => g == f || params.contains g
+
+/-- Whether `contract_mentions_nothing` fires on a clause of the contract
+of the function `f`, with the parameters `params`, where `mentioned` is what
+the clause mentions (`lint::contract_mentions_nothing`): it mentions
+something, but nothing of `f`'s own. A clause that mentions nothing is
+`assertions_on_constants`'s. -/
+def contractMentionsNothing (mentioned : List Mention) (f : String) (params : List String) : Bool :=
+  !mentioned.isEmpty && !mentioned.any (ownMention f params)
 
 /-- A precondition, if `post` is false, or a postcondition, of the function
 `f`, that mentions `mentioned` but nothing of `f`'s own. -/

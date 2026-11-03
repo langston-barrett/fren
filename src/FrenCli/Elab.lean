@@ -634,26 +634,15 @@ structure CClaim where
 
 def toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
-/-- Where the keyword `kw` is in `src`, if it ends at `pos` but for
-whitespace and block comments, as `proc` does before a procedure's name. -/
-def keywordBefore (src : Array Char) (pos : Nat) (kw : String) : Option Span := Id.run do
-  let mut stop := min pos src.size
-  let mut more := true
-  while more do
-    while stop > 0 && src[stop - 1]!.isWhitespace do stop := stop - 1
-    more := false
-    -- A block comment `/- ... -/` before it, back to its `/-`.
-    if stop ≥ 2 && src[stop - 1]! == '/' && src[stop - 2]! == '-' then
-      let mut i := stop - 2
-      while i ≥ 2 && !(src[i - 2]! == '/' && src[i - 1]! == '-') do i := i - 1
-      if i ≥ 2 then
-        stop := i - 2
-        more := true
-  if stop < kw.length then return none
-  let start := stop - kw.length
-  if String.ofList (src.extract start stop).toList != kw then return none
-  if start > 0 && (src[start - 1]!.isAlphanum || src[start - 1]! == '_') then return none
-  return some { start, stop }
+/-- Where the keyword `kw` is in `src`, if it is the last token of the
+text from `start` to `pos`, as `proc` is before a procedure's name, whatever
+whitespace and comments, line or nested block ones, lie between them. -/
+def keywordBefore (src : Array Char) (start pos : Nat) (kw : String) : Option Span :=
+  match lex (src.extract start pos) with
+  | .ok toks => (toks.filter (·.tok != .eof)).back?.bind fun t => match t.tok with
+    | .kw k => if k == kw then some { start := start + t.span.start, stop := start + t.span.stop } else none
+    | _ => none
+  | .error _ => none
 
 /-- The kind of a constraint, or cover goal, that `duplicate_constraint`
 compares. -/
@@ -5813,7 +5802,7 @@ def lintContractClause (cx : ExprCtx) (post : Bool) (f : Name) (params : Array N
     lint .assertionsOnConstants e.span (Fren.Core.assertionOnConstantMsg (if post then "postcondition" else "precondition")
       (match e with | .bool _ b => some b | _ => none))
   else if Fren.Core.contractMentionsNothing mentioned
-      (Fren.Core.contractOwn (f.toString (escape := false)) (params.toList.map (·.toString (escape := false)))) then
+      (f.toString (escape := false)) (params.toList.map (·.toString (escape := false))) then
     lint .contractMentionsNothing e.span (Fren.Core.contractMentionsNothingMsg post (f.toString (escape := false)) mentioned)
 
 /-- The conditions of a top-level `when`/`unless` chain, and their span. -/
@@ -6805,9 +6794,11 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
     unless isPub do
       let members := (blockMembers header body spans).toList.map (·.2)
       if Fren.Core.procWithoutOutputs false members 0 then
-        let r : Fren.Core.ProcRecord := { path, members, level := (← get).levels.get .procWithoutOutputs }
+        let kw? := keywordBefore (← get).src (← get).itemStart written.start "proc"
+        let r : Fren.Core.ProcRecord :=
+          { path, members, level := (← get).levels.get .procWithoutOutputs, fixable := kw?.isSome }
         modify fun s => { s with procs := s.procs.push (r, name.span) }
-        if let some kw := keywordBefore (← get).src written.start "proc" then
+        if let some kw := kw? then
           let fix : LintFix := { lint := .procWithoutOutputs, span := name.span, edits := #[(toRange kw, "expect")] }
           modify fun s => { s with lintFixes := s.lintFixes.push fix }
 

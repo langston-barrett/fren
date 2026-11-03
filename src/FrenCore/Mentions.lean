@@ -19,12 +19,6 @@ inductive Mention where
   -- read `contains` as membership.
   deriving DecidableEq, Inhabited, Repr
 
-/-- `m` with a variable by its root: `q` for a field read from it, `q.len`,
-or `w` for a variable of the call `w`, `w.y`. -/
-def Mention.root : Mention → Mention
-  | .var x => .var ((x.splitOn ".").head!)
-  | .fn f => .fn f
-
 /-- `m` as a message writes it. -/
 def Mention.describe : Mention → String
   | .var x => s!"the variable `{x}`"
