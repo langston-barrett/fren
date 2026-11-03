@@ -4,6 +4,8 @@ fuzzer or a mutation run, while holding one of a few machine-wide slots, so
 that parallel jobs don't pile up.
 
     scripts/heavy [--offline] [--] COMMAND [ARG...]
+    scripts/heavy --stats [HOURS]
+    scripts/heavy --alternate MINUTES VALUE
 
 Slots are `flock`ed files in ~/.cache/heavy/ (`slot0`, `slot1`, ...), so a
 crashed or killed holder releases its slot, and every copy of this script on
@@ -22,6 +24,18 @@ saying so. The files are re-read on every use, so changing one takes effect
 for running jobs too. An unset, empty, invalid, infinite or non-positive
 setting falls through to the next, with a warning unless it is unset.
 
+Load (opt-in): `HEAVY_MAX_LOAD`, else ~/.cache/heavy/max_load, else off.
+Wait for the 1-minute load to be below this value, for at most 10 minutes;
+slots and memory still apply. `HEAVY_MAX_LOAD=off` overrides the file.
+
+Every completed job appends a JSON line to ~/.cache/heavy/log.jsonl
+(`HEAVY_LOG` overrides the path). Logging never fails a job. `--stats`
+compares completions in the last HOURS (default 24), by admission policy
+and job kind. `--alternate` switches the file setting between VALUE and
+absent every MINUTES, logging each flip for the policy exposure times.
+Run one alternator for all agents, with HEAVY_MAX_LOAD unset everywhere.
+SIGINT and SIGTERM stop it and remove the file, leaving admission off.
+
 `--offline` runs COMMAND with no network: on Linux in a new user and
 network namespace (`unshare -rn`), whose only interface is loopback, which
 is down, and in which COMMAND runs as uid 0, mapped to the user; and on
@@ -32,24 +46,30 @@ for what never needs the network: binaries that a pull request built,
 fuzzers and mutation runs. Builds and `lake test` stay online, since
 Lake fetches packages and elan fetches toolchains.
 
-`python3 scripts/heavy_test.py` tests the argument parsing, the memory cap
-and the order of the overrides.
+`python3 scripts/heavy_test.py` tests parsing, settings, load admission
+and telemetry with scratch state and tiny jobs.
 """
 import fcntl
+import json
 import math
 import os
 import platform
-import shutil
+import re
+import shlex
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 STATE = os.path.expanduser("~/.cache/heavy")
 DEFAULT_SLOTS = 2
 DEFAULT_MEM_FRACTION = 0.8
 START_FRACTION = 0.6
-USAGE = "usage: heavy [--offline] [--] <command> [args...]"
+LOAD_GRACE_SECONDS = 600
+LOAD_SAMPLE_SECONDS = 30
+USAGE = ("usage: heavy [--offline] [--] <command> [args...] | heavy --stats [hours] | "
+         "heavy --alternate <minutes> <value>")
 
 # Denies all IP networking, inbound and outbound, loopback included, and
 # name lookups through mDNSResponder, which would send DNS queries for the
@@ -166,6 +186,247 @@ def slot_count(environ=None, state=STATE, warn=None):
     return DEFAULT_SLOTS if n is None else n
 
 
+def max_load(environ=None, state=STATE, warn=None):
+    environ = os.environ if environ is None else environ
+    if environ.get("HEAVY_MAX_LOAD", "").strip().lower() == "off":
+        return None
+    return setting("HEAVY_MAX_LOAD", "max_load", float, environ, state, warn)
+
+
+def load_average():
+    try:
+        value = os.getloadavg()[0]
+        return value if math.isfinite(value) and value >= 0 else None
+    except (OSError, AttributeError):
+        return None
+
+
+def can_start(waited, rss, cap, limit, load_reader=load_average):
+    """Admission besides the slot lock; a missing load reading fails open."""
+    if rss > START_FRACTION * cap:
+        return False
+    # Load decays slowly and includes unrelated work. Ten minutes bounds
+    # that extra delay without ever bypassing the slot or memory limits.
+    if limit is None or waited >= LOAD_GRACE_SECONDS:
+        return True
+    load = load_reader()
+    return load is None or load < limit
+
+
+def sample_load(record, load_reader, now, last=None):
+    if last is not None and now - last < LOAD_SAMPLE_SECONDS:
+        return last
+    load = load_reader()
+    if load is not None:
+        record["load_samples"].append(load)
+    return now
+
+
+def append_log(record, state=STATE, environ=None):
+    """One O_APPEND write, so concurrent writers need no logging lock."""
+    environ = os.environ if environ is None else environ
+    try:
+        path = environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl")
+        data = (json.dumps(record, allow_nan=False) + "\n").encode()
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
+    except (OSError, ValueError, TypeError):
+        pass  # Telemetry must never change a command's exit status.
+
+
+def flip_policy(value, state=STATE, environ=None, clock=time.time):
+    """Publish a complete setting atomically, or remove it for off."""
+    path = os.path.join(state, "max_load")
+    if value == "off":
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+    else:
+        with tempfile.NamedTemporaryFile(mode="w", dir=state, delete=False) as f:
+            temporary = f.name
+            try:
+                f.write(f"{value}\n")
+                f.close()
+                os.replace(temporary, path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+    append_log({"event": "policy", "at": clock(), "max_load": value,
+                "slots": slot_count(environ, state)}, state, environ)
+
+
+def alternate(minutes, value, state=STATE, environ=None, sleep=time.sleep, clock=time.time):
+    os.makedirs(state, exist_ok=True)
+    with open(os.path.join(state, "alternate.lock"), "a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("heavy: another --alternate already holds this state directory")
+        current = value
+        try:
+            while True:
+                flip_policy(current, state, environ, clock)
+                sleep(minutes * 60)
+                current = "off" if current != "off" else value
+        finally:
+            flip_policy("off", state, environ, clock)
+
+
+def job_kind(command):
+    """Retain command/flags/job names, removing paths, seeds and numbers.
+    Keep executable basenames, including the command after `lake env`."""
+    executables = {0}
+    if len(command) > 2 and os.path.basename(command[0]) == "lake" and command[1] == "env":
+        executables.add(2)
+    if command and re.fullmatch(r"python[\d.]*|bash|sh", os.path.basename(command[0])):
+        for i, word in enumerate(command[1:], 1):
+            if word in ("-c", "-m"):
+                break
+            if not word.startswith("-"):
+                executables.add(i)
+                break
+    words, skip = [], False
+    for i, word in enumerate(command):
+        if skip:
+            skip = False
+            continue
+        if word in ("--seed", "--random-seed"):
+            skip = True
+            continue
+        if word.startswith(("--seed=", "--random-seed=")):
+            continue
+        flag, equal, value = word.partition("=")
+        if equal and flag.startswith("-"):
+            word = flag
+            if not re.search(r"[/\\]", value) and not re.fullmatch(
+                    r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", value):
+                word += "=" + value
+        if re.search(r"[/\\]", word):
+            if i not in executables:
+                continue
+            word = os.path.basename(word)
+        elif re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", word):
+            continue
+        elif i not in executables and word.endswith((".fren", ".lean", ".json", ".txt")):
+            continue
+        word = re.sub(r"\d+", "", word)
+        if word:
+            words.append(word)
+    return shlex.join(words) or "<command>"
+
+
+def percentiles(values):
+    """Linearly interpolated percentiles, in seconds."""
+    values = sorted(values)
+    out = {}
+    for p in (50, 90, 95, 99):
+        if not values:
+            out[f"p{p}"] = None
+            continue
+        rank = (len(values) - 1) * p / 100
+        low, high = math.floor(rank), math.ceil(rank)
+        out[f"p{p}"] = values[low] + (values[high] - values[low]) * (rank - low)
+    return out
+
+
+def policy_key(row):
+    load, slots = row["max_load"], row["slots"]
+    if load != "off" and not (type(load) in (int, float) and math.isfinite(load) and load > 0):
+        raise ValueError("invalid max_load")
+    if type(slots) is not int or slots <= 0:
+        raise ValueError("invalid slots")
+    return load, slots
+
+
+def summarize(rows, hours):
+    loads = [v for row in rows for v in row["load_samples"]]
+    return {
+        "jobs": len(rows), "observed_hours": hours,
+        "failed_jobs": sum(r.get("exit_status") != 0 for r in rows),
+        "jobs_per_hour": len(rows) / hours if hours > 0 else None,
+        "wait_seconds": percentiles([r["wait_seconds"] for r in rows]),
+        "run_seconds": percentiles([r["run_seconds"] for r in rows]),
+        "latency_seconds": percentiles([r["wait_seconds"] + r["run_seconds"] for r in rows]),
+        "mean_load": sum(loads) / len(loads) if loads else None,
+    }
+
+
+def stats(hours, state=STATE, environ=None, now=None):
+    """Rates use logged policy intervals, clipped to the requested window.
+    Attribute completions to their admission policy, even across a flip.
+    Ignore malformed lines, including an incomplete concurrent append."""
+    environ = os.environ if environ is None else environ
+    now = time.time() if now is None else now
+    rows, flips = [], []
+    path = environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl")
+    try:
+        with open(path) as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                    key = policy_key(row)
+                    if row.get("event") == "policy":
+                        at = row["at"]
+                        if type(at) in (int, float) and math.isfinite(at) and 0 <= at <= now:
+                            flips.append((at, key))
+                        continue
+                    numbers = [row[k] for k in ("ended_at", "wait_seconds", "run_seconds")]
+                    loads = row["load_samples"]
+                    if not isinstance(loads, list):
+                        continue
+                    if not all(type(v) in (int, float) and math.isfinite(v) and v >= 0
+                               for v in numbers + loads):
+                        continue
+                    if not isinstance(row["job_kind"], str) or type(row["exit_status"]) is not int:
+                        continue
+                    if now - hours * 3600 <= row["ended_at"] <= now:
+                        rows.append(row)
+                except (ValueError, TypeError, KeyError, OverflowError):
+                    continue
+    except FileNotFoundError:
+        pass
+    exposure = {}
+    flips.sort(key=lambda flip: flip[0])
+    for i, (at, key) in enumerate(flips):
+        end = flips[i + 1][0] if i + 1 < len(flips) else now
+        duration = max(0, end - max(at, now - hours * 3600)) / 3600
+        if duration > 0:
+            exposure[key] = exposure.get(key, 0) + duration
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(policy_key(row), []).append(row)
+    policies, kinds = [], {}
+    # Compare only successful runs: a fast failure is not a speedup.
+    successful = {}
+    for row in rows:
+        if row.get("exit_status") == 0:
+            successful.setdefault((policy_key(row), row["job_kind"]), []).append(row["run_seconds"])
+    for key in sorted(set(grouped) | set(exposure), key=lambda k: (k[1], str(k[0]))):
+        load, slots = key
+        policy = {"max_load": load, "slots": slots,
+                  **summarize(grouped.get(key, []), exposure.get(key, 0))}
+        ratios = []
+        for kind in sorted({r["job_kind"] for r in grouped.get(key, [])}):
+            values = successful.get((key, kind), [])
+            baseline = successful.get((("off", slots), kind), [])
+            median = percentiles(values)["p50"]
+            off_median = percentiles(baseline)["p50"]
+            ratio = median / off_median if median is not None and off_median else None
+            if load != "off" and ratio is not None and ratio > 0:
+                ratios.append(ratio)
+            kinds.setdefault(kind, []).append({"max_load": load, "slots": slots,
+                "successful_jobs": len(values), "run_seconds": percentiles(values),
+                "run_ratio_vs_off": ratio})
+        policy.update(matched_kinds=len(ratios), normalized_run_ratio_vs_off=(
+            math.exp(sum(math.log(r) for r in ratios) / len(ratios)) if ratios else None))
+        policies.append(policy)
+    return {"hours": hours, **summarize(rows, hours), "policies": policies, "by_kind": kinds}
+
+
 _physical = []
 
 
@@ -240,7 +501,7 @@ def jobs(state=STATE):
     return found
 
 
-def kill_group(pgid):
+def kill_group(pgid, reap):
     for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 0)):
         try:
             os.killpg(pgid, sig)
@@ -248,10 +509,7 @@ def kill_group(pgid):
             return
         deadline = time.time() + wait
         while time.time() < deadline:
-            try:
-                os.waitpid(pgid, os.WNOHANG)
-            except ChildProcessError:
-                pass
+            reap()
             try:
                 os.killpg(pgid, 0)
             except (ProcessLookupError, PermissionError):
@@ -259,50 +517,124 @@ def kill_group(pgid):
             time.sleep(0.2)
 
 
-def run(f, command, shown):
+def reap_child(child, record, flags=os.WNOHANG):
+    """Keep the kernel RSS high-water mark too, including for subsecond jobs.
+    The sampled process-group sum also accounts for parallel workers."""
+    if child.returncode is not None:
+        return
+    try:
+        pid, status, usage = os.wait4(child.pid, flags)
+    except ChildProcessError:
+        # Reaping may be interrupted by a signal handler that also reaps.
+        # The successful wait4 caller stores the status when it resumes.
+        return
+    if pid:
+        child.returncode = os.waitstatus_to_exitcode(status)
+        kb = usage.ru_maxrss / 1024 if platform.system() == "Darwin" else usage.ru_maxrss
+        record["peak_rss_kb"] = max(record["peak_rss_kb"], int(kb))
+
+
+def run_command(f, command, shown, record, state, environ, load_reader):
+    sampled = sample_load(record, load_reader, time.monotonic())
     try:
         child = subprocess.Popen(command, start_new_session=True)
     except OSError as e:
         print(f"heavy: cannot run `{shown}`: {e.strerror}", file=sys.stderr)
         return 127
-    began = time.time()
     f.seek(0)
     f.truncate()
-    f.write(f"{child.pid} {began} {os.getcwd()} {shown}\n")
+    f.write(f"{child.pid} {record['started_at']} {os.getcwd()} {shown}\n")
     f.flush()
+    reap = lambda: reap_child(child, record)
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, lambda s, _: kill_group(child.pid))
-    while child.poll() is None:
-        time.sleep(1)
+        signal.signal(sig, lambda s, _: kill_group(child.pid, reap))
+    while True:
+        reap()
+        if child.returncode is not None:
+            break
         rss = group_rss_kb()
-        running = [(t, g) for t, g in jobs() if g in rss]
-        total, cap = sum(rss[g] for _, g in running), mem_cap_kb()
+        record["peak_rss_kb"] = max(record["peak_rss_kb"], rss.get(child.pid, 0))
+        sampled = sample_load(record, load_reader, time.monotonic(), sampled)
+        running = [(t, g) for t, g in jobs(state) if g in rss]
+        total, cap = sum(rss[g] for _, g in running), mem_cap_kb(environ, state)
         if total > cap and running and max(running)[1] == child.pid:
             print(f"heavy: killed `{shown}`: heavy jobs used "
                   f"{total / 1048576:.1f} GB, over the {cap / 1048576:.1f} GB cap "
-                  f"(HEAVY_MEM_GB, {os.path.join(STATE, 'mem_gb')}); run it again when "
+                  f"(HEAVY_MEM_GB, {os.path.join(state, 'mem_gb')}); run it again when "
                   "fewer jobs run", file=sys.stderr)
-            kill_group(child.pid)
-            child.wait()
+            kill_group(child.pid, reap)
+            reap_child(child, record, 0)
             return 137
+        time.sleep(1)
     return child.returncode if child.returncode >= 0 else 128 - child.returncode
 
 
-def heavy_rss_kb():
+def run(f, command, shown, kind, enqueued, queued, limit, slots, state, environ, load_reader):
+    began = time.monotonic()
+    record = {
+        "event": "job", "command": shown, "job_kind": kind,
+        "worktree": os.getcwd(), "enqueued_at": enqueued,
+        "started_at": time.time(), "wait_seconds": began - queued,
+        "peak_rss_kb": 0, "load_samples": [],
+        "max_load": "off" if limit is None else limit, "slots": slots,
+    }
+    code = run_command(f, command, shown, record, state, environ, load_reader)
+    record.update(ended_at=time.time(), run_seconds=time.monotonic() - began, exit_status=code)
+    loads = record["load_samples"]
+    record.update(load_mean=sum(loads) / len(loads) if loads else None,
+                  load_max=max(loads) if loads else None)
+    append_log(record, state, environ)
+    return code
+
+
+def heavy_rss_kb(state=STATE):
     rss = group_rss_kb()
-    return sum(rss.get(g, 0) for _, g in jobs())
+    return sum(rss.get(g, 0) for _, g in jobs(state))
 
 
-def main(argv):
+def main(argv, state=STATE, environ=None, load_reader=load_average):
+    environ = os.environ if environ is None else environ
+    if argv[:1] == ["--alternate"]:
+        try:
+            if len(argv) != 3:
+                raise ValueError("expected minutes and load value")
+            minutes, value = (positive(float, arg) for arg in argv[1:])
+        except ValueError as e:
+            print(f"heavy: --alternate: {e}\n{USAGE}", file=sys.stderr)
+            return 2
+
+        def stop(sig, frame):
+            raise KeyboardInterrupt
+
+        previous = {sig: signal.signal(sig, stop) for sig in (signal.SIGINT, signal.SIGTERM)}
+        try:
+            alternate(minutes, value, state, environ)
+        except KeyboardInterrupt:
+            return 0
+        except (OSError, RuntimeError) as e:
+            print(f"heavy: --alternate: {e}", file=sys.stderr)
+            return 2
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+    if argv[:1] == ["--stats"]:
+        try:
+            if len(argv) > 2:
+                raise ValueError("too many arguments")
+            hours = positive(float, argv[1]) if len(argv) == 2 else 24
+            print(json.dumps(stats(hours, state, environ), indent=2))
+            return 0
+        except (ValueError, OSError) as e:
+            print(f"heavy: --stats: {e}\n{USAGE}", file=sys.stderr)
+            return 2
     try:
         offline, command = parse_args(argv)
     except UsageError as e:
         print(e, file=sys.stderr)
         return 2
-    shown = " ".join(command)
-    if os.sep not in command[0] and shutil.which(command[0]) is None:
-        print(f"heavy: {command[0]}: command not found", file=sys.stderr)
-        return 127
+    enqueued, queued = time.time(), time.monotonic()
+    kind = job_kind(command)
+    shown = shlex.join(command)
     if offline:
         try:
             command = offline_command(command)
@@ -310,41 +642,54 @@ def main(argv):
             print(e, file=sys.stderr)
             return 126
         shown = "--offline " + shown
-    os.makedirs(STATE, exist_ok=True)
+    shown = shown[:237] + "..." if len(shown) > 240 else shown
+    os.makedirs(state, exist_ok=True)
     try:
-        mem_cap_kb()
+        mem_cap_kb(environ, state)
     except (OSError, ValueError, subprocess.CalledProcessError) as e:
         print(f"heavy: cannot tell the physical memory ({e}); set HEAVY_MEM_GB", file=sys.stderr)
         return 2
-    start, warned = time.time(), False
+    warned = False
     while True:
-        slots = slot_count()
+        slots = slot_count(environ, state)
+        limit = max_load(environ, state)
         # Start no job while the running ones already use most of the cap: a
         # job that starts now would likely be the one killed when they grow.
-        if heavy_rss_kb() > START_FRACTION * mem_cap_kb():
+        if not can_start(time.monotonic() - queued, heavy_rss_kb(state),
+                         mem_cap_kb(environ, state), limit, load_reader):
             if not warned:
-                print(f"heavy: heavy jobs use most of the memory cap, waiting (see {STATE})",
+                print(f"heavy: waiting for memory or load (see {state})",
                       file=sys.stderr)
                 warned = True
             time.sleep(5)
             continue
         for i in range(slots):
-            f = open(os.path.join(STATE, f"slot{i}"), "a+")
+            f = open(os.path.join(state, f"slot{i}"), "a+")
             try:
                 fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 f.close()
                 continue
-            waited = time.time() - start
+            waited = time.monotonic() - queued
+            # A flip or slot change may have happened while acquiring the
+            # lock. Recheck admission and log the settings actually used.
+            slots = slot_count(environ, state)
+            limit = max_load(environ, state)
+            if i >= slots or not can_start(waited, heavy_rss_kb(state),
+                                          mem_cap_kb(environ, state), limit, load_reader):
+                f.close()
+                break
             if waited > 1:
                 print(f"heavy: got slot {i} after {waited:.0f}s", file=sys.stderr)
-            code = run(f, command, shown)
-            f.seek(0)
-            f.truncate()
-            f.flush()
-            return code
+            try:
+                return run(f, command, shown, kind, enqueued, queued, limit, slots,
+                           state, environ, load_reader)
+            finally:
+                f.seek(0)
+                f.truncate()
+                f.close()
         if not warned:
-            print(f"heavy: all {slots} slots busy, waiting (see {STATE})", file=sys.stderr)
+            print(f"heavy: all {slots} slots busy, waiting (see {state})", file=sys.stderr)
             warned = True
         time.sleep(2)
 
