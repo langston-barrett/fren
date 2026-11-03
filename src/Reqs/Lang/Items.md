@@ -26,8 +26,8 @@ pub proc declared_before(
     k_used: Nat,                 -- the position of `used` in `items`
     k_user: Nat,                 -- the position of `user`
 ): (det accepted?) {
-    assume positions: k_used < items.len and items[k_used] = used
-        and k_user < items.len and items[k_user] = user
+    assume positions:
+        k_used < items.len and items[k_used] = used and k_user < items.len and items[k_user] = user
     assume distinct: when used = user, k_used = k_user
 
     ensure rule: accepted? iff (used = user or k_used < k_user)
@@ -614,7 +614,8 @@ pub proc function_body(
     structural?,             -- those applications are a structural recursion (`lang::structural_recursion`)
     applies_uninterpreted?,    -- the body applies an uninterpreted function
 ): (det accepted?) {
-    ensure rule: accepted? iff (typed? and (not applies_self? or structural?) and not applies_uninterpreted?)
+    ensure rule:
+        accepted? iff (typed? and (not applies_self? or structural?) and not applies_uninterpreted?)
 
     expect only_structural: when applies_self? and not structural?, not accepted?
     expect well_typed: when not typed?, not accepted?
@@ -739,8 +740,12 @@ pub proc contract_arguments(
     params: Seq<Written>,    -- the function's parameters, each as its name, never `Other`
     args: Seq<Written>,      -- the application's arguments, as written
 ): (det accepted?) {
-    ensure rule: accepted? iff (not own? or (clause = ClauseKind::Postcondition and args = params
-        and not Written::Other in params))
+    ensure rule:
+        accepted?
+            iff (not own?
+                or (clause = ClauseKind::Postcondition
+                    and args = params
+                    and not Written::Other in params))
 
     expect expressions: when own? and Written::Other in args, not accepted?
     expect arity: when own? and args.len != params.len, not accepted?
@@ -839,13 +844,15 @@ pub proc fn_member(
     member: FnMemberKind,
     det?,                    -- it is written `det`
 ): (det verdict: FnVerdict) {
-    ensure rule: verdict = (if member = FnMemberKind::Claim then FnVerdict::NotYet
-        else if det? or member in {
-            FnMemberKind::Exists,
-            FnMemberKind::Call,
-            FnMemberKind::Evidence,
-        }
-        then FnVerdict::NotFunctions else FnVerdict::Accepted)
+    ensure rule:
+        verdict
+            = (if member = FnMemberKind::Claim then FnVerdict::NotYet
+                else if det? or member in {
+                    FnMemberKind::Exists,
+                    FnMemberKind::Call,
+                    FnMemberKind::Evidence,
+                }
+                then FnVerdict::NotFunctions else FnVerdict::Accepted)
 
     expect contract: when not det? and member in {FnMemberKind::Assumption, FnMemberKind::Guarantee}, verdict = FnVerdict::Accepted
     expect determined: when det? and verdict != FnVerdict::NotYet, verdict = FnVerdict::NotFunctions

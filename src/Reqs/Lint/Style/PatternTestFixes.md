@@ -59,8 +59,9 @@ pub proc manual_pattern_test_fix_alts(operands: Seq<Shape>, conj?, run: Span, q:
     det alts: Seq<Alt>,
 ) {
     -- The run's operands are read.
-    assume read: 0 <= run.first <= run.last
-        and (forall (i: Int), when run.first <= i <= run.last, reading_at(operands, conj?, i) != None)
+    assume read:
+        0 <= run.first <= run.last
+            and (forall (i: Int), when run.first <= i <= run.last, reading_at(operands, conj?, i) != None)
     assume position: 0 <= q <= run.last - run.first
 
     out n_operands := run.last - run.first + 1
@@ -82,18 +83,19 @@ pub proc manual_pattern_test_refines(
     -- that its reading's pattern does not.
     assume read: forall (i: Int), when run.first <= i <= run.last and operands[i] is Shape::Test(_),
         patterns[i].len = alts_at(operands, conj?, i).len
-        and (forall (k: Int), when 0 <= k < patterns[i].len and lang::matches_value?(patterns[i][k], w),
-        lang::matches_value?(alt_pattern(alts_at(operands, conj?, i)[k]), w))
-    assume operands_tests: tests.len = run.last - run.first + 1
-        and (forall (i: Int), when 0 <= i < tests.len, tests[i] = run_test(operands[run.first + i], patterns[run.first + i]))
+            and (forall (k: Int), when 0 <= k < patterns[i].len and lang::matches_value?(patterns[i][k], w),
+                lang::matches_value?(alt_pattern(alts_at(operands, conj?, i)[k]), w))
+    assume operands_tests:
+        tests.len = run.last - run.first + 1
+            and (forall (i: Int), when 0 <= i < tests.len, tests[i] = run_test(operands[run.first + i], patterns[run.first + i]))
 
     -- The fix's alternatives are, position by position, those that the lint
     -- writes, each matching no value that its reading does not.
     ensure covered: when (forall (i: Int), when run.first <= i <= run.last, reading_at(operands, conj?, i) != None),
         forall (q: Int), when 0 <= q < tests.len,
         fix_alternatives(tests[q]).len = alts_at(operands, conj?, run.first + q).len
-        and (forall (k: Int), when 0 <= k < fix_alternatives(tests[q]).len and lang::matches_value?(fix_alternatives(tests[q])[k], w),
-        lang::matches_value?(alt_pattern(alts_at(operands, conj?, run.first + q)[k]), w))
+            and (forall (k: Int), when 0 <= k < fix_alternatives(tests[q]).len and lang::matches_value?(fix_alternatives(tests[q])[k], w),
+                lang::matches_value?(alt_pattern(alts_at(operands, conj?, run.first + q)[k]), w))
     ensure same_meaning: fix_holds?(tests, w) iff run_holds?(tests, w)
     -- Where the run's operands are read and it fires, as where it is
     -- reported, no value matches two alternatives of the fix.

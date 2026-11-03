@@ -1864,6 +1864,7 @@ def fmtIgnore : List String :=
    "test/cli/fmt/contract.fren",
    "test/cli/fmt/guards.fren", "test/cli/fmt/table_scrutinee.fren", "test/cli/fmt/lists.fren", "test/cli/fmt/commas.fren",
    "test/cli/fmt/independent.fren", "test/cli/fmt/right_sides.fren", "test/cli/fmt/blank_items.fren",
+   "test/cli/fmt/chains.fren",
    "test/cli/commands/mutate_unformatted.fren", "test/ui/lints/unary_formatting.fren",
    "test/cli/lints/suspicious/f0762_suspicious_unary_op_formatting.fren", "test/ui/syntax/*.fren", "test/ui/lean/*.fren",
    "test/ui/checks/trace.fren",
@@ -1886,7 +1887,8 @@ def fmtIgnore : List String :=
 Their expected outputs and `--~` annotations name their lines, so
 formatting them means updating those too. They are formatted a group at a
 time, each only where the new layout reads better than the old, and this
-list is then removed (#509). -/
+list is then removed (#509). A spec here reads worse laid out anew, for
+the reason noted with it. -/
 def fmtPending : List String :=
   ["test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
    "test/ui/checks/subset_obligations.fren",
@@ -1932,7 +1934,10 @@ def fmtPending : List String :=
    "test/ui/lang/tables.fren", "test/ui/lang/tables_scrutinee.fren",
    "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren",
    "test/ui/lang/type_facts.fren", "test/ui/lang/types.fren",
-   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren"]
+   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren",
+   -- Breaking `interpretation_at`'s chain (`fmt::chain_layout`) puts its second record past
+   -- column 100, so that record goes vertical and its twin above does not (#546).
+   "src/Reqs/Impl.md"]
 
 /-- A file's pieces (`fmt::Piece`), each comment with whether it starts
 its line, and the paths the `use` items import, sorted. With `all`, every
@@ -2103,6 +2108,20 @@ def apartLines (out : String) (blanks : Std.HashMap Nat Nat) : Std.HashSet Nat :
       if FrenCli.Fmt.apart a between.toList below pf pl f l then apart := apart.insert lines[a]
   return apart
 
+/-- The tokens of `src` before which a chain decides the gap
+(`fmt::chain_kept`): each operator of a chain that the formatter lays out,
+and the token after it. -/
+def chainGaps (src : String) : Std.HashSet Nat := Id.run do
+  let chars := src.toList.toArray
+  let some (toks, comments) := (FrenCli.lexWithComments chars).toOption | return {}
+  let some lay := (FrenCli.parseLayout toks chars).toOption | return {}
+  let kept := FrenCli.Fmt.keptChains toks comments lay
+  let mut gaps : Std.HashSet Nat := {}
+  for h : c in [0:lay.chains.size] do
+    if kept[c]! then continue
+    for o in lay.chains[c].operators do gaps := (gaps.insert o).insert (o + 1)
+  return gaps
+
 /-- Where formatting `src` as `out` loses or adds a blank line: before each
 token or comment that starts a line of `out`, the blank lines are those
 that `fmt::blank_lines` keeps of `src`'s, with whether `fmt::apart` sets
@@ -2112,7 +2131,9 @@ blank line of `src` that does not start a line of `out` is after a gap
 whose line break a list or block decides and whose blank lines go
 (`fmt::line_break`): after an opening bracket, a record update's `{` or
 `with`, before a closing bracket, before a block's `{`, or before the right
-side of a `:=` or `=>` (`fmt::right_side`). Pieces after a
+side of a `:=` or `=>` (`fmt::right_side`), or before or after an operator
+of a chain that the formatter lays out (`fmt::chain_layout`), whose blank
+lines go too, also where a line starts there. Pieces after a
 `use` item are left out, as imports are merged and sorted. -/
 def fmtBlanksKept (src out : String) : Array String := Id.run do
   let some (ps, _, lay) := blankPieces src | return #[]
@@ -2126,6 +2147,10 @@ def fmtBlanksKept (src out : String) : Array String := Id.run do
     if b.lead != b.opening then joinable := joinable.insert (b.opening + 1)
   -- And the gap before each right side of a `:=` or `=>` (`fmt::right_side`).
   for (_, first, _, _) in lay.rightSides do joinable := joinable.insert first
+  -- And the gaps before and after the operators of a chain that the
+  -- formatter lays out (`fmt::chain_layout`), whose blank lines go.
+  joinable := joinable.insertMany (chainGaps src)
+  let chained := chainGaps out
   -- Tokens of `out` after which a line has no blank line after it, and
   -- the closing brackets of those that indent.
   let mut opens : Std.HashSet Nat := {}
@@ -2155,7 +2180,8 @@ def fmtBlanksKept (src out : String) : Array String := Id.run do
     if q.startsLine then
       let afterOpen := q.prev?.any (·.any opens.contains)
       let beforeClose := q.tok?.any closes.contains
-      let kept := FrenCli.Fmt.blankLines p.blank false afterOpen beforeClose (apart.contains q.line)
+      let kept := if q.tok?.any chained.contains then 0
+        else FrenCli.Fmt.blankLines p.blank false afterOpen beforeClose (apart.contains q.line)
       if q.blank != kept then
         failures := failures.push s!"{q.blank} blank lines before `{q.text}` (line {q.endLine + 1}), where `fmt::blank_lines` keeps {kept} of {p.blank}"
     else if p.blank > 0 && !p.tok?.any joinable.contains then
@@ -2355,11 +2381,19 @@ def relaid (src : String) (seed : Nat) (apart : Std.HashSet Nat := {}) : Option 
   -- a chain broken by hand, with a line break outside its brackets, whose
   -- gap is content.
   let firsts : Std.HashSet Nat := lay.rightSides.foldl (fun acc (_, f, _, _) => acc.insert f) {}
-  for (op, first, last, _) in lay.rightSides do
+  -- The gaps before and after the operators of each chain that the
+  -- formatter lays out (`fmt::chain_layout`).
+  let keptChains := FrenCli.Fmt.keptChains toks comments lay
+  let mut chainGaps : Array Nat := #[]
+  for h : c in [0:lay.chains.size] do
+    if keptChains[c]! then continue
+    for o in lay.chains[c].operators do chainGaps := (chainGaps.push o).push (o + 1)
+  let chainGapSet : Std.HashSet Nat := chainGaps.foldl (·.insert ·) {}
+  for (op, first, last, form) in lay.rightSides do
     let mut depth : Int := 0
     let mut chained := false
     for k in [first:last + 1] do
-      if depth == 0 && k > first && !firsts.contains k
+      if depth == 0 && k > first && !firsts.contains k && !chainGapSet.contains k && form != .chain
           && lineOf[toks[k]!.span.start]! > lineOf[toks[k - 1]!.span.stop - 1]! then
         chained := true
       match toks[k]!.tok with
@@ -2369,6 +2403,17 @@ def relaid (src : String) (seed : Nat) (apart : Std.HashSet Nat := {}) : Option 
     if chained then continue
     let start := toks[op]!.span.stop
     let stop := toks[first]!.span.start
+    if seen.contains start || !(chars.extract start stop).all Char.isWhitespace then continue
+    if commented.contains lineOf[start]! || commented.contains lineOf[stop]! then continue
+    seen := seen.insert start
+    rng := (rng * 1103515245 + 12345) % 2147483648
+    let pick := (rng / 65536) % 3
+    edits := edits.push (start, stop, if pick == 0 then " " else if pick == 1 then "\n" else "\n\n")
+  -- The gaps around the operators of chains: a space, a line break or a
+  -- blank line.
+  for k in chainGaps do
+    let start := toks[k - 1]!.span.stop
+    let stop := toks[k]!.span.start
     if seen.contains start || !(chars.extract start stop).all Char.isWhitespace then continue
     if commented.contains lineOf[start]! || commented.contains lineOf[stop]! then continue
     seen := seen.insert start

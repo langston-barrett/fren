@@ -91,7 +91,10 @@ proc places(t: Set<Single>, c?, m: Mode): (w?, x?, z?, v?) {
 -- bound name is mentioned.
 set_option fren.lint.undecidable "allow" in
 proc unbounded(x: Int, u: Set<Single>): (a?) {
-    ensure r1: a? iff (forall (i: Int), when 0 <= i < x, i >= 0) and (exists (k: Single) (j: Int), 0 <= j < x and k in u)
+    ensure r1:
+        a?
+            iff (forall (i: Int), when 0 <= i < x, i >= 0)
+                and (exists (k: Single) (j: Int), 0 <= j < x and k in u)
     --~^ warning: this `exists` ranges over one value
 }
 

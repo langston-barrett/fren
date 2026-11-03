@@ -112,9 +112,10 @@ expect constant_value(binding: Binding, definition: Expr<Id>, i: Interp, env: En
     assume constant: binding.kind = BindingKind::Constant
     call name := named(binding, definition)
     -- The constant has no arguments, whose list is `Nil`, and so no parameters.
-    expect definition_outcome: eval(i, env, Expr::Nil) = Outcome::Defined(Value::Nil)
-        and bind_params(Params::Nil, Value::Nil) = Env::Empty
-        and eval(i, env, name.expr) = eval(i, Env::Empty, definition)
+    expect definition_outcome:
+        eval(i, env, Expr::Nil) = Outcome::Defined(Value::Nil)
+            and bind_params(Params::Nil, Value::Nil) = Env::Empty
+            and eval(i, env, name.expr) = eval(i, Env::Empty, definition)
 }
 ```
 

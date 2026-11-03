@@ -58,7 +58,10 @@ pub proc manual_abs(
 ): (det fires?) {
     use self::Comparison::{Ge, Gt, Le, Lt}
 
-    ensure rule: fires? iff (compared = Ordered::Number and (if negated_then? then op in {Lt, Le} else op in {Gt, Ge}))
+    ensure rule:
+        fires?
+            iff (compared = Ordered::Number
+                and (if negated_then? then op in {Lt, Le} else op in {Gt, Ge}))
 }
 ```
 
@@ -69,7 +72,8 @@ proc manual_abs_exact(op: Comparison, negated_then?, x: Int) {
     call p := manual_abs(Ordered::Number, op, negated_then?)
 
     expect exact: when p.fires?,
-        (if compares?(op, x, 0) then (if negated_then? then -x else x) else (if negated_then? then x else -x)) = x.abs
+        (if compares?(op, x, 0) then (if negated_then? then -x else x) else (if negated_then? then x else -x))
+            = x.abs
 }
 ```
 
@@ -122,8 +126,8 @@ proc manual_abs_diff_exact(op: Comparison, then_left_first?, a: Int, b: Int) {
 
     expect exact: when p.fires?,
         (if compares?(op, a, b) then (if then_left_first? then a - b else b - a)
-        else (if then_left_first? then b - a else a - b))
-        = (if then_left_first? then (a - b).abs else (b - a).abs)
+                else (if then_left_first? then b - a else a - b))
+            = (if then_left_first? then (a - b).abs else (b - a).abs)
 }
 ```
 
@@ -207,16 +211,22 @@ fn abs_of<V>(x: lang::Expr<V>): lang::Expr<V> :=
 -- `if x OP 0 then -x else x`, of an `x` that is not an integer literal.
 fn abs_negated_then?<V>(c: lang::Expr<V>, t: lang::Expr<V>, f: lang::Expr<V>) := match c {
     lang::Expr::Binary(op, x, z) =>
-        ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
-        and t = lang::Expr::Unary(lang::UnaryOp::Neg, x) and f = x,
+        ordering?(op)
+            and zero?(z)
+            and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
+            and t = lang::Expr::Unary(lang::UnaryOp::Neg, x)
+            and f = x,
     _ => false,
 }
 
 -- `if 0 OP x then x else -x`.
 fn abs_negated_else?<V>(c: lang::Expr<V>, t: lang::Expr<V>, f: lang::Expr<V>) := match c {
     lang::Expr::Binary(op, z, x) =>
-        ordering?(op) and zero?(z) and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
-        and t = x and f = lang::Expr::Unary(lang::UnaryOp::Neg, x),
+        ordering?(op)
+            and zero?(z)
+            and not (x is lang::Expr::Literal(lang::Value::Integer(_)))
+            and t = x
+            and f = lang::Expr::Unary(lang::UnaryOp::Neg, x),
     _ => false,
 }
 
@@ -235,8 +245,11 @@ pub fn manual_abs_fix<V>(e: lang::Expr<V>): lang::Expr<V> := match e {
 
 -- `if s OP m then m - s else s - m`.
 fn abs_diff?<V>(c: lang::Expr<V>, t: lang::Expr<V>, f: lang::Expr<V>) := match c {
-    lang::Expr::Binary(op, s, m) => ordering?(op) and s != m
-        and t = lang::Expr::Binary(lang::BinaryOp::Sub, m, s) and f = lang::Expr::Binary(lang::BinaryOp::Sub, s, m),
+    lang::Expr::Binary(op, s, m) =>
+        ordering?(op)
+            and s != m
+            and t = lang::Expr::Binary(lang::BinaryOp::Sub, m, s)
+            and f = lang::Expr::Binary(lang::BinaryOp::Sub, s, m),
     _ => false,
 }
 
@@ -338,8 +351,11 @@ expect manual_abs_diff_elaborated(
 
     expect rule: when a != b, p.fires? iff manual_abs_diff_fires?(abs_diff_written(op, then_left_first?, a, b))
     expect fix: when a != b and p.fires?,
-        manual_abs_diff_fix(abs_diff_written(op, then_left_first?, a, b)) = abs_of(difference_of(then_left_first?, a, b))
-    expect same: not alike.fires? and not manual_abs_diff_fires?(abs_diff_written(op, then_left_first?, a, a))
+        manual_abs_diff_fix(abs_diff_written(op, then_left_first?, a, b))
+            = abs_of(difference_of(then_left_first?, a, b))
+    expect same:
+        not alike.fires?
+            and not manual_abs_diff_fires?(abs_diff_written(op, then_left_first?, a, a))
 }
 ```
 
@@ -388,7 +404,9 @@ fn abs_around<V>(y: lang::Expr<V>, z: lang::Expr<V>): lang::Expr<V> := lang::Exp
 )
 
 expect manual_abs_refires(y: lang::Id, e: lang::Expr<lang::Id>) {
-    expect kept: not manual_abs_fires?(manual_abs_fix(e)) and not manual_abs_diff_fires?(manual_abs_diff_fix(e))
+    expect kept:
+        not manual_abs_fires?(manual_abs_fix(e))
+            and not manual_abs_diff_fires?(manual_abs_diff_fix(e))
     expect around: not manual_abs_fires?(abs_around(lang::Expr::Var(y), inner))
         and manual_abs_fires?(abs_around(lang::Expr::Var(y), manual_abs_fix(inner)))
         where inner := abs_written(Comparison::Lt, true, lang::Expr::Var(y))
@@ -444,9 +462,14 @@ pub proc manual_min_max(
     use self::Comparison::{Ge, Gt, Le, Lt}
     use self::MinMax::{Max, Min}
 
-    ensure rule: fires? iff (op in {Lt, Le, Gt, Ge} and compared != Ordered::OtherType and a.text != b.text
-        and not (a.literal? and b.literal?)
-        and ((then_branch = a.text and else_branch = b.text) or (then_branch = b.text and else_branch = a.text)))
+    ensure rule:
+        fires?
+            iff (op in {Lt, Le, Gt, Ge}
+                and compared != Ordered::OtherType
+                and a.text != b.text
+                and not (a.literal? and b.literal?)
+                and ((then_branch = a.text and else_branch = b.text)
+                    or (then_branch = b.text and else_branch = a.text)))
     ensure which: when fires?, method = (if (op in {Lt, Le} iff then_branch = a.text) then Min else Max)
     ensure receiver: when fires?, receiver_left? iff not a.literal?
 }
@@ -463,7 +486,7 @@ proc manual_min_max_exact(op: Comparison, then_left?, a: Int, b: Int) {
 
     expect exact: when p.fires?,
         (if compares?(op, a, b) then (if then_left? then a else b) else (if then_left? then b else a))
-        = (if p.method = MinMax::Min then a.min(b) else a.max(b))
+            = (if p.method = MinMax::Min then a.min(b) else a.max(b))
 }
 ```
 
@@ -495,9 +518,11 @@ pub proc manual_clamp(
 ) {
     use self::Comparison::{Ge, Gt, Le, Lt}
 
-    ensure rule: fires? iff (compared = Ordered::Number
-        and ((first_op in {Lt, Le} and second_op in {Gt, Ge} and first <= second)
-        or (first_op in {Gt, Ge} and second_op in {Lt, Le} and second <= first)))
+    ensure rule:
+        fires?
+            iff (compared = Ordered::Number
+                and ((first_op in {Lt, Le} and second_op in {Gt, Ge} and first <= second)
+                    or (first_op in {Gt, Ge} and second_op in {Lt, Le} and second <= first)))
     ensure low: low_first? iff first_op in {Lt, Le}
 }
 
@@ -512,7 +537,7 @@ proc manual_clamp_exact(
 
     expect exact: when p.fires?,
         (if compares?(first_op, x, first) then first else if compares?(second_op, x, second) then second else x)
-        = (if p.low_first? then x.max(first).min(second) else x.max(second).min(first))
+            = (if p.low_first? then x.max(first).min(second) else x.max(second).min(first))
 }
 ```
 
@@ -701,10 +726,11 @@ expect manual_rem_euclid_elaborated(
 
     -- Each summand elaborates to a remainder of `x` or `y` by its divisor where it is one, and to no
     -- remainder elsewhere.
-    assume read: (if p.remainder? then summand_written(p.text) = Binary(Mod, x, summand_written(p.divisor))
-        else not remainder?(summand_written(p.text)))
-        and (if q.remainder? then summand_written(q.text) = Binary(Mod, y, summand_written(q.divisor))
-        else not remainder?(summand_written(q.text)))
+    assume read:
+        (if p.remainder? then summand_written(p.text) = Binary(Mod, x, summand_written(p.divisor))
+                else not remainder?(summand_written(p.text)))
+            and (if q.remainder? then summand_written(q.text) = Binary(Mod, y, summand_written(q.divisor))
+                else not remainder?(summand_written(q.text)))
 
     call m := manual_rem_euclid(p, q, k)
 

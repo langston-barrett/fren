@@ -119,20 +119,35 @@ expression the rules chose.
 set_option fren.lint.nonminimal_bool "expect" in
 pub proc nonminimal_bool_keeps_meaning(a?, c?, x: Int, y: Int) {
     expect true_literals: ((a? = true) iff a?) and ((a? != false) iff a?) and ((a? iff true) iff a?)
-    expect false_literals: ((a? = false) iff not a?) and ((a? != true) iff not a?) and ((a? iff false) iff not a?)
-    expect literals_left: ((true = a?) iff a?) and ((true iff a?) iff a?) and ((false = a?) iff not a?)
-        and ((true != a?) iff not a?) and ((false != a?) iff a?) and ((false iff a?) iff not a?)
+    expect false_literals:
+        ((a? = false) iff not a?) and ((a? != true) iff not a?) and ((a? iff false) iff not a?)
+    expect literals_left:
+        ((true = a?) iff a?)
+            and ((true iff a?) iff a?)
+            and ((false = a?) iff not a?)
+            and ((true != a?) iff not a?)
+            and ((false != a?) iff a?)
+            and ((false iff a?) iff not a?)
     expect double_negation: (not not a?) iff a?
-    expect negated_literal: ((not (a? = true)) iff not a?) and ((not (a? = false)) iff a?)
-        and ((not (a? != true)) iff a?) and ((not (a? != false)) iff not a?)
-    expect complements: ((not (x = y)) iff x != y) and ((not (x != y)) iff x = y)
-        and ((not (x < y)) iff x >= y) and ((not (x <= y)) iff x > y)
-        and ((not (x > y)) iff x <= y) and ((not (x >= y)) iff x < y)
-    expect conditionals: ((if c? then true else false) iff c?) and ((if c? then false else true) iff not c?)
-    expect conditional_operands: ((if c? then a? else false) iff (c? and a?))
-        and ((if c? then true else a?) iff (c? or a?))
-        and ((if c? then false else a?) iff (not c? and a?))
-        and ((if c? then a? else true) iff (not c? or a?))
+    expect negated_literal:
+        ((not (a? = true)) iff not a?)
+            and ((not (a? = false)) iff a?)
+            and ((not (a? != true)) iff a?)
+            and ((not (a? != false)) iff not a?)
+    expect complements:
+        ((not (x = y)) iff x != y)
+            and ((not (x != y)) iff x = y)
+            and ((not (x < y)) iff x >= y)
+            and ((not (x <= y)) iff x > y)
+            and ((not (x > y)) iff x <= y)
+            and ((not (x >= y)) iff x < y)
+    expect conditionals:
+        ((if c? then true else false) iff c?) and ((if c? then false else true) iff not c?)
+    expect conditional_operands:
+        ((if c? then a? else false) iff (c? and a?))
+            and ((if c? then true else a?) iff (c? or a?))
+            and ((if c? then false else a?) iff (not c? and a?))
+            and ((if c? then a? else true) iff (not c? or a?))
 }
 ```
 
@@ -165,7 +180,8 @@ pub proc nonminimal_cardinality(
     ensure rule: fix = (if args.len != 1 then Unchanged else if exactly? then Argument else True)
 
     expect keeps_meaning: when fix != Unchanged,
-        (if exactly? then exactly_one?(args[0]) else at_most_one?(args[0])) = (if fix = Argument then args[0] else true)
+        (if exactly? then exactly_one?(args[0]) else at_most_one?(args[0]))
+            = (if fix = Argument then args[0] else true)
 }
 
 set_option fren.lint.nonminimal_bool "allow" in
@@ -500,8 +516,12 @@ pub proc zero_prefixed_literal(
     let zeros: String := lexeme.slice(0, lexeme.len - fixed.len)
 
     ensure rule: fires? iff lexeme.matches?(r"0[0-9][0-9_]*")
-    ensure fix: is_fix? iff (fires? and lexeme.ends_with?(fixed) and zeros.matches?(r"[0_]*")
-        and (fixed = "0" or fixed.matches?(r"[1-9][0-9_]*")))
+    ensure fix:
+        is_fix?
+            iff (fires?
+                and lexeme.ends_with?(fixed)
+                and zeros.matches?(r"[0_]*")
+                and (fixed = "0" or fixed.matches?(r"[1-9][0-9_]*")))
 
     expect based: when lexeme = "0x10", not fires?
     expect zero: when lexeme = "0", not fires?
@@ -595,7 +615,13 @@ pub proc trivial_quantifier(
     call s := scope(body)
 
     ensure rule: fires? iff (one_value inter names) != {}
-    ensure fix: fixed? iff (names != {} and names subset one_value and names subset variant and not global? and (names inter s.declared) = {})
+    ensure fix:
+        fixed?
+            iff (names != {}
+                and names subset one_value
+                and names subset variant
+                and not global?
+                and (names inter s.declared) = {})
 
     -- `forall (u: Solo), (forall (u!: Solo), u in t) and u in t`.
     expect inner_bang: when names = {Local::A} and one_value = names and variant = names

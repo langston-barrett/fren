@@ -18,9 +18,8 @@ proc retry(method: Method, status: Status, attempt: Pos, retry_after: Seconds): 
     decision: Decision,
 ) {
     ensure transient:
-        decision != Decision::GiveUp iff status is 429 | 503
-        and method != Method::Post
-        and attempt < MAX_ATTEMPTS
+        decision != Decision::GiveUp
+            iff status is 429 | 503 and method != Method::Post and attempt < MAX_ATTEMPTS
     ensure honor_server: match decision {
         Decision::RetryAfter(d) => d >= retry_after,
         _ => true,

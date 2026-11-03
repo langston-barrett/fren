@@ -216,8 +216,10 @@ pub fn operands_fixed?(l: ExprLint, e: Expr<lang::Id>) := match e {
     Expr::If(c, t, f) => not fires_in?(l, c) and not fires_in?(l, t) and not fires_in?(l, f),
     Expr::Is(s, _) => not fires_in?(l, s),
     Expr::Match(s, _, g, b, rest) =>
-        not fires_in?(l, s) and not fires_in?(l, g) and not fires_in?(l, b)
-        and not fires_in?(l, rest),
+        not fires_in?(l, s)
+            and not fires_in?(l, g)
+            and not fires_in?(l, b)
+            and not fires_in?(l, rest),
     Expr::Cons(a, rest) => not fires_in?(l, a) and not fires_in?(l, rest),
     Expr::Construct(_, args) => not fires_in?(l, args),
     Expr::Project(a, _, _) => not fires_in?(l, a),

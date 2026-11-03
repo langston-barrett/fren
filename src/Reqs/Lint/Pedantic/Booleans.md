@@ -68,8 +68,10 @@ pub fn negates_operand?<V>(k: Expr<V>, o: Expr<V>) := k = Expr::Unary(lang::Unar
 
 -- An operand of the `and` (`conj?`) or the `or` of `a` and `b` can be dropped.
 pub fn drops?<V>(conj?, a: Expr<V>, b: Expr<V>) :=
-    absorbs_operand?(conj?, b, a) or absorbs_operand?(conj?, a, b)
-    or negates_operand?(a, b) or negates_operand?(b, a)
+    absorbs_operand?(conj?, b, a)
+        or absorbs_operand?(conj?, a, b)
+        or negates_operand?(a, b)
+        or negates_operand?(b, a)
 
 -- What the fix of `e`, the `and` (`conj?`) or the `or` of `a` and `b`,
 -- writes: the operand that the absorption leaves, or the `Bool` that `e`
@@ -111,10 +113,14 @@ expect overly_complex_rows(a: Expr<lang::Id>, b: Expr<lang::Id>) {
     expect and_first_swapped: overly_complex_fix(Expr::And(a, Expr::Or(b, a))) = a
     expect and_last: overly_complex_fix(Expr::And(Expr::Or(a, b), a)) = a
     expect and_last_swapped: overly_complex_fix(Expr::And(Expr::Or(b, a), a)) = a
-    expect contradiction: overly_complex_fix(Expr::And(a, Expr::Unary(Not, a))) = Expr::Literal(lang::Value::False)
-        and overly_complex_fix(Expr::And(Expr::Unary(Not, a), a)) = Expr::Literal(lang::Value::False)
-    expect excluded_middle: overly_complex_fix(Expr::Or(a, Expr::Unary(Not, a))) = Expr::Literal(lang::Value::True)
-        and overly_complex_fix(Expr::Or(Expr::Unary(Not, a), a)) = Expr::Literal(lang::Value::True)
+    expect contradiction:
+        overly_complex_fix(Expr::And(a, Expr::Unary(Not, a))) = Expr::Literal(lang::Value::False)
+            and overly_complex_fix(Expr::And(Expr::Unary(Not, a), a))
+                = Expr::Literal(lang::Value::False)
+    expect excluded_middle:
+        overly_complex_fix(Expr::Or(a, Expr::Unary(Not, a))) = Expr::Literal(lang::Value::True)
+            and overly_complex_fix(Expr::Or(Expr::Unary(Not, a), a))
+                = Expr::Literal(lang::Value::True)
     -- The lint looks at the operands of the operator alone.
     expect nested: not overly_complex_fires?(Expr::Or(a, Expr::And(Expr::And(a, b), b)))
 }
@@ -211,8 +217,10 @@ pub proc overly_complex_bool_expr(
     e: Expr<lang::Id>,
     negation_rewritten?,  -- `nonminimal_bool` rewrites the operand of `e` that is the negation of the other
 ): (det fires?, kept: Kept, kind: BoolRule) {
-    ensure rule: fires? iff overly_complex_fires?(e)
-        and not (negation_rewritten? and bool_rule(e) != BoolRule::Absorption)
+    ensure rule:
+        fires?
+            iff overly_complex_fires?(e)
+                and not (negation_rewritten? and bool_rule(e) != BoolRule::Absorption)
     ensure fix: when fires?, kept = kept_by(e)
     ensure kind_rule: when fires?, kind = bool_rule(e)
 
@@ -258,10 +266,14 @@ b)`:
 ```fren
 expect overly_complex_operand(e: Expr<lang::Id>) {
     expect operand: when overly_complex_fires?(e), match e {
-        Expr::And(a, b) => overly_complex_fix(e) = a or overly_complex_fix(e) = b
-            or overly_complex_fix(e) = Expr::Literal(lang::Value::False),
-        Expr::Or(a, b) => overly_complex_fix(e) = a or overly_complex_fix(e) = b
-            or overly_complex_fix(e) = Expr::Literal(lang::Value::True),
+        Expr::And(a, b) =>
+            overly_complex_fix(e) = a
+                or overly_complex_fix(e) = b
+                or overly_complex_fix(e) = Expr::Literal(lang::Value::False),
+        Expr::Or(a, b) =>
+            overly_complex_fix(e) = a
+                or overly_complex_fix(e) = b
+                or overly_complex_fix(e) = Expr::Literal(lang::Value::True),
         _ => false,
     }
     expect literal: when e is Expr::Literal(_), not overly_complex_fires?(e)
@@ -282,15 +294,14 @@ expect overly_complex_refires(b: lang::Id, c: lang::Id, d: lang::Id) {
             )
         )
     )
-    expect around: not overly_complex_fires?(
-        Or(Var(c), And(Or(Var(c), And(Var(c), Var(d))), Var(b)))
-    )
-        and overly_complex_fires?(
-            Or(
-                Var(c),
-                And(overly_complex_fix(Or(Var(c), And(Var(c), Var(d)))), Var(b))
+    expect around:
+        not overly_complex_fires?(Or(Var(c), And(Or(Var(c), And(Var(c), Var(d))), Var(b))))
+            and overly_complex_fires?(
+                Or(
+                    Var(c),
+                    And(overly_complex_fix(Or(Var(c), And(Var(c), Var(d)))), Var(b))
+                )
             )
-        )
 }
 ```
 

@@ -71,7 +71,9 @@ pub fn subset_rule_holds?(rule: SubsetRule, x: Int) := match rule {
 }
 
 pub proc subset_membership(clauses: Seq<SubsetClause>, value: Int): (member?) {
-    ensure conjunction: member? iff (forall (i: Int), when 0 <= i < clauses.len, subset_rule_holds?(clauses[i].rule, value))
+    ensure conjunction:
+        member?
+            iff (forall (i: Int), when 0 <= i < clauses.len, subset_rule_holds?(clauses[i].rule, value))
     expect labelled_range: when clauses = [
         SubsetClause {
             label := "low",
@@ -92,7 +94,9 @@ pub proc subset_membership(clauses: Seq<SubsetClause>, value: Int): (member?) {
 }
 
 pub proc subset_obligations(clauses: Seq<SubsetClause>, value: Int, label: String): (failed?) {
-    ensure named: failed? iff (exists (i: Int), 0 <= i < clauses.len and clauses[i].label = label and not subset_rule_holds?(clauses[i].rule, value))
+    ensure named:
+        failed?
+            iff (exists (i: Int), 0 <= i < clauses.len and clauses[i].label = label and not subset_rule_holds?(clauses[i].rule, value))
     expect upper_bound: when clauses = [
         SubsetClause {
             label := "high",
@@ -227,8 +231,10 @@ are checked before derived invariants and keep their original names.
 pub proc subset_inheritance(base: Seq<SubsetClause>, added: Seq<SubsetClause>, value: Int): (
     member?,
 ) {
-    ensure inherited: member? iff (forall (i: Int), when 0 <= i < base.len, subset_rule_holds?(base[i].rule, value))
-        and (forall (i: Int), when 0 <= i < added.len, subset_rule_holds?(added[i].rule, value))
+    ensure inherited:
+        member?
+            iff (forall (i: Int), when 0 <= i < base.len, subset_rule_holds?(base[i].rule, value))
+                and (forall (i: Int), when 0 <= i < added.len, subset_rule_holds?(added[i].rule, value))
     expect retains_base: when member?, forall (i: Int), when 0 <= i < base.len, subset_rule_holds?(base[i].rule, value)
     expect no_weakening: when not (forall (i: Int), when 0 <= i < base.len, subset_rule_holds?(base[i].rule, value)), not member?
 }
@@ -255,7 +261,9 @@ pub proc subset_inhabitation(lower: Int, upper: Int): (inhabited?) {
 
 pub proc subset_earlier(clauses: Seq<SubsetClause>, position: Int, value: Int): (hypotheses?) {
     assume position_exists: 0 <= position < clauses.len
-    ensure earlier_only: hypotheses? iff (forall (i: Int), when 0 <= i < position, subset_rule_holds?(clauses[i].rule, value))
+    ensure earlier_only:
+        hypotheses?
+            iff (forall (i: Int), when 0 <= i < position, subset_rule_holds?(clauses[i].rule, value))
     expect first_unconditional: when position = 0, hypotheses?
 }
 ```
@@ -361,8 +369,11 @@ pub proc named_identity(
     second_occurrence: Nat,
     second_label: String,
 ): (det same?) {
-    ensure identity: same? iff first_definition = second_definition and first_occurrence = second_occurrence
-        and first_label = second_label
+    ensure identity:
+        same?
+            iff first_definition = second_definition
+                and first_occurrence = second_occurrence
+                and first_label = second_label
     expect repeated_application: when first_occurrence != second_occurrence, not same?
     expect different_predicates: when first_definition != second_definition, not same?
 }

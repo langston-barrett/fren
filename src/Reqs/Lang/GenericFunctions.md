@@ -158,12 +158,21 @@ pub proc generic_signature(
 ): (det in0?, det in1?, det in2?, det unmentioned?, det accepted?) {
     -- Whether the type parameters `0`, `1` and `2` are in the signature: the
     -- result's type mentions them, or one of the parameters' types does.
-    out in0? := ty_mentions?(result, 0) or (declared.len > 0 and ty_mentions?(declared[0], 0))
-        or (declared.len > 1 and ty_mentions?(declared[1], 0)) or (declared.len > 2 and ty_mentions?(declared[2], 0))
-    out in1? := ty_mentions?(result, 1) or (declared.len > 0 and ty_mentions?(declared[0], 1))
-        or (declared.len > 1 and ty_mentions?(declared[1], 1)) or (declared.len > 2 and ty_mentions?(declared[2], 1))
-    out in2? := ty_mentions?(result, 2) or (declared.len > 0 and ty_mentions?(declared[0], 2))
-        or (declared.len > 1 and ty_mentions?(declared[1], 2)) or (declared.len > 2 and ty_mentions?(declared[2], 2))
+    out in0? :=
+        ty_mentions?(result, 0)
+            or (declared.len > 0 and ty_mentions?(declared[0], 0))
+            or (declared.len > 1 and ty_mentions?(declared[1], 0))
+            or (declared.len > 2 and ty_mentions?(declared[2], 0))
+    out in1? :=
+        ty_mentions?(result, 1)
+            or (declared.len > 0 and ty_mentions?(declared[0], 1))
+            or (declared.len > 1 and ty_mentions?(declared[1], 1))
+            or (declared.len > 2 and ty_mentions?(declared[2], 1))
+    out in2? :=
+        ty_mentions?(result, 2)
+            or (declared.len > 0 and ty_mentions?(declared[0], 2))
+            or (declared.len > 1 and ty_mentions?(declared[1], 2))
+            or (declared.len > 2 and ty_mentions?(declared[2], 2))
     out unmentioned? :=
         (params > 0 and not in0?) or (params > 1 and not in1?) or (params > 2 and not in2?)
 
@@ -178,12 +187,15 @@ set_option fren.lint.length_zero "allow" in
 expect signature_detail(params: Nat, declared: Seq<lang::Ty>, result: lang::Ty) {
     use lang
     call concrete := generic_signature(params, declared, result)
-    expect rule: (concrete.accepted?) iff ((params) = 0 or not (((params) > 0 and not (lang::ty_mentions?((result), 0) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 0))
-        or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 0)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 0))))
-        or ((params) > 1 and not (lang::ty_mentions?((result), 1) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 1))
-        or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 1)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 1))))
-        or ((params) > 2 and not (lang::ty_mentions?((result), 2) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 2))
-        or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 2)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 2))))))
+    expect rule:
+        (concrete.accepted?)
+            iff ((params) = 0
+                or not (((params) > 0 and not (lang::ty_mentions?((result), 0) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 0))
+                    or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 0)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 0))))
+                    or ((params) > 1 and not (lang::ty_mentions?((result), 1) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 1))
+                    or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 1)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 1))))
+                    or ((params) > 2 and not (lang::ty_mentions?((result), 2) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 2))
+                    or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 2)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 2))))))
 }
 ```
 
@@ -263,14 +275,17 @@ type gives no argument:
 -- `waiting?` says, where `from_result` gives the type parameters that the
 -- expected type gives an argument.
 set_option fren.lint.undecidable "allow" in
-pub fn call_waits?(values: Seq<ArgMode>, from_result: Seq<Bool>, j: Int) := 0 <= j < values.len
-    and match values[j] {
+pub fn call_waits?(values: Seq<ArgMode>, from_result: Seq<Bool>, j: Int) :=
+    0 <= j < values.len and match values[j] {
         ArgMode::Waits(Arg::P0) =>
-            not ArgMode::Gives(Arg::P0) in values.slice(0, j) and not (from_result != [] and from_result[0]),
+            not ArgMode::Gives(Arg::P0) in values.slice(0, j)
+                and not (from_result != [] and from_result[0]),
         ArgMode::Waits(Arg::P1) =>
-            not ArgMode::Gives(Arg::P1) in values.slice(0, j) and not (from_result.len > 1 and from_result[1]),
+            not ArgMode::Gives(Arg::P1) in values.slice(0, j)
+                and not (from_result.len > 1 and from_result[1]),
         ArgMode::Waits(Arg::P2) =>
-            not ArgMode::Gives(Arg::P2) in values.slice(0, j) and not (from_result.len > 2 and from_result[2]),
+            not ArgMode::Gives(Arg::P2) in values.slice(0, j)
+                and not (from_result.len > 2 and from_result[2]),
         ArgMode::Waits(Arg::Other) => false,
         ArgMode::Gives(_) => false,
     }
@@ -294,13 +309,17 @@ pub proc call_order(
     -- The arguments' positions, in the order in which they are elaborated:
     -- those that do not wait, in order, then those that do.
     out order :=
-        call_position_if(values, from_result, false, 0) ++ call_position_if(values, from_result, false, 1)
-        ++ call_position_if(values, from_result, false, 2) ++ call_position_if(values, from_result, true, 0)
-        ++ call_position_if(values, from_result, true, 1) ++ call_position_if(values, from_result, true, 2)
+        call_position_if(values, from_result, false, 0)
+            ++ call_position_if(values, from_result, false, 1)
+            ++ call_position_if(values, from_result, false, 2)
+            ++ call_position_if(values, from_result, true, 0)
+            ++ call_position_if(values, from_result, true, 1)
+            ++ call_position_if(values, from_result, true, 2)
     -- For each type parameter, whether it ends with an argument.
-    out given := (if params >= 1 then [from_result[0] or Gives(P0) in values] else [])
-        ++ (if params >= 2 then [from_result[1] or Gives(P1) in values] else [])
-        ++ (if params >= 3 then [from_result[2] or Gives(P2) in values] else [])
+    out given :=
+        (if params >= 1 then [from_result[0] or Gives(P0) in values] else [])
+            ++ (if params >= 2 then [from_result[1] or Gives(P1) in values] else [])
+            ++ (if params >= 3 then [from_result[2] or Gives(P2) in values] else [])
     out unknown? := false in given
 
     expect each_once: order.len = values.len
@@ -398,14 +417,16 @@ pub proc uninterpreted_instance(
 ) {
     assume few: declared.len <= 3 and arguments.len <= 3
     -- Each inferred type argument is widened.
-    assume widened: (arguments.len < 1 or kind(arguments[0]) != ValueType::NatTy)
-        and (arguments.len < 2 or kind(arguments[1]) != ValueType::NatTy)
-        and (arguments.len < 3 or kind(arguments[2]) != ValueType::NatTy)
+    assume widened:
+        (arguments.len < 1 or kind(arguments[0]) != ValueType::NatTy)
+            and (arguments.len < 2 or kind(arguments[1]) != ValueType::NatTy)
+            and (arguments.len < 3 or kind(arguments[2]) != ValueType::NatTy)
 
     -- The sorts of the instance's unknown function.
-    out params := (if declared.len > 0 then [instantiated(declared[0], arguments)] else [])
-        ++ (if declared.len > 1 then [instantiated(declared[1], arguments)] else [])
-        ++ (if declared.len > 2 then [instantiated(declared[2], arguments)] else [])
+    out params :=
+        (if declared.len > 0 then [instantiated(declared[0], arguments)] else [])
+            ++ (if declared.len > 1 then [instantiated(declared[1], arguments)] else [])
+            ++ (if declared.len > 2 then [instantiated(declared[2], arguments)] else [])
     out result_type := instantiated(result, arguments)
 
     ensure facts_at_instance: fact_type = result_type
@@ -602,9 +623,10 @@ pub proc applied_instance(
 ): (det applied: Seq<Ty>) {
     assume few: inner.len <= 3
 
-    out applied := (if inner.len > 0 then [instantiated(inner[0], outer)] else [])
-        ++ (if inner.len > 1 then [instantiated(inner[1], outer)] else [])
-        ++ (if inner.len > 2 then [instantiated(inner[2], outer)] else [])
+    out applied :=
+        (if inner.len > 0 then [instantiated(inner[0], outer)] else [])
+            ++ (if inner.len > 1 then [instantiated(inner[1], outer)] else [])
+            ++ (if inner.len > 2 then [instantiated(inner[2], outer)] else [])
 
     expect each: applied.len = inner.len
 }

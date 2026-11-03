@@ -76,16 +76,20 @@ fn names?(named: NamedVariants, v: Position) := match v {
 
 -- The number of variants named.
 fn count_named(named: NamedVariants): Int :=
-    (if named.v0? then 1 else 0) + (if named.v1? then 1 else 0)
-    + (if named.v2? then 1 else 0) + (if named.v3? then 1 else 0) + (if named.v4? then 1 else 0)
+    (if named.v0? then 1 else 0)
+        + (if named.v1? then 1 else 0)
+        + (if named.v2? then 1 else 0)
+        + (if named.v3? then 1 else 0)
+        + (if named.v4? then 1 else 0)
 
 -- The test names two variants or more, but not all of them.
 fn some_named?(named: NamedVariants, last: Position) :=
-    count_named(named) >= 2 and (not named.v0?
-        or (Position::V1 <= last and not named.v1?)
-        or (Position::V2 <= last and not named.v2?)
-        or (Position::V3 <= last and not named.v3?)
-        or (Position::V4 <= last and not named.v4?))
+    count_named(named) >= 2
+        and (not named.v0?
+            or (Position::V1 <= last and not named.v1?)
+            or (Position::V2 <= last and not named.v2?)
+            or (Position::V3 <= last and not named.v3?)
+            or (Position::V4 <= last and not named.v4?))
 
 -- Whether `v` is named exactly when it is up to `m`, if `up?`, or from `m`,
 -- for `v` a variant of the enumeration.
@@ -127,8 +131,9 @@ pub proc manual_ordering(
 
     expect keeps_meaning: match fix {
         Unchanged => true,
-        Compare(op, m) => names?(named, m)
-            and (forall (x: Position), agrees_at?(named, last, negated?, op, m, x)),
+        Compare(op, m) =>
+            names?(named, m)
+                and (forall (x: Position), agrees_at?(named, last, negated?, op, m, x)),
     }
 }
 ```

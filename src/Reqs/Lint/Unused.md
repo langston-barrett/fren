@@ -216,9 +216,10 @@ pub proc unused_definitions(
     assume earlier: uses.domain subset names.domain
 
     ensure rule: unused? iff (k in names.domain and not (exists (x: Local),
-        (k, x) in names and ((x in body and not (exists (m: DefIndex), k < m and (m, x) in names))
-        or (exists (j: DefIndex), k < j and (j, x) in uses
-        and not (exists (m: DefIndex), k < m < j and (m, x) in names)))))
+        (k, x) in names
+            and ((x in body and not (exists (m: DefIndex), k < m and (m, x) in names))
+                or (exists (j: DefIndex), k < j and (j, x) in uses
+                    and not (exists (m: DefIndex), k < m < j and (m, x) in names)))))
 
     expect declared_only: when unused?, k in names.domain
     expect used_by_body: when names = {(DefIndex::P0, Local::A)} and body = {Local::A}, not unused?
@@ -292,14 +293,18 @@ pub proc dead_item(
     pub?,
     n_uses: Nat,         -- paths in its file that resolve to it, to one of its variants, or through it
 ): (det dead?) {
-    ensure rule: dead? iff (what in {
-        Enumeration,
-        Record,
-        AbstractType,
-        TypeAlias,
-        Function,
-        Constant,
-    } and not pub? and n_uses = 0)
+    ensure rule:
+        dead?
+            iff (what in {
+                Enumeration,
+                Record,
+                AbstractType,
+                TypeAlias,
+                Function,
+                Constant,
+            }
+                and not pub?
+                and n_uses = 0)
 
     expect public_lives: when pub?, not dead?
     expect methods_live: when what = Named::Method, not dead?
@@ -405,12 +410,14 @@ pub proc unused_assumption(
     uses: Set<ProcUse>,          -- how the file uses the procedure
     k: Int,                      -- the position of the assumption
 ): (det fires?) {
-    ensure rule: fires? iff ((exists (x: String), (k, Link::Var(x)) in links)
-        and (forall (x: String), when (k, Link::Var(x)) in links, Link::Var(x) in inputs)
-        and not k in reached(
-            links,
-            mentioned union (if reads_inputs?(uses) then inputs else {})
-        ))
+    ensure rule:
+        fires?
+            iff ((exists (x: String), (k, Link::Var(x)) in links)
+                and (forall (x: String), when (k, Link::Var(x)) in links, Link::Var(x) in inputs)
+                and not k in reached(
+                    links,
+                    mentioned union (if reads_inputs?(uses) then inputs else {})
+                ))
     -- A `refines` claim alone reads no input; a call reads them all.
     expect refines_reads_nothing: when uses = {ProcUse::Refines}, not reads_inputs?(uses)
     expect call_reads: when ProcUse::Call in uses, reads_inputs?(uses)

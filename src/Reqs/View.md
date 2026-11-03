@@ -106,9 +106,16 @@ pub enum Group { Syntax, Names, Types, Instances, Traceability, Results, Lints }
 pub proc code_group(code: String): (det group: Group) {
     use self::Group::{Instances, Lints, Names, Results, Syntax, Traceability, Types}
 
-    assume well_formed: code.len = 5 and (code.starts_with?("F01") or code.starts_with?("F02")
-        or code.starts_with?("F03") or code.starts_with?("F04") or code.starts_with?("F05")
-        or code.starts_with?("F06") or code.starts_with?("F07") or code.starts_with?("F08"))
+    assume well_formed:
+        code.len = 5
+            and (code.starts_with?("F01")
+                or code.starts_with?("F02")
+                or code.starts_with?("F03")
+                or code.starts_with?("F04")
+                or code.starts_with?("F05")
+                or code.starts_with?("F06")
+                or code.starts_with?("F07")
+                or code.starts_with?("F08"))
 
     ensure syntax_codes: when code.starts_with?("F01"), group = Syntax
     ensure names: when code.starts_with?("F02"), group = Names
@@ -296,8 +303,15 @@ pub proc clash_text(
         Forced::Variant(c, n) =>
             output ++ " is " ++ c ++ (if n = 0 then "" else "(" ++ other_blanks ++ ")"),
     }
-    out text := "`" ++ guarantee ++ "` forces " ++ said ++ ", but " ++ others
-        ++ (if count = 1 then " forces " else " force ") ++ other_said
+    out text :=
+        "`"
+            ++ guarantee
+            ++ "` forces "
+            ++ said
+            ++ ", but "
+            ++ others
+            ++ (if count = 1 then " forces " else " force ")
+            ++ other_said
 
     expect one_other: when guarantee = "low" and output = "y" and forced = Forced::Value("0") and others = "`high`"
         and count = 1 and other_forced = Forced::Value("1"), text = "`low` forces y = 0, but `high` forces y = 1"
@@ -576,7 +590,8 @@ pub proc counted(kind: Kind, verdict: Verdict): (det bucket: Bucket) {
 
     ensure redundant: when kind = Redundancy and verdict = Fail, bucket = Redundant
     ensure by_verdict: unless kind = Redundancy and verdict = Fail,
-        bucket = (if verdict = Pass then Passed else if verdict = Fail then Failed else InconclusiveBucket)
+        bucket
+            = (if verdict = Pass then Passed else if verdict = Fail then Failed else InconclusiveBucket)
 }
 
 expect failures_are_errors(c_kind: Kind, c_verdict: Verdict, s_kind: Kind, s_verdict: Verdict) {

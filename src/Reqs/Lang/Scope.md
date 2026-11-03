@@ -152,8 +152,7 @@ pub struct Context {
 
 -- `b` is the binding of the declaration `d` at depth `k`.
 pub fn binding_of?(d: Declared, k: Int, b: Binding) :=
-    b.name = d.name and b.kind = d.kind and b.target = d.target
-    and b.depth = k
+    b.name = d.name and b.kind = d.kind and b.target = d.target and b.depth = k
 
 -- `b` is the binding of one of `imports`, at depth `k`, or `k + 1` for a glob's.
 set_option fren.lint.undecidable "allow" in
@@ -171,13 +170,13 @@ pub fn module_depth(cx: Context): Int := cx.locals.len + (if cx.component? then 
 set_option fren.lint.undecidable "allow" in
 pub fn in_scope?(cx: Context, b: Binding) :=
     (exists (i: Int), 0 <= i < cx.locals.len and cx.locals[i].visible?
-        and binding_of?(cx.locals[i].declaration, cx.locals.len - 1 - i, b))
-    or (exists (i: Int), 0 <= i < cx.builtins.len and b.kind = BindingKind::Builtin and b.name = cx.builtins[i]
-        and b.target = cx.builtins[i] and b.depth = cx.locals.len)
-    or (cx.component? and imported?(cx.component_imports, cx.locals.len + 1, b))
-    or (exists (i: Int), 0 <= i < cx.items.len and i < cx.declared and binding_of?(cx.items[i], module_depth(cx), b))
-    or imported?(cx.module_imports, module_depth(cx), b)
-    or (exists (i: Int), 0 <= i < cx.prelude.len and binding_of?(cx.prelude[i], module_depth(cx) + 2, b))
+            and binding_of?(cx.locals[i].declaration, cx.locals.len - 1 - i, b))
+        or (exists (i: Int), 0 <= i < cx.builtins.len and b.kind = BindingKind::Builtin and b.name = cx.builtins[i]
+            and b.target = cx.builtins[i] and b.depth = cx.locals.len)
+        or (cx.component? and imported?(cx.component_imports, cx.locals.len + 1, b))
+        or (exists (i: Int), 0 <= i < cx.items.len and i < cx.declared and binding_of?(cx.items[i], module_depth(cx), b))
+        or imported?(cx.module_imports, module_depth(cx), b)
+        or (exists (i: Int), 0 <= i < cx.prelude.len and binding_of?(cx.prelude[i], module_depth(cx) + 2, b))
 
 -- The items and imports alone, without the locals and the built-in functions.
 pub fn item_scope(cx: Context): Context := { cx with locals := [], builtins := [] }
@@ -203,12 +202,17 @@ pub proc context_scope(context: Context, binding: Binding): (det listed?) {
     -- depth, which is visible there.
     expect locals_exact: when listed? and binding.depth < context.locals.len,
         context.locals[context.locals.len - 1 - binding.depth].visible?
-        and binding.name = context.locals[context.locals.len - 1 - binding.depth].declaration.name
-        and binding.kind = context.locals[context.locals.len - 1 - binding.depth].declaration.kind
-        and binding.target = context.locals[context.locals.len - 1 - binding.depth].declaration.target
+            and binding.name
+                = context.locals[context.locals.len - 1 - binding.depth].declaration.name
+            and binding.kind
+                = context.locals[context.locals.len - 1 - binding.depth].declaration.kind
+            and binding.target
+                = context.locals[context.locals.len - 1 - binding.depth].declaration.target
     -- A binding at the built-in functions' depth is one of them.
     expect builtins_exact: when listed? and binding.depth = context.locals.len,
-        binding.kind = BindingKind::Builtin and binding.name = binding.target and binding.name in context.builtins
+        binding.kind = BindingKind::Builtin
+            and binding.name = binding.target
+            and binding.name in context.builtins
     -- The last local declared, if visible, is the innermost binding, and
     -- the first declared the outermost of the locals.
     expect last_local: when context.locals != [] and context.locals[context.locals.len - 1].visible?
@@ -229,12 +233,15 @@ pub proc context_scope(context: Context, binding: Binding): (det listed?) {
             module_depth(context) + 1,
             binding
         ), listed?
-    expect module_depths: module_depth(context) = context.locals.len + (if context.component? then 3 else 1)
+    expect module_depths:
+        module_depth(context) = context.locals.len + (if context.component? then 3 else 1)
     -- Nothing is in an empty scope, and the items and imports alone have no locals.
     expect empty: when context.locals = [] and context.builtins = [] and context.component_imports = []
         and context.items = [] and context.module_imports = [] and context.prelude = [], not listed?
-    expect items_alone: item_scope(context).locals = [] and item_scope(context).builtins = []
-        and item_scope(context).items = context.items
+    expect items_alone:
+        item_scope(context).locals = []
+            and item_scope(context).builtins = []
+            and item_scope(context).items = context.items
     -- The built-in functions are in every scope, just outside the locals.
     expect builtins: when binding.kind = BindingKind::Builtin and binding.name = binding.target
         and binding.depth = context.locals.len
@@ -265,8 +272,10 @@ pub enum Lookup { Found(BindingKind), Ambiguous, Unbound }
 
 -- `b` is a binding of `n` in `bindings` at the least depth of those of `n`.
 set_option fren.lint.undecidable "allow" in
-pub fn innermost?(bindings: Set<Binding>, b: Binding, n: Id) := b in bindings and b.name = n
-    and (forall (c: Binding), when c in bindings and c.name = n, b.depth <= c.depth)
+pub fn innermost?(bindings: Set<Binding>, b: Binding, n: Id) :=
+    b in bindings
+        and b.name = n
+        and (forall (c: Binding), when c in bindings and c.name = n, b.depth <= c.depth)
 
 -- Some binding in `bindings` is of `n`.
 set_option fren.lint.undecidable "allow" in
@@ -274,8 +283,8 @@ pub fn declared?(bindings: Set<Binding>, n: Id) := exists (b: Binding), b in bin
 
 -- `b` is the only innermost binding of `n`.
 set_option fren.lint.undecidable "allow" in
-pub fn resolves_to?(bindings: Set<Binding>, b: Binding, n: Id) := innermost?(bindings, b, n)
-    and (forall (c: Binding), when innermost?(bindings, c, n), c = b)
+pub fn resolves_to?(bindings: Set<Binding>, b: Binding, n: Id) :=
+    innermost?(bindings, b, n) and (forall (c: Binding), when innermost?(bindings, c, n), c = b)
 
 set_option fren.lint.undecidable "allow" in
 pub fn resolve(bindings: Set<Binding>, n: Id): (r: Lookup) {

@@ -174,9 +174,10 @@ pub fn leaf_arm_pat(a: LeafArm): Leaf := a.pat
 pub fn leaf_arm_body(a: LeafArm): Body := a.body
 
 -- Whether `s` is the first arm of `arms` whose pattern matches `v`.
-pub fn first_leaf?(arms: Seq<LeafArm>, s: Slot, v: Int) := pos(s) < arms.len
-    and leaf_matches?(leaf_arm_pat(arms[pos(s)]), v)
-    and (forall (r: Slot), when pos(r) < pos(s), not leaf_matches?(leaf_arm_pat(arms[pos(r)]), v))
+pub fn first_leaf?(arms: Seq<LeafArm>, s: Slot, v: Int) :=
+    pos(s) < arms.len
+        and leaf_matches?(leaf_arm_pat(arms[pos(s)]), v)
+        and (forall (r: Slot), when pos(r) < pos(s), not leaf_matches?(leaf_arm_pat(arms[pos(r)]), v))
 ```
 
 `lint::collapsible_match` states when it fires, computing these facts from an arm whose
@@ -214,15 +215,22 @@ pub proc collapsible_match(
     -- the binder is mentioned elsewhere in the inner `match`, or the inner `_` arm's body mentions a binder of the arm's pattern
     det let mentioned? :=
         (exists (s: Slot), pos(s) < inner.len and body_names?(leaf_arm_body(inner[pos(s)]), leaf_name(first)))
-        or body_names?(leaf_arm_body(inner[inner.len - 1]), leaf_name(second))
+            or body_names?(leaf_arm_body(inner[inner.len - 1]), leaf_name(second))
     -- an inner pattern binds a name that the arm's pattern binds
     det let clash? := (exists (s: Slot), pos(s) < inner.len and leaf_name(leaf_arm_pat(inner[pos(s)])) >= 0
         and leaf_name(leaf_arm_pat(inner[pos(s)])) in {leaf_name(first), leaf_name(second)})
     -- arms of the inner `match`
     det let n_inner: Int := inner.len
 
-    ensure rule: fires? iff (on_binder? and flat? and inner_wildcard? and same_wildcard? and not mentioned?
-        and not clash? and n_inner >= 2)
+    ensure rule:
+        fires?
+            iff (on_binder?
+                and flat?
+                and inner_wildcard?
+                and same_wildcard?
+                and not mentioned?
+                and not clash?
+                and n_inner >= 2)
 
     expect mentions_kept: when mentioned?, not fires?
 
@@ -237,8 +245,7 @@ pub proc collapsible_match(
             -1,
             0,
             o
-        )
-        = body_value(outer, -1, 0, -1, 0, -1, 0, o)
+        ) = body_value(outer, -1, 0, -1, 0, -1, 0, o)
         else
         body_value(
             leaf_arm_body(inner[pos(s)]),
@@ -250,16 +257,16 @@ pub proc collapsible_match(
             x.b,
             o
         )
-        = body_value(
-            leaf_arm_body(inner[pos(s)]),
-            leaf_name(leaf_arm_pat(inner[pos(s)])),
-            x.a,
-            leaf_name(second),
-            x.b,
-            -1,
-            0,
-            o
-        )
+            = body_value(
+                leaf_arm_body(inner[pos(s)]),
+                leaf_name(leaf_arm_pat(inner[pos(s)])),
+                x.a,
+                leaf_name(second),
+                x.b,
+                -1,
+                0,
+                o
+            )
 }
 
 pub enum Grade { Low, High, Off }
@@ -439,11 +446,17 @@ pub fn leaves_overlap?(l: Leaf, m: Leaf) :=
 
 -- Whether two patterns may match a value in common.
 pub fn overlap?(p: Pat, q: Pat) :=
-    (p is Pat::Wild | Pat::Binder(_, _)) or (q is Pat::Wild | Pat::Binder(_, _))
-    or (integers_pattern?(p) and integers_pattern?(q) and reaches?(lower_of(p), upper_of(q))
-        and reaches?(lower_of(q), upper_of(p)))
-    or (variants_pattern?(p) and variants_pattern?(q) and pattern_tag(p) = pattern_tag(q)
-        and leaves_overlap?(first_leaf(p), first_leaf(q)) and leaves_overlap?(second_leaf(p), second_leaf(q)))
+    (p is Pat::Wild | Pat::Binder(_, _))
+        or (q is Pat::Wild | Pat::Binder(_, _))
+        or (integers_pattern?(p)
+            and integers_pattern?(q)
+            and reaches?(lower_of(p), upper_of(q))
+            and reaches?(lower_of(q), upper_of(p)))
+        or (variants_pattern?(p)
+            and variants_pattern?(q)
+            and pattern_tag(p) = pattern_tag(q)
+            and leaves_overlap?(first_leaf(p), first_leaf(q))
+            and leaves_overlap?(second_leaf(p), second_leaf(q)))
 
 -- Two patterns of one type that match a value in common overlap. The
 -- converse does not hold: see the prose below.
@@ -487,13 +500,16 @@ pub proc match_overlapping_arm(
 
     -- they have an integer in common
     det let meet? :=
-        reaches?(lower_of(earlier), upper_of(later)) and reaches?(lower_of(later), upper_of(earlier))
+        reaches?(lower_of(earlier), upper_of(later))
+            and reaches?(lower_of(later), upper_of(earlier))
     -- the range is within the earlier pattern
     det let within? :=
-        lower_le?(lower_of(earlier), lower_of(later)) and upper_le?(upper_of(later), upper_of(earlier))
+        lower_le?(lower_of(earlier), lower_of(later))
+            and upper_le?(upper_of(later), upper_of(earlier))
     -- the range contains the earlier pattern
     det let contains? :=
-        lower_le?(lower_of(later), lower_of(earlier)) and upper_le?(upper_of(earlier), upper_of(later))
+        lower_le?(lower_of(later), lower_of(earlier))
+            and upper_le?(upper_of(earlier), upper_of(later))
 
     ensure rule: fires? iff (meet? and not within? and not contains?)
 
@@ -641,24 +657,28 @@ pub fn arm_value(arm: IfArm, x: Val, o: Int): Int := match arm.body {
 
 -- Whether the fix moves the condition of arm `s` into a guard: its body is
 -- `if C then a else d`, and its pattern is not `_` or a binder.
-pub fn moved?(arms: Seq<IfArm>, s: Slot, d: Body) := pos(s) < arms.len
-    and not (arms[pos(s)].pat is Pat::Wild | Pat::Binder(_, _))
-    and arms[pos(s)].body is IfBody::IfElse(_, _, _) and else_of(arms[pos(s)].body) = d
+pub fn moved?(arms: Seq<IfArm>, s: Slot, d: Body) :=
+    pos(s) < arms.len
+        and not (arms[pos(s)].pat is Pat::Wild | Pat::Binder(_, _))
+        and arms[pos(s)].body is IfBody::IfElse(_, _, _)
+        and else_of(arms[pos(s)].body) = d
 
 pub fn arm_matches?(arms: Seq<IfArm>, s: Slot, x: Val) :=
     pos(s) < arms.len and pat_matches?(arms[pos(s)].pat, x)
 
 -- Whether arm `s` is the first that matches `x`, as written.
-pub fn first_arm?(arms: Seq<IfArm>, s: Slot, x: Val) := arm_matches?(arms, s, x)
-    and (forall (r: Slot), when pos(r) < pos(s), not arm_matches?(arms, r, x))
+pub fn first_arm?(arms: Seq<IfArm>, s: Slot, x: Val) :=
+    arm_matches?(arms, s, x)
+        and (forall (r: Slot), when pos(r) < pos(s), not arm_matches?(arms, r, x))
 
 -- Whether arm `s` is taken at `x` after the fix, where no earlier one is:
 -- its pattern matches, and a guard that the fix gives it holds.
-pub fn taken_fixed?(arms: Seq<IfArm>, d: Body, s: Slot, x: Val) := arm_matches?(arms, s, x)
-    and (not moved?(arms, s, d) or cond_of?(arms[pos(s)].body))
+pub fn taken_fixed?(arms: Seq<IfArm>, d: Body, s: Slot, x: Val) :=
+    arm_matches?(arms, s, x) and (not moved?(arms, s, d) or cond_of?(arms[pos(s)].body))
 
-pub fn first_fixed?(arms: Seq<IfArm>, d: Body, s: Slot, x: Val) := taken_fixed?(arms, d, s, x)
-    and (forall (r: Slot), when pos(r) < pos(s), not taken_fixed?(arms, d, r, x))
+pub fn first_fixed?(arms: Seq<IfArm>, d: Body, s: Slot, x: Val) :=
+    taken_fixed?(arms, d, s, x)
+        and (forall (r: Slot), when pos(r) < pos(s), not taken_fixed?(arms, d, r, x))
 
 -- The value of arm `s`'s body after the fix, where it is taken at `x`.
 pub fn fixed_value(arms: Seq<IfArm>, d: Body, s: Slot, x: Val, o: Int): Int :=
@@ -671,8 +691,9 @@ pub fn fixed_value(arms: Seq<IfArm>, d: Body, s: Slot, x: Val, o: Int): Int :=
 -- no arm, and the `_` arm that the fix adds gives `d` that value.
 pub fn keeps?(arms: Seq<IfArm>, d: Body, appended?, s: Slot, x: Val, o: Int) :=
     (exists (r: Slot), first_fixed?(arms, d, r, x) and fixed_value(arms, d, r, x, o) = arm_value(arms[pos(s)], x, o))
-    or (appended? and (forall (r: Slot), not taken_fixed?(arms, d, r, x))
-        and body_value(d, -1, 0, -1, 0, -1, 0, o) = arm_value(arms[pos(s)], x, o))
+        or (appended?
+            and (forall (r: Slot), not taken_fixed?(arms, d, r, x))
+            and body_value(d, -1, 0, -1, 0, -1, 0, o) = arm_value(arms[pos(s)], x, o))
 
 -- The patterns are of one type: of integers, or of an enumeration.
 pub fn one_type?(arms: Seq<IfArm>) :=
@@ -685,13 +706,13 @@ pub fn one_type?(arms: Seq<IfArm>) :=
 -- `d`, which names none of its binders.
 pub fn fires_on?(arms: Seq<IfArm>, d: Body) :=
     (exists (s r: Slot), pos(s) < pos(r) and moved?(arms, s, d)
-        and moved?(arms, r, d))
-    and (forall (s: Slot), when pos(s) < arms.len and moved?(arms, s, d), not names_binder?(d, arms[pos(s)].pat))
-    -- no condition that it moves binds names, which a guard could not
-    and (forall (s: Slot), when moved?(arms, s, d), not arms[pos(s)].binds?)
-    and (forall (s r: Slot), when moved?(arms, s, d) and pos(s) < pos(r) < arms.len
-        and overlap?(arms[pos(s)].pat, arms[pos(r)].pat),
-        arms[pos(r)].body = IfBody::Plain(d) and not names_binder?(d, arms[pos(r)].pat))
+            and moved?(arms, r, d))
+        and (forall (s: Slot), when pos(s) < arms.len and moved?(arms, s, d), not names_binder?(d, arms[pos(s)].pat))
+        -- no condition that it moves binds names, which a guard could not
+        and (forall (s: Slot), when moved?(arms, s, d), not arms[pos(s)].binds?)
+        and (forall (s r: Slot), when moved?(arms, s, d) and pos(s) < pos(r) < arms.len
+            and overlap?(arms[pos(s)].pat, arms[pos(r)].pat),
+            arms[pos(r)].body = IfBody::Plain(d) and not names_binder?(d, arms[pos(r)].pat))
 
 -- Whether the fix adds `_ => d`: unless the last arm is `_` or a binder
 -- with the body `d`.

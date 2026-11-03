@@ -43,8 +43,13 @@ pub proc redundant_closure(
     args: Seq<ClosureArg>,   -- the application's arguments, in order
     exact?,                  -- the function's parameters' and result's types are the function type's, none a subset type
 ): (det fires?) {
-    ensure rule: fires? iff (applies? and callee != Callee::Other and exact? and args.len = n_params
-        and (forall (k: Int), when 0 <= k < args.len, args[k] = ClosureArg::Param(k)))
+    ensure rule:
+        fires?
+            iff (applies?
+                and callee != Callee::Other
+                and exact?
+                and args.len = n_params
+                and (forall (k: Int), when 0 <= k < args.len, args[k] = ClosureArg::Param(k)))
 }
 ```
 

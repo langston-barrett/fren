@@ -246,8 +246,11 @@ pub proc precedence(
 ): (det fires?) {
     use self::InfixOp::{And, Inter, Join, Minus, Or, Union}
 
-    ensure rule: fires? iff (not parenthesized?
-        and ((outer = Or and inner = And) or (outer in {Union, Minus} and inner in {Inter, Join})))
+    ensure rule:
+        fires?
+            iff (not parenthesized?
+                and ((outer = Or and inner = And)
+                    or (outer in {Union, Minus} and inner in {Inter, Join})))
 }
 ```
 
@@ -344,7 +347,8 @@ pub proc arbitrary_source_item_ordering(
         0 <= m.mentioner < kinds.len and 0 <= m.mentioned < kinds.len
 
     -- Some member is written after one of a later kind.
-    ensure rule: fires? iff (exists (i: Int), 0 < i < kinds.len and rank(kinds[i - 1]) > rank(kinds[i]))
+    ensure rule:
+        fires? iff (exists (i: Int), 0 < i < kinds.len and rank(kinds[i - 1]) > rank(kinds[i]))
     -- The first such member; the members before it are in order.
     ensure at_first: if fires?
         then 0 < first < kinds.len and rank(kinds[first - 1]) > rank(kinds[first])
@@ -352,9 +356,11 @@ pub proc arbitrary_source_item_ordering(
         else first = -1
     -- In order, a member comes before another of a later kind, and before a
     -- later one of its own kind.
-    ensure kept: keeps_mentions? iff (forall (m: Mention), when m in mentions and m.mentioner != m.mentioned,
-        rank(kinds[m.mentioned]) < rank(kinds[m.mentioner])
-        or (rank(kinds[m.mentioned]) = rank(kinds[m.mentioner]) and m.mentioned < m.mentioner))
+    ensure kept:
+        keeps_mentions? iff (forall (m: Mention), when m in mentions and m.mentioner != m.mentioned,
+            rank(kinds[m.mentioned]) < rank(kinds[m.mentioner])
+                or (rank(kinds[m.mentioned]) = rank(kinds[m.mentioner])
+                    and m.mentioned < m.mentioner))
 }
 ```
 

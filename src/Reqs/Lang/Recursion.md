@@ -172,9 +172,13 @@ pub struct RecMatch {
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 pub proc recursive_match(m: RecMatch): (det rejected?) {
-    ensure rule: rejected? = (m.on != MatchedOn::Other and m.enumeration? and m.recursion_under?
-        and (m.guarded? or (exists (k: Int), 0 <= k < m.arms.len
-        and (PatPart::Literal in m.arms[k] or PatPart::OrPattern in m.arms[k]))))
+    ensure rule:
+        rejected?
+            = (m.on != MatchedOn::Other
+                and m.enumeration?
+                and m.recursion_under?
+                and (m.guarded? or (exists (k: Int), 0 <= k < m.arms.len
+                    and (PatPart::Literal in m.arms[k] or PatPart::OrPattern in m.arms[k]))))
 }
 ```
 
@@ -251,14 +255,15 @@ pub proc merged_facts(
     asserted: Rel<Int, Int>,     -- each fact that the query asserts, with each path under whose guards it does
     assertions: Rel<Int, Int>,   -- each of the query's assertions of these facts, by position, with its fact
 ): (det merged?) {
-    ensure rule: merged? iff (asserted subset found
-        and (forall (f: Int) (p: Int), when (f, p) in found,
-        exists (q: Int), (f, q) in asserted and guards.image({q}) subset guards.image({p}))
-        and (forall (f: Int) (p: Int) (q: Int), when (f, p) in asserted and (f, q) in asserted and p != q,
-        not guards.image({q}) subset guards.image({p}))
-        -- Each fact once.
-        and (forall (a: Int) (b: Int) (f: Int), when (a, f) in assertions and (b, f) in assertions, a = b)
-        and assertions.range = found.domain)
+    ensure rule:
+        merged? iff (asserted subset found
+            and (forall (f: Int) (p: Int), when (f, p) in found,
+                exists (q: Int), (f, q) in asserted and guards.image({q}) subset guards.image({p}))
+            and (forall (f: Int) (p: Int) (q: Int), when (f, p) in asserted and (f, q) in asserted and p != q,
+                not guards.image({q}) subset guards.image({p}))
+            -- Each fact once.
+            and (forall (a: Int) (b: Int) (f: Int), when (a, f) in assertions and (b, f) in assertions, a = b)
+            and assertions.range = found.domain)
 }
 ```
 
@@ -461,7 +466,9 @@ pub proc recursion_formulas(
 
 pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?, facts_recursive?):
     (det report_counterexample?) {
-        ensure rule: report_counterexample? iff (not facts_recursive? and (not applies_recursive? or evaluation_confirms?))
+        ensure rule:
+            report_counterexample?
+                iff (not facts_recursive? and (not applies_recursive? or evaluation_confirms?))
     }
 ```
 

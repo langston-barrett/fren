@@ -476,8 +476,9 @@ pub proc count(outcome: Outcome, killed: Nat, survived: Nat, equivalent: Nat, un
     ensure equivalent_rule: equivalent_after = equivalent + (if outcome = Equivalent then 1 else 0)
     ensure unviable_rule: unviable_after = unviable + (if outcome = Unviable then 1 else 0)
 
-    expect one_more: killed_after + survived_after + equivalent_after + unviable_after
-        = killed + survived + equivalent + unviable + 1
+    expect one_more:
+        killed_after + survived_after + equivalent_after + unviable_after
+            = killed + survived + equivalent + unviable + 1
     expect killed_counted: when outcome = Killed, killed_after = killed + 1
     expect others_kept: when outcome != Survived, survived_after = survived
 }

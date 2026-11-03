@@ -152,7 +152,8 @@ in what follows it.
 ```fren
 pub fn bare_operand?(outer: Precedence, inner: Precedence, assoc: Assoc, right?) :=
     rank_of(inner) > rank_of(outer)
-    or (rank_of(inner) = rank_of(outer) and ((assoc = Assoc::Left and not right?) or (assoc = Assoc::Right and right?)))
+        or (rank_of(inner) = rank_of(outer)
+            and ((assoc = Assoc::Left and not right?) or (assoc = Assoc::Right and right?)))
 
 pub fn ends_open?(t: FixTree) := match t {
     FixTree::Written(_, _, open?, _) => open?,
@@ -243,7 +244,8 @@ pub fn grammar_precedence(t: FixTree): Precedence :=
 
 pub fn reads_bare?(t: FixTree, place: Place, open?) := match place {
     Place::Operand(outer, assoc, right?, followed?) =>
-        bare_operand?(outer, grammar_precedence(t), assoc, right?) and not ((followed? or not right?) and open?),
+        bare_operand?(outer, grammar_precedence(t), assoc, right?)
+            and not ((followed? or not right?) and open?),
     Place::Receiver => grammar_precedence(t) = Precedence::Atom and receivable?(t) and not open?,
     Place::Condition => rank_of(grammar_precedence(t)) > rank_of(Precedence::Open),
     Place::Delimited | Place::Branch => true,
@@ -283,7 +285,8 @@ parentheses where `bare_in?` says it cannot do without them in its place:
 
 ```fren
 pub fn bare?(t: FixTree, outer: Precedence, assoc: Assoc, right?, followed?) :=
-    bare_operand?(outer, precedence_of(t), assoc, right?) and not ((followed? or not right?) and ends_open?(t))
+    bare_operand?(outer, precedence_of(t), assoc, right?)
+        and not ((followed? or not right?) and ends_open?(t))
 
 pub fn bare_in?(t: FixTree, place: Place) := match place {
     Place::Operand(outer, assoc, right?, followed?) => bare?(t, outer, assoc, right?, followed?),
@@ -323,16 +326,20 @@ pub fn printed(t: FixTree): String := match t {
         enclosed(
             printed(a),
             bare?(a, op_precedence(o), op_assoc(o), false, true)
-        ) ++ " " ++ lexeme(o) ++ " "
-        ++ enclosed(
-            printed(b),
-            bare?(b, op_precedence(o), op_assoc(o), true, false)
-        ),
+        )
+            ++ " "
+            ++ lexeme(o)
+            ++ " "
+            ++ enclosed(
+                printed(b),
+                bare?(b, op_precedence(o), op_assoc(o), true, false)
+            ),
     FixTree::Not(a) =>
-        "not " ++ enclosed(
-            printed(a),
-            bare?(a, Precedence::Not, Assoc::Right, true, false)
-        ),
+        "not "
+            ++ enclosed(
+                printed(a),
+                bare?(a, Precedence::Not, Assoc::Right, true, false)
+            ),
     FixTree::Neg(a) => negated(
         enclosed(
             printed(a),
@@ -341,25 +348,30 @@ pub fn printed(t: FixTree): String := match t {
     ),
     FixTree::When(negated?, c, d) =>
         (if negated? then "unless " else "when ")
-        ++ enclosed(
-            printed(c),
-            bare?(c, Precedence::Open, Assoc::NonAssoc, false, true)
-        )
-        ++ ", " ++ enclosed(
-            printed(d),
-            bare?(d, Precedence::Open, Assoc::Right, true, false)
-        ),
+            ++ enclosed(
+                printed(c),
+                bare?(c, Precedence::Open, Assoc::NonAssoc, false, true)
+            )
+            ++ ", "
+            ++ enclosed(
+                printed(d),
+                bare?(d, Precedence::Open, Assoc::Right, true, false)
+            ),
     FixTree::If(c, a, b) => "if " ++ printed(c) ++ " then " ++ printed(a) ++ " else " ++ printed(b),
     FixTree::Test(e, p) =>
         enclosed(
             printed(e),
             bare?(e, Precedence::Comparison, Assoc::NonAssoc, false, true)
-        ) ++ " is " ++ p,
+        )
+            ++ " is "
+            ++ p,
     FixTree::Field(e, x) =>
         enclosed(
             printed(e),
             bare?(e, Precedence::Atom, Assoc::Left, false, true) and receivable?(e)
-        ) ++ "." ++ x,
+        )
+            ++ "."
+            ++ x,
 }
 ```
 

@@ -30,7 +30,8 @@ proc cardinality(a?, b?, c?, d?, q: Seq<Int>): (
     --~^ warning: this is `at_most_one?` of 3 operands
     ensure r2: o2? iff (a? or b? or c?) and not (a? and b?) and not (b? and c?) and not (a? and c?)
     --~^ warning: this is `exactly_one?` of 3 operands
-    ensure r3: o3? iff d? and not (b? and a?) and not (c? and a?) and not (c? and b?) and (c? or b? or a?)
+    ensure r3:
+        o3? iff d? and not (b? and a?) and not (c? and a?) and not (c? and b?) and (c? or b? or a?)
     --~^ warning: this is `exactly_one?` of 3 operands
     -- A pair left out, two operands, or a conjunct in parentheses: none
     -- fires. A pair written twice is the same conjunction.
@@ -39,7 +40,8 @@ proc cardinality(a?, b?, c?, d?, q: Seq<Int>): (
     ensure r6: o6? iff not (a? and b?) and not (b? and a?) and not (a? and c?) and not (b? and c?)
     --~^ warning: this is `at_most_one?` of 3 operands
     -- An operand written twice in the disjunction is still the disjunction.
-    ensure r6b: o6b? iff (a? or b? or c? or a?) and not (a? and b?) and not (b? and c?) and not (a? and c?)
+    ensure r6b:
+        o6b? iff (a? or b? or c? or a?) and not (a? and b?) and not (b? and c?) and not (a? and c?)
     --~^ warning: this is `exactly_one?` of 3 operands
     ensure r7: o7? iff not (a? and b?) and (not (a? and c?)) and not (b? and c?)
     -- Nor where an operand indexes, whose guards would change.
@@ -89,12 +91,14 @@ proc memberships(s: Severity, m: Mode): (p1?, p2?, p3?, p4?, p4b?, p5?, p6?, p7?
     --~^ warning: this is `s >= Severity::Warning`
     -- Not the first or last variants, all of them, or not ordered.
     ensure r5: p5? iff s in {Severity::Silent, Severity::Warning}
-    ensure r6: p6? iff s in {
-        Severity::Silent,
-        Severity::Info,
-        Severity::Warning,
-        Severity::Error,
-    }
+    ensure r6:
+        p6?
+            iff s in {
+                Severity::Silent,
+                Severity::Info,
+                Severity::Warning,
+                Severity::Error,
+            }
     ensure r7: p7? iff m in {Mode::Off, Mode::Heat}
     ensure r8: p8? iff s = Severity::Silent or s = Severity::Info or s = Severity::Error
 }

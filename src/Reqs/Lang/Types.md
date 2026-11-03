@@ -144,7 +144,8 @@ pub proc widening(
 ): (det accepted?) {
     use self::ValueType::{IntTy, NatTy}
 
-    ensure rule: accepted? iff (found = expected or (kind(found) = NatTy and kind(expected) = IntTy))
+    ensure rule:
+        accepted? iff (found = expected or (kind(found) = NatTy and kind(expected) = IntTy))
 
     expect same_type: when found = expected, accepted?
     expect never_narrows: when kind(found) = IntTy and kind(expected) = NatTy, not accepted?
@@ -292,12 +293,16 @@ expect obligation_widening(
     use lang
     call concrete := obligation(place, type_kind, restricted?, element)
     expect rule: true
-    expect obligation: ((concrete.duty) != lang::Duty::Nothing) iff ((true) and ((place) != lang::ValuePlace::Binding
-        and ((restricted?) or ((type_kind) in {
-            lang::ValueType::SetTy,
-            lang::ValueType::RelTy,
-            lang::ValueType::SeqTy,
-        } and (element) != lang::Duty::Nothing))))
+    expect obligation:
+        ((concrete.duty) != lang::Duty::Nothing)
+            iff ((true)
+                and ((place) != lang::ValuePlace::Binding
+                    and ((restricted?)
+                        or ((type_kind) in {
+                            lang::ValueType::SetTy,
+                            lang::ValueType::RelTy,
+                            lang::ValueType::SeqTy,
+                        } and (element) != lang::Duty::Nothing))))
 }
 ```
 
@@ -402,7 +407,8 @@ pub proc pattern_count(alts: Seq<Alternative>): (
 ) {
     assume few: alts.len <= 2
 
-    ensure bounds: finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
+    ensure bounds:
+        finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
     ensure none: when alts = [], count = 0
     ensure one: when finite? and alts.len = 1, count = width(alts[0])
     ensure apart: when finite? and alts.len = 2 and width(alts[0]) > 0 and width(alts[1]) > 0
@@ -411,7 +417,10 @@ pub proc pattern_count(alts: Seq<Alternative>): (
     -- Alternatives that overlap or touch count as their union, once.
     ensure joined: when finite? and alts.len = 2 and width(alts[0]) > 0 and width(alts[1]) > 0
         and not (bound_value(alts[0].hi) + 1 < bound_value(alts[1].lo) or bound_value(alts[1].hi) + 1 < bound_value(alts[0].lo)),
-        count = bound_value(alts[0].hi).max(bound_value(alts[1].hi)) - bound_value(alts[0].lo).min(bound_value(alts[1].lo)) + 1
+        count
+            = bound_value(alts[0].hi).max(bound_value(alts[1].hi))
+                - bound_value(alts[0].lo).min(bound_value(alts[1].lo))
+                + 1
     ensure empty_first: when finite? and alts.len = 2 and width(alts[0]) = 0, count = width(alts[1])
     ensure empty_second: when finite? and alts.len = 2 and width(alts[1]) = 0, count = width(alts[0])
 }
@@ -443,7 +452,10 @@ expect bounds_finite(los: Seq<lang::Bound>, his: Seq<lang::Bound>) {
     use lang
     assume spec_not_both: not (false)
     call concrete := pattern_bounds(los, his)
-    expect rule: (concrete.finite?) iff ((false) or ((true) and (not (lang::Bound::Open in (los) or lang::Bound::Open in (his)))))
+    expect rule:
+        (concrete.finite?)
+            iff ((false)
+                or ((true) and (not (lang::Bound::Open in (los) or lang::Bound::Open in (his)))))
 }
 ```
 
@@ -760,7 +772,7 @@ pub proc type_facts(
     -- A type of a former that has no constituents has the former's facts.
     expect leaves: when not former(declared_kind(ty)).composite? and constituents.image({ty}) = {},
         (finite? iff own_finite?(declared_kind(ty), pattern_bounded?(ty)))
-        and (unbounded? iff former(declared_kind(ty)).growing?)
+            and (unbounded? iff former(declared_kind(ty)).growing?)
 }
 ```
 

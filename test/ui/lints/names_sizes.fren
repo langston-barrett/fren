@@ -31,7 +31,14 @@ proc relations(
     boxed: Rel<Int, Boxed>,
     flipped: Rel<Mark, Int>,
 ): (p?) {
-    ensure q: p? iff (r = MARKED and r in nested and two = {} and boxed = {} and flipped = {} and marked?(r))
+    ensure q:
+        p?
+            iff (r = MARKED
+                and r in nested
+                and two = {}
+                and boxed = {}
+                and flipped = {}
+                and marked?(r))
 }
 
 proc singles(a: Int, b: Int, c?, e: Two, f: Int): (total: Int) {  --~ warning: procedure `singles` declares 5 single-character names
@@ -84,7 +91,8 @@ expect all_small(  --~ warning: global expectation `all_small` declares 5 single
     call c := three(c_a, c_b)
     call d := three(d_a, d_b)
     call e := three(e_a, e_b)
-    expect all_small: a.s + b.s + c.s + d.s + e.s = a.a + a.b + b.a + b.b + c.a + c.b + d.a + d.b + e.a + e.b
+    expect all_small:
+        a.s + b.s + c.s + d.s + e.s = a.a + a.b + b.a + b.b + c.a + c.b + d.a + d.b + e.a + e.b
 }
 
 proc similar(
@@ -126,8 +134,28 @@ proc series(
     lit: Int,
     lint: Int,
 ): (ready?) {
-    ensure r: ready? iff ab + ac + x1 + x2 + level1 + level2 + a_len + b_len + len_a + len_b + ready
-        + lhs + rhs + set + get + args + arms + lit + lint > 0
+    ensure r:
+        ready?
+            iff ab
+                    + ac
+                    + x1
+                    + x2
+                    + level1
+                    + level2
+                    + a_len
+                    + b_len
+                    + len_a
+                    + len_b
+                    + ready
+                    + lhs
+                    + rhs
+                    + set
+                    + get
+                    + args
+                    + arms
+                    + lit
+                    + lint
+                > 0
 }
 
 -- 101 lines: blank lines and comments do not count.
@@ -342,8 +370,7 @@ proc long_enough(x: Int, text: String): (
     ensure r43: y43 = x + 44
     ensure r44: y44 = x + 45
     -- A line that continues a clause counts.
-    ensure r45: y45 = x
-        + 46
+    ensure r45: y45 = x + 46
     /- a block comment
        of two lines -/
 }
@@ -351,204 +378,204 @@ proc long_enough(x: Int, text: String): (
 -- 101 lines, to the `)` around the body.
 pub fn long_sum(x: Int): Int := (  --~ warning: function `long_sum` has 101 lines
     x
-    + 1
-    + 2
-    + 3
-    + 4
-    + 5
-    + 6
-    + 7
-    + 8
-    + 9
-    + 10
-    + 11
-    + 12
-    + 13
-    + 14
-    + 15
-    + 16
-    + 17
-    + 18
-    + 19
-    + 20
-    + 21
-    + 22
-    + 23
-    + 24
-    + 25
-    + 26
-    + 27
-    + 28
-    + 29
-    + 30
-    + 31
-    + 32
-    + 33
-    + 34
-    + 35
-    + 36
-    + 37
-    + 38
-    + 39
-    + 40
-    + 41
-    + 42
-    + 43
-    + 44
-    + 45
-    + 46
-    + 47
-    + 48
-    + 49
-    + 50
-    + 51
-    + 52
-    + 53
-    + 54
-    + 55
-    + 56
-    + 57
-    + 58
-    + 59
-    + 60
-    + 61
-    + 62
-    + 63
-    + 64
-    + 65
-    + 66
-    + 67
-    + 68
-    + 69
-    + 70
-    + 71
-    + 72
-    + 73
-    + 74
-    + 75
-    + 76
-    + 77
-    + 78
-    + 79
-    + 80
-    + 81
-    + 82
-    + 83
-    + 84
-    + 85
-    + 86
-    + 87
-    + 88
-    + 89
-    + 90
-    + 91
-    + 92
-    + 93
-    + 94
-    + 95
-    + 96
-    + 97
-    + 98
+        + 1
+        + 2
+        + 3
+        + 4
+        + 5
+        + 6
+        + 7
+        + 8
+        + 9
+        + 10
+        + 11
+        + 12
+        + 13
+        + 14
+        + 15
+        + 16
+        + 17
+        + 18
+        + 19
+        + 20
+        + 21
+        + 22
+        + 23
+        + 24
+        + 25
+        + 26
+        + 27
+        + 28
+        + 29
+        + 30
+        + 31
+        + 32
+        + 33
+        + 34
+        + 35
+        + 36
+        + 37
+        + 38
+        + 39
+        + 40
+        + 41
+        + 42
+        + 43
+        + 44
+        + 45
+        + 46
+        + 47
+        + 48
+        + 49
+        + 50
+        + 51
+        + 52
+        + 53
+        + 54
+        + 55
+        + 56
+        + 57
+        + 58
+        + 59
+        + 60
+        + 61
+        + 62
+        + 63
+        + 64
+        + 65
+        + 66
+        + 67
+        + 68
+        + 69
+        + 70
+        + 71
+        + 72
+        + 73
+        + 74
+        + 75
+        + 76
+        + 77
+        + 78
+        + 79
+        + 80
+        + 81
+        + 82
+        + 83
+        + 84
+        + 85
+        + 86
+        + 87
+        + 88
+        + 89
+        + 90
+        + 91
+        + 92
+        + 93
+        + 94
+        + 95
+        + 96
+        + 97
+        + 98
     )
 
 -- 100 lines, to the `)` around the body.
 pub fn long_enough_sum(x: Int): Int := (
     x
-    + 1
-    + 2
-    + 3
-    + 4
-    + 5
-    + 6
-    + 7
-    + 8
-    + 9
-    + 10
-    + 11
-    + 12
-    + 13
-    + 14
-    + 15
-    + 16
-    + 17
-    + 18
-    + 19
-    + 20
-    + 21
-    + 22
-    + 23
-    + 24
-    + 25
-    + 26
-    + 27
-    + 28
-    + 29
-    + 30
-    + 31
-    + 32
-    + 33
-    + 34
-    + 35
-    + 36
-    + 37
-    + 38
-    + 39
-    + 40
-    + 41
-    + 42
-    + 43
-    + 44
-    + 45
-    + 46
-    + 47
-    + 48
-    + 49
-    + 50
-    + 51
-    + 52
-    + 53
-    + 54
-    + 55
-    + 56
-    + 57
-    + 58
-    + 59
-    + 60
-    + 61
-    + 62
-    + 63
-    + 64
-    + 65
-    + 66
-    + 67
-    + 68
-    + 69
-    + 70
-    + 71
-    + 72
-    + 73
-    + 74
-    + 75
-    + 76
-    + 77
-    + 78
-    + 79
-    + 80
-    + 81
-    + 82
-    + 83
-    + 84
-    + 85
-    + 86
-    + 87
-    + 88
-    + 89
-    + 90
-    + 91
-    + 92
-    + 93
-    + 94
-    + 95
-    + 96
-    + 97
+        + 1
+        + 2
+        + 3
+        + 4
+        + 5
+        + 6
+        + 7
+        + 8
+        + 9
+        + 10
+        + 11
+        + 12
+        + 13
+        + 14
+        + 15
+        + 16
+        + 17
+        + 18
+        + 19
+        + 20
+        + 21
+        + 22
+        + 23
+        + 24
+        + 25
+        + 26
+        + 27
+        + 28
+        + 29
+        + 30
+        + 31
+        + 32
+        + 33
+        + 34
+        + 35
+        + 36
+        + 37
+        + 38
+        + 39
+        + 40
+        + 41
+        + 42
+        + 43
+        + 44
+        + 45
+        + 46
+        + 47
+        + 48
+        + 49
+        + 50
+        + 51
+        + 52
+        + 53
+        + 54
+        + 55
+        + 56
+        + 57
+        + 58
+        + 59
+        + 60
+        + 61
+        + 62
+        + 63
+        + 64
+        + 65
+        + 66
+        + 67
+        + 68
+        + 69
+        + 70
+        + 71
+        + 72
+        + 73
+        + 74
+        + 75
+        + 76
+        + 77
+        + 78
+        + 79
+        + 80
+        + 81
+        + 82
+        + 83
+        + 84
+        + 85
+        + 86
+        + 87
+        + 88
+        + 89
+        + 90
+        + 91
+        + 92
+        + 93
+        + 94
+        + 95
+        + 96
+        + 97
     )

@@ -281,6 +281,8 @@ def toGap : FrenCli.Fmt.Role → fmt.Gap
   | .joined => .UpdatedRecord
   | .blockBrace => .BlockBrace
   | .rightSide => .RightSide
+  | .operator => .Operator
+  | .afterOperator => .AfterOperator
 
 impl line_break: fmt::line_break for (r : FrenCli.Fmt.Role) (v b l c : Bool) (n : Nat) {
   gap := toGap r,
@@ -299,8 +301,9 @@ def toForm : FrenCli.RightForm → fmt.Form
   | .conditional => .Conditional
   | .bracketed => .Bracketed
   | .other => .Other
+  | .chain => .Chain
 
-impl right_side: fmt::right_side for (f : FrenCli.RightForm) (h w l a b i : Bool) (e n x y : Nat) {
+impl right_side: fmt::right_side for (f : FrenCli.RightForm) (h w l a b i k : Bool) (e n x y : Nat) {
   form := toForm f,
   chained? := h,
   written? := w,
@@ -308,15 +311,17 @@ impl right_side: fmt::right_side for (f : FrenCli.RightForm) (h w l a b i : Bool
   after_close? := a,
   broken? := b,
   inner? := i,
+  breaks? := k,
   line_end := e,
   next_end := n,
   first_end := x,
   head_end := y,
-  next_line? := FrenCli.Fmt.rightSide f h w l a b i e n x y,
+  next_line? := FrenCli.Fmt.rightSide f h w l a b i k e n x y,
 } by
-  intro f h w l a b i e n x y _
-  cases f <;> cases h <;> cases w <;> cases l <;> cases a <;> cases b <;> cases i <;>
-    simp [fren_spec, FrenCli.Fmt.rightSide, FrenCli.Fmt.overflows, FrenCli.Fmt.maxWidth, toForm] <;> omega
+  intro f h w l a b i k e n x y _
+  cases f <;> cases h <;> cases w <;> cases l <;> cases a <;> cases b <;> cases i <;> cases k <;>
+    simp [fren_spec, FrenCli.Fmt.rightSide, FrenCli.Fmt.overflows, FrenCli.Fmt.maxWidth,
+      FrenCli.Fmt.movesAfterSignature, FrenCli.Fmt.isChain, toForm] <;> omega
 
 impl break_before: fmt::break_before for (n : Nat) (s : Bool) {
   comments := n,
@@ -365,6 +370,45 @@ impl own_line: fmt::own_line for (k : ListKind) (fs : List Follower) (head close
   generalize FrenCli.Fmt.onlyClosing fs = a
   generalize FrenCli.Fmt.headsNear k head close hs = b
   cases k <;> cases a <;> cases b <;> simp [toFmtListKind]
+
+theorem closes_only_toFollowers (fs : List Follower) :
+    fmt.«closes_only?» (toFollowers fs) = FrenCli.Fmt.closesOnly fs := by
+  induction fs with
+  | nil => rfl
+  | cons f fs ih => cases f <;> simp [toFollowers, toFollower, fmt.«closes_only?», FrenCli.Fmt.closesOnly, ih]
+
+impl chain_kept: fmt::chain_kept for (fs : List Follower) (n : Nat) (k : Bool) {
+  followers := toFollowers fs,
+  before := n,
+  holder_kept? := k,
+  kept? := FrenCli.Fmt.chainKept fs n k,
+} by
+  intro fs n k _
+  simp only [fren_spec, closes_only_toFollowers, FrenCli.Fmt.chainKept]
+  generalize FrenCli.Fmt.closesOnly fs = a
+  cases a <;> cases k <;> simp <;> omega
+
+def toLastOperand : FrenCli.ChainOperand → fmt.LastOperand
+  | .brace => .Brace
+  | .bracket => .Bracket
+  | .other => .Other
+
+-- Over `Nat`, so `decide` does not apply: proofs by cases.
+impl chain_layout: fmt::chain_layout for (n : Nat) (f fb lb ll : Bool) (o : FrenCli.ChainOperand) (b h e : Nat) {
+  operators := n,
+  flat? := f,
+  forced_before? := fb,
+  list_before? := lb,
+  list_last? := ll,
+  last := toLastOperand o,
+  before := b,
+  head_end := h,
+  line_end := e,
+  broken? := FrenCli.Fmt.chainBroken n f fb lb ll o b h e,
+} by
+  intro n f fb lb ll o b h e _
+  cases f <;> cases fb <;> cases lb <;> cases ll <;> cases o <;>
+    simp [fren_spec, FrenCli.Fmt.chainBroken, FrenCli.Fmt.hugs, FrenCli.Fmt.maxWidth, toLastOperand] <;> omega
 
 theorem count_toElementList (es : List (Nat × Bool × Bool)) : fmt.count (toElementList es) = es.length := by
   induction es with

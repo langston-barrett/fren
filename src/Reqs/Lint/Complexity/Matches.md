@@ -58,7 +58,9 @@ pub fn binds_none?<V>(p: lang::Pattern<V>) :=
 
 pub fn trivial_match_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::Match(_, p, g, _, rest) =>
-        g = lang::Expr::Literal(lang::Value::True) and rest = lang::Expr::NoMatch and binds_none?(p),
+        g = lang::Expr::Literal(lang::Value::True)
+            and rest = lang::Expr::NoMatch
+            and binds_none?(p),
     _ => false,
 }
 
@@ -149,10 +151,11 @@ expect trivial_match_refires(
             )
         )
     )
-    expect around: not trivial_match_fires?(Match(s, Wildcard, Literal(True), b, inner))
-        and trivial_match_fires?(
-            Match(s, Wildcard, Literal(True), b, trivial_match_fix(inner))
-        )
+    expect around:
+        not trivial_match_fires?(Match(s, Wildcard, Literal(True), b, inner))
+            and trivial_match_fires?(
+                Match(s, Wildcard, Literal(True), b, trivial_match_fix(inner))
+            )
 }
 ```
 
@@ -282,13 +285,14 @@ arms:
 -- its guard.
 pub struct ArmGuard { matches?, guard: Guard }
 
-pub fn taken_at?(arms: Seq<ArmGuard>, s: Slot) := pos(s) < arms.len
-    and arm_at(arms[pos(s)].matches?, arms[pos(s)].guard) = lang::ArmAt::Taken
+pub fn taken_at?(arms: Seq<ArmGuard>, s: Slot) :=
+    pos(s) < arms.len and arm_at(arms[pos(s)].matches?, arms[pos(s)].guard) = lang::ArmAt::Taken
 
 -- Whether arm `s` is the arm taken, of the arms but `k` where `skip?`.
 pub fn first_taken?(arms: Seq<ArmGuard>, s: Slot, k: Slot, skip?) :=
-    taken_at?(arms, s) and not (skip? and s = k)
-    and (forall (r: Slot), when pos(r) < pos(s) and not (skip? and r = k), not taken_at?(arms, r))
+    taken_at?(arms, s)
+        and not (skip? and s = k)
+        and (forall (r: Slot), when pos(r) < pos(s) and not (skip? and r = k), not taken_at?(arms, r))
 
 proc trivial_guard_dropped(arms: Seq<ArmGuard>, k: Slot) {
     assume size: arms.len <= 4
@@ -451,8 +455,9 @@ expect trivial_guard_refires(
             Match(s, p, Literal(False), b, Match(s, q, Literal(False), c, r))
         )
     )
-    expect around: not trivial_guard_fires?(Match(s, p, inner, b, r))
-        and trivial_guard_fires?(Match(s, p, trivial_guard_fix(inner), b, r))
+    expect around:
+        not trivial_guard_fires?(Match(s, p, inner, b, r))
+            and trivial_guard_fires?(Match(s, p, trivial_guard_fix(inner), b, r))
 }
 ```
 
@@ -555,25 +560,27 @@ pub proc redundant_guards(
         _ => true,
     }
 
-    ensure rule: fires? iff (binds_name?(pattern, name) and value is GuardValue::Written(_) and accepted?)
+    ensure rule:
+        fires? iff (binds_name?(pattern, name) and value is GuardValue::Written(_) and accepted?)
     ensure fix: fixed = (if fires? then pat_with(pattern, name, guard_value(value)) else pattern)
 
     -- The new pattern matches where the pattern and the guard did.
     expect same_values: when fires?,
-        pat_matches?(fixed, x) iff (pat_matches?(pattern, x) and bound_value(pattern, name, x) = guard_value(value))
+        pat_matches?(fixed, x)
+            iff (pat_matches?(pattern, x) and bound_value(pattern, name, x) = guard_value(value))
     -- There, the body with the value in place of the binder means what it did.
     expect same_body: when fires? and pat_matches?(fixed, x),
         body_value(body, name, bound_value(pattern, name, x), -1, 0, -1, 0, o)
-        = body_value(
-            body_with(body, name, guard_value(value)),
-            -1,
-            0,
-            -1,
-            0,
-            -1,
-            0,
-            o
-        )
+            = body_value(
+                body_with(body, name, guard_value(value)),
+                -1,
+                0,
+                -1,
+                0,
+                -1,
+                0,
+                o
+            )
     expect constant_kept: when value is GuardValue::Other(_), not fires?
 }
 ```

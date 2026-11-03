@@ -604,7 +604,8 @@ pub proc solver_credit(
 ): (det credit_after: Nat, det covered_after: Nat) {
     assume times: first <= start <= stop
 
-    ensure new_time: credit_after = credit + (if stop > start.max(covered) then stop - start.max(covered) else 0)
+    ensure new_time:
+        credit_after = credit + (if stop > start.max(covered) then stop - start.max(covered) else 0)
     ensure covers: covered_after = covered.max(stop)
 
     -- What a query leaves out lies within it...
@@ -705,9 +706,9 @@ pub fn gives?(ms: Seq<Message>, es: Seq<Expectation>, front_end: String, a: Seq<
 set_option fren.lint.undecidable "allow" in
 pub fn assigns?(ms: Seq<Message>, es: Seq<Expectation>, front_end: String, a: Seq<Int>) :=
     a.len = es.len
-    and (forall (i: Int), when 0 <= i < es.len, gives?(ms, es, front_end, a, i))
-    and (forall (i: Int) (j: Int), when 0 <= i < j < es.len and a[i] != -1, a[i] != a[j])
-    and (forall (m: Int), when 0 <= m < ms.len, exists (i: Int), 0 <= i < es.len and a[i] = m)
+        and (forall (i: Int), when 0 <= i < es.len, gives?(ms, es, front_end, a, i))
+        and (forall (i: Int) (j: Int), when 0 <= i < j < es.len and a[i] != -1, a[i] != a[j])
+        and (forall (m: Int), when 0 <= m < ms.len, exists (i: Int), 0 <= i < es.len and a[i] = m)
 
 -- The messages meet the expectations.
 set_option fren.lint.undecidable "allow" in

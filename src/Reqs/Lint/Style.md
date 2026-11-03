@@ -206,17 +206,21 @@ expect collapsible_when_elaborated(
     call same := collapsible_when(unless?, if unless? then Head::Unless else Head::When)
     call mixed := collapsible_when(unless?, if unless? then Head::When else Head::Unless)
 
-    expect nested: same.fires? and collapsible_when_fires?(conditional_of(unless?, a, conditional_of(unless?, b, d)))
-    expect fix: collapsible_when_fix(conditional_of(unless?, a, conditional_of(unless?, b, d)))
-        = conditional_of(
-            unless?,
-            if unless? then lang::Expr::Or(a, b) else lang::Expr::And(a, b),
-            d
-        )
+    expect nested:
+        same.fires?
+            and collapsible_when_fires?(conditional_of(unless?, a, conditional_of(unless?, b, d)))
+    expect fix:
+        collapsible_when_fix(conditional_of(unless?, a, conditional_of(unless?, b, d)))
+            = conditional_of(
+                unless?,
+                if unless? then lang::Expr::Or(a, b) else lang::Expr::And(a, b),
+                d
+            )
     expect nest: unless true?(d),
-        not mixed.fires? and not collapsible_when_fires?(
-            conditional_of(unless?, a, conditional_of(not unless?, b, d))
-        )
+        not mixed.fires?
+            and not collapsible_when_fires?(
+                conditional_of(unless?, a, conditional_of(not unless?, b, d))
+            )
     expect other: when not (body in {Head::When, Head::Unless}) and not (c is lang::Expr::If(_, _, _)),
         not p.fires? and not collapsible_when_fires?(conditional_of(unless?, a, c))
 }
@@ -263,8 +267,10 @@ true`, which is `when v or v, true`, makes it fire (`around`).
 ```fren
 expect unless_not_once(e: lang::Expr<lang::Id>) {
     expect kept: not unless_not_fires?(unless_not_fix(e))
-    expect around: (true?(unless_not_fix(e)) iff true?(e))
-        and ((unless_not_fix(e) is lang::Expr::Unary(lang::UnaryOp::Not, _)) iff (e is lang::Expr::Unary(lang::UnaryOp::Not, _)))
+    expect around:
+        (true?(unless_not_fix(e)) iff true?(e))
+            and ((unless_not_fix(e) is lang::Expr::Unary(lang::UnaryOp::Not, _))
+                iff (e is lang::Expr::Unary(lang::UnaryOp::Not, _)))
 }
 
 expect collapsible_when_refires(v: lang::Expr<lang::Id>) {
@@ -352,7 +358,8 @@ proc length_zero_exact(
     call p := length_zero(op, bound, left?)
 
     expect exact: when p.fires?,
-        compares?(op, if left? then n else bound, if left? then bound else n) iff (p.empty? iff n = 0)
+        compares?(op, if left? then n else bound, if left? then bound else n)
+            iff (p.empty? iff n = 0)
 }
 ```
 
@@ -363,12 +370,18 @@ sequences, sets and relations (see [Fixing lints](../Lint.md#fixing-lints)):
 set_option fren.lint.length_zero "expect" in
 set_option fren.lint.card_zero "expect" in
 pub proc length_zero_keeps_meaning(s: String, q: Seq<Int>, t: Set<Int>, r: Rel<Bool, Bool>) {
-    expect string_length_zero: ((s.len = 0) iff s = "") and ((s.len <= 0) iff s = "") and ((s.len > 0) iff s != "")
-    expect sequence_length_zero: ((q.len = 0) iff q = []) and ((q.len <= 0) iff q = []) and ((q.len > 0) iff q != [])
-    expect length_one: ((s.len < 1) iff s = "") and ((s.len >= 1) iff s != "") and ((s.len != 0) iff s != "")
-    expect length_right: ((0 = q.len) iff q = []) and ((0 < q.len) iff q != []) and ((1 > q.len) iff q = [])
-    expect card_zero: ((t.card = 0) iff t = {}) and ((t.card <= 0) iff t = {}) and ((t.card > 0) iff t != {})
-    expect relation_card_zero: ((r.card = 0) iff r = {}) and ((r.card <= 0) iff r = {}) and ((r.card > 0) iff r != {})
+    expect string_length_zero:
+        ((s.len = 0) iff s = "") and ((s.len <= 0) iff s = "") and ((s.len > 0) iff s != "")
+    expect sequence_length_zero:
+        ((q.len = 0) iff q = []) and ((q.len <= 0) iff q = []) and ((q.len > 0) iff q != [])
+    expect length_one:
+        ((s.len < 1) iff s = "") and ((s.len >= 1) iff s != "") and ((s.len != 0) iff s != "")
+    expect length_right:
+        ((0 = q.len) iff q = []) and ((0 < q.len) iff q != []) and ((1 > q.len) iff q = [])
+    expect card_zero:
+        ((t.card = 0) iff t = {}) and ((t.card <= 0) iff t = {}) and ((t.card > 0) iff t != {})
+    expect relation_card_zero:
+        ((r.card = 0) iff r = {}) and ((r.card <= 0) iff r = {}) and ((r.card > 0) iff r != {})
 }
 ```
 
@@ -433,13 +446,17 @@ pub enum PatternFix { Equality, StartsWith, EndsWith, Contains }
 pub proc trivial_pattern(
     pattern: String,         -- the value of the literal
 ): (det fires?, det fix: PatternFix) {
-    ensure rule: fires? iff pattern.matches?(
-        r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?"
-    )
-    ensure which: fix = if pattern.starts_with?(".*") then (if pattern.ends_with?(".*") then PatternFix::Contains
-        else PatternFix::EndsWith)
-        else if pattern.ends_with?(".*") then PatternFix::StartsWith
-        else PatternFix::Equality
+    ensure rule:
+        fires?
+            iff pattern.matches?(
+                r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?"
+            )
+    ensure which:
+        fix
+            = if pattern.starts_with?(".*") then (if pattern.ends_with?(".*") then PatternFix::Contains
+                else PatternFix::EndsWith)
+                else if pattern.ends_with?(".*") then PatternFix::StartsWith
+                else PatternFix::Equality
 
     expect not_everything: when pattern = ".*", not fires?
     expect classes_kept: when pattern = "[a-z]", not fires?
@@ -582,9 +599,17 @@ pub proc match_like_membership(
     det negated?,         -- the fix is negated, of the `false` alternatives
     det pattern_test?,         -- the fix is a pattern test, rather than an equation
 ) {
-    ensure negated: negated? iff (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
-    ensure rule: fires? iff (bool_bodies? and not binds? and (disjoint? or (if negated? then false_first? else true_first?)))
-    ensure test: pattern_test? iff not (if negated? then equatable_false? and n_false = 1 else equatable_true? and n_true = 1)
+    ensure negated:
+        negated?
+            iff (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
+    ensure rule:
+        fires?
+            iff (bool_bodies?
+                and not binds?
+                and (disjoint? or (if negated? then false_first? else true_first?)))
+    ensure test:
+        pattern_test?
+            iff not (if negated? then equatable_false? and n_false = 1 else equatable_true? and n_true = 1)
 
     expect fewer_listed: when not wildcard? and disjoint? and negated?, n_false < n_true
     expect several_tested: when not negated? and n_true >= 2, pattern_test?
@@ -834,19 +859,19 @@ expect neg_multiply_refires(c: lang::Expr<lang::Id>, e: lang::Expr<lang::Id>) {
                 )
             )
         )
-        and neg_multiply_fires?(
-            Binary(
-                Mul,
-                c,
-                neg_multiply_fix(
-                    Binary(
-                        Mul,
-                        Literal(lang::Value::Integer(1)),
-                        Unary(Neg, Literal(lang::Value::Integer(1)))
+            and neg_multiply_fires?(
+                Binary(
+                    Mul,
+                    c,
+                    neg_multiply_fix(
+                        Binary(
+                            Mul,
+                            Literal(lang::Value::Integer(1)),
+                            Unary(Neg, Literal(lang::Value::Integer(1)))
+                        )
                     )
                 )
             )
-        )
 }
 ```
 

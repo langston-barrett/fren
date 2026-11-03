@@ -30,8 +30,12 @@ pub proc invisible_character(
 ): (det fires?) {
     -- U+202A to U+202E, U+2066 to U+2069 and U+FEFF anywhere; U+00AD,
     -- U+200B and U+2060 in a literal.
-    ensure rule: fires? iff (8234 <= code <= 8238 or 8294 <= code <= 8297
-        or code = 65279 or (not comment? and code in {173, 8203, 8288}))
+    ensure rule:
+        fires?
+            iff (8234 <= code <= 8238
+                or 8294 <= code <= 8297
+                or code = 65279
+                or (not comment? and code in {173, 8203, 8288}))
 
     expect controls_in_comments: when code = 8238, fires?
     expect ascii_never: when code < 128, not fires?
@@ -158,7 +162,8 @@ pub proc almost_complete_range(
     det whole_low: Int,          -- the range of the fix, from this code point
     det whole_high: Int,         -- to this one
 ) {
-    ensure rule: fires? iff ((low in {97, 98, 65, 66} and high = low + 24) or (low = 48 and high = 56))
+    ensure rule:
+        fires? iff ((low in {97, 98, 65, 66} and high = low + 24) or (low = 48 and high = 56))
     ensure fix_low: whole_low = (if fires? and low in {98, 66} then low - 1 else low)
     ensure fix_high: whole_high = (if fires? and high in {121, 89, 56} then high + 1 else high)
 

@@ -150,7 +150,8 @@ pub fn subst(x: Name, s: Named, t: Named): Named := subst_all(Subst::Bind(x, s, 
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 pub proc capture_avoidance() {
-    expect renamed: subst("x", Var("y"), Lam("y", Boolean, Var("x"))) = Lam("yx'", Boolean, Var("y"))
+    expect renamed:
+        subst("x", Var("y"), Lam("y", Boolean, Var("x"))) = Lam("yx'", Boolean, Var("y"))
     expect kept: subst("x", Var("z"), Lam("y", Boolean, Var("x"))) = Lam("y", Boolean, Var("z"))
 }
 
@@ -227,12 +228,17 @@ pub proc typing_rules(
     t3: Named,
 ) {
     expect t_var: typeof(ctx, Var(x)) = Some(ty) iff lookup(ctx, x) = Some(ty)
-    expect t_abs: typeof(ctx, Lam(x, ty1, t2)) = Some(ty)
-        iff typeof(Ctx::Bind(x, ty1, ctx), t2) is Some(ty2) and ty = Arrow(ty1, ty2)
-    expect t_app: typeof(ctx, App(t1, t2)) = Some(ty12)
-        iff typeof(ctx, t2) is Some(ty11) and typeof(ctx, t1) = Some(Arrow(ty11, ty12))
-    expect t_if: typeof(ctx, If(t1, t2, t3)) = Some(ty)
-        iff typeof(ctx, t1) = Some(Boolean) and typeof(ctx, t2) = Some(ty) and typeof(ctx, t3) = Some(ty)
+    expect t_abs:
+        typeof(ctx, Lam(x, ty1, t2)) = Some(ty)
+            iff typeof(Ctx::Bind(x, ty1, ctx), t2) is Some(ty2) and ty = Arrow(ty1, ty2)
+    expect t_app:
+        typeof(ctx, App(t1, t2)) = Some(ty12)
+            iff typeof(ctx, t2) is Some(ty11) and typeof(ctx, t1) = Some(Arrow(ty11, ty12))
+    expect t_if:
+        typeof(ctx, If(t1, t2, t3)) = Some(ty)
+            iff typeof(ctx, t1) = Some(Boolean)
+                and typeof(ctx, t2) = Some(ty)
+                and typeof(ctx, t3) = Some(ty)
     expect t_true: typeof(ctx, True) = Some(Boolean)
     expect t_false: typeof(ctx, False) = Some(Boolean)
 }
@@ -241,7 +247,8 @@ set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 pub proc typing_examples() {
     expect identity: typeof(Ctx::Empty, IDENTITY) = Some(Arrow(Boolean, Boolean))
-    expect higher_order: typeof(Ctx::Empty, APPLY_TO_TRUE) = Some(Arrow(Arrow(Boolean, Boolean), Boolean))
+    expect higher_order:
+        typeof(Ctx::Empty, APPLY_TO_TRUE) = Some(Arrow(Arrow(Boolean, Boolean), Boolean))
     expect applied: typeof(Ctx::Empty, APPLIED) = Some(Boolean)
     expect not_a_function: typeof(Ctx::Empty, App(True, False)) = None
     expect argument_mismatch: typeof(Ctx::Empty, App(NEGATION, IDENTITY)) = None
@@ -293,12 +300,16 @@ pub fn step(t: Named): Option<Named> := match t {
 -- is one step of `step`'s equations, which the solver proves; the examples
 -- below pin each rule.
 pub proc reduction_rules(t1: Named, t2: Named, t3: Named, u: Named, v: Named) {
-    expect e_app: step(App(t1, t2)) = Some(u)
-        iff (step(t1) is Some(u1) and u = App(u1, t2))
-        or (value?(t1) and step(t2) is Some(u2) and u = App(t1, u2))
-        or (value?(t2) and t1 is Lam(x, _, t12) and u = subst(x, t2, t12))
-    expect e_if: step(If(t1, t2, t3)) = Some(u)
-        iff (t1 = True and u = t2) or (t1 = False and u = t3) or (step(t1) is Some(u1) and u = If(u1, t2, t3))
+    expect e_app:
+        step(App(t1, t2)) = Some(u)
+            iff (step(t1) is Some(u1) and u = App(u1, t2))
+                or (value?(t1) and step(t2) is Some(u2) and u = App(t1, u2))
+                or (value?(t2) and t1 is Lam(x, _, t12) and u = subst(x, t2, t12))
+    expect e_if:
+        step(If(t1, t2, t3)) = Some(u)
+            iff (t1 = True and u = t2)
+                or (t1 = False and u = t3)
+                or (step(t1) is Some(u1) and u = If(u1, t2, t3))
     expect values_normal: when value?(v), step(v) = None
 }
 
@@ -378,7 +389,9 @@ pub proc evaluators(t: Named, u: Named, v: Named, w: Named, n: Fuel, m: Fuel) { 
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 pub proc evaluation_examples() {
-    expect negation: eval(THREE, App(NEGATION, True)) = Some(False) and normalize(THREE, App(NEGATION, True)) = Some(False)
+    expect negation:
+        eval(THREE, App(NEGATION, True)) = Some(False)
+            and normalize(THREE, App(NEGATION, True)) = Some(False)
     expect applied: reduce(THREE, APPLIED) = True
     expect stuck: reduce(THREE, App(True, False)) = App(True, False)
 }
@@ -412,7 +425,8 @@ pub proc type_safety(ctx: Ctx, t: Named, u: Named, ty: Ty, n: Fuel) {  --~ info:
     ensure progress: when typeof(Ctx::Empty, t) = Some(ty), value?(t) or step(t) is Some(_)
     ensure preservation: when typeof(ctx, t) = Some(ty) and step(t) = Some(u), typeof(ctx, u) = Some(ty)
     ensure safety: when typeof(Ctx::Empty, t) = Some(ty),
-        typeof(Ctx::Empty, reduce(n, t)) = Some(ty) and (value?(reduce(n, t)) or step(reduce(n, t)) is Some(_))
+        typeof(Ctx::Empty, reduce(n, t)) = Some(ty)
+            and (value?(reduce(n, t)) or step(reduce(n, t)) is Some(_))
     ensure big_step_preservation: when typeof(ctx, t) = Some(ty) and eval(n, t) = Some(u), typeof(ctx, u) = Some(ty)
 }
 
@@ -562,26 +576,34 @@ pub fn print(t: Named): Tokens := print_at(Level::Term, t)
 -- and around an arrow on the left of an arrow; nowhere else. Each law is
 -- one step of the printer, which the solver decides.
 pub proc parenthesization(x: Name, ty: Ty, body: Named, t1: Named, t2: Named, t3: Named) {
-    expect lam_bare: print_at(Level::Term, Lam(x, ty, body)) = append(
-        Tokens::Cons(
-            Token::Backslash,
-            Tokens::Cons(Token::Ident(x), Tokens::Cons(Token::Colon, print_ty(ty)))
-        ),
-        Tokens::Cons(Token::Dot, print(body))
-    )
-    expect lam_operand: print_at(Level::Application, Lam(x, ty, body)) = parens(print(Lam(x, ty, body)))
-        and print_at(Level::Atom, Lam(x, ty, body)) = parens(print(Lam(x, ty, body)))
+    expect lam_bare:
+        print_at(Level::Term, Lam(x, ty, body))
+            = append(
+                Tokens::Cons(
+                    Token::Backslash,
+                    Tokens::Cons(Token::Ident(x), Tokens::Cons(Token::Colon, print_ty(ty)))
+                ),
+                Tokens::Cons(Token::Dot, print(body))
+            )
+    expect lam_operand:
+        print_at(Level::Application, Lam(x, ty, body)) = parens(print(Lam(x, ty, body)))
+            and print_at(Level::Atom, Lam(x, ty, body)) = parens(print(Lam(x, ty, body)))
     expect if_operand: print_at(Level::Atom, If(t1, t2, t3)) = parens(print(If(t1, t2, t3)))
-    expect app_bare: print(App(t1, t2)) = append(print_at(Level::Application, t1), print_at(Level::Atom, t2))
+    expect app_bare:
+        print(App(t1, t2)) = append(print_at(Level::Application, t1), print_at(Level::Atom, t2))
     expect app_argument: print_at(Level::Atom, App(t1, t2)) = parens(print(App(t1, t2)))
-    expect atoms_bare: print_at(Level::Atom, Var(x)) = one(Token::Ident(x))
-        and print_at(Level::Atom, True) = one(Token::True)
-    expect arrow_right: print_ty(Arrow(Boolean, ty)) = append(print_ty(Boolean), Tokens::Cons(Token::Arrow, print_ty(ty)))
-    expect arrow_left: print_ty(Arrow(Arrow(ty, ty), Boolean))
-        = append(
-            parens(print_ty(Arrow(ty, ty))),
-            Tokens::Cons(Token::Arrow, print_ty(Boolean))
-        )
+    expect atoms_bare:
+        print_at(Level::Atom, Var(x)) = one(Token::Ident(x))
+            and print_at(Level::Atom, True) = one(Token::True)
+    expect arrow_right:
+        print_ty(Arrow(Boolean, ty))
+            = append(print_ty(Boolean), Tokens::Cons(Token::Arrow, print_ty(ty)))
+    expect arrow_left:
+        print_ty(Arrow(Arrow(ty, ty), Boolean))
+            = append(
+                parens(print_ty(Arrow(ty, ty))),
+                Tokens::Cons(Token::Arrow, print_ty(Boolean))
+            )
 }
 
 -- ## Parsing
@@ -714,12 +736,18 @@ set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 pub proc parsing_examples() {
     expect too_little_fuel: parse(plus(THREE, THREE), Mode::Term, print(APPLIED)) = Parsed::Fail
-    expect least_fuel: parse(More(plus(THREE, THREE)), Mode::Term, print(APPLIED)) = Parsed::Ok(APPLIED, Tokens::Nil)
-    expect fuel_to_spare: parse(More(fuel_for(APPLIED)), Mode::Term, print(APPLIED)) = Parsed::Ok(APPLIED, Tokens::Nil)
+    expect least_fuel:
+        parse(More(plus(THREE, THREE)), Mode::Term, print(APPLIED))
+            = Parsed::Ok(APPLIED, Tokens::Nil)
+    expect fuel_to_spare:
+        parse(More(fuel_for(APPLIED)), Mode::Term, print(APPLIED))
+            = Parsed::Ok(APPLIED, Tokens::Nil)
     expect identity: render(print(IDENTITY)) = "\\ x : Bool . x"
     expect applied: render(print(APPLIED)) = "( \\ x : Bool . x ) true"
-    expect nested: render(print(App(App(Var("f"), Var("x")), App(Var("g"), Var("y"))))) = "f x ( g y )"
-    expect arrow: render(print_ty(Arrow(Arrow(Boolean, Boolean), Boolean))) = "( Bool -> Bool ) -> Bool"
+    expect nested:
+        render(print(App(App(Var("f"), Var("x")), App(Var("g"), Var("y"))))) = "f x ( g y )"
+    expect arrow:
+        render(print_ty(Arrow(Arrow(Boolean, Boolean), Boolean))) = "( Bool -> Bool ) -> Bool"
 }
 
 -- # Nameless terms
@@ -811,8 +839,8 @@ pub proc nameless_round_trip(t: Named, nt: Nameless) {  --~ info: the vacuity an
 --
 -- Two named terms are alpha-equivalent when their nameless forms are
 -- equal.
-pub fn alpha_eq?(names: Names, a: Named, b: Named) := to_nameless(names, a) is Some(_)
-    and to_nameless(names, a) = to_nameless(names, b)
+pub fn alpha_eq?(names: Names, a: Named, b: Named) :=
+    to_nameless(names, a) is Some(_) and to_nameless(names, a) = to_nameless(names, b)
 
 -- Substitution on nameless terms: `shift(d, c, t)` adds `d` to the indices
 -- from `c` up, and `nsubst(k, s, t)` is `[k := s] t`.
@@ -841,7 +869,8 @@ pub fn nsubst(k: Int, s: Nameless, t: Nameless): Nameless := match t {
 pub proc alpha_equivalence(names: Names, a: Named, b: Named, c: Named) {
     expect reflexive: alpha_eq?(names, a, a) iff to_nameless(names, a) is Some(_)
     expect symmetric: alpha_eq?(names, a, b) iff alpha_eq?(names, b, a)
-    expect transitive: not (alpha_eq?(names, a, b) and alpha_eq?(names, b, c)) or alpha_eq?(names, a, c)
+    expect transitive:
+        not (alpha_eq?(names, a, b) and alpha_eq?(names, b, c)) or alpha_eq?(names, a, c)
 }
 
 -- The laws of alpha-equivalence: renaming a binder to a name free nowhere
@@ -883,10 +912,14 @@ pub const LAM_ONE: Nameless := Lam(Anon::Anon, Boolean, Var(1))
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "enumerated" in
 pub proc nameless_examples() {
-    expect substituted_under_binder: to_nameless(Names::Cons("z", Names::Nil), SUBSTITUTED) = Some(nsubst(0, Var(0), LAM_ONE))
-        and nsubst(0, Var(0), LAM_ONE) = LAM_ONE
-    expect shifted: shift(1, 0, Lam(Anon::Anon, Boolean, App(Var(0), Var(1)))) = Lam(Anon::Anon, Boolean, App(Var(0), Var(2)))
-    expect decremented: nsubst(0, True, Lam(Anon::Anon, Boolean, Var(2))) = Lam(Anon::Anon, Boolean, Var(1))
+    expect substituted_under_binder:
+        to_nameless(Names::Cons("z", Names::Nil), SUBSTITUTED) = Some(nsubst(0, Var(0), LAM_ONE))
+            and nsubst(0, Var(0), LAM_ONE) = LAM_ONE
+    expect shifted:
+        shift(1, 0, Lam(Anon::Anon, Boolean, App(Var(0), Var(1))))
+            = Lam(Anon::Anon, Boolean, App(Var(0), Var(2)))
+    expect decremented:
+        nsubst(0, True, Lam(Anon::Anon, Boolean, Var(2))) = Lam(Anon::Anon, Boolean, Var(1))
 }
 
 -- # Experiment: one layer of a term

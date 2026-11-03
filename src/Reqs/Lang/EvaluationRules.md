@@ -256,15 +256,20 @@ expect primitive_operator_values(
     w: Value,
 ) {
     expect product: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
-        eval(i, env, Expr::Binary(BinaryOp::Mul, a, b)) = primitive(i, "*", Value::Integer(m), Value::Integer(n))
+        eval(i, env, Expr::Binary(BinaryOp::Mul, a, b))
+            = primitive(i, "*", Value::Integer(m), Value::Integer(n))
     expect quotient: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)) and n != 0,
-        eval(i, env, Expr::Binary(BinaryOp::Div, a, b)) = primitive(i, "div", Value::Integer(m), Value::Integer(n))
+        eval(i, env, Expr::Binary(BinaryOp::Div, a, b))
+            = primitive(i, "div", Value::Integer(m), Value::Integer(n))
     expect remainder: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)) and n != 0,
-        eval(i, env, Expr::Binary(BinaryOp::Mod, a, b)) = primitive(i, "mod", Value::Integer(m), Value::Integer(n))
+        eval(i, env, Expr::Binary(BinaryOp::Mod, a, b))
+            = primitive(i, "mod", Value::Integer(m), Value::Integer(n))
     expect text_concatenation: when eval(i, env, a) = Outcome::Defined(Value::Text(s)) and eval(i, env, b) = Outcome::Defined(Value::Text(t)),
-        eval(i, env, Expr::Binary(BinaryOp::Concat, a, b)) = primitive(i, "++", Value::Text(s), Value::Text(t))
+        eval(i, env, Expr::Binary(BinaryOp::Concat, a, b))
+            = primitive(i, "++", Value::Text(s), Value::Text(t))
     expect zero_divisor: when eval(i, env, b) = Outcome::Defined(Value::Integer(0)),
-        eval(i, env, Expr::Binary(BinaryOp::Div, a, b)) = Outcome::Undefined and eval(i, env, Expr::Binary(BinaryOp::Mod, a, b)) = Outcome::Undefined
+        eval(i, env, Expr::Binary(BinaryOp::Div, a, b)) = Outcome::Undefined
+            and eval(i, env, Expr::Binary(BinaryOp::Mod, a, b)) = Outcome::Undefined
     expect list_concatenation: when eval(i, env, a) = Outcome::Defined(v) and eval(i, env, b) = Outcome::Defined(w) and list?(v) and list?(w),
         eval(i, env, Expr::Binary(BinaryOp::Concat, a, b)) = Outcome::Defined(append(v, w))
     expect membership: when eval(i, env, a) = Outcome::Defined(v) and eval(i, env, b) = Outcome::Defined(w) and list?(w),
@@ -277,10 +282,10 @@ expect count_rules(i: Interp, env: Env, c: Cardinality, args: Expr<Id>, l: Value
     -- It applies where every argument is a `Bool`.
     expect exactly: when eval(i, env, args) = Outcome::Defined(l),
         eval(i, env, Expr::Count(Cardinality::Exactly, args))
-        = (if booleans?(l) then Outcome::Defined(truth(trues(l) = 1)) else Outcome::Undefined)
+            = (if booleans?(l) then Outcome::Defined(truth(trues(l) = 1)) else Outcome::Undefined)
     expect at_most: when eval(i, env, args) = Outcome::Defined(l),
         eval(i, env, Expr::Count(Cardinality::AtMost, args))
-        = (if booleans?(l) then Outcome::Defined(truth(trues(l) <= 1)) else Outcome::Undefined)
+            = (if booleans?(l) then Outcome::Defined(truth(trues(l) <= 1)) else Outcome::Undefined)
 }
 ```
 
@@ -371,9 +376,11 @@ expect if_rules(
     f2: Expr<Id>,
 ) {
     expect then_branch: when eval(i, env, c) = Outcome::Defined(Value::True),
-        eval(i, env, Expr::If(c, t, f)) = eval(i, env, t) and eval(i, env, Expr::If(c, t, f)) = eval(i, env, Expr::If(c, t, f2))
+        eval(i, env, Expr::If(c, t, f)) = eval(i, env, t)
+            and eval(i, env, Expr::If(c, t, f)) = eval(i, env, Expr::If(c, t, f2))
     expect else_branch: when eval(i, env, c) = Outcome::Defined(Value::False),
-        eval(i, env, Expr::If(c, t, f)) = eval(i, env, f) and eval(i, env, Expr::If(c, t, f)) = eval(i, env, Expr::If(c, t2, f))
+        eval(i, env, Expr::If(c, t, f)) = eval(i, env, f)
+            and eval(i, env, Expr::If(c, t, f)) = eval(i, env, Expr::If(c, t2, f))
     expect condition: when eval(i, env, c) = Outcome::Undefined, eval(i, env, Expr::If(c, t, f)) = Outcome::Undefined
 }
 ```
@@ -436,15 +443,18 @@ expect match_rules(
     -- An arm whose pattern does not match is skipped, unevaluated.
     expect skipped: when not matches_value?(p, v),
         eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, rest)
-        and eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, Expr::Match(s, p, g2, b2, rest))
+            and eval(i, env, Expr::Match(s, p, g, b, rest))
+                = eval(i, env, Expr::Match(s, p, g2, b2, rest))
     -- An arm whose guard fails falls through, without its body.
     expect falls_through: when matches_value?(p, v) and eval(i, bind(p, v, env), g) = Outcome::Defined(Value::False),
         eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, rest)
-        and eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, Expr::Match(s, p, g, b2, rest))
+            and eval(i, env, Expr::Match(s, p, g, b, rest))
+                = eval(i, env, Expr::Match(s, p, g, b2, rest))
     -- A taken arm gives the value, and the later arms are not evaluated.
     expect taken: when matches_value?(p, v) and eval(i, bind(p, v, env), g) = Outcome::Defined(Value::True),
         eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, bind(p, v, env), b)
-        and eval(i, env, Expr::Match(s, p, g, b, rest)) = eval(i, env, Expr::Match(s, p, g, b, rest2))
+            and eval(i, env, Expr::Match(s, p, g, b, rest))
+                = eval(i, env, Expr::Match(s, p, g, b, rest2))
     expect test: eval(i, env, Expr::Is(s, p)) = Outcome::Defined(truth(matches_value?(p, v)))
     expect no_arm: eval(i, env, Expr::NoMatch) = Outcome::Undefined
 }
@@ -497,7 +507,8 @@ expect list_rules(
         eval(i, env, Expr::Cons(a, rest)) = Outcome::Defined(Value::Cons(v, w))
     expect strict_element: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Cons(a, rest)) = Outcome::Undefined
     expect constructed: when eval(i, env, a) = Outcome::Defined(Value::Cons(v, Value::Nil)),
-        eval(i, env, Expr::Construct(c, a)) = Outcome::Defined(Value::Constructed(c, Value::Cons(v, Value::Nil)))
+        eval(i, env, Expr::Construct(c, a))
+            = Outcome::Defined(Value::Constructed(c, Value::Cons(v, Value::Nil)))
     expect first_field: when eval(i, env, a) = Outcome::Defined(Value::Constructed(c, Value::Cons(v, w))),
         eval(i, env, Expr::Project(a, c, 0)) = Outcome::Defined(v)
     expect first_index: when eval(i, env, q) = Outcome::Defined(Value::Cons(v, w)) and eval(i, env, k) = Outcome::Defined(Value::Integer(0)),
@@ -533,12 +544,15 @@ ordered types, are not yet in the model (`semantics.excluded.orders`).
 expect method_rules(i: Interp, env: Env, r: Expr<Id>, args: Expr<Id>, m: Int, n: Int, s: String) {
     expect strict: when eval(i, env, r) = Outcome::Undefined, eval(i, env, Expr::Method(MethodName::Abs, r, args)) = Outcome::Undefined
     expect abs: when eval(i, env, r) = Outcome::Defined(Value::Integer(m)) and eval(i, env, args) = Outcome::Defined(Value::Nil),
-        eval(i, env, Expr::Method(MethodName::Abs, r, args)) = Outcome::Defined(Value::Integer(m.abs))
+        eval(i, env, Expr::Method(MethodName::Abs, r, args))
+            = Outcome::Defined(Value::Integer(m.abs))
     expect min: when eval(i, env, r) = Outcome::Defined(Value::Integer(m))
         and eval(i, env, args) = Outcome::Defined(Value::Cons(Value::Integer(n), Value::Nil)),
-        eval(i, env, Expr::Method(MethodName::Min, r, args)) = Outcome::Defined(Value::Integer(m.min(n)))
+        eval(i, env, Expr::Method(MethodName::Min, r, args))
+            = Outcome::Defined(Value::Integer(m.min(n)))
     expect text_len: when eval(i, env, r) = Outcome::Defined(Value::Text(s)) and eval(i, env, args) = Outcome::Defined(Value::Nil),
-        eval(i, env, Expr::Method(MethodName::Len, r, args)) = Outcome::Defined(Value::Integer(s.len))
+        eval(i, env, Expr::Method(MethodName::Len, r, args))
+            = Outcome::Defined(Value::Integer(s.len))
 }
 ```
 
@@ -597,7 +611,8 @@ expect call_rules(
 ) {
     assume arguments: eval(i, env, args) = Outcome::Defined(l)
 
-    expect substitution: eval(i, env, Expr::Apply(f, args, ps, body)) = eval(i, bind_params(ps, l), body)
+    expect substitution:
+        eval(i, env, Expr::Apply(f, args, ps, body)) = eval(i, bind_params(ps, l), body)
     expect interpreted: eval(i, env, Expr::Call(f, args)) = apply(i.functions, f, l)
     expect recursive: eval(i, env, Expr::Recur(f, args)) = apply(i.recursions, f, l)
 }
@@ -625,7 +640,8 @@ body, as [Defined functions](Items.md#defined-functions) states
 
 ```fren
 pub fn respects?(i: Interp, f: Id, ps: Params<Id>, e: Expr<Id>, l: Value) :=
-    apply(i.recursions, f, l) = Outcome::Undefined or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
+    apply(i.recursions, f, l) = Outcome::Undefined
+        or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
 
 expect recursion_unfolds(
     i: Interp,
@@ -721,8 +737,9 @@ pub fn param_names(ps: Params<Id>): Set<Mention> := match ps {
 
 pub fn free_vars(e: Expr<Id>): Set<Mention> := match e {
     Expr::Var(x) => {Mention::Var(x)},
-    Expr::Let(x, d, b) => (free_vars(b) minus {Mention::Var(x)})
-        union (if Mention::Var(x) in free_vars(b) then free_vars(d) else {}),
+    Expr::Let(x, d, b) =>
+        (free_vars(b) minus {Mention::Var(x)})
+            union (if Mention::Var(x) in free_vars(b) then free_vars(d) else {}),
     Expr::Unary(_, a) => free_vars(a),
     Expr::Binary(_, a, b) => free_vars(a) union free_vars(b),
     Expr::And(a, b) => free_vars(a) union free_vars(b),
@@ -730,8 +747,9 @@ pub fn free_vars(e: Expr<Id>): Set<Mention> := match e {
     Expr::If(c, t, f) => free_vars(c) union free_vars(t) union free_vars(f),
     Expr::Is(s, _) => free_vars(s),
     Expr::Match(s, p, g, b, rest) =>
-        free_vars(s) union ((free_vars(g) union free_vars(b)) minus binders(p))
-        union free_vars(rest),
+        free_vars(s)
+            union ((free_vars(g) union free_vars(b)) minus binders(p))
+            union free_vars(rest),
     Expr::Cons(a, rest) => free_vars(a) union free_vars(rest),
     Expr::Construct(_, args) => free_vars(args),
     Expr::Project(a, _, _) => free_vars(a),
@@ -767,12 +785,13 @@ pub fn points(g: Graph, f: Id): Graph := match g {
 -- A quantifier over a set's members is outside the decidable core; the
 -- laws that use it are tested, or decided where the set is empty.
 set_option fren.lint.undecidable "allow" in
-pub fn agree?(i: Interp, p: Env, j: Interp, q: Env, ms: Set<Mention>) := i.recursions = j.recursions
-    and i.primitives = j.primitives
-    and (forall (m: Mention), when m in ms, match m {
-        Mention::Var(x) => lookup(p, x) = lookup(q, x),
-        Mention::Fn(f) => points(i.functions, f) = points(j.functions, f),
-    })
+pub fn agree?(i: Interp, p: Env, j: Interp, q: Env, ms: Set<Mention>) :=
+    i.recursions = j.recursions
+        and i.primitives = j.primitives
+        and (forall (m: Mention), when m in ms, match m {
+            Mention::Var(x) => lookup(p, x) = lookup(q, x),
+            Mention::Fn(f) => points(i.functions, f) = points(j.functions, f),
+        })
 ```
 
 r[evaluation.coincidence]

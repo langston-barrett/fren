@@ -31,10 +31,14 @@ a line unless there is just one that fits. It puts the [right
 side](#right-sides) of a `:=` or `=>` on the operator's line if it fits
 there, or if it is a whole `match`, table, call, literal or other
 bracketed expression whose line fits up to its bracket, which then breaks,
-or a chain that the author broke by hand there, and otherwise on the next
-line, indented. Elsewhere, for now, it keeps the line breaks: it breaks no
-other long line and joins no other short ones, except to merge imports. On
-each line, it decides the indentation and the spaces between tokens;
+or an expression that the author broke by hand there, and otherwise on the
+next line, indented. It breaks a [chain](#chains) of operators that does
+not fit on its line before each of its operators, as rustfmt breaks a
+binary expression, and puts the expression of a clause, such as
+`ensure r:`, on the next line where it is a chain that breaks on the
+clause's line. Elsewhere, for now, it keeps the line breaks: it breaks
+no other long line and joins no other short ones, except to merge imports.
+On each line, it decides the indentation and the spaces between tokens;
 across lines, how many blank lines separate them. For example,
 
 ```text
@@ -90,14 +94,21 @@ condition, which principle 6 keeps.
    [Safety](#safety)). So, following from principles 3 and 4, after a
    signature that spans several lines a whole unit hugs as anywhere, and
    anything else starts the next line.
-5. **Break before operators**, with continuations one level in: not yet,
-   as `fren fmt` keeps the line breaks of expressions.
+5. **Break before operators**, with continuations one level in: a
+   [chain](#chains) that does not fit on its line breaks before each of
+   its operators, the loosest first, and each line that starts with one of
+   them is indented four spaces past the line it continues
+   (`fmt::chain_layout`). So the expression of a clause that breaks starts
+   the next line, and its operators are indented under it
+   (`fmt::right_side`'s `breaks?`).
 6. **Leave a choice to the author only where no rule decides it well**:
-   hand-broken chains of operators, until the formatter breaks chains
-   itself (`fmt::right_side`'s `chained?` and `written?`), and the column
-   of a comment aligned by hand (`fmt::comment_column`). This makes an
-   exception to principle 3: where a hand-broken chain moves to the next
-   line, its links line up with its first operand, as written, rather than
+   the line breaks of a chain that is not its line's expression, such as a
+   guard's condition before its body (`fmt::chain_kept`), the other line
+   breaks of an expression broken by hand (`fmt::right_side`'s `chained?`
+   and `written?`), and the column of a comment aligned by hand
+   (`fmt::comment_column`). This makes an exception to principle 3: where
+   an expression broken by hand outside its brackets moves to the next
+   line, its links line up with its first line, as written, rather than
    being indented past it.
 
 The layout is chosen so that a change to a spec changes as few lines as
@@ -130,8 +141,10 @@ what it keeps. A file's *content* is what formatting keeps of it:
   `fmt::apart` sets apart from the item before it, which always has one;
 - for now, its line breaks but those that a [list or block](#lists-and-blocks)
   decides, such as those between the members of a procedure and the one
-  before a block's `{`, and those before the [right side](#right-sides) of
-  a `:=` or `=>` but a chain broken by hand, a line break before a
+  before a block's `{`, those before the [right side](#right-sides) of a
+  `:=` or `=>`, or of a clause's `:`, but an expression broken by hand, and
+  those before and after the operators of a [chain](#chains) that the
+  formatter lays out, a line break before a
   [comma](#commas-and-comments) counting as one after it.
 
 `fmt::format` is what `fren fmt` writes for a file that parses. It writes
@@ -196,7 +209,8 @@ is recorded only here, as that of `fmt::safe`. The job formats every spec
 in the repository, and each laid out again at random, twice. Laying out
 again changes the line breaks of lists and blocks, the one before a
 block's `{` included, and their trailing commas, the line breaks before
-right sides, the side of a comma that a line break or a line comment is
+right sides and around the operators of the chains that the formatter lays
+out, the side of a comma that a line break or a line comment is
 on, the spaces between tokens and the indentation of lines. It reaches the
 gaps of lists and blocks with blank lines too: one whose blank lines go
 (`fmt::line_break`) gets a space, a line break or a blank line, whatever
@@ -227,13 +241,15 @@ and blank lines, so that how it was laid out never matters, and that
 `fren fmt` writes what rustfmt would write for the like Rust. These things
 are left for later:
 
-- Line breaks other than those of lists and blocks and those before right
-  sides are content: those in clauses and in expressions, as between the
-  operands of an operator, and those in the declarations of enumerations
-  and structs, in the paths of a `use` and in the files of a `tested`
-  claim. rustfmt breaks a long expression between its operands; `fren fmt`
-  keeps a list in it on one line instead (rule 3 of [Lists and
-  blocks](#lists-and-blocks)).
+- Line breaks other than those of lists and blocks, those before right
+  sides and those around the operators of chains are content: those in
+  clauses and in expressions, as after a guard's comma or before an `if`'s
+  `else`, or between the operands of a chain that is not its line's
+  expression, and those in the declarations of enumerations and structs,
+  in the paths of a `use` and in the files of a `tested` claim. rustfmt
+  breaks a long expression wherever it may; `fren fmt` breaks only chains
+  that are their line's expression, and keeps a list in another expression
+  on one line (rule 3 of [Lists and blocks](#lists-and-blocks)).
 - The column of a comment at the end of a line that is further right than
   the formatter would put it is content, so that comments aligned by hand
   stay aligned.
@@ -317,11 +333,13 @@ pub enum Gap {
     UpdatedRecord,           -- after a record update's `{`, before the record it updates
     BlockBrace,              -- before a block's `{`
     RightSide,               -- after a `:=` or `=>`, before its right side (`fmt::right_side`)
+    Operator,                -- before an operator of a chain that the formatter lays out (`fmt::chain_layout`)
+    AfterOperator,           -- after such an operator
 }
 
 -- A line must end at the gap whatever the layout.
-pub fn forced?(gap: Gap, blank: Nat, boundary?, after_line_comment?, comment_follows?) := boundary?
-    or after_line_comment? or comment_follows? or (gap = Gap::AfterComma and blank > 0)
+pub fn forced?(gap: Gap, blank: Nat, boundary?, after_line_comment?, comment_follows?) :=
+    boundary? or after_line_comment? or comment_follows? or (gap = Gap::AfterComma and blank > 0)
 
 pub proc line_break(
     gap: Gap,
@@ -331,8 +349,11 @@ pub proc line_break(
     after_line_comment?,     -- a line comment ends the line before the gap
     comment_follows?,        -- a comment that starts its line follows the gap
 ): (det break?) {
-    ensure rule: break? iff (forced?(gap, blank, boundary?, after_line_comment?, comment_follows?)
-        or (vertical? and gap is Gap::AfterOpen | Gap::AfterComma | Gap::BeforeClose | Gap::RightSide))
+    ensure rule:
+        break?
+            iff (forced?(gap, blank, boundary?, after_line_comment?, comment_follows?)
+                or (vertical?
+                    and gap is Gap::AfterOpen | Gap::AfterComma | Gap::BeforeClose | Gap::RightSide | Gap::Operator))
 
     -- `{ p with` and `) {` stay on their lines, blank lines or not.
     expect joined: when gap is Gap::UpdatedRecord | Gap::BlockBrace and not boundary?
@@ -342,6 +363,9 @@ pub proc line_break(
     -- `:= x + 1` stays on its line, blank lines or not, where it fits.
     expect right_side_joined: when gap = Gap::RightSide and not vertical? and not boundary?
         and not after_line_comment? and not comment_follows?, not break?
+    -- `a and` `b`: a line does not end after an operator, blank lines or not.
+    expect operator_joined: when gap = Gap::AfterOperator and not boundary? and not after_line_comment?
+        and not comment_follows?, not break?
 }
 ```
 
@@ -512,8 +536,8 @@ pub fn always_vertical?(list: ListKind) := list = Arms
 -- A block is on one line only with one member, only on the line that starts its item, and only
 -- if that line ends by column 100, as rustfmt puts a function on one line only if all of it fits
 -- there.
-pub fn stacked?(list: ListKind, n: Int, continued?, line_end: Int) := list = Members
-    and (n > 1 or continued? or line_end > 100)
+pub fn stacked?(list: ListKind, n: Int, continued?, line_end: Int) :=
+    list = Members and (n > 1 or continued? or line_end > 100)
 
 -- The widest a list may be on one line, as rustfmt's defaults allow, but for a record's fields.
 pub fn width_limit(list: ListKind): Int := match list {
@@ -544,9 +568,15 @@ pub proc one_line(
     continued?,              -- its line continues an item from an earlier line
     within?,                 -- a list around it is vertical only for its wide records (`fmt::wide_within`)
 ): (det vertical?) {
-    ensure rule: vertical? iff (n > 0 and (always_vertical?(list)
-        or stacked?(list, n, continued?, line_end) or broken? or width > width_limit(list)
-        or (own_line? and start <= 100 < line_end) or (wide? and (rest_end > 100 or within?))))
+    ensure rule:
+        vertical?
+            iff (n > 0
+                and (always_vertical?(list)
+                    or stacked?(list, n, continued?, line_end)
+                    or broken?
+                    or width > width_limit(list)
+                    or (own_line? and start <= 100 < line_end)
+                    or (wide? and (rest_end > 100 or within?))))
 
     expect empty: when n = 0, not vertical?
     expect arms: when n > 0 and list = Arms, vertical?
@@ -662,9 +692,12 @@ pub fn base_vertical?(
     own_line?,
     continued?
 ) :=
-    count(elements) > 0 and (always_vertical?(list)
-        or stacked?(list, count(elements), continued?, line_end) or any_broken?(elements)
-        or joined(elements) > width_limit(list) or (own_line? and start <= 100 < line_end))
+    count(elements) > 0
+        and (always_vertical?(list)
+            or stacked?(list, count(elements), continued?, line_end)
+            or any_broken?(elements)
+            or joined(elements) > width_limit(list)
+            or (own_line? and start <= 100 < line_end))
 
 pub proc list_layout(
     list: ListKind,
@@ -678,8 +711,12 @@ pub proc list_layout(
 ): (det vertical?) {
     let line_end: Int := start + joined(elements) + after
     let rest_end: Int := start + joined(elements) + rest
-    ensure rule: vertical? iff (base_vertical?(list, elements, start, line_end, own_line?, continued?)
-        or (count(elements) > 0 and holds_wide?(list, elements) and (rest_end > 100 or within?)))
+    ensure rule:
+        vertical?
+            iff (base_vertical?(list, elements, start, line_end, own_line?, continued?)
+                or (count(elements) > 0
+                    and holds_wide?(list, elements)
+                    and (rest_end > 100 or within?)))
 }
 
 -- Whether the lists inside a list are inside one that is vertical only for its wide records: one
@@ -697,8 +734,12 @@ pub proc wide_within(
 ): (det inner?) {
     let line_end: Int := start + joined(elements) + after
     let rest_end: Int := start + joined(elements) + rest
-    ensure rule: inner? iff (within? or (holds_wide?(list, elements) and rest_end > 100
-        and not base_vertical?(list, elements, start, line_end, own_line?, continued?)))
+    ensure rule:
+        inner?
+            iff (within?
+                or (holds_wide?(list, elements)
+                    and rest_end > 100
+                    and not base_vertical?(list, elements, start, line_end, own_line?, continued?)))
 }
 
 expect list_layout_one_line(
@@ -836,7 +877,7 @@ pub fn heads_near?(list: ListKind, head: Int, close: Int, holders: Holders) := m
     Holders::Nil => true,
     Holder(columns, operand, rest) =>
         (columns <= 4 or (list = Fields and whole?(operand, head, close)))
-        and heads_near?(list, head, close, rest),
+            and heads_near?(list, head, close, rest),
 }
 
 pub proc own_line(
@@ -846,8 +887,10 @@ pub proc own_line(
     close: Int,              -- where its closing bracket ends
     holders: Holders,
 ): (det own_line?) {
-    ensure rule: own_line? iff (list is Parameters | FunctionParameters | Members
-        or (only_closing?(followers) and heads_near?(list, head, close, holders)))
+    ensure rule:
+        own_line?
+            iff (list is Parameters | FunctionParameters | Members
+                or (only_closing?(followers) and heads_near?(list, head, close, holders)))
 
     expect signature: when list = Parameters, own_line?
     expect block: when list = Members, own_line?
@@ -1012,22 +1055,24 @@ writes `) -> T {`. A line that starts with another closing bracket, as
 signature's, and its right side is laid out as any other.
 
 A right side that the formatter keeps a line break in, outside its
-brackets, is a chain broken by hand: its line breaks are content
-([Safety](#safety)), so the author has already broken it where it reads
-best, and the line break before it is content too. It starts the next
-line where the source has it there, and otherwise stays on the operator's
-line, as rustfmt hangs a chain of operators, with the lines that continue
-it indented four spaces more, unless its first line, up to its first line
-break, would end past column 100 there, or it is an `if` with a line break
-before an `else`, so that each `else` lines up with its `if`. Where it
-starts the next line, each line that starts at one of those line breaks is
-indented as its first line, rather than four more, so its links line up as
-they were written, and lines that continue a link inside its brackets are
-indented four more:
+brackets, is *broken by hand*, as after the comma of a guard or a
+quantifier, before an `if`'s `then` or `else`, or around the operators of
+a chain that keeps its line breaks ([Chains](#chains)): its line breaks
+are content ([Safety](#safety)), so the author has already broken it where
+it reads best, and the line break before it is content too. It starts the
+next line where the source has it there, and otherwise stays on the
+operator's line, as rustfmt hangs an expression, with the lines that
+continue it indented four spaces more, unless its first line, up to its
+first line break, would end past column 100 there, or it is an `if` with a
+line break before an `else`, so that each `else` lines up with its `if`.
+Where it starts the next line, each line that starts at one of those line
+breaks is indented as its first line, rather than four more, so its links
+line up as they were written, and lines that continue a link inside its
+brackets are indented four more:
 
 ```text
-pub fn innermost?(bindings: Set<Binding>, b: Binding, n: Id) := b in bindings and b.name = n
-    and (forall (c: Binding), when c in bindings and c.name = n, b.depth <= c.depth)
+pub fn innermost?(bindings: Set<Binding>, b: Binding, n: Id) := forall (c: Binding),
+    when c in bindings and c.name = n, b.depth <= c.depth
 
 out target :=
     if declared != [] then declared.at(0)
@@ -1037,6 +1082,24 @@ out target :=
 ) :=
     exists (k l: ChoiceVariant), k != l and VariantForcing { variant := k } in alone
     and VariantForcing { variant := l } in rest
+```
+
+The expression of a clause, after the `:` of its name, as in `ensure r:`,
+`expect e:` or a law's `law l(x: T):`, is a right side too where it is
+wholly a chain, and its form is `Form::Chain`. It starts the next line
+where the chain breaks on the clause's line, as `fmt::chain_layout` says,
+so that the chain's operators are indented under its first operand rather
+than under the clause, and it stays on the clause's line otherwise (#546's
+decision 4). On the next line, the chain breaks again only if it still
+does not fit there:
+
+```text
+expect substituted_under_binder:
+    to_nameless(Names::Cons("z", Names::Nil), SUBSTITUTED) = Some(nsubst(0, Var(0), LAM_ONE))
+        and nsubst(0, Var(0), LAM_ONE) = LAM_ONE
+expect shifted:
+    shift(1, 0, Lam(Anon::Anon, Boolean, App(Var(0), Var(1))))
+        = Lam(Anon::Anon, Boolean, App(Var(0), Var(2)))
 ```
 
 `fmt::right_side` decides whether a right side starts the next line, from
@@ -1057,6 +1120,7 @@ pub enum Form {
     Conditional,             -- an `if`
     Bracketed,               -- a call, a parenthesized expression, a literal, a record update or a Boolean block
     Other,                   -- any other expression, such as an operation
+    Chain,                   -- a chain that is a clause's expression (`fmt::chain_layout`)
 }
 
 -- A right side stays on the operator's line, its bracket's elements or arms breaking: it is wholly a
@@ -1078,20 +1142,29 @@ pub proc right_side(
     after_close?,            -- the operator's line starts with the `)` of a signature's parameters
     broken?,                 -- some of it must span several lines
     inner?,                  -- a bracket opened on the operator's line is open at the operator
+    breaks?,                 -- for a clause's chain, it breaks on the operator's line (`fmt::chain_layout`)
     line_end: Int,           -- the column where the operator's line would end, with it on that line
     next_end: Int,           -- the column where its own line would end, with it on the next line
     first_end: Int,          -- the column where the operator's line would end, with it up to its first line break
     head_end: Int,           -- the same, with it up to its opening bracket
 ): (det next_line?) {
-    ensure rule: next_line? iff (not inner? and ((after_close? and (chained? or form is Form::Conditional | Form::Other))
-        or (if chained?
-        then written? or ladder? or first_end > 100
-        else not fits_here?(broken?, inner?, line_end)
-        and (fits_next?(broken?, next_end) or not overflows?(form, head_end)))))
+    ensure rule:
+        next_line?
+            iff (not inner?
+                and ((after_close?
+                        and (chained? or form is Form::Conditional | Form::Other | Form::Chain))
+                    or (if form = Form::Chain then breaks?
+                        else if chained? then written? or ladder? or first_end > 100
+                        else not fits_here?(broken?, inner?, line_end)
+                        and (fits_next?(broken?, next_end) or not overflows?(form, head_end)))))
 
     -- `:= x + 1` stays on the operator's line where it fits.
-    expect fits: when not chained? and not after_close? and fits_here?(broken?, inner?, line_end),
-        not next_line?
+    expect fits: when form != Form::Chain and not chained? and not after_close?
+        and fits_here?(broken?, inner?, line_end), not next_line?
+    -- `expect e:` `f(x) = g(y)`: a clause's chain starts the next line where it breaks on the clause's...
+    expect clause_breaks: when form = Form::Chain and not inner? and breaks?, next_line?
+    -- ...and stays on the clause's line where it does not, as `ensure r: x = match y {` ... `}`.
+    expect clause_stays: when form = Form::Chain and not after_close? and not breaks?, not next_line?
     -- `:= match t {` ... `}` hugs its operator, as rustfmt's `let x = match y {` does.
     expect arms: when not chained? and not after_close? and form = Form::Arms and broken?
         and head_end <= 100, not next_line?
@@ -1105,7 +1178,7 @@ pub proc right_side(
     expect whole_units: when not chained? and form = Form::Other
         and not fits_here?(broken?, inner?, line_end), next_line?
     -- A call that fits on the next line moves there, rather than breaking its arguments.
-    expect moves_whole: when not chained? and not fits_here?(broken?, inner?, line_end)
+    expect moves_whole: when form != Form::Chain and not chained? and not fits_here?(broken?, inner?, line_end)
         and fits_next?(broken?, next_end), next_line?
     -- `) :=` takes no operation, `if` or chain on its line...
     expect after_signature: when after_close? and not inner? and (chained? or form is Form::Conditional | Form::Other),
@@ -1113,11 +1186,183 @@ pub proc right_side(
     -- ...but a whole `match`, table or call hugs it as anywhere, as rustfmt writes `) -> T {`.
     expect hug_after_signature: when after_close? and not chained? and form = Form::Arms and broken?
         and head_end <= 100, not next_line?
-    -- `:= a` ... `and b`: a chain broken by hand stays where it was written, if its first line fits.
-    expect chain_kept: when chained? and not after_close? and not ladder? and first_end <= 100,
-        next_line? iff (written? and not inner?)
+    -- `:= forall (x: T),` ... `b`: a right side broken by hand stays where it was written, if its
+    -- first line fits.
+    expect hand_kept: when form != Form::Chain and chained? and not after_close? and not ladder?
+        and first_end <= 100, next_line? iff (written? and not inner?)
     -- `:=` `if c then a` `else b`: the `else` of an `if` broken by hand lines up with its `if`.
-    expect ladder_aligned: when chained? and ladder? and not inner?, next_line?
+    expect ladder_aligned: when form != Form::Chain and chained? and ladder? and not inner?, next_line?
+}
+```
+
+### Chains
+
+A *chain* is an operation of binary operators of one precedence, such as
+`a and b and c`, `x + y - z`, `f(x) = g(y)` or `0 <= i < n`, with its
+operands, none of which is an operation of that precedence. Where
+`fren fmt` lays out a chain, it decides the line breaks before and after
+its operators, as rustfmt does for a binary expression: the chain is on
+one line where it fits, and otherwise *broken*, with a line break before
+each of its operators and none after one, so each of its operands but the
+first starts a line, after its operator. A chain with a membership's `in`
+or a remainder's `mod`, which cannot start a line
+([Lexical](Lang/Lexical.md#keywords)), is not laid out. The gaps get their
+line breaks as `fmt::line_break` says for `Gap::Operator` and
+`Gap::AfterOperator`, and their blank lines go, as rustfmt drops those in
+an expression.
+
+The chains of an expression are laid out from the outside in, so the
+loosest-binding operators break first, as rustfmt breaks the outermost
+operation first, and an operand of a broken chain breaks in turn only if
+its own line is too long. A line that starts with an operator of a broken
+chain is indented four spaces more than the line that the chain starts
+on, or, where a broken chain around it starts on that line too, four more
+than that chain's operators, so the operators of an inner chain are
+indented past those of the chain around it ([Indentation](#indentation)):
+
+```text
+ensure law:
+    proved?
+        and view(mv(l, src, dst), q)
+            = (if under?(q, dst) then view(l, append(src, strip(q, dst)))
+                else if under?(q, src) then Entry::Missing else view(l, q))
+```
+
+A chain breaks where it does not fit on its line:
+
+1. a line break that formatting keeps, or a comment, is before its last
+   operator, outside a list that cannot be on one line, or, where it has
+   two operators or more, such a list is, as in `a and (match x {` ...
+   `}) and c`; or
+2. its last operand does not *hug* it, and that operand holds a list that
+   cannot be on one line, or the chain's line would end past column 100
+   with the chain on one line, up to the first line break that formatting
+   keeps in its last operand, counting what follows it up to where a line
+   may end, as rule 3 of [Lists and blocks](#lists-and-blocks) counts.
+   Where it has one operator, whose left operand holds a list that cannot
+   be on one line, its line is the one where that list closes, from the
+   closing bracket, as rustfmt keeps a right operand on the last line of a
+   left one, as in `}).card >= 0`.
+
+A last operand hugs a chain, breaking in place rather than the chain,
+where its first line would end with the brace of a record literal or
+update, a `match` or a table, and the line fits up to that brace, as
+rustfmt keeps a right operand whose first line ends with `{` on its
+operator's line; or where the chain has one operator, and its right
+operand is wholly a call, a method call or a sequence or set literal after
+at most 4 columns, each token taking its width and a space, as rustfmt
+keeps a right operand on the line of a left one at most 4 wide. A chain in
+a list on one line stays on that line, as a list in it does:
+
+```text
+ensure r: total = a + b + c + match x {
+    Boxed::Box(n) => n,
+}
+```
+
+A chain that is not its line's expression keeps its line breaks as the
+author wrote them, as principle 6 has it, since no rule decides them well
+(`fmt::chain_kept`). It is one followed on its line, up to where a line
+may end, by more than closing brackets and commas, as a guard's condition
+before its body or an `if`'s condition before `then`; one after more than 4
+columns on its line, each token taking its width and a space, as the body
+of `when c, a = b` or the `else` branch of `if c then a else b + d`; and any
+chain in one that keeps its line breaks. This is decided from the file's
+structure, whatever its layout. What follows a chain counts up to where a
+line may end: a comment, a line break that formatting keeps, or a gap whose
+line break a list, a block, a right side or a chain that does not keep its
+line breaks decides. What comes before it counts back to such a place, or
+to an operator of a chain that does not keep its line breaks, outside
+brackets that close before it, so that `ensure r:`, `:=` and `and (` leave
+a chain its line's expression. So the guard's condition here keeps its
+line breaks, and the chain after its comma, which starts its line, is laid
+out:
+
+```text
+expect min: when eval(i, env, r) = Outcome::Defined(Value::Integer(m))
+    and eval(i, env, args) = Outcome::Defined(Value::Cons(Value::Integer(n), Value::Nil)),
+    eval(i, env, Expr::Method(MethodName::Min, r, args))
+        = Outcome::Defined(Value::Integer(m.min(n)))
+```
+
+The parser gives the chains, their operators and the kind of their last
+operand, and the formatter's decisions implement `fmt::chain_kept` and
+`fmt::chain_layout`, proved in Lean:
+
+```fren
+-- Only closing brackets and commas follow it on its line.
+pub fn closes_only?(followers: Followers) := match followers {
+    Followers::Nil => true,
+    Then(token, rest) => token is Follower::Closing | Follower::Comma and closes_only?(rest),
+}
+
+pub proc chain_kept(
+    followers: Followers,    -- what follows it on its line, up to where a line may end
+    before: Int,             -- the columns before it on its line, back to where a line may end
+    holder_kept?,            -- the innermost chain that holds it keeps its line breaks
+): (det kept?) {
+    ensure rule: kept? iff (not closes_only?(followers) or before > 4 or holder_kept?)
+
+    -- `if a and b then`: a condition before more of what holds it keeps its line breaks.
+    expect condition: when followers = Then(Follower::Other, Followers::Nil), kept?
+    -- `when c, a = b`: so does a chain after more than 4 columns on its line.
+    expect after_guard: when before = 8, kept?
+    -- `ensure r: a and b`: a clause's or a right side's chain is laid out...
+    expect alone: when followers = Followers::Nil and before = 0 and not holder_kept?, not kept?
+    -- ...and so is one after an opening bracket, as in `f((a and b))`.
+    expect bracketed: when followers = Followers::Nil and before = 2 and not holder_kept?, not kept?
+}
+
+-- The last operand of a chain.
+pub enum LastOperand {
+    Brace,                   -- its first line ends with the brace of a record, a `match` or a table
+    Bracket,                 -- it is wholly a call, a method call, or a sequence or set literal
+    Other,                   -- any other expression
+}
+
+-- The last operand hugs the chain, breaking in place rather than the chain.
+pub fn hugs?(operators: Int, last: LastOperand, before: Int, head_end: Int) :=
+    (last = LastOperand::Brace and head_end <= 100)
+        or (operators = 1 and last = LastOperand::Bracket and before <= 4)
+
+pub proc chain_layout(
+    operators: Int,          -- its operators
+    flat?,                   -- it is in a list on one line
+    forced_before?,          -- a line break that formatting keeps, or a comment, is before its last operator,
+    -- outside a list that cannot be on one line
+    list_before?,            -- a list that cannot be on one line is before its last operator
+    list_last?,              -- a list that cannot be on one line is in its last operand
+    last: LastOperand,
+    before: Int,             -- the columns before its last operand, each token taking its width and a space
+    head_end: Int,           -- where its line would end, up to the brace or bracket of its last operand
+    line_end: Int,           -- where its line would end, with it on that line, as rule 2 counts
+): (det broken?) {
+    ensure rule:
+        broken?
+            iff (operators > 0
+                and not flat?
+                and (forced_before?
+                    or (list_before? and operators > 1)
+                    or (not hugs?(operators, last, before, head_end)
+                        and (list_last? or line_end > 100))))
+
+    expect fits: when not forced_before? and not list_before? and not list_last? and line_end <= 100, not broken?
+    expect long: when operators > 0 and not flat? and last = LastOperand::Other and line_end > 100, broken?
+    -- `x = match y {` ... `}`, `q = P {` ... `}`: a brace that ends the line hugs.
+    expect braced: when not forced_before? and not list_before? and last = LastOperand::Brace and head_end <= 100,
+        not broken?
+    -- `r = f(` ... `)`: a call hugs after a short left operand...
+    expect short_call: when operators = 1 and not forced_before? and last = LastOperand::Bracket and before <= 4,
+        not broken?
+    -- ...but `typeof(Ctx::Empty, e) = Some(` ... `)` breaks before `=` (#546's decision 4).
+    expect long_call: when operators = 1 and not flat? and last = LastOperand::Bracket and before > 4
+        and line_end > 100, broken?
+    -- `(table {` ... `}).card >= 0`: one operator stays after a left operand that spans lines...
+    expect spanning_left: when operators = 1 and not forced_before? and not list_last? and line_end <= 100,
+        not broken?
+    -- ...but `a and (match x {` ... `}) and c` breaks before each `and`.
+    expect spanning_middle: when operators > 1 and not flat? and list_before?, broken?
+    expect in_flat_list: when flat?, not broken?
 }
 ```
 
@@ -1224,8 +1469,11 @@ A `:=` or `=>` whose [right side](#right-sides) starts the next line
 indents as a bracket does, until its right side ends: the right side's
 first line is indented four spaces more than the operator's line, as an
 element is, and a line that continues it four more again, past the column
-where the right side starts, but for the links of a chain broken by hand,
-which line up with its first line ([Right sides](#right-sides)). So a
+where the right side starts, but for the links of an expression broken by
+hand, which line up with its first line ([Right sides](#right-sides)). A
+broken [chain](#chains) indents as a bracket does too, from its first
+token to its last, so the lines that start with its operators are indented
+four spaces more than the line it starts on. So a
 `match` that is moved, as the operation that ends with it is, has its arms
 indented eight spaces more than the operator's line, and its `}` four:
 
@@ -1288,7 +1536,8 @@ pub enum Bracket {
     Square,                  -- `[`
     Curly,                   -- `{`
     PathCurly,               -- `::{`
-    Operator,                -- a `:=` or `=>` whose right side starts the next line, until it ends
+    Operator,                -- a `:=`, `=>` or clause's `:` whose right side starts the next line, until it
+    -- ends, or a broken chain, from its first token to its last
 }
 
 use self::Bracket::{Curly, Operator, Paren, PathCurly, Square}
@@ -1465,8 +1714,11 @@ pub proc apart(
 ): (det apart?) {
     -- Above an item and the comments that go with it, if it or the item before spans
     -- several lines, and no annotation reaches past there.
-    ensure rule: apart? iff above = leading(between) and (previous_last > previous_first or last > first)
-        and not reaches_above?(annotations, above)
+    ensure rule:
+        apart?
+            iff above = leading(between)
+                and (previous_last > previous_first or last > first)
+                and not reaches_above?(annotations, above)
 
     expect packed: when previous_last = previous_first and last = first, not apart?
     expect documented: when above < leading(between), not apart?
@@ -1580,7 +1832,9 @@ pub proc blank_lines(
     before_close?,           -- the line starts with the closing bracket of one
     apart?,                  -- `fmt::apart` sets the line apart from the item before it
 ): (det kept: Int) {
-    ensure kept_rule: kept = if first? or after_open? or before_close? then 0 else if apart? or blank > 0 then 1 else 0
+    ensure kept_rule:
+        kept
+            = if first? or after_open? or before_close? then 0 else if apart? or blank > 0 then 1 else 0
 
     expect at_most_one: kept <= 1
     expect never_added: when not apart?, kept <= blank
@@ -1951,8 +2205,11 @@ pub proc in_block(
     assume in_order: first_line <= last_line
 
     -- It starts and ends its lines, which have no other token and no comment.
-    ensure alone_rule: alone? iff (above?(before, first_line) and below?(after, last_line)
-        and not any_within?(comments, first_line, last_line))
+    ensure alone_rule:
+        alone?
+            iff (above?(before, first_line)
+                and below?(after, last_line)
+                and not any_within?(comments, first_line, last_line))
     ensure block_rule: sorted? iff (alone? and not nested?)
 
     expect shared: when before = OnLine(first_line), not sorted?

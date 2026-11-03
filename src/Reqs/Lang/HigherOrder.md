@@ -111,7 +111,9 @@ set_option fren.lint.undecidable "allow" in
 pub proc function_type_parts(
     kinds: Seq<FnPart>,      -- what its parameters' types are, then its result's
 ): (det accepted?) {
-    ensure rule: accepted? iff not (FnPart::Natural in kinds or FnPart::Subset in kinds or FnPart::Function in kinds)
+    ensure rule:
+        accepted?
+            iff not (FnPart::Natural in kinds or FnPart::Subset in kinds or FnPart::Function in kinds)
 
     expect plain: when kinds = [FnPart::Plain, FnPart::Plain], accepted?
     expect no_nat: when FnPart::Natural in kinds, not accepted?
@@ -259,9 +261,10 @@ pub proc closure_obligation(
     det holds?,                      -- the obligation, as it is checked there
 ) {
     assume same: frames.len = conditions.len and frames.len <= 3
-    out evaluated? := (frames.len <= 0 or guard_holds?(frames[0], conditions[0]))
-        and (frames.len <= 1 or guard_holds?(frames[1], conditions[1]))
-        and (frames.len <= 2 or guard_holds?(frames[2], conditions[2]))
+    out evaluated? :=
+        (frames.len <= 0 or guard_holds?(frames[0], conditions[0]))
+            and (frames.len <= 1 or guard_holds?(frames[1], conditions[1]))
+            and (frames.len <= 2 or guard_holds?(frames[2], conditions[2]))
 
     ensure rule: holds? iff (not evaluated? or at_args?)
 
@@ -285,7 +288,8 @@ pub enum Comparand { Value, Closure, FunctionName }
 
 set_option fren.lint.undecidable "allow" in
 pub proc function_comparison(operands: Seq<Comparand>): (det accepted?) {
-    ensure rule: accepted? iff not (Comparand::Closure in operands or Comparand::FunctionName in operands)
+    ensure rule:
+        accepted? iff not (Comparand::Closure in operands or Comparand::FunctionName in operands)
 
     expect values: when operands = [Comparand::Value, Comparand::Value], accepted?
     expect functions: when operands = [Comparand::FunctionName, Comparand::FunctionName], not accepted?
@@ -389,8 +393,9 @@ pub proc closure_capture(
     j: Int,                  -- where `x` is last among `params`, if it is a parameter
 ): (det mention: Id) {
     -- One capture symbol for each name captured, each its own.
-    assume named: symbols.len = captured.len
-        and (forall (a b: Int), when 0 <= a < symbols.len and 0 <= b < symbols.len and a != b, symbols[a] != symbols[b])
+    assume named:
+        symbols.len = captured.len
+            and (forall (a b: Int), when 0 <= a < symbols.len and 0 <= b < symbols.len and a != b, symbols[a] != symbols[b])
     -- The capture symbols are new: no other binder has one.
     assume fresh: forall (s: Id), when s in symbols,
         not s in values and not s in around and not s in params and not s in inner
@@ -493,16 +498,25 @@ pub proc match_vector(
     expect fallthrough: when not first_guard? and left? in second_left and right? in second_right and second_guard?, choice = VectorChoice::Second
     expect both_columns: when first_right = {} and second_right = {}, choice = VectorChoice::Missing
     expect exact_binders: bound_left? = left? and bound_right? = right?
-    cover correlated_hole: first_left = {true} and first_right = {true}
-        and second_left = {false} and second_right = {false}
-        and first_guard? and second_guard? and choice = VectorChoice::Missing
+    cover correlated_hole:
+        first_left = {true}
+            and first_right = {true}
+            and second_left = {false}
+            and second_right = {false}
+            and first_guard?
+            and second_guard?
+            and choice = VectorChoice::Missing
 }
 
 pub proc match_vector_coverage(first: Rel<Bool, Bool>, second: Rel<Bool, Bool>): (det complete?) {
     out complete? :=
         forall (left? right?: Bool), (left?, right?) in first or (left?, right?) in second
-    expect all_worlds: complete? iff (true, true) in first union second and (true, false) in first union second
-        and (false, true) in first union second and (false, false) in first union second
+    expect all_worlds:
+        complete?
+            iff (true, true) in first union second
+                and (true, false) in first union second
+                and (false, true) in first union second
+                and (false, false) in first union second
     expect diagonal_is_incomplete: when first = {(true, true)} and second = {(false, false)}, not complete?
     expect complementary_rows: when first = {(true, true), (true, false)} and second = {(false, true), (false, false)}, complete?
 }

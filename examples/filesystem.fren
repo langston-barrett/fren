@@ -143,7 +143,8 @@ pub fn parent_strip?(q: Path, d: Path): (proved?) {
             Sub(_, dr) => parent_strip?(qr, dr),
         },
     }
-    ensure law: proved? and (when under?(q, d) and q != d, strip(parent(q), d) = parent(strip(q, d)))
+    ensure law:
+        proved? and (when under?(q, d) and q != d, strip(parent(q), d) = parent(strip(q, d)))
 }
 
 -- # The spec
@@ -179,17 +180,25 @@ pub fn entry(fs: FileSystem, q: Path): Entry := match fs {
 pub fn valid?(fs: FileSystem) := match fs {
     FileSystem::Empty => true,
     FileSystem::Mkdir(before, p) =>
-        valid?(before) and p != Root and entry(before, parent(p)) = Entry::Dir
-        and entry(before, p) = Entry::Missing,
+        valid?(before)
+            and p != Root
+            and entry(before, parent(p)) = Entry::Dir
+            and entry(before, p) = Entry::Missing,
     FileSystem::Write(before, p, _) =>
-        valid?(before) and p != Root and entry(before, parent(p)) = Entry::Dir
-        and entry(before, p) != Entry::Dir,
+        valid?(before)
+            and p != Root
+            and entry(before, parent(p)) = Entry::Dir
+            and entry(before, p) != Entry::Dir,
     FileSystem::Rm(before, p) =>
         valid?(before) and p != Root and entry(before, p) != Entry::Missing,
     FileSystem::Mv(before, src, dst) =>
-        valid?(before) and src != Root and entry(before, src) != Entry::Missing
-        and dst != Root and entry(before, parent(dst)) = Entry::Dir and entry(before, dst) = Entry::Missing
-        and not under?(dst, src),
+        valid?(before)
+            and src != Root
+            and entry(before, src) != Entry::Missing
+            and dst != Root
+            and entry(before, parent(dst)) = Entry::Dir
+            and entry(before, dst) = Entry::Missing
+            and not under?(dst, src),
 }
 
 -- What exists, but the root, has a directory as its parent: Alloy's facts
@@ -230,8 +239,13 @@ pub fn mv_keeps_rooted?(before: FileSystem, src: Path, dst: Path, q: Path): (pro
     assume valid: valid?(FileSystem::Mv(before, src, dst))
     assume rooted: rooted_at?(before, q)
     assume rooted_moved: rooted_at?(before, append(src, strip(q, dst)))
-    out proved? := parent_under?(q, src) and parent_under?(q, dst) and parent_under?(dst, src)
-        and parent_stays_under?(q, dst) and parent_strip?(q, dst) and parent_append?(src, strip(q, dst))
+    out proved? :=
+        parent_under?(q, src)
+            and parent_under?(q, dst)
+            and parent_under?(dst, src)
+            and parent_stays_under?(q, dst)
+            and parent_strip?(q, dst)
+            and parent_append?(src, strip(q, dst))
     ensure law: proved? and rooted_at?(FileSystem::Mv(before, src, dst), q)
 }
 
@@ -355,7 +369,8 @@ pub fn rm_law?(l: Listing, p: Path, q: Path): (proved?) {
                 },
             },
     }
-    ensure law: proved? and view(rm(l, p), q) = (if under?(q, p) then Entry::Missing else view(l, q))
+    ensure law:
+        proved? and view(rm(l, p), q) = (if under?(q, p) then Entry::Missing else view(l, q))
 }
 
 -- Lemma: `graft` puts `x` at `p`, and changes nothing else.
@@ -378,7 +393,10 @@ pub fn graft_law?(l: Listing, p: Path, x: Node, q: Path): (proved?) {
                 },
         },
     }
-    ensure law: proved? and view(graft(l, p, x), q) = (if under?(q, p) then kind(below(x, strip(q, p))) else view(l, q))
+    ensure law:
+        proved?
+            and view(graft(l, p, x), q)
+                = (if under?(q, p) then kind(below(x, strip(q, p))) else view(l, q))
 }
 
 -- Lemma: the tree's `mkdir` makes `p` and changes nothing else.
@@ -396,9 +414,14 @@ pub fn write_law?(l: Listing, p: Path, data: Bytes, q: Path): (proved?) {
     assume not_root: p != Root
     assume parent_dir: view(l, parent(p)) = Entry::Dir
     assume not_dir: view(l, p) != Entry::Dir
-    out proved? := rm_law?(l, p, parent(p)) and rm_law?(l, p, p) and rm_law?(l, p, q)
-        and graft_law?(rm(l, p), p, Node::File(data), q) and subtree_law?(l, p, strip(q, p))
-    ensure law: proved? and view(write(l, p, data), q) = (if q = p then Entry::File(data) else view(l, q))
+    out proved? :=
+        rm_law?(l, p, parent(p))
+            and rm_law?(l, p, p)
+            and rm_law?(l, p, q)
+            and graft_law?(rm(l, p), p, Node::File(data), q)
+            and subtree_law?(l, p, strip(q, p))
+    ensure law:
+        proved? and view(write(l, p, data), q) = (if q = p then Entry::File(data) else view(l, q))
 }
 
 -- Lemma: the tree's `mv` moves what is below `src` to below `dst`.
@@ -408,11 +431,18 @@ pub fn mv_law?(l: Listing, src: Path, dst: Path, q: Path): (proved?) {
     assume parent_dir: view(l, parent(dst)) = Entry::Dir
     assume absent: view(l, dst) = Entry::Missing
     assume not_into_itself: not under?(dst, src)
-    out proved? := parent_under?(dst, src) and rm_law?(l, src, parent(dst)) and rm_law?(l, src, dst)
-        and rm_law?(l, src, q) and graft_law?(rm(l, src), dst, node(l, src), q)
-        and subtree_law?(l, src, strip(q, dst))
-    ensure law: proved? and view(mv(l, src, dst), q) = (if under?(q, dst) then view(l, append(src, strip(q, dst)))
-        else if under?(q, src) then Entry::Missing else view(l, q))
+    out proved? :=
+        parent_under?(dst, src)
+            and rm_law?(l, src, parent(dst))
+            and rm_law?(l, src, dst)
+            and rm_law?(l, src, q)
+            and graft_law?(rm(l, src), dst, node(l, src), q)
+            and subtree_law?(l, src, strip(q, dst))
+    ensure law:
+        proved?
+            and view(mv(l, src, dst), q)
+                = (if under?(q, dst) then view(l, append(src, strip(q, dst)))
+                    else if under?(q, src) then Entry::Missing else view(l, q))
 }
 
 -- # The refinement

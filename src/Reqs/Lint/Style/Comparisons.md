@@ -295,8 +295,9 @@ pub fn chains?(l: Chain, r: Chain) :=
 -- `flip_left?`, and the right if `flip_right?`, each only if it is one
 -- comparison.
 pub fn chains_flipped?(l: Chain, r: Chain, flip_left?, flip_right?) :=
-    (not flip_left? or l.steps.len = 1) and (not flip_right? or r.steps.len = 1)
-    and chains?(oriented(l, flip_left?), oriented(r, flip_right?))
+    (not flip_left? or l.steps.len = 1)
+        and (not flip_right? or r.steps.len = 1)
+        and chains?(oriented(l, flip_left?), oriented(r, flip_right?))
 
 pub proc chainable_comparison(left: Chain, right: Chain): (
     det fires?,
@@ -393,9 +394,10 @@ expect joined_inequalities(left: Chain, steps: Seq<Step>) {
     }
     let chain: Chain := joined(left, right)
 
-    expect inequalities: chain.steps.len = left.steps.len + right.steps.len
-        and (forall (k: Int), when 0 <= k < chain.steps.len, inequality(chain, k)
-        = (if k < left.steps.len then inequality(left, k) else inequality(right, k - left.steps.len)))
+    expect inequalities:
+        chain.steps.len = left.steps.len + right.steps.len
+            and (forall (k: Int), when 0 <= k < chain.steps.len, inequality(chain, k)
+                = (if k < left.steps.len then inequality(left, k) else inequality(right, k - left.steps.len)))
 }
 
 set_option fren.lint.undecidable "allow" in
@@ -409,10 +411,12 @@ pub proc chainable_joined(left: Chain, right: Chain, flip_left?, flip_right?): (
     -- `joined_inequalities`: the right orders as the left does, and its first
     -- operand is the left's last; each has as many comparisons as it is
     -- written with.
-    expect follows: (oriented(right, flip_right?).ascending? iff oriented(left, flip_left?).ascending?)
-        and oriented(right, flip_right?).first = last_operand(oriented(left, flip_left?))
-    expect kept: oriented(left, flip_left?).steps.len = left.steps.len
-        and oriented(right, flip_right?).steps.len = right.steps.len
+    expect follows:
+        (oriented(right, flip_right?).ascending? iff oriented(left, flip_left?).ascending?)
+            and oriented(right, flip_right?).first = last_operand(oriented(left, flip_left?))
+    expect kept:
+        oriented(left, flip_left?).steps.len = left.steps.len
+            and oriented(right, flip_right?).steps.len = right.steps.len
 }
 ```
 
@@ -438,7 +442,8 @@ expect and_associates(
     c: lang::Expr<lang::Id>,
 ) {
     use lang::{Expr, eval}
-    expect associates: eval(i, env, Expr::And(Expr::And(a, b), c)) = eval(i, env, Expr::And(a, Expr::And(b, c)))
+    expect associates:
+        eval(i, env, Expr::And(Expr::And(a, b), c)) = eval(i, env, Expr::And(a, Expr::And(b, c)))
 }
 ```
 

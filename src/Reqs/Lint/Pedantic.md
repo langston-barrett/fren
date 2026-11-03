@@ -197,7 +197,14 @@ pub proc similar_names(
     word?,               -- a character is substituted for another, each a word of its name
     allowed?,            -- the pair is one that Clippy allows, such as `lhs` and `rhs`
 ): (det fires?) {
-    ensure rule: fires? iff (len_a >= 3 and len_b >= 3 and one_edit? and not digits? and not word? and not allowed?)
+    ensure rule:
+        fires?
+            iff (len_a >= 3
+                and len_b >= 3
+                and one_edit?
+                and not digits?
+                and not word?
+                and not allowed?)
 
     expect series: when digits?, not fires?
 }
@@ -294,7 +301,10 @@ pub proc invalid_upcast_comparisons(
     det fires?,
     det value?,          -- what the comparison always is, where it fires
 ) {
-    ensure rule: fires? iff (bound < lowest or (bound = lowest and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
+    ensure rule:
+        fires?
+            iff (bound < lowest
+                or (bound = lowest and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
     ensure fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
 }
 ```

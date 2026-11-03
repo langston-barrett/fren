@@ -104,11 +104,12 @@ pub proc branches_sharing_code(
     -- The product the fix would write, for `*`.
     call product := lang::linear_product(moved_mentioned, shared_mentioned)
 
-    ensure rule: fires? iff (binders = {} and same_op? and shared_left? != shared_right? and not match op {
-        Times => not product.accepted?,
-        Div | Mod => shared_left?,
-        OtherOp => false,
-    })
+    ensure rule:
+        fires? iff (binders = {} and same_op? and shared_left? != shared_right? and not match op {
+            Times => not product.accepted?,
+            Div | Mod => shared_left?,
+            OtherOp => false,
+        })
 
     expect same_branches: when shared_left? and shared_right?, not fires?
     expect linear: when fires? and op = Times, moved_mentioned = {} or shared_mentioned = {}
@@ -161,11 +162,11 @@ expect branches_sharing_value(
             env,
             written(if b.shared_left? then b.then_left else b.then_right)
         )
-        = lang::eval(
-            i,
-            env,
-            written(if b.shared_left? then b.else_left else b.else_right)
-        )
+            = lang::eval(
+                i,
+                env,
+                written(if b.shared_left? then b.else_left else b.else_right)
+            )
 }
 ```
 

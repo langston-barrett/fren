@@ -170,8 +170,10 @@ pub proc comparison_chain(
 ): (det accepted?) {
     assume compares: n_ascending + n_descending + n_other >= 1
 
-    ensure rule: accepted? iff (n_ascending + n_descending + n_other = 1
-        or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
+    ensure rule:
+        accepted?
+            iff (n_ascending + n_descending + n_other = 1
+                or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
 
     expect single: when n_ascending + n_descending + n_other = 1, accepted?
     expect one_direction: when accepted?, n_ascending = 0 or n_descending = 0
@@ -534,7 +536,8 @@ set_option fren.lint.modulo_one "allow" in
 pub proc division(x: Int, y: Int) {
     expect euclidean: x = (x div 3) * 3 + x mod 3
     expect remainder_range: 0 <= x mod 3 < 3
-    expect euclidean_negative: x = (x div NEGATIVE_DIVISOR) * NEGATIVE_DIVISOR + x mod NEGATIVE_DIVISOR
+    expect euclidean_negative:
+        x = (x div NEGATIVE_DIVISOR) * NEGATIVE_DIVISOR + x mod NEGATIVE_DIVISOR
     expect remainder_range_negative: 0 <= x mod NEGATIVE_DIVISOR < NEGATIVE_DIVISOR.abs
     expect negated_divisor: x div -3 = -(x div 3) and x mod -3 = x mod 3
     expect multiples: (3 * x) div 3 = x and (3 * x) mod 3 = 0
@@ -739,8 +742,10 @@ pub proc cardinality_laws(a?, b?, c?) {
     expect exactly_one_pair: exactly_one?(a?, b?) = (a? != b?)
     expect at_most_one_pair: at_most_one?(a?, b?) iff not (a? and b?)
     expect exactly_implies_at_most: when exactly_one?(a?, b?, c?), at_most_one?(a?, b?, c?)
-    expect exactly_is_some: exactly_one?(a?, b?, c?) iff ((a? or b? or c?) and at_most_one?(a?, b?, c?))
-    expect pairwise: at_most_one?(a?, b?, c?) iff (not (a? and b?) and not (a? and c?) and not (b? and c?))
+    expect exactly_is_some:
+        exactly_one?(a?, b?, c?) iff ((a? or b? or c?) and at_most_one?(a?, b?, c?))
+    expect pairwise:
+        at_most_one?(a?, b?, c?) iff (not (a? and b?) and not (a? and c?) and not (b? and c?))
     expect unordered: exactly_one?(a?, b?, c?) = exactly_one?(c?, a?, b?)
     expect repeated: at_most_one?(a?, a?) iff not a?
 }
@@ -1425,7 +1430,10 @@ pub proc test_scope(
     ensure later: when site is Site::Operand(k), visible? iff test_at < k < operands
     ensure body: when site = Site::Body, visible? iff context is TestContext::WhenCondition | TestContext::IfCondition
     ensure nowhere_else: when site is Site::ElseBranch | Site::Outside, not visible?
-    ensure binds: binds? iff (test_at + 1 < operands or context is TestContext::WhenCondition | TestContext::IfCondition)
+    ensure binds:
+        binds?
+            iff (test_at + 1 < operands
+                or context is TestContext::WhenCondition | TestContext::IfCondition)
 
     expect unless_body: when context = TestContext::UnlessCondition and site = Site::Body, not visible?
     expect alone: when operands = 1 and not context is TestContext::WhenCondition | TestContext::IfCondition, not binds?
@@ -1480,7 +1488,8 @@ pub proc pattern_test(
     n_useless_alternatives: Nat,     -- alternatives that no useful case of the pattern takes
     matches_some?,                   -- some value matches the pattern
 ): (det accepted?) {
-    ensure rule: accepted? iff ((binds? or n_bound = 0) and n_useless_alternatives = 0 and matches_some?)
+    ensure rule:
+        accepted? iff ((binds? or n_bound = 0) and n_useless_alternatives = 0 and matches_some?)
 
     expect binds_nothing: when accepted? and not binds?, n_bound = 0
     expect every_alternative: when accepted?, n_useless_alternatives = 0
@@ -1693,12 +1702,17 @@ pub proc table_arms(
     -- Whether arm `i`'s pattern overlaps arm `j`'s, whether one of them
     -- has a guard, and whether arm `j` is the otherwise: the last, `_`
     -- without a guard.
-    ensure rule: rejected? iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
-        and not ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
-        and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
-    ensure check: asked? iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
-        and ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
-        and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
+    ensure rule:
+        rejected?
+            iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
+                and not ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
+                and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
+    ensure check:
+        asked?
+            iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
+                and ((0 <= i < arms.len and arms[i] = Guarded)
+                    or (0 <= j < arms.len and arms[j] = Guarded))
+                and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
     ensure first: reported? iff (0 <= i < j < arms.len and rejected? and not earlier_rejected?)
 
     expect otherwise_alone: when 0 <= j and j = arms.len - 1 and arms[j] = Wildcard, not rejected? and not asked?
@@ -1715,8 +1729,17 @@ expect table_arms_refines(
 ) {
     use lang
     call concrete := table_arms(arms, overlaps, i, j, earlier_rejected?)
-    expect static: (concrete.rejected?) iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping) and not ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded) or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded)) and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
-    expect checked: (concrete.asked?) iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping) and ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded) or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded)) and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
+    expect static:
+        (concrete.rejected?)
+            iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping)
+                and not ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded) or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded))
+                and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
+    expect checked:
+        (concrete.asked?)
+            iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping)
+                and ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded)
+                    or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded))
+                and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
 }
 ```
 
@@ -1798,7 +1821,9 @@ expect table_eval_refines(arms: Seq<lang::ArmAt>, values: Seq<Int>, otherwise: S
     expect held: when ((arms).index_of([lang::ArmAt::Taken], (concrete.first) + 1) = -1) and (concrete.first) >= 0, (concrete.value) = (values)[(concrete.first)]
     expect otherwise_held: when (concrete.first) = -1 and (otherwise) != [], (concrete.value) = (otherwise)[0]
     expect one: (concrete.first) = ((arms).index_of([lang::ArmAt::Taken], 0))
-    expect disjoint_definition: ((arms).index_of([lang::ArmAt::Taken], (concrete.first) + 1) = -1) = ((arms).index_of([lang::ArmAt::Taken], (concrete.first) + 1) = -1)
+    expect disjoint_definition:
+        ((arms).index_of([lang::ArmAt::Taken], (concrete.first) + 1) = -1)
+            = ((arms).index_of([lang::ArmAt::Taken], (concrete.first) + 1) = -1)
 }
 ```
 
@@ -2467,7 +2492,8 @@ pub proc operator_type(
     -- There is one `Bool` type, one `Int` type and one `Nat` type.
     assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
     -- A newtype is a record.
-    assume newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
+    assume newtype_record:
+        (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
     assume records: when newtype?(under(a)), kind(under(a)) = RecordTy
     assume base: unless newtype?(under(a)), unders.image({under(a)}) = {}
 
@@ -2485,15 +2511,18 @@ pub proc operator_type(
         Equality => a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}),
         Ordering =>
             (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy}) or (a = b and order.ordered?),
-        Addition | Subtraction => (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})
-            or (a = b and newtype?(a) and sums.accepted?),
+        Addition | Subtraction =>
+            (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})
+                or (a = b and newtype?(a) and sums.accepted?),
         Multiplication | Negation => kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy},
         Concat => a = b and kind(a) in {StringTy, SeqTy},
         Membership =>
-            kind(b) in {SetTy, SeqTy} and (elem(b) = a or (kind(a) = NatTy and kind(elem(b)) = IntTy)),
+            kind(b) in {SetTy, SeqTy}
+                and (elem(b) = a or (kind(a) = NatTy and kind(elem(b)) = IntTy)),
         SetAlgebra | Subset => a = b and kind(a) in {SetTy, RelTy},
         Conditional =>
-            kind(cond) = BoolTy and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})),
+            kind(cond) = BoolTy
+                and (a = b or (kind(a) in {IntTy, NatTy} and kind(b) in {IntTy, NatTy})),
     }
     ensure results: result = match op {
         Addition | Multiplication =>

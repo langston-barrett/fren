@@ -4,7 +4,8 @@
 -- Otherwise a right side that is wholly a call, a parenthesized expression,
 -- a literal, a record update, a Boolean block, a `match` or a table hangs,
 -- and any other moves.
--- A chain broken by hand stays where it was written, and after a signature
+-- An expression broken by hand stays where it was written, a chain of
+-- operators being laid out (`fmt::chain_layout`), and after a signature
 -- that spans several lines a right side starts the next line
 -- (`fmt::right_side`).
 pub enum Ctx { Empty, Bind(String, Int, Ctx) }
@@ -55,14 +56,14 @@ fn small(n: Int): Set<Int> := {n + 1000000000, n + 2000000000, n + 3000000000, n
 -- A set literal after an operator moves with the operation: only a whole unit hangs.
 fn listed?(n: Int) := not n in {1000000000000, 2000000000000, 3000000000000, 4000000000000, 5000000000000}
 
--- A parenthesized expression with a line break kept in it hangs.
+-- A parenthesized chain broken by hand is joined where it fits.
 fn sum(x: Int): Int := (
     x
     + 1
     + 2)
 
--- A chain broken by hand hangs where its first line fits, its links at +4,
--- and moves where it does not, its links lined up with its first line.
+-- A chain broken by hand is laid out: joined where it fits, and otherwise
+-- moved to the next line, where it fits there, or broken there.
 fn both?(a?, b?, c?) := a? and b?
     and c?
 
@@ -70,22 +71,22 @@ fn longer_chain?(aaaaaaaaaaaaaaaaaaaaaaaaaa?, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?,
     and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb? and c?
     and c?
 
--- A chain written on the next line stays there, though its first line would fit after `:=`.
+-- A chain written on the next line is joined where it fits after `:=`.
 fn written?(a?, b?, c?) :=
     a? and b?
     and c?
 
--- A link's continuation inside its brackets is indented past the link.
+-- An inner chain in brackets is laid out as its own.
 fn inner_chain?(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?, cccccccccccccccc?) := (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?
     and bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?)
     or cccccccccccccccc?
 
--- A chain that starts with a call keeps its operands where they were written.
+-- One operator stays on the last line of a call that spans several.
 fn joined(n: Int): String :=
     display(n + 1000000000 + 2000000000 + 3000000000 + 4000000000 + 5000000000 + 6000000000)
     ++ display(n)
 
--- A long link of a moved chain keeps its last call on one line.
+-- A broken chain keeps each of its calls on one line where it fits.
 fn links(nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn: Int): String := display(1)
     ++ display4(nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn, 2, 3, 4) ++ display4(nnnnnnnnnnnnnnnnnnnnnnn, 2, 3, 4)
 
@@ -189,7 +190,8 @@ fn long_heads(n: Int): Set<Int> := match n {
     _ => {},
 }
 
--- A hand-broken `if` without a line break before an `else` is a chain like any other.
+-- An `if` broken by hand only within its condition keeps that line break, as its condition,
+-- before `then`, keeps its line breaks (`fmt::chain_kept`).
 fn either?(a?, b?, c?) := if a? and b?
     or c? then a? else b?
 

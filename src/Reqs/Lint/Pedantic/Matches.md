@@ -73,7 +73,9 @@ pub proc match_same_arms(
     all?,                -- the group is every arm of the `match`
 ): (det fires?, det fix: ArmsFix) {
     ensure rule: fires? iff (same_body? and not binds?)
-    ensure group_fix: fix = if all? then ArmsFix::Replace else if wildcard? then ArmsFix::Remove else ArmsFix::Merge
+    ensure group_fix:
+        fix
+            = if all? then ArmsFix::Replace else if wildcard? then ArmsFix::Remove else ArmsFix::Merge
 }
 ```
 
@@ -424,8 +426,9 @@ expect single_match_else_elaborated(
     )
 
     expect fires: when tests_only?(p) and not (others? or a = b),
-        t.fires? and single_match_else_fires?(two_arms)
-        and single_match_else_fix(two_arms) = If(Is(s, p), then_body, else_body)
+        t.fires?
+            and single_match_else_fires?(two_arms)
+            and single_match_else_fix(two_arms) = If(Is(s, p), then_body, else_body)
 }
 
 set_option fren.evidence "random" in
@@ -439,23 +442,27 @@ pub proc single_match_else_equality(
 ) {
     use lang::Expr::{Binary, Construct, Is, Literal, Nil, Unary}
 
-    ensure variant: lang::eval(i, env, Binary(lang::BinaryOp::Eq, s, Construct(c, Nil)))
-        = lang::eval(i, env, Is(s, lang::Pattern::Variant(c, lang::Pattern::Nil)))
-    ensure literal: lang::eval(i, env, Binary(lang::BinaryOp::Eq, s, Literal(w)))
-        = lang::eval(i, env, Is(s, lang::Pattern::Literal(w)))
-    ensure negative: lang::eval(
-        i,
-        env,
-        Binary(
-            lang::BinaryOp::Eq,
-            s,
-            Unary(lang::UnaryOp::Neg, Literal(lang::Value::Integer(n)))
+    ensure variant:
+        lang::eval(i, env, Binary(lang::BinaryOp::Eq, s, Construct(c, Nil)))
+            = lang::eval(i, env, Is(s, lang::Pattern::Variant(c, lang::Pattern::Nil)))
+    ensure literal:
+        lang::eval(i, env, Binary(lang::BinaryOp::Eq, s, Literal(w)))
+            = lang::eval(i, env, Is(s, lang::Pattern::Literal(w)))
+    ensure negative:
+        lang::eval(
+            i,
+            env,
+            Binary(
+                lang::BinaryOp::Eq,
+                s,
+                Unary(lang::UnaryOp::Neg, Literal(lang::Value::Integer(n)))
+            )
         )
-    ) = lang::eval(
-        i,
-        env,
-        Is(s, lang::Pattern::Literal(lang::Value::Integer(-n)))
-    )
+            = lang::eval(
+                i,
+                env,
+                Is(s, lang::Pattern::Literal(lang::Value::Integer(-n)))
+            )
 }
 ```
 
@@ -512,24 +519,25 @@ expect single_match_else_refires(
     let as_if: lang::Expr<lang::Id> := If(Is(z, p), a, b)
 
     expect kept: not single_match_else_fires?(single_match_else_fix(inner))
-    expect around: not single_match_else_fires?(
-        Match(
-            inner,
-            p,
-            Literal(True),
-            x,
-            Match(as_if, Wildcard, Literal(True), y, NoMatch)
-        )
-    )
-        and single_match_else_fires?(
+    expect around:
+        not single_match_else_fires?(
             Match(
-                single_match_else_fix(inner),
+                inner,
                 p,
                 Literal(True),
                 x,
                 Match(as_if, Wildcard, Literal(True), y, NoMatch)
             )
         )
+            and single_match_else_fires?(
+                Match(
+                    single_match_else_fix(inner),
+                    p,
+                    Literal(True),
+                    x,
+                    Match(as_if, Wildcard, Literal(True), y, NoMatch)
+                )
+            )
 }
 ```
 
@@ -620,16 +628,16 @@ pub proc match_bool(
             0,
             o
         )
-        = body_value(
-            if c? iff first = BoolPat::True then a else b,
-            -1,
-            0,
-            -1,
-            0,
-            -1,
-            0,
-            o
-        )
+            = body_value(
+                if c? iff first = BoolPat::True then a else b,
+                -1,
+                0,
+                -1,
+                0,
+                -1,
+                0,
+                o
+            )
 }
 ```
 
@@ -647,8 +655,10 @@ rewrites](../Rewrites.md) states for every such lint:
 ```fren
 -- `p` and `q` are the literals `true` and `false`, in either order.
 fn bool_pair?<V>(p: lang::Pattern<V>, q: lang::Pattern<V>) :=
-    (p = lang::Pattern::Literal(lang::Value::True) and q = lang::Pattern::Literal(lang::Value::False))
-    or (p = lang::Pattern::Literal(lang::Value::False) and q = lang::Pattern::Literal(lang::Value::True))
+    (p = lang::Pattern::Literal(lang::Value::True)
+            and q = lang::Pattern::Literal(lang::Value::False))
+        or (p = lang::Pattern::Literal(lang::Value::False)
+            and q = lang::Pattern::Literal(lang::Value::True))
 
 -- `rest` is an arm of a `match` on `s` without a guard, whose pattern is
 -- the other of `true` and `false` than `p`, and no arm after it.
@@ -728,7 +738,8 @@ expect match_bool_elaborated(
 
     expect fires: when t.fires? and second != BoolPat::Wild,
         match_bool_fires?(two_arms)
-        and match_bool_fix(two_arms) = (if first = BoolPat::True then If(s, x, y) else If(s, y, x))
+            and match_bool_fix(two_arms)
+                = (if first = BoolPat::True then If(s, x, y) else If(s, y, x))
 }
 
 set_option fren.evidence "random" in
@@ -814,24 +825,10 @@ expect match_bool_refires(
     )
 
     expect kept: not match_bool_fires?(match_bool_fix(inner))
-    expect around: not match_bool_fires?(
-        Match(
-            inner,
-            lang::Pattern::Literal(True),
-            Literal(True),
-            x,
+    expect around:
+        not match_bool_fires?(
             Match(
-                If(z, a, b),
-                lang::Pattern::Literal(False),
-                Literal(True),
-                y,
-                NoMatch
-            )
-        )
-    )
-        and match_bool_fires?(
-            Match(
-                match_bool_fix(inner),
+                inner,
                 lang::Pattern::Literal(True),
                 Literal(True),
                 x,
@@ -844,6 +841,21 @@ expect match_bool_refires(
                 )
             )
         )
+            and match_bool_fires?(
+                Match(
+                    match_bool_fix(inner),
+                    lang::Pattern::Literal(True),
+                    Literal(True),
+                    x,
+                    Match(
+                        If(z, a, b),
+                        lang::Pattern::Literal(False),
+                        Literal(True),
+                        y,
+                        NoMatch
+                    )
+                )
+            )
 }
 ```
 
@@ -909,11 +921,14 @@ pub fn variant_tag(p: Pat): Int := match p {
 
 pub proc unnested_or_patterns(first: Pat, second: Pat, x: Val): (det fires?) {
     -- they name the same variant
-    det let same_variant? := first is Pat::Variant(_, _, _) and second is Pat::Variant(_, _, _)
-        and variant_tag(first) = variant_tag(second)
+    det let same_variant? :=
+        first is Pat::Variant(_, _, _)
+            and second is Pat::Variant(_, _, _)
+            and variant_tag(first) = variant_tag(second)
     -- values of its payload whose patterns are not written the same
-    det let n_differ: Int := (if first_leaf(first) = first_leaf(second) then 0 else 1)
-        + (if second_leaf(first) = second_leaf(second) then 0 else 1)
+    det let n_differ: Int :=
+        (if first_leaf(first) = first_leaf(second) then 0 else 1)
+            + (if second_leaf(first) = second_leaf(second) then 0 else 1)
 
     ensure rule: fires? iff (same_variant? and n_differ = 1)
 
@@ -1050,9 +1065,12 @@ pub proc match_could_be_table(
     assume typed: not ((exists (s: Slot), pos(s) < arms.len and integers_pattern?(arms[pos(s)]))
         and (exists (s: Slot), pos(s) < arms.len and variants_pattern?(arms[pos(s)])))
 
-    ensure rule: fires? iff (arms.len >= 2 and not guarded?
-        and (forall (s r: Slot), when pos(s) < pos(r) < arms.len and overlap?(arms[pos(s)], arms[pos(r)]),
-        pos(r) = arms.len - 1 and arms[pos(r)] = Pat::Wild))
+    ensure rule:
+        fires?
+            iff (arms.len >= 2
+                and not guarded?
+                and (forall (s r: Slot), when pos(s) < pos(r) < arms.len and overlap?(arms[pos(s)], arms[pos(r)]),
+                    pos(r) = arms.len - 1 and arms[pos(r)] = Pat::Wild))
 
     -- No value matches two arms, but where one is the otherwise.
     expect disjoint: forall (s r: Slot), when fires? and pos(s) < pos(r) and slot_matches?(arms, s, x)

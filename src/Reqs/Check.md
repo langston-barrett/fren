@@ -463,8 +463,8 @@ expect realizability_protocol(
     expect realizability_protocol: when asked.assume_q = always.assume_q
         and asked.cex_q = (if always.assume_q = Unsat then Unknown else always.cex_q),
         asked.verdict = always.verdict
-        and (asked.reports_cex? iff always.reports_cex?)
-        and (asked.reports_vacuous? iff always.reports_vacuous?)
+            and (asked.reports_cex? iff always.reports_cex?)
+            and (asked.reports_vacuous? iff always.reports_vacuous?)
 }
 ```
 
@@ -550,14 +550,17 @@ pub proc forcing(
     det variant_found?,           -- Fren finds that `S` forces it to `model`'s variant
 ) {
     assume modelled: model in values
-    assume decided: pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
+    assume decided:
+        pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
     assume variant_decided:
-        variant_q = (if (forall (v: Choice), when v in values, variant_of(v) = variant_of(model)) then Unsat else Sat)
+        variant_q
+            = (if (forall (v: Choice), when v in values, variant_of(v) = variant_of(model)) then Unsat else Sat)
 
     ensure meaning: forced? iff (forall (a b: Choice), when a in values and b in values, a = b)
     ensure query: found? iff pin_q = Unsat
     ensure variant_meaning:
-        variant_forced? iff (forall (a b: Choice), when a in values and b in values, variant_of(a) = variant_of(b))
+        variant_forced?
+            iff (forall (a b: Choice), when a in values and b in values, variant_of(a) = variant_of(b))
     ensure variant_query: variant_found? iff variant_q = Unsat
 
     expect computes: found? iff forced?
@@ -680,26 +683,26 @@ pub fn single_valued?(forced: Set<Forcing>) :=
 -- the variant of each value that it forces it to.
 pub fn variants_of?(forced: Set<Forcing>, variants: Set<VariantForcing>) :=
     (forall (h: Guarantee) (o: Output) (k l: ChoiceVariant),
-        when VariantForcing {
+            when VariantForcing {
+                guarantee := h,
+                output := o,
+                variant := k,
+            } in variants
+            and VariantForcing {
+                guarantee := h,
+                output := o,
+                variant := l,
+            } in variants, k = l)
+        and (forall (h: Guarantee) (o: Output) (v: Choice), when Forcing {
             guarantee := h,
             output := o,
-            variant := k,
-        } in variants
-        and VariantForcing {
-            guarantee := h,
-            output := o,
-            variant := l,
-        } in variants, k = l)
-    and (forall (h: Guarantee) (o: Output) (v: Choice), when Forcing {
-        guarantee := h,
-        output := o,
-        value := v,
-    } in forced,
-        VariantForcing {
-            guarantee := h,
-            output := o,
-            variant := variant_of(v),
-        } in variants)
+            value := v,
+        } in forced,
+            VariantForcing {
+                guarantee := h,
+                output := o,
+                variant := variant_of(v),
+            } in variants)
 
 pub proc clash_notes(
     core: Set<Guarantee>,
@@ -727,19 +730,25 @@ pub proc clash_notes(
     assume one_variant: variants_of?(alone, alone_variants) and variants_of?(rest, rest_variants)
     assume empty_rest: forall (f: VariantForcing), when f in rest_variants, core != {f.guarantee}
     assume earlier_clashes: forall (h: Guarantee),
-        h in earlier iff (h in core and h < g
-        and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, h, o)))
+        h in earlier
+            iff (h in core
+                and h < g
+                and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, h, o)))
     -- The note gives what `g` forces of `output` as a whole value, not a
     -- variant, where it forces one, and so of what the rest of the core forces.
     out shows_value? := forces_value?(alone, g, output)
     out rest_shows_value? := forces_value?(rest, g, output)
 
-    ensure rule: noted? iff (not interpreted? and consistent? and g in core
-        and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
-        and match examples {
-            Budget::All => true,
-            Budget::AtMost(n) => earlier.card < n,
-        })
+    ensure rule:
+        noted?
+            iff (not interpreted?
+                and consistent?
+                and g in core
+                and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
+                and match examples {
+                    Budget::All => true,
+                    Budget::AtMost(n) => earlier.card < n,
+                })
     ensure first: when noted?, clashes?(alone, alone_variants, rest, rest_variants, g, output)
         and (forall (o: Output), when o < output, not clashes?(alone, alone_variants, rest, rest_variants, g, o))
     ensure one_note: note = (if not (g in core) then MemberNote::NotInCore
@@ -845,15 +854,16 @@ pub proc general_branch_explanation(
     out excluded? := consistent? and base inter others inter alternative = {}
     out locally_excluded? :=
         not (exists (w: DiagnosticWorld),
-            w in base inter others inter alternative and w.eligible? = sample.eligible?
-            and w.within_budget? = sample.within_budget?)
+            w in base inter others inter alternative
+                and w.eligible? = sample.eligible?
+                and w.within_budget? = sample.within_budget?)
     expect reported_sound: when reported?, excluded?
     expect unknown_silent: when context_q = Unknown or exclusion_q = Unknown, not reported?
     expect all_models: when excluded?, forall (w: DiagnosticWorld),
         when w in base inter others, not w in alternative
     expect nonvacuous: when base inter others = {}, not excluded?
-    cover local_is_insufficient: consistent? and sample in base inter others
-        and locally_excluded? and not excluded?
+    cover local_is_insufficient:
+        consistent? and sample in base inter others and locally_excluded? and not excluded?
 }
 
 pub proc retry_alternatives_general(worlds: Set<DiagnosticWorld>): (
@@ -896,10 +906,11 @@ pub proc conditional_branch_core(
     candidates: Set<Guarantee>,
     conditional: Set<Guarantee>,
 ): (valid?, minimal?) {
-    ensure refutes: valid? iff conditional subset candidates and
-        not (exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional, v))
-    ensure deletion_minimal: minimal? iff valid? and
-        (forall (g: Guarantee), when g in conditional,
+    ensure refutes:
+        valid?
+            iff conditional subset candidates
+                and not (exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional, v))
+    ensure deletion_minimal: minimal? iff valid? and (forall (g: Guarantee), when g in conditional,
         exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional minus {g}, v))
     expect within: when valid?, conditional subset candidates
     expect impossible_empty: when branch inter base = {} and conditional = {}, valid? and minimal?
@@ -909,8 +920,10 @@ pub proc conditional_branch_core(
 pub proc branch_member_polarity(rest: Set<Choice>, positive_values: Set<Choice>, wanted?): (
     opposite_forced?,
 ) {
-    ensure nonvacuous_opposite: opposite_forced? iff rest != {} and
-        (forall (v: Choice), when v in rest, (v in positive_values) iff not wanted?)
+    ensure nonvacuous_opposite:
+        opposite_forced?
+            iff rest != {}
+                and (forall (v: Choice), when v in rest, (v in positive_values) iff not wanted?)
     expect positive_blocked: when wanted?, opposite_forced? iff rest != {} and rest inter positive_values = {}
     expect negative_blocked: when not wanted?, opposite_forced? iff rest != {} and rest subset positive_values
     expect no_vacuous_forcing: when rest = {}, not opposite_forced?
@@ -1313,7 +1326,10 @@ expect flat_completeness_refines(arms: Seq<check::FlatArm>) {
     use check
     call concrete := flat_completeness_asked(arms)
     refines concrete completeness_asked(
-        check::FlatArm::Wild in (arms) or (check::FlatArm::A in (arms) and check::FlatArm::B in (arms) and check::FlatArm::C in (arms)),
+        check::FlatArm::Wild in (arms)
+            or (check::FlatArm::A in (arms)
+                and check::FlatArm::B in (arms)
+                and check::FlatArm::C in (arms)),
     )
 }
 ```
@@ -1388,7 +1404,8 @@ pub proc disjointness(
 ): (det verdict: Verdict, det reports_witness?) {
     call as_expect := expectation(q)
 
-    ensure like_expect: verdict = as_expect.verdict and (reports_witness? iff as_expect.reports_cex?)
+    ensure like_expect:
+        verdict = as_expect.verdict and (reports_witness? iff as_expect.reports_cex?)
 }
 ```
 
@@ -1418,7 +1435,9 @@ pub proc disjoint_question(
 
     assume pair: 0 <= i < j < arms.len and defined.len = arms.len
 
-    ensure rule: goal? iff not (defined[i] = Defined and defined[j] = Defined and arms[i] = Taken and arms[j] = Taken)
+    ensure rule:
+        goal?
+            iff not (defined[i] = Defined and defined[j] = Defined and arms[i] = Taken and arms[j] = Taken)
 
     -- Where one of them is not taken, they do not overlap here.
     expect apart: when arms[i] != Taken, goal?
@@ -1806,8 +1825,11 @@ pub proc minimal(
     core: Set<ConstraintName>,
     dropped: ConstraintName,            -- any one constraint, for the minimality condition
 ): (det minimal?) {
-    ensure rule: minimal? iff (core subset candidates and refutes?(core)
-        and (when dropped in core, not refutes?(core minus {dropped})))
+    ensure rule:
+        minimal?
+            iff (core subset candidates
+                and refutes?(core)
+                and (when dropped in core, not refutes?(core minus {dropped})))
 
     expect within: when minimal?, core subset candidates
     expect entails: when minimal?, refutes?(core)
@@ -2142,7 +2164,7 @@ pub proc contract_blocker(applied: Seq<Applied>, named: Option<String>): (det ri
         Option::None => not (exists (a: Applied), a in applied and a.postconditions > 0),
         Option::Some(p) =>
             (exists (a: Applied), a in applied and a.postconditions > 0 and a.path = p)
-            and (forall (a: Applied), when a in applied and a.postconditions > 0, p <= a.path),
+                and (forall (a: Applied), when a in applied and a.postconditions > 0, p <= a.path),
     }
 
     expect preconditions_alone: when right? and applied.len = 1 and applied[0].postconditions = 0,
@@ -2388,10 +2410,11 @@ pub proc cardinality_truth(
 ): (det truth: Truth) {
     use self::Truth::{False, True, Unknown}
 
-    ensure true_rule: truth = True iff
-        (forall (k: Int), when trues <= k <= trues + unknowns, counted?(op, k))
-    ensure false_rule: truth = False iff
-        (forall (k: Int), when trues <= k <= trues + unknowns, not counted?(op, k))
+    ensure true_rule:
+        truth = True iff (forall (k: Int), when trues <= k <= trues + unknowns, counted?(op, k))
+    ensure false_rule:
+        truth = False
+            iff (forall (k: Int), when trues <= k <= trues + unknowns, not counted?(op, k))
 
     expect all_known: when unknowns = 0, truth != Unknown
     expect two_true: when trues >= 2, truth = False
@@ -2716,8 +2739,12 @@ pub proc enumerated_verdict(
         not exact? and verdict = Inconclusive => Inconclusive,
     }
     -- What rests on an `unsat` answer that does not see every behaviour.
-    ensure bounded_rule: bounded? iff (not exact? and reported != Fail and verdict != Inconclusive
-        and (verdict = Fail or proof?(kind)))
+    ensure bounded_rule:
+        bounded?
+            iff (not exact?
+                and reported != Fail
+                and verdict != Inconclusive
+                and (verdict = Fail or proof?(kind)))
 
     expect decided: when exact?, reported = verdict
     expect failures_genuine: when reported = Fail, verdict = Fail

@@ -336,7 +336,11 @@ pub proc backjump(
 ): (
     det resumes?,            -- the search resumes at `k`
 ) {
-    ensure rule: resumes? iff (0 <= k < conflict.len and conflict[k] and not (true in conflict.slice(k + 1, conflict.len)))
+    ensure rule:
+        resumes?
+            iff (0 <= k < conflict.len
+                and conflict[k]
+                and not (true in conflict.slice(k + 1, conflict.len)))
 
     expect members_only: when resumes?, 0 <= k and conflict[k]
     expect empty_fails: when not (true in conflict), not resumes?
@@ -503,7 +507,11 @@ pub proc reaches(
     trigger: Option<Bool>,   -- the trigger's value in what the test found, `None` if it has none
     value: Option<Bool>,     -- the check's value in what the test found, `None` if it has none
 ): (det reached?, det counted?, det trigger_unknown?) {
-    ensure rule: reached? iff (found? and (not has_trigger? or trigger = Option::Some(true)) and value != Option::None)
+    ensure rule:
+        reached?
+            iff (found?
+                and (not has_trigger? or trigger = Option::Some(true))
+                and value != Option::None)
     -- The test counts toward `unreached`'s `triggered`, and toward its
     -- `unknown` where the trigger has no value.
     ensure counts: counted? iff (found? and (not has_trigger? or trigger != Option::Some(false)))
@@ -545,8 +553,12 @@ pub proc outputs_seen(
     count: Nat,                  -- the assignments of those outputs: the product of their numbers of values
     assignments: Seq<Assigned>,  -- what each assignment makes of the constraints, if there are at most 4096
 ): (det seen?) {
-    ensure rule: seen? iff ((forall (s: Option<Int>), when s in sizes, s != Option::None) and count <= 4096 and assignments.len = count
-        and (forall (a: Assigned), when a in assignments, a = Assigned::Ruled))
+    ensure rule:
+        seen?
+            iff ((forall (s: Option<Int>), when s in sizes, s != Option::None)
+                and count <= 4096
+                and assignments.len = count
+                and (forall (a: Assigned), when a in assignments, a = Assigned::Ruled))
 
     expect unbounded_unseen: when sizes != [] and sizes[0] = Option::None, not seen?
     expect satisfied_unseen: when assignments != [] and assignments[0] = Assigned::Satisfied, not seen?
@@ -639,7 +651,9 @@ pub proc unreached_warning(
     -- Beside `F0610`, only the `F0617` of a call assumption that had no
     -- value as a whole in any test is shown, which explains it.
     expect only_call_assumptions_beside_untested: when untested? and shown != UnreachedWarning::Silent,
-        call_assumption? and valued = 0 and shown is UnreachedWarning::Valueless | UnreachedWarning::TriggerValueless
+        call_assumption?
+            and valued = 0
+            and shown is UnreachedWarning::Valueless | UnreachedWarning::TriggerValueless
     -- `F0617` blames the trigger only where it had no value.
     expect trigger_blamed_only_unknown: when shown = UnreachedWarning::TriggerValueless, unknown > 0
     expect warns_only_unreached: when decided > 0, shown = UnreachedWarning::Silent

@@ -56,22 +56,30 @@ pub fn c3?(x: Int, s: String) := {x, 1}.card = 2 or s.len = 0 or s = ""
 --~^ warning: say whether it is empty with `""`, not `len`
 
 pub proc patterns(s: String): (p1?, p2?, p3?) {
-    ensure t1: p1? iff (s.matches?(r"(a|b)+x") or s.matches?("x|\\.|-") or s.matches?(r#"(\]|\^|")?"#))
+    ensure t1:
+        p1? iff (s.matches?(r"(a|b)+x") or s.matches?("x|\\.|-") or s.matches?(r#"(\]|\^|")?"#))
     --~^ warning: this alternation of single characters is a class
     --~^^ warning: this alternation of single characters is a class
     --~^^^ warning: this alternation of single characters is a class
-    ensure t2: p2? iff (s.matches?("[a-y]+") or s.matches?(r"[^B-Z0-8_]") or s.matches?("[A-Y]|[b-z]"))
+    ensure t2:
+        p2? iff (s.matches?("[a-y]+") or s.matches?(r"[^B-Z0-8_]") or s.matches?("[A-Y]|[b-z]"))
     --~^ warning: the range `a-y` is one character short of `a-z`
     --~^^ warning: these ranges are each one character short of a whole alphabet
     --~^^^ warning: these ranges are each one character short of a whole alphabet
     -- Alternatives that are not single characters, and whole ranges.
-    ensure t3: p3? iff (s.matches?("ab|c") or s.matches?("(a|.)") or s.matches?("[1-9][0-9]*") or s.matches?("[a-z]"))
+    ensure t3:
+        p3?
+            iff (s.matches?("ab|c")
+                or s.matches?("(a|.)")
+                or s.matches?("[1-9][0-9]*")
+                or s.matches?("[a-z]"))
 }
 
 -- A receiver that ends in a conditional keeps its parentheses where
 -- something follows it.
 pub proc open_receivers(s: String, t: String, b?): (p1?, p2?, p3?, p4?) {
-    ensure r1: p1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
+    ensure r1:
+        p1? iff "ab" = (s ++ if b? then t else s).slice(0, (s ++ if b? then t else s).len) ++ t
     --~^ warning: write `(s ++ if b? then t else s)`
     ensure r2: p2? iff "ab" = (s ++ if b? then t else s).replace(t, t) ++ t
     --~^ warning: write `(s ++ if b? then t else s)`

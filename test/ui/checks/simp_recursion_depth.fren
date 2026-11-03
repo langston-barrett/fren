@@ -210,7 +210,7 @@ pub fn eval(i: Interp, env: Env, e: Expr): (r: Outcome) {
 
 pub fn respects?(i: Interp, f: Id, ps: Params, e: Expr, l: Value) :=
     apply(i.recursions, f, l) = Outcome::Undefined
-    or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
+        or apply(i.recursions, f, l) = eval(i, bind_params(ps, l), e)
 
 expect recursion_unfolds(
     i: Interp,

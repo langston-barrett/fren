@@ -198,7 +198,8 @@ fn identity_literal?<V>(x: lang::Expr<V>) :=
 
 -- `x` is none of the operands that `lint::IdentityOperand` names.
 pub fn plain_operand?<V>(x: lang::Expr<V>) :=
-    not identity_literal?(x) and not (x is lang::Expr::Nil | lang::Expr::Unary(lang::UnaryOp::Neg, _))
+    not identity_literal?(x)
+        and not (x is lang::Expr::Nil | lang::Expr::Unary(lang::UnaryOp::Neg, _))
 
 -- The operator of the model that `op` is, as a `lang::BinaryOp`; `Add` for
 -- `union` and `minus`, which are not in it.
@@ -234,20 +235,26 @@ expect identity_op_elaborated(
     let e: lang::Expr<lang::Id> := Binary(binary_of(op), a, b)
     -- The four cases that `identity_op_fires?` leaves.
     let left_out? :=
-        (p.rewrite = KeepLeft and op = IdentityOperator::Concat and right = IdentityOperand::Empty and right_list?)
-        or (p.rewrite = Flip and (zero?(w) or (w is lang::Expr::Unary(lang::UnaryOp::Neg, _))
-            or (op = IdentityOperator::Sub and left = IdentityOperand::Zero)))
+        (p.rewrite = KeepLeft
+                and op = IdentityOperator::Concat
+                and right = IdentityOperand::Empty
+                and right_list?)
+            or (p.rewrite = Flip
+                and (zero?(w)
+                    or (w is lang::Expr::Unary(lang::UnaryOp::Neg, _))
+                    or (op = IdentityOperator::Sub and left = IdentityOperand::Zero)))
 
     expect fires: unless left_out?, (p.rewrite != Unchanged) iff identity_op_fires?(e)
     expect fix: unless left_out?, match p.rewrite {
         KeepLeft => identity_op_fix(e) = a,
         KeepRight => identity_op_fix(e) = b,
         Flip =>
-            identity_op_fix(e) = Binary(
-                if op = IdentityOperator::Add then lang::BinaryOp::Sub else lang::BinaryOp::Add,
-                a,
-                w
-            ),
+            identity_op_fix(e)
+                = Binary(
+                    if op = IdentityOperator::Add then lang::BinaryOp::Sub else lang::BinaryOp::Add,
+                    a,
+                    w
+                ),
         Unchanged => identity_op_fix(e) = e,
     }
 }
@@ -311,19 +318,19 @@ expect identity_op_refires(x: lang::Expr<lang::Id>, c: lang::Expr<lang::Id>) {
                 )
             )
         )
-        and identity_op_fires?(
-            Binary(
-                Add,
-                c,
-                identity_op_fix(
-                    Binary(
-                        Mul,
-                        Literal(lang::Value::Integer(0)),
-                        Literal(lang::Value::Integer(1))
+            and identity_op_fires?(
+                Binary(
+                    Add,
+                    c,
+                    identity_op_fix(
+                        Binary(
+                            Mul,
+                            Literal(lang::Value::Integer(0)),
+                            Literal(lang::Value::Integer(1))
+                        )
                     )
                 )
             )
-        )
 }
 ```
 
@@ -406,8 +413,7 @@ fn pair_negated?(pairs: Set<PairNegation>, x: Operand, y: Operand) :=
         first := x,
         second := y,
         obligation? := true,
-    } in pairs
-    or PairNegation {
+    } in pairs or PairNegation {
         first := x,
         second := y,
         obligation? := false,
@@ -424,17 +430,21 @@ pub proc manual_at_most_one(
     det fires?,
     det exactly?,                 -- the fix is `exactly_one?`, rather than `at_most_one?`
 ) {
-    ensure rule: fires? iff ((exists (x y z: Operand), x != y and x != z and y != z
-        and named?(pairs, x) and named?(pairs, y) and named?(pairs, z))
-        and (forall (x: Operand), not pair_negated?(pairs, x, x))
-        and (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y),
-        pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x))
-        and not (exists (x y: Operand), PairNegation {
-            first := x,
-            second := y,
-            obligation? := true,
-        } in pairs))
-    ensure fix: exactly? iff (disjunction != {} and (forall (x: Operand), x in disjunction iff named?(pairs, x)))
+    ensure rule:
+        fires?
+            iff ((exists (x y z: Operand), x != y and x != z and y != z
+                    and named?(pairs, x) and named?(pairs, y) and named?(pairs, z))
+                and (forall (x: Operand), not pair_negated?(pairs, x, x))
+                and (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y),
+                    pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x))
+                and not (exists (x y: Operand), PairNegation {
+                    first := x,
+                    second := y,
+                    obligation? := true,
+                } in pairs))
+    ensure fix:
+        exactly?
+            iff (disjunction != {} and (forall (x: Operand), x in disjunction iff named?(pairs, x)))
 }
 ```
 
@@ -452,12 +462,12 @@ proc manual_at_most_one_meaning(
 
     expect at_most: when m.fires?,
         (forall (x y: Operand), when pair_negated?(pairs, x, y), not (x in holds and y in holds))
-        iff (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y), not (x in holds and y in holds))
+            iff (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y), not (x in holds and y in holds))
     expect exactly: when m.fires? and m.exactly?,
         ((exists (x: Operand), x in disjunction and x in holds)
-        and (forall (x y: Operand), when pair_negated?(pairs, x, y), not (x in holds and y in holds)))
-        iff (exists (x: Operand), named?(pairs, x) and x in holds
-        and (forall (y: Operand), when y != x and named?(pairs, y), not y in holds))
+                and (forall (x y: Operand), when pair_negated?(pairs, x, y), not (x in holds and y in holds)))
+            iff (exists (x: Operand), named?(pairs, x) and x in holds
+                and (forall (y: Operand), when y != x and named?(pairs, y), not y in holds))
 }
 ```
 
@@ -501,12 +511,15 @@ pub proc manual_at_most_one_any(
     det exactly?,                     -- the fix is `exactly_one?`, rather than `at_most_one?`
 ) {
     ensure rule: fires? iff ((exists (x y z: String), x != y and x != z and y != z
-        and written_named?(pairs, x) and written_named?(pairs, y) and written_named?(pairs, z))
+            and written_named?(pairs, x) and written_named?(pairs, y) and written_named?(pairs, z))
         and (forall (p: WrittenNegation), when p in pairs, p.first != p.second)
         and (forall (x y: String), when x != y and written_named?(pairs, x) and written_named?(pairs, y),
-        written_negated?(pairs, x, y) or written_negated?(pairs, y, x))
+            written_negated?(pairs, x, y) or written_negated?(pairs, y, x))
         and not (exists (p: WrittenNegation), p in pairs and p.obligation?))
-    ensure fix: exactly? iff (disjunction != {} and (forall (x: String), x in disjunction iff written_named?(pairs, x)))
+    ensure fix:
+        exactly?
+            iff (disjunction != {}
+                and (forall (x: String), x in disjunction iff written_named?(pairs, x)))
 }
 ```
 
@@ -525,8 +538,13 @@ pub proc manual_at_most_one_written(a?, b?, c?, d?): (
 ) {
     out three? := not (a? and b?) and not (a? and c?) and not (b? and c?)
     out turned? := not (b? and a?) and not (c? and b?) and not (c? and a?)
-    out four? := not (a? and b?) and not (a? and c?) and not (a? and d?) and not (b? and c?)
-        and not (b? and d?) and not (c? and d?)
+    out four? :=
+        not (a? and b?)
+            and not (a? and c?)
+            and not (a? and d?)
+            and not (b? and c?)
+            and not (b? and d?)
+            and not (c? and d?)
     out exactly? := (a? or b? or c?) and not (a? and b?) and not (a? and c?) and not (b? and c?)
     out after? := not (a? and b?) and not (a? and c?) and not (b? and c?) and (c? or a? or b?)
 }
@@ -611,8 +629,9 @@ pub proc manual_at_most_one_defined(
     use lang::{Cardinality, Env, Expr, Interp, Outcome, Value, eval}
 
     -- The operands are `Bool`s where they are well-defined.
-    assume booleans: eval(i, env, a) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
-        and eval(i, env, b) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
+    assume booleans:
+        eval(i, env, a) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
+            and eval(i, env, b) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
     assume no_obligation: unless obligation?, eval(i, env, a) is Outcome::Defined(_) and eval(i, env, b) is Outcome::Defined(_)
 
     let conjunct: Outcome := eval(i, env, Expr::And(a, b))
@@ -624,6 +643,7 @@ pub proc manual_at_most_one_defined(
 
     ensure kept: unless obligation?, conjunct is Outcome::Defined(_) and counted is Outcome::Defined(_)
     -- With an obligation, the `and`'s guard can be what makes it well-defined.
-    cover guard_needed: obligation? and conjunct is Outcome::Defined(_) and counted = Outcome::Undefined
+    cover guard_needed:
+        obligation? and conjunct is Outcome::Defined(_) and counted = Outcome::Undefined
 }
 ```

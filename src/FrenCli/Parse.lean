@@ -577,6 +577,8 @@ inductive RightForm where
   Boolean block. -/
   | bracketed
   | other
+  /-- An operation of binary operators that is a clause's expression. -/
+  | chain
   deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- A list or block whose line breaks the formatter decides
@@ -620,6 +622,29 @@ structure Bracketed where
   items : Array Nat := #[]
   deriving Inhabited, Repr
 
+/-- The right operand of a chain's last operator, for whether it hugs the
+chain, breaking in place (`fmt::ChainOperand`): wholly a record literal or
+update, a `match` or a table, whose first line ends with its brace; wholly a
+call, a method call or a sequence or set literal; or another expression. -/
+inductive ChainOperand where
+  | brace
+  | bracket
+  | other
+  deriving BEq, DecidableEq, Repr, Inhabited
+
+/-- A chain of binary operators of one precedence, such as `a and b and c`
+or `x + y - z`, whose operators may each start a line
+(`fmt::chain_layout`): its first and last tokens, its operators, the right
+operand of its last operator, and the columns before that operand, each
+token taking its width and a space. -/
+structure Chain where
+  first : Nat
+  last : Nat
+  operators : Array Nat
+  operand : ChainOperand := .other
+  before : Nat := 0
+  deriving Inhabited, Repr
+
 /-- What the formatter needs to know of a file's structure, as indices of
 tokens. -/
 structure Layout where
@@ -657,6 +682,11 @@ structure Layout where
   /-- The right sides of `:=` and `=>` that are expressions: the operator,
   and the first and last tokens of its right side. -/
   rightSides : Array (Nat × Nat × Nat × RightForm) := #[]
+  /-- The chains of binary operators whose line breaks the formatter
+  decides (`fmt::chain_layout`). -/
+  chains : Array Chain := #[]
+  /-- The `if`s: the `if` and the last token of its `else` branch. -/
+  ifs : Array (Nat × Nat) := #[]
   /-- The top-level items, the `import` and `open` lines of the header
   included, in order: the first and last tokens of each, an item's first
   being that of the `set_option ... in` before it, if any. -/
@@ -760,6 +790,19 @@ def rightSide (x : P Expr) : P Expr := do
       else .other
     modify fun s => { s with layout.rightSides := s.layout.rightSides.push (first - 1, first, last, form) }
   return e
+/-- Runs `x`, which parses the expression of a clause after the `:` just
+consumed, recording it as a right side of that `:` (`Layout.rightSides`)
+where it is wholly an operation of binary operators, which starts the next
+line where it breaks on the clause's (`fmt::right_side`). -/
+def clauseSide (x : P Expr) : P Expr := do
+  let first := (← get).pos
+  let e ← x
+  let s ← get
+  let last := s.pos - 1
+  if first > 0 && last ≥ first && (e matches .bin .. | .chain ..)
+      && e.span.start == s.toks[first]!.span.start && e.span.stop == s.toks[last]!.span.stop then
+    modify fun s => { s with layout.rightSides := s.layout.rightSides.push (first - 1, first, last, .chain) }
+  return e
 /-- Records that the next token closes the innermost open list or block. -/
 def closeList : P Unit := modify fun s =>
   match s.openLists.back? with
@@ -835,6 +878,25 @@ def bin (start : Span) (op : String) (l r : Expr) : P Expr := do
   let sp ← spanFrom start
   modify fun st => { st with layout.exprs := st.layout.exprs ++ #[sp, l.span, r.span], layout.pairs := st.layout.pairs.push (sp, r.span) }
   return .bin sp op l r
+
+/-- Records a chain of binary operators of one precedence, from token
+`first` to the last token consumed, with its operators `ops`, unless it has
+none or one of them may not start a line: a membership's `in` or a
+remainder's `mod`, which there start an input or a module. `r` is the right
+operand of its last operator. -/
+def chainOf (first : Nat) (ops : Array Nat) (r : Expr) : P Unit := do
+  let s ← get
+  if ops.isEmpty || ops.any (fun k => isKw s.toks[k]! "in" || isKw s.toks[k]! "mod") then return
+  let whole := (s.toks[ops.back! + 1]?).any (·.span.start == r.span.start)
+    && (s.toks[s.pos - 1]?).any (·.span.stop == r.span.stop)
+  let before := ((List.range (ops.back! + 1 - first)).map fun d =>
+    let t := s.toks[first + d]!
+    t.span.stop - t.span.start + 1).sum
+  let operand : ChainOperand := if !whole then .other
+    else if r matches .record .. | .update .. | .match .. | .matches .. | .table .. then .brace
+    else if r matches .app .. | .method .. | .seq .. | .set .. then .bracket
+    else .other
+  modify fun st => { st with layout.chains := st.layout.chains.push { first, last := s.pos - 1, operators := ops, operand, before } }
 
 /-- Runs `x` within brackets: a record literal may appear, even in a
 `match`'s scrutinee, and `in` is a membership, even in a definition of a
@@ -1275,28 +1337,46 @@ partial def exprBody : P Expr := do
 
 partial def iff : P Expr := do
   let start := (← peek).span
+  let first := (← get).pos
   let l ← or
+  let op := (← get).pos
   if (← eatKw "iff").isNone then return l
   let r ← or
+  chainOf first #[op] r
   if let some t ← eatKw "iff" then
     err t.span "F0107" "`iff` is not associative" (some "second `iff`")
       #["help: add parentheses to say which `iff` applies first, e.g. `a iff (b iff c)`"]
   bin start "iff" l r
 partial def or : P Expr := do
   let start := (← peek).span
+  let first := (← get).pos
   let mut l ← and
-  while (← eatKw "or").isSome do l ← bin start "or" l (← and)
+  let mut ops := #[]
+  let mut r := l
+  repeat
+    let op := (← get).pos
+    if (← eatKw "or").isNone then break
+    ops := ops.push op
+    r ← and
+    l ← bin start "or" l r
+  chainOf first ops r
   return l
 partial def and : P Expr := do
   let start := (← peek).span
+  let first := (← get).pos
   let mut l ← not
+  let mut ops := #[]
+  let mut r := l
   repeat
     let state ← get
     if state.stopNamedAnd && isKw (← peek) "and" &&
         (state.toks[state.pos + 1]?).any (fun t => t.tok matches .ident _) &&
         (state.toks[state.pos + 2]?).any (isKw · ":") then break
     if (← eatKw "and").isNone then break
-    l ← bin start "and" l (← not)
+    ops := ops.push state.pos
+    r ← not
+    l ← bin start "and" l r
+  chainOf first ops r
   return l
 partial def not : P Expr := do
   let t ← peek
@@ -1315,6 +1395,7 @@ partial def cmpOp? : P (Option String) := do
   return ["=", "!=", "<", "<=", ">", ">="].find? (isKw t ·)
 partial def cmp : P Expr := do
   let start := (← peek).span
+  let first := (← get).pos
   let l ← add
   if let some isTok ← eatKw "is" then
     let p ← pattern (arm := false)
@@ -1326,20 +1407,27 @@ partial def cmp : P Expr := do
     if (← cmpOp?).isSome || isKw (← peek) "is" then chainedIs isTok
     return e
   let some op ← cmpOp? | return l
+  let opAt := (← get).pos
   let t ← bump
   let r ← add
-  if (← cmpOp?).isNone && !isKw (← peek) "is" then return ← bin start op l r
+  if (← cmpOp?).isNone && !isKw (← peek) "is" then
+    let e ← bin start op l r
+    chainOf first #[opAt] r
+    return e
   -- A chained comparison (`lang::comparison_chain`), checked here, so that
   -- a chain that the grammar does not have does not parse. An `is` ends
   -- it, as an operator that does not chain.
   let mut operands := #[l, r]
   let mut ops := #[(op, t.span)]
+  let mut at_ := #[opAt]
   repeat
     if isKw (← peek) "is" then ops := ops.push ("is", (← peek).span); break
     let some op ← cmpOp? | break
+    at_ := at_.push (← get).pos
     ops := ops.push (op, (← bump).span)
     operands := operands.push (← add)
   if let .error (k, msg) := Fren.Core.checkChain (ops.map (·.1)) then throw { span := ops[k]!.2, msg }
+  chainOf first at_ operands.back!
   return .chain (← spanFrom start) operands ops
 /-- `is`, at `t`, chained with a comparison or another `is` after it: it
 does not chain (`lang::comparison_chain`). -/
@@ -1347,28 +1435,41 @@ partial def chainedIs (t : Token) : P Unit :=
   throw { span := t.span, msg := Fren.Core.chainOtherMsg "is" }
 partial def add : P Expr := do
   let start := (← peek).span
+  let first := (← get).pos
   let mut l ← mul
+  let mut ops := #[]
+  let mut r := l
   repeat
-    if isKw (← peek) "union" || isKw (← peek) "minus" then
-      let op := match (← bump).tok with | .kw w => w | _ => ""
-      l ← bin start op l (← mul)
-    else if (← eatKw "++").isSome then l ← bin start "++" l (← mul)
-    else if (← eatKw "+").isSome then l ← bin start "+" l (← mul)
-    else if (← eatKw "-").isSome then l ← bin start "-" l (← mul)
-    else break
+    let t ← peek
+    let op := if isKw t "union" || isKw t "minus" || isKw t "++" || isKw t "+" || isKw t "-" then
+        match t.tok with | .kw w => some w | _ => none
+      else none
+    let some op := op | break
+    ops := ops.push (← get).pos
+    discard bump
+    r ← mul
+    l ← bin start op l r
+  chainOf first ops r
   return l
 partial def mul : P Expr := do
   let start := (← peek).span
+  let first := (← get).pos
   let mut l ← unary
+  let mut ops := #[]
+  let mut r := l
   repeat
-    if (← eatKw "*").isSome then l ← bin start "*" l (← unary)
-    else if isKw (← peek) "inter" then discard bump; l ← bin start "inter" l (← unary)
-    else if isKw (← peek) "join" then discard bump; l ← bin start "join" l (← unary)
-    else if isKw (← peek) "div" then discard bump; l ← bin start "div" l (← unary)
+    let t ← peek
     -- A remainder's `mod` is on the line of its left operand; at the start
     -- of a line, it starts a module.
-    else if isKw (← peek) "mod" && !(← peek).nlBefore then discard bump; l ← bin start "mod" l (← unary)
-    else break
+    let op := if isKw t "*" || isKw t "inter" || isKw t "join" || isKw t "div" || (isKw t "mod" && !t.nlBefore) then
+        match t.tok with | .kw w => some w | _ => none
+      else none
+    let some op := op | break
+    ops := ops.push (← get).pos
+    discard bump
+    r ← unary
+    l ← bin start op l r
+  chainOf first ops r
   return l
 partial def unary : P Expr := do
   let pos := (← get).pos
@@ -1598,6 +1699,7 @@ partial def atom : P Expr := do
     discard (expectKw "]")
     fieldReads callArgs indexArg (.seq (← spanFrom t.span) es)
   | .kw "if" =>
+    let ifAt := (← get).pos
     discard bump
     -- The condition and `then` branch are delimited, so `in` is a
     -- membership there even in a definition of a `let`.
@@ -1607,7 +1709,7 @@ partial def atom : P Expr := do
     discard (expectKw "else")
     let b ← expr
     let sp ← spanFrom t.span
-    modify fun st => { st with layout.exprs := st.layout.exprs.push sp }
+    modify fun st => { st with layout.exprs := st.layout.exprs.push sp, layout.ifs := st.layout.ifs.push (ifAt, st.pos - 1) }
     return .ite sp c a b
   | .kw "(" =>
     discard bump
@@ -1831,7 +1933,7 @@ def member : P Member := do
   if ((← peek).tok matches .ident _) && (state.toks[state.pos + 1]?).any (isKw · ":") then
     let x ← ident
     discard (expectKw ":")
-    return .prop kind x (← top)
+    return .prop kind x (← clauseSide top)
   let expression ← top
   unless kind != .cover && expression.blockRoot do fail t "a named clause or a Boolean block"
   return .prop kind { name := "", span := t.span } expression
@@ -2135,7 +2237,7 @@ partial def item (inTrait := false) : P Item := do
     let bs ← match ← eatKw "forall" with
       | some kw => binders kw
       | none => pure #[]
-    return .global name bs (← top)
+    return .global name bs (← if bs.isEmpty then clauseSide top else top)
   let isPub := (← eatKw "pub").isSome
   -- `ordered`, which an enum or a struct takes, after `pub`
   -- (`lang::ordered_declaration`).
@@ -2340,7 +2442,7 @@ partial def traitMember : P Item := do
   closeList
   discard (expectKw ")")
   discard (expectKw ":")
-  return .law name params (← top)
+  return .law name params (← clauseSide top)
 end
 
 /-- Skips `import X` and `open X` lines at the start of the file. -/

@@ -46,8 +46,9 @@ pub proc boolean_block(block_kind: BoolBlockKind, members: Seq<BoolBlockMember>)
     ensure disjunction: when block_kind = BoolBlockKind::Disjunction,
         holds? iff (exists (i: Int), 0 <= i < members.len and members[i].value?)
     ensure equivalence: when block_kind = BoolBlockKind::Equivalence,
-        holds? iff (forall (i: Int), forall (j: Int), when 0 <= i < members.len and 0 <= j < members.len,
-        members[i].value? iff members[j].value?)
+        holds?
+            iff (forall (i: Int), forall (j: Int), when 0 <= i < members.len and 0 <= j < members.len,
+                members[i].value? iff members[j].value?)
     ensure exactly_one: when block_kind = BoolBlockKind::ExactlyOne,
         holds? iff (exists (i: Int), 0 <= i < members.len and members[i].value? and
         (forall (j: Int), when 0 <= j < members.len and j != i, not members[j].value?))
@@ -104,8 +105,10 @@ pub proc block_evaluation(block_kind: BoolBlockKind, values: Seq<Bool>, position
     ensure disjunction: when 0 <= position < values.len and block_kind = BoolBlockKind::Disjunction,
         evaluated? iff not (exists (j: Int), 0 <= j < position and values[j])
     ensure equivalence: when 0 <= position < values.len and block_kind = BoolBlockKind::Equivalence,
-        evaluated? iff values.len > 1 and
-        (position = 0 or (forall (j: Int), when 1 <= j < position, values[j] = values[0]))
+        evaluated?
+            iff values.len > 1
+                and (position = 0
+                    or (forall (j: Int), when 1 <= j < position, values[j] = values[0]))
     ensure exactly_one: when 0 <= position < values.len and block_kind = BoolBlockKind::ExactlyOne,
         evaluated? iff not (exists (i: Int), exists (j: Int),
         0 <= i < j < position and values[i] and values[j])
@@ -146,7 +149,9 @@ span covering unrelated members.
 
 ```fren
 pub proc distributed_guard(ancestor_guards: Seq<Bool>, member?, inactive: Int): (guarded?) {
-    ensure implication: guarded? iff (when (forall (i: Int), when 0 <= i < ancestor_guards.len, ancestor_guards[i]), member?)
+    ensure implication:
+        guarded?
+            iff (when (forall (i: Int), when 0 <= i < ancestor_guards.len, ancestor_guards[i]), member?)
     expect no_guards: when ancestor_guards = [], guarded? iff member?
     expect inactive_parent: when 0 <= inactive < ancestor_guards.len and not ancestor_guards[inactive], guarded?
     expect nested: when ancestor_guards = [true, true], guarded? iff member?
@@ -164,7 +169,8 @@ pub fn clause_guard?(step: ClauseAncestor) := match step {
 }
 
 pub proc clause_leaf_path(path: Seq<ClauseAncestor>, member?): (split?, active?, guarded?) {
-    ensure independent: split? iff (forall (i: Int), when 0 <= i < path.len, clause_splits?(path[i]))
+    ensure independent:
+        split? iff (forall (i: Int), when 0 <= i < path.len, clause_splits?(path[i]))
     ensure all_guards: active? iff (forall (i: Int), when 0 <= i < path.len, clause_guard?(path[i]))
     ensure leaf_meaning: guarded? iff (when active?, member?)
     expect nested_named_indexed: when path = [
@@ -295,8 +301,10 @@ pub proc exactly_one_reach(values: Seq<Bool>, position: Int): (det reached?) {
 }
 
 pub proc exactly_one_branch(values: Seq<Bool>, chosen: Int): (det branch?) {
-    out branch? := 0 <= chosen < values.len and values[chosen] and
-        (forall (j: Int), when 0 <= j < values.len and j != chosen, not values[j])
+    out branch? :=
+        0 <= chosen < values.len
+            and values[chosen]
+            and (forall (j: Int), when 0 <= j < values.len and j != chosen, not values[j])
     expect unique_chosen: when branch?, forall (j: Int), when 0 <= j < values.len, values[j] iff j = chosen
     expect empty_no_branch: when values = [], not branch?
     expect positive_singleton: when values = [true] and chosen = 0, branch?
@@ -351,10 +359,14 @@ pub proc branch_forcing(branch: Set<BranchBehaviour>, rest: Set<BranchBehaviour>
     rest_forces_opposite?,
     excluded?,
 ) {
-    ensure branch_value: branch_forces? iff branch != {} and
-        (forall (b: BranchBehaviour), when b in branch, branch_first?(b) iff forced?)
-    ensure rest_value: rest_forces_opposite? iff rest != {} and
-        (forall (b: BranchBehaviour), when b in rest, branch_first?(b) iff not forced?)
+    ensure branch_value:
+        branch_forces?
+            iff branch != {}
+                and (forall (b: BranchBehaviour), when b in branch, branch_first?(b) iff forced?)
+    ensure rest_value:
+        rest_forces_opposite?
+            iff rest != {}
+                and (forall (b: BranchBehaviour), when b in rest, branch_first?(b) iff not forced?)
     ensure exclusion: excluded? iff branch inter rest = {}
     expect clash_excludes: when branch_forces? and rest_forces_opposite?, excluded?
     expect impossible_not_forcing: when branch = {}, not branch_forces?
@@ -385,8 +397,10 @@ pub proc branch_query_count(
             BranchBudget::Unlimited => true,
             BranchBudget::Remaining(n) => n > 0,
         }
-    ensure alternatives: branches = if not selected? or premises != BranchPremises::Model or block_kind = BoolBlockKind::Conjunction then 0
-        else if block_kind = BoolBlockKind::Equivalence then 2 else members
+    ensure alternatives:
+        branches
+            = if not selected? or premises != BranchPremises::Model or block_kind = BoolBlockKind::Conjunction then 0
+                else if block_kind = BoolBlockKind::Equivalence then 2 else members
     expect unrelated_free: when not in_core?, branches = 0
     expect zero_budget: when budget = BranchBudget::Remaining(0), not selected? and branches = 0
     expect one_per_member: when selected? and premises = BranchPremises::Model and block_kind = BoolBlockKind::ExactlyOne, branches = members
@@ -405,8 +419,10 @@ pub proc branch_query_families(
     call count := branch_query_count(block_kind, members, in_core?, budget, premises)
     out shared_queries :=
         if count.selected? and block_kind != BoolBlockKind::Conjunction then 1 else 0
-    ensure families: accounted? iff family_counts.len = count.branches and
-        (forall (i: Int), when 0 <= i < family_counts.len, family_counts[i] = per_branch)
+    ensure families:
+        accounted?
+            iff family_counts.len = count.branches
+                and (forall (i: Int), when 0 <= i < family_counts.len, family_counts[i] = per_branch)
     expect no_hidden_queries: when not in_core?, (accounted? iff family_counts = []) and shared_queries = 0
     expect zero_budget: when budget = BranchBudget::Remaining(0), shared_queries = 0 and (accounted? iff family_counts = [])
     expect uncertain_context: when premises != BranchPremises::Model and accounted?, family_counts = []

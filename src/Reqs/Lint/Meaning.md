@@ -197,23 +197,27 @@ fix agrees with it.
 ```fren
 -- `r` is the product of `m` and `n`, where one of them is `0`, `1` or `-1`.
 fn usual_product?(m: Int, n: Int, r: Int) :=
-    (when n = 1, r = m) and (when m = 1, r = n) and (when n = -1, r = -m) and (when m = -1, r = -n)
-    and (when m = 0 or n = 0, r = 0)
+    (when n = 1, r = m)
+        and (when m = 1, r = n)
+        and (when n = -1, r = -m)
+        and (when m = -1, r = -n)
+        and (when m = 0 or n = 0, r = 0)
 
 -- `r` is the remainder of `m` by `n`, where `n` is not `0`: in range, and
 -- `m`'s distance to the range where that is at most `n.abs`.
 fn usual_remainder?(m: Int, n: Int, r: Int) := when n != 0,
     0 <= r < n.abs
-    and (when 0 <= m < n.abs, r = m)
-    and (when n.abs <= m < n.abs + n.abs, r = m - n.abs)
-    and (when -n.abs <= m < 0, r = m + n.abs)
+        and (when 0 <= m < n.abs, r = m)
+        and (when n.abs <= m < n.abs + n.abs, r = m - n.abs)
+        and (when -n.abs <= m < 0, r = m + n.abs)
 
 -- The point `f` at `args` is `r` meets the usual meaning of `f` that the lints rest on.
 fn usual_point?(f: lang::Id, args: lang::Value, r: lang::Value) := match args, r {
     lang::Value::Cons(lang::Value::Integer(m), lang::Value::Cons(lang::Value::Integer(n), lang::Value::Nil)),
-    lang::Value::Integer(k) => (when f = "*", usual_product?(m, n, k))
-        and (when f = "div", (when n = 1, k = m) and (when m = 0, k = 0))
-        and (when f = "mod", usual_remainder?(m, n, k)),
+    lang::Value::Integer(k) =>
+        (when f = "*", usual_product?(m, n, k))
+            and (when f = "div", (when n = 1, k = m) and (when m = 0, k = 0))
+            and (when f = "mod", usual_remainder?(m, n, k)),
     lang::Value::Cons(lang::Value::Integer(_), lang::Value::Cons(lang::Value::Integer(_), lang::Value::Nil)),
     _ => not (f is "*" | "div" | "mod"),
     lang::Value::Cons(lang::Value::Text(s), lang::Value::Cons(lang::Value::Text(t), lang::Value::Nil)),
@@ -278,20 +282,30 @@ pub proc usual_primitives(m: Int, n: Int, s: String, t: String): (
 expect usual_language(m: Int, n: Int, s: String, t: String) {
     use lang::Value::{Cons, Integer, Nil, Text}
 
-    expect times_zero: usual_point?("*", integers(m, 0), Integer(0)) and usual_point?("*", integers(0, n), Integer(0))
-    expect times_one: usual_point?("*", integers(m, 1), Integer(m)) and usual_point?("*", integers(1, n), Integer(n))
-    expect times_minus_one: usual_point?("*", integers(m, -1), Integer(-m))
-        and usual_point?("*", integers(-1, n), Integer(-n))
-    expect by_one: usual_point?("div", integers(m, 1), Integer(m)) and usual_point?("div", integers(m, -1), Integer(-m))
+    expect times_zero:
+        usual_point?("*", integers(m, 0), Integer(0))
+            and usual_point?("*", integers(0, n), Integer(0))
+    expect times_one:
+        usual_point?("*", integers(m, 1), Integer(m))
+            and usual_point?("*", integers(1, n), Integer(n))
+    expect times_minus_one:
+        usual_point?("*", integers(m, -1), Integer(-m))
+            and usual_point?("*", integers(-1, n), Integer(-n))
+    expect by_one:
+        usual_point?("div", integers(m, 1), Integer(m))
+            and usual_point?("div", integers(m, -1), Integer(-m))
     expect by_zero: usual_point?("div", integers(m, 0), Integer(0))
     expect of_zero: usual_point?("div", integers(0, n), Integer(0))
-    expect mod_one: usual_point?("mod", integers(m, 1), Integer(0)) and usual_point?("mod", integers(m, -1), Integer(0))
+    expect mod_one:
+        usual_point?("mod", integers(m, 1), Integer(0))
+            and usual_point?("mod", integers(m, -1), Integer(0))
     expect mod_zero: usual_point?("mod", integers(m, 0), Integer(m))
     expect mod_near: when n != 0,
         (when 0 <= m < n.abs, usual_point?("mod", integers(m, n), Integer(m)))
-        and (when n.abs <= m < n.abs + n.abs, usual_point?("mod", integers(m, n), Integer(m - n.abs)))
-        and (when -n.abs <= m < 0, usual_point?("mod", integers(m, n), Integer(m + n.abs)))
-    expect empty: usual_point?("++", Cons(Text(s), Cons(Text(""), Nil)), Text(s))
-        and usual_point?("++", Cons(Text(""), Cons(Text(t), Nil)), Text(t))
+            and (when n.abs <= m < n.abs + n.abs, usual_point?("mod", integers(m, n), Integer(m - n.abs)))
+            and (when -n.abs <= m < 0, usual_point?("mod", integers(m, n), Integer(m + n.abs)))
+    expect empty:
+        usual_point?("++", Cons(Text(s), Cons(Text(""), Nil)), Text(s))
+            and usual_point?("++", Cons(Text(""), Cons(Text(t), Nil)), Text(t))
 }
 ```

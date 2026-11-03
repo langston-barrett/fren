@@ -87,7 +87,9 @@ pub proc trait_member(
 ): (det accepted?) {
     use self::TraitMemberKind::{Expectation, Law, Method}
 
-    ensure rule: accepted? iff (member in {Method, Law, Expectation} and not pub? and not generic? and not uses?)
+    ensure rule:
+        accepted?
+            iff (member in {Method, Law, Expectation} and not pub? and not generic? and not uses?)
 
     expect methods: when member = Method and not pub? and not generic? and not uses?, accepted?
     expect no_default_methods: when member = TraitMemberKind::DefinedFunction, not accepted?

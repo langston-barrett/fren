@@ -98,15 +98,21 @@ pub proc eq_op_values(op: InfixOp, x: Int, a?, s: Set<Int>) {
     )
 
     expect said: when e.fires?, match e.value {
-        AlwaysTrue => (op = Eq and x = x) or (op = Le and x <= x) or (op = Ge and x >= x)
-            or (op = Iff and (a? iff a?)) or (op = Subset and s subset s),
+        AlwaysTrue =>
+            (op = Eq and x = x)
+                or (op = Le and x <= x)
+                or (op = Ge and x >= x)
+                or (op = Iff and (a? iff a?))
+                or (op = Subset and s subset s),
         AlwaysFalse =>
             (op = Ne and not (x != x)) or (op = Lt and not (x < x)) or (op = Gt and not (x > x)),
         Zero => op = Sub and x - x = 0,
         Empty => op = Minus and s minus s = {},
         EqOpValue::Operand =>
-            (op = And and ((a? and a?) iff a?)) or (op = Or and ((a? or a?) iff a?))
-            or (op = Union and s union s = s) or (op = Inter and s inter s = s),
+            (op = And and ((a? and a?) iff a?))
+                or (op = Or and ((a? or a?) iff a?))
+                or (op = Union and s union s = s)
+                or (op = Inter and s inter s = s),
     }
 }
 ```
@@ -257,12 +263,13 @@ pub fn modelled?(op: InfixOp) :=
 
 pub fn eq_op_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::Binary(op, a, b) =>
-        a = b and op in {
-            lang::BinaryOp::Eq,
-            lang::BinaryOp::Lt,
-            lang::BinaryOp::Le,
-            lang::BinaryOp::Sub,
-        },
+        a = b
+            and op in {
+                lang::BinaryOp::Eq,
+                lang::BinaryOp::Lt,
+                lang::BinaryOp::Le,
+                lang::BinaryOp::Sub,
+            },
     lang::Expr::Unary(lang::UnaryOp::Not, lang::Expr::Binary(lang::BinaryOp::Eq, a, b)) => a = b,
     lang::Expr::And(a, b) => a = b,
     lang::Expr::Or(a, b) => a = b,
@@ -315,7 +322,8 @@ expect eq_op_elaborated(op: InfixOp, left: Scoped, right: Scoped) {
 
     expect fires: when p.fires? and modelled?(op),
         eq_op_fires?(infix_of(op, written(left), written(right)))
-        and eq_op_said(infix_of(op, written(left), written(right))) = value_of(p.value, written(left))
+            and eq_op_said(infix_of(op, written(left), written(right)))
+                = value_of(p.value, written(left))
     expect others: when op in {InfixOp::Add, InfixOp::Mul, InfixOp::Concat},
         not p.fires? and not eq_op_fires?(infix_of(op, written(left), written(right)))
 }
@@ -325,8 +333,8 @@ expect eq_op_conditional_elaborated(unless?, condition: Scoped, body: Scoped) {
 
     expect fires: when p.fires?,
         eq_op_fires?(conditional_of(unless?, written(condition), written(body)))
-        and eq_op_said(conditional_of(unless?, written(condition), written(body)))
-        = value_of(p.value, written(condition))
+            and eq_op_said(conditional_of(unless?, written(condition), written(body)))
+                = value_of(p.value, written(condition))
 }
 ```
 
@@ -512,10 +520,11 @@ and what it states is that its message is right.
 ```fren
 -- `e` is `0`, possibly negated.
 fn zero_dividend?<V>(e: lang::Expr<V>) :=
-    zero?(e) or e = lang::Expr::Unary(
-        lang::UnaryOp::Neg,
-        lang::Expr::Literal(lang::Value::Integer(0))
-    )
+    zero?(e)
+        or e = lang::Expr::Unary(
+            lang::UnaryOp::Neg,
+            lang::Expr::Literal(lang::Value::Integer(0))
+        )
 
 pub fn erasing_op_fires?<V>(e: lang::Expr<V>) := match e {
     lang::Expr::Binary(lang::BinaryOp::Mul, a, b) => zero?(a) or zero?(b),
@@ -590,7 +599,9 @@ expect erasing_division_elaborated(
         else if negated? then Unary(lang::UnaryOp::Neg, Literal(Integer(n)))
         else Literal(Integer(n))
 
-    expect fires: (p.fires? iff erasing_op_fires?(Binary(Div, a, k))) and (p.fires? iff erasing_op_fires?(Binary(Mod, a, k)))
+    expect fires:
+        (p.fires? iff erasing_op_fires?(Binary(Div, a, k)))
+            and (p.fires? iff erasing_op_fires?(Binary(Mod, a, k)))
 }
 ```
 
@@ -736,7 +747,8 @@ pub proc same_rows(
     expect keeps_meaning: forall (s: Slot), when fires? and fixed? and pos(s) < rows.len
         and (row_holds?(rows[pos(s)]) or pos(s) = rows.len - 1)
         and (forall (r: Slot), when pos(r) < pos(s), not row_holds?(rows[pos(r)])),
-        body_value(row_value(rows[pos(s)]), -1, 0, -1, 0, -1, 0, o) = body_value(row_value(rows[0]), -1, 0, -1, 0, -1, 0, o)
+        body_value(row_value(rows[pos(s)]), -1, 0, -1, 0, -1, 0, o)
+            = body_value(row_value(rows[0]), -1, 0, -1, 0, -1, 0, o)
 }
 ```
 
@@ -888,7 +900,9 @@ pub proc ifs_same_cond_taken(
     )
 
     -- The branch of `q` is taken where `q` is `true` and `p` `false`.
-    expect taken: chain = (if p? then Outcome::Defined(a) else if q? then Outcome::Defined(b) else Outcome::Defined(d))
+    expect taken:
+        chain
+            = (if p? then Outcome::Defined(a) else if q? then Outcome::Defined(b) else Outcome::Defined(d))
     expect never_taken: when (p? iff q?), chain = without
     cover second: not p? and q? and chain = Outcome::Defined(b)
     cover same: (p? iff q?) and chain = without
@@ -966,7 +980,7 @@ expect same_branches_tables(
     expect rows: same_branches_fix(If(c, v, same_branches_fix(If(d, v, v)))) = v
     expect no_wildcard: unless v = lang::Expr::NoMatch,
         not same_branches_fires?(If(c, v, If(d, v, lang::Expr::NoMatch)))
-        and not same_branches_fires?(If(d, v, lang::Expr::NoMatch))
+            and not same_branches_fires?(If(d, v, lang::Expr::NoMatch))
 }
 ```
 
@@ -1008,7 +1022,8 @@ expect same_branches_refires(
     use lang::Expr::If
 
     expect kept: same_branches_fires?(same_branches_fix(If(c, If(d, v, v), If(d, v, v))))
-    expect around: not same_branches_fires?(If(c, v, If(d, v, v)))
-        and same_branches_fires?(If(c, v, same_branches_fix(If(d, v, v))))
+    expect around:
+        not same_branches_fires?(If(c, v, If(d, v, v)))
+            and same_branches_fires?(If(c, v, same_branches_fix(If(d, v, v))))
 }
 ```

@@ -48,7 +48,11 @@ pub proc positional_refinement(
 ): (det arity?, det slot?, det accepted?) {
     out arity? := actual.len = required.len
     out slot? :=
-        0 <= position < actual.len and position < required.len and (actual[position] = required[position] or (actual[position] = RefineValueType::Natural and required[position] = RefineValueType::Integer))
+        0 <= position < actual.len
+            and position < required.len
+            and (actual[position] = required[position]
+                or (actual[position] = RefineValueType::Natural
+                    and required[position] = RefineValueType::Integer))
     out accepted? := arity? and slot? and existentials = {}
     expect no_narrowing: when 0 <= position < actual.len and position < required.len
         and actual[position] = RefineValueType::Integer and required[position] = RefineValueType::Natural, not slot?

@@ -157,8 +157,9 @@ pub proc element_quantifier(
         and (forall (i: Int), when 0 <= i < j, binder_verdict(binders[i]) = InCore),
         verdict = binder_verdict(binders[j])
     ensure rest: when (forall (b: ElementBinder), when b in binders, binder_verdict(b) = InCore),
-        verdict = (if output? then MentionsOutput else if nesting = ElementNesting::Other then Nested
-        else if bound? then MentionsBound else InCore)
+        verdict
+            = (if output? then MentionsOutput else if nesting = ElementNesting::Other then Nested
+                else if bound? then MentionsBound else InCore)
 }
 ```
 
@@ -223,14 +224,17 @@ pub proc index_set(
 ) {
     assume neighbours: before.len = positions.len and after.len = positions.len
 
-    ensure rule: index_set? iff (terms != [] and terms[0] = zero
-        and (forall (t: IndexTerm), when t in lasts, t in terms)
-        and (forall (t: IndexTerm), when t in reads, t in terms)
-        and (forall (i: Int), when 0 <= i < positions.len, before[i] in terms and positions[i] in terms and after[i] in terms)
-        and (forall (t: IndexTerm), when t in witnesses, t in terms)
-        and (forall (t: IndexTerm), when t in terms, t = zero or t in lasts or t in reads or t in positions or t in before
-        or t in after or t in witnesses)
-        and (forall (i j: Int), when 0 <= i < terms.len and 0 <= j < terms.len and i != j, terms[i] != terms[j]))
+    ensure rule:
+        index_set?
+            iff (terms != []
+                and terms[0] = zero
+                and (forall (t: IndexTerm), when t in lasts, t in terms)
+                and (forall (t: IndexTerm), when t in reads, t in terms)
+                and (forall (i: Int), when 0 <= i < positions.len, before[i] in terms and positions[i] in terms and after[i] in terms)
+                and (forall (t: IndexTerm), when t in witnesses, t in terms)
+                and (forall (t: IndexTerm), when t in terms, t = zero or t in lasts or t in reads or t in positions or t in before
+                    or t in after or t in witnesses)
+                and (forall (i j: Int), when 0 <= i < terms.len and 0 <= j < terms.len and i != j, terms[i] != terms[j]))
 }
 ```
 
@@ -278,11 +282,13 @@ pub proc element_projection(
 ) {
     assume zero: 0 in ix
 
-    ensure rule: projection? iff (projected.len = q.len
-        and (forall (t: Int), when t in ix and 0 <= t < q.len, projected[t] = q[t])
-        and (when (forall (t: Int), when t in ix and 0 <= t < q.len, q[t] in good),
-        forall (x: Int), when x in projected, x in good)
-        and (when i in ix and i + 1 in ix and 0 <= i < q.len, updated = projected.update(i, v)))
+    ensure rule:
+        projection?
+            iff (projected.len = q.len
+                and (forall (t: Int), when t in ix and 0 <= t < q.len, projected[t] = q[t])
+                and (when (forall (t: Int), when t in ix and 0 <= t < q.len, q[t] in good),
+                    forall (x: Int), when x in projected, x in good)
+                and (when i in ix and i + 1 in ix and 0 <= i < q.len, updated = projected.update(i, v)))
 }
 ```
 
@@ -331,8 +337,10 @@ pub proc site_expanded(
     receivers_closed?,           -- its sequences mention no name bound around it
     mentioned: Seq<Int>,         -- the positions of the binders whose names its body mentions
 ): (det expanded?) {
-    ensure rule: expanded? iff (receivers_closed?
-        and (forall (j: Int), when j in mentioned, 0 <= j < frames.len and in_chain?(frames, all?, j)))
+    ensure rule:
+        expanded?
+            iff (receivers_closed?
+                and (forall (j: Int), when j in mentioned, 0 <= j < frames.len and in_chain?(frames, all?, j)))
 }
 ```
 
@@ -362,8 +370,10 @@ pub proc element_witness(
     det failing: Int,            -- the first position where the body fails, and 0 where there is none
 ) {
     ensure meaning: all? iff (forall (x: Int), when x in q, x in good)
-    ensure instances_rule: instances? iff ((when 0 <= w < q.len, q[w] in good)
-        and (forall (t: Int), when t in ix and 0 <= t < q.len, q[t] in good))
+    ensure instances_rule:
+        instances?
+            iff ((when 0 <= w < q.len, q[w] in good)
+                and (forall (t: Int), when t in ix and 0 <= t < q.len, q[t] in good))
     ensure sound: when all?, instances?
     ensure witness: when not all?, 0 <= failing < q.len and not (q[failing] in good)
     ensure first: forall (i: Int), when 0 <= i < failing, q[i] in good

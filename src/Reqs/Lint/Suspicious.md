@@ -390,8 +390,12 @@ path of that one name with no parts:
 pub proc redundant_locals(name: Local, bang?, annotated?, value: Tree): (det fires?) {
     use lint::{Local, Tree}
 
-    ensure rule: fires? iff (bang? and not annotated? and (value.root, name) in value.paths
-        and value.children.image({value.root}) = {})
+    ensure rule:
+        fires?
+            iff (bang?
+                and not annotated?
+                and (value.root, name) in value.paths
+                and value.children.image({value.root}) = {})
 
     expect more: when value.children != {} and value.root in value.children.domain, not fires?
 }

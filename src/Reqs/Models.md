@@ -158,9 +158,10 @@ expect default_examples(t: TypeShape) {
             )
         )
     ),
-        default_value(t) = Outcome::Defined(
-            Value::Constructed("F::L", Value::Cons(Value::Nil, Value::Nil))
-        )
+        default_value(t)
+            = Outcome::Defined(
+                Value::Constructed("F::L", Value::Cons(Value::Nil, Value::Nil))
+            )
     expect skips_itself: when t = TypeShape::Data(
         TypeShape::Variant(
             "G::N",
@@ -176,9 +177,10 @@ expect default_examples(t: TypeShape) {
         default_value(t) = Outcome::Undefined
     -- A newtype's value is its underlying type's, constructed: `Ms(0)`.
     expect newtype: when t = TypeShape::Newtype("Ms", TypeShape::Integer),
-        default_value(t) = Outcome::Defined(
-            Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil))
-        )
+        default_value(t)
+            = Outcome::Defined(
+                Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil))
+            )
     expect text: when t = TypeShape::Text, default_value(t) = Outcome::Defined(Value::Text(""))
     expect set: when t = TypeShape::Set, default_value(t) = Outcome::Defined(Value::Nil)
     -- A record: its fields, in the order declared.
@@ -192,18 +194,19 @@ expect default_examples(t: TypeShape) {
             TypeShape::NoVariant
         )
     ),
-        default_value(t) = Outcome::Defined(
-            Value::Constructed(
-                "P",
-                Value::Cons(
-                    Value::False,
+        default_value(t)
+            = Outcome::Defined(
+                Value::Constructed(
+                    "P",
                     Value::Cons(
-                        Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)),
-                        Value::Nil
+                        Value::False,
+                        Value::Cons(
+                            Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)),
+                            Value::Nil
+                        )
                     )
                 )
             )
-        )
 }
 ```
 
@@ -511,7 +514,8 @@ pub proc known_if(
 set_option fren.lint.undecidable "allow" in
 pub proc arm_test_of(tests: Seq<Truth>): (det test: Truth) {
     use check::Truth::{False, True, Unknown}
-    ensure kleene: test = (if False in tests then False else if Unknown in tests then Unknown else True)
+    ensure kleene:
+        test = (if False in tests then False else if Unknown in tests then Unknown else True)
 }
 
 -- Whether an outcome is a value.
@@ -589,8 +593,8 @@ expect or_known(i: Interp, env: Env, a: Expr<Id>, b: Expr<Id>) {
 
 -- How many of the list `args`'s values are `true`, and how many are unknown.
 pub fn trues_of(i: Interp, env: Env, args: Expr<Id>): Nat := match args {
-    Expr::Cons(a, rest) => (if eval(i, env, a) = Outcome::Defined(Value::True) then 1 else 0)
-        + trues_of(i, env, rest),
+    Expr::Cons(a, rest) =>
+        (if eval(i, env, a) = Outcome::Defined(Value::True) then 1 else 0) + trues_of(i, env, rest),
     _ => 0,
 }
 
@@ -730,8 +734,9 @@ pub fn natural_outcome?(o: Outcome) := match o {
 -- negative, each a literal, negated or not, or a constant (`integer_of`).
 pub fn spelled?(i: Interp, e: Expr<Id>) := match e {
     Expr::Binary(op, a, b) => op = BinaryOp::Add and spelled?(i, a) and spelled?(i, b),
-    Expr::If(_, t, f) => integer_of(i, t) = Outcome::Defined(Value::Integer(1))
-        and integer_of(i, f) = Outcome::Defined(Value::Integer(0)),
+    Expr::If(_, t, f) =>
+        integer_of(i, t) = Outcome::Defined(Value::Integer(1))
+            and integer_of(i, f) = Outcome::Defined(Value::Integer(0)),
     Expr::Literal(v) => natural?(v),
     Expr::Unary(_, _) | Expr::Apply(_, _, _, _) => natural_outcome?(integer_of(i, e)),
     _ => false,
@@ -751,8 +756,9 @@ pub fn spelled_count(op: BinaryOp): Cardinality := match op {
 }
 
 pub fn counts?(i: Interp, op: BinaryOp, a: Expr<Id>, b: Expr<Id>) :=
-    op is BinaryOp::Eq | BinaryOp::Le and integer_of(i, b) = Outcome::Defined(Value::Integer(1))
-    and spelled?(i, a)
+    op is BinaryOp::Eq | BinaryOp::Le
+        and integer_of(i, b) = Outcome::Defined(Value::Integer(1))
+        and spelled?(i, a)
 
 pub fn number(o: Outcome): Int := match o {
     Outcome::Defined(Value::Integer(n)) => n,
@@ -930,7 +936,7 @@ set_option fren.evidence "random" in
 expect known_sound(i: Interp, env: Env, x: Id, v: Value, e: Expr<Id>) {
     expect same: when defined?(known_eval(i, Env::Bind(x, Outcome::Undefined, env), e)),
         known_eval(i, Env::Bind(x, Outcome::Defined(v), env), e)
-        = known_eval(i, Env::Bind(x, Outcome::Undefined, env), e)
+            = known_eval(i, Env::Bind(x, Outcome::Undefined, env), e)
 }
 
 -- It gives every value that `lang::eval` gives, and the same one.
@@ -1106,13 +1112,14 @@ pub proc decision(
 
 -- Whether `known_eval` finds a hypothesis `false` or the goal `true`.
 pub fn some_known_false?(i: Interp, env: Env, hypotheses: Expr<Id>) := match hypotheses {
-    Expr::Cons(h, rest) => known_eval(i, env, h) = Outcome::Defined(Value::False)
-        or some_known_false?(i, env, rest),
+    Expr::Cons(h, rest) =>
+        known_eval(i, env, h) = Outcome::Defined(Value::False) or some_known_false?(i, env, rest),
     _ => false,
 }
 
 pub fn known_contradicted?(i: Interp, env: Env, hypotheses: Expr<Id>, goal: Expr<Id>) :=
-    some_known_false?(i, env, hypotheses) or known_eval(i, env, goal) = Outcome::Defined(Value::True)
+    some_known_false?(i, env, hypotheses)
+        or known_eval(i, env, goal) = Outcome::Defined(Value::True)
 
 -- What the front ends do with a model: decide by `decision` over the
 -- outcomes that `known_eval` gives.

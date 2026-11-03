@@ -20,7 +20,8 @@ trait KV {
     fn put(Self, Key, Int): Self
     fn get(Self, Key): Option<Int>
 
-    law get_put(s: Self, k: Key, v: Int, j: Key): get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))
+    law get_put(s: Self, k: Key, v: Int, j: Key):
+        get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))
 
     -- Follows from the law.
     expect overwritten(s: Self, k: Key, v: Int, w: Int) {

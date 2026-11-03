@@ -159,11 +159,16 @@ pub proc manual_range_patterns(alts: Seq<Pat>, v: Int): (det fires?) {
     -- one of them is a range
     det let range? := (exists (s: Slot), pos(s) < alts.len and alts[pos(s)] is Pat::Range(_, _))
     -- together they match the integers of one range, bounded on some side
-    det let interval? := not (exists (s: Slot), gap_after?(alts, s))
-        and not ((exists (s: Slot), pos(s) < alts.len and lower_of(alts[pos(s)]) = Bound::Open)
-        and (exists (s: Slot), pos(s) < alts.len and upper_of(alts[pos(s)]) = Bound::Open))
+    det let interval? :=
+        not (exists (s: Slot), gap_after?(alts, s))
+            and not ((exists (s: Slot), pos(s) < alts.len and lower_of(alts[pos(s)]) = Bound::Open)
+                and (exists (s: Slot), pos(s) < alts.len and upper_of(alts[pos(s)]) = Bound::Open))
 
-    ensure rule: fires? iff (integers? and interval? and (n_alternatives >= 3 or (n_alternatives >= 2 and range?)))
+    ensure rule:
+        fires?
+            iff (integers?
+                and interval?
+                and (n_alternatives >= 3 or (n_alternatives >= 2 and range?)))
 
     expect keeps_meaning: when fires?, covers?(alts, v) iff
         ((exists (s: Slot), pos(s) < alts.len and lower_holds?(lower_of(alts[pos(s)]), v))

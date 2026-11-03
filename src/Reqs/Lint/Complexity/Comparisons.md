@@ -146,8 +146,8 @@ fn greatest(op: Comparison, k: Int): Int := if op = Lt then k - 1 else k
 
 fn disjoint?(op1: Comparison, a: Int, op2: Comparison, b: Int) :=
     (op1 in {Eq, Gt, Ge} and op2 in {Eq, Lt, Le} and least(op1, a) > greatest(op2, b))
-    or (op2 in {Eq, Gt, Ge} and op1 in {Eq, Lt, Le} and least(op2, b) > greatest(op1, a))
-    or (a = b and ((op1 = Eq and op2 = Ne) or (op1 = Ne and op2 = Eq)))
+        or (op2 in {Eq, Gt, Ge} and op1 in {Eq, Lt, Le} and least(op2, b) > greatest(op1, a))
+        or (a = b and ((op1 = Eq and op2 = Ne) or (op1 = Ne and op2 = Eq)))
 
 fn both?(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) :=
     compares?(op1, x, a) and compares?(op2, x, b)
@@ -171,8 +171,12 @@ proc disjoint(op1: Comparison, a: Int, op2: Comparison, b: Int, x: Int) {
     -- Each comparison is the same between its literal and the next integer,
     -- so if any integer meets both, one next to `a` or `b` does.
     expect complete: when not disjoint?(op1, a, op2, b),
-        both?(op1, a, op2, b, a - 1) or both?(op1, a, op2, b, a) or both?(op1, a, op2, b, a + 1)
-        or both?(op1, a, op2, b, b - 1) or both?(op1, a, op2, b, b) or both?(op1, a, op2, b, b + 1)
+        both?(op1, a, op2, b, a - 1)
+            or both?(op1, a, op2, b, a)
+            or both?(op1, a, op2, b, a + 1)
+            or both?(op1, a, op2, b, b - 1)
+            or both?(op1, a, op2, b, b)
+            or both?(op1, a, op2, b, b + 1)
 }
 
 pub proc redundant_comparisons(
@@ -185,8 +189,10 @@ pub proc redundant_comparisons(
     det fires?,
     det keep_first?,         -- the fix keeps the first comparison, rather than the second
 ) {
-    ensure fires: fires? iff (disjoint?(first, first_bound, complement_of(second), second_bound)
-        or disjoint?(second, second_bound, complement_of(first), first_bound))
+    ensure fires:
+        fires?
+            iff (disjoint?(first, first_bound, complement_of(second), second_bound)
+                or disjoint?(second, second_bound, complement_of(first), first_bound))
     ensure fix: keep_first? iff (if conjunction?
         then disjoint?(first, first_bound, complement_of(second), second_bound)
         else disjoint?(second, second_bound, complement_of(first), first_bound))
@@ -204,8 +210,8 @@ proc redundant_comparisons_exact(
 
     expect exact: when p.fires?,
         (if conjunction? then both?(first, first_bound, second, second_bound, x)
-        else compares?(first, x, first_bound) or compares?(second, x, second_bound))
-        iff (if p.keep_first? then compares?(first, x, first_bound) else compares?(second, x, second_bound))
+                else compares?(first, x, first_bound) or compares?(second, x, second_bound))
+            iff (if p.keep_first? then compares?(first, x, first_bound) else compares?(second, x, second_bound))
 }
 
 expect redundant_not_double(
@@ -263,8 +269,10 @@ pub proc int_plus_one(
 ) {
     use self::Comparison::{Ge, Gt, Le, Lt}
 
-    ensure rule: fires? iff ((op = Ge and (right = PlusOne or left = MinusOne))
-        or (op = Le and (left = PlusOne or right = MinusOne)))
+    ensure rule:
+        fires?
+            iff ((op = Ge and (right = PlusOne or left = MinusOne))
+                or (op = Le and (left = PlusOne or right = MinusOne)))
     ensure strict: result = (if op = Ge then Gt else if op = Le then Lt else op)
     ensure drop: drop_left? iff (if op = Ge then right != PlusOne else op = Le and left = PlusOne)
 }
@@ -471,6 +479,7 @@ both (`around`).
 ```fren
 expect int_plus_one_once(e: lang::Expr<lang::Id>) {
     expect kept: not int_plus_one_fires?(int_plus_one_fix(e))
-    expect around: offset_of(int_plus_one_fix(e)) = offset_of(e) and (one?(int_plus_one_fix(e)) iff one?(e))
+    expect around:
+        offset_of(int_plus_one_fix(e)) = offset_of(e) and (one?(int_plus_one_fix(e)) iff one?(e))
 }
 ```

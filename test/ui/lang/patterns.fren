@@ -28,7 +28,9 @@ proc codes(code: String): (lint?) {
     expect not_eight: not code.starts_with?("F08")
 }
 
-expect repetition: "aaa".matches?(r"a{2,3}") and not "a".matches?(r"a{2,3}") and "ab".matches?(r"(a|b)+")
+expect repetition:
+    "aaa".matches?(r"a{2,3}") and not "a".matches?(r"a{2,3}") and "ab".matches?(r"(a|b)+")
+
 expect escapes: "a.b".matches?(r"a\.b") and not "axb".matches?(r"a\.b") and "?".matches?(r"\?")
 --~^ warning: this pattern has no operator but `.*`
 --~^^ warning: this pattern has no operator but `.*`

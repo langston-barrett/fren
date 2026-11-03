@@ -44,7 +44,9 @@ pub proc min_max(
 ): (det fires?) {
     use self::MinMax::{Max, Min}
 
-    ensure rule: fires? iff ((inner = Min and outer = Max and a < b) or (inner = Max and outer = Min and a > b))
+    ensure rule:
+        fires?
+            iff ((inner = Min and outer = Max and a < b) or (inner = Max and outer = Min and a > b))
 }
 ```
 

@@ -289,15 +289,15 @@ pub fn own_written(params: Nat): Seq<Segment> :=
     ]
 
 -- The type is the declaration's own type, with type arguments or without.
-pub fn own_whole?(segs: Seq<Segment>) := segs != [] and segs[0] = Segment::Own
-    and (segs.len = 1 or segs[1] = Segment::ArgsOpen)
+pub fn own_whole?(segs: Seq<Segment>) :=
+    segs != [] and segs[0] = Segment::Own and (segs.len = 1 or segs[1] = Segment::ArgsOpen)
 
 -- The own name is within the type's arguments, if it is the own type, or
 -- anywhere in it, if not, and the type is not a set, sequence or relation.
 set_option fren.lint.undecidable "allow" in
 pub fn own_nested?(segs: Seq<Segment>) :=
     not (segs != [] and segs[0] in {Segment::SetOf, Segment::SeqOf, Segment::RelOf})
-    and Segment::Own in segs.slice(if own_whole?(segs) then 1 else 0, segs.len)
+        and Segment::Own in segs.slice(if own_whole?(segs) then 1 else 0, segs.len)
 
 set_option fren.lint.undecidable "allow" in
 pub proc own_type(
@@ -338,10 +338,12 @@ set_option fren.lint.undecidable "allow" in
 expect own_place(params: Nat, segs: Seq<lang::Segment>) {
     use lang
     call concrete := own_type(params, segs)
-    expect rule: (concrete.accepted?) iff (if lang::own_nested?((segs)) or (lang::own_whole?((segs)) and not ((params) <= 3 and (segs) = lang::own_written((params))))
-        then lang::ParamPlace::OwnOther
-        else if lang::own_whole?((segs)) then lang::ParamPlace::OwnParameter
-        else lang::ParamPlace::Whole) is lang::ParamPlace::Whole | lang::ParamPlace::Argument | lang::ParamPlace::OwnParameter
+    expect rule:
+        (concrete.accepted?)
+            iff (if lang::own_nested?((segs)) or (lang::own_whole?((segs)) and not ((params) <= 3 and (segs) = lang::own_written((params))))
+                then lang::ParamPlace::OwnOther
+                else if lang::own_whole?((segs)) then lang::ParamPlace::OwnParameter
+                else lang::ParamPlace::Whole) is lang::ParamPlace::Whole | lang::ParamPlace::Argument | lang::ParamPlace::OwnParameter
 }
 ```
 
@@ -574,9 +576,12 @@ pub proc construction_synthesis(
 ): (det synthesizes?) {
     use self::Arg::{P0, P1, P2}
 
-    ensure rule: synthesizes? iff (params <= 3 and (params < 1 or ArgMode::Gives(P0) in values)
-        and (params < 2 or ArgMode::Gives(P1) in values)
-        and (params < 3 or ArgMode::Gives(P2) in values))
+    ensure rule:
+        synthesizes?
+            iff (params <= 3
+                and (params < 1 or ArgMode::Gives(P0) in values)
+                and (params < 2 or ArgMode::Gives(P1) in values)
+                and (params < 3 or ArgMode::Gives(P2) in values))
 
     expect waiting: when params = 1 and not ArgMode::Gives(P0) in values, not synthesizes?
     expect plain: when params = 0, synthesizes?
@@ -585,9 +590,11 @@ pub proc construction_synthesis(
 set_option fren.lint.undecidable "allow" in
 expect construction_shape(params: Nat, values: Seq<lang::ArgMode>) {
     use lang
-    assume spec_counted: ((if (params) >= 1 and lang::ArgMode::Gives(lang::Arg::P0) in (values) then 1 else 0)
-        + (if (params) >= 2 and lang::ArgMode::Gives(lang::Arg::P1) in (values) then 1 else 0)
-        + (if (params) >= 3 and lang::ArgMode::Gives(lang::Arg::P2) in (values) then 1 else 0)) <= (params)
+    assume spec_counted:
+        ((if (params) >= 1 and lang::ArgMode::Gives(lang::Arg::P0) in (values) then 1 else 0)
+                + (if (params) >= 2 and lang::ArgMode::Gives(lang::Arg::P1) in (values) then 1 else 0)
+                + (if (params) >= 3 and lang::ArgMode::Gives(lang::Arg::P2) in (values) then 1 else 0))
+            <= (params)
     assume spec_pair: when (lang::Shape::Construction) = lang::Shape::Pair, (params) = 2
     call concrete := construction_synthesis(params, values)
     refines concrete synthesizes(
@@ -635,8 +642,8 @@ pub fn within?(a: Arg, params: Nat) := match a {
 }
 
 set_option fren.lint.undecidable "allow" in
-pub fn waits?(values: Seq<ArgMode>, expected?, j: Int) := not expected? and 0 <= j < values.len
-    and match values[j] {
+pub fn waits?(values: Seq<ArgMode>, expected?, j: Int) :=
+    not expected? and 0 <= j < values.len and match values[j] {
         ArgMode::Waits(a) => a != Arg::Other and not ArgMode::Gives(a) in values.slice(0, j),
         ArgMode::Gives(_) => false,
     }
@@ -658,13 +665,17 @@ pub proc construction_order(
     -- The values' positions, in the order in which they are elaborated:
     -- those that do not wait, in order, then those that do.
     out order :=
-        position_if(values, expected?, false, 0) ++ position_if(values, expected?, false, 1)
-        ++ position_if(values, expected?, false, 2) ++ position_if(values, expected?, true, 0)
-        ++ position_if(values, expected?, true, 1) ++ position_if(values, expected?, true, 2)
+        position_if(values, expected?, false, 0)
+            ++ position_if(values, expected?, false, 1)
+            ++ position_if(values, expected?, false, 2)
+            ++ position_if(values, expected?, true, 0)
+            ++ position_if(values, expected?, true, 1)
+            ++ position_if(values, expected?, true, 2)
     -- For each type parameter, whether it ends with an argument.
-    out given := (if params >= 1 then [expected? or Gives(P0) in values] else [])
-        ++ (if params >= 2 then [expected? or Gives(P1) in values] else [])
-        ++ (if params >= 3 then [expected? or Gives(P2) in values] else [])
+    out given :=
+        (if params >= 1 then [expected? or Gives(P0) in values] else [])
+            ++ (if params >= 2 then [expected? or Gives(P1) in values] else [])
+            ++ (if params >= 3 then [expected? or Gives(P2) in values] else [])
     out unknown? := false in given
 
     assume few: values.len <= 3 and params <= 3

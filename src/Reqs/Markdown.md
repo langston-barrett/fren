@@ -54,11 +54,11 @@ pub fn blank?(c: String) := c = " " or c = "\t"
 set_option fren.lint.undecidable "allow" in
 pub fn runs?(line: String, indent: Int, run: Int, lead: Int) :=
     (forall (k: Int), when 0 <= k < indent, line.at(k) = " ")
-    and line.at(indent) != " "
-    and (forall (k: Int), when indent <= k < indent + run, line.at(k) = line.at(indent))
-    and (if line.at(indent) is "`" | "~" then line.at(indent + run) != line.at(indent) else run = 0)
-    and (forall (k: Int), when indent + run <= k < indent + run + lead, blank?(line.at(k)))
-    and not blank?(line.at(indent + run + lead))
+        and line.at(indent) != " "
+        and (forall (k: Int), when indent <= k < indent + run, line.at(k) = line.at(indent))
+        and (if line.at(indent) is "`" | "~" then line.at(indent + run) != line.at(indent) else run = 0)
+        and (forall (k: Int), when indent + run <= k < indent + run + lead, blank?(line.at(k)))
+        and not blank?(line.at(indent + run + lead))
 
 set_option fren.lint.undecidable "allow" in
 pub proc split(line: String, indent: Nat, run: Nat, lead: Nat): (
@@ -94,7 +94,10 @@ pub enum BlockKind { Spec, Example, LooksLikeFren, Prose }
 
 -- The info string's first word, up to a space, tab, `,` or `{`, is `fren`.
 pub fn looks_like_fren?(info: String) :=
-    info.starts_with?("fren ") or info.starts_with?("fren\t") or info.starts_with?("fren,") or info.starts_with?("fren{")
+    info.starts_with?("fren ")
+        or info.starts_with?("fren\t")
+        or info.starts_with?("fren,")
+        or info.starts_with?("fren{")
 
 pub proc block_kind(info: String): (det kind: BlockKind) {
     ensure rule: kind = (if info = "fren" then BlockKind::Spec
@@ -141,8 +144,11 @@ pub proc step(
     call block := block_kind(opening.info)
 
     let closes? :=
-        inside? and parts.fence? and parts.marker = opening.marker and parts.run >= opening.run
-        and parts.info = ""
+        inside?
+            and parts.fence?
+            and parts.marker = opening.marker
+            and parts.run >= opening.run
+            and parts.info = ""
 
     ensure opens: opens? iff not inside? and parts.fence?
     ensure body: body? iff inside? and not closes?

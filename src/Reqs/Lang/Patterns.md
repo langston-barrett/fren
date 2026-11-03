@@ -129,9 +129,15 @@ pub proc range_pattern(
     det matches?,
     det empty?,              -- it matches no integer
 ) {
-    ensure matching: matches? iff ((not has_lower? or lower <= value)
-        and (not has_upper? or (if inclusive? then value <= upper else value < upper)))
-    ensure empty: empty? iff (has_lower? and has_upper? and (if inclusive? then upper < lower else upper <= lower))
+    ensure matching:
+        matches?
+            iff ((not has_lower? or lower <= value)
+                and (not has_upper? or (if inclusive? then value <= upper else value < upper)))
+    ensure empty:
+        empty?
+            iff (has_lower?
+                and has_upper?
+                and (if inclusive? then upper < lower else upper <= lower))
 
     expect empty_matches_nothing: when empty?, not matches?
     expect literal: when has_lower? and has_upper? and inclusive? and lower = upper, matches? iff value = lower
@@ -389,8 +395,9 @@ pub proc pattern_overlap(
     witness: SimpleValue,          -- a value that both match, where they overlap
 ) {
     -- Both are patterns of one type: of integers, or of an enumeration.
-    assume typed: not (first.shape = PatternShape::Integers and second.shape = PatternShape::Variant)
-        and not (first.shape = PatternShape::Variant and second.shape = PatternShape::Integers)
+    assume typed:
+        not (first.shape = PatternShape::Integers and second.shape = PatternShape::Variant)
+            and not (first.shape = PatternShape::Variant and second.shape = PatternShape::Integers)
     assume variants: first.variant >= 0 and second.variant >= 0
 
     ensure common: when overlap?,

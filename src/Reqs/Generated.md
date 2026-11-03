@@ -334,8 +334,11 @@ pub proc match_form(
     arms: ArmKind,
     heads: Set<Head>,   -- of the arms' patterns, and of the patterns within them
 ): (det form: MatchForm) {
-    out form := if scrutinee = Scrutinee::Enumeration and arms = ArmKind::Values
-        and not (Head::Literal in heads) and not (Head::OrPattern in heads)
+    out form :=
+        if scrutinee = Scrutinee::Enumeration
+            and arms = ArmKind::Values
+            and not (Head::Literal in heads)
+            and not (Head::OrPattern in heads)
         then MatchForm::LeanMatch else MatchForm::IfChain
 
     expect by_heads: when scrutinee = Scrutinee::Enumeration and arms = ArmKind::Values,

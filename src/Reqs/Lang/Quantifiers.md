@@ -128,8 +128,9 @@ pub proc quantified_type(
     expect collections: when declared_kind(ty) in {SetTy, RelTy, SeqTy}, not listed?
     expect not_recursive: when facts.recursive?, not listed?
     expect constituents_listed: when listed?, (forall (u: DeclaredTy), when u in constituents.image({ty}),
-        own_finite?(declared_kind(u), pattern_bounded?(u)) and not former(declared_kind(u)).growing?
-        and not (u, u) in constituents.closure)
+        own_finite?(declared_kind(u), pattern_bounded?(u))
+            and not former(declared_kind(u)).growing?
+            and not (u, u) in constituents.closure)
     -- `struct P { x: Four }`, `enum Small { S(Three), T }` and `Option<Three>`.
     expect bounded_field: forall (x: DeclaredTy),
         when declared_kind(ty) in {RecordTy, EnumTy} and constituents = {(ty, x)}
@@ -474,11 +475,19 @@ fn guard_bound_of(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOperand)
     table {
         lhs = GuardOperand::Name and relation = GuardRelation::In and rhs = GuardOperand::Free =>
             GuardBound::Members,
-        (lhs = GuardOperand::Name and relation in {GuardRelation::Gt, GuardRelation::Ge} and rhs = GuardOperand::Free)
-            or (lhs = GuardOperand::Free and relation in {GuardRelation::Lt, GuardRelation::Le} and rhs = GuardOperand::Name)
+        (lhs = GuardOperand::Name
+                and relation in {GuardRelation::Gt, GuardRelation::Ge}
+                and rhs = GuardOperand::Free)
+            or (lhs = GuardOperand::Free
+                and relation in {GuardRelation::Lt, GuardRelation::Le}
+                and rhs = GuardOperand::Name)
             => GuardBound::Lower,
-        (lhs = GuardOperand::Name and relation in {GuardRelation::Lt, GuardRelation::Le} and rhs = GuardOperand::Free)
-            or (lhs = GuardOperand::Free and relation in {GuardRelation::Gt, GuardRelation::Ge} and rhs = GuardOperand::Name)
+        (lhs = GuardOperand::Name
+                and relation in {GuardRelation::Lt, GuardRelation::Le}
+                and rhs = GuardOperand::Free)
+            or (lhs = GuardOperand::Free
+                and relation in {GuardRelation::Gt, GuardRelation::Ge}
+                and rhs = GuardOperand::Name)
             => GuardBound::Upper,
         _ => GuardBound::NoBound,
     }

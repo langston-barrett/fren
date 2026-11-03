@@ -169,7 +169,9 @@ set_option fren.evidence "random" in
 pub proc manual_pattern_test_fix(tests: Seq<RunTest>, w: lang::Value) {
     ensure same_meaning: fix_holds?(tests, w) iff run_holds?(tests, w)
     -- The run of `and` of the negations, and `not x is A₁ | … | Aₙ`.
-    ensure dual: not fix_holds?(tests, w) iff (forall (i: Int), when 0 <= i < tests.len, not test_holds?(tests[i], w))
+    ensure dual:
+        not fix_holds?(tests, w)
+            iff (forall (i: Int), when 0 <= i < tests.len, not test_holds?(tests[i], w))
 }
 ```
 
@@ -485,31 +487,33 @@ fn chain_operand?(c: Shape, o: Shape) := match o {
 -- `membership_chain` reads the chain whose operands, through parentheses,
 -- are `chain`.
 set_option fren.lint.undecidable "allow" in
-pub fn membership_chain?(chain: Seq<Shape>, conj?) := chain.len >= 3
-    and (forall (i: Int), when 0 <= i < chain.len, chain_equation?(chain[i], conj?, left_text(chain[0])))
-    and (exists (i: Int), 0 <= i < chain.len and unwritten?(chain[i]))
+pub fn membership_chain?(chain: Seq<Shape>, conj?) :=
+    chain.len >= 3
+        and (forall (i: Int), when 0 <= i < chain.len, chain_equation?(chain[i], conj?, left_text(chain[0])))
+        and (exists (i: Int), 0 <= i < chain.len and unwritten?(chain[i]))
 
 -- `s` is a longest run of adjacent operands read as tests of one expression.
 set_option fren.lint.undecidable "allow" in
 fn longest_run?(operands: Seq<Shape>, conj?, s: Span) := exists (x: String),
     s.first <= s.last
-    and (forall (i: Int), when s.first <= i <= s.last, tests_at?(operands, conj?, i, x))
-    and not tests_at?(operands, conj?, s.first - 1, x)
-    and not tests_at?(operands, conj?, s.last + 1, x)
+        and (forall (i: Int), when s.first <= i <= s.last, tests_at?(operands, conj?, i, x))
+        and not tests_at?(operands, conj?, s.first - 1, x)
+        and not tests_at?(operands, conj?, s.last + 1, x)
 
 -- The lint fires on the run `s`: the `k`th alternative of the operand at
 -- `i` comes before the `l`th of the operand at `j`, and each two are
 -- disjoint.
 set_option fren.lint.undecidable "allow" in
 fn run_fires?(operands: Seq<Shape>, conj?, chain: Seq<Shape>, s: Span) :=
-    s.first < s.last and not membership_chain?(chain, conj?)
-    and (exists (i: Int), s.first <= i <= s.last and equation_at?(operands, conj?, i))
-    and (forall (i j k l: Int), when s.first <= i <= s.last and i <= j <= s.last
-        and 0 <= k < alts_at(operands, conj?, i).len and 0 <= l < alts_at(operands, conj?, j).len and (i < j or k < l),
-        alts_disjoint?(
-            alts_at(operands, conj?, i)[k],
-            alts_at(operands, conj?, j)[l]
-        ))
+    s.first < s.last
+        and not membership_chain?(chain, conj?)
+        and (exists (i: Int), s.first <= i <= s.last and equation_at?(operands, conj?, i))
+        and (forall (i j k l: Int), when s.first <= i <= s.last and i <= j <= s.last
+            and 0 <= k < alts_at(operands, conj?, i).len and 0 <= l < alts_at(operands, conj?, j).len and (i < j or k < l),
+            alts_disjoint?(
+                alts_at(operands, conj?, i)[k],
+                alts_at(operands, conj?, j)[l]
+            ))
 
 set_option fren.lint.undecidable "allow" in
 pub proc manual_pattern_test_runs(
@@ -522,6 +526,7 @@ pub proc manual_pattern_test_runs(
     assume within: forall (i: Int), when run.first <= i <= run.last and reading_at(operands, conj?, i) != None,
         exists (j: Int), 0 <= j < chain.len and chain_operand?(chain[j], operands[i])
 
-    ensure rule: reported? iff longest_run?(operands, conj?, run) and run_fires?(operands, conj?, chain, run)
+    ensure rule:
+        reported? iff longest_run?(operands, conj?, run) and run_fires?(operands, conj?, chain, run)
 }
 ```

@@ -324,8 +324,9 @@ pub proc logic(
         logic = (if kind = Realizability or quantified? then Quantified else QuantifierFree)
     ensure all: when theories != {}, logic = (if projection? then HigherOrder else All)
     -- cvc5 decides sequences in its strings solver.
-    ensure options: (strings_exp? iff (Strings in theories or Sequences in theories))
-        and (sets_exp? iff (Sets in theories or Sequences in theories))
+    ensure options:
+        (strings_exp? iff (Strings in theories or Sequences in theories))
+            and (sets_exp? iff (Sets in theories or Sequences in theories))
     -- cvc5 instantiates quantifiers only once the rest of the query is satisfied.
     ensure instantiation: last_call? iff logic != QuantifierFree
 
@@ -567,8 +568,9 @@ pub proc head_introduction(head: GoalHead): (det introduced: Option<Introduced>)
 
 -- `heads[i]` is a head of `heads`, and it and every one in front of it can be introduced.
 set_option fren.lint.undecidable "allow" in
-pub fn introducible_through?(heads: Seq<GoalHead>, i: Int) := 0 <= i < heads.len
-    and (forall (j: Int), when 0 <= j <= i, introduced_as(heads[j]) != Option::None)
+pub fn introducible_through?(heads: Seq<GoalHead>, i: Int) :=
+    0 <= i < heads.len
+        and (forall (j: Int), when 0 <= j <= i, introduced_as(heads[j]) != Option::None)
 
 pub proc goal_introduction(
     heads: Seq<GoalHead>,        -- the goal's heads, from the outermost; past its last, the rest is `Other`
@@ -602,7 +604,11 @@ pub proc goal_constant_name(
     det chosen?,                 -- the constant is `base#goal{k}`
 ) {
     ensure keeps: kept? iff not base_taken?
-    ensure least: chosen? iff (base_taken? and not (k in taken) and (forall (j: Int), when 0 <= j < k, j in taken))
+    ensure least:
+        chosen?
+            iff (base_taken?
+                and not (k in taken)
+                and (forall (j: Int), when 0 <= j < k, j in taken))
 }
 ```
 
@@ -709,8 +715,9 @@ pub fn all_text?(parts: Seq<NamePart>) := forall (p: NamePart), when p in parts,
 
 -- `parts` are the texts `texts`, one by one.
 set_option fren.lint.undecidable "allow" in
-pub fn spells?(parts: Seq<NamePart>, texts: Seq<String>) := parts.len = texts.len
-    and (forall (j: Int), when 0 <= j < parts.len, parts[j] = NamePart::Text(texts[j]))
+pub fn spells?(parts: Seq<NamePart>, texts: Seq<String>) :=
+    parts.len = texts.len
+        and (forall (j: Int), when 0 <= j < parts.len, parts[j] = NamePart::Text(texts[j]))
 
 pub struct Observed {
     name: Seq<NamePart>,            -- the name of its value in the model
@@ -725,8 +732,8 @@ pub fn observed_text?(o: Observed) :=
     }
 
 -- The key's observation `k` is the check's `o`.
-pub fn holds?(o: Observed, k: Observation) := spells?(o.name, k.name) and k.formula = o.formula
-    and match o.guard {
+pub fn holds?(o: Observed, k: Observation) :=
+    spells?(o.name, k.name) and k.formula = o.formula and match o.guard {
         Option::Some(g) => match k.guard {
             Option::Some(h) => spells?(g, h),
             Option::None => false,
@@ -743,8 +750,10 @@ pub proc query_key(
     version: Int,                     -- the version of `fren check`'s cache
 ): (det kept?, det spelled?, det key: Key) {
     ensure kept: kept? iff (forall (o: Observed), when o in observed, observed_text?(o))
-    ensure spelled: spelled? iff (observations.len = observed.len
-        and (forall (i: Int), when 0 <= i < observed.len, holds?(observed[i], observations[i])))
+    ensure spelled:
+        spelled?
+            iff (observations.len = observed.len
+                and (forall (i: Int), when 0 <= i < observed.len, holds?(observed[i], observations[i])))
     out key := Key { script, observations, solver, version }
 }
 
@@ -786,8 +795,10 @@ pub proc query_entry(
     use self::Answer::{SatWithModel, Unknown}
 
     assume model_only_kept: when written.answer != SatWithModel, written.model = []
-    ensure kept: text? iff (written.answer != Unknown
-        and (forall (b: Binding), when b in written.model, all_text?(b.name)))
+    ensure kept:
+        text?
+            iff (written.answer != Unknown
+                and (forall (b: Binding), when b in written.model, all_text?(b.name)))
     out read := if text? then Option::Some(written) else Option::None
 }
 
@@ -805,8 +816,10 @@ pub proc contradicts(
     use self::Answer::{SatWithModel, Unknown, Unsat}
 
     assume both_kept: fresh != Unknown and kept != Unknown
-    ensure rule: contradiction? iff ((fresh = Unsat) != (kept = Unsat)
-        or (fresh = SatWithModel and kept = SatWithModel and not same_model?))
+    ensure rule:
+        contradiction?
+            iff ((fresh = Unsat) != (kept = Unsat)
+                or (fresh = SatWithModel and kept = SatWithModel and not same_model?))
 
     expect agree: when fresh = kept and fresh != SatWithModel, not contradiction?
 }
@@ -932,7 +945,8 @@ pub proc evidence_in_effect(
     set_enumerated?,         -- it sets enumeration
 ): (det random?, det enumerated?) {
     ensure random_rule: random? iff (if given? then given_random? else set? and set_random?)
-    ensure enumerated_rule: enumerated? iff (if given? then given_enumerated? else set? and set_enumerated?)
+    ensure enumerated_rule:
+        enumerated? iff (if given? then given_enumerated? else set? and set_enumerated?)
 
     expect option_first: when given?, random? = given_random? and enumerated? = given_enumerated?
     expect solver_default: when not given? and not set?, not random? and not enumerated?
@@ -1025,8 +1039,10 @@ pub proc worst_severity(
 
     expect worst_present: when worst != Silent, worst in present
     -- The maximum of the levels present, counting `Info` as `Silent`.
-    expect maximum: (when Error in present, worst >= Error) and (when Warning in present, worst >= Warning)
-        and worst != Info
+    expect maximum:
+        (when Error in present, worst >= Error)
+            and (when Warning in present, worst >= Warning)
+            and worst != Info
 }
 ```
 

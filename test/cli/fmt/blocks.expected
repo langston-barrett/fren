@@ -5,36 +5,47 @@
 -    ensure r: on? iff m = Mode::Heat
 -}
 +pub proc d(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -25,3 +23 @@
+@@ -22 +20,7 @@
+-    ensure r: on? iff m = Mode::Heat or m = Mode::Cool or m = Mode::Heat or m = Mode::Cool or m = Mode::Heat
++    ensure r:
++        on?
++            iff m = Mode::Heat
++                or m = Mode::Cool
++                or m = Mode::Heat
++                or m = Mode::Cool
++                or m = Mode::Heat
+@@ -25,3 +29 @@
 -pub proc just_fits(n: Int): (on?) {
 -    ensure r: on? iff n = 1111111111111111111111111111111111111111
 -}
 +pub proc just_fits(n: Int): (on?) { ensure r: on? iff n = 1111111111111111111111111111111111111111 }
-@@ -41 +37,3 @@
+@@ -41 +43,3 @@
 -): (on?) { ensure r: on? iff m = Mode::Heat }
 +): (on?) {
 +    ensure r: on? iff m = Mode::Heat
 +}
-@@ -51,3 +49 @@
+@@ -51,3 +55 @@
 -pub proc trailing_fits(n: Int): (y?) {
 -    ensure r: y? iff n > 1
 -}  -- a trailing comment here
 +pub proc trailing_fits(n: Int): (y?) { ensure r: y? iff n > 1 }  -- a trailing comment here
-@@ -59,3 +55 @@
+@@ -59,3 +61 @@
 -proc nested(m: Mode): (o?) {
 -    ensure r: o? iff and { m = Mode::Heat, P { x := 1 } != P { x := 2 } }
 -}
 +proc nested(m: Mode): (o?) { ensure r: o? iff and { m = Mode::Heat, P { x := 1 } != P { x := 2 } } }
-@@ -64 +58,7 @@
+@@ -64 +64,9 @@
 -    ensure r: on? iff and { m = Mode::Heat, m = Mode::Cool, m = Mode::Heat, m = Mode::Cool, m = Mode::Heat }
-+    ensure r: on? iff and {
-+        m = Mode::Heat,
-+        m = Mode::Cool,
-+        m = Mode::Heat,
-+        m = Mode::Cool,
-+        m = Mode::Heat,
-+    }
-@@ -67,2 +67,9 @@
++    ensure r:
++        on?
++            iff and {
++                m = Mode::Heat,
++                m = Mode::Cool,
++                m = Mode::Heat,
++                m = Mode::Cool,
++                m = Mode::Heat,
++            }
+@@ -67,2 +75,9 @@
 -pub fn single(x: Int): (r: Int) {
 -    out r := x + 1
 +pub fn single(x: Int): (r: Int) { out r := x + 1 }
@@ -46,7 +57,7 @@
 +pub proc e(m: Mode): (on?) {
 +    ensure r: on? iff m = Mode::Heat
 +    set_option fren.evidence "random" in expect s: on? or m = Mode::Cool
-@@ -71,2 +78,5 @@
+@@ -71,2 +86,5 @@
 -expect single_global(m: Mode) {
 -    expect a: m is Mode::Heat | Mode::Cool
 +pub proc f(n: Int): (y: Int) {
@@ -54,86 +65,86 @@
 +        0 => 1,
 +        _ => 0,
 +    }
-@@ -75,2 +85,3 @@
+@@ -75,2 +93,3 @@
 -pub proc only_use(m: Mode): (on?) {
 -    use self::Mode::Heat
 +pub fn g(x: Int): (r: Int) {
 +    assume p: x > 0
 +    out r := x + 1
-@@ -79,6 +89,0 @@
+@@ -79,6 +97,0 @@
 -pub proc e(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat  set_option fren.evidence "random" in expect s: on? or m = Mode::Cool }
 -
 -pub proc f(n: Int): (y: Int) { ensure r: y = match n { 0 => 1, _ => 0 } }
 -
 -pub fn g(x: Int): (r: Int) { assume p: x > 0  out r := x + 1 }
 -
-@@ -89 +94,2 @@
+@@ -89 +102,2 @@
 -pub proc j(x: Int): (y: Int) { ensure a: y = x
 +pub proc j(x: Int): (y: Int) {
 +    ensure a: y = x
-@@ -92 +98,2 @@
+@@ -92 +106,2 @@
 -    ensure b: y >= x }
 +    ensure b: y >= x
 +}
-@@ -94 +101,4 @@
+@@ -94 +109,4 @@
 -pub proc k(m: Mode): (on?) { use self::Mode::Heat use self::Mode::Cool ensure r: on? iff m = Heat or m = Cool }
 +pub proc k(m: Mode): (on?) {
 +    use self::Mode::{Cool, Heat}
 +    ensure r: on? iff m = Heat or m = Cool
 +}
-@@ -100 +110,3 @@
+@@ -100 +118,3 @@
 -) { ensure r: on? iff m = Mode::Heat }
 +) {
 +    ensure r: on? iff m = Mode::Heat
 +}
-@@ -103 +115,3 @@
+@@ -103 +123,3 @@
 -    : (on?) { ensure r: on? iff m = Mode::Heat }
 +    : (on?) {
 +        ensure r: on? iff m = Mode::Heat
 +    }
-@@ -105,3 +119 @@
+@@ -105,3 +127 @@
 -set_option fren.evidence "enumerated" in proc w(m: Mode): (on?) {
 -    ensure r: on? iff m = Mode::Heat
 -}
 +set_option fren.evidence "enumerated" in proc w(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -110,3 +122 @@
+@@ -110,3 +130 @@
 -proc after_option(m: Mode): (on?) {
 -    ensure r: on? iff m = Mode::Heat
 -}
 +proc after_option(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -116,4 +126 @@
+@@ -116,4 +134 @@
 -pub proc brace_line(m: Mode): (on?)
 -{
 -    ensure r: on? iff m = Mode::Heat
 -}
 +pub proc brace_line(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -121,2 +128 @@
+@@ -121,2 +136 @@
 -pub proc brace_line_two(m: Mode): (on?, off?)
 -{
 +pub proc brace_line_two(m: Mode): (on?, off?) {
-@@ -127,2 +133 @@
+@@ -127,2 +141 @@
 -pub fn brace_line_function(x: Int): (r: Int)
 -{ out r := x + 1 }
 +pub fn brace_line_function(x: Int): (r: Int) { out r := x + 1 }
-@@ -130,4 +135 @@
+@@ -130,4 +143 @@
 -expect brace_line_expectation(m: Mode)
 -{
 -    expect a: m is Mode::Heat | Mode::Cool
 -}
 +expect brace_line_expectation(m: Mode) { expect a: m is Mode::Heat | Mode::Cool }
-@@ -135,2 +137 @@
+@@ -135,2 +145 @@
 -pub proc brace_line_empty()
 -{}
 +pub proc brace_line_empty() {}
-@@ -144 +145 @@
+@@ -144 +153 @@
 -pub proc brace_after_blank(m: Mode): (on?)
 +pub proc brace_after_blank(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -146,4 +146,0 @@
+@@ -146,4 +154,0 @@
 -{
 -    ensure r: on? iff m = Mode::Heat
 -}
 -
-@@ -153,2 +150 @@
+@@ -153,2 +158 @@
 -/- the signature -/
 -{
 +/- the signature -/ {

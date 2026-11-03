@@ -270,7 +270,8 @@ pub proc unnecessary_min_or_max(
         else if argument = last then (if max? then Argument else Receiver) else Unchanged)
 
     expect keeps_meaning: forall (x: Position), when x <= last and fix != Unchanged,
-        (if max? then x.max(argument) else x.min(argument)) = (if fix = Receiver then x else argument)
+        (if max? then x.max(argument) else x.min(argument))
+            = (if fix = Receiver then x else argument)
 }
 ```
 
