@@ -19,6 +19,12 @@ one item. The rules that define the meaning use these three terms, and say
 which construct each case is. [Modules and visibility](Modules.md) states
 how modules name and hide their items.
 
+This chapter specifies modules, their signatures and imports, the items and
+clauses that state claims, how a check uses them, and induction by
+unfolding. Implementations, their obligations, the translation of
+sentences along them, views and dispatch are specified apart, over one
+model of what each check rests on (#669).
+
 ```text
 type Path
 type Fs
@@ -52,8 +58,7 @@ lemma still_made(fs: Fs, p: Path, q: Path): exists?(mkdir(mkdir(fs, p), q), q)
 > - Traits stage 1's `trait` and `inst` move to `mod I<Self>` and `mod x:
 >   I<T>` by a migration script, once stage 3 builds the shared machinery.
 > - An implementation in scope is canonical for dispatch, two are an
->   error, and an explicit choice is always available
->   (`module.meta.coherence`, stage 3).
+>   error, and an explicit choice is always available (stage 3).
 > - A module whose parts stay abstract, with `assume` items, is code over
 >   an assumed implementation, as Lean's `section` and `variable` are, and
 >   can later be ascribed to a named interface (stage 3).
@@ -84,13 +89,13 @@ pub mod lang
 
 r[module.syntax]
 ```
-lemma:= "lemma" IDENT "(" [variable ("," variable)* [","]] ")" claim-body
-assume:= "assume" IDENT "(" [variable ("," variable)* [","]] ")" claim-body
-claim-body:= ":" top | "{" claim-member* "}"
-claim-member:= require | ensure | "expect" IDENT ":" top | "cover" IDENT ":" top
- | call | "let" variable ":=" top | use
-require:= "require" IDENT ":" top
-ensure:= "ensure" IDENT ":" top
+lemma          := "lemma" IDENT "(" [variable ("," variable)* [","]] ")" claim-body
+assume         := "assume" IDENT "(" [variable ("," variable)* [","]] ")" claim-body
+claim-body     := ":" top | "{" claim-member* "}"
+claim-member   := require | ensure | "expect" IDENT ":" top | "cover" IDENT ":" top
+                | call | "let" variable ":=" top | use
+require        := "require" IDENT ":" top
+ensure         := "ensure" IDENT ":" top
 ```
 
 r[module.syntax.forms]
@@ -114,10 +119,11 @@ r[module.syntax.item]
 A lemma item and an `assume` item are [items](Items.md) of their module. A
 lemma item of an interface, today a trait, is a member of it.
 
-## Interfaces and implementations
+## Modules as theories
 
-Modules, interfaces, implementations and generic functions differ only in
-their numbers of parameters and items:
+Modules, interfaces, implementations and generic items differ only in
+their numbers of parameters and items. This chapter specifies all but
+implementations, which are specified apart:
 
 | Construct | Parameters | Items |
 |---|---|---|
@@ -155,156 +161,17 @@ The items of a module or interface may be procedures, abstract or not, and
 its lemma and `assume` items may relate them through calls
 (`module.meaning.procedures`).
 
-r[module.implementation]
-An implementation of a module or interface is a *theory morphism* from it
-into the module that implements it. It maps each parameter, and some of the
-abstract items, to types and items there, and *translates* each sentence by
-that map. An implementation `mod x: I<T>`, an `inst`, a spec's
-[`impl` and `interp`](../Impl.md) bindings, and an instance `f<Int>` of a
-generic function are morphisms.
+## Imports and generic types
 
-r[module.implementation.instantiate]
-Translating a module along an implementation is one operation, the same
-for every construct of the table above.
-
-r[module.implementation.partial]
-An implementation is *total* where it maps every abstract item, and
-*partial* otherwise.
-
-r[module.implementation.obligations] lang::morphism_status, lang::translated_theorem
-An implementation makes each translated axiom an *obligation* where the
-axiom mentions only implemented items, leaves it *trusted* where it
-mentions only items left abstract, and makes it an obligation that
-*relies* on the rest otherwise. The proof of an
-obligation, whether it relies on the rest or not, uses only what
-`module.implementation.self` allows. The
-translated `ensure` clause of an implemented item is an obligation, which
-the refinement check of that item discharges
-(`module.implementation.liskov`). The
-report of the evidence lists the items that a partial implementation
-leaves abstract.
-
-r[module.implementation.self] lang::obligation_uses, lang::law_not_through_lemma
-The checks of an implementation's obligations see, of the sentences
-translated along it, only the axioms that it leaves trusted: none of its
-other obligations, and none of its translated theorems. Of the sentences
-translated along other implementations, they see those along the
-implementations declared before it, whose obligations are checked apart
-.
-
-r[module.implementation.theorems] lang::translated_theorem
-A theorem of a module, once checked, holds translated, without another
-check, of every implementation of it whose obligations hold, each by a
-proof that uses only what `module.implementation.self` allows, and of a
-partial one, given the axioms that it leaves trusted (*functional
-instantiation*).
-
-r[module.parametricity]
-No check or item of a module or generic function inspects a type
-parameter but through the members of its bounds.
-
-r[module.implementation.liskov]
-Each item that implements an abstract item refines it: its `require`
-clauses are weaker than the abstract item's or the same, its `ensure`
-clauses are stronger or the same, and it preserves the invariants of the
-types that it implements, as [Refinement](Refinement.md) checks of each
-member.
-
-```fren
--- What an implementation makes of a translated axiom.
-pub enum MorphismStatus {
-    Obligation,      -- it mentions only implemented items: the implementation must prove it
-    Trusted,         -- it mentions only items left abstract: it stays an axiom
-    Relying,         -- it mentions both: an obligation that relies on the rest
-}
-
-set_option fren.evidence "random" in
-pub proc morphism_status(
-    mentioned: Set<Int>,     -- the abstract items that the axiom mentions
-    mapped: Set<Int>,        -- the abstract items that the implementation implements
-): (det status: MorphismStatus) {
-    out status :=
-        if mentioned subset mapped then MorphismStatus::Obligation
-        else if mentioned inter mapped = {} then MorphismStatus::Trusted
-        else MorphismStatus::Relying
-
-    expect total: when mentioned subset mapped, status = MorphismStatus::Obligation
-    expect nothing_mapped: when mapped = {} and mentioned != {}, status = MorphismStatus::Trusted
-    expect no_abstract_mentions: when mentioned = {}, status = MorphismStatus::Obligation
-}
-```
-
-> **Note:** A sentence that mentions no abstract item is an obligation of
-> every implementation, which its own check as a theorem has already
-> discharged (`module.implementation.theorems`).
-
-> **Rationale:** One notion of module, and one translation, means that a
-> generic function's instances, an interface's implementations and a
-> module's implementations cannot differ in how they translate a claim.
-> #635 needed seven rounds of review because generic functions were
-> instantiated piecemeal (#669). The design follows Dreyer, Harper,
-> Chakravarty and Keller's modular type classes (POPL 2007), in which a
-> class is a signature and an instance a structure; Burstall and Goguen's
-> Clear, OBJ and CASL's views; Specware's morphisms with proof
-> obligations; mixin modules (MixML); and Agda's parameterized modules,
-> Isabelle's locales and Coq's sections. Whether two partly abstract
-> modules that share an interface combine as their colimit, and whether
-> `refines` is module ascription, are open (#669).
-
-## Views, inclusions and generic types
-
-Every way of relating modules is a theory morphism, and the kinds of
-morphism differ only in what they owe. A *view* is one that a spec
-declares by name, between modules that exist already.
-
-| Construct | As a morphism | It owes |
-|---|---|---|
-| `mod Ord<Self> extends Eq<Self>` | an inclusion of `Eq` into `Ord` | nothing itself; an implementation of `Ord` owes `Eq`'s laws too |
-| `mod x: I<T>`, an implementation | from `I` into a module that implements it | `I`'s laws |
-| `f<Int>`, `Option<Int>`, an instance | a substitution | its parameters' requirements |
-| `use`, an import | an inclusion into the importing module | nothing |
-| a refinement (#685) | a morphism with refinement obligations | as #685 states |
-| a view | between two existing modules | the target's laws, proved from the source's |
+A `use` brings another module's items and sentences into a module. A
+generic type is a theory with a datatype in its signature.
 
 **Legality rules**
 
-r[module.morphism.kinds] lang::morphism_obligations
-Each of the constructs of the table above is a morphism, and owes what
-`lang::morphism_obligations` gives. There is one translation along a
-morphism, whatever its kind (`module.implementation.instantiate`).
-
-r[module.morphism.transport] lang::translated_theorem
-A theorem of a morphism's source is a theorem of its target, translated,
-once the morphism's obligations hold, whatever
-the morphism's kind.
-
-r[module.extends] lang::owed_laws
-`mod Ord<Self> extends Eq<Self>` makes `Ord` include `Eq`: `Eq`'s items and
-sentences are `Ord`'s too. The inclusion owes nothing. An implementation of
-an interface owes the laws of every interface that it includes, directly
-or through others, with its own.
-
-r[module.use.inclusion] lang::morphism_obligations::inclusions_owe_nothing
-A `use` is an inclusion of the module it imports into the importing one,
-and owes nothing.
-
-r[module.view]
-A *view* is a named morphism from one module into another, declared
-apart from both, so that neither changes. Its keyword is not decided yet.
-
-r[module.view.derived]
-A view may define the target's operations from the source's, as
-`le(x, y):= meet(x, y) = x` makes a lattice a partial order. The target's
-laws, translated, are its obligations, proved once from the source's
-sentences, never from the target's translated lemmas
-(`module.implementation.self`). Where they hold, every lemma of the target
-holds of the source (`module.morphism.transport`).
-
-r[module.view.choice] lang::view_choice
-A use takes the view that it names, which must apply. A use that names
-none takes the one view that applies, takes none where none applies, and
-is an error where several apply, as `Int` is a
-monoid under `+` and under `*`.
+r[module.use.inclusion]
+A `use` includes the module it imports, its items and its sentences, in
+the importing one, and owes nothing: no sentence of the imported module is
+an obligation of the importing one.
 
 r[module.generic-type]
 A generic type, such as `enum Option<T>` or `struct Pair<A, B>`, is a
@@ -316,65 +183,6 @@ r[module.generic-type.sentences]
 A generic type's sentences are those that the spec writes: its invariants,
 its functions' clauses, and the lemma items about them. Freeness is the
 meaning of the datatype declaration, and no sentence states it.
-
-r[module.generic-type.instance]
-An instance of a generic type, such as `Option<Int>`, is a morphism by
-substitution, as an instance `f<Int>` of a generic function is. A bound on
-a parameter, as in `type SortedList<T: Ord>`, an invariant that mentions a
-parameter, and the lemmas about the type's functions are translated along
-it by the one translation.
-
-```fren
--- A kind of morphism between modules.
-pub enum MorphismKind { Inclusion, Implementation, Instance, Import, Refinement, View }
-
-set_option fren.evidence "enumerated" in
-pub proc morphism_obligations(morphism: MorphismKind): (
-    det laws?,               -- the target owes the source's laws
-    det requirements?,       -- it owes the requirements of the source's parameters
-    det refinement?,         -- it owes refinement obligations (#685)
-) {
-    out laws? := morphism in {MorphismKind::Implementation, MorphismKind::View}
-    out requirements? := morphism = MorphismKind::Instance
-    out refinement? := morphism = MorphismKind::Refinement
-
-    expect inclusions_owe_nothing: when morphism in {MorphismKind::Inclusion, MorphismKind::Import},
-        not laws? and not requirements? and not refinement?
-}
-
--- The laws that an implementation of `interface` owes: its own, and those
--- of every interface it includes, directly or through others.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-pub proc owed_laws(
-    interface: Int,
-    laws: Rel<Int, Int>,         -- `(i, l)`: the interface `i` states the law `l`
-    includes: Rel<Int, Int>,     -- `(i, j)`: the interface `i` extends `j`
-): (det owed: Set<Int>) {
-    out owed := laws.image({interface} union includes.closure.image({interface}))
-
-    expect own_laws: laws.image({interface}) subset owed
-    expect no_extends: when includes = {}, owed = laws.image({interface})
-}
-
--- The view that a use takes: the one it names, or else the one view that
--- applies, and -1 where it is an error.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-pub proc view_choice(
-    applicable: Seq<Int>,        -- the views that could serve the use, each once
-    named: Int,                  -- the view that the use names, and -1 where it names none
-): (det view: Int, det error?) {
-    out error? := (named != -1 and not named in applicable) or (named = -1 and applicable.len >= 2)
-    out view :=
-        if error? then -1 else if named != -1 then named
-        else if applicable.len = 1 then applicable[0] else -1
-
-    expect implicit_only_alone: when named = -1 and applicable.len >= 2, error?
-    expect none_needed: when named = -1 and applicable = [], not error? and view = -1
-    expect named_wins: when named in applicable, view = named
-}
-```
 
 > **Note:** A module may have a type constructor as a member, as `mod Monad
 > { type M<A>; fn pure<A>(a: A): M<A>; ... }`, and a parameter may be such a
@@ -549,8 +357,7 @@ defined function and a constant are not.
 r[module.assume.abstract] lang::sentence_role
 An `assume` item that mentions no abstract item, as an item it applies or
 calls, as the type of one of its variables, or through the definition of a
-defined item it applies, in turn, is an error
-.
+defined item it applies, in turn, is an error.
 
 **Dynamic semantics**
 
@@ -593,11 +400,6 @@ r[module.meaning.procedures] lang::global_checks
 A call in a sentence ranges over the behaviours of its procedure at its
 arguments. An `assume` item with calls constrains the procedures it
 calls, as an environment that is never implemented does.
-
-r[module.trait.lemma] lang::translated_theorem
-A lemma of an interface holds in every interpretation that meets the
-interface, and of every implementation of it, by
-`module.implementation.theorems`.
 
 ```fren
 -- What is done with a sentence.
@@ -680,8 +482,7 @@ A module's *signature* is its items other than its lemma, `assume`,
 `expect` and `law` items: its types, functions and procedures. A module
 declares its signature as a whole. An `assume`, `expect` or `law` item
 may mention any item of its own module's signature, wherever it is
-declared, and the items of the modules that its module imports
-. This changes, for those items, the order of
+declared, and the items of the modules that its module imports. This changes, for those items, the order of
 declarations that [`lang::declared_before`](Items.md#items) states, and
 which [Global expectations](Global.md) states for a global expectation's
 procedures. A spec that is accepted today stays accepted, and stage 3
@@ -692,8 +493,7 @@ as [Contracts](Items.md#contracts) states.
 r[module.order.lemma] lang::lemma_order
 A lemma item applies and calls only the items declared before it, and the
 items of the modules that its module imports. A lemma that applies or
-calls an item declared after it is an error that names the application
-.
+calls an item declared after it is an error that names the application.
 
 > **Note:** The Lean-hosted front end elaborates each item as a Lean
 > command, in order. How it resolves the name of an item declared later in
@@ -753,8 +553,7 @@ that does not is not an error, and is used only as today, as a quantified
 hypothesis of every check of its trait ([Traits](Traits.md#laws)).
 
 r[module.rules.report] lang::sentence_instantiation
-A sentence that breaks the binding rule reports its first unbound variable
-.
+A sentence that breaks the binding rule reports its first unbound variable.
 
 **Dynamic semantics**
 
@@ -768,7 +567,7 @@ Fren takes the instances at which all the matched applications of the
 sentence are terms of the query at once: each anchor an application of the
 query, and each call a call of the query, with the same arguments once the
 instance's terms are put in. Two terms are the same where they are written
-alike, once each name that a `let`, a `where` clause or an `out:=`
+alike, once each name that a `let`, a `where` clause or an `out :=`
 defines, and each constant, is replaced by its definition. An application
 of a function is not replaced by the function's body.
 
@@ -802,9 +601,7 @@ query and of the instances, until no new instance arises. The *closure* is
 the set of all those instances.
 
 r[module.closure.finite]
-The closure of every query is finite. Every sentence that the query uses,
-its module's own or a translation, is judged in its module's order of
-items (`module.use.translated`). Take the items in reverse order
+The closure of every query is finite. Take the items in reverse order
 (`module.order.items`). An instance applies its subject only to quantified
 variables, which matching binds to proper subterms of the query's
 applications, or to the arguments and outputs of its calls, which no
@@ -830,9 +627,8 @@ r[module.use] lang::sentence_use
 A check instantiates the sentences that are visible to it and meet the
 binding rule, whose subject the closure applies: every
 axiom of its module and of the modules it imports, wherever it is
-declared, and each theorem declared before the check's item, but for
-what `module.implementation.self` keeps from an implementation's own
-obligations. An `ensure` is used as a [contract](Items.md#contracts) is.
+declared, and each theorem declared before the check's item. An `ensure`
+is used as a [contract](Items.md#contracts) is.
 
 r[module.use.subject] lang::sentence_use, lang::no_subject_used
 A sentence is used where its subject is applied by the query, or by an
@@ -848,27 +644,6 @@ r[module.use.laws] lang::laws_anywhere
 The laws of a trait are visible to the checks of the trait's lemmas and
 expectations, wherever each is written, as [Traits](Traits.md#expectations)
 states.
-
-r[module.use.morphism]
-The sentences visible to a check are those of its module, of the modules
-that it imports, and their theorems and axioms translated along the
-implementations that the check's terms use: an interface's at each of its
-implementations, and a generic function's at each of its instances. Each
-is used as `module.use` states. The checks of an implementation's own
-obligations see fewer (`module.implementation.self`).
-
-r[module.use.translated] lang::translated_law, lang::translated_unbound_law, lang::translate, lang::translated_law_target
-The subject, the anchors and the binding rule of a translated lemma,
-`assume` or `law` are those of the translation, in the order of items of
-the module that implements it. An obligation is
-proved, not instantiated, and needs no binding rule. A translation that
-the implementation uses as a hypothesis, a translated lemma or an axiom
-that it leaves trusted, and that breaks the binding rule there, is used
-quantified where it is a law, as `module.rules.laws` states
-, and is otherwise an error at the
-implementation or the instance that translates it. The translation maps each application's item
-by the implementation, as `translate` does. A translated `ensure` clause is used as a
-contract is, at each application of the item it translates to.
 
 r[module.no-patterns]
 No sentence states how it is instantiated, and no setting changes it.
@@ -1005,20 +780,16 @@ pub proc sentence_instantiation(
 r[module.instantiation.examples] lang::get_put_instantiation, lang::nested_anchor, lang::unbound_variable, lang::law_before_method, lang::listed_variable, lang::outside_variable
 The law `get_put` of [Traits](Traits.md) has one anchor,
 `get(put(s, k, v), j)`, which binds all four variables. It is
-instantiated at each application of `get` to an application of `put`
-. Of `f(x) = f(f(x))`, `f(f(x))` is the only
+instantiated at each application of `get` to an application of `put`. Of `f(x) = f(f(x))`, `f(f(x))` is the only
 anchor. Of `f(g(x)) = f(g(g(x)))`, both
 applications of `f` are anchors, matched at once, so an instance arises
 only where both are terms of the query, and adds no application of `f`.
 Of `f(a, b) = f(b, a)`, both applications are anchors, so it relates
 `f(c, d)` and `f(d, c)` only where both are terms of the query.
-`f(x) <= g(x, y)`, where `g` comes before `f`, leaves `y` unbound
-. A law may come before the methods it mentions
-. A law whose variable is a `Bool` that no
+`f(x) <= g(x, y)`, where `g` comes before `f`, leaves `y` unbound. A law may come before the methods it mentions. A law whose variable is a `Bool` that no
 application has, such as `law flagged(s: Self, b?): when b?, obs(s) >= 0`,
 takes both values of it, and `law bounded(s:
-Self, n: Int): when n > 0, h(s) >= 0` keeps `n` quantified
-.
+Self, n: Int): when n > 0, h(s) >= 0` keeps `n` quantified.
 
 ```fren
 -- An application, outside every quantifier, of `item` to `args`, which mention `mentions`.
@@ -1155,9 +926,7 @@ expect outside_variable() {
 }
 ```
 
-`lang::lemma_order` states which applications a lemma may have, and
-`lang::translated_law` that a translated sentence is judged in its
-target's order:
+`lang::lemma_order` states which applications a lemma may have:
 
 ```fren
 -- The first application of `apps` of an item that is not declared before
@@ -1195,58 +964,6 @@ expect lemma_before_function() {
         Applications::Cons(app(3, [SentenceArg::Variable], {0}), Applications::Nil),
     )
     expect reported: r.reported = 0
-}
-
--- A map from items to items, as an implementation gives: `Map(a, b, rest)`
--- maps `a` to `b`.
-pub enum ItemMap { Nil, Map(Int, Int, ItemMap) }
-
--- The item that `map` maps `i` to, and `i` itself where it maps none.
-pub fn mapped(map: ItemMap, i: Int): Int := match map {
-    ItemMap::Nil => i,
-    ItemMap::Map(a, b, rest) => if a = i then b else mapped(rest, i),
-}
-
--- The applications `apps`, with each item mapped by `map`.
-pub fn translate(apps: Applications, map: ItemMap): Applications := match apps {
-    Applications::Nil => Applications::Nil,
-    Applications::Cons(a, rest) =>
-        Applications::Cons({ a with item := mapped(map, a.item) }, translate(rest, map)),
-}
-
--- `f(x) = g(g(x))`, with `g` at 1 and `f` at 2.
-pub const SOURCE_LAW: Applications := Applications::Cons(
-    app(2, [SentenceArg::Variable], {0}),
-    Applications::Cons(
-        app(1, [SentenceArg::Compound], {0}),
-        Applications::Cons(app(1, [SentenceArg::Variable], {0}), Applications::Nil)
-    )
-)
-
--- The law `forall x, f(x) = g(g(x))` of an interface with `g` at 1 and `f`
--- at 2 has the subject `f` and the anchor `f(x)` there. An implementation
--- that maps `f` to `p`, at 1, and `g` to `q`, at 2, judges its
--- translation `p(x) = q(q(x))` in its own order: the subject is `q`, and
--- the anchor `q(q(x))` (`lang::translated_law_target`).
-set_option fren.evidence "random" in
-expect translated_law() {
-    call source := sentence_instantiation(ONE_VARIABLE, SOURCE_LAW)
-    expect source_subject: source.subject = 2
-    expect source_anchor: source.anchors = {0}
-}
-
-set_option fren.evidence "random" in
-expect translated_law_target() {
-    -- `f`, at 2, to `p`, at 1, and `g`, at 1, to `q`, at 2.
-    call target := sentence_instantiation(
-        ONE_VARIABLE,
-        translate(
-            SOURCE_LAW,
-            ItemMap::Map(2, 1, ItemMap::Map(1, 2, ItemMap::Nil))
-        ),
-    )
-    expect target_subject: target.subject = 2
-    expect target_anchor: target.anchors = {1}
 }
 ```
 
@@ -1507,29 +1224,6 @@ expect lemmas_ranked() {
 ```
 
 ```fren
--- `law l(s: Self, t: Self): f(s) <= g(s, t)`, translated by an
--- implementation that keeps `g`, at 1, before `f`, at 2, still breaks the
--- binding rule there, and is used quantified, as the law is.
-set_option fren.evidence "random" in
-expect translated_unbound_law() {
-    call r := sentence_use(
-        4,
-        Sentences::Cons(
-            { UNBOUND_LAW with
-                applications := translate(
-                    UNBOUND_LAW.applications,
-                    ItemMap::Map(1, 1, ItemMap::Map(2, 2, ItemMap::Nil))
-                ),
-            },
-            Sentences::Nil
-        ),
-        {},
-    )
-    expect quantified: r.kept_quantified = {3}
-}
-```
-
-```fren
 -- The clause `e` of the uninterpreted `g` is used by a later check that
 -- applies `g`, as a contract is today, whatever else the query applies.
 set_option fren.lint.undecidable "allow" in
@@ -1605,34 +1299,8 @@ Where the axioms cannot hold together, every check that uses them holds
 vacuously.
 
 r[module.assume.trusted]
-An axiom that no implementation makes an obligation is reported as
-trusted: a pass that rests on it says that it does, as one that rests on a
-trait's laws does (`F0665`).
-
-r[module.inst]
-An implementation of an interface, `mod x: I<T>` or an `inst`, is a total
-morphism from the interface (`module.implementation`). Each law is an
-obligation of it, over its `Self` and its members, proved by what
-`module.implementation.self` allows. Where every law holds, each lemma of
-the interface holds of the implementation without another check, and the
-implementation is a witness of the laws' consistency.
-
-r[module.inst.group]
-A group of abstract functions that is meant to be implemented together is
-an interface, and a refinement of the group is an implementation of it.
-
-r[module.impl]
-The [`impl`](../Impl.md) and [`interp`](../Impl.md#interpretations)
-bindings of a spec are an implementation of its module, partial where
-some abstract item has neither. An axiom that becomes an obligation of it
-is proved in Lean, from what `module.implementation.self` allows, and
-where the implementation is total, it is a witness of the module's
-consistency.
-
-r[module.generic.check]
-A generic function's contract is checked once, at its type parameters, as
-the theorems of its one-item theory, and each instance `f<Int>` uses it
-translated, by `module.implementation.theorems`.
+An axiom is reported as trusted: a pass that rests on it says that it
+does, as one that rests on a trait's laws does (`F0665`).
 
 > **Note:** Today's realizability check is kept, so
 > `module.expansion` holds of it: a spec of today's forms has the same
@@ -1642,35 +1310,10 @@ translated, by `module.implementation.theorems`.
 ## Metatheory
 
 The rules above rest on properties of the logic and of the language. Each
-is stated here, over morphisms of every kind, with the rule that relies on
-it, and whether it is argued or open (#669).
+is stated here, with the rule that relies on it, and whether it is argued
+or open (#669). Those that implementations rest on are stated with them.
 
 **Dynamic semantics**
-
-r[module.meta.satisfaction]
-The *satisfaction condition* holds: a model of an implementing module,
-reduced along the implementation, is a model of the implemented module,
-and it meets a sentence's translation exactly where its reduction meets
-the sentence (Goguen and Burstall's institutions, 1992).
-`module.implementation.obligations` and `module.implementation.theorems`
-rely on it. It is argued for Fren's many-sorted first-order logic, and its
-proof in Lean is open.
-
-r[module.meta.theorems]
-A morphism preserves theorems: where its obligations hold, the translation
-of each theorem of its source holds in its target. It follows from `module.meta.satisfaction`, as in CASL's
-views and ACL2's functional instantiation (Kaufmann and Moore).
-`module.implementation.theorems`, `module.morphism.transport`,
-`module.trait.lemma` and `module.generic.check` rely on it. It is argued.
-
-r[module.meta.composition]
-Morphisms compose, and each module has the identity morphism: the
-translation along the composite of two morphisms is the translation along
-one, then along the other. A generic function applied within another
-generic function, an implementation of a generic module, and an
-implementation of an interface that extends another, rely on it
-(`module.implementation.instantiate`, `module.extends`). It is argued, as
-substitutions compose, and its proof is open.
 
 r[module.meta.conservative]
 A module's defined items are a *conservative extension* of its other
@@ -1682,269 +1325,12 @@ an `assume` about defined items alone, rely on it. It is argued from the
 totality of [structural recursion](Recursion.md#meaning), and from an
 unspecified value being a constant of the theory, one for each instance.
 
-r[module.meta.coherence]
-Instances are *coherent* and *canonical*: an implementation in scope is
-canonical for dispatch, two in scope for the same interface and types are
-an error, and every way of elaborating a use gives the same meaning
-(Dreyer, Harper, Chakravarty and Keller, POPL 2007). Dispatch and
-`module.use.morphism` rely on it. It is open, and comes with stage 3.
-
-r[module.meta.views]
-Views are coherent through their names: two paths of views and
-inclusions from one module to another, as `Ord` and `Num` each reaching
-`Eq`, translate each sentence alike. `module.view.choice` relies on it
-where a use takes a view implicitly, and `module.extends` where an
-interface is included twice. It is open.
-
 r[module.meta.free]
 A datatype declaration's free meaning is that of the solver's datatypes
 and of a Lean `inductive`, which give its constructors' distinctness,
 injectivity and exhaustiveness (CASL's free types; the initial algebra of
 its constructors). `module.generic-type.sentences` relies on it, so that
 no query states freeness. It is argued.
-
-r[module.meta.parametricity]
-`module.parametricity` is Reynolds's abstraction theorem for Fren's
-generic items (Reynolds 1983; Wadler, "Theorems for free!", 1989).
-`module.generic.check`, which checks a generic function once, at its type
-parameters, for every instance, relies on it. A construct that inspected a
-type parameter, such as a type case, would break it. It is open.
-
-```fren
--- What a translated theorem rests on: nothing more, the axioms that the
--- implementation leaves trusted, or what is not yet established.
-pub enum Translation { Holds, GivenTrusted, Unestablished }
-
--- A sentence translated along an implementation, as a check sees it: the
--- implementation, by its position in the order of items, the sentence's
--- keyword, and what the implementation makes of it (`lang::morphism_status`).
--- `Ensure` is an `ensure` clause of an abstract item, an axiom; a theorem,
--- a lemma or an `ensure` clause of a defined item, is `Lemma`.
-pub struct Translated { along: Int, kind: SentenceKind, status: MorphismStatus }
-
--- The translated sentences visible to a check, in order.
-pub enum Translations { Nil, Cons(Translated, Translations) }
-
--- Whether `t` is an obligation of the implementation at `implementation`:
--- one of its translated axioms that it does not leave trusted, an
--- `ensure` clause of an item it implements included.
-pub fn obligation_of?(t: Translated, implementation: Int) :=
-    t.along = implementation and axiom_kind?(t.kind) and t.status != MorphismStatus::Trusted
-
--- Whether the proof of an obligation of the implementation at
--- `implementation` may use `t` (`module.implementation.self`): a
--- translation along an implementation declared before it, or an axiom
--- that it leaves trusted.
-pub fn usable?(t: Translated, implementation: Int) :=
-    t.along < implementation or (t.along = implementation and axiom_kind?(t.kind) and t.status = MorphismStatus::Trusted)
-
--- The positions of the translations of `ts` that such a proof may use, the first at position `k`.
-pub fn usable_positions(ts: Translations, implementation: Int, k: Int): Set<Int> := match ts {
-    Translations::Nil => {},
-    Translations::Cons(t, rest) =>
-        (if usable?(t, implementation) then {k} else {}) union usable_positions(rest, implementation, k + 1),
-}
-
--- Whether each obligation of the implementation among `ts` holds, by a
--- proof that uses only what `usable` allows, the first at position `k`.
-set_option fren.lint.undecidable "allow" in
-pub fn discharged?(
-    ts: Translations,
-    implementation: Int,
-    done: Set<Int>,
-    uses: Rel<Int, Int>,
-    usable: Set<Int>,
-    k: Int
-) := match ts {
-    Translations::Nil => true,
-    Translations::Cons(t, rest) =>
-        (not obligation_of?(t, implementation) or (k in done and uses.image({k}) subset usable))
-        and discharged?(rest, implementation, done, uses, usable, k + 1),
-}
-
-pub fn any_trusted?(ts: Translations, implementation: Int) := match ts {
-    Translations::Nil => false,
-    Translations::Cons(t, rest) =>
-        (t.along = implementation and t.status = MorphismStatus::Trusted) or any_trusted?(rest, implementation),
-}
-
--- What the proof of an obligation of the implementation at
--- `implementation` may use, among the translations that its check sees.
-set_option fren.evidence "random" in
-pub proc obligation_uses(implementation: Int, translations: Translations): (det usable: Set<Int>) {
-    out usable := usable_positions(translations, implementation, 0)
-
-    expect nothing_visible: when translations = Translations::Nil, usable = {}
-}
-
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-pub proc translated_theorem(
-    implementation: Int,         -- the implementation, by its position in the order of items
-    translations: Translations,  -- the translated sentences that the checks of its obligations see
-    done: Set<Int>,              -- the obligations whose proofs hold, by position
-    uses: Rel<Int, Int>,         -- `(k, j)`: the proof of the obligation `k` uses the translation `j`
-): (det translation: Translation) {
-    out translation :=
-        if not discharged?(
-            translations,
-            implementation,
-            done,
-            uses,
-            usable_positions(translations, implementation, 0),
-            0
-        )
-        then Translation::Unestablished
-        else if any_trusted?(translations, implementation) then Translation::GivenTrusted else Translation::Holds
-
-    expect nothing_to_discharge: when translations = Translations::Nil, translation = Translation::Holds
-}
-
--- An interface with `law a(s: Self): p(s)` and `lemma l(s: Self): p(s)`,
--- which follows from `a`, and an implementation at 5 whose `p` does not
--- meet `a`. The check of its obligation `a` sees `a` and `l` translated,
--- but may use neither, so a proof of `a` from `l` establishes nothing.
-pub const LAW_AND_LEMMA: Translations := Translations::Cons(
-    Translated {
-        along := 5,
-        kind := SentenceKind::Law,
-        status := MorphismStatus::Obligation,
-    },
-    Translations::Cons(
-        Translated {
-            along := 5,
-            kind := SentenceKind::Lemma,
-            status := MorphismStatus::Obligation,
-        },
-        Translations::Nil
-    )
-)
-
-set_option fren.evidence "random" in
-expect own_lemma_unusable() {
-    call r := obligation_uses(5, LAW_AND_LEMMA)
-    expect neither: r.usable = {}
-}
-
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect law_not_through_lemma() {
-    call r := translated_theorem(5, LAW_AND_LEMMA, {0}, {(0, 1)})
-    expect unestablished: r.translation = Translation::Unestablished
-}
-
--- The same lemma, translated along an implementation declared before, at
--- 3, whose obligations are checked apart, may be used.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect earlier_lemma_usable() {
-    call r := translated_theorem(
-        5,
-        Translations::Cons(
-            Translated {
-                along := 5,
-                kind := SentenceKind::Law,
-                status := MorphismStatus::Obligation,
-            },
-            Translations::Cons(
-                Translated {
-                    along := 3,
-                    kind := SentenceKind::Lemma,
-                    status := MorphismStatus::Obligation,
-                },
-                Translations::Nil
-            )
-        ),
-        {0},
-        {(0, 1)},
-    )
-    expect holds: r.translation = Translation::Holds
-}
-
--- Two obligations that rely on the rest, each proved from the other, rest
--- on nothing, so the translation is not established.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect relying_not_circular() {
-    call r := translated_theorem(
-        5,
-        Translations::Cons(
-            Translated {
-                along := 5,
-                kind := SentenceKind::Law,
-                status := MorphismStatus::Relying,
-            },
-            Translations::Cons(
-                Translated {
-                    along := 5,
-                    kind := SentenceKind::Law,
-                    status := MorphismStatus::Relying,
-                },
-                Translations::Nil
-            )
-        ),
-        {0, 1},
-        {(0, 1), (1, 0)},
-    )
-    expect unestablished: r.translation = Translation::Unestablished
-}
-
--- A relying law proved from the `ensure` clause of an item that the
--- implementation leaves abstract, which it leaves trusted, holds given it.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect relying_on_trusted_contract() {
-    call r := translated_theorem(
-        5,
-        Translations::Cons(
-            Translated {
-                along := 5,
-                kind := SentenceKind::Law,
-                status := MorphismStatus::Relying,
-            },
-            Translations::Cons(
-                Translated {
-                    along := 5,
-                    kind := SentenceKind::Ensure,
-                    status := MorphismStatus::Trusted,
-                },
-                Translations::Nil
-            )
-        ),
-        {0},
-        {(0, 1)},
-    )
-    expect given_trusted: r.translation = Translation::GivenTrusted
-}
-
--- An obligation that relies on an axiom that the implementation leaves
--- trusted holds, given that axiom.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect relying_on_trusted() {
-    call r := translated_theorem(
-        5,
-        Translations::Cons(
-            Translated {
-                along := 5,
-                kind := SentenceKind::Law,
-                status := MorphismStatus::Relying,
-            },
-            Translations::Cons(
-                Translated {
-                    along := 5,
-                    kind := SentenceKind::Assume,
-                    status := MorphismStatus::Trusted,
-                },
-                Translations::Nil
-            )
-        ),
-        {0},
-        {(0, 1)},
-    )
-    expect given_trusted: r.translation = Translation::GivenTrusted
-}
-```
 
 ## Induction by unfolding
 
@@ -1972,8 +1358,7 @@ so a check that fails has a confirmed counterexample.
 r[module.induction.variable] lang::induction_variables
 The *candidates* are the quantified variables, of a recursive enumeration,
 that are the argument at the decreasing parameter of some application of a
-[structural recursion](Recursion.md) in the sentence
-. Fren tries each, in the order of the
+[structural recursion](Recursion.md) in the sentence. Fren tries each, in the order of the
 variables, until one proves the sentence.
 
 r[module.induction.cases]
@@ -1988,8 +1373,7 @@ quantified variable at each ground term of its type that the case has.
 r[module.induction.unfolding] lang::arm_decided
 In each case, an application of a structural recursion unfolds into the arm
 of its body that the case decides: the arm that the case's hypotheses
-imply is taken, where they rule out every earlier arm
-. An application whose arm the case does not decide
+imply is taken, where they rule out every earlier arm. An application whose arm the case does not decide
 stays opaque, with its contract.
 
 r[module.induction.fixpoint]
@@ -2003,8 +1387,7 @@ the case and of its unfoldings.
 r[module.induction.verdict] lang::induction_verdict
 The induction passes where every case passes. A sentence whose check is
 Inconclusive stays Inconclusive where no candidate's induction passes. The
-induction never fails a check, and never changes a pass or a failure
-.
+induction never fails a check, and never changes a pass or a failure.
 
 r[module.induction.evidence]
 A pass by induction is a proof of a [structural recursion's
@@ -2189,13 +1572,13 @@ pub proc strict_expansion(
     written: Seq<WrittenSentence>,       -- the spec's items and clauses that state claims
     before: Report,              -- what the check reports before this chapter
     after: Report,               -- and after it
-    by_induction?,               -- the check passes by induction: an outcome of the check, given as such
+    attempts: Inductions,        -- the verdicts of the inductions on the candidates (`lang::induction_verdict`)
     by_instances?,               -- the closure of today's laws' instances gives `unsat`: an outcome of the check, given as such
     consistency_checked?,        -- stage 5 checks the laws' consistency (`module.expansion.consistency`)
 ): (det new_forms?, det allowed?) {
     out new_forms? := exists (k: Int), 0 <= k < written.len and not today_form?(written[k])
     out allowed? := new_forms? or after = before
-        or (before.verdict = CheckVerdict::Inconclusive and after.verdict = CheckVerdict::Pass and by_induction?
+        or (before.verdict = CheckVerdict::Inconclusive and after.verdict = CheckVerdict::Pass and some_pass?(attempts)
         and after.messages subset before.messages)
         or (before.verdict = CheckVerdict::Inconclusive and by_instances?
         and (after.verdict = CheckVerdict::Pass and after.messages subset before.messages
@@ -2242,7 +1625,7 @@ expect consistency_messages_need_f0665() {
             verdict := CheckVerdict::Pass,
             messages := {"F0608"},
         },
-        false,
+        Inductions::Nil,
         false,
         true,
     )
@@ -2264,7 +1647,7 @@ expect consistent_laws_drop_f0665() {
             verdict := CheckVerdict::Pass,
             messages := {},
         },
-        false,
+        Inductions::Nil,
         false,
         true,
     )
@@ -2285,7 +1668,7 @@ expect induction_pass_allowed() {
             verdict := CheckVerdict::Pass,
             messages := {},
         },
-        true,
+        Inductions::Cons(CheckVerdict::Pass, Inductions::Nil),
         false,
         false,
     )
@@ -2307,7 +1690,7 @@ expect instances_contradiction_allowed() {
             verdict := CheckVerdict::Fail,
             messages := {"F0602"},
         },
-        false,
+        Inductions::Nil,
         true,
         false,
     )
@@ -2336,7 +1719,7 @@ expect contract_without_result_kept() {
             verdict := CheckVerdict::Inconclusive,
             messages := {"F0450"},
         },
-        false,
+        Inductions::Nil,
         false,
         false,
     )
@@ -2359,7 +1742,7 @@ expect consistency_messages_need_stage_5() {
             verdict := CheckVerdict::Pass,
             messages := {"F0608"},
         },
-        false,
+        Inductions::Nil,
         false,
         false,
     )
@@ -2377,10 +1760,6 @@ The Lean-hosted front end checks this chapter's items by name, since no
 check every earlier chapter again:
 
 ```fren
-#fren_check morphism_status
-#fren_check morphism_obligations
-#fren_check owed_laws
-#fren_check view_choice
 #fren_check sentence_place
 #fren_check sentence_member
 #fren_check sentence_role
@@ -2394,28 +1773,17 @@ check every earlier chapter again:
 #fren_check outside_variable
 #fren_check lemma_order
 #fren_check lemma_before_function
-#fren_check translated_law
-#fren_check translated_law_target
 #fren_check sentence_use
 #fren_check made_used
 #fren_check made_unused
 #fren_check axioms_anywhere
 #fren_check laws_anywhere
 #fren_check unbound_law_quantified
-#fren_check translated_unbound_law
 #fren_check contract_without_result_used
 #fren_check ensure_clause
 #fren_check contract_without_result
 #fren_check no_subject_used
 #fren_check lemmas_ranked
-#fren_check obligation_uses
-#fren_check translated_theorem
-#fren_check own_lemma_unusable
-#fren_check law_not_through_lemma
-#fren_check earlier_lemma_usable
-#fren_check relying_not_circular
-#fren_check relying_on_trusted
-#fren_check relying_on_trusted_contract
 #fren_check induction_variables
 #fren_check arm_decided
 #fren_check induction_verdict

@@ -227,16 +227,9 @@ module.theory.plain -- a definition: which theory a plain module is
 module.interface -- a definition: which theory an interface, today a trait, is
 module.generic-function -- a definition: which theory a generic function is
 module.procedures -- what a module's items may be; the front ends' reading, from stage 3
-module.implementation -- a definition of implementations as morphisms; stage 3's translation formalizes it
-module.implementation.instantiate -- one operation for every construct: an invariant of stage 3's single translation, not a finite decision
-module.implementation.partial -- a definition of total and partial implementations
-module.parametricity -- an invariant of the language, open (`module.meta.parametricity`)
-module.implementation.liskov -- the refinement check of each member, which Refinement and #685 formalize
-module.view -- a definition; the keyword is not decided
-module.view.derived -- what a derived view owes is `lang::morphism_obligations`; proving the target's laws from the source's is a check of stage 3
+module.use.inclusion -- what an import brings and owes is the front ends' reading of `use`, from stage 3
 module.generic-type -- a definition: which theory a generic type is
 module.generic-type.sentences -- what a generic type's sentences are; the front ends' reading, with `module.meta.free`
-module.generic-type.instance -- the one translation, which stage 3 builds
 module.place.error -- the codes of the errors of the new forms are assigned at stage 3; `lang::sentence_place` decides acceptance
 module.abstract -- a definition of the abstract items, which the front ends extract
 module.role.domain -- partly formalized: `lang::sentence_role` gives the role; the restriction of the item's parameters is the meaning of a precondition
@@ -261,16 +254,9 @@ module.closure -- the closure of a query's instances: no requirement computes it
 module.closure.finite -- argued in the rule; a requirement over terms comes with stage 3
 module.instance.models -- the confirmation of a model against axioms: a check of stage 3
 module.use.verdict -- what a pass rests on, which Evidence formalizes
-module.use.morphism -- which translated sentences a check sees: stage 3's translation
 module.no-patterns -- an absence: no syntax states instances, and no setting changes them
-module.meta.satisfaction -- metatheory: argued, and its proof in Lean is open (#669)
-module.meta.theorems -- metatheory: argued from the satisfaction condition (#669)
-module.meta.composition -- metatheory: argued, and its proof is open (#669)
 module.meta.conservative -- metatheory: argued from the totality of structural recursion (#669)
-module.meta.coherence -- metatheory: open, with stage 3 (#669)
-module.meta.views -- metatheory: open (#669)
 module.meta.free -- metatheory: argued from the solver's datatypes and Lean's inductive types (#669)
-module.meta.parametricity -- metatheory: open (#669)
 module.expansion -- partly formalized: `lang::strict_expansion` compares the codes of messages, not their texts or places
 module.expansion.laws -- partly formalized: `lang::strict_expansion` compares reports; that today's laws keep their meaning rests on the rules it cites
 module.expansion.corpus -- a step of each stage's landing: comparing the corpus before and after
