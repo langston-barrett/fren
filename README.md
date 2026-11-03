@@ -14,6 +14,8 @@ There are two ways to use Fren:
 
 Fren is itself specified in Fren.
 
+**Status:** Experimental, currently under heavy development.
+
 ## Example
 
 Consider the following specification of the retry policy of an HTTP client:
@@ -171,14 +173,3 @@ language with a straightforward lowering into Lean and SMT.
 
 Fren is abstract, compositional, simple, fast, and predictable. If you need more
 power or expressivity, you can easily drop into Lean.
-
-## Documentation
-
-TODO
-
-## TODO
-
-- Lean API
-- Test generation
-- Alloy-style `run`
-- can global expectations quantify over base types? they should
