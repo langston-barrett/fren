@@ -68,6 +68,10 @@ def sortedFiles (dir : FilePath) (ext : String) : IO (Array FilePath) := do
 them, to see that confirmation catches it (`Reqs/Models#testing`). -/
 def misreadDir : FilePath := "test" / "ui" / "misread"
 
+/-- The ui tests that run with every query that has a model asked again
+(`Fren.Core.askAgainForced`, `Reqs/Models#testing`). -/
+def askAgainDir : FilePath := "test" / "ui" / "ask_again"
+
 /-- The ui tests: `test/ui/**/*.fren`, and the examples, `examples/**/*.fren`,
 which are checked as ui tests too. -/
 def uiFiles : IO (Array FilePath) :=
@@ -3843,12 +3847,14 @@ def panicGuard : IO (Array String) := do
 def jobs : IO (Array (List String)) := do
   -- The ui tests of `misreadDir` run with the readers' injected bug.
   let (misread, ui) := (← uiFiles).partition (·.toString.startsWith misreadDir.toString)
+  -- And those of `askAgainDir` with every query that has a model asked again.
+  let (askAgain, ui) := ui.partition (·.toString.startsWith askAgainDir.toString)
   let n := (ui.size + uiBatch - 1) / uiBatch
   -- Every `n`th file, so that the slow ones spread over the batches.
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
-    ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
+    ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
@@ -3864,6 +3870,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     uiTests env (files.toArray.map FilePath.mk)
   -- Spawned with `FREN_MISREAD_MODELS` set (`spawnJob`).
   | "uiMisread" :: files => runJob bless ("ui" :: files)
+  -- Spawned with `FREN_ASK_AGAIN` set (`spawnJob`).
+  | "uiAskAgain" :: files => runJob bless ("ui" :: files)
   | ["leanTokens"] => leanTokens
   | ["panicGuard"] => panicGuard
   -- Spawned by `panicGuard` only: it panics.
@@ -3946,6 +3954,8 @@ def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   let env := #[("LEAN_ABORT_ON_PANIC", some "1")]
   -- Both front ends' readers of solver models misread them (`Fren.Core.misreadModels`).
   let env := if job.head? == some "uiMisread" then env.push ("FREN_MISREAD_MODELS", some "1") else env
+  -- Both front ends ask every query that has a model again (`Fren.Core.askAgainForced`).
+  let env := if job.head? == some "uiAskAgain" then env.push ("FREN_ASK_AGAIN", some "1") else env
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args, env }
   let name ← jobName job
   if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"

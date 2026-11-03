@@ -84,8 +84,8 @@ pub mod testing
   lints by lint group (`lints/style/` and so on, and `lints/settings/` for
   setting levels), and the others by command (`args/`, `fix/`, `fmt/`,
   `commands/`). Under `test/ui/`, they are `lang/`, `checks/`, `lints/`,
-  `syntax/`, `lean/` and `misread/`. The example specs are in `examples/`, outside
-  `test/`.
+  `syntax/`, `lean/`, `misread/` and `ask_again/`. The example specs are
+  in `examples/`, outside `test/`.
 - **Error codes** (`lake test`): every code used in the sources must be
   explained in `src/FrenCore/Codes/CODE.md` and reported by some snapshot.
   Each explanation's first ```` ```fren ```` block must report its code,
@@ -218,6 +218,9 @@ pub mod testing
   that their readers read (see [Reading models](../Models.md)). The ui tests in
   `test/ui/misread/` run with `FREN_MISREAD_MODELS` set, which makes both
   readers misread every integer, to check that the confirmation catches it.
+  Those in `test/ui/ask_again/` run with `FREN_ASK_AGAIN` set, which makes
+  both front ends ask every query that has a model again, as they ask one
+  whose model is contradicted (see [Asking again](../Models.md#asking-again)).
 - **The binary's shared reading** (`lake test`, `ownSpec`, which runs
   `sharedSpec` after its own check): only the `fren` binary reads the spec
   once, marks it and what else the threads read persistent, and shares it
@@ -1087,8 +1090,9 @@ scripts/heavy --offline /tmp/fren-SHA/fren check FILE
 `fren` needs nothing else, for `fren check`, `quickcheck`, `mutate` and
 `fmt`. `fren_test --job JOB` reads the test files and specs of the
 checkout, and writes scratch files under its `.lake`. Its jobs `ui`,
-`uiMisread`, `smtAgreement` and `leanTokens` load the hosted front end,
-the `.olean` files of `Fren` and its dependencies; for them, run
+`uiMisread`, `uiAskAgain`, `smtAgreement` and `leanTokens` load the
+hosted front end, the `.olean` files of `Fren` and its dependencies; for
+them, run
 `scripts/heavy lake build Fren` in the checkout, which compiles no C
 code and links nothing, and then `scripts/heavy --offline lake env
 /tmp/fren_test-SHA/fren_test --job ui FILE`. Run the binaries that CI
