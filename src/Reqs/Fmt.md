@@ -432,17 +432,20 @@ set literal is not exempt: it is Rust's array, which opens with `[`, and
 so are a Boolean block's members. Until `fren fmt` breaks expressions,
 every other such list stays on one line.
 
-One exception keeps the wider limit for records, below, from changing a
-record whose line is too long: a record literal or update whose fields are
-wider than 18 columns, rustfmt's `struct_lit_width`, is vertical where its
-line would end past column 100, with all that follows it on that line,
-wherever it is, even where a field or a method follows it, as every such
-record was before `fren fmt` allowed 40 (#546). So is a list that holds
-one at any depth, a call's arguments or a sequence's elements, as each was
-then too. Where such a list is vertical only for the records it holds,
-every list in it that holds one is vertical as well, as it was then
-(`fmt::wide_within`). So raising the limit joins only records whose lines
-fit (`fmt::wide_record?`).
+A record literal or update whose fields are wider than 18 columns,
+rustfmt's `struct_lit_width`, is a *wide record* (`fmt::wide_record?`). A
+wide record, or a list that holds one at any depth, such as a call's
+arguments or a sequence's elements, is vertical where its line would end
+past column 100 with all that follows it on that line, wherever it is,
+even where a field or a method follows it. Where such a list is vertical
+only for the wide records it holds, every list in it that holds one is
+vertical too (`fmt::wide_within`).
+
+> **Rationale:** records may be 40 wide, where rustfmt's 18 split some of
+> a run of short literals that read alike and not others (#546). Wide
+> records stay vertical where their line is too long, as rustfmt's 18
+> would have them, so that the wider limit only joins records whose lines
+> fit.
 
 | List | Widest | rustfmt's option |
 |---|---|---|
@@ -521,9 +524,7 @@ pub fn width_limit(list: ListKind): Int := match list {
     Fields => 40,
 }
 
--- A record whose fields are wider than rustfmt's `struct_lit_width` of 18: before `fren fmt`
--- allowed 40 (#546), it was vertical wherever it was, and so was each list that held it. They still
--- are where their line would be too long.
+-- A wide record: one whose fields are wider than rustfmt's `struct_lit_width` of 18.
 pub fn wide_record?(list: ListKind, width: Int) := list = Fields and width > 18
 
 -- A vertical list's last element is followed by a comma.
@@ -574,7 +575,7 @@ pub proc one_line(
     -- A record wider than 18, or a list that holds one, is vertical where its line, with all that
     -- follows it, is too long, wherever it is; any other list is held to its line's expression.
     expect wide_long_line: when n > 0 and wide? and rest_end = 101, vertical?
-    -- Inside a list that is vertical only for it, it is vertical too, as on main.
+    -- Inside a list that is vertical only for its wide records, it is vertical too.
     expect wide_within_vertical: when n > 0 and wide? and within?, vertical?
     expect narrow_operand: when list = Fields and n = 2 and not broken? and not wide? and width = 18
         and not own_line? and not continued?, not vertical?
@@ -601,10 +602,12 @@ line: its closing bracket, with the space before a brace, and the tokens
 after it up to where a line may end. Where that line ends an element of a
 vertical list, the comma that the list adds after it counts too. After a
 block's `}`, a comment on its line counts too, with the two spaces before
-it. For a wide record, what counts instead is all that follows its last
-element, with every list after it on one line, up to a comment or a line
-break that formatting keeps or that a list or right side around it
-decides. Whether the list is its line's expression is decided by
+it. For a list that `fmt::wide_list` finds wide, all that follows its last
+element counts as well, as `rest`, with every list after it on one line,
+up to a comment or a line break that formatting keeps or that a list or
+right side around it decides: it decides only the clause for wide lists,
+and the line's end by `after` still decides the others. Whether the list
+is its line's expression is decided by
 [`fmt::own_line`](#a-lists-own-line), whether its line continues an item
 by [`fmt::continued`](#a-blocks-line), and whether a list around it is
 vertical only for its wide records by `fmt::wide_within`, from the outside
@@ -680,8 +683,8 @@ pub proc list_layout(
 }
 
 -- Whether the lists inside a list are inside one that is vertical only for its wide records: one
--- around them is, or it is, as its line is too long with them on it. Such a list was vertical before
--- records were allowed 40 (#546), and so was every list in it that holds a wide record.
+-- around them is, or it is, as its line is too long with them on it, and it would not be vertical
+-- but for them.
 pub proc wide_within(
     list: ListKind,
     elements: ElementList,

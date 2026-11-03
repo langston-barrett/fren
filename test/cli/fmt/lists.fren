@@ -69,8 +69,7 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
     -- Nor one that is only part of the right operand.
     ensure record_negated: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = -P { xx := 1, y := 2 }
     -- A record whose fields are wider than 18 is vertical on a line that is too long, wherever it
-    -- is, as it was before records were allowed 40 (#546): in part of a right operand, in a guard's
-    -- or a quantifier's body, or before a field.
+    -- is: in part of a right operand, in a guard's or a quantifier's body, or before a field.
     ensure wide_negated: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = -P { xx := 1000, y := 2000 }
     ensure wide_guarded: when x > 0 and r > 0 and x != r and x != 100000000, q = P { xx := 1000, y := 2000 }
     ensure wide_quantified: x > 0 and (exists (z: Int), when z > 0 and z < 10000, P { xx := z, y := 20000 } in {q})
