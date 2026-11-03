@@ -967,7 +967,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- whose model also has the values of the locals `extra`, by their names,
   -- and whether to cache it: not if it leaves out a model that lean-smt
   -- could not read.
-  let askSmt (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (extra : Array Expr := #[]) :
+  let askSmt (requery : Bool) (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (extra : Array Expr := #[]) :
       MetaM (Core.Outcome Expr × Bool) := do
     -- Each recursive symbol is opaque to the solver.
     let recs ← recursiveSolvers (hyps.map (·.2) |>.push goal)
@@ -990,6 +990,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       -- lean-smt reads an unsat core of every `unsat`, so it keeps those.
       let cvc5Defaults := [("simplification", "batch"), ("enum-inst", "false"), ("enum-inst-interleave", "false"),
         ("cegqi-midpoint", "false")]
+      -- Asked again, for a model that confirmation contradicts, after
+      -- them, so that they are overridden (`Core.askedAgain`).
+      let requeryOptions := if requery then Core.requeryOptions else []
       -- A procedure whose queries may quantify over a collection's
       -- elements sets `fmf-bound` (`Core.boundedOptions`).
       let bounded := if bounded then Core.boundedOptions else []
@@ -1022,7 +1025,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
                       -- lean-smt's logic, `ALL`, quantifies (`Core.quantifierOptions`).
                       extraSolverOptions := Core.solverOptions true true ++ bounded
                         ++ (if finiteModel then Core.finiteModelOptions else []) ++ Core.quantifierOptions "ALL"
-                        ++ logic ++ cvc5Defaults
+                        ++ logic ++ cvc5Defaults ++ requeryOptions
                         ++ resourceLimitOptions (← getOptions) ++ quietOptions }
               mv.mvarId! (premises.reverse ++ hs.reverse ++ recFvs) with
         | .sat (some m) =>
@@ -1052,9 +1055,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- pinned to the model's, whose model is real
   -- (`Reqs/Lang/ElementQuantifiers#expansion`), as the binary's
   -- `solveExpanded` asks.
-  let askElems (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) := do
+  let askElems (requery : Bool) (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) : MetaM (Core.Outcome Expr × Bool) := do
     let first ← Elems.withExpanded hyps goal none fun ex => do
-      let (o, c) ← askSmt ex.hyps ex.goal (wantModel || !ex.lengths.isEmpty) (ex.lengths.map (·.1))
+      let (o, c) ← askSmt requery ex.hyps ex.goal (wantModel || !ex.lengths.isEmpty) (ex.lengths.map (·.1))
       let .sat m := o | return ((o, c), none)
       let ids := ex.locals.map (·.fvarId!.name)
       let model := m.filter fun (n, _) => !ids.contains n
@@ -1071,13 +1074,13 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     | .error n => return (.unknown (Core.elementLimitReason n), true)
     | .ok (r, none) => return r
     | .ok (_, some pins) =>
-      match ← Elems.withExpanded hyps goal (some pins) fun ex => askSmt ex.hyps ex.goal wantModel with
+      match ← Elems.withExpanded hyps goal (some pins) fun ex => askSmt requery ex.hyps ex.goal wantModel with
       | .error n => return (.unknown (Core.elementLimitReason n), true)
       | .ok (.unsat, c) => return (.unknown Core.elementUnconfirmedReason, c)
       | .ok r => return r
   -- `unfolded?` is `hyps`'s and `goal`'s formulas already unfolded, by
   -- `unfoldDefined`, which a query that may be recursive does first.
-  let ask (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (unfolded? : Option (Array Expr × Expr) := none) :
+  let ask (requery : Bool) (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (unfolded? : Option (Array Expr × Expr) := none) :
       MetaM ((Core.Outcome Expr × Bool) × Array Name × Array Name) :=
     withoutModifyingState do
     -- With the `have`s of `let`s and `where` clauses substituted, so that an
@@ -1117,8 +1120,8 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- expanded.
     let goal := instances goal
     let hyps := hyps.map fun (n, t) => (n, instances t)
-    if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then return (← askElems hyps goal wantModel, fns, factRecs)
-    else return (← askSmt hyps goal wantModel, fns, factRecs)
+    if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then return (← askElems requery hyps goal wantModel, fns, factRecs)
+    else return (← askSmt requery hyps goal wantModel, fns, factRecs)
   Core.Backend.ownHeartbeats <|
   { query := fun hyps goal wantModel => do
       -- The same formulas, in the same local context and with the same
@@ -1140,39 +1143,63 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
         | none => pure #[]
       -- Even a query that needs only sat/unsat must obtain its inputs to
       -- confirm a recursive model, as the CLI's confirming backend does.
-      let ((o, cacheable), fns, factRecs) ← ask hyps goal (wantModel || !recs.isEmpty) unfolded?
+      let getModel := wantModel || !recs.isEmpty
+      -- The solver's answer, asked with `Core.requeryOptions` if
+      -- `requery`, and whether it can be cached. A fact that applies a
+      -- recursive function is never confirmed, a conservative choice: the
+      -- check fails only under that function's contract, as the binary's
+      -- backend decides it too, in its query, before it confirms.
+      let answer (requery : Bool) : MetaM ((Core.Outcome Expr × Bool) × Array Name) := do
+        let ((o, cacheable), fns, factRecs) ← ask requery hyps goal getModel unfolded?
+        let o := match o with
+          | .sat _ =>
+            if !factRecs.isEmpty && !Core.recursiveCounterexample (!recs.isEmpty) true true then
+              .unknown (Core.recursiveReason factRecs)
+            else o
+          | o => o
+        return ((o, cacheable), fns)
+      -- The functions whose contracts the query's facts apply, which `ask`
+      -- finds in its hypotheses and goal, whatever `requery` is: those of
+      -- the query asked again are these.
+      let ((first, cacheable), fns) ← answer false
       record fns
-      let o ← match o with
+      let st ← getState
+      let recursive := st.defined.foldl (init := #[]) fun acc _ d =>
+        if d.recursive then (acc.push d.decl) ++ d.solver?.toArray else acc
+      -- A model that contradicts a formula that applies no recursive
+      -- function is asked for again (`Core.askedAgain`), read without the
+      -- injected misread, as the `fren` command reads every model to
+      -- confirm it: of every query that obtains a model, as the `fren`
+      -- command obtains one of every query. The recursive confirmation
+      -- below is of the answer that it keeps, as the `fren` command's is.
+      let againOk ← IO.mkRef true
+      let o ← Core.askedAgainThen first (fun model => plainContradiction c fvs primes hyps goal model recursive)
+          (if !getModel then none else some do
+            let ((o, ok), _) ← answer true
+            againOk.set ok
+            pure o)
+        (forced := ← Core.askAgainForced) fun o => match o with
         | .sat model => do
-          -- A fact that applies a recursive function is never confirmed, a
-          -- conservative choice: the check fails only under that function's
-          -- contract, as the binary's backend decides it too.
-          if !factRecs.isEmpty then
-            if Core.recursiveCounterexample (!recs.isEmpty) true true then pure o
-            else pure (.unknown (Core.recursiveReason factRecs))
-          else if recs.isEmpty then pure o else
-            -- Each of its own formulas, as the solver has it: whether it
-            -- applies a recursive function, and its value at the model.
-            let infos ← recursiveInfos
-            let applies (e : Expr) : Bool := !(recInstancesIn infos e #[]).isEmpty
-            let (us, g) := unfolded?.getD (hyps.map (·.2), goal)
-            let vals ← confirmRecursiveModel c fvs primes hyps goal model
-            let own := us.mapIdx fun i u => (applies u, vals.bind (·[i]?))
-            let goalF := (applies g, (vals.bind (·[us.size]?)).map (!·))
-            if Core.counterexampleReported own goalF false then pure o
-            else do
-              let st ← getState
-              -- A formula without recursion that the model contradicts is
-              -- the report's internal error, not the contracts'.
-              let recursive := st.defined.foldl (init := #[]) fun acc _ d =>
-                if d.recursive then (acc.push d.decl) ++ d.solver?.toArray else acc
-              if ← plainContradiction c fvs primes hyps goal model recursive then pure o else
-              let names := recs.filterMap fun (r, _) => st.defined.foldl (init := none) fun acc _ d =>
-                if d.solver? == some r then some d.path else acc
-              pure (.unknown (Core.recursiveReason names))
+          if recs.isEmpty then pure o else
+          -- Each of its own formulas, as the solver has it: whether it
+          -- applies a recursive function, and its value at the model.
+          let infos ← recursiveInfos
+          let applies (e : Expr) : Bool := !(recInstancesIn infos e #[]).isEmpty
+          let (us, g) := unfolded?.getD (hyps.map (·.2), goal)
+          let vals ← confirmRecursiveModel c fvs primes hyps goal model
+          let own := us.mapIdx fun i u => (applies u, vals.bind (·[i]?))
+          let goalF := (applies g, (vals.bind (·[us.size]?)).map (!·))
+          if Core.counterexampleReported own goalF false then pure o
+          else do
+            -- A formula without recursion that the model contradicts is
+            -- the report's internal error, not the contracts'.
+            if ← plainContradiction c fvs primes hyps goal model recursive then pure o else
+            let names := recs.filterMap fun (r, _) => st.defined.foldl (init := none) fun acc _ d =>
+              if d.solver? == some r then some d.path else acc
+            pure (.unknown (Core.recursiveReason names))
         | _ => pure o
       let o := if wantModel then o else match o with | .sat _ => .sat #[] | _ => o
-      if cacheable then cache.modify (·.insert key (o, fns))
+      if cacheable && (← againOk.get) then cache.modify (·.insert key (o, fns))
       return o
     modelBool? := snapshots?.map fun snapshots => fun model formula => do
       let some (_, token) := model.find? (·.1 == Name.mkSimple "#member_model") | return none
