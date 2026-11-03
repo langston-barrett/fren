@@ -220,9 +220,11 @@ jobs:
         # Read, Grep and Glob only in the checkout (`./**`), and Write only
         # for review.md (Edit's rules hold for Write); a headless run denies
         # what is not allowed. The denials are a second layer, should a
-        # path's form slip past `./**`.
+        # path's form slip past `./**`. A full review runs on Opus; a light
+        # check (`fixes`, `rebase`), which reads only what changed since a
+        # clean review, runs on Sonnet, to save the plan's Opus quota.
         claude_args: >-
-          --model claude-opus-5-5
+          --model ${{ needs.prepare.outputs.kind == 'full' && 'claude-opus-5-5' || 'claude-sonnet-5' }}
           --allowedTools "Read(./**),Grep(./**),Glob(./**),Write(./review.md),Edit(./review.md)"
           --disallowedTools "Agent,Task,Bash,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Read(//proc/**),Read(//sys/**),Read(//dev/**),Read(//etc/**),Read(//tmp/**),Read(//var/**),Read(//run/**),Read(//root/**),Read(//opt/**),Read(//usr/**),Read(//snap/**),Read(//mnt/**),Read(//home/runner/.*/**),Read(//home/runner/work/_temp/**),Read(//home/runner/work/_actions/**),Read(//home/runner/work/_tool/**),Read(//home/runner/runners/**),Read(//home/runner/actions-runner/**)"
     - if: ${{ always() }}
