@@ -8,6 +8,7 @@ import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.OutOfFuel
 import FrenTest.Quote
+import FrenTest.ReadingBeside
 import FrenTest.SmallValues
 import FrenTest.Ui
 import Lean.Elab.Frontend
@@ -3860,6 +3861,7 @@ def jobs : IO (Array (List String)) := do
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
+    ++ #[["readingBeside"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -3913,6 +3915,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
+  | ["readingBeside"] => FrenTest.ReadingBeside.agree ownSpecFiles
   | ["enumeration"] => enumerationAgrees
   -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
   | "methodsAgree" :: part => methodsAgree part
