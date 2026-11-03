@@ -201,8 +201,8 @@ where its equation is.
 
 ## Expectations
 
-[Modules](ModulesAndInterfaces.md#checks) designs traits as interfaces, which
-are modules, their lemmas, and what an implementation discharges.
+[Modules](ModulesAndInterfaces.md#modules-as-theories) designs traits as
+interfaces, which are modules, and their lemmas.
 
 An expectation of a trait checks, from the laws alone, that the laws say
 what the author means, as Larch's `implies` does.

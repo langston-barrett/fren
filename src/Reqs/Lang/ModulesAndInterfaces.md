@@ -207,7 +207,7 @@ checked, and whether later checks use it.
 | `require` | a clause of a function, a procedure, a global expectation, a lemma or an `assume` item | a precondition: the domain of its item |
 | `ensure` | a clause of a function, a procedure, a lemma or an `assume` item | a claim of its item, which later checks use |
 | `expect` | an item, or a member of anything but an `assume` item | a goal: checked, never used by another check |
-| `lemma` | an item of a module or of an interface | a goal that, once checked, later checks use, at every implementation |
+| `lemma` | an item of a module or of an interface | a theorem: checked, and later checks use it |
 | `assume` | an item of a module | an axiom of the module's abstract items |
 | `law` | an item of an interface | an axiom of the interface, which each implementation discharges |
 
@@ -477,7 +477,7 @@ how a sentence is instantiated.
 
 **Legality rules**
 
-r[module.signature] lang::law_before_method
+r[module.signature] lang::lemma_order::axioms_unordered, lang::law_before_method, lang::axioms_anywhere, lang::laws_anywhere
 A module's *signature* is its items other than its lemma, `assume`,
 `expect` and `law` items: its types, functions and procedures. A module
 declares its signature as a whole. An `assume`, `expect` or `law` item
@@ -777,7 +777,7 @@ pub proc sentence_instantiation(
 }
 ```
 
-r[module.instantiation.examples] lang::get_put_instantiation, lang::nested_anchor, lang::unbound_variable, lang::law_before_method, lang::listed_variable, lang::outside_variable
+r[module.instantiation.examples] lang::get_put_instantiation, lang::nested_anchor, lang::unbound_variable, lang::listed_variable, lang::outside_variable
 The law `get_put` of [Traits](Traits.md) has one anchor,
 `get(put(s, k, v), j)`, which binds all four variables. It is
 instantiated at each application of `get` to an application of `put`. Of `f(x) = f(f(x))`, `f(f(x))` is the only
@@ -786,7 +786,7 @@ applications of `f` are anchors, matched at once, so an instance arises
 only where both are terms of the query, and adds no application of `f`.
 Of `f(a, b) = f(b, a)`, both applications are anchors, so it relates
 `f(c, d)` and `f(d, c)` only where both are terms of the query.
-`f(x) <= g(x, y)`, where `g` comes before `f`, leaves `y` unbound. A law may come before the methods it mentions. A law whose variable is a `Bool` that no
+`f(x) <= g(x, y)`, where `g` comes before `f`, leaves `y` unbound. A law whose variable is a `Bool` that no
 application has, such as `law flagged(s: Self, b?): when b?, obs(s) >= 0`,
 takes both values of it, and `law bounded(s:
 Self, n: Int): when n > 0, h(s) >= 0` keeps `n` quantified.
@@ -889,18 +889,6 @@ expect unbound_variable() {
     expect y_unbound: r.verdict = SentenceInstantiation::Unbound(1)
 }
 
--- `law l(s: Self): f(s) >= 0`, written before `fn f(Self): Int`: the law
--- applies `f`, at 1, wherever it is declared.
-set_option fren.evidence "random" in
-expect law_before_method() {
-    call r := sentence_instantiation(
-        ONE_VARIABLE,
-        Applications::Cons(app(1, [SentenceArg::Variable], {0}), Applications::Nil),
-    )
-    expect instantiable: r.verdict = SentenceInstantiation::Instantiable
-    expect anchored: r.anchors = {0}
-}
-
 -- `law flagged(s: Self, b?): when b?, obs(s) >= 0`, with `obs` at 1.
 set_option fren.evidence "random" in
 expect listed_variable() {
@@ -964,6 +952,18 @@ expect lemma_before_function() {
         Applications::Cons(app(3, [SentenceArg::Variable], {0}), Applications::Nil),
     )
     expect reported: r.reported = 0
+}
+
+-- `law l(s: Self): f(s) >= 0` at 1, before `fn f(Self): Int` at 2: a law
+-- may apply an item declared after it, as a lemma may not.
+set_option fren.evidence "random" in
+expect law_before_method() {
+    call r := lemma_order(
+        SentenceKind::Law,
+        1,
+        Applications::Cons(app(2, [SentenceArg::Variable], {0}), Applications::Nil),
+    )
+    expect reported: r.reported = -1
 }
 ```
 

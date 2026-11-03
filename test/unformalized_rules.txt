@@ -239,7 +239,7 @@ module.role.goal -- partly formalized: `lang::sentence_role` gives the role; tha
 module.ensure.sugar -- partly formalized: `lang::sentence_role` gives the role; what the clause states of `f(x)` is `lang::ensure_clause`'s
 module.meaning -- partly formalized: `lang::global_checks` gives the checks of a global expectation; the meaning of other sentences is stated as the same formula
 module.meaning.procedures -- partly formalized: `lang::global_checks` gives the checks of a global expectation's calls; the constraint of an `assume` item's calls on its procedures is not modelled
-module.signature -- partly formalized: `lang::law_before_method` gives the binding verdict of a law written before its method; that an `assume`, `expect` or `law` item may mention a later item is the front ends' scope, from stage 3
+module.signature -- partly formalized: the requirements decide that a law may apply a later item and that axioms are used wherever they are declared; that clauses keep the order of contracts, and the change to `lang::declared_before`, are stage 3's
 module.order.items -- a definition of the order of items
 module.binding.outside -- partly formalized: `lang::outside_variable` gives the verdict; that the variable stays quantified in each instance is how instances are built, from stage 3
 module.rules.kinds -- partly formalized: `lang::ensure_clause` and its examples cover why an `ensure` meets the binding rule; which items the rule applies to is stage 3's reading of them

@@ -86,8 +86,9 @@ pub proc block_member(
 }
 ```
 
-[Modules](ModulesAndInterfaces.md) designs lemma items, which are global
-expectations that later checks use, and `require` in place of the block's `assume`.
+[Modules](ModulesAndInterfaces.md) designs lemma items, which have a global
+expectation's checks and which later checks use, and `require` in place of
+the block's `assume`.
 
 ## The short form
 
