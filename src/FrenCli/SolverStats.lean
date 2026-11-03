@@ -32,9 +32,9 @@ as `solveScript` records them. When a command answers with an error,
 that its time up to there is in the phases it reached and none is in the
 later ones. When something throws instead, as a parse error or a failure
 to read the model does, the later marks stay 0, and `Probe.phases` counts
-the time since the last mark as `free`; and the statistics are then not
-read, so the query's counts are all 0. Fren writes every script, so
-neither is expected. A mark left at 0 counts as the one before it
+the time since the last mark as `free`. In either case the statistics are
+not read, so the query's counts are all 0, and it is `failed`. Fren
+writes every script, so neither is expected. A mark left at 0 counts as the one before it
 (`Probe.phases`). -/
 structure Probe where
   /-- Before the term manager is made. -/
@@ -180,7 +180,9 @@ def parse (text : String) : Cvc5Stats := Id.run do
       -- `theory::T::lemmas` and `theory::T::checkTime`, and the arrays'
       -- `theory::arrays::theory::arrays::checkTime`.
       match name.splitOn "::" with
-      | ["theory", _, "lemmas"] => s := { s with lemmas := s.lemmas + n }
+      -- And `theory::T::theory::T::lemmas`, should a theory repeat its
+      -- prefix for lemmas as the arrays do for `checkTime`.
+      | ["theory", _, "lemmas"] | ["theory", _, "theory", _, "lemmas"] => s := { s with lemmas := s.lemmas + n }
       -- Only these, so that a timer nested within a theory's check, such
       -- as a sub-solver's `theory::T::sub::checkTime`, is not counted twice.
       | ["theory", t, "checkTime"] | ["theory", t, "theory", _, "checkTime"] =>
@@ -189,13 +191,13 @@ def parse (text : String) : Cvc5Stats := Id.run do
   return s
 
 #guard parse "(:all-statistics ((\"sat::decisions\" 7) (\"driver::filename\" a b) (\"theory::arith::lemmas\" 1) \
-    (\"theory::strings::lemmas\" 2) (\"theory::arrays::number of Ext lemmas\" 5) \
+    (\"theory::strings::lemmas\" 2) (\"theory::bags::theory::bags::lemmas\" 4) (\"theory::arrays::number of Ext lemmas\" 5) \
     (\"theory::strings::checkTime\" 12ms) (\"theory::arrays::theory::arrays::checkTime\" 3ms) \
     (\"theory::uf::checkTime\" 0ms) (\"smt::SolverEngine::solveTime\" 20ms) \
     (\"theory::strings::regexp::checkTime\" 7ms) \
     (\"resource::steps::inference-id\" { ARITH_UNATE: 1, STRINGS_REGISTER_TERM: 0 }) \
     (\"resource::steps::resource\" { RewriteStep: 108, TheoryCheckStep: 14 }) (\"theory::arrays::avgIndexListLength\" -nan)))"
-  == { decisions := 7, lemmas := 3, theoryMs := #[("strings", 12), ("arrays", 3)],
+  == { decisions := 7, lemmas := 7, theoryMs := #[("strings", 12), ("arrays", 3)],
        inferences := #[("ARITH_UNATE", 1)], rewrites := 108, theoryChecks := 14 }
 
 /-- The sum of the timed parts of `checkSat`: the theories' checks,

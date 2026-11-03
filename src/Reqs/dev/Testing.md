@@ -1299,8 +1299,9 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
 - **A query whose command answers with an error**, answered `error`,
   has its time up to the failure in the phases it reached, and none in
   the later ones. One that throws, as on a parse error, has the time
-  since its last mark in `free`, and counts of 0. Fren writes every
-  script, so neither is expected.
+  since its last mark in `free`. In either case cvc5's statistics are not
+  read, so its counts are 0 and its `checkSat` shows no timer. Fren
+  writes every script, so neither is expected.
 - **The counts** are cvc5's: the SAT solver's decisions, conflicts and
   propagations, the theory checks and rewrites that its resource manager
   counts, every theory's lemmas, quantifier instantiations, the resource
