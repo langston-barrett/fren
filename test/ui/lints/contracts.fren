@@ -33,6 +33,17 @@ pub fn clamp(n: Int): (r: Int) {
     ensure bounded: r <= LIMIT
 }
 
+-- A labelled conjunction is split into its leaves, and only the leaf
+-- that mentions nothing of the function's own is reported: `other`, whose
+-- note names `limit`. Both front ends report it at the conjunction, since
+-- the result's definition wraps the whole clause before it is split.
+pub fn split(n: Int): (r: Int) {
+    ensure both: and {  --~ warning: it mentions only the function `limit`
+        own: r >= n,
+        other: limit(0) > 0,
+    }
+}
+
 -- About two other functions, which the note lists in order.
 pub fn both(n: Int): (r: Int) {
     ensure grows: r >= n

@@ -48,6 +48,22 @@ proc unlabelled_guarantee(n: Int) {
     --~^ warning: `unlabelled_guarantee::b` is redundant
 }
 
+-- Calls that nothing relates: the procedure gets no `unrelated_binders`,
+-- which only a global expectation gets, but its fixed form does.
+proc two(a: Int, b: Int) {  --~ warning: procedure `two` has no outputs
+    call x := band(a)
+    call y := band(b)
+    expect ex: x.cold? or a > 0
+    expect ey: y.cold? or b > 0
+}
+
+expect two_fixed(a: Int, b: Int) {  --~ warning: the calls of `two_fixed` fall into 2 groups that nothing relates
+    call x := band(a)
+    call y := band(b)
+    expect ex: x.cold? or a > 0
+    expect ey: y.cold? or b > 0
+}
+
 -- Not fired: `pub`, so other files may call it.
 pub proc public_claim(n: Int) { expect e: n + 1 > n }
 

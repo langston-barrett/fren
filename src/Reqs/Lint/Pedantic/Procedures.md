@@ -23,6 +23,13 @@ which a procedure's checks ask and a global expectation's do not
 `f0846_proc_without_outputs_fixed` show it: 6 checks pass before the fix,
 and 5 after.
 
+The fixed item is a global expectation, so the lints that only global
+expectations get now apply to it. One is
+[`unrelated_binders`](../Suspicious.md#unrelated-binders), which fires
+where the calls fall into groups that nothing relates. So fixing this
+lint can bring that warning, which says that the claim is several claims
+in one.
+
 What the fix changes is what the procedure is to the rest of the spec. A
 global expectation is not a procedure: nothing can call it, nor refine it,
 and it has no [evidence](../../Trace.md), so a `tested` or `trusted` claim
