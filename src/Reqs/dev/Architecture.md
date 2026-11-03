@@ -25,9 +25,15 @@ Verifier in Lean", Dafny '26):
 | `Reqs` | Fren's requirements | `Fren` |
 | `Impls` | Fren's code linked to `Reqs` with `impl` | `Reqs`, `FrenCore`, `FrenCli.Exit`, `FrenCli.MutateOutcome` |
 
-The executables also link `c/glibc_c23.c`, the one non-Lean source: it
-defines the C23 glibc functions that cvc5's static Linux release calls,
-which the older glibc that Lean links against lacks.
+The executables also link C sources. `c/glibc_c23.c` defines the C23
+glibc functions that cvc5's static Linux release calls, which the older
+glibc that Lean links against lacks. `c/mimalloc_malloc.c` makes `malloc`,
+on Linux, the mimalloc that Lean's runtime already links in, which runs
+cvc5 faster than glibc's allocator. The executables that run the
+Lean-hosted front end, whose solvers are never freed, also link
+`c/mimalloc_lazy_commit.c`, so that mimalloc commits memory as it needs
+it, which keeps their resident memory at what it was with glibc's
+allocator.
 
 Importing `Fren` never builds `FrenCli`, and building the `fren` command never builds
 lean-smt or lean-auto (Lake still clones them, as `require` is per package).

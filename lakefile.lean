@@ -279,6 +279,22 @@ target glibc_c23.o pkg : FilePath := do
 extern_lib glibc_c23 pkg := do
   buildStaticLib (pkg.staticLibDir / nameToStaticLib "glibc_c23") #[← glibc_c23.o.fetch]
 
+-- `malloc`, and the functions around it, by the mimalloc that Lean's
+-- runtime links in, on Linux (`c/mimalloc_malloc.c`), so that cvc5
+-- allocates with it. Linked into every executable, as an object of its
+-- own (`moreLinkObjs`), never into a library that a process could load
+-- after it had started allocating with glibc's `malloc`.
+target mimalloc_malloc.o pkg : FilePath := do
+  let src ← inputTextFile (pkg.dir / "c" / "mimalloc_malloc.c")
+  buildO (pkg.buildDir / "c" / "mimalloc_malloc.o") src #["-I", (← getLeanIncludeDir).toString] #["-std=gnu17", "-fPIC", "-O2"]
+
+-- And for the executables that run the Lean-hosted front end, whose
+-- solvers are never freed, mimalloc commits its arenas' memory as it needs
+-- it (`c/mimalloc_lazy_commit.c`).
+target mimalloc_lazy_commit.o pkg : FilePath := do
+  let src ← inputTextFile (pkg.dir / "c" / "mimalloc_lazy_commit.c")
+  buildO (pkg.buildDir / "c" / "mimalloc_lazy_commit.o") src #["-I", (← getLeanIncludeDir).toString] #["-std=gnu17", "-fPIC", "-O2"]
+
 -- The standalone binary for `.fren` files: a native executable with cvc5
 -- linked in, needing no .olean files at runtime. There is no module `FrenCli`,
 -- so the library is its modules.
@@ -296,12 +312,14 @@ lean_lib FrenCli where
 
 @[default_target] lean_exe fren where
   root := `FrenCli.Main
+  moreLinkObjs := #[`@/mimalloc_malloc.o]
   moreLinkArgs := coverageLinkArgs
 
 -- `lake test`: ui tests through both front ends, and snapshot tests for the
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
 lean_exe fren_test where
   root := `FrenTestMain
+  moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs
 
@@ -310,6 +328,7 @@ lean_exe fren_test where
 -- `lake build` keeps it building.
 @[default_target] lean_exe fren_fuzz where
   root := `FrenFuzz
+  moreLinkObjs := #[`@/mimalloc_malloc.o]
   moreLinkArgs := coverageLinkArgs
 
 -- `lake exe fren_coverage GCOV...`: the declarations that `lake test` did
@@ -317,6 +336,7 @@ lean_exe fren_test where
 -- It loads Fren's Lean environment, hence the interpreter.
 lean_exe fren_coverage where
   root := `FrenCoverage
+  moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
 
 -- `lake exe fren_fuzz_frontends`: random specs, checked by both front ends,
@@ -327,5 +347,6 @@ lean_exe fren_coverage where
 -- import it, since Lake would then use a stale `.olean` of it.
 lean_exe fren_fuzz_frontends where
   root := `FrenFuzzFrontends
+  moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs
