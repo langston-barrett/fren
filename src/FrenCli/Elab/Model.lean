@@ -1296,7 +1296,7 @@ def lintEdits (l : Lint) (span : Span) (msg : Msg) (edits : Array (Fren.Core.Ran
   modify fun s => { s with lintFixes := s.lintFixes.push { lint := l, span, edits } }
   lint l span (msg.note Fren.Core.fixHelp)
 
-/-! ## Expressions -/
+/-! ## Recording recursive uses -/
 
 /-- Records the use `u`, written at `span`, of the defined function `f`,
 whose parameters are `ps`, in its own body; an error if with it the uses are

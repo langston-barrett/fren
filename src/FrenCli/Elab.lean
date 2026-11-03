@@ -3,13 +3,15 @@ import FrenCli.Elab.Expr
 -- keep-sorted end
 
 /-!
-# Item and file elaboration for `.fren` files
+# Elaboration for `.fren` files
 
-`Elab.Model` holds the shared state and SMT-LIB data, `Elab.ExprSupport`
-the expression context and helpers, and `Elab.Expr` the mutually recursive
-expression elaborators. Separate compilation units let Lake compile one
-module's C code while elaborating the next, and keep the expression code
-built when only item elaboration changes. All retain `FrenCli`'s `-O3`.
+Resolves names with Fren's shared rules (`FrenCore.Names`), type-checks
+expressions, and translates each procedure into SMT-LIB formulas over its
+variables. Type rules mirror how the Lean-hosted front end elaborates the
+same expressions.
+
+This module elaborates items and files, with shared state and expression
+elaboration in `Elab.Model`, `Elab.ExprSupport` and `Elab.Expr`.
 -/
 
 open Lean

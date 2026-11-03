@@ -10,6 +10,8 @@ namespace FrenCli
 
 open Fren.Core (Ty Table Resolved Role Place showPath Msg Severity Lint LintLevel Levels LevelInEffect Named)
 
+/-! ## Expressions -/
+
 structure ExprCtx where
   vars : Array CVar
   /-- The procedure's calls, in order. -/
