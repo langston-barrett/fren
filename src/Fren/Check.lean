@@ -104,6 +104,10 @@ def dumpSymbols (st : State) : Std.HashMap String String := Id.run do
       out := out.insert c.getPrefix.getString! (Core.ItemSymbol.item d.path).text
   return out
 
+/-- Why a dump's script is missing where lean-smt showed no query and
+threw nothing (`queryShown`). -/
+def noQueryShown : String := "lean-smt showed no query"
+
 /-- What `act` logs is dropped, and the script of the query that lean-smt
 shows in it with `showQuery`, after its `query:`, is given, or the
 error that it threw, as an `(error ...)` command. With `showQuery`,
@@ -120,7 +124,9 @@ def queryShown (act : MetaM α) : MetaM (Option α × String) := do
   for m in logged.toList do
     let text ← m.data.toString
     if let some rest := (text.splitOn "query:\n")[1]? then return (a?, rest)
-  return (a?, failed?.getD "")
+  -- Neither a query nor an error, as where preprocessing closes the goal
+  -- before lean-smt shows the query: the dump shows that too.
+  return (a?, failed?.getD (Core.errorScript noQueryShown))
 
 /-- Values for `Bool` variables come back as `True`/`False`. -/
 def fromModel (ty : Expr) (val : Expr) : Expr :=

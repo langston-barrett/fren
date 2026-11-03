@@ -729,7 +729,9 @@ symbol of its own.
 
 The dump is printed from scripts that are never asked: it asks the solver
 nothing, and changes no result of `fren check`. A script that a front end cannot build is
-an `(error ...)` command among its obligation's declarations, and an item
+an `(error ...)` command among its obligation's declarations, as is a
+query that lean-smt does not show, as where its preprocessing closes the
+goal first (`(error "lean-smt showed no query")`), and an item
 whose questions the Lean-hosted front end cannot build is one obligation
 whose script is such a command. But in the Lean-hosted front end, the
 dump's work counts towards the item's heartbeats, and a limit of Lean's that
