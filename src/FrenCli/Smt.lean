@@ -646,8 +646,8 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
   unless Fren.Core.queryAsked logic (Fren.Core.hasQuantifier script) do
     return .unknown (Fren.Core.quantifiedQueryReason logic)
   if let some dump := dump? then dump script
-  let key := Hashed.of (script, observations)
   let some cache := cache? | solveScript script vars wantModel observations limits.timeoutSecs
+  let key := Hashed.of (script, observations)
   -- A model's variables are those that the script declares, which are `vars`.
   match ← cache.find? key with
   | some (o@(.sat _), hasModel) =>

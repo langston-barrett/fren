@@ -212,15 +212,22 @@ pub mod testing
   checking](../Cli.md#parallel-checking)): for Fren's own requirements,
   `ownSpec`'s own run, at the default `--jobs`, and for the ui tests, a
   run at `--jobs 1`. Fren's own requirements are checked with a copy of
-  `ownSpec`'s [query cache](#query-cache), once that run has filled it, so
-  that their queries are answered from it rather than solved under load,
-  where one could reach its time limit; a case whose runs differ while
-  one of them reached a time limit is run again once, and skipped if they
-  still differ so. So the shared path's own-spec run is not independent of
-  the tests' path's solver answers: it answers from the cache that
-  `ownSpec`'s run filled, and a wrong answer that the solver gave there
-  would be given again. Only a difference in a query's script, which
-  changes its key, is solved anew, and the ui tests' runs share no cache.
+  `ownSpec`'s [query cache](#query-cache), if it has one, taken once that
+  run has filled it, so that their queries are answered from it rather
+  than solved under load, where one could reach its time limit; with no
+  cache (`FREN_QUERY_CACHE` empty), they are checked with an empty one, so
+  solved. So the shared path's own-spec run is not independent of the
+  tests' path's solver answers: it answers from the cache that `ownSpec`'s
+  run filled, and a wrong answer that the solver gave there would be given
+  again. Only a difference in a query's script, which changes its key, is
+  solved anew. Run alone (`--job sharedSpec`), the tests' path is a run at
+  `--jobs 1` with a copy of the cache of its own, so it does not answer
+  from the shared path's answers either; and the ui tests' runs keep no
+  answers. A case whose outputs differ only where queries reached their
+  time limit (each block that differs says so, is at the place of a check
+  that one of those is about, or is a line of the summary) runs again
+  once, and is skipped if it still differs so; `lake test` shows each skip
+  as a `skipped: …` line. Any other difference fails.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
@@ -1111,18 +1118,20 @@ that each pass on their own cannot break `main` together.
 cache](../Cli.md#query-cache), so that a query asked by an earlier run is
 answered without the solver. The test driver's `ownSpec` job reads the
 directory from `FREN_QUERY_CACHE`, which is `.lake/query-cache` if it is
-not set, and keeps no answers if it is empty. `FREN_VERIFY_QUERY_CACHE`, if
-set, is the directory to compare with (`--verify-query-cache`): the job
+not set, and keeps no answers if it is empty. `FREN_VERIFY_QUERY_CACHE`,
+if set, is the directory to compare with (`--verify-query-cache`): the job
 fails if `fren check` compared no answers with it, unless it holds no
 entry of the current `queryCacheVersion` and cvc5, which no answer could
 be compared with. Only that job uses the cache, and `sharedSpec`, which it
 runs, a copy of it. The `queryCache` job tests the cache itself: the same
-output cold, in a fresh directory, as warm, a warm run that writes no entry, so that it answered every query
-from the cache, the same entries from two cold runs, a comparison that
-compares answers and finds no contradiction, one with entries whose
-answers are flipped that reports each as a contradiction with no
-position, and a `sat` entry without a model that does not answer a query
-that wants one.
+output cold, in a fresh directory, as warm, a warm run that writes no
+entry, so that it answered every query from the cache, the same entries
+from two cold runs, a comparison that compares answers and finds no
+contradiction, one with entries whose answers are flipped that reports
+each as a contradiction with no position, and a `sat` entry without a
+model that does not answer a query that wants one; and, in memory, a
+script asked again gets the answer that it got first, whichever of the
+cache's maps holds it.
 
 Locally, the cache grows with each run: copying a worktree's `.lake`
 copies it too, and deleting `.lake/query-cache` clears it. An answer from
