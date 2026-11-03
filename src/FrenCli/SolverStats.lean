@@ -304,7 +304,8 @@ def listed : Nat := 20
 /-- The report of `--solver-stats` (`Reqs/dev/Testing#solver-statistics`),
 each line starting with `solver-stats: `: the queries' total time by
 phase, then a line for each logic with its queries' time by phase, then
-where their `checkSat` went by cvc5's timers, summed; then the `listed?`
+where their `checkSat` went by cvc5's timers, summed, and how many
+queries' timed parts exceed their `checkSat`, if any did; then the `listed?`
 slowest queries (all of them for `none`), each with its item, the kind of
 its check, its logic, its size and its answer, a line of its phases, one
 of where its `checkSat` went by cvc5's timers, one of its counts, and one
@@ -331,10 +332,13 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
   let overs := qs.filterMap fun q =>
     let over := q.cvc5.overMs (wholeMs q.phases.check)
     if over == 0 then none else some over
-  let overNote := if overs.isEmpty then "" else
-    s!" (queries whose timed parts exceed their checkSat: {overs.size}, by {overs.foldl (· + ·) 0} ms)"
-  out := out ++ s!"{p}checkSat of queries of {summedMs} ms or more: {long.size}, {ms longMs} ms, by cvc5's timers\
-    {overNote}: {showParts parts}\n"
+  out := out ++ s!"{p}checkSat of queries of {summedMs} ms or more: {long.size}, {ms longMs} ms, by cvc5's timers: \
+    {showParts parts}\n"
+  -- On a line of its own, since it counts every query, not only those
+  -- summed above.
+  unless overs.isEmpty do
+    out := out ++ s!"{p}queries of any length whose timed parts exceed their checkSat: {overs.size}, \
+      by {overs.foldl (· + ·) 0} ms\n"
   let sorted := qs.qsort fun a b => a.phases.total > b.phases.total ||
     (a.phases.total == b.phases.total && Fren.Core.showPath a.item ++ " " ++ a.kind.noun < Fren.Core.showPath b.item ++ " " ++ b.kind.noun)
   let shown := listed?.getD sorted.size
@@ -364,7 +368,7 @@ private def testQuery (checkMs : Nat) (cvc5 : Cvc5Stats) : QueryStats :=
 -- A query whose timed parts exceed its `checkSat` says so in the summed
 -- line, though it is not listed.
 #guard (report #[testQuery 3 { preprocessMs := 2, cnfMs := 3 }, testQuery 9 {}] (some 0)).contains
-  "(queries whose timed parts exceed their checkSat: 1, by 2 ms)"
+  "solver-stats: queries of any length whose timed parts exceed their checkSat: 1, by 2 ms\n"
 -- The parts are summed over the queries of `summedMs` or more only.
 #guard (report #[testQuery 3 { preprocessMs := 1 }, testQuery 9 { preprocessMs := 2 }] (some 0)).contains
   "checkSat of queries of 5 ms or more: 1, 9.0 ms, by cvc5's timers: SAT search and the rest 7 ms, preprocessing 2 ms"

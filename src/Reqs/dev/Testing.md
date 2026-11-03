@@ -1279,8 +1279,8 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   `checkSat`, but timers that overlap in part, as the clausal form of a
   theory's lemmas may within its check, would still meet that bound, and
   make `SAT search and the rest` too small. A query whose timed parts
-  exceed its `checkSat` says by how much, and the summed line says how
-  many did. The timers are also read in whole milliseconds, so the rest
+  exceed its `checkSat` says by how much, and a line after the summed
+  one says how many of all the queries did, not only of those summed. The timers are also read in whole milliseconds, so the rest
   takes in what they leave out, which makes it too large: of the queries
   of Fren's own requirements whose `checkSat` took under 5 ms, it was
   2,054 ms of their 2,485 ms. So the summed line sums only the queries
