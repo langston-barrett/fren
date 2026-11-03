@@ -224,7 +224,9 @@ structure Args where
   evidence? : Option Fren.Core.Evidence := none
   /-- Whether `check` and `quickcheck` mark what their threads share
   `persistent`, which is then never freed: only the `fren` binary, whose
-  process ends with the command, sets it (`run`). Not an option. -/
+  process ends with the command, sets it (`run`), and the test job
+  `sharedSpec`, which runs that path once in each process of its own. Not
+  an option. -/
   persist : Bool := false
 
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
@@ -1909,7 +1911,8 @@ def paintFor (choice : ColorChoice) (stream : IO.FS.Stream) : IO Paint := do
 
 /-- Runs `fren` with `args`, printing diagnostics and usage errors to
 stderr; returns the exit code. `persist` only from the `fren` binary's
-`main`, whose process ends with the command (`Args.persist`). -/
+`main`, and the test job that runs its path, whose processes end with the
+command (`Args.persist`). -/
 def run (args : List String) (persist : Bool := false) : IO UInt32 := do
   let (choice, args) ← match colorArg args with
     | .ok r => pure r
