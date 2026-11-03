@@ -369,6 +369,11 @@ private def testQuery (checkMs : Nat) (cvc5 : Cvc5Stats) : QueryStats :=
 -- line, though it is not listed.
 #guard (report #[testQuery 3 { preprocessMs := 2, cnfMs := 3 }, testQuery 9 {}] (some 0)).contains
   "solver-stats: queries of any length whose timed parts exceed their checkSat: 1, by 2 ms\n"
+-- The slowest query is listed first, by its total time.
+#guard (report #[testQuery 3 {}, { testQuery 9 {} with item := `slow }, testQuery 5 {}] (some 1)).contains
+  "solver-stats: 1. 9.0 ms: `slow` (expectation)"
+#guard !(report #[testQuery 3 {}, { testQuery 9 {} with item := `slow }, testQuery 5 {}] (some 1)).contains
+  "solver-stats: 2. "
 -- The parts are summed over the queries of `summedMs` or more only.
 #guard (report #[testQuery 3 { preprocessMs := 1 }, testQuery 9 { preprocessMs := 2 }] (some 0)).contains
   "checkSat of queries of 5 ms or more: 1, 9.0 ms, by cvc5's timers: SAT search and the rest 7 ms, preprocessing 2 ms"

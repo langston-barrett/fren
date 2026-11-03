@@ -142,7 +142,10 @@ def equal (st : State) (prelude : Prelude) (vars : Array CVar) (pairs : Array (S
   let options := String.join ((Fren.Core.solverOptions strings sets ++ Fren.Core.quantifierOptions logic).map
     fun (o, v) => s!"(set-option :{o} {v})\n")
   let goal := conj (pairs.map fun (a, b) => s!"(= {a} {b})")
-  match ← runQuery logic options prelude vars { timeoutSecs := timeout } none #[] goal false cache with
+  -- Of no item: whether two mutants agree (`item` and `kind` label only
+  -- `--solver-stats`, which `fren mutate` does not take).
+  match ← runQuery logic options prelude vars { timeoutSecs := timeout } none #[] goal false cache
+      (item := .anonymous) (kind := .expect) with
   | .unsat => return some true
   | .sat _ => return some false
   | .unknown _ => return none

@@ -718,7 +718,7 @@ of `item`, for `fren check --solver-stats` (`QueryCache.stats?`). -/
 def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
     (cache? : Option QueryCache := none) (observations : Array ModelObservation := #[])
-    (item : Lean.Name := .anonymous) (kind : Fren.Core.CheckKind := .realizable) : IO (Outcome String) := do
+    (item : Lean.Name) (kind : Fren.Core.CheckKind) : IO (Outcome String) := do
   let script := queryScript logic options prelude vars limits hyps goal
   -- Read from the script that would be asked, the definitions that it
   -- includes, its hypotheses and its goal, not from the spec: a query with a
