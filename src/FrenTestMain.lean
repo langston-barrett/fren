@@ -8,6 +8,7 @@ import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.OutOfFuel
 import FrenTest.Quote
+import FrenTest.ReadingBeside
 import FrenTest.SmallValues
 import FrenTest.Ui
 import Lean.Elab.Frontend
@@ -3776,7 +3777,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"]]
+      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"], ["readingBeside"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -3830,6 +3831,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
+  | ["readingBeside"] => FrenTest.ReadingBeside.agree ownSpecFiles
   | ["enumeration"] => enumerationAgrees
   -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
   | "methodsAgree" :: part => methodsAgree part

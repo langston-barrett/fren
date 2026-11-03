@@ -651,15 +651,19 @@ def applyRefutations (results : Array Fren.Core.CheckResult) (log : Array Refuta
     | none => out := out.push r
   return (out, errs)
 
+/-- The items of a file whose text is `chars`, as the evaluator reads
+them, or the headline of its lexer's or else its parser's error. -/
+def readItems (chars : Array Char) : Except String (Array Item) :=
+  match lex chars with
+  | .error e => throw e.msg.headline
+  | .ok toks => match parse toks chars with
+    | .error e => throw e.msg.headline
+    | .ok items => pure items
+
 /-- The evaluator's reading of files that the elaborator accepted. -/
 def specStateOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
     Except String LState := do
-  let items ← files.mapM fun (_, chars) =>
-    match lex chars with
-    | .error e => throw e.msg.headline
-    | .ok toks => match parse toks chars with
-      | .error e => throw e.msg.headline
-      | .ok items => pure items
+  let items ← files.mapM fun (_, chars) => readItems chars
   lowerAll items callTargs
 
 def specOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
