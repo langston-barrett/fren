@@ -25,10 +25,15 @@ namespace FrenCli.SolverStats
 
 /-- When a query reached each of its phases, in nanoseconds of the
 monotonic clock (`IO.monoNanosNow`), and cvc5's statistics of its solver,
-as `solveScript` records them. When a command fails, `solveOn` sets every
-mark not yet reached to the time of the failure, so that its time up to
-there is in the phases it reached and none is in the later ones. A mark
-left at 0 counts as the one before it (`Probe.phases`). -/
+as `solveScript` records them. When a command answers with an error,
+`solveOn` sets every mark not yet reached to the time of the failure, so
+that its time up to there is in the phases it reached and none is in the
+later ones. When something throws instead, as a parse error or a failure
+to read the model does, the later marks stay 0, and `Probe.phases` counts
+the time since the last mark as `free`; and the statistics are then not
+read, so the query's counts are all 0. Fren writes every script, so
+neither is expected. A mark left at 0 counts as the one before it
+(`Probe.phases`). -/
 structure Probe where
   /-- Before the term manager is made. -/
   start : Nat := 0
@@ -90,7 +95,8 @@ def Probe.phases (p : Probe) : Phases :=
 
 -- The 18 ns of reading the statistics count for no phase.
 #guard (Probe.mk 10 15 25 30 70 72 90 95 "").phases.total == 67
--- A query whose command failed reached no check.
+-- A query that threw in its first command that initializes, which began
+-- at 15: the time since that mark is in `free`.
 #guard (Probe.mk 10 15 0 0 0 0 0 20 "").phases == { setup := 5, free := 5 }
 -- A query whose assertion failed, at 40, after the first command
 -- initialized at 15–25: its assertions are in `assert`, not `free`.
@@ -197,12 +203,15 @@ what cvc5 does around it. cvc5's own timer of the whole check,
 `smt::SolverEngine::solveTime`, is 0 in cvc5 1.3.2's `checkSat`.
 
 This takes the timers to be disjoint, which is not read from cvc5's
-source: it was observed of cvc5 1.3.2, on the 6,267 queries of a check of
-Fren's own requirements, none of whose timed parts summed to more than
-its `checkSat`. Were one nested in another, as the clausal form in
-preprocessing, it would count twice, and the rest come out too small; so
-`report` says of a query whose timed parts exceed its `checkSat` by how
-much (`overMs`), rather than hide it in the subtraction. -/
+source. On the 6,267 queries of a check of Fren's own requirements, with
+cvc5 1.3.2, no query's timed parts summed to more than its `checkSat`,
+but timers that overlap in part would still meet that bound: the clausal
+form of a lemma that a theory sends during its check, for one, may count
+both in the theory's `checkTime` and in `cnfConversionTime`. Time counted
+twice makes the rest too small, so it is a lower bound of the time that
+no timer accounts for. `report` says of a query whose timed parts exceed
+its `checkSat` by how much (`overMs`), rather than hide that in the
+subtraction. -/
 def Cvc5Stats.searchMs (s : Cvc5Stats) (checkMs : Nat) : Nat :=
   checkMs - s.timedMs
 
@@ -307,7 +316,7 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
     let over := q.cvc5.overMs (wholeMs q.phases.check)
     if over == 0 then none else some over
   let overNote := if overs.isEmpty then "" else
-    s!" (cvc5's timers exceed checkSat in {overs.size} queries, by {overs.foldl (· + ·) 0} ms)"
+    s!" (queries whose timed parts exceed their checkSat: {overs.size}, by {overs.foldl (· + ·) 0} ms)"
   out := out ++ s!"{p}checkSat by cvc5's timers{overNote}: {showParts parts}\n"
   let sorted := qs.qsort fun a b => a.phases.total > b.phases.total ||
     (a.phases.total == b.phases.total && Fren.Core.showPath a.item ++ " " ++ a.kind.noun < Fren.Core.showPath b.item ++ " " ++ b.kind.noun)
@@ -338,6 +347,6 @@ private def testQuery (checkMs : Nat) (cvc5 : Cvc5Stats) : QueryStats :=
     phases := { check := checkMs * 1000000 }, cvc5 }
 
 #guard (report #[testQuery 3 { preprocessMs := 2, cnfMs := 3 }, testQuery 9 {}] (some 0)).contains
-  "(cvc5's timers exceed checkSat in 1 queries, by 2 ms)"
+  "(queries whose timed parts exceed their checkSat: 1, by 2 ms)"
 
 end FrenCli.SolverStats

@@ -1268,19 +1268,27 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   query with no command that initializes the solver.
 - **cvc5's timers** split `checkSat`: each theory's checks
   (`theory::T::checkTime`), preprocessing, the clausal form and theory
-  combination, in cvc5's whole milliseconds. They were observed to be
-  disjoint, and a query whose timed parts exceed its `checkSat` says by
-  how much, as the summed line does of how many queries' did. What none
-  of them accounts for is `SAT search and the rest`: the SAT solver's own
-  search and propagation, and whatever else `checkSat` does. The
+  combination, in cvc5's whole milliseconds. What none of them accounts
+  for is `SAT search and the rest`: the SAT solver's own search and
+  propagation, and whatever else `checkSat` does. The report takes the
+  timers to be disjoint, which is not read from cvc5's source: no query
+  of Fren's own requirements had timed parts that summed to more than its
+  `checkSat`, but timers that overlap in part, as the clausal form of a
+  theory's lemmas may within its check, would still meet that bound, so
+  `SAT search and the rest` is a lower bound. A query whose timed parts
+  exceed its `checkSat` says by how much, and the summed line says how
+  many did. The
   theories' checks are made from within the search, so a query that
   makes tens of thousands of cheap theory checks, as `cli::query_symbols`'
   do, shows its search's cost spread over the search and the theories. A
   query is `dominated by` its largest part. cvc5 has no timer of its own
   for parts of a theory, such as the datatypes solver's cycle check, so
   those need a profile.
-- **A query whose command fails**, answered `error`, has its time up to
-  the failure in the phases it reached, and none in the later ones.
+- **A query whose command answers with an error**, answered `error`,
+  has its time up to the failure in the phases it reached, and none in
+  the later ones. One that throws, as on a parse error, has the time
+  since its last mark in `free`, and counts of 0. Fren writes every
+  script, so neither is expected.
 - **The counts** are cvc5's: the SAT solver's decisions, conflicts and
   propagations, the theory checks and rewrites that its resource manager
   counts, every theory's lemmas, quantifier instantiations, the resource
