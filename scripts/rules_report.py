@@ -10,10 +10,17 @@ is `.lake/build/bin/fren_test`, which `lake build fren_test` builds; without
 one, the page is a placeholder that says how to write it. The report is
 never committed, so that pull requests that change its rows do not
 conflict over it.
+
+It also renders the links of each rule's identifier line, `r[ID] LINKS`
+(`Reqs/dev/Style#rule-identifiers`), small, at the start of the rule, and
+leaves `r[ID]` alone on its line, which is all that mdbook-spec reads.
+`python3 scripts/rules_report.py test` tests this.
 """
 
+import html
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -67,11 +74,59 @@ def add(items, chapter):
     return False
 
 
+RULE_LINE = re.compile(r"(r\[[^\]\s]+\]) (\S.*)")
+FENCE = re.compile(r"\s*(```+|~~~+)")
+
+
+def render_links(content):
+    """`content`, a chapter's Markdown, with the links of each rule's
+    identifier line outside code blocks on a line of their own, as small
+    code."""
+    out = []
+    fence = None
+    for line in content.split("\n"):
+        f = FENCE.match(line)
+        if f and fence is None:
+            fence = f.group(1)
+        elif f and fence is not None and f.group(1).startswith(fence) and not line.strip().strip(fence[0]):
+            fence = None
+        m = RULE_LINE.fullmatch(line) if fence is None else None
+        if m:
+            out.append(m.group(1))
+            out.append(f'<small class="rule-links"><code>{html.escape(m.group(2))}</code></small><br>')
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def render_all(items):
+    """Renders the links of every chapter of `items` (`render_links`)."""
+    for item in items:
+        ch = item.get("Chapter") if isinstance(item, dict) else None
+        if ch is not None:
+            ch["content"] = render_links(ch["content"])
+            render_all(ch["sub_items"])
+
+
+def test():
+    assert render_links("r[a.b] lang::p::{c, d}\nText.") == \
+        'r[a.b]\n<small class="rule-links"><code>lang::p::{c, d}</code></small><br>\nText.'
+    assert render_links("r[a.b]\nText.") == "r[a.b]\nText."
+    assert render_links("```text\nr[a.b] lang::p\n```\nr[a.c] q<r") == \
+        '```text\nr[a.b] lang::p\n```\nr[a.c]\n<small class="rule-links"><code>q&lt;r</code></small><br>'
+    assert render_links("````\n```\nr[a.b] p\n````\n") == "````\n```\nr[a.b] p\n````\n"
+    print("rules_report: tests pass")
+
+
 def main():
+    if sys.argv[1:] == ["test"]:
+        test()
+        return
     if len(sys.argv) > 1:
         # `supports RENDERER`: every renderer.
         return
     context, book = json.load(sys.stdin)
+    render_all(book["items"])
     chapter = {
         "name": "Rules and their requirements",
         "content": report(context["root"]),
