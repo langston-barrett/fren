@@ -491,7 +491,10 @@ def identName (s : String) : Name := (s.splitOn ".").foldl Name.mkStr .anonymous
 
 /-- `smt` in pieces, in order: the text between quoted symbols, and the
 name of each quoted symbol. A `|` in a string literal, where `""` is a `"`,
-does not quote. -/
+does not quote. It reads characters, slowly, and nothing but the tests
+calls it: it is the reference that `FrenTest.QuotedSymbols` checks the
+byte readers `substQuoted` and `quotedSymbols` against, so a change to
+how symbols are read changes it and them together. -/
 def quotedPieces (smt : String) : Array (String ⊕ String) := Id.run do
   let cs := smt.toList.toArray
   let mut out := #[]
@@ -520,9 +523,10 @@ def quotedPieces (smt : String) : Array (String ⊕ String) := Id.run do
 of `quotedPieces smt`, each name replaced by `f` of it. It reads the UTF-8
 bytes, as `quotedSymbols` does, and copies the text between symbols a run
 at a time, where `quotedPieces` makes a list of the text's characters and
-builds its pieces a character at a time. Read from `quotedPieces`, it took
-3.0 % of the cycles of a cold `fren check --jobs 1` of Fren's own spec,
-mostly in `queryScript`; this way, 0.9 %. -/
+builds its pieces a character at a time. `"` and `|` are ASCII, and no
+byte of a character that is not ASCII is one of them, so it cuts the text
+only at character boundaries: each run and each name is whole characters,
+and the bytes it puts together are UTF-8, which `String.fromUTF8!` accepts. -/
 def substQuoted (f : String → String) (smt : String) : String := Id.run do
   let bs := smt.toUTF8
   let mut out := ByteArray.emptyWithCapacity bs.size

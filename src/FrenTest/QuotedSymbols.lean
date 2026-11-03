@@ -3,9 +3,11 @@ import FrenCli.Smt
 -- keep-sorted end
 
 /-!
-`FrenCli.quotedSymbols` reads the bytes of a script, but finds the same
-symbols, in the same order, as `FrenCli.quotedPieces`, which reads its
-characters.
+`FrenCli.quotedSymbols` and `FrenCli.substQuoted` read the bytes of a
+script, and `FrenCli.quotedPieces`, the reference, reads its characters.
+`quotedSymbols` finds the same symbols, in the same order, as
+`quotedPieces`, and `substQuoted` gives the text of its pieces, each name
+replaced.
 -/
 
 open FrenCli
