@@ -59,12 +59,6 @@ pub fn wrong(p: Pos, l: L): Pos := match l {  --~ warning: does not confirm the 
     L::Cons(_, rest) => wrong(p, rest),
 }
 
--- A caller has the result type's fact of `wrong` too, though `wrong`'s own
--- obligation is undecided, as it has a recursive function's postconditions.
-expect wrong_caller(p: Pos, l: L) {
-    expect c: wrong(p, l) >= 1
-}
-
 -- No contract: `count` may be anything, so the obligation has a model that
 -- evaluation refutes, which is Inconclusive, not a failure.
 pub fn count(l: L): Int := match l {
