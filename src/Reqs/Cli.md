@@ -773,7 +773,8 @@ pub proc canonical_sentences(
     det kept?,                   -- each sentence given is printed
     det only?,                   -- each sentence printed is given
 ) {
-    ensure ascending: ascending? iff (forall (i: Int), when 0 <= i and i + 1 < printed.len, printed[i] < printed[i + 1])
+    ensure ascending: ascending? iff
+        (forall (i: Int), when 0 <= i and i + 1 < printed.len, printed[i] < printed[i + 1])
     ensure kept: kept? iff (forall (i: Int), when 0 <= i < given.len, given[i] in printed)
     ensure only: only? iff (forall (i: Int), when 0 <= i < printed.len, printed[i] in given)
 }

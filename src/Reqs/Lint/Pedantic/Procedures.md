@@ -71,8 +71,10 @@ pub proc proc_without_outputs(
     members: Rel<lang::BlockMember, Bool>,    -- its results and members, each with whether it is written with `det`
     n_uses: Nat,                              -- paths in its file that resolve to it
 ): (det fires?) {
-    ensure rule: fires? iff (not pub? and n_uses = 0
-        and (forall (m: lang::BlockMember) (det?: Bool), when (m, det?) in members, lang::block_accepts?(m, det?)))
+    ensure rule: fires? iff
+        (not pub?
+            and n_uses = 0
+            and (forall (m: lang::BlockMember) (det?: Bool), when (m, det?) in members, lang::block_accepts?(m, det?)))
 
     expect public_never: when pub?, not fires?
     expect used_never: when n_uses > 0, not fires?

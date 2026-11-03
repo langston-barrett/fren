@@ -252,8 +252,9 @@ pub proc contract_mentions_nothing(
     function: lang::Id,               -- the function
     params: Set<lang::Id>,            -- its parameters, function parameters among them
 ): (det fires?) {
-    ensure rule: fires? iff (mentioned != {}
-        and not (exists (m: lang::Mention), m in mentioned and own_mention?(m, function, params)))
+    ensure rule: fires? iff
+        (mentioned != {}
+            and not (exists (m: lang::Mention), m in mentioned and own_mention?(m, function, params)))
 
     expect constants_quiet: when mentioned = {}, not fires?
     expect field_own: when mentioned = {lang::Mention::Var("q.len")} and params = {"q"}, not fires?
