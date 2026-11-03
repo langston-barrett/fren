@@ -1343,9 +1343,10 @@ them.
 declaration (`FrenTest.Coverage.fails` and `stale`). Its inputs are
 trusted: `ran?` is gcov's counters, and `reached?` is
 `FrenCoverage.reached`, which no Req states and no evidence backs (#679).
-It comes after the chapter's last `#fren_check`, so a `#fren_check` of
-its own names the procedure, which the Lean-hosted front end then checks,
-as the `fren` command checks every procedure:
+`testing::coverage` comes after the chapter's other `#fren_check`s, the
+last of which ends the section before [Own requirements](#own-requirements),
+so a `#fren_check` of its own names it, which the Lean-hosted front end
+then checks, as the `fren` command checks every procedure:
 
 ```fren
 pub proc coverage(
