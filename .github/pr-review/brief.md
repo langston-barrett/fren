@@ -87,15 +87,15 @@ not run, such as any that needs a rebuild (a hosted front end's job, a
 build of a test, `fren_fuzz_frontends`) or another binary; say for each
 what it would have checked. This comment is the pull request's review,
 for everything, so the reader must see what it rests on. The checks
-refuse images and loading tags even in code, links to hosts other than
-github.com, and anything that looks like a token. After the checks, the
-workflow replaces every `<` with U+2039 `‹`, inside code and out, without
-parsing Markdown. Thus `<` shows as `‹` in posted reviews, including in
-type applications. Use no `@` mentions (any `@` before a name is made
-inert). The workflow checks and scrubs the comment, and posts nothing
-else. Write in Fren's prose style: "Fren" capitalized, the standard terms
-of the programming-language literature, words written out ("pull
-request"), and no names of machines.
+refuse Markdown images even in code, links to hosts other than
+github.com, and anything that looks like a token. HTML tags are not
+refused: the workflow replaces every `<` with U+FF1C `＜` after the checks,
+inside code and out, without parsing Markdown. Thus `<` shows as `＜` in
+posted reviews, including in type applications. Use no `@` mentions (any
+`@` before a name is made inert). The workflow checks and scrubs the
+comment, and posts nothing else. Write in Fren's prose style: "Fren"
+capitalized, the standard terms of the programming-language literature,
+words written out ("pull request"), and no names of machines.
 If you cannot complete the review, still write `review.md`, with the
 first line `{{PREFIX}} {{HEAD}}: blocking issues`, a `[blocking]` finding
 saying what stopped you, and the `Probes:` paragraph.

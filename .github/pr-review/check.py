@@ -15,22 +15,24 @@ the `review` artifact. The review must:
   issues`;
 - say which probes it ran and which it could not, in a paragraph that
   starts with `Probes:` (`PROBES`);
-- hold nothing that looks like a token, no image or tag that loads
-  something (even in code), and no link to a host other than github.com,
-  since GitHub's image proxy fetches an image's URL when the comment is
-  shown, which could carry data out.
+- hold nothing that looks like a token, no Markdown image (even in code),
+  and no link to a host other than github.com, since GitHub's image proxy
+  fetches an image's URL when the comment is shown, which could carry
+  data out.
 
 Names of machines are replaced: those in the file NAMES (the review job's
 host and runner, one per line), and any word whose SHA-256 is in
 machines.sha256. After the checks, every `<` in the posted comment is
-replaced with U+2039 `‹`, inside code and out, without parsing Markdown.
-Thus `<` shows as `‹` in posted reviews, including in type applications,
-and no literal HTML opener remains. If the review fails a check, the
-comment says why instead, with the run's URL and no text of the review,
-and does not start with the verdict's prefix, so that it counts as no
-review; the script then fails. The resulting comment is checked again for
-loading content before replacing `<`; it loads nothing from outside
-github.com, and no `@` in it mentions anyone.
+replaced with U+FF1C `＜`, inside code and out, without parsing Markdown.
+Thus `<` shows as `＜` in posted reviews, including in type applications,
+and no literal HTML opener remains. This is distinct from Lean's `‹_›`
+assumption notation. HTML tags are not refused; the replacement makes
+them inert. If the review fails a check, the comment says why instead,
+with the run's URL and no text of the review, and does not start with the
+verdict's prefix, so that it counts as no review; the script then fails.
+The resulting comment is checked again for loading content before
+replacing `<`; it loads nothing from outside github.com, and no `@` in
+it mentions anyone.
 
 The second form is the `review` job's, which holds the secrets, run before
 the review leaves it: it fails if the review holds any of the values of
@@ -61,12 +63,11 @@ TOKEN = re.compile(r"sk-ant-[\w-]{8,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_
 URL = re.compile(r"\b(?:https?|ftp)://([^/\s)\]>\"'`]+)", re.IGNORECASE)
 # A protocol-relative destination, `//host`, where Markdown takes one.
 RELATIVE = re.compile(r"(?:^|[\s(<\[:=\"'])//([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
-# Any image (`![`, inline, full, collapsed or shortcut reference), even in
-# code; and any tag that loads something, wherever it is. Other possible
-# HTML is not refused here: every `<` is replaced with `‹` in the posted
-# comment, inside code and out, without parsing Markdown.
-LOADING = r"img|image|picture|source|video|audio|track|iframe|frame|embed|object|svg|input|link|meta|base|style|script"
-IMAGE = re.compile(rf"!\[|<\s*/?\s*(?:{LOADING})\b", re.IGNORECASE)
+# Any Markdown image (`![`, inline, full, collapsed or shortcut reference),
+# even in code: images can load without `<`. HTML tags are made inert by
+# replacing every `<` with `＜` in the posted comment, inside code and out,
+# without parsing Markdown.
+IMAGE = re.compile(r"!\[")
 # The paragraph that says which probes the review ran (the probe job's)
 # and which it could not, such as those that need a rebuild.
 PROBES = re.compile(r"^[*_\s]*Probes[*_\s]*:", re.MULTILINE)
@@ -87,10 +88,10 @@ def github_host(host):
 
 
 def loading(decoded):
-    """Why the decoded text could load from outside github.com when shown,
-    or None."""
+    """Why the decoded text has a Markdown image or a link outside
+    github.com, or None. HTML tags are neutralized in the posted body."""
     if IMAGE.search(decoded):
-        return "it holds an image or a tag that could load from elsewhere"
+        return "it holds a Markdown image, which could load from elsewhere"
     if any(not github_host(h) for h in URL.findall(decoded) + RELATIVE.findall(decoded)):
         return "it links to a host other than github.com"
     return None
@@ -169,7 +170,7 @@ def comment(text, head, kind, run_url, names, hashes=frozenset()):
     """The comment to post, and whether the review passed. Whatever it is,
     the comment that leaves here loads nothing from outside github.com and
     mentions no one: the loading check runs on the comment as well as the
-    review, before replacing every `<` with `‹`, inside code and out."""
+    review, before replacing every `<` with `＜`, inside code and out."""
     reason = problem(text, head, kind) if text else "it wrote no `review.md`"
     if reason is None:
         body, ok = scrub(text, names, hashes) + "\n", True
@@ -181,7 +182,7 @@ def comment(text, head, kind, run_url, names, hashes=frozenset()):
     # Replace every literal opener last, including in code and failure
     # notes. This needs no Markdown parse and leaves no `<` to open HTML.
     # Never decode the posted body: entity decoding is only for checks.
-    return body.replace("<", "‹"), ok
+    return body.replace("<", "＜"), ok
 
 
 def alnum(text):
