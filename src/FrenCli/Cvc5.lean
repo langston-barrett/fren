@@ -122,6 +122,12 @@ opaque setOption (solver : @& Solver) (option value : @& String) : Env Unit
 @[extern "solver_getVersion"]
 opaque getVersion (solver : @& Solver) : Env String
 
+/-- What `(get-info :FLAG)` answers, such as cvc5's statistics for
+`all-statistics`, which `fren check --solver-stats` reads
+(`FrenCli.SolverStats`). -/
+@[extern "solver_getInfo"]
+opaque getInfo (solver : @& Solver) (flag : @& String) : Env String
+
 @[extern "solver_checkSat"]
 opaque checkSat (solver : @& Solver) : Env Result
 

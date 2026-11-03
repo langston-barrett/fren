@@ -1,0 +1,4 @@
+--@ args: quickcheck --solver-stats
+-- `--solver-stats` reports the solver's statistics, which only `fren
+-- check` asks.
+proc c(x: Int): (y: Int) { ensure same: y = x }

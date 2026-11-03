@@ -181,6 +181,12 @@ structure Args where
   dumpSmt : Bool := false
   /-- `check --timings` (`Reqs/Cli#timings`). -/
   timings : Bool := false
+  /-- `check --solver-stats`, a developer's report of where the solver's
+  time went (`Reqs/dev/Testing#solver-statistics`). -/
+  solverStats : Bool := false
+  /-- `check --solver-stats=N`: how many of the slowest queries it lists,
+  `none` for `all`. -/
+  solverStatsListed : Option Nat := some SolverStats.listed
   /-- `check --query-cache` and `check --verify-query-cache` (`Reqs/Cli#query-cache`). -/
   queryCache? : Option String := none
   verifyQueryCache? : Option String := none
@@ -232,7 +238,7 @@ structure Args where
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--timings", "--solver-stats", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard"]
 
@@ -369,6 +375,9 @@ where
     | "--timings" :: rest, a =>
       if a.command == .check then go rest { a with timings := true }
       else only "--timings" "check"
+    | "--solver-stats" :: rest, a =>
+      if a.command == .check then go rest { a with solverStats := true }
+      else only "--solver-stats" "check"
     | "--query-cache" :: d :: rest, a =>
       if a.command == .check then go rest { a with queryCache? := some d }
       else only "--query-cache" "check"
@@ -412,7 +421,15 @@ where
     | [opt@"--allow"], _ | [opt@"--warn"], _ | [opt@"--deny"], _ | [opt@"--forbid"], _ =>
       .error (argError p { code? := none, headline := s!"`{opt}` needs a value" })
     | f :: rest, a =>
-      if f.startsWith "-" then .error (argError p (unknownOption f))
+      if let some n := f.dropPrefix? "--solver-stats=" then
+        if a.command != .check then only "--solver-stats" "check" else
+        match n.toString, n.toString.toNat? with
+        | "all", _ => go rest { a with solverStats := true, solverStatsListed := none }
+        | _, some k => go rest { a with solverStats := true, solverStatsListed := some k }
+        | n, none => .error (argError p {
+            code? := none, headline := s!"invalid number of queries `{n}`",
+            notes := #["note: `--solver-stats=N` lists the N slowest queries, a whole number such as `--solver-stats=50`, or `all`"] })
+      else if f.startsWith "-" then .error (argError p (unknownOption f))
       else go rest { a with files := a.files.push f }
   addLint (opt : String) (lv : Fren.Core.LintLevel) (n : String) (a : Args) : Except String Args :=
     if a.command == .fmt then
@@ -970,7 +987,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- run, from `--query-cache` (`Reqs/Cli#query-cache`).
   let store? ← if args.queryCache?.isNone && args.verifyQueryCache?.isNone then pure none else
     some <$> QueryStore.new (args.queryCache?.map System.FilePath.mk) (args.verifyQueryCache?.map System.FilePath.mk)
-  let cache ← QueryCache.new store?
+  let cache ← QueryCache.new store? args.solverStats
   -- A directory to compare with that is not there would compare nothing.
   if let some dir := args.verifyQueryCache? then
     unless ← System.FilePath.isDir dir do
@@ -1139,6 +1156,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   if let (some store, some dir) := (store?, args.verifyQueryCache?) then
     IO.eprintln s!"fren: compared {← store.compared.get} answers with the query cache `{dir}`"
   if args.timings then IO.eprint (timingReport timings)
+  if let some stats := cache.stats? then IO.eprint (SolverStats.report (← stats.get) args.solverStatsListed)
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
     printExplainHint shown

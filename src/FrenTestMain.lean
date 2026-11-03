@@ -1252,6 +1252,54 @@ def answersInMemory : IO (Array String) := do
   if (← cache.find? (key 1000)).isSome then failures := failures.push "a key never inserted has an answer"
   return failures
 
+/-- `fren check --solver-stats` (`Reqs/dev/Testing#solver-statistics`)
+adds only lines that start with `solver-stats: `, and the output without
+them, its exit status and the answers and models that a query cache keeps
+are those without the flag. It reports every query that it asked, and
+lists each, with its item and the kind of its check; a warm run, which
+asks the solver nothing, reports no query. -/
+def solverStats : IO (Array String) := do
+  let file := "test/fixtures/solver_stats.fren"
+  let root : FilePath := ".lake" / "solver-stats-test" / s!"{← IO.monoNanosNow}"
+  let plainDir := (root / "plain").toString
+  let statsDir := (root / "stats").toString
+  let run (args : List String) := runFren (["check"] ++ args ++ [file])
+  let entries (d : String) : IO (Array String) := do
+    let fs ← (FilePath.mk d).walkDir
+    let fs ← fs.filterM fun f => return !(← f.isDir)
+    (fs.qsort (·.toString < ·.toString)).mapM IO.FS.readFile
+  let (plain, plainCode) ← run ["--query-cache", plainDir]
+  let (withStats, statsCode) ← run ["--query-cache", statsDir, "--solver-stats=all"]
+  let (warm, _) ← run ["--query-cache", statsDir, "--solver-stats"]
+  let mut failures := #[]
+  let (stats, rest) := (withStats.splitOn "\n").partition (·.startsWith "solver-stats: ")
+  unless "\n".intercalate rest == plain && statsCode == plainCode do
+    failures := failures.push s!"with --solver-stats, the rest of the output differs:\n{withStats}\n---\n{plain}"
+  unless plain.contains "counterexample: " do
+    failures := failures.push s!"the fixture shows no counterexample:\n{plain}"
+  unless (← entries plainDir) == (← entries statsDir) do
+    failures := failures.push "with --solver-stats, the query cache keeps other answers or models"
+  if (← entries plainDir).isEmpty then failures := failures.push "the run kept no answers"
+  -- The header counts the queries, and each is listed once, `all` of them.
+  let asked := stats.findSome? fun l =>
+    ((l.dropPrefix? "solver-stats: ").bind fun r => (r.toString.splitOn " queries asked").head?.bind (·.toNat?))
+  let listed := stats.filter fun l => (l.dropPrefix? "solver-stats: ").any fun r =>
+    let r := r.toString
+    (r.splitOn ". ").length > 1 && ((r.splitOn ". ").head?.bind (·.toNat?)).isSome
+  match asked with
+  | some n =>
+    if n == 0 || n != listed.length then
+      failures := failures.push s!"--solver-stats=all asked {n} queries but listed {listed.length}:\n{withStats}"
+  | none => failures := failures.push s!"--solver-stats reports no count of queries:\n{withStats}"
+  for kind in ["`c` (realizability)", "`c` (expectation)", "`d` (redundancy)"] do
+    unless listed.any (·.contains kind) do failures := failures.push s!"--solver-stats lists no query of {kind}"
+  for part in ["  phases: setup ", "  checkSat ", "  counts: "] do
+    unless (stats.filter (·.startsWith s!"solver-stats: {part}")).length == listed.length do
+      failures := failures.push s!"not every listed query has a line `{part.trimAscii}`"
+  unless warm.contains "solver-stats: 0 queries asked of the solver" do
+    failures := failures.push s!"a warm run reports queries that it did not ask:\n{warm}"
+  return failures
+
 /-- `fren check --query-cache` gives the same output cold, in a fresh
 directory, as warm, from it, and the warm run answers every query from the
 cache, writing no entry; a third run, cold into another fresh directory
@@ -3855,7 +3903,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["queryCache"], ["solverStats"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
@@ -3903,6 +3951,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- checks (`ownSpecAgreement`).
   | ["ownSpecAgreement"] => ownSpecAgreement
   | ["queryCache"] => queryCache
+  | ["solverStats"] => solverStats
   | ["solverLifetime"] => solverLifetime
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus
