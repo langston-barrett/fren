@@ -89,13 +89,14 @@ what it would have checked. This comment is the pull request's review,
 for everything, so the reader must see what it rests on. Use no images,
 no HTML (no `<` before a letter, except in a type such as `Set<Role>`),
 no links to hosts other than github.com, and no `@` mentions (any `@`
-before a name is made inert). The workflow checks all of this, and posts
-nothing else. Write in Fren's prose style: "Fren" capitalized, the
+before a name is made inert). The workflow checks and scrubs the comment,
+and posts nothing else. Write in Fren's prose style: "Fren" capitalized, the
 standard terms of the programming-language literature, words written out
 ("pull request"), and no names of machines. If you cannot complete
 the review, still write `review.md`, with the first line
 `{{PREFIX}} {{HEAD}}: blocking issues`, a `[blocking]` finding saying
 what stopped you, and the `Probes:` paragraph.
+Do not use angle-bracket placeholders; write `HEAD_SHA` or `the old head` instead.
 
 # The pull request's own context
 

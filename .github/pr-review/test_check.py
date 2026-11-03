@@ -6,6 +6,11 @@ import unittest
 
 from check import comment, hashed_names, leaks, problem, scrub, verdicts
 
+try:
+    from markdown_it import MarkdownIt
+except ImportError:  # pragma: no cover
+    MarkdownIt = None
+
 HEAD = "b" * 40
 OK = f"Review of {HEAD}: no blocking issues"
 BAD = f"Review of {HEAD}: blocking issues"
@@ -74,7 +79,7 @@ class Problem(unittest.TestCase):
                      "See [logo] here.\n\n[logo]: //evil.example/x.png",
                      "[x](//evil.example/a)", "[x](h&#x74;tp://evil.example)",
                      "[x](h&amp;#116;tps://evil.example)", "&lt;img src=x&gt;",
-                     "<!-- hidden -->", "</details>", "x<img src=//evil.example/p>",
+                     "x<img src=//evil.example/p>",
                      "`Set<img src=x>`", "a<Picture>"):
             self.assertIsNotNone(problem(f"{OK}\n\n{text}{PROBED}", HEAD, "full"), text)
 
@@ -114,6 +119,90 @@ class Leaks(unittest.TestCase):
 
 
 class Comment(unittest.TestCase):
+    def posted(self, case):
+        text = f"{OK}\n\n{case}{PROBED}"
+        body, ok = comment(text, HEAD, "full", "URL", set())
+        self.assertTrue(ok, case)
+        return body
+
+    def test_placeholders_in_code(self):
+        for case in ("`<old head>`", "``a ` <old head>``", "```<old head>```",
+                     "```text\n<old head>\n```", "~~~\n<old head>\n~~~",
+                     "```\r\n<old head>\r\n```", "```\n<old head>",
+                     "~~~\n<old head>"):
+            self.assertEqual(self.posted(case), f"{OK}\n\n{case}{PROBED}\n", case)
+
+    def test_prose_html_is_escaped(self):
+        for case in ("<old head>", "<sha>", "</details>", "<!-- hidden -->", "<?xml?>"):
+            self.assertEqual(self.posted(case), f"{OK}\n\n{case.replace('<', '&lt;')}{PROBED}\n", case)
+
+    def test_loading_is_refused_even_in_code(self):
+        for content in ("<img src=x>", "![x](y)", "<script>x</script>", "<svg>"):
+            for case in (content, f"`{content}`", f"```\n{content}\n```", f"~~~\n{content}\n~~~"):
+                body, ok = comment(f"{OK}\n\n{case}{PROBED}", HEAD, "full", "URL", set())
+                self.assertFalse(ok, case)
+                self.assertNotIn(content, body, case)
+
+    def test_type_applications_stay_literal(self):
+        case = "Set<Role>, Set<Set<Role>>, Rel<Role, Role>, and `Set<Role>`."
+        self.assertEqual(self.posted(case), f"{OK}\n\n{case}{PROBED}\n")
+
+    def test_only_matching_backtick_runs_are_code(self):
+        for case, expected in (("`<old head>", "`&lt;old head>"),
+                               ("``<old head>`", "``&lt;old head>`"),
+                               ("`<old head>``", "`&lt;old head>``"),
+                               ("`a``<old head>` <sha>", "`a``<old head>` &lt;sha>"),
+                               (r"\`<old head>`", r"\`&lt;old head>`"),
+                               (r"\\`<old head>`", r"\\`<old head>`"),
+                               (r"`x\` <old head>`", r"`x\` &lt;old head>`")):
+            self.assertEqual(self.posted(case), f"{OK}\n\n{expected}{PROBED}\n", case)
+
+    def test_multiline_spans_are_uncertain_until_a_block_boundary(self):
+        for case, expected in (("`x\n` <old head> `", "`x\n` &lt;old head> `"),
+                               ("`x\n\n`<old head>`", "`x\n\n`<old head>`"),
+                               ("`x\n~~~\n<old head>\n~~~\n<sha>",
+                                "`x\n~~~\n<old head>\n~~~\n&lt;sha>")):
+            self.assertEqual(self.posted(case), f"{OK}\n\n{expected}{PROBED}\n", case)
+
+    def test_fence_boundaries(self):
+        for case, expected in (("````\n```\n<old head>\n````\n<sha>",
+                                "````\n```\n<old head>\n````\n&lt;sha>"),
+                               ("~~~\n```\n<old head>\n~~~\n<sha>",
+                                "~~~\n```\n<old head>\n~~~\n&lt;sha>"),
+                               ("```\n<old head>\n   ````\n<sha>",
+                                "```\n<old head>\n   ````\n&lt;sha>"),
+                               ("```<old head>\n<sha>\n```", "```&lt;old head>\n<sha>\n```")):
+            self.assertEqual(self.posted(case), f"{OK}\n\n{expected}{PROBED}\n", case)
+
+    def test_entities_are_not_decoded_or_escaped_again(self):
+        case = "&lt;old head>, &#60;sha>, &#x3c;sha>, &amp;lt;sha>, and &lt;<old head>."
+        expected = case.replace("<old head>", "&lt;old head>")
+        self.assertEqual(self.posted(case), f"{OK}\n\n{expected}{PROBED}\n")
+        # Scrubbing a name such as 'lt' must not undo the escape it adds.
+        body, ok = comment(f"{OK}\n\n<old head>{PROBED}", HEAD, "full", "URL", {"lt"})
+        self.assertTrue(ok)
+        self.assertIn("&lt;old head>", body)
+
+    @unittest.skipIf(MarkdownIt is None, "markdown-it-py is not installed")
+    def test_ambiguous_markdown_leaves_no_html(self):
+        for case in ("- ```\n  x\n  ```\n\n<old head>",
+                     "- a\n\n  ```\n  x\n- b <old head>",
+                     'x<span title="`"><old head><span title="`">',
+                     "see x<https://github.com/`><old head> `",
+                     '[x](relative "`") <old head> `',
+                     '[x][`] <old head> `\n\n[`]: relative',
+                     '[x]: relative "\n```\n"\n<old head>',
+                     "`x\n\n<old head>\nx`",
+                     "`x\n` <old head> `",
+                     '[x](relative "`")\n` <old head> `',
+                     '[x](relative\n"`") <old head> `',
+                     "x\u2028~~~\n<old head>\n~~~",
+                     r"\<old head> and &lt;sha>"):
+            tokens = MarkdownIt("commonmark").parse(self.posted(case))
+            for token in tokens:
+                self.assertNotEqual(token.type, "html_block", case)
+                self.assertFalse(any(t.type == "html_inline" for t in token.children or []), case)
+
     def test_scrub(self):
         self.assertEqual(scrub("ran on Box-1 and box-1.", {"box-1"}), "ran on a machine and a machine.")
         self.assertEqual(scrub("boxes", {"box"}), "boxes")
@@ -196,6 +285,9 @@ class Comment(unittest.TestCase):
         body, ok = comment(OK + PROBED, HEAD, "full", "URL", set())
         self.assertTrue(ok)
         self.assertEqual(body, OK + PROBED + "\n")
+        case = ("1. [non-blocking] `src/a.lean:3`: check `Set<Role>` with `a < b`.\n\n"
+                "See [the code](https://github.com/langston-barrett/fren).")
+        self.assertEqual(self.posted(case), f"{OK}\n\n{case}{PROBED}\n")
 
 
 if __name__ == "__main__":
