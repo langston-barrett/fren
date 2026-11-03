@@ -2,7 +2,12 @@
 import FrenCli.Elab.Model
 -- keep-sorted end
 
-/-! Helpers shared by expression and item elaboration. -/
+/-!
+# Expression helpers for `.fren` elaboration
+
+Provides the expression context, type and pattern helpers, and diagnostic
+helpers shared by expression and item elaboration.
+-/
 
 open Lean
 

@@ -2,7 +2,13 @@
 import FrenCli.Elab.ExprSupport
 -- keep-sorted end
 
-/-! Expression elaboration, including its mutually recursive cases. -/
+/-!
+# Expression elaboration for `.fren` files
+
+Type-checks expressions and translates them to SMT-LIB terms with mutually
+recursive elaborators. Also holds helpers for definitions, contract lints
+and quantifier triggers.
+-/
 
 open Lean
 
