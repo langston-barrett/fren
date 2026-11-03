@@ -1272,8 +1272,8 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   combination, in cvc5's whole milliseconds. What none of them accounts
   for is `SAT search and the rest`: the SAT solver's own search and
   propagation, and whatever else `checkSat` does. The report takes the
-  timers to be disjoint, which is not read from cvc5's source: no query
-  of Fren's own requirements had timed parts that summed to more than its
+  timers to be disjoint, which is not read from cvc5's source: no query of
+  Fren's own requirements had timed parts that summed to more than its
   `checkSat`, but timers that overlap in part, as the clausal form of a
   theory's lemmas may within its check, would still meet that bound, and
   make `SAT search and the rest` too small. A query whose timed parts
@@ -1282,10 +1282,10 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   takes in what they leave out, which makes it too large: of the queries
   of Fren's own requirements whose `checkSat` took under 5 ms, it was
   2,054 ms of their 2,485 ms. So the summed line sums only the queries
-  whose `checkSat` took 5 ms or more (`summedMs`), and the rest is
-  rough for a short query that is listed. In cvc5 1.3.2, each theory has
-  one `checkTime`, the arrays' as
-  `theory::arrays::theory::arrays::checkTime`. The theories' checks are made from within the search, so a query that
+  whose `checkSat` took 5 ms or more (`summedMs`), and the rest is rough
+  for a short query that is listed. In cvc5 1.3.2, each theory has one
+  `checkTime`, the arrays' as `theory::arrays::theory::arrays::checkTime`.
+  The theories' checks are made from within the search, so a query that
   makes tens of thousands of cheap theory checks, as `cli::query_symbols`'
   do, shows its search's cost spread over the search and the theories. A
   query is `dominated by` its largest part. cvc5 has no timer of its own
@@ -1302,14 +1302,14 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   units that `--resource-limit` limits, and the five commonest of the
   theories' inferences, by cvc5's names.
 
-It lists the 20 slowest queries; `--solver-stats=N` lists `N` of them,
-and `--solver-stats=all` every one. The value is written after `=`, not
-as the next argument as other options' are, so that the bare flag needs
-none. The flag is in no help text, but `fren` suggests it for a
-misspelled option, as it does every option. A query answered from the [query
-cache](#query-cache), or by another item's query in the same run, asks
-the solver nothing and is not reported, so measure with no
-`--query-cache` and with `--jobs 1`, which times each query alone.
+It lists the 20 slowest queries; `--solver-stats=N` lists `N` of them, and
+`--solver-stats=all` every one. The value is written after `=`, not as the
+next argument as other options' are, so that the bare flag needs none. The
+flag is in no help text, but `fren` suggests it for a misspelled option,
+as it does every option. A query answered from the [query
+cache](#query-cache), or by another item's query in the same run, asks the
+solver nothing and is not reported, so measure with no `--query-cache` and
+with `--jobs 1`, which times each query alone.
 
 Without the flag, nothing of this runs: Fren reads no clock and asks cvc5
 nothing more. A check of Fren's own requirements took the same

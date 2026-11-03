@@ -176,9 +176,10 @@ def parse (text : String) : Cvc5Stats := Id.run do
       -- `theory::arrays::theory::arrays::checkTime`.
       match name.splitOn "::" with
       | ["theory", _, "lemmas"] => s := { s with lemmas := s.lemmas + n }
-      | "theory" :: t :: rest =>
-        if rest.getLast? == some "checkTime" && n != 0 then
-          s := { s with theoryMs := s.theoryMs.push (t, n) }
+      -- Only these, so that a timer nested within a theory's check, such
+      -- as a sub-solver's `theory::T::sub::checkTime`, is not counted twice.
+      | ["theory", t, "checkTime"] | ["theory", t, "theory", _, "checkTime"] =>
+        if n != 0 then s := { s with theoryMs := s.theoryMs.push (t, n) }
       | _ => pure ()
   return s
 
@@ -186,6 +187,7 @@ def parse (text : String) : Cvc5Stats := Id.run do
     (\"theory::strings::lemmas\" 2) (\"theory::arrays::number of Ext lemmas\" 5) \
     (\"theory::strings::checkTime\" 12ms) (\"theory::arrays::theory::arrays::checkTime\" 3ms) \
     (\"theory::uf::checkTime\" 0ms) (\"smt::SolverEngine::solveTime\" 20ms) \
+    (\"theory::strings::regexp::checkTime\" 7ms) \
     (\"resource::steps::inference-id\" { ARITH_UNATE: 1, STRINGS_REGISTER_TERM: 0 }) \
     (\"resource::steps::resource\" { RewriteStep: 108, TheoryCheckStep: 14 }) (\"theory::arrays::avgIndexListLength\" -nan)))"
   == { decisions := 7, lemmas := 3, theoryMs := #[("strings", 12), ("arrays", 3)],

@@ -54,7 +54,10 @@ whose integers are used, such as `ALL`, cvc5 turns its coverings solver
 (`nl-cov`) off, and nothing else in solving creates libpoly's variables.
 A query over the reals, setting `nl-cov`, or another cvc5 could make
 solving use libpoly too, and then `checkSat` would need the lock, or a
-solver of its own process.
+solver of its own process. `getInfo`, which `fren check --solver-stats`
+calls after the model is read, takes no lock either: it writes the
+statistics that the solver kept as text, and makes no term, so it creates
+no libpoly variable.
 
 The Lean front end's solvers, which lean-smt makes, are never freed, and
 take no lock: they only ever take a reference. `fren_test` runs both
