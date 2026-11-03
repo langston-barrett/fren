@@ -7151,8 +7151,8 @@ def assertionOnConstantMsg (kind : String) (literal? : Option Bool) : Msg :=
     | some true, _ => ("always `true`", "it claims nothing")
     | some false, "assume" => ("always `false`", "no input meets it, so every guarantee holds vacuously")
     | some false, "ensure" => ("always `false`", "no behaviour meets it, so the procedure is not realizable")
-    | some false, "precondition" => ("always `false`", "no argument meets it, so no application is defined")
-    | some false, "postcondition" => ("always `false`", "no value meets it")
+    | some false, "precondition" => ("always `false`", "no argument meets it, so every application of the function fails its precondition check")
+    | some false, "postcondition" => ("always `false`", "no value meets it, so the function's contract cannot hold")
     | some false, _ => ("always `false`", "it always fails")
     | none, _ => ("the same in every behaviour",
       "it is either always true, and says nothing, or always false")

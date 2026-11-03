@@ -988,7 +988,10 @@ on the [interpretation](../Lang/Procedures.md#interpretations).
 Such a constraint is the same in every behaviour. If it is always true,
 it says nothing. If it is always false, a guarantee makes its procedure
 unrealizable, an assumption makes every guarantee hold vacuously, and an
-expectation always fails. The message says which where the expression is
+expectation always fails. A precondition makes every application of its
+function fail its precondition check, and a postcondition cannot hold: an
+uninterpreted function's contract is then unrealizable, and a defined
+function's postcondition check fails. The message says which where the expression is
 written `true` or `false`, in parentheses or not; otherwise only the
 solver could tell, and a lint never asks it, so the message says that the
 constraint mentions no variable. It has no fix: removing a constraint

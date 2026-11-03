@@ -33,6 +33,19 @@ pub fn clamp(n: Int): (r: Int) {
     ensure bounded: r <= LIMIT
 }
 
+-- Always `false`: a precondition makes every application fail its
+-- precondition check, and a postcondition of an uninterpreted function
+-- makes its contract unrealizable.
+pub fn never(n: Int): (r: Int) {
+    assume nope: false  --~ warning: so every application of the function fails its precondition check
+    out r := n
+}
+
+pub fn impossible(n: Int): (r: Int) {  --~ error: the postconditions of `impossible` cannot all hold
+    ensure grows: r >= n
+    ensure nope: false  --~ warning: no value meets it, so the function's contract cannot hold
+}
+
 -- A labelled conjunction is split into its leaves, and only the leaf
 -- that mentions nothing of the function's own is reported: `other`. Both
 -- front ends report it at the conjunction, since the result's definition
