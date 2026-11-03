@@ -1015,14 +1015,15 @@ interpretation whose primitive operations have their usual meaning:
 
 - Where the semantics finds an operation well-defined, the binary gives it
   the same value.
-- An operator but `and` and `or` is strict in the binary too: an operand
+- Every operator but `and` and `or` is strict in the binary too: an operand
   that is not well-defined leaves its value unknown.
 - The binary knows the value of a binary or unary operator of two
   well-defined operands exactly where `lang::applies?` and
   `lang::unary_applies?` say that it applies, but where the semantics
   leaves the value unspecified: `div` and `mod` by `0`, which the
-  definedness check rules out, and the orders of other types than the
-  integers (`evaluation.operator.order.excluded`).
+  definedness check rules out, and the orders of the ordered types other
+  than the integers, two strings or two values of one data type
+  (`evaluation.operator.order.excluded`).
 - The binary's connectives and cardinality operators are Kleene's, so
   they may know more than the semantics, but only where the known
   operands decide the value: an `and` whose left operand is not a `Bool`
@@ -1079,7 +1080,11 @@ def operatorsAgree : Array String := Id.run do
       let (some x', some y') := (toValue x, toValue y) | continue
       let unspecified := match op, x, y with
         | .div, .int _, .int 0 | .mod, .int _, .int 0 => true
-        | .lt, _, _ | .le, _, _ => !(x matches .int _ && y matches .int _)
+        -- The orders of the ordered types other than `Int`, which the model
+        -- leaves out (`semantics.excluded.orders`): of two strings, or two
+        -- values of one data type. Elsewhere `applies?` decides.
+        | .lt, .str _, .str _ | .le, .str _, .str _ => true
+        | .lt, .ctor t _ _, .ctor u _ _ | .le, .ctor t _ _, .ctor u _ _ => t == u
         | _, _, _ => false
       unless unspecified || r.isSome == lang.applies? i bop x' y' do
         failures := failures.push s!"{what}: `Ex.eval` {if r.isSome then "knows" else "does not know"} its value, but `lang::applies?` is {lang.applies? i bop x' y'}"

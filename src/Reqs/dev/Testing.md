@@ -56,17 +56,19 @@ pub mod testing
   [Writing the reference](Style.md#examples)).
 - **Rule identifiers** (`lake test`, `ruleIds`): every line of
   `src/Reqs/**/*.md` outside a code block that starts with `r[` is a
-  well-formed rule identifier, and no two are the same (see [Writing the
+  well-formed rule identifier, alone or followed by one space and the
+  rule's links, and no two are the same (see [Writing the
   reference](Style.md#rule-identifiers)).
 - **Rules and their requirements** (`lake test`, `ruleReqs`): each rule of
   **Legality rules** or **Dynamic semantics** has a requirement or is
   listed in `test/unformalized_rules.txt`, with why where its chapter's
   section is not "(Interlock pending)", and a rule that is only partly
   formalized is listed too, saying what is missing once its chapter's
-  section is done; every item and clause that a marker names exists, and
-  the clauses that it names alone are clauses of the item they resolve to;
-  a block that formalizes a rule of
-  its chapter follows it; each item of a module named as one of its
+  section is done; the links on each rule's identifier line are well
+  formed, name nothing twice nor what the rule's name links, and every
+  item and clause that they name exists; no rule's prose names a
+  requirement in parentheses; a block that
+  formalizes a rule of its chapter follows it; each item of a module named as one of its
   chapter's constructs has a rule of its name, or, if it has clauses, each
   of them does, where the name is shaped as a rule identifier; and every
   rule that a test cites with `--@ reference: ID` exists
@@ -1139,8 +1141,14 @@ The `pr-review` workflow reviews each pull request's head with Claude once
 `pre-merge` has passed on it, by AGENTS.md's review rules: a full review,
 or a light check when the last comment that names the head starts with
 "fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
-an update from `main` of a reviewed head. It never reviews a pull request
-from a fork. Its comment counts as the pull request's review, for
+an update from `main` of a reviewed head, or for a head whose last naming
+comment starts with "wording only", whose only parent is the head of the
+last clean review before that comment, and that changes neither
+AGENTS.md nor `.github/`. That skip's log says "Nothing to review:
+wording only:", and for that head the coordinator confirms instead that
+each change answers a finding that the comment lists and changes only
+prose as AGENTS.md defines it, and that nothing else changed. The
+workflow never reviews a pull request from a fork. Its comment counts as the pull request's review, for
 everything, and says which probes it ran and which it could not, such as
 those that need a rebuild. The only code of the pull request that it runs
 is these binaries, `fren check` of each spec that the pull request
