@@ -2,7 +2,9 @@
 
 import base64
 import hashlib
+import random
 import unittest
+from pathlib import Path
 
 from check import comment, hashed_names, leaks, problem, scrub, verdicts
 
@@ -73,9 +75,7 @@ class Problem(unittest.TestCase):
                      "See [logo] here.\n\n[logo]: h&#116;tps://evil.example/x.png",
                      "See [logo] here.\n\n[logo]: //evil.example/x.png",
                      "[x](//evil.example/a)", "[x](h&#x74;tp://evil.example)",
-                     "[x](h&amp;#116;tps://evil.example)", "&lt;img src=x&gt;",
-                     "<!-- hidden -->", "</details>", "x<img src=//evil.example/p>",
-                     "`Set<img src=x>`", "a<Picture>"):
+                     "[x](h&amp;#116;tps://evil.example)", "x<img src=//evil.example/p>"):
             self.assertIsNotNone(problem(f"{OK}\n\n{text}{PROBED}", HEAD, "full"), text)
 
     def test_github_links(self):
@@ -114,6 +114,94 @@ class Leaks(unittest.TestCase):
 
 
 class Comment(unittest.TestCase):
+    def posted(self, case):
+        text = f"{OK}\n\n{case}{PROBED}"
+        body, ok = comment(text, HEAD, "full", "URL", set())
+        self.assertTrue(ok, case)
+        return body
+
+    def test_every_opener_is_replaced_in_every_context(self):
+        cases = [
+            "<old head>", "`<old head>`", "``a ` <old head>``",
+            "```text\n<old head>\n```", "~~~\n<old head>\n~~~",
+            "```\r\n<old head>\r\n```", "```\n<old head>",
+            "<sha> and </details>, <!-- hidden -->, <?xml?>, and a < b",
+            "Set<Role>, Set<Set<Role>>, Rel<Role, Role>, and `Set<Role>`",
+            "`<old head>", "``<old head>`", r"\`<old head>`",
+            "| a | b |\n| --- | --- |\n| `x|<old head>` |",
+        ]
+        for indent in range(1, 4):
+            for fence in ("```", "~~~"):
+                cases += [f"{' ' * indent}{fence}\n<old head>\n{fence}",
+                          f"{' ' * indent}{fence}\na\n\n{fence}\n<old head>"]
+        for case in cases:
+            with self.subTest(case=case):
+                body = self.posted(case)
+                self.assertNotIn("<", body)
+                self.assertIn("＜", body)
+                self.assertEqual(body, f"{OK}\n\n{case.replace('<', '＜')}{PROBED}\n")
+
+    def test_markdown_images_are_refused_even_in_code(self):
+        for content in ("![x](y)", "![x][ref]", "![x]", "&#33;[x](y)"):
+            for case in (content, f"`{content}`", f"```\n{content}\n```", f"~~~\n{content}\n~~~"):
+                body, ok = comment(f"{OK}\n\n{case}{PROBED}", HEAD, "full", "URL", set())
+                self.assertFalse(ok, case)
+                self.assertIn("it holds a Markdown image", body, case)
+                self.assertNotIn(content, body, case)
+
+    def test_loading_tag_placeholders_are_neutralized(self):
+        case = "Quote `<img src=x>` and `<link>` as placeholders."
+        expected = "Quote `＜img src=x>` and `＜link>` as placeholders."
+        self.assertEqual(self.posted(case), f"{OK}\n\n{expected}{PROBED}\n")
+        for tag in ("<img src=x>", "<link>", "<script>x</script>", "<svg>",
+                    "`Set<img src=x>`", "a<Picture>", "&lt;img src=x&gt;"):
+            self.assertEqual(self.posted(tag), f"{OK}\n\n{tag.replace('<', '＜')}{PROBED}\n", tag)
+
+    def test_lean_assumption_notation_is_preserved(self):
+        case = "`simp_wf) <;> (try have := ‹_ ∈ fs›)`"
+        expected = "`simp_wf) ＜;> (try have := ‹_ ∈ fs›)`"
+        self.assertEqual(self.posted(case), f"{OK}\n\n{expected}{PROBED}\n")
+
+    def test_previously_withheld_review_posts(self):
+        # Exact review of this PR's 6a6f3905 head, withheld for quoting tags.
+        fixture = Path(__file__).with_name("fixtures") / "review-6a6f3905.md"
+        text = fixture.read_text(encoding="utf-8")
+        head = "6a6f39053846ef29abbf6ca430387b545564f0de"
+        body, ok = comment(text, head, "full", "https://github.com/runs/1", set())
+        self.assertTrue(ok)
+        self.assertTrue(body.startswith(f"Review of {head}: no blocking issues\n"))
+        self.assertNotIn("<", body)
+        self.assertIn("＜", body)
+
+    def test_entities_are_not_decoded(self):
+        case = "&lt;old head>, &#60;sha>, &#x3c;sha>, &amp;lt;sha>, and &lt;<old head>."
+        expected = "&lt;old head>, &#60;sha>, &#x3c;sha>, &amp;lt;sha>, and &lt;＜old head>."
+        self.assertEqual(self.posted(case), f"{OK}\n\n{expected}{PROBED}\n")
+
+    def test_generated_comments_contain_no_openers(self):
+        rng = random.Random(0)
+        fragments = ["<", "<old head>", "<details>", "</summary>", "<!-- -->", "<?xml?>",
+                     "Set<Role>", "`", "``", "```", "~~~", "|", "\\", "\n", "\r\n",
+                     " ", "   ", "[", "](", "]:", "&lt;", "&#60;", "＜", "‹_›", "x",
+                     "<img src=x>", "<link>", "![x](y)", "https://outside.example/x",
+                     "sk-ant-oat01-abcdefghijkl"]
+        outcomes = set()
+        for i in range(1000):
+            case = "".join(rng.choices(fragments, k=rng.randrange(1, 30)))
+            text = f"{OK}\n\n{case}{PROBED}" if i % 2 else case
+            body, ok = comment(text, HEAD, "full", "https://github.com/runs/1?head=<sha>", set())
+            outcomes.add(ok)
+            with self.subTest(i=i, case=case):
+                self.assertNotIn("<", body)
+        self.assertEqual(outcomes, {True, False})
+
+    def test_fallback_note_contains_no_openers(self):
+        body, ok = comment("", "<head>", "full", "https://outside.example/run", set())
+        self.assertFalse(ok)
+        self.assertNotIn("outside.example", body)
+        self.assertNotIn("<", body)
+        self.assertIn("＜head>", body)
+
     def test_scrub(self):
         self.assertEqual(scrub("ran on Box-1 and box-1.", {"box-1"}), "ran on a machine and a machine.")
         self.assertEqual(scrub("boxes", {"box"}), "boxes")
@@ -190,12 +278,15 @@ class Comment(unittest.TestCase):
         self.assertFalse(ok)
         self.assertNotIn("evil", body)
 
-    def test_review_is_posted_as_written(self):
+    def test_review_without_openers_is_posted_as_written(self):
         # The comment counts as the review, so it is the review itself,
         # with no note added.
         body, ok = comment(OK + PROBED, HEAD, "full", "URL", set())
         self.assertTrue(ok)
         self.assertEqual(body, OK + PROBED + "\n")
+        case = ("1. [non-blocking] `src/a.lean:3`: check `Role` with `a ≤ b`.\n\n"
+                "See [the code](https://github.com/langston-barrett/fren).")
+        self.assertEqual(self.posted(case), f"{OK}\n\n{case}{PROBED}\n")
 
 
 if __name__ == "__main__":
