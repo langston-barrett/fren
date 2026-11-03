@@ -617,8 +617,8 @@ desugaring, its goal, and its evidence. It is the level of an intermediate
 verification language, such as Boogie's, Viper's or Why3's tasks, after
 the instantiation of generic functions and types and the desugaring of
 the spec into formulas, as the solver is given them. The Lean-hosted
-front end prints the same dump with `set_option fren.dump "obligations"`,
-as a message at the `#fren_check`: each `#fren_check` logs a dump of only
+front end prints a dump of the same form with `set_option fren.dump
+"obligations"`, as a message at the `#fren_check`: each `#fren_check` logs a dump of only
 the items that it reports, not of the procedures that it checks only for
 the evidence that its items rest on. An unknown value is an error for
 `fren check`, `--dump=obligation` being an unknown option, which stops it
@@ -652,30 +652,53 @@ An obligation names its item, its check, as its kind, the constraint,
 call or variable that it is about, and which of the check's questions it
 is, such as `(assumptions)` for whether an item's assumptions can hold
 together, and its evidence, as `set_option fren.evidence` writes it. Its
-signature declares the sorts, datatypes, constants and functions that it
-uses, its context is the sentences that the query assumes, and its goal is
+signature is its query's declarations of sorts, datatypes, constants and
+functions, and its recursive definitions, its context is the sentences that the query assumes, and its goal is
 what the query asks to follow from them; a question whether its context
 can hold at all has the goal `false`. A comment gives where its
 constraint, or its item, is written, as `line:column`: metadata, which
 comparisons ignore.
 
-Every check is there, whatever its evidence, and every question that it
-asks first, such as the redundancy of each constraint, though a run asks
-some only after an answer (`Fren.Core.questionsOf`). Both front ends take
-each question from `Fren.Core.questionsOf`, give the script of its query as
-they would give it to the solver, without asking it, and print them with
-`Fren.Core.dump`, which makes every decision about their canonical form:
+Every check of the items that the run checks is there, whatever its
+evidence, and every question that it asks first, such as the redundancy of
+each constraint, though a run asks some only after an answer
+(`Fren.Core.questionsOf`). A check set to random testing or enumeration
+shows the question that the solver would be asked, with that evidence,
+though the solver is not asked it. The dump leaves out:
+
+- the realizability checks of a generic contract at the instances that a
+  spec applies, which a run asks only where the check at its type
+  parameters' sorts does not pass;
+- the queries that a check asks after an answer, to explain or confirm it:
+  minimal cores, the pins and clash notes of forced outputs, branch
+  explanations, and the confirmation of models;
+- the expansion of quantifiers over a collection's elements, which a run
+  asks of the query that the dump shows
+  (`Reqs/Lang/ElementQuantifiers#expansion`).
+
+Both front ends take each question from `Fren.Core.questionsOf`, give the
+script of its query as they would give it to the solver, without asking
+it, and print them with `Fren.Core.dump`, which makes every decision about
+their canonical form:
 
 - the logic, the options and the solver's commands of a script are left
   out; its non-recursive definitions are unfolded where they are used,
   since one front end gives the solver a function's definition and the
-  other its body; and a constant or function (`declare-const`,
-  `declare-fun`) that nothing else mentions is left out, though its sorts
-  and datatypes stay;
+  other its body, and so are its sorts' definitions (`define-sort`); and a
+  constant or function (`declare-const`, `declare-fun`) that nothing else
+  mentions is left out, though its sorts and datatypes stay;
 - its symbols for the spec's types, constructors, selectors and functions
-  are their names in `fren check`'s queries, without `|`s, which each
-  front end maps its own symbols to (`Fren.Core.ItemSymbol`); and Lean's
-  `«»` and `✝` go from a name, but where two names would then be one;
+  are their names in `fren check`'s queries, without `|`s
+  (`Fren.Core.ItemSymbol`). The Lean-hosted front end maps lean-smt's
+  names to them for the spec's enumerations, records, their constructors
+  and selectors, recursive functions that are not generic, and abstract
+  types and functions, the last two by the last component of their
+  paths, which also renames a variable or bound name of the same name; it
+  erases a newtype's constructor and field,
+  as `fren check` erases newtypes, and names the newtype by its
+  underlying sort where that is `Int`, `Nat`, `Bool` or `String`
+  (`Fren.dumpSymbols`). Lean's `«»` and `✝` go from a name, but where two
+  names would then be one;
 - what either front end could write in two ways is written one way
   (`Fren.Core.Sx.normalize`), such as a conjunction of conjunctions, a
   `let`, whose definitions are substituted, or `<=`; a conjunction in the
@@ -686,22 +709,32 @@ they would give it to the solver, without asking it, and print them with
   their text (`cli::canonical_sentences`), so that neither their order
   nor a repeated one changes the dump;
 - the obligations are in order of their items' paths, then in the order of
-  their questions within each item.
+  their questions within each item; two items with one path, as a
+  function's body and its contract, are in order of their questions, then
+  of their text.
 
 So for the same spec, two front ends that build the same queries print the
 same dump, and a difference between their dumps, but for the metadata, is
-a difference between what they ask the solver, found where it starts,
-before it changes a verdict or a message. `fren_fuzz_frontends` compares
-them on every spec that it generates, and reports, without failing, those
-whose dumps differ, and of those, the ones that differ other than in the
-names of their constants. The Lean-hosted front end keeps elaborating Fren
+a difference between their queries, found where it starts, before it
+changes a verdict or a message, or between the names or simplifications
+that the dump does not make canonical, such as the names that lean-smt's
+embeddings give `Nat` and `Bool` variables (#493). `fren_fuzz_frontends`
+compares them on every spec that a run generates, but not on the corpus
+that `lake test` checks, and reports, without failing, those whose dumps
+differ, and of those, the ones that differ other than in the names of
+their constants. The Lean-hosted front end keeps elaborating Fren
 into Lean terms and proving with them: its dump is printed from the
 query that lean-smt is given, in which a Lean term that is not Fren's is a
 symbol of its own.
 
-The dump is printed from scripts that are never asked, so it changes no
-result; a script that a front end cannot build is an `(error ...)`
-command among its obligation's declarations.
+The dump is printed from scripts that are never asked: it asks the solver
+nothing, and changes no result of `fren check`. A script that a front end cannot build is
+an `(error ...)` command among its obligation's declarations, and an item
+whose questions the Lean-hosted front end cannot build is one obligation
+whose script is such a command. But in the Lean-hosted front end, the
+dump's work counts towards the item's heartbeats, and a limit of Lean's that
+building it reaches, heartbeats or recursion depth, is the item's failure
+to check, as any other is.
 
 `cli::canonical_sentences` states the order: a context's sentences, each
 by the place of its text in the order of texts, as a front end gives them
