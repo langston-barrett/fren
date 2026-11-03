@@ -1362,6 +1362,15 @@ def claimProcs : R String := do
     s!"    ensure zpost: {← fieldClause true}\n}\n"
   let hoClause ← pick #["zk(0) > ZK", "zk(zn) >= zn", "zn > 0", "zg(0) > 0", "and { zl1: zk(1) > 0, zl2: zg(1) > 0 }"]
   out := out ++ s!"pub fn zho(zk: fn(Int) -> Int, zn: Int): (zr: Int) \{\n    assume zpre: {hoClause}\n    out zr := zk(zn)\n}\n"
+  -- Drawn after the above too: procedures whose members are unlabelled
+  -- Boolean blocks, of each kind, which are members of their keywords'
+  -- kinds, so that a guarantee among them keeps the lint quiet.
+  for k in [0:(← below 2) + 1] do
+    let mut body := ""
+    if ← chance 50 then body := body ++ "    assume and { zua: zx > 0, zub: zx < 9 }\n"
+    if ← chance 30 then body := body ++ "    ensure and { zuc: zx + 1 > zx, zud: zx - 1 < zx }\n"
+    body := body ++ s!"    expect and \{ zue: zx >= {← below 3}, zuf: zg(zx) != zx }\n"
+    out := out ++ s!"proc zu{k}(zx: Int) \{\n{body}}\n"
   return out
 
 /-- A goal with leading binders (`cli::goal_introduction`), whose terms

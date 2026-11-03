@@ -34,6 +34,20 @@ proc tested_claim(n: Int) {  --~ warning: procedure `tested_claim` has no output
     expect e: n + 1 > n
 }
 
+-- Unlabelled Boolean blocks are members of their keywords' kinds: an
+-- assumption and an expectation, which a global expectation accepts, and a
+-- guarantee, which it does not.
+proc unlabelled_claims(n: Int) {  --~ warning: procedure `unlabelled_claims` has no outputs
+    assume and { big: n > 0, small: n < 9 }
+    expect and { above: n >= 1, below: n <= 8 }
+}
+
+proc unlabelled_guarantee(n: Int) {
+    assume small: n < 3
+    ensure and { a: n + 1 > n, b: n - 1 < n }  --~ warning: `unlabelled_guarantee::a` is redundant
+    --~^ warning: `unlabelled_guarantee::b` is redundant
+}
+
 -- Not fired: `pub`, so other files may call it.
 pub proc public_claim(n: Int) { expect e: n + 1 > n }
 

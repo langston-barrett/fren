@@ -8815,21 +8815,31 @@ def blockMembers (stx : Syntax) : CommandElabM (Array (Syntax × Core.BlockMembe
   let results := (procResults stx).map fun r => (r[2], Core.BlockMember.result, !r[1].isNone)
   let others ← stx[8].getArgs.mapM fun m0 => do
     let (m, _) ← unwrapEvidence m0
-    let (kind, det) : Core.BlockMember × Bool :=
-      if m.isOfKind ``Lang.existsMember then (.exists, !m[0].isNone)
-      else if m.isOfKind ``Lang.letMember then (.let, !m[0].isNone)
-      else if m.isOfKind ``Lang.defineMember then (.define, false)
-      else if m.isOfKind ``Lang.assumeMember then (.assume, false)
-      else if m.isOfKind ``Lang.ensureMember then (.ensure, false)
-      else if m.isOfKind ``Lang.expectMember then (.expect, false)
-      else if m.isOfKind ``Lang.coverMember then (.cover, false)
-      else if m.isOfKind ``Lang.callMember then (.call, false)
-      else if m.isOfKind ``Lang.refinesMember then (.refines, false)
-      else (.use, false)
+    -- Each kind by name, the unlabelled Boolean blocks among them, so
+    -- that a member kind added later is an error here rather than read as
+    -- one the block accepts.
+    let kind? : Option (Core.BlockMember × Bool) :=
+      if m.isOfKind ``Lang.existsMember then some (.exists, !m[0].isNone)
+      else if m.isOfKind ``Lang.letMember then some (.let, !m[0].isNone)
+      else if m.isOfKind ``Lang.defineMember then some (.define, false)
+      else if m.isOfKind ``Lang.assumeMember || m.isOfKind ``Lang.bareAssumeMember then some (.assume, false)
+      else if m.isOfKind ``Lang.ensureMember || m.isOfKind ``Lang.bareEnsureMember then some (.ensure, false)
+      else if m.isOfKind ``Lang.expectMember || m.isOfKind ``Lang.bareExpectMember then some (.expect, false)
+      else if m.isOfKind ``Lang.coverMember then some (.cover, false)
+      else if m.isOfKind ``Lang.callMember then some (.call, false)
+      else if m.isOfKind ``Lang.refinesMember then some (.refines, false)
+      else if m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember then some (.use, false)
+      else none
+    let some (kind, det) := kind? | throwErrorAt m "internal error: a member of unknown kind `{m.getKind}`"
     return (m, kind, det)
   return results ++ others
 
 @[command_elab Lang.procCmd] def elabProc : CommandElab := recordingErrors fun stx => do
+  -- The file's errors so far: `proc_without_outputs` records the procedure
+  -- only if it adds no static error, failed checks aside, as the `fren`
+  -- command keeps nothing of an item with a static error.
+  let errorsBefore := (← get).messages.toList.filter (·.severity == .error) |>.length
+  let checksBefore := (← getLocal).checkErrors
   checkLexemes stx
   checkParsed stx
   checkProcMembers stx
@@ -8873,8 +8883,10 @@ def blockMembers (stx : Syntax) : CommandElabM (Array (Syntax × Core.BlockMembe
   lintDeclared .component n nameStx
   lintLines .component n nameStx stx
   -- `proc_without_outputs`, once the file's paths are known
-  -- (`pendingLints`).
-  if ok && !isPub then
+  -- (`pendingLints`), if the procedure has no static error.
+  let errorsAfter := (← get).messages.toList.filter (·.severity == .error) |>.length
+  let staticErrors := errorsAfter - errorsBefore - ((← getLocal).checkErrors - checksBefore)
+  if ok && !isPub && staticErrors == 0 then
     let members := (← blockMembers stx).toList.map (·.2)
     if Core.procWithoutOutputs false members 0 then
       let r : Core.ProcRecord := { path, members, level := ← lintLevel .procWithoutOutputs }

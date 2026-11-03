@@ -59,6 +59,10 @@ expect results(x: Int): (y: Int) {  --~ error: global expectations have no resul
 expect guarantee(x: Int) {
     ensure g: x > 0  --~ error: global expectations have no `ensure` members
 }
+-- An unlabelled Boolean block is a member of its keyword's kind too.
+expect unlabelled_guarantee(x: Int) {
+    ensure and { a: x > 0, b: x < 9 }  --~ error: global expectations have no `ensure` members
+}
 expect determined(x: Int) {
     det let y: Int := x  --~ error: global expectations have no `det` members
     expect determined: y = x
