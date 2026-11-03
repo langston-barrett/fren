@@ -2778,8 +2778,8 @@ def corpus : List (Mode × Nat × Nat) :=
   [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
     ({ confirm := true }, 0, 20)]
 
-/-- The specs that `knownDifferences` lists outside `corpus`, which the job
-`frontendFuzz listed` checks. -/
+/-- The specs that `knownDifferences` lists outside `corpus`, checked in
+the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
 def listedOutside : List (Mode × Nat) :=
   let inCorpus (m : Mode) (s : Nat) := corpus.any fun (m', a, n) => m' == m && a ≤ s && s < a + n
   (knownDifferences.filterMap fun k => if inCorpus k.mode k.seed then none else some (k.mode, k.seed)).eraseDups
