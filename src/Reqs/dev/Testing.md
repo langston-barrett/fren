@@ -820,13 +820,26 @@ or `"off"`, and the slot count, rechecked after acquiring its slot. Its
 job kind is computed from the full command before shortening it, removing
 paths, seeds and numbers while retaining executable and script basenames,
 flags and job names. Tests use scratch directories, including for logs.
+A missing bare command exits with 127 before waiting or taking a slot;
+it has no admission and produces no job record.
+
+The log has no automatic size limit or rotation, and `--stats` reads it
+all, including the load samples of long jobs. Keep the raw log for the
+trial. Archive it between trials while the controller and heavy jobs
+are stopped; preserve the flip records with their jobs so that exposure
+can still be measured. Automatic retention remains future work.
 
 `scripts/heavy --stats [HOURS]` compares completions in the last HOURS
 (default 24), grouped by admission policy and slot count: jobs per hour,
 wait, run and total latency percentiles, and mean sampled load. It divides
-each policy's completions by that policy's active hours in the window,
-including idle time, from the flip records below. Without those records
-its rate is `null`, rather than an estimate from first and last jobs.
+each policy's `rate_jobs` by that policy's active hours in the window,
+including idle time, from the flip records below. Only completions whose
+admission falls in a matching logged policy interval within the window
+count toward `rate_jobs`. Jobs admitted before the first flip, outside
+the window or under a different policy do not inflate that rate. Raw job
+counts and timing summaries still include every completion in the window.
+Without flip records its policy rate is `null`, rather than an estimate
+from first and last jobs.
 A completion stays attributed to its admission policy if a flip happened
 while it ran. Failed jobs are counted separately. Samples from overlapping
 jobs both count toward mean load. Malformed and incomplete lines are skipped.
@@ -853,7 +866,7 @@ use the same slot count and memory limit on every agent and keep them
 constant throughout the trial.
 
 The load policy stays off by default until a field A/B on this machine
-shows better development throughput. After merge, run
+shows better development throughput. To judge the setting, run
 `scripts/heavy --alternate 60 8` for about a day of alternating hourly
 blocks across all agents, then compare the real log with
 `scripts/heavy --stats 24`: jobs per active policy hour, mean load,

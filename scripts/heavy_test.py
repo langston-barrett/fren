@@ -5,14 +5,17 @@ They use scratch state directories, injected load and tiny Python jobs.
     python3 -I scripts/heavy_test.py
 """
 
+import contextlib
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import signal
 import subprocess
 import sys
 import tempfile
+from unittest import mock
 
 # Loading `heavy` must leave no `__pycache__` in the checkout.
 sys.dont_write_bytecode = True
@@ -49,6 +52,47 @@ def test_parse_args():
     assert p(["--offline", "--", "-x"]) == (True, ["-x"])
     for bad in ([], ["--offline"], ["--"], ["--bogus", "ls"], ["-h"]):
         assert raises(lambda: p(bad), heavy.UsageError), bad
+
+
+def test_missing_command():
+    with tempfile.TemporaryDirectory() as state:
+        # The only slot is held, and a load gate would also prevent admission.
+        # A missing bare executable must fail before checking either limit.
+        with open(os.path.join(state, "slot0"), "w+") as held:
+            held.write("occupied\n")
+            held.flush()
+            heavy.fcntl.flock(held, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr), \
+                 mock.patch.object(heavy, "heavy_rss_kb", side_effect=AssertionError("admission checked")), \
+                 mock.patch.object(heavy.time, "sleep", side_effect=AssertionError("waited")):
+                code = heavy.main(["heavy-test-no-such-executable-768"], state,
+                                  {"HEAVY_SLOTS": "1", "HEAVY_MAX_LOAD": "0.01"},
+                                  lambda: 100)
+            assert code == 127 and "command not found" in stderr.getvalue()
+            held.seek(0)
+            assert held.read() == "occupied\n"
+        assert not os.path.exists(os.path.join(state, "log.jsonl"))
+
+
+def test_recheck_wait_message():
+    class Waiting(Exception):
+        pass
+
+    with tempfile.TemporaryDirectory() as state:
+        loads = iter([0, 9])  # Initially admitted; load rises before the locked recheck.
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), \
+             mock.patch.object(heavy, "heavy_rss_kb", return_value=0), \
+             mock.patch.object(heavy.time, "sleep", side_effect=Waiting):
+            assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
+                          {"HEAVY_SLOTS": "1", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "8"},
+                          lambda: next(loads)), Waiting)
+        assert "waiting for memory or load" in stderr.getvalue()
+        assert "slots busy" not in stderr.getvalue()
+        assert not os.path.exists(os.path.join(state, "log.jsonl"))
+        with open(os.path.join(state, "slot0")) as slot:
+            heavy.fcntl.flock(slot, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
 
 
 def test_physical_memory():
@@ -287,15 +331,16 @@ def test_job_kinds():
 def test_stats_and_appends():
     with tempfile.TemporaryDirectory() as state:
         assert heavy.stats(1, state, {}, now=10000)["jobs"] == 0
-        record = {"ended_at": 10000, "wait_seconds": 10, "run_seconds": 20,
+        record = {"started_at": 9900, "ended_at": 10000, "wait_seconds": 10, "run_seconds": 20,
                   "load_samples": [6, 8], "max_load": "off", "slots": 2,
                   "job_kind": "lake test", "exit_status": 0}
         heavy.append_log(record, state, {})
-        heavy.append_log(dict(record, ended_at=6400, wait_seconds=0, run_seconds=10), state, {})
-        heavy.append_log(dict(record, ended_at=6399), state, {})  # Outside the window.
+        heavy.append_log(dict(record, started_at=6390, ended_at=6400,
+                              wait_seconds=0, run_seconds=10), state, {})
+        heavy.append_log(dict(record, started_at=6389, ended_at=6399), state, {})  # Outside the window.
         heavy.append_log(dict(record, ended_at=10001), state, {})
         for bad in ({"slots": True}, {"max_load": True}, {"load_samples": [False]},
-                    {"exit_status": "0"}, {"run_seconds": float("inf")}):
+                    {"exit_status": "0"}, {"run_seconds": float("inf")}, {"started_at": None}):
             # Bypass append_log's finite-number validation to test a damaged log.
             with open(os.path.join(state, "log.jsonl"), "a") as f:
                 f.write(json.dumps(dict(record, **bad)) + "\n")
@@ -309,9 +354,10 @@ def test_stats_and_appends():
         assert summary["mean_load"] == 7
         assert summary["policies"][0]["jobs_per_hour"] is None  # No exposure log to guess from.
         assert heavy.percentiles([10])["p99"] == 10
-        # Real concurrent processes each append complete lines in one write.
+        # Forced short writes from concurrent processes must not interleave records.
         path = os.path.join(state, "concurrent.jsonl")
-        code = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
+        code = ("import os,runpy,sys; h=runpy.run_path(sys.argv[1]); "
+                "write=os.write; os.write=lambda fd,data: write(fd,data[:7]); "
                 "[h['append_log']({'writer':sys.argv[2]}, environ={'HEAVY_LOG':sys.argv[3]}) "
                 "for _ in range(20)]")
         writers = [subprocess.Popen([sys.executable, "-I", "-B", "-c", code,
@@ -323,6 +369,29 @@ def test_stats_and_appends():
         assert all(sum(r["writer"] == str(i) for r in rows) == 20 for i in range(4))
 
 
+def test_short_appends():
+    with tempfile.TemporaryDirectory() as state:
+        record = {"command": "lake test", "load_samples": [1.5, 2.5]}
+        write = os.write
+
+        def short_write(fd, data):
+            return write(fd, data[:3])
+
+        with mock.patch.object(heavy.os, "write", side_effect=short_write):
+            heavy.append_log(record, state, {})
+        path = os.path.join(state, "log.jsonl")
+        with open(path) as f:
+            assert [json.loads(line) for line in f] == [record]
+        # A zero-byte write is a non-fatal logging failure, not an infinite retry.
+        with mock.patch.object(heavy.os, "write", side_effect=[0, AssertionError("retried no progress")]):
+            heavy.append_log({"ignored": True}, state, {})
+        with open(path) as f:
+            heavy.fcntl.flock(f, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+        heavy.append_log({"next": True}, state, {})
+        with open(path) as f:
+            assert [json.loads(line) for line in f] == [record, {"next": True}]
+
+
 def test_policy_comparison():
     with tempfile.TemporaryDirectory() as state:
         # The first flip predates the window. Count its clipped interval,
@@ -332,7 +401,8 @@ def test_policy_comparison():
 
         def job(load, kind, run, slots=2, status=0, ended=10000):
             heavy.append_log({"event": "job", "max_load": load, "slots": slots,
-                              "job_kind": kind, "ended_at": ended, "exit_status": status,
+                              "job_kind": kind, "started_at": ended - 1,
+                              "ended_at": ended, "exit_status": status,
                               "wait_seconds": 2, "run_seconds": run,
                               "load_samples": [8 if load == "off" else 4]}, state, {})
 
@@ -354,6 +424,7 @@ def test_policy_comparison():
         off, on = policies[("off", 2)], policies[(8, 2)]
         assert off["observed_hours"] == 0.5 and on["observed_hours"] == 1.5
         assert off["jobs_per_hour"] == 20 and on["jobs_per_hour"] == 8
+        assert off["rate_jobs"] == 10 and on["rate_jobs"] == 12
         assert off["mean_load"] == 8 and on["mean_load"] == 4
         assert off["run_seconds"]["p50"] == 1 and on["run_seconds"]["p50"] == 100
         assert on["matched_kinds"] == 2 and on["normalized_run_ratio_vs_off"] == 0.5
@@ -364,6 +435,36 @@ def test_policy_comparison():
         assert fast[8]["run_ratio_vs_off"] == 0.25 and fast[8]["successful_jobs"] == 1
         assert summary["by_kind"]["only-on"][0]["run_ratio_vs_off"] is None
         assert (99, 2) not in policies
+
+
+def test_partial_policy_coverage():
+    with tempfile.TemporaryDirectory() as state:
+        # The window begins at 7200, but the controller does not start until 10800.
+        for at, load in ((10800, 8), (12600, "off")):
+            heavy.append_log({"event": "policy", "at": at, "max_load": load, "slots": 2}, state, {})
+        records = [
+            ("off", 8000, 9000),    # Completion before the first flip.
+            ("off", 10700, 11000),  # Admission before the first flip, completion after it.
+            ("off", 7000, 7300),    # Admission outside the requested window.
+            ("off", 11000, 11100),  # Admission under an override, not the logged policy.
+            ("off", 12600, 12700),  # Exactly the boundary, included only in off.
+            ("off", 13000, 13100),
+            (8, 10800, 10900),      # Exactly the first flip, included in on.
+            (8, 12599, 12700),      # Retains admission policy across a flip.
+            (8, 12600, 12700),      # At the off boundary, excluded from on's rate.
+        ]
+        for load, began, ended in records:
+            heavy.append_log({"event": "job", "max_load": load, "slots": 2,
+                              "started_at": began, "ended_at": ended, "exit_status": 0,
+                              "job_kind": "lake test", "wait_seconds": 0, "run_seconds": 10,
+                              "load_samples": []}, state, {})
+        summary = heavy.stats(2, state, {}, now=14400)
+        policies = {p["max_load"]: p for p in summary["policies"]}
+        assert summary["jobs"] == 9  # Raw counts and timing summaries retain every completion.
+        assert policies["off"]["jobs"] == 6 and policies[8]["jobs"] == 3
+        for policy in policies.values():
+            assert policy["observed_hours"] == 0.5
+            assert policy["rate_jobs"] == 2 and policy["jobs_per_hour"] == 4
 
 
 def test_alternate():
@@ -398,9 +499,11 @@ def test_alternate():
 
 
 def main():
-    tests = [test_parse_args, test_physical_memory, test_overrides, test_offline_command,
+    tests = [test_parse_args, test_missing_command, test_recheck_wait_message,
+             test_physical_memory, test_overrides, test_offline_command,
              test_load_admission, test_job_log, test_admission_snapshot, test_job_kinds,
-             test_stats_and_appends, test_policy_comparison, test_alternate]
+             test_stats_and_appends, test_short_appends, test_policy_comparison,
+             test_partial_policy_coverage, test_alternate]
     for t in tests:
         t()
     print(f"heavy: {len(tests)} tests passed")

@@ -56,6 +56,7 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -223,14 +224,20 @@ def sample_load(record, load_reader, now, last=None):
 
 
 def append_log(record, state=STATE, environ=None):
-    """One O_APPEND write, so concurrent writers need no logging lock."""
+    """Append a complete line, locking across retries of a short write."""
     environ = os.environ if environ is None else environ
     try:
         path = environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl")
         data = (json.dumps(record, allow_nan=False) + "\n").encode()
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
-            os.write(fd, data)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            remaining = memoryview(data)
+            while remaining:
+                written = os.write(fd, remaining)
+                if written <= 0:
+                    raise OSError("log write made no progress")
+                remaining = remaining[written:]
         finally:
             os.close(fd)
     except (OSError, ValueError, TypeError):
@@ -342,12 +349,13 @@ def policy_key(row):
     return load, slots
 
 
-def summarize(rows, hours):
+def summarize(rows, hours, rate_jobs=None):
     loads = [v for row in rows for v in row["load_samples"]]
+    rate_jobs = len(rows) if rate_jobs is None else rate_jobs
     return {
         "jobs": len(rows), "observed_hours": hours,
         "failed_jobs": sum(r.get("exit_status") != 0 for r in rows),
-        "jobs_per_hour": len(rows) / hours if hours > 0 else None,
+        "rate_jobs": rate_jobs, "jobs_per_hour": rate_jobs / hours if hours > 0 else None,
         "wait_seconds": percentiles([r["wait_seconds"] for r in rows]),
         "run_seconds": percentiles([r["run_seconds"] for r in rows]),
         "latency_seconds": percentiles([r["wait_seconds"] + r["run_seconds"] for r in rows]),
@@ -357,6 +365,8 @@ def summarize(rows, hours):
 
 def stats(hours, state=STATE, environ=None, now=None):
     """Rates use logged policy intervals, clipped to the requested window.
+    Only admissions within a matching interval count toward policy rates;
+    raw counts and timings still describe every completion in the window.
     Attribute completions to their admission policy, even across a flip.
     Ignore malformed lines, including an incomplete concurrent append."""
     environ = os.environ if environ is None else environ
@@ -374,7 +384,7 @@ def stats(hours, state=STATE, environ=None, now=None):
                         if type(at) in (int, float) and math.isfinite(at) and 0 <= at <= now:
                             flips.append((at, key))
                         continue
-                    numbers = [row[k] for k in ("ended_at", "wait_seconds", "run_seconds")]
+                    numbers = [row[k] for k in ("started_at", "ended_at", "wait_seconds", "run_seconds")]
                     loads = row["load_samples"]
                     if not isinstance(loads, list):
                         continue
@@ -389,16 +399,21 @@ def stats(hours, state=STATE, environ=None, now=None):
                     continue
     except FileNotFoundError:
         pass
-    exposure = {}
+    exposure, intervals = {}, []
     flips.sort(key=lambda flip: flip[0])
     for i, (at, key) in enumerate(flips):
         end = flips[i + 1][0] if i + 1 < len(flips) else now
-        duration = max(0, end - max(at, now - hours * 3600)) / 3600
+        begin = max(at, now - hours * 3600)
+        duration = max(0, end - begin) / 3600
         if duration > 0:
             exposure[key] = exposure.get(key, 0) + duration
-    grouped = {}
+            intervals.append((begin, end, key))
+    grouped, rate_counts = {}, {}
     for row in rows:
-        grouped.setdefault(policy_key(row), []).append(row)
+        key = policy_key(row)
+        grouped.setdefault(key, []).append(row)
+        if any(k == key and begin <= row["started_at"] < end for begin, end, k in intervals):
+            rate_counts[key] = rate_counts.get(key, 0) + 1
     policies, kinds = [], {}
     # Compare only successful runs: a fast failure is not a speedup.
     successful = {}
@@ -408,7 +423,7 @@ def stats(hours, state=STATE, environ=None, now=None):
     for key in sorted(set(grouped) | set(exposure), key=lambda k: (k[1], str(k[0]))):
         load, slots = key
         policy = {"max_load": load, "slots": slots,
-                  **summarize(grouped.get(key, []), exposure.get(key, 0))}
+                  **summarize(grouped.get(key, []), exposure.get(key, 0), rate_counts.get(key, 0))}
         ratios = []
         for kind in sorted({r["job_kind"] for r in grouped.get(key, [])}):
             values = successful.get((key, kind), [])
@@ -632,6 +647,9 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     except UsageError as e:
         print(e, file=sys.stderr)
         return 2
+    if os.sep not in command[0] and shutil.which(command[0]) is None:
+        print(f"heavy: {command[0]}: command not found", file=sys.stderr)
+        return 127
     enqueued, queued = time.time(), time.monotonic()
     kind = job_kind(command)
     shown = shlex.join(command)
@@ -675,9 +693,15 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             # lock. Recheck admission and log the settings actually used.
             slots = slot_count(environ, state)
             limit = max_load(environ, state)
-            if i >= slots or not can_start(waited, heavy_rss_kb(state),
-                                          mem_cap_kb(environ, state), limit, load_reader):
+            if i >= slots:
                 f.close()
+                break
+            if not can_start(waited, heavy_rss_kb(state),
+                             mem_cap_kb(environ, state), limit, load_reader):
+                f.close()
+                if not warned:
+                    print(f"heavy: waiting for memory or load (see {state})", file=sys.stderr)
+                    warned = True
                 break
             if waited > 1:
                 print(f"heavy: got slot {i} after {waited:.0f}s", file=sys.stderr)
