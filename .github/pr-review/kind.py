@@ -25,6 +25,13 @@ this one, and whose review must have found no blocking issues. Otherwise
 the head gets a full review. A workflow_run skips a head that already has a
 review.
 
+A head that only fixes the wording of a clean review's points gets no
+check at all: a comment that starts with "wording only", read by the same
+rules as a request for a light check, skips the head on any event, and the
+coordinator checks that the diff from the previous head changes only
+prose before merging it. A later comment that names the head without
+asking for a check gets it a full review, as for a light check.
+
 Anyone who can read the repository can comment, so only the comments of
 those who can push count, as reviews and as requests: those whose
 `authorAssociation` is OWNER, MEMBER or COLLABORATOR, as in claude.yml.
@@ -40,7 +47,7 @@ import re
 import sys
 
 REVIEW = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues|blocking issues)")
-LIGHT = {"fixes only": "fixes", "rebase only": "rebase"}
+LIGHT = {"fixes only": "fixes", "rebase only": "rebase", "wording only": "wording"}
 PUSHERS = {"OWNER", "MEMBER", "COLLABORATOR"}
 SHA = re.compile(r"\b[0-9a-f]{7,40}\b")
 
@@ -60,8 +67,8 @@ def reviews(comments):
 
 
 def light_kind(body):
-    """`fixes` or `rebase` if the comment starts so, ignoring case and
-    leading markup such as `**` or a quote."""
+    """`fixes`, `rebase` or `wording` if the comment starts so, ignoring
+    case and leading markup such as `**` or a quote."""
     text = body.lstrip(" \t\r\n*_`\"'>#").lower()
     for prefix, kind in LIGHT.items():
         if text.startswith(prefix):
@@ -104,6 +111,8 @@ def decide(pr, event):
         return {"kind": "full", "reason": "the request comes after a review of the head itself"}
     if not clean:
         return {"kind": "full", "reason": f"the review of {previous} found blocking issues, so the head gets a fresh review"}
+    if kind == "wording":
+        return {"kind": "skip", "reason": f"the last comment that names the head says it only fixes the wording of the clean review of {previous}; the coordinator checks that the diff from {previous} changes only prose"}
     return {
         "kind": kind,
         "reason": f"the last comment that names the head starts with \"{kind} only\"",

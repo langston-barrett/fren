@@ -131,6 +131,29 @@ class Decide(unittest.TestCase):
                comment("02:00", f"fixes only: {HEAD[:8]}"))
         self.assertEqual(self.kind(p), "full")
 
+    # AGENTS.md: a head that only fixes the wording of a clean review's
+    # points merges without another check.
+    def test_wording_after_clean_review(self):
+        for event in ("workflow_run", "workflow_dispatch"):
+            p = pr(review("01:00", OLD), comment("02:00", f"wording only: {HEAD}"))
+            d = decide(p, event)
+            self.assertEqual(d["kind"], "skip", event)
+            self.assertIn(OLD, d["reason"])
+            self.assertNotIn("previous", d)
+
+    def test_wording_after_blocking_review(self):
+        p = pr(review("01:00", OLD, clean=False), comment("02:00", f"**Wording only**: {HEAD}"))
+        self.assertEqual(self.kind(p, "workflow_run"), "full")
+
+    def test_later_comment_after_wording(self):
+        p = pr(review("01:00", OLD), comment("02:00", f"wording only: {HEAD}"),
+               comment("03:00", f"Not only wording after all: {HEAD[:8]} changes a test"))
+        self.assertEqual(self.kind(p, "workflow_run"), "full")
+
+    def test_outsiders_forged_wording(self):
+        p = pr(review("01:00", OLD), comment("02:00", f"wording only: {HEAD}", "NONE"))
+        self.assertEqual(self.kind(p, "workflow_run"), "full")
+
     def test_reviews_are_not_requests(self):
         p = pr(review("01:00", OLD), comment("02:00", f"Review of {HEAD}: no blocking issues (fixes only)"))
         self.assertEqual(self.kind(p, "workflow_run"), "skip")

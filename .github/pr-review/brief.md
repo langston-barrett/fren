@@ -75,8 +75,11 @@ line is exactly one of:
 and nothing else. Then the numbered findings, `1.`, `2.` and so on at the
 start of a line, each marked with exactly one of `[blocking]`,
 `[non-blocking]` and `[non-blocking, fix before merge]` (for a small
-point), with the file, the line, what is wrong and what to do. Use
-numbered lines for findings only. The verdict says `blocking issues`
+point), with the file, the line, what is wrong and what to do. Before
+writing a finding, search the diff and the files it touches for the same
+mistake, and list every other instance, by file and line, in that
+finding, so that the author can fix them all in one push. Use numbered
+lines for findings only. The verdict says `blocking issues`
 exactly when a finding is `[blocking]`. After the findings, write a
 paragraph that starts with `Probes:` and says which probes you ran, that
 is, those in `.review/probes.md`, with their results, and which you could

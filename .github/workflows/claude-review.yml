@@ -3,7 +3,8 @@ name: pr-review
 # AGENTS.md, once `pre-merge` has passed on it: a full review, or a light
 # check ("fixes only" or "rebase only") when the last comment that names
 # the head asks for one (.github/pr-review/kind.py). An update from `main`
-# of a reviewed head gets none.
+# of a reviewed head gets none, and nor does a head whose last comment says
+# "wording only": the coordinator checks that one's diff.
 #
 # Threat model. A workflow_run runs in `main`'s context, with the Claude
 # token, while the pull request's author controls its files, its
