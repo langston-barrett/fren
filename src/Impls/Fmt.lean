@@ -404,7 +404,7 @@ impl chain_side: fmt::chain_side for (b : Bool) (n w : Nat) {
   intro b n w _
   cases b <;> simp [fren_spec, FrenCli.Fmt.breaksAfter, FrenCli.Fmt.shortName] <;> omega
 
-impl chain_layout: fmt::chain_layout for (n : Nat) (f fb lb ll : Bool) (o : FrenCli.ChainOperand) (b h x e : Nat) {
+impl chain_layout: fmt::chain_layout for (n : Nat) (f fb lb ll : Bool) (o : FrenCli.ChainOperand) (b h x e ln : Nat) (lf ll2 : Bool) {
   operators := n,
   flat? := f,
   forced_before? := fb,
@@ -415,11 +415,14 @@ impl chain_layout: fmt::chain_layout for (n : Nat) (f fb lb ll : Bool) (o : Fren
   head_end := h,
   next_end := x,
   line_end := e,
-  broken? := FrenCli.Fmt.chainBroken n f fb lb ll o b h x e,
+  last_operators := ln,
+  last_forced? := lf,
+  last_list? := ll2,
+  broken? := FrenCli.Fmt.chainBroken n f fb lb ll o b h x e ln lf ll2,
 } by
-  intro n f fb lb ll o b h x e _
-  cases f <;> cases fb <;> cases lb <;> cases ll <;> cases o <;>
-    simp [fren_spec, FrenCli.Fmt.chainBroken, FrenCli.Fmt.hugs, FrenCli.Fmt.maxWidth, toLastOperand] <;> omega
+  intro n f fb lb ll o b h x e ln lf ll2 _
+  cases f <;> cases fb <;> cases lb <;> cases ll <;> cases o <;> cases lf <;> cases ll2 <;>
+    simp [fren_spec, FrenCli.Fmt.chainBroken, FrenCli.Fmt.hugs, FrenCli.Fmt.mustBreak, FrenCli.Fmt.maxWidth, toLastOperand] <;> omega
 
 theorem count_toElementList (es : List (Nat × Bool × Bool)) : fmt.count (toElementList es) = es.length := by
   induction es with

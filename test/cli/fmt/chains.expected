@@ -64,16 +64,17 @@
 +    ensure long_call_left:
 +        eval(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota)
 +            = f(alpha_beta_gamma, eta_theta_iota, c + a + b)
-@@ -59,3 +90,5 @@
+@@ -59,3 +90,6 @@
 -    ensure middle: ok? iff a > 0 and (match x {
 -        Boxed::Box(n) => n > 0,
 -    }) and b > 0
-+    ensure middle: ok? iff a > 0
-+        and (match x {
-+            Boxed::Box(n) => n > 0,
-+        })
-+        and b > 0
-@@ -69 +102,6 @@
++    ensure middle: ok? iff
++        a > 0
++            and (match x {
++                Boxed::Box(n) => n > 0,
++            })
++            and b > 0
+@@ -69 +103,6 @@
 -        total = alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + delta_epsilon_zeta
 +        total =
 +            alpha_beta_gamma
@@ -81,9 +82,16 @@
 +                + eta_theta_iota
 +                + alpha_beta_gamma
 +                + delta_epsilon_zeta
-@@ -75 +112,0 @@
+@@ -73,4 +112,4 @@
+-    ensure commented: ok? iff a > 0  -- the first
+-        and b > 0
 -
-@@ -82,2 +119,5 @@
+-        and c > 0
++    ensure commented: ok? iff
++        a > 0  -- the first
++            and b > 0
++            and c > 0
+@@ -82,2 +121,5 @@
 -fn moved(alpha_beta_gamma: Int, delta_epsilon_zeta: Int, eta_theta_iota: Int): Bool := alpha_beta_gamma > 1000000
 -    and delta_epsilon_zeta > 2000000 and eta_theta_iota > 3000000 and alpha_beta_gamma < eta_theta_iota
 +fn moved(alpha_beta_gamma: Int, delta_epsilon_zeta: Int, eta_theta_iota: Int): Bool :=

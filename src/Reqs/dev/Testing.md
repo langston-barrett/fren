@@ -730,15 +730,16 @@ pub proc ui_file(
     exit: Option<Int>,              -- `--@ exit:`
     got_exit: Option<Int>,          -- the front end's exit code; Lean has none
 ): (det passes?) {
-    ensure rule: passes? iff met?(ms, es, front_end)
-        and (match summary {
-            Option::None => true,
-            Option::Some(s) => got_summary = Option::Some(s),
-        })
-        and (match exit, got_exit {
-            Option::Some(x), Option::Some(g) => x = g,
-            _, _ => true,
-        })
+    ensure rule: passes? iff
+        met?(ms, es, front_end)
+            and (match summary {
+                Option::None => true,
+                Option::Some(s) => got_summary = Option::Some(s),
+            })
+            and (match exit, got_exit {
+                Option::Some(x), Option::Some(g) => x = g,
+                _, _ => true,
+            })
 }
 ```
 

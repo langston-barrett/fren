@@ -378,16 +378,23 @@ def hugs (n : Nat) (operand : ChainOperand) (listLast : Bool) (before headEnd ne
   headEnd ≤ maxWidth && (operand matches .brace
     || (decide (n = 1) && operand matches .bracket && (before ≤ 4 || listLast || nextEnd > maxWidth)))
 
+/-- Whether a chain of `n` operators must break whatever its line
+(`fmt::must_break?`): a line break that formatting keeps or a comment is
+before its last operator (`forcedBefore`), or, with two operators or more,
+a list that cannot be on one line is (`listBefore`). -/
+def mustBreak (n : Nat) (forcedBefore listBefore : Bool) : Bool :=
+  n > 0 && (forcedBefore || (listBefore && n > 1))
+
 /-- Whether a chain of `n` operators that the formatter lays out breaks
-(`fmt::chain_layout`): it is not in a list on one line (`flat`), and a line
-break that formatting keeps or a comment is before its last operator
-(`forcedBefore`), or, with two operators or more, a list that cannot be on
-one line is (`listBefore`), or its last operand does not hug it and holds
-such a list (`listLast`), or its line would end past `maxWidth`
-(`lineEnd`). -/
+(`fmt::chain_layout`): it is not in a list on one line (`flat`), and it must
+break whatever its line (`mustBreak`), or so must the chain that is its
+whole last operand, of `lastN` operators (`lastForced`, `lastList`), which
+breaks before any brace or bracket that the operand would hug, or its last
+operand does not hug it and holds a list that cannot be on one line
+(`listLast`), or its line would end past `maxWidth` (`lineEnd`). -/
 def chainBroken (n : Nat) (flat forcedBefore listBefore listLast : Bool) (last : ChainOperand)
-    (before headEnd nextEnd lineEnd : Nat) : Bool :=
-  n > 0 && !flat && (forcedBefore || (listBefore && n > 1)
+    (before headEnd nextEnd lineEnd lastN : Nat) (lastForced lastList : Bool) : Bool :=
+  n > 0 && !flat && (mustBreak n forcedBefore listBefore || mustBreak lastN lastForced lastList
     || (!hugs n last listLast before headEnd nextEnd && (listLast || lineEnd > maxWidth)))
 
 /-- The widest a single name on the left of a chain's one `iff` or `=` may
@@ -671,6 +678,7 @@ def keptChains (toks : Array Token) (comments : Array Span) (lay : Layout) : Arr
   let order := (Array.range chains.size).qsort fun a b =>
     chains[a]!.first < chains[b]!.first || (chains[a]!.first == chains[b]!.first && chains[a]!.last > chains[b]!.last)
   let mut kept : Array Bool := Array.replicate chains.size false
+  let mut keptOpen : Array Nat := #[]
   for c in order do
     let ch := chains[c]!
     -- A gap that the formatter decides: one of a list, block or right
@@ -699,9 +707,13 @@ def keptChains (toks : Array Token) (comments : Array Span) (lay : Layout) : Arr
       else if closer.contains (k - 1) && depth > 0 then depth := depth - 1
       columns := columns + width (k - 1) + 1
       k := k - 1
-    let held := (Array.range chains.size).any fun d => kept[d]! && d != c
-      && chains[d]!.first ≤ ch.first && ch.last ≤ chains[d]!.last
-    kept := kept.set! c (chainKept follows.toList columns held)
+    -- The kept chains open here: chains nest, so the innermost that has
+    -- not ended holds this one.
+    while keptOpen.back?.any (chains[·]!.last < ch.first) do keptOpen := keptOpen.pop
+    let held := !keptOpen.isEmpty
+    let keeps := chainKept follows.toList columns held
+    kept := kept.set! c keeps
+    if keeps then keptOpen := keptOpen.push c
   return kept
 
 /-- A token or a comment, with the lines it starts and ends on, and the
@@ -1101,18 +1113,18 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   -- with it on that line. A line must end at a line break that formatting
   -- keeps or a comment, and after the opening bracket of a list that
   -- cannot be on one line.
-  let chainBreaksAt (vertical : Array Bool) (c startCol indent : Nat) (flat : Bool) : Bool × Bool := Id.run do
+  -- Before chain `c`'s last operator: whether a line break that formatting
+  -- keeps or a comment is there, outside a list that cannot be on one
+  -- line, and the last closing bracket of such a list there. In its last
+  -- operand: the first list that cannot be on one line, and the first line
+  -- break that formatting keeps or comment.
+  let chainScan (c : Nat) : Bool × Option Nat × Option Nat × Nat := Id.run do
     let ch := chains[c]!
     let firstPiece := pieceAt ch.first
     let lastPiece := pieceAt ch.last
     let lastOperator := pieceAt ch.operators.back!
-    -- Before its last operator: whether a line break that formatting keeps
-    -- or a comment is there, and the last closing bracket of a list there
-    -- that cannot be on one line.
     let mut forcedBefore := false
     let mut closedBefore : Option Nat := none
-    -- In its last operand: the first list that cannot be on one line, and
-    -- the first line break that formatting keeps or comment.
     let mut firstList : Option Nat := none
     let mut stop := lastPiece + 1
     for j in [firstPiece + 1:lastPiece + 1] do
@@ -1128,6 +1140,21 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       else
         if firstList.isNone then firstList := list?
         if forced j && stop == lastPiece + 1 then stop := j
+    return (forcedBefore, closedBefore, firstList, stop)
+  let chainBreaksAt (vertical : Array Bool) (c startCol indent : Nat) (flat : Bool) : Bool × Bool := Id.run do
+    let ch := chains[c]!
+    let firstPiece := pieceAt ch.first
+    let lastPiece := pieceAt ch.last
+    let lastOperator := pieceAt ch.operators.back!
+    let (forcedBefore, closedBefore, firstList, stop) := chainScan c
+    -- The chain that is its whole last operand, if any: its operators, and
+    -- whether it must break by rule 1 (`fmt::must_break?`).
+    let inner := (chainsAt.getD (ch.operators.back! + 1) #[]).find? (chains[·]!.last == ch.last)
+    let (lastOperators, lastForced, lastList) := match inner with
+      | some d =>
+        let (f, l, _, _) := chainScan d
+        (chains[d]!.operators.size, f, l.isSome)
+      | none => (0, false, false)
     -- Its line, on one line, up to where a line must end in its last
     -- operand; but where its one operator's left operand holds a list that
     -- cannot be on one line, the line that the list closes, as rustfmt keeps
@@ -1154,7 +1181,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     -- more than its line.
     let nextEnd := indent + 4 + flatWidth lastOperator tail + (suffix vertical .arguments lastPiece).1
     let broken := chainBroken ch.operators.size flat forcedBefore closedBefore.isSome firstList.isSome last
-      ch.before headEnd nextEnd lineEnd
+      ch.before headEnd nextEnd lineEnd lastOperators lastForced lastList
     return (broken, breaksAfter broken ch.operators.size ch.name)
   let mut out : Array Line := #[]
   let mut vertical : Array Bool := Array.replicate lists.size false

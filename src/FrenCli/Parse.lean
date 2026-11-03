@@ -689,8 +689,6 @@ structure Layout where
   /-- The chains of binary operators whose line breaks the formatter
   decides (`fmt::chain_layout`). -/
   chains : Array Chain := #[]
-  /-- The `if`s: the `if` and the last token of its `else` branch. -/
-  ifs : Array (Nat × Nat) := #[]
   /-- The top-level items, the `import` and `open` lines of the header
   included, in order: the first and last tokens of each, an item's first
   being that of the `set_option ... in` before it, if any. -/
@@ -1707,7 +1705,6 @@ partial def atom : P Expr := do
     discard (expectKw "]")
     fieldReads callArgs indexArg (.seq (← spanFrom t.span) es)
   | .kw "if" =>
-    let ifAt := (← get).pos
     discard bump
     -- The condition and `then` branch are delimited, so `in` is a
     -- membership there even in a definition of a `let`.
@@ -1717,7 +1714,7 @@ partial def atom : P Expr := do
     discard (expectKw "else")
     let b ← expr
     let sp ← spanFrom t.span
-    modify fun st => { st with layout.exprs := st.layout.exprs.push sp, layout.ifs := st.layout.ifs.push (ifAt, st.pos - 1) }
+    modify fun st => { st with layout.exprs := st.layout.exprs.push sp }
     return .ite sp c a b
   | .kw "(" =>
     discard bump

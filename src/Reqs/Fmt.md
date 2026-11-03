@@ -1231,10 +1231,13 @@ ensure law:
 
 A chain breaks where it does not fit on its line:
 
-1. a line break that formatting keeps, or a comment, is before its last
-   operator, outside a list that cannot be on one line, or, where it has
-   two operators or more, such a list is, as in `a and (match x {` ...
-   `}) and c`; or
+1. it *must break*: a line break that formatting keeps, or a comment, is
+   before its last operator, outside a list that cannot be on one line, or,
+   where it has two operators or more, such a list is, as in
+   `a and (match x {` ... `}) and c`; or the chain that is its whole last
+   operand must break, so that the loosest operators break first, as in
+   `ok? iff a > 0 and (match x {` ... `}) and b > 0`, whatever that operand
+   would hug; or
 2. its last operand does not *hug* it, and that operand holds a list that
    cannot be on one line, or the chain's line would end past column 100
    with the chain on one line, up to the first line break that formatting
@@ -1349,6 +1352,11 @@ pub fn hugs?(
                 and last = LastOperand::Bracket
                 and (before <= 4 or list_last? or next_end > 100)))
 
+-- A chain must break whatever its line: a line break kept, or a comment, is before its last operator,
+-- outside a list, or, with two operators or more, a list that cannot be on one line is.
+pub fn must_break?(operators: Int, forced_before?, list_before?) :=
+    operators > 0 and (forced_before? or (list_before? and operators > 1))
+
 pub proc chain_layout(
     operators: Int,          -- its operators
     flat?,                   -- it is in a list on one line
@@ -1360,32 +1368,42 @@ pub proc chain_layout(
     head_end: Int,           -- where its line would end, up to the brace or bracket of its last operand
     next_end: Int,           -- where its last operator and operand would end on a line of their own
     line_end: Int,           -- where its line would end, with it on that line, as rule 2 counts
+    -- Of the chain that is its whole last operand, if any (0 operators if none): its operators,
+    -- `forced_before?` and `list_before?`.
+    last_operators: Int,
+    last_forced?,
+    last_list?,
 ): (det broken?) {
     ensure rule: broken? iff
         (operators > 0
             and not flat?
-            and (forced_before?
-                or (list_before? and operators > 1)
+            and (must_break?(operators, forced_before?, list_before?)
+                or must_break?(last_operators, last_forced?, last_list?)
                 or (not hugs?(operators, last, list_last?, before, head_end, next_end)
                     and (list_last? or line_end > 100))))
 
-    expect fits: when not forced_before? and not list_before? and not list_last? and line_end <= 100, not broken?
+    -- `ok? iff a > 0 and (match x {` ... `}) and b > 0`: where its last operand must break, so does
+    -- it, the loosest first, whatever brace that operand holds.
+    expect inner_breaks: when operators > 0 and not flat? and must_break?(last_operators, last_forced?, last_list?),
+        broken?
+    expect fits: when last_operators = 0 and not forced_before? and not list_before? and not list_last?
+        and line_end <= 100, not broken?
     expect long: when operators > 0 and not flat? and last = LastOperand::Other and line_end > 100, broken?
     -- `x = match y {` ... `}`, `q = P {` ... `}`: a brace that ends the line hugs.
-    expect braced: when not forced_before? and not list_before? and last = LastOperand::Brace and head_end <= 100,
-        not broken?
+    expect braced: when last_operators = 0 and not forced_before? and not list_before?
+        and last = LastOperand::Brace and head_end <= 100, not broken?
     -- `r = f(` ... `)`: a call hugs after a short left operand, and one that must split anyway...
-    expect short_call: when operators = 1 and not forced_before? and last = LastOperand::Bracket and before <= 4
-        and head_end <= 100, not broken?
-    expect split_anyway: when operators = 1 and not forced_before? and last = LastOperand::Bracket and list_last?
-        and head_end <= 100, not broken?
+    expect short_call: when last_operators = 0 and operators = 1 and not forced_before?
+        and last = LastOperand::Bracket and before <= 4 and head_end <= 100, not broken?
+    expect split_anyway: when last_operators = 0 and operators = 1 and not forced_before?
+        and last = LastOperand::Bracket and list_last? and head_end <= 100, not broken?
     -- ...but `typeof(Ctx::Empty, e) = Some(` ... `)` breaks before `=` where `= Some(` ... `)` then fits
     -- on a line of its own (#546's decision 4).
     expect long_call: when operators = 1 and not flat? and last = LastOperand::Bracket and before > 4
         and not list_last? and next_end <= 100 < line_end, broken?
     -- `(table {` ... `}).card >= 0`: one operator stays after a left operand that spans lines...
-    expect spanning_left: when operators = 1 and not forced_before? and not list_last? and line_end <= 100,
-        not broken?
+    expect spanning_left: when last_operators = 0 and operators = 1 and not forced_before? and not list_last?
+        and line_end <= 100, not broken?
     -- ...but `a and (match x {` ... `}) and c` breaks before each `and`.
     expect spanning_middle: when operators > 1 and not flat? and list_before?, broken?
     expect in_flat_list: when flat?, not broken?
@@ -1604,8 +1622,9 @@ pub enum Bracket {
     Square,                  -- `[`
     Curly,                   -- `{`
     PathCurly,               -- `::{`
-    Operator,                -- a `:=`, `=>` or clause's `:` whose right side starts the next line, until it
-    -- ends, or a broken chain, from its first token to its last
+    -- A `:=`, `=>` or clause's `:` whose right side starts the next line, until that ends, or a
+    -- broken chain, from its first token to its last.
+    Operator,
 }
 
 use self::Bracket::{Curly, Operator, Paren, PathCurly, Square}
