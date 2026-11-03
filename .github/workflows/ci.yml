@@ -312,7 +312,11 @@ jobs:
       with:
         sha: ${{ github.sha }}
     - run: lake build fren_test
-    - run: |
+    # A panic aborts the part, as in `lake test`'s jobs (`spawnJob`): it
+    # would otherwise only print, and the check would go on with a default.
+    - env:
+        LEAN_ABORT_ON_PANIC: "1"
+      run: |
         set -euo pipefail
         part() {
           local name="${*// /-}"
