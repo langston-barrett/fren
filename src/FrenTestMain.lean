@@ -3733,6 +3733,35 @@ def smtAgreement (env : Environment) : IO (Array String) := do
       unless cli.contains d do failures := failures.push s!"{path}: only Lean's queries have {d}"
   return failures
 
+/-- The specs whose obligations dumps both front ends must print alike
+(`Reqs/Cli#obligations`): a recursive function with a contract, a
+quantifier, a generic function and its instance, records,
+enumerations and checks by testing and enumeration, and recursive functions
+and abstract types and functions of one name in two modules, beside a
+variable of that name. -/
+def obligationsAgreementSpecs : List String :=
+  ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
+   "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren",
+   "test/cli/args/dump_obligations_modules.fren"]
+
+/-- That the `fren` command's obligations dump (`--dump=obligations`) of each
+of `obligationsAgreementSpecs` is the Lean-hosted front end's, but for
+their metadata (`Fren.Core.withoutMetadata`). -/
+def obligationsAgreement (env : Environment) : IO (Array String) := do
+  let mut failures := #[]
+  for path in obligationsAgreementSpecs do
+    let (out, _) ← runFren ["check", "--dump=obligations", path]
+    let src ← IO.FS.readFile path
+    let input := "open Fren.Lang\n" ++ src ++ "\n#fren_check\n"
+    let (_, log) ← Elab.process input env (Fren.fren.dump.set {} "obligations") path
+    let texts ← log.toList.mapM fun m => m.data.toString
+    let hosted := (texts.find? (·.startsWith Fren.Core.dumpStart)).getD ""
+    let cli := (FrenTest.FuzzFrontends.splitDump out).2.getD ""
+    if cli.isEmpty then failures := failures.push s!"{path}: the binary printed no obligations dump"
+    else if Fren.Core.withoutMetadata cli.trimAscii.toString != Fren.Core.withoutMetadata hosted.trimAscii.toString then
+      failures := failures.push s!"{path}: the front ends' obligations dumps differ:\n--- fren\n{cli}\n--- Lean\n{hosted}"
+  return failures
+
 /-- Runs `fren_test --job outOfFuel` with `env`, returning its exit code, its
 failures, if it printed them, and its stderr. -/
 def spawnOutOfFuel (env : Array (String × Option String)) : IO (UInt32 × Option (Array String) × String) := do
@@ -3781,7 +3810,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+      ["enumeration"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -3847,6 +3876,10 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     enableInitializersExecution
     initSearchPath (← findSysroot)
     smtAgreement (← importModules #[{ module := `Fren }] {} (loadExts := true))
+  | ["obligationsAgreement"] => do
+    enableInitializersExecution
+    initSearchPath (← findSysroot)
+    obligationsAgreement (← importModules #[{ module := `Fren }] {} (loadExts := true))
   | "frontendFuzz" :: args => match FrenTest.FuzzFrontends.corpusSpecs? args with
     | some specs => do
       FrenTest.FuzzFrontends.corpusFailures (← FrenTest.FuzzFrontends.loadFren) (".lake" / "fuzz") specs

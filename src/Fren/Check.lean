@@ -6,6 +6,7 @@ import Fren.SeqElems
 import Fren.SmtTranslate
 import FrenCore.Check
 import FrenCore.Goals
+import FrenCore.Obligations
 import FrenCore.SolverTime
 import FrenCore.Ty
 import Smt
@@ -61,6 +62,71 @@ whose time `Core.timeQuery` records, as the binary's `solveScript` does. -/
 def smtTimedOut : Smt.Result → Bool
   | .unknown reason => Core.timedOutExplanation reason
   | _ => false
+
+/-- The canonical name (`Core.ItemSymbol.text`) of each symbol that lean-smt
+gives a spec's types, constructors and selectors, by
+the name that it gives it, for the obligations dump (`Core.dump`). -/
+def dumpSymbols (st : State) : Std.HashMap String String := Id.run do
+  let mut out : Std.HashMap String String := {}
+  for (_, e) in st.enums do
+    if e.lean?.isSome then continue
+    out := out.insert (toString e.decl) (Core.ItemSymbol.datatype e.path).text
+    for v in e.variants, idx in [0:e.variants.size] do
+      out := out.insert (toString (e.ctor idx)) (Core.ItemSymbol.variant e.path v).text
+      for k in [0:((e.payloads[idx]?.map (·.size)).getD 0)] do
+        out := out.insert (toString (e.sel idx k)) (Core.ItemSymbol.payload e.path v k).text
+  for (_, r) in st.records do
+    out := out.insert (toString r.decl) (Core.ItemSymbol.datatype r.path).text
+    let ctor := if r.params.isEmpty then recordCtor r.decl else genericRecordCtor r.decl
+    out := out.insert (toString ctor) (Core.ItemSymbol.record r.path).text
+    for (f, _) in r.fields do
+      out := out.insert (toString (ctor ++ f)) (Core.ItemSymbol.field r.path f).text
+  -- A newtype, which `fren check` erases, as its underlying type, and its
+  -- constructor and its field, as lean-smt names its selector, erased
+  -- (`Core.erasedSymbol`). Only a newtype whose underlying type, through
+  -- any newtypes, is `Int`, `Nat`, `Bool` or `String` gets that type's sort;
+  -- any other keeps lean-smt's name, so that its dumps differ.
+  -- A newtype over a newtype is the underlying type of that one.
+  let rec base (fuel : Nat) (t : Expr) : Expr := match fuel, t.constName?.bind st.newtypeOfDecl? with
+    | k + 1, some m => base k m.under
+    | _, _ => t
+  for (_, n) in st.newtypes do
+    let u := base st.newtypes.size n.under
+    let under? := if u.isConstOf ``Int || u.isConstOf ``Nat then some "Int"
+      else if u.isConstOf ``Bool then some "Bool"
+      else if u.isConstOf ``String then some "String" else none
+    if let some u := under? then out := out.insert (toString n.decl) u
+    out := out.insert (toString n.ctor) Core.erasedSymbol
+    out := out.insert (toString (n.ctor ++ Name.mkSimple "0")) Core.erasedSymbol
+  return out
+
+/-- Why a dump's script is missing where lean-smt showed no query and
+threw nothing (`queryShown`). -/
+def noQueryShown : String := "lean-smt showed no query"
+
+/-- What `act` logs is dropped, and the script of the query that lean-smt
+shows in it with `showQuery`, after its `query:`, is given, or the
+error that it threw, as an `(error ...)` command. With `showQuery`,
+lean-smt returns once it has shown the query, before it gives it to the
+solver (`Smt.smt`), so nothing is asked. The messages logged before it are
+kept even if `act` throws what `catch` does not catch, such as reaching a
+heartbeat limit. -/
+def queryShown (act : MetaM α) : MetaM (Option α × String) := do
+  let saved := (← getThe Core.State).messages
+  modifyThe Core.State fun s => { s with messages := {} }
+  let (a?, failed?, logged) ← tryFinally
+    (do
+      let (a?, failed?) ← try pure (some (← act), none) catch ex => do
+        pure (none, some (Core.errorScript (← ex.toMessageData.toString)))
+      return (a?, failed?, (← getThe Core.State).messages))
+    (modifyThe Core.State fun s => { s with messages := saved })
+  -- The query that lean-smt showed, even if it threw after showing it.
+  for m in logged.toList do
+    let text ← m.data.toString
+    if let some rest := (text.splitOn "query:\n")[1]? then return (a?, rest)
+  -- Neither a query nor an error, as where preprocessing closes the goal
+  -- before lean-smt shows the query: the dump shows that too.
+  return (a?, failed?.getD (Core.errorScript noQueryShown))
 
 /-- Values for `Bool` variables come back as `True`/`False`. -/
 def fromModel (ty : Expr) (val : Expr) : Expr :=
@@ -714,7 +780,16 @@ where
       let (c, pre) := recs[i]
       let ty ← instantiateForall (← getConstInfo c).type pre
       let nat := (resultType ty).isConstOf ``Nat
-      let name := if pre.isEmpty then Name.mkSimple c.getPrefix.getString! else Name.mkSimple s!"{c.getPrefix.getString!}<{i}>"
+      -- Named by the function's whole path, as the `fren` command names its
+      -- symbol (`Core.ItemSymbol.item`), so that two functions of one name in
+      -- two modules are apart, and apart from every variable; an instance at
+      -- type arguments by its position among them too.
+      let path? := (← getState).defined.foldl (init := none) fun acc _ d =>
+        acc <|> if d.recursive && d.solver? == some c then some d.path else none
+      let base := match path? with
+        | some p => (Core.ItemSymbol.item p).text
+        | none => c.getPrefix.getString!
+      let name := if pre.isEmpty then Name.mkSimple base else Name.mkSimple s!"{base}<{i}>"
       withLocalDeclD name (if nat then intResult ty else ty) fun f => do
         let rep ← if !nat then pure f else Meta.forallTelescope ty (fun xs _ => mkLambdaFVars xs (mkApp (mkConst ``Fren.natResult) (mkAppN f xs)))
         go (i + 1) (fs.push f) (reps.push rep)
@@ -957,7 +1032,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
     (snapshots? : Option (IO.Ref (Array Smt.Model)) := none)
     (fnOf : Expr → Option Name := fun _ => none) (applied? : Option (IO.Ref (Array Name)) := none)
-    (rounds : Nat := 1) :
+    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -1005,6 +1080,15 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let goal := intro.goal
       -- The premises after the hypotheses, as the binary asserts them.
       let premises := intro.premises
+      -- With `script?`, the query's script, as lean-smt writes it, kept
+      -- there, and nothing asked (`Fren.Core.obligationsOf`).
+      if let some r := script? then
+        let mv ← mkFreshExprMVar goal
+        let (_, text) ← queryShown do
+          Smt.smt { trust := true, showQuery := true, embeddings := true, intros := false } mv.mvarId!
+            (premises.reverse ++ hs.reverse ++ recFvs)
+        r.set text
+        return (.unknown "not asked", false)
       -- Each attempt on a goal of its own.
       let solve (model : Bool) : MetaM (Core.Outcome Expr) := do
         let mv ← mkFreshExprMVar goal
@@ -1120,7 +1204,10 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- expanded.
     let goal := instances goal
     let hyps := hyps.map fun (n, t) => (n, instances t)
-    if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then return (← askElems requery hyps goal wantModel, fns, factRecs)
+    -- A script is of the query with its quantifiers over elements, as the
+    -- `fren` command's is (`FrenCli.queryText`).
+    if script?.isNone && (Elems.hasMark goal || hyps.any (Elems.hasMark ·.2)) then
+      return (← askElems requery hyps goal wantModel, fns, factRecs)
     else return (← askSmt requery hyps goal wantModel, fns, factRecs)
   Core.Backend.ownHeartbeats <|
   { query := fun hyps goal wantModel => do
@@ -1308,9 +1395,11 @@ where
       -- A generic function's type parameter is a sort named by its whole
       -- path, as the `fren` command names it (`Core.typeParamPath`): a
       -- parametric datatype's own parameter may have its name.
-      let name := if (Core.typeParamName? uses[i]).isSome
-        then Name.mkSimple ("::" ++ Core.showPath (uses[i].replacePrefix `Fren.Abstract .anonymous))
-        else Name.mkSimple uses[i].getString!
+      -- And an abstract type or function by its whole path too, as the `fren`
+      -- command names it (`Core.ItemSymbol.item`), so that two of one name in
+      -- two modules are apart, and apart from every variable.
+      let name := if isInhabitedName uses[i] then Name.mkSimple uses[i].getString!
+        else Name.mkSimple ("::" ++ Core.showPath (uses[i].replacePrefix `Fren.Abstract .anonymous))
       Meta.withLocalDecl name bi (if nat then intResult ty else ty) fun x => do
         let fns := if ty.isForall then fns.push (uses[i], x, ty.getForallArity, nat) else fns
         -- An abstract type, or a type parameter's sort, whose `Inhabited`
@@ -1488,7 +1577,7 @@ the messages about the checks that the method their evidence sets does not
 run (`F0654`). -/
 partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.all) (enumerate? : Option EnumHook := none)
     (hooks? : Option ElabHooks := none) (own : Array (Array Core.Ty) := #[])
-    (foreign : Array (Name × Array Core.Ty) := #[]) :
+    (foreign : Array (Name × Array Core.Ty) := #[]) (obligations? : Option (IO.Ref (Array (Array Core.Obligation))) := none) :
     MetaM (Array CheckResult × Array Declaration × Option (Except Core.Msg Core.Enumeration.Enumerated) × Array Core.Msg) := do
   let kinds := Core.kindsRun c.subset?.isSome c.subsetInvariant?.isSome kinds
   let c := { c with uses := ← checkUses c }
@@ -1680,6 +1769,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
     let global := st0.globals.toList.any fun (p, g) => g.decl == c.decl && p != g.path
     let subject := Core.subjectOf c.path global (c.props[0]?.map (·.name))
     let skipped := full.skippedMsgs subject c.tested c.enumerated kinds
+    let kinds0 := kinds
     let (comp, kinds) := full.untested (c.tested.union c.enumerated) kinds
     let cache : QueryCache ← IO.mkRef {}
     let memberModels ← IO.mkRef (#[] : Array Smt.Model)
@@ -1747,14 +1837,51 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         else some ((st.abstracts.foldl (init := none) fun acc _ a =>
           acc <|> if a.placeholder == u then some a.path else none).getD .anonymous)
     let applied ← IO.mkRef (#[] : Array Name)
-    let bk (k : CheckKind) :=
+    let mkBk (k : CheckKind) (cache : QueryCache) (script? : Option (IO.Ref String) := none) :=
       let heads := factFns.map (fun (_, x, n, _) => (x, n)) ++ typedApps.map (fun (x, n, _, _) => (x, n))
         ++ generics.map fun (a, m) => (mkConst a.placeholder, m + a.declared.size)
-      let b := leanBackend c fvs primes cache facts outFacts (fun e => (natApps heads e).map pruneLams)
+      leanBackend c fvs primes cache facts outFacts (fun e => (natApps heads e).map pruneLams)
         (closedFacts factsOf)
         (modelOptional := k == .cover) bounded instances (finiteModel := generic || c.finiteModel)
-        (snapshots? := if full.memberGroups.isEmpty then none else some memberModels) fnOf (some applied)
-        (heads.size + 1)
+        (snapshots? := if full.memberGroups.isEmpty then none else some memberModels) fnOf
+        (if script?.isSome then none else some applied) (heads.size + 1) script?
+    -- What each of its checks asks, for `set_option fren.dump
+    -- "obligations"`, with its query's script as lean-smt would be given
+    -- it, from a cache of its own, so that no answer is taken for it
+    -- (`Core.obligationsOf`).
+    if let some r := obligations? then
+      -- A script that cannot be built is an `(error ...)` command, which the
+      -- dump shows, so that the dump asks the solver nothing and changes no
+      -- verdict; but its work counts towards the item's heartbeats, and a
+      -- limit of Lean's that building it reaches, heartbeats or recursion
+      -- depth, is the item's failure to check (`Reqs/Cli#obligations`).
+      let script (k : CheckKind) (hyps : Array (Name × Expr)) (goal : Expr) : MetaM String := do
+        let text ← IO.mkRef ""
+        let fresh : QueryCache ← IO.mkRef {}
+        try discard <| (mkBk k fresh (some text)).query hyps goal false
+        catch ex => text.set (Core.errorScript (← ex.toMessageData.toString))
+        text.get
+      let fileMap ← getFileMap
+      let spanOf (n? : Option Name) : Option String :=
+        let ref := (n?.bind fun n => (c.props.find? (·.name == n)).map (·.ref)
+          <|> (c.insts.find? (·.name == n)).map (·.ref)).getD c.ref
+        (ref.getPos?).map fun p => let q := fileMap.toPosition p; s!"{q.line}:{q.column + 1}"
+      -- The locals that stand for its abstract types and functions, and its
+      -- recursive functions, are named canonically already (`withNatUses`,
+      -- `withRecursiveDefs`).
+      let symbols := dumpSymbols st
+      try
+        let os ← withoutModifyingState <| Core.obligationsOf (mkBk · cache) script full kinds0 c.tested c.enumerated interprets
+          spanOf symbols
+        r.modify (·.push os)
+      -- An item whose questions cannot be built is one `(error ...)`
+      -- obligation, as a script that cannot be built is.
+      catch ex =>
+        let comp := Core.itemName full
+        r.modify (·.push #[{ comp, kind := (kinds0[0]?).getD .realizable, part := "questions"
+                             script := Core.errorScript (← ex.toMessageData.toString) }])
+    let bk (k : CheckKind) :=
+      let b := mkBk k cache
       if k != .cover then b else
       { b with query := fun hyps goal wantModel => do
           let o ← b.query hyps goal wantModel

@@ -1,0 +1,20 @@
+--@ args: check --dump=obligations
+-- `--dump=obligations` of a recursive function with a contract: the
+-- questions of its body's checks, with the facts that its applications
+-- bring, its recursive applications' among them, as both front ends ask
+-- them (`Reqs/Cli#obligations`), and the questions of a procedure that
+-- applies it.
+pub enum T { Leaf, Node(T) }
+
+pub fn depth(t: T): (d: Int) {
+    out d := match t {
+        T::Leaf => 0,
+        T::Node(u) => 1 + depth(u),
+    }
+    ensure nonneg: d >= 0
+}
+
+proc p(t: T): (y: Int) {
+    ensure r: y = depth(t) + 1
+    expect pos: y > 0
+}

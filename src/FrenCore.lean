@@ -14,6 +14,7 @@ import FrenCore.Lint
 import FrenCore.Literate
 import FrenCore.Mentions
 import FrenCore.Names
+import FrenCore.Obligations
 import FrenCore.Patterns
 import FrenCore.Prelude
 import FrenCore.Procedures

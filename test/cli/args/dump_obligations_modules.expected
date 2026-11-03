@@ -1,0 +1,237 @@
+; obligations
+(obligation
+  ; at 15:12
+  (item a::depth)
+  (check postcondition depth.nonneg)
+  (evidence solver)
+  (signature
+    (declare-const t a::T)
+    (declare-datatypes ((a::T 0)) (((a::T::Leaf) (a::T::Node (a::T::Node::0 a::T)))))
+    (declare-fun ::a::depth (a::T) Int)
+  )
+  (context
+    (=> (and (not (= t a::T::Leaf)) (not (= (a::T::Node::0 t) a::T::Leaf))) (>= (::a::depth (a::T::Node::0 (a::T::Node::0 t))) 0))
+    (=> (not (= t a::T::Leaf)) (= (::a::depth (a::T::Node::0 t)) (ite (= (a::T::Node::0 t) a::T::Leaf) 0 (+ 1 (::a::depth (a::T::Node::0 (a::T::Node::0 t)))))))
+    (=> (not (= t a::T::Leaf)) (>= (::a::depth (a::T::Node::0 t)) 0))
+  )
+  (goal (>= (ite (= t a::T::Leaf) 0 (+ 1 (::a::depth (a::T::Node::0 t)))) 0))
+)
+
+(obligation
+  ; at 31:12
+  (item b::depth)
+  (check postcondition depth.pos)
+  (evidence solver)
+  (signature
+    (declare-const t b::T)
+    (declare-datatypes ((b::T 0)) (((b::T::Leaf) (b::T::Node (b::T::Node::0 b::T)))))
+    (declare-fun ::b::depth (b::T) Int)
+  )
+  (context
+    (=> (and (not (= t b::T::Leaf)) (not (= (b::T::Node::0 t) b::T::Leaf))) (>= (::b::depth (b::T::Node::0 (b::T::Node::0 t))) 1))
+    (=> (not (= t b::T::Leaf)) (= (::b::depth (b::T::Node::0 t)) (ite (= (b::T::Node::0 t) b::T::Leaf) 1 (+ 1 (::b::depth (b::T::Node::0 (b::T::Node::0 t)))))))
+    (=> (not (= t b::T::Leaf)) (>= (::b::depth (b::T::Node::0 t)) 1))
+  )
+  (goal (>= (ite (= t b::T::Leaf) 1 (+ 1 (::b::depth (b::T::Node::0 t)))) 1))
+)
+
+(obligation
+  ; at 43:6
+  (item c::p)
+  (check realizability (assumptions))
+  (evidence solver)
+  (signature
+    (declare-const depth Int)
+    (declare-const j ::a::K)
+    (declare-const k ::b::K)
+    (declare-fun ::a::key (::a::K) Int)
+    (declare-fun ::b::key (::b::K) Int)
+    (declare-sort ::a::K 0)
+    (declare-sort ::b::K 0)
+  )
+  (context
+    (= depth (+ (::a::key j) (::b::key k)))
+  )
+  (goal false)
+)
+(obligation
+  ; at 43:6
+  (item c::p)
+  (check realizability (outputs))
+  (evidence solver)
+  (signature
+    (declare-const depth Int)
+    (declare-const j ::a::K)
+    (declare-const k ::b::K)
+    (declare-const s a::T)
+    (declare-const t b::T)
+    (declare-datatypes ((a::T 0)) (((a::T::Leaf) (a::T::Node (a::T::Node::0 a::T)))))
+    (declare-datatypes ((b::T 0)) (((b::T::Leaf) (b::T::Node (b::T::Node::0 b::T)))))
+    (declare-fun ::a::depth (a::T) Int)
+    (declare-fun ::a::key (::a::K) Int)
+    (declare-fun ::b::depth (b::T) Int)
+    (declare-fun ::b::key (::b::K) Int)
+    (declare-sort ::a::K 0)
+    (declare-sort ::b::K 0)
+  )
+  (context
+    (= (::a::depth s) (ite (= s a::T::Leaf) 0 (+ 1 (::a::depth (a::T::Node::0 s)))))
+    (= (::b::depth t) (ite (= t b::T::Leaf) 1 (+ 1 (::b::depth (b::T::Node::0 t)))))
+    (= depth (+ (::a::key j) (::b::key k)))
+    (=> (not (= s a::T::Leaf)) (>= (::a::depth (a::T::Node::0 s)) 0))
+    (=> (not (= t b::T::Leaf)) (>= (::b::depth (b::T::Node::0 t)) 1))
+    (>= (::a::depth s) 0)
+    (>= (::b::depth t) 1)
+  )
+  (goal (exists ((y Int)) (= y (+ (::a::depth s) (::b::depth t) depth))))
+)
+(obligation
+  ; at 46:12
+  (item c::p)
+  (check expectation pos)
+  (evidence solver)
+  (signature
+    (declare-const depth Int)
+    (declare-const j ::a::K)
+    (declare-const k ::b::K)
+    (declare-const s a::T)
+    (declare-const t b::T)
+    (declare-const y Int)
+    (declare-datatypes ((a::T 0)) (((a::T::Leaf) (a::T::Node (a::T::Node::0 a::T)))))
+    (declare-datatypes ((b::T 0)) (((b::T::Leaf) (b::T::Node (b::T::Node::0 b::T)))))
+    (declare-fun ::a::depth (a::T) Int)
+    (declare-fun ::a::key (::a::K) Int)
+    (declare-fun ::b::depth (b::T) Int)
+    (declare-fun ::b::key (::b::K) Int)
+    (declare-sort ::a::K 0)
+    (declare-sort ::b::K 0)
+  )
+  (context
+    (= (::a::depth s) (ite (= s a::T::Leaf) 0 (+ 1 (::a::depth (a::T::Node::0 s)))))
+    (= (::b::depth t) (ite (= t b::T::Leaf) 1 (+ 1 (::b::depth (b::T::Node::0 t)))))
+    (= depth (+ (::a::key j) (::b::key k)))
+    (= y (+ (::a::depth s) (::b::depth t) depth))
+    (=> (not (= s a::T::Leaf)) (>= (::a::depth (a::T::Node::0 s)) 0))
+    (=> (not (= t b::T::Leaf)) (>= (::b::depth (b::T::Node::0 t)) 1))
+    (>= (::a::depth s) 0)
+    (>= (::b::depth t) 1)
+  )
+  (goal (> y depth))
+)
+(obligation
+  ; at 43:6
+  (item c::p)
+  (check redundancy (assumptions))
+  (evidence solver)
+  (signature
+    (declare-const depth Int)
+    (declare-const j ::a::K)
+    (declare-const k ::b::K)
+    (declare-fun ::a::key (::a::K) Int)
+    (declare-fun ::b::key (::b::K) Int)
+    (declare-sort ::a::K 0)
+    (declare-sort ::b::K 0)
+  )
+  (context
+    (= depth (+ (::a::key j) (::b::key k)))
+  )
+  (goal false)
+)
+(obligation
+  ; at 44:12
+  (item c::p)
+  (check redundancy known)
+  (evidence solver)
+  (signature
+    (declare-const depth Int)
+    (declare-const j ::a::K)
+    (declare-const k ::b::K)
+    (declare-fun ::a::key (::a::K) Int)
+    (declare-fun ::b::key (::b::K) Int)
+    (declare-sort ::a::K 0)
+    (declare-sort ::b::K 0)
+  )
+  (context)
+  (goal (= depth (+ (::a::key j) (::b::key k))))
+)
+(obligation
+  ; at 43:6
+  (item c::p)
+  (check redundancy (constraints))
+  (evidence solver)
+  (signature
+    (declare-const depth Int)
+    (declare-const j ::a::K)
+    (declare-const k ::b::K)
+    (declare-const s a::T)
+    (declare-const t b::T)
+    (declare-const y Int)
+    (declare-datatypes ((a::T 0)) (((a::T::Leaf) (a::T::Node (a::T::Node::0 a::T)))))
+    (declare-datatypes ((b::T 0)) (((b::T::Leaf) (b::T::Node (b::T::Node::0 b::T)))))
+    (declare-fun ::a::depth (a::T) Int)
+    (declare-fun ::a::key (::a::K) Int)
+    (declare-fun ::b::depth (b::T) Int)
+    (declare-fun ::b::key (::b::K) Int)
+    (declare-sort ::a::K 0)
+    (declare-sort ::b::K 0)
+  )
+  (context
+    (= (::a::depth s) (ite (= s a::T::Leaf) 0 (+ 1 (::a::depth (a::T::Node::0 s)))))
+    (= (::b::depth t) (ite (= t b::T::Leaf) 1 (+ 1 (::b::depth (b::T::Node::0 t)))))
+    (= depth (+ (::a::key j) (::b::key k)))
+    (= y (+ (::a::depth s) (::b::depth t) depth))
+    (=> (not (= s a::T::Leaf)) (>= (::a::depth (a::T::Node::0 s)) 0))
+    (=> (not (= t b::T::Leaf)) (>= (::b::depth (b::T::Node::0 t)) 1))
+    (>= (::a::depth s) 0)
+    (>= (::b::depth t) 1)
+  )
+  (goal false)
+)
+(obligation
+  ; at 45:12
+  (item c::p)
+  (check redundancy r)
+  (evidence solver)
+  (signature
+    (declare-const depth Int)
+    (declare-const j ::a::K)
+    (declare-const k ::b::K)
+    (declare-const s a::T)
+    (declare-const t b::T)
+    (declare-const y Int)
+    (declare-datatypes ((a::T 0)) (((a::T::Leaf) (a::T::Node (a::T::Node::0 a::T)))))
+    (declare-datatypes ((b::T 0)) (((b::T::Leaf) (b::T::Node (b::T::Node::0 b::T)))))
+    (declare-fun ::a::depth (a::T) Int)
+    (declare-fun ::a::key (::a::K) Int)
+    (declare-fun ::b::depth (b::T) Int)
+    (declare-fun ::b::key (::b::K) Int)
+    (declare-sort ::a::K 0)
+    (declare-sort ::b::K 0)
+  )
+  (context
+    (= (::a::depth s) (ite (= s a::T::Leaf) 0 (+ 1 (::a::depth (a::T::Node::0 s)))))
+    (= (::b::depth t) (ite (= t b::T::Leaf) 1 (+ 1 (::b::depth (b::T::Node::0 t)))))
+    (= depth (+ (::a::key j) (::b::key k)))
+    (=> (not (= s a::T::Leaf)) (>= (::a::depth (a::T::Node::0 s)) 0))
+    (=> (not (= t b::T::Leaf)) (>= (::b::depth (b::T::Node::0 t)) 1))
+    (>= (::a::depth s) 0)
+    (>= (::b::depth t) 1)
+  )
+  (goal (= y (+ (::a::depth s) (::b::depth t) depth)))
+)
+
+; end of obligations
+warning[F0450]: could not decide whether `c::p::r` is redundant
+  --> test/cli/args/dump_obligations_modules.fren:45:12
+   |
+45 |     ensure r: y = a::depth(s) + b::depth(t) + depth
+   |            ^ contracts may be too weak
+   |
+   = note: this check fails under the contracts of `a::depth`, `b::depth`
+   = note: evaluation of the recursive definitions does not confirm the counterexample: it refutes it, or cannot evaluate it
+   = help: strengthen those functions' contracts
+
+fren: 5 passed, 0 failed, 1 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0450`.
+exit=3

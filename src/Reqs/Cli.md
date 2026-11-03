@@ -1,7 +1,7 @@
 # The `fren` command
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump-smt] [--timings] [--tests N]
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=obligations|smt] [--timings] [--tests N]
     [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
@@ -40,7 +40,8 @@ installation. It is built by `lake build fren`.
 | `--resource-limit N` | `check` and `mutate`: limit on the solver's work for each query, in cvc5's resource units (default 0, which means none); see [Limits](#limits) |
 | `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable procedure, a whole number or `all` (default 1) |
 | `--jobs N` | `check` and `quickcheck`: how many procedures to check or test at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
-| `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
+| `--dump=obligations` | `check`: write what each check asks to standard output; see [Obligations](#obligations) |
+| `--dump=smt`, `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--timings` | `check`: report how long each procedure's checks took; see [Timings](#timings) |
 | `--evidence METHOD` | `check`: check every check that `set_option fren.evidence` could set by `METHOD`, in place of the spec's own settings; see [Evidence](#evidence) |
 | `--query-cache DIR` | `check`: keep the solver's answers in `DIR`, and answer the queries asked before from it; see [Query cache](#query-cache) |
@@ -124,7 +125,8 @@ Diagnostics, the summary of the checks, and the [timings](#timings) of
 `fren check --timings` go to standard error. Standard
 output holds only what was asked for: the evidence report of `fren trace`,
 the evaluated behaviour of `fren eval`, the kill rates and the list of
-mutants of `fren mutate`, the diffs of `fren fmt --check` and `fren fix --check`, the [solver queries](#solver-queries) of `fren check --dump-smt`, and the
+mutants of `fren mutate`, the diffs of `fren fmt --check` and `fren fix --check`, the [solver queries](#solver-queries) of `fren check --dump-smt` and the
+[obligations](#obligations) of `fren check --dump=obligations`, and the
 text of `--explain`, `--help` and `--version`.
 
 Each [diagnostic](View.md) is printed with a header
@@ -162,7 +164,7 @@ use view::Severity::{Error, Info, Silent, Warning}
 
 ## Solver queries
 
-With `--dump-smt`, `fren check` writes each query it gives the solver to
+With `--dump-smt`, or `--dump=smt`, `fren check` writes each query it gives the solver to
 standard output, as an [SMT-LIB](https://smt-lib.org/) script, before the
 query runs. Each script starts with a comment naming its procedure and
 numbering the query within it, names each hypothesis in a comment after
@@ -603,6 +605,174 @@ pub proc goal_constant_name(
 ) {
     ensure keeps: kept? iff not base_taken?
     ensure least: chosen? iff (base_taken? and not (k in taken) and (forall (j: Int), when 0 <= j < k, j in taken))
+}
+```
+
+## Obligations
+
+With `--dump=obligations`, `fren check` writes what each of its checks
+asks to standard output, before the results: for each check, its
+obligation, the context that its query may use, after instantiation and
+desugaring, its goal, and its evidence. It is the level of an intermediate
+verification language, such as Boogie's, Viper's or Why3's tasks, after
+the instantiation of generic functions and types and the desugaring of
+the spec into formulas, as the solver is given them. The Lean-hosted
+front end prints a dump of the same form with `set_option fren.dump
+"obligations"`, as a message at the `#fren_check`: each `#fren_check` logs a dump of only
+the items that it reports, not of the procedures that it checks only for
+the evidence that its items rest on. An unknown value is an error for
+`fren check`, `--dump=obligation` being an unknown option, which stops it
+before it checks anything; the Lean-hosted front end warns of an unknown
+`fren.dump` at the `#fren_check`, and checks without a dump. The dump is
+for debugging and for comparing the front ends: nothing reads it back, and its format may
+change with any version.
+
+```text
+; obligations
+(obligation
+  ; at 6:12
+  (item c)
+  (check expectation e)
+  (evidence solver)
+  (signature
+    (declare-const m Int)
+    (declare-const n Int)
+  )
+  (context
+    (= m (+ (* 2 n) 1))
+    (> n 0)
+  )
+  (goal (> m 1))
+)
+
+; end of obligations
+```
+
+An obligation names its item, its check, as its kind, the constraint,
+call or variable that it is about, and which of the check's questions it
+is, such as `(assumptions)` for whether an item's assumptions can hold
+together, and its evidence, as `set_option fren.evidence` writes it. Its
+signature is its query's declarations of sorts, datatypes, constants and
+functions, and its recursive definitions, its context is the sentences that the query assumes, and its goal is
+what the query asks to follow from them; a question whether its context
+can hold at all has the goal `false`. A comment gives where its
+constraint, or its item, is written, as `line:column`: metadata, which
+comparisons ignore.
+
+Every check of the items that the run checks is there, whatever its
+evidence, and every question that it asks first, such as the redundancy of
+each constraint, though a run asks some only after an answer
+(`Fren.Core.questionsOf`). A check set to random testing or enumeration
+shows the question that the solver would be asked, with that evidence,
+though the solver is not asked it. A question that the solver is asked is
+shown as it is asked, with the checks set to testing or enumeration taken
+out: without the assumptions of a call set to them, in the question of the
+item's vacuity under its trait's laws. The dump leaves out:
+
+- the realizability checks of a generic contract at the instances that a
+  spec applies, which a run asks only where the check at its type
+  parameters' sorts does not pass;
+- the queries that a check asks after an answer, to explain or confirm it:
+  minimal cores, the pins and clash notes of forced outputs, branch
+  explanations, the confirmation of models, and a query asked again
+  where confirmation contradicts its model (`Reqs/Models`);
+- the expansion of quantifiers over a collection's elements, which a run
+  asks of the query that the dump shows
+  (`Reqs/Lang/ElementQuantifiers#expansion`).
+
+Both front ends take each question from `Fren.Core.questionsOf`, give the
+script of its query as they would give it to the solver, without asking
+it, and print them with `Fren.Core.dump`, which makes every decision about
+their canonical form:
+
+- the logic, the options and the solver's commands of a script are left
+  out; its non-recursive definitions are unfolded where they are used,
+  since one front end gives the solver a function's definition and the
+  other its body, and so are its sorts' definitions (`define-sort`); and a
+  constant or function (`declare-const`, `declare-fun`) that nothing else
+  mentions is left out, though its sorts and datatypes stay;
+- its symbols for the spec's types, constructors, selectors and functions
+  are their names in `fren check`'s queries, without `|`s
+  (`Fren.Core.ItemSymbol`). The Lean-hosted front end maps lean-smt's
+  names to them for the spec's enumerations, records, their constructors
+  and selectors; it names the locals that stand for recursive functions
+  and for abstract types and functions by their whole paths, as `fren
+  check` names their symbols, so that two of one name in two modules stay
+  apart, and apart from every variable, though a generic recursive
+  function's instance gets its position among the query's, as `f<0>`; it
+  erases a newtype's constructor and field,
+  as `fren check` erases newtypes, and names the newtype by its
+  underlying sort where that is `Int`, `Nat`, `Bool` or `String`
+  (`Fren.dumpSymbols`). Lean's `«»` and `✝` go from a name, but where two
+  names would then be one;
+- what either front end could write in two ways is written one way
+  (`Fren.Core.Sx.normalize`), such as a conjunction of conjunctions, a
+  `let`, whose definitions are substituted, or `<=`; a conjunction in the
+  context is as many sentences. A definition is unfolded and a `let`
+  substituted without capture: a bound name that would capture a free
+  name of what is substituted is renamed apart, as `x#s0`. The names
+  bound are those of SMT-LIB's binding constructs, which one function
+  lists (`Fren.Core.Sx.binder?`): `forall`, `exists` and `lambda`'s
+  variables, a `let`'s names in its body, and a `match` case's pattern
+  variables in its body; in declarations, a recursive definition's
+  parameters and a parametric datatype's `par` sort parameters;
+- the declarations and the sentences are each printed once, in order of
+  their text (`cli::canonical_sentences`), so that neither their order
+  nor a repeated one changes the dump;
+- the obligations are in order of their items' paths, then in the order of
+  their questions within each item; two items with one path, as a
+  function's body and its contract, are in order of their questions, then
+  of their text without its metadata, so that where they are written does
+  not order them.
+
+So for the same spec, two front ends that build the same queries print the
+same dump, and a difference between their dumps, but for the metadata, is
+a difference between their queries, found where it starts, before it
+changes a verdict or a message, or between the names or simplifications
+that the dump does not make canonical, such as the names that lean-smt's
+embeddings give `Nat` and `Bool` variables (#493). `fren_fuzz_frontends
+--obligations` compares them on every spec that a run generates, but not on the corpus
+that `lake test` checks, and reports, without failing, those whose dumps
+differ, and of those, the ones that differ other than in the names of
+their constants. The Lean-hosted front end keeps elaborating Fren
+into Lean terms and proving with them: its dump is printed from the
+query that lean-smt is given, in which a Lean term that is not Fren's is a
+symbol of its own.
+
+The dump is printed from scripts that are never asked: it asks the solver
+nothing, and changes no result of `fren check`. A script that a front end cannot build is
+an `(error ...)` command among its obligation's declarations, as is a
+query that lean-smt does not show, as where its preprocessing closes the
+goal first (`(error "lean-smt showed no query")`), and an item
+whose questions the Lean-hosted front end cannot build is one obligation
+whose script is such a command. But in the Lean-hosted front end, the
+dump's work counts towards the item's heartbeats, and a limit of Lean's that
+building it reaches, heartbeats or recursion depth, is the item's failure
+to check, as any other is.
+
+`cli::canonical_sentences` states the order: a context's sentences, each
+by the place of its text in the order of texts, as a front end gives them
+and as the dump prints them, are printed in ascending order, each once,
+and are exactly those that the front end gives. Its `impl` is proved of
+`Fren.Core.sortedOnce`, which prints them, over every sequence of places,
+but of its instance on `Int` with `Int`'s order, not of the instance that
+the dump runs, on `String` with `Fren.Core.textLe`. That the two agree is
+assumed: that `textLe`, `String`'s order, is total and transitive, and
+that two texts are in the same place under it only if they are equal:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc canonical_sentences(
+    given: Seq<Int>,             -- a context's sentences, as a front end gives them
+    printed: Seq<Int>,           -- the sentences that the dump prints, in order
+): (
+    det ascending?,              -- each is before the next in order, so each is printed once
+    det kept?,                   -- each sentence given is printed
+    det only?,                   -- each sentence printed is given
+) {
+    ensure ascending: ascending? iff (forall (i: Int), when 0 <= i and i + 1 < printed.len, printed[i] < printed[i + 1])
+    ensure kept: kept? iff (forall (i: Int), when 0 <= i < given.len, given[i] in printed)
+    ensure only: only? iff (forall (i: Int), when 0 <= i < printed.len, printed[i] in given)
 }
 ```
 

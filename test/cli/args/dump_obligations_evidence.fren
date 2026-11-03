@@ -1,0 +1,21 @@
+--@ args: check --dump=obligations
+-- `--dump=obligations` of checks set to random testing and enumeration:
+-- each is there, with its evidence, and records and enumerations by their
+-- names in `fren check`'s queries (`Reqs/Cli#obligations`).
+pub struct P { a: Int, b? }
+
+pub enum E { A(Int), B }
+
+pub fn get(e: E): Int := match e {
+    E::A(k) => k,
+    E::B => 0,
+}
+
+proc c(p: P, e: E): (y: Int) {
+    assume pos: p.a > 0
+    ensure r: y = p.a + get(e)
+    set_option fren.evidence "random" in
+    expect big: p.b? or y > -100
+    set_option fren.evidence "enumerated" in
+    expect small: y < 1000 or p.a > 900
+}

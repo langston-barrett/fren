@@ -1,0 +1,14 @@
+-- `set_option fren.dump`: with `"obligations"`, `#fren_check` logs what
+-- each check asks, as `fren check --dump=obligations` prints it, and with a
+-- value that is no dump, it warns and checks without a dump, where `fren
+-- check` rejects an unknown `--dump=` as an unknown option
+-- (`test/cli/args/dump_unknown.fren`, `Reqs/Cli#obligations`).
+--@ only: hosted
+set_option fren.dump "obligation"
+
+proc c(n: Int): (m: Int) {
+    assume a: n > 0
+    ensure r: m = n + 1
+}
+--~$ warning: `fren.dump` is `"obligation"`, which is not a dump that `#fren_check` prints: only `"obligations"` is; checking without a dump
+--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant

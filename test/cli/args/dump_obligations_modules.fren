@@ -1,0 +1,47 @@
+--@ args: check --dump=obligations
+-- `--dump=obligations` of two recursive functions and two abstract types
+-- and functions of one name in two modules, and a variable of that name:
+-- each is named by its whole path, in both front ends' dumps, so that
+-- none is taken for another (`Reqs/Cli#obligations`).
+mod a
+
+pub enum T { Leaf, Node(T) }
+
+pub fn depth(t: T): (d: Int) {
+    out d := match t {
+        T::Leaf => 0,
+        T::Node(u) => 1 + depth(u),
+    }
+    ensure nonneg: d >= 0
+}
+
+pub type K
+
+pub fn key(K): Int
+
+mod b
+
+pub enum T { Leaf, Node(T) }
+
+pub fn depth(t: T): (d: Int) {
+    out d := match t {
+        T::Leaf => 1,
+        T::Node(u) => 1 + depth(u),
+    }
+    ensure pos: d >= 1
+}
+
+pub type K
+
+pub fn key(K): Int
+
+mod c
+
+use a
+use b
+
+proc p(s: a::T, t: b::T, j: a::K, k: b::K, depth: Int): (y: Int) {
+    assume known: depth = a::key(j) + b::key(k)
+    ensure r: y = a::depth(s) + b::depth(t) + depth
+    expect pos: y > depth
+}

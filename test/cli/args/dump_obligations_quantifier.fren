@@ -1,0 +1,9 @@
+--@ args: check --dump=obligations
+-- `--dump=obligations` of a quantifier: the solver's `forall`, its bound
+-- name `i#0`, in the goal of realizability and in the context of the cover
+-- goal (`Reqs/Cli#obligations`).
+set_option fren.lint.undecidable "allow" in
+proc c(n: Int): (k: Int) {
+    ensure r: (forall (i: Int), when 0 <= i < n, i != 3) iff k > 0
+    cover big: k > 0 and n > 4
+}

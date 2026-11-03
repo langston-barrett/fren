@@ -3,6 +3,7 @@ import FrenCli.Color
 import FrenCli.Exit
 import FrenCli.QueryStore
 import FrenCli.SeqElems
+import FrenCore.Obligations
 import FrenCore.Symbols
 import Impls.QueryCache
 import Impls.View
@@ -377,6 +378,94 @@ impl contradicts: cli::contradicts for (fresh kept : FrenCli.CachedAnswer) (same
 } by
   intro fresh kept same _
   rcases fresh with _ | (_ | _) | _ <;> rcases kept with _ | (_ | _) | _ <;> cases same <;> decide
+
+/-! ## The order of an obligation's sentences (`cli::canonical_sentences`) -/
+
+namespace CanonicalSentences
+
+open Fren.Core (dedupAdjacent sortedOnce)
+
+theorem mem_dedup : ∀ (l : List Int) (x : Int), x ∈ dedupAdjacent l ↔ x ∈ l
+  | [], _ => by simp [dedupAdjacent]
+  | [_], _ => by simp [dedupAdjacent]
+  | a :: b :: rest, x => by
+    have ih := mem_dedup (b :: rest) x
+    by_cases h : a = b
+    · subst h
+      simp only [dedupAdjacent, beq_self_eq_true, ↓reduceIte, ih, List.mem_cons]
+      constructor
+      · intro h; exact Or.inr h
+      · rintro (h | h) <;> simp_all
+    · have : (a == b) = false := by simpa using h
+      simp only [dedupAdjacent, this, Bool.false_eq_true, ↓reduceIte, List.mem_cons, ih]
+
+theorem sorted_dedup : ∀ (l : List Int), l.Pairwise (· ≤ ·) → (dedupAdjacent l).Pairwise (· < ·)
+  | [], _ => by simp [dedupAdjacent]
+  | [_], _ => by simp [dedupAdjacent]
+  | a :: b :: rest, h => by
+    have hb : (b :: rest).Pairwise (· ≤ ·) := List.Pairwise.of_cons h
+    have ih := sorted_dedup (b :: rest) hb
+    by_cases hab : a = b
+    · subst hab
+      simpa [dedupAdjacent] using ih
+    · have hf : (a == b) = false := by simpa using hab
+      simp only [dedupAdjacent, hf, Bool.false_eq_true, ↓reduceIte]
+      refine List.Pairwise.cons (fun x hx => ?_) ih
+      have hx' := (mem_dedup _ x).mp hx
+      have hle : a ≤ b := List.rel_of_pairwise_cons h (by simp)
+      have hax : a ≤ x := List.rel_of_pairwise_cons h hx'
+      rcases List.mem_cons.mp hx' with rfl | hr
+      · omega
+      · have hbx : b ≤ x := List.rel_of_pairwise_cons hb hr
+        omega
+
+/-- The order of `sortedOnce` on `Int`s. -/
+def le (a b : Int) : Bool := decide (a ≤ b)
+
+theorem sortedOnce_toList (l : List Int) : (sortedOnce le l.toArray).toList = dedupAdjacent (l.mergeSort le) := by
+  simp [sortedOnce]
+
+theorem sorted (l : List Int) : (dedupAdjacent (l.mergeSort le)).Pairwise (· < ·) := by
+  apply sorted_dedup
+  have := List.pairwise_mergeSort (le := le) (fun a b c h₁ h₂ => by simp [le] at *; omega)
+    (fun a b => by simp only [le, Bool.or_eq_true, decide_eq_true_eq]; omega) l
+  exact this.imp fun h => by simpa [le] using h
+
+theorem mem (l : List Int) (x : Int) : x ∈ dedupAdjacent (l.mergeSort le) ↔ x ∈ l :=
+  (mem_dedup _ x).trans (List.mergeSort_perm l le).mem_iff
+
+end CanonicalSentences
+
+-- The sentences of an obligation's context, as `Fren.Core.canonical`
+-- orders them, by `Fren.Core.sortedOnce`, here of the places of their texts.
+impl canonical_sentences: cli::canonical_sentences for (given : List Int) {
+  given := Fren.Seq.ofList given,
+  printed := Fren.Seq.ofList (Fren.Core.sortedOnce CanonicalSentences.le given.toArray).toList,
+  «ascending?» := true,
+  «kept?» := true,
+  «only?» := true,
+} by
+  intro given
+  simp only [fren_spec, CanonicalSentences.sortedOnce_toList]
+  intro _
+  have hs := CanonicalSentences.sorted given
+  refine ⟨iff_of_true trivial ?_, iff_of_true trivial ?_, iff_of_true trivial ?_⟩
+  · intro i ⟨h0, h1⟩
+    simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList] at h1
+    rw [Fren.Seq.nth_of_lt _ _ h0 (by simp only [Fren.Seq.toList_ofList]; omega),
+      Fren.Seq.nth_of_lt _ _ (by omega) (by simpa using h1)]
+    simp only [Fren.Seq.toList_ofList]
+    exact List.pairwise_iff_getElem.mp hs _ _ _ _ (by omega)
+  · intro i ⟨h0, h1⟩
+    simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList] at h1
+    rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)]
+    simp only [Fren.Seq.mem_iff, Fren.Seq.toList_ofList, CanonicalSentences.mem]
+    exact List.getElem_mem _
+  · intro i ⟨h0, h1⟩
+    simp only [Fren.Seq.len_eq, Fren.Seq.toList_ofList] at h1
+    rw [Fren.Seq.nth_of_lt _ _ h0 (by simpa using h1)]
+    simp only [Fren.Seq.mem_iff, Fren.Seq.toList_ofList, ← CanonicalSentences.mem given]
+    exact List.getElem_mem _
 
 end Fren.Impls
 
