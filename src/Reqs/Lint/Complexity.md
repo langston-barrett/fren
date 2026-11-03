@@ -516,12 +516,11 @@ pub proc zero_prefixed_literal(
     let zeros: String := lexeme.slice(0, lexeme.len - fixed.len)
 
     ensure rule: fires? iff lexeme.matches?(r"0[0-9][0-9_]*")
-    ensure fix:
-        is_fix?
-            iff (fires?
-                and lexeme.ends_with?(fixed)
-                and zeros.matches?(r"[0_]*")
-                and (fixed = "0" or fixed.matches?(r"[1-9][0-9_]*")))
+    ensure fix: is_fix? iff
+        (fires?
+            and lexeme.ends_with?(fixed)
+            and zeros.matches?(r"[0_]*")
+            and (fixed = "0" or fixed.matches?(r"[1-9][0-9_]*")))
 
     expect based: when lexeme = "0x10", not fires?
     expect zero: when lexeme = "0", not fires?
@@ -615,13 +614,12 @@ pub proc trivial_quantifier(
     call s := scope(body)
 
     ensure rule: fires? iff (one_value inter names) != {}
-    ensure fix:
-        fixed?
-            iff (names != {}
-                and names subset one_value
-                and names subset variant
-                and not global?
-                and (names inter s.declared) = {})
+    ensure fix: fixed? iff
+        (names != {}
+            and names subset one_value
+            and names subset variant
+            and not global?
+            and (names inter s.declared) = {})
 
     -- `forall (u: Solo), (forall (u!: Solo), u in t) and u in t`.
     expect inner_bang: when names = {Local::A} and one_value = names and variant = names

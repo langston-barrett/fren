@@ -60,11 +60,9 @@ accepts the declaration.
 pub mod lang
 
 pub proc identifier(lexeme: String): (det accepted?) {
-    ensure rule:
-        accepted?
-            iff lexeme.matches?(
-                r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?[!]?"
-            )
+    ensure rule: accepted? iff lexeme.matches?(
+        r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?[!]?"
+    )
 
     expect primed: when lexeme = "x'", accepted?
     expect components: when lexeme = "w.x.y?", accepted?
@@ -121,11 +119,10 @@ pub proc identifier_end(
     lexeme: String,
     remaining: String,       -- the input after the lexeme
 ): (det ends?) {
-    ensure maximal_munch:
-        ends?
-            iff (lexeme.ends_with?("!")
-                or (lexeme.ends_with?("?") and not remaining.starts_with?("!"))
-                or not (remaining.matches?(r"[A-Za-z0-9_'?!].*") or remaining.matches?(r"[.][A-Za-z_].*")))
+    ensure maximal_munch: ends? iff
+        (lexeme.ends_with?("!")
+            or (lexeme.ends_with?("?") and not remaining.starts_with?("!"))
+            or not (remaining.matches?(r"[A-Za-z0-9_'?!].*") or remaining.matches?(r"[.][A-Za-z_].*")))
 
     expect space_ends: when remaining.starts_with?(" "), ends?
     expect component: when lexeme = "w" and remaining = ".x", not ends?
@@ -343,12 +340,11 @@ literals:
 
 ```fren
 pub proc integer_literal(lexeme: String): (det accepted?) {
-    ensure rule:
-        accepted?
-            iff ((lexeme.matches?(r"[0-9]([0-9_]*[0-9])?") and not lexeme.starts_with?("0_"))
-                or lexeme.matches?(r"0[xX][0-9a-fA-F_]*[0-9a-fA-F]")
-                or lexeme.matches?(r"0[bB][0-1_]*[0-1]")
-                or lexeme.matches?(r"0[oO][0-7_]*[0-7]"))
+    ensure rule: accepted? iff
+        ((lexeme.matches?(r"[0-9]([0-9_]*[0-9])?") and not lexeme.starts_with?("0_"))
+            or lexeme.matches?(r"0[xX][0-9a-fA-F_]*[0-9a-fA-F]")
+            or lexeme.matches?(r"0[bB][0-1_]*[0-1]")
+            or lexeme.matches?(r"0[oO][0-7_]*[0-7]"))
 
     expect decimal: when lexeme is "120" | "0", accepted?
     expect bases: when lexeme is "0x1F" | "0b101" | "0o17", accepted?
@@ -374,8 +370,8 @@ character after a `\` is an error:
 pub proc escape_sequence(
     remaining: String,       -- the input after a `\` in a literal
 ): (det accepted?, det length: Int) {
-    ensure rule:
-        accepted? iff remaining.matches?(r#"([nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}).*"#)
+    ensure rule: accepted? iff
+        remaining.matches?(r#"([nrt\\"']|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}).*"#)
     ensure single: when accepted? and remaining.matches?(r#"[nrt\\"'].*"#), length = 2
     ensure byte: when accepted? and remaining.starts_with?("x"), length = 4
     ensure unicode: when accepted? and remaining.starts_with?("u"), length = 6
@@ -419,22 +415,21 @@ and the solver decides it:
 pub proc escape_start(
     remaining: String,       -- the input after a `\` in a literal
 ): (accepted?) {
-    ensure escapes:
-        accepted?
-            iff (remaining.starts_with?("n")
-                or remaining.starts_with?("r")
-                or remaining.starts_with?("t")
-                or remaining.starts_with?("\\")
-                or remaining.starts_with?("\"")
-                or remaining.starts_with?("'")
-                or (remaining.starts_with?("x")
-                    and remaining.at(1).matches?(r"[0-9a-fA-F]")
-                    and remaining.at(2).matches?(r"[0-9a-fA-F]"))
-                or (remaining.starts_with?("u")
-                    and remaining.at(1).matches?(r"[0-9a-fA-F]")
-                    and remaining.at(2).matches?(r"[0-9a-fA-F]")
-                    and remaining.at(3).matches?(r"[0-9a-fA-F]")
-                    and remaining.at(4).matches?(r"[0-9a-fA-F]")))
+    ensure escapes: accepted? iff
+        (remaining.starts_with?("n")
+            or remaining.starts_with?("r")
+            or remaining.starts_with?("t")
+            or remaining.starts_with?("\\")
+            or remaining.starts_with?("\"")
+            or remaining.starts_with?("'")
+            or (remaining.starts_with?("x")
+                and remaining.at(1).matches?(r"[0-9a-fA-F]")
+                and remaining.at(2).matches?(r"[0-9a-fA-F]"))
+            or (remaining.starts_with?("u")
+                and remaining.at(1).matches?(r"[0-9a-fA-F]")
+                and remaining.at(2).matches?(r"[0-9a-fA-F]")
+                and remaining.at(3).matches?(r"[0-9a-fA-F]")
+                and remaining.at(4).matches?(r"[0-9a-fA-F]")))
 }
 
 expect escape_sequence_starts(remaining: String) {
@@ -581,42 +576,41 @@ pub proc punctuator(lexeme: String): (det accepted?) {
 
     -- The punctuators listed above, the three of other languages, and
     -- Lean's `<-`.
-    expect listed:
-        accepted?
-            iff lexeme in {
-                "::",
-                "::*",
-                "::{",
-                ":",
-                ":=",
-                ",",
-                "(",
-                ")",
-                "{",
-                "}",
-                "[",
-                "]",
-                ".",
-                "..",
-                "..=",
-                "=>",
-                "|",
-                "->",
-                "=",
-                "!=",
-                "<",
-                "<=",
-                ">",
-                ">=",
-                "+",
-                "++",
-                "-",
-                "*",
-                "==",
-                "&&",
-                "||",
-                "<-",
-            }
+    expect listed: accepted? iff
+        lexeme in {
+            "::",
+            "::*",
+            "::{",
+            ":",
+            ":=",
+            ",",
+            "(",
+            ")",
+            "{",
+            "}",
+            "[",
+            "]",
+            ".",
+            "..",
+            "..=",
+            "=>",
+            "|",
+            "->",
+            "=",
+            "!=",
+            "<",
+            "<=",
+            ">",
+            ">=",
+            "+",
+            "++",
+            "-",
+            "*",
+            "==",
+            "&&",
+            "||",
+            "<-",
+        }
 }
 
 pub proc punctuator_end(

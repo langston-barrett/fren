@@ -55,13 +55,12 @@ pub proc let_and_return(
         DefIndex::P3 => {DefIndex::P0, DefIndex::P1, DefIndex::P2, DefIndex::P3},
     }
 
-    ensure rule:
-        fires?
-            iff (last in names.domain
-                and names.domain subset upto
-                and not last in annotated
-                and (body.paths.image({body.root}) inter names.image({last})) != {}
-                and body.children.image({body.root}) = {})
+    ensure rule: fires? iff
+        (last in names.domain
+            and names.domain subset upto
+            and not last in annotated
+            and (body.paths.image({body.root}) inter names.image({last})) != {}
+            and body.children.image({body.root}) = {})
 
     expect not_last: when names = {(DefIndex::P0, Local::A), (DefIndex::P1, Local::B)}
         and body.paths = {(body.root, Local::A)}, not fires?
@@ -195,13 +194,12 @@ pub proc manual_forall(
     -- Every variant, and no two operands at one.
     let covers? :=
         variant_of.range = {Hue::Red, Hue::Green, Hue::Blue}
-            and (variant_of join variant_of.inverse)
-                subset {
-                    (DefIndex::P0, DefIndex::P0),
-                    (DefIndex::P1, DefIndex::P1),
-                    (DefIndex::P2, DefIndex::P2),
-                    (DefIndex::P3, DefIndex::P3),
-                }
+            and (variant_of join variant_of.inverse) subset {
+                (DefIndex::P0, DefIndex::P0),
+                (DefIndex::P1, DefIndex::P1),
+                (DefIndex::P2, DefIndex::P2),
+                (DefIndex::P3, DefIndex::P3),
+            }
 
     ensure rule: fires? iff (instances? and covers?)
 
@@ -221,12 +219,11 @@ pub proc quantifier_parentheses(
     whole?,                          -- the fix replaces the whole run, not some of its operands
     enclosed?,                       -- the whole run is in parentheses of its own, not an application's
 ): (det parenthesized?) {
-    ensure rule:
-        parenthesized?
-            iff (not enclosed?
-                and (not whole?
-                    or followed?
-                    or place in {RunPlace::Condition, RunPlace::Operand, RunPlace::Receiver}))
+    ensure rule: parenthesized? iff
+        (not enclosed?
+            and (not whole?
+                or followed?
+                or place in {RunPlace::Condition, RunPlace::Operand, RunPlace::Receiver}))
 
     expect arms: when place = RunPlace::Condition and not enclosed?, parenthesized?
     expect bare_body: when place = RunPlace::Body and whole? and not followed?, not parenthesized?

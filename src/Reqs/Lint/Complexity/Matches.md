@@ -560,8 +560,8 @@ pub proc redundant_guards(
         _ => true,
     }
 
-    ensure rule:
-        fires? iff (binds_name?(pattern, name) and value is GuardValue::Written(_) and accepted?)
+    ensure rule: fires? iff
+        (binds_name?(pattern, name) and value is GuardValue::Written(_) and accepted?)
     ensure fix: fixed = (if fires? then pat_with(pattern, name, guard_value(value)) else pattern)
 
     -- The new pattern matches where the pattern and the guard did.
@@ -570,17 +570,16 @@ pub proc redundant_guards(
             iff (pat_matches?(pattern, x) and bound_value(pattern, name, x) = guard_value(value))
     -- There, the body with the value in place of the binder means what it did.
     expect same_body: when fires? and pat_matches?(fixed, x),
-        body_value(body, name, bound_value(pattern, name, x), -1, 0, -1, 0, o)
-            = body_value(
-                body_with(body, name, guard_value(value)),
-                -1,
-                0,
-                -1,
-                0,
-                -1,
-                0,
-                o
-            )
+        body_value(body, name, bound_value(pattern, name, x), -1, 0, -1, 0, o) = body_value(
+            body_with(body, name, guard_value(value)),
+            -1,
+            0,
+            -1,
+            0,
+            -1,
+            0,
+            o
+        )
     expect constant_kept: when value is GuardValue::Other(_), not fires?
 }
 ```

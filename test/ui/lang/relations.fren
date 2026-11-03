@@ -25,9 +25,8 @@ proc grant(
     assume admins_exist: Admin in roles.range
 
     -- A user holds their own roles and those of everyone they act for, directly or not.
-    ensure rule:
-        granted?
-            iff requested subset ((delegates.closure union {(user, user)}) join roles).image({user})
+    ensure rule: granted? iff
+        requested subset ((delegates.closure union {(user, user)}) join roles).image({user})
 
     expect own_roles: when requested = {Viewer} and (user, Viewer) in roles, granted?
     expect delegated: when (user, b) in delegates and (b, c) in delegates and requested = {Admin}

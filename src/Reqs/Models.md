@@ -158,10 +158,9 @@ expect default_examples(t: TypeShape) {
             )
         )
     ),
-        default_value(t)
-            = Outcome::Defined(
-                Value::Constructed("F::L", Value::Cons(Value::Nil, Value::Nil))
-            )
+        default_value(t) = Outcome::Defined(
+            Value::Constructed("F::L", Value::Cons(Value::Nil, Value::Nil))
+        )
     expect skips_itself: when t = TypeShape::Data(
         TypeShape::Variant(
             "G::N",
@@ -177,10 +176,9 @@ expect default_examples(t: TypeShape) {
         default_value(t) = Outcome::Undefined
     -- A newtype's value is its underlying type's, constructed: `Ms(0)`.
     expect newtype: when t = TypeShape::Newtype("Ms", TypeShape::Integer),
-        default_value(t)
-            = Outcome::Defined(
-                Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil))
-            )
+        default_value(t) = Outcome::Defined(
+            Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil))
+        )
     expect text: when t = TypeShape::Text, default_value(t) = Outcome::Defined(Value::Text(""))
     expect set: when t = TypeShape::Set, default_value(t) = Outcome::Defined(Value::Nil)
     -- A record: its fields, in the order declared.
@@ -194,19 +192,18 @@ expect default_examples(t: TypeShape) {
             TypeShape::NoVariant
         )
     ),
-        default_value(t)
-            = Outcome::Defined(
-                Value::Constructed(
-                    "P",
+        default_value(t) = Outcome::Defined(
+            Value::Constructed(
+                "P",
+                Value::Cons(
+                    Value::False,
                     Value::Cons(
-                        Value::False,
-                        Value::Cons(
-                            Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)),
-                            Value::Nil
-                        )
+                        Value::Constructed("Ms", Value::Cons(Value::Integer(0), Value::Nil)),
+                        Value::Nil
                     )
                 )
             )
+        )
 }
 ```
 
@@ -514,8 +511,8 @@ pub proc known_if(
 set_option fren.lint.undecidable "allow" in
 pub proc arm_test_of(tests: Seq<Truth>): (det test: Truth) {
     use check::Truth::{False, True, Unknown}
-    ensure kleene:
-        test = (if False in tests then False else if Unknown in tests then Unknown else True)
+    ensure kleene: test =
+        (if False in tests then False else if Unknown in tests then Unknown else True)
 }
 
 -- Whether an outcome is a value.

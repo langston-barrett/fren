@@ -211,8 +211,11 @@ pub proc interpretation(
     typed?,                    -- the term has the required type, and an `Inhabited` instance for a type
     types_interpreted?,        -- for a function: each abstract type in its signature is interpreted
 ): (det accepted?) {
-    ensure rule: accepted? iff (what != Interpreted::Other and earlier = 0 and typed?
-        and (what != Interpreted::Function or types_interpreted?))
+    ensure rule: accepted? iff
+        (what != Interpreted::Other
+            and earlier = 0
+            and typed?
+            and (what != Interpreted::Function or types_interpreted?))
 
     expect once: when earlier > 0, not accepted?
     expect only_open_items: when what = Interpreted::Other, not accepted?
@@ -276,9 +279,9 @@ pub proc interpretation_at(
     at_a0: Value,            -- the interpretation's value at `A0`
     at_a1: Value,            -- at `A1`
 ): (det recorded?) {
-    ensure rule: recorded?
-        iff ((when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
-        and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts))
+    ensure rule: recorded? iff
+        ((when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
+            and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts))
 
     expect unconstrained: when pres = {}, recorded?
 }
@@ -301,7 +304,8 @@ expect interpretation_detail(
             then Outcome::Unsat else Outcome::Sat,
         Outcome::Unknown,
     )
-    expect rule: specification.proof = (if concrete.recorded? then ContractProof::Theorem else ContractProof::Unproved)
+    expect rule: specification.proof =
+        (if concrete.recorded? then ContractProof::Theorem else ContractProof::Unproved)
     expect records: specification.recorded? iff concrete.recorded?
     expect reports: specification.error? iff not concrete.recorded?
 }

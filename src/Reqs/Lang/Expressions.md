@@ -170,10 +170,9 @@ pub proc comparison_chain(
 ): (det accepted?) {
     assume compares: n_ascending + n_descending + n_other >= 1
 
-    ensure rule:
-        accepted?
-            iff (n_ascending + n_descending + n_other = 1
-                or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
+    ensure rule: accepted? iff
+        (n_ascending + n_descending + n_other = 1
+            or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
 
     expect single: when n_ascending + n_descending + n_other = 1, accepted?
     expect one_direction: when accepted?, n_ascending = 0 or n_descending = 0
@@ -536,8 +535,8 @@ set_option fren.lint.modulo_one "allow" in
 pub proc division(x: Int, y: Int) {
     expect euclidean: x = (x div 3) * 3 + x mod 3
     expect remainder_range: 0 <= x mod 3 < 3
-    expect euclidean_negative:
-        x = (x div NEGATIVE_DIVISOR) * NEGATIVE_DIVISOR + x mod NEGATIVE_DIVISOR
+    expect euclidean_negative: x =
+        (x div NEGATIVE_DIVISOR) * NEGATIVE_DIVISOR + x mod NEGATIVE_DIVISOR
     expect remainder_range_negative: 0 <= x mod NEGATIVE_DIVISOR < NEGATIVE_DIVISOR.abs
     expect negated_divisor: x div -3 = -(x div 3) and x mod -3 = x mod 3
     expect multiples: (3 * x) div 3 = x and (3 * x) mod 3 = 0
@@ -1430,10 +1429,8 @@ pub proc test_scope(
     ensure later: when site is Site::Operand(k), visible? iff test_at < k < operands
     ensure body: when site = Site::Body, visible? iff context is TestContext::WhenCondition | TestContext::IfCondition
     ensure nowhere_else: when site is Site::ElseBranch | Site::Outside, not visible?
-    ensure binds:
-        binds?
-            iff (test_at + 1 < operands
-                or context is TestContext::WhenCondition | TestContext::IfCondition)
+    ensure binds: binds? iff
+        (test_at + 1 < operands or context is TestContext::WhenCondition | TestContext::IfCondition)
 
     expect unless_body: when context = TestContext::UnlessCondition and site = Site::Body, not visible?
     expect alone: when operands = 1 and not context is TestContext::WhenCondition | TestContext::IfCondition, not binds?
@@ -1488,8 +1485,8 @@ pub proc pattern_test(
     n_useless_alternatives: Nat,     -- alternatives that no useful case of the pattern takes
     matches_some?,                   -- some value matches the pattern
 ): (det accepted?) {
-    ensure rule:
-        accepted? iff ((binds? or n_bound = 0) and n_useless_alternatives = 0 and matches_some?)
+    ensure rule: accepted? iff
+        ((binds? or n_bound = 0) and n_useless_alternatives = 0 and matches_some?)
 
     expect binds_nothing: when accepted? and not binds?, n_bound = 0
     expect every_alternative: when accepted?, n_useless_alternatives = 0
@@ -1702,17 +1699,15 @@ pub proc table_arms(
     -- Whether arm `i`'s pattern overlaps arm `j`'s, whether one of them
     -- has a guard, and whether arm `j` is the otherwise: the last, `_`
     -- without a guard.
-    ensure rule:
-        rejected?
-            iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
-                and not ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
-                and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
-    ensure check:
-        asked?
-            iff (0 <= i < overlaps.len and overlaps[i] = Overlapping)
-                and ((0 <= i < arms.len and arms[i] = Guarded)
-                    or (0 <= j < arms.len and arms[j] = Guarded))
-                and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
+    ensure rule: rejected? iff
+        (0 <= i < overlaps.len and overlaps[i] = Overlapping)
+            and not ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
+            and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
+    ensure check: asked? iff
+        (0 <= i < overlaps.len and overlaps[i] = Overlapping)
+            and ((0 <= i < arms.len and arms[i] = Guarded)
+                or (0 <= j < arms.len and arms[j] = Guarded))
+            and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
     ensure first: reported? iff (0 <= i < j < arms.len and rejected? and not earlier_rejected?)
 
     expect otherwise_alone: when 0 <= j and j = arms.len - 1 and arms[j] = Wildcard, not rejected? and not asked?

@@ -202,12 +202,12 @@ pub proc context_scope(context: Context, binding: Binding): (det listed?) {
     -- depth, which is visible there.
     expect locals_exact: when listed? and binding.depth < context.locals.len,
         context.locals[context.locals.len - 1 - binding.depth].visible?
-            and binding.name
-                = context.locals[context.locals.len - 1 - binding.depth].declaration.name
-            and binding.kind
-                = context.locals[context.locals.len - 1 - binding.depth].declaration.kind
-            and binding.target
-                = context.locals[context.locals.len - 1 - binding.depth].declaration.target
+            and binding.name =
+                context.locals[context.locals.len - 1 - binding.depth].declaration.name
+            and binding.kind =
+                context.locals[context.locals.len - 1 - binding.depth].declaration.kind
+            and binding.target =
+                context.locals[context.locals.len - 1 - binding.depth].declaration.target
     -- A binding at the built-in functions' depth is one of them.
     expect builtins_exact: when listed? and binding.depth = context.locals.len,
         binding.kind = BindingKind::Builtin

@@ -104,8 +104,8 @@ pub proc branches_sharing_code(
     -- The product the fix would write, for `*`.
     call product := lang::linear_product(moved_mentioned, shared_mentioned)
 
-    ensure rule:
-        fires? iff (binders = {} and same_op? and shared_left? != shared_right? and not match op {
+    ensure rule: fires? iff
+        (binders = {} and same_op? and shared_left? != shared_right? and not match op {
             Times => not product.accepted?,
             Div | Mod => shared_left?,
             OtherOp => false,

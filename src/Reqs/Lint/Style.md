@@ -446,17 +446,14 @@ pub enum PatternFix { Equality, StartsWith, EndsWith, Contains }
 pub proc trivial_pattern(
     pattern: String,         -- the value of the literal
 ): (det fires?, det fix: PatternFix) {
-    ensure rule:
-        fires?
-            iff pattern.matches?(
-                r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?"
-            )
-    ensure which:
-        fix
-            = if pattern.starts_with?(".*") then (if pattern.ends_with?(".*") then PatternFix::Contains
-                else PatternFix::EndsWith)
-                else if pattern.ends_with?(".*") then PatternFix::StartsWith
-                else PatternFix::Equality
+    ensure rule: fires? iff pattern.matches?(
+        r"(\.\*)?([^\\.\[\]()*+?{}|^]|\\[\\.\[\]()*+?{}|^-])+(\.\*)?"
+    )
+    ensure which: fix =
+        if pattern.starts_with?(".*") then (if pattern.ends_with?(".*") then PatternFix::Contains
+            else PatternFix::EndsWith)
+            else if pattern.ends_with?(".*") then PatternFix::StartsWith
+            else PatternFix::Equality
 
     expect not_everything: when pattern = ".*", not fires?
     expect classes_kept: when pattern = "[a-z]", not fires?
@@ -599,17 +596,14 @@ pub proc match_like_membership(
     det negated?,         -- the fix is negated, of the `false` alternatives
     det pattern_test?,         -- the fix is a pattern test, rather than an equation
 ) {
-    ensure negated:
-        negated?
-            iff (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
-    ensure rule:
-        fires?
-            iff (bool_bodies?
-                and not binds?
-                and (disjoint? or (if negated? then false_first? else true_first?)))
-    ensure test:
-        pattern_test?
-            iff not (if negated? then equatable_false? and n_false = 1 else equatable_true? and n_true = 1)
+    ensure negated: negated? iff
+        (if wildcard? then wildcard_true? else if disjoint? then n_true > n_false else false_first?)
+    ensure rule: fires? iff
+        (bool_bodies?
+            and not binds?
+            and (disjoint? or (if negated? then false_first? else true_first?)))
+    ensure test: pattern_test? iff
+        not (if negated? then equatable_false? and n_false = 1 else equatable_true? and n_true = 1)
 
     expect fewer_listed: when not wildcard? and disjoint? and negated?, n_false < n_true
     expect several_tested: when not negated? and n_true >= 2, pattern_test?

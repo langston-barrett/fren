@@ -335,11 +335,10 @@ pub fn printed(t: FixTree): String := match t {
                 bare?(b, op_precedence(o), op_assoc(o), true, false)
             ),
     FixTree::Not(a) =>
-        "not "
-            ++ enclosed(
-                printed(a),
-                bare?(a, Precedence::Not, Assoc::Right, true, false)
-            ),
+        "not " ++ enclosed(
+            printed(a),
+            bare?(a, Precedence::Not, Assoc::Right, true, false)
+        ),
     FixTree::Neg(a) => negated(
         enclosed(
             printed(a),

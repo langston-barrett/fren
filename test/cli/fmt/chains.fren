@@ -27,7 +27,8 @@ proc chains(
     -- A chain broken by hand that fits is joined.
     ensure joined: ok? iff a > 0
         and b > 0
-    -- One that does not fit breaks before each of its operators...
+    -- One that does not fit breaks before each of its operators, but after a single short name before
+    -- `iff` or `=`, its right operand starting the next line (`fmt::chain_side`)...
     ensure long: ok? iff alpha_beta_gamma > 1000000 and delta_epsilon_zeta > 2000000 and eta_theta_iota > 30
     -- ...the loosest first, an operand breaking only if its line is still too long...
     ensure loosest: total = alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma * 2
@@ -44,9 +45,12 @@ proc chains(
         Boxed::Box(n) => n,
     }
     ensure record: q = P { x := alpha_beta_gamma + delta_epsilon_zeta, y := eta_theta_iota + alpha_beta_gamma }
-    -- ...and so does a call after a short left operand, but not after a long one.
+    -- ...and so does a call after a short left operand, or one that would not fit on a line of its
+    -- own, but not one that would (#546's decision 3).
     ensure short: t = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c + a + b)
+    ensure split_anyway: eval(alpha_beta_gamma, delta_epsilon_zeta) = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c)
     ensure long_left: alpha_beta_gamma = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota, c + a)
+    ensure long_call_left: eval(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota) = f(alpha_beta_gamma, eta_theta_iota, c + a + b)
     -- One operator stays on the last line of a left operand that spans several...
     ensure spanning: (match x {
         Boxed::Box(n) => n,

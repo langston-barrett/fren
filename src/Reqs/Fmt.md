@@ -100,7 +100,12 @@ condition, which principle 6 keeps.
    them is indented four spaces past the line it continues
    (`fmt::chain_layout`). So the expression of a clause that breaks starts
    the next line, and its operators are indented under it
-   (`fmt::right_side`'s `breaks?`).
+   (`fmt::right_side`'s `breaks?`). One shape breaks *after* its operator:
+   a single short name before `iff` or `=`, as in `ensure rule: noted? iff`,
+   whose right operand then starts the next line, one level in
+   (`fmt::chain_side`). A call after an operator that would not fit on a
+   line of its own anyway hugs it rather than the chain breaking, as in
+   `lhs = f(` (`fmt::hugs?`).
 6. **Leave a choice to the author only where no rule decides it well**:
    the line breaks of a chain that is not its line's expression, such as a
    guard's condition before its body (`fmt::chain_kept`), the other line
@@ -334,7 +339,7 @@ pub enum Gap {
     BlockBrace,              -- before a block's `{`
     RightSide,               -- after a `:=` or `=>`, before its right side (`fmt::right_side`)
     Operator,                -- before an operator of a chain that the formatter lays out (`fmt::chain_layout`)
-    AfterOperator,           -- after such an operator
+    AfterOperator,           -- after such an operator, where it breaks after it (`fmt::chain_side`)
 }
 
 -- A line must end at the gap whatever the layout.
@@ -349,11 +354,11 @@ pub proc line_break(
     after_line_comment?,     -- a line comment ends the line before the gap
     comment_follows?,        -- a comment that starts its line follows the gap
 ): (det break?) {
-    ensure rule:
-        break?
-            iff (forced?(gap, blank, boundary?, after_line_comment?, comment_follows?)
-                or (vertical?
-                    and gap is Gap::AfterOpen | Gap::AfterComma | Gap::BeforeClose | Gap::RightSide | Gap::Operator))
+    ensure rule: break? iff
+        (forced?(gap, blank, boundary?, after_line_comment?, comment_follows?)
+            or (vertical?
+                and gap is Gap::AfterOpen | Gap::AfterComma | Gap::BeforeClose | Gap::RightSide | Gap::Operator
+                    | Gap::AfterOperator))
 
     -- `{ p with` and `) {` stay on their lines, blank lines or not.
     expect joined: when gap is Gap::UpdatedRecord | Gap::BlockBrace and not boundary?
@@ -363,9 +368,9 @@ pub proc line_break(
     -- `:= x + 1` stays on its line, blank lines or not, where it fits.
     expect right_side_joined: when gap = Gap::RightSide and not vertical? and not boundary?
         and not after_line_comment? and not comment_follows?, not break?
-    -- `a and` `b`: a line does not end after an operator, blank lines or not.
-    expect operator_joined: when gap = Gap::AfterOperator and not boundary? and not after_line_comment?
-        and not comment_follows?, not break?
+    -- `a and` `b`: a line ends after an operator only where its chain breaks there.
+    expect operator_joined: when gap = Gap::AfterOperator and not vertical? and not boundary?
+        and not after_line_comment? and not comment_follows?, not break?
 }
 ```
 
@@ -568,15 +573,14 @@ pub proc one_line(
     continued?,              -- its line continues an item from an earlier line
     within?,                 -- a list around it is vertical only for its wide records (`fmt::wide_within`)
 ): (det vertical?) {
-    ensure rule:
-        vertical?
-            iff (n > 0
-                and (always_vertical?(list)
-                    or stacked?(list, n, continued?, line_end)
-                    or broken?
-                    or width > width_limit(list)
-                    or (own_line? and start <= 100 < line_end)
-                    or (wide? and (rest_end > 100 or within?))))
+    ensure rule: vertical? iff
+        (n > 0
+            and (always_vertical?(list)
+                or stacked?(list, n, continued?, line_end)
+                or broken?
+                or width > width_limit(list)
+                or (own_line? and start <= 100 < line_end)
+                or (wide? and (rest_end > 100 or within?))))
 
     expect empty: when n = 0, not vertical?
     expect arms: when n > 0 and list = Arms, vertical?
@@ -711,12 +715,11 @@ pub proc list_layout(
 ): (det vertical?) {
     let line_end: Int := start + joined(elements) + after
     let rest_end: Int := start + joined(elements) + rest
-    ensure rule:
-        vertical?
-            iff (base_vertical?(list, elements, start, line_end, own_line?, continued?)
-                or (count(elements) > 0
-                    and holds_wide?(list, elements)
-                    and (rest_end > 100 or within?)))
+    ensure rule: vertical? iff
+        (base_vertical?(list, elements, start, line_end, own_line?, continued?)
+            or (count(elements) > 0
+                and holds_wide?(list, elements)
+                and (rest_end > 100 or within?)))
 }
 
 -- Whether the lists inside a list are inside one that is vertical only for its wide records: one
@@ -734,12 +737,11 @@ pub proc wide_within(
 ): (det inner?) {
     let line_end: Int := start + joined(elements) + after
     let rest_end: Int := start + joined(elements) + rest
-    ensure rule:
-        inner?
-            iff (within?
-                or (holds_wide?(list, elements)
-                    and rest_end > 100
-                    and not base_vertical?(list, elements, start, line_end, own_line?, continued?)))
+    ensure rule: inner? iff
+        (within?
+            or (holds_wide?(list, elements)
+                and rest_end > 100
+                and not base_vertical?(list, elements, start, line_end, own_line?, continued?)))
 }
 
 expect list_layout_one_line(
@@ -887,10 +889,9 @@ pub proc own_line(
     close: Int,              -- where its closing bracket ends
     holders: Holders,
 ): (det own_line?) {
-    ensure rule:
-        own_line?
-            iff (list is Parameters | FunctionParameters | Members
-                or (only_closing?(followers) and heads_near?(list, head, close, holders)))
+    ensure rule: own_line? iff
+        (list is Parameters | FunctionParameters | Members
+            or (only_closing?(followers) and heads_near?(list, head, close, holders)))
 
     expect signature: when list = Parameters, own_line?
     expect block: when list = Members, own_line?
@@ -1148,15 +1149,14 @@ pub proc right_side(
     first_end: Int,          -- the column where the operator's line would end, with it up to its first line break
     head_end: Int,           -- the same, with it up to its opening bracket
 ): (det next_line?) {
-    ensure rule:
-        next_line?
-            iff (not inner?
-                and ((after_close?
-                        and (chained? or form is Form::Conditional | Form::Other | Form::Chain))
-                    or (if form = Form::Chain then breaks?
-                        else if chained? then written? or ladder? or first_end > 100
-                        else not fits_here?(broken?, inner?, line_end)
-                        and (fits_next?(broken?, next_end) or not overflows?(form, head_end)))))
+    ensure rule: next_line? iff
+        (not inner?
+            and ((after_close?
+                    and (chained? or form is Form::Conditional | Form::Other | Form::Chain))
+                or (if form = Form::Chain then breaks?
+                    else if chained? then written? or ladder? or first_end > 100
+                    else not fits_here?(broken?, inner?, line_end)
+                    and (fits_next?(broken?, next_end) or not overflows?(form, head_end)))))
 
     -- `:= x + 1` stays on the operator's line where it fits.
     expect fits: when form != Form::Chain and not chained? and not after_close?
@@ -1208,7 +1208,8 @@ first starts a line, after its operator. A chain with a membership's `in`
 or a remainder's `mod`, which cannot start a line
 ([Lexical](Lang/Lexical.md#keywords)), is not laid out. The gaps get their
 line breaks as `fmt::line_break` says for `Gap::Operator` and
-`Gap::AfterOperator`, and their blank lines go, as rustfmt drops those in
+`Gap::AfterOperator`, the one or the other breaking (`fmt::chain_side`),
+and their blank lines go, as rustfmt drops those in
 an expression.
 
 The chains of an expression are laid out from the outside in, so the
@@ -1249,15 +1250,26 @@ where its first line would end with the brace of a record literal or
 update, a `match` or a table, and the line fits up to that brace, as
 rustfmt keeps a right operand whose first line ends with `{` on its
 operator's line; or where the chain has one operator, and its right
-operand is wholly a call, a method call or a sequence or set literal after
-at most 4 columns, each token taking its width and a space, as rustfmt
-keeps a right operand on the line of a left one at most 4 wide. A chain in
-a list on one line stays on that line, as a list in it does:
+operand is wholly a call, a method call or a sequence or set literal, and
+the line fits up to its bracket, after at most 4 columns, each token taking
+its width and a space, as rustfmt keeps a right operand on the line of a
+left one at most 4 wide, or where that operand would not fit on a line of
+its own with its operator anyway, as it cannot be on one line, or is too
+long (#546's decision 3). So breaking at `=` keeps a call on one line, or
+is not done. A chain in a list on one line stays on that line, as a list in
+it does:
 
 ```text
 ensure r: total = a + b + c + match x {
     Boxed::Box(n) => n,
 }
+expect lam_bare: print_at(Level::Term, Lam(x, ty, body)) = append(
+    Tokens::Cons(
+        Token::Backslash,
+        Tokens::Cons(Token::Ident(x), Tokens::Cons(Token::Colon, print_ty(ty)))
+    ),
+    Tokens::Cons(Token::Dot, print(body))
+)
 ```
 
 A chain that is not its line's expression keeps its line breaks as the
@@ -1320,49 +1332,105 @@ pub enum LastOperand {
     Other,                   -- any other expression
 }
 
--- The last operand hugs the chain, breaking in place rather than the chain.
-pub fn hugs?(operators: Int, last: LastOperand, before: Int, head_end: Int) :=
-    (last = LastOperand::Brace and head_end <= 100)
-        or (operators = 1 and last = LastOperand::Bracket and before <= 4)
+-- The last operand hugs the chain, breaking in place rather than the chain, where the line fits up to
+-- its opening bracket: a brace ends its first line, or it is a bracketed list after a short left
+-- operand, or one that would not fit on a line of its own anyway (#546's decision 3).
+pub fn hugs?(
+    operators: Int,
+    last: LastOperand,
+    list_last?,
+    before: Int,
+    head_end: Int,
+    next_end: Int
+) :=
+    head_end <= 100
+        and (last = LastOperand::Brace
+            or (operators = 1
+                and last = LastOperand::Bracket
+                and (before <= 4 or list_last? or next_end > 100)))
 
 pub proc chain_layout(
     operators: Int,          -- its operators
     flat?,                   -- it is in a list on one line
-    forced_before?,          -- a line break that formatting keeps, or a comment, is before its last operator,
-    -- outside a list that cannot be on one line
+    forced_before?,          -- a line break kept, or a comment, is before its last operator, outside a list
     list_before?,            -- a list that cannot be on one line is before its last operator
     list_last?,              -- a list that cannot be on one line is in its last operand
     last: LastOperand,
     before: Int,             -- the columns before its last operand, each token taking its width and a space
     head_end: Int,           -- where its line would end, up to the brace or bracket of its last operand
+    next_end: Int,           -- where its last operator and operand would end on a line of their own
     line_end: Int,           -- where its line would end, with it on that line, as rule 2 counts
 ): (det broken?) {
-    ensure rule:
-        broken?
-            iff (operators > 0
-                and not flat?
-                and (forced_before?
-                    or (list_before? and operators > 1)
-                    or (not hugs?(operators, last, before, head_end)
-                        and (list_last? or line_end > 100))))
+    ensure rule: broken? iff
+        (operators > 0
+            and not flat?
+            and (forced_before?
+                or (list_before? and operators > 1)
+                or (not hugs?(operators, last, list_last?, before, head_end, next_end)
+                    and (list_last? or line_end > 100))))
 
     expect fits: when not forced_before? and not list_before? and not list_last? and line_end <= 100, not broken?
     expect long: when operators > 0 and not flat? and last = LastOperand::Other and line_end > 100, broken?
     -- `x = match y {` ... `}`, `q = P {` ... `}`: a brace that ends the line hugs.
     expect braced: when not forced_before? and not list_before? and last = LastOperand::Brace and head_end <= 100,
         not broken?
-    -- `r = f(` ... `)`: a call hugs after a short left operand...
-    expect short_call: when operators = 1 and not forced_before? and last = LastOperand::Bracket and before <= 4,
-        not broken?
-    -- ...but `typeof(Ctx::Empty, e) = Some(` ... `)` breaks before `=` (#546's decision 4).
+    -- `r = f(` ... `)`: a call hugs after a short left operand, and one that must split anyway...
+    expect short_call: when operators = 1 and not forced_before? and last = LastOperand::Bracket and before <= 4
+        and head_end <= 100, not broken?
+    expect split_anyway: when operators = 1 and not forced_before? and last = LastOperand::Bracket and list_last?
+        and head_end <= 100, not broken?
+    -- ...but `typeof(Ctx::Empty, e) = Some(` ... `)` breaks before `=` where `= Some(` ... `)` then fits
+    -- on a line of its own (#546's decision 4).
     expect long_call: when operators = 1 and not flat? and last = LastOperand::Bracket and before > 4
-        and line_end > 100, broken?
+        and not list_last? and next_end <= 100 < line_end, broken?
     -- `(table {` ... `}).card >= 0`: one operator stays after a left operand that spans lines...
     expect spanning_left: when operators = 1 and not forced_before? and not list_last? and line_end <= 100,
         not broken?
     -- ...but `a and (match x {` ... `}) and c` breaks before each `and`.
     expect spanning_middle: when operators > 1 and not flat? and list_before?, broken?
     expect in_flat_list: when flat?, not broken?
+}
+```
+
+Where a chain that breaks has one operator, `iff` or `=`, after a single
+name no wider than 24 columns, a *short name*, it breaks after that
+operator rather than before it, and its right operand starts the next line,
+indented four spaces more, as a right side does. This amends principle 5
+for that shape (#546): the name reads as what is being defined, and the
+operator at the end of its line says how, as in `ensure rule: noted? iff`.
+The right operand on its line is laid out as any chain is, and a clause
+whose chain breaks so stays on the clause's line (`fmt::chain_side`):
+
+```text
+ensure rule: noted? iff
+    (not interpreted?
+        and consistent?
+        and g in core
+        and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
+        and match examples {
+            Budget::All => true,
+            Budget::AtMost(n) => earlier.card < n,
+        })
+```
+
+```fren
+-- A single name on the left of a chain's one `iff` or `=`, no wider than 24 columns.
+pub fn short_name?(operators: Int, named?, width: Int) := operators = 1 and named? and width <= 24
+
+pub proc chain_side(
+    broken?,                 -- it breaks (`fmt::chain_layout`)
+    operators: Int,          -- its operators
+    named?,                  -- its left operand is a single name, and its one operator `iff` or `=`
+    width: Int,              -- the width of that name
+): (det after?) {
+    ensure rule: after? iff (broken? and short_name?(operators, named?, width))
+
+    -- `ensure rule: noted? iff` ... : a short name keeps its operator on its line...
+    expect short: when broken? and operators = 1 and named? and width = 6, after?
+    -- ...but a longer left operand, or several operators, break before each operator.
+    expect not_named: when not named?, not after?
+    expect several: when operators > 1, not after?
+    expect whole: when not broken?, not after?
 }
 ```
 
@@ -1714,11 +1782,10 @@ pub proc apart(
 ): (det apart?) {
     -- Above an item and the comments that go with it, if it or the item before spans
     -- several lines, and no annotation reaches past there.
-    ensure rule:
-        apart?
-            iff above = leading(between)
-                and (previous_last > previous_first or last > first)
-                and not reaches_above?(annotations, above)
+    ensure rule: apart? iff
+        above = leading(between)
+            and (previous_last > previous_first or last > first)
+            and not reaches_above?(annotations, above)
 
     expect packed: when previous_last = previous_first and last = first, not apart?
     expect documented: when above < leading(between), not apart?
@@ -1832,9 +1899,8 @@ pub proc blank_lines(
     before_close?,           -- the line starts with the closing bracket of one
     apart?,                  -- `fmt::apart` sets the line apart from the item before it
 ): (det kept: Int) {
-    ensure kept_rule:
-        kept
-            = if first? or after_open? or before_close? then 0 else if apart? or blank > 0 then 1 else 0
+    ensure kept_rule: kept =
+        if first? or after_open? or before_close? then 0 else if apart? or blank > 0 then 1 else 0
 
     expect at_most_one: kept <= 1
     expect never_added: when not apart?, kept <= blank
@@ -2205,11 +2271,10 @@ pub proc in_block(
     assume in_order: first_line <= last_line
 
     -- It starts and ends its lines, which have no other token and no comment.
-    ensure alone_rule:
-        alone?
-            iff (above?(before, first_line)
-                and below?(after, last_line)
-                and not any_within?(comments, first_line, last_line))
+    ensure alone_rule: alone? iff
+        (above?(before, first_line)
+            and below?(after, last_line)
+            and not any_within?(comments, first_line, last_line))
     ensure block_rule: sorted? iff (alone? and not nested?)
 
     expect shared: when before = OnLine(first_line), not sorted?

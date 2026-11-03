@@ -635,14 +635,18 @@ inductive ChainOperand where
 /-- A chain of binary operators of one precedence, such as `a and b and c`
 or `x + y - z`, whose operators may each start a line
 (`fmt::chain_layout`): its first and last tokens, its operators, the right
-operand of its last operator, and the columns before that operand, each
-token taking its width and a space. -/
+operand of its last operator, the columns before that operand, each token
+taking its width and a space, and the width of its left operand where that
+is a single name before its one `iff` or `=`. -/
 structure Chain where
   first : Nat
   last : Nat
   operators : Array Nat
   operand : ChainOperand := .other
   before : Nat := 0
+  /-- It has one operator, `iff` or `=`, and its left operand is a single
+  name: the width of that name, or 0. -/
+  name : Nat := 0
   deriving Inhabited, Repr
 
 /-- What the formatter needs to know of a file's structure, as indices of
@@ -896,7 +900,11 @@ def chainOf (first : Nat) (ops : Array Nat) (r : Expr) : P Unit := do
     else if r matches .record .. | .update .. | .match .. | .matches .. | .table .. then .brace
     else if r matches .app .. | .method .. | .seq .. | .set .. then .bracket
     else .other
-  modify fun st => { st with layout.chains := st.layout.chains.push { first, last := s.pos - 1, operators := ops, operand, before } }
+  let name := if ops.size == 1 && ops[0]! == first + 1 && (s.toks[first]!.tok matches .ident _)
+      && (isKw s.toks[ops[0]!]! "iff" || isKw s.toks[ops[0]!]! "=") then
+      s.toks[first]!.span.stop - s.toks[first]!.span.start
+    else 0
+  modify fun st => { st with layout.chains := st.layout.chains.push { first, last := s.pos - 1, operators := ops, operand, before, name } }
 
 /-- Runs `x` within brackets: a record literal may appear, even in a
 `match`'s scrutinee, and `in` is a membership, even in a definition of a

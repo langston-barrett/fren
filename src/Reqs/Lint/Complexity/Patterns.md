@@ -164,11 +164,8 @@ pub proc manual_range_patterns(alts: Seq<Pat>, v: Int): (det fires?) {
             and not ((exists (s: Slot), pos(s) < alts.len and lower_of(alts[pos(s)]) = Bound::Open)
                 and (exists (s: Slot), pos(s) < alts.len and upper_of(alts[pos(s)]) = Bound::Open))
 
-    ensure rule:
-        fires?
-            iff (integers?
-                and interval?
-                and (n_alternatives >= 3 or (n_alternatives >= 2 and range?)))
+    ensure rule: fires? iff
+        (integers? and interval? and (n_alternatives >= 3 or (n_alternatives >= 2 and range?)))
 
     expect keeps_meaning: when fires?, covers?(alts, v) iff
         ((exists (s: Slot), pos(s) < alts.len and lower_holds?(lower_of(alts[pos(s)]), v))

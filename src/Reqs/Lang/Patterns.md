@@ -129,15 +129,11 @@ pub proc range_pattern(
     det matches?,
     det empty?,              -- it matches no integer
 ) {
-    ensure matching:
-        matches?
-            iff ((not has_lower? or lower <= value)
-                and (not has_upper? or (if inclusive? then value <= upper else value < upper)))
-    ensure empty:
-        empty?
-            iff (has_lower?
-                and has_upper?
-                and (if inclusive? then upper < lower else upper <= lower))
+    ensure matching: matches? iff
+        ((not has_lower? or lower <= value)
+            and (not has_upper? or (if inclusive? then value <= upper else value < upper)))
+    ensure empty: empty? iff
+        (has_lower? and has_upper? and (if inclusive? then upper < lower else upper <= lower))
 
     expect empty_matches_nothing: when empty?, not matches?
     expect literal: when has_lower? and has_upper? and inclusive? and lower = upper, matches? iff value = lower

@@ -5,8 +5,8 @@ mod lexref
 
 -- The precise rule, which the solver struggles with.
 pub proc word(text: String): (det accepted?) {
-    ensure rule:
-        accepted? iff text.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
+    ensure rule: accepted? iff
+        text.matches?(r"[A-Za-z_][A-Za-z0-9_']*([.][A-Za-z_][A-Za-z0-9_']*)*[?]?")
 }
 
 -- A simpler shape: a word never contains `..`, and never starts with a digit.

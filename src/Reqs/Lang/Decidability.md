@@ -347,17 +347,16 @@ pub proc in_core(
         StringSearch,
     }
 
-    ensure rule:
-        decidable?
-            iff (construct != Quantifier and (ground? or (not infinite_output? and match construct {
-                StringAtom | StringIndex => constant_args?,
-                StringCompare => comparable?,
-                SetAlgebra | SeqArray => true,
-                SetFunction => infinite_elems?,
-                Relational => finite_range?,
-                SeqWord => literal_operand?,
-                StringSearch | RelationalCard | Quantifier => false,
-            })))
+    ensure rule: decidable? iff
+        (construct != Quantifier and (ground? or (not infinite_output? and match construct {
+            StringAtom | StringIndex => constant_args?,
+            StringCompare => comparable?,
+            SetAlgebra | SeqArray => true,
+            SetFunction => infinite_elems?,
+            Relational => finite_range?,
+            SeqWord => literal_operand?,
+            StringSearch | RelationalCard | Quantifier => false,
+        })))
 
     expect outputs_block: when infinite_output? and not ground?, not decidable?
     expect search_never: when construct = StringSearch and not ground?, not decidable?

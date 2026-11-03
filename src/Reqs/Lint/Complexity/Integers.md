@@ -58,10 +58,8 @@ pub proc manual_abs(
 ): (det fires?) {
     use self::Comparison::{Ge, Gt, Le, Lt}
 
-    ensure rule:
-        fires?
-            iff (compared = Ordered::Number
-                and (if negated_then? then op in {Lt, Le} else op in {Gt, Ge}))
+    ensure rule: fires? iff
+        (compared = Ordered::Number and (if negated_then? then op in {Lt, Le} else op in {Gt, Ge}))
 }
 ```
 
@@ -462,14 +460,13 @@ pub proc manual_min_max(
     use self::Comparison::{Ge, Gt, Le, Lt}
     use self::MinMax::{Max, Min}
 
-    ensure rule:
-        fires?
-            iff (op in {Lt, Le, Gt, Ge}
-                and compared != Ordered::OtherType
-                and a.text != b.text
-                and not (a.literal? and b.literal?)
-                and ((then_branch = a.text and else_branch = b.text)
-                    or (then_branch = b.text and else_branch = a.text)))
+    ensure rule: fires? iff
+        (op in {Lt, Le, Gt, Ge}
+            and compared != Ordered::OtherType
+            and a.text != b.text
+            and not (a.literal? and b.literal?)
+            and ((then_branch = a.text and else_branch = b.text)
+                or (then_branch = b.text and else_branch = a.text)))
     ensure which: when fires?, method = (if (op in {Lt, Le} iff then_branch = a.text) then Min else Max)
     ensure receiver: when fires?, receiver_left? iff not a.literal?
 }
@@ -518,11 +515,10 @@ pub proc manual_clamp(
 ) {
     use self::Comparison::{Ge, Gt, Le, Lt}
 
-    ensure rule:
-        fires?
-            iff (compared = Ordered::Number
-                and ((first_op in {Lt, Le} and second_op in {Gt, Ge} and first <= second)
-                    or (first_op in {Gt, Ge} and second_op in {Lt, Le} and second <= first)))
+    ensure rule: fires? iff
+        (compared = Ordered::Number
+            and ((first_op in {Lt, Le} and second_op in {Gt, Ge} and first <= second)
+                or (first_op in {Gt, Ge} and second_op in {Lt, Le} and second <= first)))
     ensure low: low_first? iff first_op in {Lt, Le}
 }
 

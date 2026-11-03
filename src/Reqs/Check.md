@@ -550,17 +550,15 @@ pub proc forcing(
     det variant_found?,           -- Fren finds that `S` forces it to `model`'s variant
 ) {
     assume modelled: model in values
-    assume decided:
-        pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
-    assume variant_decided:
-        variant_q
-            = (if (forall (v: Choice), when v in values, variant_of(v) = variant_of(model)) then Unsat else Sat)
+    assume decided: pin_q =
+        (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
+    assume variant_decided: variant_q =
+        (if (forall (v: Choice), when v in values, variant_of(v) = variant_of(model)) then Unsat else Sat)
 
     ensure meaning: forced? iff (forall (a b: Choice), when a in values and b in values, a = b)
     ensure query: found? iff pin_q = Unsat
-    ensure variant_meaning:
-        variant_forced?
-            iff (forall (a b: Choice), when a in values and b in values, variant_of(a) = variant_of(b))
+    ensure variant_meaning: variant_forced? iff
+        (forall (a b: Choice), when a in values and b in values, variant_of(a) = variant_of(b))
     ensure variant_query: variant_found? iff variant_q = Unsat
 
     expect computes: found? iff forced?
@@ -739,16 +737,15 @@ pub proc clash_notes(
     out shows_value? := forces_value?(alone, g, output)
     out rest_shows_value? := forces_value?(rest, g, output)
 
-    ensure rule:
-        noted?
-            iff (not interpreted?
-                and consistent?
-                and g in core
-                and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
-                and match examples {
-                    Budget::All => true,
-                    Budget::AtMost(n) => earlier.card < n,
-                })
+    ensure rule: noted? iff
+        (not interpreted?
+            and consistent?
+            and g in core
+            and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, g, o))
+            and match examples {
+                Budget::All => true,
+                Budget::AtMost(n) => earlier.card < n,
+            })
     ensure first: when noted?, clashes?(alone, alone_variants, rest, rest_variants, g, output)
         and (forall (o: Output), when o < output, not clashes?(alone, alone_variants, rest, rest_variants, g, o))
     ensure one_note: note = (if not (g in core) then MemberNote::NotInCore
@@ -906,10 +903,9 @@ pub proc conditional_branch_core(
     candidates: Set<Guarantee>,
     conditional: Set<Guarantee>,
 ): (valid?, minimal?) {
-    ensure refutes:
-        valid?
-            iff conditional subset candidates
-                and not (exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional, v))
+    ensure refutes: valid? iff
+        conditional subset candidates
+            and not (exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional, v))
     ensure deletion_minimal: minimal? iff valid? and (forall (g: Guarantee), when g in conditional,
         exists (v: Choice), v in branch and v in base and branch_rest_holds?(meaning, conditional minus {g}, v))
     expect within: when valid?, conditional subset candidates
@@ -920,10 +916,8 @@ pub proc conditional_branch_core(
 pub proc branch_member_polarity(rest: Set<Choice>, positive_values: Set<Choice>, wanted?): (
     opposite_forced?,
 ) {
-    ensure nonvacuous_opposite:
-        opposite_forced?
-            iff rest != {}
-                and (forall (v: Choice), when v in rest, (v in positive_values) iff not wanted?)
+    ensure nonvacuous_opposite: opposite_forced? iff
+        rest != {} and (forall (v: Choice), when v in rest, (v in positive_values) iff not wanted?)
     expect positive_blocked: when wanted?, opposite_forced? iff rest != {} and rest inter positive_values = {}
     expect negative_blocked: when not wanted?, opposite_forced? iff rest != {} and rest subset positive_values
     expect no_vacuous_forcing: when rest = {}, not opposite_forced?
@@ -1435,9 +1429,8 @@ pub proc disjoint_question(
 
     assume pair: 0 <= i < j < arms.len and defined.len = arms.len
 
-    ensure rule:
-        goal?
-            iff not (defined[i] = Defined and defined[j] = Defined and arms[i] = Taken and arms[j] = Taken)
+    ensure rule: goal? iff
+        not (defined[i] = Defined and defined[j] = Defined and arms[i] = Taken and arms[j] = Taken)
 
     -- Where one of them is not taken, they do not overlap here.
     expect apart: when arms[i] != Taken, goal?
@@ -1825,11 +1818,10 @@ pub proc minimal(
     core: Set<ConstraintName>,
     dropped: ConstraintName,            -- any one constraint, for the minimality condition
 ): (det minimal?) {
-    ensure rule:
-        minimal?
-            iff (core subset candidates
-                and refutes?(core)
-                and (when dropped in core, not refutes?(core minus {dropped})))
+    ensure rule: minimal? iff
+        (core subset candidates
+            and refutes?(core)
+            and (when dropped in core, not refutes?(core minus {dropped})))
 
     expect within: when minimal?, core subset candidates
     expect entails: when minimal?, refutes?(core)
@@ -2739,12 +2731,11 @@ pub proc enumerated_verdict(
         not exact? and verdict = Inconclusive => Inconclusive,
     }
     -- What rests on an `unsat` answer that does not see every behaviour.
-    ensure bounded_rule:
-        bounded?
-            iff (not exact?
-                and reported != Fail
-                and verdict != Inconclusive
-                and (verdict = Fail or proof?(kind)))
+    ensure bounded_rule: bounded? iff
+        (not exact?
+            and reported != Fail
+            and verdict != Inconclusive
+            and (verdict = Fail or proof?(kind)))
 
     expect decided: when exact?, reported = verdict
     expect failures_genuine: when reported = Fail, verdict = Fail

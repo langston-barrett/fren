@@ -38,10 +38,9 @@ proc shared_plain(r: Reply, v: Int): (w: Int) {
 -- Nor does `eq_op` compare operands that see different binders: the right
 -- operand's first `v` is the left's payload (`lint::eq_op`).
 proc eq_binders(r: Reply, v: Int): (w?, x?, y?) {
-    ensure both:
-        w?
-            iff ((v > 1 and r is Reply::Value(v!) and v < 3)
-                and (v > 1 and r is Reply::Value(v!) and v < 3))
+    ensure both: w? iff
+        ((v > 1 and r is Reply::Value(v!) and v < 3)
+            and (v > 1 and r is Reply::Value(v!) and v < 3))
     ensure one: x? iff (v > 1 and r is Reply::Value(v!) and v < 3)
     -- Without a binder, it fires.
     ensure plain: y? iff ((v > 1 and r is Reply::Value(_)) and (v > 1 and r is Reply::Value(_)))

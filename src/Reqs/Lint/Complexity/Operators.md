@@ -249,12 +249,11 @@ expect identity_op_elaborated(
         KeepLeft => identity_op_fix(e) = a,
         KeepRight => identity_op_fix(e) = b,
         Flip =>
-            identity_op_fix(e)
-                = Binary(
-                    if op = IdentityOperator::Add then lang::BinaryOp::Sub else lang::BinaryOp::Add,
-                    a,
-                    w
-                ),
+            identity_op_fix(e) = Binary(
+                if op = IdentityOperator::Add then lang::BinaryOp::Sub else lang::BinaryOp::Add,
+                a,
+                w
+            ),
         Unchanged => identity_op_fix(e) = e,
     }
 }
@@ -430,21 +429,19 @@ pub proc manual_at_most_one(
     det fires?,
     det exactly?,                 -- the fix is `exactly_one?`, rather than `at_most_one?`
 ) {
-    ensure rule:
-        fires?
-            iff ((exists (x y z: Operand), x != y and x != z and y != z
-                    and named?(pairs, x) and named?(pairs, y) and named?(pairs, z))
-                and (forall (x: Operand), not pair_negated?(pairs, x, x))
-                and (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y),
-                    pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x))
-                and not (exists (x y: Operand), PairNegation {
-                    first := x,
-                    second := y,
-                    obligation? := true,
-                } in pairs))
-    ensure fix:
-        exactly?
-            iff (disjunction != {} and (forall (x: Operand), x in disjunction iff named?(pairs, x)))
+    ensure rule: fires? iff
+        ((exists (x y z: Operand), x != y and x != z and y != z
+                and named?(pairs, x) and named?(pairs, y) and named?(pairs, z))
+            and (forall (x: Operand), not pair_negated?(pairs, x, x))
+            and (forall (x y: Operand), when x != y and named?(pairs, x) and named?(pairs, y),
+                pair_negated?(pairs, x, y) or pair_negated?(pairs, y, x))
+            and not (exists (x y: Operand), PairNegation {
+                first := x,
+                second := y,
+                obligation? := true,
+            } in pairs))
+    ensure fix: exactly? iff
+        (disjunction != {} and (forall (x: Operand), x in disjunction iff named?(pairs, x)))
 }
 ```
 
@@ -516,10 +513,8 @@ pub proc manual_at_most_one_any(
         and (forall (x y: String), when x != y and written_named?(pairs, x) and written_named?(pairs, y),
             written_negated?(pairs, x, y) or written_negated?(pairs, y, x))
         and not (exists (p: WrittenNegation), p in pairs and p.obligation?))
-    ensure fix:
-        exactly?
-            iff (disjunction != {}
-                and (forall (x: String), x in disjunction iff written_named?(pairs, x)))
+    ensure fix: exactly? iff
+        (disjunction != {} and (forall (x: String), x in disjunction iff written_named?(pairs, x)))
 }
 ```
 

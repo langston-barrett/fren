@@ -604,8 +604,8 @@ pub proc solver_credit(
 ): (det credit_after: Nat, det covered_after: Nat) {
     assume times: first <= start <= stop
 
-    ensure new_time:
-        credit_after = credit + (if stop > start.max(covered) then stop - start.max(covered) else 0)
+    ensure new_time: credit_after =
+        credit + (if stop > start.max(covered) then stop - start.max(covered) else 0)
     ensure covers: covered_after = covered.max(stop)
 
     -- What a query leaves out lies within it...

@@ -111,9 +111,8 @@ set_option fren.lint.undecidable "allow" in
 pub proc function_type_parts(
     kinds: Seq<FnPart>,      -- what its parameters' types are, then its result's
 ): (det accepted?) {
-    ensure rule:
-        accepted?
-            iff not (FnPart::Natural in kinds or FnPart::Subset in kinds or FnPart::Function in kinds)
+    ensure rule: accepted? iff
+        not (FnPart::Natural in kinds or FnPart::Subset in kinds or FnPart::Function in kinds)
 
     expect plain: when kinds = [FnPart::Plain, FnPart::Plain], accepted?
     expect no_nat: when FnPart::Natural in kinds, not accepted?
@@ -288,8 +287,8 @@ pub enum Comparand { Value, Closure, FunctionName }
 
 set_option fren.lint.undecidable "allow" in
 pub proc function_comparison(operands: Seq<Comparand>): (det accepted?) {
-    ensure rule:
-        accepted? iff not (Comparand::Closure in operands or Comparand::FunctionName in operands)
+    ensure rule: accepted? iff
+        not (Comparand::Closure in operands or Comparand::FunctionName in operands)
 
     expect values: when operands = [Comparand::Value, Comparand::Value], accepted?
     expect functions: when operands = [Comparand::FunctionName, Comparand::FunctionName], not accepted?
@@ -511,12 +510,11 @@ pub proc match_vector(
 pub proc match_vector_coverage(first: Rel<Bool, Bool>, second: Rel<Bool, Bool>): (det complete?) {
     out complete? :=
         forall (left? right?: Bool), (left?, right?) in first or (left?, right?) in second
-    expect all_worlds:
-        complete?
-            iff (true, true) in first union second
-                and (true, false) in first union second
-                and (false, true) in first union second
-                and (false, false) in first union second
+    expect all_worlds: complete? iff
+        (true, true) in first union second
+            and (true, false) in first union second
+            and (false, true) in first union second
+            and (false, false) in first union second
     expect diagonal_is_incomplete: when first = {(true, true)} and second = {(false, false)}, not complete?
     expect complementary_rows: when first = {(true, true), (true, false)} and second = {(false, true), (false, false)}, complete?
 }

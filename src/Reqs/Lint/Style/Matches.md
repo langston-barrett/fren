@@ -222,15 +222,14 @@ pub proc collapsible_match(
     -- arms of the inner `match`
     det let n_inner: Int := inner.len
 
-    ensure rule:
-        fires?
-            iff (on_binder?
-                and flat?
-                and inner_wildcard?
-                and same_wildcard?
-                and not mentioned?
-                and not clash?
-                and n_inner >= 2)
+    ensure rule: fires? iff
+        (on_binder?
+            and flat?
+            and inner_wildcard?
+            and same_wildcard?
+            and not mentioned?
+            and not clash?
+            and n_inner >= 2)
 
     expect mentions_kept: when mentioned?, not fires?
 

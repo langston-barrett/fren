@@ -394,7 +394,17 @@ def toLastOperand : FrenCli.ChainOperand → fmt.LastOperand
   | .other => .Other
 
 -- Over `Nat`, so `decide` does not apply: proofs by cases.
-impl chain_layout: fmt::chain_layout for (n : Nat) (f fb lb ll : Bool) (o : FrenCli.ChainOperand) (b h e : Nat) {
+impl chain_side: fmt::chain_side for (b : Bool) (n w : Nat) {
+  broken? := b,
+  operators := n,
+  named? := decide (0 < w),
+  width := w,
+  after? := FrenCli.Fmt.breaksAfter b n w,
+} by
+  intro b n w _
+  cases b <;> simp [fren_spec, FrenCli.Fmt.breaksAfter, FrenCli.Fmt.shortName] <;> omega
+
+impl chain_layout: fmt::chain_layout for (n : Nat) (f fb lb ll : Bool) (o : FrenCli.ChainOperand) (b h x e : Nat) {
   operators := n,
   flat? := f,
   forced_before? := fb,
@@ -403,10 +413,11 @@ impl chain_layout: fmt::chain_layout for (n : Nat) (f fb lb ll : Bool) (o : Fren
   last := toLastOperand o,
   before := b,
   head_end := h,
+  next_end := x,
   line_end := e,
-  broken? := FrenCli.Fmt.chainBroken n f fb lb ll o b h e,
+  broken? := FrenCli.Fmt.chainBroken n f fb lb ll o b h x e,
 } by
-  intro n f fb lb ll o b h e _
+  intro n f fb lb ll o b h x e _
   cases f <;> cases fb <;> cases lb <;> cases ll <;> cases o <;>
     simp [fren_spec, FrenCli.Fmt.chainBroken, FrenCli.Fmt.hugs, FrenCli.Fmt.maxWidth, toLastOperand] <;> omega
 

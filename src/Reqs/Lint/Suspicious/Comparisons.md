@@ -33,8 +33,8 @@ pub proc absurd_extreme_comparisons(
 ) {
     use self::Comparison::{Ge, Gt, Le, Lt, Ne}
 
-    ensure rule:
-        fires? iff (bound < 0 or (bound = 0 and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
+    ensure rule: fires? iff
+        (bound < 0 or (bound = 0 and (if left? then op in {Lt, Ge} else op in {Gt, Le})))
     ensure fixed: value? iff (if left? then op in {Ne, Gt, Ge} else op in {Ne, Lt, Le})
 }
 
@@ -133,16 +133,15 @@ pub proc contradictory_comparisons(
     second: Comparison,
     second_bound: Int,
 ): (det fires?) {
-    ensure rule:
-        fires?
-            iff (if conjunction?
-                then disjoint?(first, first_bound, second, second_bound)
-                else disjoint?(
-                    complement_of(first),
-                    first_bound,
-                    complement_of(second),
-                    second_bound
-                ))
+    ensure rule: fires? iff
+        (if conjunction?
+            then disjoint?(first, first_bound, second, second_bound)
+            else disjoint?(
+                complement_of(first),
+                first_bound,
+                complement_of(second),
+                second_bound
+            ))
 }
 
 proc contradictory_comparisons_exact(
@@ -169,10 +168,9 @@ pub proc contradictory_equalities(
 ): (det fires?) {
     use self::Comparison::{Eq, Ne}
 
-    ensure rule:
-        fires?
-            iff (distinct?
-                and (if conjunction? then first = Eq and second = Eq else first = Ne and second = Ne))
+    ensure rule: fires? iff
+        (distinct?
+            and (if conjunction? then first = Eq and second = Eq else first = Ne and second = Ne))
 }
 ```
 

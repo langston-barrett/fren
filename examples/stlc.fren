@@ -576,15 +576,13 @@ pub fn print(t: Named): Tokens := print_at(Level::Term, t)
 -- and around an arrow on the left of an arrow; nowhere else. Each law is
 -- one step of the printer, which the solver decides.
 pub proc parenthesization(x: Name, ty: Ty, body: Named, t1: Named, t2: Named, t3: Named) {
-    expect lam_bare:
-        print_at(Level::Term, Lam(x, ty, body))
-            = append(
-                Tokens::Cons(
-                    Token::Backslash,
-                    Tokens::Cons(Token::Ident(x), Tokens::Cons(Token::Colon, print_ty(ty)))
-                ),
-                Tokens::Cons(Token::Dot, print(body))
-            )
+    expect lam_bare: print_at(Level::Term, Lam(x, ty, body)) = append(
+        Tokens::Cons(
+            Token::Backslash,
+            Tokens::Cons(Token::Ident(x), Tokens::Cons(Token::Colon, print_ty(ty)))
+        ),
+        Tokens::Cons(Token::Dot, print(body))
+    )
     expect lam_operand:
         print_at(Level::Application, Lam(x, ty, body)) = parens(print(Lam(x, ty, body)))
             and print_at(Level::Atom, Lam(x, ty, body)) = parens(print(Lam(x, ty, body)))
@@ -598,12 +596,10 @@ pub proc parenthesization(x: Name, ty: Ty, body: Named, t1: Named, t2: Named, t3
     expect arrow_right:
         print_ty(Arrow(Boolean, ty))
             = append(print_ty(Boolean), Tokens::Cons(Token::Arrow, print_ty(ty)))
-    expect arrow_left:
-        print_ty(Arrow(Arrow(ty, ty), Boolean))
-            = append(
-                parens(print_ty(Arrow(ty, ty))),
-                Tokens::Cons(Token::Arrow, print_ty(Boolean))
-            )
+    expect arrow_left: print_ty(Arrow(Arrow(ty, ty), Boolean)) = append(
+        parens(print_ty(Arrow(ty, ty))),
+        Tokens::Cons(Token::Arrow, print_ty(Boolean))
+    )
 }
 
 -- ## Parsing

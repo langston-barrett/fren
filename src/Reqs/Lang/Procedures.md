@@ -119,11 +119,10 @@ pub proc modifiers(
     det?,                -- written with `det`
     defined?,            -- written with `:= e`
 ): (accepted?) {
-    ensure rule:
-        accepted?
-            iff (not pub?
-                and (not det? or member is Member::Result | Member::Exists | Member::Let)
-                and (defined? iff member is Member::Let | Member::Define))
+    ensure rule: accepted? iff
+        (not pub?
+            and (not det? or member is Member::Result | Member::Exists | Member::Let)
+            and (defined? iff member is Member::Let | Member::Define))
 
     expect plain_members: when member is Member::Param | Member::Constraint | Member::Call,
         accepted? iff not (pub? or det? or defined?)

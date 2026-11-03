@@ -604,11 +604,8 @@ pub proc goal_constant_name(
     det chosen?,                 -- the constant is `base#goal{k}`
 ) {
     ensure keeps: kept? iff not base_taken?
-    ensure least:
-        chosen?
-            iff (base_taken?
-                and not (k in taken)
-                and (forall (j: Int), when 0 <= j < k, j in taken))
+    ensure least: chosen? iff
+        (base_taken? and not (k in taken) and (forall (j: Int), when 0 <= j < k, j in taken))
 }
 ```
 
@@ -750,10 +747,9 @@ pub proc query_key(
     version: Int,                     -- the version of `fren check`'s cache
 ): (det kept?, det spelled?, det key: Key) {
     ensure kept: kept? iff (forall (o: Observed), when o in observed, observed_text?(o))
-    ensure spelled:
-        spelled?
-            iff (observations.len = observed.len
-                and (forall (i: Int), when 0 <= i < observed.len, holds?(observed[i], observations[i])))
+    ensure spelled: spelled? iff
+        (observations.len = observed.len
+            and (forall (i: Int), when 0 <= i < observed.len, holds?(observed[i], observations[i])))
     out key := Key { script, observations, solver, version }
 }
 
@@ -795,10 +791,9 @@ pub proc query_entry(
     use self::Answer::{SatWithModel, Unknown}
 
     assume model_only_kept: when written.answer != SatWithModel, written.model = []
-    ensure kept:
-        text?
-            iff (written.answer != Unknown
-                and (forall (b: Binding), when b in written.model, all_text?(b.name)))
+    ensure kept: text? iff
+        (written.answer != Unknown
+            and (forall (b: Binding), when b in written.model, all_text?(b.name)))
     out read := if text? then Option::Some(written) else Option::None
 }
 
@@ -816,10 +811,9 @@ pub proc contradicts(
     use self::Answer::{SatWithModel, Unknown, Unsat}
 
     assume both_kept: fresh != Unknown and kept != Unknown
-    ensure rule:
-        contradiction?
-            iff ((fresh = Unsat) != (kept = Unsat)
-                or (fresh = SatWithModel and kept = SatWithModel and not same_model?))
+    ensure rule: contradiction? iff
+        ((fresh = Unsat) != (kept = Unsat)
+            or (fresh = SatWithModel and kept = SatWithModel and not same_model?))
 
     expect agree: when fresh = kept and fresh != SatWithModel, not contradiction?
 }
@@ -945,8 +939,8 @@ pub proc evidence_in_effect(
     set_enumerated?,         -- it sets enumeration
 ): (det random?, det enumerated?) {
     ensure random_rule: random? iff (if given? then given_random? else set? and set_random?)
-    ensure enumerated_rule:
-        enumerated? iff (if given? then given_enumerated? else set? and set_enumerated?)
+    ensure enumerated_rule: enumerated? iff
+        (if given? then given_enumerated? else set? and set_enumerated?)
 
     expect option_first: when given?, random? = given_random? and enumerated? = given_enumerated?
     expect solver_default: when not given? and not set?, not random? and not enumerated?

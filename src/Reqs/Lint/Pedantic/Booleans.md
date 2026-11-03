@@ -217,10 +217,9 @@ pub proc overly_complex_bool_expr(
     e: Expr<lang::Id>,
     negation_rewritten?,  -- `nonminimal_bool` rewrites the operand of `e` that is the negation of the other
 ): (det fires?, kept: Kept, kind: BoolRule) {
-    ensure rule:
-        fires?
-            iff overly_complex_fires?(e)
-                and not (negation_rewritten? and bool_rule(e) != BoolRule::Absorption)
+    ensure rule: fires? iff
+        overly_complex_fires?(e)
+            and not (negation_rewritten? and bool_rule(e) != BoolRule::Absorption)
     ensure fix: when fires?, kept = kept_by(e)
     ensure kind_rule: when fires?, kind = bool_rule(e)
 

@@ -31,14 +31,8 @@ proc relations(
     boxed: Rel<Int, Boxed>,
     flipped: Rel<Mark, Int>,
 ): (p?) {
-    ensure q:
-        p?
-            iff (r = MARKED
-                and r in nested
-                and two = {}
-                and boxed = {}
-                and flipped = {}
-                and marked?(r))
+    ensure q: p? iff
+        (r = MARKED and r in nested and two = {} and boxed = {} and flipped = {} and marked?(r))
 }
 
 proc singles(a: Int, b: Int, c?, e: Two, f: Int): (total: Int) {  --~ warning: procedure `singles` declares 5 single-character names
@@ -134,28 +128,10 @@ proc series(
     lit: Int,
     lint: Int,
 ): (ready?) {
-    ensure r:
-        ready?
-            iff ab
-                    + ac
-                    + x1
-                    + x2
-                    + level1
-                    + level2
-                    + a_len
-                    + b_len
-                    + len_a
-                    + len_b
-                    + ready
-                    + lhs
-                    + rhs
-                    + set
-                    + get
-                    + args
-                    + arms
-                    + lit
-                    + lint
-                > 0
+    let digits: Int := ab + ac + x1 + x2 + level1 + level2
+    let words: Int := a_len + b_len + len_a + len_b + ready
+    let allowed: Int := lhs + rhs + set + get + args + arms + lit + lint
+    ensure r: ready? iff digits + words + allowed > 0
 }
 
 -- 101 lines: blank lines and comments do not count.

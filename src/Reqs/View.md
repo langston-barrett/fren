@@ -590,8 +590,8 @@ pub proc counted(kind: Kind, verdict: Verdict): (det bucket: Bucket) {
 
     ensure redundant: when kind = Redundancy and verdict = Fail, bucket = Redundant
     ensure by_verdict: unless kind = Redundancy and verdict = Fail,
-        bucket
-            = (if verdict = Pass then Passed else if verdict = Fail then Failed else InconclusiveBucket)
+        bucket =
+            (if verdict = Pass then Passed else if verdict = Fail then Failed else InconclusiveBucket)
 }
 
 expect failures_are_errors(c_kind: Kind, c_verdict: Verdict, s_kind: Kind, s_verdict: Verdict) {

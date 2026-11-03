@@ -526,7 +526,7 @@ pub proc manual_pattern_test_runs(
     assume within: forall (i: Int), when run.first <= i <= run.last and reading_at(operands, conj?, i) != None,
         exists (j: Int), 0 <= j < chain.len and chain_operand?(chain[j], operands[i])
 
-    ensure rule:
-        reported? iff longest_run?(operands, conj?, run) and run_fires?(operands, conj?, chain, run)
+    ensure rule: reported? iff
+        longest_run?(operands, conj?, run) and run_fires?(operands, conj?, chain, run)
 }
 ```

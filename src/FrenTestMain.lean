@@ -1887,8 +1887,7 @@ def fmtIgnore : List String :=
 Their expected outputs and `--~` annotations name their lines, so
 formatting them means updating those too. They are formatted a group at a
 time, each only where the new layout reads better than the old, and this
-list is then removed (#509). A spec here reads worse laid out anew, for
-the reason noted with it. -/
+list is then removed (#509). -/
 def fmtPending : List String :=
   ["test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
    "test/ui/checks/subset_obligations.fren",
@@ -1934,10 +1933,7 @@ def fmtPending : List String :=
    "test/ui/lang/tables.fren", "test/ui/lang/tables_scrutinee.fren",
    "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren",
    "test/ui/lang/type_facts.fren", "test/ui/lang/types.fren",
-   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren",
-   -- Breaking `interpretation_at`'s chain (`fmt::chain_layout`) puts its second record past
-   -- column 100, so that record goes vertical and its twin above does not (#546).
-   "src/Reqs/Impl.md"]
+   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren"]
 
 /-- A file's pieces (`fmt::Piece`), each comment with whether it starts
 its line, and the paths the `use` items import, sorted. With `all`, every

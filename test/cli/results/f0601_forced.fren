@@ -15,8 +15,8 @@ proc retry(method: Method, status: Nat, attempt: Nat, retry_after: Seconds): (
 ) {
     assume sane: attempt >= 1 and retry_after >= Seconds(0)
 
-    ensure transient:
-        retry? iff status is 429 | 503 and method != Method::Post and attempt < MAX_ATTEMPTS
+    ensure transient: retry? iff
+        status is 429 | 503 and method != Method::Post and attempt < MAX_ATTEMPTS
     ensure honor_server: when retry?, delay >= retry_after
     ensure backoff: when retry?, delay >= Seconds(2 * attempt)
     ensure latency_budget: delay <= MAX_DELAY

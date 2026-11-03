@@ -189,10 +189,9 @@ pub proc redundant_comparisons(
     det fires?,
     det keep_first?,         -- the fix keeps the first comparison, rather than the second
 ) {
-    ensure fires:
-        fires?
-            iff (disjoint?(first, first_bound, complement_of(second), second_bound)
-                or disjoint?(second, second_bound, complement_of(first), first_bound))
+    ensure fires: fires? iff
+        (disjoint?(first, first_bound, complement_of(second), second_bound)
+            or disjoint?(second, second_bound, complement_of(first), first_bound))
     ensure fix: keep_first? iff (if conjunction?
         then disjoint?(first, first_bound, complement_of(second), second_bound)
         else disjoint?(second, second_bound, complement_of(first), first_bound))
@@ -269,10 +268,9 @@ pub proc int_plus_one(
 ) {
     use self::Comparison::{Ge, Gt, Le, Lt}
 
-    ensure rule:
-        fires?
-            iff ((op = Ge and (right = PlusOne or left = MinusOne))
-                or (op = Le and (left = PlusOne or right = MinusOne)))
+    ensure rule: fires? iff
+        ((op = Ge and (right = PlusOne or left = MinusOne))
+            or (op = Le and (left = PlusOne or right = MinusOne)))
     ensure strict: result = (if op = Ge then Gt else if op = Le then Lt else op)
     ensure drop: drop_left? iff (if op = Ge then right != PlusOne else op = Le and left = PlusOne)
 }

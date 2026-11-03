@@ -266,8 +266,8 @@ pub proc pass_evidence(
     ensure random_rule: when earlier?(premises, k), random? iff Caveat::Random in own.image(rests_on(premises, k))
     ensure bounded_rule: when earlier?(premises, k), bounded? iff Caveat::Bounded in own.image(rests_on(premises, k))
     -- A premise that is not earlier fails closed.
-    ensure settled_rule:
-        settled? iff (rests_on(premises, k) inter unsettled = {} and earlier?(premises, k))
+    ensure settled_rule: settled? iff
+        (rests_on(premises, k) inter unsettled = {} and earlier?(premises, k))
 
     -- No stronger than its own method, nor than any premise.
     expect own_random: when earlier?(premises, k) and (k, Caveat::Random) in own, random?
@@ -934,13 +934,12 @@ pub proc fact_applications(
     brings: Set<Int>,            -- the applications that bring their facts (`query_facts`)
     brought: Set<Int>,           -- the applications whose facts the query has
 ): (det closed?) {
-    ensure rule:
-        closed?
-            iff (written inter brings subset brought
-                and inside.image(brought) inter brings subset brought
-                and brought subset brings
-                and brought subset written inter brings union inside.image(brought)
-                and brought subset written union inside.closure.image(written))
+    ensure rule: closed? iff
+        (written inter brings subset brought
+            and inside.image(brought) inter brings subset brought
+            and brought subset brings
+            and brought subset written inter brings union inside.image(brought)
+            and brought subset written union inside.closure.image(written))
 
     -- `b(s)` brings `a(s)`'s facts, and `c(s)`, whose fact mentions `b(s)`, both.
     expect transitive: forall (x: Int) (y: Int) (z: Int), when closed? and x in written and (x, y) in inside
@@ -1095,8 +1094,8 @@ pub proc law_premise(
     laws?,
     asked?,                  -- the item has a vacuity under the laws
 ): (det rests?) {
-    ensure rule:
-        rests? iff laws? and query_laws?(kind) and from_unsat?(kind, verdict) and not asked?
+    ensure rule: rests? iff
+        laws? and query_laws?(kind) and from_unsat?(kind, verdict) and not asked?
 
     expect lawless: when not laws?, not rests?
     expect counterexamples: when kind = Kind::Expectation and verdict = Verdict::Fail, not rests?
@@ -1137,9 +1136,8 @@ pub proc reported_pass(
     -- rests on nothing.
     assume witness_plain: when not proof?(kind), own = {} and caveats = {}
 
-    ensure verdict_rule:
-        shown
-            = (if verdict = Verdict::Pass and not settled? then Verdict::Inconclusive else verdict)
+    ensure verdict_rule: shown =
+        (if verdict = Verdict::Pass and not settled? then Verdict::Inconclusive else verdict)
     ensure testing: by_testing? iff (shown = Verdict::Pass and Caveat::Random in caveats)
     ensure bound: by_bound? iff (shown = Verdict::Pass and Caveat::Bounded in caveats)
     -- `F0663`
@@ -1201,10 +1199,8 @@ expect own_caveats_reported(
     )
 
     expect shown_own: r.shown = c.verdict and not r.weakened? and not r.unsettled?
-    expect bound_own:
-        r.by_bound?
-            iff (c.verdict = Verdict::Pass
-                and Caveat::Bounded in own_caveats(kind, c.method, c.bounded?))
+    expect bound_own: r.by_bound? iff
+        (c.verdict = Verdict::Pass and Caveat::Bounded in own_caveats(kind, c.method, c.bounded?))
 }
 ```
 
@@ -1260,10 +1256,9 @@ pub proc hosted_runs(
     -- no other check of Lean's has that caveat. So a check rests on one set
     -- to random testing just where `Random` is among the own caveats of the
     -- checks that it rests on.
-    ensure rule:
-        reported?
-            iff (not Caveat::Random in own.image(rests_on(premises, k))
-                or (k in failed and not (k, Caveat::Random) in own))
+    ensure rule: reported? iff
+        (not Caveat::Random in own.image(rests_on(premises, k))
+            or (k in failed and not (k, Caveat::Random) in own))
 
     expect own_setting: when (k, Caveat::Random) in own, not reported?
     expect failure_reported: when k in failed and not (k, Caveat::Random) in own, reported?
@@ -1425,16 +1420,9 @@ expect issue_examples() {
         if e5.random? then {Caveat::Random} else {},
         e5.settled?,
     )
-    expect weakened:
-        r1.weakened?
-            and r1.by_testing?
-            and r3.weakened?
-            and r3.by_testing?
-            and r4.weakened?
-            and r4.by_testing?
-            and r5.shown = Verdict::Pass
-            and r5.weakened?
-            and r5.by_testing?
+    expect weakened: r1.weakened? and r1.by_testing? and r3.weakened? and r3.by_testing?
+    expect weakened_below: r4.weakened? and r4.by_testing?
+    expect weakened_top: r5.shown = Verdict::Pass and r5.weakened? and r5.by_testing?
     -- Where it finds an input without outputs, as it does here: each is
     -- inconclusive, `top`'s too.
     call u2 := pass_evidence({(0, Caveat::Random)}, {0}, edges, 2)
@@ -1461,12 +1449,9 @@ expect issue_examples() {
         if u5.random? then {Caveat::Random} else {},
         u5.settled?,
     )
-    expect inconclusive:
-        v2.shown = Verdict::Inconclusive
-            and v2.unsettled?
-            and v4.shown = Verdict::Inconclusive
-            and v4.unsettled?
-            and v5.shown = Verdict::Inconclusive
+    expect inconclusive: v2.shown = Verdict::Inconclusive and v2.unsettled?
+    expect inconclusive_below: v4.shown = Verdict::Inconclusive and v4.unsettled?
+    expect inconclusive_top: v5.shown = Verdict::Inconclusive
 }
 ```
 

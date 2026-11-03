@@ -73,9 +73,8 @@ pub proc match_same_arms(
     all?,                -- the group is every arm of the `match`
 ): (det fires?, det fix: ArmsFix) {
     ensure rule: fires? iff (same_body? and not binds?)
-    ensure group_fix:
-        fix
-            = if all? then ArmsFix::Replace else if wildcard? then ArmsFix::Remove else ArmsFix::Merge
+    ensure group_fix: fix =
+        if all? then ArmsFix::Replace else if wildcard? then ArmsFix::Remove else ArmsFix::Merge
 }
 ```
 
@@ -627,17 +626,16 @@ pub proc match_bool(
             -1,
             0,
             o
+        ) = body_value(
+            if c? iff first = BoolPat::True then a else b,
+            -1,
+            0,
+            -1,
+            0,
+            -1,
+            0,
+            o
         )
-            = body_value(
-                if c? iff first = BoolPat::True then a else b,
-                -1,
-                0,
-                -1,
-                0,
-                -1,
-                0,
-                o
-            )
 }
 ```
 
@@ -1065,12 +1063,11 @@ pub proc match_could_be_table(
     assume typed: not ((exists (s: Slot), pos(s) < arms.len and integers_pattern?(arms[pos(s)]))
         and (exists (s: Slot), pos(s) < arms.len and variants_pattern?(arms[pos(s)])))
 
-    ensure rule:
-        fires?
-            iff (arms.len >= 2
-                and not guarded?
-                and (forall (s r: Slot), when pos(s) < pos(r) < arms.len and overlap?(arms[pos(s)], arms[pos(r)]),
-                    pos(r) = arms.len - 1 and arms[pos(r)] = Pat::Wild))
+    ensure rule: fires? iff
+        (arms.len >= 2
+            and not guarded?
+            and (forall (s r: Slot), when pos(s) < pos(r) < arms.len and overlap?(arms[pos(s)], arms[pos(r)]),
+                pos(r) = arms.len - 1 and arms[pos(r)] = Pat::Wild))
 
     -- No value matches two arms, but where one is the otherwise.
     expect disjoint: forall (s r: Slot), when fires? and pos(s) < pos(r) and slot_matches?(arms, s, x)

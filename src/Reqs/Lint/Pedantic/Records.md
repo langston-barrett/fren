@@ -213,14 +213,10 @@ pub proc needless_higher_order(
     pub?,                            -- the function is public
     generic?,                        -- the function is generic
 ): (det fires?) {
-    ensure rule:
-        fires?
-            iff (not pub?
-                and not generic?
-                and given != []
-                and (forall (k: Int), when 0 <= k < given.len,
-                    not given[k].lambda_match?
-                        and closure_names(given[k].params, given[k].body) = {}
-                        and given[k].form = given[0].form))
+    ensure rule: fires? iff
+        (not pub? and not generic? and given != [] and (forall (k: Int), when 0 <= k < given.len,
+            not given[k].lambda_match?
+                and closure_names(given[k].params, given[k].body) = {}
+                and given[k].form = given[0].form))
 }
 ```

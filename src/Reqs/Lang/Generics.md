@@ -576,12 +576,11 @@ pub proc construction_synthesis(
 ): (det synthesizes?) {
     use self::Arg::{P0, P1, P2}
 
-    ensure rule:
-        synthesizes?
-            iff (params <= 3
-                and (params < 1 or ArgMode::Gives(P0) in values)
-                and (params < 2 or ArgMode::Gives(P1) in values)
-                and (params < 3 or ArgMode::Gives(P2) in values))
+    ensure rule: synthesizes? iff
+        (params <= 3
+            and (params < 1 or ArgMode::Gives(P0) in values)
+            and (params < 2 or ArgMode::Gives(P1) in values)
+            and (params < 3 or ArgMode::Gives(P2) in values))
 
     expect waiting: when params = 1 and not ArgMode::Gives(P0) in values, not synthesizes?
     expect plain: when params = 0, synthesizes?

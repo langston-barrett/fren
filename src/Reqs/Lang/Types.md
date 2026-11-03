@@ -144,8 +144,8 @@ pub proc widening(
 ): (det accepted?) {
     use self::ValueType::{IntTy, NatTy}
 
-    ensure rule:
-        accepted? iff (found = expected or (kind(found) = NatTy and kind(expected) = IntTy))
+    ensure rule: accepted? iff
+        (found = expected or (kind(found) = NatTy and kind(expected) = IntTy))
 
     expect same_type: when found = expected, accepted?
     expect never_narrows: when kind(found) = IntTy and kind(expected) = NatTy, not accepted?
@@ -407,8 +407,8 @@ pub proc pattern_count(alts: Seq<Alternative>): (
 ) {
     assume few: alts.len <= 2
 
-    ensure bounds:
-        finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
+    ensure bounds: finite? iff
+        ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
     ensure none: when alts = [], count = 0
     ensure one: when finite? and alts.len = 1, count = width(alts[0])
     ensure apart: when finite? and alts.len = 2 and width(alts[0]) > 0 and width(alts[1]) > 0
@@ -417,8 +417,8 @@ pub proc pattern_count(alts: Seq<Alternative>): (
     -- Alternatives that overlap or touch count as their union, once.
     ensure joined: when finite? and alts.len = 2 and width(alts[0]) > 0 and width(alts[1]) > 0
         and not (bound_value(alts[0].hi) + 1 < bound_value(alts[1].lo) or bound_value(alts[1].hi) + 1 < bound_value(alts[0].lo)),
-        count
-            = bound_value(alts[0].hi).max(bound_value(alts[1].hi))
+        count =
+            bound_value(alts[0].hi).max(bound_value(alts[1].hi))
                 - bound_value(alts[0].lo).min(bound_value(alts[1].lo))
                 + 1
     ensure empty_first: when finite? and alts.len = 2 and width(alts[0]) = 0, count = width(alts[1])
