@@ -6,11 +6,15 @@
    gives cvc5's allocations to mimalloc, those solvers took a third more
    resident memory with arenas committed at once: 5.9-6.2 GB, against
    4.2 GB with glibc's allocator, for `fren_test --job frontendFuzz 0 30`.
-   Committed as needed, they take 4.3 GB. The `fren` binary keeps
+   Committed as needed, they take 4.2 GB again. The `fren` binary keeps
    mimalloc's default, which costs it no memory and about 1% fewer cycles.
 
-   Set by a constructor that runs before those of priority above 101 and
-   before `main`, before mimalloc reserves memory for what they allocate. */
+   Set by a constructor of priority 101, which runs before the
+   executable's other constructors and `main`, and so before cvc5's and
+   Lean's allocations. The shared libraries' constructors and the dynamic
+   linker run earlier and may allocate with mimalloc first, so mimalloc may
+   already have reserved an arena under eager commit; the setting applies
+   to the arenas that it reserves after it. */
 
 #ifdef __linux__
 #include <lean/mimalloc.h>
