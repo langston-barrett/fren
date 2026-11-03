@@ -33,6 +33,12 @@ pub fn clamp(n: Int): (r: Int) {
     ensure bounded: r <= LIMIT
 }
 
+-- About two other functions, which the note lists in order.
+pub fn both(n: Int): (r: Int) {
+    ensure grows: r >= n
+    ensure others: limit(0) > 0 or known?(1)  --~ warning: it mentions only the function `limit`, the function `known?`
+}
+
 -- Not fired: the clause mentions a parameter, the value, or the function.
 pub fn steps(n: Int): (r: Int) {
     assume small: n < LIMIT
@@ -44,6 +50,13 @@ pub fn steps(n: Int): (r: Int) {
 pub fn first(q: Seq<Int>): (r: Int) {
     assume long: q.len > 1
     out r := q[1]
+}
+
+-- The value of a defined function is its application, which mentions its
+-- parameters, even where its body does not.
+pub fn seven(n: Int): (r: Int) {
+    out r := 7
+    ensure positive: r > 0
 }
 
 -- A function parameter is the function's too, whether read or applied.

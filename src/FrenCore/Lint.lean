@@ -7182,10 +7182,9 @@ def contractMentionsNothing (mentioned : List Mention) (f : String) (params : Li
 `f`, that mentions `mentioned` but nothing of `f`'s own. -/
 def contractMentionsNothingMsg (post : Bool) (f : String) (mentioned : List Mention) : Msg :=
   let what := if post then "postcondition" else "precondition"
-  let shown := ", ".intercalate (mentioned.eraseDups.map (·.describe))
   { code? := some Lint.contractMentionsNothing.code, headline := s!"this {what} says nothing about `{f}`"
     label? := some s!"mentions no parameter of `{f}`{if post then ", nor its value" else ""}"
-    notes := #[s!"note: it mentions only {shown}",
+    notes := #[s!"note: it mentions only {describeMentions mentioned}",
       "help: state it in the contract of what it is about, or as a global expectation"] }
 
 /-! ## Restricted settings and paths -/

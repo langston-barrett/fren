@@ -1371,6 +1371,12 @@ def claimProcs : R String := do
     if ← chance 30 then body := body ++ "    ensure and { zuc: zx + 1 > zx, zud: zx - 1 < zx }\n"
     body := body ++ s!"    expect and \{ zue: zx >= {← below 3}, zuf: zg(zx) != zx }\n"
     out := out ++ s!"proc zu{k}(zx: Int) \{\n{body}}\n"
+  -- And last, a clause about two other functions, whose note lists both,
+  -- in an order that both front ends must agree on.
+  if ← chance 60 then
+    let two ← pick #["zg(0) > zg2(1)", "zg2(0) > 0 or zg(1) > ZK", "zg2(zg(0)) > 0"]
+    out := out ++ s!"pub fn zg2(Int): Int\npub fn zf2(zn: Int): (zr: Int) \{\n    ensure zgrows: zr >= zn\n" ++
+      s!"    ensure ztwo: {two}\n}\n"
   return out
 
 /-- A goal with leading binders (`cli::goal_introduction`), whose terms

@@ -1,0 +1,14 @@
+-- `proc_without_outputs`'s fix of `f0846_proc_without_outputs.fren`, the
+-- second example of `F0846.md`: the lint no longer fires, and the global
+-- expectation passes the procedure's 6 checks but one, whether its
+-- assumption is redundant, which a global expectation does not check.
+set_option fren.lint.proc_without_outputs "warn"
+
+pub proc band(temp: Int): (cold?) { ensure rule: cold? iff temp < 18 }
+
+expect colder_is_cold(a: Int, b: Int) {
+    assume sorted: a <= b
+    call x := band(a)
+    call y := band(b)
+    expect colder: when y.cold?, x.cold?
+}

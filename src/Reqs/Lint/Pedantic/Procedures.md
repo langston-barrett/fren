@@ -11,11 +11,17 @@ for its members to constrain, and constrains nothing: it only claims
 something of its parameters, which is what a global expectation is for. A
 global expectation means what its expectations mean in a procedure with its
 parameters as inputs, its assumptions, its calls and its definitions, and no
-outputs or guarantees (see [Meaning](../../Lang/Global.md#meaning)), so the fix,
-which writes `expect` in place of `proc`, keeps every check: the
-procedure's realizability check has no guarantee to realize, and the
-global expectation's checks are a procedure's but for those of what it
-does not have.
+outputs or guarantees (see [Meaning](../../Lang/Global.md#meaning)). So the fix,
+which writes `expect` in place of `proc`, keeps what each claim means and
+how it is checked: each expectation and cover goal, the preconditions of
+the calls, and that the assumptions can hold together. The procedure's
+realizability check had no guarantee to realize. One check goes: whether
+an assumption is [redundant](../../Check.md#redundancy), always true,
+which a procedure's checks ask and a global expectation's do not
+(`check::applies`), so the fixed spec loses that warning, never a verdict. The snapshots
+`test/cli/lints/pedantic/f0846_proc_without_outputs` and
+`f0846_proc_without_outputs_fixed` show it: 6 checks pass before the fix,
+and 5 after.
 
 What the fix changes is what the procedure is to the rest of the spec. A
 global expectation is not a procedure: nothing can call it, nor refine it,
