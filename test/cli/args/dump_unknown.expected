@@ -1,0 +1,4 @@
+error: unknown option `--dump=obligation`
+  = help: an option with a similar name exists: `--dump=obligations`
+  = help: run `fren --help` for usage
+exit=2

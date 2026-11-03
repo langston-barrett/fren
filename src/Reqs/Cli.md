@@ -618,8 +618,13 @@ verification language, such as Boogie's, Viper's or Why3's tasks, after
 the instantiation of generic functions and types and the desugaring of
 the spec into formulas, as the solver is given them. The Lean-hosted
 front end prints the same dump with `set_option fren.dump "obligations"`,
-as a message at the `#fren_check`. The dump is for debugging and for
-comparing the front ends: nothing reads it back, and its format may
+as a message at the `#fren_check`: each `#fren_check` logs a dump of only
+the items that it reports, not of the procedures that it checks only for
+the evidence that its items rest on. An unknown value is an error for
+`fren check`, `--dump=obligation` being an unknown option, which stops it
+before it checks anything; the Lean-hosted front end warns of an unknown
+`fren.dump` at the `#fren_check`, and checks without a dump. The dump is
+for debugging and for comparing the front ends: nothing reads it back, and its format may
 change with any version.
 
 ```text

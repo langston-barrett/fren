@@ -426,9 +426,11 @@ where
   -- items that this run reports (`Core.dump`).
   let dump := fren.dump.get (← getOptions)
   let dumping := dump == "obligations"
-  -- As `fren check` rejects an unknown `--dump=`.
+  -- An unknown value, which `fren check` rejects as an unknown option
+  -- before it checks anything, is a warning here, and the checks run
+  -- without a dump (`Reqs/Cli#obligations`).
   unless dump.isEmpty || dumping do
-    logWarning m!"`fren.dump` is `\"{dump}\"`, which is not a dump that `#fren_check` prints: only `\"obligations\"` is"
+    logWarning m!"`fren.dump` is `\"{dump}\"`, which is not a dump that `#fren_check` prints: only `\"obligations\"` is; checking without a dump"
   let obligations ← items.mapIdxM fun k _ => if dumping && k ≥ silent then some <$> IO.mkRef #[] else pure none
   let tasks ← checkItems items sites cancel obligations
   -- The evidence of the contracts of the functions among them first, though
