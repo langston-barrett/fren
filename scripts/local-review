@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""Review the current branch with Codex before a push, by the brief that the
+`pr-review` workflow gives its reviewer.
+
+    scripts/local-review [--base REF] [--dry-run] [--keep]
+
+Reviews HEAD's diff against its merge base with REF (default `origin/main`).
+The brief is composed by `.github/pr-review/compose.py` and `brief.md`, as
+REF has them, with REF's AGENTS.md, as the workflow composes it from
+`main`'s; a preamble says where a local review differs. The title and
+description are the branch's pull request's (`gh pr view`), or else the
+latest commit's subject and the messages of the branch's commits.
+
+Codex runs in a scratch copy of HEAD's tree, its blobs as they are, outside
+the repository, with no `.git`, and with AGENTS.md, CLAUDE.md, `.claude`,
+`.mcp.json`, a top-level `review.md` and symbolic links removed, as on CI,
+and Codex's own AGENTS.override.md, `.codex` and `.agents` removed too;
+`.review` holds the texts that the brief names. Its sandbox is read-only,
+which stops its commands from writing and cuts them off the network, but
+not from reading elsewhere: only the preamble keeps its reads in the copy.
+Web search, apps and the browsers are disabled, and the user's Codex
+configuration is not loaded. Uncommitted changes are not reviewed.
+
+The review is printed on stdout and saved, with the prompt and Codex's log,
+in `.lake/local-review/<head>/`. Nothing is posted. Its first line starts
+"Pre-push check of", never "Review of": it is not a review in AGENTS.md's
+sense, and is never posted as one.
+
+`--dry-run` prints the prompt and runs no model. `--keep` keeps the scratch
+copy. `LOCAL_REVIEW_MODEL` (default gpt-6.1-sol) and `LOCAL_REVIEW_EFFORT`
+(default xhigh) choose the model and its reasoning effort, and
+`LOCAL_REVIEW_CODEX` the Codex binary (default `codex`).
+
+`python3 -I -B scripts/local_review_test.py` tests it without a model.
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+MODEL = "gpt-6.1-sol"
+EFFORT = "xhigh"
+# The files of the workflow that compose the brief, read from the base.
+TRUSTED = [
+    "AGENTS.md",
+    ".github/pr-review/brief.md",
+    ".github/pr-review/check.py",
+    ".github/pr-review/compose.py",
+]
+# What CI removes from the reviewer's checkout (claude-review.yml), and what
+# steers Codex: `AGENTS.override.md`, read before AGENTS.md, a project's
+# `.codex` (its config.toml, agents and hooks) and `.agents` (its skills).
+REMOVED_FILES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "AGENTS.local.md",
+                 "AGENTS.override.md", ".mcp.json"}
+REMOVED_DIRS = {".claude", ".codex", ".agents"}
+# The flags that keep Codex off the web and the network, and out of the
+# user's own configuration.
+OFFLINE = [
+    "-c", "web_search=disabled",
+    "--disable", "apps",
+    "--disable", "browser_use",
+    "--disable", "browser_use_external",
+    "--disable", "in_app_browser",
+    "--disable", "computer_use",
+    "--disable", "multi_agent",
+    "--ignore-user-config",
+]
+PREFIX = "Review of"
+LOCAL_PREFIX = "Pre-push check of"
+
+PREAMBLE = """\
+Note from the author of the pull request, who runs this review: this is a
+pre-push check, a review run with Codex before the author pushes the head
+below. It is not the workflow's review, and nothing of it is posted. The
+brief below holds, as written, except here:
+
+- Your only tool is the shell. Wherever the brief says Read, Grep or Glob,
+  use the shell instead, and use it only to read files in the working
+  directory (for example cat, sed -n, rg and ls). Don't build, run binaries
+  or tests, run git or gh, or use the network. The working directory is a
+  copy of the head's tree, with no `.git`.
+- The sandbox is read-only, so you cannot write `review.md`. Give the review,
+  exactly as the brief says to write it, as your final message, and nothing
+  else in that message.
+- No `pre-merge` run has run on this head, and no probe has run:
+  `.review/probes.md` says so. Where the brief says that `pre-merge` passed,
+  nothing is known yet of the build or the tests. Judge the code by reading
+  it, and say in a finding what a build, a test or a probe would show.
+- {pr}
+"""
+
+NO_PR = """\
+The branch has no pull request yet, so the brief's pull request number
+  is a stand-in, and its title and description are the branch's commits'."""
+HAS_PR = """\
+The pull request is #{number}, and its title and description are quoted
+  at the end."""
+
+PROBES = "No probe ran: this is a local review, before a push, and before `pre-merge`.\n"
+
+
+def fail(message):
+    print(f"local-review: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def git(*args, cwd=None, text=True, input=None):
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=text, input=input)
+    if result.returncode != 0:
+        err = result.stderr if text else result.stderr.decode(errors="replace")
+        fail(f"git {' '.join(args)} failed: {err.strip()}")
+    return result.stdout
+
+
+def diff(*args, cwd=None):
+    return git("diff", "--no-ext-diff", "--no-textconv", *args, cwd=cwd)
+
+
+def pull_request(cwd):
+    """The branch's pull request's number, title and body, or None."""
+    if shutil.which("gh") is None:
+        return None
+    result = subprocess.run(["gh", "pr", "view", "--json", "number,title,body"],
+                            cwd=cwd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    return json.loads(result.stdout)
+
+
+def from_commits(base, head, cwd):
+    """A stand-in title and body for a branch with no pull request."""
+    title = git("log", "-1", "--format=%s", head, cwd=cwd).strip()
+    body = git("log", "--reverse", "--format=%B", f"{base}..{head}", cwd=cwd).strip()
+    return {"title": title, "body": body}
+
+
+def extract(tree, dest, cwd):
+    """Writes `tree`'s files into `dest` as CI's reviewer sees them: no
+    AGENTS.md, CLAUDE.md, `.claude`, `.mcp.json`, top-level `review.md` or
+    `.review`, and no symbolic link. Writes the blobs as they are, unlike
+    `git archive`, which applies the `export-ignore` and `export-subst`
+    attributes."""
+    files = []
+    for entry in git("ls-tree", "-r", "-z", "--full-tree", tree, cwd=cwd, text=False).split(b"\0"):
+        if not entry:
+            continue
+        meta, path = entry.split(b"\t", 1)
+        mode, kind, sha = meta.split()
+        # A symbolic link is 120000, and a submodule is a commit.
+        if kind != b"blob" or mode not in (b"100644", b"100755"):
+            continue
+        parts = os.fsdecode(path).split("/")
+        if any(p in ("", ".", "..") for p in parts):
+            fail(f"{tree} has a path that cannot be copied: {os.fsdecode(path)!r}")
+        if parts[-1] in REMOVED_FILES or any(p in REMOVED_DIRS for p in parts):
+            continue
+        if parts == ["review.md"] or parts[0] == ".review":
+            continue
+        files.append((os.path.join(dest, *parts), mode == b"100755", sha))
+    blobs = git("cat-file", "--batch", cwd=cwd, text=False,
+                input=b"".join(sha + b"\n" for _, _, sha in files))
+    at = 0
+    for target, executable, sha in files:
+        header_end = blobs.index(b"\n", at)
+        got, kind, size = blobs[at:header_end].split()
+        assert got == sha and kind == b"blob", (got, sha, kind)
+        at = header_end + 1 + int(size)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "wb") as f:
+            f.write(blobs[header_end + 1:at])
+        if executable:
+            os.chmod(target, 0o755)
+        at += 1  # the newline after each blob
+
+
+def compose(base_ref, facts, pr, cwd, scratch):
+    """The brief, from compose.py and brief.md as `base_ref` has them."""
+    trusted = os.path.join(scratch, "trusted")
+    for path in TRUSTED:
+        target = os.path.join(trusted, path)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w") as f:
+            f.write(git("show", f"{base_ref}:{path}", cwd=cwd))
+    temp = os.path.join(scratch, "temp")
+    os.makedirs(temp)
+    with open(os.path.join(temp, "pr.json"), "w") as f:
+        json.dump({"title": pr["title"], "body": pr["body"]}, f)
+    env = {**os.environ, **facts}
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", os.path.join(trusted, ".github/pr-review/compose.py"), temp, "full"],
+        cwd=trusted, env=env, capture_output=True, text=True)
+    if result.returncode != 0:
+        fail(f"compose.py failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def codex_command(codex, model, effort, workdir, output):
+    return [
+        codex, "exec", "-m", model, "-c", f"model_reasoning_effort={effort}",
+        *OFFLINE, "-s", "read-only", "--ephemeral", "--skip-git-repo-check",
+        "-C", workdir, "-o", output, "-",
+    ]
+
+
+def relabel(review):
+    """The review with its first line's "Review of" made "Pre-push check
+    of", so that it never reads as a review in AGENTS.md's sense."""
+    review = review.strip() + "\n"
+    if review.startswith(PREFIX):
+        return LOCAL_PREFIX + review[len(PREFIX):]
+    return f"{LOCAL_PREFIX} (no verdict line):\n\n{review}"
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(prog="local-review", description=__doc__.splitlines()[0])
+    parser.add_argument("--base", default="origin/main")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--keep", action="store_true")
+    args = parser.parse_args(argv)
+
+    codex = os.environ.get("LOCAL_REVIEW_CODEX") or "codex"
+    if not args.dry_run and shutil.which(codex) is None:
+        fail(f"`{codex}` is not installed or not on PATH: install the Codex CLI, "
+             "or skip the local review")
+    model = os.environ.get("LOCAL_REVIEW_MODEL") or MODEL
+    effort = os.environ.get("LOCAL_REVIEW_EFFORT") or EFFORT
+
+    top = git("rev-parse", "--show-toplevel").strip()
+    head = git("rev-parse", "HEAD", cwd=top).strip()
+    git("rev-parse", "--verify", "--quiet", f"{args.base}^{{commit}}", cwd=top)
+    base = git("merge-base", args.base, head, cwd=top).strip()
+    if base == head:
+        fail(f"HEAD has no commits that {args.base} lacks")
+    if git("status", "--porcelain", "--untracked-files=no", cwd=top).strip():
+        print("local-review: uncommitted changes are not reviewed", file=sys.stderr)
+
+    pr = pull_request(top)
+    if pr is None:
+        pr, number, note = from_commits(base, head, top), "0", NO_PR
+    else:
+        number, note = str(pr["number"]), HAS_PR.format(number=pr["number"])
+    remote = re.search(r"github\.com[:/](.+?)(?:\.git)?$",
+                       subprocess.run(["git", "remote", "get-url", "origin"], cwd=top,
+                                      capture_output=True, text=True).stdout.strip())
+    facts = {
+        "REPO": remote.group(1) if remote else "langston-barrett/fren",
+        "PR": number, "HEAD": head, "BASE": base, "RUN": "(none: local review)",
+        "PREVIOUS": "",
+    }
+
+    scratch = tempfile.mkdtemp(prefix=f"local-review-{head[:12]}-")
+    try:
+        brief = compose(args.base, facts, pr, top, scratch)
+        prompt = PREAMBLE.format(pr=note) + "\n" + brief
+        work = os.path.join(scratch, "head")
+        os.makedirs(work)
+        extract(head, work, top)
+        review_dir = os.path.join(work, ".review")
+        os.makedirs(review_dir)
+        for name, text in [
+            ("brief.md", brief),
+            ("diff.patch", diff(base, head, cwd=top)),
+            ("diff-stat.txt", diff("--stat", base, head, cwd=top)),
+            ("log.txt", git("log", "--no-decorate", f"{base}..{head}", cwd=top)),
+            ("probes.md", PROBES),
+        ]:
+            with open(os.path.join(review_dir, name), "w") as f:
+                f.write(text)
+
+        if args.dry_run:
+            sys.stdout.write(prompt)
+            return 0
+
+        out = os.path.join(top, ".lake", "local-review", head)
+        os.makedirs(out, exist_ok=True)
+        with open(os.path.join(out, "prompt.md"), "w") as f:
+            f.write(prompt)
+        last = os.path.join(scratch, "last-message.md")
+        log = os.path.join(out, "codex.log")
+        print(f"local-review: {model} at {effort} is reviewing {head} against {base}; "
+              f"its log is {log}", file=sys.stderr)
+        with open(log, "w") as log_file:
+            status = subprocess.run(codex_command(codex, model, effort, work, last),
+                                    input=prompt, text=True, stdout=log_file,
+                                    stderr=subprocess.STDOUT).returncode
+        if status != 0 or not os.path.exists(last):
+            fail(f"codex failed (exit {status}); see {log}")
+        with open(last) as f:
+            review = relabel(f.read())
+        with open(os.path.join(out, "review.md"), "w") as f:
+            f.write(review)
+        sys.stdout.write(review)
+        print(f"local-review: saved in {out}/review.md", file=sys.stderr)
+        return 0
+    finally:
+        if args.keep:
+            print(f"local-review: scratch copy in {scratch}", file=sys.stderr)
+        else:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
