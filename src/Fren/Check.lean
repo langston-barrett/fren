@@ -1075,7 +1075,13 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     let hyps := hyps.map fun (n, t) => (n, instances t)
     if Elems.hasMark goal || hyps.any (Elems.hasMark ·.2) then return (← askElems hyps goal wantModel, fns, factRecs)
     else return (← askSmt hyps goal wantModel, fns, factRecs)
-  { query := fun hyps goal wantModel => do
+  -- Each query has Lean's heartbeat budget of its own, as it has a time
+  -- limit of its own (`fren.timeout`), so that a procedure's check never
+  -- reaches the limit only for having many clauses
+  -- (`Reqs/View#check-results`). `lang::operator_rules`'s 40 queries take
+  -- about 406,000 heartbeats (in `maxHeartbeats`'s thousands) in all,
+  -- against a limit of 200,000, and none of them more than 19,000 (#710).
+  { query := fun hyps goal wantModel => withCurrHeartbeats do
       -- The same formulas, in the same local context and with the same
       -- options, are the same query.
       let key := (hyps.map (·.2), goal, wantModel)
