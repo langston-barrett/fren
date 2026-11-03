@@ -1728,8 +1728,9 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
           checkComp (← instanceContract hooks b f targs) #[.realizable] none hooks?
         results := results ++ (rs.filter (·.kind == .realizable)).map fun r => { r with clashes := #[] }
     -- Each after the queries, under a heartbeat limit of its own, as each
-    -- step of the backend is (`Core.Backend.ownHeartbeats`): the nested
-    -- checks above, and each cover goal's witness.
+    -- step of the backend is (`Core.Backend.ownHeartbeats`): each
+    -- instance's contract and its nested check above, and each cover goal's
+    -- question and witness.
     let mut witnesses := #[]
     for g in c.covers do
       let passed := results.any fun r => r.kind == .cover && r.prop? == some g.name && r.verdict == .pass

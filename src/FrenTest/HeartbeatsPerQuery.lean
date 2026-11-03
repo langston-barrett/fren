@@ -9,6 +9,9 @@ open Fren.Lang
 -- (#710).
 -- Under one limit for the whole procedure, this one's check took between
 -- 200 and 400 thousand heartbeats and stopped at 100; it passes at 50.
+-- Heartbeat counts move with Lean and lean-smt: if an upgrade makes these
+-- tests fail, adjust the number of clauses or the limit, keeping each
+-- procedure's total far above the limit and each step below it.
 proc many(x: Int, y: Int): (z: Int) {
     ensure r: z = x + y
     expect c1: z - y = x
