@@ -330,7 +330,9 @@ def test_job_kinds():
 
 def test_stats_and_appends():
     with tempfile.TemporaryDirectory() as state:
-        assert heavy.stats(1, state, {}, now=10000)["jobs"] == 0
+        empty = heavy.stats(1, state, {}, now=10000)
+        assert empty["jobs"] == 0 and empty["observed_hours"] == 0
+        assert empty["rate_jobs"] == 0 and empty["jobs_per_hour"] is None
         record = {"started_at": 9900, "ended_at": 10000, "wait_seconds": 10, "run_seconds": 20,
                   "load_samples": [6, 8], "max_load": "off", "slots": 2,
                   "job_kind": "lake test", "exit_status": 0}
@@ -347,7 +349,9 @@ def test_stats_and_appends():
         with open(os.path.join(state, "log.jsonl"), "a") as f:
             f.write('null\n[]\n{}\n{"wait_seconds": NaN}\n{"partial":')
         summary = heavy.stats(1, state, {}, now=10000)
-        assert summary["jobs"] == 2 and summary["jobs_per_hour"] == 2
+        assert summary["jobs"] == 2 and summary["hours"] == 1
+        assert summary["observed_hours"] == 0 and summary["rate_jobs"] == 0
+        assert summary["jobs_per_hour"] is None  # No logged exposure at either level.
         assert summary["wait_seconds"]["p50"] == 5
         assert summary["run_seconds"]["p50"] == 15
         assert summary["latency_seconds"]["p50"] == 20
@@ -390,6 +394,21 @@ def test_short_appends():
         heavy.append_log({"next": True}, state, {})
         with open(path) as f:
             assert [json.loads(line) for line in f] == [record, {"next": True}]
+        with open(path, "rb") as f:
+            before = f.read()
+
+        def partial_then_error(fd, data):
+            if os.fstat(fd).st_size == len(before):
+                return write(fd, data[:5])
+            raise OSError("disk full")
+
+        with mock.patch.object(heavy.os, "write", side_effect=partial_then_error):
+            heavy.append_log({"damaged": True}, state, {})
+        with open(path, "rb") as f:
+            assert f.read() == before  # Keep earlier records, remove the failed append.
+        heavy.append_log({"after_error": True}, state, {})
+        with open(path) as f:
+            assert [json.loads(line) for line in f] == [record, {"next": True}, {"after_error": True}]
 
 
 def test_policy_comparison():
@@ -420,6 +439,8 @@ def test_policy_comparison():
             job("off", "fast", 1000000, slots=3)  # Never pool different slot counts.
         job("off", "fast", 1000, ended=7199)  # Outside the window.
         summary = heavy.stats(2, state, {}, now=14400)
+        assert summary["hours"] == 2 and summary["observed_hours"] == 2
+        assert summary["rate_jobs"] == 22 and summary["jobs_per_hour"] == 11
         policies = {(p["max_load"], p["slots"]): p for p in summary["policies"]}
         off, on = policies[("off", 2)], policies[(8, 2)]
         assert off["observed_hours"] == 0.5 and on["observed_hours"] == 1.5
@@ -461,6 +482,8 @@ def test_partial_policy_coverage():
         summary = heavy.stats(2, state, {}, now=14400)
         policies = {p["max_load"]: p for p in summary["policies"]}
         assert summary["jobs"] == 9  # Raw counts and timing summaries retain every completion.
+        assert summary["hours"] == 2 and summary["observed_hours"] == 1
+        assert summary["rate_jobs"] == 4 and summary["jobs_per_hour"] == 4
         assert policies["off"]["jobs"] == 6 and policies[8]["jobs"] == 3
         for policy in policies.values():
             assert policy["observed_hours"] == 0.5
@@ -498,12 +521,42 @@ def test_alternate():
         assert all(p["jobs_per_hour"] == 0 for p in summary["policies"])
 
 
+def test_alternate_hangup():
+    with tempfile.TemporaryDirectory() as state:
+        alternate = heavy.alternate
+
+        def hangup(seconds):
+            assert seconds == 60 and heavy.max_load({}, state) == 8
+            signal.raise_signal(signal.SIGHUP)
+            raise AssertionError("SIGHUP did not stop the controller")
+
+        def controlled(minutes, value, state, environ):
+            alternate(minutes, value, state, environ, sleep=hangup)
+
+        def unexpected(sig, frame):
+            # Fail safely instead of terminating the test driver if main
+            # forgets to replace the inherited SIGHUP handler.
+            raise AssertionError("controller did not handle SIGHUP")
+
+        previous = signal.signal(signal.SIGHUP, unexpected)
+        try:
+            with mock.patch.object(heavy, "alternate", side_effect=controlled):
+                assert heavy.main(["--alternate", "1", "8"], state, {}) == 0
+            assert signal.getsignal(signal.SIGHUP) is unexpected
+        finally:
+            signal.signal(signal.SIGHUP, previous)
+        assert not os.path.exists(os.path.join(state, "max_load"))
+        with open(os.path.join(state, "log.jsonl")) as f:
+            flips = [json.loads(line) for line in f]
+        assert [r["max_load"] for r in flips] == [8, "off"]
+
+
 def main():
     tests = [test_parse_args, test_missing_command, test_recheck_wait_message,
              test_physical_memory, test_overrides, test_offline_command,
              test_load_admission, test_job_log, test_admission_snapshot, test_job_kinds,
              test_stats_and_appends, test_short_appends, test_policy_comparison,
-             test_partial_policy_coverage, test_alternate]
+             test_partial_policy_coverage, test_alternate, test_alternate_hangup]
     for t in tests:
         t()
     print(f"heavy: {len(tests)} tests passed")

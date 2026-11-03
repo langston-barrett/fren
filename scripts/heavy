@@ -34,7 +34,7 @@ compares completions in the last HOURS (default 24), by admission policy
 and job kind. `--alternate` switches the file setting between VALUE and
 absent every MINUTES, logging each flip for the policy exposure times.
 Run one alternator for all agents, with HEAVY_MAX_LOAD unset everywhere.
-SIGINT and SIGTERM stop it and remove the file, leaving admission off.
+SIGINT, SIGTERM and SIGHUP stop it and remove the file, leaving admission off.
 
 `--offline` runs COMMAND with no network: on Linux in a new user and
 network namespace (`unshare -rn`), whose only interface is loopback, which
@@ -232,12 +232,17 @@ def append_log(record, state=STATE, environ=None):
         fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
-            remaining = memoryview(data)
-            while remaining:
-                written = os.write(fd, remaining)
-                if written <= 0:
-                    raise OSError("log write made no progress")
-                remaining = remaining[written:]
+            size = os.fstat(fd).st_size
+            try:
+                remaining = memoryview(data)
+                while remaining:
+                    written = os.write(fd, remaining)
+                    if written <= 0:
+                        raise OSError("log write made no progress")
+                    remaining = remaining[written:]
+            except OSError:
+                os.ftruncate(fd, size)
+                raise
         finally:
             os.close(fd)
     except (OSError, ValueError, TypeError):
@@ -439,7 +444,8 @@ def stats(hours, state=STATE, environ=None, now=None):
         policy.update(matched_kinds=len(ratios), normalized_run_ratio_vs_off=(
             math.exp(sum(math.log(r) for r in ratios) / len(ratios)) if ratios else None))
         policies.append(policy)
-    return {"hours": hours, **summarize(rows, hours), "policies": policies, "by_kind": kinds}
+    return {"hours": hours, **summarize(rows, sum(exposure.values()), sum(rate_counts.values())),
+            "policies": policies, "by_kind": kinds}
 
 
 _physical = []
@@ -621,7 +627,8 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
         def stop(sig, frame):
             raise KeyboardInterrupt
 
-        previous = {sig: signal.signal(sig, stop) for sig in (signal.SIGINT, signal.SIGTERM)}
+        previous = {sig: signal.signal(sig, stop)
+                    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
         try:
             alternate(minutes, value, state, environ)
         except KeyboardInterrupt:

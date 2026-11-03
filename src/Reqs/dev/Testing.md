@@ -843,6 +843,12 @@ from first and last jobs.
 A completion stays attributed to its admission policy if a flip happened
 while it ran. Failed jobs are counted separately. Samples from overlapping
 jobs both count toward mean load. Malformed and incomplete lines are skipped.
+At the top level, `hours` is the requested window, while `observed_hours`
+is the total logged exposure across policies. Its `rate_jobs` is the sum
+of the policy numerators, and its `jobs_per_hour` divides that sum by
+the total exposure, using the same admission rule as the policy entries.
+With no logged exposure the rate is `null`; raw counts and timings still
+describe every completion in the requested window.
 
 `by_kind` compares successful run-time percentiles within each job kind.
 For each load threshold it also reports the ratio of its median run time
@@ -858,7 +864,7 @@ in the amount of work within a kind can still affect the comparison.
 agents on the machine. It immediately writes VALUE to `max_load`, then
 removes the file after MINUTES, repeating on and off until stopped. The
 writes are atomic and every flip appends a policy record with its time
-and slot count. A lock prevents a second controller. SIGINT or SIGTERM
+and slot count. A lock prevents a second controller. SIGINT, SIGTERM or SIGHUP
 removes the file and logs off before exiting. An abrupt kill can leave
 the last setting in place. Run it directly, without holding a heavy slot.
 Unset `HEAVY_MAX_LOAD` on every agent so that all use the shared file;
