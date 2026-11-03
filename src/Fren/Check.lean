@@ -801,8 +801,8 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     -- clauses: their subset helpers may have executable Lean matches.
     -- An application that `scan` found has nothing bound, so only the
     -- declared result type decides (`Core.recursiveResultFact`).
-    if let some fact := d.fact? then
-      if Core.recursiveResultFact (constrained := true) then
+    if Core.recursiveResultFact d.fact?.isSome then
+      if let some fact := d.fact? then
         let value := if d.result == .nat then
           mkApp3 (mkConst ``Nat.cast [0]) (mkConst ``Int) (mkConst ``instNatCastInt) app else app
         out := out.push ((`type, ← unfoldDefined ((atI fact).beta #[value])), gs)
