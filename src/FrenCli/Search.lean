@@ -1056,6 +1056,19 @@ def Comp.earlyDefs (c : Comp) : Array Name := Id.run do
     if out.size == before then break
   return out
 
+/-- A strict application's arguments hold its definition back: with the
+input `a` and the output `z`, which no definition gives, `y`, whose body
+reads none of its arguments, waits for `z`, since its definition mentions `z`
+(`Reqs/Eval#searching-for-behaviours`), while `v`, whose argument is `a`,
+is given by the inputs. -/
+private def strictArgComp : Comp :=
+  { path := `c, constraints := #[], insts := #[]
+    vars := #[{ name := `a, ty := .int, role := .input, isPub := true }, { name := `z, ty := .int, role := .output, isPub := true },
+      { name := `y, ty := .bool, role := .output, isPub := true }, { name := `w, ty := .int, role := .output, isPub := true },
+      { name := `v, ty := .bool, role := .output, isPub := true }]
+    defs := #[(`y, .strict #[.var `z] (.lit (.bool true))), (`w, .var `a), (`v, .strict #[.var `a] (.lit (.bool true)))] }
+#guard strictArgComp.earlyDefs == #[`w, `v]
+
 /-- The variables of `c` nested at `pfx` in the order the search chooses
 them (`Reqs/Eval#searching-for-behaviours`): its inputs, the defined
 outputs that they give, each call's variables, then its other
