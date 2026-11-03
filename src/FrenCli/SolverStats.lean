@@ -374,6 +374,9 @@ private def testQuery (checkMs : Nat) (cvc5 : Cvc5Stats) : QueryStats :=
   "solver-stats: 1. 9.0 ms: `slow` (expectation)"
 #guard !(report #[testQuery 3 {}, { testQuery 9 {} with item := `slow }, testQuery 5 {}] (some 1)).contains
   "solver-stats: 2. "
+-- `N` past the number of queries lists them all, and no more.
+#guard (report #[testQuery 3 {}, testQuery 9 {}, testQuery 5 {}] (some 5)).contains "solver-stats: 3. "
+#guard !(report #[testQuery 3 {}, testQuery 9 {}, testQuery 5 {}] (some 5)).contains "solver-stats: 4. "
 -- The parts are summed over the queries of `summedMs` or more only.
 #guard (report #[testQuery 3 { preprocessMs := 1 }, testQuery 9 { preprocessMs := 2 }] (some 0)).contains
   "checkSat of queries of 5 ms or more: 1, 9.0 ms, by cvc5's timers: SAT search and the rest 7 ms, preprocessing 2 ms"
