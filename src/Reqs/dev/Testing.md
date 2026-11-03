@@ -1279,20 +1279,20 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   `checkSat`, but timers that overlap in part, as the clausal form of a
   theory's lemmas may within its check, would still meet that bound, and
   make `SAT search and the rest` too small. A query whose timed parts
-  exceed its `checkSat` says by how much, and a line after the summed
-  one says how many of all the queries did, not only of those summed. The timers are also read in whole milliseconds, so the rest
-  takes in what they leave out, which makes it too large: of the queries
-  of Fren's own requirements whose `checkSat` took under 5 ms, it was
-  2,054 ms of their 2,485 ms. So the summed line sums only the queries
-  whose `checkSat` took 5 ms or more (`summedMs`), and the rest is rough
-  for a short query that is listed. In cvc5 1.3.2, each theory has one
-  `checkTime`, the arrays' as `theory::arrays::theory::arrays::checkTime`.
-  The theories' checks are made from within the search, so a query that
-  makes tens of thousands of cheap theory checks, as `cli::query_symbols`'
-  do, shows its search's cost spread over the search and the theories. A
-  query is `dominated by` its largest part. cvc5 has no timer of its own
-  for parts of a theory, such as the datatypes solver's cycle check, so
-  those need a profile.
+  exceed its `checkSat` says by how much, and a line after the summed one
+  says how many of all the queries did, not only of those summed. The
+  timers are also read in whole milliseconds, so the rest takes in what
+  they leave out, which makes it too large: of the queries of Fren's own
+  requirements whose `checkSat` took under 5 ms, it was 2,054 ms of their
+  2,485 ms. So the summed line sums only the queries whose `checkSat` took
+  5 ms or more (`summedMs`), and the rest is rough for a short query that
+  is listed. In cvc5 1.3.2, each theory has one `checkTime`, the arrays'
+  as `theory::arrays::theory::arrays::checkTime`. The theories' checks are
+  made from within the search, so a query that makes tens of thousands of
+  cheap theory checks, as `cli::query_symbols`' do, shows its search's
+  cost spread over the search and the theories. A query is `dominated by`
+  its largest part. cvc5 has no timer of its own for parts of a theory,
+  such as the datatypes solver's cycle check, so those need a profile.
 - **A query whose command answers with an error**, answered `error`,
   has its time up to the failure in the phases it reached, and none in
   the later ones. One that throws, as on a parse error, has the time
