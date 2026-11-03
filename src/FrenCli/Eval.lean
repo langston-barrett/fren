@@ -1673,7 +1673,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
       fun _ => do I.fn (← unspec?) #[]) <|>
       -- Where whether a row is taken is unknown, the rows decide it as the
       -- `if`s that they are, as the Lean-hosted front end's definitions
-      -- are (`chainKnown`).
+      -- are (`chainKnownBy`, which is `chainKnown`).
       chainKnownBy (fun (_, c?, v) => (match c? with
           | none => some true
           | some c => truthOf (c.evalIn I look locals slots frame memos fuel depth), fun _ => v.evalIn I look locals slots frame memos fuel depth))
@@ -1705,8 +1705,9 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     -- Where whether an arm is taken is unknown, the arms decide it as the
     -- `if`s that they are: an arm's test and its guard, and its body, with
     -- the binders bound, or unknown where a scrutinee is (`armCase`,
-    -- `chainKnown`). The scrutinees of a `match` of several are its
-    -- vector's values, which each pattern tests on its own.
+    -- `chainKnownBy`, which is `chainKnown`). The scrutinees of a `match`
+    -- of several are its vector's values, which each pattern tests on its
+    -- own.
     let scrutinees? : Option (Array Ex) := match e with
       | .ctor t _ xs => if t == Fren.Core.matchVectorPath then some xs else none
       | _ => none
