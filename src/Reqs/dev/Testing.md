@@ -1139,7 +1139,9 @@ The `pr-review` workflow reviews each pull request's head with Claude once
 `pre-merge` has passed on it, by AGENTS.md's review rules: a full review,
 or a light check when the last comment that names the head starts with
 "fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
-an update from `main` of a reviewed head. It never reviews a pull request
+an update from `main` of a reviewed head, or for a head whose last naming
+comment starts with "wording only", whose diff the coordinator checks
+instead. It never reviews a pull request
 from a fork. Its comment counts as the pull request's review, for
 everything, and says which probes it ran and which it could not, such as
 those that need a rebuild. The only code of the pull request that it runs

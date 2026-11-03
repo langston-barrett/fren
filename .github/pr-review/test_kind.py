@@ -139,7 +139,8 @@ class Decide(unittest.TestCase):
             d = decide(p, event)
             self.assertEqual(d["kind"], "skip", event)
             self.assertIn(OLD, d["reason"])
-            self.assertNotIn("previous", d)
+            # prepare.sh checks that the head is one commit on it.
+            self.assertEqual(d["previous"], OLD)
 
     def test_wording_after_blocking_review(self):
         p = pr(review("01:00", OLD, clean=False), comment("02:00", f"**Wording only**: {HEAD}"))

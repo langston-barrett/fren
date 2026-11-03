@@ -34,14 +34,15 @@ the new head: the workflow runs only then.
 
 {how}
 
-Judge only what changed since `{previous}`. Code that the new head does
-not touch had its review: raise a point about it only if it is
-`[blocking]`. Mark any other point about untouched code
-`[non-blocking]`, never `[non-blocking, fix before merge]`, and say that
-it goes to the area's queue rather than into this pull request.
-
 If the new head changes anything else, do a full review of it instead,
 and give it a full review's first line.
+
+In the light check, judge only what changed since `{previous}`. Code
+that the new head does not touch had its review: raise a point about it
+only if it is `[blocking]`. Mark any other point about untouched code
+`[non-blocking]`, never `[non-blocking, fix before merge]`, and say that
+it goes to the area's queue rather than into this pull request. A full
+review that replaces the check has no such limit.
 
 The review of `{previous}`:
 

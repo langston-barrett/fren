@@ -6,8 +6,8 @@ Usage: kind.py PR_JSON EVENT OUT_DIR
 PR_JSON is `gh pr view --json headRefOid,comments`. EVENT is the
 workflow's event. The first form prints `key=value` lines for
 `$GITHUB_OUTPUT`: `kind` (`full`, `fixes`, `rebase` or `skip`), `reason`,
-and, for a light check, `previous`, the previously reviewed head. For a
-light check it writes the previous review to OUT_DIR/previous-review.md and
+and, for a light check or a wording-only skip, `previous`, the previously
+reviewed head. For either it writes the previous review to OUT_DIR/previous-review.md and
 the comment that asks for the check to OUT_DIR/request.md. The second form
 prints the verdict of the last review of SHA, or nothing, for prepare.sh's
 skip of an update from `main`, so that both read a review the same way.
@@ -29,7 +29,8 @@ A head that only fixes the wording of a clean review's points gets no
 check at all: a comment that starts with "wording only", read by the same
 rules as a request for a light check, skips the head on any event, and the
 coordinator checks that the diff from the previous head changes only
-prose before merging it. A later comment that names the head without
+prose before merging it. The skip names that head as `previous`, so that
+prepare.sh can check that the new head is one commit on top of it. A later comment that names the head without
 asking for a check gets it a full review, as for a light check.
 
 Anyone who can read the repository can comment, so only the comments of
@@ -112,10 +113,12 @@ def decide(pr, event):
     if not clean:
         return {"kind": "full", "reason": f"the review of {previous} found blocking issues, so the head gets a fresh review"}
     if kind == "wording":
-        return {"kind": "skip", "reason": f"the last comment that names the head says it only fixes the wording of the clean review of {previous}; the coordinator checks that the diff from {previous} changes only prose"}
+        kind, reason = "skip", f"the last comment that names the head says it only fixes the wording of the clean review of {previous}; the coordinator checks that the diff from {previous} changes only prose"
+    else:
+        reason = f"the last comment that names the head starts with \"{kind} only\""
     return {
         "kind": kind,
-        "reason": f"the last comment that names the head starts with \"{kind} only\"",
+        "reason": reason,
         "previous": previous,
         "previous_review": review["body"],
         "request": request["body"],

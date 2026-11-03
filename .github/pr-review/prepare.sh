@@ -113,6 +113,15 @@ if [ -n "$previous" ] && ! auth_fetch "$previous"; then
   reason="$previous, the reviewed head, can no longer be fetched"
   previous=
 fi
+# A wording-only head is one commit on top of the reviewed head, with no
+# rebase (AGENTS.md); any other gets a full review.
+if [ "$kind" = skip ] && [ -n "$previous" ]; then
+  if [ "$(git rev-list --parents -n 1 "$head")" != "$head $previous" ]; then
+    kind=full
+    reason="$head asks to skip as wording only, but is not one commit on top of $previous"
+  fi
+  previous=
+fi
 [ "$kind" != skip ] || skip "$reason"
 echo "Review: $kind, since $reason"
 out kind "$kind"
