@@ -211,7 +211,11 @@ whatever `scale` is applied to, so it says something about `limit`, and is
 probably in the wrong place. A precondition that mentions none of the
 parameters does not say where the function may be applied, and a
 postcondition that mentions none of them, nor the value, says nothing
-about the function. A clause that mentions nothing at all is
+about the function. Mentions are compared by their names as written: the
+contract can apply its own function only by its name alone, as
+[`lang::contract_application`](../Lang/Items.md#contracts) states, since a
+path to the function, such as `self::f`, does not resolve until the
+function is declared, after its contract. A clause that mentions nothing at all is
 [`assertions_on_constants`](Style.md#constant-constraints)'s instead, so
 the two never fire on one clause. A `let` of the function's block mentions
 what its definition mentions, as anywhere.

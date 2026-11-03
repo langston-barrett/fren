@@ -1928,6 +1928,7 @@ def fmtIgnore : List String :=
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTestFiles/chapters/LiterateOuter.md", "src/FrenTestFiles/chapters/LiterateReader.md",
    "src/FrenTestFiles/chapters/deep/LiterateDeep.md", "src/FrenTestFiles/chapters/LiterateReplacing.md",
+   "src/FrenTestFiles/chapters/LiterateProcsOuter.md",
    -- Lean code in a block, likewise.
    "src/FrenTestFiles/chapters/LiterateNoPosition.md",
    -- Trailing commas that `unnecessary_trailing_comma` reports.

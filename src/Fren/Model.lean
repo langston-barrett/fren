@@ -925,7 +925,9 @@ structure LocalState where
   items : Array (Core.ItemRecord × Syntax) := #[]
   usedItems : Array Name := #[]
   /-- The file's private procedures that `proc_without_outputs` may fire
-  on, unless a path in it resolves to one. -/
+  on, unless a path in it resolves to one. Per file, as `items` is:
+  `reportLints` clears it, and `elabMd` clears it for a spec it reads and
+  restores the reader's after. -/
   procs : Array (Core.ProcRecord × Syntax) := #[]
   /-- The function parameters of the file's private higher-order functions,
   and what the applications give them, by where each is written

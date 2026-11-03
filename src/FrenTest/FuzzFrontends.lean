@@ -1270,13 +1270,16 @@ def patternTests : R String := do
   if results.isEmpty then return ""
   return decls ++ s!"pub proc zpt(t: Zt, o: Zo, w: Zw, v: Zn, q: Zq, n: Int): ({", ".intercalate results.toList}) \{\n{body}}\n"
 
-/-- Private procedures that only claim (`lint::proc_without_outputs`), each
-with members of every kind a global expectation's block accepts but an
-evidence setting, and now
-and then one it does not, a result, a guarantee, an `exists` or a `det`
-`let`, and named or not by a later call, refinement or claim; and
+/-- Private procedures that only claim (`lint::proc_without_outputs`), and
 functions whose contract clauses mention their own names, another
-function's, a constant's, or nothing (`lint::contract_mentions_nothing`). -/
+function's, a constant's, or nothing (`lint::contract_mentions_nothing`).
+
+Each procedure has members of every kind that a global expectation's block
+accepts, and now and then one that it does not: a result, a guarantee, an
+`exists` or a `det` `let`. A later call, refinement or claim names some of
+them. No member has an evidence setting: only `fren check` runs random
+testing, so the two front ends would report such a member's checks
+differently. -/
 def claimProcs : R String := do
   -- The lint is allowed by default, so warn of it from here on.
   let mut out := "set_option fren.lint.proc_without_outputs \"warn\"\npub const ZK: Int := 3\npub fn zg(Int): Int\npub proc zb(x: Int): (y?) { ensure r: y? iff x > ZK }\n"
