@@ -1200,7 +1200,10 @@ These rules apply whether or not the query mentions a recursive function.
 The hosted frontend’s Lean substitution and the CLI’s SMT substitution
 must preserve exactly the same free variables and meaning.
 
-The per-name scope decision is bound to the helper used by SMT substitution:
+The per-name scope decision is bound to the helper used by SMT substitution.
+`cli::substitution_scope` comes after the chapter's last `#fren_check`, so
+it is named, and the Lean-hosted front end then checks it, as the `fren`
+command checks every procedure:
 
 ```fren
 pub struct SubstitutionName { bound_here?, mentioned_in_replacement? }
@@ -1209,4 +1212,6 @@ pub proc substitution_scope(name: SubstitutionName): (det replace?, det rename?)
     ensure shadowing: replace? iff not name.bound_here?
     ensure capture: rename? iff name.bound_here? and name.mentioned_in_replacement?
 }
+
+#fren_check substitution_scope
 ```

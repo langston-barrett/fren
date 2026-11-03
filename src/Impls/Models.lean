@@ -22,7 +22,11 @@ agreement with it is trusted (`Reqs/Models#how-the-front-ends-evaluate`).
 `Fren.Core.appliedKnown` and `Fren.Core.iteKnown`, by which both front ends'
 evaluators decide whether an application's and an `if`'s values are known
 in a model's confirmation, implement `model::known_application` and
-`model::known_if` (`Reqs/Models#known-values`). `Fren.Core.armTest`, by
+`model::known_if` (`Reqs/Models#known-values`). `Fren.Core.asksAgain` and
+`Fren.Core.keepsSecond`, by which both front ends decide, in
+`Fren.Core.askedAgain`, whether to ask a query whose model confirmation
+contradicts again and whether to keep the second answer, implement
+`model::requery` (`Reqs/Models#asking-again`). `Fren.Core.armTest`, by
 which the `fren` command combines the tests of a `match` arm's patterns,
 implements `model::arm_test_of`; the Lean-hosted front end writes the same
 conjunction as `∧`, which `Enumerate.knownOf` reads by
@@ -146,6 +150,18 @@ impl known_if_of: model::known_if for (c : Option Bool) (y n same : Bool) {
   intro c y n same
   rcases c with _ | _ | _ <;> cases y <;> cases n <;> cases same <;>
     simp [fren_spec, toTruth, Fren.Core.iteKnown]
+
+impl requery_of: model::requery for (contradicted canAsk againSat againContradicted : Bool) {
+  «first_contradicted?» := contradicted,
+  «can_ask?» := canAsk,
+  «again_sat?» := againSat,
+  «again_contradicted?» := againContradicted,
+  «asks?» := Fren.Core.asksAgain contradicted canAsk,
+  «second?» := Fren.Core.keepsSecond (Fren.Core.asksAgain contradicted canAsk) againSat againContradicted,
+} by
+  intro contradicted canAsk againSat againContradicted
+  cases contradicted <;> cases canAsk <;> cases againSat <;> cases againContradicted <;>
+    simp [fren_spec, Fren.Core.asksAgain, Fren.Core.keepsSecond]
 
 trusted model::report: "the rule over `lang::eval`, which no front end implements as an equivalence: they implement `model::confirmed_report` instead (`Reqs/Models#reporting`), over `model::known_eval`, which knows more than `lang::eval`, and a model that it shows satisfies `report`'s readable statement, `reported_real`, as `model::confirmed_real` checks"
 

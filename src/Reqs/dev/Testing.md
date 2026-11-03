@@ -84,8 +84,8 @@ pub mod testing
   lints by lint group (`lints/style/` and so on, and `lints/settings/` for
   setting levels), and the others by command (`args/`, `fix/`, `fmt/`,
   `commands/`). Under `test/ui/`, they are `lang/`, `checks/`, `lints/`,
-  `syntax/`, `lean/` and `misread/`. The example specs are in `examples/`, outside
-  `test/`.
+  `syntax/`, `lean/`, `misread/` and `ask_again/`. The example specs are
+  in `examples/`, outside `test/`.
 - **Error codes** (`lake test`): every code used in the sources must be
   explained in `src/FrenCore/Codes/CODE.md` and reported by some snapshot.
   Each explanation's first ```` ```fren ```` block must report its code,
@@ -206,7 +206,9 @@ pub mod testing
   at a `push` before their definition, and let the lock go there. And
   each command that the lock is let go after must initialize a solver in
   cvc5, each must be tried, and the declarations and options before it
-  must not initialize one.
+  must not initialize one. On Linux, a block that glibc allocates for
+  itself must be mimalloc's, which `c/mimalloc_malloc.c` makes every
+  executable's `malloc` (see [Architecture](Architecture.md)).
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
@@ -216,6 +218,9 @@ pub mod testing
   that their readers read (see [Reading models](../Models.md)). The ui tests in
   `test/ui/misread/` run with `FREN_MISREAD_MODELS` set, which makes both
   readers misread every integer, to check that the confirmation catches it.
+  Those in `test/ui/ask_again/` run with `FREN_ASK_AGAIN` set, which makes
+  both front ends ask every query that has a model again, as they ask one
+  whose model is contradicted (see [Asking again](../Models.md#asking-again)).
 - **The binary's shared reading** (`lake test`, `ownSpec`, which runs
   `sharedSpec` after its own check): only the `fren` binary reads the spec
   once, marks it and what else the threads read persistent, and shares it
@@ -976,14 +981,14 @@ build --wfail Reqs Impls`), the other the rest of the default targets:
 the code, the tests, the examples and the binaries, among them the C code
 that the first needs none of. The chain from `Fren.Elab` through
 `Reqs.Lang`, `Reqs.Lint` and `Impls.Lint` is the build's critical path,
-and on one machine its modules shared the runner's four cores with the
-rest: where everything was rebuilt, the build's steps took some 2,400
-CPU seconds, so that the chain's ran at about half speed. On 2026-11-02, in
-three runs of one commit, which rebuilt from `FrenCore` up, with the old
-single build job beside the two, the single build took 729, 705 and 679
-s, the build of the requirements 361, 443 and 316 s, and that of the
-rest 321, 392 and 297 s; so the build no longer outlasts the test
-shards. Both build what both import, from `FrenCore` to `Fren`, and
+and on one machine its modules shared the runner's four logical CPUs
+with the rest: where everything was rebuilt, the build's steps took some
+2,400 CPU seconds, so that the chain's ran at about half speed. On
+2026-11-02, in three runs of one commit, which rebuilt from `FrenCore`
+up, with the old single build job beside the two, the single build took
+729, 705 and 679 s, the build of the requirements 361, 443 and 316 s,
+and that of the rest 321, 392 and 297 s; so the build no longer outlasts
+the test shards. Both build what both import, from `FrenCore` to `Fren`, and
 `lake test`'s `libraries` job checks that the two lists of targets
 together are `lakefile.lean`'s default targets. On
 `main`, the `lean ci` workflow runs `lake build --wfail` and the whole
@@ -1000,10 +1005,41 @@ for the one before it, the median time from a push to `main` to its
 `.lake` being saved would have been some 6 minutes instead of 13, and a
 fifth would have. The runners' artifact caches ([Shared
 builds](#shared-builds)) start empty, so on CI every step that `.lake`
-does not have runs, and reports its messages. It also compares the methods on every check that each can run
-(`methodsAgree`, [Agreement of methods](../Methods.md#agreement-of-methods)), and runs the
-front-end fuzzer on seeds that no run used before, from the run's number,
-with `--avoid-known`, of both generators. What fails that job is exactly a
+does not have runs, and reports its messages.
+
+Before it saves the `.lake`, `main`'s build job also builds the test
+driver, as `lake test` does. Of the C code of `Fren` and `FrenTest`, the
+default targets link only `Fren.Seq`'s (through `fren`), so without it
+the `.lake` had the object files of none of their other modules, and each
+test shard of each pull request compiled them all again: on 2026-11-03,
+on a runner, `lake build fren_test` from `main`'s `.lake` took 71 and 74
+s where nothing had changed, and 0 and 1 s once the objects were
+there. Lake recompiles a module's C code only if the code differs, and
+`lean` writes the same C code for the same module: after a comment at the
+end of `Fren/Check.lean`, the shard rebuilt the `.olean` files of
+`Fren.Check` and of what imports it (66 and 67 s), but compiled no C code,
+since `Check.c` came out byte for byte the same. So a cache of compiled C
+code such as ccache would add nothing to the objects in the `.lake`. Each
+`.lake` is about 470 MB, and the repository's caches share 10 GB, past
+which GitHub evicts the least recently used. So once the build job has
+saved one, the `prune-lake-caches` job, the only one that may delete the
+repository's caches, deletes all but the newest three that `main` saved,
+which keeps the small caches, the query cache and mdbook's, from being
+evicted. A pull request whose base's `.lake` was deleted restores the
+newest, and Lake rebuilds what differs.
+
+The requirements' chain is the critical path of most `pre-merge` runs
+that rebuild it, and the runners slow it: they have four logical CPUs, two
+cores of two threads each. On 2026-11-03, on a runner, elaborating
+`Reqs/Lint.lean` alone took 82 and 83 s, with one other module elaborated
+beside it 90 and 95 s, and with three others 112 and 123 s, while in the
+build, beside the rest of `Reqs` and `Impls`, it takes 121 to 152 s.
+
+The `lean ci` workflow also compares the methods on every check that
+each can run (`methodsAgree`, [Agreement of
+methods](../Methods.md#agreement-of-methods)), and runs the front-end
+fuzzer on seeds that no run used before, from the run's number, with
+`--avoid-known`, of both generators. What fails that job is exactly a
 spec with a difference of a kind that is not known, a crash, or a
 timeout; a spec whose differences are all of known kinds
 (`knownDifferences` for `--avoid-known`, and `knownKinds`), or only in
@@ -1086,8 +1122,9 @@ scripts/heavy --offline /tmp/fren-SHA/fren check FILE
 `fren` needs nothing else, for `fren check`, `quickcheck`, `mutate` and
 `fmt`. `fren_test --job JOB` reads the test files and specs of the
 checkout, and writes scratch files under its `.lake`. Its jobs `ui`,
-`uiMisread`, `smtAgreement` and `leanTokens` load the hosted front end,
-the `.olean` files of `Fren` and its dependencies; for them, run
+`uiMisread`, `uiAskAgain`, `smtAgreement` and `leanTokens` load the
+hosted front end, the `.olean` files of `Fren` and its dependencies; for
+them, run
 `scripts/heavy lake build Fren` in the checkout, which compiles no C
 code and links nothing, and then `scripts/heavy --offline lake env
 /tmp/fren_test-SHA/fren_test --job ui FILE`. Run the binaries that CI
@@ -1103,8 +1140,14 @@ The `pr-review` workflow reviews each pull request's head with Claude once
 `pre-merge` has passed on it, by AGENTS.md's review rules: a full review,
 or a light check when the last comment that names the head starts with
 "fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
-an update from `main` of a reviewed head. It never reviews a pull request
-from a fork. Its comment counts as the pull request's review, for
+an update from `main` of a reviewed head, or for a head whose last naming
+comment starts with "wording only", whose only parent is the head of the
+last clean review before that comment, and that changes neither
+AGENTS.md nor `.github/`. That skip's log says "Nothing to review:
+wording only:", and for that head the coordinator confirms instead that
+each change answers a finding that the comment lists and changes only
+prose as AGENTS.md defines it, and that nothing else changed. The
+workflow never reviews a pull request from a fork. Its comment counts as the pull request's review, for
 everything, and says which probes it ran and which it could not, such as
 those that need a rebuild. The only code of the pull request that it runs
 is these binaries, `fren check` of each spec that the pull request
@@ -1342,6 +1385,10 @@ them.
 declaration (`FrenTest.Coverage.fails` and `stale`). Its inputs are
 trusted: `ran?` is gcov's counters, and `reached?` is
 `FrenCoverage.reached`, which no Req states and no evidence backs (#679).
+`testing::coverage` comes after the chapter's last `#fren_check`, so it is
+named, and the Lean-hosted front end then checks it, as the `fren` command
+checks every procedure. `lake test`'s `ownSpec` job fails on an item that
+no `#fren_check` checks in Lean (`hostedChecks`):
 
 ```fren
 pub proc coverage(
@@ -1362,6 +1409,8 @@ pub proc coverage(
     expect line_needed: when listed?, not stale? iff not ran? and reached?
     cover failing: fails?
 }
+
+#fren_check coverage
 ```
 
 A counted definition that nothing refers to at all, not even a proof, is

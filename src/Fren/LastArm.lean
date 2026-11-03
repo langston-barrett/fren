@@ -16,8 +16,9 @@ application, knows its value only where it knows `s`'s, as `lang::eval`'s
 
 namespace Fren
 
-/-- `b`, the last arm of a complete `match` on `s`. -/
-def lastArm.{u, v} {α : Sort u} {β : Sort v} (_s : α) (b : β) : β := b
+/-- `b`, the last arm of a complete `match` on `s`. Its compiled callers,
+the generated definitions and confirmation's decisions, run `b` itself. -/
+@[inline] def lastArm.{u, v} {α : Sort u} {β : Sort v} (_s : α) (b : β) : β := b
 
 @[simp, fren_spec] theorem lastArm_eq.{u, v} {α : Sort u} {β : Sort v} (s : α) (b : β) : lastArm s b = b := rfl
 

@@ -1214,16 +1214,26 @@ where
         return own ++ scan recs c gs introduced ancestors bound ++ scan recs b (gs.push (toString c)) introduced ancestors bound
       | _ => return own ++ xs.flatMap fun x => scan recs x gs introduced ancestors bound
 
+/-- The recursive functions, by path, that the SMT-LIB formula `f` applies
+once the definitions of `prelude` are unfolded, of those whose symbols are
+`recursiveSyms` (`State.recursiveSyms`), each once, in order. -/
+def recursiveIn (prelude : Prelude) (recursiveSyms : Std.HashMap String Lean.Name) (f : String) : Array Lean.Name :=
+  if recursiveSyms.isEmpty then #[] else
+  (atomsOf ((SeqElems.parse f).unfold prelude.unfolds.get)).foldl (init := #[]) fun acc a =>
+    match recursiveSyms.get? a with
+    | some p => if acc.contains p then acc else acc.push p
+    | none => acc
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite, which puts in `HO_ALL` those of its queries that
 do (`cli::logic`, `queryScript`); answering from `cache?`, if any,
 the scripts asked before (`runQuery`). -/
-def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
+def backendWith (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
     (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (quantified : Bool := false)
     (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind)
     (contractFns : Std.HashMap String Lean.Name := {}) (applied? : Option (IO.Ref (Array Lean.Name)) := none)
-    (recursiveSyms : Std.HashMap String Lean.Name := {}) :
+    (recursiveSyms : Std.HashMap String Lean.Name := {}) (requery : Bool := false) :
     Fren.Core.Backend IO String String where
   -- cvc5 refuses some string operations without `strings-exp`. Every query
   -- has what the `Nat` variables bring, of both copies, and what the
@@ -1303,17 +1313,17 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
     -- The recursive functions that the facts of its applications apply,
     -- once their clauses are unfolded, by path, whose models are never
     -- confirmed (`Fren.Core.recursiveCounterexample`).
-    let factRecs := if recursiveSyms.isEmpty then #[] else appFacts.foldl (init := #[]) fun acc (_, f) =>
-      (atomsOf ((SeqElems.parse f).unfold prelude.unfolds.get)).foldl (init := acc) fun acc a =>
-        match recursiveSyms.get? a with
-        | some p => if acc.contains p then acc else acc.push p
-        | none => acc
+    let factRecs := appFacts.foldl (init := #[]) fun acc (_, f) =>
+      (recursiveIn prelude recursiveSyms f).foldl (init := acc) fun acc p => if acc.contains p then acc else acc.push p
     -- Reflected with the hypotheses (`Fren.Core.recursionFormulas`).
     let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas facts appFacts hyps) goal mentioned ++ hyps
     let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
       -- The contract of a generic function without a body, at its type
       -- parameters' sorts, with finite-model finding.
       ++ (if c.generic || c.finiteModel then Fren.Core.finiteModelOptions else [])
+      -- Asked again, for a model that confirmation contradicts
+      -- (`Fren.Core.askedAgain`).
+      ++ (if requery then Fren.Core.requeryOptions else [])
     -- A recursive definition needs a logic with quantifiers.
     let logic := Fren.Core.logic kind (strings || sets) projection quantified
     let options := String.join ((options ++ Fren.Core.quantifierOptions logic).map fun (o, v) => s!"(set-option :{o} {v})\n")
@@ -1354,6 +1364,24 @@ def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Lim
   samePrimed n := s!"(= {quote (n.toString (escape := false))} {quote (Fren.Core.copySymbol (n.toString (escape := false)))})"
   -- Each definition sees the earlier ones.
   subst ds f := ds.foldr (init := f) fun (d, e) f => s!"(let (({quote d.toString} {e})) {f})"
+
+/-- `backendWith`'s backend for `c`, which can ask a query again
+(`Fren.Core.askedAgain`), with `Fren.Core.requeryOptions`: a script of its
+own, which is dumped and cached as any other. -/
+def backend (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits : Limits) (dump? : Option (String → IO Unit) := none)
+    (strings sets : Bool := false) (projection : Bool := false) (cache? : Option QueryCache := none) (quantified : Bool := false)
+    (funs : Std.HashMap String (Bool × Contract) := {}) (kind : Fren.Core.CheckKind)
+    (contractFns : Std.HashMap String Lean.Name := {}) (applied? : Option (IO.Ref (Array Lean.Name)) := none)
+    (recursiveSyms : Std.HashMap String Lean.Name := {}) :
+    Fren.Core.Backend IO String String :=
+  -- The functions whose contracts a query's facts apply are found in its
+  -- hypotheses and goal, whatever `requery` is, so those of the query
+  -- asked again are the first's, which the first records: the second
+  -- records none, as in the Lean-hosted front end.
+  let again := backendWith prelude dts c limits dump? strings sets projection cache? quantified funs kind contractFns none
+    recursiveSyms (requery := true)
+  { backendWith prelude dts c limits dump? strings sets projection cache? quantified funs kind contractFns applied?
+      recursiveSyms with again? := some again.query }
 
 def toCore (c : CComp) : Fren.Core.Comp String :=
   let props (k : PropKind) := c.props.filter (·.kind == k) |>.map fun p => (p.name, p.smt)

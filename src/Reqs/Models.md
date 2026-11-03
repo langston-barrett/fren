@@ -6,7 +6,8 @@ Fren reads the model back into Fren values to report a counterexample, as
 for a failed [expectation](Check.md#expectations), or a witness, as for a
 met [cover goal](Check.md#cover-goals). The checks trust the solver's
 answers (see [Verdicts](Check.md#verdicts)), but not Fren's own reading of
-its models, nor Fren's translation of the spec for the solver. So before it
+its models, nor Fren's translation of the spec for the solver, nor every
+model that the solver gives ([Asking again](#asking-again)). So before it
 reports a model, each front end evaluates the query in Fren's [dynamic
 semantics](Lang/Semantics.md), at the values it would show.
 
@@ -1002,7 +1003,7 @@ the goal, and shows the values as Fren read them:
 error: internal error: the solver's model for the expectation check of `m::p::e` makes its hypothesis `pinned` false in Fren's semantics
 note: Fren reads the model as a = 0
 note: so it is not shown as a counterexample or a witness, and the check is inconclusive
-note: this is a bug in Fren: in reading the solver's model, or in translating the spec
+note: this is a bug in Fren, in reading the solver's model or in translating the spec, or in the solver
 ```
 
 `model::report` states it over the semantics: given the model's
@@ -1144,6 +1145,81 @@ expect confirmed_real(i: Interp, env: Env, hypotheses: Expr<Id>, goal: Expr<Id>,
 }
 ```
 
+### Asking again
+
+A contradicted model need not be Fren's bug: the solver's own models can
+violate its assertions. cvc5 1.3.2's simplification solves an equation for
+a variable and substitutes the solution, whose value the model then
+evaluates, and it evaluates an index out of range of a sequence of `Bool`s,
+`seq.nth`, differently from its own interpretation of it: for `a ≠ x` and
+`x ≠ seq.nth q 0`, it can answer `a = x = true` and `q = []`. Whether it
+does depends on how the query is written and set up, so the front ends,
+whose queries differ, may disagree: one shows a counterexample where the
+other reports an internal error (`test/ui/checks/model_premise.fren`).
+
+So before a contradicted model is reported, both front ends ask the same
+query once more, without the solver's simplification
+(`Fren.Core.requeryOptions`), which substitutes nothing. `model::requery`
+states the rule: a query is asked again where confirmation contradicts its
+model and the front end can ask it so, and the second answer replaces the
+first where it is `Sat` with a model that confirmation does not contradict.
+A model that gives no values contradicts nothing, so a query whose answer
+has none is never asked again, and a second answer without values is not
+kept. Here a model is contradicted where a formula that applies no
+recursive function is (`Fren.Core.plainContradiction`): a recursive
+function is opaque to the solver, and a formula that applies one is
+confirmed by evaluating its real definition, as [Recursion](Lang/Recursion.md)
+says (`lang::recursive_counterexample`), not by this rule. The answers
+that `requery` weighs are the solver's, before that evaluation: the
+evaluation is of the answer kept, in both front ends, so that whether a
+query is asked again never depends on it. Only an answer whose query has
+facts that apply a recursive function is decided before, since it is
+never confirmed, whatever its model (`lang::recursive_counterexample`): it
+is not a `Sat` with a model, and is not asked again. Where the second
+answer is not kept, the first is reported, as [Reporting](#reporting)
+says, as an internal error. The second model is confirmed as the first
+is, so a model is never shown on the second answer's word alone, and
+`model::reported_real` holds of it as of the first. The `fren` command
+obtains, and confirms, a model of every query, and so may ask any of them
+again; the Lean-hosted front end obtains one only of the queries whose
+check reports it or whose formulas apply a recursive function, and asks
+again only those. Both decide by `Fren.Core.asksAgain` and
+`Fren.Core.keepsSecond`, in `Fren.Core.askedAgain`, which implement
+`requery`. It states only those two decisions, over the facts that they
+weigh; the rest of the rule, that a model without values contradicts
+nothing, that formulas that apply a recursive function are left out, and
+that the answer kept is evaluated last, is stated here, and tested by
+`src/FrenTest/AskedAgain.lean`:
+
+```fren
+pub proc requery(
+    first_contradicted?,    -- confirmation contradicts the first model, which gives values
+    can_ask?,               -- the front end can ask the query again without simplification
+    again_sat?,             -- the solver's second answer is `Sat`, with values, before recursion is evaluated
+    again_contradicted?,    -- confirmation contradicts the second model
+): (det asks?, det second?) {
+    out asks? := first_contradicted? and can_ask?
+    out second? := asks? and again_sat? and not again_contradicted?
+}
+
+-- A query is asked again only for a contradicted model, by a front end that
+-- can, and the second answer is kept only where it was asked, with a model
+-- that confirmation does not contradict.
+expect requery_confirmed(first_contradicted?, can_ask?, again_sat?, again_contradicted?) {
+    call r := requery(
+        first_contradicted?,
+        can_ask?,
+        again_sat?,
+        again_contradicted?,
+    )
+    expect only_contradicted: when r.asks?, first_contradicted?
+    expect only_askable: when r.asks?, can_ask?
+    expect only_asked: when r.second?, r.asks?
+    expect confirmed: when r.second?, again_sat? and not again_contradicted?
+    cover kept: r.second?
+}
+```
+
 ### What is not confirmed
 
 The other values that checks report from models are not confirmed, since
@@ -1181,6 +1257,17 @@ that both front ends report the same. The ui tests in
 `test/ui/misread/` run with it set (see [Testing](dev/Testing.md)), and
 expect the internal errors above where the misread values contradict the
 query, and the misread values as the counterexample where they do not.
+
+Asking again happens only where the solver gives a contradicted model, so
+a test of it that waits for one depends on the solver's bugs:
+`test/ui/checks/model_premise.fren` exercises it only while cvc5 1.3.2
+gives that spec its wrong model. So with the environment variable
+`FREN_ASK_AGAIN` set (`Fren.Core.askAgainForced`), both front ends take
+the first model of every query that has one as contradicted, and ask the
+query again. The ui tests in `test/ui/ask_again/` run with it set, and
+`src/FrenTest/AskedAgain.lean` tests `Fren.Core.askedAgain` and
+`Fren.Core.askedAgainThen` with stand-ins for the solver and the
+evaluation.
 
 ```fren
 #fren_check

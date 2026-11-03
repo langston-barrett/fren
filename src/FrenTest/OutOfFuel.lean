@@ -115,6 +115,46 @@ def unreached (t : Tally) (found : Nat) : Unreached :=
 -- A trigger that held once, with the check without a value: `F0617` at the check.
 #guard unreached ((({} : Tally).test true none none cex).test true (some true) none cex) 2 == .Valueless
 
+/-- `down(3)`, which needs four units of fuel (`deep`). -/
+def down3 : Ex := .app `down #[.lit (.int 3)]
+
+/-- An `if`, a table and a `match`, each over `u`, which has no value, as
+its condition or scrutinee, whose first case's value is `u` too, and whose
+rest is `down3`. Each has no value, whatever the rest's is, so evaluation
+leaves the rest unevaluated (`iteUnknown`, `chainKnownBy`). At three units
+of fuel, evaluating the rest would run out of fuel and panic
+(`unknownFirstRest`), so `unknownFirstLazy`, run with
+`LEAN_ABORT_ON_PANIC` (`panicGuard`), fails if the rest is evaluated. -/
+def unknownFirst : Array Atom :=
+  let u : Ex := .var `u
+  let atom (label : Lean.Name) (e : Ex) : Atom := { label, pfx := .anonymous, e }
+  #[atom `ite (.ite u u down3),
+    atom `table (.table 0 #[(0, some u, u), (0, none, down3)] none),
+    atom `match (.match u #[(.int (some 0) (some 0), none, u), (.wild, none, down3)] 0 #[0, 0] none none)]
+
+/-- `unknownFirst` at three units of fuel, read at run time so that the
+evaluation is not done ahead, in each of `interps`: each has no value, and
+nothing panics, since the rest after the unknown case is not evaluated.
+Run with `LEAN_ABORT_ON_PANIC` (`panicGuard`). -/
+def unknownFirstLazy : IO (Array String) := do
+  let fuel := (← IO.monoMsNow) % 1 + 3
+  let mut failures := #[]
+  for I in interps do
+    for a in unknownFirst do
+      let value := a.eval I (fun _ => none) fuel
+      unless value.isNone do failures := failures.push s!"`{a.label}` has the value {value} with `u` unknown"
+  return failures
+
+/-- That the rest of each of `unknownFirst`, `down3`, runs out of fuel at
+three units, so that `unknownFirstLazy` would panic if it evaluated it:
+`down3` has no value there. It panics, as `tinyFuel` does. -/
+def unknownFirstRest (fuel : Nat) : Array String := Id.run do
+  let mut failures := #[]
+  for I in interps do
+    let value := ({ label := `rest, pfx := .anonymous, e := down3 } : Atom).eval I (fun _ => none) fuel
+    unless value.isNone do failures := failures.push s!"`down(3)` has the value {value} at fuel {fuel}"
+  return failures
+
 /-- At a tiny fuel, read at run time so that the evaluation is not done
 ahead: with one unit too few, `deep` has no value, in each of `interps`,
 and a test of it neither refutes nor reaches it, so testing leaves it
@@ -136,6 +176,6 @@ def tinyFuel : IO (Array String) := do
     unless value.isNone do failures := failures.push s!"`downward` has the value {value} at fuel {fuel + 1}"
   let value := positive.eval (withInvariants {}) (fun _ => none) (fuel - 3)
   unless value.isNone do failures := failures.push s!"`positive` has the value {value} at fuel {fuel - 3}"
-  return failures
+  return failures ++ unknownFirstRest fuel
 
 end Fren.Test.OutOfFuel
