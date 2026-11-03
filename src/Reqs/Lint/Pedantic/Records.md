@@ -32,10 +32,7 @@ pub proc inconsistent_struct_constructor_written(a: Int, b: Int, row: Int, colum
     det given: Cell,
     det named: Cell,
 ) {
-    out given := Cell {
-        column := b,
-        row := a,
-    }
+    out given := Cell { column := b, row := a }
     out named := Cell { column, row }
 }
 
@@ -43,10 +40,7 @@ pub proc inconsistent_struct_constructor_fixed(a: Int, b: Int, row: Int, column:
     det given: Cell,
     det named: Cell,
 ) {
-    out given := Cell {
-        row := a,
-        column := b,
-    }
+    out given := Cell { row := a, column := b }
     out named := Cell { row, column }
 }
 

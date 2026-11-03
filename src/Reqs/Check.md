@@ -436,10 +436,8 @@ expect contract_realizes(pres: Set<check::Argument>, posts: Set<check::Point>) {
     call concrete := contract_realizability(pres, posts)
     refines concrete realizability(
         if (pres) = {} then check::Outcome::Unsat else check::Outcome::Sat,
-        if forall (a: check::Argument), when (a) in (pres), exists (v: check::Value), check::Point {
-            arg := (a),
-            value := (v),
-        } in (posts)
+        if forall (a: check::Argument), when (a) in (pres),
+            exists (v: check::Value), check::Point { arg := (a), value := (v) } in (posts)
             then check::Outcome::Unsat else check::Outcome::Sat,
     )
 }
@@ -636,16 +634,8 @@ pub enum MemberNote { ClashNote, Silent, NotInCore }
 
 -- `g` forces `o` to one value, and the rest of the core to another.
 pub fn value_clashes?(alone: Set<Forcing>, rest: Set<Forcing>, g: Guarantee, o: Output) :=
-    exists (a b: Choice), a != b and Forcing {
-        guarantee := g,
-        output := o,
-        value := a,
-    } in alone
-    and Forcing {
-        guarantee := g,
-        output := o,
-        value := b,
-    } in rest
+    exists (a b: Choice), a != b and Forcing { guarantee := g, output := o, value := a } in alone
+    and Forcing { guarantee := g, output := o, value := b } in rest
 
 -- `g` forces `o` to one variant, and the rest of the core to another.
 pub fn variant_clashes?(
@@ -678,25 +668,13 @@ pub fn clashes?(
 
 -- A set of guarantees forces `o` to a whole value, for the guarantee `g`.
 pub fn forces_value?(forced: Set<Forcing>, g: Guarantee, o: Output) :=
-    exists (v: Choice), Forcing {
-        guarantee := g,
-        output := o,
-        value := v,
-    } in forced
+    exists (v: Choice), Forcing { guarantee := g, output := o, value := v } in forced
 
 -- A set of guarantees forces each output to one value, at most.
 pub fn single_valued?(forced: Set<Forcing>) :=
     forall (h: Guarantee) (o: Output) (a b: Choice),
-    when Forcing {
-        guarantee := h,
-        output := o,
-        value := a,
-    } in forced
-    and Forcing {
-        guarantee := h,
-        output := o,
-        value := b,
-    } in forced, a = b
+    when Forcing { guarantee := h, output := o, value := a } in forced
+    and Forcing { guarantee := h, output := o, value := b } in forced, a = b
 
 -- A set of guarantees forces each output to one variant, at most, and to
 -- the variant of each value that it forces it to.

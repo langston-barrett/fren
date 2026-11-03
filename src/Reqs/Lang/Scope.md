@@ -180,10 +180,7 @@ pub fn in_scope?(cx: Context, b: Binding) :=
     or (exists (i: Int), 0 <= i < cx.prelude.len and binding_of?(cx.prelude[i], module_depth(cx) + 2, b))
 
 -- The items and imports alone, without the locals and the built-in functions.
-pub fn item_scope(cx: Context): Context := { cx with
-    locals := [],
-    builtins := [],
-}
+pub fn item_scope(cx: Context): Context := { cx with locals := [], builtins := [] }
 ```
 
 `lang::context_scope` says which bindings the scope where a name is
