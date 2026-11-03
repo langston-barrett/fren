@@ -62,10 +62,10 @@ jobs:
     - id: build
       run: touch "$RUNNER_TEMP/build-start" && lake build --wfail
     # The test driver too, as `lake test` builds it, not a default target:
-    # it links the C code of `Fren` and `FrenTest`, which no default target
-    # does, so that without it the `.lake` saved below has none of their
-    # object files, and every test shard of every pull request compiles all
-    # of them again. Lake recompiles a module's C code only if the code
+    # it links the C code of `Fren` and `FrenTest`, of which the default
+    # targets link only `Fren.Seq` (through `fren`), so that without it the
+    # `.lake` saved below has the object files of no other of their modules,
+    # and every test shard of every pull request compiles them all again. Lake recompiles a module's C code only if the code
     # differs, so a shard that starts from this `.lake` compiles only what
     # its pull request changes (`Reqs/dev/Testing#continuous-integration`).
     - id: driver
@@ -298,10 +298,10 @@ jobs:
       with:
         sha: ${{ github.sha }}
     - run: lake build fren_fuzz_frontends
-    # Four fuzzers at once, one to a core, two of each generator, each on
-    # 150 seeds of the run's 1000, far from the corpus's (a run by hand may
-    # ask for more, which reach into later runs' seeds). Each exits nonzero
-    # on a failure, as above.
+    # Four fuzzers at once, one to a logical CPU, two of each generator,
+    # each on 150 seeds of the run's 1000, far from the corpus's (a run by
+    # hand may ask for more, which reach into later runs' seeds). Each exits
+    # nonzero on a failure, as above.
     - name: Fuzz the front ends
       env:
         RUN: ${{ github.run_number }}

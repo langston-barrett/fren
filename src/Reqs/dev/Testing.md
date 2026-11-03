@@ -1004,9 +1004,10 @@ builds](#shared-builds)) start empty, so on CI every step that `.lake`
 does not have runs, and reports its messages.
 
 Before it saves the `.lake`, `main`'s build job also builds the test
-driver, as `lake test` does. No default target links the C code of `Fren`
-or `FrenTest`, so without it the `.lake` had none of their object files,
-and each test shard of each pull request compiled all of them again: on
+driver, as `lake test` does. Of the C code of `Fren` and `FrenTest`, the
+default targets link only `Fren.Seq`'s (through `fren`), so without it the
+`.lake` had the object files of no other of their modules, and each test
+shard of each pull request compiled them all again: on
 2026-11-03, on a runner, `lake build fren_test` from `main`'s `.lake` took
 71 and 74 s where nothing had changed, and 0 and 1 s once the objects were
 there. Lake recompiles a module's C code only if the code differs, and
