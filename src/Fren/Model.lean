@@ -36,6 +36,12 @@ register_option fren.enumeration.size : Nat := {
   descr := "the size bound of enumeration: the checks set to `\"enumerated\"` enumerate every behaviour whose values have at most this size"
 }
 
+register_option fren.checkTypeCache : Bool := {
+  defValue := false
+  descr := "whether `typeOf` checks each type that it takes from its cache (`LocalState.types`) against the term's \
+    type elaborated afresh, and fails where they differ; on in `lake test`'s ui jobs (`Reqs/dev/Testing`)"
+}
+
 register_option fren.evidence : String := {
   defValue := "solver"
   descr := "the evidence of the checks of the next procedure, global expectation or refinement: \"random\" to have the `fren` command test them on random behaviours, \"enumerated\" to decide them by enumerating behaviours, \"enumerated+random\" for both, or \"solver\""

@@ -8,6 +8,7 @@ import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.OutOfFuel
 import FrenTest.Quote
+import FrenTest.SmallValues
 import FrenTest.Ui
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -184,7 +185,9 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
         failures := failures.push s!"{f} (binary): {e}"
       cliStopped := some (out.contains s!"error: {Fren.Core.couldNotHeadline}")
     if spec.only? != some "cli" then
-      let (diags, summary) ← hostedDiagnostics env f.toString src
+      -- Each type that the hosted front end takes from its cache checked
+      -- against the term's elaborated again (`Fren.typeOf`).
+      let (diags, summary) ← hostedDiagnostics env f.toString src (Fren.fren.checkTypeCache.set {} true)
       let stopped := diags.any isStopped
       for e in check "hosted" spec (diags.filter (!isStopped ·)) summary none do
         failures := failures.push s!"{f} (Lean): {e}"
@@ -1330,14 +1333,68 @@ def queryCache : IO (Array String) := do
 /-- A satisfiable query whose solver initializes its theories at a
 definition: in `ALL`, a logic with nonlinear arithmetic, whose solvers
 take `FrenCli.Cvc5.solverLock`, or, if `linear`, in `QF_UFDTLIA`, whose
-solvers do not. -/
-def lifetimeScript (k : Nat) (linear : Bool := false) : String :=
+solvers do not. If `pushed`, it initializes them earlier, at a `push`,
+which `FrenCli.Cvc5.initializes` lists too, so that the lock is let go
+there, before the definition. -/
+def lifetimeScript (k : Nat) (linear : Bool := false) (pushed : Bool := false) : String :=
+  let push := if pushed then "(push 1)\n" else ""
   if linear then
     s!"(set-logic QF_UFDTLIA)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-      s!"(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
+      s!"{push}(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
   else
     s!"(set-logic ALL)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-      s!"(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
+      s!"{push}(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
+
+/-- The name that cvc5 gives the last command of `cmds`, run after
+`(set-logic ALL)` and `(declare-const x Int)`, and whether it initialized
+the solver: `(set-option :produce-models true)` after it then fails. On
+`solver`, which it borrows (`FrenCli.Cvc5`). -/
+def initializationOn (solver : @& cvc5.Solver) (cmds : String) : cvc5.Env (String × Bool) := do
+  let parser ← FrenCli.Cvc5.parserNew solver
+  let sm ← FrenCli.Cvc5.getSymbolManager parser
+  FrenCli.Cvc5.setStringInput parser s!"(set-logic ALL)\n(declare-const x Int)\n{cmds}\n(set-option :produce-models true)\n"
+    .SMT_LIB_2_6 "lean-cvc5"
+  let mut names := #[]
+  let mut outs := #[]
+  repeat
+    let cmd ← FrenCli.Cvc5.nextCommand parser
+    if FrenCli.Cvc5.isNull cmd then break
+    names := names.push (FrenCli.Cvc5.commandName cmd)
+    outs := outs.push (← FrenCli.Cvc5.invoke cmd solver sm)
+  return (names[names.size - 2]!, (outs.back!.trimAscii.toString.startsWith "(error"))
+
+/-- `initializationOn` on a solver of `tm`, freed before it returns. -/
+@[noinline] def initializationWith (tm : @& cvc5.TermManager) (cmds : String) : cvc5.Env (String × Bool) := do
+  initializationOn (← FrenCli.Cvc5.solverNew tm) cmds
+
+/-- Each command of `FrenCli.Cvc5.initializingCommands` has a case here
+and always initializes its solver, and the commands that
+`FrenCli.queryScript` writes before them do not, as cvc5 names them:
+`FrenCli.solveOn` lets `FrenCli.Cvc5.solverLock` go after the first of
+the former. -/
+def initializingCommandsHold : IO (Array String) := do
+  let initializing := #["(assert (> x 0))", "(define-fun f () Int 1)", "(define-fun f ((n Int)) Int n)",
+    "(define-fun-rec g ((n Int)) Int (ite (<= n 0) 0 (g (- n 1))))",
+    "(define-funs-rec ((h ((n Int)) Int)) ((ite (<= n 0) 0 (h (- n 1)))))", "(define-const c Int 1)",
+    "(push 1)", "(check-sat)", "(check-sat-assuming (true))"]
+  let other := #["(declare-const y Int)", "(declare-fun u (Int) Int)", "(declare-sort S 0)", "(define-sort T () Int)",
+    "(declare-datatype D ((A) (B (b Int))))", "(set-option :strings-exp true)"]
+  let mut failures := #[]
+  let mut named := #[]
+  for (cmds, expected) in initializing.map (·, true) ++ other.map (·, false) do
+    match ← cvc5.Env.run (do initializationWith (← cvc5.TermManager.new) cmds) with
+    | .error e => failures := failures.push s!"`{cmds}` failed: {e}"
+    | .ok (name, initialized) =>
+      if expected then named := named.push name
+      if initialized != expected then
+        failures := failures.push s!"`{cmds}` {if expected then "does not initialize" else "initializes"} the solver"
+      if FrenCli.Cvc5.initializes name != expected then
+        failures := failures.push s!"`{cmds}`, which cvc5 names `{name}`, is {if expected then "not " else ""}one that `FrenCli.Cvc5.initializes` lists"
+  -- Every listed command has a case here, so none is listed unchecked.
+  for c in FrenCli.Cvc5.initializingCommands do
+    unless named.contains c do
+      failures := failures.push s!"`{c}`, which `FrenCli.Cvc5.initializes` lists, has no case in `initializingCommandsHold`"
+  return failures
 
 /-- This process's resident memory, in kB, as `ps` reports it. -/
 def residentKb : IO Nat := do
@@ -1347,11 +1404,13 @@ def residentKb : IO Nat := do
 /-- Each query's solver is freed once it is answered, so that the memory
 of `fren check` does not grow with the number of its queries; and solvers
 of a logic with nonlinear arithmetic answer correctly on several threads
-at once, which they share libpoly's state for (`FrenCli.Cvc5`). -/
+at once, which they share libpoly's state for (`FrenCli.Cvc5`), each
+command that the lock is let go after always initializing its solver
+(`initializingCommandsHold`). -/
 def solverLifetime : IO (Array String) := do
-  let mut failures := #[]
-  let solve (k : Nat) (linear : Bool := false) : IO Bool := do
-    return (← FrenCli.solveScript (lifetimeScript k linear) #[] false) matches .sat _
+  let mut failures ← initializingCommandsHold
+  let solve (k : Nat) (linear : Bool := false) (pushed : Bool := false) : IO Bool := do
+    return (← FrenCli.solveScript (lifetimeScript k linear pushed) #[] false) matches .sat _
   -- Warm up the allocator first, so that what it keeps does not count.
   for k in [0:100] do discard <| solve k
   let before ← residentKb
@@ -1366,10 +1425,13 @@ def solverLifetime : IO (Array String) := do
   -- without `FrenCli.Cvc5.exclusively`, this crashed one run in three.
   -- After every third, each thread asks one in a linear logic, whose
   -- solvers take no lock and must answer correctly beside those that do.
+  -- Every other query in `ALL` initializes its solver at a `push`, which
+  -- `FrenCli.Cvc5.initializes` lists, so that it lets the lock go there,
+  -- before its definition, rather than at the definition.
   let tasks ← (List.range 16).mapM fun t => IO.asTask (prio := .dedicated) do
     let mut n := 0
     for k in [0:300] do
-      if ← solve (1000 * t + k) then n := n + 1
+      if ← solve (1000 * t + k) (pushed := k % 2 == 1) then n := n + 1
       if k % 3 == 0 then if ← solve (1000 * t + k) (linear := true) then n := n + 1
     return n
   for t in tasks do
@@ -2664,13 +2726,64 @@ def specsOf (src : String) : Array String :=
 #guard specsOf "#fren_md \"a.md\"\n#guard_msgs in #fren_md \"b.md\"\n  #fren_md \"c/d.md\"\n" == #["a.md", "b.md", "c/d.md"]
 #guard specsOf "-- `#fren_md` with no file\n" == #[]
 
+/-- The default targets of the lakefile `lakefile`: the names of its
+`lean_lib`s and `lean_exe`s marked `@[default_target]`, the attribute on
+the declaration's line or on a line of its own before it; or, as an
+error, the first `@[default_target]` that it cannot read, so that no
+default target is missed. -/
+def defaultTargets (lakefile : String) : Except String (Array String) := do
+  let lines := (lakefile.splitOn "\n").toArray
+  let mut out := #[]
+  for i in [0:lines.size] do
+    let line := lines[i]!.trimAscii.toString
+    unless line.startsWith "@[default_target]" do continue
+    let after := (line.drop "@[default_target]".length).trimAscii.toString
+    let decl := if after.isEmpty then ((lines[i + 1]?).getD "").trimAscii.toString else after
+    let rest := (decl.dropPrefix? "lean_lib ").orElse fun _ => decl.dropPrefix? "lean_exe "
+    let name := (rest.bind fun r => (r.toString.splitOn " ").head?).getD ""
+    unless !name.isEmpty && name.all (fun c => c.isAlphanum || c == '_') do
+      throw s!"lakefile.lean:{i + 1}: `lake test`'s `libraries` job cannot read the default target `{line}`"
+    out := out.push name
+  return out
+
+#guard defaultTargets "@[default_target] lean_lib A where\n  x := 1\nlean_lib B\n@[default_target] lean_exe c where\n" == .ok #["A", "c"]
+#guard defaultTargets "@[default_target]\nlean_lib A where\n" == .ok #["A"]
+#guard (defaultTargets "@[default_target] lean_lib «a b» where\n" matches .error _)
+#guard (defaultTargets "@[default_target] target x where\n" matches .error _)
+
+/-- The targets that the job `build` of the workflow `workflow` builds in
+its matrix: the names after each `targets:` from the job's line to the
+next job's (a line indented by two spaces). -/
+def matrixTargets (workflow : String) : Array String := Id.run do
+  let mut out := #[]
+  let mut inBuild := false
+  for line in workflow.splitOn "\n" do
+    if line.startsWith "  " && !line.startsWith "   " && !line.startsWith "  #" then
+      inBuild := line == "  build:"
+    else if inBuild then
+      if let some rest := line.trimAscii.toString.dropPrefix? "targets: " then
+        out := out ++ (rest.toString.splitOn " ").toArray.filter (!·.isEmpty)
+  return out
+
+#guard matrixTargets "jobs:\n  build:\n    strategy:\n      matrix:\n        - part: a\n          targets: A B\n        - part: b\n          targets: c\n  test:\n    targets: D\n" == #["A", "B", "c"]
+
 /-- Each copy of a root's imports is the root's; no module is in the globs
 of two libraries; each module of Reqs reads only the specs that its
 library needs; only modules whose library needs the tests make `tested`
 claims; and only the tests whose library needs the files that they read,
-`FrenTestFiles`, read files with `#fren_md`. -/
+`FrenTestFiles`, read files with `#fren_md`; and `pre-merge`'s build
+jobs together build exactly the default targets. -/
 def libraries : IO (Array String) := do
   let mut failures := #[]
+  -- `lake build --wfail` runs on two machines, each building some of the
+  -- default targets, so that a new one would otherwise go unbuilt.
+  let built := ((matrixTargets (← IO.FS.readFile ".github/workflows/pre-merge.yml")).qsort (· < ·)).toList.eraseDups.toArray
+  match defaultTargets (← IO.FS.readFile "lakefile.lean") with
+  | .error e => failures := failures.push e
+  | .ok ts =>
+    let want := ts.qsort (· < ·)
+    if want != built then
+      failures := failures.push s!".github/workflows/pre-merge.yml: its build jobs build {built.toList}, but the default targets of `lakefile.lean` are {want.toList}"
   for (root, copies) in rootCopies do
     let ofRoot (ms : Array String) := (ms.filter (·.startsWith s!"{root}.")).qsort (· < ·)
     let want := ofRoot (← importsOf root)
@@ -3648,7 +3761,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["panicGuard"]]
+      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -3680,6 +3793,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     markdownFences (← importModules #[{ module := `Fren }] {} (loadExts := true))
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
+  | ["smallValues"] => pure (Fren.Test.SmallValues.differences 300)
   | ["ownSpec"] => ownSpec
   -- Run by `ownSpec` too, after it, with its query cache.
   | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
