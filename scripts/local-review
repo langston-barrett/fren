@@ -11,11 +11,11 @@ REF has them, with REF's AGENTS.md, as the workflow composes it from
 description are the branch's pull request's (`gh pr view`), or else the
 latest commit's subject and the messages of the branch's commits.
 
-Codex runs in a scratch copy of HEAD's tree, outside the repository, with no
-`.git`, and with AGENTS.md, CLAUDE.md, `.claude`, `.mcp.json` and symbolic
-links removed, as on CI. Its sandbox is read-only, which also cuts its
-commands off the network; web search, apps and the browsers are disabled,
-and the user's Codex configuration is not loaded. Uncommitted changes are
+Codex runs in a scratch copy of HEAD's tree, its blobs as they are, outside
+the repository, with no `.git`, and with AGENTS.md, CLAUDE.md, `.claude`,
+`.mcp.json` and symbolic links removed, as on CI. Its sandbox is read-only,
+which also cuts its commands off the network; web search, apps and the
+browsers are disabled, and the user's Codex configuration is not loaded. Uncommitted changes are
 not reviewed.
 
 The review is printed on stdout and saved, with the prompt and Codex's log,
@@ -32,14 +32,12 @@ copy. `LOCAL_REVIEW_MODEL` (default gpt-6.1-sol) and `LOCAL_REVIEW_EFFORT`
 """
 
 import argparse
-import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 
 MODEL = "gpt-6.1-sol"
@@ -105,8 +103,8 @@ def fail(message):
     sys.exit(1)
 
 
-def git(*args, cwd=None, text=True):
-    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=text)
+def git(*args, cwd=None, text=True, input=None):
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=text, input=input)
     if result.returncode != 0:
         err = result.stderr if text else result.stderr.decode(errors="replace")
         fail(f"git {' '.join(args)} failed: {err.strip()}")
@@ -137,18 +135,38 @@ def from_commits(base, head, cwd):
 
 def extract(tree, dest, cwd):
     """Writes `tree`'s files into `dest` as CI's reviewer sees them: no
-    AGENTS.md, CLAUDE.md, `.claude`, `.mcp.json` or symbolic link."""
-    data = git("archive", "--format=tar", tree, cwd=cwd, text=False)
-    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
-        members = []
-        for member in tar.getmembers():
-            parts = member.name.split("/")
-            if member.issym() or member.islnk():
-                continue
-            if parts[-1] in REMOVED_FILES or any(p in REMOVED_DIRS for p in parts):
-                continue
-            members.append(member)
-        tar.extractall(dest, members=members, filter="data")
+    AGENTS.md, CLAUDE.md, `.claude`, `.mcp.json` or symbolic link. Writes
+    the blobs as they are, unlike `git archive`, which applies the
+    `export-ignore` and `export-subst` attributes."""
+    files = []
+    for entry in git("ls-tree", "-r", "-z", "--full-tree", tree, cwd=cwd, text=False).split(b"\0"):
+        if not entry:
+            continue
+        meta, path = entry.split(b"\t", 1)
+        mode, kind, sha = meta.split()
+        # A symbolic link is 120000, and a submodule is a commit.
+        if kind != b"blob" or mode not in (b"100644", b"100755"):
+            continue
+        parts = os.fsdecode(path).split("/")
+        if any(p in ("", ".", "..") for p in parts):
+            fail(f"{tree} has a path that cannot be copied: {os.fsdecode(path)!r}")
+        if parts[-1] in REMOVED_FILES or any(p in REMOVED_DIRS for p in parts):
+            continue
+        files.append((os.path.join(dest, *parts), mode == b"100755", sha))
+    blobs = git("cat-file", "--batch", cwd=cwd, text=False,
+                input=b"".join(sha + b"\n" for _, _, sha in files))
+    at = 0
+    for target, executable, sha in files:
+        header_end = blobs.index(b"\n", at)
+        got, kind, size = blobs[at:header_end].split()
+        assert got == sha and kind == b"blob", (got, sha, kind)
+        at = header_end + 1 + int(size)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "wb") as f:
+            f.write(blobs[header_end + 1:at])
+        if executable:
+            os.chmod(target, 0o755)
+        at += 1  # the newline after each blob
 
 
 def compose(base_ref, facts, pr, cwd, scratch):

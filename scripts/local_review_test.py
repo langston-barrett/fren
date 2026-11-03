@@ -88,6 +88,13 @@ def make_repo(root):
         with open(os.path.join(repo, path), "w") as f:
             f.write("{}\n")
     os.symlink("new.txt", os.path.join(repo, "link.txt"))
+    # Attributes that `git archive` would apply, and an executable.
+    with open(os.path.join(repo, ".gitattributes"), "w") as f:
+        f.write("ignored.txt export-ignore\nsubst.txt export-subst\n")
+    for path, text in [("ignored.txt", "kept\n"), ("subst.txt", "$Format:%H$\n"), ("run.sh", "#!/bin/sh\n")]:
+        with open(os.path.join(repo, path), "w") as f:
+            f.write(text)
+    os.chmod(os.path.join(repo, "run.sh"), 0o755)
     head = commit(repo, "Add a new file\n\nIts body.", base)
     run("git", "-C", repo, "branch", "-f", "main", base)
     return repo, base, head
@@ -129,6 +136,11 @@ def test_dry_run():
         try:
             work = os.path.join(scratch, "head")
             assert os.path.exists(os.path.join(work, "new.txt"))
+            for path, text in [("ignored.txt", "kept\n"), ("subst.txt", "$Format:%H$\n")]:
+                with open(os.path.join(work, path)) as f:
+                    assert f.read() == text, path
+            assert os.access(os.path.join(work, "run.sh"), os.X_OK)
+            assert not os.access(os.path.join(work, "new.txt"), os.X_OK)
             for gone in ["CLAUDE.md", ".claude", "AGENTS.md", "link.txt", ".git"]:
                 assert not os.path.lexists(os.path.join(work, gone)), gone
             with open(os.path.join(work, ".review", "diff.patch")) as f:
