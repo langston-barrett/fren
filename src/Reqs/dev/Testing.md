@@ -1175,10 +1175,12 @@ input names.
 
 `scripts/local-review` gives an author a pre-push check of its branch, by
 OpenAI's Codex CLI, before CI's review (AGENTS.md says when). It composes
-the brief with `compose.py` and `brief.md` as `origin/main` has them, adds
-a preamble that says where the check differs from CI's review, and runs
-Codex in a scratch copy of the head's tree with a read-only sandbox, with
-no network, web search, apps, browsers or user configuration. It prints
+the brief with `compose.py` and `brief.md` as `origin/main` (or `--base
+REF`) has them, adds a preamble that says where the check differs from
+CI's review, and runs Codex in a scratch copy of the head's tree, without
+the files that CI removes (AGENTS.md, CLAUDE.md, `.claude`, `.mcp.json`,
+`review.md`, `.review` and symbolic links), with a read-only sandbox, and
+with no network, web search, apps, browsers or user configuration. It prints
 the result, whose first line starts "Pre-push check of", never "Review
 of", and saves it in `.lake/local-review/`; it posts nothing. `--dry-run`
 prints the prompt and runs no model, and `python3 -I -B

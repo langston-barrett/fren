@@ -13,10 +13,11 @@ latest commit's subject and the messages of the branch's commits.
 
 Codex runs in a scratch copy of HEAD's tree, its blobs as they are, outside
 the repository, with no `.git`, and with AGENTS.md, CLAUDE.md, `.claude`,
-`.mcp.json` and symbolic links removed, as on CI. Its sandbox is read-only,
+`.mcp.json`, a top-level `review.md` and symbolic links removed, as on CI;
+`.review` holds the texts that the brief names. Its sandbox is read-only,
 which also cuts its commands off the network; web search, apps and the
-browsers are disabled, and the user's Codex configuration is not loaded. Uncommitted changes are
-not reviewed.
+browsers are disabled, and the user's Codex configuration is not loaded.
+Uncommitted changes are not reviewed.
 
 The review is printed on stdout and saved, with the prompt and Codex's log,
 in `.lake/local-review/<head>/`. Nothing is posted. Its first line starts
@@ -135,9 +136,10 @@ def from_commits(base, head, cwd):
 
 def extract(tree, dest, cwd):
     """Writes `tree`'s files into `dest` as CI's reviewer sees them: no
-    AGENTS.md, CLAUDE.md, `.claude`, `.mcp.json` or symbolic link. Writes
-    the blobs as they are, unlike `git archive`, which applies the
-    `export-ignore` and `export-subst` attributes."""
+    AGENTS.md, CLAUDE.md, `.claude`, `.mcp.json`, top-level `review.md` or
+    `.review`, and no symbolic link. Writes the blobs as they are, unlike
+    `git archive`, which applies the `export-ignore` and `export-subst`
+    attributes."""
     files = []
     for entry in git("ls-tree", "-r", "-z", "--full-tree", tree, cwd=cwd, text=False).split(b"\0"):
         if not entry:
@@ -151,6 +153,8 @@ def extract(tree, dest, cwd):
         if any(p in ("", ".", "..") for p in parts):
             fail(f"{tree} has a path that cannot be copied: {os.fsdecode(path)!r}")
         if parts[-1] in REMOVED_FILES or any(p in REMOVED_DIRS for p in parts):
+            continue
+        if parts == ["review.md"] or parts[0] == ".review":
             continue
         files.append((os.path.join(dest, *parts), mode == b"100755", sha))
     blobs = git("cat-file", "--batch", cwd=cwd, text=False,
@@ -252,7 +256,6 @@ def main(argv):
         os.makedirs(work)
         extract(head, work, top)
         review_dir = os.path.join(work, ".review")
-        shutil.rmtree(review_dir, ignore_errors=True)
         os.makedirs(review_dir)
         for name, text in [
             ("brief.md", brief),

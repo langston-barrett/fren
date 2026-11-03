@@ -38,11 +38,11 @@ FAKE_CODEX = r"""#!PYTHON
 import sys
 args = sys.argv[1:]
 prompt = sys.stdin.read()
-need = ["exec", "web_search=disabled", "read-only", "--ignore-user-config", "-"]
-missing = [a for a in need if a not in args]
-assert not missing, missing
-for feature in ["apps", "browser_use", "in_app_browser"]:
-    assert any(args[i] == "--disable" and args[i + 1] == feature for i in range(len(args) - 1)), feature
+assert args[0] == "exec" and args[-1] == "-", args
+assert args[args.index("-s") + 1] == "read-only"
+# Every flag of OFFLINE, in its order, with its value next to it.
+offline = OFFLINE
+assert any(args[i:i + len(offline)] == offline for i in range(len(args))), args
 assert args[args.index("-m") + 1] == "test-model"
 assert "model_reasoning_effort=low" in args
 assert "Note from the author" in prompt
@@ -95,6 +95,12 @@ def make_repo(root):
         with open(os.path.join(repo, path), "w") as f:
             f.write(text)
     os.chmod(os.path.join(repo, "run.sh"), 0o755)
+    # A committed review.md and .review, which CI removes too.
+    os.makedirs(os.path.join(repo, ".review"))
+    for path in ["review.md", ".review/diff.patch", "docs/review.md"]:
+        os.makedirs(os.path.dirname(os.path.join(repo, path)), exist_ok=True)
+        with open(os.path.join(repo, path), "w") as f:
+            f.write("committed\n")
     head = commit(repo, "Add a new file\n\nIts body.", base)
     run("git", "-C", repo, "branch", "-f", "main", base)
     return repo, base, head
@@ -141,10 +147,11 @@ def test_dry_run():
                     assert f.read() == text, path
             assert os.access(os.path.join(work, "run.sh"), os.X_OK)
             assert not os.access(os.path.join(work, "new.txt"), os.X_OK)
-            for gone in ["CLAUDE.md", ".claude", "AGENTS.md", "link.txt", ".git"]:
+            for gone in ["CLAUDE.md", ".claude", "AGENTS.md", "link.txt", ".git", "review.md"]:
                 assert not os.path.lexists(os.path.join(work, gone)), gone
             with open(os.path.join(work, ".review", "diff.patch")) as f:
                 assert "+a new line" in f.read()
+            assert os.path.exists(os.path.join(work, "docs", "review.md"))
             with open(os.path.join(work, ".review", "probes.md")) as f:
                 assert f.read() == local_review.PROBES
             with open(os.path.join(work, ".review", "log.txt")) as f:
@@ -159,7 +166,8 @@ def test_fake_codex():
         repo, _, head = make_repo(root)
         codex = os.path.join(root, "fake-codex")
         with open(codex, "w") as f:
-            f.write(FAKE_CODEX.replace("PYTHON", sys.executable))
+            f.write(FAKE_CODEX.replace("PYTHON", sys.executable)
+                    .replace("offline = OFFLINE", f"offline = {local_review.OFFLINE!r}"))
         os.chmod(codex, 0o755)
         env = env_without_gh(root, LOCAL_REVIEW_CODEX=codex, LOCAL_REVIEW_MODEL="test-model",
                              LOCAL_REVIEW_EFFORT="low")
