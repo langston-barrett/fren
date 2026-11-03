@@ -1,0 +1,3 @@
+--@ args: check --solver-stats=some
+-- `--solver-stats=N` lists the N slowest queries, or `all` of them.
+proc c(x: Int): (y: Int) { ensure same: y = x }

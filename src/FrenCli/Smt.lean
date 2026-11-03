@@ -3,6 +3,7 @@ import FrenCli.Cvc5
 import FrenCli.Elab
 import FrenCli.QueryStore
 import FrenCli.SeqElems
+import FrenCli.SolverStats
 import FrenCore.Check
 import FrenCore.Goals
 import FrenCore.SolverTime
@@ -537,10 +538,16 @@ structure QueryCache where
   answers : Vector (IO.Ref (Std.HashMap (Hashed QueryKey) (Outcome String × Bool))) answerShards
   /-- The answers kept across runs, if any (`Reqs/Cli#query-cache`). -/
   store? : Option QueryStore := none
+  /-- With `fren check --solver-stats`, where the time of each query asked
+  of the solver went (`FrenCli.SolverStats`); without it, `none`,
+  and nothing is measured. -/
+  stats? : Option (IO.Ref (Array SolverStats.QueryStats)) := none
 
-/-- A cache with no answers yet, over the persistent `store?`, if any. -/
-def QueryCache.new (store? : Option QueryStore := none) : IO QueryCache := do
-  return { answers := ← (Shards.empty : Shards (Hashed QueryKey) _).mapM fun m => IO.mkRef m, store? }
+/-- A cache with no answers yet, over the persistent `store?`, if any,
+that records the solver's statistics of each query if `stats`. -/
+def QueryCache.new (store? : Option QueryStore := none) (stats : Bool := false) : IO QueryCache := do
+  let stats? ← if stats then some <$> IO.mkRef #[] else pure none
+  return { answers := ← (Shards.empty : Shards (Hashed QueryKey) _).mapM fun m => IO.mkRef m, store?, stats? }
 
 /-- The answer to `k`, if it was asked: as `Shards.get?`, on the
 reference of `k`'s map. -/
@@ -564,9 +571,16 @@ def observationsOf (c : CComp) : Array ModelObservation := Id.run do
 
 /-- `solveScript`'s work, on `solver`, which it borrows: what it makes
 from the solver, it drops before it returns, and so before the solver is
-freed (`FrenCli.Cvc5`). -/
+freed (`FrenCli.Cvc5`). With `probe?`, it marks when each phase begins and
+ends, and then reads cvc5's statistics (`FrenCli.SolverStats.Probe`);
+without it, it reads no clock of its own, only `Fren.Core.timeQuery`'s. -/
 def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wantModel : Bool)
-    (observations : Array ModelObservation) (limitSecs : Nat) (shared : Bool) : cvc5.Env (Outcome String) := do
+    (observations : Array ModelObservation) (limitSecs : Nat) (shared : Bool)
+    (probe? : Option (IO.Ref SolverStats.Probe) := none) : cvc5.Env (Outcome String) := do
+  let mark (set : SolverStats.Probe → Nat → SolverStats.Probe) : cvc5.Env Unit := do
+    if let some probe := probe? then
+      let t ← IO.monoNanosNow
+      probe.modify (set · t)
   -- cvc5 warns on stderr when a model's value of a quantified formula
   -- cannot be evaluated (`Could not evaluate ... in getValue.`), which the
   -- model then holds as that formula: the warning is not an outcome, and
@@ -587,46 +601,68 @@ def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wan
     let cmd ← Cvc5.nextCommand parser
     if Cvc5.isNull cmd then break
     let initializes := Cvc5.initializes (Cvc5.commandName cmd)
+    let first := !released && initializes
+    if first then mark fun p t => { p with initStart := t }
     -- A command that fails reports an error as its output, rather than
     -- throwing; ignoring it could let a dropped assertion give `sat`.
     let out ← if released then Cvc5.invoke cmd solver sm
       else Cvc5.exclusively shared (Cvc5.invoke cmd solver sm)
+    if first then mark fun p t => { p with initEnd := t }
     released := released || initializes
     if out.trimAscii.toString.startsWith "(error" then
+      -- Its time up to here is in the phases it reached, and none in
+      -- the later ones (`FrenCli.SolverStats.Probe`).
+      mark fun p t => { p with initStart := if p.initStart == 0 then t else p.initStart,
+                                initEnd := if p.initEnd == 0 then t else p.initEnd,
+                                checkStart := t, checkEnd := t, modelEnd := t, statsEnd := t }
       throw (.error out)
+  -- With no command that initializes the solver, `checkSat` does.
+  if !released then mark fun p t => { p with initStart := t, initEnd := t }
+  mark fun p t => { p with checkStart := t }
   -- The time of a query that reaches its time limit is recorded
   -- (`Fren.Core.solverCredit`).
   let res ← Fren.Core.timeQuery limitSecs (fun (res : cvc5.Result) => Cvc5.isUnknown res &&
     Fren.Core.timedOutExplanation (toString (Cvc5.unknownExplanation res)))
     (if released then Cvc5.checkSat solver else Cvc5.exclusively shared (Cvc5.checkSat solver))
-  if Cvc5.isUnsat res then return Outcome.unsat
-  if !Cvc5.isSat res then return .unknown s!"the solver returned unknown ({Cvc5.unknownExplanation res})"
-  if !wantModel then return .sat #[]
-  let mut model := #[]
-  for t in ← Cvc5.getDeclaredTerms sm do
-    let n := (Cvc5.termText t).replace "|" ""
-    if let some v := vars.find? (fun v => Fren.Core.smtName (v.name.toString (escape := false)) == n) then
-      let value := Cvc5.termText (← Cvc5.getValue solver t)
-      -- cvc5 shares values and qualified constructor symbols with lets.
-      -- Expand them before confirmation, rendering, or pinning a model.
-      let value := toString ((SeqElems.parse value).unfold {})
-      model := model.push (v.name, value)
-  for observation in observations do
-    let reached := observation.guard?.all fun guard => model.any (fun (name, value) => name == guard && value == "true")
-    let value ← if !reached then pure "unknown" else do
-      try
-        Cvc5.setStringInput parser observation.formula .SMT_LIB_2_6 "lean-cvc5"
-        let term ← Cvc5.nextTerm parser
-        pure (Cvc5.termText (← Cvc5.getValue solver term))
-      catch _ => pure "unknown"
-    model := model.push (observation.key, value)
-  return .sat model
+  mark fun p t => { p with checkEnd := t }
+  let o ← (do
+    if Cvc5.isUnsat res then return Outcome.unsat
+    if !Cvc5.isSat res then return .unknown s!"the solver returned unknown ({Cvc5.unknownExplanation res})"
+    if !wantModel then return .sat #[]
+    let mut model := #[]
+    for t in ← Cvc5.getDeclaredTerms sm do
+      let n := (Cvc5.termText t).replace "|" ""
+      if let some v := vars.find? (fun v => Fren.Core.smtName (v.name.toString (escape := false)) == n) then
+        let value := Cvc5.termText (← Cvc5.getValue solver t)
+        -- cvc5 shares values and qualified constructor symbols with lets.
+        -- Expand them before confirmation, rendering, or pinning a model.
+        let value := toString ((SeqElems.parse value).unfold {})
+        model := model.push (v.name, value)
+    for observation in observations do
+      let reached := observation.guard?.all fun guard => model.any (fun (name, value) => name == guard && value == "true")
+      let value ← if !reached then pure "unknown" else do
+        try
+          Cvc5.setStringInput parser observation.formula .SMT_LIB_2_6 "lean-cvc5"
+          let term ← Cvc5.nextTerm parser
+          pure (Cvc5.termText (← Cvc5.getValue solver term))
+        catch _ => pure "unknown"
+      model := model.push (observation.key, value)
+    return .sat model : cvc5.Env (Outcome String))
+  if let some probe := probe? then
+    let t ← IO.monoNanosNow
+    -- Read last, so that it changes nothing that the query answered; and
+    -- a failure to read it is no answer's.
+    let stats ← try Cvc5.getInfo solver "all-statistics" catch _ => pure ""
+    let t' ← IO.monoNanosNow
+    probe.modify fun p => { p with modelEnd := t, statsEnd := t', stats }
+  return o
 
 /-- `solveOn` on a solver of the term manager `tm`, which it borrows: it
 frees the solver before it returns, and so before the term manager is
 (`FrenCli.Cvc5`). -/
 @[noinline] def solveWith (tm : @& cvc5.TermManager) (script : String) (vars : Array CVar) (wantModel : Bool)
-    (observations : Array ModelObservation) (limitSecs : Nat) : cvc5.Env (Outcome String) := do
+    (observations : Array ModelObservation) (limitSecs : Nat) (probe? : Option (IO.Ref SolverStats.Probe) := none) :
+    cvc5.Env (Outcome String) := do
   let shared := Cvc5.sharesLibpoly (Cvc5.scriptLogic script)
   -- Only `cell` holds the solver once `solveOn` returns, so that emptying
   -- it frees the solver, exclusively if its logic shares libpoly's state
@@ -634,7 +670,7 @@ frees the solver before it returns, and so before the term manager is
   let cell ← IO.mkRef (some (← Cvc5.solverNew tm))
   ExceptT.mk do
     let r ← match ← cell.get with
-      | some solver => (solveOn solver script vars wantModel observations limitSecs shared).run
+      | some solver => (solveOn solver script vars wantModel observations limitSecs shared probe?).run
       -- Not reached: `cell` was just set to the solver.
       | none => pure (.error (.error "the solver was freed before its query"))
     let _ ← (Cvc5.exclusively shared (cell.set none)).run
@@ -642,21 +678,47 @@ frees the solver before it returns, and so before the term manager is
 
 /-- Checks the satisfiability of `script`, a query over `vars`, with values
 of `vars` if `wantModel`, with a solver of its own, which is freed once
-it is answered (`FrenCli.Cvc5`). -/
+it is answered (`FrenCli.Cvc5`); with `probe?`, marking when each phase
+begins and ends (`FrenCli.SolverStats.Probe`). -/
 def solveScript (script : String) (vars : Array CVar) (wantModel : Bool) (observations : Array ModelObservation := #[])
-    (limitSecs : Nat := 0) : IO (Outcome String) := do
+    (limitSecs : Nat := 0) (probe? : Option (IO.Ref SolverStats.Probe) := none) : IO (Outcome String) := do
+  if let some probe := probe? then
+    let t ← IO.monoNanosNow
+    probe.modify ({ · with start := t })
   let r ← cvc5.Env.run do
-    solveWith (← cvc5.TermManager.new) script vars wantModel observations limitSecs
+    solveWith (← cvc5.TermManager.new) script vars wantModel observations limitSecs probe?
+  if let some probe := probe? then
+    let t ← IO.monoNanosNow
+    probe.modify ({ · with stop := t, failed := r matches .error _ })
   match r with
   | .ok o => return o
   | .error e => return .unknown s!"solver error: {e}"
 
+/-- `solveScript`, recording in `sink` where its time went, as a query of
+the check of kind `kind` of `item` (`FrenCli.SolverStats`). -/
+def solveRecorded (sink : IO.Ref (Array SolverStats.QueryStats)) (item : Lean.Name) (kind : Fren.Core.CheckKind)
+    (script : String) (vars : Array CVar) (wantModel : Bool) (observations : Array ModelObservation)
+    (limitSecs : Nat) : IO (Outcome String) := do
+  let probe ← IO.mkRef ({} : SolverStats.Probe)
+  let o ← solveScript script vars wantModel observations limitSecs (some probe)
+  let p ← probe.get
+  let outcome := match o with
+    | .sat _ => "sat"
+    | .unsat => "unsat"
+    | .unknown _ => if p.failed then "error" else "unknown"
+  let stats : SolverStats.QueryStats :=
+    { item, kind, logic := Cvc5.scriptLogic script, bytes := script.utf8ByteSize, outcome, phases := p.phases, cvc5 := SolverStats.parse p.stats }
+  sink.modify (·.push stats)
+  return o
+
 /-- Asserts `hyps` and the negation of `goal` and checks satisfiability,
 first passing the script to `dump?`, if any, and answering from `cache?`,
-if any, a script asked before. -/
+if any, a script asked before. It is a query of the check of kind `kind`
+of `item`, for `fren check --solver-stats` (`QueryCache.stats?`). -/
 def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
     (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
-    (cache? : Option QueryCache := none) (observations : Array ModelObservation := #[]) : IO (Outcome String) := do
+    (cache? : Option QueryCache := none) (observations : Array ModelObservation := #[])
+    (item : Lean.Name) (kind : Fren.Core.CheckKind) : IO (Outcome String) := do
   let script := queryScript logic options prelude vars limits hyps goal
   -- Read from the script that would be asked, the definitions that it
   -- includes, its hypotheses and its goal, not from the spec: a query with a
@@ -679,7 +741,9 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
     if let some (o, hasModel) ← store.lookup? script observations wantModel then
       cache.insert key (o, hasModel)
       return if wantModel then o else match o with | .sat _ => .sat #[] | _ => o
-  let o ← solveScript script vars wantModel observations limits.timeoutSecs
+  let o ← match cache.stats? with
+    | none => solveScript script vars wantModel observations limits.timeoutSecs
+    | some sink => solveRecorded sink item kind script vars wantModel observations limits.timeoutSecs
   cache.insert key (o, wantModel)
   if let some store := cache.store? then store.record script observations o wantModel
   return o
@@ -1363,9 +1427,9 @@ def backendWith (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits :
     let { vars, hyps, goal, logic, options, observations, shown, factRecs } ← prepare prelude c strings sets projection
       quantified funs kind contractFns applied? recursiveSyms hyps goal requery
     let o ← if needsExpansion prelude.marked (hyps.map (·.2) |>.push goal) then
-        solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations) vars hyps goal
-          wantModel
-      else runQuery logic options prelude vars limits dump? hyps goal wantModel cache? observations
+        solveExpanded prelude.marked (runQuery logic options prelude · limits dump? · · · cache? observations c.path kind)
+          vars hyps goal wantModel
+      else runQuery logic options prelude vars limits dump? hyps goal wantModel cache? observations c.path kind
     -- A fact that applies a recursive function is never confirmed, a
     -- conservative choice, as the Lean front end decides it too.
     let o := match o with

@@ -1,0 +1,4 @@
+error: invalid number of queries `some`
+  = note: `--solver-stats=N` lists the N slowest queries, a whole number such as `--solver-stats=50`, or `all`
+  = help: run `fren --help` for usage
+exit=2

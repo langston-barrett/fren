@@ -1,0 +1,10 @@
+-- The `solverStats` job checks this with and without `fren check
+-- --solver-stats`, and compares the outputs and the query caches
+-- (`Reqs/dev/Testing#solver-statistics`). The failing expectation's
+-- counterexample comes from a model, with a string's value.
+proc c(s: String): (n: Int) {
+    ensure length: n = s.len
+    expect short: n < 3
+}
+
+proc d(x: Int): (y: Int) { ensure same: y = x + 1 }

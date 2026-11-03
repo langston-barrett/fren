@@ -211,6 +211,14 @@ pub mod testing
   must not initialize one. On Linux, a block that glibc allocates for
   itself must be mimalloc's, which `c/mimalloc_malloc.c` makes every
   executable's `malloc` (see [Architecture](Architecture.md)).
+- **Solver statistics** (`lake test`, `solverStats`): `fren check
+  --solver-stats` adds only its own lines to the output, and with it the
+  output, the exit status and the answers and models of the query cache
+  are those without it. With `--solver-stats=all` it lists every query it
+  asked, with its item and check, and `--solver-stats=N` lists `N` of
+  them. The report's counts and inferences show that cvc5's statistics
+  were read. And a warm run, which asks nothing, reports none (see [Solver
+  statistics](#solver-statistics)).
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that
@@ -1359,6 +1367,107 @@ of `pre-merge` restores the last saved cache and never saves one. With
 most queries answered from it, Fren's own requirements took some 35% less
 CPU in the `fren` command, measured locally: the rest is building the
 queries and testing.
+
+## Solver statistics
+
+`fren check --solver-stats` is a developer's tool for work on the
+solver's speed, not a feature of the `fren` command for users: it is
+left out of its `--help` and of [the command's chapter](../Cli.md), and
+what it prints may change with any cvc5. It reports, on standard error
+after the summary and any [timings](../Cli.md#timings), where the time of
+each query asked of the solver went (`FrenCli.SolverStats`), as in
+this report of Fren's own requirements, of which only the first logic's
+line and the first listed query are shown, and their lines shortened
+where they show `…`:
+
+```text
+solver-stats: queries asked of the solver: 6267, 15922.7 ms (setup 1504.0, init 1733.5, assert 1391.8, check 9587.8, model 509.5, free 1196.1 ms)
+solver-stats: logic ALL, queries: 6247, 15900.4 ms (setup 1499.9, init 1728.2, assert 1391.0, check 9579.3, model 508.4, free 1193.6 ms)
+solver-stats: checkSat of queries of 5 ms or more: 360, 6566.2 ms, by cvc5's timers: SAT search and the rest 2260 ms, datatypes 1036 ms, strings 1012 ms, …
+solver-stats: 1. 311.3 ms: `cli::query_symbols` (expectation), ALL, 3.0 KB, unsat, dominated by SAT search and the rest
+solver-stats:   phases: setup 0.2, init 0.3, assert 0.1, check 308.2, model 0.0, free 2.4 ms
+solver-stats:   checkSat 308 ms: SAT search and the rest 107 ms, strings 94 ms, arith 88 ms, datatypes 10 ms, clausal form 9 ms
+solver-stats:   counts: 6306 decisions, 58 conflicts, 53715 propagations; 35505 theory checks, 28965 rewrites, 455 lemmas, 0 instantiations, 80509 resource units
+solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_I_NORM_S 127, …
+```
+
+- **The phases** are Fren's own measure of each query, from making its
+  term manager to freeing it, in wall-clock time: `setup` makes the
+  solver and parses its options and declarations; `init` is the first
+  command that initializes its theories (`FrenCli.Cvc5.initializes`),
+  where cvc5 sets up every theory of the logic, or nothing if `checkSat`
+  is the first; `assert` is the other commands; `check` is `checkSat`;
+  `model` reads the model's values; and `free` frees the solver and the
+  term manager. The lines by logic sum them over the queries of each
+  logic, so a change of logic shows in `init` and `setup` (#755). In a
+  logic that shares libpoly's state, such as `ALL`, the commands up to
+  and including the first that initializes, and freeing the solver, wait
+  for `solverLock` (`FrenCli.Cvc5`), so under `--jobs` more than 1,
+  `setup`, `init` and `free` include that wait, and so does `check` for a
+  query with no command that initializes the solver.
+- **cvc5's timers** split `checkSat`: each theory's checks
+  (`theory::T::checkTime`), preprocessing, the clausal form and theory
+  combination, in cvc5's whole milliseconds. What none of them accounts
+  for is `SAT search and the rest`: the SAT solver's own search and
+  propagation, and whatever else `checkSat` does. The report takes the
+  timers to be disjoint, which is not read from cvc5's source: no query of
+  Fren's own requirements had timed parts that summed to more than its
+  `checkSat`, but timers that overlap in part, as the clausal form of a
+  theory's lemmas may within its check, would still meet that bound, and
+  make `SAT search and the rest` too small. A query whose timed parts
+  exceed its `checkSat` says by how much, and a line after the summed one
+  says how many of all the queries did, not only of those summed. The
+  timers are also read in whole milliseconds, so the rest takes in what
+  they leave out, which makes it too large: of the queries of Fren's own
+  requirements whose `checkSat` took under 5 ms, it was 2,054 ms of their
+  2,485 ms, with cvc5 1.3.2, when the report was added (#757). So the
+  summed line sums only the queries whose `checkSat` took 5 ms or more
+  (`summedMs`), and the rest is rough for a short query that is listed. In
+  cvc5 1.3.2, each theory has one `checkTime`, the arrays' as
+  `theory::arrays::theory::arrays::checkTime`. The theories' checks are
+  made from within the search, so a query that makes tens of thousands of
+  cheap theory checks, as `cli::query_symbols`' do, shows its search's
+  cost spread over the search and the theories. A query is `dominated by`
+  its largest part. cvc5 has no timer of its own for parts of a theory,
+  such as the datatypes solver's cycle check, so those need a profile.
+- **A query whose command answers with an error**, answered `error`,
+  has its time up to the failure in the phases it reached, and none in
+  the later ones. One that throws, as on a parse error, has the time
+  since its last mark in `free`. In either case cvc5's statistics are not
+  read, so its counts are 0 and its `checkSat` shows no timer. Fren
+  writes every script, so neither is expected.
+- **The counts** are cvc5's: the SAT solver's decisions, conflicts and
+  propagations, the theory checks and rewrites that its resource manager
+  counts, every theory's lemmas, quantifier instantiations, the resource
+  units that `--resource-limit` limits, and the five commonest of the
+  theories' inferences, by cvc5's names.
+
+It lists the 20 slowest queries; `--solver-stats=N` lists `N` of them, and
+`--solver-stats=all` every one. The value is written after `=`, not as the
+next argument as other options' are, so that the bare flag needs none. The
+flag is in no help text, but `fren` suggests the bare flag for a
+misspelled option, as it does every option, without its `=N`. A query
+answered from the [query cache](#query-cache), or by the same script that
+another item asked earlier in the run, asks the solver nothing and is not
+reported. Under `--jobs` more than 1, two items can ask the same script at
+once, before either answer is kept, and both are then reported. So measure
+with no `--query-cache` and with `--jobs 1`, which times each query alone
+and asks each script once.
+
+Without the flag, nothing of this runs: Fren reads no clock of its own,
+only the one around `checkSat` that every query reads
+(`Fren.Core.timeQuery`), and asks cvc5 nothing more. A check of Fren's own
+requirements took the same instructions, within 0.02 %, and the same time
+as before the report was added, with cvc5 1.3.2 (#757). With it, each
+query reads cvc5's statistics once, after its answer and model, so that
+the answers, models and messages are the same, which the `solverStats`
+test checks. cvc5 keeps the statistics whether or not they are read
+(#742), but writing them as text is not cheap: it tries each value as a
+number, and throws an exception for each that is not, so a cold check of
+Fren's own requirements at `--jobs 1` takes some 40 % more instructions
+with the flag. That time is outside every phase that the report measures.
+lean-cvc5 does not bind cvc5's `getStatistics`, which would read them
+without the text.
 
 ## Learning from review
 
