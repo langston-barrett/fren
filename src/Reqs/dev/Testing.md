@@ -1240,7 +1240,9 @@ left out of its `--help` and of [the command's chapter](../Cli.md), and
 what it prints may change with any cvc5. It reports, on standard error
 after the summary and any [timings](../Cli.md#timings), where the time of
 each query that the solver answered went (`FrenCli.SolverStats`), as in
-this report of Fren's own requirements, shortened where it shows `…`:
+this report of Fren's own requirements, of which only the first logic's
+line and the first listed query are shown, and their lines shortened
+where they show `…`:
 
 ```text
 solver-stats: queries asked of the solver: 6267, 15922.7 ms (setup 1504.0, init 1733.5, assert 1391.8, check 9587.8, model 509.5, free 1196.1 ms)
