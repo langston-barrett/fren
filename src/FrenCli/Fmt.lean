@@ -154,18 +154,36 @@ def apart (above : Nat) (between : List (Bool × Nat)) (annotations : List (Nat 
     (previousFirst previousLast first last : Nat) : Bool :=
   above == leading between && (previousLast > previousFirst || last > first) && !reachesAbove annotations above
 
+/-- The line where the comments `trailing` that go on from line `line`
+end, each given by the lines it starts and ends on, and each starting on
+the line where the one before it ends (`fmt::run_end`). -/
+def runEnd (line : Nat) : List (Nat × Nat) → Nat
+  | [] => line
+  | (start, stop) :: rest => if start = line then runEnd stop rest else line
+
+/-- The first and last lines of an item, for `apart` (`fmt::item_lines`):
+from the line its first token starts on, the line its last token ends on,
+the lines of the comments after that token, before the next, and the line
+where the next token starts, if any. Its last line is that of the comments
+that trail its last token, unless a token follows them on their last
+line. -/
+def itemLines (firstToken lastToken : Nat) (trailing : List (Nat × Nat)) (next : Option Nat) : Nat × Nat :=
+  let run := runEnd lastToken trailing
+  (firstToken, if next.any (· ≤ run) then lastToken else run)
+
 /-- The blank lines kept before a line (`fmt::blank_lines`). -/
 def blankLines (blank : Nat) (first afterOpen beforeClose apart : Bool) : Nat :=
   if first || afterOpen || beforeClose then 0 else if apart || blank > 0 then 1 else 0
 
 /-- The widest that a list of kind `k` may be on one line, its elements
-separated by `, `, as rustfmt's defaults have it (`fmt::width_limit`). -/
+separated by `, `, as rustfmt's defaults have it, but for a record's
+fields, which may be 40 wide where rustfmt allows 18 (`fmt::width_limit`). -/
 def widthLimit : ListKind → Nat
   | .arms => 0
   | .arguments | .applicationArguments => 60
   | .parameters | .functionParameters | .members => 100
   | .elements => 60
-  | .fields => 18
+  | .fields => 40
 
 /-- The widest a line may be, as rustfmt's `max_width`. -/
 def maxWidth : Nat := 100
@@ -185,11 +203,14 @@ which counts only if `ownLine` and the line fits up to the first element.
 A `match`'s arms are always vertical, and so is a block with two or more
 members, on a line that continues an item from an earlier line
 (`fmt::continued`), or whose line would end past `maxWidth`, wherever its
-member would start (`fmt::stacked?`). -/
+member would start (`fmt::stacked?`). So is a record whose fields are
+wider than rustfmt's 18 columns, on a line that would end past `maxWidth`,
+wherever it is (`fmt::wide_record?`). -/
 def vertical (k : ListKind) (n : Nat) (broken : Bool) (width start end_ : Nat) (ownLine continued : Bool) :
     Bool :=
   n > 0 && ((k matches .arms) || (k matches .members && (n > 1 || continued || end_ > maxWidth)) || broken
-    || width > widthLimit k || (ownLine && start ≤ maxWidth && end_ > maxWidth))
+    || width > widthLimit k || (ownLine && start ≤ maxWidth && end_ > maxWidth)
+    || (k matches .fields && width > 18 && end_ > maxWidth))
 
 /-- Whether a block's line continues an item from an earlier line
 (`fmt::continued`), from its first token, if it has one before the block,
@@ -857,6 +878,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   -- For each token placed so far, the rows of its line that it starts and
   -- ends on, from 0, where a piece before it spans several.
   let mut tokRows : Std.HashMap Nat (Nat × Nat) := {}
+  -- The comments after each token, before the next: each one's line in
+  -- `out`, and the rows of that line that it starts and ends on.
+  let mut commentsAfter : Std.HashMap Nat (Array (Nat × Nat × Nat)) := {}
   -- The first token of the last line, and whether that line continues an
   -- item, a member or an element.
   let mut lineFirst : Option Nat := none
@@ -917,6 +941,10 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
       { l with pieces := l.pieces.push (kinds[i]!, p.text), commentCol := if p.tok?.isNone then p.col else l.commentCol
                commentLine := if p.tok?.isNone then p.startLine else l.commentLine
                endsOpen := opens, breaks := l.breaks + lineBreaks p.text }
+    if p.tok?.isNone then
+      if let some (_, _, k) := last? then
+        commentsAfter := commentsAfter.insert k
+          ((commentsAfter.getD k #[]).push (out.size - 1, breaksBefore, breaksBefore + lineBreaks p.text))
     let some k := p.tok? | continue
     tokRows := tokRows.insert k (breaksBefore, breaksBefore + lineBreaks p.text)
     last? := some (out.size - 1, out.back!.pieces.size - 1, k)
@@ -1062,13 +1090,18 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     let x ← outLine[k]?
     let (s, e) ← tokRows[k]?
     return rowOf[x]! + if endRow then e else s
-  -- Each item: its first token's line in `out`, and the rows of its first
-  -- and last tokens.
+  -- Each item: its first token's line in `out`, and its first and last
+  -- rows (`fmt::item_lines`), from the rows of its first and last tokens,
+  -- of the comments after its last token and of the next token.
   let spans := lay.items.filterMap fun (f, l) => do
     let x ← outLine[f]?
-    let first ← rowAt f false
+    let firstRow ← rowAt f false
     -- Its last token may be a trailing comma that the layout dropped.
-    let last := ((List.range (l + 1 - f)).findSome? fun d => rowAt (l - d) true).getD first
+    let lastTok := ((List.range (l + 1 - f)).find? fun d => (rowAt (l - d) true).isSome).map (l - ·)
+    let (first, last) := (lastTok.bind fun k => do
+      let e ← rowAt k true
+      let trailing := (commentsAfter.getD k #[]).toList.map fun (y, s, t) => (rowOf[y]! + s, rowOf[y]! + t)
+      return itemLines firstRow e trailing (rowAt (l + 1) false)).getD (firstRow, firstRow)
     return (x, first, last)
   -- The `--~` annotations, each with its line in `out`, the row it is
   -- written on, blank lines counted, and how far it reaches.
@@ -1088,10 +1121,12 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     -- starts a `--~` annotation, and the blank lines after it in the
     -- source.
     let mut rowsBetween : Array (Bool × Nat) := #[]
-    for x in [px:fx] do
+    -- They include the rows of the later item's line before its first
+    -- token, as of a block comment that starts that line.
+    for x in [px:fx + 1] do
       for o in [0:out[x]!.breaks + 1] do
         let r := rowOf[x]! + o
-        if r ≤ pl then continue
+        if r ≤ pl || r ≥ f then continue
         let annotation := o == 0 && out[x]!.pieces[0]?.any fun (k, t) => k == .comment && (annotationReach t).isSome
         let after := if o == out[x]!.breaks then out[x + 1]!.blankFrom.1 else 0
         rowsBetween := rowsBetween.push (annotation, after)
@@ -1099,7 +1134,7 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     -- The annotations at or below the item's first line, before the next
     -- item in its file or block: how many rows each is below that line,
     -- and how far it reaches.
-    let top := writtenOf[fx]!
+    let top := writtenOf[fx]! + (f - rowOf[fx]!)
     let stop? := spans[j + 1]?.bind fun (nx, _, _) =>
       if segment out[nx]!.line == segment out[fx]!.line then some writtenOf[nx]! else none
     let below := annotations.toList.filterMap fun (x, w, r) =>

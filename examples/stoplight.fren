@@ -65,9 +65,7 @@ pub proc step(now: Lights, event: Event): (det next: Lights) {
     -- A press is remembered until a walk serves it. One during the walk is
     -- taken as served by it, even on its last tick: this controller's choice,
     -- so a press is served in time below only when made before the walk.
-    ensure press: when event = Press, next = { now with
-        waiting? := now.people = DontWalk,
-    }
+    ensure press: when event = Press, next = { now with waiting? := now.people = DontWalk }
 
     -- A tick counts down the current phase, and the last tick of a phase
     -- starts the next. Green runs out only once someone is waiting.
@@ -150,10 +148,7 @@ pub type Watched = w: Watch where
     green: when w.lights.cars = Green, w.green_ticks >= MIN_GREEN - w.lights.timer
     and yellow: when w.lights.cars = Yellow, w.green_ticks >= MIN_GREEN
 
-pub const WATCH_START: Watched := Watch {
-    lights := START,
-    green_ticks := 0,
-}
+pub const WATCH_START: Watched := Watch { lights := START, green_ticks := 0 }
 
 pub proc watch(now: Watched, event: Event): (det next: Watched) {
     call s := step(now.lights, event)

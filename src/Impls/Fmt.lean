@@ -181,6 +181,41 @@ impl apart: fmt::apart for (n : Nat) (xs : List (Bool × Nat)) (ys : List (Nat �
   simp only [fren_spec, FrenCli.Fmt.apart, leading_toBetween, reaches_toAnnotations]
   by_cases h : n = FrenCli.Fmt.leading xs <;> simp_all <;> omega
 
+def toTrailing : List (Nat × Nat) → fmt.Trailing
+  | [] => .Nil
+  | (s, e) :: rest => .Comment (s : Int) (e : Int) (toTrailing rest)
+
+def toAfter : Option Nat → fmt.After
+  | none => .End
+  | some n => .Line (n : Int)
+
+theorem run_end_toTrailing (ts : List (Nat × Nat)) (line : Nat) :
+    fmt.run_end (line : Int) (toTrailing ts) = (FrenCli.Fmt.runEnd line ts : Int) := by
+  induction ts generalizing line with
+  | nil => simp [toTrailing, fmt.run_end, FrenCli.Fmt.runEnd]
+  | cons t ts ih =>
+    obtain ⟨s, e⟩ := t
+    by_cases h : s = line
+    · subst h; simp [toTrailing, fmt.run_end, FrenCli.Fmt.runEnd, ih]
+    · simp [toTrailing, fmt.run_end, FrenCli.Fmt.runEnd, h, show ¬((s : Int) = line) by omega]
+
+impl item_lines: fmt::item_lines for (f l : Nat) (ts : List (Nat × Nat)) (o : Option Nat) {
+  first_token := f,
+  last_token := l,
+  trailing := toTrailing ts,
+  next := toAfter o,
+  first := (FrenCli.Fmt.itemLines f l ts o).1,
+  last := (FrenCli.Fmt.itemLines f l ts o).2,
+} by
+  intro f l ts o _
+  simp only [fren_spec, FrenCli.Fmt.itemLines]
+  refine ⟨_, rfl, ?_⟩
+  simp only [run_end_toTrailing]
+  refine ⟨trivial, ?_⟩
+  rcases o with _ | n
+  · simp [toAfter]
+  · by_cases h : n ≤ FrenCli.Fmt.runEnd l ts <;> simp [toAfter, h]
+
 impl blank_lines: fmt::blank_lines for (b : Nat) (f ao bc a : Bool) {
   blank := b,
   first? := f,

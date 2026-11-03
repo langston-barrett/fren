@@ -412,7 +412,7 @@ three hold:
      operator whose whole right operand it is, and only from that one.
 
    Otherwise the list is horizontal when 1 and 2 hold, however long its
-   line.
+   line, but for a record wider than 18 columns, as below.
 
 A list that is not its line's expression is an operand, as `f(a)` and
 `g(b)` are in `x and f(a) = g(b)`, a branch, as in `if c then f(a) else
@@ -432,23 +432,33 @@ set literal is not exempt: it is Rust's array, which opens with `[`, and
 so are a Boolean block's members. Until `fren fmt` breaks expressions,
 every other such list stays on one line.
 
+One exception keeps the wider limit for records, below, from changing a
+record whose line is too long: a record literal or update whose fields are
+wider than 18 columns, rustfmt's `struct_lit_width`, is vertical where its
+line would end past column 100, wherever it is, even where a field or a
+method follows it, as every such record was before `fren fmt` allowed 40
+(#546). So raising the limit joins only records whose lines fit
+(`fmt::wide_record?`).
+
 | List | Widest | rustfmt's option |
 |---|---|---|
 | arguments | 60 | `fn_call_width` |
 | parameters and results | 100 | `max_width`, which a function's signature must fit |
 | elements of a sequence or set literal, and members of a Boolean block | 60 | `array_width` |
-| fields of a record literal or update | 18 | `struct_lit_width` |
+| fields of a record literal or update | 40 | `struct_lit_width`, which is 18 by default |
 | a block's single member | 100 | `max_width`, which a function on one line must fit |
 
-These are rustfmt's defaults, those of `use_small_heuristics =
-"Default"`. The lists of a file are laid out from the outside in, each on
-the lines that the lists around it give, so a list in one that is
-horizontal is horizontal too. Otherwise each list is laid out on its own:
-`fmt::list_layout` decides it from its own elements and line, as rustfmt
-lays out each, and two lists that look alike may be laid out differently.
-So of the arms of one `match`, only one whose call is too wide breaks it,
-and of two record literals alike, only one too wide is vertical
-(`test/cli/fmt/independent.fren`):
+These are rustfmt's defaults, those of `use_small_heuristics = "Default"`,
+but for a record's fields. rustfmt's 18 columns split some of a run of
+short record literals that read alike and not others, as each list is laid
+out on its own, so `fren fmt` allows 40 (#546). The lists of a file are
+laid out from the outside in, each on the lines that the lists around it
+give, so a list in one that is horizontal is horizontal too. Otherwise
+each list is laid out on its own: `fmt::list_layout` decides it from its
+own elements and line, as rustfmt lays out each, and two lists that look
+alike may be laid out differently. So of the arms of one `match`, only one
+whose call is too wide breaks it, and of two record literals alike, only
+one too wide is vertical (`test/cli/fmt/independent.fren`):
 
 ```text
 ensure r1: r = match n {
@@ -457,10 +467,10 @@ ensure r1: r = match n {
         wrap(n + 1000000000 + m) + wrap(n + 2000000000 + m) + wrap(3)
     ),
 }
-ensure r2: p = P { x := n, y := m }
+ensure r2: p = P { x := n + 1000000000, y := m + 2000000000 }
 ensure r3: q = P {
-    x := n + 1,
-    y := m + 1,
+    x := n + 10000000000,
+    y := m + 2000000000,
 }
 ```
 
@@ -498,14 +508,19 @@ pub fn always_vertical?(list: ListKind) := list = Arms
 pub fn stacked?(list: ListKind, n: Int, continued?, line_end: Int) := list = Members
     and (n > 1 or continued? or line_end > 100)
 
--- The widest a list may be on one line, as rustfmt's defaults allow.
+-- The widest a list may be on one line, as rustfmt's defaults allow, but for a record's fields.
 pub fn width_limit(list: ListKind): Int := match list {
     Arms => 0,
     Arguments | ApplicationArguments => 60,
     Parameters | FunctionParameters | Members => 100,
     Elements => 60,
-    Fields => 18,
+    Fields => 40,
 }
+
+-- A record whose fields are wider than rustfmt's `struct_lit_width` of 18: before `fren fmt`
+-- allowed 40 (#546), it was vertical wherever it was, and it still is where its line would be too
+-- long.
+pub fn wide_record?(list: ListKind, width: Int) := list = Fields and width > 18
 
 -- A vertical list's last element is followed by a comma.
 pub fn ends_with_comma?(list: ListKind) :=
@@ -523,7 +538,7 @@ pub proc one_line(
 ): (det vertical?) {
     ensure rule: vertical? iff (n > 0 and (always_vertical?(list)
         or stacked?(list, n, continued?, line_end) or broken? or width > width_limit(list)
-        or (own_line? and start <= 100 < line_end)))
+        or (own_line? and start <= 100 < line_end) or (wide_record?(list, width) and line_end > 100)))
 
     expect empty: when n = 0, not vertical?
     expect arms: when n > 0 and list = Arms, vertical?
@@ -543,18 +558,26 @@ pub proc one_line(
         and width <= width_limit(list) and line_end <= 100, not vertical?
     expect just_fits: when list = Arguments and n = 2 and not broken? and width = 60 and line_end = 100, not vertical?
     expect just_too_wide: when list = Arguments and n = 2 and width = 61, vertical?
+    -- A record's fields fit in 40 columns, where rustfmt's default is 18 (#546).
+    expect fields_just_fit: when list = Fields and n = 2 and not broken? and width = 40 and line_end = 100, not vertical?
+    expect fields_just_too_wide: when list = Fields and n = 2 and width = 41, vertical?
+    -- A record wider than 18 on a line that is too long is vertical wherever it is; one no wider
+    -- than 18 is held to its line's expression, as other lists are.
+    expect wide_record_long_line: when list = Fields and n = 2 and width = 19 and line_end = 101, vertical?
+    expect narrow_record_operand: when list = Fields and n = 2 and not broken? and width = 18 and not own_line?,
+        not vertical?
     expect just_too_long: when list = Fields and n = 1 and width = 18 and start = 80 and line_end = 101 and own_line?,
         vertical?
     -- Breaking a list helps its line only where the list is the line's expression: elsewhere, the
     -- rest of the expression would still be on the lines of its brackets.
     expect operand: when not own_line? and not always_vertical?(list)
         and not stacked?(list, n, continued?, line_end) and not broken?
-        and width <= width_limit(list), not vertical?
+        and width <= width_limit(list) and not (wide_record?(list, width) and line_end > 100), not vertical?
     -- A list that is vertical for its line's length alone shortens the line: the line fits up to its
     -- first element, and is too long with the list on it.
     expect helps: when vertical? and not always_vertical?(list)
         and not stacked?(list, n, continued?, line_end) and not broken?
-        and width <= width_limit(list), own_line? and start <= 100 < line_end
+        and width <= width_limit(list) and not wide_record?(list, width), own_line? and start <= 100 < line_end
 }
 ```
 
@@ -605,7 +628,8 @@ pub proc list_layout(
     let line_end: Int := start + joined(elements) + after
     ensure rule: vertical? iff (count(elements) > 0 and (always_vertical?(list)
         or stacked?(list, count(elements), continued?, line_end) or any_broken?(elements)
-        or joined(elements) > width_limit(list) or (own_line? and start <= 100 < line_end)))
+        or joined(elements) > width_limit(list) or (own_line? and start <= 100 < line_end)
+        or (wide_record?(list, joined(elements)) and line_end > 100)))
 }
 
 expect list_layout_one_line(
@@ -1302,13 +1326,16 @@ the blank lines it has, packed or not. An item spans the lines that its
 tokens are written on as laid out, from those of the `set_option ... in`
 before it, which is part of it as an attribute is of a Rust function, so
 an item after one on a line of its own spans several lines. Each line of a
-token or comment that spans several counts, as of a block comment. Whether
-an item spans several lines depends on its content, then, not on how the
-source lays it out. The comments just above an item, with no blank line
-between them and it in the source, go with it, as a doc comment goes with
-a Rust function: the blank line goes above them, never between them and
-the item. A comment that starts with `--~`, a ui test's annotation of the
-line as many lines above it as it has `^` ([Testing](dev/Testing.md)),
+token or comment that spans several counts, as of a block comment, and so
+does each line of the comments that trail the item's last token, unless a
+token follows them on their last line: a block comment that trails `}` and
+ends on the next line goes with the item, and the blank line goes after it.
+Whether an item spans several lines depends on its content, then, not on
+how the source lays it out. The comments just above an item, with no blank
+line between them and it in the source, go with it, as a doc comment goes
+with a Rust function: the blank line goes above them, never between them
+and the item. A comment that starts with `--~`, a ui test's annotation of
+the line as many lines above it as it has `^` ([Testing](dev/Testing.md)),
 goes with that line instead, and the comments above it are left as they
 are. No blank line comes between an annotation and its line: an item is
 not set apart where an annotation on or below its first line, before the
@@ -1349,9 +1376,9 @@ pub proc apart(
     between: Between,        -- the lines between the item before and the item
     annotations: Annotations,  -- the annotations on or below the item's first line
     previous_first: Nat,     -- the line of the first token of the item before
-    previous_last: Nat,      -- the line of its last token
+    previous_last: Nat,      -- the last line of its last token, or of the comments trailing it
     first: Nat,              -- the line of the item's first token
-    last: Nat,               -- the line of its last token
+    last: Nat,               -- the last line of its last token, or of the comments trailing it
 ): (det apart?) {
     -- Above an item and the comments that go with it, if it or the item before spans
     -- several lines, and no annotation reaches past there.
@@ -1362,6 +1389,82 @@ pub proc apart(
     expect documented: when above < leading(between), not apart?
     expect left_above: when above > leading(between), not apart?
     expect annotated: when reaches_above?(annotations, above), not apart?
+}
+```
+
+`fmt::item_lines` gives the lines of an item that `fmt::apart` reads,
+from the lines of its first and last tokens and of the comments after it:
+its last line is that of the comments that trail its last token, one
+after another, unless a token follows them on their last line. The
+formatter computes them, and the lines between two items, which are those
+after the one's last line and before the other's first, with its
+implementation, as does the `formatting` job's check of blank lines, proved
+in Lean:
+
+```fren
+-- The comments after an item's last token, before the next token: for each, the lines it starts
+-- and ends on.
+pub enum Trailing { Nil, Comment(Int, Int, Trailing) }
+
+-- Where the token after an item starts: none, at the end of the file, or on a line.
+pub enum After { End, Line(Int) }
+
+-- The line where the comments that go on from line `line` end, each starting on the line where the
+-- one before it ends.
+pub fn run_end(line: Int, trailing: Trailing): Int := match trailing {
+    Trailing::Nil => line,
+    Trailing::Comment(start, stop, rest) => if start = line then run_end(stop, rest) else line,
+}
+
+-- The next token starts by line `line`.
+pub fn starts_by?(next: After, line: Int) := match next {
+    After::End => false,
+    After::Line(n) => n <= line,
+}
+
+pub proc item_lines(
+    first_token: Nat,        -- the line its first token starts on
+    last_token: Nat,         -- the line its last token ends on
+    trailing: Trailing,      -- the comments after its last token, before the next token
+    next: After,             -- where the next token starts
+): (det first: Int, det last: Int) {
+    let run: Int := run_end(last_token, trailing)
+    ensure first_rule: first = first_token
+    ensure last_rule: last = (if starts_by?(next, run) then last_token else run)
+
+    expect untrailed: when trailing = Trailing::Nil, last = last_token
+}
+
+-- The layouts of #714, of an item from line 1 to a last token on line 4, which testing
+-- evaluates, as the solver cannot unfold `run_end`. `} /- x` / `y -/`, then the next item: the
+-- comment's last line is the item's.
+set_option fren.evidence "random" in
+expect item_lines_trailed() {
+    call lines := item_lines(1, 4, Trailing::Comment(4, 5, Trailing::Nil), After::Line(6))
+    expect first: lines.first = 1
+    expect last: lines.last = 5
+}
+
+-- `} /- x` / `y -/ fn next`: a token follows the comment on its last line.
+set_option fren.evidence "random" in
+expect item_lines_followed() {
+    call lines := item_lines(1, 4, Trailing::Comment(4, 5, Trailing::Nil), After::Line(5))
+    expect last: lines.last = 4
+}
+
+-- `}` / `-- c`: a comment on a line of its own does not trail the item, nor one on the line after
+-- a comment that does, as in `} -- c` / `/- d -/`.
+set_option fren.evidence "random" in
+expect item_lines_own_line() {
+    call alone := item_lines(1, 4, Trailing::Comment(5, 5, Trailing::Nil), After::Line(6))
+    call after := item_lines(
+        1,
+        4,
+        Trailing::Comment(4, 4, Trailing::Comment(5, 5, Trailing::Nil)),
+        After::End,
+    )
+    expect alone_last: alone.last = 4
+    expect after_last: after.last = alone.last
 }
 ```
 

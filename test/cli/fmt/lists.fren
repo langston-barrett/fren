@@ -27,11 +27,11 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
         bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     )
     call k := g(aaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
-    -- A record literal's fields 18 wide fit; 19 do not.
+    -- A record literal's fields 40 wide fit; 41 do not.
     ensure p: q = P {
-        xx := 10, y := 200,
+        xx := 100000000000000000, y := 200000000,
     }
-    ensure p2: q = P { xx := 10, y := 2000 }
+    ensure p2: q = P { xx := 100000000000000000, y := 2000000000 }
     -- An application's arguments get no trailing comma.
     ensure f: r = f(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)
     -- Nested: a list in one on one line is on it too, and a vertical one
@@ -47,8 +47,9 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
 
         x = 2,
     }
-    -- A record update's fields start after its `with`.
-    ensure u: q = { q with xx := 1000000, y := 2000000 }
+    -- A record update's fields start after its `with`, and are held to the same 40 columns.
+    ensure u: q = { q with xx := 10000000000000000, y := 2000000000 }
+    ensure u2: q = { q with xx := 100000000000000000, y := 2000000000 }
     -- Past column 100, a list goes vertical only if it is its line's expression: only closers
     -- follow it, and at most 4 columns come before its head in each expression that holds it, but
     -- for a record that is an operator's whole right operand. Elsewhere, breaking is no shorter.
@@ -67,6 +68,15 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
     ensure record_in_chain: x = 1 and r = 2 and qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = P { xx := 1, y := 2 }
     -- Nor one that is only part of the right operand.
     ensure record_negated: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = -P { xx := 1, y := 2 }
+    -- A record whose fields are wider than 18 is vertical on a line that is too long, wherever it
+    -- is, as it was before records were allowed 40 (#546): in part of a right operand, in a guard's
+    -- or a quantifier's body, or before a field.
+    ensure wide_negated: qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq = -P { xx := 1000, y := 2000 }
+    ensure wide_guarded: when x > 0 and r > 0 and x != r and x != 100000000, q = P { xx := 1000, y := 2000 }
+    ensure wide_quantified: x > 0 and (exists (z: Int), when z > 0 and z < 10000, P { xx := z, y := 20000 } in {q})
+    ensure wide_field: r = P { xx := 1000, y := 2000 }.xx + 100000000000000000000000000000000000000000000000000
+    -- One that fits its line stays on it, wherever it is.
+    ensure wide_fits: when x > 0, r = P { xx := 1000, y := 2000 }.xx
     -- Nor does a list break whose first element would start past column 100.
     ensure past_the_end_of_the_line_with_a_label_this_long_and_still_going_on_and_on_and_on_and_on: r = gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
     ensure continued: x = 1

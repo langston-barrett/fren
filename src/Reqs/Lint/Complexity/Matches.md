@@ -538,10 +538,7 @@ pub fn bound_value(p: Pat, n: Int, x: Val): Int := match p {
 
 -- The body `b` with the integer `c` in place of its mention of `n`.
 pub fn body_with(b: Body, n: Int, c: Int): Body :=
-    if body_names?(b, n) then Body {
-        form := b.form + c,
-        uses := Use::Nothing,
-    } else b
+    if body_names?(b, n) then Body { form := b.form + c, uses := Use::Nothing } else b
 
 pub proc redundant_guards(
     pattern: Pat,            -- the arm's pattern

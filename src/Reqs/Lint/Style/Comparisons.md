@@ -371,9 +371,7 @@ pub fn inequality(c: Chain, k: Int): Inequality :=
 -- The chain of `l` and then `r`, whose first operand is `l`'s last: `l`'s
 -- operands, then `r`'s after its first.
 set_option fren.lint.undecidable "allow" in
-pub fn joined(l: Chain, r: Chain): Chain := { l with
-    steps := l.steps ++ r.steps,
-}
+pub fn joined(l: Chain, r: Chain): Chain := { l with steps := l.steps ++ r.steps }
 
 -- A comparison written the other way round is the same inequality.
 expect turned(c: Chain) {
