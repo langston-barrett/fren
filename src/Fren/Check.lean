@@ -602,26 +602,48 @@ def recursiveInfos : MetaM (Array (Name × DefinedInfo)) := do
 
 /-- The instances (`RecInstance`) of the structural recursions `recs` that
 `e` applies, each once, added to `acc`: a generic one's, by its
-applications' type arguments, which mention no bound variable. -/
+applications' type arguments, which mention no bound variable. Each
+subterm is visited once, however often `e` shares it, as `foldConsts`
+visits it: a formula unfolded from definitions shares its subterms, and
+visiting each once for each path to it took exponentially many steps,
+such as nearly all of a query's heartbeats in `lint::chainable_comparison`. -/
 partial def recInstancesIn (recs : Array (Name × DefinedInfo)) (e : Expr) (acc : Array RecInstance) : Array RecInstance :=
-  let add (i : RecInstance) (acc : Array RecInstance) := if acc.any i.same then acc else acc.push i
-  match e with
-  | .const c _ => if recs.any (fun (r, d) => r == c && d.solverTypeArgs.isEmpty) then add (c, #[]) acc else acc
-  | .app .. =>
-    let args := e.getAppArgs
-    let acc := match e.getAppFn with
-      | .const c _ => match recs.find? (·.1 == c) with
-        | some (_, d) =>
-          let m := d.solverTypeArgs.size
-          if m == 0 then add (c, #[]) acc
-          else if args.size ≥ m && !(args.extract 0 m).any (·.hasLooseBVars) then add (recInstanceOf c m e).1 acc else acc
-        | none => acc
-      | _ => acc
-    args.foldl (fun acc x => recInstancesIn recs x acc) (match e.getAppFn with | .const .. => acc | f => recInstancesIn recs f acc)
-  | .lam _ d b _ | .forallE _ d b _ => recInstancesIn recs b (recInstancesIn recs d acc)
-  | .letE _ t v b _ => recInstancesIn recs b (recInstancesIn recs v (recInstancesIn recs t acc))
-  | .mdata _ b | .proj _ _ b => recInstancesIn recs b acc
-  | _ => acc
+  ((go e).run ({}, acc)).2.2
+where
+  add (i : RecInstance) : StateM (Std.HashSet Expr × Array RecInstance) Unit :=
+    modify fun (seen, acc) => (seen, if acc.any i.same then acc else acc.push i)
+  go (e : Expr) : StateM (Std.HashSet Expr × Array RecInstance) Unit := do
+    match e with
+    | .const c _ => if recs.any (fun (r, d) => r == c && d.solverTypeArgs.isEmpty) then add (c, #[])
+    | .app .. | .lam .. | .forallE .. | .letE .. | .mdata .. | .proj .. =>
+      if (← get).1.contains e then return
+      modify fun (seen, acc) => (seen.insert e, acc)
+      match e with
+      | .app .. =>
+        let args := e.getAppArgs
+        match e.getAppFn with
+        | .const c _ =>
+          if let some (_, d) := recs.find? (·.1 == c) then
+            let m := d.solverTypeArgs.size
+            if m == 0 then add (c, #[])
+            else if args.size ≥ m && !(args.extract 0 m).any (·.hasLooseBVars) then add (recInstanceOf c m e).1
+        | f => go f
+        args.forM go
+      | .lam _ d b _ | .forallE _ d b _ => go d; go b
+      | .letE _ t v b _ => go t; go v; go b
+      | .mdata _ b | .proj _ _ b => go b
+      | _ => pure ()
+    | _ => pure ()
+
+/-- `r x` within `n` conjunctions of a term with itself, shared: `2 ^ n`
+paths to it, but `n + 1` subterms. -/
+private def sharedConjunctions : Nat → Expr
+  | 0 => mkApp (mkConst `r) (mkConst `x)
+  | n + 1 => let e := sharedConjunctions n; mkApp2 (mkConst ``And) e e
+
+-- A traversal that visited `r x` once for each path to it would never end.
+#guard (recInstancesIn #[(`r, { path := `r, decl := `r, uses := #[], nParams := 1, recursive := true })]
+  (sharedConjunctions 64) #[]).map (·.1) == #[`r]
 
 /-- The recursive symbols a query uses, including dependencies needed by
 its one-step equations, each at the instances that it applies, the
