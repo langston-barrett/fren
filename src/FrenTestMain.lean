@@ -1260,9 +1260,8 @@ some of cvc5's counts and inferences, so that it read them, and
 lists each, with its item and the kind of its check, or `N` of them for
 `--solver-stats=N`; a warm run, which asks the solver nothing, reports no
 query. -/
-def solverStats : IO (Array String) := do
+def solverStats : IO (Array String) := IO.FS.withTempDir fun root => do
   let file := "test/fixtures/solver_stats.fren"
-  let root : FilePath := ".lake" / "solver-stats-test" / s!"{← IO.monoNanosNow}"
   let plainDir := (root / "plain").toString
   let statsDir := (root / "stats").toString
   let run (args : List String) := runFren (["check"] ++ args ++ [file])
@@ -1317,6 +1316,15 @@ def solverStats : IO (Array String) := do
   let _ ← FrenCli.solveRecorded sink `bad .expect "(set-logic ALL)\n(assert (no_such_symbol))\n" #[] false #[] 0
   unless ((← sink.get).map (·.outcome)) == #["error"] do
     failures := failures.push s!"a query that the solver cannot read is not recorded once as an error: {(← sink.get).map (·.outcome)}"
+  -- `get-model` parses but answers with `(error` when models are disabled.
+  -- Later marks close at that failure, leaving only cleanup in `free`.
+  let probe ← IO.mkRef ({} : FrenCli.SolverStats.Probe)
+  let _ ← FrenCli.solveScript "(set-logic ALL)\n(assert true)\n(get-model)\n" #[] false #[] 0 (some probe)
+  let p ← probe.get
+  unless p.failed && p.phases.assert > 0 && p.checkStart == p.checkEnd
+      && p.checkEnd == p.modelEnd && p.modelEnd == p.statsEnd
+      && p.phases.check == 0 && p.phases.model == 0 && p.phases.free == p.stop - p.checkStart do
+    failures := failures.push s!"a command error did not close the later phases at failure: {repr p.phases}"
   unless warm.contains "solver-stats: queries asked of the solver: 0," do
     failures := failures.push s!"a warm run reports queries that it did not ask:\n{warm}"
   return failures

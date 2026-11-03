@@ -34,8 +34,8 @@ later ones. When something throws instead, as a parse error or a failure
 to read the model does, the later marks stay 0, and `Probe.phases` counts
 the time since the last mark as `free`. In either case the statistics are
 not read, so the query's counts are all 0, and it is `failed`. Fren
-writes every script, so neither is expected. A mark left at 0 counts as the one before it
-(`Probe.phases`). -/
+writes every script, so neither is expected. A mark left at 0 counts as
+the one before it (`Probe.phases`). -/
 structure Probe where
   /-- Before the term manager is made. -/
   start : Nat := 0
