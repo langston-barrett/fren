@@ -322,7 +322,8 @@ jobs:
           # its exit status, or the signal that killed it.
           if [ "$status" -ne 0 ]; then
             local how="exit status $status"
-            if [ "$status" -gt 128 ]; then how="$how, signal SIG$(kill -l $((status - 128)))"; fi
+            local sig
+            if [ "$status" -gt 128 ] && sig=$(kill -l $((status - 128)) 2>/dev/null); then how="$how, signal SIG$sig"; fi
             echo "::error::methodsAgree $* ended with $how"
             return 1
           fi
