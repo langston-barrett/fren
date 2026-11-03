@@ -80,14 +80,17 @@ jobs:
         path: .lake
         key: ${{ steps.lake.outputs.key }}
     # No output that the build wrote names the checkout's directory, as in
-    # `pre-merge` (`Reqs/dev/Testing#shared-builds`).
-    - run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
+    # `pre-merge` (`Reqs/dev/Testing#shared-builds`). Like the mutation
+    # sample below, it runs even if only the test driver failed to build.
+    - if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
     # A few mutants of Fren's own requirements on each push, a different few
     # each run (the seed is the run's number), so that over many pushes the
     # runs cover them: all of them, over 3000, are too many for one run.
     # Survivors are warnings, and the step never fails the build, since the
     # survivors are not triaged yet.
     - name: Mutate a few requirements
+      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
       continue-on-error: true
       timeout-minutes: 2
       env:
@@ -115,8 +118,8 @@ jobs:
   # old commit of `main` would restore, push out the small caches, such as
   # the query cache and mdbook's. A pull request whose base's `.lake` was
   # deleted restores the newest, and Lake rebuilds what differs. Its own
-  # job, since it alone may write the repository's caches, and it runs no
-  # code from the checkout.
+  # job, since it alone has `actions: write`, with which it may delete the
+  # repository's caches, and it runs no code from the checkout.
   prune-lake-caches:
     needs: build
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
