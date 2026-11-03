@@ -72,3 +72,6 @@ fn after_trailing_comment(m: Mode) := m = Mode::Heat
 fn one_line_with_trailing_comment(m: Mode) := m = Mode::Heat /- which spans
 two lines, and so does the item -/
 fn after_one_line(m: Mode) := m = Mode::Heat
+tested after_one_line: "a.txt", "b.txt", /- A block comment after a trailing comma that is dropped
+trails the item's last token. -/
+fn after_tested(m: Mode) := m = Mode::Heat

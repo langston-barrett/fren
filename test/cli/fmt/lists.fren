@@ -77,6 +77,11 @@ proc c(x: Int, y: Int): (q: P, r: Int) {
     ensure wide_field: r = P { xx := 1000, y := 2000 }.xx + 100000000000000000000000000000000000000000000000000
     -- One that fits its line stays on it, wherever it is.
     ensure wide_fits: when x > 0, r = P { xx := 1000, y := 2000 }.xx
+    -- So is a list that holds one, as an argument or a sequence's element, where its line is too
+    -- long, and the record is then laid out on its own line.
+    ensure nested: r = ff(P { xx := 1000, y := 2000 }) + 1000000000000000000000000000000000000000000000000000000000
+    ensure in_sequence: [P { xx := 1000, y := 2000 }, q] = [q, q] and r = 100000000000000000000000000000000000000000
+    ensure nested_fits: r = ff(P { xx := 1000, y := 2000 }) + 1
     -- Nor does a list break whose first element would start past column 100.
     ensure past_the_end_of_the_line_with_a_label_this_long_and_still_going_on_and_on_and_on_and_on: r = gg(xxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
     ensure continued: x = 1

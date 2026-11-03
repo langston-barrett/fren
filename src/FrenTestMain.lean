@@ -1602,7 +1602,8 @@ formatting them means updating those too. They are formatted a group at a
 time, each only where the new layout reads better than the old, and this
 list is then removed (#509). -/
 def fmtPending : List String :=
-  ["test/ui/checks/recursion.fren", "test/ui/checks/subset_obligations.fren",
+  ["test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
+   "test/ui/checks/subset_obligations.fren",
    "test/ui/lang/bool_members.fren", "test/ui/lang/cardinality.fren",
    "test/ui/lang/cardinality_static.fren", "test/ui/lang/chained_comparisons.fren",
    "test/ui/lang/checking_static.fren", "test/ui/lang/constants_static.fren",
