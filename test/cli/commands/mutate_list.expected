@@ -29,9 +29,9 @@ help: write `x > 3`
    |
 
 warning[F0810]: `p_x` is never negative, so it can be a `Nat`
-  --> test/cli/commands/mutate_list.fren:78:23
+  --> test/cli/commands/mutate_list.fren:75:23
    |
-78 |     assume p_bounded: p_x >= 0 and p_x <= LIMIT
+75 |     assume p_bounded: p_x >= 0 and p_x <= LIMIT
    |                       ^^^^^^^^ `p_x` is at least 0 by this assumption
    |
    = note: a `Nat` parameter brings this assumption with its type
@@ -200,9 +200,9 @@ shift-variant-m::c::modes-5adb5eea87ec test/cli/commands/mutate_list.fren:68:30 
 swap-and-or-m::c::modes-ec6218190339 test/cli/commands/mutate_list.fren:68:35 `or` changed to `and`
 swap-affix-m::c::modes-f325fb998ab4 test/cli/commands/mutate_list.fren:68:40 `starts_with?` changed to `ends_with?`
 swap-comparison-m::c::spans-155b0fc260cf test/cli/commands/mutate_list.fren:69:22 `=` changed to `!=`
-drop-update-m::c::spans-255a9bd470c8 test/cli/commands/mutate_list.fren:70:9 `lo := x.min(y),` removed
-swap-min-max-m::c::spans-88fcd75701b0 test/cli/commands/mutate_list.fren:70:17 `min` changed to `max`
-drop-update-m::c::spans-8127324e7fc5 test/cli/commands/mutate_list.fren:70:23 `, hi := 3` removed
-shift-integer-m::c::spans-2f2c367c494e test/cli/commands/mutate_list.fren:71:15 `3` changed to `4`
-shift-integer-m::c::spans-052c404c1044 test/cli/commands/mutate_list.fren:71:15 `3` changed to `2`
+drop-update-m::c::spans-255a9bd470c8 test/cli/commands/mutate_list.fren:69:34 `lo := x.min(y),` removed
+swap-min-max-m::c::spans-88fcd75701b0 test/cli/commands/mutate_list.fren:69:42 `min` changed to `max`
+drop-update-m::c::spans-8127324e7fc5 test/cli/commands/mutate_list.fren:69:48 `, hi := 3` removed
+shift-integer-m::c::spans-2f2c367c494e test/cli/commands/mutate_list.fren:69:56 `3` changed to `4`
+shift-integer-m::c::spans-052c404c1044 test/cli/commands/mutate_list.fren:69:56 `3` changed to `2`
 exit=0

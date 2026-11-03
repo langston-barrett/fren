@@ -104,14 +104,8 @@ pub proc manual_abs_diff(
     ensure rule: fires? iff (compared = Ordered::Number and a != b
         and ((then_branch = forward and else_branch = backward and op in {Gt, Ge})
         or (then_branch = backward and else_branch = forward and op in {Lt, Le})))
-        where forward := Difference {
-            minuend := a,
-            subtrahend := b,
-        },
-        backward := Difference {
-            minuend := b,
-            subtrahend := a,
-        }
+        where forward := Difference { minuend := a, subtrahend := b },
+        backward := Difference { minuend := b, subtrahend := a }
 }
 
 proc manual_abs_diff_exact(op: Comparison, then_left_first?, a: Int, b: Int) {
@@ -120,22 +114,10 @@ proc manual_abs_diff_exact(op: Comparison, then_left_first?, a: Int, b: Int) {
         Ordered::Number,
         "a",
         "b",
-        if then_left_first? then Difference {
-            minuend := "a",
-            subtrahend := "b",
-        }
-            else Difference {
-                minuend := "b",
-                subtrahend := "a",
-            },
-        if then_left_first? then Difference {
-            minuend := "b",
-            subtrahend := "a",
-        }
-            else Difference {
-                minuend := "a",
-                subtrahend := "b",
-            },
+        if then_left_first? then Difference { minuend := "a", subtrahend := "b" }
+            else Difference { minuend := "b", subtrahend := "a" },
+        if then_left_first? then Difference { minuend := "b", subtrahend := "a" }
+            else Difference { minuend := "a", subtrahend := "b" },
     )
 
     expect exact: when p.fires?,
@@ -319,13 +301,8 @@ fn abs_diff_written<V>(
 
 -- The written forms of `a - b`, or of `b - a`, of the operands `a` and `b`.
 fn written_difference(a_first?, a: String, b: String): Difference :=
-    if a_first? then Difference {
-        minuend := a,
-        subtrahend := b,
-    } else Difference {
-        minuend := b,
-        subtrahend := a,
-    }
+    if a_first? then Difference { minuend := a, subtrahend := b }
+    else Difference { minuend := b, subtrahend := a }
 
 expect manual_abs_elaborated(op: Comparison, negated_then?, x: lang::Expr<lang::Id>) {
     call p := manual_abs(Ordered::Number, op, negated_then?)
@@ -478,14 +455,8 @@ proc manual_min_max_exact(op: Comparison, then_left?, a: Int, b: Int) {
     call p := manual_min_max(
         op,
         Ordered::Number,
-        Written {
-            text := "a",
-            literal? := false,
-        },
-        Written {
-            text := "b",
-            literal? := false,
-        },
+        Written { text := "a", literal? := false },
+        Written { text := "b", literal? := false },
         if then_left? then "a" else "b",
         if then_left? then "b" else "a",
     )

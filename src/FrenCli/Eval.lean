@@ -378,7 +378,9 @@ model's confirmation and enumeration alike, decides by
 known where an unknown case's value and the rest's are known and equal.
 After an unknown case, where no case is taken is unknown too, as
 `lang::eval`'s `NoMatch` is and the Lean-hosted front end's index of the
-empty sequence is, rather than the interpretation's unspecified value. -/
+empty sequence is, rather than the interpretation's unspecified value.
+Evaluation computes it by `chainKnownBy`, which is equal to it
+(`chainKnownBy_eq`) and evaluates less. -/
 def chainKnown : List (Option Bool × (Unit → Option Val)) → (Unit → Option Val) → Option Val
   | [], rest => rest ()
   | (t, v) :: more, rest => match t with
@@ -388,6 +390,44 @@ def chainKnown : List (Option Bool × (Unit → Option Val)) → (Unit → Optio
       let x := v ()
       let y := chainKnown more fun _ => none
       if Fren.Core.iteKnown none x.isSome y.isSome (x == y) then x else none
+
+/-- An `if` whose condition is unknown: `x` where it and `y ()` are known
+and equal (`Fren.Core.iteKnown`), with `y ()` evaluated only where `x` is
+known, since where `x` is not, neither is the `if` (`iteUnknown_eq`). -/
+@[inline] def iteUnknown (x : Option Val) (y : Unit → Option Val) : Option Val :=
+  match x with
+  | none => none
+  | some _ =>
+    let y := y ()
+    if Fren.Core.iteKnown none x.isSome y.isSome (x == y) then x else none
+
+theorem iteUnknown_eq (x : Option Val) (y : Unit → Option Val) :
+    iteUnknown x y = if Fren.Core.iteKnown none x.isSome (y ()).isSome (x == y ()) then x else none := by
+  cases x <;> simp [iteUnknown, Fren.Core.iteKnown]
+
+/-- `chainKnown (cs.map case) rest` (`chainKnownBy_eq`), in less time:
+each case is made only when the chain reaches it, and after an unknown
+case whose value is unknown, the cases after it are not evaluated, since
+the chain's value is then unknown whatever theirs are (`iteUnknown`). -/
+@[specialize] def chainKnownBy (case : α → Option Bool × (Unit → Option Val)) :
+    List α → (Unit → Option Val) → Option Val
+  | [], rest => rest ()
+  | c :: more, rest => match case c with
+    | (some true, v) => v ()
+    | (some false, _) => chainKnownBy case more rest
+    | (none, v) => iteUnknown (v ()) fun _ => chainKnownBy case more fun _ => none
+
+theorem chainKnownBy_eq (case : α → Option Bool × (Unit → Option Val)) (cs : List α)
+    (rest : Unit → Option Val) : chainKnownBy case cs rest = chainKnown (cs.map case) rest := by
+  induction cs generalizing rest with
+  | nil => rfl
+  | cons c more ih =>
+    simp only [chainKnownBy, List.map, chainKnown]
+    rcases case c with ⟨t, v⟩
+    rcases t with _ | _ | _
+    · simp only [iteUnknown_eq, ih]
+    · simp only [ih]
+    · rfl
 
 /-- An arm's test and the frame of its binders where its scrutinees'
 values may be unknown: of each of its patterns and its scrutinee's value,
@@ -1482,10 +1522,8 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
   | .ite c a b => match c.evalIn I look locals slots frame memos fuel depth with
     | some (.bool true) => a.evalIn I look locals slots frame memos fuel depth
     | some (.bool false) => b.evalIn I look locals slots frame memos fuel depth
-    | _ =>
-      let x := a.evalIn I look locals slots frame memos fuel depth
-      let y := b.evalIn I look locals slots frame memos fuel depth
-      if Fren.Core.iteKnown none x.isSome y.isSome (x == y) then x else none
+    | _ => iteUnknown (a.evalIn I look locals slots frame memos fuel depth)
+      fun _ => b.evalIn I look locals slots frame memos fuel depth
   | .app f args =>
     -- A structural recursion's body, at the arguments' values, which ends
     -- (`Reqs/Lang/Recursion#meaning`).
@@ -1635,11 +1673,11 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
       fun _ => do I.fn (← unspec?) #[]) <|>
       -- Where whether a row is taken is unknown, the rows decide it as the
       -- `if`s that they are, as the Lean-hosted front end's definitions
-      -- are (`chainKnown`).
-      chainKnown (rows.toList.map fun (_, c?, v) => (match c? with
+      -- are (`chainKnownBy`, which is `chainKnown`).
+      chainKnownBy (fun (_, c?, v) => (match c? with
           | none => some true
           | some c => truthOf (c.evalIn I look locals slots frame memos fuel depth), fun _ => v.evalIn I look locals slots frame memos fuel depth))
-        fun _ => do I.fn (← unspec?) #[]
+        rows.toList fun _ => do I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => evalResult (e.evalIn I (fun _ => none) [] #[] .nil #[] fuel depth)
   | .typed t _ e => do truthV (typeV I fuel depth t (← e.evalIn I look locals slots frame memos fuel depth))
@@ -1667,8 +1705,9 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     -- Where whether an arm is taken is unknown, the arms decide it as the
     -- `if`s that they are: an arm's test and its guard, and its body, with
     -- the binders bound, or unknown where a scrutinee is (`armCase`,
-    -- `chainKnown`). The scrutinees of a `match` of several are its
-    -- vector's values, which each pattern tests on its own.
+    -- `chainKnownBy`, which is `chainKnown`). The scrutinees of a `match`
+    -- of several are its vector's values, which each pattern tests on its
+    -- own.
     let scrutinees? : Option (Array Ex) := match e with
       | .ctor t _ xs => if t == Fren.Core.matchVectorPath then some xs else none
       | _ => none
@@ -1686,7 +1725,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
         | none => some true
         | some g => truthOf (g.evalIn I look locals slots fr memos fuel depth)
       (Fren.Core.Enumeration.andTruth test guard, fun _ => body.evalIn I look locals slots fr memos fuel depth)
-    chainKnown (arms.toList.map case) fun _ => do I.fn (← unspec?) #[]
+    chainKnownBy case arms.toList fun _ => do I.fn (← unspec?) #[]
   -- The same arm as the `match` takes: those left out are those whose
   -- patterns do not match the value, which `firstCase` passes over
   -- (`firstCase_filter`).

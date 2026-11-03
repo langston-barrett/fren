@@ -41,6 +41,8 @@ import Lean.Elab.Frontend
   reads back as each tree, by the parser of the `fren` command, and needs
   each pair of parentheses that it adds, but those of its exceptions
   (`printing`, `lint::printing`).
+- **Sets in models:** the binary's fallback renderer of solver models
+  shows sets and relations as literals (`renderedSets`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
@@ -1848,6 +1850,29 @@ def ownSpecAgreement : IO (Array String) := do
       failures := failures.push s!"{g}:{d.line}: Lean reports about a spec that `ownSpecFiles` lacks: {FrenTest.Frontends.headOf d}"
   return failures
 
+/-! ## Models as the solver writes them -/
+
+/-- How `FrenCli.renderValue` shows a model's value, as cvc5 writes it,
+where the evaluator cannot read it (`FrenCli.confirming`'s `render`). A set
+is a union or insertion of singletons of 1-tuples, and is shown as a
+literal of its members, sorted as text, so `10` comes before `2`. A
+relation's members are pairs, and are shown as pairs. The empty set is
+shown as `{}`. The evaluator reads every set in the tests' models, so only
+this job runs this rendering. -/
+def renderedSets : Array String := Id.run do
+  let cases : Array (String × String) := #[
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 0)))", "{0, 2}"),
+    ("(set.insert (tuple 3) (tuple 1) (set.singleton (tuple 2)))", "{1, 2, 3}"),
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 10)))", "{10, 2}"),
+    ("(set.singleton (tuple 1 (- 2)))", "{(1, -2)}"),
+    ("(as set.empty (Set (Tuple Int)))", "{}")]
+  let mut failures := #[]
+  for (v, shown) in cases do
+    let got := FrenCli.renderValue #[] v
+    unless got == shown do
+      failures := failures.push s!"renderValue {v} is `{got}`, not `{shown}`"
+  return failures
+
 /-! ## Formatting -/
 
 /-- The specs in the repository: its `.fren` and Markdown files, outside
@@ -1897,13 +1922,11 @@ formatting them means updating those too. They are formatted a group at a
 time, each only where the new layout reads better than the old, and this
 list is then removed (#509). -/
 def fmtPending : List String :=
-  ["test/cli/commands/counterexample_newtype.fren",
-   "test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
+  ["test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
    "test/ui/checks/subset_obligations.fren",
    "test/ui/lang/bool_members.fren", "test/ui/lang/cardinality.fren",
    "test/ui/lang/cardinality_static.fren", "test/ui/lang/chained_comparisons.fren",
-   "test/ui/lang/checking_static.fren", "test/ui/lang/constants.fren",
-   "test/ui/lang/constants_imported.fren", "test/ui/lang/constants_static.fren",
+   "test/ui/lang/checking_static.fren", "test/ui/lang/constants_static.fren",
    "test/ui/lang/datatypes.fren", "test/ui/lang/datatypes_static.fren",
    "test/ui/lang/declared_types_static.fren", "test/ui/lang/defined_functions.fren",
    "test/ui/lang/defined_functions_static.fren", "test/ui/lang/defined_outputs.fren",
@@ -1912,7 +1935,7 @@ def fmtPending : List String :=
    "test/ui/lang/generic_functions.fren", "test/ui/lang/generic_functions_contracts.fren",
    "test/ui/lang/generic_functions_static.fren", "test/ui/lang/generics.fren",
    "test/ui/lang/generics_guards_contracts.fren", "test/ui/lang/generics_pattern_elements.fren",
-   "test/ui/lang/generics_recursive_within.fren", "test/ui/lang/generics_static.fren",
+   "test/ui/lang/generics_static.fren",
    "test/ui/lang/generics_subset_types.fren", "test/ui/lang/global_static.fren",
    "test/ui/lang/guards.fren", "test/ui/lang/guards_static.fren",
    "test/ui/lang/higher_order_obligations.fren", "test/ui/lang/instances_static.fren",
@@ -1933,7 +1956,7 @@ def fmtPending : List String :=
    "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_elements.fren",
    "test/ui/lang/quantifiers_let.fren", "test/ui/lang/quantifiers_places.fren",
    "test/ui/lang/quantifiers_static.fren", "test/ui/lang/range_patterns.fren",
-   "test/ui/lang/record_updates.fren", "test/ui/lang/record_updates_static.fren",
+   "test/ui/lang/record_updates_static.fren",
    "test/ui/lang/refines.fren", "test/ui/lang/refines_pattern.fren",
    "test/ui/lang/relations_static.fren", "test/ui/lang/scoping.fren",
    "test/ui/lang/sequences.fren", "test/ui/lang/sequences_static.fren",
@@ -1943,8 +1966,7 @@ def fmtPending : List String :=
    "test/ui/lang/tables.fren", "test/ui/lang/tables_scrutinee.fren",
    "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren",
    "test/ui/lang/type_facts.fren", "test/ui/lang/types.fren",
-   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren",
-   "test/ui/lints/records.fren", "test/ui/lints/updates_covers.fren"]
+   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren"]
 
 /-- A file's pieces (`fmt::Piece`), each comment with whether it starts
 its line, and the paths the `use` items import, sorted. With `all`, every
@@ -2081,7 +2103,14 @@ def apartLines (out : String) (blanks : Std.HashMap Nat Nat) : Std.HashSet Nat :
   let (lineOf, starts) := FrenCli.Fmt.lineTable chars
   let text (l : Nat) : String :=
     String.ofList (chars.extract starts[l]! ((starts[l + 1]?.map (· - 1)).getD chars.size)).toList
-  let spans := lay.items.map fun (f, l) => (lineOf[toks[f]!.span.start]!, lineOf[toks[l]!.span.stop - 1]!)
+  -- An item's first and last lines (`fmt::item_lines`), from those of its
+  -- first and last tokens, of the comments after it and of the next token.
+  let spans := lay.items.map fun (f, l) =>
+    let stop := toks[l]!.span.stop
+    let next : Option Nat := toks[l + 1]?.map fun (t : FrenCli.Token) => t.span.start
+    let trailing := comments.toList.filter (fun (c : FrenCli.Span) => c.start ≥ stop && next.all (c.stop ≤ ·))
+      |>.map fun (c : FrenCli.Span) => (lineOf[c.start]!, lineOf[c.stop - 1]!)
+    FrenCli.Fmt.itemLines lineOf[toks[f]!.span.start]! lineOf[stop - 1]! trailing (next.map (lineOf[·]!))
   let annotations := comments.filterMap fun c =>
     (FrenCli.Fmt.annotationReach (FrenCli.Fmt.text chars c)).map (lineOf[c.start]!, ·)
   let mut apart : Std.HashSet Nat := {}
@@ -3745,9 +3774,20 @@ def spawnOutOfFuel (env : Array (String × Option String)) : IO (UInt32 × Optio
 /-- A job's `panic!` fails it (`spawnJob`): `outOfFuel`, whose evaluation
 runs out of fuel, aborts with `LEAN_ABORT_ON_PANIC`, and without it says
 so on stderr and finds that the test counts for nothing
-(`FrenTest.OutOfFuel.tinyFuel`). -/
+(`FrenTest.OutOfFuel.tinyFuel`). And `unknownFirst`, whose evaluation
+would run out of fuel only if it evaluated what follows an unknown case
+whose value is unknown, does not abort with it
+(`FrenTest.OutOfFuel.unknownFirstLazy`). -/
 def panicGuard : IO (Array String) := do
   let mut failures := #[]
+  let abort := #[("LEAN_ABORT_ON_PANIC", some "1")]
+  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args := #["--job", "unknownFirst"], env := abort }
+  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+  match out.exitCode, (Json.parse last >>= fromJson? (α := Array String)).toOption with
+  | 0, some found => failures := failures ++ found
+  | code, _ =>
+    let msg := s!"`unknownFirst` evaluated what follows an unknown case whose value is unknown, or crashed (exit {code}):\n{out.stderr}"
+    failures := failures.push msg
   let (code, _, err) ← spawnOutOfFuel #[("LEAN_ABORT_ON_PANIC", some "1")]
   unless code != 0 && (err.splitOn "Ex.eval ran out of fuel").length > 1 do
     failures := failures.push s!"running out of fuel with `LEAN_ABORT_ON_PANIC` did not abort (exit {code}):\n{err}"
@@ -3770,7 +3810,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"]]
+      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -3788,6 +3828,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["panicGuard"] => panicGuard
   -- Spawned by `panicGuard` only: it panics.
   | ["outOfFuel"] => Fren.Test.OutOfFuel.tinyFuel
+  -- Spawned by `panicGuard` only, with `LEAN_ABORT_ON_PANIC`.
+  | ["unknownFirst"] => Fren.Test.OutOfFuel.unknownFirstLazy
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
   | ["manualExamples"] => do
@@ -3803,6 +3845,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["smallValues"] => pure (Fren.Test.SmallValues.differences 300)
+  | ["renderedSets"] => pure renderedSets
   | ["ownSpec"] => ownSpec
   -- Run by `ownSpec` too, after it, with its query cache.
   | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
