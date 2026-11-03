@@ -32,9 +32,10 @@ variable database, whose reference count is not atomic. A solver of a
 logic with nonlinear arithmetic, such as `ALL`, takes a reference when it
 initializes its theories, at its first command that `initializes` lists
 (an assertion, a definition, a `push` or a `check-sat`), or at its
-`checkSat`, and drops it when it is freed. Solvers that are never freed only ever add to the
-count, but once they are, two threads that change it at once can lose a
-change, and the database is then freed while it is in use. So a solver of
+`checkSat`, and drops it when it is freed. Solvers that are never freed
+only ever add to the count, but once they are, two threads that change it
+at once can lose a change, and the database is then freed while it is in
+use. So a solver of
 such a logic (`sharesLibpoly`) initializes and is freed while it holds
 `solverLock` (`exclusively`): every command up to and including the first
 that `initializes` lists, or its `checkSat` too if no command did. So a
@@ -98,10 +99,10 @@ def sharesLibpoly (logic : String) : Bool :=
 #guard !sharesLibpoly "QF_UFDTLIA" && !sharesLibpoly "UFDTLIA" && !sharesLibpoly "QF_LIA"
 
 /-- The names of the commands that always initialize their solver's
-theories (`initializes`), as cvc5 1.3.2's parser names them. -/
+theories (`initializes`), as cvc5 1.3.2's parser names them: it names
+`define-const` `define-fun`, and `define-funs-rec` `define-fun-rec`. -/
 def initializingCommands : Array String :=
-  #["assert", "define-fun", "define-fun-rec", "define-funs-rec", "define-const", "push", "check-sat",
-    "check-sat-assuming"]
+  #["assert", "define-fun", "define-fun-rec", "push", "check-sat", "check-sat-assuming"]
 
 /-- Whether the command named `name` always initializes its solver's
 theories, by cvc5's `SolverEngine::beginCall`: an assertion, a definition,
@@ -111,8 +112,6 @@ would let a later one initialize unlocked: `solverLifetime` checks each
 against cvc5. One missing from the list only holds the lock longer. -/
 def initializes (name : String) : Bool :=
   initializingCommands.contains name
-
-
 
 @[extern "solver_new"]
 opaque solverNew (tm : @& TermManager) : Env Solver

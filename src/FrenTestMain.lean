@@ -1301,7 +1301,8 @@ def queryCache : IO (Array String) := do
 definition: in `ALL`, a logic with nonlinear arithmetic, whose solvers
 take `FrenCli.Cvc5.solverLock`, or, if `linear`, in `QF_UFDTLIA`, whose
 solvers do not. If `pushed`, it initializes them earlier, at a `push`,
-which `FrenCli.Cvc5.initializes` does not list. -/
+which `FrenCli.Cvc5.initializes` lists too, so that the lock is let go
+there, before the definition. -/
 def lifetimeScript (k : Nat) (linear : Bool := false) (pushed : Bool := false) : String :=
   let push := if pushed then "(push 1)\n" else ""
   if linear then
@@ -1333,10 +1334,11 @@ def initializationOn (solver : @& cvc5.Solver) (cmds : String) : cvc5.Env (Strin
 @[noinline] def initializationWith (tm : @& cvc5.TermManager) (cmds : String) : cvc5.Env (String × Bool) := do
   initializationOn (← FrenCli.Cvc5.solverNew tm) cmds
 
-/-- The commands of `FrenCli.Cvc5.initializingCommands` each always
-initialize their solver, and the commands that `FrenCli.queryScript` writes
-before them do not, as cvc5 names them: `FrenCli.solveOn` lets
-`FrenCli.Cvc5.solverLock` go after the first of the former. -/
+/-- Each command of `FrenCli.Cvc5.initializingCommands` has a case here
+and always initializes its solver, and the commands that
+`FrenCli.queryScript` writes before them do not, as cvc5 names them:
+`FrenCli.solveOn` lets `FrenCli.Cvc5.solverLock` go after the first of
+the former. -/
 def initializingCommandsHold : IO (Array String) := do
   let initializing := #["(assert (> x 0))", "(define-fun f () Int 1)", "(define-fun f ((n Int)) Int n)",
     "(define-fun-rec g ((n Int)) Int (ite (<= n 0) 0 (g (- n 1))))",
@@ -1345,14 +1347,20 @@ def initializingCommandsHold : IO (Array String) := do
   let other := #["(declare-const y Int)", "(declare-fun u (Int) Int)", "(declare-sort S 0)", "(define-sort T () Int)",
     "(declare-datatype D ((A) (B (b Int))))", "(set-option :strings-exp true)"]
   let mut failures := #[]
+  let mut named := #[]
   for (cmds, expected) in initializing.map (·, true) ++ other.map (·, false) do
     match ← cvc5.Env.run (do initializationWith (← cvc5.TermManager.new) cmds) with
     | .error e => failures := failures.push s!"`{cmds}` failed: {e}"
     | .ok (name, initialized) =>
+      if expected then named := named.push name
       if initialized != expected then
         failures := failures.push s!"`{cmds}` {if expected then "does not initialize" else "initializes"} the solver"
       if FrenCli.Cvc5.initializes name != expected then
         failures := failures.push s!"`{cmds}`, which cvc5 names `{name}`, is {if expected then "not " else ""}one that `FrenCli.Cvc5.initializes` lists"
+  -- Every listed command has a case here, so none is listed unchecked.
+  for c in FrenCli.Cvc5.initializingCommands do
+    unless named.contains c do
+      failures := failures.push s!"`{c}`, which `FrenCli.Cvc5.initializes` lists, has no case in `initializingCommandsHold`"
   return failures
 
 /-- This process's resident memory, in kB, as `ps` reports it. -/
@@ -1385,8 +1393,8 @@ def solverLifetime : IO (Array String) := do
   -- After every third, each thread asks one in a linear logic, whose
   -- solvers take no lock and must answer correctly beside those that do.
   -- Every other query in `ALL` initializes its solver at a `push`, which
-  -- is not a command that `FrenCli.Cvc5.initializes` lists, and must
-  -- hold the lock all the same.
+  -- `FrenCli.Cvc5.initializes` lists, so that it lets the lock go there,
+  -- before its definition, rather than at the definition.
   let tasks ← (List.range 16).mapM fun t => IO.asTask (prio := .dedicated) do
     let mut n := 0
     for k in [0:300] do
