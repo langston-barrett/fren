@@ -1,14 +1,14 @@
 --- test/cli/fmt/chains.fren
 +++ test/cli/fmt/chains.fren
-@@ -28,2 +28 @@
+@@ -31,2 +31 @@
 -    ensure joined: ok? iff a > 0
 -        and b > 0
 +    ensure joined: ok? iff a > 0 and b > 0
-@@ -32 +31,2 @@
+@@ -35 +34,2 @@
 -    ensure long: ok? iff alpha_beta_gamma > 1000000 and delta_epsilon_zeta > 2000000 and eta_theta_iota > 30
 +    ensure long: ok? iff
 +        alpha_beta_gamma > 1000000 and delta_epsilon_zeta > 2000000 and eta_theta_iota > 30
-@@ -34,2 +34,10 @@
+@@ -37,2 +37,10 @@
 -    ensure loosest: total = alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma * 2
 -    ensure inner: total = alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + 1
 +    ensure loosest: total =
@@ -21,7 +21,7 @@
 +            + delta_epsilon_zeta
 +            + eta_theta_iota
 +            + 1
-@@ -38 +46,7 @@
+@@ -41 +49,7 @@
 -    ensure nested: ok? iff alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + delta_epsilon_zeta > eta_theta_iota
 +    ensure nested: ok? iff
 +        alpha_beta_gamma
@@ -30,7 +30,12 @@
 +                + alpha_beta_gamma
 +                + delta_epsilon_zeta
 +            > eta_theta_iota
-@@ -41,2 +55,5 @@
+@@ -44 +58,3 @@
+-    ensure nested_call: alpha_beta_gamma + delta_epsilon_zeta = evaluate_for_nested_chain_width(alpha_beta_gamma, delta_epsilon_zeta, eta_theta_iota) iff ok?
++    ensure nested_call:
++        alpha_beta_gamma + delta_epsilon_zeta = evaluate_for_nested_chain_width(alpha_beta_gamma, delta_epsilon_zeta, eta_theta_iota)
++            iff ok?
+@@ -47,2 +63,5 @@
 -    expect higher_order: typeof(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota) = Some(alpha_beta_gamma)
 -    expect still_long: typeof(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota) = Some(alpha_beta_gamma + delta_epsilon_zeta)
 +    expect higher_order:
@@ -38,13 +43,13 @@
 +    expect still_long:
 +        typeof(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota)
 +            = Some(alpha_beta_gamma + delta_epsilon_zeta)
-@@ -47 +64,4 @@
+@@ -53 +72,4 @@
 -    ensure record: q = P { x := alpha_beta_gamma + delta_epsilon_zeta, y := eta_theta_iota + alpha_beta_gamma }
 +    ensure record: q = P {
 +        x := alpha_beta_gamma + delta_epsilon_zeta,
 +        y := eta_theta_iota + alpha_beta_gamma,
 +    }
-@@ -50,4 +70,15 @@
+@@ -56,4 +78,15 @@
 -    ensure short: t = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c + a + b)
 -    ensure split_anyway: eval(alpha_beta_gamma, delta_epsilon_zeta) = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c)
 -    ensure long_left: alpha_beta_gamma = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota, c + a)
@@ -64,7 +69,15 @@
 +    ensure long_call_left:
 +        eval(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota)
 +            = f(alpha_beta_gamma, eta_theta_iota, c + a + b)
-@@ -59,3 +90,6 @@
+@@ -61 +94,6 @@
+-    ensure wide_record: alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_record_for_this_test = P { x := 1000, y := 2000 } and ok?
++    ensure wide_record:
++        alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_record_for_this_test = P {
++            x := 1000,
++            y := 2000,
++        }
++            and ok?
+@@ -67,3 +105,6 @@
 -    ensure middle: ok? iff a > 0 and (match x {
 -        Boxed::Box(n) => n > 0,
 -    }) and b > 0
@@ -74,7 +87,7 @@
 +                Boxed::Box(n) => n > 0,
 +            })
 +            and b > 0
-@@ -69 +103,6 @@
+@@ -77 +118,6 @@
 -        total = alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + delta_epsilon_zeta
 +        total =
 +            alpha_beta_gamma
@@ -82,7 +95,22 @@
 +                + eta_theta_iota
 +                + alpha_beta_gamma
 +                + delta_epsilon_zeta
-@@ -73,4 +112,4 @@
+@@ -81,3 +127,3 @@
+-            + delta_epsilon_zeta
+-            + eta_theta_iota
+-    ) > 0, ok?
++        + delta_epsilon_zeta
++        + eta_theta_iota
++        ) > 0, ok?
+@@ -85,2 +131,5 @@
+-    ensure negated: ok? iff a > 0 and not (alpha_beta_gamma > 1000000
+-        and delta_epsilon_zeta > 2000000 and eta_theta_iota > 3000000)
++    ensure negated: ok? iff
++        a > 0
++            and not (alpha_beta_gamma > 1000000
++                and delta_epsilon_zeta > 2000000
++                and eta_theta_iota > 3000000)
+@@ -90,4 +139,4 @@
 -    ensure commented: ok? iff a > 0  -- the first
 -        and b > 0
 -
@@ -91,7 +119,14 @@
 +        a > 0  -- the first
 +            and b > 0
 +            and c > 0
-@@ -82,2 +121,5 @@
+@@ -100 +149,5 @@
+-    ensure comparison: 0 <= alpha_beta_gamma + delta_epsilon_zeta < eta_theta_iota + alpha_beta_gamma <= delta_epsilon_zeta
++    ensure comparison:
++        0
++            <= alpha_beta_gamma + delta_epsilon_zeta
++            < eta_theta_iota + alpha_beta_gamma
++            <= delta_epsilon_zeta
+@@ -104,2 +157,5 @@
 -fn moved(alpha_beta_gamma: Int, delta_epsilon_zeta: Int, eta_theta_iota: Int): Bool := alpha_beta_gamma > 1000000
 -    and delta_epsilon_zeta > 2000000 and eta_theta_iota > 3000000 and alpha_beta_gamma < eta_theta_iota
 +fn moved(alpha_beta_gamma: Int, delta_epsilon_zeta: Int, eta_theta_iota: Int): Bool :=
@@ -99,4 +134,14 @@
 +        and delta_epsilon_zeta > 2000000
 +        and eta_theta_iota > 3000000
 +        and alpha_beta_gamma < eta_theta_iota
+@@ -109 +165,2 @@
+-    law bounded(n: Int): n > 10000000000000000000 and n < 20000000000000000000 and n != 30000000000000000000
++    law bounded(n: Int):
++        n > 10000000000000000000 and n < 20000000000000000000 and n != 30000000000000000000
+@@ -112 +169,4 @@
+-expect global_chain: 100000000000000000000000000000 > 0 and 200000000000000000000000000000 > 0 and 300000000000000000000000000000 > 0
++expect global_chain:
++    100000000000000000000000000000 > 0
++        and 200000000000000000000000000000 > 0
++        and 300000000000000000000000000000 > 0
 exit=1

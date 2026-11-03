@@ -1143,7 +1143,7 @@ pub proc right_side(
     after_close?,            -- the operator's line starts with the `)` of a signature's parameters
     broken?,                 -- some of it must span several lines
     inner?,                  -- a bracket opened on the operator's line is open at the operator
-    breaks?,                 -- for a clause's chain, it breaks on the operator's line (`fmt::chain_layout`)
+    breaks?,                 -- for a clause's chain, it breaks before its operators (`fmt::chain_side`)
     line_end: Int,           -- the column where the operator's line would end, with it on that line
     next_end: Int,           -- the column where its own line would end, with it on the next line
     first_end: Int,          -- the column where the operator's line would end, with it up to its first line break
@@ -1209,8 +1209,7 @@ or a remainder's `mod`, which cannot start a line
 ([Lexical](Lang/Lexical.md#keywords)), is not laid out. The gaps get their
 line breaks as `fmt::line_break` says for `Gap::Operator` and
 `Gap::AfterOperator`, the one or the other breaking (`fmt::chain_side`),
-and their blank lines go, as rustfmt drops those in
-an expression.
+and their blank lines go, as rustfmt drops them within an expression.
 
 The chains of an expression are laid out from the outside in, so the
 loosest-binding operators break first, as rustfmt breaks the outermost
@@ -1251,9 +1250,8 @@ A chain breaks where it does not fit on its line:
 A last operand hugs a chain, breaking in place rather than the chain,
 where its first line would end with the brace of a record literal or
 update, a `match`, a table or a Boolean block, and the line fits up to that
-brace, as
-rustfmt keeps a right operand whose first line ends with `{` on its
-operator's line; or where the chain has one operator, and its right
+brace, as rustfmt keeps a right operand whose first line ends with `{` on
+its operator's line; or where the chain has one operator, and its right
 operand is wholly a call, a method call or a sequence or set literal, and
 the line fits up to its bracket, after at most 4 columns, each token taking
 its width and a space, as rustfmt keeps a right operand on the line of a
@@ -1281,11 +1279,11 @@ author wrote them, as principle 6 has it, since no rule decides them well
 (`fmt::chain_kept`). It is one followed on its line, up to where a line
 may end, by more than closing brackets and commas, as a guard's condition
 before its body or an `if`'s condition before `then`; one after more than 4
-columns on its line, each token taking its width and a space but a prefix
-`not`, which takes none, as the body
-of `when c, a = b` or the `else` branch of `if c then a else b + d`; and any
-chain in one that keeps its line breaks. This is decided from the file's
-structure, whatever its layout. What follows a chain counts up to where a
+columns on its line, each token taking its width and a space, except that
+a prefix `not` takes none, as the body of `when c, a = b` or the `else`
+branch of `if c then a else b + d`; and any chain in one that keeps its
+line breaks. This is decided from the file's structure, whatever its
+layout. What follows a chain counts up to where a
 line may end: a comment, a line break that formatting keeps, or a gap whose
 line break a list, a block, a right side or a chain that does not keep its
 line breaks decides. What comes before it counts back to such a place, or
@@ -1437,20 +1435,26 @@ ensure rule: noted? iff
 -- A single name on the left of a chain's one `iff` or `=`, no wider than 24 columns.
 pub fn short_name?(operators: Int, named?, width: Int) := operators = 1 and named? and width <= 24
 
+-- A clause's chain moves off the clause's line only where it breaks before its operators.
+pub fn breaks_before?(broken?, after?) := broken? and not after?
+
 pub proc chain_side(
     broken?,                 -- it breaks (`fmt::chain_layout`)
     operators: Int,          -- its operators
     named?,                  -- its left operand is a single name, and its one operator `iff` or `=`
     width: Int,              -- the width of that name
-): (det after?) {
+): (det after?, det before?) {
     ensure rule: after? iff (broken? and short_name?(operators, named?, width))
+    out before? := breaks_before?(broken?, after?)
 
     -- `ensure rule: noted? iff` ... : a short name keeps its operator on its line...
     expect short: when broken? and operators = 1 and named? and width = 6, after?
+    expect clause_stays: when after?, not before?
     -- ...but a longer left operand, or several operators, break before each operator.
     expect not_named: when not named?, not after?
     expect several: when operators > 1, not after?
     expect whole: when not broken?, not after?
+    expect clause_moves: when broken? and not short_name?(operators, named?, width), before?
 }
 ```
 
@@ -1612,14 +1616,42 @@ indented as the line after it, but inside the brackets when that line
 closes them. Other brackets, such as those of a grouping or an index, do
 not indent. `fmt::indent` gives the indentation, in spaces, from the
 brackets open at the start of the line, the innermost first, each with
-whether it opens a list or block and the indentation of the line that
-opens it. A line is indented from the line that opens the innermost of
-those that indent, however many open on that line: in `f(g(` ... `))`,
-the arguments of `g` are indented four spaces more than the line, not
-eight. So the arms of a `match` in a clause are indented four spaces
-more than the clause:
+whether it opens a list or block and an indentation base. For a bracket
+or a moved right side, the base is the indentation of the line that opens
+it. For a broken chain, `fmt::chain_indent` gives the base: its line's
+indentation, or four more than the base of the chain around it where that
+chain starts on the same line too. The operators are four spaces past
+the base. A line is indented from the base of the innermost entry that
+indents, however many open on that line: in `f(g(` ... `))`, the arguments
+of `g` are indented four spaces more than the line, not eight. So the arms
+of a `match` in a clause are indented four spaces more than the clause:
 
 ```fren
+-- The innermost entry that indents, if it is a broken chain: its first line and indentation base.
+pub enum OpenChain { Absent, OnLine(Int, Int) }
+
+-- A broken chain's base is its line's indentation, unless the chain around it starts on that line
+-- too, when its base is four more than that chain's. Its operators are four more than its base.
+pub fn chain_base(line: Int, columns: Int, outer: OpenChain): Int := match outer {
+    OpenChain::Absent => columns,
+    OpenChain::OnLine(first, base) => if first = line then base + 4 else columns,
+}
+
+pub proc chain_indent(
+    line: Int,              -- the line where the chain starts, in the output
+    columns: Int,           -- that line's indentation
+    outer: OpenChain,
+): (det base: Int, det operators: Int) {
+    out base := chain_base(line, columns, outer)
+    out operators := base + 4
+
+    expect alone: when outer = OpenChain::Absent, operators = columns + 4
+    -- `ensure nested: ok? iff` / `    a + b + c > d`: the `+`s go past the `>`.
+    expect nested: when line = 1 and columns = 8 and outer = OpenChain::OnLine(1, 8),
+        base = 12 and operators = 16
+    expect later_line: when outer = OpenChain::OnLine(line - 1, 0), operators = columns + 4
+}
+
 pub enum Bracket {
     Paren,                   -- `(`
     Square,                  -- `[`
@@ -1633,7 +1665,7 @@ pub enum Bracket {
 use self::Bracket::{Curly, Operator, Paren, PathCurly, Square}
 
 -- The brackets open at the start of a line, the innermost first, each with whether it opens a list
--- or block and the indentation of the line that opens it.
+-- or block and its indentation base (`fmt::chain_indent` for a broken chain).
 pub enum OpenBrackets { Nil, Within(Bracket, Bool, Int, OpenBrackets) }
 
 use self::OpenBrackets::Within
@@ -1641,7 +1673,7 @@ use self::OpenBrackets::Within
 -- A bracket indents the lines inside it if it is a brace, an operator or opens a list or block.
 pub fn indents?(bracket: Bracket, list?) := bracket is Curly | PathCurly | Operator or list?
 
--- Four more than the line that opens the innermost bracket that indents, or 0 outside every one.
+-- Four more than the base of the innermost bracket that indents, or 0 outside every one.
 pub fn base(brackets: OpenBrackets): Int := match brackets {
     OpenBrackets::Nil => 0,
     Within(bracket, list?, line, rest) => if indents?(bracket, list?) then line + 4 else base(rest),
@@ -1653,7 +1685,7 @@ pub fn innermost_indents?(brackets: OpenBrackets) := match brackets {
     Within(bracket, list?, _, _) => indents?(bracket, list?),
 }
 
--- The indentation of the line that opens the innermost open bracket.
+-- The indentation base of the innermost open bracket.
 pub fn opener(brackets: OpenBrackets): Int := match brackets {
     OpenBrackets::Nil => 0,
     Within(_, _, line, _) => line,

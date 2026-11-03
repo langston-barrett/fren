@@ -56,7 +56,7 @@ fn small(n: Int): Set<Int> := {n + 1000000000, n + 2000000000, n + 3000000000, n
 -- A set literal after an operator moves with the operation: only a whole unit hangs.
 fn listed?(n: Int) := not n in {1000000000000, 2000000000000, 3000000000000, 4000000000000, 5000000000000}
 
--- A parenthesized chain broken by hand is joined where it fits.
+-- Inside parentheses, a chain broken by hand is joined where the chain fits.
 fn sum(x: Int): Int := (
     x
     + 1

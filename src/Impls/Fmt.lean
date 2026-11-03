@@ -393,6 +393,24 @@ def toLastOperand : FrenCli.ChainOperand → fmt.LastOperand
   | .bracket => .Bracket
   | .other => .Other
 
+def toOpenChain : Option (Nat × Nat) → fmt.OpenChain
+  | none => .Absent
+  | some (line, base) => .OnLine line base
+
+impl chain_indent: fmt::chain_indent for (l c : Nat) (o : Option (Nat × Nat)) {
+  line := l,
+  columns := c,
+  outer := toOpenChain o,
+  base := FrenCli.Fmt.chainBase l c o,
+  operators := FrenCli.Fmt.chainBase l c o + 4,
+} by
+  intro l c o _
+  rcases o with _ | ⟨first, base⟩
+  · simp [fren_spec, fmt.chain_base, FrenCli.Fmt.chainBase, toOpenChain]
+  · by_cases h : first = l <;>
+      simp [fren_spec, fmt.chain_base, FrenCli.Fmt.chainBase, toOpenChain, h,
+        show ((first : Int) = l) ↔ first = l by omega]
+
 -- Over `Nat`, so `decide` does not apply: proofs by cases.
 impl chain_side: fmt::chain_side for (b : Bool) (n w : Nat) {
   broken? := b,
@@ -400,9 +418,12 @@ impl chain_side: fmt::chain_side for (b : Bool) (n w : Nat) {
   named? := decide (0 < w),
   width := w,
   after? := FrenCli.Fmt.breaksAfter b n w,
+  before? := FrenCli.Fmt.breaksBefore b (FrenCli.Fmt.breaksAfter b n w),
 } by
   intro b n w _
-  cases b <;> simp [fren_spec, FrenCli.Fmt.breaksAfter, FrenCli.Fmt.shortName] <;> omega
+  cases b <;> by_cases hn : n = 1 <;> by_cases hw : 0 < w <;> by_cases hs : w ≤ 24 <;>
+    simp_all [fren_spec, fmt.«breaks_before?», FrenCli.Fmt.breaksAfter,
+      FrenCli.Fmt.breaksBefore, FrenCli.Fmt.shortName] <;> omega
 
 impl chain_layout: fmt::chain_layout for (n : Nat) (f fb lb ll : Bool) (o : FrenCli.ChainOperand) (b h x e ln : Nat) (lf ll2 : Bool) {
   operators := n,

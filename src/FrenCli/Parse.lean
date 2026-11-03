@@ -624,9 +624,9 @@ structure Bracketed where
 
 /-- The right operand of a chain's last operator, for whether it hugs the
 chain, breaking in place (`fmt::ChainOperand`): wholly a record literal or
-update, a `match`, a table or a Boolean block, whose first line ends with its
-brace; wholly a
-call, a method call or a sequence or set literal; or another expression. -/
+update, a `match`, a table or a Boolean block, whose first line ends with
+its brace; wholly a call, a method call or a sequence or set literal; or
+another expression. -/
 inductive ChainOperand where
   | brace
   | bracket

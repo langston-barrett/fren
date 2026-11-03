@@ -14,12 +14,15 @@ fn typeof(Int, Int): Option<Int>
 
 fn eval(Int, Int): Int
 
+fn evaluate_for_nested_chain_width(Int, Int, Int): Int
+
 proc chains(
     a: Int,
     b: Int,
     c: Int,
     x: Boxed,
     p: P,
+    alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_record_for_this_test: P,
     alpha_beta_gamma: Int,
     delta_epsilon_zeta: Int,
     eta_theta_iota: Int,
@@ -36,6 +39,9 @@ proc chains(
     -- ...and the operators of an inner chain that starts on the line of an outer one are indented past
     -- the outer one's.
     ensure nested: ok? iff alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + delta_epsilon_zeta > eta_theta_iota
+    -- A call that cannot fit beside a nested chain's operator hugs it instead of splitting after
+    -- a break at `=`. Its operator line is four columns farther in than a chain on its own.
+    ensure nested_call: alpha_beta_gamma + delta_epsilon_zeta = evaluate_for_nested_chain_width(alpha_beta_gamma, delta_epsilon_zeta, eta_theta_iota) iff ok?
     -- A clause's chain that breaks starts the next line, and breaks there only if it still does
     -- not fit (#546's decision 4).
     expect higher_order: typeof(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota) = Some(alpha_beta_gamma)
@@ -51,6 +57,8 @@ proc chains(
     ensure split_anyway: eval(alpha_beta_gamma, delta_epsilon_zeta) = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c)
     ensure long_left: alpha_beta_gamma = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota, c + a)
     ensure long_call_left: eval(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota) = f(alpha_beta_gamma, eta_theta_iota, c + a + b)
+    -- A wide record within a chain that is laid out breaks in place too.
+    ensure wide_record: alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_record_for_this_test = P { x := 1000, y := 2000 } and ok?
     -- One operator stays on the last line of a left operand that spans several...
     ensure spanning: (match x {
         Boxed::Box(n) => n,
@@ -67,6 +75,15 @@ proc chains(
     -- After the guard's comma, a chain that starts its line is laid out.
     ensure guard_body: when alpha_beta_gamma > 0,
         total = alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + delta_epsilon_zeta
+    -- A chain inside a kept chain keeps its line breaks even where it could fit on one line.
+    ensure held_chain: when a > 0 and (
+        alpha_beta_gamma
+            + delta_epsilon_zeta
+            + eta_theta_iota
+    ) > 0, ok?
+    -- A prefix `not` takes no columns: the chain inside `and not (` is laid out too.
+    ensure negated: ok? iff a > 0 and not (alpha_beta_gamma > 1000000
+        and delta_epsilon_zeta > 2000000 and eta_theta_iota > 3000000)
     -- A chain in a list on one line stays on that line.
     ensure listed: total = f(a + b, c, a)
     -- A line comment keeps its line break, and the blank lines in a chain go.
@@ -76,8 +93,20 @@ proc chains(
         and c > 0
     -- `in` cannot start a line, so a chain with it is not laid out.
     ensure membership: alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + 1000000 in s
+    -- Nor can `mod`; a multiplicative chain containing it keeps its line breaks.
+    ensure remainder: total = alpha_beta_gamma * delta_epsilon_zeta mod 17
+        * eta_theta_iota
+    -- Every operator of a chained comparison is laid out.
+    ensure comparison: 0 <= alpha_beta_gamma + delta_epsilon_zeta < eta_theta_iota + alpha_beta_gamma <= delta_epsilon_zeta
 }
 
 -- A right side that is an operation moves to the next line, and breaks there if it still does not fit.
 fn moved(alpha_beta_gamma: Int, delta_epsilon_zeta: Int, eta_theta_iota: Int): Bool := alpha_beta_gamma > 1000000
     and delta_epsilon_zeta > 2000000 and eta_theta_iota > 3000000 and alpha_beta_gamma < eta_theta_iota
+
+-- A trait law's and a binderless global expectation's clauses lay out their chains too.
+trait Ordered {
+    law bounded(n: Int): n > 10000000000000000000 and n < 20000000000000000000 and n != 30000000000000000000
+}
+
+expect global_chain: 100000000000000000000000000000 > 0 and 200000000000000000000000000000 > 0 and 300000000000000000000000000000 > 0

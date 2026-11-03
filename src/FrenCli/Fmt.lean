@@ -89,8 +89,8 @@ inductive Bracket where
   | curly
   /-- `::{`. -/
   | pathCurly
-  /-- A `:=` or `=>` whose right side starts the next line, until the right
-  side ends. -/
+  /-- A `:=`, `=>` or clause's `:` whose right side starts the next line,
+  until it ends, or a broken chain from its first token to its last. -/
   | operator
   deriving BEq, DecidableEq, Repr
 
@@ -100,11 +100,12 @@ opens a list or block. -/
 def bracketIndents (b : Bracket) (list : Bool) : Bool := b matches .curly | .pathCurly | .operator || list
 
 /-- A bracket open at the start of a line: its kind, whether it opens a
-list or block, and the indentation of the line that opens it. -/
+list or block, and its indentation base (`fmt::chain_indent` for a broken
+chain, otherwise the indentation of the line that opens it). -/
 abbrev OpenBracket := Bracket × Bool × Nat
 
-/-- Four more than the line that opens the innermost of the open brackets,
-given innermost first, that indents, or 0 outside every one
+/-- Four more than the base of the innermost of the open brackets, given
+innermost first, that indents, or 0 outside every one
 (`fmt::base`). -/
 def base : List OpenBracket → Nat
   | [] => 0
@@ -368,12 +369,12 @@ def chainKept (follows : List Follower) (before : Nat) (holderKept : Bool) : Boo
 /-- Whether the last operand of a chain of `n` operators hugs it, breaking
 in place rather than the chain (`fmt::hugs?`), where the line fits up to its
 opening bracket (`headEnd`): its first line ends with the brace of a
-record, a `match`, a table or a Boolean block, as rustfmt keeps a right operand whose first
-line ends with `{` on its operator's line; or the chain has one operator and
-the operand is wholly a bracketed list, after at most 4 columns (`before`),
-or that cannot be on one line (`listLast`), or that would not fit on a line
-of its own, with the operator (`nextEnd`), so that breaking the chain would
-not keep it on one line. -/
+record, a `match`, a table or a Boolean block, as rustfmt keeps a right
+operand whose first line ends with `{` on its operator's line; or the chain
+has one operator and the operand is wholly a bracketed list, after at most
+4 columns (`before`), or that cannot be on one line (`listLast`), or that
+would not fit on a line of its own, with the operator (`nextEnd`), so that
+breaking the chain would not keep it on one line. -/
 def hugs (n : Nat) (operand : ChainOperand) (listLast : Bool) (before headEnd nextEnd : Nat) : Bool :=
   headEnd ≤ maxWidth && (operand matches .brace
     || (decide (n = 1) && operand matches .bracket && (before ≤ 4 || listLast || nextEnd > maxWidth)))
@@ -408,6 +409,20 @@ the name and the operator stay on the first line and the right operand
 starts the next. -/
 def breaksAfter (broken : Bool) (n name : Nat) : Bool :=
   broken && decide (n = 1) && decide (0 < name) && decide (name ≤ shortName)
+
+/-- Whether a clause's chain moves off the clause's line: it breaks before
+its operators (`fmt::breaks_before?`, `fmt::chain_side`). -/
+def breaksBefore (broken after : Bool) : Bool := broken && !after
+
+/-- The indentation base of a broken chain (`fmt::chain_indent`), from its
+first line, that line's indentation, and the innermost entry that indents,
+if it is a broken chain: its first line and indentation base. Where both
+start on the same line, the inner chain's base is four more than the
+outer's, so its operators are indented past the outer's. -/
+def chainBase (line columns : Nat) (outer : Option (Nat × Nat)) : Nat :=
+  match outer with
+  | none => columns
+  | some (first, base) => if first == line then base + 4 else columns
 
 /-- Whether the last element of a list is followed by a comma
 (`fmt::trailing_comma`), where `allowed` says that its syntax allows one. -/
@@ -1109,12 +1124,6 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   -- spaces before it, if one does.
   let trailingComment (i : Nat) : Nat :=
     if i + 1 < pieces.size && isComment (i + 1) && !forced (i + 1) then 2 + pieces[i + 1]!.text.length else 0
-  -- Whether chain `c` breaks before its operators where it starts at
-  -- column `startCol` of a line indented by `indent`, in a list on one line
-  -- if `flat` (`fmt::chain_layout`), from where a line must end in it, and its line
-  -- with it on that line. A line must end at a line break that formatting
-  -- keeps or a comment, and after the opening bracket of a list that
-  -- cannot be on one line.
   -- Before chain `c`'s last operator: whether a line break that formatting
   -- keeps or a comment is there, outside a list that cannot be on one
   -- line, and the last closing bracket of such a list there. In its last
@@ -1143,7 +1152,14 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
         if firstList.isNone then firstList := list?
         if forced j && stop == lastPiece + 1 then stop := j
     return (forcedBefore, closedBefore, firstList, stop)
-  let chainBreaksAt (vertical : Array Bool) (c startCol indent : Nat) (flat : Bool) : Bool × Bool := Id.run do
+  -- Whether chain `c` breaks where it starts at column `startCol` of a line
+  -- indented by `indent`, its operators at `operatorCol`, in a list on one
+  -- line if `flat` (`fmt::chain_layout`), from where a line must end in it,
+  -- and its line with it on that line. A line must end at a line break that
+  -- formatting keeps or a comment, and after the opening bracket of a list
+  -- that cannot be on one line. Also, whether it breaks after its operator
+  -- (`fmt::chain_side`).
+  let chainBreaksAt (vertical : Array Bool) (c startCol indent operatorCol : Nat) (flat : Bool) : Bool × Bool := Id.run do
     let ch := chains[c]!
     let firstPiece := pieceAt ch.first
     let lastPiece := pieceAt ch.last
@@ -1168,7 +1184,6 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
           + (if stop == tail then (suffix vertical .arguments lastPiece).1 else 0)
         else startCol + flatWidth firstPiece stop
       | none => startCol + flatWidth firstPiece stop + (if stop == tail then (suffix vertical .arguments lastPiece).1 else 0)
-
     -- Its last operand ends its first line with a brace: it is wholly a
     -- record, a `match` or a table, or the first list in it that cannot be
     -- on one line is the arms of a `match` or a table, or a record's
@@ -1179,9 +1194,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     let headEnd := match firstList.map (lists[·]!) <|> lists.find? (fun b => b.closing == ch.last) with
       | some b => startCol + flatWidth firstPiece (pieceAt b.opening + 1)
       | none => lineEnd
-    -- Its last operator and operand on a line of their own, indented four
-    -- more than its line.
-    let nextEnd := indent + 4 + flatWidth lastOperator tail + (suffix vertical .arguments lastPiece).1
+    -- Its last operator and operand on a line of their own, at the column
+    -- where its operators would start (`fmt::chain_indent`).
+    let nextEnd := operatorCol + flatWidth lastOperator tail + (suffix vertical .arguments lastPiece).1
     let broken := chainBroken ch.operators.size flat forcedBefore closedBefore.isSome firstList.isSome last
       ch.before headEnd nextEnd lineEnd lastOperators lastForced lastList
     return (broken, breaksAfter broken ch.operators.size ch.name)
@@ -1198,6 +1213,12 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
   let mut chainAfter : Array Bool := Array.replicate chains.size false
   -- The line in `out` where each broken chain starts.
   let mut chainLine : Std.HashMap Nat Nat := {}
+  -- The innermost entry that indents, if it is a broken chain: its first
+  -- output line and indentation base, for `fmt::chain_indent`.
+  let outerChain (stack : List (Nat × OpenBracket)) (lines : Std.HashMap Nat Nat) : Option (Nat × Nat) :=
+    match stack.find? fun (_, b, l, _) => bracketIndents b l with
+    | some (t, .operator, _, l) => if t ≥ toks.size then lines[t - toks.size]?.map (·, l) else none
+    | _ => none
   -- The first tokens of the right sides that start a line.
   let mut rightStarts : Std.HashSet Nat := {}
   -- The first tokens of a moved chain's links.
@@ -1287,19 +1308,15 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     outLine := outLine.insert k (out.size - 1)
     if lineFirst.isNone then lineFirst := some k
     -- The chains that start here, the outermost first: whether each breaks
-    -- before its operators (`fmt::chain_layout`), and if so, the lines that
-    -- start with its operators are indented four spaces more than the line
-    -- it starts on, as inside a bracket that indents, until it ends.
+    -- before its operators (`fmt::chain_layout`), and if so, its indentation
+    -- base (`fmt::chain_indent`), as inside a bracket that indents until it
+    -- ends.
     for c in chainsAt.getD k #[] do
-      let (b, a) := chainBreaksAt vertical c (out.back!.width - p.text.length) out.back!.indent flatUntil.isSome
+      let line := chainBase (out.size - 1) out.back!.indent (outerChain stack chainLine)
+      let (b, a) := chainBreaksAt vertical c (out.back!.width - p.text.length) out.back!.indent (line + 4) flatUntil.isSome
       chainBreaks := chainBreaks.set! c b
       chainAfter := chainAfter.set! c a
       if b then
-        -- In a broken chain that starts on this line too, as its first
-        -- operand, its lines are indented four more than that chain's.
-        let line := match stack.find? fun (_, b, l, _) => bracketIndents b l with
-          | some (t, .operator, _, l) => if t ≥ toks.size && chainLine[t - toks.size]? == some (out.size - 1) then l + 4 else out.back!.indent
-          | _ => out.back!.indent
         stack := (toks.size + c, .operator, false, line) :: stack
         chainLine := chainLine.insert c (out.size - 1)
         -- The lines start with its operators, or after them.
@@ -1416,9 +1433,10 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
         let firstEnd := out.back!.width + sp + flatWidth (i + 1) firstStop
         let chained := !links.isEmpty
         -- A clause's chain breaks where it is.
+        let operatorCol := chainBase (out.size - 1) out.back!.indent (outerChain stack chainLine) + 4
         let breaks := (chainsAt.getD first #[]).any fun c =>
-          chains[c]!.last == last && (chainBreaksAt vertical c (out.back!.width + sp) out.back!.indent false
-            |> fun (b, a) => b && !a)
+          chains[c]!.last == last && (chainBreaksAt vertical c (out.back!.width + sp) out.back!.indent operatorCol false
+            |> fun (b, a) => FrenCli.Fmt.breaksBefore b a)
         -- The operator's line continues a signature that spans several lines, as
         -- `) :=` or `): Int :=` does: it starts with the `)` of its parameters.
         let afterClose := lineFirst.any fun f => isTok f ")" &&
