@@ -1183,14 +1183,14 @@ encoded, and no names of machines. Whatever it posts, the review or a
 note that it failed, which quotes nothing of it, loads nothing from
 outside github.com and mentions no one. Images and tags that load
 something are refused even in code, as are links to hosts other than
-github.com. Other possible HTML openers are escaped as `&lt;` outside
-recognized code spans and fenced blocks; type applications such as
-`Set<Role>` stay literal. Uncertain Markdown is escaped too, which is
-only cosmetic inside code. The Claude token is a repository
-secret, which anyone who can push a branch can read, until it is moved to
-an environment that only `main` can use. Run by hand (`gh workflow run
-pr-review -f pr=N`), it posts only on the pull request that its `post`
-input names.
+github.com. Other possible HTML is not refused. After the checks, every
+`<` in the posted comment is replaced with U+2039 `‹`, inside code and
+out, without parsing Markdown. Thus `<` shows as `‹` in posted reviews,
+including in type applications, and no literal HTML opener remains.
+The Claude token is a repository secret, which anyone who can push a
+branch can read, until it is moved to an environment that only `main`
+can use. Run by hand (`gh workflow run pr-review -f pr=N`), it posts only
+on the pull request that its `post` input names.
 
 `scripts/local-review` gives an author a pre-push check of its branch, by
 OpenAI's Codex CLI, before CI's review (AGENTS.md says when). It composes

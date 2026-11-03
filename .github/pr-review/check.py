@@ -22,13 +22,15 @@ the `review` artifact. The review must:
 
 Names of machines are replaced: those in the file NAMES (the review job's
 host and runner, one per line), and any word whose SHA-256 is in
-machines.sha256. Stray HTML openers outside recognized Markdown code are
-escaped as `&lt;`; code and type applications such as `Set<Role>` stay
-literal. If the review fails a check, the comment says why
-instead, with the run's URL and no text of the review, and does not start
-with the verdict's prefix, so that it counts as no review; the script then
-fails. Whatever the comment is, it is checked again as posted: it loads
-nothing from outside github.com, and no `@` in it mentions anyone.
+machines.sha256. After the checks, every `<` in the posted comment is
+replaced with U+2039 `‹`, inside code and out, without parsing Markdown.
+Thus `<` shows as `‹` in posted reviews, including in type applications,
+and no literal HTML opener remains. If the review fails a check, the
+comment says why instead, with the run's URL and no text of the review,
+and does not start with the verdict's prefix, so that it counts as no
+review; the script then fails. The resulting comment is checked again for
+loading content before replacing `<`; it loads nothing from outside
+github.com, and no `@` in it mentions anyone.
 
 The second form is the `review` job's, which holds the secrets, run before
 the review leaves it: it fails if the review holds any of the values of
@@ -61,13 +63,10 @@ URL = re.compile(r"\b(?:https?|ftp)://([^/\s)\]>\"'`]+)", re.IGNORECASE)
 RELATIVE = re.compile(r"(?:^|[\s(<\[:=\"'])//([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
 # Any image (`![`, inline, full, collapsed or shortcut reference), even in
 # code; and any tag that loads something, wherever it is. Other possible
-# HTML is escaped when the comment is built, rather than refused here.
+# HTML is not refused here: every `<` is replaced with `‹` in the posted
+# comment, inside code and out, without parsing Markdown.
 LOADING = r"img|image|picture|source|video|audio|track|iframe|frame|embed|object|svg|input|link|meta|base|style|script"
 IMAGE = re.compile(rf"!\[|<\s*/?\s*(?:{LOADING})\b", re.IGNORECASE)
-# A type application may keep its word-adjacent `<`: identifiers, commas
-# and nested applications, with no HTML attributes, quotes, backticks or
-# line endings that could swallow a Markdown delimiter as part of a tag.
-TYPE = re.compile(r"<[A-Za-z]\w*(?:(?:<|,[ \t]*)[A-Za-z]\w*|>)*>")
 # The paragraph that says which probes the review ran (the probe job's)
 # and which it could not, such as those that need a rebuild.
 PROBES = re.compile(r"^[*_\s]*Probes[*_\s]*:", re.MULTILINE)
@@ -166,101 +165,23 @@ def scrub(text, names, hashes=frozenset()):
     return re.sub(r"[A-Za-z0-9][A-Za-z0-9_-]*", word, text)
 
 
-def escape_html(text):
-    """Escape possible HTML outside code, without decoding any entities.
-
-    Recognize unindented fences and code spans on one line. Indented
-    fences may belong to lists, and multiline spans may cross block
-    boundaries, so escape in those uncertain cases. Link destinations
-    and reference labels can contain backticks that are not code: escape
-    on lines with a possible destination, or throughout text with a
-    possible reference definition. An unmatched run makes the rest of
-    the paragraph uncertain too. Escaping real code is only cosmetic.
-    """
-    def angles(part):
-        def opener(m):
-            i = m.start()
-            if i and re.match(r"\w", part[i - 1]) and TYPE.match(part, i):
-                return "<"
-            return "&lt;"
-
-        return re.sub(r"<(?=[A-Za-z/!?])", opener, part)
-
-    if re.search(r"\][ \t]*:", text):
-        return angles(text)
-
-    def inline(line):
-        if "](" in line:
-            return angles(line), True
-        out = []
-        start = 0
-        # Outside code, a backslash can escape a backtick (or another
-        # backslash). Inside code it cannot escape the closing run.
-        tokens = list(re.finditer(r"\\[`\\]|`+", line))
-        i = 0
-        while i < len(tokens):
-            token = tokens[i]
-            if token[0].startswith("`"):
-                # Search runs afresh: a backslash before a closing run
-                # is literal, so the outside-code tokens cannot find it.
-                close = next((m for m in re.finditer(r"`+", line[token.end():])
-                              if len(m[0]) == len(token[0])), None)
-                if close is not None:
-                    end = token.end() + close.end()
-                    out += [angles(line[start:token.start()]), line[token.start():end]]
-                    start = end
-                    while i < len(tokens) and tokens[i].start() < end:
-                        i += 1
-                    continue
-                return "".join(out) + angles(line[start:]), True
-            i += 1
-        return "".join(out) + angles(line[start:]), False
-
-    out = []
-    fence = None
-    uncertain = False
-    # Split only at Markdown line endings, not at Unicode separators
-    # that str.splitlines() would mistake for a new block's start.
-    for line in re.findall(r"[^\r\n]*(?:\r\n?|\n|$)", text):
-        if fence is not None:
-            out.append(line)
-            marker, size = fence
-            if re.fullmatch(rf" {{0,3}}{marker}{{{size},}}[ \t]*(?:\r\n?|\n)?", line):
-                fence = None
-            continue
-        opened = re.match(r"(`{3,}|~{3,})([^\r\n]*)", line)
-        if opened and (opened[1][0] == "~" or "`" not in opened[2]):
-            fence = opened[1][0], len(opened[1])
-            uncertain = False
-            # The info string is not code.
-            out.append(angles(line))
-        else:
-            if re.fullmatch(r"[ \t]*(?:\r\n?|\n)?", line):
-                uncertain = False
-            if uncertain:
-                out.append(angles(line))
-            else:
-                escaped, uncertain = inline(line)
-                out.append(escaped)
-    return "".join(out)
-
-
 def comment(text, head, kind, run_url, names, hashes=frozenset()):
     """The comment to post, and whether the review passed. Whatever it is,
     the comment that leaves here loads nothing from outside github.com and
-    mentions no one: the checks run on it as it is posted, not only on the
-    review."""
+    mentions no one: the loading check runs on the comment as well as the
+    review, before replacing every `<` with `‹`, inside code and out."""
     reason = problem(text, head, kind) if text else "it wrote no `review.md`"
     if reason is None:
         body, ok = scrub(text, names, hashes) + "\n", True
     else:
         body, ok = f"The `pr-review` workflow did not review {head}: {reason}. Its run is {run_url}.\n", False
-    # Escape last, after replacements that could change Markdown syntax.
-    # Never unescape the posted body: entity decoding is only for checks.
-    body = escape_html(unmention(body))
+    body = unmention(body)
     if loading(html.unescape(html.unescape(body))):
         body, ok = f"The `pr-review` workflow did not review {head}: see its run's log.\n", False
-    return body, ok
+    # Replace every literal opener last, including in code and failure
+    # notes. This needs no Markdown parse and leaves no `<` to open HTML.
+    # Never decode the posted body: entity decoding is only for checks.
+    return body.replace("<", "‹"), ok
 
 
 def alnum(text):
