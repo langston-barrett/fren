@@ -2647,10 +2647,13 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
       recursiveDefs := s.recursiveDefs.insert name
       contracts := s.contracts.insert name { k with pres := atInst k.pres, posts := atInst k.posts }
       recInstances := s.recInstances.insert name (path, domain.map (replaceSymbols · repl)) }
-    -- Its result type's constraint, at the instance: a type parameter's
-    -- argument brings none (`Reqs/Lang/Recursion#generic-recursion`).
-    let rp := Fren.Core.instanceResult g.resultP args
-    if Fren.Core.recursiveResultFact (rp.cons (← get).shapeOf).isSome then noteResultFactAt sym rp
+    -- Its result type's constraint, at the instance, where its declared
+    -- result type has one, as the Lean front end decides from the declared
+    -- type: a result that is a type parameter brings none, whatever its
+    -- argument (`Reqs/Lang/Recursion#generic-recursion`).
+    let st ← get
+    if Fren.Core.recursiveResultFact (g.resultP.cons st.shapeOf).isSome then
+      noteResultFactAt sym (Fren.Core.instanceResult g.resultP args)
   return sym
 
 /-- The quoted symbols that the prelude declares: a closure captures each

@@ -3469,15 +3469,25 @@ def methodResults (files : Array String) (method : Fren.Core.ProofMethod) (value
     acc.insert (methodKey item r) { kind := r.kind, verdict := r.verdict, bounded := r.bounded?.isSome, detail := detailText r.detail }
   return (found, code)
 
-/-- The contradictions that `methodsAgree` expects, each a check by its file
-and `methodKey`, with why: a known bug, by its issue, or a difference that
-is not one. Each is narrow: a single check. -/
+/-- The contradictions that `methodsAgree` and `enumerationAgrees` expect,
+each a check by its file and `methodKey`, with why: a known bug, by its
+issue, or a difference that is not one. Each is narrow: a single check, and
+both fail on one that a run of its file no longer hits (`staleExceptions`),
+so that a fixed bug's entry does not stay. -/
 def methodExceptions : Array (String × String × String) := #[
   -- A caller assumes a recursive function's result type, as its
   -- postconditions, whether or not its body meets it; the pass rests on the
   -- body's obligation, a premise (`Postconditions`) not applied yet.
   ("test/ui/checks/recursion_subset_result.fren",
     "comp r.wrong_caller|Fren.Core.CheckKind.expect|(some c)|none|none|none|none|-|none", "#522")]
+
+/-- The exceptions of `methodExceptions` whose file is among `ran` but that
+none of `hit`, each a file and a key, matched. -/
+def staleExceptions (ran : Array String) (hit : Array (String × String)) : Array String :=
+  methodExceptions.filterMap fun (f, k, why) =>
+    if ran.contains f && !hit.contains (f, k) then
+      some s!"{f}: the exception `{k}` ({why}) matches no contradiction: remove it"
+    else none
 
 /-- Each verdict of enumeration on the ui tests matches the solver's on the
 same check (`Reqs/Check#verdicts-of-enumeration`): a failure is genuine, so
@@ -3487,7 +3497,9 @@ types, which stay the solver's, keep their results. -/
 def enumerationAgrees : IO (Array String) := do
   let mut failures := #[]
   let mut compared := 0
-  for f in ← enumerationCorpus do
+  let mut hit : Array (String × String) := #[]
+  let corpus ← enumerationCorpus
+  for f in corpus do
     let src ← IO.FS.readFile f
     let (solver, code) ← checkResultsOf #[f.toString]
     if code == 2 then continue
@@ -3501,7 +3513,9 @@ def enumerationAgrees : IO (Array String) := do
         -- As `methodsAgree` compares them, with no verdict of random testing.
         if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
           -- The same narrow exceptions as `methodsAgree`'s.
-          if methodExceptions.any fun (g, key, _) => g == f.toString && key == methodKey item s then continue
+          if methodExceptions.any fun (g, key, _) => g == f.toString && key == methodKey item s then
+            hit := hit.push (f.toString, methodKey item s)
+            continue
           let bounded := if r.bounded?.isSome then " up to the bound" else ""
           failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
     -- A value given where a subset type is declared stays the solver's
@@ -3511,6 +3525,7 @@ def enumerationAgrees : IO (Array String) := do
         unless s.kind == .definedness && s.subsetTy?.isSome do continue
         let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
         unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
+  failures := failures ++ staleExceptions (corpus.map (·.toString)) hit
   return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
 
 /-- What `methodsAgree` counted. -/
@@ -3527,6 +3542,10 @@ structure MethodCounts where
   the size: no contradiction, as the counterexample may be larger. -/
   beyondSize : Nat := 0
   excepted : Nat := 0
+  /-- The exceptions that a contradiction matched, each a file and a key,
+  and the names compared, for `staleExceptions`. -/
+  hit : Array (String × String) := #[]
+  ran : Array String := #[]
   /-- Specs with a static error, which no method checks. -/
   static : Nat := 0
   /-- Runs that reported an error under their method alone (exit 2), as
@@ -3545,6 +3564,7 @@ structure MethodCounts where
 procedures at once, adding to `counts`; returns the contradictions. -/
 def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref MethodCounts)
     (jobs? : Option Nat := none) : IO (Array String) := do
+  counts.modify fun c => { c with ran := c.ran.push name }
   let mut runs := #[]
   for (m, value) in comparedMethods do
     let (found, code) ← methodResults files m value jobs?
@@ -3581,7 +3601,7 @@ def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref Metho
       return c
     unless Fren.Core.methodsContradict kind (verdictOf 0) (verdictOf 1) bounded (verdictOf 2) do continue
     if methodExceptions.any fun (f, k, _) => f == name && k == key then
-      counts.modify fun c => { c with excepted := c.excepted + 1 }
+      counts.modify fun c => { c with excepted := c.excepted + 1, hit := c.hit.push (name, key) }
       continue
     let said := (List.range comparedMethods.size).map fun i =>
       let m := comparedMethods[i]!.2
@@ -3634,6 +3654,7 @@ def methodsAgree (part : List String) : IO (Array String) := do
         failures := failures ++ (← withText "spec.fren" (mode.spec s).toList.toArray fun p =>
           methodsAgreeOn name #[p] counts)
   let c ← counts.get
+  failures := failures ++ staleExceptions c.ran c.hit
   let byMethod := (List.range comparedMethods.size).map fun i =>
     s!"{comparedMethods[i]!.2} decided {c.decided[i]!}, inconclusive {c.inconclusive[i]!}, not run {c.notRun[i]!}"
   IO.println s!"methodsAgree: {c.checks} checks, {c.compared} compared by at least two methods; {"; ".intercalate byMethod}; \

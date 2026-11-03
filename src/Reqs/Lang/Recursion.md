@@ -413,11 +413,14 @@ sorts and at each instance:
   ends read them, and once evaluation confirms the counterexample the check
   fails, with that counterexample.
 - Where the declared result type is a type parameter, an instance's result
-  brings no fact of its type argument's: the type parameter has none, so a
-  subset type's invariant reaches such an instance's result only through
-  its postconditions. A declared result type that is not a type parameter
-  brings its constraint as for any recursion, as `keep_generic<T>(p: Pos,
-  x: T, l: L): Pos` does.
+  brings no fact of its type argument's, not even a data type's whose
+  payload has a subset type: the type parameter has none, so a subset
+  type's invariant reaches such an instance's result only through its
+  postconditions. Both front ends decide from the declared result type. A
+  declared result type that is not a type parameter brings its constraint
+  as for any recursion, as `keep_generic<T>(p: Pos, x: T, l: L): Pos` does
+  in `test/ui/checks/recursion_subset_result.fren`, beside `rep<T>(x: T, l:
+  L): T` at an enumeration with a `Pos` payload, which brings none.
   With `fn rep<T>(n: N, x: T): T` and `d: Pos`, `rep(n, d) >= 1` holds but is
   Inconclusive (`F0450`). That is sound but incomplete, and particular to a
   recursion: a generic function that is not recursive is unfolded, so its

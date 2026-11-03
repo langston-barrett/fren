@@ -165,13 +165,13 @@ vacuity under the laws (below), `AbstractionRealizability(a)` is the
 realizability check of the abstraction of the item's refinement claim `a`,
 by the claim's position among the item's refinement claims, `ContractRealizability(f)` is uninterpreted
 function `f`'s contract's realizability check, `InstanceContract(i)` is
-the check that decides instance `i`'s contract (above),
+the check that decides instance `i`'s contract (above), and
+`Inhabitation(t)` is subset type `t`'s inhabitation check.
 `Postconditions(f)` is recursive function `f`'s postcondition checks, one
-for each postcondition, and the obligation that its body meets its
-declared result type, where that type has a constraint, since its
+for each postcondition, together with the obligation that its body meets
+its declared result type, where that type has a constraint: its
 applications bring that constraint as a fact beside the postconditions
-(`lang::recursive_facts`), and `Inhabitation(t)` is subset type `t`'s
-inhabitation check. That check is the realizability check
+(`lang::recursive_facts`). The inhabitation check is the realizability check
 (`Kind::Realizability`, `Site::Whole`) of the type's declaration, which is
 universal over the interpretations that the existing contracts admit
 (`Lang/SubsetTypes`), so its record's `applies` lists the functions that

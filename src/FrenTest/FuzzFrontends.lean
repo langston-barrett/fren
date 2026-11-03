@@ -1785,7 +1785,15 @@ def recursiveSubsets : R String := do
       | _, 3 => pure s!"{← pick fns}(p, Rsl::Nil)"
       | _, _ => pure s!"rs_gen(p, {← pick #["true", "1", "l"]}, l)"
     body := body ++ s!"    expect rs{k}: {← pick #[inv app, s!"{app} = p or ({inv app})"]}\n"
-  return out ++ s!"pub proc rs_apps(p: {ty}, l: Rsl, t: Rst) \{\n{body}}\n"
+  out := out ++ s!"pub proc rs_apps(p: {ty}, l: Rsl, t: Rst) \{\n{body}}\n"
+  -- A generic one whose result is its type parameter, at an enumeration
+  -- whose payload has the subset type: its instance's result brings no
+  -- fact, in both front ends.
+  if ← chance 50 then
+    return out ++ s!"pub enum Rsb \{ B({ty}) }\n" ++
+      "pub fn rs_rep<T>(x: T, l: Rsl): T := match l {\n    Rsl::Nil => x,\n    Rsl::Cons(_, r) => rs_rep(x, r),\n}\n" ++
+      s!"pub proc rs_reps(b: Rsb, l: Rsl) \{\n    expect rr: match rs_rep(b, l) \{\n        Rsb::B(n) => {inv "n"},\n    }\n}\n"
+  return out
 
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after

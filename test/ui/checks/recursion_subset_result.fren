@@ -44,6 +44,22 @@ pub fn keep_generic<T>(p: Pos, x: T, l: L): Pos := match l {
     L::Cons(_, rest) => keep_generic(p, x, rest),
 }
 
+-- Generic, at a result type that is its type parameter: an instance's
+-- result brings no fact of its type argument's, though `Box`'s payload is
+-- a `Pos`, in both front ends.
+pub enum Box { B(Pos) }
+
+pub fn rep<T>(x: T, l: L): T := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => rep(x, rest),
+}
+
+expect rep_caller(b: Box, l: L) {
+    expect c: match rep(b, l) {  --~ warning: could not decide whether `r::rep_caller::c` holds
+        Box::B(n) => n >= 1,
+    }
+}
+
 -- A caller has the result type's fact of each application.
 expect callers(p: Pos, l: L) {
     expect direct: keep(p, l) >= 1

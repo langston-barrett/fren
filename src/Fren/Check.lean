@@ -800,7 +800,10 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     -- Newly reflected type facts need the same solver forms as explicit
     -- clauses: their subset helpers may have executable Lean matches.
     -- An application that `scan` found has nothing bound, so only the
-    -- declared result type decides (`Core.recursiveResultFact`).
+    -- declared result type decides (`Core.recursiveResultFact`): whether
+    -- it has a fact is the shared decision's input, which the binary
+    -- extracts from the declared type too, and the fact itself is read
+    -- after it.
     if Core.recursiveResultFact d.fact?.isSome then
       if let some fact := d.fact? then
         let value := if d.result == .nat then
