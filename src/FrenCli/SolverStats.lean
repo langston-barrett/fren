@@ -355,14 +355,14 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
       out := out ++ s!"{p}  inferences: {showCounts inferences}\n"
   return out
 
--- A query whose timed parts exceed its `checkSat` says so in the summed
--- line, though it is not listed.
 /-- A query of `a`'s expectation whose `checkSat` took
 `checkMs` milliseconds, by `cvc5`'s statistics. -/
 private def testQuery (checkMs : Nat) (cvc5 : Cvc5Stats) : QueryStats :=
   { item := `a, kind := .expect, logic := "ALL", bytes := 10, outcome := "unsat",
     phases := { check := checkMs * 1000000 }, cvc5 }
 
+-- A query whose timed parts exceed its `checkSat` says so in the summed
+-- line, though it is not listed.
 #guard (report #[testQuery 3 { preprocessMs := 2, cnfMs := 3 }, testQuery 9 {}] (some 0)).contains
   "(queries whose timed parts exceed their checkSat: 1, by 2 ms)"
 -- The parts are summed over the queries of `summedMs` or more only.
