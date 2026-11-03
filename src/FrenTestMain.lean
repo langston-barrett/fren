@@ -1256,8 +1256,9 @@ def answersInMemory : IO (Array String) := do
 adds only lines that start with `solver-stats: `, and the output without
 them, its exit status and the answers and models that a query cache keeps
 are those without the flag. It reports every query that it asked, and
-lists each, with its item and the kind of its check; a warm run, which
-asks the solver nothing, reports no query. -/
+lists each, with its item and the kind of its check, or `N` of them for
+`--solver-stats=N`; a warm run, which asks the solver nothing, reports no
+query. -/
 def solverStats : IO (Array String) := do
   let file := "test/fixtures/solver_stats.fren"
   let root : FilePath := ".lake" / "solver-stats-test" / s!"{← IO.monoNanosNow}"
@@ -1271,6 +1272,9 @@ def solverStats : IO (Array String) := do
   let (plain, plainCode) ← run ["--query-cache", plainDir]
   let (withStats, statsCode) ← run ["--query-cache", statsDir, "--solver-stats=all"]
   let (warm, _) ← run ["--query-cache", statsDir, "--solver-stats"]
+  -- `--solver-stats=N` lists `N` of them, and none for 0.
+  let (one, _) ← run ["--solver-stats=1"]
+  let (none_, _) ← run ["--solver-stats=0"]
   let mut failures := #[]
   let (stats, rest) := (withStats.splitOn "\n").partition (·.startsWith "solver-stats: ")
   unless "\n".intercalate rest == plain && statsCode == plainCode do
@@ -1296,6 +1300,11 @@ def solverStats : IO (Array String) := do
   for part in ["  phases: setup ", "  checkSat ", "  counts: "] do
     unless (stats.filter (·.startsWith s!"solver-stats: {part}")).length == listed.length do
       failures := failures.push s!"not every listed query has a line `{part.trimAscii}`"
+  let listedIn (out : String) : Nat := ((out.splitOn "\n").filter fun l =>
+    (l.dropPrefix? "solver-stats: ").any fun r => ((r.toString.splitOn ". ").head?.bind (·.toNat?)).isSome).length
+  unless listedIn one == 1 do failures := failures.push s!"--solver-stats=1 lists {listedIn one} queries:\n{one}"
+  unless listedIn none_ == 0 && none_.contains " queries asked of the solver" do
+    failures := failures.push s!"--solver-stats=0 lists {listedIn none_} queries, or no count:\n{none_}"
   unless warm.contains "solver-stats: 0 queries asked of the solver" do
     failures := failures.push s!"a warm run reports queries that it did not ask:\n{warm}"
   return failures

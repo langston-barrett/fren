@@ -1264,11 +1264,13 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   logic that shares libpoly's state, such as `ALL`, the commands up to
   and including the first that initializes, and freeing the solver, wait
   for `solverLock` (`FrenCli.Cvc5`), so under `--jobs` more than 1,
-  `setup`, `init` and `free` include that wait.
+  `setup`, `init` and `free` include that wait, and so does `check` for a
+  query with no command that initializes the solver.
 - **cvc5's timers** split `checkSat`: each theory's checks
   (`theory::T::checkTime`), preprocessing, the clausal form and theory
-  combination, in cvc5's whole milliseconds. What none of them accounts
-  for is `SAT search and the rest`: the SAT solver's own search and
+  combination, in cvc5's whole milliseconds. They were observed to be
+  disjoint, and a query whose timed parts exceed its `checkSat` says by
+  how much. What none of them accounts for is `SAT search and the rest`: the SAT solver's own search and
   propagation, and whatever else `checkSat` does. The theories' checks
   are made from within the search, so a query that makes tens of
   thousands of cheap theory checks, as `cli::query_symbols`' do, shows

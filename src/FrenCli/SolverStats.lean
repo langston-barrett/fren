@@ -110,11 +110,13 @@ structure Cvc5Stats where
   /-- `resource::resourceUnitsUsed`, as `--resource-limit` counts. -/
   resourceUnits : Nat := 0
   /-- `smt::SolverEngine::processAssertionsTime`: preprocessing, which
-cvc5 does in `checkSat`. -/
+  cvc5 does in `checkSat`. -/
   preprocessMs : Nat := 0
-  /-- `prop::CnfStream::cnfConversionTime`: the clausal form, within it. -/
+  /-- `prop::CnfStream::cnfConversionTime`: the clausal form, within
+  `checkSat`. -/
   cnfMs : Nat := 0
-  /-- `TheoryEngine::combineTheoriesTime`: theory combination, within it. -/
+  /-- `TheoryEngine::combineTheoriesTime`: theory combination, within
+  `checkSat`. -/
   combineMs : Nat := 0
   /-- Each theory's `theory::T::checkTime` that is not 0, as `(T, ms)`. -/
   theoryMs : Array (String × Nat) := #[]
@@ -179,13 +181,34 @@ def parse (text : String) : Cvc5Stats := Id.run do
   == { decisions := 7, lemmas := 3, theoryMs := #[("strings", 12), ("arrays", 3)],
        inferences := #[("ARITH_UNATE", 1)], rewrites := 108, theoryChecks := 14 }
 
+/-- The sum of the timed parts of `checkSat`: the theories' checks,
+preprocessing, the clausal form and theory combination. -/
+def Cvc5Stats.timedMs (s : Cvc5Stats) : Nat :=
+  s.theoryMs.foldl (· + ·.2) 0 + s.preprocessMs + s.cnfMs + s.combineMs
+
 /-- The time of a `checkSat` of `checkMs` milliseconds, as Fren measures
 it, that no theory's check, preprocessing, the clausal form or theory
 combination accounts for, by cvc5's timers: the SAT solver's search, with
 what cvc5 does around it. cvc5's own timer of the whole check,
-`smt::SolverEngine::solveTime`, is 0 in cvc5 1.3.2's `checkSat`. -/
+`smt::SolverEngine::solveTime`, is 0 in cvc5 1.3.2's `checkSat`.
+
+This takes the timers to be disjoint, which is not read from cvc5's
+source: it was observed of cvc5 1.3.2, on the 6,267 queries of a check of
+Fren's own requirements, none of whose timed parts summed to more than
+its `checkSat`. Were one nested in another, as the clausal form in
+preprocessing, it would count twice, and the rest come out too small; so
+`report` says of a query whose timed parts exceed its `checkSat` by how
+much (`overMs`), rather than hide it in the subtraction. -/
 def Cvc5Stats.searchMs (s : Cvc5Stats) (checkMs : Nat) : Nat :=
-  checkMs - (s.theoryMs.foldl (· + ·.2) 0 + s.preprocessMs + s.cnfMs + s.combineMs)
+  checkMs - s.timedMs
+
+/-- How much the timed parts exceed a `checkSat` of `checkMs`
+milliseconds, which they would if two of cvc5's timers overlapped
+(`searchMs`). -/
+def Cvc5Stats.overMs (s : Cvc5Stats) (checkMs : Nat) : Nat := s.timedMs - checkMs
+
+#guard ({ preprocessMs := 5, cnfMs := 4 } : Cvc5Stats).overMs 7 == 2
+#guard ({ preprocessMs := 5, cnfMs := 4 } : Cvc5Stats).searchMs 7 == 0
 
 /-- Where a `checkSat` of `checkMs` milliseconds went, largest first: each
 theory's checks, the SAT search (`searchMs`), preprocessing, the clausal
@@ -236,7 +259,8 @@ def kb (n : Nat) : String :=
   let tenths := (n + 50) / 100
   s!"{tenths / 10}.{tenths % 10}"
 
-/-- Parts of a time in milliseconds, or `none` if there are none. -/
+/-- Parts of a time in milliseconds, or `no timer over 0 ms` if there are
+none. -/
 def showParts (xs : Array (String × Nat)) : String :=
   if xs.isEmpty then "no timer over 0 ms" else showCounts xs " ms"
 
@@ -254,10 +278,12 @@ def listed : Nat := 20
 
 /-- The report of `--solver-stats` (`Reqs/dev/Testing#solver-statistics`),
 each line starting with `solver-stats: `: the queries' total time by
-phase, by logic and by theory, then the `listed?` slowest queries (all
-for `none`), each
-with its item, the kind of its check, its logic, its answer, its phases,
-where its `checkSat` went by cvc5's timers, and its counts. -/
+phase, then a line for each logic with its queries' time by phase, then
+where their `checkSat` went by cvc5's timers, summed; then the `listed?`
+slowest queries (all of them for `none`), each with its item, the kind of
+its check, its logic, its size and its answer, a line of its phases, one
+of where its `checkSat` went by cvc5's timers, one of its counts, and one
+of its commonest inferences, if it made any. -/
 def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : String := Id.run do
   let p := "solver-stats: "
   let mut out := ""
@@ -281,7 +307,9 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
     let dominant := ((s.dominant? checkMs).map fun d => s!", dominated by {d}").getD ""
     out := out ++ s!"{p}{i}. {ms q.phases.total} ms: `{Fren.Core.showPath q.item}` ({q.kind.noun}), {q.logic}, {kb q.bytes} KB, {q.outcome}{dominant}\n"
     out := out ++ s!"{p}  phases: {q.phases.show}\n"
-    out := out ++ s!"{p}  checkSat {checkMs} ms: {showParts (s.parts checkMs)}\n"
+    let over := s.overMs checkMs
+    let overNote := if over == 0 then "" else s!" (cvc5's timers exceed it by {over} ms)"
+    out := out ++ s!"{p}  checkSat {checkMs} ms{overNote}: {showParts (s.parts checkMs)}\n"
     out := out ++ s!"{p}  counts: {s.decisions} decisions, {s.conflicts} conflicts, {s.propagations} propagations; \
       {s.theoryChecks} theory checks, {s.rewrites} rewrites, {s.lemmas} lemmas, {s.instantiations} instantiations, \
       {s.resourceUnits} resource units\n"
