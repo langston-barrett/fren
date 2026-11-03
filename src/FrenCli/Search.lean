@@ -444,7 +444,12 @@ partial def Ex.vars : Ex → Array Name
   | .memo lets e => e.vars ++ lets.flatMap (·.vars)
   | .lifted lets e => e.vars ++ lets.flatten.flatMap (·.vars)
   | .dispatch _ m => m.vars
-  | .not a | .neg a | .field a _ | .card a | .pre _ _ _ a | .strict _ a => a.vars
+  | .not a | .neg a | .field a _ | .card a => a.vars
+  -- A precondition's goals and a strict application's arguments are read
+  -- too, and `Ex.substVars` replaces their variables as well
+  -- (`Problem.prepare`).
+  | .pre _ _ gs a => gs.flatMap (·.2.vars) ++ a.vars
+  | .strict args a => args.flatMap (·.vars) ++ a.vars
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ => a.vars ++ b.vars
   | .ite c a b => c.vars ++ a.vars ++ b.vars
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args.flatMap (·.vars)
@@ -683,7 +688,7 @@ partial def Ex.slots : Ex → Array Nat
   | .range lo hi => lo.slots ++ hi.slots
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.slots)).getD #[] ++ v.slots
   | .pre _ _ gs e => gs.flatMap (·.2.slots) ++ e.slots
-  | .strict _ e => e.slots
+  | .strict args e => args.flatMap (·.slots) ++ e.slots
   | .typed _ _ e => e.slots
 
 /-- What `Problem.search` computes of `p` before it reads its environment,
@@ -727,6 +732,14 @@ def Problem.prepare (shapes : Name → Option Fren.Core.DataShape) (p : Problem)
     equated := varSlot.map fun x =>
       let es := full.flatMap fun e => e.equated x
       (es.map fun e => (e.compile shapes (some []), e), es.flatMap (·.slots)) }
+
+/-- A strict application's arguments are part of its constraint: `n`, read
+only as one, gets a slot of its own, and the constraint reads it. -/
+private def strictArgProblem : Problem :=
+  { vars := #[(`x, .int)], atoms := #[{ label := `a, pfx := .anonymous, e := .strict #[.var `n] (.var `x) }] }
+#guard (strictArgProblem.prepare fun _ => none).names == #[`x, `n]
+#guard (strictArgProblem.prepare fun _ => none).fullSlots == #[#[1, 0]]
+#guard (strictArgProblem.prepare fun _ => none).full.all (·.same (.strict #[.slot 1] (.slot 0)))
 
 /-- Values for `p.vars`, extending `env`, that make every constraint
 `true` under `I`, within `budget` steps, each step a candidate tried, and
