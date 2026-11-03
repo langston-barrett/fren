@@ -1707,8 +1707,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         if r.verdict == .pass then pure results else do
         let mut instResults := #[]
         for targs in own do
-          let ic ← instanceContract hooks elaborated f targs
-          let (rs, _, _, _) ← withCurrHeartbeats (checkComp ic #[.realizable] none hooks?)
+          let (rs, _, _, _) ← withCurrHeartbeats do
+            checkComp (← instanceContract hooks elaborated f targs) #[.realizable] none hooks?
           instResults := instResults ++ rs.filter (·.kind == .realizable)
         let checked := Core.genericContract (·.verdict) r instResults
         pure (results.foldl (init := #[]) fun acc x => if x.kind == .realizable then acc ++ checked else acc.push x)
@@ -1724,16 +1724,20 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         let some b := st0.bodies.get? f | continue
         let (rs, _, _, _) ← withCurrHeartbeats (checkComp b #[.realizable])
         unless rs.any fun r => r.kind == .realizable && r.verdict != .pass do continue
-        let ic ← instanceContract hooks b f targs
-        let (rs, _, _, _) ← withCurrHeartbeats (checkComp ic #[.realizable] none hooks?)
+        let (rs, _, _, _) ← withCurrHeartbeats do
+          checkComp (← instanceContract hooks b f targs) #[.realizable] none hooks?
         results := results ++ (rs.filter (·.kind == .realizable)).map fun r => { r with clashes := #[] }
+    -- Each after the queries, under a heartbeat limit of its own, as each
+    -- step of the backend is (`Core.Backend.ownHeartbeats`): the nested
+    -- checks above, and each cover goal's witness.
     let mut witnesses := #[]
     for g in c.covers do
       let passed := results.any fun r => r.kind == .cover && r.prop? == some g.name && r.verdict == .pass
-      let goal := mkNot (← beta g.body)
-      if let some (_, model) := (← models.get).find? (·.1 == goal) then
-        if passed then
-          if let some d ← withCurrHeartbeats (coverWitness c fvs g model) then witnesses := witnesses.push d
+      let witness? ← withCurrHeartbeats do
+        let goal := mkNot (← beta g.body)
+        let some (_, model) := (← models.get).find? (·.1 == goal) | return none
+        if passed then coverWitness c fvs g model else return none
+      if let some d := witness? then witnesses := witnesses.push d
     return (results, witnesses, enumerated, skipped)
 
 end Fren
