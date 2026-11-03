@@ -31,3 +31,23 @@ def quotedCases : Array String := #[
 
 #guard quotedCases.all fun s => quotedSymbols s == piecesSymbols s
 #guard quotedSymbols "(assert (= |x| \"|y|\")) ; |z|" == #["x", "z"]
+
+/-- What `substQuoted f` gives, read from `quotedPieces`. -/
+def piecesSubst (f : String → String) (smt : String) : String :=
+  String.join ((quotedPieces smt).toList.map fun | .inl text => text | .inr name => f name)
+
+/-- A replacement that shows where each name was and what it was, and
+that is not ASCII. -/
+def marked (name : String) : String := s!"⟨{name}⟩"
+
+/-- Every string of up to 6 of `a`, `|`, `"` and `é`: each way that
+symbols, literals and their `""` can follow each other, closed or not. -/
+def smallScripts : Array String :=
+  (List.range 7).toArray.flatMap fun n =>
+    (List.range (4 ^ n)).toArray.map fun k =>
+      String.ofList ((List.range n).map fun d => #['a', '|', '"', 'é'][(k / 4 ^ d) % 4]!)
+
+#guard quotedCases.all fun s => substQuoted marked s == piecesSubst marked s
+#guard smallScripts.all fun s => substQuoted marked s == piecesSubst marked s
+#guard smallScripts.all fun s => quotedSymbols s == piecesSymbols s
+#guard substQuoted marked "(assert (= |x| \"|y|\")) ; |z|" == "(assert (= ⟨x⟩ \"|y|\")) ; ⟨z⟩"
