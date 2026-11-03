@@ -1403,14 +1403,23 @@ def residentKb : IO Nat := do
   let out ← IO.Process.output { cmd := "ps", args := #["-o", "rss=", "-p", toString (← IO.Process.getPID)] }
   return out.stdout.trimAscii.toString.toNat!
 
+/-- Whether glibc's own allocations are mimalloc's, as the executables'
+`malloc` makes them on Linux (`c/mimalloc_malloc.c`): 1 if they are, 0 if
+not, and 2 where that file replaces no allocator. -/
+@[extern "fren_malloc_is_mimalloc"] opaque mallocIsMimalloc : Unit → UInt32
+
 /-- Each query's solver is freed once it is answered, so that the memory
 of `fren check` does not grow with the number of its queries; and solvers
 of a logic with nonlinear arithmetic answer correctly on several threads
 at once, which they share libpoly's state for (`FrenCli.Cvc5`), each
 command that the lock is let go after always initializing its solver
-(`initializingCommandsHold`). -/
+(`initializingCommandsHold`); and on Linux, they allocate with mimalloc
+(`mallocIsMimalloc`). -/
 def solverLifetime : IO (Array String) := do
   let mut failures ← initializingCommandsHold
+  -- cvc5 allocates through `malloc`, which is mimalloc's on Linux.
+  if mallocIsMimalloc () == 0 then
+    failures := failures.push "glibc's `strdup` did not allocate with mimalloc: `c/mimalloc_malloc.c` does not replace `malloc`"
   let solve (k : Nat) (linear : Bool := false) (pushed : Bool := false) : IO Bool := do
     return (← FrenCli.solveScript (lifetimeScript k linear pushed) #[] false) matches .sat _
   -- Warm up the allocator first, so that what it keeps does not count.
