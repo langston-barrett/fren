@@ -399,9 +399,9 @@ sorts and at each instance:
   of a defined generic function is, as `|::len<Int>|`, and the Lean-hosted
   front end gives each its own local, from the solver form, which takes the
   type arguments and their `Inhabited` instances first. Each of its
-  applications brings its postconditions, at the instance, and, if written,
-  one step of the instance's body, as above ([Solver
-  encoding](#solver-encoding)).
+  applications brings its postconditions and its declared result type's
+  constraint, at the instance, and, if written, one step of the instance's
+  body, as above ([Solver encoding](#solver-encoding)).
 - Evaluation, testing and enumeration apply the instance's definition.
 - A counterexample of the check at the sorts is confirmed by evaluation as
   any other is ([Counterexamples and completeness](#counterexamples-and-completeness)),
@@ -412,9 +412,12 @@ sorts and at each instance:
   values of a type parameter's sort, as `t = Term::Var(V#0)`: both front
   ends read them, and once evaluation confirms the counterexample the check
   fails, with that counterexample.
-- An instance's result type brings no fact of its own: the result's
-  declared type is the type parameter's, which has none, so a subset type's
-  invariant reaches an instance's result only through its postconditions.
+- Where the declared result type is a type parameter, an instance's result
+  brings no fact of its type argument's: the type parameter has none, so a
+  subset type's invariant reaches such an instance's result only through
+  its postconditions. A declared result type that is not a type parameter
+  brings its constraint as for any recursion, as `keep_generic<T>(p: Pos,
+  x: T, l: L): Pos` does.
   With `fn rep<T>(n: N, x: T): T` and `d: Pos`, `rep(n, d) >= 1` holds but is
   Inconclusive (`F0450`). That is sound but incomplete, and particular to a
   recursion: a generic function that is not recursive is unfolded, so its

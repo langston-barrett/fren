@@ -3408,38 +3408,6 @@ def enumerationCorpus : IO (Array FilePath) := do
     let src ← IO.FS.readFile f
     return !(src.splitOn "--@ only: hosted").length > 1 && (src.splitOn "--@ exit: 2").length == 1
 
-/-- Each verdict of enumeration on the ui tests matches the solver's on the
-same check (`Reqs/Check#verdicts-of-enumeration`): a failure is genuine, so
-the solver must not pass the check, and a pass that is not bounded is a
-decision, so the solver must not fail it; and the obligations of pattern
-types, which stay the solver's, keep their results. -/
-def enumerationAgrees : IO (Array String) := do
-  let mut failures := #[]
-  let mut compared := 0
-  for f in ← enumerationCorpus do
-    let src ← IO.FS.readFile f
-    let (solver, code) ← checkResultsOf #[f.toString]
-    if code == 2 then continue
-    let (enumerated, _) ← withText (f.fileName.getD "spec.fren") (enumeratedText src).toList.toArray fun p =>
-      checkResultsOf #[p]
-    for (item, rs) in enumerated do
-      let ss := solver.getD item #[]
-      for (k, r) in rs do
-        let some (_, s) := ss.find? (·.1 == k) | continue
-        compared := compared + 1
-        -- As `methodsAgree` compares them, with no verdict of random testing.
-        if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
-          let bounded := if r.bounded?.isSome then " up to the bound" else ""
-          failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
-    -- A value given where a subset type is declared stays the solver's
-    -- (`check::by_evidence`): its result is not dropped.
-    for (item, ss) in solver do
-      for (k, s) in ss do
-        unless s.kind == .definedness && s.subsetTy?.isSome do continue
-        let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
-        unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
-  return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
-
 /-! ## Methods agree
 
 Every check of Fren's own requirements, of the ui tests and of the
@@ -3504,7 +3472,46 @@ def methodResults (files : Array String) (method : Fren.Core.ProofMethod) (value
 /-- The contradictions that `methodsAgree` expects, each a check by its file
 and `methodKey`, with why: a known bug, by its issue, or a difference that
 is not one. Each is narrow: a single check. -/
-def methodExceptions : Array (String × String × String) := #[]
+def methodExceptions : Array (String × String × String) := #[
+  -- A caller assumes a recursive function's result type, as its
+  -- postconditions, whether or not its body meets it; the pass rests on the
+  -- body's obligation, a premise (`Postconditions`) not applied yet.
+  ("test/ui/checks/recursion_subset_result.fren",
+    "comp r.wrong_caller|Fren.Core.CheckKind.expect|(some c)|none|none|none|none|-|none", "#522")]
+
+/-- Each verdict of enumeration on the ui tests matches the solver's on the
+same check (`Reqs/Check#verdicts-of-enumeration`): a failure is genuine, so
+the solver must not pass the check, and a pass that is not bounded is a
+decision, so the solver must not fail it; and the obligations of pattern
+types, which stay the solver's, keep their results. -/
+def enumerationAgrees : IO (Array String) := do
+  let mut failures := #[]
+  let mut compared := 0
+  for f in ← enumerationCorpus do
+    let src ← IO.FS.readFile f
+    let (solver, code) ← checkResultsOf #[f.toString]
+    if code == 2 then continue
+    let (enumerated, _) ← withText (f.fileName.getD "spec.fren") (enumeratedText src).toList.toArray fun p =>
+      checkResultsOf #[p]
+    for (item, rs) in enumerated do
+      let ss := solver.getD item #[]
+      for (k, r) in rs do
+        let some (_, s) := ss.find? (·.1 == k) | continue
+        compared := compared + 1
+        -- As `methodsAgree` compares them, with no verdict of random testing.
+        if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
+          -- The same narrow exceptions as `methodsAgree`'s.
+          if methodExceptions.any fun (g, key, _) => g == f.toString && key == methodKey item s then continue
+          let bounded := if r.bounded?.isSome then " up to the bound" else ""
+          failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
+    -- A value given where a subset type is declared stays the solver's
+    -- (`check::by_evidence`): its result is not dropped.
+    for (item, ss) in solver do
+      for (k, s) in ss do
+        unless s.kind == .definedness && s.subsetTy?.isSome do continue
+        let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
+        unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
+  return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
 
 /-- What `methodsAgree` counted. -/
 structure MethodCounts where

@@ -59,6 +59,13 @@ pub fn wrong(p: Pos, l: L): Pos := match l {  --~ warning: does not confirm the 
     L::Cons(_, rest) => wrong(p, rest),
 }
 
+-- A caller assumes `wrong`'s result type, as it assumes a recursive
+-- function's postconditions, whether or not the body meets it: the
+-- solver passes this, where enumeration, which evaluates `wrong`, fails
+-- it. The pass rests on `wrong`'s body obligation, a premise that is not
+-- applied yet (#522); `methodExceptions` records it.
+expect wrong_caller(p: Pos, l: L) { expect c: wrong(p, l) >= 1 }
+
 -- No contract: `count` may be anything, so the obligation has a model that
 -- evaluation refutes, which is Inconclusive, not a failure.
 pub fn count(l: L): Int := match l {

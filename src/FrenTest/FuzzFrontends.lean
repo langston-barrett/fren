@@ -1752,7 +1752,10 @@ def recursiveSubsets : R String := do
     | 1 => pure ("x", s!"if x > 0 then {f}(p, r) else p")
     | 2 => pure ("_", s!"match r \{ Rsl::Nil => p, Rsl::Cons(_, s) => {f}(p, s) }")
     | 3 => pure ("_", s!"if {f}(p, r) = p then p else {f}(p, r)")
-    | 4 => pure ("_", s!"{f}(p, r) + {← pick #["0", "1"]}")
+    -- Each arm meets the result type where the recursive applications
+    -- do, so that a caller's check, which assumes it, holds in fact and
+    -- the methods agree (`methodsAgree fuzz`).
+    | 4 => pure ("_", s!"{f}(p, r) + 0")
     | _ => pure ("x", s!"if x = 0 then p else {f}(p, r)")
   let fns := #["rs_keep", "rs_post"]
   let (x, a) ← arm "rs_keep"

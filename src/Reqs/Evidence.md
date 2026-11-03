@@ -167,7 +167,10 @@ by the claim's position among the item's refinement claims, `ContractRealizabili
 function `f`'s contract's realizability check, `InstanceContract(i)` is
 the check that decides instance `i`'s contract (above),
 `Postconditions(f)` is recursive function `f`'s postcondition checks, one
-for each postcondition, and `Inhabitation(t)` is subset type `t`'s
+for each postcondition, and the obligation that its body meets its
+declared result type, where that type has a constraint, since its
+applications bring that constraint as a fact beside the postconditions
+(`lang::recursive_facts`), and `Inhabitation(t)` is subset type `t`'s
 inhabitation check. That check is the realizability check
 (`Kind::Realizability`, `Site::Whole`) of the type's declaration, which is
 universal over the interpretations that the existing contracts admit
@@ -225,7 +228,11 @@ procedures that the item calls. They do not apply the rule yet to
 check to know which instances, recursive functions and subset types'
 invariants its query has, as [Checks](Check.md#global-expectations) says
 too; that is #522. Until then, a pass that rests only on one of those can be
-vacuous where that check does not pass, as before.
+vacuous where that check does not pass, as before: a caller of a recursive
+function whose body does not meet its result type passes on that type's
+fact, as `wrong_caller` in `test/ui/checks/recursion_subset_result.fren`
+does, which enumeration, evaluating the body, fails; `methodsAgree`
+records it as an exception, by #522.
 
 ## Resting on checks
 
