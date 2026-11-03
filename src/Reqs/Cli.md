@@ -671,7 +671,8 @@ though the solver is not asked it. The dump leaves out:
   parameters' sorts does not pass;
 - the queries that a check asks after an answer, to explain or confirm it:
   minimal cores, the pins and clash notes of forced outputs, branch
-  explanations, and the confirmation of models;
+  explanations, the confirmation of models, and a query asked again
+  where confirmation contradicts its model (`Reqs/Models`);
 - the expansion of quantifiers over a collection's elements, which a run
   asks of the query that the dump shows
   (`Reqs/Lang/ElementQuantifiers#expansion`).
