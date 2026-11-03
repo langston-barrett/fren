@@ -299,12 +299,13 @@ target mimalloc_lazy_commit.o pkg : FilePath := do
 -- linked in, needing no .olean files at runtime. There is no module `FrenCli`,
 -- so the library is its modules.
 --
--- Unlike `Fren.Elab`, `FrenCli.Elab` keeps `-O3`, although clang takes
--- some 40 s on its C code (on a Mac), spread over its functions since no
--- function elaborates every kind of item (`FrenCli.elabItem`). At `-O0` (3 s), the
--- binary elaborates 40–50% slower, and `lake test`, whose mutation jobs
--- elaborate Fren's own requirements once for each mutant, took about 25%
--- more CPU; `-O1 -fno-inline` (12 s) still costs a mutation job 10%.
+-- Unlike `Fren.Elab`, `FrenCli.Elab` and its support modules keep `-O3`.
+-- Before the module split, clang took some 40 s on its C code (on a Mac),
+-- spread over its functions since no function elaborates every kind of
+-- item (`FrenCli.elabItem`). At `-O0` (3 s), the binary elaborated 40–50%
+-- slower, and `lake test`, whose mutation jobs elaborate Fren's own
+-- requirements once for each mutant, took about 25% more CPU;
+-- `-O1 -fno-inline` (12 s) still cost a mutation job 10%.
 lean_lib FrenCli where
   globs := #[.submodules `FrenCli]
   moreLeancArgs := coverageArgs
