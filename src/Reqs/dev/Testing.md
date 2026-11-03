@@ -1239,7 +1239,7 @@ solver's speed, not a feature of the `fren` command for users: it is
 left out of its `--help` and of [the command's chapter](../Cli.md), and
 what it prints may change with any cvc5. It reports, on standard error
 after the summary and any [timings](../Cli.md#timings), where the time of
-each query that the solver answered went (`FrenCli.SolverStats`), as in
+each query asked of the solver went (`FrenCli.SolverStats`), as in
 this report of Fren's own requirements, of which only the first logic's
 line and the first listed query are shown, and their lines shortened
 where they show `…`:

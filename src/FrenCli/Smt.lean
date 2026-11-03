@@ -538,8 +538,8 @@ structure QueryCache where
   answers : Vector (IO.Ref (Std.HashMap (Hashed QueryKey) (Outcome String × Bool))) answerShards
   /-- The answers kept across runs, if any (`Reqs/Cli#query-cache`). -/
   store? : Option QueryStore := none
-  /-- With `fren check --solver-stats`, where the time of each query that
-  the solver answered went (`FrenCli.SolverStats`); without it, `none`,
+  /-- With `fren check --solver-stats`, where the time of each query asked
+  of the solver went (`FrenCli.SolverStats`); without it, `none`,
   and nothing is measured. -/
   stats? : Option (IO.Ref (Array SolverStats.QueryStats)) := none
 

@@ -7,8 +7,8 @@ import FrenCore.Names
 /-!
 # cvc5's statistics of each query
 
-`fren check --solver-stats` reports, for the queries that the solver
-answered, where their time went (`Reqs/dev/Testing#solver-statistics`):
+`fren check --solver-stats` reports, for the queries asked of the
+solver, where their time went (`Reqs/dev/Testing#solver-statistics`):
 Fren's own measure of each phase of a query, from making its term manager
 to freeing it, and cvc5's statistics of its solver, which cvc5 keeps
 whether or not anyone reads them (#742). Without the flag, none of this
@@ -247,7 +247,7 @@ def Cvc5Stats.dominant? (s : Cvc5Stats) (checkMs : Nat) : Option String := (s.pa
 #guard ({ theoryMs := #[("strings", 20)] } : Cvc5Stats).dominant? 100 == some "SAT search and the rest"
 #guard ({} : Cvc5Stats).dominant? 0 == none
 
-/-- One query that the solver answered, with where its time went. -/
+/-- One query asked of the solver, with where its time went. -/
 structure QueryStats where
   /-- The item whose check asked it, and the kind of that check. -/
   item : Lean.Name
