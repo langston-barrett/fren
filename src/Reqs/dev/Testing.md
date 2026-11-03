@@ -202,7 +202,11 @@ pub mod testing
   `QF_UFDTLIA`, a linear one, at once must get every answer right. The
   `ALL` ones crashed about one run in three while their solvers
   initialized and were freed at the same time; the linear ones take no
-  lock (`FrenCli.Cvc5`).
+  lock (`FrenCli.Cvc5`). Half of the `ALL` ones initialize their solvers
+  at a `push` before their definition, and let the lock go there. And
+  each command that the lock is let go after must initialize a solver in
+  cvc5, each must be tried, and the declarations and options before it
+  must not initialize one.
 - **Confirmed models** (`lake test`): `fren check` confirms every model the
   solver returns with the evaluator (see
   [Evaluation and testing](../Eval.md#confirming-models)), so every test that

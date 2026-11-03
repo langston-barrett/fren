@@ -1303,14 +1303,68 @@ def queryCache : IO (Array String) := do
 /-- A satisfiable query whose solver initializes its theories at a
 definition: in `ALL`, a logic with nonlinear arithmetic, whose solvers
 take `FrenCli.Cvc5.solverLock`, or, if `linear`, in `QF_UFDTLIA`, whose
-solvers do not. -/
-def lifetimeScript (k : Nat) (linear : Bool := false) : String :=
+solvers do not. If `pushed`, it initializes them earlier, at a `push`,
+which `FrenCli.Cvc5.initializes` lists too, so that the lock is let go
+there, before the definition. -/
+def lifetimeScript (k : Nat) (linear : Bool := false) (pushed : Bool := false) : String :=
+  let push := if pushed then "(push 1)\n" else ""
   if linear then
     s!"(set-logic QF_UFDTLIA)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-      s!"(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
+      s!"{push}(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
   else
     s!"(set-logic ALL)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-      s!"(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
+      s!"{push}(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
+
+/-- The name that cvc5 gives the last command of `cmds`, run after
+`(set-logic ALL)` and `(declare-const x Int)`, and whether it initialized
+the solver: `(set-option :produce-models true)` after it then fails. On
+`solver`, which it borrows (`FrenCli.Cvc5`). -/
+def initializationOn (solver : @& cvc5.Solver) (cmds : String) : cvc5.Env (String × Bool) := do
+  let parser ← FrenCli.Cvc5.parserNew solver
+  let sm ← FrenCli.Cvc5.getSymbolManager parser
+  FrenCli.Cvc5.setStringInput parser s!"(set-logic ALL)\n(declare-const x Int)\n{cmds}\n(set-option :produce-models true)\n"
+    .SMT_LIB_2_6 "lean-cvc5"
+  let mut names := #[]
+  let mut outs := #[]
+  repeat
+    let cmd ← FrenCli.Cvc5.nextCommand parser
+    if FrenCli.Cvc5.isNull cmd then break
+    names := names.push (FrenCli.Cvc5.commandName cmd)
+    outs := outs.push (← FrenCli.Cvc5.invoke cmd solver sm)
+  return (names[names.size - 2]!, (outs.back!.trimAscii.toString.startsWith "(error"))
+
+/-- `initializationOn` on a solver of `tm`, freed before it returns. -/
+@[noinline] def initializationWith (tm : @& cvc5.TermManager) (cmds : String) : cvc5.Env (String × Bool) := do
+  initializationOn (← FrenCli.Cvc5.solverNew tm) cmds
+
+/-- Each command of `FrenCli.Cvc5.initializingCommands` has a case here
+and always initializes its solver, and the commands that
+`FrenCli.queryScript` writes before them do not, as cvc5 names them:
+`FrenCli.solveOn` lets `FrenCli.Cvc5.solverLock` go after the first of
+the former. -/
+def initializingCommandsHold : IO (Array String) := do
+  let initializing := #["(assert (> x 0))", "(define-fun f () Int 1)", "(define-fun f ((n Int)) Int n)",
+    "(define-fun-rec g ((n Int)) Int (ite (<= n 0) 0 (g (- n 1))))",
+    "(define-funs-rec ((h ((n Int)) Int)) ((ite (<= n 0) 0 (h (- n 1)))))", "(define-const c Int 1)",
+    "(push 1)", "(check-sat)", "(check-sat-assuming (true))"]
+  let other := #["(declare-const y Int)", "(declare-fun u (Int) Int)", "(declare-sort S 0)", "(define-sort T () Int)",
+    "(declare-datatype D ((A) (B (b Int))))", "(set-option :strings-exp true)"]
+  let mut failures := #[]
+  let mut named := #[]
+  for (cmds, expected) in initializing.map (·, true) ++ other.map (·, false) do
+    match ← cvc5.Env.run (do initializationWith (← cvc5.TermManager.new) cmds) with
+    | .error e => failures := failures.push s!"`{cmds}` failed: {e}"
+    | .ok (name, initialized) =>
+      if expected then named := named.push name
+      if initialized != expected then
+        failures := failures.push s!"`{cmds}` {if expected then "does not initialize" else "initializes"} the solver"
+      if FrenCli.Cvc5.initializes name != expected then
+        failures := failures.push s!"`{cmds}`, which cvc5 names `{name}`, is {if expected then "not " else ""}one that `FrenCli.Cvc5.initializes` lists"
+  -- Every listed command has a case here, so none is listed unchecked.
+  for c in FrenCli.Cvc5.initializingCommands do
+    unless named.contains c do
+      failures := failures.push s!"`{c}`, which `FrenCli.Cvc5.initializes` lists, has no case in `initializingCommandsHold`"
+  return failures
 
 /-- This process's resident memory, in kB, as `ps` reports it. -/
 def residentKb : IO Nat := do
@@ -1320,11 +1374,13 @@ def residentKb : IO Nat := do
 /-- Each query's solver is freed once it is answered, so that the memory
 of `fren check` does not grow with the number of its queries; and solvers
 of a logic with nonlinear arithmetic answer correctly on several threads
-at once, which they share libpoly's state for (`FrenCli.Cvc5`). -/
+at once, which they share libpoly's state for (`FrenCli.Cvc5`), each
+command that the lock is let go after always initializing its solver
+(`initializingCommandsHold`). -/
 def solverLifetime : IO (Array String) := do
-  let mut failures := #[]
-  let solve (k : Nat) (linear : Bool := false) : IO Bool := do
-    return (← FrenCli.solveScript (lifetimeScript k linear) #[] false) matches .sat _
+  let mut failures ← initializingCommandsHold
+  let solve (k : Nat) (linear : Bool := false) (pushed : Bool := false) : IO Bool := do
+    return (← FrenCli.solveScript (lifetimeScript k linear pushed) #[] false) matches .sat _
   -- Warm up the allocator first, so that what it keeps does not count.
   for k in [0:100] do discard <| solve k
   let before ← residentKb
@@ -1339,10 +1395,13 @@ def solverLifetime : IO (Array String) := do
   -- without `FrenCli.Cvc5.exclusively`, this crashed one run in three.
   -- After every third, each thread asks one in a linear logic, whose
   -- solvers take no lock and must answer correctly beside those that do.
+  -- Every other query in `ALL` initializes its solver at a `push`, which
+  -- `FrenCli.Cvc5.initializes` lists, so that it lets the lock go there,
+  -- before its definition, rather than at the definition.
   let tasks ← (List.range 16).mapM fun t => IO.asTask (prio := .dedicated) do
     let mut n := 0
     for k in [0:300] do
-      if ← solve (1000 * t + k) then n := n + 1
+      if ← solve (1000 * t + k) (pushed := k % 2 == 1) then n := n + 1
       if k % 3 == 0 then if ← solve (1000 * t + k) (linear := true) then n := n + 1
     return n
   for t in tasks do
