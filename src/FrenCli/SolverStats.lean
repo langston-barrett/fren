@@ -25,9 +25,10 @@ namespace FrenCli.SolverStats
 
 /-- When a query reached each of its phases, in nanoseconds of the
 monotonic clock (`IO.monoNanosNow`), and cvc5's statistics of its solver,
-as `solveScript` records them. A phase that the query never reached, as
-when a command fails, is left at the time of the one before it
-(`Probe.phases`). -/
+as `solveScript` records them. When a command fails, `solveOn` sets every
+mark not yet reached to the time of the failure, so that its time up to
+there is in the phases it reached and none is in the later ones. A mark
+left at 0 counts as the one before it (`Probe.phases`). -/
 structure Probe where
   /-- Before the term manager is made. -/
   start : Nat := 0
@@ -91,6 +92,9 @@ def Probe.phases (p : Probe) : Phases :=
 #guard (Probe.mk 10 15 25 30 70 72 90 95 "").phases.total == 67
 -- A query whose command failed reached no check.
 #guard (Probe.mk 10 15 0 0 0 0 0 20 "").phases == { setup := 5, free := 5 }
+-- A query whose assertion failed, at 40, after the first command
+-- initialized at 15–25: its assertions are in `assert`, not `free`.
+#guard (Probe.mk 10 15 25 40 40 40 40 50 "").phases == { setup := 5, init := 10, assert := 15, free := 10 }
 
 /-- What the report shows of cvc5's statistics of one query. Times are
 cvc5's, in whole milliseconds. -/
@@ -297,7 +301,14 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
     out := out ++ s!"{p}logic {l}: {these.size} queries, {ms ph.total} ms ({ph.show})\n"
   -- Where `checkSat` went, by cvc5's timers, summed over the queries.
   let parts := sumCounts (qs.flatMap fun q => q.cvc5.parts (wholeMs q.phases.check))
-  out := out ++ s!"{p}checkSat by cvc5's timers: {showParts parts}\n"
+  -- And of how many queries' the timed parts exceed their `checkSat`,
+  -- listed or not (`Cvc5Stats.overMs`).
+  let overs := qs.filterMap fun q =>
+    let over := q.cvc5.overMs (wholeMs q.phases.check)
+    if over == 0 then none else some over
+  let overNote := if overs.isEmpty then "" else
+    s!" (cvc5's timers exceed checkSat in {overs.size} queries, by {overs.foldl (· + ·) 0} ms)"
+  out := out ++ s!"{p}checkSat by cvc5's timers{overNote}: {showParts parts}\n"
   let sorted := qs.qsort fun a b => a.phases.total > b.phases.total ||
     (a.phases.total == b.phases.total && Fren.Core.showPath a.item ++ " " ++ a.kind.noun < Fren.Core.showPath b.item ++ " " ++ b.kind.noun)
   let shown := listed?.getD sorted.size
@@ -317,5 +328,16 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
     unless inferences.isEmpty do
       out := out ++ s!"{p}  inferences: {showCounts inferences}\n"
   return out
+
+-- A query whose timed parts exceed its `checkSat` says so in the summed
+-- line, though it is not listed.
+/-- A query of `a`'s expectation whose `checkSat` took
+`checkMs` milliseconds, by `cvc5`'s statistics. -/
+private def testQuery (checkMs : Nat) (cvc5 : Cvc5Stats) : QueryStats :=
+  { item := `a, kind := .expect, logic := "ALL", bytes := 10, outcome := "unsat",
+    phases := { check := checkMs * 1000000 }, cvc5 }
+
+#guard (report #[testQuery 3 { preprocessMs := 2, cnfMs := 3 }, testQuery 9 {}] (some 0)).contains
+  "(cvc5's timers exceed checkSat in 1 queries, by 2 ms)"
 
 end FrenCli.SolverStats

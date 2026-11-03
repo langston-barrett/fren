@@ -610,6 +610,11 @@ def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wan
     if first then mark fun p t => { p with initEnd := t }
     released := released || initializes
     if out.trimAscii.toString.startsWith "(error" then
+      -- Its time up to here is in the phases it reached, and none in
+      -- the later ones (`FrenCli.SolverStats.Probe`).
+      mark fun p t => { p with initStart := if p.initStart == 0 then t else p.initStart,
+                                initEnd := if p.initEnd == 0 then t else p.initEnd,
+                                checkStart := t, checkEnd := t, modelEnd := t, statsEnd := t }
       throw (.error out)
   -- With no command that initializes the solver, `checkSat` does.
   if !released then mark fun p t => { p with initStart := t, initEnd := t }

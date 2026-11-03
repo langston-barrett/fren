@@ -1270,14 +1270,17 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   (`theory::T::checkTime`), preprocessing, the clausal form and theory
   combination, in cvc5's whole milliseconds. They were observed to be
   disjoint, and a query whose timed parts exceed its `checkSat` says by
-  how much. What none of them accounts for is `SAT search and the rest`: the SAT solver's own search and
-  propagation, and whatever else `checkSat` does. The theories' checks
-  are made from within the search, so a query that makes tens of
-  thousands of cheap theory checks, as `cli::query_symbols`' do, shows
-  its search's cost spread over the search and the theories. A query is
-  `dominated by` its largest part. cvc5 has no timer of its own for parts
-  of a theory, such as the datatypes solver's cycle check, so those need
-  a profile.
+  how much, as the summed line does of how many queries' did. What none
+  of them accounts for is `SAT search and the rest`: the SAT solver's own
+  search and propagation, and whatever else `checkSat` does. The
+  theories' checks are made from within the search, so a query that
+  makes tens of thousands of cheap theory checks, as `cli::query_symbols`'
+  do, shows its search's cost spread over the search and the theories. A
+  query is `dominated by` its largest part. cvc5 has no timer of its own
+  for parts of a theory, such as the datatypes solver's cycle check, so
+  those need a profile.
+- **A query whose command fails**, answered `error`, has its time up to
+  the failure in the phases it reached, and none in the later ones.
 - **The counts** are cvc5's: the SAT solver's decisions, conflicts and
   propagations, the theory checks and rewrites that its resource manager
   counts, every theory's lemmas, quantifier instantiations, the resource
@@ -1285,13 +1288,16 @@ solver-stats:   inferences: ARITH_CONF_SIMPLEX 175, DATATYPES_INST 172, STRINGS_
   theories' inferences, by cvc5's names.
 
 It lists the 20 slowest queries; `--solver-stats=N` lists `N` of them,
-and `--solver-stats=all` every one. A query answered from the [query
+and `--solver-stats=all` every one. The value is written after `=`, not
+as the next argument as other options' are, so that the bare flag needs
+none. The flag is in no help text, but `fren` suggests it for a
+misspelled option, as it does every option. A query answered from the [query
 cache](#query-cache), or by another item's query in the same run, asks
 the solver nothing and is not reported, so measure with no
 `--query-cache` and with `--jobs 1`, which times each query alone.
 
 Without the flag, nothing of this runs: Fren reads no clock and asks cvc5
-nothing more: a check of Fren's own requirements took the same
+nothing more. A check of Fren's own requirements took the same
 instructions, within 0.02 %, and the same time as before the report was
 added. With it, each query reads cvc5's statistics once, after its answer
 and model, so that the answers, models and messages are the same, which
