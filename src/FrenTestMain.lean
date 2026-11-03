@@ -3740,9 +3740,20 @@ def spawnOutOfFuel (env : Array (String × Option String)) : IO (UInt32 × Optio
 /-- A job's `panic!` fails it (`spawnJob`): `outOfFuel`, whose evaluation
 runs out of fuel, aborts with `LEAN_ABORT_ON_PANIC`, and without it says
 so on stderr and finds that the test counts for nothing
-(`FrenTest.OutOfFuel.tinyFuel`). -/
+(`FrenTest.OutOfFuel.tinyFuel`). And `unknownFirst`, whose evaluation
+would run out of fuel only if it evaluated what follows an unknown case
+whose value is unknown, does not abort with it
+(`FrenTest.OutOfFuel.unknownFirstLazy`). -/
 def panicGuard : IO (Array String) := do
   let mut failures := #[]
+  let abort := #[("LEAN_ABORT_ON_PANIC", some "1")]
+  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args := #["--job", "unknownFirst"], env := abort }
+  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+  match out.exitCode, (Json.parse last >>= fromJson? (α := Array String)).toOption with
+  | 0, some found => failures := failures ++ found
+  | code, _ =>
+    let msg := s!"`unknownFirst` evaluated what follows an unknown case whose value is unknown, or crashed (exit {code}):\n{out.stderr}"
+    failures := failures.push msg
   let (code, _, err) ← spawnOutOfFuel #[("LEAN_ABORT_ON_PANIC", some "1")]
   unless code != 0 && (err.splitOn "Ex.eval ran out of fuel").length > 1 do
     failures := failures.push s!"running out of fuel with `LEAN_ABORT_ON_PANIC` did not abort (exit {code}):\n{err}"
@@ -3783,6 +3794,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["panicGuard"] => panicGuard
   -- Spawned by `panicGuard` only: it panics.
   | ["outOfFuel"] => Fren.Test.OutOfFuel.tinyFuel
+  -- Spawned by `panicGuard` only, with `LEAN_ABORT_ON_PANIC`.
+  | ["unknownFirst"] => Fren.Test.OutOfFuel.unknownFirstLazy
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
   | ["manualExamples"] => do
