@@ -1309,9 +1309,12 @@ It lists the 20 slowest queries; `--solver-stats=N` lists `N` of them, and
 next argument as other options' are, so that the bare flag needs none. The
 flag is in no help text, but `fren` suggests it for a misspelled option,
 as it does every option. A query answered from the [query
-cache](#query-cache), or by another item's query in the same run, asks the
-solver nothing and is not reported, so measure with no `--query-cache` and
-with `--jobs 1`, which times each query alone.
+cache](#query-cache), or by the same script that another item asked
+earlier in the run, asks the solver nothing and is not reported. Under
+`--jobs` more than 1, two items can ask the same script at once, before
+either answer is kept, and both are then reported. So measure with no
+`--query-cache` and with `--jobs 1`, which times each query alone and asks
+each script once.
 
 Without the flag, nothing of this runs: Fren reads no clock of its own,
 only the one around `checkSat` that every query reads
