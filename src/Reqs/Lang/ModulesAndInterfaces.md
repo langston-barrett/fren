@@ -553,7 +553,9 @@ that does not is not an error, and is used only as today, as a quantified
 hypothesis of every check of its trait ([Traits](Traits.md#laws)).
 
 r[module.rules.report] lang::sentence_instantiation
-A sentence that breaks the binding rule reports its first unbound variable.
+The error of a lemma or `assume` item that breaks the binding rule names
+its first unbound variable. A law that breaks it gets no message
+(`module.rules.laws`).
 
 **Dynamic semantics**
 
@@ -592,8 +594,14 @@ r[module.instance.quantifiers]
 A quantifier within a sentence, and a variable that stays quantified
 (`module.binding.outside`), are quantifiers of each instance. Where their
 types are not listed, the instance is outside the [decidable
-core](Decidability.md), and `undecidable` reports it at the sentence, as
-it reports an [unbounded quantifier](Quantifiers.md#unbounded-quantifiers).
+core](Decidability.md). Of a lemma or `assume` item, `undecidable` reports
+it at the sentence, as it reports an [unbounded
+quantifier](Quantifiers.md#unbounded-quantifiers). Sentences of today's
+forms (`module.expansion`) are linted as written, as today: a law with a
+variable of a type that is not listed is reported whether or not it is
+instantiated (`traits.law.undecidable`), and a contract's quantifiers as
+[Quantifiers](Quantifiers.md#unbounded-quantifiers) states. So a law gets
+the same `undecidable` messages as today, and once each.
 
 r[module.closure]
 Fren instantiates each sentence that the check uses at the terms of the
@@ -602,8 +610,9 @@ the set of all those instances.
 
 r[module.closure.finite]
 The closure of every query is finite. Take the items in reverse order
-(`module.order.items`). An instance applies its subject only to quantified
-variables, which matching binds to proper subterms of the query's
+(`module.order.items`). Apart from its anchors, which are applications of
+the query and so add none, an instance applies its subject only to
+quantified variables, which matching binds to proper subterms of the query's
 applications, or to the arguments and outputs of its calls, which no
 instance adds, to values of listed types, and to closed terms of the
 sentence. It applies
@@ -1291,16 +1300,15 @@ function's `ensure` clauses ([Realizability](../Check.md#contracts-of-uninterpre
 
 r[module.axiom.unchecked]
 The consistency of an `assume` item, and of a trait's laws, is not checked
-yet. A verdict that rests on one says so, as one that rests on a trait's
-laws does today (`F0665`).
+yet. A verdict that rests on an `assume` item says so (`F0665`) under the
+conditions that [`check::law_premise`](../Evidence.md#the-laws-of-a-trait)
+gives a verdict that rests on a trait's laws today. Contracts, the
+guarantees of calls and laws are reported as today, and no verdict that
+rests on them gains a message.
 
 r[module.consistency.vacuity]
 Where the axioms cannot hold together, every check that uses them holds
 vacuously.
-
-r[module.assume.trusted]
-An axiom is reported as trusted: a pass that rests on it says that it
-does, as one that rests on a trait's laws does (`F0665`).
 
 > **Note:** Today's realizability check is kept, so
 > `module.expansion` holds of it: a spec of today's forms has the same
@@ -1505,7 +1513,10 @@ r[module.expansion.laws] lang::strict_expansion
 Today's laws keep their meaning. They may come before the methods they
 mention (`module.signature`). Every check of their trait uses them,
 wherever each is written (`module.use.laws`). One that breaks the binding
-rule is used as today (`module.rules.laws`). A query to which their
+rule is used as today, with no message (`module.rules.laws`,
+`module.rules.report`). `undecidable` reports them as written, as today
+(`module.instance.quantifiers`), and a verdict that rests on them carries
+`F0665` exactly where it does today (`module.axiom.unchecked`). A query to which their
 instances do not give `unsat` is asked as today, whatever model the
 instances have (`module.instance.models`), so the warning of
 `traits::Pos::undecided` in the ui test `test/ui/lang/traits.fren`, that

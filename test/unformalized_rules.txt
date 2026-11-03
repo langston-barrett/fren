@@ -249,7 +249,7 @@ module.instance.ground -- which terms of a query are ground: no requirement comp
 module.instance.listed -- partly formalized: `lang::listed_variable` gives the verdict; that the variable takes each value of its type is how instances are built, from stage 3
 module.instance.unused -- partly formalized: `lang::sentence_instantiation` gives the verdict; that the variable takes no term is how instances are built, from stage 3
 module.instance.hypothesis -- how an instance enters a query: no requirement models queries here (stage 3)
-module.instance.quantifiers -- the decidable core of an instance, as Decidability states it for quantifiers
+module.instance.quantifiers -- the decidable core of an instance, as Decidability states it for quantifiers; today's forms keep today's lint, `traits.law.undecidable`
 module.closure -- the closure of a query's instances: no requirement computes it yet (stage 3)
 module.closure.finite -- argued in the rule; a requirement over terms comes with stage 3
 module.instance.models -- the confirmation of a model against axioms: a check of stage 3
