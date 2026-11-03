@@ -895,7 +895,7 @@ def leanGoalHead (e : Expr) : StateT LocalContext MetaM (Core.GoalHead Expr Expr
   | .letE _ _ v b _ => return .definition (b.instantiate1 v)
   | _ => return .other
 
-/-- `b` with each of its steps, a query or a reading of a model, under
+/-- `b` with each of its steps, a query or building or reading a model, under
 Lean's heartbeat limit of its own, as each query has a time limit of its own
 (`fren.timeout`): a procedure never reaches the limit only by having many
 clauses, which the `fren` command, with no such limit, checks

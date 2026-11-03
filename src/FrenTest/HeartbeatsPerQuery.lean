@@ -3,9 +3,10 @@ import Fren.View
 -- keep-sorted end
 open Fren.Lang
 
--- Each solver query, and each step that reads a model, has Lean's heartbeat
--- limit to itself (`Reqs/View#check-results`), so a procedure does not reach
--- it only by having many clauses, as `lang::operator_rules` did (#710).
+-- Each solver query, and each step that builds or reads a model, has Lean's
+-- heartbeat limit to itself (`Reqs/View#check-results`), so a procedure does
+-- not reach it only by having many clauses, as `lang::operator_rules` did
+-- (#710).
 -- Under one limit for the whole procedure, this one's check took between
 -- 200 and 400 thousand heartbeats and stopped at 100; it passes at 50.
 proc many(x: Int, y: Int): (z: Int) {
