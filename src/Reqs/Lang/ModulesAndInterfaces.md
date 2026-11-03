@@ -528,7 +528,8 @@ generic function's type parameters and the members of their bounds. A
 defined function and a constant are not.
 
 r[module.assume.abstract]
-An `assume` item that mentions no abstract item is an error
+An `assume` item that depends on no abstract item (`module.depends`) is an
+error
 (`lang::sentence_role`).
 
 **Dynamic semantics**
@@ -591,7 +592,7 @@ set_option fren.evidence "random" in
 pub proc sentence_role(
     keyword: SentenceKind,
     place: SentencePlace,
-    mentioned: Set<Int>,     -- the items that the sentence mentions
+    mentioned: Set<Int>,     -- the items that the sentence depends on, directly or through definitions (`module.depends`)
     abstract: Set<Int>,      -- the abstract items of the spec
 ): (det role: SentenceRole, det accepted?) {
     use self::SentencePlace::{DefinedFunction, LemmaBlock, Module}
@@ -677,7 +678,8 @@ since a contract applies its function only to its parameters
 r[module.rules.laws]
 A `law` that meets the binding rule is instantiated as a lemma is. A `law`
 that does not is not an error, and is used only as today, as a quantified
-hypothesis of its trait's checks ([Traits](Traits.md#laws)).
+hypothesis of every check of its trait ([Traits](Traits.md#laws),
+`lang::unbound_law_quantified`).
 
 r[module.rules.report]
 A sentence that breaks the binding rule reports its first unbound variable
@@ -745,8 +747,8 @@ that uses only today's laws asks today's query, with the laws quantified
 ([Traits](Traits.md#expectations)), and any other check is Inconclusive.
 
 r[module.use]
-A check uses the sentences that are visible to it and meet the binding
-rule, whose subject the closure applies (`lang::sentence_use`): every
+A check instantiates the sentences that are visible to it and meet the
+binding rule, whose subject the closure applies (`lang::sentence_use`): every
 axiom of its module and of the modules it imports, wherever it is
 declared, and each theorem declared before the check's item. An `ensure`
 is used as a [contract](Items.md#contracts) is.
@@ -938,10 +940,7 @@ pub fn app(
     inner? := false,
 }
 
-pub fn quantified(listed?): SentenceVariable := SentenceVariable {
-    mentioned? := true,
-    listed?,
-}
+pub fn quantified(listed?): SentenceVariable := SentenceVariable { mentioned? := true, listed? }
 
 -- `law get_put(s: Self, k: Key, v: Int, j: Key): get(put(s, k, v), j) = (if j = k then Option::Some(v) else get(s, j))`,
 -- with `put` at 1 and `get` at 2.
@@ -1121,6 +1120,16 @@ pub fn reach(rounds: Sentences, all: Sentences, check: Int, items: Set<Int>): Se
         Sentences::Cons(_, rest) => reach(rest, all, check, items union brought(all, check, items)),
     }
 
+-- The laws of `ps` that break the binding rule, which every check of
+-- their trait uses as today, quantified (`module.rules.laws`).
+pub fn quantified_laws(ps: Sentences): Set<Int> := match ps {
+    Sentences::Nil => {},
+    Sentences::Cons(p, rest) =>
+        (if p.kind = SentenceKind::Law
+            and instantiation_verdict(p.variables, p.applications) != SentenceInstantiation::Instantiable
+            then {p.position} else {}) union quantified_laws(rest),
+}
+
 pub fn used_positions(ps: Sentences, check: Int, items: Set<Int>): Set<Int> := match ps {
     Sentences::Nil => {},
     Sentences::Cons(p, rest) =>
@@ -1132,12 +1141,17 @@ pub proc sentence_use(
     check: Int,                  -- the position of the item whose check it is
     sentences: Sentences,        -- the sentences visible to the check
     applied: Set<Int>,           -- the items that the query applies or calls
-): (det reached: Set<Int>, det used: Set<Int>) {
+): (
+    det reached: Set<Int>,       -- the items that the query and the instances apply
+    det used: Set<Int>,          -- the sentences that the check instantiates
+    det kept_quantified: Set<Int>,   -- the laws that it uses as today, quantified
+) {
     out reached := reach(sentences, sentences, check, applied)
     out used := used_positions(sentences, check, reached)
+    out kept_quantified := quantified_laws(sentences)
 
     expect query_items_reached: applied subset reached
-    expect nothing_visible: when sentences = Sentences::Nil, used = {}
+    expect nothing_visible: when sentences = Sentences::Nil, used = {} and kept_quantified = {}
 }
 
 -- `assume made(fs: Fs, p: Path): exists?(mkdir(fs, p), p)`, with `mkdir`
@@ -1181,6 +1195,29 @@ expect axioms_anywhere() {
     expect used_before: assumed.used = {3}
 }
 
+-- `law l(s: Self, t: Self): f(s) <= g(s, t)`, with `g` at 1, `f` at 2
+-- and the law at 3, breaks the binding rule, so every check of its trait
+-- uses it quantified, whatever its query applies.
+pub const UNBOUND_LAW: Sentence := Sentence {
+    kind := SentenceKind::Law,
+    position := 3,
+    variables := TWO_VARIABLES,
+    applications := Applications::Cons(
+        app(2, 0, [SentenceArg::Variable], {0}),
+        Applications::Cons(
+            app(1, 1, [SentenceArg::Variable, SentenceArg::Variable], {0, 1}),
+            Applications::Nil
+        )
+    ),
+}
+
+set_option fren.evidence "random" in
+expect unbound_law_quantified() {
+    call r := sentence_use(4, Sentences::Cons(UNBOUND_LAW, Sentences::Nil), {})
+    expect quantified: r.kept_quantified = {3}
+    expect not_instantiated: r.used = {}
+}
+
 set_option fren.evidence "random" in
 expect lemmas_ranked() {
     call lemma := sentence_use(2, made(SentenceKind::Lemma), {2})
@@ -1222,9 +1259,16 @@ An axiom is never proved. Fren checks that the axioms of each module can
 hold together (its *consistency*), item by abstract item, in the tier that
 `lang::axiom_tier` gives.
 
+r[module.depends]
+A sentence *depends on* each abstract item that it applies or calls, and on
+each abstract item that the definition of a defined item it applies
+depends on, through definitions in turn. A definition mentions only items
+declared before its own ([Functions](Items.md#functions)).
+
 r[module.axiom.owner]
-Each axiom has one *owner*, its subject (`module.subject`). The axioms of
-an abstract item are those it owns.
+Each axiom that depends on an abstract item has one *owner*: the last, in
+the order of items, of the abstract items that it depends on
+(`lang::axiom_owner`). The axioms of an abstract item are those it owns.
 
 r[module.contract.earlier]
 A contract mentions only the items declared before its function, and the
@@ -1232,7 +1276,7 @@ function itself ([Contracts](Items.md#contracts)). The owner of an
 `ensure` clause is its own item.
 
 r[module.tier.modular]
-An abstract item that owns only `ensure` clauses, and axioms that mention
+An abstract item that owns only `ensure` clauses, and axioms that depend on
 no other abstract item, is checked as today: it is *realizable* where, for
 each argument that meets its domain, some value meets its axioms, whatever
 the other items are (tier 1,
@@ -1240,11 +1284,12 @@ the other items are (tier 1,
 
 r[module.tier.pointwise]
 An axiom is *pointwise* where all its applications and calls of its owner
-have the same arguments, as `f(x)` in each of `f`'s contracts.
+have the same arguments, as `f(x)` in each of `f`'s contracts, and none of
+the definitions of the defined items it applies depends on its owner.
 
 r[module.tier.relative]
-An abstract item that owns only pointwise axioms, some of them mentioning
-other abstract items, is *relatively realizable* where, for every
+An abstract item that owns only pointwise axioms, some of them depending
+on other abstract items, is *relatively realizable* where, for every
 interpretation of the items before it that meets the axioms they own, each
 argument that meets its domain has a value that meets the axioms it owns
 (tier 2), as in the rely-guarantee method. Fren asks it with the instances
@@ -1264,7 +1309,11 @@ induction on the order of items: an interpretation of the items before an
 item that meets the axioms they own extends, by a value at each argument
 that its tier gives, to one of the item as well. It rests on
 `module.contract.earlier` for tier 1, and on `module.axiom.owner` for tier
-2: an item's axioms mention only it and items before it.
+2: an item's axioms depend only on it and on abstract items before it. A
+defined item that an axiom applies may come after its owner, but its
+definition depends only on abstract items that the owner's choice covers
+(`module.depends`), so its meaning is fixed once they are interpreted, and
+the axiom constrains only the owner and the items before it.
 
 r[module.tier.theories]
 The tiers are the same for every theory, whichever construct it is: a
@@ -1327,47 +1376,96 @@ pub fn all_at?(apps: Applications, s: Int, p: Int) := match apps {
     Applications::Cons(a, rest) => (a.item != s or a.point = p) and all_at?(rest, s, p),
 }
 
-pub fn pointwise?(p: Sentence) := all_at?(
-    p.applications,
-    last_item(p.applications),
-    first_point(p.applications, last_item(p.applications))
-)
+-- A module's abstract items, in the order of items.
+pub enum AbstractItems { Nil, Cons(Int, AbstractItems) }
+
+pub fn item_set(items: AbstractItems): Set<Int> := match items {
+    AbstractItems::Nil => {},
+    AbstractItems::Cons(a, rest) => {a} union item_set(rest),
+}
+
+-- The last of `items` that is in `among`, and -1 where none is.
+pub fn last_among(items: AbstractItems, among: Set<Int>): Int := match items {
+    AbstractItems::Nil => -1,
+    AbstractItems::Cons(a, rest) =>
+        if last_among(rest, among) != -1 then last_among(rest, among)
+        else if a in among then a else -1,
+}
+
+-- The items that the definitions of the defined items that `p` applies
+-- apply, through definitions in turn, where `defines` relates each defined
+-- item to the items that its definition applies.
+set_option fren.lint.undecidable "allow" in
+pub fn through_definitions(p: Sentence, defines: Rel<Int, Int>): Set<Int> :=
+    defines.closure.image(applied_items(p.applications))
+
+-- The abstract items that `p` depends on (`module.depends`).
+pub fn depends(p: Sentence, abstract: AbstractItems, defines: Rel<Int, Int>): Set<Int> :=
+    (applied_items(p.applications) union through_definitions(p, defines)) inter item_set(abstract)
+
+-- The owner of `p`: the last abstract item it depends on, and -1 where it depends on none.
+pub fn owner(p: Sentence, abstract: AbstractItems, defines: Rel<Int, Int>): Int :=
+    last_among(abstract, depends(p, abstract, defines))
+
+pub fn pointwise?(p: Sentence, item: Int, defines: Rel<Int, Int>) :=
+    not item in through_definitions(p, defines)
+    and all_at?(p.applications, item, first_point(p.applications, item))
 
 -- Whether `p` is an axiom that `item` owns.
-pub fn owns?(p: Sentence, item: Int) := axiom?(p) and last_item(p.applications) = item
+pub fn owns?(p: Sentence, item: Int, abstract: AbstractItems, defines: Rel<Int, Int>) :=
+    axiom?(p) and owner(p, abstract, defines) = item
 
--- Whether an axiom of `item` keeps it in tier 1: an `ensure` clause, or one that mentions no other abstract item.
-pub fn modular_axiom?(p: Sentence, item: Int, abstract: Set<Int>) :=
-    p.kind = SentenceKind::Ensure or applied_items(p.applications) inter abstract subset {item}
+-- Whether an axiom of `item` keeps it in tier 1: an `ensure` clause, or one that depends on no other abstract item.
+pub fn modular_axiom?(p: Sentence, item: Int, abstract: AbstractItems, defines: Rel<Int, Int>) :=
+    p.kind = SentenceKind::Ensure or depends(p, abstract, defines) subset {item}
 
-pub fn owned(ps: Sentences, item: Int): Set<Int> := match ps {
-    Sentences::Nil => {},
-    Sentences::Cons(p, rest) =>
-        (if owns?(p, item) then {p.position} else {}) union owned(rest, item),
-}
+pub fn owned(ps: Sentences, item: Int, abstract: AbstractItems, defines: Rel<Int, Int>): Set<Int> :=
+    match ps {
+        Sentences::Nil => {},
+        Sentences::Cons(p, rest) =>
+            (if owns?(p, item, abstract, defines) then {p.position} else {}) union owned(rest, item, abstract, defines),
+    }
 
-pub fn all_modular?(ps: Sentences, item: Int, abstract: Set<Int>) := match ps {
-    Sentences::Nil => true,
-    Sentences::Cons(p, rest) =>
-        (not owns?(p, item) or modular_axiom?(p, item, abstract)) and all_modular?(rest, item, abstract),
-}
+pub fn all_modular?(ps: Sentences, item: Int, abstract: AbstractItems, defines: Rel<Int, Int>) :=
+    match ps {
+        Sentences::Nil => true,
+        Sentences::Cons(p, rest) =>
+            (not owns?(p, item, abstract, defines) or modular_axiom?(p, item, abstract, defines))
+            and all_modular?(rest, item, abstract, defines),
+    }
 
-pub fn all_pointwise?(ps: Sentences, item: Int) := match ps {
-    Sentences::Nil => true,
-    Sentences::Cons(p, rest) =>
-        (not owns?(p, item) or pointwise?(p)) and all_pointwise?(rest, item),
+pub fn all_pointwise?(ps: Sentences, item: Int, abstract: AbstractItems, defines: Rel<Int, Int>) :=
+    match ps {
+        Sentences::Nil => true,
+        Sentences::Cons(p, rest) =>
+            (not owns?(p, item, abstract, defines) or pointwise?(p, item, defines))
+            and all_pointwise?(rest, item, abstract, defines),
+    }
+
+set_option fren.evidence "random" in
+pub proc axiom_owner(
+    sentence: Sentence,
+    abstract: AbstractItems,     -- the module's abstract items, in order
+    defines: Rel<Int, Int>,      -- `(d, a)`: the definition of the defined item `d` applies `a`
+): (det owned_by: Int) {
+    out owned_by := owner(sentence, abstract, defines)
+
+    -- Every axiom that depends on an abstract item has an abstract owner, which it depends on.
+    expect abstract_owner: owned_by in depends(sentence, abstract, defines)
+        or (owned_by = -1 and depends(sentence, abstract, defines) = {})
 }
 
 set_option fren.evidence "random" in
 pub proc axiom_tier(
     item: Int,                   -- the abstract item, by its place in the order of items
-    abstract: Set<Int>,          -- the module's abstract items
+    abstract: AbstractItems,     -- the module's abstract items, in order
+    defines: Rel<Int, Int>,      -- `(d, a)`: the definition of the defined item `d` applies `a`
     sentences: Sentences,        -- the module's axioms
 ): (det owns: Set<Int>, det tier: Tier) {
-    out owns := owned(sentences, item)
+    out owns := owned(sentences, item, abstract, defines)
     out tier :=
-        if all_modular?(sentences, item, abstract) then Tier::Modular
-        else if all_pointwise?(sentences, item) then Tier::Relative else Tier::Joint
+        if all_modular?(sentences, item, abstract, defines) then Tier::Modular
+        else if all_pointwise?(sentences, item, abstract, defines) then Tier::Relative else Tier::Joint
 
     expect nothing_owned: when sentences = Sentences::Nil, tier = Tier::Modular
 }
@@ -1388,17 +1486,80 @@ pub const SHARED_AXIOM: Sentences := Sentences::Cons(
     Sentences::Nil
 )
 
+pub const F_AND_G: AbstractItems :=
+    AbstractItems::Cons(1, AbstractItems::Cons(2, AbstractItems::Nil))
+
 set_option fren.evidence "random" in
 expect shared_axiom_owned() {
-    call g := axiom_tier(2, {1, 2}, SHARED_AXIOM)
+    call g := axiom_tier(2, F_AND_G, {}, SHARED_AXIOM)
     expect g_owns_it: g.owns = {3}
     expect g_relative: g.tier = Tier::Relative
 }
 
 set_option fren.evidence "random" in
 expect shared_axiom_not_earlier() {
-    call f := axiom_tier(1, {1, 2}, SHARED_AXIOM)
+    call f := axiom_tier(1, F_AND_G, {}, SHARED_AXIOM)
     expect f_owns_nothing: f.owns = {}
+}
+
+-- `assume ax(x: Int): h(g(x)) > g(x)`, with `g` abstract at 1, `fn h(y:
+-- Int): Int := y` defined at 2, and the axiom at 3: its last item is `h`,
+-- but its owner is `g`, which is checked in tier 1 and fails, since no
+-- value `v` meets `h(v) > v`.
+pub const DEFINED_LAST: Sentence := Sentence {
+    kind := SentenceKind::Assume,
+    position := 3,
+    variables := ONE_VARIABLE,
+    applications := Applications::Cons(
+        app(2, 0, [SentenceArg::Compound], {0}),
+        Applications::Cons(
+            app(1, 1, [SentenceArg::Variable], {0}),
+            Applications::Cons(app(1, 1, [SentenceArg::Variable], {0}), Applications::Nil)
+        )
+    ),
+}
+
+pub const ONLY_G: AbstractItems := AbstractItems::Cons(1, AbstractItems::Nil)
+
+set_option fren.evidence "random" in
+expect defined_last_owned() {
+    call g := axiom_tier(1, ONLY_G, {}, Sentences::Cons(DEFINED_LAST, Sentences::Nil))
+    expect g_owns_it: g.owns = {3}
+    expect g_modular: g.tier = Tier::Modular
+}
+
+-- The same axiom, where `h(y) := t(y)` applies an abstract `t` at 2, so
+-- that `h` comes at 3 and the axiom at 4: its owner is `t`, which it
+-- depends on through `h`'s definition, and it is not pointwise for `t`.
+pub const THROUGH_DEFINITION: Sentence := Sentence {
+    kind := SentenceKind::Assume,
+    position := 4,
+    variables := ONE_VARIABLE,
+    applications := Applications::Cons(
+        app(3, 0, [SentenceArg::Compound], {0}),
+        Applications::Cons(
+            app(1, 1, [SentenceArg::Variable], {0}),
+            Applications::Cons(app(1, 1, [SentenceArg::Variable], {0}), Applications::Nil)
+        )
+    ),
+}
+
+set_option fren.evidence "random" in
+expect owner_through_definition() {
+    call o := axiom_owner(THROUGH_DEFINITION, F_AND_G, {(3, 2)})
+    expect owned_by_t: o.owned_by = 2
+}
+
+set_option fren.evidence "random" in
+expect tier_through_definition() {
+    call t := axiom_tier(
+        2,
+        F_AND_G,
+        {(3, 2)},
+        Sentences::Cons(THROUGH_DEFINITION, Sentences::Nil),
+    )
+    expect t_owns_it: t.owns = {4}
+    expect t_joint: t.tier = Tier::Joint
 }
 
 -- An interpretation of a function from `Bool` to `Bool`: its values at
@@ -1844,13 +2005,15 @@ pub proc strict_expansion(
     written: Seq<WrittenSentence>,       -- the spec's items and clauses that state claims
     before: Report,              -- what the check reports before this chapter
     after: Report,               -- and after it
-    by_induction?,               -- the check passes by induction
-    by_instances?,               -- the closure of today's laws' instances decides it
+    by_induction?,               -- the check passes by induction: an outcome of the check, given as such
+    by_instances?,               -- the closure of today's laws' instances gives `unsat`: an outcome of the check, given as such
 ): (det new_forms?, det allowed?) {
     out new_forms? := exists (k: Int), 0 <= k < written.len and not today_form?(written[k])
     out allowed? := new_forms? or after = before
         or (before.verdict = CheckVerdict::Inconclusive and after.verdict = CheckVerdict::Pass and by_induction?)
-        or (before.verdict = CheckVerdict::Inconclusive and by_instances?)
+        or (before.verdict = CheckVerdict::Inconclusive and by_instances? and (after.verdict = CheckVerdict::Pass
+        or (after.verdict = CheckVerdict::Fail and "F0602" in after.messages
+        and after.messages minus {"F0602"} = before.messages minus {"F0608"})))
         or (after.verdict = before.verdict and after.messages minus {"F0602", "F0608"} = before.messages minus {"F0665"})
 
     expect laws_are_today: when written = [
@@ -1903,10 +2066,15 @@ check every earlier chapter again:
 #fren_check made_used
 #fren_check made_unused
 #fren_check axioms_anywhere
+#fren_check unbound_law_quantified
 #fren_check lemmas_ranked
+#fren_check axiom_owner
 #fren_check axiom_tier
 #fren_check shared_axiom_owned
 #fren_check shared_axiom_not_earlier
+#fren_check defined_last_owned
+#fren_check owner_through_definition
+#fren_check tier_through_definition
 #fren_check relative_tiers
 #fren_check consistency
 #fren_check translated_theorem

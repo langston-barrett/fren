@@ -121,6 +121,7 @@ trusted lang::sentence_member: "the design of lemma, assume and law items (#669)
 trusted lang::sentence_role: "the design of lemma, assume and law items (#669); no front end classifies these items yet, and its expectations are checked by testing"
 trusted lang::sentence_instantiation: "the design of instantiation (#669, stage 3); no front end instantiates these items yet, and its examples are checked by testing"
 trusted lang::sentence_use: "the design of instantiation (#669, stage 3); no front end chooses what a check uses yet, and its examples are checked by testing"
+trusted lang::axiom_owner: "the design of the realizability tiers (#669, stage 5); nothing computes an axiom's owner yet, and its examples are checked by testing"
 trusted lang::axiom_tier: "the design of the realizability tiers (#669, stage 5); nothing chooses a tier this way yet, and its examples are checked by testing"
 trusted lang::relative_tiers: "the design of the realizability tiers (#669, stage 5); it states over a small domain what tier 2 asks, and its expectation that the tiers give consistency is proved by the solver"
 trusted lang::translated_theorem: "the design of modules as theories (#669, stage 3); nothing translates theorems along implementations yet, and its expectations are checked by testing"

@@ -238,7 +238,7 @@ module.interface -- a definition: which theory an interface, today a trait, is
 module.generic-function -- a definition: which theory a generic function is
 module.procedures -- what a module's items may be; the front ends' reading, from stage 3
 module.implementation -- a definition of implementations as morphisms; stage 3's translation formalizes it
-module.implementation.instantiate -- one operation for every construct: an invariant of stage 3's implementation (`Theory.instantiate`), not a finite decision
+module.implementation.instantiate -- one operation for every construct: an invariant of stage 3's single translation, not a finite decision
 module.implementation.partial -- a definition of total and partial implementations
 module.parametricity -- an invariant of the language, open (`module.meta.parametricity`)
 module.implementation.liskov -- the refinement check of each member, which Refinement and #685 formalize
@@ -251,7 +251,6 @@ module.place.error -- the codes of the errors of the new forms are assigned at s
 module.abstract -- a definition of the abstract items, which the front ends extract
 module.order.items -- a definition of the order of items
 module.rules.kinds -- which sentences the binding rule binds; stage 3's reading of the items
-module.rules.laws -- today's quantified reading of a law ([Traits](Traits.md#laws)), kept as it is
 module.instance -- a definition of an instance
 module.instance.matching -- matching at the query's terms: no requirement computes an instance yet (stage 3)
 module.instance.ground -- which terms of a query are ground: no requirement computes an instance yet (stage 3)
