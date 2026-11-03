@@ -63,9 +63,11 @@ tested lang::recursive_facts: "test/ui/checks/recursion_hoare.fren",
   "test/ui/checks/recursion_reflection.fren", "test/ui/checks/recursion_reflected_contracts.fren",
   "test/ui/checks/recursion_independent.fren", "test/ui/checks/recursion_contract_queue.fren",
   "test/ui/checks/recursion_ih_name.fren", "test/ui/checks/recursion_quantifiers.fren",
-  "test/ui/checks/recursion_dependency.fren", "src/FrenTest/RecursiveDependency.lean"
+  "test/ui/checks/recursion_dependency.fren", "src/FrenTest/RecursiveDependency.lean",
+  "test/ui/checks/recursion_subset_result.fren"
 tested lang::recursive_post_result: "test/ui/checks/recursion_hoare.fren"
-tested lang::recursive_counterexample: "test/ui/checks/recursion_hoare.fren"
+tested lang::recursive_counterexample: "test/ui/checks/recursion_hoare.fren", "test/ui/checks/recursion_subset_result.fren"
+tested lang::counterexample_confirmed: "test/ui/checks/recursion_subset_result.fren"
 tested lang::recursive_match: "test/ui/lang/structural_recursion_static.fren", "test/ui/lang/recursion_guarded.fren", "test/cli/types/f0449_literal.fren"
 tested lang::argument: "test/ui/lang/defined_functions.fren", "test/ui/lang/functions_static.fren"
 tested lang::cardinality_args: "test/ui/lang/cardinality_static.fren", "test/cli/types/f0304_cardinality.fren",

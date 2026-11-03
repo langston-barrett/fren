@@ -1,0 +1,22 @@
+-- With `FREN_ASK_AGAIN` set, both front ends take the first model of every
+-- query as contradicted, and ask every query that has a model again
+-- (`Reqs/Models#testing`): so asking again is tested whatever models the
+-- solver gives, here of queries that apply a recursive function, whose
+-- real definition is evaluated at the model kept, the second
+-- (`Fren.Core.askedAgainThen`). Where that evaluation does not confirm the
+-- second model, the check is inconclusive in both front ends, as `e` and
+-- `g` are, not an internal error about the first.
+
+pub enum L { Nil, Cons(Bool, L) }
+
+pub fn len(l: L): Int := match l {
+    L::Nil => 0,
+    L::Cons(_, r) => 1 + len(r),
+}
+
+proc p(l: L, n: Int) {
+    assume small: n < 0
+    expect e: len(l) != n  --~ warning: could not decide whether `p::e` holds
+    expect f: len(l) > 2  --~ error: expectation `p::f` does not hold
+    cover g: len(l) = 3  --~ warning: could not decide whether `p::g` can be met
+}

@@ -857,13 +857,13 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
     let some ec := sp.counterpart? c global | found := found.push s!"no counterpart of {c.path}"; continue
     let log ← IO.mkRef #[]
     let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } { timeoutSecs := timeout } none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
-      st.usesProjection (funs := st.appFuns)
+      st.usesProjection (funs := st.appFuns) (recursiveSyms := st.recursiveSyms)
     let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
     -- Every clash of a conflict, where it depends on no interpretation
     -- (`Fren.Core.Comp.realizableInterpreted`), as `fren check` decides.
     let interprets (f : String) : Bool := prelude.interprets (quotedSymbols f)
     let core := { core with typesInterpreted := c.vars.any (interprets ·.ty.sort) }
-    let results ← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k)) core (Fren.Core.kindsFor global)
+    let results ← Fren.Core.checkComp (fun k => confirming sp sy ec k log (bk k) (recursiveIn prelude st.recursiveSyms)) core (Fren.Core.kindsFor global)
       (examples := none) (interprets := (interprets ·.1))
     -- A definedness result, by its index's position, and a table's, by
     -- where it is reported and its rows, as brute force keys them.

@@ -186,7 +186,10 @@ application, including applications on constant arguments. The
 invariants of its parameters' subset types and its preconditions are
 obligations, just as for an
 uninterpreted function with a contract. Its postconditions are ground
-facts, under the application's guards and preconditions. No recursive
+facts, under the application's guards and preconditions, and so is its
+result type's constraint, as for an uninterpreted function: that a `Nat`
+is at least 0, and the invariants of a subset type, or of the subset type
+that an alias names. No recursive
 SMT definition, quantified recursion axiom, or evaluation on constant
 arguments is used.
 
@@ -214,17 +217,52 @@ over elements](ElementQuantifiers.md#expansion) are expanded where it is
 applied, as in a spec without recursion. This is the CLI’s finite
 collection policy, shared by hosted checks and recursive contract proofs.
 Facts are conditional on the application's own guards, and postconditions
-also on its preconditions.
+also on its preconditions. The result type's constraint, where the
+function's declared result type has one, comes with the postconditions,
+wherever they do: so in the function's own body too, where it is an
+induction hypothesis at each recursive application, beside the
+postconditions ([Contracts](#contracts)). For example, of `keep` below,
+the obligation that the body is a `Pos` follows, at `keep(p, rest)`, from
+that application's being one:
+
+```text
+pub type Pos = n: Int where positive: n >= 1
+
+pub fn keep(p: Pos, l: L): Pos := match l {
+    L::Nil => p,
+    L::Cons(_, rest) => keep(p, rest),
+}
+```
+
+An application's `bound?` is decided with its postconditions, where the
+work queue finds it: both front ends decide the result type's fact from
+`constrained_result?` alone, for the applications that bring
+postconditions.
 
 ```fren
 pub enum RecApplication { Written, Reflected }
-pub struct RecFacts { posts?, equation? }
+pub struct RecFacts { result_type?, posts?, equation? }
 
-pub proc recursive_facts(origin: RecApplication, bound?): (det facts: RecFacts) {
+pub proc recursive_facts(
+    origin: RecApplication,
+    bound?,                  -- the application mentions a quantifier-bound variable
+    constrained_result?,     -- the function's declared result type has a constraint
+): (det facts: RecFacts) {
+    ensure result_type: facts.result_type? iff constrained_result? and not bound?
     ensure posts: facts.posts? iff not bound?
     ensure equation: facts.equation? iff not bound? and origin = RecApplication::Written
+
+    -- The result type is a hypothesis wherever the postconditions are.
+    expect with_posts: when constrained_result?, facts.result_type? = facts.posts?
 }
 ```
+
+Both front ends decide whether a function's applications bring its result
+type's fact with `Fren.Core.recursiveResultFact`, from its declared result
+type alone, and which applications bring facts with
+`Fren.Core.recursiveFacts`: the result type's fact rides on the
+postconditions' gate, as `with_posts` states, so `result_type?` is the
+conjunction of the two.
 
 The work queue finds an application once on each path to it: within the
 formulas of the query, and through the facts and equations that bring it.
@@ -276,9 +314,10 @@ Inconclusive with the same `F0450` diagnostic.
 
 A recursive function's contract is checked once against its body by
 Hoare's rule. At actual recursive applications in that body all of the
-function's postconditions may be assumed simultaneously, guarded by the
-application's conditions. No hypotheses are added at arbitrary payloads:
-only the applications actually made bring facts. Structural recursion
+function's postconditions, and its result type's constraint, may be
+assumed simultaneously, guarded by the application's conditions. No
+hypotheses are added at arbitrary payloads: only the applications
+actually made bring facts. Structural recursion
 makes the induction sound, because each such application decreases.
 The other arguments are those at the application, not necessarily the
 original parameters. The invariants of the parameters' subset types and
@@ -363,9 +402,9 @@ sorts and at each instance:
   of a defined generic function is, as `|::len<Int>|`, and the Lean-hosted
   front end gives each its own local, from the solver form, which takes the
   type arguments and their `Inhabited` instances first. Each of its
-  applications brings its postconditions, at the instance, and, if written,
-  one step of the instance's body, as above ([Solver
-  encoding](#solver-encoding)).
+  applications brings its postconditions and its declared result type's
+  constraint, at the instance, and, if written, one step of the instance's
+  body, as above ([Solver encoding](#solver-encoding)).
 - Evaluation, testing and enumeration apply the instance's definition.
 - A counterexample of the check at the sorts is confirmed by evaluation as
   any other is ([Counterexamples and completeness](#counterexamples-and-completeness)),
@@ -376,9 +415,15 @@ sorts and at each instance:
   values of a type parameter's sort, as `t = Term::Var(V#0)`: both front
   ends read them, and once evaluation confirms the counterexample the check
   fails, with that counterexample.
-- An instance's result type brings no fact of its own: the result's
-  declared type is the type parameter's, which has none, so a subset type's
-  invariant reaches an instance's result only through its postconditions.
+- Where the declared result type is a type parameter, an instance's result
+  brings no fact of its type argument's, not even a data type's whose
+  payload has a subset type: the type parameter has none, so a subset
+  type's invariant reaches such an instance's result only through its
+  postconditions. Both front ends decide from the declared result type. A
+  declared result type that is not a type parameter brings its constraint
+  as for any recursion, as `keep_generic<T>(p: Pos, x: T, l: L): Pos` does
+  in `test/ui/checks/recursion_subset_result.fren`, beside `rep<T>(x: T, l:
+  L): T` at an enumeration with a `Pos` payload, which brings none.
   With `fn rep<T>(n: N, x: T): T` and `d: Pos`, `rep(n, d) >= 1` holds but is
   Inconclusive (`F0450`). That is sound but incomplete, and particular to a
   recursion: a generic function that is not recursive is unfolded, so its
@@ -429,8 +474,9 @@ big: one(l) > 100`, which `l = [200]` meets, is Inconclusive too. Both
 front ends take the formulas they reflect from
 `Fren.Core.recursionFormulas`, from the same three kinds, and decide with
 `Fren.Core.recursiveCounterexample`, where `applies_recursive?` is whether
-the query's own hypotheses or goal apply a recursive function, and
-`facts_recursive?` whether a formula of `facts.image(brought)` does.
+the query's own hypotheses or goal apply a recursive function, as the
+solver has them, and `facts_recursive?` whether a formula of
+`facts.image(brought)` does.
 
 A model is not yet confirmed against the facts of the query's variables'
 types, though they are reflected. That is a known gap, not the rule meant:
@@ -448,6 +494,19 @@ which is part of the call's hypothesis there, and the Lean front end does
 not: there, too, the front ends agree only where the solver's model is a
 real one (#634).
 
+`lang::counterexample_confirmed` states the same over the query's own
+formulas, each as the solver has it: whether it applies a recursive
+function, once the definitions it applies are unfolded, and what
+evaluation of the real definitions gives it at the model. A formula
+applies a recursive function where the solver's formula does, whether or
+not evaluation can read it: the goal of a subset type's obligation, which
+evaluation has no formula of, applies one where the value checked against
+the subset type does, as `keep(p, rest)` above. So a model that evaluation
+refutes, or cannot evaluate, is never a failure where a formula applies a
+recursive function; `counterexample_confirmed_refines` confirms that this
+refines `recursive_counterexample`. Both front ends decide with
+`Fren.Core.counterexampleReported`.
+
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub proc recursion_formulas(
@@ -463,6 +522,60 @@ pub proc recursive_counterexample(applies_recursive?, evaluation_confirms?, fact
     (det report_counterexample?) {
         ensure rule: report_counterexample? iff (not facts_recursive? and (not applies_recursive? or evaluation_confirms?))
     }
+
+-- What evaluation of the real definitions gives a formula at the solver's
+-- model: true, false, or nothing, where it cannot evaluate it.
+pub enum Evaluated { Holds, Fails, Unevaluated }
+
+-- A formula of a query, as the solver has it: whether it applies a
+-- recursive function, and what evaluation gives it at the model.
+pub struct ModelFormula { recursive?, value: Evaluated }
+
+-- Whether a formula of `hyps`, or `goal`, applies a recursive function.
+set_option fren.lint.undecidable "allow" in
+pub fn applies_recursive?(hyps: Seq<ModelFormula>, goal: ModelFormula) :=
+    goal.recursive? or (exists (k: Int), 0 <= k < hyps.len and hyps[k].recursive?)
+
+-- Whether evaluation confirms the model: every hypothesis holds and the
+-- goal fails.
+set_option fren.lint.undecidable "allow" in
+pub fn evaluation_confirms?(hyps: Seq<ModelFormula>, goal: ModelFormula) :=
+    goal.value = Evaluated::Fails and (forall (k: Int), when 0 <= k < hyps.len, hyps[k].value = Evaluated::Holds)
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "solver" in
+pub proc counterexample_confirmed(
+    hyps: Seq<ModelFormula>,     -- the query's own hypotheses
+    goal: ModelFormula,          -- its goal, which a counterexample makes false
+    facts_recursive?,            -- a fact of the applications that the query has applies a recursive function
+): (det report_counterexample?) {
+    use self::Evaluated::{Fails, Holds, Unevaluated}
+    ensure rule: report_counterexample? iff (not facts_recursive?
+        and (not applies_recursive?(hyps, goal) or evaluation_confirms?(hyps, goal)))
+
+    -- A model that evaluation refutes is never a failure.
+    expect refuted: when applies_recursive?(hyps, goal)
+        and (goal.value = Holds or (exists (k: Int), 0 <= k < hyps.len and hyps[k].value = Fails)),
+        not report_counterexample?
+    -- Nor one that it cannot evaluate.
+    expect unevaluated: when goal.recursive? and goal.value = Unevaluated, not report_counterexample?
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "solver" in
+expect counterexample_confirmed_refines(
+    hyps: Seq<lang::ModelFormula>,
+    goal: lang::ModelFormula,
+    facts_recursive?,
+) {
+    use lang
+    call concrete := counterexample_confirmed(hyps, goal, facts_recursive?)
+    refines concrete recursive_counterexample(
+        lang::applies_recursive?(hyps, goal),
+        lang::evaluation_confirms?(hyps, goal),
+        facts_recursive?,
+    )
+}
 ```
 
 Checks are complete modulo recursive functions being opaque. A fact that
@@ -481,4 +594,6 @@ functions to quantifier-free queries.
 #fren_check recursive_post_result
 #fren_check recursion_formulas
 #fren_check recursive_counterexample
+#fren_check counterexample_confirmed
+#fren_check counterexample_confirmed_refines
 ```
