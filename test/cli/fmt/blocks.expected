@@ -29,17 +29,16 @@
 -    ensure r: o? iff and { m = Mode::Heat, P { x := 1 } != P { x := 2 } }
 -}
 +proc nested(m: Mode): (o?) { ensure r: o? iff and { m = Mode::Heat, P { x := 1 } != P { x := 2 } } }
-@@ -64 +59,8 @@
+@@ -64 +59,7 @@
 -    ensure r: on? iff and { m = Mode::Heat, m = Mode::Cool, m = Mode::Heat, m = Mode::Cool, m = Mode::Heat }
-+    ensure r: on? iff
-+        and {
-+            m = Mode::Heat,
-+            m = Mode::Cool,
-+            m = Mode::Heat,
-+            m = Mode::Cool,
-+            m = Mode::Heat,
-+        }
-@@ -67,2 +69,9 @@
++    ensure r: on? iff and {
++        m = Mode::Heat,
++        m = Mode::Cool,
++        m = Mode::Heat,
++        m = Mode::Cool,
++        m = Mode::Heat,
++    }
+@@ -67,2 +68,9 @@
 -pub fn single(x: Int): (r: Int) {
 -    out r := x + 1
 +pub fn single(x: Int): (r: Int) { out r := x + 1 }
@@ -51,7 +50,7 @@
 +pub proc e(m: Mode): (on?) {
 +    ensure r: on? iff m = Mode::Heat
 +    set_option fren.evidence "random" in expect s: on? or m = Mode::Cool
-@@ -71,2 +80,5 @@
+@@ -71,2 +79,5 @@
 -expect single_global(m: Mode) {
 -    expect a: m is Mode::Heat | Mode::Cool
 +pub proc f(n: Int): (y: Int) {
@@ -59,86 +58,86 @@
 +        0 => 1,
 +        _ => 0,
 +    }
-@@ -75,2 +87,3 @@
+@@ -75,2 +86,3 @@
 -pub proc only_use(m: Mode): (on?) {
 -    use self::Mode::Heat
 +pub fn g(x: Int): (r: Int) {
 +    assume p: x > 0
 +    out r := x + 1
-@@ -79,6 +91,0 @@
+@@ -79,6 +90,0 @@
 -pub proc e(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat  set_option fren.evidence "random" in expect s: on? or m = Mode::Cool }
 -
 -pub proc f(n: Int): (y: Int) { ensure r: y = match n { 0 => 1, _ => 0 } }
 -
 -pub fn g(x: Int): (r: Int) { assume p: x > 0  out r := x + 1 }
 -
-@@ -89 +96,2 @@
+@@ -89 +95,2 @@
 -pub proc j(x: Int): (y: Int) { ensure a: y = x
 +pub proc j(x: Int): (y: Int) {
 +    ensure a: y = x
-@@ -92 +100,2 @@
+@@ -92 +99,2 @@
 -    ensure b: y >= x }
 +    ensure b: y >= x
 +}
-@@ -94 +103,4 @@
+@@ -94 +102,4 @@
 -pub proc k(m: Mode): (on?) { use self::Mode::Heat use self::Mode::Cool ensure r: on? iff m = Heat or m = Cool }
 +pub proc k(m: Mode): (on?) {
 +    use self::Mode::{Cool, Heat}
 +    ensure r: on? iff m = Heat or m = Cool
 +}
-@@ -100 +112,3 @@
+@@ -100 +111,3 @@
 -) { ensure r: on? iff m = Mode::Heat }
 +) {
 +    ensure r: on? iff m = Mode::Heat
 +}
-@@ -103 +117,3 @@
+@@ -103 +116,3 @@
 -    : (on?) { ensure r: on? iff m = Mode::Heat }
 +    : (on?) {
 +        ensure r: on? iff m = Mode::Heat
 +    }
-@@ -105,3 +121 @@
+@@ -105,3 +120 @@
 -set_option fren.evidence "enumerated" in proc w(m: Mode): (on?) {
 -    ensure r: on? iff m = Mode::Heat
 -}
 +set_option fren.evidence "enumerated" in proc w(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -110,3 +124 @@
+@@ -110,3 +123 @@
 -proc after_option(m: Mode): (on?) {
 -    ensure r: on? iff m = Mode::Heat
 -}
 +proc after_option(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -116,4 +128 @@
+@@ -116,4 +127 @@
 -pub proc brace_line(m: Mode): (on?)
 -{
 -    ensure r: on? iff m = Mode::Heat
 -}
 +pub proc brace_line(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -121,2 +130 @@
+@@ -121,2 +129 @@
 -pub proc brace_line_two(m: Mode): (on?, off?)
 -{
 +pub proc brace_line_two(m: Mode): (on?, off?) {
-@@ -127,2 +135 @@
+@@ -127,2 +134 @@
 -pub fn brace_line_function(x: Int): (r: Int)
 -{ out r := x + 1 }
 +pub fn brace_line_function(x: Int): (r: Int) { out r := x + 1 }
-@@ -130,4 +137 @@
+@@ -130,4 +136 @@
 -expect brace_line_expectation(m: Mode)
 -{
 -    expect a: m is Mode::Heat | Mode::Cool
 -}
 +expect brace_line_expectation(m: Mode) { expect a: m is Mode::Heat | Mode::Cool }
-@@ -135,2 +139 @@
+@@ -135,2 +138 @@
 -pub proc brace_line_empty()
 -{}
 +pub proc brace_line_empty() {}
-@@ -144 +147 @@
+@@ -144 +146 @@
 -pub proc brace_after_blank(m: Mode): (on?)
 +pub proc brace_after_blank(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat }
-@@ -146,4 +148,0 @@
+@@ -146,4 +147,0 @@
 -{
 -    ensure r: on? iff m = Mode::Heat
 -}
 -
-@@ -153,2 +152 @@
+@@ -153,2 +151 @@
 -/- the signature -/
 -{
 +/- the signature -/ {

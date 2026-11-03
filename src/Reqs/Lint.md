@@ -415,8 +415,9 @@ pub proc history(
     -- The settings after the first `forbid`.
     let rest: Seq<Level> := settings.slice(settings.index_of([Forbid], 0) + 1, settings.len)
 
-    ensure rule: accepted? iff not (Forbid in settings
-        and (Allow in rest or Expect in rest or Warn in rest or Deny in rest))
+    ensure rule: accepted? iff
+        not (Forbid in settings
+            and (Allow in rest or Expect in rest or Warn in rest or Deny in rest))
 
     expect forbid_last: when settings = [Warn, Forbid], accepted?
     expect no_unforbid: when settings = [Forbid, Allow], not accepted?

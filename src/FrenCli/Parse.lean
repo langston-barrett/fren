@@ -624,7 +624,8 @@ structure Bracketed where
 
 /-- The right operand of a chain's last operator, for whether it hugs the
 chain, breaking in place (`fmt::ChainOperand`): wholly a record literal or
-update, a `match` or a table, whose first line ends with its brace; wholly a
+update, a `match`, a table or a Boolean block, whose first line ends with its
+brace; wholly a
 call, a method call or a sequence or set literal; or another expression. -/
 inductive ChainOperand where
   | brace
@@ -895,7 +896,7 @@ def chainOf (first : Nat) (ops : Array Nat) (r : Expr) : P Unit := do
     let t := s.toks[first + d]!
     t.span.stop - t.span.start + 1).sum
   let operand : ChainOperand := if !whole then .other
-    else if r matches .record .. | .update .. | .match .. | .matches .. | .table .. then .brace
+    else if r matches .record .. | .update .. | .match .. | .matches .. | .table .. | .block .. then .brace
     else if r matches .app .. | .method .. | .seq .. | .set .. then .bracket
     else .other
   let name := if ops.size == 1 && ops[0]! == first + 1 && (s.toks[first]!.tok matches .ident _)

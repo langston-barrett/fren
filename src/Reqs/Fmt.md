@@ -1250,7 +1250,8 @@ A chain breaks where it does not fit on its line:
 
 A last operand hugs a chain, breaking in place rather than the chain,
 where its first line would end with the brace of a record literal or
-update, a `match` or a table, and the line fits up to that brace, as
+update, a `match`, a table or a Boolean block, and the line fits up to that
+brace, as
 rustfmt keeps a right operand whose first line ends with `{` on its
 operator's line; or where the chain has one operator, and its right
 operand is wholly a call, a method call or a sequence or set literal, and
@@ -1280,7 +1281,8 @@ author wrote them, as principle 6 has it, since no rule decides them well
 (`fmt::chain_kept`). It is one followed on its line, up to where a line
 may end, by more than closing brackets and commas, as a guard's condition
 before its body or an `if`'s condition before `then`; one after more than 4
-columns on its line, each token taking its width and a space, as the body
+columns on its line, each token taking its width and a space but a prefix
+`not`, which takes none, as the body
 of `when c, a = b` or the `else` branch of `if c then a else b + d`; and any
 chain in one that keeps its line breaks. This is decided from the file's
 structure, whatever its layout. What follows a chain counts up to where a
@@ -1288,10 +1290,10 @@ line may end: a comment, a line break that formatting keeps, or a gap whose
 line break a list, a block, a right side or a chain that does not keep its
 line breaks decides. What comes before it counts back to such a place, or
 to an operator of a chain that does not keep its line breaks, outside
-brackets that close before it, so that `ensure r:`, `:=` and `and (` leave
-a chain its line's expression. So the guard's condition here keeps its
-line breaks, and the chain after its comma, which starts its line, is laid
-out:
+brackets that close before it, so that `ensure r:`, `:=`, `and (` and
+`and not (` leave a chain its line's expression. So the guard's condition
+here keeps its line breaks, and the chain after its comma, which starts its
+line, is laid out:
 
 ```text
 expect min: when eval(i, env, r) = Outcome::Defined(Value::Integer(m))
@@ -1330,7 +1332,7 @@ pub proc chain_kept(
 
 -- The last operand of a chain.
 pub enum LastOperand {
-    Brace,                   -- its first line ends with the brace of a record, a `match` or a table
+    Brace,                   -- its first line ends with the brace of a record, `match`, table or Boolean block
     Bracket,                 -- it is wholly a call, a method call, or a sequence or set literal
     Other,                   -- any other expression
 }
@@ -1516,8 +1518,9 @@ pub proc space(before: Kind, after: Kind): (det space?) {
     ensure negations: when before = Negation and after = Negation, space?
     ensure tight: unless before = Comment or after = Comment or (before = Brace and after = CloseBrace)
         or (before = Negation and after = Negation),
-        space? iff not (before is Open | Call | Group | Path | Negation | RangeLeading
-        or after is Close | CloseGroup | Path | Comma | Colon | Group | Call | RangeTrailing)
+        space? iff
+            not (before is Open | Call | Group | Path | Negation | RangeLeading
+                or after is Close | CloseGroup | Path | Comma | Colon | Group | Call | RangeTrailing)
 
     expect binary_operators: when before = Kind::Other and after = Kind::Other, space?
     expect braces_spaced: when before = Brace and after = Kind::Other, space?

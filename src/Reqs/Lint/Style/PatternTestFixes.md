@@ -103,7 +103,8 @@ pub proc manual_pattern_test_refines(
         and run_fires?(operands, conj?, chain, run),
         forall (i j k l: Int), when 0 <= i < tests.len and i <= j < tests.len
         and 0 <= k < fix_alternatives(tests[i]).len and 0 <= l < fix_alternatives(tests[j]).len and (i < j or k < l),
-        not (lang::matches_value?(fix_alternatives(tests[i])[k], w) and lang::matches_value?(fix_alternatives(tests[j])[l], w))
+        not (lang::matches_value?(fix_alternatives(tests[i])[k], w)
+            and lang::matches_value?(fix_alternatives(tests[j])[l], w))
 }
 ```
 

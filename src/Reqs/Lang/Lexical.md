@@ -122,7 +122,8 @@ pub proc identifier_end(
     ensure maximal_munch: ends? iff
         (lexeme.ends_with?("!")
             or (lexeme.ends_with?("?") and not remaining.starts_with?("!"))
-            or not (remaining.matches?(r"[A-Za-z0-9_'?!].*") or remaining.matches?(r"[.][A-Za-z_].*")))
+            or not (remaining.matches?(r"[A-Za-z0-9_'?!].*")
+                or remaining.matches?(r"[.][A-Za-z_].*")))
 
     expect space_ends: when remaining.starts_with?(" "), ends?
     expect component: when lexeme = "w" and remaining = ".x", not ends?

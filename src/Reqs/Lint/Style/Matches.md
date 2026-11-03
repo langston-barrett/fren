@@ -717,7 +717,8 @@ pub fn fires_on?(arms: Seq<IfArm>, d: Body) :=
 -- with the body `d`.
 pub fn appends?(arms: Seq<IfArm>, d: Body) :=
     not (arms != []
-        and arms[arms.len - 1].pat is Pat::Wild | Pat::Binder(_, _) and arms[arms.len - 1].body = IfBody::Plain(d))
+        and arms[arms.len - 1].pat is Pat::Wild | Pat::Binder(_, _)
+        and arms[arms.len - 1].body = IfBody::Plain(d))
 
 pub proc match_arm_if_else(
     arms: Seq<IfArm>,        -- the arms of the `match`, which have no guards

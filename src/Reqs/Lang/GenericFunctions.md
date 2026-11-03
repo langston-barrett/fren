@@ -190,12 +190,21 @@ expect signature_detail(params: Nat, declared: Seq<lang::Ty>, result: lang::Ty) 
     expect rule:
         (concrete.accepted?)
             iff ((params) = 0
-                or not (((params) > 0 and not (lang::ty_mentions?((result), 0) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 0))
-                    or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 0)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 0))))
-                    or ((params) > 1 and not (lang::ty_mentions?((result), 1) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 1))
-                    or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 1)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 1))))
-                    or ((params) > 2 and not (lang::ty_mentions?((result), 2) or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 2))
-                    or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 2)) or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 2))))))
+                or not (((params) > 0
+                        and not (lang::ty_mentions?((result), 0)
+                            or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 0))
+                            or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 0))
+                            or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 0))))
+                    or ((params) > 1
+                        and not (lang::ty_mentions?((result), 1)
+                            or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 1))
+                            or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 1))
+                            or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 1))))
+                    or ((params) > 2
+                        and not (lang::ty_mentions?((result), 2)
+                            or ((declared).len > 0 and lang::ty_mentions?((declared)[0], 2))
+                            or ((declared).len > 1 and lang::ty_mentions?((declared)[1], 2))
+                            or ((declared).len > 2 and lang::ty_mentions?((declared)[2], 2))))))
 }
 ```
 

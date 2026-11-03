@@ -1701,7 +1701,8 @@ pub proc table_arms(
     -- without a guard.
     ensure rule: rejected? iff
         (0 <= i < overlaps.len and overlaps[i] = Overlapping)
-            and not ((0 <= i < arms.len and arms[i] = Guarded) or (0 <= j < arms.len and arms[j] = Guarded))
+            and not ((0 <= i < arms.len and arms[i] = Guarded)
+                or (0 <= j < arms.len and arms[j] = Guarded))
             and not (0 <= j and j = arms.len - 1 and arms[j] = Wildcard)
     ensure check: asked? iff
         (0 <= i < overlaps.len and overlaps[i] = Overlapping)
@@ -1727,14 +1728,19 @@ expect table_arms_refines(
     expect static:
         (concrete.rejected?)
             iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping)
-                and not ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded) or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded))
-                and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
+                and not ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded)
+                    or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded))
+                and not (0 <= (j)
+                    and (j) = (arms).len - 1
+                    and (arms)[(j)] = lang::TableArm::Wildcard))
     expect checked:
         (concrete.asked?)
             iff ((0 <= (i) < (overlaps).len and (overlaps)[(i)] = lang::Overlap::Overlapping)
                 and ((0 <= (i) < (arms).len and (arms)[(i)] = lang::TableArm::Guarded)
                     or (0 <= (j) < (arms).len and (arms)[(j)] = lang::TableArm::Guarded))
-                and not (0 <= (j) and (j) = (arms).len - 1 and (arms)[(j)] = lang::TableArm::Wildcard))
+                and not (0 <= (j)
+                    and (j) = (arms).len - 1
+                    and (arms)[(j)] = lang::TableArm::Wildcard))
 }
 ```
 

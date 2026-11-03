@@ -368,7 +368,7 @@ def chainKept (follows : List Follower) (before : Nat) (holderKept : Bool) : Boo
 /-- Whether the last operand of a chain of `n` operators hugs it, breaking
 in place rather than the chain (`fmt::hugs?`), where the line fits up to its
 opening bracket (`headEnd`): its first line ends with the brace of a
-record, a `match` or a table, as rustfmt keeps a right operand whose first
+record, a `match`, a table or a Boolean block, as rustfmt keeps a right operand whose first
 line ends with `{` on its operator's line; or the chain has one operator and
 the operand is wholly a bracketed list, after at most 4 columns (`before`),
 or that cannot be on one line (`listLast`), or that would not fit on a line
@@ -705,7 +705,9 @@ def keptChains (toks : Array Token) (comments : Array Span) (lay : Layout) : Arr
       if depth == 0 && (ends k || (after[k]?.any fun d => !kept[d]!)) then break
       if toks[k - 1]!.tok matches .kw ")" | .kw "]" | .kw "}" then depth := depth + 1
       else if closer.contains (k - 1) && depth > 0 then depth := depth - 1
-      columns := columns + width (k - 1) + 1
+      -- A prefix `not` takes no columns, so that `not (` leaves a chain
+      -- its line's expression as `and (` does.
+      if !(toks[k - 1]!.tok matches .ident "not") then columns := columns + width (k - 1) + 1
       k := k - 1
     -- The kept chains open here: chains nest, so the innermost that has
     -- not ended holds this one.
