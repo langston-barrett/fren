@@ -99,6 +99,10 @@ private def script (lines : List String) : String := "\n".intercalate lines ++ "
 -- leave out, and the sentences `true` and `(not false)` go.
 #guard canonical (script ["(declare-const n Int)", "(assert (> n 0))", "(assert (not false))"]) true ==
   canonical (script ["(declare-const n Int)", "(assert (> n 0))"]) true
+-- A goal that is a negation stays the goal, though its double negation
+-- is written as what it negates.
+#guard (canonical (script ["(declare-const n Int)", "(assert (> n 0))", "(assert (not (not (> n 1))))"]) false).goal ==
+  "(not (> n 1))"
 -- A constant that nothing mentions free goes, even if a binder names it.
 #guard (canonical (script ["(declare-const m Int)", "(declare-const n Int)",
     "(assert (not (exists ((m Int)) (= m n))))"]) false).signature == #["(declare-const n Int)"]

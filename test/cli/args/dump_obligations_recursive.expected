@@ -1,7 +1,7 @@
 ; obligations
 (obligation
   ; at 14:12
-  (item )
+  (item depth)
   (check postcondition depth.nonneg)
   (evidence solver)
   (signature

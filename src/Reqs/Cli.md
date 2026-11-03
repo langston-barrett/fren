@@ -690,7 +690,8 @@ query that lean-smt is given, in which a Lean term that is not Fren's is a
 symbol of its own.
 
 `cli::canonical_sentences` states the order: a context's sentences, each
-by the place of its text in the order of texts, as a front end gives them
+by the place of its text in the order of texts, `String`'s, which is
+total, as a front end gives them
 and as the dump prints them, are printed in ascending order, each once,
 and are exactly those that the front end gives. Its `impl` is proved of
 `Fren.Core.sortedOnce`, which prints them, over every sequence:

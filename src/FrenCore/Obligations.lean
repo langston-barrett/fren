@@ -250,6 +250,13 @@ partial def Sx.conjuncts : Sx → Array Sx
   | .list xs => if xs[0]? == some (.atom "and") then (xs.extract 1).flatMap Sx.conjuncts else #[.list xs]
   | e => #[e]
 
+/-- The canonical name of a newtype's constructor and of its field, which
+`fren check` erases (`Reqs/Lang/Items#newtypes`): `Sx.normalize` writes
+an application of either as its argument, and `canonical` leaves out a
+declaration that mentions it. A front end that does not erase newtypes
+maps them to it, and the newtype itself to its underlying type's sort. -/
+def erasedSymbol : String := "#erased"
+
 /-- The operators whose nested applications `Sx.normalize` flattens. -/
 def associative : List String := ["and", "or", "+", "*", "seq.++", "str.++"]
 
@@ -271,6 +278,7 @@ partial def Sx.normalize (symbols : Std.HashMap String String) : Sx → Sx
   | .atom a => .atom (withoutDagger (unguillemet (symbols.getD a a)))
   | .list xs =>
     let xs := xs.map (Sx.normalize symbols)
+    if xs.size == 2 && xs[0]? == some (.atom erasedSymbol) then xs[1]! else
     match xs with
     | #[.atom "declare-datatype", n, body] =>
       let arity : Nat := match body with
@@ -386,9 +394,11 @@ logic, options and solver commands; with each non-recursive definition
 gives the solver a function's definition and the other its body; with its
 declarations and its sentences each once and sorted, since neither their
 order nor a repeated one changes the query; and with its goal apart. The
-goal is the last assertion, `(not G)`, of a question that is not one of
-`consistency`, whose goal, `false`, a front end may leave out, as it
-leaves out every sentence `true` or `(not false)`. -/
+goal of a question that is not one of `consistency` is the negation of its
+last assertion, which is the goal's negation, `(not G)`; a question of
+`consistency` has the goal `false`, which a front end may leave out, as it
+leaves out every sentence `true` or `(not false)`. Texts are in `String`'s
+order (`textLe`), which is total. -/
 def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap String String := {}) : QueryContext := Id.run do
   let mut defs : Std.HashMap String (Array String × Sx) := {}
   let mut sig : Array Sx := #[]
@@ -406,10 +416,13 @@ def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap Stri
     | "assert", [_, t] => asserts := asserts.push ((t.unfold defs).normalize {})
     | _, _ => sig := sig.push ((cmd.unfold defs).normalize {})
   let trivial (t : Sx) := t == .atom "true" || t == .list #[.atom "not", .atom "false"]
+  -- The last assertion is the goal's negation, which `Sx.normalize` may
+  -- have rewritten, as `(not (not g))` to `g`: the goal is its negation,
+  -- written as both front ends could.
   let (goal, sentences) := if consistency then (Sx.atom "false", asserts) else
     match asserts.back? with
-    | some (.list #[.atom "not", g]) => (g, asserts.pop)
-    | _ => (.atom "false", asserts)
+    | some t => ((Sx.list #[.atom "not", t]).normalize {}, asserts.pop)
+    | none => (.atom "false", asserts)
   -- A conjunction is as many sentences, as lean-smt splits a hypothesis.
   let sentences := (sentences.flatMap Sx.conjuncts).filter (!trivial ·)
   -- A constant or function that nothing else mentions cannot change the
@@ -420,7 +433,7 @@ def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap Stri
     | .list xs => if xs[0]? == some (.atom "declare-const") || xs[0]? == some (.atom "declare-fun") then acc
       else d.freeAtoms #[] acc
     | _ => acc
-  let declared := sig.filter fun d => match d with
+  let declared := sig.filter fun d => !(d.freeAtoms.contains erasedSymbol) && match d with
     | .list xs => !(xs[0]? == some (.atom "declare-const") || xs[0]? == some (.atom "declare-fun"))
       || (match xs[1]? with | some (Sx.atom f) => used.contains f | _ => true)
     | _ => true
@@ -481,7 +494,10 @@ def obligationsOf (bk : CheckKind → Backend m F V) (script : CheckKind → Arr
   all.mapM fun q => do
     let r : CheckResult := { kind := q.kind, comp := c.path, prop? := q.prop?, verdict := .pass }
     let evidence := evidenceName (bySolver.any (·.same q)) (tested.covers r) (enumerated.covers r)
-    return q.obligation c.path (← script q.kind q.hyps q.goal) evidence (spanOf q.prop?) symbols
+    -- A function's body or contract is checked as an item without a path:
+    -- it is named after the function.
+    let item := if c.path.isAnonymous then c.fn?.getD c.path else c.path
+    return q.obligation item (← script q.kind q.hyps q.goal) evidence (spanOf q.prop?) symbols
 
 /-- The check that an obligation is of, as the dump names it:
 `(check KIND [PROP] [PART])`. -/

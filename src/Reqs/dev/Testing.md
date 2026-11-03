@@ -321,7 +321,12 @@ pub mod testing
   of range. It checks them with both front ends misreading models, as
   `FREN_MISREAD_MODELS` makes them ([Testing](../Models.md#testing)), so
   that what one front end knows and the other does not is a message that
-  differs: one refutes the model, and the other shows it. Only what may
+  differs: one refutes the model, and the other shows it. Each run also
+  compares the front ends' [obligations dumps](../Cli.md#obligations),
+  but for their metadata, and writes those of each spec where they differ
+  to `DIR` as `obligations-seed*`, counted in its summary, both all of them
+  and those that differ other than in the names of their constants: an
+  early signal, which fails nothing yet. Only what may
   legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
@@ -1090,9 +1095,9 @@ scripts/heavy --offline /tmp/fren-SHA/fren check FILE
 `fren` needs nothing else, for `fren check`, `quickcheck`, `mutate` and
 `fmt`. `fren_test --job JOB` reads the test files and specs of the
 checkout, and writes scratch files under its `.lake`. Its jobs `ui`,
-`uiMisread`, `uiAskAgain`, `smtAgreement` and `leanTokens` load the
-hosted front end, the `.olean` files of `Fren` and its dependencies; for
-them, run
+`uiMisread`, `uiAskAgain`, `smtAgreement`, `obligationsAgreement` and
+`leanTokens` load the hosted front end, the `.olean` files of `Fren` and
+its dependencies; for them, run
 `scripts/heavy lake build Fren` in the checkout, which compiles no C
 code and links nothing, and then `scripts/heavy --offline lake env
 /tmp/fren_test-SHA/fren_test --job ui FILE`. Run the binaries that CI

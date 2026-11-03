@@ -81,6 +81,16 @@ def dumpSymbols (st : State) : Std.HashMap String String := Id.run do
     out := out.insert (toString ctor) (Core.ItemSymbol.record r.path).text
     for (f, _) in r.fields do
       out := out.insert (toString (ctor ++ f)) (Core.ItemSymbol.field r.path f).text
+  -- A newtype, which `fren check` erases, as its underlying type, and its
+  -- constructor and its field, as lean-smt names its selector, erased
+  -- (`Core.erasedSymbol`).
+  for (_, n) in st.newtypes do
+    let under? := if n.under.isConstOf ``Int || n.under.isConstOf ``Nat then some "Int"
+      else if n.under.isConstOf ``Bool then some "Bool"
+      else if n.under.isConstOf ``String then some "String" else none
+    if let some u := under? then out := out.insert (toString n.decl) u
+    out := out.insert (toString n.ctor) Core.erasedSymbol
+    out := out.insert (toString (n.ctor ++ Name.mkSimple "0")) Core.erasedSymbol
   -- A recursive function's opaque symbol (`withRecursiveDefs`).
   for (_, d) in st.defined do
     if let (true, some c) := (d.recursive, d.solver?) then
@@ -89,19 +99,21 @@ def dumpSymbols (st : State) : Std.HashMap String String := Id.run do
 
 /-- What `act` logs is dropped, and the script of the query that lean-smt
 shows in it with `showQuery`, after its `query:`, is given, or the
-error that it threw, as a comment. -/
+error that it threw, as an `(error ...)` command. With `showQuery`,
+lean-smt returns once it has shown the query, before it gives it to the
+solver (`Smt.smt`), so nothing is asked. -/
 def queryShown (act : MetaM α) : MetaM (Option α × String) := do
   let saved := (← getThe Core.State).messages
   modifyThe Core.State fun s => { s with messages := {} }
-  let a? ← try some <$> act catch ex => do
-    modifyThe Core.State fun s => { s with messages := saved }
-    return (none, s!"(error \"{(← ex.toMessageData.toString).replace "\"" "\"\""}\")")
+  let (a?, failed?) ← try pure (some (← act), none) catch ex => do
+    pure (none, some s!"(error \"{(← ex.toMessageData.toString).replace "\"" "\"\""}\")")
   let logged := (← getThe Core.State).messages
   modifyThe Core.State fun s => { s with messages := saved }
+  -- The query that lean-smt showed, even if it threw after showing it.
   for m in logged.toList do
     let text ← m.data.toString
     if let some rest := (text.splitOn "query:\n")[1]? then return (a?, rest)
-  return (a?, "")
+  return (a?, failed?.getD "")
 
 /-- Values for `Bool` variables come back as `True`/`False`. -/
 def fromModel (ty : Expr) (val : Expr) : Expr :=
