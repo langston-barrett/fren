@@ -37,3 +37,4 @@ open Fren.Lang
 #fren_md "Lang/HigherOrder.md"
 #fren_md "Lang/Recursion.md"
 #fren_md "Lang/ScopeLaws.md"
+#fren_md "Lang/ModulesAndInterfaces.md"

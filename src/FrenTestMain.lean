@@ -1020,6 +1020,7 @@ def ownSpecFiles : Array String :=
     "Lang/HigherOrder",
     "Lang/Recursion",
     "Lang/ScopeLaws",
+    "Lang/ModulesAndInterfaces",
     "Lang/Modules",
     "Lang/Calls",
     "Check",

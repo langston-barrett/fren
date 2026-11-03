@@ -220,3 +220,57 @@ traits.law.mentions
 traits.law.names
 traits.law.meaning
 traits.law.interpretation
+
+# src/Reqs/Lang/ModulesAndInterfaces.md
+module.theory -- a definition, of the theory that stage 3's machinery builds from a module; no decision to formalize
+module.theory.plain -- a definition: which theory a plain module is
+module.interface -- a definition: which theory an interface, today a trait, is
+module.generic-function -- a definition: which theory a generic function is
+module.procedures -- what a module's items may be; the front ends' reading, from stage 3
+module.implementation -- a definition of implementations as morphisms; stage 3's translation formalizes it
+module.implementation.instantiate -- one operation for every construct: an invariant of stage 3's single translation, not a finite decision
+module.implementation.partial -- a definition of total and partial implementations
+module.parametricity -- an invariant of the language, open (`module.meta.parametricity`)
+module.implementation.liskov -- the refinement check of each member, which Refinement and #685 formalize
+module.view -- a definition; the keyword is not decided
+module.view.derived -- what a derived view owes is `lang::morphism_obligations`; proving the target's laws from the source's is a check of stage 3
+module.generic-type -- a definition: which theory a generic type is
+module.generic-type.sentences -- what a generic type's sentences are; the front ends' reading, with `module.meta.free`
+module.generic-type.instance -- the one translation, which stage 3 builds
+module.place.error -- the codes of the errors of the new forms are assigned at stage 3; `lang::sentence_place` decides acceptance
+module.abstract -- a definition of the abstract items, which the front ends extract
+module.role.domain -- partly formalized: `lang::sentence_role` gives the role; the restriction of the item's parameters is the meaning of a precondition
+module.role.theorem -- partly formalized: `lang::sentence_role` gives the role; in which interpretations a theorem holds is the checks' meaning
+module.role.axiom -- partly formalized: `lang::sentence_role` gives the role; that the interpretations are those meeting every axiom is the checks' meaning
+module.role.goal -- partly formalized: `lang::sentence_role` gives the role; that Fren proves it as a theorem is the checks'
+module.ensure.sugar -- partly formalized: `lang::sentence_role` gives the role; what the clause states of `f(x)` is `lang::ensure_clause`'s
+module.meaning -- partly formalized: `lang::global_checks` gives the checks of a global expectation; the meaning of other sentences is stated as the same formula
+module.meaning.procedures -- partly formalized: `lang::global_checks` gives the checks of a global expectation's calls; the constraint of an `assume` item's calls on its procedures is not modelled
+module.signature -- partly formalized: `lang::law_before_method` gives the binding verdict of a law written before its method; that an `assume`, `expect` or `law` item may mention a later item is the front ends' scope, from stage 3
+module.order.items -- a definition of the order of items
+module.binding.outside -- partly formalized: `lang::outside_variable` gives the verdict; that the variable stays quantified in each instance is how instances are built, from stage 3
+module.rules.kinds -- partly formalized: `lang::ensure_clause` and its examples cover why an `ensure` meets the binding rule; which items the rule applies to is stage 3's reading of them
+module.instance -- a definition of an instance
+module.instance.matching -- matching at the query's terms: no requirement computes an instance yet (stage 3)
+module.instance.ground -- which terms of a query are ground: no requirement computes an instance yet (stage 3)
+module.instance.listed -- partly formalized: `lang::listed_variable` gives the verdict; that the variable takes each value of its type is how instances are built, from stage 3
+module.instance.unused -- partly formalized: `lang::sentence_instantiation` gives the verdict; that the variable takes no term is how instances are built, from stage 3
+module.instance.hypothesis -- how an instance enters a query: no requirement models queries here (stage 3)
+module.instance.quantifiers -- the decidable core of an instance, as Decidability states it for quantifiers
+module.closure -- the closure of a query's instances: no requirement computes it yet (stage 3)
+module.closure.finite -- argued in the rule; a requirement over terms comes with stage 3
+module.instance.models -- the confirmation of a model against axioms: a check of stage 3
+module.use.verdict -- what a pass rests on, which Evidence formalizes
+module.use.morphism -- which translated sentences a check sees: stage 3's translation
+module.no-patterns -- an absence: no syntax states instances, and no setting changes them
+module.meta.satisfaction -- metatheory: argued, and its proof in Lean is open (#669)
+module.meta.theorems -- metatheory: argued from the satisfaction condition (#669)
+module.meta.composition -- metatheory: argued, and its proof is open (#669)
+module.meta.conservative -- metatheory: argued from the totality of structural recursion (#669)
+module.meta.coherence -- metatheory: open, with stage 3 (#669)
+module.meta.views -- metatheory: open (#669)
+module.meta.free -- metatheory: argued from the solver's datatypes and Lean's inductive types (#669)
+module.meta.parametricity -- metatheory: open (#669)
+module.expansion -- partly formalized: `lang::strict_expansion` compares the codes of messages, not their texts or places
+module.expansion.laws -- partly formalized: `lang::strict_expansion` compares reports; that today's laws keep their meaning rests on the rules it cites
+module.expansion.corpus -- a step of each stage's landing: comparing the corpus before and after

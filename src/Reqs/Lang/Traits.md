@@ -201,6 +201,9 @@ where its equation is.
 
 ## Expectations
 
+[Modules](ModulesAndInterfaces.md#checks) designs traits as interfaces, which
+are modules, their lemmas, and what an implementation discharges.
+
 An expectation of a trait checks, from the laws alone, that the laws say
 what the author means, as Larch's `implies` does.
 
@@ -264,11 +267,11 @@ pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: Che
 r[traits.expect.lawful] check::query_hypotheses
 An expectation of a trait with laws, and with assumptions or calls, has a
 vacuity check of its own: whether its assumptions and calls can hold
-together with the laws. A call contributes to it as to the item's other
-checks: its bindings, and what its procedure guarantees where the
-procedure's assumptions hold. Whether those assumptions hold is the call's
-own check (`F0604`), so a call whose assumptions fail is not also a
-contradiction here. Where the assumptions and
+together with the laws. A call contributes to it its bindings, and what
+its procedure guarantees where the procedure's assumptions hold, but not
+those assumptions. Whether those assumptions hold is the call's own check
+(`F0604`), so a call whose assumptions fail is not also a contradiction
+here. Where the assumptions and
 calls cannot hold with the laws, it is an error (`F0602`). Where
 the solver does not decide it, it is a warning (`F0608`). Its other checks
 rest on this check as they rest on its realizability: where it does not

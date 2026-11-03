@@ -109,6 +109,27 @@ tested model::fill_rule: "src/FrenTest/ModelDefaults.lean"
 -- checked by the solver.
 trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
 
+-- Modules as theories, and the items that state claims
+-- (`Reqs/Lang/ModulesAndInterfaces`), are a design that no front end
+-- implements yet (#669), so there is no code to bind them to.
+trusted lang::morphism_status: "the design of modules as theories and implementations as morphisms (#669, stage 3); nothing implements it yet, and its expectations are checked by testing"
+trusted lang::morphism_obligations: "the design of morphisms as the one primitive between modules (#669); nothing implements extends or views yet, and its expectations are checked by enumeration"
+trusted lang::owed_laws: "the design of extends (#669); nothing implements it yet, and its expectations are checked by testing"
+trusted lang::view_choice: "the design of named views (#669); their keyword is not decided and nothing implements them yet, and its expectations are checked by testing"
+trusted lang::sentence_place: "the design of lemma, assume and law items (#669); no front end reads them yet, and its expectations are checked by enumeration"
+trusted lang::sentence_member: "the design of lemma, assume and law items (#669); no front end reads lemma or assume blocks yet, and its expectations are checked by enumeration"
+trusted lang::sentence_role: "the design of lemma, assume and law items (#669); no front end classifies these items yet, and its expectations are checked by testing"
+trusted lang::sentence_instantiation: "the design of instantiation (#669, stage 3); no front end instantiates these items yet, and its examples are checked by testing"
+trusted lang::lemma_order: "the design of the order of lemma items (#669, stage 3); nothing reads lemma items yet, and its expectations are checked by testing"
+trusted lang::ensure_clause: "the design of contracts as sentences (#669, stage 3); nothing reads an ensure clause as a sentence yet, and its expectations are checked by testing"
+trusted lang::sentence_use: "the design of instantiation (#669, stage 3); no front end chooses what a check uses yet, and its examples are checked by testing"
+trusted lang::obligation_uses: "the design of modules as theories (#669, stage 3); nothing checks an implementation's obligations yet, and its expectations are checked by testing"
+trusted lang::translated_theorem: "the design of modules as theories (#669, stage 3); nothing translates theorems along implementations yet, and its expectations are checked by testing"
+trusted lang::induction_variables: "the design of induction by unfolding (#669, stage 4); nothing implements it yet, and its expectations are checked by testing"
+trusted lang::arm_decided: "the design of induction by unfolding (#669, stage 4); nothing implements it yet, and its expectations are checked by testing"
+trusted lang::induction_verdict: "the design of induction by unfolding (#669, stage 4); nothing implements it yet, and its expectations are checked by testing"
+trusted lang::strict_expansion: "the guarantee of #669, which each stage confirms by comparing the messages of Fren's own specs and of the ui tests before and after"
+
 -- The matrix of what each method can conclude is a design, refined by
 -- what runs today (`check::method_run`), which is bound to `dispatchOf`.
 trusted check::method_cell: "the design of the proof methods; check::today_within_matrix checks check::method_run, bound to dispatchOf, against it, and check::enumeration_within_matrix and eval::random_within_matrix the verdicts of enumeration and testing"
