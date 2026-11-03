@@ -10,6 +10,7 @@ import importlib.machinery
 import importlib.util
 import io
 import json
+import math
 import os
 import signal
 import subprocess
@@ -256,6 +257,8 @@ def test_job_log():
         assert row["load_samples"] == [0.5]
         assert row["load_mean"] == row["load_max"] == 0.5
         assert row["max_load"] == "off" and row["slots"] == 1
+        assert row["enqueued_max_load"] == "off" and row["enqueued_slots"] == 1
+        assert row["wait_policy_changed"] is False
         assert row["job_kind"] == heavy.job_kind(command) and "last-kind" in row["job_kind"]
         assert len(row["command"]) == 240 and row["command"].endswith("...")
         assert row["worktree"] == os.getcwd()
@@ -310,6 +313,68 @@ def test_admission_snapshot():
         with open(os.path.join(state, "log.jsonl")) as f:
             row = json.loads(f.read())
         assert row["max_load"] == 6 and row["slots"] == 1
+        assert row["enqueued_max_load"] == 8 and row["wait_policy_changed"] is True
+
+
+def test_policy_flip_while_waiting():
+    with tempfile.TemporaryDirectory() as state:
+        clock = [1000]
+        environ = {"HEAVY_SLOTS": "1", "HEAVY_MEM_GB": "1"}
+        completed = []
+
+        def flip(value):
+            heavy.flip_policy(value, state, environ, clock=lambda: clock[0])
+
+        def release(seconds):
+            assert seconds == 5 and not completed
+            clock[0] += seconds
+            flip("off")
+            clock[0] += 5
+
+        def finish(f, command, shown, record, state, environ, load_reader):
+            assert record["max_load"] == "off" and record["slots"] == 1
+            if not completed:
+                # The policy can flip again during execution; billing must
+                # still use the snapshot taken when the job was admitted.
+                assert record["started_at"] == 1010 and record["wait_seconds"] == 10
+                clock[0] += 5
+                flip(8)
+            else:
+                clock[0] += 1
+            completed.append(True)
+            return 0
+
+        flip(8)
+        with mock.patch.object(heavy.time, "time", side_effect=lambda: clock[0]), \
+             mock.patch.object(heavy.time, "monotonic", side_effect=lambda: clock[0]), \
+             mock.patch.object(heavy.time, "sleep", side_effect=release), \
+             mock.patch.object(heavy, "heavy_rss_kb", return_value=0), \
+             mock.patch.object(heavy, "run_command", side_effect=finish), \
+             contextlib.redirect_stderr(io.StringIO()):
+            assert heavy.main([sys.executable, "-c", "pass"], state, environ, lambda: 100) == 0
+            clock[0] = 1020
+            flip("off")
+            assert heavy.main([sys.executable, "-c", "pass"], state, environ, lambda: 0) == 0
+
+        with open(os.path.join(state, "log.jsonl")) as f:
+            records = [row for line in f if (row := json.loads(line))["event"] == "job"]
+        waiting, steady = records
+        assert waiting["enqueued_max_load"] == 8 and waiting["max_load"] == "off"
+        assert waiting["wait_policy_changed"] is True
+        assert steady["enqueued_max_load"] == steady["max_load"] == "off"
+        assert steady["wait_policy_changed"] is False
+        summary = heavy.stats(1, state, {}, now=1025)
+        policies = {p["max_load"]: p for p in summary["policies"]}
+        off = policies["off"]
+        assert off["jobs"] == 2 and off["wait_jobs"] == off["rate_jobs"] == 1
+        assert off["wait_seconds"]["p99"] == 0 and off["latency_seconds"]["p99"] == 1
+        assert math.isclose(off["observed_hours"], 15 / 3600)
+        assert math.isclose(off["jobs_per_hour"], 240)
+        assert summary["rate_jobs"] == 1 and math.isclose(summary["observed_hours"], 25 / 3600)
+        assert len(summary["excluded_waits"]) == 1
+        excluded = summary["excluded_waits"][0]
+        assert excluded["reason"] == "policy_changed_while_waiting"
+        assert excluded["max_load"] == "off" and excluded["enqueued_max_load"] == 8
 
 
 def test_job_kinds():
@@ -342,7 +407,10 @@ def test_stats_and_appends():
         heavy.append_log(dict(record, started_at=6389, ended_at=6399), state, {})  # Outside the window.
         heavy.append_log(dict(record, ended_at=10001), state, {})
         for bad in ({"slots": True}, {"max_load": True}, {"load_samples": [False]},
-                    {"exit_status": "0"}, {"run_seconds": float("inf")}, {"started_at": None}):
+                    {"exit_status": "0"}, {"run_seconds": float("inf")}, {"started_at": None},
+                    {"enqueued_at": float("nan")}, {"wait_policy_changed": "false"},
+                    {"enqueued_max_load": float("nan"), "enqueued_slots": 2},
+                    {"command": []}, {"worktree": 42}):
             # Bypass append_log's finite-number validation to test a damaged log.
             with open(os.path.join(state, "log.jsonl"), "a") as f:
                 f.write(json.dumps(dict(record, **bad)) + "\n")
@@ -357,6 +425,9 @@ def test_stats_and_appends():
         assert summary["latency_seconds"]["p50"] == 20
         assert summary["mean_load"] == 7
         assert summary["policies"][0]["jobs_per_hour"] is None  # No exposure log to guess from.
+        assert summary["policies"][0]["wait_jobs"] == 0
+        assert len(summary["excluded_waits"]) == 2
+        assert all(r["reason"] == "wait_policy_unknown" for r in summary["excluded_waits"])
         assert heavy.percentiles([10])["p99"] == 10
         # Forced short writes from concurrent processes must not interleave records.
         path = os.path.join(state, "concurrent.jsonl")
@@ -420,6 +491,8 @@ def test_policy_comparison():
 
         def job(load, kind, run, slots=2, status=0, ended=10000):
             heavy.append_log({"event": "job", "max_load": load, "slots": slots,
+                              "enqueued_max_load": load, "enqueued_slots": slots,
+                              "wait_policy_changed": False, "enqueued_at": ended - 3,
                               "job_kind": kind, "started_at": ended - 1,
                               "ended_at": ended, "exit_status": status,
                               "wait_seconds": 2, "run_seconds": run,
@@ -448,7 +521,7 @@ def test_policy_comparison():
         assert off["rate_jobs"] == 10 and on["rate_jobs"] == 12
         assert off["mean_load"] == 8 and on["mean_load"] == 4
         assert off["run_seconds"]["p50"] == 1 and on["run_seconds"]["p50"] == 100
-        assert on["matched_kinds"] == 2 and on["normalized_run_ratio_vs_off"] == 0.5
+        assert on["matched_kinds"] == 2 and math.isclose(on["normalized_run_ratio_vs_off"], 0.5)
         assert off["matched_kinds"] == 0 and off["normalized_run_ratio_vs_off"] is None
         assert on["failed_jobs"] == 1
         assert policies[("off", 3)]["jobs_per_hour"] is None
@@ -476,6 +549,8 @@ def test_partial_policy_coverage():
         ]
         for load, began, ended in records:
             heavy.append_log({"event": "job", "max_load": load, "slots": 2,
+                              "enqueued_max_load": load, "enqueued_slots": 2,
+                              "wait_policy_changed": False, "enqueued_at": began,
                               "started_at": began, "ended_at": ended, "exit_status": 0,
                               "job_kind": "lake test", "wait_seconds": 0, "run_seconds": 10,
                               "load_samples": []}, state, {})
@@ -524,6 +599,19 @@ def test_alternate():
 def test_alternate_hangup():
     with tempfile.TemporaryDirectory() as state:
         alternate = heavy.alternate
+        flip = heavy.flip_policy
+        signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+        cleaning = []
+
+        def cleanup(value, state, environ, clock):
+            if value == "off":
+                # Deliver more signals before the file has been removed or
+                # the final off record written. None may interrupt cleanup.
+                assert heavy.max_load({}, state) == 8
+                for sig in signals:
+                    signal.raise_signal(sig)
+                cleaning.append(True)
+            flip(value, state, environ, clock)
 
         def hangup(seconds):
             assert seconds == 60 and heavy.max_load({}, state) == 8
@@ -534,29 +622,62 @@ def test_alternate_hangup():
             alternate(minutes, value, state, environ, sleep=hangup)
 
         def unexpected(sig, frame):
-            # Fail safely instead of terminating the test driver if main
-            # forgets to replace the inherited SIGHUP handler.
-            raise AssertionError("controller did not handle SIGHUP")
+            # Fail safely instead of terminating the test driver if the
+            # controller forgets to replace the inherited signal handlers.
+            raise AssertionError("controller did not handle signal")
 
-        previous = signal.signal(signal.SIGHUP, unexpected)
+        previous = {sig: signal.signal(sig, unexpected) for sig in signals}
         try:
-            with mock.patch.object(heavy, "alternate", side_effect=controlled):
+            with mock.patch.object(heavy, "alternate", side_effect=controlled), \
+                 mock.patch.object(heavy, "flip_policy", side_effect=cleanup):
                 assert heavy.main(["--alternate", "1", "8"], state, {}) == 0
-            assert signal.getsignal(signal.SIGHUP) is unexpected
+            assert all(signal.getsignal(sig) is unexpected for sig in signals)
         finally:
-            signal.signal(signal.SIGHUP, previous)
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+        assert cleaning == [True]
         assert not os.path.exists(os.path.join(state, "max_load"))
         with open(os.path.join(state, "log.jsonl")) as f:
             flips = [json.loads(line) for line in f]
         assert [r["max_load"] for r in flips] == [8, "off"]
 
 
+def test_alternate_ignored_hangup():
+    with tempfile.TemporaryDirectory() as state:
+        alternate = heavy.alternate
+        seen = []
+
+        def sleep(seconds):
+            seen.append(heavy.max_load({}, state))
+            assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
+            signal.raise_signal(signal.SIGHUP)
+            if len(seen) == 2:
+                raise KeyboardInterrupt
+
+        def controlled(minutes, value, state, environ):
+            alternate(minutes, value, state, environ, sleep=sleep)
+
+        previous = signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        try:
+            with mock.patch.object(heavy, "alternate", side_effect=controlled):
+                assert heavy.main(["--alternate", "1", "8"], state, {}) == 0
+            assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
+        finally:
+            signal.signal(signal.SIGHUP, previous)
+        assert seen == [8, None]  # The hang-up did not end the on block early.
+        assert not os.path.exists(os.path.join(state, "max_load"))
+        with open(os.path.join(state, "log.jsonl")) as f:
+            assert [json.loads(line)["max_load"] for line in f] == [8, "off", "off"]
+
+
 def main():
     tests = [test_parse_args, test_missing_command, test_recheck_wait_message,
              test_physical_memory, test_overrides, test_offline_command,
              test_load_admission, test_job_log, test_admission_snapshot, test_job_kinds,
+             test_policy_flip_while_waiting,
              test_stats_and_appends, test_short_appends, test_policy_comparison,
-             test_partial_policy_coverage, test_alternate, test_alternate_hangup]
+             test_partial_policy_coverage, test_alternate, test_alternate_hangup,
+             test_alternate_ignored_hangup]
     for t in tests:
         t()
     print(f"heavy: {len(tests)} tests passed")

@@ -34,7 +34,9 @@ compares completions in the last HOURS (default 24), by admission policy
 and job kind. `--alternate` switches the file setting between VALUE and
 absent every MINUTES, logging each flip for the policy exposure times.
 Run one alternator for all agents, with HEAVY_MAX_LOAD unset everywhere.
-SIGINT, SIGTERM and SIGHUP stop it and remove the file, leaving admission off.
+SIGINT, SIGTERM and SIGHUP stop it and remove the file, leaving admission off,
+unless inherited as ignored (for example SIGHUP under nohup). Further signals
+are ignored during cleanup, then the inherited handlers are restored.
 
 `--offline` runs COMMAND with no network: on Linux in a new user and
 network namespace (`unshare -rn`), whose only interface is loopback, which
@@ -278,14 +280,33 @@ def alternate(minutes, value, state=STATE, environ=None, sleep=time.sleep, clock
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("heavy: another --alternate already holds this state directory")
-        current = value
+        previous = {}
+        stopping = False
+
+        def stop(sig, frame):
+            nonlocal stopping
+            if not stopping:
+                stopping = True
+                raise KeyboardInterrupt
+
         try:
-            while True:
-                flip_policy(current, state, environ, clock)
-                sleep(minutes * 60)
-                current = "off" if current != "off" else value
+            for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                handler = signal.getsignal(sig)
+                if handler is not signal.SIG_IGN:
+                    previous[sig] = handler
+                    signal.signal(sig, stop)
+            current = value
+            try:
+                while True:
+                    flip_policy(current, state, environ, clock)
+                    sleep(minutes * 60)
+                    current = "off" if current != "off" else value
+            finally:
+                stopping = True
+                flip_policy("off", state, environ, clock)
         finally:
-            flip_policy("off", state, environ, clock)
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
 
 
 def job_kind(command):
@@ -354,16 +375,31 @@ def policy_key(row):
     return load, slots
 
 
-def summarize(rows, hours, rate_jobs=None):
+def wait_policy_changed(row):
+    """Whether a wait spans an observed policy change; None for older records
+    without enough evidence. Enqueue settings diagnose a crossover, never
+    decide the policy that is billed for the admitted job."""
+    if type(row.get("wait_policy_changed")) is not bool:
+        return None
+    try:
+        initial = policy_key({"max_load": row["enqueued_max_load"], "slots": row["enqueued_slots"]})
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    return row["wait_policy_changed"] or initial != policy_key(row)
+
+
+def summarize(rows, hours, rate_jobs=None, wait_rows=None):
     loads = [v for row in rows for v in row["load_samples"]]
     rate_jobs = len(rows) if rate_jobs is None else rate_jobs
+    wait_rows = rows if wait_rows is None else wait_rows
     return {
         "jobs": len(rows), "observed_hours": hours,
         "failed_jobs": sum(r.get("exit_status") != 0 for r in rows),
         "rate_jobs": rate_jobs, "jobs_per_hour": rate_jobs / hours if hours > 0 else None,
-        "wait_seconds": percentiles([r["wait_seconds"] for r in rows]),
+        "wait_jobs": len(wait_rows),
+        "wait_seconds": percentiles([r["wait_seconds"] for r in wait_rows]),
         "run_seconds": percentiles([r["run_seconds"] for r in rows]),
-        "latency_seconds": percentiles([r["wait_seconds"] + r["run_seconds"] for r in rows]),
+        "latency_seconds": percentiles([r["wait_seconds"] + r["run_seconds"] for r in wait_rows]),
         "mean_load": sum(loads) / len(loads) if loads else None,
     }
 
@@ -371,7 +407,8 @@ def summarize(rows, hours, rate_jobs=None):
 def stats(hours, state=STATE, environ=None, now=None):
     """Rates use logged policy intervals, clipped to the requested window.
     Only admissions within a matching interval count toward policy rates;
-    raw counts and timings still describe every completion in the window.
+    waits that span policy changes are reported separately from comparisons.
+    Raw counts and top-level timings still describe every completion in the window.
     Attribute completions to their admission policy, even across a flip.
     Ignore malformed lines, including an incomplete concurrent append."""
     environ = os.environ if environ is None else environ
@@ -390,6 +427,8 @@ def stats(hours, state=STATE, environ=None, now=None):
                             flips.append((at, key))
                         continue
                     numbers = [row[k] for k in ("started_at", "ended_at", "wait_seconds", "run_seconds")]
+                    if "enqueued_at" in row:
+                        numbers.append(row["enqueued_at"])
                     loads = row["load_samples"]
                     if not isinstance(loads, list):
                         continue
@@ -397,6 +436,12 @@ def stats(hours, state=STATE, environ=None, now=None):
                                for v in numbers + loads):
                         continue
                     if not isinstance(row["job_kind"], str) or type(row["exit_status"]) is not int:
+                        continue
+                    if "wait_policy_changed" in row and type(row["wait_policy_changed"]) is not bool:
+                        continue
+                    if "enqueued_max_load" in row or "enqueued_slots" in row:
+                        policy_key({"max_load": row["enqueued_max_load"], "slots": row["enqueued_slots"]})
+                    if any(k in row and not isinstance(row[k], str) for k in ("command", "worktree")):
                         continue
                     if now - hours * 3600 <= row["ended_at"] <= now:
                         rows.append(row)
@@ -413,12 +458,20 @@ def stats(hours, state=STATE, environ=None, now=None):
         if duration > 0:
             exposure[key] = exposure.get(key, 0) + duration
             intervals.append((begin, end, key))
-    grouped, rate_counts = {}, {}
+    grouped, wait_groups, rate_counts, excluded_waits = {}, {}, {}, []
     for row in rows:
         key = policy_key(row)
         grouped.setdefault(key, []).append(row)
-        if any(k == key and begin <= row["started_at"] < end for begin, end, k in intervals):
-            rate_counts[key] = rate_counts.get(key, 0) + 1
+        changed = wait_policy_changed(row)
+        if changed is False:
+            wait_groups.setdefault(key, []).append(row)
+            if any(k == key and begin <= row["started_at"] < end for begin, end, k in intervals):
+                rate_counts[key] = rate_counts.get(key, 0) + 1
+        else:
+            fields = ("command", "worktree", "enqueued_at", "started_at", "max_load", "slots",
+                      "enqueued_max_load", "enqueued_slots", "wait_seconds", "run_seconds")
+            excluded_waits.append({**{k: row[k] for k in fields if k in row},
+                                   "reason": "policy_changed_while_waiting" if changed else "wait_policy_unknown"})
     policies, kinds = [], {}
     # Compare only successful runs: a fast failure is not a speedup.
     successful = {}
@@ -428,7 +481,8 @@ def stats(hours, state=STATE, environ=None, now=None):
     for key in sorted(set(grouped) | set(exposure), key=lambda k: (k[1], str(k[0]))):
         load, slots = key
         policy = {"max_load": load, "slots": slots,
-                  **summarize(grouped.get(key, []), exposure.get(key, 0), rate_counts.get(key, 0))}
+                  **summarize(grouped.get(key, []), exposure.get(key, 0), rate_counts.get(key, 0),
+                              wait_groups.get(key, []))}
         ratios = []
         for kind in sorted({r["job_kind"] for r in grouped.get(key, [])}):
             values = successful.get((key, kind), [])
@@ -445,7 +499,7 @@ def stats(hours, state=STATE, environ=None, now=None):
             math.exp(sum(math.log(r) for r in ratios) / len(ratios)) if ratios else None))
         policies.append(policy)
     return {"hours": hours, **summarize(rows, sum(exposure.values()), sum(rate_counts.values())),
-            "policies": policies, "by_kind": kinds}
+            "policies": policies, "by_kind": kinds, "excluded_waits": excluded_waits}
 
 
 _physical = []
@@ -590,15 +644,9 @@ def run_command(f, command, shown, record, state, environ, load_reader):
     return child.returncode if child.returncode >= 0 else 128 - child.returncode
 
 
-def run(f, command, shown, kind, enqueued, queued, limit, slots, state, environ, load_reader):
-    began = time.monotonic()
-    record = {
-        "event": "job", "command": shown, "job_kind": kind,
-        "worktree": os.getcwd(), "enqueued_at": enqueued,
-        "started_at": time.time(), "wait_seconds": began - queued,
-        "peak_rss_kb": 0, "load_samples": [],
-        "max_load": "off" if limit is None else limit, "slots": slots,
-    }
+def run(f, command, shown, kind, record, began, state, environ, load_reader):
+    record.update(event="job", command=shown, job_kind=kind,
+                  worktree=os.getcwd(), peak_rss_kb=0, load_samples=[])
     code = run_command(f, command, shown, record, state, environ, load_reader)
     record.update(ended_at=time.time(), run_seconds=time.monotonic() - began, exit_status=code)
     loads = record["load_samples"]
@@ -624,11 +672,6 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             print(f"heavy: --alternate: {e}\n{USAGE}", file=sys.stderr)
             return 2
 
-        def stop(sig, frame):
-            raise KeyboardInterrupt
-
-        previous = {sig: signal.signal(sig, stop)
-                    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
         try:
             alternate(minutes, value, state, environ)
         except KeyboardInterrupt:
@@ -636,9 +679,6 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
         except (OSError, RuntimeError) as e:
             print(f"heavy: --alternate: {e}", file=sys.stderr)
             return 2
-        finally:
-            for sig, handler in previous.items():
-                signal.signal(sig, handler)
     if argv[:1] == ["--stats"]:
         try:
             if len(argv) > 2:
@@ -658,6 +698,9 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
         print(f"heavy: {command[0]}: command not found", file=sys.stderr)
         return 127
     enqueued, queued = time.time(), time.monotonic()
+    initial = (max_load(environ, state), slot_count(environ, state))
+    record = {"enqueued_at": enqueued, "enqueued_max_load": "off" if initial[0] is None else initial[0],
+              "enqueued_slots": initial[1], "wait_policy_changed": False}
     kind = job_kind(command)
     shown = shlex.join(command)
     if offline:
@@ -678,6 +721,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     while True:
         slots = slot_count(environ, state)
         limit = max_load(environ, state)
+        record["wait_policy_changed"] |= (limit, slots) != initial
         # Start no job while the running ones already use most of the cap: a
         # job that starts now would likely be the one killed when they grow.
         if not can_start(time.monotonic() - queued, heavy_rss_kb(state),
@@ -700,6 +744,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             # lock. Recheck admission and log the settings actually used.
             slots = slot_count(environ, state)
             limit = max_load(environ, state)
+            record["wait_policy_changed"] |= (limit, slots) != initial
             if i >= slots:
                 f.close()
                 break
@@ -710,11 +755,13 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
                     print(f"heavy: waiting for memory or load (see {state})", file=sys.stderr)
                     warned = True
                 break
+            admitted = time.monotonic()
+            record.update(started_at=time.time(), wait_seconds=admitted - queued,
+                          max_load="off" if limit is None else limit, slots=slots)
             if waited > 1:
                 print(f"heavy: got slot {i} after {waited:.0f}s", file=sys.stderr)
             try:
-                return run(f, command, shown, kind, enqueued, queued, limit, slots,
-                           state, environ, load_reader)
+                return run(f, command, shown, kind, record, admitted, state, environ, load_reader)
             finally:
                 f.seek(0)
                 f.truncate()

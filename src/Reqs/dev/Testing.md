@@ -817,6 +817,10 @@ mark for the child and its waited-for descendants; a short overlap of
 workers between samples can be missed. A log failure never fails the
 job. Each job also records its admission policy: the `max_load` value
 or `"off"`, and the slot count, rechecked after acquiring its slot. Its
+admission timestamp and policy are recorded together before execution;
+later flips cannot reassign the job. It also records `enqueued_max_load`,
+`enqueued_slots` and `wait_policy_changed` to diagnose a change observed
+while waiting. Enqueue settings never decide the job's accounting label. Its
 job kind is computed from the full command before shortening it, removing
 paths, seeds and numbers while retaining executable and script basenames,
 flags and job names. Tests use scratch directories, including for logs.
@@ -837,11 +841,20 @@ including idle time, from the flip records below. Only completions whose
 admission falls in a matching logged policy interval within the window
 count toward `rate_jobs`. Jobs admitted before the first flip, outside
 the window or under a different policy do not inflate that rate. Raw job
-counts and timing summaries still include every completion in the window.
+counts and run time summaries still include every completion in the window.
 Without flip records its policy rate is `null`, rather than an estimate
 from first and last jobs.
 A completion stays attributed to its admission policy if a flip happened
-while it ran. Failed jobs are counted separately. Samples from overlapping
+while it ran. For policy comparisons, waits that span an observed change
+of load threshold or slot count are excluded from wait and total-latency
+percentiles and from `rate_jobs`. Records without enough information about
+the wait are excluded too. `wait_jobs` counts the jobs used for these percentiles;
+`excluded_waits` reports the other jobs with their admission and enqueue
+policies, timestamps, durations and reason. Their raw counts and run times
+remain under the recorded admission policy, and top-level wait summaries
+still include every completion. This keeps a backlog released by a flip
+from inflating the new policy's comparison waits or completion rate.
+Failed jobs are counted separately. Samples from overlapping
 jobs both count toward mean load. Malformed and incomplete lines are skipped.
 At the top level, `hours` is the requested window, while `observed_hours`
 is the total logged exposure across policies. Its `rate_jobs` is the sum
@@ -865,8 +878,11 @@ agents on the machine. It immediately writes VALUE to `max_load`, then
 removes the file after MINUTES, repeating on and off until stopped. The
 writes are atomic and every flip appends a policy record with its time
 and slot count. A lock prevents a second controller. SIGINT, SIGTERM or SIGHUP
-removes the file and logs off before exiting. An abrupt kill can leave
-the last setting in place. Run it directly, without holding a heavy slot.
+removes the file and logs off before exiting, unless inherited as ignored.
+In particular, SIGHUP remains ignored under `nohup`. Further signals cannot
+interrupt cleanup, and inherited handlers are restored afterwards. An abrupt
+kill can leave the last setting in place. Run it directly, without holding
+a heavy slot.
 Unset `HEAVY_MAX_LOAD` on every agent so that all use the shared file;
 use the same slot count and memory limit on every agent and keep them
 constant throughout the trial.
