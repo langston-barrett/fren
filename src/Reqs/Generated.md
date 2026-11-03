@@ -670,7 +670,11 @@ a procedure's are (see [Procedures](#procedures)); nothing calls it, so
 nothing else uses them. A global expectation in the short form, `expect
 n: e`, becomes `def p : Prop`, which is `True → e`. Like a procedure's
 definitions, each first takes a parameter for each abstract type and
-function it uses.
+function it uses. A global expectation with a block also brings, for each
+of its claims and each parameter that induction may be tried on, the
+function that the induction checks, generated as a [defined
+function](#defined-functions) is, under a name that starts with `#`
+([Induction](Lang/Recursion.md#induction)). Nothing else applies it.
 
 ## Proofs
 

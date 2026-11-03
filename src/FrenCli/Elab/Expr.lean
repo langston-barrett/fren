@@ -1102,6 +1102,14 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
       noteObligation cx .construction args[0]!.span (← partPTy path 0 0) x
       return (x, .newtype path u)
     | r => err fnSpan (Fren.Core.notAFunctionMsg r)
+  -- A variable, written as its name, that is the argument at the
+  -- decreasing parameter of a structural recursion
+  -- (`lang::induction_candidate`).
+  if let some i := (← get).recursiveDecreasing.get? path then
+    if let some (.path _ #[s]) := args[i]? then
+      let x := identName s.name
+      if (cx.binder? x).isNone && cx.vars.any (·.name == x) then
+        modify fun st => { st with inductionArgs := st.inductionArgs.push x }
   if let some g := (← get).genericFns.find? path then
     -- A generic function, at the instance whose type arguments are inferred
     -- (`Reqs/Lang/GenericFunctions#applications`); its arguments may

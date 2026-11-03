@@ -1,0 +1,15 @@
+-- A generated name is never offered as a similar name (F0201): the name
+-- below is the one that induction's function would have, but at `#`s.
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn len(l: L): Int := match l {
+    L::Nil => 0,
+    L::Cons(_, r) => 1 + len(r),
+}
+
+expect wrong(a: L) { expect wrong: len(a) = 3 }
+
+expect sneaky(a: L) {
+    assume h: induction_wrong_wrong_a_273?(a)
+    expect s: len(a) = 3
+}

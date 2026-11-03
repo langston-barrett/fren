@@ -893,7 +893,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
     (global : Bool := false) : M Unit := do
   let (name, bang, written) := ((declaredIdent name).1, (declaredIdent name).2, name.span)
   let n := Name.mkSimple name.name
-  modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[], itemExcludeGroups := #[], itemBranches := #[], itemMemberGroups := #[] }
+  modify fun s => { s with outsideCore := false, guardedUsed := false, relationalUsed := false, countSpans := #[], natApps := #[], itemExcludeGroups := #[], itemBranches := #[], itemMemberGroups := #[], inductionArgs := #[] }
   if global then
     liftMsg name.span (Fren.Core.checkNoBang n)
     if name.name.endsWith "?" then err name.span (Fren.Core.propNameMsg n)
@@ -1626,9 +1626,9 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
   let (smt, t) ← elabExpr cx body
   let uses := (← get).recUses
   let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
-  if recursion matches .structural _ then
+  if let .structural i := recursion then
     if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
-    modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path }
+    modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path, recursiveDecreasing := s.recursiveDecreasing.insert path i }
     -- Each of its applications is opaque, and brings its result type's
     -- constraint, as its postconditions, a hypothesis at a recursive
     -- application in its own body too (`lang::recursive_facts`).
@@ -1897,6 +1897,9 @@ partial def elabItem (item : Item) : M Unit := do
     let shown := (declaredIdent name).1
     modify fun s => { s with item := s.module ++ Name.mkSimple shown.name }
     modify fun s => { s with inCompBody := false }
+    -- Whether its block applies an uninterpreted function, which records
+    -- the application (`lang::induction_candidate`).
+    let applied := (← get).applied.size
     try elabComp false name header members spans openStop (global := true)
     catch e =>
       modify (fun s => { s.keepLints e.state with scope := s.module })
@@ -1906,6 +1909,7 @@ partial def elabItem (item : Item) : M Unit := do
       throw { e with state := ← get }
     lintDeclared .global (Name.mkSimple shown.name) shown.span
     lintLines .global (Name.mkSimple shown.name) shown.span close
+    elabInductions name header members ((← get).applied.size > applied)
   | .law name params body => do
     -- Only a trait's members are laws, which the parser reads only there.
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
@@ -1993,6 +1997,94 @@ partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Id
   withoutGhostLints <| elabItem (.comp true inhabit header guarantees name.span (guarantees.map fun _ => name.span) name.span.stop)
   modify fun st => { st with inSubset := false, comps := st.comps.map fun c => if c.path == module ++ Name.mkSimple inhabit.name then
     { c with subset? := some path, finiteModel := true } else c }
+
+/-- Elaborates the functions generated for induction on the parameters of
+the global expectation `name`, just elaborated, whose header and block are
+`header` and `body`, where its block applies an uninterpreted function if
+`abstract` (`Reqs/Lang/Recursion#induction`): one for each of its claims
+and each candidate, in order (`Fren.Core.inductionCandidate`). Each is an
+item of the module that nothing reports, whose body is kept in
+`State.inductionBodies` rather than checked as a function's. -/
+partial def elabInductions (name : Ident) (header body : Array Member) (abstract : Bool) : M Unit := do
+  let st ← get
+  let shown := (declaredIdent name).1
+  let some c := st.globals.back? | return
+  unless c.path == st.module ++ Name.mkSimple shown.name do return
+  let members := splitConjunctionMembers body
+  let kinds := (blockMembers #[] members (members.map fun _ => default)).map (·.2.1)
+  let params := header.filterMap fun
+    | .var true _ _ x ty none => some (x, ty)
+    | _ => none
+  let vars := params.filterMap fun (x, _) => c.vars.find? (·.name == Name.mkSimple (declaredIdent x).1.name)
+  unless vars.size == params.size do return
+  let tys := vars.map (·.ty)
+  let constrained := vars.any (·.ptype.restricted)
+  let candidates := (List.range params.size).filter fun i =>
+    Fren.Core.inductionCandidate kinds.toList abstract constrained (Fren.Core.directlyRecursive st.shapeOf tys[i]!)
+      (st.inductionArgs.contains vars[i]!.name)
+  if candidates.isEmpty then return
+  let assumptions := members.filterMap fun
+    | .prop .assume _ e => some e
+    | _ => none
+  let mut inductions := #[]
+  for m in members do
+    let .prop .expect claim e := m | continue
+    let mut fns := #[]
+    for i in candidates do
+      if let some f ← elabInduction claim e i assumptions then fns := fns.push f
+    inductions := inductions.push (Name.mkSimple claim.name, fns)
+  modify fun s => { s with globals := s.globals.modify (s.globals.size - 1) fun g => { g with inductions } }
+where
+  /-- The function generated for induction on the parameter at `i` of the
+  claim `e`, named `claim`, under the assumptions `assumptions`, elaborated:
+  its path, or none if it is not a structural recursion. -/
+  elabInduction (claim : Ident) (e : Expr) (i : Nat) (assumptions : Array Expr) : M (Option Name) := do
+    let st ← get
+    let shown := (declaredIdent name).1
+    let params := header.filterMap fun
+      | .var true _ _ x ty none => some (x, ty)
+      | _ => none
+    let some c := st.globals.back? | return none
+    let tys := params.filterMap fun (x, _) => (c.vars.find? (·.name == Name.mkSimple (declaredIdent x).1.name)).map (·.ty)
+    let .enum ep _ := tys[i]! | return none
+    let some d := st.dataOf? ep | return none
+    let sp := e.span
+    let ident (s : String) : Ident := { name := s, span := sp }
+    let fname := Fren.Core.inductionFnName shown.name claim.name (declaredIdent params[i]!.1).1.name name.span.start
+    let fn := ident fname
+    let n := params.size
+    let named (k : Nat) := Expr.path sp #[ident (declaredIdent params[k]!.1).1.name]
+    -- Each variant, with its payload bound, and the function applied to
+    -- the case's variables as `inductionHypotheses` gives them.
+    let cases := Fren.Core.inductionCases st.shapeOf tys i
+    let arms := (cases.zip d.ctors).map fun ((payload, hyps), (v, _)) =>
+      let binder (k : Nat) := ident (Fren.Core.inductionBinder k (payload[k]! matches .bool))
+      let arg (k : Nat) := if k < n then named k else Expr.path sp #[binder (k - n)]
+      let pattern := Pattern.variant sp ((Fren.Core.variantSegments st.module ep v).toArray.map ident)
+        (if payload.isEmpty then none else some ((List.range payload.size).toArray.map fun k => Pattern.variant sp #[binder k] none))
+      let apps := hyps.toArray.map fun h => Expr.app sp #[fn] (h.toArray.map arg)
+      let value := if apps.isEmpty then Expr.bool sp true else apps.extract 1 apps.size |>.foldl (Expr.bin sp "and") apps[0]!
+      (pattern, none, value)
+    let fnBody := Expr.match sp (named i) arms false
+    let held := if assumptions.isEmpty then e
+      else Expr.when sp false (assumptions.extract 1 assumptions.size |>.foldl (Expr.bin sp "and") assumptions[0]!) e
+    let post := Expr.bin sp "and" (.app sp #[fn] ((List.range n).toArray.map named)) held
+    let item := Item.function true fn #[] (params.map fun (x, ty) => (#[x], ty)) (some #[ident "Bool"]) (some fnBody)
+      #[(true, ident "claim", post)] sp {}
+    let before ← get
+    try withoutGhostLints (elabItem item)
+    catch _ =>
+      set before
+      return none
+    let after ← get
+    let path := after.module ++ Name.mkSimple fname
+    let some b := (after.bodies.extract before.bodies.size after.bodies.size).find? (·.fn? == some path)
+      | set before; return none
+    unless after.recursiveDefs.contains path do
+      set before
+      return none
+    modify fun s => { s with bodies := s.bodies.extract 0 before.bodies.size, inductionBodies := s.inductionBodies.insert path b }
+    return some path
 
 /-- Elaborates a `set_option` (`Reqs/Lang/Items#lint-settings`), and the item
 after its `in`, if any. -/

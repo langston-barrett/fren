@@ -1,0 +1,29 @@
+-- Induction on a parameter of an enumeration of another module is not
+-- tried (`Reqs/Lang/Recursion#induction`): the generated function's
+-- patterns write the variants from the root, `lists::L::Cons`, which a
+-- path in a pattern cannot be written from, so the function does not
+-- elaborate, and the claim keeps its own check's verdict and message. In
+-- the module that declares `L`, the same claim passes by induction.
+mod lists
+
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn len(l: L): Int := match l {
+    L::Nil => 0,
+    L::Cons(_, r) => 1 + len(r),
+}
+
+pub fn append(a: L, b: L): L := match a {
+    L::Nil => b,
+    L::Cons(h, t) => L::Cons(h, append(t, b)),
+}
+
+expect len_append(a: L, b: L) { expect adds: len(append(a, b)) = len(a) + len(b) }
+
+mod users
+
+use lists::{L, append, len}
+
+expect len_append(a: L, b: L) {
+    expect adds: len(append(a, b)) = len(a) + len(b)   --~ warning: could not decide whether `users::len_append::adds` holds
+}

@@ -35,8 +35,9 @@ clash note may give, sets and relations with `card`, so that it
 reaches `linear_product`, the decidable core and the lints,
 expressions that do not synthesize their types at each kind of site
 (`sitesProc`), traits, with laws and expectations over their methods
-(`traitGroup`), and a recursive function applied on several paths of one
-expectation (`guardPaths`).
+(`traitGroup`), a recursive function applied on several paths of one
+expectation (`guardPaths`), and global expectations over recursive
+enumerations that induction on a parameter may prove (`inductions`).
 
 What legitimately differs is normalized away by
 `FrenTest.Frontends.compare`, whose documentation lists it, as does
@@ -61,6 +62,8 @@ includes such a procedure now and then too. `--sites` generates
 `Wide.sitesProc`s alone, the last of which may write an expression that
 does not synthesize its type where it is not checked, an error that stops
 the spec's other checks; `genWide` includes one without it now and then.
+`--inductions` generates global expectations over recursive enumerations
+alone (`Wide.inductions`), which induction on a parameter may prove.
 `--confirm` generates what the confirmation of models evaluates
 (`Wide.genConfirmed`): `div` and `mod`, an index in an argument that a
 function's body never reads, and the formulas whose value confirmation
@@ -1124,6 +1127,64 @@ def guardPaths : R String := do
     "pub fn gpsum(l: GuardList): (r: Int) {\n    out r := match l { GuardList::Nil => 0, GuardList::Cons(m, rest) => m.abs + gpsum(rest) }\n" ++
     "    ensure e: r >= 0\n}\n" ++
     s!"\nproc gp_paths(l: GuardList, {params}) \{\n    expect c: {goal}\n}\n"
+
+/-- Global expectations over recursive enumerations, whose claims their
+checks leave Inconclusive and induction on a parameter may prove
+(`Reqs/Lang/Recursion#induction`): over a list, a tree with two children
+and a `Bool` payload, and an instance of a generic enumeration; with
+parameters of those types, of `Int`, of `Bool` and of a payload's type,
+in either order;
+under an assumption or not; claims that one step of each function proves,
+that need more (Inconclusive still), and in a Boolean block; and the forms
+that rule induction out: a call, an uninterpreted function, a parameter of
+a subset type. Each claim holds, so no result depends on a model, but for
+one false claim now and then, which evaluation refutes the model of, so it
+stays Inconclusive, with no model shown, and induction must not pass it. It is
+written from a grammar of its own, as `factChain` is. -/
+def inductions : R String := do
+  let mut out := "pub enum IdList { Nil, Cons(Int, IdList) }\n" ++
+    "pub enum IdTree { Leaf(Bool), Node(IdTree, Int, IdTree) }\n" ++
+    "pub enum IdGen<A> { Z, S(A, IdGen<A>) }\n" ++
+    "pub fn idlen(l: IdList): Int := match l { IdList::Nil => 0, IdList::Cons(_, r) => 1 + idlen(r) }\n" ++
+    "pub fn idapp(a: IdList, b: IdList): IdList := match a {\n" ++
+    "    IdList::Nil => b,\n    IdList::Cons(h, t) => IdList::Cons(h, idapp(t, b)),\n}\n" ++
+    "pub fn idsize(t: IdTree): Int := match t { IdTree::Leaf(_) => 1, IdTree::Node(l, _, r) => idsize(l) + 1 + idsize(r) }\n" ++
+    "pub fn idmirror(t: IdTree): IdTree := match t {\n" ++
+    "    IdTree::Leaf(x?) => IdTree::Leaf(x?),\n    IdTree::Node(l, n, r) => IdTree::Node(idmirror(r), n, idmirror(l)),\n}\n" ++
+    "pub fn idcount<A>(g: IdGen<A>): Int := match g { IdGen::Z => 0, IdGen::S(_, r) => 1 + idcount(r) }\n"
+  -- Each claim, with its parameters, which come in either order.
+  let swap ← chance 50
+  let two (x y : String) : String := if swap then s!"{y}, {x}" else s!"{x}, {y}"
+  let claims : Array (String × String × String) := #[
+    ("adds", two "a: IdList" "b: IdList", "expect c: idlen(idapp(a, b)) = idlen(a) + idlen(b)"),
+    ("nil_right", "a: IdList", "expect c: idapp(a, IdList::Nil) = a"),
+    ("assoc", "a: IdList, b: IdList, c: IdList", "expect holds: idapp(idapp(a, b), c) = idapp(a, idapp(b, c))"),
+    ("mirror_size", "t: IdTree", "expect c: idsize(idmirror(t)) = idsize(t)"),
+    ("mirror_twice", "t: IdTree", "expect c: idmirror(idmirror(t)) = t"),
+    ("count", "g: IdGen<Int>", "expect c: idcount(g) >= 0"),
+    ("suffix", two "a: IdList" "b: IdList", "assume e: b = IdList::Nil\n    expect c: idlen(idapp(a, b)) = idlen(a)"),
+    ("one_more", two "a: IdList" "k: Int", "expect c: idlen(idapp(a, IdList::Cons(k, IdList::Nil))) = idlen(a) + 1"),
+    ("flagged", two "a: IdList" "x?", "expect c: when x?, idapp(a, IdList::Nil) = a"),
+    ("both", two "a: IdList" "b: IdList",
+      "expect c: and {\n        n: idapp(a, IdList::Nil) = a,\n        s: idlen(idapp(a, b)) = idlen(a) + idlen(b),\n    }")]
+  for (n, params, body) in claims do
+    if ← chance 50 then out := out ++ s!"\nexpect id_{n}({params}) \{\n    {body}\n}\n"
+  -- The forms that rule induction out.
+  if ← chance 40 then
+    out := out ++ "\npub proc idmeasure(l: IdList): (det n: Int) {\n    ensure value: n = idlen(l)\n}\n" ++
+      "\nexpect id_called(a: IdList, b: IdList) {\n    call m := idmeasure(idapp(a, b))\n" ++
+      "    expect c: m.n = idlen(a) + idlen(b)\n}\n"
+  if ← chance 40 then
+    out := out ++ "\npub fn idweight(IdList): Int\n" ++
+      "\nexpect id_weighed(a: IdList, b: IdList) {\n    expect c: idlen(idapp(a, b)) + idweight(a) = idlen(a) + idlen(b) + idweight(a)\n}\n"
+  if ← chance 40 then
+    out := out ++ "\npub type IdCons = l: IdList where invariant: l is IdList::Cons(_, _)\n" ++
+      s!"\nexpect id_subset({two "a: IdList" "b: IdCons"}) \{\n    expect c: idlen(idapp(a, b)) = idlen(a) + idlen(b)\n}\n"
+  -- A false claim that its own check leaves Inconclusive, which induction
+  -- must not pass, last.
+  if ← chance 30 then
+    out := out ++ "\nexpect id_off(a: IdList) {\n    expect c: idlen(a) != 5\n}\n"
+  return out
 
 /-- Generic functions whose type parameters are element types
 (`lang::element_parameter`): sets, sequences and relations of them, nested
@@ -2271,6 +2332,10 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← claimProcs)
+  -- Global expectations over recursive enumerations, which induction may
+  -- prove, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← inductions)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
@@ -2374,40 +2439,46 @@ structure Mode where
   confirm : Bool := false
   /-- Multi-scrutinee lints alone (`Wide.duplicateScrutineeGroup`). -/
   scrutinees : Bool := false
+  /-- Specs of global expectations over recursive enumerations alone
+  (`Wide.inductions`). -/
+  inductions : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  Id.run ((if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
+  Id.run ((if m.inductions then Wide.inductions else if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
     else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
     else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
-the next; none for `--guards`, `--sites` and `--confirm`. The empty prefix
+the next; none for `--guards`, `--sites`, `--confirm` and `--inductions`. The empty prefix
 of `--scrutinees` makes any static error a group error: that generator,
 like an appended group, promises to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm then #[] else
+  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm || m.inductions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
   (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
     (if m.sites then #["--sites"] else #[]) ++ (if m.confirm then #["--confirm"] else #[]) ++
-    (if m.scrutinees then #["--scrutinees"] else #[])
+    (if m.scrutinees then #["--scrutinees"] else #[]) ++
+    (if m.inductions then #["--inductions"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
-  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees"]) then
+  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
-           confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees" }
+           confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
+           inductions := args.contains "--inductions" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
 def Mode.lean (m : Mode) : String :=
   let fields := (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
     (if m.sites then ["sites := true"] else []) ++ (if m.confirm then ["confirm := true"] else []) ++
-    (if m.scrutinees then ["scrutinees := true"] else [])
+    (if m.scrutinees then ["scrutinees := true"] else []) ++
+    (if m.inductions then ["inductions := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3006,7 +3077,8 @@ end
 Sized so that the whole corpus takes about 2 minutes of one CI machine. -/
 def corpus : List (Mode × Nat × Nat) :=
   [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
-    ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1)]
+    ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
+    ({ inductions := true }, 0, 20)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -3578,10 +3650,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -3597,8 +3669,10 @@ unsafe def main (args : List String) : IO UInt32 := do
     IO.FS.createDirAll ".lake/fuzz"
     return ← mainFiles files ".lake/fuzz"
   let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
-                       sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees" }
-  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees")
+                       sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
+                       inductions := args.contains "--inductions" }
+  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
+    && a != "--inductions")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

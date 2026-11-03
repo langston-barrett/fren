@@ -589,6 +589,11 @@ structure CompInfo where
   fn? : Option Name := none
   /-- A global expectation with a block (`Core.Comp.global`). -/
   global : Bool := false
+  /-- For a global expectation, the functions generated for induction on
+  its parameters, by its claims (`Reqs/Lang/Recursion#induction`): each
+  claim's name, with the paths of its functions, one for each candidate,
+  in order, whose bodies are in `State.bodies`. -/
+  inductions : Array (Name × Array Name) := #[]
   /-- Internal checks generated for a declared subset alias. -/
   subset? : Option Name := none
   subsetInvariant? : Option Name := none
@@ -892,6 +897,12 @@ structure LocalState where
   currentItem : Name := .anonymous
   /-- Internal subset checks may quantify an otherwise unbounded output. -/
   inSubset : Bool := false
+  /-- Of the item being elaborated, the variables that are the argument at
+  the decreasing parameter of an application of a structural recursion
+  in it, written as their names, and whether it applies an uninterpreted
+  function (`lang::induction_candidate`). -/
+  inductionArgs : Array Name := #[]
+  inductionAbstract : Bool := false
   /-- Where each closure's obligation is checked, by its position, with the
   higher-order function that its closure is given to (`Core.viaNote`). -/
   vias : Array (Option String.Pos.Raw × Name) := #[]

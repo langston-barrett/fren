@@ -249,7 +249,17 @@ def similarStr (s : String) (cands : Array String) : Option String :=
   | some (c, d) => if d ≤ limit then some c else byPrefix
   | none => byPrefix
 
+/-- Whether the name `n` is one that a front end generates rather than one
+that is written: no identifier starts with `#`, so no source declares or
+mentions it. Such a name shadows nothing, and the rules and lints of
+written names, such as `?` ending a `Bool`'s name, do not apply to it. -/
+def generatedName (n : String) : Bool := n.startsWith "#"
+
+/-- A name of `cands` similar to `n`, if there is one, but never a generated
+one (`generatedName`), which no source can write, such as the function
+that induction on a global expectation's parameter generates. -/
 def similar (n : Name) (cands : Array Name) : Option Name :=
+  let cands := cands.filter fun c => !(match c with | .str _ s => generatedName s | _ => false)
   (similarStr n.toString (cands.map (·.toString))).bind fun c => cands.find? (·.toString == c)
 
 /-- A fix replacing `n` with a similar candidate, if there is one; `msg`
@@ -797,12 +807,6 @@ def nameText : Name → String
 /-- `checkVarKind`, reading whether the name ends in `?` from its text. -/
 def checkVarName (n : Name) (isBool? : Option Bool) : Except Msg Unit :=
   checkVarKind n (Fren.Str.endsWith (nameText n) "?") isBool?
-
-/-- Whether the name `n` is one that a front end generates rather than one
-that is written: no identifier starts with `#`, so no source declares or
-mentions it. Such a name shadows nothing, and the rules and lints of
-written names, such as `?` ending a `Bool`'s name, do not apply to it. -/
-def generatedName (n : String) : Bool := n.startsWith "#"
 
 /-! ## Shadowing (`Reqs/Lang/Procedures#shadowing`) -/
 

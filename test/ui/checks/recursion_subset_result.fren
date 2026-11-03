@@ -54,8 +54,22 @@ pub fn rep<T>(x: T, l: L): T := match l {
     L::Cons(_, rest) => rep(x, rest),
 }
 
+-- With no fact of `rep`'s result, its check is Inconclusive, but induction
+-- on `l` proves it (`Reqs/Lang/Recursion#induction`): at `L::Nil` the
+-- result is `b`, whose payload is a `Pos`, and at `L::Cons(_, t)` it is
+-- `rep(b, t)`, which the claim at `t` covers. It rests on `rep`'s
+-- equations, not on a fact of its result.
 expect rep_caller(b: Box, l: L) {
-    expect c: match rep(b, l) {  --~ warning: could not decide whether `r::rep_caller::c` holds
+    expect c: match rep(b, l) {
+        Box::B(n) => n >= 1,
+    }
+}
+
+-- The same claim, where no parameter is the argument at `rep`'s decreasing
+-- parameter, so induction is not tried: still Inconclusive, as the result
+-- brings no fact of its type argument's.
+expect rep_caller_direct(b: Box, l: L) {
+    expect c: match rep(b, L::Cons(0, l)) {  --~ warning: could not decide whether `r::rep_caller_direct::c` holds
         Box::B(n) => n >= 1,
     }
 }

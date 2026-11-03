@@ -1,0 +1,18 @@
+-- The function generated for induction on a parameter has a name that no
+-- source can write, which starts with `#`, so nothing else can apply it and
+-- rest on its contract, which is checked only for its expectation
+-- (`Reqs/Lang/Recursion#induction`). The name below is the one it would
+-- have, but where it has `#`.
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn len(l: L): Int := match l {
+    L::Nil => 0,
+    L::Cons(_, r) => 1 + len(r),
+}
+
+expect wrong(a: L) { expect wrong: len(a) = 3 }
+
+expect sneaky(a: L) {
+    assume h: induction_wrong_wrong_a_451?(a)   --~ error: cannot find `induction_wrong_wrong_a_451?` in this scope
+    expect s: len(a) = 3
+}

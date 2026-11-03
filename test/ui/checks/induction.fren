@@ -1,0 +1,133 @@
+-- Induction on a global expectation's parameter: where a claim's check is
+-- Inconclusive, the contract of a function generated from it, by Hoare's
+-- rule, on each candidate in order (`Reqs/Lang/Recursion#induction`).
+-- fren-covers: lang::induction_candidate, lang::induction_hypotheses, lang::induction_verdict
+--@ summary: 34 passed, 1 failed, 6 inconclusive, 0 redundant
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn len(l: L): Int := match l {
+    L::Nil => 0,
+    L::Cons(_, r) => 1 + len(r),
+}
+
+pub fn append(a: L, b: L): L := match a {
+    L::Nil => b,
+    L::Cons(h, t) => L::Cons(h, append(t, b)),
+}
+
+pub fn rev(a: L): L := match a {
+    L::Nil => L::Nil,
+    L::Cons(h, t) => append(rev(t), L::Cons(h, L::Nil)),
+}
+
+-- Proved by induction on `a`, the first candidate, with the claim at `t`
+-- and `b`: `b` is a candidate too, as `len(b)` has it at `len`'s
+-- decreasing parameter, but is not tried.
+expect len_append(a: L, b: L) { expect adds: len(append(a, b)) = len(a) + len(b) }
+
+expect nil_right(a: L) { expect nil_right: append(a, L::Nil) = a }
+
+-- Induction on `a`, the first candidate, proves it: `b` is the argument at
+-- `append`'s decreasing parameter too, in `append(b, c)`.
+expect assoc(a: L, b: L, c: L) { expect assoc: append(append(a, b), c) = append(a, append(b, c)) }
+
+-- Under an assumption, which the induction hypotheses have too.
+expect nil_suffix(a: L, b: L) {
+    assume empty: b = L::Nil
+    expect same: len(append(a, b)) = len(a)
+}
+
+-- Needs `append(L::Nil, b) = b` where `a` is `L::Cons(h, L::Nil)`: one
+-- step of `append` at the child, which applications that the equations
+-- bring do not have yet.
+expect long(a: L, b: L) {
+    assume nonempty: a != L::Nil
+    expect longer: len(append(a, b)) > len(b)   --~ warning: could not decide whether `long::longer` holds
+}
+
+-- Needs `adds` at `rev(t)`: earlier claims are not hypotheses yet.
+expect len_rev(a: L) {
+    expect len_rev: len(rev(a)) = len(a)   --~ warning: could not decide whether `len_rev::len_rev` holds
+}
+
+-- A claim that its check refutes still fails.
+expect wrong(a: L) {
+    expect wrong: len(a) = 3   --~ error: expectation `wrong::wrong` does not hold
+}
+
+-- No candidate: a call.
+pub proc measure(l: L): (det n: Int) { ensure value: n = len(l) }
+
+expect called(a: L, b: L) {
+    call m := measure(append(a, b))
+    expect adds: m.n = len(a) + len(b)   --~ warning: could not decide whether `called::adds` holds
+}
+
+-- No candidate: an uninterpreted function.
+pub fn weight(L): Int
+
+expect weighed(a: L, b: L) {
+    expect adds: len(append(a, b)) + weight(a) = len(a) + len(b) + weight(a)   --~ warning: could not decide whether `weighed::adds` holds
+}
+
+-- No candidate: a parameter of a subset type.
+type NonEmpty = l: L where invariant: l is L::Cons(_, _)
+
+expect nonempty(a: L, b: NonEmpty) {
+    expect adds: len(append(a, b)) = len(a) + len(b)   --~ warning: could not decide whether `nonempty::adds` holds
+}
+
+-- An instance of a generic enumeration.
+pub enum G<A> { Z, S(A, G<A>) }
+
+pub fn count<A>(g: G<A>): Int := match g {
+    G::Z => 0,
+    G::S(_, r) => 1 + count(r),
+}
+
+expect counted(g: G<Int>) { expect nonnegative: count(g) >= 0 }
+
+-- Each claim within a Boolean block, by its own induction.
+expect both(a: L, b: L) {
+    expect claims: and {
+        right: append(a, L::Nil) = a,
+        adds: len(append(a, b)) = len(a) + len(b),
+    }
+}
+
+-- A block with a scenario.
+expect covered(a: L) {
+    cover nonempty: a != L::Nil   --~ info: cover goal `covered::nonempty` is met
+    expect right: append(a, L::Nil) = a
+}
+
+-- A false claim that its own check leaves Inconclusive, since evaluation
+-- refutes the solver's model: induction does not pass it either, as the
+-- step from `len(t) != 5` to `1 + len(t) != 5` does not hold, and the
+-- generated function's postcondition is a hypothesis only at its
+-- recursive applications, never at its own.
+expect off(a: L) {
+    expect c: len(a) != 5   --~ warning: could not decide whether `off::c` holds
+}
+
+-- A claim within a Boolean block and a claim whose names the generated
+-- functions' names once wrote alike (`claims.right`, `claims_right`):
+-- each has a function of its own, and each passes.
+expect alike(a: L) {
+    expect claims: and { right: append(a, L::Nil) = a }
+    expect claims_right: len(append(a, L::Nil)) = len(a)
+}
+
+-- Names like those that the Lean front end parses the generated function
+-- with, before it splices the expectation's syntax in: its placeholders
+-- take a prefix that no name of the expectation starts with, so a
+-- parameter, a type's argument or a claim's variable is never renamed.
+expect placeholders(fren_induction_p0: L, fren_induction_t0: L) {
+    assume empty: fren_induction_t0 = L::Nil
+    expect same: len(append(fren_induction_p0, fren_induction_t0)) = len(fren_induction_p0)
+}
+
+expect placeholder_claim(a: L, fren_induction_a0: L) {
+    assume empty: fren_induction_a0 = L::Nil
+    expect same: len(append(a, fren_induction_a0)) = len(a)
+}

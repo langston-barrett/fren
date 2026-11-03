@@ -153,7 +153,10 @@ procedure are obligations on the call's arguments, as in any procedure,
 which the global expectation's assumptions must discharge: the [call
 check](../Check.md#call-assumptions) confirms that they do. So a global
 expectation states its domain: the inputs it is about are those that its
-assumptions admit, and each call is one that its procedure accepts.
+assumptions admit, and each call is one that its procedure accepts. Where
+its check of an expectation is Inconclusive, the expectation may still
+pass by induction on a parameter of a recursive enumeration
+([Induction](Recursion.md#induction)).
 
 All the calls share one [interpretation](Procedures.md#interpretations)
 of the spec's abstract types and functions, and the global expectation
