@@ -664,7 +664,10 @@ evidence, and every question that it asks first, such as the redundancy of
 each constraint, though a run asks some only after an answer
 (`Fren.Core.questionsOf`). A check set to random testing or enumeration
 shows the question that the solver would be asked, with that evidence,
-though the solver is not asked it. The dump leaves out:
+though the solver is not asked it. A question that the solver is asked is
+shown as it is asked, with the checks set to testing or enumeration taken
+out: without the assumptions of a call set to them, in the question of the
+item's vacuity under its trait's laws. The dump leaves out:
 
 - the realizability checks of a generic contract at the instances that a
   spec applies, which a run asks only where the check at its type
@@ -750,10 +753,11 @@ to check, as any other is.
 by the place of its text in the order of texts, as a front end gives them
 and as the dump prints them, are printed in ascending order, each once,
 and are exactly those that the front end gives. Its `impl` is proved of
-`Fren.Core.sortedOnce`, which prints them, over every sequence of places.
-That the places are those of an order on texts is assumed: the dump
-orders texts by `String`'s order (`Fren.Core.textLe`), which is total, and
-under which two texts are in the same place only if they are equal:
+`Fren.Core.sortedOnce`, which prints them, over every sequence of places,
+but of its instance on `Int` with `Int`'s order, not of the instance that
+the dump runs, on `String` with `Fren.Core.textLe`. That the two agree is
+assumed: that `textLe`, `String`'s order, is total and transitive, and
+that two texts are in the same place under it only if they are equal:
 
 ```fren
 set_option fren.lint.undecidable "allow" in

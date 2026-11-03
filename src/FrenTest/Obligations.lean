@@ -88,6 +88,26 @@ private def carrier : Comp String :=
 #guard ((questionsOf (fun _ => backend) { full with assumes := #[] } #[.realizable]).run #[]).1.any fun q =>
   q.part == "assumptions" && q.hyps.isEmpty && q.consistency
 
+/-- The evidence and script of the obligation of `c` under the laws, with
+the call `i` set to testing, as `obligationsOf` gives them, and the
+solver's, with the hypotheses and goal of the query of `untested`'s vacuity
+under the laws, which `checkCompLawful` asks of it. -/
+private def lawsWithTestedCall (c : Comp String) (untested : Comp String) : Option String × Option String :=
+  let tested : Tested := { insts := #[`i] }
+  let text (hyps : Array (Name × String)) (goal : String) : String := s!"{hyps} {goal}"
+  let ((os : Array Obligation), _) :=
+    (obligationsOf (fun _ => backend) (fun _ hyps goal => pure (text hyps goal)) c #[.vacuity] tested {}).run #[]
+  let (_, asked) := (checkCompLawful (fun _ => backend) untested #[.vacuity]).run #[]
+  ((os.find? (·.part == "laws")).map fun o => s!"{o.evidence} {o.script}",
+    asked.back?.map fun (hyps, goal) => s!"solver {text hyps goal}")
+
+-- A call set to testing has its assumptions cleared (`Comp.untested`), and
+-- the question under the laws, which the solver is asked, has the context
+-- that it is asked with, not the item's.
+#guard let (dumped, asked) := lawsWithTestedCall full (full.untested { insts := #[`i] } #[.vacuity]).1
+  dumped.isSome && dumped == asked
+#guard (lawsWithTestedCall full full).1 != (lawsWithTestedCall full full).2
+
 /-! The canonical form of a script. -/
 
 private def script (lines : List String) : String := "\n".intercalate lines ++ "\n"

@@ -675,9 +675,13 @@ def itemName (c : Comp F) : Name :=
 /-- The obligations of `c`, with the checks `kinds`, of which those set to
 testing or enumeration, `tested` and `enumerated`, have their evidence:
 `questionsOf` of `c`, with their scripts, as `script` gives them for each
-kind. `spanOf` gives where a constraint, or the item itself, is written,
-and `symbols` the canonical name of each of the front end's symbols that
-`ItemSymbol.text` names otherwise. -/
+kind. A question that the solver is asked has the hypotheses and goal that
+it is asked them with, those of `c.untested`, which can differ from `c`'s:
+`Comp.untested` clears the assumptions of a call set to testing or
+enumeration, which a vacuity question reads. `spanOf` gives where a
+constraint, or the item itself, is written, and `symbols` the canonical
+name of each of the front end's symbols that `ItemSymbol.text` names
+otherwise. -/
 def obligationsOf (bk : CheckKind → Backend m F V) (script : CheckKind → Array (Name × F) → F → m String)
     (c : Comp F) (kinds : Array CheckKind) (tested enumerated : Tested) (interprets : F → Bool := fun _ => false)
     (spanOf : Option Name → Option String := fun _ => none) (symbols : Std.HashMap String String := {}) :
@@ -687,7 +691,9 @@ def obligationsOf (bk : CheckKind → Backend m F V) (script : CheckKind → Arr
   let bySolver ← questionsOf bk solved solverKinds interprets
   all.mapM fun q => do
     let r : CheckResult := { kind := q.kind, comp := c.path, prop? := q.prop?, verdict := .pass }
-    let evidence := evidenceName (bySolver.any (·.same q)) (tested.covers r) (enumerated.covers r)
+    let asked? := bySolver.find? (·.same q)
+    let evidence := evidenceName asked?.isSome (tested.covers r) (enumerated.covers r)
+    let q := asked?.getD q
     let item := itemName c
     return q.obligation item (← script q.kind q.hyps q.goal) evidence (spanOf q.prop?) symbols
 

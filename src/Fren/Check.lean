@@ -108,14 +108,18 @@ def noQueryShown : String := "lean-smt showed no query"
 shows in it with `showQuery`, after its `query:`, is given, or the
 error that it threw, as an `(error ...)` command. With `showQuery`,
 lean-smt returns once it has shown the query, before it gives it to the
-solver (`Smt.smt`), so nothing is asked. -/
+solver (`Smt.smt`), so nothing is asked. The messages logged before it are
+kept even if `act` throws what `catch` does not catch, such as reaching a
+heartbeat limit. -/
 def queryShown (act : MetaM α) : MetaM (Option α × String) := do
   let saved := (← getThe Core.State).messages
   modifyThe Core.State fun s => { s with messages := {} }
-  let (a?, failed?) ← try pure (some (← act), none) catch ex => do
-    pure (none, some (Core.errorScript (← ex.toMessageData.toString)))
-  let logged := (← getThe Core.State).messages
-  modifyThe Core.State fun s => { s with messages := saved }
+  let (a?, failed?, logged) ← tryFinally
+    (do
+      let (a?, failed?) ← try pure (some (← act), none) catch ex => do
+        pure (none, some (Core.errorScript (← ex.toMessageData.toString)))
+      return (a?, failed?, (← getThe Core.State).messages))
+    (modifyThe Core.State fun s => { s with messages := saved })
   -- The query that lean-smt showed, even if it threw after showing it.
   for m in logged.toList do
     let text ← m.data.toString
