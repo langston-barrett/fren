@@ -1181,7 +1181,11 @@ again; the Lean-hosted front end obtains one only of the queries whose
 check reports it or whose formulas apply a recursive function, and asks
 again only those. Both decide by `Fren.Core.asksAgain` and
 `Fren.Core.keepsSecond`, in `Fren.Core.askedAgain`, which implement
-`requery`:
+`requery`. It states only those two decisions, over the facts that they
+weigh; the rest of the rule, that a model without values contradicts
+nothing, that formulas that apply a recursive function are left out, and
+that the answer kept is evaluated last, is stated here, and tested by
+`src/FrenTest/AskedAgain.lean`:
 
 ```fren
 pub proc requery(
@@ -1194,8 +1198,9 @@ pub proc requery(
     out second? := asks? and again_sat? and not again_contradicted?
 }
 
--- A query is asked again only for a contradicted model, and the second
--- answer is kept only with a model that confirmation does not contradict.
+-- A query is asked again only for a contradicted model, by a front end that
+-- can, and the second answer is kept only where it was asked, with a model
+-- that confirmation does not contradict.
 expect requery_confirmed(first_contradicted?, can_ask?, again_sat?, again_contradicted?) {
     call r := requery(
         first_contradicted?,
@@ -1204,7 +1209,10 @@ expect requery_confirmed(first_contradicted?, can_ask?, again_sat?, again_contra
         again_contradicted?,
     )
     expect only_contradicted: when r.asks?, first_contradicted?
+    expect only_askable: when r.asks?, can_ask?
+    expect only_asked: when r.second?, r.asks?
     expect confirmed: when r.second?, again_sat? and not again_contradicted?
+    cover kept: r.second?
 }
 ```
 

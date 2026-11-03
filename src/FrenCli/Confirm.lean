@@ -444,15 +444,15 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
       let recsOf (f : String × Fm) := f.2.recursiveNames sp ++ recursiveIn f.1
       let applies (_ : Unit) := (hyps.map fun (_, f) => recsOf f, recsOf goal)
       -- The truths of the hypotheses and of the goal at `model`, read
-      -- right, each model evaluated once: the last is kept, for the
-      -- confirmation below of the model that `askedAgain` keeps.
-      let last ← IO.mkRef (none : Option (Array (Name × String) × Array (Name × Option Bool) × Option Bool))
+      -- right, each model evaluated once: those of both models of a query
+      -- asked again are kept, for the confirmation below of the model that
+      -- `askedAgain` keeps, whichever it is.
+      let seen ← IO.mkRef (#[] : Array (Array (Name × String) × Array (Name × Option Bool) × Option Bool))
       let truths (model : Array (Name × String)) : IO (Array (Name × Option Bool) × Option Bool) := do
-        if let some (m, t) ← last.get then
-          if m == model then return t
+        if let some (_, t) := (← seen.get).find? (·.1 == model) then return t
         let (env, I) := readModel sp sy model false typed
         let t := (hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys), goal.2.eval sp sy I env tys)
-        last.set (some (model, t))
+        seen.modify (·.push (model, t))
         return t
       -- Whether the model contradicts a formula without recursion, a bug in
       -- Fren, which the refutation below reports, not evidence about the
