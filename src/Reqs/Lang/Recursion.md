@@ -545,7 +545,8 @@ pub fn applies_recursive?(hyps: Seq<ModelFormula>, goal: ModelFormula) :=
 -- goal fails.
 set_option fren.lint.undecidable "allow" in
 pub fn evaluation_confirms?(hyps: Seq<ModelFormula>, goal: ModelFormula) :=
-    goal.value = Evaluated::Fails and (forall (k: Int), when 0 <= k < hyps.len, hyps[k].value = Evaluated::Holds)
+    goal.value = Evaluated::Fails
+        and (forall (k: Int), when 0 <= k < hyps.len, hyps[k].value = Evaluated::Holds)
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "solver" in
@@ -555,8 +556,9 @@ pub proc counterexample_confirmed(
     facts_recursive?,            -- a fact of the applications that the query has applies a recursive function
 ): (det report_counterexample?) {
     use self::Evaluated::{Fails, Holds, Unevaluated}
-    ensure rule: report_counterexample? iff (not facts_recursive?
-        and (not applies_recursive?(hyps, goal) or evaluation_confirms?(hyps, goal)))
+    ensure rule: report_counterexample? iff
+        (not facts_recursive?
+            and (not applies_recursive?(hyps, goal) or evaluation_confirms?(hyps, goal)))
 
     -- A model that evaluation refutes is never a failure.
     expect refuted: when applies_recursive?(hyps, goal)
