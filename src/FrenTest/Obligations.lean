@@ -78,6 +78,15 @@ private def carrier : Comp String :=
 -- Without assumptions, there is no question of their consistency.
 #guard questionsAsked { full with assumes := #[], defs := #[], indexes := #[] } #[.redundancy] == (true, 3)
 #guard questionsAsked { full with reqs := #[] } == (true, 20)
+-- Each kind alone, so that a check whose first query changes fails here
+-- whichever kinds are selected.
+#guard CheckKind.all.all fun k => (questionsAsked full #[k]).1
+#guard CheckKind.all.all fun k => (questionsAsked { full with laws := #[] } #[k]).1
+-- Realizability, and every other kind, of an item without assumptions,
+-- whose question of their consistency has an empty context.
+#guard questionsAsked { full with assumes := #[] } == (true, 21)
+#guard ((questionsOf (fun _ => backend) { full with assumes := #[] } #[.realizable]).run #[]).1.any fun q =>
+  q.part == "assumptions" && q.hyps.isEmpty && q.consistency
 
 /-! The canonical form of a script. -/
 

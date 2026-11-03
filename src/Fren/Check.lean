@@ -1870,9 +1870,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       -- An item whose questions cannot be built is one `(error ...)`
       -- obligation, as a script that cannot be built is.
       catch ex =>
-        let comp := match c.fn? with
-          | some f => if c.path.isPrefixOf f then f else c.path ++ f
-          | none => c.path
+        let comp := Core.itemName full
         r.modify (·.push #[{ comp, kind := (kinds0[0]?).getD .realizable, part := "questions"
                              script := Core.errorScript (← ex.toMessageData.toString) }])
     let bk (k : CheckKind) :=
