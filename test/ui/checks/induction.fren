@@ -2,7 +2,7 @@
 -- Inconclusive, the contract of a function generated from it, by Hoare's
 -- rule, on each candidate in order (`Reqs/Lang/Recursion#induction`).
 -- fren-covers: lang::induction_candidate, lang::induction_hypotheses, lang::induction_verdict
---@ summary: 34 passed, 1 failed, 6 inconclusive, 0 redundant
+--@ summary: 37 passed, 1 failed, 6 inconclusive, 0 redundant
 pub enum L { Nil, Cons(Int, L) }
 
 pub fn len(l: L): Int := match l {
@@ -131,3 +131,18 @@ expect placeholder_claim(a: L, fren_induction_a0: L) {
     assume empty: fren_induction_a0 = L::Nil
     expect same: len(append(a, fren_induction_a0)) = len(a)
 }
+
+-- A parameter whose enumeration has a payload of a subset type is a
+-- candidate: the payload's invariant is a fact where it is read, never an
+-- obligation, and the parameter's own type is no subset type.
+type Pos = n: Int where positive: n >= 1
+
+set_option fren.lint.undecidable "allow" in
+pub enum PL { Nil, Cons(Pos, PL) }
+
+pub fn plen(l: PL): Int := match l {
+    PL::Nil => 0,
+    PL::Cons(_, r) => 1 + plen(r),
+}
+
+expect plen_nonnegative(l: PL) { expect nonnegative: plen(l) >= 0 }

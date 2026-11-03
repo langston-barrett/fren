@@ -387,8 +387,11 @@ expectation's parameters that is a *candidate*, in the order of the
 parameters, until one proves it, where its generated function is accepted
 (below). `lang::induction_candidate` states which
 parameters are. The expectation's block has only assumptions, claims and
-scenarios, and applies no uninterpreted function. No parameter's type is or
-has within it a subset type. The parameter's type is a recursive
+scenarios, and applies no uninterpreted function. No parameter's type is a
+subset type, or has one as a type argument or an element type, as
+`lang::subset_widening`'s `restricted?` reads a declared type: a payload
+of a parameter's enumeration may still have one, as it brings an
+invariant as a fact, never an obligation. The parameter's type is a recursive
 enumeration with a payload of that same type. And the parameter is the
 argument at the decreasing parameter of an application of a structural
 recursion in the block, written as its name.
@@ -398,7 +401,7 @@ set_option fren.lint.undecidable "allow" in
 pub proc induction_candidate(
     members: Set<BlockMember>,   -- the kinds of the members of the expectation's block
     abstract?,                   -- the block applies an uninterpreted function
-    constrained?,                -- some parameter's type is or has within it a subset type
+    constrained?,                -- some parameter's type is a subset type, or has one as a type argument or element type (`lang::subset_widening`'s `restricted?`)
     recursive?,                  -- the parameter's type is an enumeration with a payload of that type (`lang::directly_recursive`)
     decreasing?,                 -- the parameter is the argument at the decreasing parameter of an application in the block
 ): (det candidate?) {

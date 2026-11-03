@@ -1900,7 +1900,8 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       let mut attempts := #[]
       for f in fns do
         let some b := st0.bodies.get? f | continue
-        let (rs, _, _, _) ← checkComp b #[.postcondition] none hooks?
+        -- Under a heartbeat limit of its own, as the nested checks below.
+        let (rs, _, _, _) ← withCurrHeartbeats (checkComp b #[.postcondition] none hooks?)
         let some p := rs.find? (·.kind == .postcondition) | continue
         attempts := attempts.push p
         if p.verdict == .pass then break

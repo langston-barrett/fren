@@ -27,7 +27,9 @@ def inductionMember (m : BlockMember) : Bool := m == .assume || m == .expect || 
 /-- Whether induction is tried on a parameter of a global expectation
 (`lang::induction_candidate`): its block has only the members of
 `inductionMember`, `members`, applies no uninterpreted function, and no
-parameter's type is a subset type, nor has one within it (`constrained`);
+parameter's type is a subset type, nor has one as a type argument or an
+element type (`constrained`, `PTy.restricted`, as `lang::subset_widening`'s
+`restricted?` reads it), though a payload of its enumeration may;
 and the parameter's type is a directly recursive enumeration, and it is
 the argument at the decreasing parameter of an application of a
 structural recursion in the block. -/
