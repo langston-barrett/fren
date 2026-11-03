@@ -745,12 +745,7 @@ pub proc query_key(
     ensure kept: kept? iff (forall (o: Observed), when o in observed, observed_text?(o))
     ensure spelled: spelled? iff (observations.len = observed.len
         and (forall (i: Int), when 0 <= i < observed.len, holds?(observed[i], observations[i])))
-    out key := Key {
-        script,
-        observations,
-        solver,
-        version,
-    }
+    out key := Key { script, observations, solver, version }
 }
 
 pub enum Answer { Unsat, Sat, SatWithModel, Unknown }

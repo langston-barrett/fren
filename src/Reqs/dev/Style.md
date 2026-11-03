@@ -95,15 +95,15 @@ quote, so it needs no label.
   (see [Rules and requirements](#rules-and-requirements)).
 
   ```text
-  r[evaluation.operator.concatenation] lang::operator_rules::{binary_defined, list_concatenation}
+  r[evaluation.operator.concatenation] lang::operator_domains::binary_defined, lang::primitive_operator_values::list_concatenation
   `++` applies only to two strings or two lists. Of two lists, it gives the
   elements of the first, then those of the second.
   ```
 
 - The links are paths, fully qualified, separated by `, `. Each names an
   item of a ```` ```fren ```` block, or a clause of one as the item's path
-  and the clause's name (`lang::operator_rules::list_concatenation`). A
-  path may end in `::{...}`, which stands for its prefix followed by each
+  and the clause's name (`lang::operator_values::negation`). A path may
+  end in `::{...}`, which stands for its prefix followed by each
   of the links between the braces, separated by `, `, as in a Rust `use`
   declaration: `lang::p::{a, b}` is `lang::p::a, lang::p::b`. Braces nest,
   as in `lang::{p::{a, b}, q}`, and a name may end in `?`, as

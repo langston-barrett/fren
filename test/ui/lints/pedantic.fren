@@ -122,11 +122,8 @@ proc cells(row: Int, column: Int, x: Int): (a: Cell, b: Cell, det c: Cell) {
     -- A field written alone mentions its variable: not `constant_output`.
     out c := Cell { row, column }
 
-    ensure r1: a = Cell {
-        column := x + 1,
-        row,
-    }
-    --~^^^^ warning: the fields of this literal are not in the order `Cell` declares them
+    ensure r1: a = Cell { column := x + 1, row }
+    --~^ warning: the fields of this literal are not in the order `Cell` declares them
     ensure r2: b = Cell { row, column := x }
 }
 

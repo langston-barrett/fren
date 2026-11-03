@@ -9,7 +9,8 @@ expression, with the coincidence lemma, and the guards of the
 **Dynamic semantics**
 
 r[evaluation.laws]
-Each law of `lang::leaf_rules`, `let_rules`, `operator_rules`,
+Each law of `lang::leaf_rules`, `let_rules`, `operator_strictness`,
+`operator_domains`, `operator_values`, `primitive_operator_values`,
 `lazy_rules`, `if_rules`, `match_rules`, `list_rules`, `method_rules` and
 `call_rules` is about one form of expression, and is stated over the
 outcomes of the form's immediate subexpressions, some of them
@@ -90,49 +91,49 @@ An operator evaluates every operand, and applies to some of their values.
 
 **Dynamic semantics**
 
-r[evaluation.operator.strict] lang::operator_rules::{strict_left, strict_right, strict_unary}
+r[evaluation.operator.strict] lang::operator_strictness::{strict_left, strict_right, strict_unary}
 `Unary(op, a)` and `Binary(op, a, b)` evaluate every operand. Each is
 undefined where an operand is not WD.
 
-r[evaluation.operator.defined] lang::operator_rules::{strict_unary, strict_left, strict_right, unary_defined, binary_defined}
+r[evaluation.operator.defined] lang::operator_strictness, lang::operator_domains::{unary_defined, binary_defined}
 `Unary(op, a)` and `Binary(op, a, b)` are WD exactly where the operands
 are and the operator applies to their values. The rules below say where
 each operator applies, and `unary_applies?` and `applies?` in the block
 below state it exactly.
 
-r[evaluation.operator.not] lang::operator_rules::{unary_defined, negated}
+r[evaluation.operator.not] lang::operator_domains::unary_defined, lang::operator_values::negated
 `not` applies to a `Bool`, and gives its negation.
 
-r[evaluation.operator.negation] lang::operator_rules::negation
+r[evaluation.operator.negation] lang::operator_values::negation
 `-` applies to an integer.
 
-r[evaluation.operator.arithmetic] lang::operator_rules::{binary_defined, sum, difference}
+r[evaluation.operator.arithmetic] lang::operator_domains::binary_defined, lang::operator_values::{sum, difference}
 The arithmetic operators, `+`, `-`, `*`, `div` and `mod`, apply only to
 integers. `+` gives the sum, and `-` the difference.
 
-r[evaluation.operator.primitive] lang::operator_rules::{binary_defined, product, quotient, remainder, text_concatenation}
+r[evaluation.operator.primitive] lang::operator_domains::binary_defined, lang::primitive_operator_values::{product, quotient, remainder, text_concatenation}
 `*`, `div` and `mod` of two integers, and `++` of two strings, are
 [primitive operations](Semantics.md#environments-and-interpretations).
 Each applies where the interpretation has a point for it at the operands'
 values, except `div` and `mod` by `0` (`evaluation.operator.division`), and
 gives that point's value.
 
-r[evaluation.operator.division] lang::operator_rules::zero_divisor
+r[evaluation.operator.division] lang::primitive_operator_values::zero_divisor
 `div` and `mod` apply only to a divisor other than `0`.
 
-r[evaluation.operator.concatenation] lang::operator_rules::{binary_defined, list_concatenation}
+r[evaluation.operator.concatenation] lang::operator_domains::binary_defined, lang::primitive_operator_values::list_concatenation
 `++` applies only to two strings or two lists. Of two lists, it gives the
 elements of the first, then those of the second.
 
-r[evaluation.operator.membership] lang::operator_rules::{binary_defined, membership}
+r[evaluation.operator.membership] lang::operator_domains::binary_defined, lang::primitive_operator_values::membership
 `in` applies, to any left operand, exactly where its right operand is a
 list, and says whether the left operand's value is one of the list's
 elements.
 
-r[evaluation.operator.equality] lang::operator_rules::equality
+r[evaluation.operator.equality] lang::operator_values::equality
 `=` applies to any two values, and says whether they are equal.
 
-r[evaluation.operator.order] lang::operator_rules::{binary_defined, less, at_most}
+r[evaluation.operator.order] lang::operator_domains::binary_defined, lang::operator_values::{less, at_most}
 `<` and `<=` apply only to integers, and compare them.
 
 r[evaluation.operator.order.excluded]
@@ -170,11 +171,63 @@ pub fn applies?(i: Interp, op: BinaryOp, v: Value, w: Value) := match op, v, w {
     _, _, _ => false,
 }
 
-expect operator_rules(
+-- Strictness: an operand that is not WD makes the operation undefined.
+expect operator_strictness(i: Interp, env: Env, op: BinaryOp, a: Expr<Id>, b: Expr<Id>) {
+    expect strict_left: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Binary(op, a, b)) = Outcome::Undefined
+    expect strict_right: when eval(i, env, b) = Outcome::Undefined, eval(i, env, Expr::Binary(op, a, b)) = Outcome::Undefined
+    expect strict_unary: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Unary(UnaryOp::Not, a)) = Outcome::Undefined
+        and eval(i, env, Expr::Unary(UnaryOp::Neg, a)) = Outcome::Undefined
+}
+
+-- Where the operands are WD, the operation is WD exactly where the operator applies.
+expect operator_domains(
     i: Interp,
     env: Env,
     uop: UnaryOp,
     op: BinaryOp,
+    a: Expr<Id>,
+    b: Expr<Id>,
+    v: Value,
+    w: Value,
+) {
+    expect unary_defined: when eval(i, env, a) = Outcome::Defined(v),
+        (eval(i, env, Expr::Unary(uop, a)) is Outcome::Defined(_)) iff unary_applies?(uop, v)
+    expect binary_defined: when eval(i, env, a) = Outcome::Defined(v) and eval(i, env, b) = Outcome::Defined(w),
+        (eval(i, env, Expr::Binary(op, a, b)) is Outcome::Defined(_)) iff applies?(i, op, v, w)
+}
+
+-- The values of the unary operators, and of `=` and the linear operations, which are Fren's own.
+expect operator_values(
+    i: Interp,
+    env: Env,
+    a: Expr<Id>,
+    b: Expr<Id>,
+    m: Int,
+    n: Int,
+    v: Value,
+    w: Value,
+    p?,
+) {
+    expect negated: when eval(i, env, a) = Outcome::Defined(truth(p?)),
+        eval(i, env, Expr::Unary(UnaryOp::Not, a)) = Outcome::Defined(truth(not p?))
+    expect negation: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)),
+        eval(i, env, Expr::Unary(UnaryOp::Neg, a)) = Outcome::Defined(Value::Integer(-m))
+    expect equality: when eval(i, env, a) = Outcome::Defined(v) and eval(i, env, b) = Outcome::Defined(w),
+        eval(i, env, Expr::Binary(BinaryOp::Eq, a, b)) = Outcome::Defined(truth(v = w))
+    expect sum: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
+        eval(i, env, Expr::Binary(BinaryOp::Add, a, b)) = Outcome::Defined(Value::Integer(m + n))
+    expect difference: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
+        eval(i, env, Expr::Binary(BinaryOp::Sub, a, b)) = Outcome::Defined(Value::Integer(m - n))
+    expect less: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
+        eval(i, env, Expr::Binary(BinaryOp::Lt, a, b)) = Outcome::Defined(truth(m < n))
+    expect at_most: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
+        eval(i, env, Expr::Binary(BinaryOp::Le, a, b)) = Outcome::Defined(truth(m <= n))
+}
+
+-- The others are the interpretation's primitive operations, but `++` of lists and `in`.
+expect primitive_operator_values(
+    i: Interp,
+    env: Env,
     a: Expr<Id>,
     b: Expr<Id>,
     m: Int,
@@ -183,30 +236,7 @@ expect operator_rules(
     t: String,
     v: Value,
     w: Value,
-    p?,
 ) {
-    -- Strictness: an operand that is not WD makes the operation undefined.
-    expect strict_left: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Binary(op, a, b)) = Outcome::Undefined
-    expect strict_right: when eval(i, env, b) = Outcome::Undefined, eval(i, env, Expr::Binary(op, a, b)) = Outcome::Undefined
-    expect strict_unary: when eval(i, env, a) = Outcome::Undefined, eval(i, env, Expr::Unary(UnaryOp::Not, a)) = Outcome::Undefined
-        and eval(i, env, Expr::Unary(UnaryOp::Neg, a)) = Outcome::Undefined
-    -- Where the operands are WD, the operation is WD exactly where the operator applies.
-    expect unary_defined: when eval(i, env, a) = Outcome::Defined(v),
-        (eval(i, env, Expr::Unary(uop, a)) is Outcome::Defined(_)) iff unary_applies?(uop, v)
-    expect binary_defined: when eval(i, env, a) = Outcome::Defined(v) and eval(i, env, b) = Outcome::Defined(w),
-        (eval(i, env, Expr::Binary(op, a, b)) is Outcome::Defined(_)) iff applies?(i, op, v, w)
-    expect negated: when eval(i, env, a) = Outcome::Defined(truth(p?)),
-        eval(i, env, Expr::Unary(UnaryOp::Not, a)) = Outcome::Defined(truth(not p?))
-    expect negation: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)),
-        eval(i, env, Expr::Unary(UnaryOp::Neg, a)) = Outcome::Defined(Value::Integer(-m))
-    expect equality: when eval(i, env, a) = Outcome::Defined(v) and eval(i, env, b) = Outcome::Defined(w),
-        eval(i, env, Expr::Binary(BinaryOp::Eq, a, b)) = Outcome::Defined(truth(v = w))
-    -- The linear operations are Fren's own.
-    expect sum: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
-        eval(i, env, Expr::Binary(BinaryOp::Add, a, b)) = Outcome::Defined(Value::Integer(m + n))
-    expect difference: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
-        eval(i, env, Expr::Binary(BinaryOp::Sub, a, b)) = Outcome::Defined(Value::Integer(m - n))
-    -- The others are the interpretation's primitive operations.
     expect product: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
         eval(i, env, Expr::Binary(BinaryOp::Mul, a, b)) = primitive(i, "*", Value::Integer(m), Value::Integer(n))
     expect quotient: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)) and n != 0,
@@ -221,10 +251,6 @@ expect operator_rules(
         eval(i, env, Expr::Binary(BinaryOp::Concat, a, b)) = Outcome::Defined(append(v, w))
     expect membership: when eval(i, env, a) = Outcome::Defined(v) and eval(i, env, b) = Outcome::Defined(w) and list?(w),
         eval(i, env, Expr::Binary(BinaryOp::In, a, b)) = Outcome::Defined(truth(element?(v, w)))
-    expect less: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
-        eval(i, env, Expr::Binary(BinaryOp::Lt, a, b)) = Outcome::Defined(truth(m < n))
-    expect at_most: when eval(i, env, a) = Outcome::Defined(Value::Integer(m)) and eval(i, env, b) = Outcome::Defined(Value::Integer(n)),
-        eval(i, env, Expr::Binary(BinaryOp::Le, a, b)) = Outcome::Defined(truth(m <= n))
 }
 
 expect count_rules(i: Interp, env: Env, c: Cardinality, args: Expr<Id>, l: Value) {

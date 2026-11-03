@@ -66,10 +66,7 @@ pub proc c(x: Int, s: String, m: Mode, rd: Reading, sp: Span): (ok?, y: Int) {
         Reading::Value(v) => v,
     }
     ensure modes: m != Mode::Heat or s.starts_with?("h")
-    ensure spans: sp = { sp with
-        lo := x.min(y),
-        hi := 3,
-    }
+    ensure spans: sp = { sp with lo := x.min(y), hi := 3 }
 
     expect e: when x = 3, ok?
 }

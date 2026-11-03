@@ -8,6 +8,7 @@ import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.OutOfFuel
 import FrenTest.Quote
+import FrenTest.SmallValues
 import FrenTest.Ui
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -40,6 +41,8 @@ import Lean.Elab.Frontend
   reads back as each tree, by the parser of the `fren` command, and needs
   each pair of parentheses that it adds, but those of its exceptions
   (`printing`, `lint::printing`).
+- **Sets in models:** the binary's fallback renderer of solver models
+  shows sets and relations as literals (`renderedSets`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
@@ -184,7 +187,9 @@ def uiTests (env : Environment) (files : Array FilePath) : IO (Array String) := 
         failures := failures.push s!"{f} (binary): {e}"
       cliStopped := some (out.contains s!"error: {Fren.Core.couldNotHeadline}")
     if spec.only? != some "cli" then
-      let (diags, summary) ← hostedDiagnostics env f.toString src
+      -- Each type that the hosted front end takes from its cache checked
+      -- against the term's elaborated again (`Fren.typeOf`).
+      let (diags, summary) ← hostedDiagnostics env f.toString src (Fren.fren.checkTypeCache.set {} true)
       let stopped := diags.any isStopped
       for e in check "hosted" spec (diags.filter (!isStopped ·)) summary none do
         failures := failures.push s!"{f} (Lean): {e}"
@@ -1126,6 +1131,35 @@ def hostedChecks : IO (Array String) := do
           failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as the chapter comes after its file's last `#fren_check` in a `fren` block: name it, as `#fren_check {i}`"
   return failures
 
+/-- `QueryCache`'s answers in memory: a script asked again gets the answer
+that it got first (`Reqs/Cli#solver-queries`), whichever of its maps
+(`FrenCli.answerShard`) holds it. Keys inserted into many maps are each
+found, also from a key built anew; a key never inserted is not; and a key
+inserted again gets its last answer. -/
+def answersInMemory : IO (Array String) := do
+  let cache ← FrenCli.QueryCache.new
+  let key (n : Nat) : FrenCli.Hashed FrenCli.QueryKey :=
+    .of (s!"(check-sat) ; {n}", #[{ key := `obs, formula := s!"x{n}" }])
+  let answer (n : Nat) : Fren.Core.Outcome String × Bool :=
+    (if n % 2 == 0 then .unsat else .sat #[(`x, toString n)], n % 3 == 0)
+  let render : Option (Fren.Core.Outcome String × Bool) → String
+    | some (.sat m, b) => s!"sat {m.map fun (x, v) => (x.toString, v)} {b}"
+    | some (.unsat, b) => s!"unsat {b}"
+    | some (.unknown r, b) => s!"unknown {r} {b}"
+    | none => "none"
+  let ns := List.range 200
+  for n in ns do cache.insert (key n) (answer n)
+  cache.insert (key 7) (answer 8)
+  let mut failures := #[]
+  let shards := (ns.map fun n => (FrenCli.answerShard (key n)).val).eraseDups.length
+  if shards < 32 then failures := failures.push s!"200 keys fell in only {shards} of the answers' maps"
+  for n in ns do
+    let want := if n == 7 then answer 8 else answer n
+    unless render (← cache.find? (key n)) == render (some want) do
+      failures := failures.push s!"the answer to key {n} is not the one inserted for it"
+  if (← cache.find? (key 1000)).isSome then failures := failures.push "a key never inserted has an answer"
+  return failures
+
 /-- `fren check --query-cache` gives the same output cold, in a fresh
 directory, as warm, from it, and the warm run answers every query from the
 cache, writing no entry; a third run, cold into another fresh directory
@@ -1218,34 +1252,100 @@ def queryCache : IO (Array String) := do
   unless (← FrenCli.comparableEntries (FilePath.mk first) solver) && !(← FrenCli.comparableEntries (FilePath.mk first) "another solver")
       && !(← FrenCli.comparableEntries (root / "missing") solver) do
     failures := failures.push "`comparableEntries` misjudges a cache that a run could compare with"
+  failures := failures ++ (← answersInMemory)
   IO.FS.removeDirAll root
   return failures
 
 /-- A satisfiable query whose solver initializes its theories at a
 definition: in `ALL`, a logic with nonlinear arithmetic, whose solvers
 take `FrenCli.Cvc5.solverLock`, or, if `linear`, in `QF_UFDTLIA`, whose
-solvers do not. -/
-def lifetimeScript (k : Nat) (linear : Bool := false) : String :=
+solvers do not. If `pushed`, it initializes them earlier, at a `push`,
+which `FrenCli.Cvc5.initializes` lists too, so that the lock is let go
+there, before the definition. -/
+def lifetimeScript (k : Nat) (linear : Bool := false) (pushed : Bool := false) : String :=
+  let push := if pushed then "(push 1)\n" else ""
   if linear then
     s!"(set-logic QF_UFDTLIA)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-      s!"(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
+      s!"{push}(define-fun dbl ((y Int)) Int (+ y y))\n(assert (> (dbl x) {k}))\n"
   else
     s!"(set-logic ALL)\n(set-option :produce-models true)\n(declare-const x Int)\n" ++
-      s!"(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
+      s!"{push}(define-fun sq ((y Int)) Int (* y y))\n(assert (> (sq x) {k}))\n"
+
+/-- The name that cvc5 gives the last command of `cmds`, run after
+`(set-logic ALL)` and `(declare-const x Int)`, and whether it initialized
+the solver: `(set-option :produce-models true)` after it then fails. On
+`solver`, which it borrows (`FrenCli.Cvc5`). -/
+def initializationOn (solver : @& cvc5.Solver) (cmds : String) : cvc5.Env (String × Bool) := do
+  let parser ← FrenCli.Cvc5.parserNew solver
+  let sm ← FrenCli.Cvc5.getSymbolManager parser
+  FrenCli.Cvc5.setStringInput parser s!"(set-logic ALL)\n(declare-const x Int)\n{cmds}\n(set-option :produce-models true)\n"
+    .SMT_LIB_2_6 "lean-cvc5"
+  let mut names := #[]
+  let mut outs := #[]
+  repeat
+    let cmd ← FrenCli.Cvc5.nextCommand parser
+    if FrenCli.Cvc5.isNull cmd then break
+    names := names.push (FrenCli.Cvc5.commandName cmd)
+    outs := outs.push (← FrenCli.Cvc5.invoke cmd solver sm)
+  return (names[names.size - 2]!, (outs.back!.trimAscii.toString.startsWith "(error"))
+
+/-- `initializationOn` on a solver of `tm`, freed before it returns. -/
+@[noinline] def initializationWith (tm : @& cvc5.TermManager) (cmds : String) : cvc5.Env (String × Bool) := do
+  initializationOn (← FrenCli.Cvc5.solverNew tm) cmds
+
+/-- Each command of `FrenCli.Cvc5.initializingCommands` has a case here
+and always initializes its solver, and the commands that
+`FrenCli.queryScript` writes before them do not, as cvc5 names them:
+`FrenCli.solveOn` lets `FrenCli.Cvc5.solverLock` go after the first of
+the former. -/
+def initializingCommandsHold : IO (Array String) := do
+  let initializing := #["(assert (> x 0))", "(define-fun f () Int 1)", "(define-fun f ((n Int)) Int n)",
+    "(define-fun-rec g ((n Int)) Int (ite (<= n 0) 0 (g (- n 1))))",
+    "(define-funs-rec ((h ((n Int)) Int)) ((ite (<= n 0) 0 (h (- n 1)))))", "(define-const c Int 1)",
+    "(push 1)", "(check-sat)", "(check-sat-assuming (true))"]
+  let other := #["(declare-const y Int)", "(declare-fun u (Int) Int)", "(declare-sort S 0)", "(define-sort T () Int)",
+    "(declare-datatype D ((A) (B (b Int))))", "(set-option :strings-exp true)"]
+  let mut failures := #[]
+  let mut named := #[]
+  for (cmds, expected) in initializing.map (·, true) ++ other.map (·, false) do
+    match ← cvc5.Env.run (do initializationWith (← cvc5.TermManager.new) cmds) with
+    | .error e => failures := failures.push s!"`{cmds}` failed: {e}"
+    | .ok (name, initialized) =>
+      if expected then named := named.push name
+      if initialized != expected then
+        failures := failures.push s!"`{cmds}` {if expected then "does not initialize" else "initializes"} the solver"
+      if FrenCli.Cvc5.initializes name != expected then
+        failures := failures.push s!"`{cmds}`, which cvc5 names `{name}`, is {if expected then "not " else ""}one that `FrenCli.Cvc5.initializes` lists"
+  -- Every listed command has a case here, so none is listed unchecked.
+  for c in FrenCli.Cvc5.initializingCommands do
+    unless named.contains c do
+      failures := failures.push s!"`{c}`, which `FrenCli.Cvc5.initializes` lists, has no case in `initializingCommandsHold`"
+  return failures
 
 /-- This process's resident memory, in kB, as `ps` reports it. -/
 def residentKb : IO Nat := do
   let out ← IO.Process.output { cmd := "ps", args := #["-o", "rss=", "-p", toString (← IO.Process.getPID)] }
   return out.stdout.trimAscii.toString.toNat!
 
+/-- Whether glibc's own allocations are mimalloc's, as the executables'
+`malloc` makes them on Linux (`c/mimalloc_malloc.c`): 1 if they are, 0 if
+not, and 2 where that file replaces no allocator. -/
+@[extern "fren_malloc_is_mimalloc"] opaque mallocIsMimalloc : Unit → UInt32
+
 /-- Each query's solver is freed once it is answered, so that the memory
 of `fren check` does not grow with the number of its queries; and solvers
 of a logic with nonlinear arithmetic answer correctly on several threads
-at once, which they share libpoly's state for (`FrenCli.Cvc5`). -/
+at once, which they share libpoly's state for (`FrenCli.Cvc5`), each
+command that the lock is let go after always initializing its solver
+(`initializingCommandsHold`); and on Linux, they allocate with mimalloc
+(`mallocIsMimalloc`). -/
 def solverLifetime : IO (Array String) := do
-  let mut failures := #[]
-  let solve (k : Nat) (linear : Bool := false) : IO Bool := do
-    return (← FrenCli.solveScript (lifetimeScript k linear) #[] false) matches .sat _
+  let mut failures ← initializingCommandsHold
+  -- cvc5 allocates through `malloc`, which is mimalloc's on Linux.
+  if mallocIsMimalloc () == 0 then
+    failures := failures.push "glibc's `strdup` did not allocate with mimalloc: `c/mimalloc_malloc.c` does not replace `malloc`"
+  let solve (k : Nat) (linear : Bool := false) (pushed : Bool := false) : IO Bool := do
+    return (← FrenCli.solveScript (lifetimeScript k linear pushed) #[] false) matches .sat _
   -- Warm up the allocator first, so that what it keeps does not count.
   for k in [0:100] do discard <| solve k
   let before ← residentKb
@@ -1260,10 +1360,13 @@ def solverLifetime : IO (Array String) := do
   -- without `FrenCli.Cvc5.exclusively`, this crashed one run in three.
   -- After every third, each thread asks one in a linear logic, whose
   -- solvers take no lock and must answer correctly beside those that do.
+  -- Every other query in `ALL` initializes its solver at a `push`, which
+  -- `FrenCli.Cvc5.initializes` lists, so that it lets the lock go there,
+  -- before its definition, rather than at the definition.
   let tasks ← (List.range 16).mapM fun t => IO.asTask (prio := .dedicated) do
     let mut n := 0
     for k in [0:300] do
-      if ← solve (1000 * t + k) then n := n + 1
+      if ← solve (1000 * t + k) (pushed := k % 2 == 1) then n := n + 1
       if k % 3 == 0 then if ← solve (1000 * t + k) (linear := true) then n := n + 1
     return n
   for t in tasks do
@@ -1284,9 +1387,205 @@ def ownSpecCaches : IO (Option String × Option String) := do
   let verify? := (← IO.getEnv "FREN_VERIFY_QUERY_CACHE").filter (· != "")
   return (dir?, verify?)
 
+/-- The ui tests that `sharedSpec` runs on the `fren` binary's path, each
+in a process of its own: they fail checks (exit 1) and leave checks
+undecided (exit 3), under `check` and `quickcheck`. -/
+def sharedSpecUi : Array (List String) :=
+  let ui := #["enumerated_collections", "enumerated_quantifiers", "contracts", "quantifier_facts"].map
+    (s!"test/ui/checks/{·}.fren")
+  ui.map (["check", ·]) ++ ui.map (["quickcheck", ·])
+
+/-- Run by `sharedSpec` in a process of its own: `fren ARGS` as the `fren`
+binary runs it, marking what its threads share persistent
+(`FrenCli.Args.persist`), with its output (stdout and stderr) and exit
+code. Once in the process, since what it marks is never freed. -/
+def persistentRun (args : List String) : IO (Array String) := do
+  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.run args (persist := true))
+  return #[toString code, out]
+
+/-- Copies the files of the directory `src`, if there is one, into `dst`,
+which it makes. -/
+def copyTree (src dst : FilePath) : IO Unit := do
+  IO.FS.createDirAll dst
+  unless ← src.isDir do return
+  for f in ← src.walkDir do
+    if ← f.isDir then continue
+    let rel := (f.toString.dropPrefix (src.toString ++ "/")).toString
+    let target := dst / rel
+    if let some p := target.parent then IO.FS.createDirAll p
+    IO.FS.writeBinFile target (← IO.FS.readBinFile f)
+
+/-- Whether an output says that a solver query reached its time limit,
+which a busier machine makes likelier (`Reqs/Cli#parallel-checking`). -/
+def timedOut (out : String) : Bool := out.contains "returned unknown (TIMEOUT)".toSlice
+
+/-- The blocks of a run's output: each diagnostic, from its line that
+starts with a letter (`warning[F0608]: …`) to the next such line, and each
+line of the summary. -/
+def outputBlocks (out : String) : Array String := Id.run do
+  let mut blocks : Array String := #[]
+  for l in out.splitOn "\n" do
+    let starts := l.toList.head?.any Char.isAlpha
+    if starts || blocks.isEmpty then blocks := blocks.push l
+    else blocks := blocks.modify (blocks.size - 1) (· ++ "\n" ++ l)
+  return blocks
+
+/-- Where a diagnostic block points (`--> FILE:LINE:COL`), if it does. -/
+def blockSite (block : String) : Option String :=
+  (block.splitOn "\n").findSome? fun l => match l.splitOn "--> " with
+    | [_, site] => some site.trimAscii.toString
+    | _ => none
+
+/-- `xs` without one occurrence of each of `ys`. -/
+def removeEach (xs ys : Array String) : Array String :=
+  ys.foldl (init := xs) fun acc y => match acc.idxOf? y with
+    | some i => acc.eraseIdx! i
+    | none => acc
+
+/-- Whether outputs `a` and `b` differ only because queries reached their
+time limit: some block that differs says so, and every block that differs
+is one that says so, or one at the place of a check that one of those is
+about, or a line of the summary, whose counts and codes those change. A
+wrong result elsewhere differs at a place where no query timed out. -/
+def onlyTimedOut (a b : String) : Bool :=
+  let (xs, ys) := (outputBlocks a, outputBlocks b)
+  let diff := removeEach xs ys ++ removeEach ys xs
+  let timed := diff.filter timedOut
+  let sites := timed.filterMap blockSite
+  let summary (block : String) :=
+    block.startsWith "fren: " || block.startsWith "Some errors have" || block.startsWith "For more information"
+  !timed.isEmpty && diff.all fun block => timedOut block || summary block || (blockSite block).any sites.contains
+
+-- A check that timed out on one side only, which the other refuted, is
+-- excused; the same with a wrong result at another check is not, nor is a
+-- difference with no time limit reached.
+private def timedOutSide : String :=
+  "warning[F0608]: could not decide whether `p::r` is redundant: the solver returned unknown (TIMEOUT)\n --> a.fren:3:5\n" ++
+  "fren: 1 passed, 0 failed, 1 inconclusive, 0 redundant"
+private def refutedSide : String :=
+  "error[F0601]: `p::e` fails\n --> a.fren:3:5\n  = note: x = 1\n" ++
+  "fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant"
+private def wrongElsewhere : String :=
+  "error[F0601]: `p::e` fails\n --> a.fren:3:5\n  = note: x = 1\n" ++
+  "error[F0601]: `p::f` fails\n --> a.fren:9:5\n  = note: x = 2\n" ++
+  "fren: 0 passed, 2 failed, 0 inconclusive, 0 redundant"
+#guard onlyTimedOut timedOutSide refutedSide
+#guard !onlyTimedOut timedOutSide wrongElsewhere
+#guard !onlyTimedOut refutedSide wrongElsewhere
+
+/-- `out` without the lines of `--verify-query-cache`'s report
+(`fren: compared …`), which only a run that compares writes. -/
+def unverified (out : String) : String :=
+  "\n".intercalate ((out.splitOn "\n").filter (!·.startsWith "fren: compared "))
+
+/-- How a run of the `fren` binary's path compares with the tests' path's
+run: the same, different, or different only because queries reached their
+time limit (`onlyTimedOut`). -/
+inductive Agreement where
+  | same
+  | differs (msg : String)
+  | timedOut (msg : String)
+
+/-- Runs `fren ARGS --jobs 4` on the binary's path (`persistentRun`), in a
+process of its own, and compares its output and exit code with `ref`'s,
+the tests' path, unmarked. -/
+def sharedAgrees (args : List String) (ref : IO (String × UInt32)) : IO Agreement := do
+  let cmd :: rest := args | return .same
+  let name := " ".intercalate (cmd :: (rest.filter (!·.startsWith "src/Reqs/")))
+  let out ← IO.Process.output
+    { cmd := (← IO.appPath).toString, args := #["--job", "persistentRun", cmd, "--jobs", "4"] ++ rest.toArray }
+  let (one, oneCode) ← ref
+  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+  unless out.stderr.isEmpty do
+    return .differs s!"`fren {name}` on the binary's shared path wrote to stderr:\n{out.stderr}"
+  match (Json.parse last >>= fromJson? : Except String (Array String)) with
+  | .ok #[code, shared] =>
+    if code == toString oneCode && shared == one then return .same
+    let msg := s!"`fren {name}`: the binary's shared path at --jobs 4 (exit {code}) differs from the tests' path (exit {oneCode}):\n{shared}\n---\n{one}"
+    return if onlyTimedOut shared one then .timedOut msg else .differs msg
+  | _ => return .differs s!"`fren {name}` on the binary's shared path crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"
+
+/-- A case of `sharedSpec`: `first`, then, if it differed only because
+queries reached their time limit, `again` once. Its failures, and the
+skip, if it still differed so: only a run that reached no time limit must
+give the same output at every `--jobs`. -/
+def sharedCase (first : Agreement) (again : IO Agreement) : IO (Array String × Array String) := do
+  match first with
+  | .same => return (#[], #[])
+  | .differs msg => return (#[msg], #[])
+  | .timedOut _ =>
+    match ← again with
+    | .same => return (#[], #[])
+    | .differs msg => return (#[msg], #[])
+    | .timedOut msg =>
+      let head := ((msg.splitOn "\n").head?.getD msg).dropSuffix ":" |>.toString
+      return (#[], #[s!"{head}, but only where queries reached their time limit, twice"])
+
+/-- Starts the run of Fren's own requirements on the binary's path for
+`sharedSpec`, in a task, with a copy of the query cache `cache?`, if any,
+in `root`, so that it shares no directory with another run. -/
+def sharedOwnStart (root : FilePath) (cache? : Option String) (ref : IO (String × UInt32)) :
+    IO (Task (Except IO.Error Agreement)) := do
+  let dir := root / "own"
+  copyTree (cache?.getD "/nonexistent") dir
+  IO.asTask (sharedAgrees (["check", "--query-cache", dir.toString] ++ ownSpecFiles.toList) ref) .dedicated
+
+/-- The `fren` binary's path through `check` and `quickcheck`, where the
+spec and what else the threads read is read once, marked persistent and
+shared by every thread (`FrenCli.inParallel`), gives the same output and
+exit code at `--jobs 4` as the path of the tests, unmarked
+(`Reqs/Cli#parallel-checking`). Each run of that path is a process of its
+own (`persistentRun`).
+
+Fren's own requirements run on the binary's path with a copy of `cache`,
+the query cache of `ownSpec`, if any, taken once `ownSpec`'s own run,
+`own?`, the tests' path, has filled it, so that its queries are answered
+from it rather than solved under load. Run alone, the tests' path is a run
+at `--jobs 1` with a copy of its own, at once with the binary's path. The
+ui tests (`sharedSpecUi`) run meanwhile, each against a run at `--jobs 1`.
+A case that differs only because queries reached their time limit
+(`onlyTimedOut`) runs again once, Fren's own requirements then with a
+fresh copy of the cache that the tests' path filled, and is skipped if it
+still differs so. The skips are printed on stdout as `skipped: …` lines,
+which `spawnJob` shows. -/
+def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none) : IO (Array String) := do
+  let root : FilePath := ".lake" / "shared-spec-test" / s!"{← IO.monoNanosNow}"
+  try
+    let ref : IO (String × UInt32) ← match own? with
+      | some own => pure (pure own)
+      | none => do
+        copyTree (cache.getD "/nonexistent") (root / "ref")
+        pure (runFren (["check", "--jobs", "1", "--query-cache", (root / "ref").toString] ++ ownSpecFiles.toList))
+    -- The tests' path runs once, whichever run of the binary's path it is
+    -- compared with.
+    let refTask ← IO.asTask ref .dedicated
+    let refOnce : IO (String × UInt32) := IO.ofExcept refTask.get
+    let own ← sharedOwnStart root cache refOnce
+    let mut failures := #[]
+    let mut skips := #[]
+    for args in sharedSpecUi do
+      let ui := runFren (args.head! :: "--jobs" :: "1" :: args.tail)
+      let (f, s) ← sharedCase (← sharedAgrees args ui) (sharedAgrees args ui)
+      failures := failures ++ f
+      skips := skips ++ s
+    -- Again with the cache that the tests' path filled.
+    let again : IO Agreement := do
+      let (refOut, refCode) ← refOnce
+      let dir := root / "again"
+      copyTree ((if own?.isSome then cache else some (root / "ref").toString).getD "/nonexistent") dir
+      sharedAgrees (["check", "--query-cache", dir.toString] ++ ownSpecFiles.toList) (pure (refOut, refCode))
+    let (f, s) ← sharedCase (← IO.ofExcept own.get) again
+    failures := failures ++ f
+    skips := skips ++ s
+    for skip in skips do IO.println s!"skipped: {skip}"
+    return failures
+  finally
+    if ← root.pathExists then IO.FS.removeDirAll root
+
 /-- Fren's own requirements pass under the binary, and it checks every
-chapter that the Lean front end does; and Lean checks every chapter too
-(`hostedChecks`). -/
+chapter that the Lean front end does; Lean checks every chapter too
+(`hostedChecks`); and the binary's shared path agrees with the tests'
+(`sharedSpec`), with this job's query cache, once it is filled. -/
 def ownSpec : IO (Array String) := do
   let missing := (← hostedSpecFiles).filter (!ownSpecFiles.contains ·)
   let (queryCache?, verifyQueryCache?) ← ownSpecCaches
@@ -1314,6 +1613,7 @@ def ownSpec : IO (Array String) := do
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
     ++ compared
     ++ (← hostedChecks)
+    ++ (← sharedSpec queryCache? (some (unverified out, code)))
 
 /-- A message that Lake kept in a module's trace, `src/Reqs/M.lean:L:C: text`
 or `src/Reqs/M.lean:L:C: warning: text`, about a Markdown spec that the
@@ -1474,6 +1774,29 @@ def ownSpecAgreement : IO (Array String) := do
       failures := failures.push s!"{g}:{d.line}: Lean reports about a spec that `ownSpecFiles` lacks: {FrenTest.Frontends.headOf d}"
   return failures
 
+/-! ## Models as the solver writes them -/
+
+/-- How `FrenCli.renderValue` shows a model's value, as cvc5 writes it,
+where the evaluator cannot read it (`FrenCli.confirming`'s `render`). A set
+is a union or insertion of singletons of 1-tuples, and is shown as a
+literal of its members, sorted as text, so `10` comes before `2`. A
+relation's members are pairs, and are shown as pairs. The empty set is
+shown as `{}`. The evaluator reads every set in the tests' models, so only
+this job runs this rendering. -/
+def renderedSets : Array String := Id.run do
+  let cases : Array (String × String) := #[
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 0)))", "{0, 2}"),
+    ("(set.insert (tuple 3) (tuple 1) (set.singleton (tuple 2)))", "{1, 2, 3}"),
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 10)))", "{10, 2}"),
+    ("(set.singleton (tuple 1 (- 2)))", "{(1, -2)}"),
+    ("(as set.empty (Set (Tuple Int)))", "{}")]
+  let mut failures := #[]
+  for (v, shown) in cases do
+    let got := FrenCli.renderValue #[] v
+    unless got == shown do
+      failures := failures.push s!"renderValue {v} is `{got}`, not `{shown}`"
+  return failures
+
 /-! ## Formatting -/
 
 /-- The specs in the repository: its `.fren` and Markdown files, outside
@@ -1523,13 +1846,11 @@ formatting them means updating those too. They are formatted a group at a
 time, each only where the new layout reads better than the old, and this
 list is then removed (#509). -/
 def fmtPending : List String :=
-  ["test/cli/commands/counterexample_newtype.fren",
-   "test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
+  ["test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
    "test/ui/checks/subset_obligations.fren",
    "test/ui/lang/bool_members.fren", "test/ui/lang/cardinality.fren",
    "test/ui/lang/cardinality_static.fren", "test/ui/lang/chained_comparisons.fren",
-   "test/ui/lang/checking_static.fren", "test/ui/lang/constants.fren",
-   "test/ui/lang/constants_imported.fren", "test/ui/lang/constants_static.fren",
+   "test/ui/lang/checking_static.fren", "test/ui/lang/constants_static.fren",
    "test/ui/lang/datatypes.fren", "test/ui/lang/datatypes_static.fren",
    "test/ui/lang/declared_types_static.fren", "test/ui/lang/defined_functions.fren",
    "test/ui/lang/defined_functions_static.fren", "test/ui/lang/defined_outputs.fren",
@@ -1538,7 +1859,7 @@ def fmtPending : List String :=
    "test/ui/lang/generic_functions.fren", "test/ui/lang/generic_functions_contracts.fren",
    "test/ui/lang/generic_functions_static.fren", "test/ui/lang/generics.fren",
    "test/ui/lang/generics_guards_contracts.fren", "test/ui/lang/generics_pattern_elements.fren",
-   "test/ui/lang/generics_recursive_within.fren", "test/ui/lang/generics_static.fren",
+   "test/ui/lang/generics_static.fren",
    "test/ui/lang/generics_subset_types.fren", "test/ui/lang/global_static.fren",
    "test/ui/lang/guards.fren", "test/ui/lang/guards_static.fren",
    "test/ui/lang/higher_order_obligations.fren", "test/ui/lang/instances_static.fren",
@@ -1559,7 +1880,7 @@ def fmtPending : List String :=
    "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_elements.fren",
    "test/ui/lang/quantifiers_let.fren", "test/ui/lang/quantifiers_places.fren",
    "test/ui/lang/quantifiers_static.fren", "test/ui/lang/range_patterns.fren",
-   "test/ui/lang/record_updates.fren", "test/ui/lang/record_updates_static.fren",
+   "test/ui/lang/record_updates_static.fren",
    "test/ui/lang/refines.fren", "test/ui/lang/refines_pattern.fren",
    "test/ui/lang/relations_static.fren", "test/ui/lang/scoping.fren",
    "test/ui/lang/sequences.fren", "test/ui/lang/sequences_static.fren",
@@ -1569,8 +1890,7 @@ def fmtPending : List String :=
    "test/ui/lang/tables.fren", "test/ui/lang/tables_scrutinee.fren",
    "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren",
    "test/ui/lang/type_facts.fren", "test/ui/lang/types.fren",
-   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren",
-   "test/ui/lints/records.fren", "test/ui/lints/updates_covers.fren"]
+   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren"]
 
 /-- A file's pieces (`fmt::Piece`), each comment with whether it starts
 its line, and the paths the `use` items import, sorted. With `all`, every
@@ -1707,7 +2027,14 @@ def apartLines (out : String) (blanks : Std.HashMap Nat Nat) : Std.HashSet Nat :
   let (lineOf, starts) := FrenCli.Fmt.lineTable chars
   let text (l : Nat) : String :=
     String.ofList (chars.extract starts[l]! ((starts[l + 1]?.map (· - 1)).getD chars.size)).toList
-  let spans := lay.items.map fun (f, l) => (lineOf[toks[f]!.span.start]!, lineOf[toks[l]!.span.stop - 1]!)
+  -- An item's first and last lines (`fmt::item_lines`), from those of its
+  -- first and last tokens, of the comments after it and of the next token.
+  let spans := lay.items.map fun (f, l) =>
+    let stop := toks[l]!.span.stop
+    let next : Option Nat := toks[l + 1]?.map fun (t : FrenCli.Token) => t.span.start
+    let trailing := comments.toList.filter (fun (c : FrenCli.Span) => c.start ≥ stop && next.all (c.stop ≤ ·))
+      |>.map fun (c : FrenCli.Span) => (lineOf[c.start]!, lineOf[c.stop - 1]!)
+    FrenCli.Fmt.itemLines lineOf[toks[f]!.span.start]! lineOf[stop - 1]! trailing (next.map (lineOf[·]!))
   let annotations := comments.filterMap fun c =>
     (FrenCli.Fmt.annotationReach (FrenCli.Fmt.text chars c)).map (lineOf[c.start]!, ·)
   let mut apart : Std.HashSet Nat := {}
@@ -2361,13 +2688,64 @@ def specsOf (src : String) : Array String :=
 #guard specsOf "#fren_md \"a.md\"\n#guard_msgs in #fren_md \"b.md\"\n  #fren_md \"c/d.md\"\n" == #["a.md", "b.md", "c/d.md"]
 #guard specsOf "-- `#fren_md` with no file\n" == #[]
 
+/-- The default targets of the lakefile `lakefile`: the names of its
+`lean_lib`s and `lean_exe`s marked `@[default_target]`, the attribute on
+the declaration's line or on a line of its own before it; or, as an
+error, the first `@[default_target]` that it cannot read, so that no
+default target is missed. -/
+def defaultTargets (lakefile : String) : Except String (Array String) := do
+  let lines := (lakefile.splitOn "\n").toArray
+  let mut out := #[]
+  for i in [0:lines.size] do
+    let line := lines[i]!.trimAscii.toString
+    unless line.startsWith "@[default_target]" do continue
+    let after := (line.drop "@[default_target]".length).trimAscii.toString
+    let decl := if after.isEmpty then ((lines[i + 1]?).getD "").trimAscii.toString else after
+    let rest := (decl.dropPrefix? "lean_lib ").orElse fun _ => decl.dropPrefix? "lean_exe "
+    let name := (rest.bind fun r => (r.toString.splitOn " ").head?).getD ""
+    unless !name.isEmpty && name.all (fun c => c.isAlphanum || c == '_') do
+      throw s!"lakefile.lean:{i + 1}: `lake test`'s `libraries` job cannot read the default target `{line}`"
+    out := out.push name
+  return out
+
+#guard defaultTargets "@[default_target] lean_lib A where\n  x := 1\nlean_lib B\n@[default_target] lean_exe c where\n" == .ok #["A", "c"]
+#guard defaultTargets "@[default_target]\nlean_lib A where\n" == .ok #["A"]
+#guard (defaultTargets "@[default_target] lean_lib «a b» where\n" matches .error _)
+#guard (defaultTargets "@[default_target] target x where\n" matches .error _)
+
+/-- The targets that the job `build` of the workflow `workflow` builds in
+its matrix: the names after each `targets:` from the job's line to the
+next job's (a line indented by two spaces). -/
+def matrixTargets (workflow : String) : Array String := Id.run do
+  let mut out := #[]
+  let mut inBuild := false
+  for line in workflow.splitOn "\n" do
+    if line.startsWith "  " && !line.startsWith "   " && !line.startsWith "  #" then
+      inBuild := line == "  build:"
+    else if inBuild then
+      if let some rest := line.trimAscii.toString.dropPrefix? "targets: " then
+        out := out ++ (rest.toString.splitOn " ").toArray.filter (!·.isEmpty)
+  return out
+
+#guard matrixTargets "jobs:\n  build:\n    strategy:\n      matrix:\n        - part: a\n          targets: A B\n        - part: b\n          targets: c\n  test:\n    targets: D\n" == #["A", "B", "c"]
+
 /-- Each copy of a root's imports is the root's; no module is in the globs
 of two libraries; each module of Reqs reads only the specs that its
 library needs; only modules whose library needs the tests make `tested`
 claims; and only the tests whose library needs the files that they read,
-`FrenTestFiles`, read files with `#fren_md`. -/
+`FrenTestFiles`, read files with `#fren_md`; and `pre-merge`'s build
+jobs together build exactly the default targets. -/
 def libraries : IO (Array String) := do
   let mut failures := #[]
+  -- `lake build --wfail` runs on two machines, each building some of the
+  -- default targets, so that a new one would otherwise go unbuilt.
+  let built := ((matrixTargets (← IO.FS.readFile ".github/workflows/pre-merge.yml")).qsort (· < ·)).toList.eraseDups.toArray
+  match defaultTargets (← IO.FS.readFile "lakefile.lean") with
+  | .error e => failures := failures.push e
+  | .ok ts =>
+    let want := ts.qsort (· < ·)
+    if want != built then
+      failures := failures.push s!".github/workflows/pre-merge.yml: its build jobs build {built.toList}, but the default targets of `lakefile.lean` are {want.toList}"
   for (root, copies) in rootCopies do
     let ofRoot (ms : Array String) := (ms.filter (·.startsWith s!"{root}.")).qsort (· < ·)
     let want := ofRoot (← importsOf root)
@@ -3320,9 +3698,20 @@ def spawnOutOfFuel (env : Array (String × Option String)) : IO (UInt32 × Optio
 /-- A job's `panic!` fails it (`spawnJob`): `outOfFuel`, whose evaluation
 runs out of fuel, aborts with `LEAN_ABORT_ON_PANIC`, and without it says
 so on stderr and finds that the test counts for nothing
-(`FrenTest.OutOfFuel.tinyFuel`). -/
+(`FrenTest.OutOfFuel.tinyFuel`). And `unknownFirst`, whose evaluation
+would run out of fuel only if it evaluated what follows an unknown case
+whose value is unknown, does not abort with it
+(`FrenTest.OutOfFuel.unknownFirstLazy`). -/
 def panicGuard : IO (Array String) := do
   let mut failures := #[]
+  let abort := #[("LEAN_ABORT_ON_PANIC", some "1")]
+  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args := #["--job", "unknownFirst"], env := abort }
+  let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
+  match out.exitCode, (Json.parse last >>= fromJson? (α := Array String)).toOption with
+  | 0, some found => failures := failures ++ found
+  | code, _ =>
+    let msg := s!"`unknownFirst` evaluated what follows an unknown case whose value is unknown, or crashed (exit {code}):\n{out.stderr}"
+    failures := failures.push msg
   let (code, _, err) ← spawnOutOfFuel #[("LEAN_ABORT_ON_PANIC", some "1")]
   unless code != 0 && (err.splitOn "Ex.eval ran out of fuel").length > 1 do
     failures := failures.push s!"running out of fuel with `LEAN_ABORT_ON_PANIC` did not abort (exit {code}):\n{err}"
@@ -3345,7 +3734,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["panicGuard"]]
+      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -3363,6 +3752,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["panicGuard"] => panicGuard
   -- Spawned by `panicGuard` only: it panics.
   | ["outOfFuel"] => Fren.Test.OutOfFuel.tinyFuel
+  -- Spawned by `panicGuard` only, with `LEAN_ABORT_ON_PANIC`.
+  | ["unknownFirst"] => Fren.Test.OutOfFuel.unknownFirstLazy
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
   | ["manualExamples"] => do
@@ -3377,7 +3768,13 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     markdownFences (← importModules #[{ module := `Fren }] {} (loadExts := true))
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
+  | ["smallValues"] => pure (Fren.Test.SmallValues.differences 300)
+  | ["renderedSets"] => pure renderedSets
   | ["ownSpec"] => ownSpec
+  -- Run by `ownSpec` too, after it, with its query cache.
+  | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
+  -- Spawned by `sharedSpec` only: what it marks is never freed.
+  | "persistentRun" :: args => persistentRun args
   -- Not among `jobs`: on `main` only, after a build of `Reqs` with its
   -- checks (`ownSpecAgreement`).
   | ["ownSpecAgreement"] => ownSpecAgreement
@@ -3436,6 +3833,10 @@ def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args, env }
   let name ← jobName job
   if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"
+  -- A case that a job skipped, which it says on a `skipped: …` line, is
+  -- shown, though it does not fail the job (`sharedSpec`).
+  for line in out.stdout.splitOn "\n" do
+    if line.startsWith "skipped: " then IO.println s!"fren_test: {name}: {line}"
   let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
   match Json.parse last >>= fromJson? with
   | .ok failures =>

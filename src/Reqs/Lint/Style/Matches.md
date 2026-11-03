@@ -730,19 +730,13 @@ pub proc match_arm_if_else_keeps_meaning(arms: Seq<IfArm>, d: Body, x: Val, o: I
 -- `match s { E::A => if c? then 1 else 0, E::B => if e? then 2 else 0 }`,
 -- on which the lint fires, and whose fix keeps its value: the arms' shared
 -- `else` branch, and the arm of the variant with tag `t`, `if c? then f else 0`.
-pub const IF_ELSE_EXAMPLE_BRANCH: Body := Body {
-    form := 0,
-    uses := Use::Nothing,
-}
+pub const IF_ELSE_EXAMPLE_BRANCH: Body := Body { form := 0, uses := Use::Nothing }
 
 pub fn if_else_example_arm(t: Int, c?, f: Int): IfArm := IfArm {
     pat := Pat::Tag(t),
     body := IfBody::IfElse(
         c?,
-        Body {
-            form := f,
-            uses := Use::Nothing,
-        },
+        Body { form := f, uses := Use::Nothing },
         IF_ELSE_EXAMPLE_BRANCH
     ),
     binds? := false,
