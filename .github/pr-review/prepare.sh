@@ -113,9 +113,9 @@ if [ -n "$previous" ] && ! auth_fetch "$previous"; then
   reason="$previous, the reviewed head, can no longer be fetched"
   previous=
 fi
-# A wording-only head is one commit on top of the reviewed head, with no
-# rebase, and changes neither AGENTS.md nor `.github/` (AGENTS.md); any
-# other gets a full review.
+# As AGENTS.md says, a wording-only head is one commit on top of the
+# reviewed head, with no rebase, and changes neither AGENTS.md nor
+# `.github/`; any other gets a full review.
 if [ "$kind" = skip ] && [ -n "$previous" ]; then
   problem=$(python3 -I "$here/kind.py" wording "$previous" "$head")
   if [ -n "$problem" ]; then

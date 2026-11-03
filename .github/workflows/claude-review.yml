@@ -7,7 +7,7 @@ name: pr-review
 # names it starts with "wording only", if it is one commit on top of the
 # reviewed head and changes neither AGENTS.md nor `.github/`: the
 # coordinator confirms that each of its changes answers a listed finding
-# and changes only prose outside rule paragraphs, and that nothing else
+# and changes only prose as AGENTS.md defines it, and that nothing else
 # changed.
 #
 # Threat model. A workflow_run runs in `main`'s context, with the Claude

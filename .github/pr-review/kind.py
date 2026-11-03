@@ -37,8 +37,9 @@ the head is one commit on top of `previous` and changes neither AGENTS.md
 nor anything under `.github/` (`wording_problem`); otherwise the head
 gets a full review. The rest is the coordinator's to confirm before the
 merge: that each change answers a "fix before merge" finding of the
-previous review that the request lists and changes only prose outside
-the rule paragraphs of `src/Reqs`, and that nothing else changed. A
+previous review that the request lists and changes only prose as
+AGENTS.md defines it, which leaves out text that decides behaviour or
+process, and that nothing else changed. A
 later comment that names the head without starting with one of the three
 gets it a full review, as for a light check.
 
@@ -126,7 +127,7 @@ def decide(pr, event):
         kind, reason = "skip", (
             f"the last comment that names the head says it only fixes the wording of the clean review of {previous}; "
             "the coordinator confirms that each change answers a fix-before-merge finding that the comment lists "
-            "and changes only prose outside rule paragraphs, and that nothing else changed")
+            "and changes only prose as AGENTS.md defines it, and that nothing else changed")
     else:
         reason = f"the last comment that names the head starts with \"{kind} only\""
     return {
