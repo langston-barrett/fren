@@ -406,9 +406,13 @@ where
 
 /-- `b`, with each formula paired with its meaning, and each model
 evaluated; refuted models are recorded in `log`. `sy` is `Symbols.of sp`,
-which the caller builds once for the spec. -/
+which the caller builds once for the spec. `recursiveIn` gives the
+recursive functions that a formula applies as the solver has it, once its
+definitions are unfolded, which the evaluator's formula of it may not show,
+as of a subset type's obligation, which it has none of. -/
 def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKind) (log : IO.Ref (Array Refutation))
-    (b : Fren.Core.Backend IO String String) : Fren.Core.Backend IO (String × Fm) String :=
+    (b : Fren.Core.Backend IO String String) (recursiveIn : String → Array Name) :
+    Fren.Core.Backend IO (String × Fm) String :=
   let vars := sp.flatVars ec
   let outs := vars.filter (·.role == .output) |>.map fun v => (v.name, v.ty)
   let copied := vars.filter (fun v => (Fren.Core.Symbol.ofRole v.role).copied) |>.map (·.name)
@@ -432,23 +436,55 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
     return readModel sp sy model (← Fren.Core.misreadModels) typed
   { modelBool? := b.modelBool?.map fun read => fun model formula => read model formula.1
     query := fun hyps goal wantModel => do
-      let o ← b.query (hyps.map fun (n, f) => (n, f.1)) goal.1 true
-      if let .sat model := o then
+      let hs := hyps.map fun (n, f) => (n, f.1)
+      -- Each formula's recursive functions, as the evaluator's formula and
+      -- the solver's have them (`Fren.Core.counterexampleReported`): of the
+      -- hypotheses and of the goal, computed only for a `sat` answer, since
+      -- unfolding can make a formula large.
+      let recsOf (f : String × Fm) := f.2.recursiveNames sp ++ recursiveIn f.1
+      let applies (_ : Unit) := (hyps.map fun (_, f) => recsOf f, recsOf goal)
+      -- The truths of the hypotheses and of the goal at `model`, read
+      -- right, each model evaluated once: those of both models of a query
+      -- asked again are kept, for the confirmation below of the model that
+      -- `askedAgain` keeps, whichever it is.
+      let seen ← IO.mkRef (#[] : Array (Array (Name × String) × Array (Name × Option Bool) × Option Bool))
+      let truths (model : Array (Name × String)) : IO (Array (Name × Option Bool) × Option Bool) := do
+        if let some (_, t) := (← seen.get).find? (·.1 == model) then return t
         let (env, I) := readModel sp sy model false typed
-        let vals := hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys)
-        let bad := vals.find? (·.2 == some false)
-        let g := goal.2.eval sp sy I env tys
-        let recursive := (hyps.flatMap fun (_, f) => f.2.recursiveNames sp) ++ goal.2.recursiveNames sp
-        -- A formula without recursion that the model contradicts is a bug
-        -- in Fren, which the refutation below reports, not evidence about
-        -- the contracts (`Reqs/Models#reporting`).
-        let plain := Fren.Core.plainContradiction
-          ((hyps.zip vals).map fun ((n, f), (_, v)) => (n, v, !(f.2.recursiveNames sp).isEmpty))
-          (g, !(goal.2.recursiveNames sp).isEmpty)
-        if !plain && !Fren.Core.recursiveCounterexample (!recursive.isEmpty)
-            (bad.isNone && g == some false && vals.all (·.2 == some true))
-            false then
+        let t := (hyps.map fun (n, f) => (n, f.2.eval sp sy I env tys), goal.2.eval sp sy I env tys)
+        seen.modify (·.push (model, t))
+        return t
+      -- Whether the model contradicts a formula without recursion, a bug in
+      -- Fren, which the refutation below reports, not evidence about the
+      -- contracts (`Reqs/Models#reporting`).
+      let plainOf (vals : Array (Name × Option Bool)) (g : Option Bool) (hypRecs : Array (Array Name))
+          (goalRecs : Array Name) : Bool :=
+        Fren.Core.plainContradiction ((vals.zip hypRecs).map fun ((n, v), rs) => (n, v, !rs.isEmpty))
+          (g, !goalRecs.isEmpty)
+      -- Whether `model` contradicts a formula that applies no recursive
+      -- function: then the query is asked again, without the solver's
+      -- simplification (`Fren.Core.askedAgain`).
+      let contradicted (model : Array (Name × String)) : IO Bool := do
+        let (vals, g) ← truths model
+        let (hypRecs, goalRecs) := applies ()
+        return plainOf vals g hypRecs goalRecs
+      -- The recursive functions that the formulas apply, whose real
+      -- definitions confirm the model kept (`Fren.Core.askedAgainThen`).
+      let evaluated (o : Fren.Core.Outcome String) : IO (Fren.Core.Outcome String) := do
+        let .sat model := o | return o
+        let (vals, g) ← truths model
+        let (hypRecs, goalRecs) := applies ()
+        let recursive := hypRecs.flatten ++ goalRecs
+        if !plainOf vals g hypRecs goalRecs && !Fren.Core.counterexampleReported
+            ((vals.zip hypRecs).map fun ((_, v), rs) => (!rs.isEmpty, v))
+            (!goalRecs.isEmpty, g) false then
           return .unknown (Fren.Core.recursiveReason recursive)
+        return o
+      let o ← Fren.Core.askedAgainThen (← b.query hs goal.1 true) contradicted
+        (b.again?.map fun again => again hs goal.1 true) evaluated (← Fren.Core.askAgainForced)
+      if let .sat model := o then
+        let (vals, g) ← truths model
+        let bad := vals.find? (·.2 == some false)
         -- Only a refuted model is reported (`eval::confirm`).
         if confirmation bad.isSome (g == some true) (vals.all (·.2.isSome) && g.isSome) == .Refuted then
           let hyp? := bad.map (·.1)

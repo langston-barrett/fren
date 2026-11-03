@@ -1,0 +1,77 @@
+-- A check that reaches one of Lean's limits is reported as its own error,
+-- which says how to raise the limit, and the other checks keep their
+-- verdicts (`Fren.failureMsg`). Unfolding `f60` nests sixty applications,
+-- deeper than `maxRecDepth` lets the check go, while elaborating each
+-- function needs much less.
+--@ only: hosted
+set_option maxRecDepth 64
+
+pub fn f0(x: Int): Int := x
+pub fn f1(x: Int): Int := f0(x) + 1
+pub fn f2(x: Int): Int := f1(x) + 1
+pub fn f3(x: Int): Int := f2(x) + 1
+pub fn f4(x: Int): Int := f3(x) + 1
+pub fn f5(x: Int): Int := f4(x) + 1
+pub fn f6(x: Int): Int := f5(x) + 1
+pub fn f7(x: Int): Int := f6(x) + 1
+pub fn f8(x: Int): Int := f7(x) + 1
+pub fn f9(x: Int): Int := f8(x) + 1
+pub fn f10(x: Int): Int := f9(x) + 1
+pub fn f11(x: Int): Int := f10(x) + 1
+pub fn f12(x: Int): Int := f11(x) + 1
+pub fn f13(x: Int): Int := f12(x) + 1
+pub fn f14(x: Int): Int := f13(x) + 1
+pub fn f15(x: Int): Int := f14(x) + 1
+pub fn f16(x: Int): Int := f15(x) + 1
+pub fn f17(x: Int): Int := f16(x) + 1
+pub fn f18(x: Int): Int := f17(x) + 1
+pub fn f19(x: Int): Int := f18(x) + 1
+pub fn f20(x: Int): Int := f19(x) + 1
+pub fn f21(x: Int): Int := f20(x) + 1
+pub fn f22(x: Int): Int := f21(x) + 1
+pub fn f23(x: Int): Int := f22(x) + 1
+pub fn f24(x: Int): Int := f23(x) + 1
+pub fn f25(x: Int): Int := f24(x) + 1
+pub fn f26(x: Int): Int := f25(x) + 1
+pub fn f27(x: Int): Int := f26(x) + 1
+pub fn f28(x: Int): Int := f27(x) + 1
+pub fn f29(x: Int): Int := f28(x) + 1
+pub fn f30(x: Int): Int := f29(x) + 1
+pub fn f31(x: Int): Int := f30(x) + 1
+pub fn f32(x: Int): Int := f31(x) + 1
+pub fn f33(x: Int): Int := f32(x) + 1
+pub fn f34(x: Int): Int := f33(x) + 1
+pub fn f35(x: Int): Int := f34(x) + 1
+pub fn f36(x: Int): Int := f35(x) + 1
+pub fn f37(x: Int): Int := f36(x) + 1
+pub fn f38(x: Int): Int := f37(x) + 1
+pub fn f39(x: Int): Int := f38(x) + 1
+pub fn f40(x: Int): Int := f39(x) + 1
+pub fn f41(x: Int): Int := f40(x) + 1
+pub fn f42(x: Int): Int := f41(x) + 1
+pub fn f43(x: Int): Int := f42(x) + 1
+pub fn f44(x: Int): Int := f43(x) + 1
+pub fn f45(x: Int): Int := f44(x) + 1
+pub fn f46(x: Int): Int := f45(x) + 1
+pub fn f47(x: Int): Int := f46(x) + 1
+pub fn f48(x: Int): Int := f47(x) + 1
+pub fn f49(x: Int): Int := f48(x) + 1
+pub fn f50(x: Int): Int := f49(x) + 1
+pub fn f51(x: Int): Int := f50(x) + 1
+pub fn f52(x: Int): Int := f51(x) + 1
+pub fn f53(x: Int): Int := f52(x) + 1
+pub fn f54(x: Int): Int := f53(x) + 1
+pub fn f55(x: Int): Int := f54(x) + 1
+pub fn f56(x: Int): Int := f55(x) + 1
+pub fn f57(x: Int): Int := f56(x) + 1
+pub fn f58(x: Int): Int := f57(x) + 1
+pub fn f59(x: Int): Int := f58(x) + 1
+pub fn f60(x: Int): Int := f59(x) + 1
+
+expect chain(x: Int) {  --~ error: checking `chain` in Lean reached a limit: maximum recursion depth has been reached
+    expect e: f60(x) = x + 60
+}
+
+expect shallow(x: Int) {
+    expect e: f1(x) = x + 1
+}

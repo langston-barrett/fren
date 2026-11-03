@@ -1,0 +1,8 @@
+-- The last arm of a complete `match` whose patterns test its scrutinee is
+-- marked `Fren.lastArm` in its Lean definition, and prints as its body
+-- (`Fren.lastArm.unexpand`): `-1`, not `Fren.lastArm n (-1)`.
+--@ only: hosted
+pub fn sign(n: Int): Int := match n { 0 => 0, 1.. => 1, ..=-1 => -1 }
+
+#print sign
+--~^ info: if n = 0 then 0 else if 1 ≤ n then 1 else -1

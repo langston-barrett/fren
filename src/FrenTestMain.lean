@@ -42,6 +42,8 @@ import Lean.Elab.Frontend
   reads back as each tree, by the parser of the `fren` command, and needs
   each pair of parentheses that it adds, but those of its exceptions
   (`printing`, `lint::printing`).
+- **Sets in models:** the binary's fallback renderer of solver models
+  shows sets and relations as literals (`renderedSets`).
 - **Decisions of `fren mutate`:** on each example of `test/mutate/`, it is
   adequate, decides a mutant as a sample or a shard does, needs every expectation, and
   selects the components to check, and decides each check, soundly
@@ -66,6 +68,10 @@ def sortedFiles (dir : FilePath) (ext : String) : IO (Array FilePath) := do
 /-- The ui tests that run with the readers of solver models misreading
 them, to see that confirmation catches it (`Reqs/Models#testing`). -/
 def misreadDir : FilePath := "test" / "ui" / "misread"
+
+/-- The ui tests that run with every query that has a model asked again
+(`Fren.Core.askAgainForced`, `Reqs/Models#testing`). -/
+def askAgainDir : FilePath := "test" / "ui" / "ask_again"
 
 /-- The ui tests: `test/ui/**/*.fren`, and the examples, `examples/**/*.fren`,
 which are checked as ui tests too. -/
@@ -1179,13 +1185,25 @@ def chapterChecks (md : String) : Array String :=
 
 #guard chapterChecks "```fren\nproc p() {}\n#fren_check p\n```\n\n#fren_check\n" == #["#fren_check p"]
 
-/-- The problems of Lean's checks of `src/Reqs`: each chapter that a Lean file
-reads by `#fren_md`, and that declares procedures or global expectations, is
-checked by a `#fren_check` without a path in it or in a later chapter of
-that file, or by a `#fren_check` of each of them in it. A `#fren_check`
-checks what is declared before it in its file (`Reqs/Lean#commands`), so a
-chapter after a file's last one is not checked in Lean at all: the hosted
-counterpart of `ownSpecFiles`. -/
+/-- The procedures and global expectations that the `fren` block lines
+`ls` declare after their last `#fren_check` without a path, which none of
+those checks: a `#fren_check` checks what is declared before it in its file
+(`Reqs/Lean#commands`). -/
+def afterLastCheck (ls : Array String) : Array String :=
+  ls.foldl (init := #[]) fun pending l =>
+    if l.trimAscii.toString == "#fren_check" then #[] else pending ++ checkedItems #[l]
+
+#guard afterLastCheck #["proc p() {}", "#fren_check", "proc q() {}"] == #["q"]
+#guard afterLastCheck #["proc p() {}", "#fren_check"] == #[]
+#guard afterLastCheck #["proc p() {}", "#fren_check p", "pub proc q() {}", "expect e: true"] == #["p", "q", "e"]
+
+/-- The problems of Lean's checks of `src/Reqs`: each procedure or global
+expectation that a chapter declares, which a Lean file reads by
+`#fren_md`, is checked by a `#fren_check` without a path after it in its
+chapter or in a later chapter of that file, or by a `#fren_check` of it in
+its chapter. A `#fren_check` checks what is declared before it in its file
+(`Reqs/Lean#commands`), so an item after a file's last one is not checked in
+Lean at all: the hosted counterpart of `ownSpecFiles`. -/
 def hostedChecks : IO (Array String) := do
   let mut failures := #[]
   for entry in ← System.FilePath.readDir "src/Reqs" do
@@ -1197,13 +1215,13 @@ def hostedChecks : IO (Array String) := do
     let texts ← chapters.toArray.mapM fun (c : String) => IO.FS.readFile (("src" : FilePath) / "Reqs" / c)
     let checks := texts.map chapterChecks
     for c in chapters.toArray, t in texts, k in [0:texts.size] do
-      let items := checkedItems (frenBlockLines t)
-      if items.isEmpty then continue
-      let bare := (checks.extract k checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
+      let pending := afterLastCheck (frenBlockLines t)
+      if pending.isEmpty then continue
+      let later := (checks.extract (k + 1) checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
       let named := checks[k]!.filterMap fun l => (l.trimAscii.toString.dropPrefix? "#fren_check ").map (·.toString.trimAscii.toString)
-      for i in items do
-        unless bare || named.contains i do
-          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as the chapter comes after its file's last `#fren_check` in a `fren` block: name it, as `#fren_check {i}`"
+      for i in pending do
+        unless later || named.contains i do
+          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as it comes after its file's last `#fren_check` in a `fren` block: name it, as `#fren_check {i}`"
   return failures
 
 /-- `QueryCache`'s answers in memory: a script asked again gets the answer
@@ -1402,14 +1420,23 @@ def residentKb : IO Nat := do
   let out ← IO.Process.output { cmd := "ps", args := #["-o", "rss=", "-p", toString (← IO.Process.getPID)] }
   return out.stdout.trimAscii.toString.toNat!
 
+/-- Whether glibc's own allocations are mimalloc's, as the executables'
+`malloc` makes them on Linux (`c/mimalloc_malloc.c`): 1 if they are, 0 if
+not, and 2 where that file replaces no allocator. -/
+@[extern "fren_malloc_is_mimalloc"] opaque mallocIsMimalloc : Unit → UInt32
+
 /-- Each query's solver is freed once it is answered, so that the memory
 of `fren check` does not grow with the number of its queries; and solvers
 of a logic with nonlinear arithmetic answer correctly on several threads
 at once, which they share libpoly's state for (`FrenCli.Cvc5`), each
 command that the lock is let go after always initializing its solver
-(`initializingCommandsHold`). -/
+(`initializingCommandsHold`); and on Linux, they allocate with mimalloc
+(`mallocIsMimalloc`). -/
 def solverLifetime : IO (Array String) := do
   let mut failures ← initializingCommandsHold
+  -- cvc5 allocates through `malloc`, which is mimalloc's on Linux.
+  if mallocIsMimalloc () == 0 then
+    failures := failures.push "glibc's `strdup` did not allocate with mimalloc: `c/mimalloc_malloc.c` does not replace `malloc`"
   let solve (k : Nat) (linear : Bool := false) (pushed : Bool := false) : IO Bool := do
     return (← FrenCli.solveScript (lifetimeScript k linear pushed) #[] false) matches .sat _
   -- Warm up the allocator first, so that what it keeps does not count.
@@ -1838,6 +1865,29 @@ def ownSpecAgreement : IO (Array String) := do
   for (g, d) in hosted do
     unless ownSpecFiles.contains g do
       failures := failures.push s!"{g}:{d.line}: Lean reports about a spec that `ownSpecFiles` lacks: {FrenTest.Frontends.headOf d}"
+  return failures
+
+/-! ## Models as the solver writes them -/
+
+/-- How `FrenCli.renderValue` shows a model's value, as cvc5 writes it,
+where the evaluator cannot read it (`FrenCli.confirming`'s `render`). A set
+is a union or insertion of singletons of 1-tuples, and is shown as a
+literal of its members, sorted as text, so `10` comes before `2`. A
+relation's members are pairs, and are shown as pairs. The empty set is
+shown as `{}`. The evaluator reads every set in the tests' models, so only
+this job runs this rendering. -/
+def renderedSets : Array String := Id.run do
+  let cases : Array (String × String) := #[
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 0)))", "{0, 2}"),
+    ("(set.insert (tuple 3) (tuple 1) (set.singleton (tuple 2)))", "{1, 2, 3}"),
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 10)))", "{10, 2}"),
+    ("(set.singleton (tuple 1 (- 2)))", "{(1, -2)}"),
+    ("(as set.empty (Set (Tuple Int)))", "{}")]
+  let mut failures := #[]
+  for (v, shown) in cases do
+    let got := FrenCli.renderValue #[] v
+    unless got == shown do
+      failures := failures.push s!"renderValue {v} is `{got}`, not `{shown}`"
   return failures
 
 /-! ## Formatting -/
@@ -3409,38 +3459,6 @@ def enumerationCorpus : IO (Array FilePath) := do
     let src ← IO.FS.readFile f
     return !(src.splitOn "--@ only: hosted").length > 1 && (src.splitOn "--@ exit: 2").length == 1
 
-/-- Each verdict of enumeration on the ui tests matches the solver's on the
-same check (`Reqs/Check#verdicts-of-enumeration`): a failure is genuine, so
-the solver must not pass the check, and a pass that is not bounded is a
-decision, so the solver must not fail it; and the obligations of pattern
-types, which stay the solver's, keep their results. -/
-def enumerationAgrees : IO (Array String) := do
-  let mut failures := #[]
-  let mut compared := 0
-  for f in ← enumerationCorpus do
-    let src ← IO.FS.readFile f
-    let (solver, code) ← checkResultsOf #[f.toString]
-    if code == 2 then continue
-    let (enumerated, _) ← withText (f.fileName.getD "spec.fren") (enumeratedText src).toList.toArray fun p =>
-      checkResultsOf #[p]
-    for (item, rs) in enumerated do
-      let ss := solver.getD item #[]
-      for (k, r) in rs do
-        let some (_, s) := ss.find? (·.1 == k) | continue
-        compared := compared + 1
-        -- As `methodsAgree` compares them, with no verdict of random testing.
-        if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
-          let bounded := if r.bounded?.isSome then " up to the bound" else ""
-          failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
-    -- A value given where a subset type is declared stays the solver's
-    -- (`check::by_evidence`): its result is not dropped.
-    for (item, ss) in solver do
-      for (k, s) in ss do
-        unless s.kind == .definedness && s.subsetTy?.isSome do continue
-        let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
-        unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
-  return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
-
 /-! ## Methods agree
 
 Every check of Fren's own requirements, of the ui tests and of the
@@ -3502,10 +3520,64 @@ def methodResults (files : Array String) (method : Fren.Core.ProofMethod) (value
     acc.insert (methodKey item r) { kind := r.kind, verdict := r.verdict, bounded := r.bounded?.isSome, detail := detailText r.detail }
   return (found, code)
 
-/-- The contradictions that `methodsAgree` expects, each a check by its file
-and `methodKey`, with why: a known bug, by its issue, or a difference that
-is not one. Each is narrow: a single check. -/
-def methodExceptions : Array (String × String × String) := #[]
+/-- The contradictions that `methodsAgree` and `enumerationAgrees` expect,
+each a check by its file and `methodKey`, with why: a known bug, by its
+issue, or a difference that is not one. Each is narrow: a single check, and
+both fail on one that a run of its file no longer hits (`staleExceptions`),
+so that a fixed bug's entry does not stay. -/
+def methodExceptions : Array (String × String × String) := #[
+  -- A caller assumes a recursive function's result type, as its
+  -- postconditions, whether or not its body meets it; the pass rests on the
+  -- body's obligation, a premise (`Postconditions`) not applied yet.
+  ("test/ui/checks/recursion_subset_result.fren",
+    "comp r.wrong_caller|Fren.Core.CheckKind.expect|(some c)|none|none|none|none|-|none", "#522")]
+
+/-- The exceptions of `methodExceptions` whose file is among `ran` but that
+none of `hit`, each a file and a key, matched. -/
+def staleExceptions (ran : Array String) (hit : Array (String × String)) : Array String :=
+  methodExceptions.filterMap fun (f, k, why) =>
+    if ran.contains f && !hit.contains (f, k) then
+      some s!"{f}: the exception `{k}` ({why}) matches no contradiction: remove it"
+    else none
+
+/-- Each verdict of enumeration on the ui tests matches the solver's on the
+same check (`Reqs/Check#verdicts-of-enumeration`): a failure is genuine, so
+the solver must not pass the check, and a pass that is not bounded is a
+decision, so the solver must not fail it; and the obligations of pattern
+types, which stay the solver's, keep their results. -/
+def enumerationAgrees : IO (Array String) := do
+  let mut failures := #[]
+  let mut compared := 0
+  let mut hit : Array (String × String) := #[]
+  let corpus ← enumerationCorpus
+  for f in corpus do
+    let src ← IO.FS.readFile f
+    let (solver, code) ← checkResultsOf #[f.toString]
+    if code == 2 then continue
+    let (enumerated, _) ← withText (f.fileName.getD "spec.fren") (enumeratedText src).toList.toArray fun p =>
+      checkResultsOf #[p]
+    for (item, rs) in enumerated do
+      let ss := solver.getD item #[]
+      for (k, r) in rs do
+        let some (_, s) := ss.find? (·.1 == k) | continue
+        compared := compared + 1
+        -- As `methodsAgree` compares them, with no verdict of random testing.
+        if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
+          -- The same narrow exceptions as `methodsAgree`'s.
+          if methodExceptions.any fun (g, key, _) => g == f.toString && key == methodKey item s then
+            hit := hit.push (f.toString, methodKey item s)
+            continue
+          let bounded := if r.bounded?.isSome then " up to the bound" else ""
+          failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
+    -- A value given where a subset type is declared stays the solver's
+    -- (`check::by_evidence`): its result is not dropped.
+    for (item, ss) in solver do
+      for (k, s) in ss do
+        unless s.kind == .definedness && s.subsetTy?.isSome do continue
+        let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
+        unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
+  failures := failures ++ staleExceptions (corpus.map (·.toString)) hit
+  return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
 
 /-- What `methodsAgree` counted. -/
 structure MethodCounts where
@@ -3521,6 +3593,10 @@ structure MethodCounts where
   the size: no contradiction, as the counterexample may be larger. -/
   beyondSize : Nat := 0
   excepted : Nat := 0
+  /-- The exceptions that a contradiction matched, each a file and a key,
+  and the names compared, for `staleExceptions`. -/
+  hit : Array (String × String) := #[]
+  ran : Array String := #[]
   /-- Specs with a static error, which no method checks. -/
   static : Nat := 0
   /-- Runs that reported an error under their method alone (exit 2), as
@@ -3539,6 +3615,7 @@ structure MethodCounts where
 procedures at once, adding to `counts`; returns the contradictions. -/
 def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref MethodCounts)
     (jobs? : Option Nat := none) : IO (Array String) := do
+  counts.modify fun c => { c with ran := c.ran.push name }
   let mut runs := #[]
   for (m, value) in comparedMethods do
     let (found, code) ← methodResults files m value jobs?
@@ -3575,7 +3652,7 @@ def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref Metho
       return c
     unless Fren.Core.methodsContradict kind (verdictOf 0) (verdictOf 1) bounded (verdictOf 2) do continue
     if methodExceptions.any fun (f, k, _) => f == name && k == key then
-      counts.modify fun c => { c with excepted := c.excepted + 1 }
+      counts.modify fun c => { c with excepted := c.excepted + 1, hit := c.hit.push (name, key) }
       continue
     let said := (List.range comparedMethods.size).map fun i =>
       let m := comparedMethods[i]!.2
@@ -3628,6 +3705,7 @@ def methodsAgree (part : List String) : IO (Array String) := do
         failures := failures ++ (← withText "spec.fren" (mode.spec s).toList.toArray fun p =>
           methodsAgreeOn name #[p] counts)
   let c ← counts.get
+  failures := failures ++ staleExceptions c.ran c.hit
   let byMethod := (List.range comparedMethods.size).map fun i =>
     s!"{comparedMethods[i]!.2} decided {c.decided[i]!}, inconclusive {c.inconclusive[i]!}, not run {c.notRun[i]!}"
   IO.println s!"methodsAgree: {c.checks} checks, {c.compared} compared by at least two methods; {"; ".intercalate byMethod}; \
@@ -3770,14 +3848,16 @@ def panicGuard : IO (Array String) := do
 def jobs : IO (Array (List String)) := do
   -- The ui tests of `misreadDir` run with the readers' injected bug.
   let (misread, ui) := (← uiFiles).partition (·.toString.startsWith misreadDir.toString)
+  -- And those of `askAgainDir` with every query that has a model asked again.
+  let (askAgain, ui) := ui.partition (·.toString.startsWith askAgainDir.toString)
   let n := (ui.size + uiBatch - 1) / uiBatch
   -- Every `n`th file, so that the slow ones spread over the batches.
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
-    ++ batches ++ #["uiMisread" :: misread.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
+    ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"]]
+      ["enumeration"], ["smtAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"])
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -3792,6 +3872,8 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     uiTests env (files.toArray.map FilePath.mk)
   -- Spawned with `FREN_MISREAD_MODELS` set (`spawnJob`).
   | "uiMisread" :: files => runJob bless ("ui" :: files)
+  -- Spawned with `FREN_ASK_AGAIN` set (`spawnJob`).
+  | "uiAskAgain" :: files => runJob bless ("ui" :: files)
   | ["leanTokens"] => leanTokens
   | ["panicGuard"] => panicGuard
   -- Spawned by `panicGuard` only: it panics.
@@ -3813,6 +3895,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   -- fren-covers: lint::printing, lint::parenthesization
   | ["printing"] => pure (FrenTest.Quote.roundTrips 5000)
   | ["smallValues"] => pure (Fren.Test.SmallValues.differences 300)
+  | ["renderedSets"] => pure renderedSets
   | ["ownSpec"] => ownSpec
   -- Run by `ownSpec` too, after it, with its query cache.
   | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
@@ -3874,6 +3957,8 @@ def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   let env := #[("LEAN_ABORT_ON_PANIC", some "1")]
   -- Both front ends' readers of solver models misread them (`Fren.Core.misreadModels`).
   let env := if job.head? == some "uiMisread" then env.push ("FREN_MISREAD_MODELS", some "1") else env
+  -- Both front ends ask every query that has a model again (`Fren.Core.askAgainForced`).
+  let env := if job.head? == some "uiAskAgain" then env.push ("FREN_ASK_AGAIN", some "1") else env
   let out ← IO.Process.output { cmd := (← IO.appPath).toString, args, env }
   let name ← jobName job
   if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"

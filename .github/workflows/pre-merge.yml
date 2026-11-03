@@ -40,10 +40,10 @@ concurrency:
 jobs:
   # `lake build --wfail` of every default target, on two machines: Fren's
   # own requirements and their `impl`s, the build's critical path, on one,
-  # and the rest on the other, so that the first shares its four cores with
-  # nothing else (`Reqs/dev/Testing#continuous-integration`). Both build the
-  # modules that both need. `lake test`'s `libraries` job checks that the
-  # two together are `lakefile.lean`'s default targets.
+  # and the rest on the other, so that the first shares its four logical
+  # CPUs with nothing else (`Reqs/dev/Testing#continuous-integration`).
+  # Both build the modules that both need. `lake test`'s `libraries` job
+  # checks that the two together are `lakefile.lean`'s default targets.
   build:
     name: lake build --wfail (${{ matrix.part }})
     runs-on: ubuntu-24.04

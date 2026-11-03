@@ -1,0 +1,20 @@
+-- A model that confirmation contradicts is asked for again, without the
+-- solver's simplification (`Reqs/Models#asking-again`). The Lean-hosted
+-- front end asks `ge0` as `b? = q.nth 0` with the premise `a? ≠ b?`, and
+-- cvc5 1.3.2, simplifying, answers `a? = b? = true` and `q = []`, which
+-- violates the premise: it evaluates `q.nth 0`, out of range, differently
+-- from its own interpretation of it. Asked again, it gives a real
+-- counterexample, which both front ends show (#567). The test depends on
+-- that cvc5 and on the shape of the hosted query: with another, it may
+-- pass without asking again, so `src/FrenTest/AskedAgain.lean` tests the
+-- rule itself, with stand-ins for the solver.
+
+pub fn ge_pick<T>(q: Seq<T>, d: T): (r: T) {
+    out r := d
+    ensure same: r = q[0]  --~ error: the postcondition `same` of `ge_pick` does not hold
+}
+
+pub proc ge_apps(a?, b?, q: Seq<Bool>) {
+    expect ge0: when a? != b?, ge_pick(q, b?) = q[0]  --~ error: expectation `ge_apps::ge0` does not hold
+    --~^ error: an index of `ge_apps::ge0` may be out of range
+}

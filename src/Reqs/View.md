@@ -455,7 +455,12 @@ procedure, and every other procedure's results, and the summary, are
 reported as they otherwise would be. A limit of the front end's own that
 the user may raise, as Lean's maximum recursion depth or heartbeats, is
 reported as that limit reached, saying how to raise it; any other failure
-is an internal error, a bug in Fren.
+is an internal error, a bug in Fren. In Lean, each solver query, each step
+that builds or reads a model, each nested check of an instance's contract
+and each cover goal's question and witness has the heartbeat limit to
+itself, as each query has the time limit: a procedure does not reach the
+limit only by having many clauses, which the `fren` command, having no
+such limit, checks.
 
 After the results, a summary is reported as information. It counts the
 results by verdict, except that redundant constraints, which are warnings,

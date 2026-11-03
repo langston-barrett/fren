@@ -1,0 +1,157 @@
+-- A recursive function's result type is a hypothesis at each recursive
+-- application, beside its postconditions, and a counterexample that
+-- evaluation refutes is never a failure (#693).
+-- fren-covers: lang::recursive_facts, lang::recursive_counterexample, lang::counterexample_confirmed
+mod r
+
+pub type Pos = n: Int where positive: n >= 1
+
+-- An alias of a subset type brings its invariants.
+pub type Positive := Pos
+
+pub enum L { Nil, Cons(Int, L) }
+
+-- A direct recursive application.
+pub fn keep(p: Pos, l: L): Pos := match l {
+    L::Nil => p,
+    L::Cons(_, rest) => keep(p, rest),
+}
+
+-- Under a guard.
+pub fn keep_guarded(p: Pos, l: L): Pos := match l {
+    L::Nil => p,
+    L::Cons(x, rest) => if x > 0 then keep_guarded(p, rest) + x else p,
+}
+
+-- Through an alias.
+pub fn keep_alias(p: Positive, l: L): Positive := match l {
+    L::Nil => p,
+    L::Cons(_, rest) => keep_alias(p, rest),
+}
+
+-- Within an arithmetic expression, beside a postcondition.
+pub fn grow(p: Pos, l: L): (r: Pos) {
+    out r := match l {
+        L::Nil => p,
+        L::Cons(_, rest) => grow(p, rest) + 1,
+    }
+    ensure at_least: r >= p
+}
+
+-- Generic, at a declared result type that is not a type parameter.
+pub fn keep_generic<T>(p: Pos, x: T, l: L): Pos := match l {
+    L::Nil => p,
+    L::Cons(_, rest) => keep_generic(p, x, rest),
+}
+
+-- Generic, at a result type that is its type parameter: an instance's
+-- result brings no fact of its type argument's, though `Box`'s payload is
+-- a `Pos`, in both front ends.
+pub enum Box { B(Pos) }
+
+pub fn rep<T>(x: T, l: L): T := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => rep(x, rest),
+}
+
+expect rep_caller(b: Box, l: L) {
+    expect c: match rep(b, l) {  --~ warning: could not decide whether `r::rep_caller::c` holds
+        Box::B(n) => n >= 1,
+    }
+}
+
+-- A caller has the result type's fact of each application.
+expect callers(p: Pos, l: L) {
+    expect direct: keep(p, l) >= 1
+    expect alias: keep_alias(p, l) >= 1
+    expect generic: keep_generic(p, true, l) >= 1
+}
+
+-- Result types that bring a subset type's constraint through data: a
+-- record's field, a newtype's, an enumeration's payload, an option's, and
+-- every element of a set or a sequence, which quantifies over them.
+pub struct Rec { v: Pos, k: Int }
+pub struct Nt(Pos)
+pub enum Ch { A(Pos), Z }
+
+pub fn k_rec(x: Rec, l: L): Rec := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_rec(x, rest),
+}
+
+pub fn k_nt(x: Nt, l: L): Nt := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_nt(x, rest),
+}
+
+pub fn k_ch(x: Ch, l: L): Ch := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_ch(x, rest),
+}
+
+pub fn k_opt(x: Option<Pos>, l: L): Option<Pos> := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_opt(x, rest),
+}
+
+set_option fren.lint.undecidable "allow" in
+pub fn k_set(x: Set<Pos>, l: L): Set<Pos> := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_set(x, rest) union x,
+}
+
+set_option fren.lint.undecidable "allow" in
+pub fn k_seq(x: Seq<Pos>, l: L): Seq<Pos> := match l {
+    L::Nil => x,
+    L::Cons(_, rest) => k_seq(x, rest),
+}
+
+set_option fren.lint.undecidable "allow" in
+expect data_callers(r: Rec, t: Nt, c: Ch, o: Option<Pos>, s: Set<Pos>, q: Seq<Pos>, l: L) {
+    expect rec: k_rec(r, l).v >= 1
+    expect nt: k_nt(t, l).0 >= 1
+    expect ch: match k_ch(c, l) {
+        Ch::A(n) => n >= 1,
+        Ch::Z => true,
+    }
+    expect opt: match k_opt(o, l) {
+        Option::Some(n) => n >= 1,
+        Option::None => true,
+    }
+    expect set: forall (n: Int), when n in k_set(s, l), n >= 1
+    expect seq: forall (n: Int), when n in k_seq(q, l), n >= 1
+}
+
+-- A caller's check that is false still fails: the result type's fact is
+-- reflected with the query's recursive applications, not a fact of an
+-- application that the query has, so evaluation confirms the model.
+expect false_caller(p: Pos, l: L) {
+    expect c: when l = L::Nil, keep(p, l) >= 2  --~ error: expectation `r::false_caller::c` does not hold
+}
+
+-- Wrong, but evaluation has no formula of a subset type's obligation, so
+-- it cannot confirm the counterexample, which is Inconclusive, not a
+-- failure, until #736 gives it one.
+pub fn wrong(p: Pos, l: L): Pos := match l {  --~ warning: does not confirm the counterexample: it refutes it, or cannot evaluate it
+    L::Nil => p - 1,
+    L::Cons(_, rest) => wrong(p, rest),
+}
+
+-- A caller assumes `wrong`'s result type, as it assumes a recursive
+-- function's postconditions, whether or not the body meets it: the
+-- solver passes this, where enumeration, which evaluates `wrong`, fails
+-- it. The pass rests on `wrong`'s body obligation, a premise that is not
+-- applied yet (#522); `methodExceptions` records it.
+expect wrong_caller(p: Pos, l: L) { expect c: wrong(p, l) >= 1 }
+
+-- No contract: `count` may be anything, so the obligation has a model that
+-- evaluation refutes, which is Inconclusive, not a failure.
+pub fn count(l: L): Int := match l {
+    L::Nil => 0,
+    L::Cons(_, rest) => 1 + count(rest),
+}
+
+pub fn succ_count(l: L): Pos := match l {  --~ warning: does not confirm the counterexample: it refutes it, or cannot evaluate it
+    L::Nil => 1,
+    L::Cons(_, rest) => 1 + count(rest),
+}

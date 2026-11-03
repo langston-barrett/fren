@@ -491,7 +491,10 @@ def identName (s : String) : Name := (s.splitOn ".").foldl Name.mkStr .anonymous
 
 /-- `smt` in pieces, in order: the text between quoted symbols, and the
 name of each quoted symbol. A `|` in a string literal, where `""` is a `"`,
-does not quote. -/
+does not quote. It reads characters, slowly, and nothing but the tests
+calls it: it is the reference that `FrenTest.QuotedSymbols` checks the
+byte readers `substQuoted` and `quotedSymbols` against, so a change to
+how symbols are read changes it and them together. -/
 def quotedPieces (smt : String) : Array (String ⊕ String) := Id.run do
   let cs := smt.toList.toArray
   let mut out := #[]
@@ -516,10 +519,39 @@ def quotedPieces (smt : String) : Array (String ⊕ String) := Id.run do
       i := i + 1
   return out.push (.inl text)
 
-/-- Replaces each quoted symbol of `smt` with `f` of its name
-(`quotedPieces`). -/
-def substQuoted (f : String → String) (smt : String) : String :=
-  String.join ((quotedPieces smt).toList.map fun | .inl text => text | .inr name => f name)
+/-- Replaces each quoted symbol of `smt` with `f` of its name: the text
+of `quotedPieces smt`, each name replaced by `f` of it. It reads the UTF-8
+bytes, as `quotedSymbols` does, and copies the text between symbols a run
+at a time, where `quotedPieces` makes a list of the text's characters and
+builds its pieces a character at a time. `"` and `|` are ASCII, and no
+byte of a character that is not ASCII is one of them, so it cuts the text
+only at character boundaries: each run and each name is whole characters,
+and the bytes it puts together are UTF-8, which `String.fromUTF8!` accepts. -/
+def substQuoted (f : String → String) (smt : String) : String := Id.run do
+  let bs := smt.toUTF8
+  let mut out := ByteArray.emptyWithCapacity bs.size
+  -- Where the text since the last symbol starts.
+  let mut start := 0
+  let mut i := 0
+  while i < bs.size do
+    let c := bs[i]!
+    if c == '"'.toUInt8 then
+      -- A string literal, in which `""` is a `"`.
+      let mut j := i + 1
+      while j < bs.size && !(bs[j]! == '"'.toUInt8 && bs[j + 1]? != some '"'.toUInt8) do
+        j := if bs[j]! == '"'.toUInt8 then j + 2 else j + 1
+      i := j + 1
+    else if c == '|'.toUInt8 then
+      let mut j := i + 1
+      while j < bs.size && bs[j]! != '|'.toUInt8 do j := j + 1
+      out := bs.copySlice start out out.size (i - start) false
+      out := out ++ (f (String.fromUTF8! (bs.extract (i + 1) j))).toUTF8
+      i := j + 1
+      start := i
+    else
+      i := i + 1
+  out := bs.copySlice start out out.size (bs.size - start) false
+  return String.fromUTF8! out
 
 /-- Applies `f` to the name of each quoted symbol of `smt`. -/
 def mapQuoted (f : String → String) (smt : String) : String := substQuoted (quote ∘ f) smt
@@ -2647,6 +2679,13 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
       recursiveDefs := s.recursiveDefs.insert name
       contracts := s.contracts.insert name { k with pres := atInst k.pres, posts := atInst k.posts }
       recInstances := s.recInstances.insert name (path, domain.map (replaceSymbols · repl)) }
+    -- Its result type's constraint, at the instance, where its declared
+    -- result type has one, as the Lean front end decides from the declared
+    -- type: a result that is a type parameter brings none, whatever its
+    -- argument (`Reqs/Lang/Recursion#generic-recursion`).
+    let st ← get
+    if Fren.Core.recursiveResultFact (g.resultP.cons st.shapeOf).isSome then
+      noteResultFactAt sym (Fren.Core.instanceResult g.resultP args)
   return sym
 
 /-- The quoted symbols that the prelude declares: a closure captures each
@@ -7358,6 +7397,10 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
   if recursion matches .structural _ then
     if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
     modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path }
+    -- Each of its applications is opaque, and brings its result type's
+    -- constraint, as its postconditions, a hypothesis at a recursive
+    -- application in its own body too (`lang::recursive_facts`).
+    if Fren.Core.recursiveResultFact (rp.cons (← get).shapeOf).isSome then noteResultFact path rp
   notePredicateClauses cx path vars body smt
   noteObligation cx .body body.span rp smt
   let bodyTables ← takeTables

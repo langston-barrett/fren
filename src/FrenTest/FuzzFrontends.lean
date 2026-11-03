@@ -1726,6 +1726,105 @@ def emptyArguments (sc : WScope) : R String := do
   let body := String.join (atoms.toList.zipIdx.map fun (a, k) => s!"    expect xa{k}: {a}\n")
   return s!"pub proc empty_args({", ".intercalate params.toList}) \{\n{body}    expect xa_all: {" and ".intercalate atoms.toList}\n}\n"
 
+/-- Structural recursions whose results have subset types (#693): of
+`Int` or `Nat`, named or through an alias, over a list and a tree, with
+each recursive application direct, under an `if`'s guard, under a `match`
+on a payload, within arithmetic, or several of them, with a postcondition
+or without, one generic at a result type that is not its type parameter,
+and a procedure whose expectations apply each. Each application's result
+type is a fact, in the function's own body too, beside its postconditions
+(`lang::recursive_facts`), and a model that evaluation refutes is
+Inconclusive (`lang::counterexample_confirmed`). A check may fail or be
+inconclusive, but nothing here is a static error. -/
+def recursiveSubsets : R String := do
+  -- The subset type's base and its invariant, of a value.
+  let (base, inv) ← pick #[("Int", fun (e : String) => s!"{e} >= 1"), ("Int", fun e => s!"{e} != 0"),
+    ("Nat", fun e => s!"{e} >= 2"), ("Int", fun e => s!"{e} >= 1 and {e} <= 100")]
+  let alias ← chance 50
+  let ty := if alias then "Rsq" else "Rsp"
+  let mut out := "pub enum Rsl { Nil, Cons(Int, Rsl) }\npub enum Rst { Leaf, Node(Rst, Rst) }\n" ++
+    s!"pub type Rsp = n: {base} where inv: {inv "n"}\n" ++ (if alias then "pub type Rsq := Rsp\n" else "")
+  -- The arm of a `Cons`, with the recursive application `f(p, ·)`, and
+  -- whether it reads the element `x`.
+  let arm (f : String) : R (String × String) := do
+    match ← below 6 with
+    | 0 => pure ("_", s!"{f}(p, r)")
+    | 1 => pure ("x", s!"if x > 0 then {f}(p, r) else p")
+    | 2 => pure ("_", s!"match r \{ Rsl::Nil => p, Rsl::Cons(_, s) => {f}(p, s) }")
+    | 3 => pure ("_", s!"if {f}(p, r) = p then p else {f}(p, r)")
+    -- Each arm meets the result type where the recursive applications
+    -- do, so that a caller's check, which assumes it, holds in fact and
+    -- the methods agree (`methodsAgree fuzz`).
+    | 4 => pure ("_", s!"{f}(p, r) + 0")
+    | _ => pure ("x", s!"if x = 0 then p else {f}(p, r)")
+  let fns := #["rs_keep", "rs_post"]
+  let (x, a) ← arm "rs_keep"
+  out := out ++ s!"pub fn rs_keep(p: {ty}, l: Rsl): {ty} := match l \{\n" ++
+    s!"    Rsl::Nil => p,\n    Rsl::Cons({x}, r) => {a},\n}\n"
+  -- With a postcondition, which holds or fails by induction.
+  let post ← pick #["o >= p", "o = p", "o > p", "o >= 1"]
+  let (x, a) ← arm "rs_post"
+  out := out ++ s!"pub fn rs_post(p: {ty}, l: Rsl): (o: {ty}) \{\n    out o := match l \{\n" ++
+    s!"        Rsl::Nil => p,\n        Rsl::Cons({x}, r) => {a},\n    }\n    ensure e: {post}\n}\n"
+  -- Two applications, over a tree.
+  let (pat, a) ← pick #[("Rst::Node(a, b)", "if rs_tree(p, a) > rs_tree(p, b) then rs_tree(p, a) else rs_tree(p, b)"),
+    ("Rst::Node(a, _)", "rs_tree(p, a)"), ("Rst::Node(a, b)", "if a = b then rs_tree(p, b) else p")]
+  out := out ++ s!"pub fn rs_tree(p: {ty}, t: Rst): {ty} := match t \{\n    Rst::Leaf => p,\n    {pat} => {a},\n}\n"
+  let generic ← chance 50
+  if generic then
+    out := out ++ s!"pub fn rs_gen<T>(p: {ty}, y: T, l: Rsl): {ty} := match l \{\n" ++
+      s!"    Rsl::Nil => p,\n    Rsl::Cons(_, r) => rs_gen(p, y, r),\n}\n"
+  -- Every input mentioned, so that none is unused: `l` first, `t` second.
+  let mut body := ""
+  for k in [0:(← below 3) + 2] do
+    let app ← match k, ← below (if generic then 5 else 4) with
+      | 0, _ => pure s!"{← pick fns}(p, l)"
+      | 1, _ | _, 2 => pure "rs_tree(p, t)"
+      | _, 0 => pure s!"{← pick fns}(p, l)"
+      | _, 1 => pure s!"{← pick fns}(p, Rsl::Cons({← pick #["0", "1", "-1"]}, l))"
+      | _, 3 => pure s!"{← pick fns}(p, Rsl::Nil)"
+      | _, _ => pure s!"rs_gen(p, {← pick #["true", "1", "l"]}, l)"
+    body := body ++ s!"    expect rs{k}: {← pick #[inv app, s!"{app} = p or ({inv app})"]}\n"
+  out := out ++ s!"pub proc rs_apps(p: {ty}, l: Rsl, t: Rst) \{\n{body}}\n"
+  -- A generic one whose result is its type parameter, at an enumeration
+  -- whose payload has the subset type: its instance's result brings no
+  -- fact, in both front ends.
+  if ← chance 50 then
+    out := out ++ s!"pub enum Rsb \{ B({ty}) }\n" ++
+      "pub fn rs_rep<T>(x: T, l: Rsl): T := match l {\n    Rsl::Nil => x,\n    Rsl::Cons(_, r) => rs_rep(x, r),\n}\n" ++
+      s!"pub proc rs_reps(b: Rsb, l: Rsl) \{\n    expect rr: match rs_rep(b, l) \{\n        Rsb::B(n) => {inv "n"},\n    }\n}\n"
+  -- Result types that bring the subset type's constraint through data,
+  -- each now and then: a record's field, a newtype's, an enumeration's
+  -- payload, an option's, and every element of a set or a sequence, which
+  -- quantifies over them. Each body meets its type, and a caller reads the
+  -- constraint.
+  let forms : Array (String × String × String × String) := #[
+    ("rs_rec", "Rsr", s!"pub struct Rsr \{ v: {ty}, k: Int }\n", inv "rs_rec(v, l).v"),
+    ("rs_nt", "Rsn", s!"pub struct Rsn({ty})\n", inv "rs_nt(v, l).0"),
+    ("rs_ch", "Rse", s!"pub enum Rse \{ A({ty}), Z }\n",
+      s!"match rs_ch(v, l) \{ Rse::A(n) => {inv "n"}, Rse::Z => true }"),
+    ("rs_opt", s!"Option<{ty}>", "",
+      s!"match rs_opt(v, l) \{ Option::Some(n) => {inv "n"}, Option::None => true }"),
+    ("rs_set", s!"Set<{ty}>", "", s!"forall (n: {base}), when n in rs_set(v, l), {inv "n"}"),
+    ("rs_seq", s!"Seq<{ty}>", "", s!"forall (n: {base}), when n in rs_seq(v, l), {inv "n"}")]
+  for (f, rt, decl, read) in forms do
+    unless ← chance 30 do continue
+    -- A `Nat`, or a subset type of one, is no type argument or element type.
+    if base == "Nat" && rt.contains '<' then continue
+    -- A collection's constraint quantifies over its elements.
+    let opt := if rt.startsWith "Set" || rt.startsWith "Seq" then "set_option fren.lint.undecidable \"allow\" in\n" else ""
+    let (x, a) ← pick #[("_", s!"{f}(v, r)"), ("x", s!"if x > 0 then {f}(v, r) else v")]
+    out := out ++ decl ++ opt ++ s!"pub fn {f}(v: {rt}, l: Rsl): {rt} := match l \{\n" ++
+      s!"    Rsl::Nil => v,\n    Rsl::Cons({x}, r) => {a},\n}\n" ++
+      opt ++ s!"pub proc {f}_apps(v: {rt}, l: Rsl) \{\n    expect c: {read}\n}\n"
+  -- A body wrong only at its induction step, which no caller applies: its
+  -- obligation's model, at a recursive application, is never confirmed,
+  -- so it is Inconclusive in both front ends, never `F0661`.
+  if base != "Nat" && (← chance 30) then
+    out := out ++ s!"pub fn rs_bad(p: {ty}, l: Rsl): {ty} := match l \{\n" ++
+      "    Rsl::Nil => p,\n    Rsl::Cons(x, r) => if x > 0 then rs_bad(p, r) - 1 else p,\n}\n"
+  return out
+
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after
 `bodyFns`, which must add no static error (`corpusFailures`). -/
@@ -1964,6 +2063,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- `[]` and `{}` as methods' arguments, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← emptyArguments sc)
+  -- Structural recursions with subset results, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← recursiveSubsets)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
