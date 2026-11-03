@@ -3810,11 +3810,14 @@ def smtAgreement (env : Environment) : IO (Array String) := do
 
 /-- The specs whose obligations dumps both front ends must print alike
 (`Reqs/Cli#obligations`): a recursive function with a contract, a
-quantifier, a generic function and its instance, and records,
-enumerations and checks by testing and enumeration. -/
+quantifier, a generic function and its instance, records,
+enumerations and checks by testing and enumeration, and recursive functions
+and abstract types and functions of one name in two modules, beside a
+variable of that name. -/
 def obligationsAgreementSpecs : List String :=
   ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
-   "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren"]
+   "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren",
+   "test/cli/args/dump_obligations_modules.fren"]
 
 /-- That the `fren` command's obligations dump (`--dump=obligations`) of each
 of `obligationsAgreementSpecs` is the Lean-hosted front end's, but for

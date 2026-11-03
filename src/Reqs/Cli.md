@@ -691,9 +691,11 @@ their canonical form:
   are their names in `fren check`'s queries, without `|`s
   (`Fren.Core.ItemSymbol`). The Lean-hosted front end maps lean-smt's
   names to them for the spec's enumerations, records, their constructors
-  and selectors, recursive functions that are not generic, and abstract
-  types and functions, the last two by the last component of their
-  paths, which also renames a variable or bound name of the same name; it
+  and selectors; it names the locals that stand for recursive functions
+  and for abstract types and functions by their whole paths, as `fren
+  check` names their symbols, so that two of one name in two modules stay
+  apart, and apart from every variable, though a generic recursive
+  function's instance gets its position among the query's, as `f<0>`; it
   erases a newtype's constructor and field,
   as `fren check` erases newtypes, and names the newtype by its
   underlying sort where that is `Int`, `Nat`, `Bool` or `String`

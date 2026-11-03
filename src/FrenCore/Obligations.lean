@@ -650,6 +650,15 @@ def evidenceName (solver tested enumerated : Bool) : String :=
   else if tested then "random"
   else "solver"
 
+/-- The item that the dump names `c`'s obligations after: a function's body
+or contract, which is checked as an item whose path is its module's, after
+the function, by its path (`fn?`, which is within the module); any other
+item by its own path. -/
+def itemName (c : Comp F) : Name :=
+  match c.fn? with
+  | some f => if c.path.isPrefixOf f then f else c.path ++ f
+  | none => c.path
+
 /-- The obligations of `c`, with the checks `kinds`, of which those set to
 testing or enumeration, `tested` and `enumerated`, have their evidence:
 `questionsOf` of `c`, with their scripts, as `script` gives them for each
@@ -666,9 +675,7 @@ def obligationsOf (bk : CheckKind → Backend m F V) (script : CheckKind → Arr
   all.mapM fun q => do
     let r : CheckResult := { kind := q.kind, comp := c.path, prop? := q.prop?, verdict := .pass }
     let evidence := evidenceName (bySolver.any (·.same q)) (tested.covers r) (enumerated.covers r)
-    -- A function's body or contract is checked as an item without a path:
-    -- it is named after the function.
-    let item := if c.path.isAnonymous then c.fn?.getD c.path else c.path
+    let item := itemName c
     return q.obligation item (← script q.kind q.hyps q.goal) evidence (spanOf q.prop?) symbols
 
 /-- The check that an obligation is of, as the dump names it:

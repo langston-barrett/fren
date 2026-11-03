@@ -64,7 +64,7 @@ def smtTimedOut : Smt.Result → Bool
   | _ => false
 
 /-- The canonical name (`Core.ItemSymbol.text`) of each symbol that lean-smt
-gives a spec's types, constructors, selectors and recursive functions, by
+gives a spec's types, constructors and selectors, by
 the name that it gives it, for the obligations dump (`Core.dump`). -/
 def dumpSymbols (st : State) : Std.HashMap String String := Id.run do
   let mut out : Std.HashMap String String := {}
@@ -98,10 +98,6 @@ def dumpSymbols (st : State) : Std.HashMap String String := Id.run do
     if let some u := under? then out := out.insert (toString n.decl) u
     out := out.insert (toString n.ctor) Core.erasedSymbol
     out := out.insert (toString (n.ctor ++ Name.mkSimple "0")) Core.erasedSymbol
-  -- A recursive function's opaque symbol (`withRecursiveDefs`).
-  for (_, d) in st.defined do
-    if let (true, some c) := (d.recursive, d.solver?) then
-      out := out.insert c.getPrefix.getString! (Core.ItemSymbol.item d.path).text
   return out
 
 /-- Why a dump's script is missing where lean-smt showed no query and
@@ -780,7 +776,16 @@ where
       let (c, pre) := recs[i]
       let ty ← instantiateForall (← getConstInfo c).type pre
       let nat := (resultType ty).isConstOf ``Nat
-      let name := if pre.isEmpty then Name.mkSimple c.getPrefix.getString! else Name.mkSimple s!"{c.getPrefix.getString!}<{i}>"
+      -- Named by the function's whole path, as the `fren` command names its
+      -- symbol (`Core.ItemSymbol.item`), so that two functions of one name in
+      -- two modules are apart, and apart from every variable; an instance at
+      -- type arguments by its position among them too.
+      let path? := (← getState).defined.foldl (init := none) fun acc _ d =>
+        acc <|> if d.recursive && d.solver? == some c then some d.path else none
+      let base := match path? with
+        | some p => (Core.ItemSymbol.item p).text
+        | none => c.getPrefix.getString!
+      let name := if pre.isEmpty then Name.mkSimple base else Name.mkSimple s!"{base}<{i}>"
       withLocalDeclD name (if nat then intResult ty else ty) fun f => do
         let rep ← if !nat then pure f else Meta.forallTelescope ty (fun xs _ => mkLambdaFVars xs (mkApp (mkConst ``Fren.natResult) (mkAppN f xs)))
         go (i + 1) (fs.push f) (reps.push rep)
@@ -1386,9 +1391,11 @@ where
       -- A generic function's type parameter is a sort named by its whole
       -- path, as the `fren` command names it (`Core.typeParamPath`): a
       -- parametric datatype's own parameter may have its name.
-      let name := if (Core.typeParamName? uses[i]).isSome
-        then Name.mkSimple ("::" ++ Core.showPath (uses[i].replacePrefix `Fren.Abstract .anonymous))
-        else Name.mkSimple uses[i].getString!
+      -- And an abstract type or function by its whole path too, as the `fren`
+      -- command names it (`Core.ItemSymbol.item`), so that two of one name in
+      -- two modules are apart, and apart from every variable.
+      let name := if isInhabitedName uses[i] then Name.mkSimple uses[i].getString!
+        else Name.mkSimple ("::" ++ Core.showPath (uses[i].replacePrefix `Fren.Abstract .anonymous))
       Meta.withLocalDecl name bi (if nat then intResult ty else ty) fun x => do
         let fns := if ty.isForall then fns.push (uses[i], x, ty.getForallArity, nat) else fns
         -- An abstract type, or a type parameter's sort, whose `Inhabited`
@@ -1852,11 +1859,10 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         let ref := (n?.bind fun n => (c.props.find? (·.name == n)).map (·.ref)
           <|> (c.insts.find? (·.name == n)).map (·.ref)).getD c.ref
         (ref.getPos?).map fun p => let q := fileMap.toPosition p; s!"{q.line}:{q.column + 1}"
-      -- And the locals that stand for its abstract types and functions,
-      -- named by their last component (`withNatUses`).
-      let symbols := c.uses.foldl (init := dumpSymbols st) fun acc u =>
-        if (Core.typeParamName? u).isSome then acc
-        else acc.insert u.getString! (Core.ItemSymbol.item (u.replacePrefix `Fren.Abstract .anonymous)).text
+      -- The locals that stand for its abstract types and functions, and its
+      -- recursive functions, are named canonically already (`withNatUses`,
+      -- `withRecursiveDefs`).
+      let symbols := dumpSymbols st
       try
         let os ← withoutModifyingState <| Core.obligationsOf (mkBk · cache) script full kinds0 c.tested c.enumerated interprets
           spanOf symbols
@@ -1864,7 +1870,9 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       -- An item whose questions cannot be built is one `(error ...)`
       -- obligation, as a script that cannot be built is.
       catch ex =>
-        let comp := if c.path.isAnonymous then c.fn?.getD c.path else c.path
+        let comp := match c.fn? with
+          | some f => if c.path.isPrefixOf f then f else c.path ++ f
+          | none => c.path
         r.modify (·.push #[{ comp, kind := (kinds0[0]?).getD .realizable, part := "questions"
                              script := Core.errorScript (← ex.toMessageData.toString) }])
     let bk (k : CheckKind) :=
