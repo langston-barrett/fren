@@ -1844,15 +1844,17 @@ def ownSpecAgreement : IO (Array String) := do
 /-! ## Models as the solver writes them -/
 
 /-- How `FrenCli.renderValue` shows a model's value, as cvc5 writes it,
-where the evaluator cannot read it (`FrenCli.confirming`'s `render`): a set,
-a union of singletons of 1-tuples, as a literal with its members sorted;
-a relation's, of pairs, as one of pairs; the empty set as `{}`. The
-evaluator reads every set that the tests' specs give, so only this shows
-these. -/
+where the evaluator cannot read it (`FrenCli.confirming`'s `render`). A set
+is a union or insertion of singletons of 1-tuples, and is shown as a
+literal of its members, sorted as text, so `10` comes before `2`. A
+relation's members are pairs, and are shown as pairs. The empty set is
+shown as `{}`. The evaluator reads every set in the tests' models, so only
+this job runs this rendering. -/
 def renderedSets : Array String := Id.run do
   let cases : Array (String × String) := #[
     ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 0)))", "{0, 2}"),
     ("(set.insert (tuple 3) (tuple 1) (set.singleton (tuple 2)))", "{1, 2, 3}"),
+    ("(set.union (set.singleton (tuple 2)) (set.singleton (tuple 10)))", "{10, 2}"),
     ("(set.singleton (tuple 1 (- 2)))", "{(1, -2)}"),
     ("(as set.empty (Set (Tuple Int)))", "{}")]
   let mut failures := #[]
