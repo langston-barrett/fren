@@ -5,14 +5,13 @@
 # sections marked " (Interlock pending)"; its Interlock step gives each a
 # requirement, removes its line and the mark. A rule that is to keep no
 # requirement says why, after ` -- `, which every line of a section without
-# the mark must. A rule whose markers link only part of what it states is
-# listed too, with ` -- partly formalized: ` and what is missing (or, in a
-# pending section, ` -- partly formalized` alone), until they link all of
-# it. The
-# `ruleReqs` job fails on a rule of those labels that has no requirement and
-# is not listed, and on a listed one that has one (but for `partly
-# formalized`), is of another label, is in another chapter's section, or is
-# no rule.
+# the mark must. A rule whose links, on its identifier's line, name only
+# part of what it states is listed too, with ` -- partly formalized: ` and
+# what is missing (or, in a pending section, ` -- partly formalized` alone),
+# until they name all of it. The `ruleReqs` job fails on a rule of those
+# labels that has no requirement and is not listed, and on a listed one that
+# has one (but for `partly formalized`), is of another label, is in another
+# chapter's section, or is no rule.
 
 # src/Reqs/Lang/EvaluationRules.md (Interlock pending)
 evaluation.laws
@@ -49,7 +48,6 @@ evaluation.free.unread
 evaluation.free.binders
 evaluation.free.params
 evaluation.guard.term
-evaluation.guard
 evaluation.guard.when
 evaluation.guard.branches
 evaluation.guard.and-or
@@ -59,8 +57,6 @@ evaluation.guard.evaluated
 evaluation.guard.unguarded
 evaluation.guard.nesting
 evaluation.guard.evaluation
-evaluation.guard.evaluation.connectives
-evaluation.guard.evaluation.arms
 evaluation.guard.evaluation.rest
 
 # src/Reqs/Lang/Quantifiers.md (Interlock pending)
@@ -95,10 +91,8 @@ quantifier.guard.free
 quantifier.guard.operand
 quantifier.guard.strict
 quantifier.guard.name.members
-quantifier.guard.name.model
-quantifier.guard.domain.inputs
+quantifier.guard.name.model -- partly formalized: not that its result is the `alone` of the operand's `GuardSide`
 quantifier.guard.range.other
-quantifier.guard.range.model
 quantifier.guard.meaning
 quantifier.guard.evaluation
 quantifier.name.scope
@@ -111,9 +105,7 @@ quantifier.name.mentions.quantifier
 quantifier.global.short-form
 
 # src/Reqs/Lang/Semantics.md (Interlock pending)
-semantics.eval.big-step
 semantics.derived-forms
-semantics.value
 semantics.value.bool
 semantics.value.integer
 semantics.value.text
@@ -163,9 +155,8 @@ semantics.derived.lambda-match
 semantics.derived.function-name
 semantics.derived.function-parameter
 semantics.derived.count
-semantics.env
+semantics.env -- partly formalized: not which variables an environment binds
 semantics.env.unbound
-semantics.interp
 semantics.interp.functions
 semantics.interp.recursions
 semantics.interp.primitives
@@ -216,7 +207,6 @@ traits.member.pub
 traits.member.default
 traits.member.generic
 traits.member.use
-traits.member.rule
 traits.carrier
 traits.carrier.payload
 traits.carrier.outside
