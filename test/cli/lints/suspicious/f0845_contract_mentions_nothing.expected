@@ -1,0 +1,38 @@
+warning[F0761]: this precondition mentions no variable
+ --> test/cli/lints/suspicious/f0845_contract_mentions_nothing.fren:9:18
+  |
+9 |     assume sane: LIMIT > 0
+  |                  ^^^^^^^^^ the same in every behaviour
+  |
+  = note: it is either always true, and says nothing, or always false
+  = note: `assertions_on_constants` is `warn` by default
+  = help: to allow it, `set_option fren.lint.assertions_on_constants "allow"`
+
+warning[F0845]: the postcondition `positive` says nothing about `scale`
+  --> test/cli/lints/suspicious/f0845_contract_mentions_nothing.fren:11:22
+   |
+11 |     ensure positive: limit(0) > 0
+   |                      ^^^^^^^^^^^^ mentions no parameter of `scale`, nor its value
+   |
+   = note: it mentions only the function `limit`
+   = help: state it in the contract of what it is about, or as a global expectation
+   = note: `contract_mentions_nothing` is `warn` by default
+   = help: to allow it, `set_option fren.lint.contract_mentions_nothing "allow"`
+
+error[F0631]: the postconditions of `scale` cannot all hold
+ --> test/cli/lints/suspicious/f0845_contract_mentions_nothing.fren:8:8
+  |
+8 | pub fn scale(n: Int): (r: Int) {
+  |        ^^^^^ unrealizable contract
+  |
+  = note: for the arguments
+              n = 0
+          no value of `scale` satisfies `grows` and `positive`
+  = note: an uninterpreted function's postconditions are assumed wherever it is applied, so if they cannot hold, every check that applies it would pass
+  = help: weaken one of them, or add a precondition that rules these arguments out
+
+fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
+
+Some errors have detailed explanations: F0631, F0761, F0845.
+For more information about an error, try `fren --explain F0631`.
+exit=1

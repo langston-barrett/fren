@@ -975,7 +975,9 @@ pub proc disallowed_names(name: String): (det fires?) {
 ## Constant constraints
 
 `assertions_on_constants` fires on an assumption, guarantee,
-expectation or cover goal, of a procedure or [global](../Lang/Global.md), whose
+expectation or cover goal, of a procedure or [global](../Lang/Global.md),
+or a precondition or postcondition of a function's
+[contract](../Lang/Items.md#contracts), whose
 expression mentions no variable and no uninterpreted function (see
 [Mentions](../Lang/Expressions.md#mentions)), as
 [`constant_output`](Complexity.md#constant-outputs) does on a
@@ -986,7 +988,10 @@ on the [interpretation](../Lang/Procedures.md#interpretations).
 Such a constraint is the same in every behaviour. If it is always true,
 it says nothing. If it is always false, a guarantee makes its procedure
 unrealizable, an assumption makes every guarantee hold vacuously, and an
-expectation always fails. The message says which where the expression is
+expectation always fails. A precondition makes every application of its
+function fail its precondition check, and a postcondition cannot hold: an
+uninterpreted function's contract is then unrealizable, and a defined
+function's postcondition check fails. The message says which where the expression is
 written `true` or `false`, in parentheses or not; otherwise only the
 solver could tell, and a lint never asks it, so the message says that the
 constraint mentions no variable. It has no fix: removing a constraint

@@ -25,7 +25,7 @@ use view::Severity
 | `allow_attributes` | `F0780` | `restriction` | `allow` | a `set_option` that sets a lint or a group to `allow` (see [Allowed lints](Lint/Restriction.md#allowed-lints)) |
 | `almost_complete_range` | `F0757` | `suspicious` | `warn` | a range in a pattern one character short of an alphabet, such as `a-y` (see [Ranges of characters](Lint/Suspicious/Literals.md#ranges-of-characters)) |
 | `arbitrary_source_item_ordering` | `F0779` | `restriction` | `allow` | a procedure whose members are out of order, such as an `exists` after an `ensure` (see [The order of members](Lint/Restriction.md#the-order-of-members)) |
-| `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `ensure` or `expect` that mentions no variable, such as `ensure r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
+| `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `ensure` or `expect`, or a clause of a function's contract, that mentions no variable, such as `ensure r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
 | `branches_sharing_code` | `F0778` | `pedantic` | `allow` | `if c then a op x else b op x`, whose branches share an operand (see [Branches sharing code](Lint/Pedantic/Conditionals.md#branches-sharing-code)) |
 | `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
@@ -35,6 +35,7 @@ use view::Severity
 | `collapsible_when` | `F0723` | `style` | `warn` | a `when` whose body is a `when`, or an `unless` whose body is an `unless` (see [Conditionals](Lint/Style.md#conditionals)) |
 | `const_is_empty` | `F0755` | `suspicious` | `warn` | a test of a literal whose value the literal fixes, such as `"ab".len = 0` (see [Tests of literals](Lint/Suspicious/Literals.md#tests-of-literals)) |
 | `constant_output` | `F0719` | `complexity` | `warn` | a definition of a result or `let` variable that mentions no variable and no uninterpreted function (see [Constant outputs](Lint/Complexity.md#constant-outputs)) |
+| `contract_mentions_nothing` | `F0845` | `suspicious` | `warn` | a precondition or postcondition of a function that mentions none of its parameters, nor its value, but something else, such as `ensure p: limit(0) > 0` (see [Contract clauses about other names](Lint/Suspicious.md#contract-clauses-about-other-names)) |
 | `contradictory_comparisons` | `F0766` | `suspicious` | `warn` | two comparisons of one operand that cannot both hold, joined by `and`, or of which one always holds, joined by `or`, such as `x < 3 and x > 5`, or in a chained comparison, such as `5 < x < 3` (see [Comparisons](Lint/Suspicious/Comparisons.md)) |
 | `dead_code` | `F0711` | `unused` | `warn` | a private enumeration, record, abstract type, function or constant that nothing in its file uses (see [Dead code](Lint/Unused.md#dead-code)) |
 | `definable_output` | `F0720` | `pedantic` | `allow` | an output that one guarantee equates with an expression of other variables (see [Definable outputs](Lint/Pedantic.md#definable-outputs)) |
@@ -110,6 +111,7 @@ use view::Severity
 | `nonminimal_bool` | `F0712` | `complexity` | `warn` | a `Bool` expression with a simpler form, such as `a? = true` or `exactly_one?(a?)` (see [Simpler `Bool` expressions](Lint/Complexity.md#simpler-bool-expressions)) |
 | `overly_complex_bool_expr` | `F0773` | `pedantic` | `allow` | an `and` or `or` with an operand that can be dropped, such as `a or (a and b)` or `a and not a` (see [Operands that can be dropped](Lint/Pedantic/Booleans.md#operands-that-can-be-dropped)) |
 | `precedence` | `F0787` | `restriction` | `allow` | an `and` in an `or`, or a `join` or `inter` in a `union` or `minus`, without parentheses, such as `a? or b? and c?` (see [Precedence](Lint/Restriction.md#precedence)) |
+| `proc_without_outputs` | `F0846` | `pedantic` | `allow` | a private procedure with no results, whose members a global expectation accepts, and which nothing in its file calls, refines or names in a claim (see [Procedures that only claim](Lint/Pedantic/Procedures.md#procedures-that-only-claim)) |
 | `redundant_bindings` | `F0735` | `style` | `warn` | a field `x := x` of a record literal, or a field `x := r.x` of an update of `r` (see [Bindings](Lint/Style.md#bindings)) |
 | `redundant_bool_type` | `F0746` | `style` | `warn` | a `: Bool` that a name ending in `?` implies, as in the parameter `ready?: Bool` (see [Boolean types](Lint/Style.md#boolean-types)) |
 | `redundant_closure` | `F0821` | `style` | `warn` | a closure that only applies a function to its parameters, such as `\|x\| f(x)` (see [Closures that only apply a function](Lint/Style/Closures.md#closures-that-only-apply-a-function)) |
@@ -155,9 +157,10 @@ use view::Severity
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel<A, B>` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
-The lints' codes run from `F0701` to `F0843`, and each group's codes start
+The lints' codes run from `F0701` to `F0846`, and each group's codes start
 at `01`. Among them, `F0707`, `F0708` and `F0709` are errors in [setting
-levels](#setting-levels), and `F0713` is the removed `shadowed_constants`'s.
+levels](#setting-levels), `F0713` is the removed `shadowed_constants`'s,
+and `F0844` is kept for a lint of parentheses.
 
 Lints are found while elaborating, like [static
 errors](View.md#static-errors), and never ask the solver anything: the
@@ -490,8 +493,8 @@ pub proc effective(
 The level that applies to a lint's message is the one in effect at the
 item it is about: the `use` for the import lints; for the naming lints
 and `unused_variables`, the item that declares the name, which for a
-member is its procedure and for a variant its enumeration; for `dead_code`
-and `single_call_fn`, the item it is about; for
+member is its procedure and for a variant its enumeration; for `dead_code`,
+`single_call_fn` and `proc_without_outputs`, the item it is about; for
 `arbitrary_source_item_ordering`, the procedure; for
 `unused_assumption`, its procedure; for `unused_lint_setting`, the setting, before it; for
 `invisible_characters`, the item the literal or comment is in (see
@@ -699,7 +702,10 @@ The other lints have no fix. Renaming a declaration, as the naming lints
 and `struct_field_names` would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
 would removing a dead item, or a function applied once, which
-`single_call_fn` reports. Removing an unused variable, or the parameters of an
+`single_call_fn` reports. Writing `expect` in place of `proc`, as
+`proc_without_outputs` suggests, would break a call of the procedure in
+another file: only the paths in its own file are counted, and another file
+may enter any module, the root module too, and call it. Removing an unused variable, or the parameters of an
 unused assumption, would change its procedure's interface, and merging the guarantees that `case_split_guarantees`
 reports would change what traces, claims and `impl`s name, and so would
 removing a constraint that `assertions_on_constants` reports. Writing a

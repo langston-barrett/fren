@@ -15,7 +15,9 @@ uninterpreted function, by its name as written, named apart. -/
 inductive Mention where
   | var (x : String)
   | fn (f : String)
-  deriving BEq, DecidableEq, Inhabited, Repr
+  -- `BEq` from `DecidableEq`, which makes it lawful, so that a proof can
+  -- read `contains` as membership.
+  deriving DecidableEq, Inhabited, Repr
 
 /-- `m` as a message writes it. -/
 def Mention.describe : Mention → String

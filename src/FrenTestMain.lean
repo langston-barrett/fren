@@ -1062,6 +1062,7 @@ def ownSpecFiles : Array String :=
     "Lint/Pedantic/Comparisons",
     "Lint/Pedantic/Conditionals",
     "Lint/Pedantic/Booleans",
+    "Lint/Pedantic/Procedures",
     "Lint/Restriction",
     "Lint/Decidability",
     "Lint/Printing",
@@ -1852,6 +1853,7 @@ def fmtIgnore : List String :=
    -- `#fren_md` in a block, which only the Lean front end reads.
    "src/FrenTestFiles/chapters/LiterateOuter.md", "src/FrenTestFiles/chapters/LiterateReader.md",
    "src/FrenTestFiles/chapters/deep/LiterateDeep.md", "src/FrenTestFiles/chapters/LiterateReplacing.md",
+   "src/FrenTestFiles/chapters/LiterateProcsOuter.md",
    -- Lean code in a block, likewise.
    "src/FrenTestFiles/chapters/LiterateNoPosition.md",
    -- Trailing commas that `unnecessary_trailing_comma` reports.
@@ -2966,6 +2968,7 @@ deriving instance BEq for Fren.Core.ExpectationRecord
 deriving instance BEq for Fren.Core.LintReport
 deriving instance BEq for FrenCli.UseLoc
 deriving instance BEq for Fren.Core.ItemRecord
+deriving instance BEq for Fren.Core.ProcRecord
 deriving instance BEq for Fren.Core.HofParamRecord
 deriving instance BEq for Fren.Core.FnArgRecord
 deriving instance BEq for FrenCli.LintFix

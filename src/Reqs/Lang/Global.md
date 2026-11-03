@@ -48,7 +48,9 @@ accepts, and a result in its signature, which it does not, and the code of
 the error that both front ends report for a member that it does not
 accept, before any other check of that member: `F0417`, so an `out`
 member is reported as one that the block does not accept, not as a
-procedure's `out` that names no result (`F0444`):
+procedure's `out` that names no result (`F0444`). Its rule is
+`lang::block_accepts?`, which the lint
+[`proc_without_outputs`](../Lint/Pedantic/Procedures.md) reads too:
 
 ```fren
 pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cover, Call, Refines, Use }
@@ -56,25 +58,25 @@ pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cove
 -- What is reported for a member: nothing, or the error `F0417`.
 pub enum MemberReport { NoReport, F0417 }
 
+-- Whether the block accepts `member`, written with `det` if `det?`.
+pub fn block_accepts?(member: BlockMember, det?) :=
+    not det? and member in {
+        BlockMember::Let,
+        BlockMember::Assume,
+        BlockMember::Expect,
+        BlockMember::Cover,
+        BlockMember::Call,
+        BlockMember::Refines,
+        BlockMember::Use,
+    }
+
 pub proc block_member(
     member: BlockMember,
     det?,                -- written with `det`
 ): (det accepted?, det report: MemberReport) {
-    use self::BlockMember::{
-        Assume,
-        Call,
-        Cover,
-        Define,
-        Ensure,
-        Exists,
-        Expect,
-        Let,
-        Refines,
-        Result,
-        Use,
-    }
+    use self::BlockMember::{Cover, Define, Ensure, Exists, Expect, Result}
 
-    ensure rule: accepted? iff (not det? and member in {Let, Assume, Expect, Cover, Call, Refines, Use})
+    ensure rule: accepted? iff block_accepts?(member, det?)
     ensure reported: report = (if accepted? then MemberReport::NoReport else MemberReport::F0417)
 
     expect claims: when member in {Expect, Cover} and not det?, accepted?

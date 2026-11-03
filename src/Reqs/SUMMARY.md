@@ -70,6 +70,7 @@
     - [Comparisons](Lint/Pedantic/Comparisons.md)
     - [Conditionals](Lint/Pedantic/Conditionals.md)
     - [Boolean operands](Lint/Pedantic/Booleans.md)
+    - [Procedures](Lint/Pedantic/Procedures.md)
   - [Restriction](Lint/Restriction.md)
   - [Decidability](Lint/Decidability.md)
   - [Printing fixes](Lint/Printing.md)
