@@ -664,10 +664,13 @@ they would give it to the solver, without asking it, and print them with
 - the logic, the options and the solver's commands of a script are left
   out; its non-recursive definitions are unfolded where they are used,
   since one front end gives the solver a function's definition and the
-  other its body; and a declaration that nothing else mentions is left out;
+  other its body; and a constant or function (`declare-const`,
+  `declare-fun`) that nothing else mentions is left out, though its sorts
+  and datatypes stay;
 - its symbols for the spec's types, constructors, selectors and functions
   are their names in `fren check`'s queries, without `|`s, which each
-  front end maps its own symbols to (`Fren.Core.ItemSymbol`);
+  front end maps its own symbols to (`Fren.Core.ItemSymbol`); and Lean's
+  `«»` and `✝` go from a name, but where two names would then be one;
 - what either front end could write in two ways is written one way
   (`Fren.Core.Sx.normalize`), such as a conjunction of conjunctions, a
   `let`, whose definitions are substituted, or `<=`; a conjunction in the

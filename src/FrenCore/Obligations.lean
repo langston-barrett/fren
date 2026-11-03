@@ -291,6 +291,12 @@ def Sx.int? : Sx → Option Int
   | .list #[.atom "-", .atom a] => a.toNat?.map fun n => -Int.ofNat n
   | _ => none
 
+/-- The atoms of `e`, bound or free, added to `acc`. -/
+partial def Sx.atomsInto (e : Sx) (acc : Std.HashSet String) : Std.HashSet String :=
+  match e with
+  | .atom a => acc.insert a
+  | .list xs => xs.foldl (fun acc x => x.atomsInto acc) acc
+
 /-- `e` with each atom renamed by `symbols`. -/
 partial def Sx.rename (symbols : Std.HashMap String String) : Sx → Sx
   | .atom a => .atom (symbols.getD a a)
@@ -312,7 +318,8 @@ def erasedSymbol : String := "#erased"
 def associative : List String := ["and", "or", "+", "*", "seq.++", "str.++"]
 
 /-- `e` written as both front ends could: with each atom renamed by
-`symbols`, then without `«»` (`unguillemet`) or `✝` (`withoutDagger`);
+`symbols` (which `canonical` gives without `«»` (`unguillemet`) and `✝`
+(`withoutDagger`), where no two names would then be one);
 each `declare-datatype` as the `declare-datatypes` of one datatype, as
 lean-smt declares them; each conjunction of conjunctions as one; each
 implication whose conclusion is an implication, `(=> a (=> b c))`, as
@@ -329,7 +336,7 @@ integer literals, a negation, a conjunction or disjunction with `true` or
 lean-smt's preprocessing simplifies them. None of these changes what the
 formula means. -/
 partial def Sx.normalize (symbols : Std.HashMap String String) : Sx → Sx
-  | .atom a => .atom (withoutDagger (unguillemet (symbols.getD a a)))
+  | .atom a => .atom (symbols.getD a a)
   | .list xs =>
     let xs := xs.map (Sx.normalize symbols)
     if xs.size == 2 && xs[0]? == some (.atom erasedSymbol) then xs[1]! else
@@ -387,17 +394,51 @@ partial def Sx.normalize (symbols : Std.HashMap String String) : Sx → Sx
 
 /-- `e` with each application of a definition of `defs`, by its name, to as
 many arguments as it has parameters, and each mention of one without
-parameters, replaced by its body. The bodies are unfolded already. -/
-partial def Sx.unfold (defs : Std.HashMap String (Array String × Sx)) (e : Sx) : Sx :=
+parameters, replaced by its body, without capture: a name that `bound`
+or a binder within `e` binds is not a definition's, and a binder that
+would capture a free name of a body it holds has its bound name renamed
+apart (`freshName`). The bodies are unfolded already. -/
+partial def Sx.unfold (defs : Std.HashMap String (Array String × Sx)) (e : Sx) (bound : Array String := #[]) : Sx :=
   if defs.isEmpty then e else
   match e with
-  | .atom a => match defs[a]? with
+  | .atom a => if bound.contains a then e else match defs[a]? with
     | some (#[], body) => body
     | _ => e
   | .list xs =>
-    let xs := xs.map (·.unfold defs)
+    let names := e.binds
+    if !names.isEmpty then
+      match xs with
+      | #[q, .list bs, body] => Id.run do
+        -- The definitions that the body uses, and the free names of their
+        -- bodies, which a binder here would capture.
+        let inner := bound ++ names
+        let usedFree := body.freeAtoms inner |>.fold (init := ({} : Std.HashSet String)) fun acc a =>
+          match defs[a]? with
+          | some (ps, b) => (b.freeAtoms ps).fold (·.insert ·) acc
+          | none => acc
+        let mut avoid := (body.freeAtoms).fold (·.insert ·) usedFree
+        avoid := inner.foldl (·.insert ·) avoid
+        let mut σ : Array (String × Sx) := #[]
+        let mut names' := #[]
+        for x in names do
+          if usedFree.contains x then
+            let x' := freshName x avoid
+            avoid := avoid.insert x'
+            σ := σ.push (x, .atom x')
+            names' := names'.push x'
+          else names' := names'.push x
+        let body := body.subst σ
+        let bs := bs.zipWith (fun (b : Sx) (x : String) => match b with
+          -- A `let`'s definition is outside its scope; a bound name's sort is
+          -- unfolded, as a sort's definition may be.
+          | .list #[_, v] => Sx.list #[.atom x, v.unfold defs bound]
+          | b => b) names'
+        return .list #[q, .list bs, body.unfold defs (bound ++ names')]
+      | _ => e
+    else
+    let xs := xs.map (·.unfold defs bound)
     match xs[0]? with
-    | some (Sx.atom f) => match defs[f]? with
+    | some (Sx.atom f) => if bound.contains f then .list xs else match defs[f]? with
       | some (ps, body) =>
         if ps.size + 1 == xs.size && !ps.isEmpty then body.subst (ps.zip (xs.extract 1)) else .list xs
       | none => .list xs
@@ -478,6 +519,14 @@ def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap Stri
   let mut defs : Std.HashMap String (Array String × Sx) := {}
   let mut sig : Array Sx := #[]
   let mut asserts : Array Sx := #[]
+  -- Lean's `«»` and `✝` go from each name, but where two names would be
+  -- one without them, which would merge two constants or bound names.
+  let renamed := (Sx.parseAll script).map (·.rename symbols)
+  let atoms := renamed.foldl (init := ({} : Std.HashSet String)) fun acc c => c.atomsInto acc
+  let plain (a : String) := withoutDagger (unguillemet a)
+  let count := atoms.fold (init := ({} : Std.HashMap String Nat)) fun m a => m.insert (plain a) (m.getD (plain a) 0 + 1)
+  let strips := atoms.fold (init := ({} : Std.HashMap String String)) fun m a =>
+    if plain a != a && count.getD (plain a) 0 == 1 then m.insert a (plain a) else m
   for raw in Sx.parseAll script do
     -- A newtype's declaration, which `fren check` erases, goes, as its
     -- renamed symbols show (`erasedSymbol`).
@@ -485,7 +534,7 @@ def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap Stri
       | .list xs => xs[0]? == some (.atom "declare-datatypes") || xs[0]? == some (.atom "declare-datatype")
       | _ => false
     if declares && (raw.rename symbols).freeAtoms.contains erasedSymbol then continue
-    let cmd := raw.normalize symbols
+    let cmd := (raw.rename symbols).normalize strips
     let .list xs := cmd | continue
     let some (Sx.atom head) := xs[0]? | continue
     if solverCommands.contains head then continue

@@ -115,6 +115,20 @@ private def script (lines : List String) : String := "\n".intercalate lines ++ "
 -- capture its argument's free name is renamed apart.
 #guard (canonical (script ["(define-fun f ((y Int)) Bool (forall ((x Int)) (> x y)))", "(assert (not (f x)))"]) false).goal ==
   "(forall ((x#s0 Int)) (> x#s0 x))"
+-- At its use, a definition without parameters is not a bound name's, and
+-- a binder that would capture a free name of its body is renamed apart.
+#guard (canonical (script ["(define-fun d () Int x)", "(assert (not (forall ((x Int)) (> x d))))"]) false).goal ==
+  "(forall ((x#s0 Int)) (> x#s0 x))"
+#guard (canonical (script ["(define-fun d () Int 3)", "(assert (not (forall ((d Int)) (> d 0))))"]) false).goal ==
+  "(forall ((d Int)) (> d 0))"
+#guard (canonical (script ["(define-fun f ((y Int)) Bool (> y n))", "(assert (not (forall ((n Int)) (f n))))"]) false).goal ==
+  "(forall ((n#s0 Int)) (> n#s0 n))"
+-- Lean's `✝` and `«»` go, but not where two names would be one.
+#guard (canonical (script ["(declare-const x✝ Int)", "(assert (not (> x✝ 0)))"]) false).goal == "(> x 0)"
+#guard (canonical (script ["(declare-const x✝ Int)", "(declare-const x Int)", "(assert (not (> x✝ x)))"]) false).goal ==
+  "(> x✝ x)"
+#guard (canonical (script ["(declare-const «x» Int)", "(declare-const x Int)", "(assert (not (> «x» x)))"]) false).goal ==
+  "(> «x» x)"
 -- Quantifiers are merged only where no name would be bound twice.
 #guard (canonical (script ["(assert (not (forall ((x Int)) (forall ((x Int)) (> x 0)))))"]) false).goal ==
   "(forall ((x Int)) (forall ((x Int)) (> x 0)))"

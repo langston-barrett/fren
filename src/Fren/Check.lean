@@ -1855,7 +1855,12 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         let os ← withoutModifyingState <| Core.obligationsOf (mkBk · cache) script full kinds0 c.tested c.enumerated interprets
           spanOf symbols
         r.modify (·.push os)
-      catch _ => pure ()
+      -- An item whose questions cannot be built is one `(error ...)`
+      -- obligation, as a script that cannot be built is.
+      catch ex =>
+        let comp := if c.path.isAnonymous then c.fn?.getD c.path else c.path
+        r.modify (·.push #[{ comp, kind := (kinds0[0]?).getD .realizable, part := "questions"
+                             script := Core.errorScript (← ex.toMessageData.toString) }])
     let bk (k : CheckKind) :=
       let b := mkBk k cache
       if k != .cover then b else
