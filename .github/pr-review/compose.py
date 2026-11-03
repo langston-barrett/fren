@@ -34,8 +34,11 @@ the new head: the workflow runs only then.
 
 {how}
 
-If the new head changes anything else, do a full review of it instead,
-and give it a full review's first line.
+If the new head changes anything else, don't review it here: a light
+check runs on a smaller model than a full review. Post a review whose
+first line says blocking issues, with one `[blocking]` finding that names
+what changed beyond the request and says the head needs a full review;
+the author's next push without a request for a light check gets one.
 
 In the light check, judge only what changed since `{previous}`: the
 diff from it, or, for a rebase, what the range-diff shows changed in
