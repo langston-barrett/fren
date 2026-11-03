@@ -252,11 +252,8 @@ module.instance.hypothesis -- how an instance enters a query: no requirement mod
 module.instance.quantifiers -- the decidable core of an instance, as Decidability states it for quantifiers; today's forms keep today's lint, `traits.law.undecidable`
 module.closure -- the closure of a query's instances: no requirement computes it yet (stage 3)
 module.closure.finite -- argued in the rule; a requirement over terms comes with stage 3
-module.instance.models -- the confirmation of a model against axioms: a check of stage 3
-module.use.verdict -- what a pass rests on, which Evidence formalizes
 module.no-patterns -- an absence: no syntax states instances, and no setting changes them
 module.meta.conservative -- metatheory: argued from the totality of structural recursion (#669)
 module.meta.free -- metatheory: argued from the solver's datatypes and Lean's inductive types (#669)
 module.expansion -- partly formalized: `lang::strict_expansion` compares the codes of messages, not their texts or places
-module.expansion.laws -- partly formalized: `lang::strict_expansion` compares reports; that today's laws keep their meaning rests on the rules it cites
 module.expansion.corpus -- a step of each stage's landing: comparing the corpus before and after

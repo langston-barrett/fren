@@ -208,7 +208,7 @@ checked, and whether later checks use it.
 | `ensure` | a clause of a function, a procedure, a lemma or an `assume` item | a claim of its item, which later checks use |
 | `expect` | an item, or a member of anything but an `assume` item | a goal: checked, never used by another check |
 | `lemma` | an item of a module or of an interface | a theorem: checked, and later checks use it |
-| `assume` | an item of a module | an axiom of the module's abstract items |
+| `assume` | an item of a module; within a function, a procedure or a global expectation, `require` | an axiom of the module's abstract items; within an item, a precondition |
 | `law` | an item of an interface | an axiom of the interface, which each implementation discharges |
 
 **Legality rules**
@@ -410,6 +410,19 @@ pub enum SentenceRole {
     Goal,        -- Fren proves it, and no other check uses it
 }
 
+-- The role of a sentence of the keyword `keyword`, written at `place`.
+pub fn role_of(keyword: SentenceKind, place: SentencePlace): SentenceRole := match keyword {
+    SentenceKind::Require => SentenceRole::Domain,
+    SentenceKind::Expect => SentenceRole::Goal,
+    SentenceKind::Lemma => SentenceRole::Theorem,
+    SentenceKind::Law => SentenceRole::Axiom,
+    SentenceKind::Ensure =>
+        if place in {SentencePlace::DefinedFunction, SentencePlace::LemmaBlock} then SentenceRole::Theorem
+        else SentenceRole::Axiom,
+    SentenceKind::Assume =>
+        if place = SentencePlace::Module then SentenceRole::Axiom else SentenceRole::Domain,
+}
+
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 pub proc sentence_role(
@@ -419,17 +432,10 @@ pub proc sentence_role(
     defines: Rel<Int, Int>,  -- `(d, i)`: the definition of the defined item `d` mentions `i`
     abstract: Set<Int>,      -- the abstract items of the spec
 ): (det role: SentenceRole, det accepted?) {
-    use self::SentencePlace::{DefinedFunction, LemmaBlock, Module}
-    use self::SentenceRole::{Axiom, Domain, Goal, Theorem}
+    use self::SentencePlace::Module
+    use self::SentenceRole::{Axiom, Domain}
 
-    out role := match keyword {
-        SentenceKind::Require => Domain,
-        SentenceKind::Expect => Goal,
-        SentenceKind::Lemma => Theorem,
-        SentenceKind::Law => Axiom,
-        SentenceKind::Ensure => if place in {DefinedFunction, LemmaBlock} then Theorem else Axiom,
-        SentenceKind::Assume => if place = Module then Axiom else Domain,
-    }
+    out role := role_of(keyword, place)
     let reached: Set<Int> := mentioned union defines.closure.image(mentioned)
     out accepted? :=
         not (keyword = SentenceKind::Assume and place = Module and reached inter abstract = {})
@@ -621,17 +627,6 @@ arguments of each item's applications are among finitely many terms, once
 the applications of the items after it are finitely many. No bound on the
 number of rounds is part of the language.
 
-r[module.instance.models]
-A model of a query whose hypotheses include instances of axioms is a
-model of those instances, not always of the axioms. A check whose
-sentences are all of today's forms (`module.expansion`), where the
-instances do not give `unsat`, asks today's query, with today's laws
-quantified ([Traits](Traits.md#expectations)) and its contracts as today,
-and never takes a model of the instances as a counterexample or as a
-witness of consistency. Any other check reports such a model as a counterexample,
-or as a witness, only where Fren confirms that the model meets the axioms
-themselves, and is Inconclusive where it does not.
-
 r[module.use] lang::sentence_use
 A check instantiates the sentences that are visible to it and meet the
 binding rule, whose subject the closure applies: every
@@ -644,10 +639,6 @@ A sentence is used where its subject is applied by the query, or by an
 instance of a used sentence. A sentence that applies and calls nothing,
 such as an `assume` item about an abstract type alone, has no subject, and
 every check that may use it does, as its one instance.
-
-r[module.use.verdict]
-A check uses a lemma whatever the lemma's own verdict. Where the check
-passes, the pass rests on the lemma's check ([Evidence](../Evidence.md#resting-on-checks)).
 
 r[module.use.laws] lang::laws_anywhere
 The laws of a trait are visible to the checks of the trait's lemmas and
@@ -1046,10 +1037,10 @@ expect contract_without_result() {
 sentences visible to it and the items that its query applies:
 
 ```fren
--- A lemma, `assume` item or law, or a goal, visible to a check. `Ensure`
--- is an `ensure` clause of an abstract item.
+-- A sentence visible to a check, by its keyword and where it is written.
 pub struct Sentence {
     kind: SentenceKind,
+    place: SentencePlace,
     position: Int,                   -- its position in declaration order
     variables: SentenceVariables,
     applications: Applications,
@@ -1063,24 +1054,13 @@ pub fn applied_items(apps: Applications): Set<Int> := match apps {
     Applications::Cons(a, rest) => {a.item} union applied_items(rest),
 }
 
--- Whether a sentence of the keyword `k` is an axiom (`module.role.axiom`):
--- an `assume` item, a law, or an `ensure` clause, which stands for one of
--- an abstract item here.
-pub fn axiom_kind?(k: SentenceKind) :=
-    k in {
-        SentenceKind::Assume,
-        SentenceKind::Law,
-        SentenceKind::Ensure,
-    }
-
--- Whether `p` is an axiom: an `assume` item, a law, or an `ensure` clause of an abstract item.
-pub fn axiom?(p: Sentence) := axiom_kind?(p.kind)
-
 -- Whether `p` may be used by a check of the item at `check`, where its
--- subject is applied: an axiom, wherever it is declared, or a lemma
--- declared before the item, that meets the binding rule.
+-- subject is applied: an axiom, wherever it is declared, or a theorem
+-- declared before the item, that meets the binding rule, each by the role
+-- that `lang::sentence_role` gives it.
 pub fn fact?(p: Sentence, check: Int) :=
-    (axiom?(p) or (p.kind = SentenceKind::Lemma and p.position < check))
+    (role_of(p.kind, p.place) = SentenceRole::Axiom
+        or (role_of(p.kind, p.place) = SentenceRole::Theorem and p.position < check))
     and instantiation_verdict(p.variables, p.applications) = SentenceInstantiation::Instantiable
 
 -- Whether `p` is used where the query and the instances apply `items`.
@@ -1137,9 +1117,10 @@ pub proc sentence_use(
 
 -- `assume made(fs: Fs, p: Path): exists?(mkdir(fs, p), p)`, with `mkdir`
 -- at 1, `exists?` at 2 and the axiom at 3.
-pub fn made(keyword: SentenceKind): Sentences := Sentences::Cons(
+pub fn made(keyword: SentenceKind, place: SentencePlace): Sentences := Sentences::Cons(
     Sentence {
         kind := keyword,
+        place,
         position := 3,
         variables := TWO_VARIABLES,
         applications := Applications::Cons(
@@ -1156,7 +1137,7 @@ pub fn made(keyword: SentenceKind): Sentences := Sentences::Cons(
 -- A check that applies `exists?` uses it, and reaches `mkdir`.
 set_option fren.evidence "random" in
 expect made_used() {
-    call r := sentence_use(4, made(SentenceKind::Assume), {2})
+    call r := sentence_use(4, made(SentenceKind::Assume, SentencePlace::Module), {2})
     expect used: r.used = {3}
     expect reaches_mkdir: 1 in r.reached
 }
@@ -1164,7 +1145,7 @@ expect made_used() {
 -- One that applies only `mkdir` does not.
 set_option fren.evidence "random" in
 expect made_unused() {
-    call r := sentence_use(4, made(SentenceKind::Assume), {1})
+    call r := sentence_use(4, made(SentenceKind::Assume, SentencePlace::Module), {1})
     expect unused: r.used = {}
 }
 
@@ -1172,13 +1153,13 @@ expect made_unused() {
 -- `assume` item, and a law, as by an expectation written before it.
 set_option fren.evidence "random" in
 expect axioms_anywhere() {
-    call assumed := sentence_use(2, made(SentenceKind::Assume), {2})
+    call assumed := sentence_use(2, made(SentenceKind::Assume, SentencePlace::Module), {2})
     expect used_before: assumed.used = {3}
 }
 
 set_option fren.evidence "random" in
 expect laws_anywhere() {
-    call law_used := sentence_use(2, made(SentenceKind::Law), {2})
+    call law_used := sentence_use(2, made(SentenceKind::Law, SentencePlace::Interface), {2})
     expect used_before: law_used.used = {3}
 }
 
@@ -1187,6 +1168,7 @@ expect laws_anywhere() {
 -- uses it quantified, whatever its query applies.
 pub const UNBOUND_LAW: Sentence := Sentence {
     kind := SentenceKind::Law,
+    place := SentencePlace::Interface,
     position := 3,
     variables := TWO_VARIABLES,
     applications := Applications::Cons(
@@ -1214,6 +1196,7 @@ expect no_subject_used() {
         Sentences::Cons(
             Sentence {
                 kind := SentenceKind::Assume,
+                place := SentencePlace::Module,
                 position := 2,
                 variables := TWO_VARIABLES,
                 applications := Applications::Nil,
@@ -1227,8 +1210,30 @@ expect no_subject_used() {
 
 set_option fren.evidence "random" in
 expect lemmas_ranked() {
-    call lemma := sentence_use(2, made(SentenceKind::Lemma), {2})
+    call lemma := sentence_use(2, made(SentenceKind::Lemma, SentencePlace::Module), {2})
     expect not_before: lemma.used = {}
+}
+
+-- An `ensure` clause of a defined function at 3, which is a theorem: the
+-- function's own check does not use it, and a later check does.
+set_option fren.evidence "random" in
+expect defined_contract_not_own() {
+    call own := sentence_use(
+        3,
+        made(SentenceKind::Ensure, SentencePlace::DefinedFunction),
+        {2},
+    )
+    expect not_own: own.used = {}
+}
+
+set_option fren.evidence "random" in
+expect defined_contract_later() {
+    call later := sentence_use(
+        4,
+        made(SentenceKind::Ensure, SentencePlace::DefinedFunction),
+        {2},
+    )
+    expect used_later: later.used = {3}
 }
 ```
 
@@ -1244,6 +1249,7 @@ expect contract_without_result_used() {
         Sentences::Cons(
             Sentence {
                 kind := SentenceKind::Ensure,
+                place := SentencePlace::UninterpretedFunction,
                 position := 3,
                 variables := TWO_VARIABLES,
                 applications := clause.applications,
@@ -1297,18 +1303,6 @@ several items is specified (#669, stage 5), Fren checks of a module's
 axioms only what it checks today: the realizability of each uninterpreted
 function's `ensure` clauses ([Realizability](../Check.md#contracts-of-uninterpreted-functions),
 `F0631`, `F0632`).
-
-r[module.axiom.unchecked]
-The consistency of an `assume` item, and of a trait's laws, is not checked
-yet. A verdict that rests on an `assume` item says so (`F0665`) under the
-conditions that [`check::law_premise`](../Evidence.md#the-laws-of-a-trait)
-gives a verdict that rests on a trait's laws today. Contracts, the
-guarantees of calls and laws are reported as today, and no verdict that
-rests on them gains a message.
-
-r[module.consistency.vacuity]
-Where the axioms cannot hold together, every check that uses them holds
-vacuously.
 
 > **Note:** Today's realizability check is kept, so
 > `module.expansion` holds of it: a spec of today's forms has the same
@@ -1508,36 +1502,24 @@ an `assume` clause of a function or procedure, an `expect` of a procedure,
 a global expectation or a trait, a global expectation, and a trait's
 `law`. A `require`, a lemma item, an `assume` item, an `expect` in a
 function, and any member of a lemma's or an `assume` item's block are new.
+A new pass that an exception below gives, and that rests on a trait's laws,
+carries `F0665` exactly where [`check::law_premise`](../Evidence.md#the-laws-of-a-trait)
+gives it, as a pass that rests on them does today, so that no pass hides
+that it rests on laws whose consistency is not checked. The second half of
+this design computes, from a model of the module, what each check rests
+on and so what it reports (#669).
 
-r[module.expansion.laws] lang::strict_expansion
-Today's laws keep their meaning. They may come before the methods they
-mention (`module.signature`). Every check of their trait uses them,
-wherever each is written (`module.use.laws`). One that breaks the binding
-rule is used as today, with no message (`module.rules.laws`,
-`module.rules.report`). `undecidable` reports them as written, as today
-(`module.instance.quantifiers`), and a verdict that rests on them carries
-`F0665` exactly where it does today (`module.axiom.unchecked`). A query to which their
-instances do not give `unsat` is asked as today, whatever model the
-instances have (`module.instance.models`), so the warning of
-`traits::Pos::undecided` in the ui test `test/ui/lang/traits.fren`, that
-it could not decide whether its assumptions hold with the laws, stays.
-
-r[module.expansion.induction] lang::strict_expansion
+r[module.expansion.induction] lang::strict_expansion, lang::induction_pass_gains_f0665
 A check that was Inconclusive may pass by induction (`module.induction`).
+Its pass carries `F0665` where `check::law_premise` gives it, and gains no
+other message.
 
-r[module.expansion.instances] lang::strict_expansion
+r[module.expansion.instances] lang::strict_expansion, lang::instances_pass_gains_f0665
 A check that was not decided may be decided by the instances of today's
-laws, where their closure gives `unsat`: an expectation may pass, and
-assumptions that contradict the laws may be an error (`F0602`) where today
-they are a warning that the check is not decided (`F0608`).
-
-r[module.expansion.consistency] lang::strict_expansion
-Once stage 5 checks the laws' consistency (`module.axiom.unchecked`), the warning
-that a verdict rests on laws whose consistency is not checked (`F0665`)
-gives way to that check's messages (`F0602`, `F0608`).
-A check that passes today keeps its verdict, and where stage 5 finds the
-laws inconsistent, it reports that at the laws, as stage 5 states, not at
-the check.
+laws, where their closure gives `unsat`: an expectation may pass, carrying
+`F0665` where `check::law_premise` gives it and gaining no other message,
+and assumptions that contradict the laws may be an error (`F0602`) where
+today they are a warning that the check is not decided (`F0608`).
 
 r[module.expansion.corpus]
 Each stage that lands compares the messages of Fren's own specs and of the
@@ -1577,6 +1559,11 @@ pub fn today_form?(w: WrittenSentence) := match w.kind {
 -- What a check reports: its verdict, and the codes of its messages.
 pub struct Report { verdict: CheckVerdict, messages: Set<String> }
 
+-- Whether a new pass gains no message but `F0665`, and that one exactly
+-- where `check::law_premise` gives it.
+pub fn caveat_only?(before: Report, after: Report, laws_caveat?) :=
+    after.messages minus {"F0665"} subset before.messages and ("F0665" in after.messages iff laws_caveat?)
+
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 pub proc strict_expansion(
@@ -1585,20 +1572,16 @@ pub proc strict_expansion(
     after: Report,               -- and after it
     attempts: Inductions,        -- the verdicts of the inductions on the candidates (`lang::induction_verdict`)
     by_instances?,               -- the closure of today's laws' instances gives `unsat`: an outcome of the check, given as such
-    consistency_checked?,        -- stage 5 checks the laws' consistency (`module.expansion.consistency`)
+    laws_caveat?,                -- `check::law_premise` gives the new verdict `F0665`
 ): (det new_forms?, det allowed?) {
     out new_forms? := exists (k: Int), 0 <= k < written.len and not today_form?(written[k])
     out allowed? := new_forms? or after = before
         or (before.verdict = CheckVerdict::Inconclusive and after.verdict = CheckVerdict::Pass and some_pass?(attempts)
-        and after.messages subset before.messages)
+        and caveat_only?(before, after, laws_caveat?))
         or (before.verdict = CheckVerdict::Inconclusive and by_instances?
-        and (after.verdict = CheckVerdict::Pass and after.messages subset before.messages
+        and (after.verdict = CheckVerdict::Pass and caveat_only?(before, after, laws_caveat?)
         or (after.verdict = CheckVerdict::Fail and "F0602" in after.messages
         and after.messages minus {"F0602"} = before.messages minus {"F0608"})))
-        -- Stage 5's exception (`module.expansion.consistency`).
-        or (consistency_checked? and after.verdict = before.verdict and "F0665" in before.messages
-        and after.messages minus {"F0602", "F0608"} = before.messages minus {"F0665"}
-        and (not "F0602" in after.messages or after.verdict = CheckVerdict::Fail))
 
     expect laws_are_today: when written = [
         WrittenSentence {
@@ -1616,56 +1599,12 @@ pub proc strict_expansion(
         new_forms?
     expect passes_stay: when not new_forms? and before.verdict = CheckVerdict::Pass and allowed?, after.verdict = CheckVerdict::Pass
     expect failures_stay: when not new_forms? and before.verdict = CheckVerdict::Fail and allowed?, after.verdict = CheckVerdict::Fail
-    expect messages_kept: when not new_forms? and before.verdict != CheckVerdict::Inconclusive and allowed?
-        and not "F0665" in before.messages and not "F0602" in after.messages and not "F0608" in after.messages,
-        after.messages = before.messages
+    expect messages_kept: when not new_forms? and before.verdict != CheckVerdict::Inconclusive and allowed?,
+        after = before
 }
 
--- A check of today's forms whose verdict stays, and which gains `F0608`
--- without having had `F0665`, breaks strict expansion.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect consistency_messages_need_f0665() {
-    call r := strict_expansion(
-        [],
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {},
-        },
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {"F0608"},
-        },
-        Inductions::Nil,
-        false,
-        true,
-    )
-    expect not_allowed: not r.allowed?
-}
-
--- Each exception allows what its rule allows. Where stage 5 finds the
--- laws consistent, `F0665` goes, and nothing takes its place.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect consistent_laws_drop_f0665() {
-    call r := strict_expansion(
-        [],
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {"F0665"},
-        },
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {},
-        },
-        Inductions::Nil,
-        false,
-        true,
-    )
-    expect allowed: r.allowed?
-}
-
--- An Inconclusive check that passes by induction loses its warning.
+-- An Inconclusive check that passes by induction loses its warning, and
+-- gains `F0665` only where `check::law_premise` gives it.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect induction_pass_allowed() {
@@ -1684,6 +1623,71 @@ expect induction_pass_allowed() {
         false,
     )
     expect allowed: r.allowed?
+}
+
+-- An expectation of a trait with laws, and with no assumptions or calls,
+-- that passes by induction carries `F0665`, as `traits::KV::overwritten`
+-- does today.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+expect induction_pass_gains_f0665() {
+    call r := strict_expansion(
+        [],
+        Report {
+            verdict := CheckVerdict::Inconclusive,
+            messages := {"F0450"},
+        },
+        Report {
+            verdict := CheckVerdict::Pass,
+            messages := {"F0665"},
+        },
+        Inductions::Cons(CheckVerdict::Pass, Inductions::Nil),
+        false,
+        true,
+    )
+    expect allowed: r.allowed?
+}
+
+-- So does one that the instances of the laws decide.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+expect instances_pass_gains_f0665() {
+    call r := strict_expansion(
+        [],
+        Report {
+            verdict := CheckVerdict::Inconclusive,
+            messages := {"F0450"},
+        },
+        Report {
+            verdict := CheckVerdict::Pass,
+            messages := {"F0665"},
+        },
+        Inductions::Nil,
+        true,
+        true,
+    )
+    expect allowed: r.allowed?
+}
+
+-- A new pass that `check::law_premise` gives `F0665` must carry it.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+expect caveat_not_hidden() {
+    call r := strict_expansion(
+        [],
+        Report {
+            verdict := CheckVerdict::Inconclusive,
+            messages := {"F0450"},
+        },
+        Report {
+            verdict := CheckVerdict::Pass,
+            messages := {},
+        },
+        Inductions::Nil,
+        true,
+        true,
+    )
+    expect not_allowed: not r.allowed?
 }
 
 -- Assumptions that today's laws' instances contradict are an error where
@@ -1737,28 +1741,6 @@ expect contract_without_result_kept() {
     expect today: not r.new_forms?
     expect not_allowed: not r.allowed?
 }
-
--- Before stage 5 checks the laws' consistency, `F0608` does not take the
--- place of `F0665` either.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect consistency_messages_need_stage_5() {
-    call r := strict_expansion(
-        [],
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {"F0665"},
-        },
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {"F0608"},
-        },
-        Inductions::Nil,
-        false,
-        false,
-    )
-    expect not_allowed: not r.allowed?
-}
 ```
 
 > **Rationale:** The prior art: ACL2's `encapsulate` and functional
@@ -1795,14 +1777,16 @@ check every earlier chapter again:
 #fren_check contract_without_result
 #fren_check no_subject_used
 #fren_check lemmas_ranked
+#fren_check defined_contract_not_own
+#fren_check defined_contract_later
 #fren_check induction_variables
 #fren_check arm_decided
 #fren_check induction_verdict
 #fren_check strict_expansion
 #fren_check contract_without_result_kept
-#fren_check consistency_messages_need_f0665
-#fren_check consistency_messages_need_stage_5
-#fren_check consistent_laws_drop_f0665
 #fren_check induction_pass_allowed
+#fren_check induction_pass_gains_f0665
+#fren_check instances_pass_gains_f0665
+#fren_check caveat_not_hidden
 #fren_check instances_contradiction_allowed
 ```
