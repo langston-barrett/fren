@@ -35,4 +35,22 @@
 +
 @@ -52,0 +66 @@
 +
+@@ -59,0 +74 @@
++
+@@ -63,0 +79 @@
++
+@@ -65,0 +82 @@
++
+@@ -70,0 +88 @@
++
+@@ -71,0 +90 @@
++
+@@ -73,0 +93 @@
++
+@@ -75 +95,2 @@
+-tested after_one_line: "a.txt", "b.txt", /- A block comment after a trailing comma that is dropped
++
++tested after_one_line: "a.txt", "b.txt" /- A block comment after a trailing comma that is dropped
+@@ -76,0 +98 @@
++
 exit=1

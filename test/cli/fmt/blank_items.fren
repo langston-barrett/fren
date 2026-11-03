@@ -57,3 +57,21 @@ proc tall_again(m: Mode): (on?) {
 fn reached(m: Mode) := m = Mode::Heat
 --~^^ an annotation of the `}` two lines up, which no blank line comes between
 fn last(m: Mode) := m = Mode::Heat
+proc tall_before_block_comment(m: Mode): (on?) {
+    ensure r: on? iff m = Mode::Heat
+    ensure s: on? iff m != Mode::Cool
+}
+/- A block comment that starts the next item's line, on several lines,
+goes with that item. -/ fn after_block_comment(m: Mode) := m = Mode::Heat
+proc tall_with_trailing_comment(m: Mode): (on?) {
+    ensure r: on? iff m = Mode::Heat
+    ensure s: on? iff m != Mode::Cool
+} /- A block comment that trails an item's last token
+goes with that item, and the blank line goes after it. -/
+fn after_trailing_comment(m: Mode) := m = Mode::Heat
+fn one_line_with_trailing_comment(m: Mode) := m = Mode::Heat /- which spans
+two lines, and so does the item -/
+fn after_one_line(m: Mode) := m = Mode::Heat
+tested after_one_line: "a.txt", "b.txt", /- A block comment after a trailing comma that is dropped
+trails the item's last token. -/
+fn after_tested(m: Mode) := m = Mode::Heat

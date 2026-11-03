@@ -5,9 +5,7 @@ struct Point { x: Int, y: Int }
 struct Pair { x: Int, y: Int }
 struct Line { a: Point, b: Point }
 
-pub proc src(): (x: Int, y: Int) {
-    ensure r: x = 1 and y = 2
-}
+pub proc src(): (x: Int, y: Int) { ensure r: x = 1 and y = 2 }
 
 proc copies(p: Point, l: Line, c?): (
     a: Pair,
@@ -25,8 +23,10 @@ proc copies(p: Point, l: Line, c?): (
     ensure rb: b = Point { x := w.x, y := w.y }
     ensure rd: d = Point { y := p.y, x := p.x }  --~ warning: this record literal is `p`
     ensure re: e = Point { x := l.a.x, y := l.a.y }  --~ warning: this record literal is `l.a`
-    ensure rh: h = Point { x := (if c? then p else l.b).x, y := (if c? then p else l.b).y }
-    --~^ warning: this record literal is `(if c? then p else l.b)`
+    ensure rh: h = Point {  --~ warning: this record literal is `(if c? then p else l.b)`
+        x := (if c? then p else l.b).x,
+        y := (if c? then p else l.b).y,
+    }
     -- Fields of two values, or another field.
     ensure rf: f = Point { x := p.x, y := l.a.y }
     ensure rg: g = Point { x := p.y, y := p.x }

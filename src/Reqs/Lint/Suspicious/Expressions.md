@@ -93,14 +93,8 @@ pub proc eq_op_values(op: InfixOp, x: Int, a?, s: Set<Int>) {
 
     call e := eq_op(
         op,
-        Scoped {
-            text := Operand::P,
-            scope := {},
-        },
-        Scoped {
-            text := Operand::P,
-            scope := {},
-        },
+        Scoped { text := Operand::P, scope := {} },
+        Scoped { text := Operand::P, scope := {} },
     )
 
     expect said: when e.fires?, match e.value {
@@ -145,14 +139,8 @@ set_option fren.lint.eq_op "allow" in
 pub proc eq_op_conditional_values(unless?, a?) {
     call e := eq_op_conditional(
         unless?,
-        Scoped {
-            text := Operand::P,
-            scope := {},
-        },
-        Scoped {
-            text := Operand::P,
-            scope := {},
-        },
+        Scoped { text := Operand::P, scope := {} },
+        Scoped { text := Operand::P, scope := {} },
     )
 
     -- What the message says `when a?, a?` and `unless a?, a?` are.

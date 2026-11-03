@@ -195,7 +195,7 @@ fn either?(a?, b?, c?) := if a? and b?
 
 -- A closing bracket that starts a line other than a signature's takes its right side as any line.
 fn row(p: P): Int := table {
-    p = P { x := 1000000000000, y := 1 } => 1,
+    p = P { x := 1000000000000, y := 1000000000000000000000 } => 1,
     _ => 0,
 }
 
