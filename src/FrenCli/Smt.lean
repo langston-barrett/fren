@@ -573,7 +573,7 @@ def observationsOf (c : CComp) : Array ModelObservation := Id.run do
 from the solver, it drops before it returns, and so before the solver is
 freed (`FrenCli.Cvc5`). With `probe?`, it marks when each phase begins and
 ends, and then reads cvc5's statistics (`FrenCli.SolverStats.Probe`);
-without it, it reads no clock. -/
+without it, it reads no clock of its own, only `Fren.Core.timeQuery`'s. -/
 def solveOn (solver : @& cvc5.Solver) (script : String) (vars : Array CVar) (wantModel : Bool)
     (observations : Array ModelObservation) (limitSecs : Nat) (shared : Bool)
     (probe? : Option (IO.Ref SolverStats.Probe) := none) : cvc5.Env (Outcome String) := do

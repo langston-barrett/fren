@@ -12,7 +12,9 @@ answered, where their time went (`Reqs/dev/Testing#solver-statistics`):
 Fren's own measure of each phase of a query, from making its term manager
 to freeing it, and cvc5's statistics of its solver, which cvc5 keeps
 whether or not anyone reads them (#742). Without the flag, none of this
-runs: `FrenCli.solveOn` reads no clock and asks cvc5 for nothing more.
+runs: `FrenCli.solveOn` reads no clock of its own, only the one that
+`Fren.Core.timeQuery` reads for every query, and asks cvc5 for nothing
+more.
 
 cvc5 reports its statistics as `(get-info :all-statistics)` writes them:
 a list of `("name" value)`, where a value is a number, a time such as
@@ -311,13 +313,13 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
   let p := "solver-stats: "
   let mut out := ""
   let all := qs.foldl (fun (acc : Phases) (q : QueryStats) => acc.add q.phases) {}
-  out := out ++ s!"{p}{qs.size} queries asked of the solver, {ms all.total} ms ({all.show})\n"
+  out := out ++ s!"{p}queries asked of the solver: {qs.size}, {ms all.total} ms ({all.show})\n"
   -- By logic, for the cost of initializing its theories.
   let logics := (qs.map (·.logic)).foldl (init := #[]) fun acc l => if acc.contains l then acc else acc.push l
   for l in logics.qsort (· < ·) do
     let these := qs.filter (·.logic == l)
     let ph := these.foldl (fun (acc : Phases) (q : QueryStats) => acc.add q.phases) {}
-    out := out ++ s!"{p}logic {l}: {these.size} queries, {ms ph.total} ms ({ph.show})\n"
+    out := out ++ s!"{p}logic {l}, queries: {these.size}, {ms ph.total} ms ({ph.show})\n"
   -- Where `checkSat` went, by cvc5's timers, summed over the queries
   -- long enough that their timers' whole milliseconds say much
   -- (`Cvc5Stats.searchMs`).
@@ -331,7 +333,7 @@ def report (qs : Array QueryStats) (listed? : Option Nat := some listed) : Strin
     if over == 0 then none else some over
   let overNote := if overs.isEmpty then "" else
     s!" (queries whose timed parts exceed their checkSat: {overs.size}, by {overs.foldl (· + ·) 0} ms)"
-  out := out ++ s!"{p}checkSat of the {long.size} queries of {summedMs} ms or more, {ms longMs} ms, by cvc5's timers\
+  out := out ++ s!"{p}checkSat of queries of {summedMs} ms or more: {long.size}, {ms longMs} ms, by cvc5's timers\
     {overNote}: {showParts parts}\n"
   let sorted := qs.qsort fun a b => a.phases.total > b.phases.total ||
     (a.phases.total == b.phases.total && Fren.Core.showPath a.item ++ " " ++ a.kind.noun < Fren.Core.showPath b.item ++ " " ++ b.kind.noun)
@@ -365,6 +367,6 @@ private def testQuery (checkMs : Nat) (cvc5 : Cvc5Stats) : QueryStats :=
   "(queries whose timed parts exceed their checkSat: 1, by 2 ms)"
 -- The parts are summed over the queries of `summedMs` or more only.
 #guard (report #[testQuery 3 { preprocessMs := 1 }, testQuery 9 { preprocessMs := 2 }] (some 0)).contains
-  "checkSat of the 1 queries of 5 ms or more, 9.0 ms, by cvc5's timers: SAT search and the rest 7 ms, preprocessing 2 ms"
+  "checkSat of queries of 5 ms or more: 1, 9.0 ms, by cvc5's timers: SAT search and the rest 7 ms, preprocessing 2 ms"
 
 end FrenCli.SolverStats

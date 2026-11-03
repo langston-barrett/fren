@@ -1243,9 +1243,9 @@ each query that the solver answered went (`FrenCli.SolverStats`), as in
 this report of Fren's own requirements, shortened where it shows `…`:
 
 ```text
-solver-stats: 6267 queries asked of the solver, 15922.7 ms (setup 1504.0, init 1733.5, assert 1391.8, check 9587.8, model 509.5, free 1196.1 ms)
-solver-stats: logic ALL: 6247 queries, 15900.4 ms (setup 1499.9, init 1728.2, assert 1391.0, check 9579.3, model 508.4, free 1193.6 ms)
-solver-stats: checkSat of the 360 queries of 5 ms or more, 6566.2 ms, by cvc5's timers: SAT search and the rest 2260 ms, datatypes 1036 ms, strings 1012 ms, …
+solver-stats: queries asked of the solver: 6267, 15922.7 ms (setup 1504.0, init 1733.5, assert 1391.8, check 9587.8, model 509.5, free 1196.1 ms)
+solver-stats: logic ALL, queries: 6247, 15900.4 ms (setup 1499.9, init 1728.2, assert 1391.0, check 9579.3, model 508.4, free 1193.6 ms)
+solver-stats: checkSat of queries of 5 ms or more: 360, 6566.2 ms, by cvc5's timers: SAT search and the rest 2260 ms, datatypes 1036 ms, strings 1012 ms, …
 solver-stats: 1. 311.3 ms: `cli::query_symbols` (expectation), ALL, 3.0 KB, unsat, dominated by SAT search and the rest
 solver-stats:   phases: setup 0.2, init 0.3, assert 0.1, check 308.2, model 0.0, free 2.4 ms
 solver-stats:   checkSat 308 ms: SAT search and the rest 107 ms, strings 94 ms, arith 88 ms, datatypes 10 ms, clausal form 9 ms
@@ -1311,18 +1311,19 @@ cache](#query-cache), or by another item's query in the same run, asks the
 solver nothing and is not reported, so measure with no `--query-cache` and
 with `--jobs 1`, which times each query alone.
 
-Without the flag, nothing of this runs: Fren reads no clock and asks cvc5
-nothing more. A check of Fren's own requirements took the same
-instructions, within 0.02 %, and the same time as before the report was
-added. With it, each query reads cvc5's statistics once, after its answer
-and model, so that the answers, models and messages are the same, which
-the `solverStats` test checks. cvc5 keeps the statistics whether or not
-they are read (#742), but writing them as text is not cheap: it tries
-each value as a number, and throws an exception for each that is not, so
-a cold check of Fren's own requirements at `--jobs 1` takes some 40 %
-more instructions with the flag. That time is outside every phase that
-the report measures. lean-cvc5 does not bind cvc5's `getStatistics`,
-which would read them without the text.
+Without the flag, nothing of this runs: Fren reads no clock of its own,
+only the one around `checkSat` that every query reads
+(`Fren.Core.timeQuery`), and asks cvc5 nothing more. A check of Fren's own
+requirements took the same instructions, within 0.02 %, and the same time
+as before the report was added. With it, each query reads cvc5's
+statistics once, after its answer and model, so that the answers, models
+and messages are the same, which the `solverStats` test checks. cvc5 keeps
+the statistics whether or not they are read (#742), but writing them as
+text is not cheap: it tries each value as a number, and throws an
+exception for each that is not, so a cold check of Fren's own requirements
+at `--jobs 1` takes some 40 % more instructions with the flag. That time
+is outside every phase that the report measures. lean-cvc5 does not bind
+cvc5's `getStatistics`, which would read them without the text.
 
 ## Learning from review
 

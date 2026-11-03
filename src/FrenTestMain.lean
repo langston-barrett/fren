@@ -1287,7 +1287,7 @@ def solverStats : IO (Array String) := do
   if (← entries plainDir).isEmpty then failures := failures.push "the run kept no answers"
   -- The header counts the queries, and each is listed once, `all` of them.
   let asked := stats.findSome? fun l =>
-    ((l.dropPrefix? "solver-stats: ").bind fun r => (r.toString.splitOn " queries asked").head?.bind (·.toNat?))
+    ((l.dropPrefix? "solver-stats: queries asked of the solver: ").bind fun r => (r.toString.splitOn ",").head?.bind (·.toNat?))
   let listed := stats.filter fun l => (l.dropPrefix? "solver-stats: ").any fun r =>
     let r := r.toString
     (r.splitOn ". ").length > 1 && ((r.splitOn ". ").head?.bind (·.toNat?)).isSome
@@ -1304,7 +1304,7 @@ def solverStats : IO (Array String) := do
   let listedIn (out : String) : Nat := ((out.splitOn "\n").filter fun l =>
     (l.dropPrefix? "solver-stats: ").any fun r => ((r.toString.splitOn ". ").head?.bind (·.toNat?)).isSome).length
   unless listedIn one == 1 do failures := failures.push s!"--solver-stats=1 lists {listedIn one} queries:\n{one}"
-  unless listedIn none_ == 0 && none_.contains " queries asked of the solver" do
+  unless listedIn none_ == 0 && none_.contains "solver-stats: queries asked of the solver: " do
     failures := failures.push s!"--solver-stats=0 lists {listedIn none_} queries, or no count:\n{none_}"
   -- cvc5's statistics were read: a renamed statistic, or a `get-info`
   -- that failed, would read as all 0.
@@ -1312,7 +1312,7 @@ def solverStats : IO (Array String) := do
     !(r.toString.splitOn " rewrites").head!.endsWith " 0" && !(r.toString.splitOn " resource units").head!.endsWith " 0"
   unless counted && stats.any (·.startsWith "solver-stats:   inferences: ") do
     failures := failures.push s!"--solver-stats read no rewrites, resource units or inferences of cvc5's:\n{withStats}"
-  unless warm.contains "solver-stats: 0 queries asked of the solver" do
+  unless warm.contains "solver-stats: queries asked of the solver: 0," do
     failures := failures.push s!"a warm run reports queries that it did not ask:\n{warm}"
   return failures
 
