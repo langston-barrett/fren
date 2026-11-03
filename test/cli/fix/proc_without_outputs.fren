@@ -1,11 +1,11 @@
 --@ args: fix --check
--- `fren fix` writes `expect` in place of `proc` for a procedure that only
--- claims, but not for one that a call names.
+-- `fren fix` leaves a procedure that only claims as it is: writing `expect`
+-- in place of `proc` would break a call of it in a file it is not given, so
+-- `proc_without_outputs` has no fix.
 set_option fren.lint.proc_without_outputs "warn"
 
 pub proc band(temp: Int): (cold?) { ensure rule: cold? iff temp < 18 }
 
-set_option fren.evidence "random" in
 proc colder_is_cold(a: Int, b: Int) {
     assume sorted: a <= b
     call x := band(a)
@@ -13,24 +13,4 @@ proc colder_is_cold(a: Int, b: Int) {
     expect colder: when y.cold?, x.cold?
 }
 
-proc /- spaced -/ spaced(t: Int) { expect warm: t + 1 > t }
-
-proc /- outer /- inner -/ -/ nested(t: Int) { expect warm: t + 1 > t }
-
-proc -- a line comment
-lined(t: Int) { expect warm: t + 1 > t }
-
--- Without parameters.
 proc nothing() {}
-
-proc freezing() {
-    call b := band(0)
-    expect cold: b.cold?
-}
-
-proc called(t: Int) { expect warm: t + 1 > t }
-
-pub proc caller(t: Int): (u: Int) {
-    call c := called(t)
-    out u := t
-}

@@ -1675,32 +1675,32 @@ accepts (`blockMemberAccepted`), so that it has no results. -/
 def procWithoutOutputs (isPub : Bool) (members : List (BlockMember × Bool)) (nUses : Nat) : Bool :=
   !isPub && nUses == 0 && members.all fun (m, det) => blockMemberAccepted m det
 
-def procWithoutOutputsMsg (n : Name) (fixable : Bool) : Msg :=
-  let msg : Msg :=
-    { code? := some Lint.procWithoutOutputs.code, headline := s!"procedure `{n.getString!}` has no outputs"
-      label? := some "constrains nothing"
-      notes := #["note: it has no results, and each of its members is one a global expectation accepts, \
-          and nothing in this file calls, refines or names it, so it is a claim about its parameters",
-        "help: write it as a global expectation, `expect` in place of `proc`"] }
-  if fixable then msg.note fixHelp else msg
+/-- `proc_without_outputs`'s message. It has no fix: writing `expect` in
+place of `proc` would break a call of the procedure in another file that
+enters its module, and any module may be entered, the root module too. -/
+def procWithoutOutputsMsg (n : Name) : Msg :=
+  { code? := some Lint.procWithoutOutputs.code, headline := s!"procedure `{n.getString!}` has no outputs"
+    label? := some "constrains nothing"
+    notes := #["note: it has no results, and each of its members is one a global expectation accepts, \
+        and nothing in this file calls, refines or names it, so it is a claim about its parameters",
+      "help: write it as a global expectation, `expect` in place of `proc`, unless another file calls it"] }
 
-/-- A private procedure that `proc_without_outputs` may fire on, once the
-file's paths are known: its path, its results and members, the level of
-the lint at it, and whether the front end found where to fix it. -/
+/-- A procedure that `proc_without_outputs` may fire on, once the file's
+paths are known: its path, whether it is `pub`, its results and members,
+and the level of the lint at it. -/
 structure ProcRecord where
   path : Name
+  isPub : Bool
   members : List (BlockMember × Bool)
   level : LevelInEffect
-  fixable : Bool := true
   deriving Inhabited, Repr
 
 /-- The `proc_without_outputs` messages of a file's procedures, given the
 items that paths in it resolve to: its calls, refinements and claims. -/
-def procWithoutOutputsReports (procs : Array (ProcRecord × α)) (used : Array Name) (fixable : Bool) :
-    Array (LintReport α) :=
+def procWithoutOutputsReports (procs : Array (ProcRecord × α)) (used : Array Name) : Array (LintReport α) :=
   procs.filterMap fun (p, ref) =>
-    if procWithoutOutputs false p.members (used.count p.path) then
-      some { lint := .procWithoutOutputs, level := p.level, ref, msg := procWithoutOutputsMsg p.path (fixable && p.fixable) }
+    if procWithoutOutputs p.isPub p.members (used.count p.path) then
+      some { lint := .procWithoutOutputs, level := p.level, ref, msg := procWithoutOutputsMsg p.path }
     else none
 
 /-! ## Simpler `Bool` expressions -/
@@ -7178,11 +7178,13 @@ something, but nothing of `f`'s own. A clause that mentions nothing is
 def contractMentionsNothing (mentioned : List Mention) (f : String) (params : List String) : Bool :=
   !mentioned.isEmpty && !mentioned.any (ownMention f params)
 
-/-- A precondition, if `post` is false, or a postcondition, of the function
-`f`, that mentions `mentioned` but nothing of `f`'s own. -/
-def contractMentionsNothingMsg (post : Bool) (f : String) (mentioned : List Mention) : Msg :=
+/-- The precondition, if `post` is false, or the postcondition `clause` of
+the function `f`, that mentions `mentioned` but nothing of `f`'s own. A leaf
+of a labelled conjunction is named by its path, as `both.other`, since it
+is reported at the conjunction. -/
+def contractMentionsNothingMsg (post : Bool) (clause f : String) (mentioned : List Mention) : Msg :=
   let what := if post then "postcondition" else "precondition"
-  { code? := some Lint.contractMentionsNothing.code, headline := s!"this {what} says nothing about `{f}`"
+  { code? := some Lint.contractMentionsNothing.code, headline := s!"the {what} `{clause}` says nothing about `{f}`"
     label? := some s!"mentions no parameter of `{f}`{if post then ", nor its value" else ""}"
     notes := #[s!"note: it mentions only {describeMentions mentioned}",
       "help: state it in the contract of what it is about, or as a global expectation"] }

@@ -223,7 +223,12 @@ what its definition mentions, as anywhere.
 It has no fix: the clause belongs in the contract of what it mentions, or
 in a global expectation, and which one is the writer's choice. It is in
 `suspicious`, `warn`, and has no Clippy counterpart. It is reported at the
-clause's expression. `lint::own_mention?` states which mentions are the
+clause's expression, and its message names the clause. A clause written as
+a labelled conjunction is split into its leaves, each a clause of its own,
+named by its path, as `both.other`. A leaf is reported at the whole
+conjunction, as both front ends read the function's result around the
+clause before they split it, so the message's name says which leaf it is.
+`lint::own_mention?` states which mentions are the
 function's own, and `lint::contract_mentions_nothing` when the lint fires,
 from what the clause mentions, the function's name and its parameters. A
 quantifier over a set's members is outside the decidable core, so the

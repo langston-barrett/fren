@@ -272,7 +272,7 @@ def pendingLints : CommandElabM (Array (Core.LintReport Syntax × Core.Severity)
       ++ Core.unusedAssumptionReports l.assumptions l.globalReads
       ++ Core.unusedSettingReports l.settings seen atEnd fixable
       ++ Core.singleCallReports l.items l.usedItems
-      ++ Core.procWithoutOutputsReports l.procs l.usedItems fixable
+      ++ Core.procWithoutOutputsReports l.procs l.usedItems
       ++ Core.needlessHigherOrderReports l.hofParams (l.fnArgs.map (·.1)))
   let (unfulfilled, _) := Core.finishReports (Core.expectationReports l.expectations fulfilled fixable)
   return reports ++ unfulfilled

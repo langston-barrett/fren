@@ -49,7 +49,7 @@ proc unlabelled_guarantee(n: Int) {
 }
 
 -- Calls that nothing relates: the procedure gets no `unrelated_binders`,
--- which only a global expectation gets, but its fixed form does.
+-- which only a global expectation gets, but its rewritten form does.
 proc two(a: Int, b: Int) {  --~ warning: procedure `two` has no outputs
     call x := band(a)
     call y := band(b)

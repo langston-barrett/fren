@@ -5,8 +5,7 @@ warning[F0846]: procedure `colder_is_cold` has no outputs
   |      ^^^^^^^^^^^^^^ constrains nothing
   |
   = note: it has no results, and each of its members is one a global expectation accepts, and nothing in this file calls, refines or names it, so it is a claim about its parameters
-  = help: write it as a global expectation, `expect` in place of `proc`
-  = help: `fren fix` can fix this
+  = help: write it as a global expectation, `expect` in place of `proc`, unless another file calls it
   = note: `proc_without_outputs` is set to `warn`
 
 fren: 6 passed, 0 failed, 0 inconclusive, 0 redundant

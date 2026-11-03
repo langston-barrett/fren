@@ -1,5 +1,6 @@
--- `proc_without_outputs`'s fix of `f0846_proc_without_outputs.fren`, the
--- second example of `F0846.md`: the lint no longer fires, and the global
+-- The rewrite that `proc_without_outputs` suggests, of
+-- `f0846_proc_without_outputs.fren`, which is the second example of
+-- `F0846.md`: the lint no longer fires, and the global
 -- expectation passes the procedure's 6 checks but one, whether its
 -- assumption is redundant, which a global expectation does not check.
 set_option fren.lint.proc_without_outputs "warn"

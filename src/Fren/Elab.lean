@@ -1831,14 +1831,14 @@ def lintConstant (cx : ExprCtx) (kind : String) (e : Syntax) : TermElabM Unit :=
 the function `f`, a postcondition if `post`, if it mentions nothing, and
 otherwise `contract_mentions_nothing` if it mentions nothing of `f`'s own
 (`lint::contract_mentions_nothing`). -/
-def lintContractClause (cx : ExprCtx) (post : Bool) (f : Name) (params : Array Name) (e : Syntax) : TermElabM Unit := do
+def lintContractClause (cx : ExprCtx) (post : Bool) (clause f : Name) (params : Array Name) (e : Syntax) : TermElabM Unit := do
   let mentioned ← mentionedNames cx e
   if Core.assertionOnConstant mentioned then
     let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
     recordLint .assertionsOnConstants e (Core.assertionOnConstantMsg (if post then "postcondition" else "precondition") literal?)
   else if Core.contractMentionsNothing mentioned
       (f.toString (escape := false)) (params.toList.map (·.toString (escape := false))) then
-    recordLint .contractMentionsNothing e (Core.contractMentionsNothingMsg post (f.toString (escape := false)) mentioned)
+    recordLint .contractMentionsNothing e (Core.contractMentionsNothingMsg post (clause.toString (escape := false)) (f.toString (escape := false)) mentioned)
 
 /-- The integer literals in `e`, its patterns' among them. -/
 partial def numLits (e : Syntax) : Array Syntax :=
@@ -7263,7 +7263,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     let res ← contractClause modName path post vars fnVars value? e params
     lintBools e (← hidesIn { modName, vars, insts := #[], place := .prop })
     lintContractClause { modName, vars, insts := #[], place := .prop, contract? := some { path, post, params }
-                         fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) } post n params e
+                         fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) } post cn n params e
     -- Expand a named predicate using typed templates twice: once in the
     -- real contract (which applies the function), and once in its checking
     -- procedure (which represents the function's value by an output).
@@ -8886,10 +8886,10 @@ def blockMembers (stx : Syntax) : CommandElabM (Array (Syntax × Core.BlockMembe
   -- (`pendingLints`), if the procedure has no static error.
   let errorsAfter := (← get).messages.toList.filter (·.severity == .error) |>.length
   let staticErrors := errorsAfter - errorsBefore - ((← getLocal).checkErrors - checksBefore)
-  if ok && !isPub && staticErrors == 0 then
+  if ok && staticErrors == 0 then
     let members := (← blockMembers stx).toList.map (·.2)
-    if Core.procWithoutOutputs false members 0 then
-      let r : Core.ProcRecord := { path, members, level := ← lintLevel .procWithoutOutputs }
+    if Core.procWithoutOutputs isPub members 0 then
+      let r : Core.ProcRecord := { path, isPub, members, level := ← lintLevel .procWithoutOutputs }
       modifyLocal fun l => { l with procs := l.procs.push (r, nameStx) }
   if ok = true then
     for d in generated do

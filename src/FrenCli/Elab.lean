@@ -634,16 +634,6 @@ structure CClaim where
 
 def toRange (sp : Span) : Fren.Core.Range := { start := sp.start, stop := sp.stop }
 
-/-- Where the keyword `kw` is in `src`, if it is the last token of the
-text from `start` to `pos`, as `proc` is before a procedure's name, whatever
-whitespace and comments, line or nested block ones, lie between them. -/
-def keywordBefore (src : Array Char) (start pos : Nat) (kw : String) : Option Span :=
-  match lex (src.extract start pos) with
-  | .ok toks => (toks.filter (·.tok != .eof)).back?.bind fun t => match t.tok with
-    | .kw k => if k == kw then some { start := start + t.span.start, stop := start + t.span.stop } else none
-    | _ => none
-  | .error _ => none
-
 /-- The kind of a constraint, or cover goal, that `duplicate_constraint`
 compares. -/
 def PropKind.core : PropKind → Fren.Core.ConstraintKind
@@ -5796,14 +5786,14 @@ def lintConstant (cx : ExprCtx) (kind : String) (e : Expr) : M Unit := do
 the function `f`, a postcondition if `post`, if it mentions nothing, and
 otherwise `contract_mentions_nothing` if it mentions nothing of `f`'s own
 (`lint::contract_mentions_nothing`). -/
-def lintContractClause (cx : ExprCtx) (post : Bool) (f : Name) (params : Array Name) (e : Expr) : M Unit := do
+def lintContractClause (cx : ExprCtx) (post : Bool) (clause f : Name) (params : Array Name) (e : Expr) : M Unit := do
   let mentioned ← mentionedNames cx e
   if Fren.Core.assertionOnConstant mentioned then
     lint .assertionsOnConstants e.span (Fren.Core.assertionOnConstantMsg (if post then "postcondition" else "precondition")
       (match e with | .bool _ b => some b | _ => none))
   else if Fren.Core.contractMentionsNothing mentioned
       (f.toString (escape := false)) (params.toList.map (·.toString (escape := false))) then
-    lint .contractMentionsNothing e.span (Fren.Core.contractMentionsNothingMsg post (f.toString (escape := false)) mentioned)
+    lint .contractMentionsNothing e.span (Fren.Core.contractMentionsNothingMsg post (clause.toString (escape := false)) (f.toString (escape := false)) mentioned)
 
 /-- The conditions of a top-level `when`/`unless` chain, and their span. -/
 partial def trigger? (cx : ExprCtx) : Expr → M (Option (String × Span))
@@ -6790,17 +6780,11 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
       scope := s.module
       comps := s.comps.push c }
     -- `proc_without_outputs`, once the file's paths are known
-    -- (`finishLints`), fixed by writing `expect` for `proc`.
-    unless isPub do
-      let members := (blockMembers header body spans).toList.map (·.2)
-      if Fren.Core.procWithoutOutputs false members 0 then
-        let kw? := keywordBefore (← get).src (← get).itemStart written.start "proc"
-        let r : Fren.Core.ProcRecord :=
-          { path, members, level := (← get).levels.get .procWithoutOutputs, fixable := kw?.isSome }
-        modify fun s => { s with procs := s.procs.push (r, name.span) }
-        if let some kw := kw? then
-          let fix : LintFix := { lint := .procWithoutOutputs, span := name.span, edits := #[(toRange kw, "expect")] }
-          modify fun s => { s with lintFixes := s.lintFixes.push fix }
+    -- (`finishLints`). It has no fix (`Fren.Core.procWithoutOutputsMsg`).
+    let members := (blockMembers header body spans).toList.map (·.2)
+    if Fren.Core.procWithoutOutputs isPub members 0 then
+      let r : Fren.Core.ProcRecord := { path, isPub, members, level := (← get).levels.get .procWithoutOutputs }
+      modify fun s => { s with procs := s.procs.push (r, name.span) }
 
 /-- Elaborates a global expectation (`Reqs/Lang/Global`). -/
 def elabGlobal (name : Ident) (binders : Array Binder) (body : Expr) : M Unit := do
@@ -6946,7 +6930,7 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
     let tables ← takeTables
     let place := if post then Fren.Core.IndexPlace.body else .assume
     lintBools e (← hidesIn cx)
-    lintContractClause cx post n params e
+    lintContractClause cx post cn n params e
     let app := s!"({itemSym path} {" ".intercalate (vars.toList.map fun v => quote v.name.toString)})"
     let value := quote (Fren.Core.contractValueName n (vars.map (·.name))).toString
     let output (formula : String) := if post && !defined then formula.replace app value else formula
@@ -8076,7 +8060,7 @@ def finishLints : StateM State Unit := do
       ++ Fren.Core.unusedAssumptionReports s.assumptions s.globalReads
       ++ Fren.Core.unusedSettingReports s.settings s.seenSettings atEnd true
       ++ Fren.Core.singleCallReports s.items s.usedItems
-      ++ Fren.Core.procWithoutOutputsReports s.procs s.usedItems true
+      ++ Fren.Core.procWithoutOutputsReports s.procs s.usedItems
       ++ Fren.Core.needlessHigherOrderReports s.hofParams (s.fnArgs.map (·.1)))
   let (unfulfilled, _) := Fren.Core.finishReports (Fren.Core.expectationReports s.expectations fulfilled true)
   let all := reports ++ unfulfilled

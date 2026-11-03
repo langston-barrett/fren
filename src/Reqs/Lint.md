@@ -649,7 +649,6 @@ what the spec means:
 | `nonminimal_bool` | replaces the expression with its simpler form, as the message suggests |
 | `overly_complex_bool_expr` | replaces the expression with the operand that stays, or with `false` or `true` |
 | `precedence` | puts the operand in parentheses |
-| `proc_without_outputs` | writes `expect` in place of `proc` |
 | `redundant_bindings` | replaces `x := x` with `x`, and removes a field `x := r.x` of an update of `r`, with a comma |
 | `redundant_bool_type` | removes the `: Bool` |
 | `redundant_closure` | replaces the closure with the function's name |
@@ -703,7 +702,10 @@ The other lints have no fix. Renaming a declaration, as the naming lints
 and `struct_field_names` would need, would also have to rename every use
 of it, including uses in Lean code and in files that are not given, and so
 would removing a dead item, or a function applied once, which
-`single_call_fn` reports. Removing an unused variable, or the parameters of an
+`single_call_fn` reports. Writing `expect` in place of `proc`, as
+`proc_without_outputs` suggests, would break a call of the procedure in
+another file: only the paths in its own file are counted, and another file
+may enter any module, the root module too, and call it. Removing an unused variable, or the parameters of an
 unused assumption, would change its procedure's interface, and merging the guarantees that `case_split_guarantees`
 reports would change what traces, claims and `impl`s name, and so would
 removing a constraint that `assertions_on_constants` reports. Writing a

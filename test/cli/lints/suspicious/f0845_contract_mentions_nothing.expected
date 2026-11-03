@@ -8,7 +8,7 @@ warning[F0761]: this precondition mentions no variable
   = note: `assertions_on_constants` is `warn` by default
   = help: to allow it, `set_option fren.lint.assertions_on_constants "allow"`
 
-warning[F0845]: this postcondition says nothing about `scale`
+warning[F0845]: the postcondition `positive` says nothing about `scale`
   --> test/cli/lints/suspicious/f0845_contract_mentions_nothing.fren:11:22
    |
 11 |     ensure positive: limit(0) > 0

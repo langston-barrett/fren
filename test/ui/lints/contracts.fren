@@ -10,18 +10,18 @@ pub fn known?(Int)
 -- About another function.
 pub fn scale(n: Int): (r: Int) {
     ensure grows: r >= n
-    ensure positive: limit(0) > 0  --~ warning: this postcondition says nothing about `scale`
+    ensure positive: limit(0) > 0  --~ warning: the postcondition `positive` says nothing about `scale`
 }
 
 pub fn shift(n: Int): (r: Int) {
-    assume known: known?(0)  --~ warning: this precondition says nothing about `shift`
+    assume known: known?(0)  --~ warning: the precondition `known` says nothing about `shift`
     out r := n + 1
 }
 
 -- Through a `let` of the block, which mentions what its definition does.
 pub fn twice(n: Int): (r: Int) {
     let base: Int := limit(1)
-    ensure based: base > 0  --~ warning: this postcondition says nothing about `twice`
+    ensure based: base > 0  --~ warning: the postcondition `based` says nothing about `twice`
     let own: Int := n + 1
     ensure owned: r > own or r <= own
 }
@@ -34,11 +34,11 @@ pub fn clamp(n: Int): (r: Int) {
 }
 
 -- A labelled conjunction is split into its leaves, and only the leaf
--- that mentions nothing of the function's own is reported: `other`, whose
--- note names `limit`. Both front ends report it at the conjunction, since
--- the result's definition wraps the whole clause before it is split.
+-- that mentions nothing of the function's own is reported: `other`. Both
+-- front ends report it at the conjunction, since the result's definition
+-- wraps the whole clause before it is split, so the message names the leaf.
 pub fn split(n: Int): (r: Int) {
-    ensure both: and {  --~ warning: it mentions only the function `limit`
+    ensure both: and {  --~ warning: the postcondition `both.other` says nothing about `split`
         own: r >= n,
         other: limit(0) > 0,
     }
