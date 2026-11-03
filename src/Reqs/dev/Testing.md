@@ -198,7 +198,20 @@ pub mod testing
   `QF_UFDTLIA`, a linear one, at once must get every answer right. The
   `ALL` ones crashed about one run in three while their solvers
   initialized and were freed at the same time; the linear ones take no
-  lock (`FrenCli.Cvc5`).
+  lock (`FrenCli.Cvc5`). Half of the `ALL` ones initialize their solvers
+  at a `push` before their definition, and let the lock go there. And
+  each command that the lock is let go after must initialize a solver in
+  cvc5, each must be tried, and the declarations and options before it
+  must not initialize one.
+- **Confirmed models** (`lake test`): `fren check` confirms every model the
+  solver returns with the evaluator (see
+  [Evaluation and testing](../Eval.md#confirming-models)), so every test that
+  runs the checks also checks the translation of its spec on the solver's
+  models. A refuted model is an internal error, which fails the test.
+  Both front ends also confirm each model that they report, at the values
+  that their readers read (see [Reading models](../Models.md)). The ui tests in
+  `test/ui/misread/` run with `FREN_MISREAD_MODELS` set, which makes both
+  readers misread every integer, to check that the confirmation catches it.
 - **The binary's shared reading** (`lake test`, `ownSpec`, which runs
   `sharedSpec` after its own check): only the `fren` binary reads the spec
   once, marks it and what else the threads read persistent, and shares it
@@ -228,15 +241,6 @@ pub mod testing
   that one of those is about, or is a line of the summary) runs again
   once, and is skipped if it still differs so; `lake test` shows each skip
   as a `skipped: …` line. Any other difference fails.
-- **Confirmed models** (`lake test`): `fren check` confirms every model the
-  solver returns with the evaluator (see
-  [Evaluation and testing](../Eval.md#confirming-models)), so every test that
-  runs the checks also checks the translation of its spec on the solver's
-  models. A refuted model is an internal error, which fails the test.
-  Both front ends also confirm each model that they report, at the values
-  that their readers read (see [Reading models](../Models.md)). The ui tests in
-  `test/ui/misread/` run with `FREN_MISREAD_MODELS` set, which makes both
-  readers misread every integer, to check that the confirmation catches it.
 - **Differential fuzzing** (`lake exe fren_fuzz [--count N] [--seed N]
   [--out DIR]`): generates random specs and compares each verdict of
   `fren check` with one computed by brute force from the evaluator. The
