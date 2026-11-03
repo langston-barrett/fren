@@ -382,9 +382,11 @@ structure Rule where
   links : String
   deriving Inhabited
 
-/-- The labels whose rules each have a requirement, or are listed in
-`unformalizedFile` (`Reqs/dev/Style#rules-and-requirements`). -/
-def formalLabels : Array String := #["Legality rules", "Dynamic semantics"]
+/-- The labels whose rules in chapter `md` each have a requirement, or are
+listed in `unformalizedFile` (`Reqs/dev/Style#rules-and-requirements`).
+`Rules` is used only in chapters under `src/Reqs/dev/`. -/
+def formalLabels (md : String) : Array String :=
+  #["Legality rules", "Dynamic semantics"] ++ (if md.startsWith "src/Reqs/dev/" then #["Rules"] else #[])
 
 /-- The rules of a Markdown text, each under the last label before it: a
 line that is a bold run-in label (`**Legality rules**`), or a `Syntax`
@@ -641,8 +643,8 @@ def declaredBefore (md : String) (r : Rule) (reqs : Array ReqItem) : Array ReqIt
     #[{ path := "x::p", file := "c", line := 4, clauses := #[] }, { path := "x::q", file := "c", line := 6, clauses := #[] },
       { path := "x::r", file := "d", line := 1, clauses := #[] }]).map (·.path) == #["x::p"]
 
-/-- The rules of the reference's Legality rules and Dynamic semantics that
-no requirement formalizes yet (`Reqs/dev/Style#rules-and-requirements`). -/
+/-- The rules under the labels of `formalLabels` that no requirement
+formalizes yet (`Reqs/dev/Style#rules-and-requirements`). -/
 def unformalizedFile : FilePath := "test" / "unformalized_rules.txt"
 
 /-- The mark of a section of `unformalizedFile` whose chapter's Interlock
@@ -715,6 +717,74 @@ def implBindings : IO (Array (String × String × String)) := do
           out := out.push (name, (after.splitOn " ").head!, f.toString)
   return out
 
+/-- The problems of rules under labels that require formalization, and of
+the gap list: every such rule has a requirement or is listed, and not both
+unless it is partly formalized (`Reqs/dev/Style#rules-and-requirements`).
+The label `Rules` is an error outside chapters under `src/Reqs/dev/`. -/
+def ruleRequirementProblems (rules : Array (String × Rule × Array (ReqItem × Array String)))
+    (listed : Array Listed) : Array String := Id.run do
+  let mut failures := #[]
+  for e in listed, k in [0:listed.size] do
+    let here := s!"{unformalizedFile}:{e.line}"
+    if (listed.extract 0 k).any (·.id == e.id) then
+      failures := failures.push s!"{here}: `{e.id}` is listed already"
+      continue
+    match rules.find? (·.2.1.id == e.id) with
+    | none => failures := failures.push s!"{here}: `{e.id}` is no rule"
+    | some (md, r, reqs) =>
+      if !(formalLabels md).contains r.label then
+        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) is not under a label that requires formalization in this chapter, so it needs no requirement: remove its line"
+      else if !reqs.isEmpty && !isPartly e.why then
+        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) is formalized by `{reqs[0]!.1.path}`: remove its line, or say ` -- {partlyMark}` if that is only part of the rule"
+      else if reqs.isEmpty && isPartly e.why then
+        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) has no requirement at all, so it is not `{partlyMark}`"
+      else if e.chapter != md then
+        failures := failures.push s!"{here}: `{e.id}` is a rule of {md}, so it is listed under `# {md}`"
+      else if e.why == partlyMark && !e.pending then
+        failures := failures.push s!"{here}: `{e.id}` says it is `{partlyMark}`, but not what is missing, though its chapter's Interlock step is done: write ` -- {partlyMark}: WHAT`"
+      else if e.why.isEmpty && !e.pending then
+        failures := failures.push s!"{here}: `{e.id}` says no reason, after ` -- `, though its chapter's Interlock step is done (no `{pendingMark.trimAscii}`)"
+  for (md, r, reqs) in rules do
+    let here := s!"{md}:{r.line}"
+    if r.label == "Rules" && !(formalLabels md).contains r.label then
+      failures := failures.push s!"{here}: **Rules** is used only in chapters under src/Reqs/dev/"
+    if (formalLabels md).contains r.label && reqs.isEmpty && !listed.any (·.id == r.id) then
+      failures := failures.push s!"{here}: the rule `{r.id}` has no requirement: link one on its identifier's line, `r[{r.id}] lang::p`, or give one its name (`{reqPathOf r.id}`), or list it in {unformalizedFile}"
+    -- The block that formalizes a rule follows it.
+    for i in declaredBefore md r (reqs.map (·.1)) do
+      failures := failures.push s!"{here}: the rule `{r.id}` is formalized by `{i.path}`, which is declared before it, at line {i.line}"
+  return failures
+
+/-- Check a chapter and its gap list for the `#guard`s below, using the
+same readers and requirement checks as `ruleLinks`. -/
+def guardRuleChapter (md text gap : String) : Array String :=
+  match reqItemsOf md text with
+  | .error e => #[e]
+  | .ok items =>
+    let (linked, problems) := reqsOfChapter md items (rulesOf text)
+    problems ++ ruleRequirementProblems (linked.map fun (r, reqs) => (md, r, reqs)) (listedRules gap)
+
+-- All three labels require a requirement or a gap entry in dev chapters.
+#guard ["Rules", "Dynamic semantics", "Legality rules"].all fun label =>
+  guardRuleChapter "src/Reqs/dev/Testing.md" s!"**{label}**\n\nr[testing.example]\nAn example holds.\n" "" ==
+    #["src/Reqs/dev/Testing.md:3: the rule `testing.example` has no requirement: link one on its identifier's line, `r[testing.example] lang::p`, or give one its name (`testing::example`), or list it in test/unformalized_rules.txt"]
+#guard ["Rules", "Dynamic semantics", "Legality rules"].all fun label =>
+  (guardRuleChapter "src/Reqs/dev/Testing.md" s!"**{label}**\n\nr[testing.example]\nAn example holds.\n"
+    "# src/Reqs/dev/Testing.md\ntesting.example -- checked by review\n").isEmpty
+#guard ["Rules", "Dynamic semantics", "Legality rules"].all fun label =>
+  (guardRuleChapter "src/Reqs/dev/Testing.md" s!"**{label}**\n\nr[testing.example]\nAn example holds.\n\n```fren\npub mod testing\n\nconst example: Bool := true\n```\n" "").isEmpty
+-- A formalized rule cannot also be listed without saying it is partial.
+#guard guardRuleChapter "src/Reqs/dev/Testing.md"
+    "**Rules**\n\nr[testing.example]\nAn example holds.\n\n```fren\npub mod testing\n\nconst example: Bool := true\n```\n"
+    "# src/Reqs/dev/Testing.md\ntesting.example -- checked by review\n" ==
+  #["test/unformalized_rules.txt:2: `testing.example` (src/Reqs/dev/Testing.md:3) is formalized by `testing::example`: remove its line, or say ` -- partly formalized` if that is only part of the rule"]
+-- Other chapters cannot use Rules, even if they formalize the rule or
+-- their directory's name starts with dev.
+#guard ["src/Reqs/Lang/Testing.md", "src/Reqs/development/Testing.md"].all fun md =>
+  ["", "\n```fren\npub mod testing\n\nconst example: Bool := true\n```\n"].all fun block =>
+    guardRuleChapter md ("**Rules**\n\nr[testing.example]\nAn example holds.\n" ++ block) "" ==
+      #[s!"{md}:3: **Rules** is used only in chapters under src/Reqs/dev/"]
+
 /-- The rules of the reference with their requirements, by chapter, the
 rules that tests cite, each with the test, and the problems that
 `ruleReqs` finds (`Reqs/dev/Style#rules-and-requirements`). -/
@@ -734,36 +804,7 @@ def ruleLinks : IO (Array (String × Array (Rule × Array (ReqItem × Array Stri
     failures := failures ++ problems
     chapters := chapters.push (md, linked)
   let rules := chapters.flatMap fun (md, rs) => rs.map fun (r, reqs) => (md, r, reqs)
-  -- Each rule of Legality rules or Dynamic semantics has a requirement, or
-  -- is listed, and not both.
-  let listed := listedRules (← IO.FS.readFile unformalizedFile)
-  for e in listed, k in [0:listed.size] do
-    let here := s!"{unformalizedFile}:{e.line}"
-    if (listed.extract 0 k).any (·.id == e.id) then
-      failures := failures.push s!"{here}: `{e.id}` is listed already"
-      continue
-    match rules.find? (·.2.1.id == e.id) with
-    | none => failures := failures.push s!"{here}: `{e.id}` is no rule"
-    | some (md, r, reqs) =>
-      if !formalLabels.contains r.label then
-        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) is not under **Legality rules** or **Dynamic semantics**, so it needs no requirement: remove its line"
-      else if !reqs.isEmpty && !isPartly e.why then
-        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) is formalized by `{reqs[0]!.1.path}`: remove its line, or say ` -- {partlyMark}` if that is only part of the rule"
-      else if reqs.isEmpty && isPartly e.why then
-        failures := failures.push s!"{here}: `{e.id}` ({md}:{r.line}) has no requirement at all, so it is not `{partlyMark}`"
-      else if e.chapter != md then
-        failures := failures.push s!"{here}: `{e.id}` is a rule of {md}, so it is listed under `# {md}`"
-      else if e.why == partlyMark && !e.pending then
-        failures := failures.push s!"{here}: `{e.id}` says it is `{partlyMark}`, but not what is missing, though its chapter's Interlock step is done: write ` -- {partlyMark}: WHAT`"
-      else if e.why.isEmpty && !e.pending then
-        failures := failures.push s!"{here}: `{e.id}` says no reason, after ` -- `, though its chapter's Interlock step is done (no `{pendingMark.trimAscii}`)"
-  for (md, r, reqs) in rules do
-    let here := s!"{md}:{r.line}"
-    if formalLabels.contains r.label && reqs.isEmpty && !listed.any (·.id == r.id) then
-      failures := failures.push s!"{here}: the rule `{r.id}` has no requirement: link one on its identifier's line, `r[{r.id}] lang::p`, or give one its name (`{reqPathOf r.id}`), or list it in {unformalizedFile}"
-    -- The block that formalizes a rule follows it.
-    for i in declaredBefore md r (reqs.map (·.1)) do
-      failures := failures.push s!"{here}: the rule `{r.id}` is formalized by `{i.path}`, which is declared before it, at line {i.line}"
+  failures := failures ++ ruleRequirementProblems rules (listedRules (← IO.FS.readFile unformalizedFile))
   -- An item of a chapter that is in a module named as one of the chapter's
   -- constructs, and each of its clauses, has a rule of its name, where the
   -- name is shaped as a rule identifier is.
@@ -802,19 +843,19 @@ def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem �
     ++ "For each rule of a chapter of the reference that has rule identifiers:\n"
     ++ "the requirements that formalize it, the `impl`s bound to them, and the\n"
     ++ "tests that cite it (see [Writing the reference](Style.md#rules-and-requirements)).\n"
-    ++ "A rule of **Legality rules** or **Dynamic semantics** with no\n"
+    ++ "A rule of **Legality rules**, **Dynamic semantics**, or (in `dev/`) **Rules** with no\n"
     ++ "requirement, or any rule with no test, says **none**, and one whose\n"
     ++ "requirements formalize only part of it says *partly*. This page is\n"
     ++ "written when the book is built.\n"
   for (md, rules) in chapters do
-    let formal := rules.filter (formalLabels.contains ·.1.label)
+    let formal := rules.filter ((formalLabels md).contains ·.1.label)
     let untested := rules.filter fun (r, _) => !tests.any (·.2 == r.id)
-    out := out ++ s!"\n## [{md}]({rel md})\n\n{rules.size} rules, {formal.size} of them of legality or dynamic semantics, "
+    out := out ++ s!"\n## [{md}]({rel md})\n\n{rules.size} rules, {formal.size} under labels that require formalization, "
       ++ s!"{(formal.filter fun (r, reqs) => reqs.isEmpty || partly.contains r.id).size} of which have no requirement "
       ++ s!"or only part of one; {untested.size} rules have no test.\n\n"
       ++ "| Rule | Label | Requirements | `impl`s | Tests |\n|---|---|---|---|---|\n"
     for (r, reqs) in rules do
-      let reqCell := if reqs.isEmpty then (if formalLabels.contains r.label then "**none**" else "")
+      let reqCell := if reqs.isEmpty then (if (formalLabels md).contains r.label then "**none**" else "")
         else ", ".intercalate (reqs.map fun (i, cs) =>
           if cs.isEmpty then s!"`{i.path}`" else s!"`{i.path}` ({", ".intercalate (cs.map (s!"`{·}`")).toList})").toList
           ++ (if partly.contains r.id then ", *partly*" else "")
@@ -827,8 +868,8 @@ def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem �
 
 /-- The rules of the reference and their requirements and tests
 (`Reqs/dev/Style#rules-and-requirements`): every rule of **Legality rules**
-or **Dynamic semantics** has a requirement, or is listed in
-`unformalizedFile`, and not both unless the line says `partlyMark`
+or **Dynamic semantics**, or **Rules** in a `dev/` chapter, has a requirement,
+or is listed in `unformalizedFile`, and not both unless the line says `partlyMark`
 (`isPartly`); a listed rule is in its chapter's section, and says why it
 has none once its chapter's Interlock step is done; the links of each
 rule's identifier line are well formed, name nothing twice nor what the

@@ -60,6 +60,9 @@ stay those of its topics. Every rule is under one, but a `## Syntax`
 heading serves as the **Syntax** label. A note or rationale is a block
 quote, so it needs no label.
 
+Chapters under `src/Reqs/dev/` may instead group development-process rules
+under **Rules**. This label is used only there.
+
 ## What is not a rule
 
 - The reference states what Fren accepts, what it means, which checks it
@@ -144,9 +147,10 @@ quote, so it needs no label.
 
 ## Rules and requirements
 
-- A rule under **Legality rules** or **Dynamic semantics** is formalized
-  by a requirement: an item of a ```` ```fren ```` block, or some of its
-  *clauses*, the named `ensure`s, `expect`s and `cover`s of a procedure or
+- A rule under **Legality rules**, **Dynamic semantics**, or (in a `dev/`
+  chapter) **Rules** is formalized by a requirement: an item of a
+  ```` ```fren ```` block, or some of its *clauses*, the named `ensure`s,
+  `expect`s and `cover`s of a procedure or
   of an expectation's block, and a function's postconditions. One
   requirement may formalize several rules.
 - The requirement has the rule's name: its path is the rule's identifier
