@@ -187,6 +187,24 @@ private def script (lines : List String) : String := "\n".intercalate lines ++ "
 #guard (canonical (script ["(assert (not (forall ((x Int)) (forall ((y Int)) (> x y)))))"]) false).goal ==
   "(forall ((x Int) (y Int)) (> x y))"
 
+/-! The order of a dump. -/
+
+-- `sortedOnce` as the dump runs it, on texts with `textLe`: in order,
+-- each once, a prefix and the empty text first.
+#guard sortedOnce textLe #["b", "ab", "", "a", "b", "", "a"] == #["", "a", "ab", "b"]
+#guard sortedOnce textLe #["(> x 1)", "(> x 0)", "(> x 1)"] == #["(> x 0)", "(> x 1)"]
+#guard sortedOnce textLe (#[] : Array String) == #[]
+
+/-- The dump, without its metadata, of two items of one path, with the same
+checks, written at `first` and at `second`. -/
+private def twoItems (first second : String) : String :=
+  let item (span : String) (goal : String) : Array Obligation :=
+    #[{ comp := `p, kind := .vacuity, script := s!"(declare-const x Int)\n(assert (not {goal}))\n", span? := some span }]
+  withoutMetadata (dump #[item first "(> x 1)", item second "(> x 0)"])
+
+-- Where two items of one path are written does not order them.
+#guard twoItems "1:1" "9:9" == twoItems "9:9" "1:1"
+
 /-! The canonical names of symbols are those of `fren check`'s queries,
 without their `|`s. -/
 

@@ -3066,8 +3066,11 @@ def obligationsDifferBeyondNames (cli hosted : String) : Bool :=
   "(obligation\n  (signature\n    (declare-const f Int)\n  )\n  (goal (> f 2))\n)"
 
 /-- Checks the specs of seeds `[seed, seed + count)` in this process,
-writing each one's outcome to the results file. -/
-unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
+writing each one's outcome to the results file. With `compareDumps`
+(`--obligations`), it compares the front ends' obligations dumps too, from
+runs with the dump on, whose messages it then compares: off by default, so
+that a run compares the messages of what users run. -/
+unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) (compareDumps : Bool) : IO UInt32 := do
   let env ← loadFren
   let reporter ← IO.asTask (prio := .dedicated) (reportSolverTime run)
   for i in [0:count] do
@@ -3077,7 +3080,7 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
     IO.FS.writeFile run.progress s!"{s}\n{solver0}"
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
-    let ran ← runFrontends env run.spec text mode.confirm (obligations := true)
+    let ran ← runFrontends env run.spec text mode.confirm compareDumps
     let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
     -- The obligations dumps, compared without their metadata, and both
     -- written where they differ.
@@ -3088,7 +3091,8 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) : IO UInt32 := do
       | some (a, b) => obligations && obligationsDifferBeyondNames a b
       | none => false
     if let (true, some (a, b)) := (obligations, ran.obligations?) then
-      IO.FS.writeFile (run.dir / s!"obligations-seed{s}.fren") (s!"-- fren_fuzz_frontends{flags mode} --seed {s}\n" ++ text)
+      IO.FS.writeFile (run.dir / s!"obligations-seed{s}.fren")
+        (s!"-- fren_fuzz_frontends{flags mode} --obligations --seed {s}\n" ++ text)
       IO.FS.writeFile (run.dir / s!"obligations-seed{s}.cli") a
       IO.FS.writeFile (run.dir / s!"obligations-seed{s}.lean") b
     let elapsed := (← IO.monoMsNow) - t0
@@ -3260,8 +3264,10 @@ takes longer than `limit` seconds is stopped and recorded as a timeout.
 Crashes and timeouts are findings: the run then exits nonzero. A worker
 that dies while checking no spec, before its first or between two, is
 blamed on none: the run resumes after the last spec recorded, or stops if
-the worker recorded none. -/
-unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit : Nat) : IO UInt32 := do
+the worker recorded none. With `compareDumps`, the workers compare the
+obligations dumps too (`worker`). -/
+unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit : Nat) (compareDumps : Bool) :
+    IO UInt32 := do
   let start ← IO.monoMsNow
   let run : Run := { dir, id := toString (← IO.Process.getPID) }
   IO.FS.writeFile run.results ""
@@ -3270,7 +3276,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
     IO.FS.writeFile run.progress ""
     let batch := min (seed + count - next) workerSpecs
     let args := #["--worker", run.id, "--count", toString batch, "--seed", toString next, "--out", dir]
-      ++ mode.args
+      ++ mode.args ++ (if compareDumps then #["--obligations"] else #[])
     for f in [run.solver, run.solver.addExtension "tmp"] do
       try IO.FS.removeFile f catch _ => pure ()
     let child ← IO.Process.spawn { cmd := (← IO.appPath).toString, args, stdin := .null, stdout := .inherit, stderr := .inherit }
@@ -3329,10 +3335,11 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   let codeList := ", ".intercalate ((codes.qsort (·.2.1 > ·.2.1)).toList.map fun (e, k, _) => s!"{e} ×{k}")
   IO.eprintln s!"specs with errors from `fren check`: {(outcomes.filter (!·.errors.isEmpty)).size} ({codeList})"
   let dumps := outcomes.filter (·.obligations)
-  IO.eprintln s!"specs whose obligations dumps differ, which fails nothing: {dumps.size}, \
-    {(dumps.filter (·.status == "ok")).size} of them where the messages agree, \
-    {(dumps.filter (·.obligationsBeyondNames)).size} other than in the names of their constants \
-    (`obligations-seed*` in {dir})"
+  if compareDumps then
+    IO.eprintln s!"specs whose obligations dumps differ, which fails nothing: {dumps.size}, \
+      {(dumps.filter (·.status == "ok")).size} of them where the messages agree, \
+      {(dumps.filter (·.obligationsBeyondNames)).size} other than in the names of their constants \
+      (`obligations-seed*` in {dir})"
   IO.eprintln s!"fren_fuzz_frontends: {outcomes.size} specs in {((← IO.monoMsNow) - start) / 1000}s, {n "differ"} where \
     the front ends differ, {n "inconclusive"} more only in inconclusive results, \
     {n "known"} more only in known kinds, {n "crash"} crashed, \
@@ -3340,7 +3347,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
   "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] --print SEED"
@@ -3351,6 +3358,8 @@ structure Opts where
   dir : String := ".lake/fuzz"
   limit : Nat := 30
   worker? : Option String := none
+  /-- Compare the obligations dumps too (`--obligations`, `worker`). -/
+  compareDumps : Bool := false
 
 unsafe def main (args : List String) : IO UInt32 := do
   if let "--files" :: files := args then
@@ -3373,11 +3382,12 @@ unsafe def main (args : List String) : IO UInt32 := do
     | "--out" :: d :: rest, o => parse rest { o with dir := d }
     | "--spec-timeout" :: n :: rest, o => n.toNat?.bind fun n => parse rest { o with limit := n }
     | "--worker" :: id :: rest, o => parse rest { o with worker? := some id }
+    | "--obligations" :: rest, o => parse rest { o with compareDumps := true }
     | _, _ => none
   let some o := parse args {} | IO.eprintln usage; return 2
   IO.FS.createDirAll o.dir
   match o.worker? with
-  | some id => worker o.count o.seed { dir := o.dir, id } mode
-  | none => mainFrontends o.count o.seed o.dir mode o.limit
+  | some id => worker o.count o.seed { dir := o.dir, id } mode o.compareDumps
+  | none => mainFrontends o.count o.seed o.dir mode o.limit o.compareDumps
 
 end FrenTest.FuzzFrontends

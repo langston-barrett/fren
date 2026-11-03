@@ -724,20 +724,22 @@ dump is found in a front end's output. -/
 def dumpStart : String := "; obligations"
 def dumpEnd : String := "; end of obligations"
 
-/-- The obligations dump of a spec, from each front end's obligations of
-its items: each obligation rendered (`Obligation.render`), in order of its
-item's path, then of its place among its item's, which `questionsOf`
-gives; an item checked twice, as a function's body and its contract are,
-in order of their checks, then of their text. -/
-def dump (items : Array (Array Obligation)) : String :=
-  let keyed := items.filterMap fun os => os[0]?.map fun o =>
-    (showComp o.comp, String.join (os.toList.map (·.checkText)), String.join (os.toList.map (·.render)))
-  let sorted := keyed.qsort fun (p, k, a) (q, l, b) => p < q || (p == q && (k < l || (k == l && a < b)))
-  s!"{dumpStart}\n" ++ String.join (sorted.toList.map (·.2.2 ++ "\n")) ++ s!"{dumpEnd}\n"
-
 /-- `text`, a dump, without its metadata: its comments, but its first and
 last lines. Two front ends' dumps of a spec are compared so. -/
 def withoutMetadata (text : String) : String :=
   "\n".intercalate ((text.splitOn "\n").filter fun l => !l.trimAscii.toString.startsWith "; at ")
+
+/-- The obligations dump of a spec, from each front end's obligations of
+its items: each obligation rendered (`Obligation.render`), in order of its
+item's path, then of its place among its item's, which `questionsOf`
+gives; an item checked twice, as a function's body and its contract are,
+in order of their checks, then of their text without its metadata
+(`withoutMetadata`), so that where they are written does not order them. -/
+def dump (items : Array (Array Obligation)) : String :=
+  let keyed := items.filterMap fun os => os[0]?.map fun o =>
+    let text := String.join (os.toList.map (·.render))
+    (showComp o.comp, String.join (os.toList.map (·.checkText)), withoutMetadata text, text)
+  let sorted := keyed.qsort fun (p, k, a, _) (q, l, b, _) => p < q || (p == q && (k < l || (k == l && a < b)))
+  s!"{dumpStart}\n" ++ String.join (sorted.toList.map (·.2.2.2 ++ "\n")) ++ s!"{dumpEnd}\n"
 
 end Fren.Core

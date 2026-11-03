@@ -321,9 +321,12 @@ pub mod testing
   of range. It checks them with both front ends misreading models, as
   `FREN_MISREAD_MODELS` makes them ([Testing](../Models.md#testing)), so
   that what one front end knows and the other does not is a message that
-  differs: one refutes the model, and the other shows it. Each run also
-  compares the front ends' [obligations dumps](../Cli.md#obligations),
-  but for their metadata, and writes those of each spec where they differ
+  differs: one refutes the model, and the other shows it. A run with
+  `--obligations` also compares the front ends' [obligations
+  dumps](../Cli.md#obligations), but for their metadata, from runs with
+  the dump on, whose messages it then compares. It is off by default, so
+  that a run compares the messages of what users run, which is what CI
+  runs. It writes the dumps of each spec where they differ
   to `DIR` as `obligations-seed*`, counted in its summary, both all of them
   and those that differ other than in the names of their constants: an
   early signal, which fails nothing yet. Only what may

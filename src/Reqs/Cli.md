@@ -722,15 +722,16 @@ their canonical form:
 - the obligations are in order of their items' paths, then in the order of
   their questions within each item; two items with one path, as a
   function's body and its contract, are in order of their questions, then
-  of their text.
+  of their text without its metadata, so that where they are written does
+  not order them.
 
 So for the same spec, two front ends that build the same queries print the
 same dump, and a difference between their dumps, but for the metadata, is
 a difference between their queries, found where it starts, before it
 changes a verdict or a message, or between the names or simplifications
 that the dump does not make canonical, such as the names that lean-smt's
-embeddings give `Nat` and `Bool` variables (#493). `fren_fuzz_frontends`
-compares them on every spec that a run generates, but not on the corpus
+embeddings give `Nat` and `Bool` variables (#493). `fren_fuzz_frontends
+--obligations` compares them on every spec that a run generates, but not on the corpus
 that `lake test` checks, and reports, without failing, those whose dumps
 differ, and of those, the ones that differ other than in the names of
 their constants. The Lean-hosted front end keeps elaborating Fren
