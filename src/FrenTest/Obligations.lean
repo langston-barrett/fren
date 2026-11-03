@@ -123,6 +123,15 @@ private def script (lines : List String) : String := "\n".intercalate lines ++ "
   "(forall ((d Int)) (> d 0))"
 #guard (canonical (script ["(define-fun f ((y Int)) Bool (> y n))", "(assert (not (forall ((n Int)) (f n))))"]) false).goal ==
   "(forall ((n#s0 Int)) (> n#s0 n))"
+-- A definition's parameter, and a recursive definition's, is its own,
+-- not an earlier definition's of the same name.
+#guard (canonical (script ["(define-fun y () Int 7)", "(define-fun f ((y Int)) Int (+ y 1))",
+    "(assert (not (> (f 2) 0)))"]) false).goal == "(> (+ 2 1) 0)"
+#guard (canonical (script ["(define-fun y () Int 7)", "(define-fun-rec g ((y Int)) Int (g y))",
+    "(assert (not (> (g 2) 0)))"]) false).signature == #["(define-fun-rec g ((y Int)) Int (g y))"]
+#guard (canonical (script ["(define-fun T () Int 7)", "(declare-datatypes ((L 1)) ((par (T) ((nil) (cons (hd T) (tl (L T)))))))",
+    "(declare-const l (L Int))", "(assert (not (= l (as nil (L Int)))))"]) false).signature ==
+  #["(declare-const l (L Int))", "(declare-datatypes ((L 1)) ((par (T) ((nil) (cons (hd T) (tl (L T)))))))"]
 -- Lean's `✝` and `«»` go, but not where two names would be one.
 #guard (canonical (script ["(declare-const x✝ Int)", "(assert (not (> x✝ 0)))"]) false).goal == "(> x 0)"
 #guard (canonical (script ["(declare-const x✝ Int)", "(declare-const x Int)", "(assert (not (> x✝ x)))"]) false).goal ==

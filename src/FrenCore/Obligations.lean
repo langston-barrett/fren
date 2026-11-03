@@ -499,6 +499,44 @@ def sortedOnce {α : Type} [BEq α] (le : α → α → Bool) (xs : Array α) : 
 /-- Texts in order: by their characters. -/
 def textLe (a b : String) : Bool := !(b < a)
 
+/-- The names of a list of sorted variables, `((x Int) (y Bool))`. -/
+def sortedVars : Sx → Array String
+  | .list vs => vs.filterMap fun | .list #[.atom x, _] => some x | _ => none
+  | _ => #[]
+
+/-- The declaration `cmd` with the definitions of `defs` unfolded in it
+(`Sx.unfold`), with the names that it binds itself bound: a recursive
+definition's parameters, whose names stay and whose sorts are unfolded,
+in its body, and a parametric datatype's sort parameters. The other names that a declaration has are its own, which no
+definition of the same script has. -/
+def unfoldDecl (defs : Std.HashMap String (Array String × Sx)) (cmd : Sx) : Sx :=
+  match cmd with
+  | .list #[h@(.atom "define-fun-rec"), f, ps, s, body] =>
+    let bound := sortedVars ps
+    .list #[h, f, unfoldSorts ps, s.unfold defs, body.unfold defs bound]
+  | .list #[h@(.atom "define-funs-rec"), .list decls, .list bodies] =>
+    let bodies := bodies.zipWith (fun (b : Sx) (d : Sx) => match d with
+      | .list #[_, ps, _] => b.unfold defs (sortedVars ps)
+      | _ => b.unfold defs) decls
+    .list #[h, .list (decls.map fun
+      | .list #[f, ps, r] => Sx.list #[f, unfoldSorts ps, r.unfold defs]
+      | d => d), .list bodies]
+  | .list #[h@(.atom "declare-datatypes"), sorts, .list dts] =>
+    .list #[h, sorts, .list (dts.map fun
+      | .list #[p@(.atom "par"), .list ps, body] =>
+        Sx.list #[p, .list ps, body.unfold defs (ps.filterMap fun | .atom x => some x | _ => none)]
+      | dt => dt.unfold defs)]
+  | .list #[h@(.atom "declare-datatype"), n, .list #[p@(.atom "par"), .list ps, body]] =>
+    .list #[h, n, .list #[p, .list ps, body.unfold defs (ps.filterMap fun | .atom x => some x | _ => none)]]
+  | cmd => cmd.unfold defs
+where
+  /-- A list of sorted variables with only their sorts unfolded. -/
+  unfoldSorts : Sx → Sx
+    | .list vs => .list (vs.map fun
+      | .list #[x, t] => Sx.list #[x, t.unfold defs]
+      | v => v)
+    | e => e
+
 /-- The commands of a script that say nothing of what a query asks: its
 logic, options and the solver's commands. -/
 def solverCommands : List String :=
@@ -543,11 +581,12 @@ def canonical (script : String) (consistency : Bool) (symbols : Std.HashMap Stri
     | "define-sort", [_, .atom f, .list #[], body] => defs := defs.insert f (#[], body)
     | "define-fun", [_, .atom f, .list ps, _, body] =>
       let ps := ps.filterMap fun | .list #[.atom x, _] => some x | _ => none
-      defs := defs.insert f (ps, (body.unfold defs).normalize {})
+      -- Its parameters are bound in its body, so no definition is theirs.
+      defs := defs.insert f (ps, (body.unfold defs ps).normalize {})
     -- Written again as both front ends could, once unfolded: an argument
     -- may make a new instance of a rule of `Sx.normalize`.
     | "assert", [_, t] => asserts := asserts.push ((t.unfold defs).normalize {})
-    | _, _ => sig := sig.push ((cmd.unfold defs).normalize {})
+    | _, _ => sig := sig.push ((unfoldDecl defs cmd).normalize {})
   let trivial (t : Sx) := t == .atom "true" || t == .list #[.atom "not", .atom "false"]
   -- The last assertion is the goal's negation, which `Sx.normalize` may
   -- have rewritten, as `(not (not g))` to `g`: the goal is its negation,
