@@ -1,0 +1,98 @@
+; obligations
+(obligation
+  ; at 6:6
+  (item c)
+  (check realizability (assumptions))
+  (evidence solver)
+  (signature)
+  (context)
+  (goal false)
+)
+(obligation
+  ; at 6:6
+  (item c)
+  (check realizability (outputs))
+  (evidence solver)
+  (signature
+    (declare-const n Int)
+  )
+  (context)
+  (goal (exists ((k Int)) (= (forall ((i#0 Int)) (=> (and (>= i#0 0) (> n i#0)) (not (= i#0 3)))) (> k 0))))
+)
+(obligation
+  ; at 8:11
+  (item c)
+  (check cover big)
+  (evidence solver)
+  (signature
+    (declare-const k Int)
+    (declare-const n Int)
+  )
+  (context
+    (= (forall ((i#0 Int)) (=> (and (>= i#0 0) (> n i#0)) (not (= i#0 3)))) (> k 0))
+  )
+  (goal (not (and (> k 0) (> n 4))))
+)
+(obligation
+  ; at 6:6
+  (item c)
+  (check redundancy (constraints))
+  (evidence solver)
+  (signature
+    (declare-const k Int)
+    (declare-const n Int)
+  )
+  (context
+    (= (forall ((i#0 Int)) (=> (and (>= i#0 0) (> n i#0)) (not (= i#0 3)))) (> k 0))
+  )
+  (goal false)
+)
+(obligation
+  ; at 7:12
+  (item c)
+  (check redundancy r)
+  (evidence solver)
+  (signature
+    (declare-const k Int)
+    (declare-const n Int)
+  )
+  (context)
+  (goal (= (forall ((i#0 Int)) (=> (and (>= i#0 0) (> n i#0)) (not (= i#0 3)))) (> k 0)))
+)
+
+; end of obligations
+error[F0615]: cover goal `c::big` cannot be met: it is ruled out by `r`
+ --> test/cli/args/dump_obligations_quantifier.fren:8:11
+  |
+8 |     cover big: k > 0 and n > 4
+  |           ^^^ no behaviour that meets the procedure satisfies this
+  |
+  = note: a cover goal is a scenario that some behaviour meeting the assumptions and guarantees must allow
+  = help: weaken the constraints that rule it out, or correct the goal
+
+note: Assuming the cover goal `big`, `r` cannot hold.
+ --> test/cli/args/dump_obligations_quantifier.fren:7:12
+  |
+7 |     ensure r: (forall (i: Int), when 0 <= i < n, i != 3) iff k > 0
+  |            ^
+
+note: Both operands of `r` cannot be true: the stated premises require `r.1` to be false.
+ --> test/cli/args/dump_obligations_quantifier.fren:7:16
+  |
+7 |     ensure r: (forall (i: Int), when 0 <= i < n, i != 3) iff k > 0
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = member: forall (i: Int), when 0 <= i < n, i != 3
+
+note: Both operands of `r` cannot be false: the stated premises require `r.2` to be true.
+ --> test/cli/args/dump_obligations_quantifier.fren:7:62
+  |
+7 |     ensure r: (forall (i: Int), when 0 <= i < n, i != 3) iff k > 0
+  |                                                              ^^^^^
+  |
+  = member: k > 0
+
+fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0615`.
+exit=1

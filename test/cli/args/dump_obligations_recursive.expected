@@ -1,0 +1,105 @@
+; obligations
+(obligation
+  ; at 14:12
+  (item depth)
+  (check postcondition depth.nonneg)
+  (evidence solver)
+  (signature
+    (declare-const t T)
+    (declare-datatypes ((T 0)) (((T::Leaf) (T::Node (T::Node::0 T)))))
+    (declare-fun ::depth (T) Int)
+  )
+  (context
+    (=> (and (not (= t T::Leaf)) (not (= (T::Node::0 t) T::Leaf))) (>= (::depth (T::Node::0 (T::Node::0 t))) 0))
+    (=> (not (= t T::Leaf)) (= (::depth (T::Node::0 t)) (ite (= (T::Node::0 t) T::Leaf) 0 (+ 1 (::depth (T::Node::0 (T::Node::0 t)))))))
+    (=> (not (= t T::Leaf)) (>= (::depth (T::Node::0 t)) 0))
+  )
+  (goal (>= (ite (= t T::Leaf) 0 (+ 1 (::depth (T::Node::0 t)))) 0))
+)
+
+(obligation
+  ; at 17:6
+  (item p)
+  (check realizability (assumptions))
+  (evidence solver)
+  (signature)
+  (context)
+  (goal false)
+)
+(obligation
+  ; at 17:6
+  (item p)
+  (check realizability (outputs))
+  (evidence solver)
+  (signature
+    (declare-const t T)
+    (declare-datatypes ((T 0)) (((T::Leaf) (T::Node (T::Node::0 T)))))
+    (declare-fun ::depth (T) Int)
+  )
+  (context
+    (= (::depth t) (ite (= t T::Leaf) 0 (+ 1 (::depth (T::Node::0 t)))))
+    (=> (not (= t T::Leaf)) (>= (::depth (T::Node::0 t)) 0))
+    (>= (::depth t) 0)
+  )
+  (goal (exists ((y Int)) (= y (+ (::depth t) 1))))
+)
+(obligation
+  ; at 19:12
+  (item p)
+  (check expectation pos)
+  (evidence solver)
+  (signature
+    (declare-const t T)
+    (declare-const y Int)
+    (declare-datatypes ((T 0)) (((T::Leaf) (T::Node (T::Node::0 T)))))
+    (declare-fun ::depth (T) Int)
+  )
+  (context
+    (= (::depth t) (ite (= t T::Leaf) 0 (+ 1 (::depth (T::Node::0 t)))))
+    (= y (+ (::depth t) 1))
+    (=> (not (= t T::Leaf)) (>= (::depth (T::Node::0 t)) 0))
+    (>= (::depth t) 0)
+  )
+  (goal (> y 0))
+)
+(obligation
+  ; at 17:6
+  (item p)
+  (check redundancy (constraints))
+  (evidence solver)
+  (signature
+    (declare-const t T)
+    (declare-const y Int)
+    (declare-datatypes ((T 0)) (((T::Leaf) (T::Node (T::Node::0 T)))))
+    (declare-fun ::depth (T) Int)
+  )
+  (context
+    (= (::depth t) (ite (= t T::Leaf) 0 (+ 1 (::depth (T::Node::0 t)))))
+    (= y (+ (::depth t) 1))
+    (=> (not (= t T::Leaf)) (>= (::depth (T::Node::0 t)) 0))
+    (>= (::depth t) 0)
+  )
+  (goal false)
+)
+(obligation
+  ; at 18:12
+  (item p)
+  (check redundancy r)
+  (evidence solver)
+  (signature
+    (declare-const t T)
+    (declare-const y Int)
+    (declare-datatypes ((T 0)) (((T::Leaf) (T::Node (T::Node::0 T)))))
+    (declare-fun ::depth (T) Int)
+  )
+  (context
+    (= (::depth t) (ite (= t T::Leaf) 0 (+ 1 (::depth (T::Node::0 t)))))
+    (=> (not (= t T::Leaf)) (>= (::depth (T::Node::0 t)) 0))
+    (>= (::depth t) 0)
+  )
+  (goal (= y (+ (::depth t) 1)))
+)
+
+; end of obligations
+fren: 4 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

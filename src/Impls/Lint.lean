@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Impls.Global
 import Impls.Lang
 import Impls.View
 import Reqs.Lint
@@ -1769,6 +1770,80 @@ impl single_call_fn: lint::single_call_fn for (p d : Bool) (n : Nat) {
 } by
   intro p d n _
   cases p <;> cases d <;> rcases n with _ | _ | n <;> simp [fren_spec, Fren.Core.singleCallFn] <;> omega
+
+theorem block_accepts_toBlockMember (m : Fren.Core.BlockMember) (d : Bool) :
+    lang.«block_accepts?» (toBlockMember m) d = Fren.Core.blockMemberAccepted m d := by
+  cases m <;> cases d <;> simp [fren_spec, toBlockMember, Fren.Core.blockMemberAccepted]
+
+-- Both front ends decide `proc_without_outputs` with `procWithoutOutputs`,
+-- for every list of results and members.
+impl proc_without_outputs: lint::proc_without_outputs for (p : Bool) (ms : List (Fren.Core.BlockMember × Bool)) (n : Nat) {
+  pub? := p,
+  members := Fren.FinSet.ofList (ms.map fun (m, d) => (toBlockMember m, d)),
+  n_uses := n,
+  fires? := Fren.Core.procWithoutOutputs p ms n,
+} by
+  intro p ms n _
+  unfold lint.proc_without_outputs.ensures lint.proc_without_outputs.ensure.rule
+  have h : (∀ (m : lang.BlockMember) (d : Bool), (m, d) ∈ Fren.FinSet.ofList (ms.map fun (m, d) => (toBlockMember m, d)) →
+      lang.«block_accepts?» m d = true) ↔ ms.all (fun (m, d) => Fren.Core.blockMemberAccepted m d) = true := by
+    simp only [Fren.FinSet.mem_ofList, List.mem_map, List.all_eq_true, Prod.exists, Prod.mk.injEq]
+    constructor
+    · intro h ⟨m, d⟩ hm
+      rw [← block_accepts_toBlockMember]
+      exact h _ _ ⟨m, d, hm, rfl, rfl⟩
+    · rintro h _ _ ⟨m, d, hm, rfl, rfl⟩
+      rw [block_accepts_toBlockMember]
+      exact h (m, d) hm
+  -- The quantifier over the finitely many members and `det`s is written
+  -- out, one conjunct for each.
+  constructor
+  · intro hf
+    simp only [Fren.Core.procWithoutOutputs, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hf
+    obtain ⟨⟨rfl, rfl⟩, hall⟩ := hf
+    have A := h.mpr hall
+    simp (config := { contextual := true }) [A]
+  · rintro ⟨⟨hp, hn⟩, hc⟩
+    have A : ∀ (m : lang.BlockMember) (d : Bool),
+        (m, d) ∈ Fren.FinSet.ofList (ms.map fun (m, d) => (toBlockMember m, d)) → lang.«block_accepts?» m d = true := by
+      intro m d hm
+      cases m <;> cases d <;> simp_all
+    have hall := h.mp A
+    cases p
+    · simp only [Fren.Core.procWithoutOutputs, hall, Bool.not_false, Bool.true_and, Bool.and_true, beq_iff_eq]
+      omega
+    · simp at hp
+
+-- Which mentions are the function's own, as both front ends decide with
+-- `ownMention`, for every mention, function and list of parameters.
+theorem own_mention_toMention (m : Fren.Core.Mention) (f : String) (ps : List String) :
+    lint.«own_mention?» (toMention m) f (Fren.FinSet.ofList ps) = Fren.Core.ownMention f ps m := by
+  cases m <;> simp only [fren_spec, toMention, Fren.Core.ownMention] <;> rw [Bool.eq_iff_iff] <;>
+    simp [List.any_eq_true, Fren.Str.lit]
+
+-- Both front ends decide `contract_mentions_nothing` with
+-- `contractMentionsNothing`, for every list of mentions, function and list
+-- of parameters.
+impl contract_mentions_nothing: lint::contract_mentions_nothing for (ms : List Fren.Core.Mention) (f : String)
+    (ps : List String) {
+  mentioned := mentionSet ms,
+  function := f,
+  params := Fren.FinSet.ofList ps,
+  fires? := Fren.Core.contractMentionsNothing ms f ps,
+} by
+  intro ms f ps
+  unfold lint.contract_mentions_nothing.ensures lint.contract_mentions_nothing.ensure.rule
+  intro _
+  have h : (∃ m, m ∈ mentionSet ms ∧ lint.«own_mention?» m f (Fren.FinSet.ofList ps) = true) ↔
+      ms.any (Fren.Core.ownMention f ps) = true := by
+    simp only [mentionSet, Fren.FinSet.mem_ofList, List.mem_map, List.any_eq_true]
+    constructor
+    · rintro ⟨_, ⟨m, hm, rfl⟩, hown⟩
+      exact ⟨m, hm, (own_mention_toMention m f ps) ▸ hown⟩
+    · rintro ⟨m, hm, hown⟩
+      exact ⟨toMention m, ⟨m, hm, rfl⟩, (own_mention_toMention m f ps).symm ▸ hown⟩
+  rw [h]
+  simp [Fren.Core.contractMentionsNothing, mentionSet_eq_empty]
 
 trusted lint::zero_prefixed_written: "a model of an expression, checked by the refinements in its section"
 trusted lint::zero_prefixed_fixed: "a model of an expression, checked by the refinements in its section"

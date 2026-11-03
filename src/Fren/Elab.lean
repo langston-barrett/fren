@@ -1827,6 +1827,19 @@ def lintConstant (cx : ExprCtx) (kind : String) (e : Syntax) : TermElabM Unit :=
     let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
     recordLint .assertionsOnConstants e (Core.assertionOnConstantMsg kind literal?)
 
+/-- Records `assertions_on_constants` on the clause `e` of the contract of
+the function `f`, a postcondition if `post`, if it mentions nothing, and
+otherwise `contract_mentions_nothing` if it mentions nothing of `f`'s own
+(`lint::contract_mentions_nothing`). -/
+def lintContractClause (cx : ExprCtx) (post : Bool) (clause f : Name) (params : Array Name) (e : Syntax) : TermElabM Unit := do
+  let mentioned ← mentionedNames cx e
+  if Core.assertionOnConstant mentioned then
+    let literal? := match boolNode "" 0 (unparen e) with | .mk (.lit b) .. => some b | _ => none
+    recordLint .assertionsOnConstants e (Core.assertionOnConstantMsg (if post then "postcondition" else "precondition") literal?)
+  else if Core.contractMentionsNothing mentioned
+      (f.toString (escape := false)) (params.toList.map (·.toString (escape := false))) then
+    recordLint .contractMentionsNothing e (Core.contractMentionsNothingMsg post (clause.toString (escape := false)) (f.toString (escape := false)) mentioned)
+
 /-- The integer literals in `e`, its patterns' among them. -/
 partial def numLits (e : Syntax) : Array Syntax :=
   if e.isOfKind numLitKind then #[e] else e.getArgs.flatMap numLits
@@ -7249,6 +7262,8 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     -- of its placeholder (`Reqs/Lang/HigherOrder#function-parameters`).
     let res ← contractClause modName path post vars fnVars value? e params
     lintBools e (← hidesIn { modName, vars, insts := #[], place := .prop })
+    lintContractClause { modName, vars, insts := #[], place := .prop, contract? := some { path, post, params }
+                         fnParams := fnVars.map fun p => (p.1, p.2.1, (⟨(mkIdent p.1).raw⟩ : Term)) } post cn n params e
     -- Expand a named predicate using typed templates twice: once in the
     -- real contract (which applies the function), and once in its checking
     -- procedure (which represents the function's value by an output).
@@ -8793,7 +8808,38 @@ def procMembers (stx : Syntax) : CommandElabM (Array Syntax) := do
       (mkNode ``Lang.evidenceMember #[e[0], e[1], e[2], e[3], out] : Syntax)
   return params ++ outs ++ body
 
+/-- The results and members of the procedure `stx`, or of a global
+expectation aligned as one, as `lang::block_member` reads them, each with
+whether it is written with `det` and where it is reported. -/
+def blockMembers (stx : Syntax) : CommandElabM (Array (Syntax × Core.BlockMember × Bool)) := do
+  let results := (procResults stx).map fun r => (r[2], Core.BlockMember.result, !r[1].isNone)
+  let others ← stx[8].getArgs.mapM fun m0 => do
+    let (m, _) ← unwrapEvidence m0
+    -- Each kind by name, the unlabelled Boolean blocks among them, so
+    -- that a member kind added later is an error here rather than read as
+    -- one the block accepts.
+    let kind? : Option (Core.BlockMember × Bool) :=
+      if m.isOfKind ``Lang.existsMember then some (.exists, !m[0].isNone)
+      else if m.isOfKind ``Lang.letMember then some (.let, !m[0].isNone)
+      else if m.isOfKind ``Lang.defineMember then some (.define, false)
+      else if m.isOfKind ``Lang.assumeMember || m.isOfKind ``Lang.bareAssumeMember then some (.assume, false)
+      else if m.isOfKind ``Lang.ensureMember || m.isOfKind ``Lang.bareEnsureMember then some (.ensure, false)
+      else if m.isOfKind ``Lang.expectMember || m.isOfKind ``Lang.bareExpectMember then some (.expect, false)
+      else if m.isOfKind ``Lang.coverMember then some (.cover, false)
+      else if m.isOfKind ``Lang.callMember then some (.call, false)
+      else if m.isOfKind ``Lang.refinesMember then some (.refines, false)
+      else if m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember then some (.use, false)
+      else none
+    let some (kind, det) := kind? | throwErrorAt m "internal error: a member of unknown kind `{m.getKind}`"
+    return (m, kind, det)
+  return results ++ others
+
 @[command_elab Lang.procCmd] def elabProc : CommandElab := recordingErrors fun stx => do
+  -- The file's errors so far: `proc_without_outputs` records the procedure
+  -- only if it adds no static error, failed checks aside, as the `fren`
+  -- command keeps nothing of an item with a static error.
+  let errorsBefore := (← get).messages.toList.filter (·.severity == .error) |>.length
+  let checksBefore := (← getLocal).checkErrors
   checkLexemes stx
   checkParsed stx
   checkProcMembers stx
@@ -8836,6 +8882,15 @@ def procMembers (stx : Syntax) : CommandElabM (Array Syntax) := do
   let (ok, generated) ← liftTermElabM <| elabCompMembers scope path modName declBase isPub nameStx members tested enumerated enumSize
   lintDeclared .component n nameStx
   lintLines .component n nameStx stx
+  -- `proc_without_outputs`, once the file's paths are known
+  -- (`pendingLints`), if the procedure has no static error.
+  let errorsAfter := (← get).messages.toList.filter (·.severity == .error) |>.length
+  let staticErrors := errorsAfter - errorsBefore - ((← getLocal).checkErrors - checksBefore)
+  if ok && staticErrors == 0 then
+    let members := (← blockMembers stx).toList.map (·.2)
+    if Core.procWithoutOutputs isPub members 0 then
+      let r : Core.ProcRecord := { path, isPub, members, level := ← lintLevel .procWithoutOutputs }
+      modifyLocal fun l => { l with procs := l.procs.push (r, nameStx) }
   if ok = true then
     for d in generated do
       elabCommand (← `(attribute [fren_spec] $(mkCIdent d)))
@@ -8844,24 +8899,8 @@ def procMembers (stx : Syntax) : CommandElabM (Array Syntax) := do
 /-- The first member of the global expectation `stx`, aligned as a
 procedure's, that its block does not accept (`lang::block_member`), with
 where it is reported. -/
-def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Msg)) := do
-  for r in procResults stx do
-    if let some msg := Core.blockMemberReport? .result !r[1].isNone then return some (r[2], msg)
-  for m0 in stx[8].getArgs do
-    let (m, _) ← unwrapEvidence m0
-    let (kind, det) : Core.BlockMember × Bool :=
-      if m.isOfKind ``Lang.existsMember then (.exists, !m[0].isNone)
-      else if m.isOfKind ``Lang.letMember then (.let, !m[0].isNone)
-      else if m.isOfKind ``Lang.defineMember then (.define, false)
-      else if m.isOfKind ``Lang.assumeMember then (.assume, false)
-      else if m.isOfKind ``Lang.ensureMember then (.ensure, false)
-      else if m.isOfKind ``Lang.expectMember then (.expect, false)
-      else if m.isOfKind ``Lang.coverMember then (.cover, false)
-      else if m.isOfKind ``Lang.callMember then (.call, false)
-      else if m.isOfKind ``Lang.refinesMember then (.refines, false)
-      else (.use, false)
-    if let some msg := Core.blockMemberReport? kind det then return some (m, msg)
-  return none
+def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Msg)) :=
+  return (← blockMembers stx).findSome? fun (ref, m, det) => (Core.blockMemberReport? m det).map (ref, ·)
 
 /-- `expect n(x: T) { members }`, a global expectation with a block
 (`Reqs/Lang/Global`): elaborated as a procedure is, but for the members it

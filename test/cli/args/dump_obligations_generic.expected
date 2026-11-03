@@ -1,0 +1,115 @@
+; obligations
+(obligation
+  ; at 18:6
+  (item c)
+  (check realizability (assumptions))
+  (evidence solver)
+  (signature
+    (declare-const x (Option Int))
+    (declare-datatypes ((Option 1)) ((par (α) ((Option.none) (Option.some (Option.some.val α))))))
+  )
+  (context
+    (not (= x (as Option.none (Option Int))))
+  )
+  (goal false)
+)
+(obligation
+  ; at 18:6
+  (item c)
+  (check realizability (outputs))
+  (evidence solver)
+  (signature
+    (declare-const x (Option Int))
+    (declare-datatypes ((Option 1)) ((par (α) ((Option.none) (Option.some (Option.some.val α))))))
+  )
+  (context
+    (not (= x (as Option.none (Option Int))))
+  )
+  (goal true)
+)
+(obligation
+  ; at 18:6
+  (item c)
+  (check redundancy (assumptions))
+  (evidence solver)
+  (signature
+    (declare-const x (Option Int))
+    (declare-const y Int)
+    (declare-datatypes ((Option 1)) ((par (α) ((Option.none) (Option.some (Option.some.val α))))))
+  )
+  (context
+    (= y (ite (= x ((as Option.some (Option Int)) (Option.some.val x))) (Option.some.val x) 0))
+    (not (= x (as Option.none (Option Int))))
+  )
+  (goal false)
+)
+(obligation
+  ; at 19:12
+  (item c)
+  (check redundancy some)
+  (evidence solver)
+  (signature
+    (declare-const x (Option Int))
+    (declare-const y Int)
+    (declare-datatypes ((Option 1)) ((par (α) ((Option.none) (Option.some (Option.some.val α))))))
+  )
+  (context
+    (= y (ite (= x ((as Option.some (Option Int)) (Option.some.val x))) (Option.some.val x) 0))
+  )
+  (goal (not (= x (as Option.none (Option Int)))))
+)
+(obligation
+  ; at 18:6
+  (item c)
+  (check determinism y)
+  (evidence solver)
+  (signature
+    (declare-const x (Option Int))
+    (declare-const y Int)
+    (declare-const y#' Int)
+    (declare-datatypes ((Option 1)) ((par (α) ((Option.none) (Option.some (Option.some.val α))))))
+  )
+  (context
+    (= y (ite (= x ((as Option.some (Option Int)) (Option.some.val x))) (Option.some.val x) 0))
+    (= y#' (ite (= x ((as Option.some (Option Int)) (Option.some.val x))) (Option.some.val x) 0))
+    (not (= x (as Option.none (Option Int))))
+  )
+  (goal (= y y#'))
+)
+(obligation
+  ; at 18:6
+  (item c)
+  (check precondition y (site 0))
+  (evidence solver)
+  (signature
+    (declare-const x (Option Int))
+    (declare-const y Int)
+    (declare-datatypes ((Option 1)) ((par (α) ((Option.none) (Option.some (Option.some.val α))))))
+  )
+  (context
+    (= y (ite (= x ((as Option.some (Option Int)) (Option.some.val x))) (Option.some.val x) 0))
+    (not (= x (as Option.none (Option Int))))
+  )
+  (goal (not (= x (as Option.none (Option Int)))))
+)
+
+(obligation
+  ; at 15:12
+  (item unwrap_or)
+  (check postcondition unwrap_or.payload)
+  (evidence solver)
+  (signature
+    (declare-const d ::unwrap_or::0::T)
+    (declare-const o (Option ::unwrap_or::0::T))
+    (declare-datatypes ((Option 1)) ((par (α) ((Option.none) (Option.some (Option.some.val α))))))
+    (declare-sort ::unwrap_or::0::T 0)
+  )
+  (context
+    (not (= o (as Option.none (Option ::unwrap_or::0::T))))
+  )
+  (goal (= ((as Option.some (Option ::unwrap_or::0::T)) (ite (= o ((as Option.some (Option ::unwrap_or::0::T)) (Option.some.val o))) (Option.some.val o) d)) o))
+)
+
+; end of obligations
+fren: 5 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0

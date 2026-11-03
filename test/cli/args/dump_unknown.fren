@@ -1,0 +1,9 @@
+--@ args: check --dump=obligation
+-- An unknown `--dump=` value, such as a typo of `obligations`, is an unknown
+-- option: `fren check` stops before it checks anything, with exit status 2,
+-- where the Lean-hosted front end warns of an unknown `fren.dump` and checks
+-- without a dump (`test/ui/lean/dump_option.fren`, `Reqs/Cli#obligations`).
+proc c(n: Int): (m: Int) {
+    assume a: n > 0
+    ensure r: m = n + 1
+}

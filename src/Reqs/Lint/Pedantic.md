@@ -6,8 +6,8 @@ chapter has the lints of expressions and of literals, and its subchapters
 the others: those of [matches](Pedantic/Matches.md), of [records and
 functions](Pedantic/Records.md), of [source text](Pedantic/Text.md), of
 [comparisons](Pedantic/Comparisons.md), of
-[conditionals](Pedantic/Conditionals.md) and of [Boolean
-operands](Pedantic/Booleans.md).
+[conditionals](Pedantic/Conditionals.md), of [Boolean
+operands](Pedantic/Booleans.md) and of [procedures](Pedantic/Procedures.md).
 
 Where a lint rewrites an expression, its section checks the rewrite with
 [refinement](../Lang/Refinement.md): a procedure `lint::R_written`

@@ -272,6 +272,7 @@ def pendingLints : CommandElabM (Array (Core.LintReport Syntax × Core.Severity)
       ++ Core.unusedAssumptionReports l.assumptions l.globalReads
       ++ Core.unusedSettingReports l.settings seen atEnd fixable
       ++ Core.singleCallReports l.items l.usedItems
+      ++ Core.procWithoutOutputsReports l.procs l.usedItems
       ++ Core.needlessHigherOrderReports l.hofParams (l.fnArgs.map (·.1)))
   let (unfulfilled, _) := Core.finishReports (Core.expectationReports l.expectations fulfilled fixable)
   return reports ++ unfulfilled
@@ -285,7 +286,7 @@ def reportLints : CommandElabM Unit := do
     | .warning => logWarningAt r.ref r.msg.text
     | .info => logInfoAt r.ref r.msg.text
   modifyLocal fun l => { l with useRecords := #[], used := #[], expectations := #[], lintReports := #[],
-                                items := #[], usedItems := #[], natReports := #[], natKept := #[], settings := #[], settingIds := #[],
+                                items := #[], usedItems := #[], procs := #[], natReports := #[], natKept := #[], settings := #[], settingIds := #[],
                                 seenSettings := #[], assumptions := #[], globalReads := #[], hofParams := #[], fnArgs := #[] }
 
 /-- `set_option fren.lint.NAME "LEVEL"`, for a lint (`lint::setting`) or a

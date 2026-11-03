@@ -67,23 +67,21 @@ whose type is a path that names no type is an error: `F0201` where the path
 names nothing, and `F0210` where it names something else, such as a
 constant or a procedure (`quantifier.binder.procedure`).
 
-r[quantifier.type.listed]
+r[quantifier.type.listed] lang::quantified_type
 A type is *listed* when it is [finite and not
 unbounded](Types.md#finite-types): every type that it is built from is
 finite by itself, has a former that is not growing, and is not recursive.
-A type of a former that has no constituents, such as `Bool`, has none
-(`lang::quantified_type`, over the constituent relation of
-`lang::type_facts`).
+A type of a former that has no constituents, such as `Bool`, has none.
 
 r[quantifier.type.not-listed]
 `Int`, `Nat`, `String`, abstract types, recursive enumerations, and set,
 relation and sequence types are not listed, whatever their element types.
 
-r[quantifier.type.subset]
+r[quantifier.type.subset] lang::pattern_finite
 A [subset type](SubsetTypes.md) whose invariant is a pattern test that
-matches finitely many integers is listed, and so is a type built from it
-(`lang::pattern_finite`). A subset type's values are those of its base type
-that satisfy its invariants.
+matches finitely many integers is listed, and so is a type built from it.
+A subset type's values are those of its base type that satisfy its
+invariants.
 
 r[quantifier.type.alias]
 An alias of a subset type stands for the subset type in a binder's type, as
@@ -183,13 +181,13 @@ The *instances* of a quantifier over listed types are its body with each
 bound name standing for one value of its type, one instance for each
 combination of the bound names' values.
 
-r[quantifier.meaning.expansion]
+r[quantifier.meaning.expansion] lang::quantifier
 A `forall` over listed types means the conjunction of its instances, and an
-`exists` their disjunction: its *expansion* (`lang::quantifier`).
+`exists` their disjunction: its *expansion*.
 
-r[quantifier.meaning.some-instance]
+r[quantifier.meaning.some-instance] lang::forall_implies_exists
 Every quantifier has at least one instance. A `forall` implies the
-`exists` of the same body (`lang::forall_implies_exists`).
+`exists` of the same body.
 
 r[quantifier.meaning.order]
 The values of a type are listed in this order: `true`, then `false`; the
@@ -269,9 +267,9 @@ A quantifier is expanded only where it has few enough instances.
 
 **Legality rules**
 
-r[quantifier.limit]
+r[quantifier.limit] lang::quantifier_size
 A quantifier has at most 256 instances. One with more is an error that says
-how many it would have (`F0356`, `lang::quantifier_size`).
+how many it would have (`F0356`).
 
 r[quantifier.limit.count]
 The number of instances is the product, over the bound names of listed
@@ -521,22 +519,21 @@ pub proc guard_bound(lhs: GuardOperand, relation: GuardRelation, rhs: GuardOpera
 
 **Dynamic semantics**
 
-r[quantifier.guard.name]
+r[quantifier.guard.name] lang::name_alone
 A bound name's field `0`, where its type is a [newtype](Items.md#newtypes),
-is the bound name itself, and so on through nested newtypes. Any other
-field read from a bound name, and a field `0` read from a type that is not
-a newtype, is not the name (`lang::name_alone`).
+is the bound name itself, and so on through nested newtypes. No other
+field read from a bound name is the name.
 
 r[quantifier.guard.name.members]
 A membership read through such fields gives the members as the name's
 values.
 
-r[quantifier.guard.name.model]
-`lang::name_alone` is stated over the type model of [Types](Types.md#types),
-from the position of the bound name that an operand reads, or -1, its type
-and the underlying type of each newtype it is, and the fields read from
-it, outermost last. Its result is the `alone` of the operand's `GuardSide`
-(`quantifier.guard.domain.inputs`).
+r[quantifier.guard.name.model] lang::name_alone
+`name_alone` is stated over the type model of [Types](Types.md#types),
+from the position of the bound name that an operand reads, or -1 if it
+reads none, its type and the underlying type of each newtype it is, and
+the fields read from it, outermost last. Its result is the `alone` of the
+operand's `GuardSide` (`quantifier.guard.domain.inputs`).
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -573,23 +570,23 @@ pub proc name_alone(
 
 **Dynamic semantics**
 
-r[quantifier.guard.nat-floor]
+r[quantifier.guard.nat-floor] lang::nat_floor
 Where the guard gives a bound name only an upper bound, its range starts
-from 0 if its values are naturals: a `Nat`, or a newtype over one
-(`lang::nat_floor`, which gives `lang::guard_domain`'s `nat?`).
+from 0 if its values are naturals: a `Nat`, or a newtype over one.
 
-r[quantifier.guard.domain]
+r[quantifier.guard.domain] lang::guard_domain
 A bound name's *domain* comes from its conjuncts' bounds, in order: its
 members, from the first conjunct that gives them; otherwise a range, from
 the first conjunct that gives a lower bound and the first that gives an
 upper bound, starting from 0 for a name whose values are naturals and that
-has no lower bound; otherwise none (`lang::guard_domain`).
+has no lower bound; otherwise none.
 
-r[quantifier.guard.domain.inputs]
-`lang::guard_domain` is computed from the conjuncts as written: each side
-of each, with the position of the bound name that it is, written alone, and
-those of the bound names that it names. The bound names and the conjuncts
-are named by their positions, from 0.
+r[quantifier.guard.domain.inputs] lang::guard_domain
+`guard_domain` is computed from the conjuncts as written, each side of each
+as a `GuardSide`: the position of the bound name that the side is, written
+alone, or -1 if it is none, and the positions of the bound names that it
+names. The bound names and the conjuncts are named by their positions,
+from 0.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -691,12 +688,11 @@ over `Nat` the values from `Ns(0)` to `Ns(9)`.
 
 **Dynamic semantics**
 
-r[quantifier.guard.range]
+r[quantifier.guard.range] lang::range_domain
 For evaluation and enumeration, a membership bounds a bound name of any
 type, and a comparison bounds one only where its type is `Int`, `Nat`, or a
 [newtype](Items.md#newtypes) over them, a [pattern
-type](Types.md#subset-types) counting as its base type
-(`lang::range_domain`).
+type](Types.md#subset-types) counting as its base type.
 
 r[quantifier.guard.range.other]
 For evaluation and enumeration, a comparison of a bound name of any other
@@ -705,12 +701,10 @@ both [evaluation](../Eval.md#quantifiers) and
 [enumeration](../Check.md#quantifiers-up-to-the-bound) read it as any other
 bound name without a domain.
 
-r[quantifier.guard.range.model]
-`lang::range_domain` is stated over the type model of
-[Types](Types.md#types), from the bound name's type and the underlying type
-of each newtype it is, from the outermost in: each but the last is a
-newtype whose `under` is the next, and the last, not a newtype, is the type
-of the values that the comparison compares.
+r[quantifier.guard.range.model] lang::range_domain
+`range_domain` is stated over the type model of [Types](Types.md#types),
+from the bound name's type and the underlying type of each newtype it is.
+The last of them is the type of the values that the comparison compares.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -851,10 +845,9 @@ A [global expectation's](Global.md) short form, `expect n: forall (m:
 Method), E`, is a quantifier like any other, around `E` with any `where`
 clause.
 
-r[quantifier.binder.procedure]
+r[quantifier.binder.procedure] lang::quantifier_binder
 A binder whose type names a procedure is an error (`F0210`), whose help
-says to call the procedure in a global expectation instead
-(`lang::quantifier_binder`).
+says to call the procedure in a global expectation instead.
 
 ```fren
 -- `TypeName` is a type, listed or not, and `Component` a procedure.

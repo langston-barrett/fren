@@ -56,17 +56,19 @@ pub mod testing
   [Writing the reference](Style.md#examples)).
 - **Rule identifiers** (`lake test`, `ruleIds`): every line of
   `src/Reqs/**/*.md` outside a code block that starts with `r[` is a
-  well-formed rule identifier, and no two are the same (see [Writing the
+  well-formed rule identifier, alone or followed by one space and the
+  rule's links, and no two are the same (see [Writing the
   reference](Style.md#rule-identifiers)).
 - **Rules and their requirements** (`lake test`, `ruleReqs`): each rule of
   **Legality rules** or **Dynamic semantics** has a requirement or is
   listed in `test/unformalized_rules.txt`, with why where its chapter's
   section is not "(Interlock pending)", and a rule that is only partly
   formalized is listed too, saying what is missing once its chapter's
-  section is done; every item and clause that a marker names exists, and
-  the clauses that it names alone are clauses of the item they resolve to;
-  a block that formalizes a rule of
-  its chapter follows it; each item of a module named as one of its
+  section is done; the links on each rule's identifier line are well
+  formed, name nothing twice nor what the rule's name links, and every
+  item and clause that they name exists; no rule's prose names a
+  requirement in parentheses; a block that
+  formalizes a rule of its chapter follows it; each item of a module named as one of its
   chapter's constructs has a rule of its name, or, if it has clauses, each
   of them does, where the name is shaped as a rule identifier; and every
   rule that a test cites with `--@ reference: ID` exists
@@ -321,7 +323,15 @@ pub mod testing
   of range. It checks them with both front ends misreading models, as
   `FREN_MISREAD_MODELS` makes them ([Testing](../Models.md#testing)), so
   that what one front end knows and the other does not is a message that
-  differs: one refutes the model, and the other shows it. Only what may
+  differs: one refutes the model, and the other shows it. A run with
+  `--obligations` also compares the front ends' [obligations
+  dumps](../Cli.md#obligations), but for their metadata, from runs with
+  the dump on, whose messages it then compares. It is off by default, so
+  that a run compares the messages of what users run, which is what CI
+  runs. It writes the dumps of each spec where they differ
+  to `DIR` as `obligations-seed*`, counted in its summary, both all of them
+  and those that differ other than in the names of their constants: an
+  early signal, which fails nothing yet. Only what may
   legitimately differ is not compared:
   - A parse error stops the `fren` command, while Lean recovers at the
     next command: Lean must then report a parse error in the same item, on
@@ -1123,9 +1133,9 @@ scripts/heavy --offline /tmp/fren-SHA/fren check FILE
 `fren` needs nothing else, for `fren check`, `quickcheck`, `mutate` and
 `fmt`. `fren_test --job JOB` reads the test files and specs of the
 checkout, and writes scratch files under its `.lake`. Its jobs `ui`,
-`uiMisread`, `uiAskAgain`, `smtAgreement` and `leanTokens` load the
-hosted front end, the `.olean` files of `Fren` and its dependencies; for
-them, run
+`uiMisread`, `uiAskAgain`, `smtAgreement`, `obligationsAgreement` and
+`leanTokens` load the hosted front end, the `.olean` files of `Fren` and
+its dependencies; for them, run
 `scripts/heavy lake build Fren` in the checkout, which compiles no C
 code and links nothing, and then `scripts/heavy --offline lake env
 /tmp/fren_test-SHA/fren_test --job ui FILE`. Run the binaries that CI
@@ -1174,6 +1184,21 @@ secret, which anyone who can push a branch can read, until it is moved to
 an environment that only `main` can use. Run by hand (`gh workflow run
 pr-review -f pr=N`), it posts only on the pull request that its `post`
 input names.
+
+`scripts/local-review` gives an author a pre-push check of its branch, by
+OpenAI's Codex CLI, before CI's review (AGENTS.md says when). It composes
+the brief with `compose.py` and `brief.md` as `origin/main` (or `--base
+REF`) has them, adds a preamble that says where the check differs from
+CI's review, and runs Codex in a scratch copy of the head's tree. The copy
+lacks the files that CI removes (AGENTS.md, CLAUDE.md, `.claude`,
+`.mcp.json`, `review.md`, `.review` and symbolic links) and those that
+steer Codex (AGENTS.override.md, `.codex` and `.agents`). Codex runs with a
+read-only sandbox, which stops writes and the network but not reads
+elsewhere, and with no web search, apps, browsers or user configuration.
+It prints the result, whose first line starts "Pre-push check of", never
+"Review of", and saves it in `.lake/local-review/`; it posts nothing.
+`--dry-run` prints the prompt and runs no model, and `python3 -I -B
+scripts/local_review_test.py` tests the script with a stand-in for Codex.
 
 A pull request merges once `pre-merge` and `lint` pass on its head. Its
 branch need not be up to date with `main`: `pre-merge` tests the head

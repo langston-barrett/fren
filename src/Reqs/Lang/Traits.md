@@ -69,7 +69,7 @@ A method with type parameters is an error (`F0222`).
 r[traits.member.use]
 A `use` in the block of a member is an error (`F0222`).
 
-r[traits.member.rule]
+r[traits.member.rule] lang::trait_member
 `lang::trait_member` states which members a trait accepts, from what the
 member is as written, and whether it is written `pub`, has type
 parameters, or has a `use` in its block.
@@ -96,10 +96,10 @@ pub proc trait_member(
 }
 ```
 
-r[traits.member.order]
+r[traits.member.order] lang::trait_member_phase
 The messages about a trait's members come by their phase, and in the
 order written within a phase: those of the methods first, then those of
-the laws, then those of the expectations (`lang::trait_member_phase`). A
+the laws, then those of the expectations. A
 member of another kind is reported, and no other member is. Each member
 reports its own errors, and its errors stop only what follows them within
 it.
@@ -207,9 +207,9 @@ what the author means, as Larch's `implies` does.
 
 **Dynamic semantics**
 
-r[traits.expect.meaning]
+r[traits.expect.meaning] lang::trait_expectation
 An expectation of a trait holds when its claims hold in every
-interpretation that meets the trait (`lang::trait_expectation`).
+interpretation that meets the trait.
 
 ```fren
 pub type Interpretation
@@ -240,10 +240,10 @@ expectation](../Check.md#global-expectations), each with the trait's laws
 among its hypotheses, but for its realizability, whose queries ask of its
 own assumptions and calls alone.
 
-r[traits.expect.core]
+r[traits.expect.core] lang::law_flags
 An expectation of a trait is in the decidable core where it is and every
 law of its trait is, and `undecidable` is an error in it where it is in
-the expectation or in a law (`lang::law_flags`, one law at a time).
+the expectation or in a law, taking one law at a time.
 
 ```fren
 -- What is known of an expectation, or of a law, before it is checked.
@@ -262,14 +262,14 @@ pub proc law_flags(expectation: CheckFlags, law: CheckFlags): (det combined: Che
 }
 ```
 
-r[traits.expect.lawful]
+r[traits.expect.lawful] check::query_hypotheses
 An expectation of a trait with laws, and with assumptions or calls, has a
 vacuity check of its own: whether its assumptions and calls can hold
 together with the laws. A call contributes to it as to the item's other
 checks: its bindings, and what its procedure guarantees where the
 procedure's assumptions hold. Whether those assumptions hold is the call's
 own check (`F0604`), so a call whose assumptions fail is not also a
-contradiction here (`check::query_hypotheses`). Where the assumptions and
+contradiction here. Where the assumptions and
 calls cannot hold with the laws, it is an error (`F0602`). Where
 the solver does not decide it, it is a warning (`F0608`). Its other checks
 rest on this check as they rest on its realizability: where it does not
@@ -277,17 +277,17 @@ pass, a pass of a proof check is inconclusive (`F0664`), and a witness
 check's verdict stands ([Evidence](../Evidence.md#the-laws-of-a-trait)).
 Laws that contradict each other fail it too.
 
-r[traits.expect.laws-unchecked]
+r[traits.expect.laws-unchecked] check::law_premise, check::query_hypotheses
 A verdict of an expectation of a trait with laws that comes from an
 `unsat` query, such as a pass of an expectation or a failure of a cover
 goal, rests on the laws. Where the expectation has no assumptions or
 calls, and so no vacuity check under the laws, the verdict rests on what
 no check settles, the laws' consistency, which Fren does not check yet
 (#594), and its constraint says so once, whatever its other checks give
-(`F0665`, `check::law_premise`). One with assumptions or calls always has
+(`F0665`). One with assumptions or calls always has
 that check, since its checks are always the solver's (`F0215`). A verdict that comes from a model, such as a
 counterexample, rests on nothing more, since the model meets the laws.
-Realizability's queries have no laws (`check::query_hypotheses`).
+Realizability's queries have no laws.
 
 r[traits.expect.once]
 An expectation of a trait is checked once, in the trait.
@@ -296,9 +296,9 @@ r[traits.law.setting]
 `fren.evidence` or `fren.enumeration.size` set before a law is an error
 (`F0215`): a law has no checks of its own.
 
-r[traits.expect.evidence]
+r[traits.expect.evidence] lang::trait_expectation_evidence
 `fren.evidence` set to testing or enumeration for an expectation of a
-trait is an error (`F0215`, `lang::trait_expectation_evidence`).
+trait is an error (`F0215`).
 
 ```fren
 pub proc trait_expectation_evidence(tested?, enumerated?): (det accepted?) {
