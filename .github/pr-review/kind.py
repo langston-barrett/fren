@@ -2,36 +2,45 @@
 
 Usage: kind.py PR_JSON EVENT OUT_DIR
        kind.py verdict PR_JSON SHA
+       kind.py wording PREVIOUS HEAD
 
 PR_JSON is `gh pr view --json headRefOid,comments`. EVENT is the
 workflow's event. The first form prints `key=value` lines for
 `$GITHUB_OUTPUT`: `kind` (`full`, `fixes`, `rebase` or `skip`), `reason`,
 and, for a light check or a wording-only skip, `previous`, the previously
-reviewed head. For either it writes the previous review to OUT_DIR/previous-review.md and
-the comment that asks for the check to OUT_DIR/request.md. The second form
-prints the verdict of the last review of SHA, or nothing, for prepare.sh's
-skip of an update from `main`, so that both read a review the same way.
+reviewed head. For either it writes the previous review to
+OUT_DIR/previous-review.md and the comment that asks for it to
+OUT_DIR/request.md. The second form prints the verdict of the last review
+of SHA, or nothing, for prepare.sh's skip of an update from `main`, so
+that both read a review the same way. The third form, run by prepare.sh
+in a repository that has both commits, prints why HEAD cannot skip as
+wording only after PREVIOUS (`wording_problem`), or nothing if it can.
 
 AGENTS.md allows two light checks, each only when the previous head's
 review was clean: "rebase only", when the new head only rebases it, and
-"fixes only", when it only fixes that review's non-blocking findings. The
-author, the reviewers and the coordinator all post under one login, so a
-comment's login says nothing about who wrote it. So a light check needs a
-comment that is not a review, names the head (by at least its first 7 hex
-digits), and starts with "fixes only" or "rebase only"; the latest such
+"fixes only", when it only fixes that review's non-blocking findings. It
+also lets a head that only fixes the wording of such a review skip any
+check: "wording only" (below). The author, the reviewers and the
+coordinator all post under one login, so a comment's login says nothing
+about who wrote it. So each of the three needs a comment that is not a
+review, names the head (by at least its first 7 hex digits), and starts
+with "fixes only", "rebase only" or "wording only"; the latest such
 comment that names the head decides. The head that it checks against is
-the one reviewed last before that comment, which must be another head than
-this one, and whose review must have found no blocking issues. Otherwise
-the head gets a full review. A workflow_run skips a head that already has a
-review.
+the one reviewed last before that comment, which must be another head
+than this one, and whose review must have found no blocking issues.
+Otherwise the head gets a full review. A workflow_run skips a head that
+already has a review.
 
-A head that only fixes the wording of a clean review's points gets no
-check at all: a comment that starts with "wording only", read by the same
-rules as a request for a light check, skips the head on any event, and the
-coordinator checks that the diff from the previous head changes only
-prose before merging it. The skip names that head as `previous`, so that
-prepare.sh can check that the new head is one commit on top of it. A later comment that names the head without
-asking for a check gets it a full review, as for a light check.
+A "wording only" request skips the head on any event, with `previous`
+set, so that prepare.sh can check what it can of the rule mechanically:
+the head is one commit on top of `previous` and changes neither AGENTS.md
+nor anything under `.github/` (`wording_problem`); otherwise the head
+gets a full review. The rest is the coordinator's to confirm before the
+merge: that each change answers a "fix before merge" finding of the
+previous review that the request lists and changes only prose outside
+the rule paragraphs of `src/Reqs`, and that nothing else changed. A
+later comment that names the head without starting with one of the three
+gets it a full review, as for a light check.
 
 Anyone who can read the repository can comment, so only the comments of
 those who can push count, as reviews and as requests: those whose
@@ -45,6 +54,7 @@ decided by prepare.sh, which has the commits.
 
 import json
 import re
+import subprocess
 import sys
 
 REVIEW = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues|blocking issues)")
@@ -113,7 +123,10 @@ def decide(pr, event):
     if not clean:
         return {"kind": "full", "reason": f"the review of {previous} found blocking issues, so the head gets a fresh review"}
     if kind == "wording":
-        kind, reason = "skip", f"the last comment that names the head says it only fixes the wording of the clean review of {previous}; the coordinator checks that the diff from {previous} changes only prose"
+        kind, reason = "skip", (
+            f"the last comment that names the head says it only fixes the wording of the clean review of {previous}; "
+            "the coordinator confirms that each change answers a fix-before-merge finding that the comment lists "
+            "and changes only prose outside rule paragraphs, and that nothing else changed")
     else:
         reason = f"the last comment that names the head starts with \"{kind} only\""
     return {
@@ -131,7 +144,30 @@ def verdict(pr, sha):
     return found[-1][len(f"Review of {sha}: "):] if found else None
 
 
+def git(*args):
+    return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
+
+
+def wording_problem(previous, head):
+    """Why `head` cannot skip as wording only after `previous`, or None:
+    it must be one commit on top of `previous` and change neither AGENTS.md
+    nor anything under `.github/`. Runs git in the current directory."""
+    if git("rev-list", "--parents", "-n", "1", head).split() != [head, previous]:
+        return f"{head} is not one commit on top of {previous}"
+    changed = git("diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z",
+                  previous, head).split("\0")
+    # The process and the workflow, whose prose decides how reviews go.
+    held = [p for p in changed if p == "AGENTS.md" or p.startswith(".github/")]
+    if held:
+        return f"{head} changes {held[0]}, which a wording-only head never changes"
+    return None
+
+
 def main():
+    if sys.argv[1] == "wording":
+        previous, head = sys.argv[2:]
+        print(wording_problem(previous, head) or "")
+        return
     if sys.argv[1] == "verdict":
         pr_json, sha = sys.argv[2:]
         with open(pr_json) as f:

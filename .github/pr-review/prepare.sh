@@ -114,11 +114,13 @@ if [ -n "$previous" ] && ! auth_fetch "$previous"; then
   previous=
 fi
 # A wording-only head is one commit on top of the reviewed head, with no
-# rebase (AGENTS.md); any other gets a full review.
+# rebase, and changes neither AGENTS.md nor `.github/` (AGENTS.md); any
+# other gets a full review.
 if [ "$kind" = skip ] && [ -n "$previous" ]; then
-  if [ "$(git rev-list --parents -n 1 "$head")" != "$head $previous" ]; then
+  problem=$(python3 -I "$here/kind.py" wording "$previous" "$head")
+  if [ -n "$problem" ]; then
     kind=full
-    reason="$head asks to skip as wording only, but is not one commit on top of $previous"
+    reason="the head asks to skip as wording only, but $problem"
   fi
   previous=
 fi

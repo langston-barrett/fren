@@ -2,9 +2,12 @@
 `python3 -B -m unittest discover -s .github/pr-review` (the `lint` workflow
 does)."""
 
+import os
+import subprocess
+import tempfile
 import unittest
 
-from kind import decide, verdict
+from kind import decide, verdict, wording_problem
 
 OLD = "a" * 40
 HEAD = "b" * 40
@@ -158,6 +161,59 @@ class Decide(unittest.TestCase):
     def test_reviews_are_not_requests(self):
         p = pr(review("01:00", OLD), comment("02:00", f"Review of {HEAD}: no blocking issues (fixes only)"))
         self.assertEqual(self.kind(p, "workflow_run"), "skip")
+
+
+class Wording(unittest.TestCase):
+    """prepare.sh's check of a wording-only head (`wording_problem`), in a
+    repository of its own."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.cwd = os.getcwd()
+        os.chdir(self.dir.name)
+        self.addCleanup(os.chdir, self.cwd)
+        self.git("init", "-q", "-b", "main")
+        self.base = self.commit("README.md", "base")
+        self.reviewed = self.commit("src/Reqs/A.md", "reviewed")
+
+    def git(self, *args):
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@example.com",
+               "GIT_COMMITTER_NAME": "a", "GIT_COMMITTER_EMAIL": "a@example.com"}
+        return subprocess.run(["git", *args], check=True, capture_output=True, text=True,
+                              env=env).stdout.strip()
+
+    def commit(self, path, text):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "a") as f:
+            f.write(text + "\n")
+        self.git("add", path)
+        self.git("commit", "-q", "-m", text)
+        return self.git("rev-parse", "HEAD")
+
+    def test_one_commit_on_top(self):
+        head = self.commit("src/Reqs/A.md", "wording")
+        self.assertIsNone(wording_problem(self.reviewed, head))
+
+    def test_two_commits_on_top(self):
+        self.commit("src/Reqs/A.md", "wording")
+        head = self.commit("src/Reqs/A.md", "more wording")
+        self.assertIn("not one commit on top", wording_problem(self.reviewed, head))
+
+    def test_rebased(self):
+        # The same wording, on a reviewed head rebased onto a newer main.
+        self.git("checkout", "-q", "-b", "newer", self.base)
+        self.commit("README.md", "newer main")
+        self.commit("src/Reqs/A.md", "reviewed")
+        head = self.commit("src/Reqs/A.md", "wording")
+        self.assertIn("not one commit on top", wording_problem(self.reviewed, head))
+
+    def test_process_and_workflow(self):
+        for path in ("AGENTS.md", ".github/pr-review/brief.md", ".github/workflows/x.yml"):
+            self.git("checkout", "-q", "--detach", self.reviewed)
+            head = self.commit(path, "wording")
+            self.assertIn(path, wording_problem(self.reviewed, head) or "", path)
 
 
 if __name__ == "__main__":
