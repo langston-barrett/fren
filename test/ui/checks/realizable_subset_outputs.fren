@@ -15,9 +15,7 @@ pub struct Lamp { light: Light, walk? }
 type Safe = s: Lamp where invariant: not (s.light = Light::Green and s.walk?)
 
 proc turn_green(now: Safe): (next: Safe) {  --~ error: `turn_green` is not realizable
-    ensure to_green: when now.light = Light::Red, next = { now with
-        light := Light::Green,
-    }
+    ensure to_green: when now.light = Light::Red, next = { now with light := Light::Green }
 }
 
 -- `det` asks it too, before determinism, which then rests on it.

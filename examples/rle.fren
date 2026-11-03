@@ -18,16 +18,10 @@ fn size(o: Option<Run>): Nat := match o {
 pub proc step(current: Option<Run>, next: Int): (run: Run, emitted: Option<Run>) {
     ensure extend:
         when current is Some(r) and r.value = next,
-        run = Run {
-            value := next,
-            count := r.count + 1,
-        } and emitted = None
+        run = Run { value := next, count := r.count + 1 } and emitted = None
     ensure start:
         unless current is Some(r) and r.value = next,
-        run = Run {
-            value := next,
-            count := 1,
-        } and emitted = current
+        run = Run { value := next, count := 1 } and emitted = current
 
     -- The current run holds the value just read.
     expect fresh: run.value = next

@@ -1888,13 +1888,11 @@ formatting them means updating those too. They are formatted a group at a
 time, each only where the new layout reads better than the old, and this
 list is then removed (#509). -/
 def fmtPending : List String :=
-  ["test/cli/commands/counterexample_newtype.fren",
-   "test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
+  ["test/ui/checks/recursion.fren", "test/ui/checks/recursion_bool_payload.fren",
    "test/ui/checks/subset_obligations.fren",
    "test/ui/lang/bool_members.fren", "test/ui/lang/cardinality.fren",
    "test/ui/lang/cardinality_static.fren", "test/ui/lang/chained_comparisons.fren",
-   "test/ui/lang/checking_static.fren", "test/ui/lang/constants.fren",
-   "test/ui/lang/constants_imported.fren", "test/ui/lang/constants_static.fren",
+   "test/ui/lang/checking_static.fren", "test/ui/lang/constants_static.fren",
    "test/ui/lang/datatypes.fren", "test/ui/lang/datatypes_static.fren",
    "test/ui/lang/declared_types_static.fren", "test/ui/lang/defined_functions.fren",
    "test/ui/lang/defined_functions_static.fren", "test/ui/lang/defined_outputs.fren",
@@ -1903,7 +1901,7 @@ def fmtPending : List String :=
    "test/ui/lang/generic_functions.fren", "test/ui/lang/generic_functions_contracts.fren",
    "test/ui/lang/generic_functions_static.fren", "test/ui/lang/generics.fren",
    "test/ui/lang/generics_guards_contracts.fren", "test/ui/lang/generics_pattern_elements.fren",
-   "test/ui/lang/generics_recursive_within.fren", "test/ui/lang/generics_static.fren",
+   "test/ui/lang/generics_static.fren",
    "test/ui/lang/generics_subset_types.fren", "test/ui/lang/global_static.fren",
    "test/ui/lang/guards.fren", "test/ui/lang/guards_static.fren",
    "test/ui/lang/higher_order_obligations.fren", "test/ui/lang/instances_static.fren",
@@ -1924,7 +1922,7 @@ def fmtPending : List String :=
    "test/ui/lang/quantifiers.fren", "test/ui/lang/quantifiers_elements.fren",
    "test/ui/lang/quantifiers_let.fren", "test/ui/lang/quantifiers_places.fren",
    "test/ui/lang/quantifiers_static.fren", "test/ui/lang/range_patterns.fren",
-   "test/ui/lang/record_updates.fren", "test/ui/lang/record_updates_static.fren",
+   "test/ui/lang/record_updates_static.fren",
    "test/ui/lang/refines.fren", "test/ui/lang/refines_pattern.fren",
    "test/ui/lang/relations_static.fren", "test/ui/lang/scoping.fren",
    "test/ui/lang/sequences.fren", "test/ui/lang/sequences_static.fren",
@@ -1934,8 +1932,7 @@ def fmtPending : List String :=
    "test/ui/lang/tables.fren", "test/ui/lang/tables_scrutinee.fren",
    "test/ui/lang/tables_scrutinee_static.fren", "test/ui/lang/tables_static.fren",
    "test/ui/lang/type_facts.fren", "test/ui/lang/types.fren",
-   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren",
-   "test/ui/lints/records.fren", "test/ui/lints/updates_covers.fren"]
+   "test/ui/lints/closures.fren", "test/ui/lints/methods.fren"]
 
 /-- A file's pieces (`fmt::Piece`), each comment with whether it starts
 its line, and the paths the `use` items import, sorted. With `all`, every
@@ -2072,7 +2069,14 @@ def apartLines (out : String) (blanks : Std.HashMap Nat Nat) : Std.HashSet Nat :
   let (lineOf, starts) := FrenCli.Fmt.lineTable chars
   let text (l : Nat) : String :=
     String.ofList (chars.extract starts[l]! ((starts[l + 1]?.map (· - 1)).getD chars.size)).toList
-  let spans := lay.items.map fun (f, l) => (lineOf[toks[f]!.span.start]!, lineOf[toks[l]!.span.stop - 1]!)
+  -- An item's first and last lines (`fmt::item_lines`), from those of its
+  -- first and last tokens, of the comments after it and of the next token.
+  let spans := lay.items.map fun (f, l) =>
+    let stop := toks[l]!.span.stop
+    let next : Option Nat := toks[l + 1]?.map fun (t : FrenCli.Token) => t.span.start
+    let trailing := comments.toList.filter (fun (c : FrenCli.Span) => c.start ≥ stop && next.all (c.stop ≤ ·))
+      |>.map fun (c : FrenCli.Span) => (lineOf[c.start]!, lineOf[c.stop - 1]!)
+    FrenCli.Fmt.itemLines lineOf[toks[f]!.span.start]! lineOf[stop - 1]! trailing (next.map (lineOf[·]!))
   let annotations := comments.filterMap fun c =>
     (FrenCli.Fmt.annotationReach (FrenCli.Fmt.text chars c)).map (lineOf[c.start]!, ·)
   let mut apart : Std.HashSet Nat := {}

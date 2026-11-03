@@ -276,14 +276,9 @@ pub proc interpretation_at(
     at_a0: Value,            -- the interpretation's value at `A0`
     at_a1: Value,            -- at `A1`
 ): (det recorded?) {
-    ensure rule: recorded? iff ((when Argument::A0 in pres, Point {
-        arg := Argument::A0,
-        value := at_a0,
-    } in posts)
-        and (when Argument::A1 in pres, Point {
-            arg := Argument::A1,
-            value := at_a1,
-        } in posts))
+    ensure rule: recorded?
+        iff ((when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
+        and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts))
 
     expect unconstrained: when pres = {}, recorded?
 }
@@ -301,14 +296,8 @@ expect interpretation_detail(
         false,
         false,
         false,
-        if (when Argument::A0 in pres, Point {
-            arg := Argument::A0,
-            value := at_a0,
-        } in posts)
-            and (when Argument::A1 in pres, Point {
-                arg := Argument::A1,
-                value := at_a1,
-            } in posts)
+        if (when Argument::A0 in pres, Point { arg := Argument::A0, value := at_a0 } in posts)
+            and (when Argument::A1 in pres, Point { arg := Argument::A1, value := at_a1 } in posts)
             then Outcome::Unsat else Outcome::Sat,
         Outcome::Unknown,
     )

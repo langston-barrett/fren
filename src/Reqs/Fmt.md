@@ -412,7 +412,7 @@ three hold:
      operator whose whole right operand it is, and only from that one.
 
    Otherwise the list is horizontal when 1 and 2 hold, however long its
-   line.
+   line, but for a record wider than 18 columns, as below.
 
 A list that is not its line's expression is an operand, as `f(a)` and
 `g(b)` are in `x and f(a) = g(b)`, a branch, as in `if c then f(a) else
@@ -432,23 +432,40 @@ set literal is not exempt: it is Rust's array, which opens with `[`, and
 so are a Boolean block's members. Until `fren fmt` breaks expressions,
 every other such list stays on one line.
 
+A record literal or update whose fields are wider than 18 columns,
+rustfmt's `struct_lit_width`, is a *wide record* (`fmt::wide_record?`). A
+wide record, or a list that holds one at any depth, such as a call's
+arguments or a sequence's elements, is vertical where its line would end
+past column 100 with all that follows it on that line, wherever it is,
+even where a field or a method follows it. Where such a list is vertical
+only for the wide records it holds, every list in it that holds one is
+vertical too (`fmt::wide_within`).
+
+> **Rationale:** records may be 40 wide, where rustfmt's 18 split some of
+> a run of short literals that read alike and not others (#546). Wide
+> records stay vertical where their line is too long, as rustfmt's 18
+> would have them, so that the wider limit only joins records whose lines
+> fit.
+
 | List | Widest | rustfmt's option |
 |---|---|---|
 | arguments | 60 | `fn_call_width` |
 | parameters and results | 100 | `max_width`, which a function's signature must fit |
 | elements of a sequence or set literal, and members of a Boolean block | 60 | `array_width` |
-| fields of a record literal or update | 18 | `struct_lit_width` |
+| fields of a record literal or update | 40 | `struct_lit_width`, which is 18 by default |
 | a block's single member | 100 | `max_width`, which a function on one line must fit |
 
-These are rustfmt's defaults, those of `use_small_heuristics =
-"Default"`. The lists of a file are laid out from the outside in, each on
-the lines that the lists around it give, so a list in one that is
-horizontal is horizontal too. Otherwise each list is laid out on its own:
-`fmt::list_layout` decides it from its own elements and line, as rustfmt
-lays out each, and two lists that look alike may be laid out differently.
-So of the arms of one `match`, only one whose call is too wide breaks it,
-and of two record literals alike, only one too wide is vertical
-(`test/cli/fmt/independent.fren`):
+These are rustfmt's defaults, those of `use_small_heuristics = "Default"`,
+but for a record's fields. rustfmt's 18 columns split some of a run of
+short record literals that read alike and not others, as each list is laid
+out on its own, so `fren fmt` allows 40 (#546). The lists of a file are
+laid out from the outside in, each on the lines that the lists around it
+give, so a list in one that is horizontal is horizontal too. Otherwise
+each list is laid out on its own: `fmt::list_layout` decides it from its
+own elements and line, as rustfmt lays out each, and two lists that look
+alike may be laid out differently. So of the arms of one `match`, only one
+whose call is too wide breaks it, and of two record literals alike, only
+one too wide is vertical (`test/cli/fmt/independent.fren`):
 
 ```text
 ensure r1: r = match n {
@@ -457,10 +474,10 @@ ensure r1: r = match n {
         wrap(n + 1000000000 + m) + wrap(n + 2000000000 + m) + wrap(3)
     ),
 }
-ensure r2: p = P { x := n, y := m }
+ensure r2: p = P { x := n + 1000000000, y := m + 2000000000 }
 ensure r3: q = P {
-    x := n + 1,
-    y := m + 1,
+    x := n + 10000000000,
+    y := m + 2000000000,
 }
 ```
 
@@ -498,14 +515,17 @@ pub fn always_vertical?(list: ListKind) := list = Arms
 pub fn stacked?(list: ListKind, n: Int, continued?, line_end: Int) := list = Members
     and (n > 1 or continued? or line_end > 100)
 
--- The widest a list may be on one line, as rustfmt's defaults allow.
+-- The widest a list may be on one line, as rustfmt's defaults allow, but for a record's fields.
 pub fn width_limit(list: ListKind): Int := match list {
     Arms => 0,
     Arguments | ApplicationArguments => 60,
     Parameters | FunctionParameters | Members => 100,
     Elements => 60,
-    Fields => 18,
+    Fields => 40,
 }
+
+-- A wide record: one whose fields are wider than rustfmt's `struct_lit_width` of 18.
+pub fn wide_record?(list: ListKind, width: Int) := list = Fields and width > 18
 
 -- A vertical list's last element is followed by a comma.
 pub fn ends_with_comma?(list: ListKind) :=
@@ -515,22 +535,25 @@ pub proc one_line(
     list: ListKind,
     n: Int,                  -- its elements
     broken?,                 -- some element must span several lines
+    wide?,                   -- it is a record wider than 18, or holds one (`fmt::list_layout`)
     width: Int,              -- the width of its elements on one line, separated by `, `
     start: Int,              -- the column where its first element would start
     line_end: Int,           -- the column where its line would end, with it on one line
+    rest_end: Int,           -- where its line would end, with all that follows it on one line
     own_line?,               -- it is its line's expression (`fmt::own_line`)
     continued?,              -- its line continues an item from an earlier line
+    within?,                 -- a list around it is vertical only for its wide records (`fmt::wide_within`)
 ): (det vertical?) {
     ensure rule: vertical? iff (n > 0 and (always_vertical?(list)
         or stacked?(list, n, continued?, line_end) or broken? or width > width_limit(list)
-        or (own_line? and start <= 100 < line_end)))
+        or (own_line? and start <= 100 < line_end) or (wide? and (rest_end > 100 or within?))))
 
     expect empty: when n = 0, not vertical?
     expect arms: when n > 0 and list = Arms, vertical?
     -- A block's members are one to a line when it has two or more, however short.
     expect members: when n > 1 and list = Members, vertical?
     -- A block with one short member is on one line.
-    expect single_member: when list = Members and n = 1 and not continued? and not broken?
+    expect single_member: when list = Members and n = 1 and not continued? and not broken? and not wide?
         and width <= 100 and line_end <= 100, not vertical?
     -- `): (y: Int) {`: a block after a signature that spans several lines is vertical.
     expect after_long_signature: when list = Members and n > 0 and continued?, vertical?
@@ -540,72 +563,142 @@ pub proc one_line(
     expect long_member: when list = Members and n = 1 and line_end > 100, vertical?
     expect fits: when n > 0 and not always_vertical?(list)
         and not stacked?(list, n, continued?, line_end) and not broken?
-        and width <= width_limit(list) and line_end <= 100, not vertical?
-    expect just_fits: when list = Arguments and n = 2 and not broken? and width = 60 and line_end = 100, not vertical?
+        and width <= width_limit(list) and line_end <= 100 and not (wide? and (rest_end > 100 or within?)),
+        not vertical?
+    expect just_fits: when list = Arguments and n = 2 and not broken? and not wide? and width = 60 and line_end = 100,
+        not vertical?
     expect just_too_wide: when list = Arguments and n = 2 and width = 61, vertical?
+    -- A record's fields fit in 40 columns, where rustfmt's default is 18 (#546).
+    expect fields_just_fit: when list = Fields and n = 2 and not broken? and width = 40 and line_end = 100
+        and rest_end = 100 and not within?, not vertical?
+    expect fields_just_too_wide: when list = Fields and n = 2 and width = 41, vertical?
+    -- A record wider than 18, or a list that holds one, is vertical where its line, with all that
+    -- follows it, is too long, wherever it is; any other list is held to its line's expression.
+    expect wide_long_line: when n > 0 and wide? and rest_end = 101, vertical?
+    -- Inside a list that is vertical only for its wide records, it is vertical too.
+    expect wide_within_vertical: when n > 0 and wide? and within?, vertical?
+    expect narrow_operand: when list = Fields and n = 2 and not broken? and not wide? and width = 18
+        and not own_line? and not continued?, not vertical?
     expect just_too_long: when list = Fields and n = 1 and width = 18 and start = 80 and line_end = 101 and own_line?,
         vertical?
     -- Breaking a list helps its line only where the list is the line's expression: elsewhere, the
     -- rest of the expression would still be on the lines of its brackets.
     expect operand: when not own_line? and not always_vertical?(list)
         and not stacked?(list, n, continued?, line_end) and not broken?
-        and width <= width_limit(list), not vertical?
+        and width <= width_limit(list) and not (wide? and (rest_end > 100 or within?)), not vertical?
     -- A list that is vertical for its line's length alone shortens the line: the line fits up to its
     -- first element, and is too long with the list on it.
     expect helps: when vertical? and not always_vertical?(list)
         and not stacked?(list, n, continued?, line_end) and not broken?
-        and width <= width_limit(list), own_line? and start <= 100 < line_end
+        and width <= width_limit(list) and not wide?, own_line? and start <= 100 < line_end
 }
 ```
 
 `fmt::list_layout` decides it over the elements themselves, each with its
-width on one line and whether it must span several lines, from the
-column where its first element would start, and the width of what would
-follow its last on that line: its closing bracket, with the space before
-a brace, and the tokens after it up to where a line may end. Where that
-line ends an element of a vertical list, the comma that the list adds
-after it counts too. After a block's `}`, a comment on its line counts
-too, with the two spaces before it. Whether the list is its line's
-expression is decided by [`fmt::own_line`](#a-lists-own-line), and
-whether its line continues an item by [`fmt::continued`](#a-blocks-line).
-`fmt::list_layout` refines `fmt::one_line`, and the formatter's decision
-implements both, proved in Lean:
+width on one line, whether it must span several lines and whether it holds
+a list that `fmt::wide_list` finds wide, from the column where its first
+element would start, and the width of what would follow its last on that
+line: its closing bracket, with the space before a brace, and the tokens
+after it up to where a line may end. Where that line ends an element of a
+vertical list, the comma that the list adds after it counts too. After a
+block's `}`, a comment on its line counts too, with the two spaces before
+it. For a list that `fmt::wide_list` finds wide, all that follows its last
+element counts as well, as `rest`, with every list after it on one line,
+up to a comment or a line break that formatting keeps or that a list or
+right side around it decides: it decides only the clause for wide lists,
+and the line's end by `after` still decides the others. Whether the list
+is its line's expression is decided by
+[`fmt::own_line`](#a-lists-own-line), whether its line continues an item
+by [`fmt::continued`](#a-blocks-line), and whether a list around it is
+vertical only for its wide records by `fmt::wide_within`, from the outside
+in. `fmt::list_layout` refines `fmt::one_line`, and the formatter's
+decisions implement them, proved in Lean:
 
 ```fren
--- The elements of a list, each with its width on one line and whether it must span several lines.
-pub enum ElementList { Nil, Cons(Int, Bool, ElementList) }
+-- The elements of a list, each with its width on one line, whether it must span several lines,
+-- and whether it holds a list that is a record wider than 18 or holds one (`list_layout`'s `wide?`).
+pub enum ElementList { Nil, Cons(Int, Bool, Bool, ElementList) }
 
 use self::ElementList::{Cons, Nil}
 
 pub fn count(es: ElementList): Int := match es {
     Nil => 0,
-    Cons(_, _, rest) => 1 + count(rest),
+    Cons(_, _, _, rest) => 1 + count(rest),
 }
 
 pub fn any_broken?(es: ElementList) := match es {
     Nil => false,
-    Cons(_, broken?, rest) => broken? or any_broken?(rest),
+    Cons(_, broken?, _, rest) => broken? or any_broken?(rest),
+}
+
+pub fn any_wide?(es: ElementList) := match es {
+    Nil => false,
+    Cons(_, _, wide?, rest) => wide? or any_wide?(rest),
 }
 
 -- The width of the elements on one line, separated by `, `.
 pub fn joined(es: ElementList): Int := match es {
     Nil => 0,
-    Cons(w, _, Nil) => w,
-    Cons(w, _, rest) => w + 2 + joined(rest),
+    Cons(w, _, _, Nil) => w,
+    Cons(w, _, _, rest) => w + 2 + joined(rest),
 }
+
+-- It is a record wider than 18, or an element holds one, at any depth.
+pub fn holds_wide?(list: ListKind, es: ElementList) :=
+    wide_record?(list, joined(es)) or any_wide?(es)
+
+-- Whether a list is a record wider than 18, or holds one, which an element of the list around it
+-- then holds.
+pub proc wide_list(list: ListKind, elements: ElementList): (det wide?) {
+    ensure rule: wide? iff holds_wide?(list, elements)
+}
+
+-- It is vertical for the rule but its wide records, its line ending at `line_end`.
+pub fn base_vertical?(
+    list: ListKind,
+    elements: ElementList,
+    start: Nat,
+    line_end: Int,
+    own_line?,
+    continued?
+) :=
+    count(elements) > 0 and (always_vertical?(list)
+        or stacked?(list, count(elements), continued?, line_end) or any_broken?(elements)
+        or joined(elements) > width_limit(list) or (own_line? and start <= 100 < line_end))
 
 pub proc list_layout(
     list: ListKind,
     elements: ElementList,
     start: Nat,              -- the column where its first element would start
     after: Nat,              -- the width of what would follow its last element on its line
+    rest: Nat,               -- the width of all that follows its last element, to a kept line break
     own_line?,               -- it is its line's expression (`fmt::own_line`)
     continued?,              -- its line continues an item from an earlier line
+    within?,                 -- a list around it is vertical only for its wide records
 ): (det vertical?) {
     let line_end: Int := start + joined(elements) + after
-    ensure rule: vertical? iff (count(elements) > 0 and (always_vertical?(list)
-        or stacked?(list, count(elements), continued?, line_end) or any_broken?(elements)
-        or joined(elements) > width_limit(list) or (own_line? and start <= 100 < line_end)))
+    let rest_end: Int := start + joined(elements) + rest
+    ensure rule: vertical? iff (base_vertical?(list, elements, start, line_end, own_line?, continued?)
+        or (count(elements) > 0 and holds_wide?(list, elements) and (rest_end > 100 or within?)))
+}
+
+-- Whether the lists inside a list are inside one that is vertical only for its wide records: one
+-- around them is, or it is, as its line is too long with them on it, and it would not be vertical
+-- but for them.
+pub proc wide_within(
+    list: ListKind,
+    elements: ElementList,
+    start: Nat,
+    after: Nat,
+    rest: Nat,
+    own_line?,
+    continued?,
+    within?,                 -- a list around it is vertical only for its wide records
+): (det inner?) {
+    let line_end: Int := start + joined(elements) + after
+    let rest_end: Int := start + joined(elements) + rest
+    ensure rule: inner? iff (within? or (holds_wide?(list, elements) and rest_end > 100
+        and not base_vertical?(list, elements, start, line_end, own_line?, continued?)))
 }
 
 expect list_layout_one_line(
@@ -613,19 +706,33 @@ expect list_layout_one_line(
     elements: ElementList,
     start: Nat,
     after: Nat,
+    rest: Nat,
     own_line?,
     continued?,
+    within?,
 ) {
-    call concrete := list_layout(list, elements, start, after, own_line?, continued?)
+    call concrete := list_layout(
+        list,
+        elements,
+        start,
+        after,
+        rest,
+        own_line?,
+        continued?,
+        within?,
+    )
     refines concrete one_line(
         list,
         count(elements),
         any_broken?(elements),
+        holds_wide?(list, elements),
         joined(elements),
         start,
         start + joined(elements) + after,
+        start + joined(elements) + rest,
         own_line?,
         continued?,
+        within?,
     )
 }
 ```
@@ -1302,13 +1409,16 @@ the blank lines it has, packed or not. An item spans the lines that its
 tokens are written on as laid out, from those of the `set_option ... in`
 before it, which is part of it as an attribute is of a Rust function, so
 an item after one on a line of its own spans several lines. Each line of a
-token or comment that spans several counts, as of a block comment. Whether
-an item spans several lines depends on its content, then, not on how the
-source lays it out. The comments just above an item, with no blank line
-between them and it in the source, go with it, as a doc comment goes with
-a Rust function: the blank line goes above them, never between them and
-the item. A comment that starts with `--~`, a ui test's annotation of the
-line as many lines above it as it has `^` ([Testing](dev/Testing.md)),
+token or comment that spans several counts, as of a block comment, and so
+does each line of the comments that trail the item's last token, unless a
+token follows them on their last line: a block comment that trails `}` and
+ends on the next line goes with the item, and the blank line goes after it.
+Whether an item spans several lines depends on its content, then, not on
+how the source lays it out. The comments just above an item, with no blank
+line between them and it in the source, go with it, as a doc comment goes
+with a Rust function: the blank line goes above them, never between them
+and the item. A comment that starts with `--~`, a ui test's annotation of
+the line as many lines above it as it has `^` ([Testing](dev/Testing.md)),
 goes with that line instead, and the comments above it are left as they
 are. No blank line comes between an annotation and its line: an item is
 not set apart where an annotation on or below its first line, before the
@@ -1349,9 +1459,9 @@ pub proc apart(
     between: Between,        -- the lines between the item before and the item
     annotations: Annotations,  -- the annotations on or below the item's first line
     previous_first: Nat,     -- the line of the first token of the item before
-    previous_last: Nat,      -- the line of its last token
+    previous_last: Nat,      -- the last line of its last token, or of the comments trailing it
     first: Nat,              -- the line of the item's first token
-    last: Nat,               -- the line of its last token
+    last: Nat,               -- the last line of its last token, or of the comments trailing it
 ): (det apart?) {
     -- Above an item and the comments that go with it, if it or the item before spans
     -- several lines, and no annotation reaches past there.
@@ -1362,6 +1472,82 @@ pub proc apart(
     expect documented: when above < leading(between), not apart?
     expect left_above: when above > leading(between), not apart?
     expect annotated: when reaches_above?(annotations, above), not apart?
+}
+```
+
+`fmt::item_lines` gives the lines of an item that `fmt::apart` reads,
+from the lines of its first and last tokens and of the comments after it:
+its last line is that of the comments that trail its last token, one
+after another, unless a token follows them on their last line. Both the
+formatter and the `formatting` job's check of blank lines compute an
+item's lines with `FrenCli.Fmt.itemLines`, which is proved to meet
+`fmt::item_lines`. The lines between two items are those after the
+earlier item's last line and before the later item's first:
+
+```fren
+-- The comments after an item's last token, before the next token: for each, the lines it starts
+-- and ends on.
+pub enum Trailing { Nil, Comment(Int, Int, Trailing) }
+
+-- Where the token after an item starts: none, at the end of the file, or on a line.
+pub enum After { End, Line(Int) }
+
+-- The line where the comments that go on from line `line` end, each starting on the line where the
+-- one before it ends.
+pub fn run_end(line: Int, trailing: Trailing): Int := match trailing {
+    Trailing::Nil => line,
+    Trailing::Comment(start, stop, rest) => if start = line then run_end(stop, rest) else line,
+}
+
+-- The next token starts by line `line`.
+pub fn starts_by?(next: After, line: Int) := match next {
+    After::End => false,
+    After::Line(n) => n <= line,
+}
+
+pub proc item_lines(
+    first_token: Nat,        -- the line its first token starts on
+    last_token: Nat,         -- the line its last token ends on
+    trailing: Trailing,      -- the comments after its last token, before the next token
+    next: After,             -- where the next token starts
+): (det first: Int, det last: Int) {
+    let run: Int := run_end(last_token, trailing)
+    ensure first_rule: first = first_token
+    ensure last_rule: last = (if starts_by?(next, run) then last_token else run)
+
+    expect untrailed: when trailing = Trailing::Nil, last = last_token
+}
+
+-- The layouts of #714, of an item from line 1 to a last token on line 4, which testing
+-- evaluates, as the solver cannot unfold `run_end`. `} /- x` / `y -/`, then the next item: the
+-- comment's last line is the item's.
+set_option fren.evidence "random" in
+expect item_lines_trailed() {
+    call lines := item_lines(1, 4, Trailing::Comment(4, 5, Trailing::Nil), After::Line(6))
+    expect first: lines.first = 1
+    expect last: lines.last = 5
+}
+
+-- `} /- x` / `y -/ fn next`: a token follows the comment on its last line.
+set_option fren.evidence "random" in
+expect item_lines_followed() {
+    call lines := item_lines(1, 4, Trailing::Comment(4, 5, Trailing::Nil), After::Line(5))
+    expect last: lines.last = 4
+}
+
+-- `}` / `-- c`: a comment on a line of its own does not trail the item, nor one on the line after
+-- a comment that does, as in `} -- c` / `/- d -/`.
+set_option fren.evidence "random" in
+expect item_lines_own_line() {
+    call alone := item_lines(1, 4, Trailing::Comment(5, 5, Trailing::Nil), After::Line(6))
+    call after := item_lines(
+        1,
+        4,
+        Trailing::Comment(4, 4, Trailing::Comment(5, 5, Trailing::Nil)),
+        After::End,
+    )
+    expect alone_last: alone.last = 4
+    expect after_last: after.last = alone.last
 }
 ```
 
