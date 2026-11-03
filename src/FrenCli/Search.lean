@@ -741,6 +741,14 @@ private def strictArgProblem : Problem :=
 #guard (strictArgProblem.prepare fun _ => none).fullSlots == #[#[1, 0]]
 #guard (strictArgProblem.prepare fun _ => none).full.all (·.same (.strict #[.slot 1] (.slot 0)))
 
+/-- Likewise a precondition's goals, which `Ex.substVars` replaces too: `m`,
+read only in a goal, gets a slot of its own. -/
+private def preGoalProblem : Problem :=
+  { vars := #[(`x, .int)], atoms := #[{ label := `a, pfx := .anonymous, e := .pre 0 `f #[(`g, .var `m)] (.var `x) }] }
+#guard (preGoalProblem.prepare fun _ => none).names == #[`x, `m]
+#guard (preGoalProblem.prepare fun _ => none).fullSlots == #[#[1, 0]]
+#guard (preGoalProblem.prepare fun _ => none).full.all (·.same (.pre 0 `f #[(`g, .slot 1)] (.slot 0)))
+
 /-- Values for `p.vars`, extending `env`, that make every constraint
 `true` under `I`, within `budget` steps, each step a candidate tried, and
 the steps it took. `w` gives the candidates of the abstract types.
@@ -1032,7 +1040,10 @@ def Spec.withOwnCompiledRecs (sp : Spec) (shapes : Std.HashMap Name Fren.Core.Da
 which each mentions only inputs and earlier such outputs. Members may
 come in any order, so a definition may mention an output defined after
 it: each pass adds those whose definitions mention only what is known,
-until one adds none. -/
+until one adds none. A definition's variables (`Ex.vars`) include the
+arguments of its strict applications, which strict evaluation reads, though
+non-strict evaluation drops them (`Ex.unstrict`): so such a definition
+waits for its arguments' names under either. -/
 def Comp.earlyDefs (c : Comp) : Array Name := Id.run do
   let mut known := (c.vars.filter (·.role == .input)).map (·.name)
   let mut out := #[]
