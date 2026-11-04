@@ -487,7 +487,7 @@ pub proc induction_hypotheses(
     induction_on: Int,          -- the parameter that the induction is on
     hypotheses: Set<Seq<Int>>,  -- the arguments of each application, by position among the case's variables
 ): (det generated?) {
-    assume parameter: 0 <= induction_on < n_params <= types.len
+    require parameter: 0 <= induction_on < n_params <= types.len
 
     ensure rule: generated? iff ((forall (h: Seq<Int>), when h in hypotheses, h.len = n_params
         -- A child at the parameter's position.
