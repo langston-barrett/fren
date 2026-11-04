@@ -35,7 +35,7 @@ the new head: the workflow runs only then.
 {how}
 
 If the new head changes anything else, don't review it here: a light
-check runs on a smaller model than a full review. Post a review whose
+check runs on a smaller model than a full review. Write a review whose
 first line says blocking issues, with one `[blocking]` finding that names
 what changed beyond the request and says the head needs a full review;
 the author or coordinator then posts a comment that names the head

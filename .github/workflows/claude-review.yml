@@ -225,7 +225,11 @@ jobs:
         # path's form slip past `./**`. A light check (`fixes`, `rebase`),
         # which reads only what changed since a clean review, runs on Sonnet
         # (`claude-sonnet-5`), to save the plan's Opus quota; any other kind,
-        # a full review included, runs on Opus.
+        # a full review included, runs on Opus. Model ids do not share one
+        # pattern across families: Sonnet 5's id is `claude-sonnet-5`, while
+        # Opus 5.5's is `claude-opus-5-5`. Checked on 2026-11-04 with
+        # `claude -p --model claude-sonnet-5`, which answers, whereas
+        # `claude-sonnet-5-5` is reported as an unrecognized model.
         claude_args: >-
           --model ${{ (needs.prepare.outputs.kind == 'fixes' || needs.prepare.outputs.kind == 'rebase') && 'claude-sonnet-5' || 'claude-opus-5-5' }}
           --allowedTools "Read(./**),Grep(./**),Glob(./**),Write(./review.md),Edit(./review.md)"
