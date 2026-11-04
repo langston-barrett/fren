@@ -875,6 +875,10 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
   let st ← getState
   let recs := st.defined.toArray.filterMap fun (_, d) =>
     if d.recursive then d.solver?.map (·, d) else none
+  -- Membership is checked at every subterm below. Index the symbols once,
+  -- so unrelated recursive definitions do not multiply the walk's cost.
+  let recs := recs.foldl (init := ({} : NameMap DefinedInfo)) fun acc (n, d) =>
+    if acc.contains n then acc else acc.insert n d
   if recs.isEmpty then return #[]
   let mut work := #[]
   for f in hyps.map (·.2) |>.push goal do
@@ -888,7 +892,8 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     let key := (app, gs, introduced)
     if seen.contains key || ancestors.contains app then continue
     seen := seen.push key
-    let some (c, d) := recs.find? (app.getAppFn.isConstOf ·.1) | continue
+    let .const c _ := app.getAppFn | continue
+    let some d := recs.get? c | continue
     let ancestors := ancestors.push app
     -- A generic one's at the instance that the application applies, its
     -- type arguments first (`Reqs/Lang/Recursion#generic-recursion`).
@@ -931,15 +936,18 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
   return (Core.mergeGuarded Core.guardsWithin out.toList).toArray.map fun ((n, f), ps) =>
     (n, Core.guardedFact implies disj f ps)
 where
-  scan (recs : Array (Name × DefinedInfo)) (e : Expr) (gs : Array Expr)
+  scan (recs : NameMap DefinedInfo) (e : Expr) (gs : Array Expr)
       (introduced : Bool) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Bool × Array Expr)) := do
     -- A formula without a recursive symbol has no application to find:
     -- `find?` visits each shared subterm once, where the descent below
     -- would visit it once for each path to it.
-    if (e.find? fun x => recs.any (x.isConstOf ·.1)).isNone then return #[]
+    let recursive (e : Expr) : Bool := match e with
+      | .const n _ => recs.contains n
+      | _ => false
+    if (e.find? recursive).isNone then return #[]
     -- Descend through binders to find closed applications, but never export
     -- an application or a guard containing a binder-local variable.
-    let own := if (Core.recursiveFacts introduced e.hasLooseBVars).1 && recs.any (e.getAppFn.isConstOf ·.1) && e.isApp then
+    let own := if (Core.recursiveFacts introduced e.hasLooseBVars).1 && recursive e.getAppFn && e.isApp then
       #[(e, gs.filter (!·.hasLooseBVars), introduced, ancestors)] else #[]
     if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 then
       let args := e.getAppArgs
