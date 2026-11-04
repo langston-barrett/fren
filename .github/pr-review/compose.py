@@ -34,16 +34,21 @@ the new head: the workflow runs only then.
 
 {how}
 
-If the new head changes anything else, do a full review of it instead,
-and give it a full review's first line.
+If the new head changes anything else, don't review it here: a light
+check runs on a smaller model than a full review. Write a review whose
+first line says blocking issues, with one `[blocking]` finding that names
+what changed beyond the request and says the head needs a full review;
+the author or coordinator then posts a comment that names the head
+without asking for a light check, and reruns the workflow by hand
+(`gh workflow run pr-review -f pr=N -f post=N`), which gives the same
+head a full review.
 
 In the light check, judge only what changed since `{previous}`: the
 diff from it, or, for a rebase, what the range-diff shows changed in
 the patch. Code that this leaves unchanged had its review: raise a point
 about it only if it is `[blocking]`. Mark any other point about it
 `[non-blocking]`, never `[non-blocking, fix before merge]`, and say that
-it goes to the area's queue rather than into this pull request. A full
-review that replaces the check has no such limit.
+it goes to the area's queue rather than into this pull request.
 
 The review of `{previous}`:
 
