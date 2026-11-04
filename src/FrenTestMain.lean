@@ -3465,8 +3465,11 @@ Every check of Fren's own requirements, of the ui tests and of the
 front-end fuzzer's corpus runs under each method that applies, the solver,
 enumeration up to the size and random testing, each set by `fren check
 --evidence`, in place of the specs' own settings; and no two methods'
-verdicts on a check contradict each other (`check::methods_agree`). Model
-confirmation checks every counterexample and witness that the solver
+verdicts on a check contradict each other (`check::methods_agree`). The job
+also fails on internal errors, unexpected error diagnostics, unexplained
+exits, wrong-method records, stale known entries and missed comparison
+floors. Exact known entries excuse only their recorded differences.
+Model confirmation checks every counterexample and witness that the solver
 reports (`Reqs/Models`); this checks the other direction, a pass that rests
 on the solver's `unsat` alone, which a wrong encoding can make of a false
 claim. On `main` only (`methods-agree` in `ci.yml`). -/
@@ -3769,7 +3772,7 @@ def staleExceptions (ran : Array String) (hit : Array (String × String))
 
 /-- Compares the union of check identities, allowing omissions only where
 `enumerationMayOmit` says why. Returns failures, the number compared and
-the known contradictions hit. -/
+the known differences hit. -/
 def compareEnumeration (name : String) (solver enumerated : MethodRun) :
     Array String × Nat × Array (String × String) := Id.run do
   let mut failures := #[]
@@ -3973,7 +3976,10 @@ structure MethodCounts where
   deriving Inhabited
 
 /-- Compares the methods on `files`, checked together as `name`, `jobs?`
-procedures at once, adding to `counts`; returns the contradictions. -/
+procedures at once, adding to `counts`; returns unlisted contradictions,
+internal errors, unexpected error diagnostics, unexplained exits and
+wrong-method records. `methodsAgree` also rejects stale known entries and
+missed comparison floors. -/
 def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref MethodCounts)
     (jobs? : Option Nat := none) : IO (Array String) := do
   counts.modify fun c => { c with ran := c.ran.push name }
