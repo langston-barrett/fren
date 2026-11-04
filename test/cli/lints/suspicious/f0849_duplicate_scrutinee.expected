@@ -1,0 +1,40 @@
+warning[F0849]: this scrutinee is written the same as scrutinee 1
+ --> test/cli/lints/suspicious/f0849_duplicate_scrutinee.fren:5:42
+  |
+5 | pub fn copied(c: Color): Int := match c, c {
+  |                                          ^ repeats scrutinee 1
+  |
+  = note: these columns always have the same value; rows requiring different values cannot be taken
+  = note: row 1 cannot be taken because its patterns in these columns are disjoint
+  = note: `duplicate_scrutinee` is `warn` by default
+  = help: to allow it, `set_option fren.lint.duplicate_scrutinee "allow"`
+
+warning[F0849]: this scrutinee is written the same as scrutinee 2
+  --> test/cli/lints/suspicious/f0849_duplicate_scrutinee.fren:11:45
+   |
+11 | pub fn later(a?, b?): Int := table a?, b?, (b?) {
+   |                                             ^^ repeats scrutinee 2
+   |
+   = note: these columns always have the same value; rows requiring different values cannot be taken
+   = note: row 2 cannot be taken because its patterns in these columns are disjoint
+
+warning[F0849]: this scrutinee is written the same as scrutinee 1
+  --> test/cli/lints/suspicious/f0849_duplicate_scrutinee.fren:18:41
+   |
+18 | pub fn compatible(a?): Int := match a?, a?, a? {
+   |                                         ^^ repeats scrutinee 1
+   |
+   = note: these columns always have the same value; rows requiring different values cannot be taken
+
+warning[F0849]: this scrutinee is written the same as scrutinee 1
+  --> test/cli/lints/suspicious/f0849_duplicate_scrutinee.fren:18:45
+   |
+18 | pub fn compatible(a?): Int := match a?, a?, a? {
+   |                                             ^^ repeats scrutinee 1
+   |
+   = note: these columns always have the same value; rows requiring different values cannot be taken
+
+fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0849`.
+exit=3

@@ -45,6 +45,7 @@ use view::Severity
 | `double_parens` | `F0739` | `complexity` | `warn` | parentheses directly around parentheses, `((e))` (see [Parentheses](Lint/Complexity/Operators.md#parentheses)) |
 | `duplicate_constraint` | `F0768` | `suspicious` | `warn` | a constraint or global expectation written the same as an earlier one, or a cover goal written the same as an earlier cover goal (see [Repeated constraints](Lint/Suspicious.md#repeated-constraints)) |
 | `duplicate_elements` | `F0738` | `suspicious` | `warn` | a set or relation literal with an element written the same as an earlier one, such as `{a, b, a}` (see [Elements written the same](Lint/Suspicious/Literals.md#elements-written-the-same)) |
+| `duplicate_scrutinee` | `F0849` | `suspicious` | `warn` | a scrutinee of a `match` or table written the same as an earlier one, such as `match x, x { ... }` (see [Repeated scrutinees](Lint/Suspicious/Expressions.md#repeated-scrutinees)) |
 | `else_extends` | `F0733` | `complexity` | `warn` | a conditional operand whose `else` branch extends past its operator, as in `2 * if c? then x else y + 1` (see [Conditional operands](Lint/Complexity/Operators.md#conditional-operands)) |
 | `empty_argument` | `F0745` | `suspicious` | `warn` | a method applied to `""` or `[]`, or a `slice` of length `0`, such as `s.starts_with?("")` (see [Empty arguments](Lint/Suspicious/Methods.md#empty-arguments)) |
 | `enum_variant_names` | `F0749` | `style` | `warn` | an enumeration whose variants all start, or all end, with the same word, or a variant that contains its enumeration's name (see [Names](Lint/Style.md#names)) |
@@ -157,10 +158,12 @@ use view::Severity
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel<A, B>` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
-The lints' codes run from `F0701` to `F0846`, and each group's codes start
+The lints' codes run from `F0701` to `F0849`, and each group's codes start
 at `01`. Among them, `F0707`, `F0708` and `F0709` are errors in [setting
-levels](#setting-levels), `F0713` is the removed `shadowed_constants`'s,
-and `F0844` is kept for a lint of parentheses.
+levels](#setting-levels), `F0713` is the removed
+`shadowed_constants`'s, and `F0844` is kept for a lint of parentheses.
+`F0847` is reserved for [#713's follow-ons](https://github.com/langston-barrett/fren/pull/713),
+and `F0848` is never used.
 
 Lints are found while elaborating, like [static
 errors](View.md#static-errors), and never ask the solver anything: the

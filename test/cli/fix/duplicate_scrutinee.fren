@@ -1,0 +1,5 @@
+--@ args: fix --check --only duplicate_scrutinee
+pub fn copied(a?): Int := match a?, a? {
+    true, false => 1,
+    _, _ => 0,
+}

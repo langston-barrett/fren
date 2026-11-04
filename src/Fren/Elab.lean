@@ -3609,6 +3609,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
     | .error (none, msg) => throwError (if many then Core.vectorMsg msg else msg).text
   let p := if scrutinee.getNumArgs == 1 then scrutinee[0] else scrutinee
   let implicitArg := p.isOfKind ``Lang.fren_path && (pathSegs p).any (fun n => n.getId.toString.startsWith "#match")
+  if cx.noteIndexes then
+    -- A lambda match writes no scrutinees; its generated parameters have
+    -- no source texts to compare.
+    let texts := if implicitArg then #[] else scrutinees.map (exactText ∘ unparen)
+    for (j, i, row?) in Core.duplicateScrutinees texts baseSigs ptypes rows do
+      recordLint .duplicateScrutinee (unparen scrutinees[j]!) (Core.duplicateScrutineeMsg i row?)
   if cx.noteIndexes && !many && !implicitArg then
     lintMatch cx e ty pats slot
     lintCouldBeTable e sigs pty pats

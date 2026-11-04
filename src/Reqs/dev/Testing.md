@@ -367,10 +367,10 @@ pub mod testing
   summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
-  [--confirm] [--spec-timeout SECONDS]`): generates random specs and checks each
-  with both front ends, the `fren` command's pipeline and the Lean front
-  end (in an environment that imports `Fren`, as the ui tests do), whose
-  reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
+  [--confirm] [--scrutinees] [--spec-timeout SECONDS]`): generates random
+  specs and checks each with both front ends, the `fren` command's pipeline
+  and the Lean front end (in an environment that imports `Fren`, as the ui
+  tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
   same errors, warnings and notes at the same lines and columns, the
   same summary, and the exit status that Lean's messages call for: 2
   after a static error, else 1 when Lean reports an error, 3 when it
@@ -402,7 +402,12 @@ pub mod testing
   of range. It checks them with both front ends misreading models, as
   `FREN_MISREAD_MODELS` makes them ([Testing](../Models.md#testing)), so
   that what one front end knows and the other does not is a message that
-  differs: one refutes the model, and the other shows it. A run with
+  differs: one refutes the model, and the other shows it. `--scrutinees`
+  generates repeated and distinct columns of matches and tables, through
+  calls, fields, definitions and nested expressions, including generic
+  types and lambda matches. It has its own mode to preserve the older
+  generators' seeds and keep earlier static errors from stopping these
+  checks. Its corpus rejects generated static errors. A run with
   `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
@@ -517,7 +522,8 @@ pub mod testing
   itself is tested in `FrenTest/FrontendsCompare.lean`.
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
-  `--sites` and `--confirm` (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  `--sites`, `--confirm` and `--scrutinees`
+  (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of at
   most five specs each, including those listed outside the ranges. Each
   job imports `Fren` once; small batches spread the work over the shards

@@ -90,6 +90,7 @@ tested lang::subset_membership: "src/FrenTest/BooleanSubsets.lean", "src/FrenTes
 tested lang::subset_obligations: "src/FrenTest/SubsetObligations.lean", "src/FrenTest/NestedSubsetEnumeration.lean"
 tested lang::varying_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/FrenTest/SubsetObligations.lean"
 tested lang::recursive_post_result: "test/ui/checks/recursive_subsets.fren"
+tested lint::duplicate_scrutinee: "test/ui/lints/duplicate_scrutinee.fren"
 
 -- The dynamic semantics (`Reqs/Lang/Semantics`). `lang::coincidence` and
 -- `lang::closed` are proved in `Impls/Semantics.lean`, and

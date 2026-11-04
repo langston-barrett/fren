@@ -86,6 +86,7 @@ inductive Lint where
   | doubleParens
   | duplicateConstraint
   | duplicateElements
+  | duplicateScrutinee
   | elseExtends
   | emptyArgument
   | enumVariantNames
@@ -272,6 +273,7 @@ def Lint.info : Lint → String × String × Group
   | .doubleParens => ("double_parens", "F0739", .complexity)
   | .duplicateConstraint => ("duplicate_constraint", "F0768", .suspicious)
   | .duplicateElements => ("duplicate_elements", "F0738", .suspicious)
+  | .duplicateScrutinee => ("duplicate_scrutinee", "F0849", .suspicious)
   | .elseExtends => ("else_extends", "F0733", .complexity)
   | .emptyArgument => ("empty_argument", "F0745", .suspicious)
   | .enumVariantNames => ("enum_variant_names", "F0749", .style)
@@ -4756,6 +4758,41 @@ one at `i` that is written the same, given each test's written form
 (`lint::ifs_same_cond`). -/
 def earlierSame (forms : Array String) (i : Nat) : Option Nat :=
   (List.range i).find? fun j => forms[j]! == forms[i]!
+
+/-- The first earlier scrutinee written the same, from their written
+forms (`lint::duplicate_scrutinee`). All scrutinees of one match see the
+same outer scope. The bound also makes the decision total for callers
+asking about a position outside the scrutinees. -/
+def duplicateScrutinee (forms : Array String) (i : Nat) : Option Nat :=
+  if i < forms.size then earlierSame forms i else none
+
+/-- Repeated columns, each with its first earlier column and, if there is
+one, the first row whose patterns in those two columns cannot both match.
+Both front ends supply only the texts without outer parentheses, types
+and resolved patterns, as for `eq_op`'s operands.
+The row note uses `Pat.overlapWit?` (`lang::pattern_overlap`); choosing its
+first row is checked by the ui tests and CLI snapshots, not the `impl`
+of `lint::duplicate_scrutinee`. -/
+def duplicateScrutinees (texts : Array String) (sigs : Sigs) (types : Array PatTy)
+    (rows : Array (Array Pat)) : Array (Nat × Nat × Option Nat) := Id.run do
+  if texts.size < 2 then return #[]
+  let forms := texts.map writtenForm
+  let mut out := #[]
+  for j in [:texts.size] do
+    if let some i := duplicateScrutinee forms j then
+      let row? := rows.toList.findIdx? fun ps =>
+        match ps[i]?, ps[j]?, types[j]? with
+        | some p, some q, some ty => (p.overlapWit? sigs ty q).isNone
+        | _, _, _ => false
+      out := out.push (j, i, row?)
+  return out
+
+def duplicateScrutineeMsg (first : Nat) (row? : Option Nat) : Msg :=
+  { code? := some Lint.duplicateScrutinee.code
+    headline := s!"this scrutinee is written the same as scrutinee {first + 1}"
+    label? := some s!"repeats scrutinee {first + 1}"
+    notes := #["note: these columns always have the same value; rows requiring different values cannot be taken"]
+      ++ row?.toArray.map (fun r => s!"note: row {r + 1} cannot be taken because its patterns in these columns are disjoint") }
 
 /-- `ifs_same_cond` on the chain of `else if` that starts at `n`
 (`lint::ifs_same_cond`): at each test written the same as an earlier

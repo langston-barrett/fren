@@ -1012,3 +1012,79 @@ expect same_branches_refires(
         and same_branches_fires?(If(c, v, same_branches_fix(If(d, v, v))))
 }
 ```
+
+## Repeated scrutinees
+
+Matching one expression twice often means a scrutinee was copied in place
+of another. Like `eq_op`, this lint is in `suspicious`, `warn` by default.
+It has no automatic fix.
+
+**Legality rules**
+
+r[duplicate-scrutinee.rule] lint::duplicate_scrutinee::rule
+`duplicate_scrutinee` fires on each scrutinee of a `match` or table that is
+written the same as an earlier scrutinee, ignoring outer parentheses.
+All scrutinees are in the same outer scope;
+an arm's binders are in none of them.
+
+r[duplicate-scrutinee.named] lint::duplicate_scrutinee::named
+The message is at the later scrutinee and names the first earlier one
+written the same, counted from 1 in the message.
+
+> The optional row note is outside this rule: the requirement models texts,
+> not resolved pattern matrices. Its choice of the first disjoint row uses
+> [`lang::pattern_overlap`](../../Lang/Patterns.md#overlap), but the selection
+> and its unreachability explanation are covered by the ui tests and CLI
+> snapshots, not proved by the `impl`. Those tests cover a first disjoint
+> row, a later one and no disjoint row.
+
+The decision compares the scrutinees' written forms, as
+[`ifs_same_cond`](#branches-written-the-same) compares its tests. It uses
+`first_same` to choose the first earlier column, for any number of
+scrutinees. Its quantifiers are outside the decidable core, so its checks
+are by testing, and its implementation is proved in Lean:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc duplicate_scrutinee(
+    scrutinees: Seq<String>,      -- their written forms, in order
+    k: Int,                       -- the scrutinee's position, from 0
+): (det fires?, det earlier: Int) {
+    call first := first_same(scrutinees, k)
+
+    ensure rule: fires? iff repeated?(scrutinees, k)
+    ensure named: earlier = first.earlier
+}
+```
+
+The columns have the same outcome in one environment, as
+`duplicate_scrutinee_values` checks over expressions as written in one
+scope, following [`written_same`](../Meaning.md#expressions-as-written).
+`scrutinee_form` gives the four texts of the `Scoped` model distinct
+strings, so the claim calls the lint's decision on those texts rather
+than assuming that it fires:
+
+```fren
+pub fn scrutinee_form(s: Scoped): String := match s.text {
+    Operand::P => "p",
+    Operand::Q => "q",
+    Operand::R => "r",
+    Operand::S => "s",
+}
+
+set_option fren.lint.undecidable "allow" in
+expect duplicate_scrutinee_values(x: Scoped, y: Scoped, i: lang::Interp, env: lang::Env) {
+    assume one_scope: x.scope = y.scope
+    call c := duplicate_scrutinee([scrutinee_form(x), scrutinee_form(y)], 1)
+    expect same_value: when c.fires?, lang::eval(i, env, written(x)) = lang::eval(i, env, written(y))
+}
+```
+
+> There is no exception for uninterpreted functions: they too are deterministic.
+> A row requiring different values in those columns cannot be taken.
+> Static exhaustiveness and reachability consider every vector of values of the
+> columns' types, including vectors in which the columns differ. They do
+> not decide whether the scrutinees can differ. A lambda match's implicit
+> scrutinees are distinct parameters and do not repeat. Checks of guards
+> can separately prove a guarded row unreachable.

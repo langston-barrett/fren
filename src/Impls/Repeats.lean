@@ -184,6 +184,39 @@ impl ifs_same_cond: lint::ifs_same_cond for (ts : List String) (k : Int) {
       exact ⟨fun h => absurd h (by simp), fun ⟨h0, hl, _⟩ => absurd ⟨h0, hl⟩ hk⟩
   · exact ⟨⟨rfl, rfl⟩, trivial, firstSame_ensures ts k⟩
 
+-- Both front ends call `duplicateScrutinees` on the scrutinees' texts;
+-- it computes their written forms and searches with `duplicateScrutinee`.
+impl duplicate_scrutinee: lint::duplicate_scrutinee for (ts : List String) (k : Int) {
+  scrutinees := Fren.Seq.ofList ts,
+  k := k,
+  «fires?» := decide (0 ≤ k) && (duplicateScrutinee ts.toArray k.toNat).isSome,
+  earlier := if 0 ≤ k then ((duplicateScrutinee ts.toArray k.toNat).map Int.ofNat).getD (-1) else -1,
+} by
+  intro ts k _
+  have he : (if 0 ≤ k then ((duplicateScrutinee ts.toArray k.toNat).map Int.ofNat).getD (-1) else -1) = firstSame ts k := by
+    by_cases h0 : 0 ≤ k
+    · by_cases hi : k.toNat < ts.length
+      · have hk : 0 ≤ k ∧ k.toNat < ts.length := ⟨h0, hi⟩
+        simp only [duplicateScrutinee, List.size_toArray, firstSame, if_pos h0, if_pos hi, if_pos hk]
+        cases earlierSame ts.toArray k.toNat <;> rfl
+      · simp [duplicateScrutinee, firstSame, h0, hi]
+    · simp [firstSame, h0]
+  rw [he]
+  refine ⟨Fren.Seq.ofList ts, k, firstSame ts k, ⟨?_, rfl⟩, ?_⟩
+  · unfold lint.duplicate_scrutinee.ensure.rule
+    rw [repeated_iff]
+    by_cases hk : 0 ≤ k ∧ k.toNat < ts.length
+    · simp only [duplicateScrutinee, List.size_toArray, if_pos hk.2, decide_eq_true hk.1, Bool.true_and,
+        Option.isSome_iff_ne_none, ne_eq, earlierSame_none ts k.toNat hk.2, Classical.not_not]
+      exact ⟨fun h => ⟨hk.1, h⟩, fun h => h.2⟩
+    · simp only [duplicateScrutinee, List.size_toArray]
+      by_cases h0 : 0 ≤ k
+      · simp only [if_neg (show ¬ k.toNat < ts.length by omega), Option.isSome_none, Bool.and_false]
+        exact ⟨fun h => absurd h (by simp), fun ⟨_, hl, _⟩ => by omega⟩
+      · simp only [decide_eq_false h0, Bool.false_and]
+        exact ⟨fun h => absurd h (by simp), fun ⟨h0', _, _⟩ => absurd h0' h0⟩
+  · exact ⟨⟨rfl, rfl⟩, trivial, firstSame_ensures ts k⟩
+
 -- Both front ends decide `duplicate_elements` with `repeatedForms`, through
 -- `repeatedElements`, of the written forms of the literal's elements.
 impl duplicate_elements: lint::duplicate_elements for (ts : List String) (k : Int) {

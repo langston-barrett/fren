@@ -1,0 +1,13 @@
+warning[F0849]: this scrutinee is written the same as scrutinee 1
+ --> test/cli/fix/duplicate_scrutinee.fren:2:37
+  |
+2 | pub fn copied(a?): Int := match a?, a? {
+  |                                     ^^ repeats scrutinee 1
+  |
+  = note: these columns always have the same value; rows requiring different values cannot be taken
+  = note: row 1 cannot be taken because its patterns in these columns are disjoint
+  = note: `duplicate_scrutinee` is `warn` by default
+  = help: to allow it, `set_option fren.lint.duplicate_scrutinee "allow"`
+
+For more information about this error, try `fren --explain F0849`.
+exit=0
