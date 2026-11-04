@@ -2833,6 +2833,9 @@ structure Known where
   /-- As a kind, it is known only on a spec that also has a difference of
   this kind (a `signature`), which explains it. -/
   alongside? : Option String := none
+  /-- Whether the kind of `alongside?` must be at the same line, so that it
+  explains the difference at that check only. -/
+  onItsLine : Bool := false
   deriving BEq
 
 /-- The kind of the `fren` command's internal error on a formula that its
@@ -2968,7 +2971,27 @@ def knownDifferences : List Known :=
      difference := "line 28:10: only Lean reports error: `fz::c1` has 442137500 behaviours up to size 2, too \
        many to enumerate" },
    { mode := { avoidKnown := true }, seed := 1160173, issue := 493, alongside? := some evaluatorUnread,
-     difference := "exit: fren exits 1, and Lean's messages call for 2" }]
+     difference := "exit: fren exits 1, and Lean's messages call for 2" },
+   -- Run 267 found these on main; both seeds reproduce at dd28d924,
+   -- before #817. Lean cannot decide the expectation, while `fren`
+   -- reports its dependency or failure (#493).
+   { mode := { avoidKnown := true }, seed := 1267162, issue := 493, onItsLine := true,
+     alongside? := some "only Lean reports warning: could not decide whether `_` holds: INCOMPLETE",
+     difference := "line 141:12: only fren reports warning[F0664]: `fz::zpn::zpe1` rests on the realizability of \
+       `fz::zpn`, which did not pass" },
+   { mode := { avoidKnown := true }, seed := 1267162, issue := 493, onItsLine := true,
+     alongside? := some "only fren reports warning[F0664]: `_` rests on the realizability of `_`, which did not pass",
+     difference := "line 141:12: only Lean reports warning: could not decide whether `fz::zpn::zpe1` holds: INCOMPLETE" },
+   { mode := { avoidKnown := true }, seed := 1267186, issue := 493, onItsLine := true,
+     alongside? := some "only Lean reports warning: could not decide whether `_` holds",
+     difference := "line 167:12: only fren reports error[F0603]: expectation `fz::gr_apps::gr1` does not hold" },
+   { mode := { avoidKnown := true }, seed := 1267186, issue := 493, onItsLine := true,
+     alongside? := some "only fren reports error[F0603]: expectation `_` does not hold",
+     difference := "line 167:12: only Lean reports warning: could not decide whether `fz::gr_apps::gr1` holds" },
+   { mode := { avoidKnown := true }, seed := 1267186, issue := 493,
+     alongside? := some "only fren reports error[F0603]: expectation `_` does not hold",
+     difference := "summary: fren says `57 passed (1 by bounded enumeration), 17 failed, 18 inconclusive, 0 redundant`, \
+       Lean says `57 passed (1 by bounded enumeration), 16 failed, 19 inconclusive, 0 redundant`" }]
 
 /-- Whether the kind `s` (a `signature`) is of the pattern `p`, where each
 `*` stands for any text, and every other character for itself. -/
@@ -3214,7 +3237,8 @@ of `--avoid-known`, of either generator, or one of `knownKinds`, where
 it, those kinds go unchecked. An entry that holds only after a static
 error (`afterStaticError`) matches only where one is at or before `f`'s
 line, and one that holds only alongside another kind (`alongside?`) only
-where `found` has that kind; one with a `test?`, only where the
+where `found` has that kind, on the same line when `onItsLine` is set;
+one with a `test?`, only where the
 difference passes it. -/
 def knownIssue? (mode : Mode) (staticLines : Array Nat) (found : Array String) (f : String) : Option Nat :=
   let sig := signature f
@@ -3224,7 +3248,7 @@ def knownIssue? (mode : Mode) (staticLines : Array Nat) (found : Array String) (
         kindMatches a (signature g) && (!onItsLine || (differenceLine? f).isSome && differenceLine? g == differenceLine? f)
   if !mode.avoidKnown then none
   else match knownDifferences.find? (fun k =>
-      k.mode.avoidKnown && signature k.difference == sig && holds k.afterStaticError k.alongside?) with
+      k.mode.avoidKnown && signature k.difference == sig && holds k.afterStaticError k.alongside? k.onItsLine) with
     | some k => some k.issue
     | none =>
       (knownKinds.find? fun k =>
@@ -3276,6 +3300,23 @@ private def known (f : String) (staticLines : Array Nat := #[]) (found : Array S
 #guard known "line 53:21: only fren reports error[F0307]: nonlinear arithmetic is not supported" #[42]
 #guard !known "line 53:21: only fren reports error[F0307]: nonlinear arithmetic is not supported"
 #guard !known "line 53:21: only fren reports error[F0603]: expectation `fz::c0::e` does not hold" #[42]
+-- The pairs from seeds 1267162 and 1267186 excuse only their own line:
+-- an inconclusive expectation elsewhere cannot hide a decided result.
+section
+private def failed : String :=
+  "line 53:21: only fren reports error[F0603]: expectation `fz::c0::e` does not hold"
+private def rests : String :=
+  "line 53:21: only fren reports warning[F0664]: `fz::c0::e` rests on the realizability of `fz::c0`, which did not pass"
+private def unknown : String :=
+  "line 53:21: only Lean reports warning: could not decide whether `fz::c0::e` holds"
+private def incomplete : String := unknown ++ ": INCOMPLETE"
+#guard known failed (found := #[failed, unknown]) && known unknown (found := #[failed, unknown])
+#guard known rests (found := #[rests, incomplete]) && known incomplete (found := #[rests, incomplete])
+#guard !known failed (found := #[failed, unknown.replace "line 53:" "line 54:"])
+#guard !known rests (found := #[rests, incomplete.replace "line 53:" "line 54:"])
+#guard !known unknown (found := #[failed.replace "line 53:" "line 54:", unknown])
+#guard !known incomplete (found := #[rests.replace "line 53:" "line 54:", incomplete])
+end
 #guard !known "line 21:25: only fren reports warning[F0736]: both operands of `=` are written the same"
 #guard known "line 10:33: only Lean reports info: Both operands of `a0` cannot be false: this would require `b0?` to \
   equal false, while `a1` requires `b0?` to equal true."
@@ -3422,7 +3463,7 @@ def corpusSpecs? : List String → Option (List (Mode × Nat))
 -- `--avoid-known` ones among them, and every job's specs are the corpus's
 -- or those.
 #guard listedOutside == ({}, 153) :: ([41, 1156065, 1160095, 3000319, 3102696, 3103202, 3100624, 1159002, 3102505,
-  3101311, 3104511, 1157147, 1158050, 3000892, 3102156, 1157298, 1160124, 1160173].map
+  3101311, 3104511, 1157147, 1158050, 3000892, 3102156, 1157298, 1160124, 1160173, 1267162, 1267186].map
     fun s => ({ avoidKnown := true }, s))
 #guard corpusJobs.all fun j => (corpusSpecs? (j.drop 1)).isSome
 -- The jobs keep every original mode and seed, in order, exactly once,

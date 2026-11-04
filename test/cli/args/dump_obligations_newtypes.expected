@@ -1,0 +1,51 @@
+; obligations
+(obligation
+  ; at 7:6
+  (item p)
+  (check realizability (assumptions))
+  (evidence solver)
+  (signature)
+  (context)
+  (goal false)
+)
+(obligation
+  ; at 7:6
+  (item p)
+  (check realizability (outputs))
+  (evidence solver)
+  (signature)
+  (context)
+  (goal true)
+)
+(obligation
+  ; at 9:12
+  (item p)
+  (check expectation same)
+  (evidence solver)
+  (signature
+    (declare-const x Int)
+    (declare-const y Int)
+  )
+  (context
+    (= y x)
+  )
+  (goal (= y x))
+)
+(obligation
+  ; at 7:6
+  (item p)
+  (check redundancy (assumptions))
+  (evidence solver)
+  (signature
+    (declare-const x Int)
+    (declare-const y Int)
+  )
+  (context
+    (= y x)
+  )
+  (goal false)
+)
+
+; end of obligations
+fren: 2 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0
