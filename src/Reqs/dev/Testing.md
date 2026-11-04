@@ -847,21 +847,21 @@ pub proc ui_file(
 A test's result is *fresh* when it is that of the files it reads as they
 are now: its module was rebuilt after the last change to any of them, or
 none of them changed. Lake rebuilds a module when a file that its library
-needs changed since its last build, which Fren trusts; that each module
-that reads files, with `#fren_md`, `tested`, or the converse scan
-(`fren.testGlobs`), reads only files that its owning library needs is
-what the `libraries` job checks, by resolving the library's actual
-`needs` in `lakefile.lean`, including each input's path and filter. An
-unreadable dependency declaration fails the check.
+needs changed since its last build, which Fren trusts.
 
-`testing::library_reads` models these readers' file imports by the input
-groups that contain them. It computes `reads` from the module's imports,
-independently of the owner's declared `needs`, and expects the former to
-be a subset of the latter. Adding a read outside those needs must fail
-that expectation. The `libraries` job tests the binding to concrete
-files, ownership and input filters, and also checks this mutation of the
-model. `testing::fresh` states how the subset gives freshness: whenever
-the files read are among those needed, the result is fresh.
+**Rules**
+
+r[lake.reader-inputs]
+The `libraries` job rejects a reader in `Reqs`, `ImplsTested`, or
+`FrenTestFiles` if a file it reads through `#fren_md`, `tested`, or the
+converse scan (`fren.testGlobs`) is outside its owning library's actual
+`needs`, or if a dependency declaration cannot be read.
+
+The job checks the real sources and resolves library ownership and input
+paths and filters from `lakefile.lean`. This rule has no formal Req
+binding; its regressions exercise the concrete check. The abstract
+`testing::fresh` states how the subset gives freshness: whenever the
+files read are among those needed, the result is fresh.
 
 The same goes for the driver itself: `lake test` runs `fren_test`, its
 test driver, after Lake has rebuilt it from the sources as they are now.
@@ -872,74 +872,6 @@ with `lake build fren_test`.
 ```fren
 -- A file of the repository.
 pub type File
-
--- Each input denotes the files selected by that Lake input declaration.
-pub enum ReadInput {
-    ChaptersMd, LangMd, LintMd, LintChapterMd, DevMd,
-    Tests, TestLean, TestFilesLean, TestMain,
-}
-
-pub enum ReaderModule {
-    Check, Cli, Eval, Fmt, Generated, Impl, Markdown, Models, Mutate, Trace, View,
-    Calls, Lang, Modules, Refine, Lint, Testing,
-    ImplsEvidence, ImplsLint, ImplsTrace,
-}
-
-pub enum ReaderLibrary { Chapters, Lang, Lint, Dev, Tested }
-
--- File imports made by each module, independently of its library's needs.
-pub fn module_imports(m: ReaderModule): Set<ReadInput> := match m {
-    ReaderModule::Models => {ReadInput::ChaptersMd},
-    ReaderModule::Check | ReaderModule::Cli | ReaderModule::Eval | ReaderModule::Fmt
-    | ReaderModule::Generated | ReaderModule::Impl | ReaderModule::Markdown
-    | ReaderModule::Mutate | ReaderModule::Trace | ReaderModule::View => {ReadInput::ChaptersMd},
-    ReaderModule::Calls | ReaderModule::Lang | ReaderModule::Modules | ReaderModule::Refine =>
-        {ReadInput::LangMd},
-    ReaderModule::Lint => {ReadInput::LintMd, ReadInput::LintChapterMd},
-    ReaderModule::Testing => {ReadInput::DevMd},
-    ReaderModule::ImplsEvidence => {
-        ReadInput::Tests,
-        ReadInput::TestLean,
-        ReadInput::TestFilesLean,
-        ReadInput::TestMain,
-    },
-    ReaderModule::ImplsLint | ReaderModule::ImplsTrace =>
-        {ReadInput::Tests, ReadInput::TestLean, ReadInput::TestMain},
-}
-
--- The current lakefile's assignment of these modules to libraries.
-pub fn reader_owner(m: ReaderModule): ReaderLibrary := match m {
-    ReaderModule::Calls | ReaderModule::Lang | ReaderModule::Modules | ReaderModule::Refine =>
-        ReaderLibrary::Lang,
-    ReaderModule::Lint => ReaderLibrary::Lint,
-    ReaderModule::Testing => ReaderLibrary::Dev,
-    ReaderModule::ImplsEvidence | ReaderModule::ImplsLint | ReaderModule::ImplsTrace =>
-        ReaderLibrary::Tested,
-    _ => ReaderLibrary::Chapters,
-}
-
--- The input declarations in each library's needs, without consulting imports.
-pub fn declared_inputs(lib: ReaderLibrary): Set<ReadInput> := match lib {
-    ReaderLibrary::Chapters => {ReadInput::ChaptersMd},
-    ReaderLibrary::Lang => {ReadInput::LangMd},
-    ReaderLibrary::Lint => {ReadInput::LintMd, ReadInput::LintChapterMd},
-    ReaderLibrary::Dev => {ReadInput::DevMd},
-    ReaderLibrary::Tested => {
-        ReadInput::Tests,
-        ReadInput::TestLean,
-        ReadInput::TestFilesLean,
-        ReadInput::TestMain,
-    },
-}
-
-pub proc library_reads(m: ReaderModule) {
-    let reads: Set<ReadInput> := module_imports(m)
-    let needs: Set<ReadInput> := declared_inputs(reader_owner(m))
-
-    expect read_needed: reads subset needs
-    cover nonempty: reads != {}
-    cover spare_input: needs minus reads != {}
-}
 
 pub proc fresh(
     reads: Set<File>,       -- the files that the module reads when it is built

@@ -2924,7 +2924,6 @@ name are among its actual `needs`; unreadable dependency declarations fail;
 and only the tests whose library needs the files that they read,
 `FrenTestFiles`, read files with `#fren_md`; and `pre-merge`'s build
 jobs together build exactly the default targets. -/
--- fren-covers: testing::library_reads
 def checkLibraries (lakefile : String) : IO (Array String) := do
   let mut failures := #[]
   -- `lake build --wfail` runs on two machines, each building some of the
@@ -2962,15 +2961,14 @@ def checkLibraries (lakefile : String) : IO (Array String) := do
           failures := failures.push s!"lakefile.lean: `{m}` is in the globs of both `{other}` and `{lib}`, which build it with their own `needs`"
         else owners := owners.push (m, lib)
   let modulesOfLib (lib : String) : Array String := ((modulesOf.find? (·.1 == lib)).map (·.2)).getD #[]
-  -- Explicit globs own a module; otherwise Lake uses the last library
-  -- whose roots contain it. This also covers unlisted modules under Reqs.
-  let owner (m : String) : Option (String × String) := do
-    let lib ← ((owners.find? (·.1 == m)).map (·.2)).orElse fun _ =>
-      (libs.reverse.find? fun (lib, decl) =>
+  -- Imported modules use the last library whose globs or roots hold
+  -- them, even when an earlier library explicitly globs the module.
+  let owner (m : String) : Option (String × String) :=
+    libs.reverse.find? fun (lib, decl) =>
+      owners.contains (m, lib) ||
         ((lakeArray decl "roots").getD [s!"`{lib}"]).any fun r =>
           let root := (r.dropPrefix "`").toString
-          m == root || m.startsWith (root ++ ".")).map (·.1)
-    libs.find? (·.1 == lib)
+          m == root || m.startsWith (root ++ ".")
   let checkReads (m : String) (reads : Array String) : Array String := Id.run do
     let some (lib, decl) := owner m
       | return #[s!"{sourceOf m}: no owning library in `lakefile.lean`"]
@@ -3056,32 +3054,29 @@ def libraries : IO (Array String) := do
     let got ← checkLibraries fixture
     unless got.any (fun e => (e.splitOn s!"src/Reqs/{omitted}.lean:").length > 1) do
       failures := failures.push s!"libraries regression: missing {omitted}.md was accepted"
+  -- A later root takes precedence over an earlier explicit glob.
+  -- With all specs it passes; with only Lang specs it must reject Models.
+  let lateRoot (input : String) := lakefile ++
+    s!"\nlean_lib LateReqs where\n  roots := #[`Reqs]\n  globs := #[]\n  needs := #[`@/{input}]\n"
+  let got ← checkLibraries (lateRoot "reqs_md")
+  unless got.isEmpty do
+    failures := failures.push s!"libraries regression: later root with every needed spec failed: {got}"
+  let got ← checkLibraries (lateRoot "reqs_lang_md")
+  unless got.contains "src/Reqs/Models.lean: reads `src/Reqs/Models.md`, which `LateReqs` in `lakefile.lean` does not need" do
+    failures := failures.push "libraries regression: later root did not override the Models glob"
   -- Unsupported declarations must fail closed, including a changed custom filter.
   for (before, after) in #[
       ("needs := #[`@/reqs_lang_md]", "needs := reqsNeeds"),
       ("`@/reqs_lang_md", "`@/missing_input"),
       ("filter := .extension #[\"md\"]", "filter := unknownFilter"),
       ("filter := .ofFn fun p =>", "filter := .ofFn fun q =>")] do
-    if (← checkLibraries (lakefile.replace before after)).isEmpty then
-      failures := failures.push s!"libraries regression: unreadable declaration `{after}` was accepted"
-  -- The spec must constrain imports independently of needs: adding an
-  -- unneeded development-file import to Models must kill read_needed.
-  let spec ← IO.FS.readFile "src/Reqs/dev/Testing.md"
-  let before := "ReaderModule::Models => {ReadInput::ChaptersMd},"
-  let mutant := spec.replace before
-    "ReaderModule::Models => {ReadInput::ChaptersMd, ReadInput::DevMd},"
-  if (spec.splitOn before).length != 2 then
-    failures := failures.push "libraries regression: unneeded-read mutation must apply exactly once"
-  else
-    let dir : System.FilePath := ".lake/libraries-test"
-    IO.FS.createDirAll dir
-    let path := dir / "Testing.md"
-    IO.FS.writeFile path mutant
-    let (out, code) ← runCheck #[path.toString]
-    unless code == 1 &&
-        (out.splitOn "expectation `testing::library_reads::read_needed` does not hold").length > 1 &&
-        (out.splitOn "counterexample: m = ReaderModule::Models").length > 1 do
-      failures := failures.push s!"libraries regression: unneeded-read mutation was not killed (exit {code}):\n{out}"
+    let fixture := lakefile.replace before after
+    if fixture == lakefile then
+      failures := failures.push s!"libraries regression: unreadable-declaration fixture `{before}` did not apply"
+      continue
+    let got ← checkLibraries fixture
+    unless got.any (fun e => (e.splitOn "`libraries` job cannot read").length > 1) do
+      failures := failures.push s!"libraries regression: unreadable declaration `{after}` did not report cannot read: {got}"
   return failures
 
 /-! ## Mutants
