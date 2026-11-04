@@ -2020,7 +2020,11 @@ def duplicateScrutineeGroup : R String := do
     else
       let body ← pick (bodies.push s!"ds_apply(|arg| ({e}) + arg, n)")
       out := out ++ s!"pub fn ds_f{k}({params}): Int := {body}{defs}\n"
-  return out
+  -- Append after every existing draw, keeping each seed's earlier text.
+  let (a, b) ← pick #[("n", "m"), ("m", "n")]
+  let kw ← pick #["match", "table"]
+  return out ++ s!"pub fn ds_groups(n: Int, m: Int): Int := {kw} {a}, {b}, {a}, {b} \{ 0, 0, 0, 1 => 1, 0, 1, 1, 1 => 2, _, _, _, _ => 0 }\n" ++
+    s!"pub fn ds_generic<T>(o: Option<T>): Int := {kw} o, o \{ Option::Some(_), Option::None => 1, _, _ => 0 }\n"
 
 /-- A spec with constants, functions, and components over them, and its
 *cuts*: the spec as it stands before each group of items appended after

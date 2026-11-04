@@ -4770,7 +4770,9 @@ def duplicateScrutinee (forms : Array String) (i : Nat) : Option Nat :=
 one, the first row whose patterns in those two columns cannot both match.
 Both front ends supply only the texts without outer parentheses, types
 and resolved patterns, as for `eq_op`'s operands.
-The row note uses `Pat.overlapWit?` (`lang::pattern_overlap`). -/
+The row note uses `Pat.overlapWit?` (`lang::pattern_overlap`); choosing its
+first row is checked by the ui tests and CLI snapshots, not the `impl`
+of `lint::duplicate_scrutinee`. -/
 def duplicateScrutinees (texts : Array String) (sigs : Sigs) (types : Array PatTy)
     (rows : Array (Array Pat)) : Array (Nat × Nat × Option Nat) := Id.run do
   if texts.size < 2 then return #[]

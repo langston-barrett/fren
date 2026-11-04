@@ -158,10 +158,12 @@ use view::Severity
 | `zero_sized_map_values` | `F0789` | `pedantic` | `allow` | a relation type `Rel<A, B>` whose `B` has one value (see [Relations to one value](Lint/Pedantic.md#relations-to-one-value)) |
 <!-- keep-sorted end -->
 
-The lints' codes run from `F0701` to `F0846`, and include `F0849`. Each
-group's codes start at `01`. Among them, `F0707`, `F0708` and `F0709` are
-errors in [setting levels](#setting-levels), `F0713` is the removed
+The lints' codes run from `F0701` to `F0849`, and each group's codes start
+at `01`. Among them, `F0707`, `F0708` and `F0709` are errors in [setting
+levels](#setting-levels), `F0713` is the removed
 `shadowed_constants`'s, and `F0844` is kept for a lint of parentheses.
+`F0847` is reserved for [#713's follow-ons](https://github.com/langston-barrett/fren/pull/713),
+and `F0848` is never used.
 
 Lints are found while elaborating, like [static
 errors](View.md#static-errors), and never ask the solver anything: the
