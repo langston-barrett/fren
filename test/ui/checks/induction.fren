@@ -101,11 +101,13 @@ expect covered(a: L) {
     expect right: append(a, L::Nil) = a
 }
 
--- A false claim that its own check leaves Inconclusive, since evaluation
--- refutes the solver's model: induction does not pass it either, as the
--- step from `len(t) != 5` to `1 + len(t) != 5` does not hold, and the
--- generated function's postcondition is a hypothesis only at its
--- recursive applications, never at its own.
+-- A false claim that its own check leaves Inconclusive: it fails under
+-- `len`'s contract, and evaluation does not confirm that counterexample,
+-- which is not the internal error of a model that contradicts Fren's
+-- semantics, so induction is tried. It does not pass it, as the step from
+-- `len(t) != 5` to `1 + len(t) != 5` does not hold, and the generated
+-- function's postcondition is a hypothesis only at its recursive
+-- applications, never at its own.
 expect off(a: L) {
     expect c: len(a) != 5   --~ warning: could not decide whether `off::c` holds
 }

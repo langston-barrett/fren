@@ -1140,9 +1140,12 @@ under an assumption or not; claims that one step of each function proves,
 that need more (Inconclusive still), and in a Boolean block; and the forms
 that rule induction out: a call, an uninterpreted function, a parameter of
 a subset type. Each claim holds, so no result depends on a model, but for
-one false claim now and then, which evaluation refutes the model of, so it
-stays Inconclusive, with no model shown, and induction must not pass it. It is
-written from a grammar of its own, as `factChain` is. -/
+one false claim now and then, which fails under its function's contract
+with a counterexample that evaluation does not confirm, not the internal
+error of a model that contradicts Fren's semantics: so it stays
+Inconclusive, with no model shown, induction is tried on it, and induction
+must not pass it. It is written from a grammar of its own, as `factChain`
+is. -/
 def inductions : R String := do
   let mut out := "pub enum IdList { Nil, Cons(Int, IdList) }\n" ++
     "pub enum IdTree { Leaf(Bool), Node(IdTree, Int, IdTree) }\n" ++
