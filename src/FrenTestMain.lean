@@ -2715,15 +2715,6 @@ would wait for its own build too: each must import exactly the root's. -/
 def rootCopies : List (String × List String) :=
   [("Fren", ["Reqs.Check", "Reqs.Calls", "Reqs.Lang", "Reqs.Modules"])]
 
-/-- The libraries of Reqs that need only some of its specs, as module and
-the specs, relative to `src/Reqs`, that it may read. -/
-def specsRead : List (List String × (String → Bool)) :=
-  [(["Reqs.Check", "Reqs.Cli", "Reqs.Eval", "Reqs.Fmt", "Reqs.Generated", "Reqs.Impl", "Reqs.Mutate", "Reqs.Trace", "Reqs.View"],
-      fun p => !p.contains '/'),
-    (["Reqs.Calls", "Reqs.Lang", "Reqs.Modules", "Reqs.Refine"], (·.startsWith "Lang/")),
-    (["Reqs.Lint"], fun p => p == "Lint.md" || p.startsWith "Lint/"),
-    (["Reqs.Testing"], (·.startsWith "dev/"))]
-
 /-- The modules of Impls whose library needs the tests, `ImplsTested` in
 `lakefile.lean` (`libraryModules`). -/
 def testReaders : List String := ["src/Impls/Evidence.lean", "src/Impls/Lint.lean", "src/Impls/Trace.lean"]
@@ -2746,10 +2737,10 @@ def sourceOf (m : String) : System.FilePath := "src" / ((m.replace "." "/") ++ "
 /-- The declarations of kind `kind` in `lakefile.lean` (`lean_lib`,
 `input_dir`, `input_file`), each as its name and its text: its line and
 the indented lines after it. -/
-def lakeDecls (kind : String) : IO (Array (String × String)) := do
+def lakeDecls (lakefile kind : String) : Array (String × String) := Id.run do
   let mut out := #[]
   let mut cur : Option (String × String) := none
-  for line in (← IO.FS.readFile "lakefile.lean").splitOn "\n" do
+  for line in lakefile.splitOn "\n" do
     if line.startsWith " " then
       cur := cur.map fun (n, t) => (n, t ++ "\n" ++ line)
       continue
@@ -2763,11 +2754,15 @@ def lakeDecls (kind : String) : IO (Array (String × String)) := do
 each trimmed. -/
 def lakeArray (decl field : String) : Option (List String) := do
   let after ← (decl.splitOn s!"{field} := #[")[1]?
-  return ((after.splitOn "]").headD "").splitOn "," |>.map (·.trimAscii.toString) |>.filter (!·.isEmpty)
+  let before ← (after.splitOn "]").head?
+  unless after.contains ']' do none
+  return before.splitOn "," |>.map (·.trimAscii.toString) |>.filter (!·.isEmpty)
 
 /-- The string of the field `field := "…"` of the declaration text `decl`. -/
 def lakeString (decl field : String) : Option String := do
-  (← (decl.splitOn s!"{field} := \"")[1]?).splitOn "\"" |>.head?
+  let after ← (decl.splitOn s!"{field} := \"")[1]?
+  unless after.contains '"' do none
+  return (after.splitOn "\"").headD ""
 
 /-- A glob of a `lean_lib`, as the module, and whether it selects the
 module itself and its submodules. -/
@@ -2811,28 +2806,46 @@ def libraryModules (lib decl : String) : IO (Except String (Array (String × Str
 file `p`, a path from the repository's root, by its `needs`: an
 `input_file` of `p`, or an `input_dir` that holds `p` and whose filter
 takes it. -/
-def lakeNeeds (decl : String) : IO (Except String (String → Bool)) := do
-  let files ← lakeDecls "input_file"
-  let dirs ← lakeDecls "input_dir"
+def lakeNeeds (lakefile decl : String) : Except String (String → Bool) := do
+  let files := lakeDecls lakefile "input_file"
+  let dirs := lakeDecls lakefile "input_dir"
+  let entries ← match lakeArray decl "needs" with
+    | some ns => pure ns
+    | none =>
+      if (decl.splitOn "\n").any (·.trimAscii.toString.startsWith "needs") then
+        throw "lakefile.lean: `lake test`'s `libraries` job cannot read `needs`"
+      else pure []
   let mut needed : Array (String → Bool) := #[]
-  for n in (lakeArray decl "needs").getD [] do
-    let name := (n.dropPrefix "`@/").toString
-    let cannot := s!"lakefile.lean: `lake test`'s `libraries` job cannot read the input `{name}`"
+  for n in entries do
+    let cannot := s!"lakefile.lean: `lake test`'s `libraries` job cannot read the input `{n}`"
+    let some name := n.dropPrefix? "`@/" | throw cannot
+    let name := name.toString
     if let some (_, d) := files.find? (·.1 == name) then
-      let some path := lakeString d "path" | return .error cannot
-      needed := needed.push (· == path)
+      let some path := lakeString d "path" | throw cannot
+      needed := needed.push (· == normalPath path)
     else if let some (_, d) := dirs.find? (·.1 == name) then
-      let some path := lakeString d "path" | return .error cannot
+      let some path := lakeString d "path" | throw cannot
+      let path := normalPath path
       let filter := (((d.splitOn "filter := ")[1]?.bind (·.splitOn "\n" |>.head?)).getD "").trimAscii.toString
       let inDir (p : String) := p.startsWith (path ++ "/")
       if filter == ".star" then needed := needed.push inDir
+      else if filter == ".ofFn fun p => p.extension == some \"md\" && (p.parent.bind (·.fileName)) == some \"Reqs\"" then
+        -- The one custom filter in this lakefile. Accept its exact spelling,
+        -- rather than treating an arbitrary function as all Markdown files.
+        needed := needed.push fun p => inDir p && (System.FilePath.mk p).extension == some "md" &&
+          ((System.FilePath.mk p).parent.bind (·.fileName)) == some "Reqs"
       else if let some exts := filter.dropPrefix? ".extension #[" then
-        let exts := ((exts.toString.splitOn "]").headD "").splitOn "," |>.map fun e =>
-          ((e.trimAscii.toString.dropPrefix "\"").dropSuffix "\"").toString
-        needed := needed.push fun p => inDir p && exts.any (some · == (System.FilePath.mk p).extension)
-      else return .error cannot
-    else return .error cannot
-  return .ok fun p => needed.any (· p)
+        let some exts := exts.toString.dropSuffix? "]" | throw cannot
+        let mut extensions := #[]
+        for e in exts.toString.splitOn "," do
+          let some e := e.trimAscii.toString.dropPrefix? "\"" | throw cannot
+          let some e := e.toString.dropSuffix? "\"" | throw cannot
+          if e.toString.contains '\"' then throw cannot
+          extensions := extensions.push e.toString
+        needed := needed.push fun p => inDir p && extensions.any (some · == (System.FilePath.mk p).extension)
+      else throw cannot
+    else throw cannot
+  return fun p => needed.any (· (normalPath p))
 
 /-- The modules that `m` imports. -/
 def importsOf (m : String) : IO (Array String) := do
@@ -2847,6 +2860,20 @@ def specsOf (src : String) : Array String :=
 
 #guard specsOf "#fren_md \"a.md\"\n#guard_msgs in #fren_md \"b.md\"\n  #fren_md \"c/d.md\"\n" == #["a.md", "b.md", "c/d.md"]
 #guard specsOf "-- `#fren_md` with no file\n" == #[]
+
+/-- The paths in `tested` commands, including indented continuations. -/
+def testedFilesOf (src : String) : Array String := Id.run do
+  let mut inClaim := false
+  let mut files := #[]
+  for line in src.splitOn "\n" do
+    unless line.startsWith " " do inClaim := line.startsWith "tested "
+    if inClaim then
+      let quoted := (line.splitOn "\"").toArray
+      for i in [0:quoted.size] do
+        if i % 2 == 1 then files := files.push quoted[i]!
+  return files
+
+#guard testedFilesOf "tested m::p: \"test/a.fren\",\n  \"src/FrenTest/B.lean\"\n-- \"ignored\"\n" == #["test/a.fren", "src/FrenTest/B.lean"]
 
 /-- The default targets of the lakefile `lakefile`: the names of its
 `lean_lib`s and `lean_exe`s marked `@[default_target]`, the attribute on
@@ -2895,12 +2922,13 @@ library needs; only modules whose library needs the tests make `tested`
 claims; and only the tests whose library needs the files that they read,
 `FrenTestFiles`, read files with `#fren_md`; and `pre-merge`'s build
 jobs together build exactly the default targets. -/
-def libraries : IO (Array String) := do
+-- fren-covers: testing::library_reads
+def checkLibraries (lakefile : String) : IO (Array String) := do
   let mut failures := #[]
   -- `lake build --wfail` runs on two machines, each building some of the
   -- default targets, so that a new one would otherwise go unbuilt.
   let built := ((matrixTargets (← IO.FS.readFile ".github/workflows/pre-merge.yml")).qsort (· < ·)).toList.eraseDups.toArray
-  match defaultTargets (← IO.FS.readFile "lakefile.lean") with
+  match defaultTargets lakefile with
   | .error e => failures := failures.push e
   | .ok ts =>
     let want := ts.qsort (· < ·)
@@ -2919,7 +2947,7 @@ def libraries : IO (Array String) := do
   -- the globs of two libraries is built with either's `needs`, by which
   -- library the build reaches it through first, and editing a file that
   -- the other needs may not rebuild it.
-  let libs ← lakeDecls "lean_lib"
+  let libs := lakeDecls lakefile "lean_lib"
   let mut owners : Array (String × String) := #[]
   let mut modulesOf : Array (String × Array String) := #[]
   for (lib, decl) in libs do
@@ -2932,11 +2960,38 @@ def libraries : IO (Array String) := do
           failures := failures.push s!"lakefile.lean: `{m}` is in the globs of both `{other}` and `{lib}`, which build it with their own `needs`"
         else owners := owners.push (m, lib)
   let modulesOfLib (lib : String) : Array String := ((modulesOf.find? (·.1 == lib)).map (·.2)).getD #[]
-  for (mods, ok) in specsRead do
-    for m in mods do
-      for spec in specsOf (← IO.FS.readFile (sourceOf m)) do
-        unless ok spec do
-          failures := failures.push s!"{sourceOf m}: reads `{spec}`, which its library in `lakefile.lean` does not need"
+  -- Explicit globs own a module; otherwise Lake uses the last library
+  -- whose roots contain it. This also covers unlisted modules under Reqs.
+  let owner (m : String) : Option (String × String) := do
+    let lib ← ((owners.find? (·.1 == m)).map (·.2)).orElse fun _ =>
+      (libs.reverse.find? fun (lib, decl) =>
+        ((lakeArray decl "roots").getD [s!"`{lib}"]).any fun r =>
+          let root := (r.dropPrefix "`").toString
+          m == root || m.startsWith (root ++ ".")).map (·.1)
+    libs.find? (·.1 == lib)
+  let checkReads (m : String) (reads : Array String) : Array String := Id.run do
+    let some (lib, decl) := owner m
+      | return #[s!"{sourceOf m}: no owning library in `lakefile.lean`"]
+    match lakeNeeds lakefile decl with
+    | .error e => return #[e]
+    | .ok needed =>
+      return reads.filterMap (fun p =>
+        if needed p then none else some s!"{sourceOf m}: reads `{p}`, which `{lib}` in `lakefile.lean` does not need")
+  for f in (← System.FilePath.walkDir "src/Reqs").push "src/Reqs.lean" do
+    if f.extension != some "lean" then continue
+    let m := ((f.withExtension "").toString.dropPrefix "src/").toString.replace "/" "."
+    let reads := (specsOf (← IO.FS.readFile f)).map fun (spec : String) =>
+      normalPath ((f.parent.getD "" / spec).toString)
+    failures := failures ++ checkReads m reads
+  -- Check the files actually named by claims and the converse scan.
+  -- Membership alone says nothing about their freshness.
+  for f in testReaders do
+    let src ← IO.FS.readFile f
+    let mut reads := testedFilesOf src
+    for rest in (src.splitOn "set_option fren.testGlobs \"").drop 1 do
+      reads := reads ++ (← Fren.Core.expandGlobs (((rest.splitOn "\"").headD "").splitOn " ").toArray)
+    let m := (((System.FilePath.mk f).withExtension "").toString.dropPrefix "src/").toString.replace "/" "."
+    failures := failures ++ checkReads m reads
   let tested := modulesOfLib "ImplsTested"
   unless tested.qsort (· < ·) == testReaders.toArray.qsort (· < ·) do
     failures := failures.push s!"lakefile.lean: `ImplsTested` holds {tested}, but `testReaders` in src/FrenTestMain.lean is {testReaders}"
@@ -2953,7 +3008,7 @@ def libraries : IO (Array String) := do
       failures := failures.push s!"{f}: reads `{file}`, but its library in `lakefile.lean` is not `FrenTestFiles`, which needs the files that tests read"
   -- The files that `FrenTestFiles` reads, and those that they read with
   -- their own `#fren_md`, relative to themselves, must be ones that it needs.
-  match ← lakeNeeds (((libs.find? (·.1 == "FrenTestFiles")).map (·.2)).getD "") with
+  match lakeNeeds lakefile (((libs.find? (·.1 == "FrenTestFiles")).map (·.2)).getD "") with
   | .error e => failures := failures.push e
   | .ok needed =>
     let mut todo := readers
@@ -2968,6 +3023,45 @@ def libraries : IO (Array String) := do
         if !seen.contains path && (← System.FilePath.pathExists path) then
           seen := seen.push path
           todo := todo.push path
+  return failures
+
+/-- The live lakefile and fixtures that remove a dependency without
+changing module membership. Each removal must fail the same check. -/
+def libraries : IO (Array String) := do
+  let lakefile ← IO.FS.readFile "lakefile.lean"
+  let mut failures ← checkLibraries lakefile
+  for (lib, decl) in lakeDecls lakefile "lean_lib" do
+    unless (lib.startsWith "Reqs" && lib != "Reqs") || lib == "ImplsTested" do continue
+    let entries := (lakeArray decl "needs").getD []
+    for entry in entries do
+      let without := decl.replace s!"needs := #[{", ".intercalate entries}]"
+        s!"needs := #[{", ".intercalate (entries.filter (· != entry))}]"
+      let got ← checkLibraries (lakefile.replace decl without)
+      unless got.any (fun e => (e.splitOn s!"`{lib}`").length > 1) do
+        failures := failures.push s!"libraries regression: removing {entry} from {lib} was accepted"
+  -- Markdown and Models used to be omitted from the hard-coded readers.
+  -- Give their library individual files, then omit each one in turn.
+  let some (_, chapters) := (lakeDecls lakefile "lean_lib").find? (·.1 == "ReqsChapters")
+    | return failures.push "libraries regression: no ReqsChapters fixture"
+  let specs ← sortedFiles "src/Reqs" "md"
+  let specs := specs.filter (·.parent == some (System.FilePath.mk "src/Reqs"))
+  for omitted in #["Markdown", "Models"] do
+    let kept := specs.filter (·.fileStem != some omitted)
+    let entries := kept.mapIdx fun i _ => s!"`@/fixture_{i}"
+    let inputs := kept.mapIdx fun i f => s!"input_file fixture_{i} where\n  path := \"{f}\"\n"
+    let fixture := lakefile.replace chapters (chapters.replace "`@/reqs_chapters_md" (", ".intercalate entries.toList)) ++
+      "\n" ++ "\n".intercalate inputs.toList
+    let got ← checkLibraries fixture
+    unless got.any (fun e => (e.splitOn s!"src/Reqs/{omitted}.lean:").length > 1) do
+      failures := failures.push s!"libraries regression: missing {omitted}.md was accepted"
+  -- Unsupported declarations must fail closed, including a changed custom filter.
+  for (before, after) in #[
+      ("needs := #[`@/reqs_lang_md]", "needs := reqsNeeds"),
+      ("`@/reqs_lang_md", "`@/missing_input"),
+      ("filter := .extension #[\"md\"]", "filter := unknownFilter"),
+      ("filter := .ofFn fun p =>", "filter := .ofFn fun q =>")] do
+    if (← checkLibraries (lakefile.replace before after)).isEmpty then
+      failures := failures.push s!"libraries regression: unreadable declaration `{after}` was accepted"
   return failures
 
 /-! ## Mutants

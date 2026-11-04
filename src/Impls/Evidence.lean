@@ -44,6 +44,9 @@ import Reqs
 
 open Fren.Lang
 
+-- The libraries job checks declared Lake inputs and tests missing dependencies.
+tested testing::library_reads: "src/FrenTestMain.lean"
+
 tested cli::fix_static_errors: "src/FrenTestMain.lean"
 
 tested lang::global_checks: "test/ui/lang/global.fren", "test/ui/lang/global_preconditions.fren"

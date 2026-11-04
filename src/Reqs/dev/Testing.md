@@ -846,10 +846,12 @@ A test's result is *fresh* when it is that of the files it reads as they
 are now: its module was rebuilt after the last change to any of them, or
 none of them changed. Lake rebuilds a module when a file that its library
 needs changed since its last build, which Fren trusts; that each module
-that reads files, with `#fren_md`, reads only files that its library
-needs is what the `libraries` job checks, by reading the sources and
-`lakefile.lean`, so it is tested, not proved. `testing::fresh` states how
-the two give freshness: whenever the files read are among those needed,
+that reads files, with `#fren_md` or `tested`, reads only files that its
+owning library needs is what the `libraries` job checks, by resolving the
+library's actual `needs` in `lakefile.lean`, including each input's path
+and filter. An unreadable dependency declaration fails the check. This
+check, `testing::library_reads`, is tested, not proved. `testing::fresh`
+states how the two give freshness: whenever the files read are among those needed,
 the result is fresh.
 
 The same goes for the driver itself: `lake test` runs `fren_test`, its
@@ -861,6 +863,13 @@ with `lake build fren_test`.
 ```fren
 -- A file of the repository.
 pub type File
+
+-- The library check must reject a reader with any missing dependency.
+pub proc library_reads(reads: Set<File>, needs: Set<File>): (covered?) {
+    ensure rule: covered? iff reads subset needs
+
+    expect missing: when reads minus needs != {}, not covered?
+}
 
 pub proc fresh(
     reads: Set<File>,       -- the files that the module reads when it is built
