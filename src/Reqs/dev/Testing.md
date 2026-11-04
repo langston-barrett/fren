@@ -372,7 +372,8 @@ pub mod testing
   summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
-  [--confirm] [--scrutinees] [--keywords] [--fact-scopes]
+  [--confirm] [--obligations] [--scrutinees] [--inductions]
+  [--induction-forms] [--keywords] [--fact-scopes]
   [--spec-timeout SECONDS]`): generates random
   specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
@@ -431,8 +432,7 @@ pub mod testing
   and through definitions, and a cover goal that mentions none of them.
   The mode compares the front ends' reports on these queries;
   `test/ui/checks/fact_scope.fren` pins the expected verdicts and witness.
-  A run with
-  `--obligations` also compares the front ends' [obligations
+  A run with `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
   that a run compares the messages of what users run, which is what CI
