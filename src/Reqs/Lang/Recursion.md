@@ -403,7 +403,7 @@ pub proc induction_candidate(
     abstract?,                   -- the block applies an uninterpreted function
     restrictions: Set<Bool>,     -- `lang::subset_widening`'s `restricted?` for every declared parameter type
     ty: Int,                     -- the parameter's type, by an identifier
-    payloads: Set<Set<Int>>,      -- each variant's payload types, at the type arguments; empty for a non-enumeration
+    payloads: Set<Set<Int>>,     -- each variant's payload types, at the type arguments; empty for a non-enumeration
     parameter: Int,              -- the parameter, by an identifier
     arguments: Set<Int>,         -- unshadowed local variables written at structural recursions' decreasing arguments
 ): (det candidate?) {
@@ -429,16 +429,10 @@ pub proc induction_argument(
 }
 ```
 
-`lang::induction_candidate` computes the restriction across all parameters
-and the membership of this parameter among decreasing arguments. The front
-ends extract variable paths, declared parameter types and enum shapes.
-Shared Core code instantiates payload types, selects candidates, and
-constructs the function bodies and postconditions.
-
-`lang::directly_recursive` states when the parameter's type is one, from
-the types of its enumeration's variants' payloads, at its type arguments,
-as `G<Int>`'s payload `G<A>` is `G<Int>`: where some payload's type is the
-parameter's.
+The payload condition of `lang::induction_candidate` is
+`lang::directly_recursive`'s: the parameter's type is a recursive enumeration
+with a payload of that same type. Payload types are instantiated at the
+enumeration's type arguments, as `G<Int>`'s payload `G<A>` is `G<Int>`.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -481,12 +475,8 @@ whose check has the claim at `p1` and `b` as a hypothesis where `a` is
 `L::Cons(p0, p1)`, from the postcondition at its recursive application.
 The postcondition has the function's application, so that its check has
 the body, and the facts of the applications in it. A Boolean payload is
-bound to a name that ends with `?`. Where a front end parses a template
-before splicing the expectation's syntax into it, its temporary names must
-avoid every name in the expectation and every segment of each generated
-variant path, including an enum's name hidden by a type alias. Replacing a
-temporary name never changes a variant path. The function, its body and
-its checks are internal, so nothing about them is reported. Its name, as its binders',
+bound to a name that ends with `?`. The function, its body and its checks
+are internal, so nothing about them is reported. Its name, as its binders',
 starts with `#`, which no source can write, so nothing but the function
 itself can apply it: an application elsewhere would rest on its contract,
 which is checked only where the claim's own check is Inconclusive. Nor is

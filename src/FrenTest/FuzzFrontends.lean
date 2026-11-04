@@ -65,8 +65,8 @@ the spec's other checks; `genWide` includes one without it now and then.
 `--inductions` generates global expectations over recursive enumerations
 alone (`Wide.inductions`), which induction on a parameter may prove, and
 `--induction-forms` the forms in which the front ends read a candidate
-for it (`Wide.inductionForms`); `--induction-candidates` adds declared type,
-comparison and binder forms (`Wide.inductionCandidates`).
+for it (`Wide.inductionForms`); `--induction-candidates` generates declared
+type, comparison and binder forms (`Wide.inductionCandidates`).
 `--confirm` generates what the confirmation of models evaluates
 (`Wide.genConfirmed`): `div` and `mod`, an index in an argument that a
 function's body never reads, and the formulas whose value confirmation
@@ -1248,12 +1248,10 @@ def inductionForms : R String := do
       s!"\nexpect jf_module(a: JL, b: JL) \{\n    expect c: {adds "a" "b"}\n}\n"
   return out
 
-/-- Candidacy and builder coverage beyond `inductionForms`. A separate
-mode preserves every existing mode's specs, including the induction corpus.
-It draws from its own generator split off the seed. Each spec samples a
-companion type, an argument form and a comparison; thousands of small
-specs exercise every form without repeating the original induction corpus.
-All claims hold, and no form adds a static error that suppresses checks. -/
+/-- Specs of induction candidacy and function construction: each samples a
+companion parameter type, an argument form and a comparison. Its generator
+is split off the seed, leaving the other modes' draws unchanged. All claims
+hold; no form adds a static error that suppresses the checks. -/
 def inductionCandidates : R String := do
   let mut out := "mod kcandidates\n\nset_option fren.lint.undecidable \"allow\"\n\n" ++
     "pub enum KL { Nil, Cons(Int, KL) }\n" ++
@@ -2811,7 +2809,8 @@ def grammarRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6772⟩
 split off the seed too. -/
 def itemRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6974⟩
 
-/-- The new induction-candidacy mode's independent generator. -/
+/-- The generator of `--induction-candidates` (`Wide.inductionCandidates`),
+split off the seed so that its draws leave the other modes unchanged. -/
 def inductionRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6963⟩
 
 /-- How specs are generated: `--avoid-known`, and `--guards`, which
@@ -2837,7 +2836,8 @@ structure Mode where
   keywords : Bool := false
   /-- Query-local transitive fact closure (`Wide.factScopes`). -/
   factScopes : Bool := false
-  /-- Additional candidacy forms, with the original modes unchanged. -/
+  /-- Specs of induction-candidate types, argument forms and comparisons
+  (`Wide.inductionCandidates`). -/
   inductionCandidates : Bool := false
   deriving BEq
 

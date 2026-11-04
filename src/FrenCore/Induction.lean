@@ -76,18 +76,12 @@ def enumParts (shapes : Lean.Name → Option DataShape) (t : Ty) : Option (Array
   if d.isRecord || d.isNewtype then none
   return d.parts.map (·.map (·.ty.subst args.toArray))
 
-/-- Whether `t` is an enumeration with a payload of type `t` itself, by
-`shapes`: induction on a value of it has children
-(`lang::induction_candidate`). Its variants' payloads' types, at `t`'s type
-arguments (`enumParts`), are compared with `t` by `payloadOfType`. -/
-def directlyRecursive (shapes : Lean.Name → Option DataShape) (t : Ty) : Bool :=
-  match enumParts shapes t with
-  | some parts => payloadOfType (parts.toList.map fun ps => ps.toList.map (·.flat)) t.flat
-  | none => false
-
 /-- The candidates, in parameter order (`lang::induction_candidate`).
-Both front ends supply declared parameter types and the local variables
-collected by `inductionArgument?`; all candidacy decisions are made here. -/
+Both front ends extract variable paths, declared parameter types and enum
+shapes, and supply the local variables collected by `inductionArgument?`.
+This function instantiates payload types at each parameter's type arguments
+and decides restrictions, payload membership and decreasing-argument
+membership through `inductionCandidate`. -/
 def inductionCandidates (shapes : Lean.Name → Option DataShape) (members : List BlockMember) (abstract : Bool)
     (params : Array (Lean.Name × PTy)) (arguments : Array Lean.Name) : List Nat :=
   let restrictions := params.toList.map (·.2.restricted)
@@ -176,10 +170,12 @@ structure InductionSyntax (E : Type) where
   matchOn : String → Array (InductionArm E) → E
 
 /-- The generated function's body and postcondition
-(`Reqs/Lang/Recursion#induction`), in either front end's syntax. Every
-arm binds all payloads and conjoins precisely `inductionHypotheses`'s
-applications, with `true` at a leaf. The postcondition conjoins the
-function's own application with the claim under all assumptions.
+(`Reqs/Lang/Recursion#induction`), constructed for both front ends from
+their syntax operations, parameter types, enum shapes, assumptions and
+claim. Every arm binds all payloads and conjoins precisely
+`inductionHypotheses`'s applications, with `true` at a leaf. The
+postcondition conjoins the function's own application with the claim under
+all assumptions.
 `binder` allows the hosted front end to parse temporary names before
 renaming them to the unwriteable generated binders. -/
 def buildInduction {E : Type} (builder : InductionSyntax E) (shapes : Lean.Name → Option DataShape)

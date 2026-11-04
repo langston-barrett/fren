@@ -9189,20 +9189,20 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
     | _ => none
   let position := (charRange (← getFileMap).source stx[2]).start
   let ref := stx[2]
+  let savedModule := l.currentModule
   -- Placeholders for the parts that are spliced in after parsing, under a
   -- prefix that no name in the expectation or the generated patterns
   -- starts with: renaming must not rewrite a variant or an enum's name
   -- hidden by an alias in the expectation's signature.
   let patternNames := candidates.toArray.flatMap fun i => match tys[i]! with
     | .enum ep _ => ((st.enums.get? ep).map fun info => info.variants.flatMap fun v =>
-        (Core.variantSegments l.currentModule ep v).toArray).getD #[]
+        (Core.variantSegments savedModule ep v).toArray).getD #[]
     | _ => #[]
   let written := identNames stx ++ patternNames
   let mut fresh := "fren_induction_"
   while written.any (·.startsWith fresh) do fresh := fresh ++ "_"
   let stem := fresh
   let ph (s : String) : String := stem ++ s
-  let savedModule := l.currentModule
   let mut inductions := #[]
   for m in members do
     let some (.expect, claim, e) := constraint? m | continue

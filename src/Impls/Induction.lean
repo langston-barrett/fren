@@ -56,9 +56,8 @@ impl induction_candidate: lang::induction_candidate for (ms : List BlockMember) 
   · rintro ⟨_, ⟨p, hp, rfl⟩, ht⟩
     exact ⟨p, hp, by simpa only [Fren.FinSet.mem_ofList] using ht⟩
 
--- The payload membership used by `directlyRecursive` and candidate
--- selection: compare payload types instantiated at the type arguments
--- with `payloadOfType`.
+-- Bind `payloadOfType`, which `inductionCandidate` calls to compare
+-- payload types instantiated at the parameter's type arguments.
 impl directly_recursive: lang::directly_recursive for (ps : List (List Nat)) (t : Nat) {
   ty := t,
   payloads := Fren.Seq.ofList (ps.map fun p => Fren.Seq.ofList (p.map Int.ofNat)),
