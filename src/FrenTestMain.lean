@@ -6,6 +6,7 @@ import FrenTest.Frontends
 import FrenTest.FuzzFrontends
 import FrenTest.Jobs
 import FrenTest.Messages
+import FrenTest.MutateDecisions
 import FrenTest.OutOfFuel
 import FrenTest.Quote
 import FrenTest.ReadingBeside
@@ -3218,15 +3219,24 @@ def outcomeName : FrenCli.Mutate.Outcome → String
   | .equivalent => "is equivalent"
   | .unviable => "is unviable"
 
-/-- The decisions of `fren mutate` about the mutants of `files`, or of
+/-- The decisions of `fren mutate` about the independently generated `all`
+mutants of `files`, or of
 those named by `ids`, or `sample?` of them, or the shard `shard?`, in
-order; checking every component of every mutant if `exhaustive`. -/
-def decisionsOf (files : Array String) (ids : Array String := #[]) (sample? : Option Nat := none)
+order; checking every component of every mutant if `exhaustive`. Fails
+on command errors or any difference in the selected ID multiset. -/
+def decisionsOf (files : Array String) (all : Array FrenCli.Mutate.Mutant)
+    (ids : Array String := #[]) (sample? : Option Nat := none)
     (shard? : Option (Nat × Nat) := none) (exhaustive := false) : IO (Array FrenCli.Decision) := do
   let decisions ← IO.mkRef #[]
-  let _ ← IO.FS.withIsolatedStreams
+  let run ← FrenTest.MutateDecisions.capture decisions
     (FrenCli.mutate { command := .mutate, files, mutantIds := ids, sample?, shard? } (some { exhaustive, decisions }))
-  decisions.get
+  -- `all` is generated independently of this run, never read from its
+  -- decisions (including for samples, individual shards and derivatives).
+  let selected := FrenCli.Mutate.select all none ids sample? 0 (shard? := shard?)
+  let problems := FrenTest.MutateDecisions.problems (selected.map (·.id)) run
+  unless problems.isEmpty do
+    throw (IO.userError s!"{files.toList} (sample {sample?}, shard {shard?}, exhaustive {exhaustive}):\n{String.intercalate "\n" problems.toList}")
+  return run.decisions
 
 /-- The results of `fren check` of `files`, by the key of their item and
 their own (`FrenCli.Mutate.keyed`), and its exit code. -/
@@ -3268,6 +3278,11 @@ def withText (name : String) (chars : Array Char) (f : String → IO α) : IO α
     f path.toString
 
 /-- What `fren mutate` decides about the mutants of the example `path`:
+- **complete ledger:** every run (full, sample, each shard, each
+  expectation-deleted derivative and the exhaustive sample) decides exactly
+  the ID multiset selected from its independently generated mutants, reports
+  no error diagnostic, and exits with 3 exactly when a mutant survives,
+  otherwise 0;
 - **adequate:** the example passes `fren check`, and every mutant is killed
   but those listed as equivalent, each of which survives or is shown
   equivalent;
@@ -3297,7 +3312,7 @@ def decisions (path : String) : IO (Array String) := do
   let (before, code) ← checkResultsOf #[path]
   if code != 0 then failures := failures.push s!"{path}: `fren check` exits with {code}, not 0"
   -- Adequacy.
-  let decided ← decisionsOf #[path]
+  let decided ← decisionsOf #[path] all
   -- Whether the solver shows a listed mutant equivalent within its time
   -- limit, which is in wall-clock time, can depend on the machine's load,
   -- so a listed mutant may either survive or be equivalent.
@@ -3309,28 +3324,27 @@ def decisions (path : String) : IO (Array String) := do
     | .unviable, true => failures := failures.push s!"{path}: {d.id} is unviable"
   for id in listed do
     unless decided.any (·.id == id) do failures := failures.push s!"{path}: {id} is listed, but is no mutant"
-  -- Whether a mutant that is not killed is shown equivalent depends on
-  -- the solver's time limit, as above.
-  let kind (o : FrenCli.Mutate.Outcome) := if o == .equivalent then .survived else o
   -- A sample, in which each mutant runs after fewer others, with fewer
   -- answers kept (`Reqs/Cli#solver-queries`), decides each as the whole
   -- run does.
-  for d in ← decisionsOf #[path] (sample? := some (all.size / 2)) do
-    let some d₀ := decided.find? (·.id == d.id) | continue
-    if kind d.outcome != kind d₀.outcome || d.killers != d₀.killers then
+  for d in ← decisionsOf #[path] all (sample? := some (all.size / 2)) do
+    let some d₀ := decided.find? (·.id == d.id) | throw (IO.userError s!"{path}: {d.id} has no baseline decision")
+    if !FrenCli.Mutate.sameDecision d.outcome d₀.outcome || d.killers != d₀.killers then
       failures := failures.push s!"{path}: {d.id} {outcomeName d₀.outcome}, killed by {d₀.killers.toList}, but in a sample \
         {outcomeName d.outcome}, killed by {d.killers.toList}"
   -- So do the shards, which together hold each mutant once.
-  let shards ← (List.range decisionShards).toArray.flatMapM fun k => decisionsOf #[path] (shard? := some (k, decisionShards))
-  if (shards.map (·.id)).qsort (· < ·) != (decided.map (·.id)).qsort (· < ·) then
+  let shards ← (List.range decisionShards).toArray.flatMapM fun k => decisionsOf #[path] all (shard? := some (k, decisionShards))
+  if (shards.map (·.id)).qsort (· < ·) != (all.map (·.id)).qsort (· < ·) then
     failures := failures.push s!"{path}: the {decisionShards} shards do not hold each mutant once"
   for d in shards do
-    let some d₀ := decided.find? (·.id == d.id) | continue
-    if kind d.outcome != kind d₀.outcome || d.killers != d₀.killers then
+    let some d₀ := decided.find? (·.id == d.id) | throw (IO.userError s!"{path}: {d.id} has no baseline decision")
+    if !FrenCli.Mutate.sameDecision d.outcome d₀.outcome || d.killers != d₀.killers then
       failures := failures.push s!"{path}: {d.id} {outcomeName d₀.outcome}, killed by {d₀.killers.toList}, but in its shard \
         {outcomeName d.outcome}, killed by {d.killers.toList}"
   -- Every expectation and cover goal is needed.
-  let killed := decided.map (·.outcome == .killed)
+  let killed ← all.mapM fun m => do
+    let some d := decided.find? (·.id == m.id) | throw (IO.userError s!"{path}: {m.id} has no baseline decision")
+    pure (d.outcome == .killed)
   for (what, sp) in expectationsOf chars do
     let chars' := chars.extract 0 sp.start ++ chars.extract sp.stop chars.size
     let failure? ← withText name chars' fun path' => do
@@ -3339,10 +3353,15 @@ def decisions (path : String) : IO (Array String) := do
       -- read the file's path.
       if all'.size != all.size || (all.zip all').any fun (m, m') => m.item != m'.item || m.change != m'.change then
         return some s!"{path}: without `{what}`, the mutants are not the same"
-      let decided' ← decisionsOf #[path']
+      let decided' ← decisionsOf #[path'] all'
       -- A mutant that the deleted check killed now means something else
       -- than the spec, so it survives: it is not shown equivalent.
-      let outcomes := (killed.zip (decided'.map (·.outcome))).filter (·.1) |>.map (·.2)
+      -- Compare by generated mutant order, never by a possibly reordered
+      -- decision stream, and only after validating its full ID multiset.
+      let outcomes' ← all'.mapM fun m => do
+        let some d := decided'.find? (·.id == m.id) | throw (IO.userError s!"{path'}: {m.id} is not decided")
+        pure d.outcome
+      let outcomes := (killed.zip outcomes').filter (·.1) |>.map (·.2)
       if outcomes.contains .survived then return none
       if outcomes.contains .equivalent then
         return some s!"{path}: without `{what}`, a mutant that was killed is shown equivalent to the spec"
@@ -3350,11 +3369,11 @@ def decisions (path : String) : IO (Array String) := do
     failures := failures ++ failure?.toArray
   -- Selection and verdicts, on a sample.
   let sample := FrenCli.Mutate.select all none #[] (some decisionSample) 0
-  let full ← decisionsOf #[path] (sample.map (·.id)) (exhaustive := true)
+  let full ← decisionsOf #[path] all (sample.map (·.id)) (exhaustive := true)
   for m in sample do
     let some d := full.find? (·.id == m.id) | failures := failures.push s!"{path}: {m.id} is not decided"
-    let some d₀ := decided.find? (·.id == m.id) | continue
-    if kind d.outcome != kind d₀.outcome then
+    let some d₀ := decided.find? (·.id == m.id) | throw (IO.userError s!"{path}: {m.id} has no baseline decision")
+    if !FrenCli.Mutate.sameDecision d.outcome d₀.outcome then
       failures := failures.push
         s!"{path}: {m.id} {outcomeName d₀.outcome}, but {outcomeName d.outcome} when every component is checked"
     for (item, k) in d₀.killers do
