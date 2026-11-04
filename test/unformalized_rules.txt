@@ -1,4 +1,5 @@
-# The rules of the reference's **Legality rules** and **Dynamic semantics**
+# The rules of the reference's **Legality rules**, **Dynamic semantics**,
+# and (in chapters under src/Reqs/dev/) **Rules**
 # that no requirement formalizes yet (`Reqs/dev/Style#rules-and-requirements`),
 # one per line, in a section for each chapter, in the chapter's order. The
 # Measure step of a chapter group (#620) lists its chapters' rules, in
