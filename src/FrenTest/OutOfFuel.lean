@@ -8,8 +8,8 @@ tested pass (`eval::reaches`): it neither refutes nor reaches the check,
 so that testing leaves the check inconclusive, and it is counted apart, for
 the warning `F0617` (`eval::unreached`). At a tiny fuel, a check that full
 fuel evaluates has no value. Fuel is counted in steps of the semantics,
-applications of a structural recursion (`Reqs/Eval#fuel`), so how deeply
-the expression around them is nested, and whether the recursion's body is
+applications of a structural recursion (`Reqs/Eval#fuel`), so, within the
+native depth budget, how deeply the expression around them is nested, and whether the recursion's body is
 compiled (`Spec.withCompiledRecs`), do not change which evaluations run
 out, nor do the quantifiers and `match`es around them; checking that a
 value is of a subset type spends one unit for each invariant. The
@@ -42,7 +42,7 @@ def deep : Atom := { label := `deep, pfx := .anonymous, e := nots 64 (.app `down
 
 /-- Each way of evaluating `deep` whose step count must not differ:
 `down`'s body nested shallowly or deeply, compiled or not. -/
-def interps : List Interp := [downInterp 0 false, downInterp 0 true, downInterp 500 false, downInterp 500 true]
+def interps : List Interp := [downInterp 0 false, downInterp 0 true, downInterp 4 false, downInterp 4 true]
 
 /-- `down(3)` within 32 negations, within a `match` on a quantifier's
 bound name, within 32 more: neither the quantifier nor the `match`

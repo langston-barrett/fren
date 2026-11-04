@@ -2,6 +2,7 @@
 import Fren
 import FrenCli.Eval
 import FrenCli.Run
+import FrenTest.EvalLimits
 import FrenTest.Frontends
 import FrenTest.FuzzFrontends
 import FrenTest.Jobs
@@ -3690,6 +3691,36 @@ def methodResults (files : Array String) (value : String) (jobs? : Option Nat :=
   let (output, code) ← IO.FS.withIsolatedStreams (FrenCli.check args (some record))
   return { records := ← record.get, diags := (output.splitOn "\n").toArray.filterMap header?, output, code }
 
+/-- Limits leave diagnostics at the public checking and testing commands. -/
+def evalLimitChecks : IO (Array String) := do
+  let failures ← Fren.Test.EvalLimits.check
+  let depth := (← IO.monoMsNow) % 1 + Fren.Core.Enumeration.maxEvalDepth + 1
+  let text := "proc deep(x?) { expect e: " ++ String.join (List.replicate depth "not ") ++ "x? }\n"
+  let diagnostics ← withText "eval-limits.fren" text.toList.toArray fun path => do
+    let enumerated ← methodResults #[path] "enumerated" (some 1)
+    let mut failures := #[]
+    unless enumerated.code == 1 && enumerated.diags.any (fun (_, code, _) => code == some "F0645") do
+      failures := failures.push s!"oversized enumeration did not report F0645:\n{enumerated.output}"
+    let (output, code) ← IO.FS.withIsolatedStreams (FrenCli.quickcheck { files := #[path], nTests := 1, jobs? := some 1 })
+    unless code == 3 && (output.splitOn "F0617").length > 1 do
+      failures := failures.push s!"evaluation exceeding its limits did not report F0617:\n{output}"
+    return failures
+  let recursive := "set_option fren.enumeration.size 4\n" ++
+    "set_option fren.lint.double_neg \"allow\"\n" ++
+    "pub enum T { Z, S(T) }\n" ++
+    "pub fn holds?(t: T): Bool := match t { T::Z => true, T::S(a) => " ++
+    String.join (List.replicate 96 "not ") ++ "holds?(a) }\n" ++
+    "proc p(t: T) { expect e: holds?(t) }\n" ++
+    "proc d(t: T): (det n?) { out n? := holds?(t) }\n"
+  let unknowns ← withText "eval-recursive-limit.fren" recursive.toList.toArray fun path => do
+    let run ← methodResults #[path] "enumerated" (some 1)
+    let undecided (comp : Name) (kind : Fren.Core.CheckKind) := run.records.any fun (_, r, _) =>
+      r.comp == comp && r.kind == kind && r.verdict == .inconclusive
+    return if run.code == 3 && undecided `p .expect && undecided `d .determinism &&
+        (run.output.splitOn "depth limit of 256").length > 1 then #[] else
+      #[s!"evaluation exceeding its limits was treated as known:\n{run.output}"]
+  return failures ++ diagnostics ++ unknowns
+
 /-- A diagnostic that documents why this method cannot run a procedure.
 A code from another method is never an expected limitation. -/
 def unsupportedMethod (method : Fren.Core.ProofMethod) (code? : Option String) : Bool :=
@@ -4079,11 +4110,11 @@ def methodAgreementChecks : IO (Array String) := do
 
 /-- Forced enumeration and solver runs compare every check in their union,
 including the obligations and function checks that stay the solver's. -/
-def enumerationAgrees : IO (Array String) := do
+def enumerationAgrees (files : List String := []) : IO (Array String) := do
   let mut failures ← methodAgreementChecks
   let mut compared := 0
   let mut hit : Array (String × String) := #[]
-  let corpus ← enumerationCorpus
+  let corpus ← if files.isEmpty then enumerationCorpus else pure (files.toArray.map FilePath.mk)
   for f in corpus do
     let solver ← methodResults #[f.toString] "solver"
     let (fs, hs) := knownMethodFailures f.toString (methodRunFailures .solver solver (staticOK := true))
@@ -4105,7 +4136,7 @@ def enumerationAgrees : IO (Array String) := do
     if methodExceptions.any fun (f, k, why) => f == file && k == key && why == "#813" then
       IO.println s!"enumeration: known #813: {file}: {key}"
   failures := failures ++ staleExceptions (corpus.map (·.toString)) hit (methods := #[.solver, .enumerated])
-  return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
+  return if files.isEmpty && compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
 
 /-- What `methodsAgree` counted. -/
 structure MethodCounts where
@@ -4455,7 +4486,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+      ["enumeration"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["evalLimits"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -4474,6 +4505,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | "uiAskAgain" :: files => runJob bless ("ui" :: files)
   | ["leanTokens"] => leanTokens
   | ["panicGuard"] => panicGuard
+  | ["evalLimits"] => evalLimitChecks
   -- Spawned by `panicGuard` only: it panics.
   | ["outOfFuel"] => Fren.Test.OutOfFuel.tinyFuel
   -- Spawned by `panicGuard` only, with `LEAN_ABORT_ON_PANIC`.
@@ -4515,7 +4547,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
   | ["readingBeside"] => FrenTest.ReadingBeside.agree ownSpecFiles
-  | ["enumeration"] => enumerationAgrees
+  | "enumeration" :: files => enumerationAgrees files
   -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
   | "methodsAgree" :: part => methodsAgree part
   | ["smtAgreement"] => do

@@ -150,6 +150,11 @@ neither. So `forall (i: Int), when 0 <= i < q.len, q[i] > 0` is evaluated
 at each position of `q`, and `exists (x: Name), x in s and p?(x)` at each
 member of `s`.
 
+Traversing subsequent instances adds no recursion depth, including when
+every instance is unknown; each instance is evaluated with the remaining
+depth budget. A later instance can still decide the result after unknown
+ones (`check::quantified_truth`).
+
 A quantifier has no value that the evaluator knows, as an index out of
 range has none, where a bound name of a type that is not listed has no
 domain, where the expression of a domain has none, and where a range has
@@ -201,13 +206,65 @@ quantifiers, `match`es and the definitions read through
 known outcome under an approximation is the recursion's own, and running
 out only leaves a value unknown, which the test then neither refutes nor
 reaches a check by (see below). Fren's evaluator has `2^20` units of fuel
-(`evalFuel`), far more than any evaluation needs. It also bounds how deeply
-it nests between two steps (`evalDepth`, `2^20`), only to be total: between
-two steps, evaluation nests no deeper than the expression, the definitions
-that it reads and the newtypes that it checks are nested, and no spec comes
-near the bound. That rests on source size. Long before the bound, at a
-depth that no source reaches, the evaluator's native stack overflows, so
-evaluation crashes rather than leave a value unknown. Neither is tested.
+(`evalFuel`). A separate native recursion budget is 256 calls, counting
+expression parts, recursive bodies, invariants, descent into values and
+quantifier binders. It is never reset inside one evaluation. Reaching this
+bound leaves the value unknown without panicking: testing reports `F0617`,
+model confirmation cannot confirm it, and enumeration reports an inconclusive
+check with the depth limit as its reason. A quantifier may also be undecided
+at that point; its ordinary undecided diagnostic covers either cause.
+
+Before recursively compiling an expression for evaluation, Fren checks its
+lowered expression tree iteratively. The root has depth 1; at most 256
+levels and 4194304 nodes are accepted. An oversized expression compiles to an
+unknown value. Enumeration refuses an oversized formula with `F0645` and
+states both bounds before traversing it. Compilation and evaluation must
+reach these bounds before exhausting the native stack. `eval::expression_limit`
+states the compiler's admission rule, used at each node of its iterative
+check and bound to that code by an `impl`.
+
+Enumeration applies the same depth bound and a tighter bound of 262144
+nodes before expanding the types of its variables and functions into
+shapes. All those roots share one node budget; constructor nodes and the values of a finite integer subset count
+toward it. Constructor and field lists spend their full length on depth
+before any member is expanded, including the surrounding shape's bookkeeping
+levels. The combined forest also spends its root count before expanding
+any root, bounding the number of slots the search descends through.
+Wide lists cannot evade the recursion bound. A type expansion beyond either bound is refused with `F0645`
+before its shapes or integer domain are allocated.
+
+```fren
+pub const MAX_EXPRESSION_DEPTH: Nat := 256
+pub const MAX_EXPRESSION_NODES: Nat := 4194304
+pub const MAX_TYPE_NODES: Nat := 262144
+
+pub proc expression_limit(depth: Nat, nodes: Nat): (det accepted?) {
+    ensure rule: accepted? iff depth <= MAX_EXPRESSION_DEPTH and nodes <= MAX_EXPRESSION_NODES
+
+    expect depth_limited: when depth > MAX_EXPRESSION_DEPTH, not accepted?
+    expect size_limited: when nodes > MAX_EXPRESSION_NODES, not accepted?
+}
+
+pub proc type_expansion_limit(depth: Nat, nodes: Nat): (det accepted?) {
+    ensure rule: accepted? iff depth <= MAX_EXPRESSION_DEPTH and nodes <= MAX_TYPE_NODES
+
+    expect depth_limited: when depth > MAX_EXPRESSION_DEPTH, not accepted?
+    expect size_limited: when nodes > MAX_TYPE_NODES, not accepted?
+}
+
+pub proc evaluation_depth(requested: Nat): (det budget: Nat) {
+    ensure rule: budget = requested.min(MAX_EXPRESSION_DEPTH)
+
+    expect bounded: budget <= MAX_EXPRESSION_DEPTH
+    expect unchanged: when requested <= MAX_EXPRESSION_DEPTH, budget = requested
+}
+```
+
+`eval::evaluation_depth` is bound to the function that caps the public
+evaluator's requested depth. Runtime regressions exercise
+oversized raw and compiled expressions, recursive applications, invariants,
+nested values and multiple quantifier binders; disabling the guard must
+make them fail, rather than merely change a precomputed limit flag.
 
 ## Searching for behaviours
 

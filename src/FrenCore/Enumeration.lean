@@ -26,6 +26,26 @@ namespace Fren.Core.Enumeration
 
 open Lean (Name)
 
+/-- Resource bounds for expression compilation and evaluation
+(`eval::expression_limit`). Depth counts the root as one. -/
+def maxEvalDepth : Nat := 256
+def maxEvalNodes : Nat := 4194304
+
+/-- Expanded types allocate shapes and finite domains, so have a tighter
+node budget than lowered expression trees (`eval::type_expansion_limit`). -/
+def maxTypeNodes : Nat := 262144
+
+/-- Cap a caller's requested evaluation depth (`eval::evaluation_depth`). -/
+def boundedEvalDepth (requested : Nat) : Nat := min requested maxEvalDepth
+
+/-- Whether an expression fits the evaluator's resource bounds. -/
+def withinEvalLimits (depth nodes : Nat) : Bool :=
+  depth ≤ maxEvalDepth && nodes ≤ maxEvalNodes
+
+/-- Whether an expanded type fits its allocation budget. -/
+def withinTypeLimits (depth nodes : Nat) : Bool :=
+  depth ≤ maxEvalDepth && nodes ≤ maxTypeNodes
+
 /-! ## Values and shapes -/
 
 /-- A value as the enumerator builds it: a `Bool`, an integer, the `k`th
@@ -299,15 +319,73 @@ partial def matchesEVal : Pat → EVal → Bool
   | .or alts, v => alts.any (matchesEVal · v)
   | _, _ => false
 
+/-- A type expansion exceeded its allocation budget. -/
+def typeLimitMarker : String := "#type-limit"
+
+private abbrev TypeWork := Option (Nat × PTy) × Nat
+
+/-- Admit type expansions before allocating their shapes or finite integer
+domains. The work list counts constructor nodes too, and shares one budget
+across the roots (`eval::type_expansion_limit`). -/
+def typesWithinLimits (shapes : Name → Option DataShape) (roots : Array (Nat × PTy)) : Bool :=
+  if !withinTypeLimits (roots.size + 1) roots.size then false else
+  visit maxTypeNodes roots.size (roots.toList.map fun root => (some root, roots.size + 1))
+where
+  visit : Nat → Nat → List TypeWork → Bool
+    | _, _, [] => true
+    | 0, _, _ :: _ => false
+    | fuel + 1, pending, (entry, depth) :: rest =>
+      if !withinTypeLimits depth (maxTypeNodes - fuel) then false else
+      match entry with
+      | none => visit fuel (pending - 1) rest
+      | some (n, t) =>
+        let count := if t.ty == .int || t.ty == .nat then
+          (t.pat?.bind fun p => p.intCount? (if t.ty == .nat then some 0 else none)).getD 1
+          else 1
+        let extra := count - 1
+        if extra > fuel then false else
+        let fuel := fuel - extra
+        let elem (i : Nat) (ty : Ty) := t.elems[i]?.getD { ty }
+        -- Shape's constructor and field lists are recursively traversed.
+        -- Charge their full lengths before descending into any member.
+        let push (m extra : Nat) (ts : Array PTy) (todo : List TypeWork) :=
+          ts.foldr (fun pt todo => (some (m, pt), depth + extra + ts.size + 1) :: todo) todo
+        let (children, grow) : Nat × (List TypeWork → List TypeWork) := match t.ty with
+          | .seq e | .set e => (1, fun todo => (some (n, elem 0 e), depth + 1) :: todo)
+          | .rel a b => (2, fun todo =>
+              (some (n, elem 0 a), depth + 2) :: (some (n, elem 1 b), depth + 2) :: todo)
+          | .enum path _ | .record path _ | .newtype path _ =>
+            match shapes path with
+            | none => (0, id)
+            | some d =>
+              let width := if d.isRecord || d.isNewtype then (d.parts[0]?.getD #[]).size + 1
+                else d.parts.size + max 2 (d.parts.foldl (fun m ts => max m ts.size) 0 + 1)
+              if !withinTypeLimits (depth + width) 0 then (maxTypeNodes + 1, id) else
+              let d := d.inst t.parts
+              if d.isRecord || d.isNewtype then
+                let fields := d.parts[0]?.getD #[]
+                (fields.size + 1, fun todo =>
+                  (none, depth + fields.size + 1) :: push n 0 fields todo)
+              else
+                let count := d.parts.foldl (fun k ts => k + 1 + if n == 0 then 0 else ts.size) 1
+                (count, fun todo => (none, depth + d.parts.size + 2) :: d.parts.foldr (fun ts todo =>
+                  (none, depth + d.parts.size + 2) ::
+                    (if n == 0 then todo else push (n - 1) d.parts.size ts todo)) todo)
+          | _ => (0, id)
+        let pending := pending - 1 + children
+        if pending > fuel then false else visit fuel pending (grow rest)
+  termination_by fuel _ _ => fuel
+  decreasing_by all_goals omega
+
 /-- The shape of the declared type `t` for the bound `n`
 (`Reqs/Check#enumerable-types`): every declared type has one: `Bool`,
 `Int`, `Nat`, `String`, sets, relations, sequences, enumerations, records,
 newtypes, instances of generic types, subset types and abstract types.
 `shapes` gives what is known of each record, newtype and enumeration. A
 recursive enumeration is unfolded `n` deep. -/
-partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : Except String Shape := do
+private partial def shapeOfUnchecked (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : Except String Shape := do
   let keep (p : Pat) : EVal → Bool := matchesEVal p
-  let elem (i : Nat) (e : Ty) : Except String Shape := shapeOf shapes n (t.elems[i]?.getD (PTy.plain e))
+  let elem (i : Nat) (e : Ty) : Except String Shape := shapeOfUnchecked shapes n (t.elems[i]?.getD (PTy.plain e))
   let base : Shape ← match t.ty with
     | .bool => pure .bool
     | .int | .nat =>
@@ -316,14 +394,15 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
       | none => pure (if nat then .nat else .int)
       | some p =>
         -- A finite integer subset type: all of its integers, of size 0.
-        match p.intCount? (if nat then some 0 else none), Pat.intValues? p with
-        | some _, some vs => return .ints (vs.toList.filter fun i => !nat || 0 ≤ i)
-        -- A `Nat` pattern bounded only above, as `Nat is ..=5`: from 0 to
-        -- its largest bound.
-        | some _, none =>
-          let top := (p.bounds.foldl max 0).toNat
-          return .ints (((List.range (top + 1)).map fun (k : Nat) => (k : Int)).filter fun i => p.matchesVal (.int i))
-        | _, _ => pure (if nat then .nat else .int)
+        match p.intCount? (if nat then some 0 else none) with
+        | none => pure (if nat then .nat else .int)
+        | some _ =>
+          match Pat.intValues? p with
+          | some vs => return .ints (vs.toList.filter fun i => !nat || 0 ≤ i)
+          -- A `Nat` pattern bounded only above, as `Nat is ..=5`.
+          | none =>
+            let top := (p.bounds.foldl max 0).toNat
+            return .ints (((List.range (top + 1)).map fun (k : Nat) => (k : Int)).filter fun i => p.matchesVal (.int i))
     | .string => pure .string
     | .seq e => pure (.seq (← elem 0 e))
     | .set e => pure (.set (← elem 0 e))
@@ -333,7 +412,7 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
       let some d := shapes p | throw (notEnumerable t)
       let d := d.inst t.parts
       let parts (m : Nat) (ts : Array PTy) : Except String Shapes :=
-        ts.toList.foldrM (init := .nil) fun pt acc => return .cons (← shapeOf shapes m pt) acc
+        ts.toList.foldrM (init := .nil) fun pt acc => return .cons (← shapeOfUnchecked shapes m pt) acc
       if d.isRecord || d.isNewtype then
         pure (.record (← parts n (d.parts[0]?.getD #[])))
       else
@@ -352,6 +431,10 @@ partial def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : E
   | some p, s => return .filter s (keep p)
   | none, s => return s
 
+/-- Build only type expansions admitted by the shared resource guard. -/
+def shapeOf (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : Except String Shape :=
+  if typesWithinLimits shapes #[(n, t)] then shapeOfUnchecked shapes n t else .error typeLimitMarker
+
 /-- How many values of size at most `n` a shape has. -/
 def Shape.count (s : Shape) (n : Nat) : Nat := (s.vals n).length
 
@@ -361,6 +444,17 @@ def maxBehaviours : Nat := 65536
 
 /-- `x`, or one more than `maxBehaviours` if it is larger. -/
 def saturate (x : Nat) : Nat := min x (maxBehaviours + 1)
+
+/-- A power, exact up to the behaviour cap, otherwise one more. Stop
+before computing an arbitrarily large interpretation count. -/
+def boundedPower (base exponent : Nat) : Nat :=
+  if exponent == 0 then 1 else if base == 0 then 0 else if base == 1 then 1 else loop exponent 1
+where
+  loop : Nat → Nat → Nat
+    | 0, acc => acc
+    | n + 1, acc =>
+      let next := saturate (acc * base)
+      if next > maxBehaviours then next else loop n next
 
 /-- `1 + k + k ^ 2 + ... + k ^ len`, saturated. -/
 def geometric (k len : Nat) : Nat :=
@@ -591,12 +685,15 @@ structure Atoms where
   eval : Nat → Array Nat → Bool
   /-- Whether the atom's truth is known in an assignment: it is not where
   a quantifier over a domain that the bound does not exhaust has no
-  instance that decides it (`Reqs/Check#quantifiers-up-to-the-bound`).
+  deciding instance, or evaluation reaches its depth limit
+  (`Reqs/Check#quantifiers-up-to-the-bound`).
   `eval` is its truth where it is known. -/
   known : Nat → Array Nat → Bool := fun _ _ => true
   /-- Whether every atom's truth is known in every assignment, so that the
   search need not read `known`. -/
   total : Bool := true
+  /-- The diagnostic reason when an atom cannot be evaluated. -/
+  unknownReason : String := "a quantifier is undecided"
   /-- Whether the defined output `d` has the same value in two
   assignments, where `sameKnown` says that it is known whether it has. -/
   sameDefined : Name → Array Nat → Array Nat → Bool := fun _ _ _ => true
@@ -869,12 +966,10 @@ def doubtfulRow (ts : List Truth) : Bool := ts.all (· != .no) && ts.any (· == 
 evaluators know (`Reqs/Eval#quantifiers`), in both front ends. -/
 def maxEnumerated : Int := 1024
 
-/-- Whether some atom's truth may be unknown to the model search
-(`Atoms.known`), given whether each of a procedure's formulas, and each of
-the definitions they read, has a quantifier: only a quantifier, guarded or
-not, can leave one unknown there, where its domain is too large or an
-instance is unknown (`Reqs/Check#quantifiers-up-to-the-bound`). Both front
-ends set `Atoms.total` to its negation. -/
+/-- Whether a query has quantifiers, in its formulas or the definitions
+that they read (`Reqs/Check#quantifiers-up-to-the-bound`). An evaluator
+with additional sources of unknown values, such as a depth bound, must
+also account for them before marking every atom known. -/
 def mayBeUnknown (quantified : Array Bool) : Bool := quantified.any id
 
 /-- Why a query that a quantifier undecided up to the bound leaves open
@@ -908,6 +1003,40 @@ def quantifiedTruth {α : Type} (exact universal : Bool) (body : α → Option B
   | v :: vs => match body v with
     | some b => if b != universal then some b else quantifiedTruth exact universal body vs
     | none => if quantifiedTruth exact universal body vs == some (!universal) then some (!universal) else none
+
+/-- Traverse unknown instances without retaining a frame per instance. -/
+def quantifiedTruthTR {α : Type} (exact universal : Bool) (body : α → Option Bool) (values : List α) : Option Bool :=
+  go false values
+where
+  go (unknown : Bool) : List α → Option Bool
+    | [] => if exact && !unknown then some universal else none
+    | v :: vs => match body v with
+      | some b => if b != universal then some b else go unknown vs
+      | none => go true vs
+
+private theorem quantifiedTruthTR_go {α : Type} (exact universal : Bool) (body : α → Option Bool)
+    (values : List α) (unknown : Bool) :
+    quantifiedTruthTR.go exact universal body unknown values =
+      match quantifiedTruth exact universal body values with
+      | some b => if unknown && b == universal then none else some b
+      | none => none := by
+  induction values generalizing unknown with
+  | nil => cases exact <;> cases universal <;> cases unknown <;> rfl
+  | cons v vs ih =>
+    cases hq : quantifiedTruth exact universal body vs with
+    | none =>
+      cases h : body v with
+      | none => cases universal <;> cases unknown <;> simp_all [quantifiedTruthTR.go, quantifiedTruth]
+      | some b => cases universal <;> cases unknown <;> cases b <;> simp_all [quantifiedTruthTR.go, quantifiedTruth]
+    | some b =>
+      cases h : body v with
+      | none => cases universal <;> cases unknown <;> cases b <;> simp_all [quantifiedTruthTR.go, quantifiedTruth]
+      | some c => cases universal <;> cases unknown <;> cases b <;> cases c <;> simp_all [quantifiedTruthTR.go, quantifiedTruth]
+
+@[csimp] theorem quantifiedTruth_eq_TR : @quantifiedTruth = @quantifiedTruthTR := by
+  funext α exact universal body values
+  have h := (quantifiedTruthTR_go exact universal body values false).symm
+  cases hq : quantifiedTruth exact universal body values <;> simpa [quantifiedTruthTR, hq] using h
 
 /-- The name under which `EF.polarize` reads whether the defined output
 `x` is the same in both copies as whether it may be: no variable's name
@@ -1107,7 +1236,7 @@ def backend [Monad m] (sp : Space) (ats : Atoms) (render : Nat → Nat → m Str
       if answerKind false open? != .unknown then return .unsat
       let byQuantifier := !ats.total && ats.within fun _ =>
         doubtful sp { ats with unknown := fun _ _ => false, defUnknown := fun _ _ => false } parts
-      return .unknown (if byQuantifier then undecidedQuantifierReason else indexUnknownReason)
+      return .unknown (if byQuantifier then ats.unknownReason else indexUnknownReason)
     | some (env, _) =>
       let slots := slotsOf sp ats parts
       let shown ← (slots.toArray.filter (· < sp.names.size - sp.hidden)).mapM fun x => do
@@ -1393,7 +1522,7 @@ structure FunSlot where
   tables : Array Nat
   /-- Every interpretation of the function is among them. -/
   exhausted : Bool
-  /-- How many interpretations there are up to the bound. -/
+  /-- The interpretation count, capped at `maxBehaviours + 1`. -/
   count : Nat
   deriving Inhabited
 
@@ -1406,15 +1535,18 @@ def tupleIndex (sizes idx : Array Nat) : Option Nat :=
 /-- The result, by its position among the results, of `results` many, that
 the table numbered `table` gives the tuple at position `pos`. -/
 def tableEntry (results table pos : Nat) : Nat :=
-  if results == 0 then 0 else (table / results ^ pos) % results
+  if results ≤ 1 then 0 else (table / results ^ pos) % results
 
 /-- The tables from `domain` tuples to results whose sizes are `sizes`,
 each with its size, the largest of its results', smallest first, then by
 number; none if there are more than `limit`. -/
 def tablesBySize (domain : Nat) (sizes : Array Nat) (limit : Nat) : Option (Array (Nat × Nat)) :=
   let r := sizes.size
-  let count := r ^ domain
+  let limit := min limit maxBehaviours
+  let count := boundedPower r domain
   if count > limit then none else
+  if r == 0 then some (if domain == 0 then #[(0, 0)] else #[]) else
+  if r == 1 then some #[(0, if domain == 0 then 0 else sizes[0]!)] else
   let tables := (List.range count).toArray.map fun j =>
     (j, (List.range domain).foldl (init := 0) fun m p => max m (sizes[tableEntry r j p]!))
   some (tables.qsort fun a b => a.2 < b.2 || (a.2 == b.2 && a.1 < b.1))
@@ -1436,6 +1568,10 @@ def spaceOf (shapes : Name → Option DataShape) (n : Nat) (vars : Array SlotVar
   let copied := own.filter fun v => (Symbol.ofRole v.sig.role).copied
   let all := own.map (fun v => (v.sig.name, v.pty)) ++ copied.map (fun v => (primed v.sig.name, v.pty)) ++ hidden
   let visible := own.size + copied.size
+  let types := all.map (·.2) ++ funs.flatMap (fun f => f.params.push f.result)
+  let roots := types.map fun t => (n, t)
+  let roots := if tests == 0 then roots else roots ++ all.map (fun (_, t) => (testSize n, t))
+  if !typesWithinLimits shapes roots then throw (none, typeLimitMarker)
   let shapesOf ← all.zipIdx.mapM fun ((x, t), i) => match shapeOf shapes n t with
     | .ok s => pure s
     | .error why => throw (if i < visible then some x else none, why)
@@ -1474,7 +1610,7 @@ def spaceOf (shapes : Name → Option DataShape) (n : Nat) (vars : Array SlotVar
     let tables := (tablesBySize domain (results.map (·.2)) maxBehaviours).getD #[]
     fslots := fslots.push { name := f.name, slot := all.size + k, params := params.map (·.map (·.1)), results := results.map (·.1)
                             tables := tables.map (·.1), exhausted := ps.all (·.exhausted n) && r.exhausted n
-                            count := results.size ^ domain }
+                            count := boundedPower results.size domain }
     fsizes := fsizes.push (tables.map (·.2))
   let sp : Space := { names := all.map (·.1) ++ funs.map (·.name), sizes := ordered.map (·.toArray.map (·.2)) ++ fsizes
                       primeOf, outputs, hidden := hidden.size + funs.size, bound := n }
@@ -1482,7 +1618,8 @@ def spaceOf (shapes : Name → Option DataShape) (n : Nat) (vars : Array SlotVar
 
 /-- How many assignments the enumeration of a procedure searches, at
 most: the product of its variables' and hidden slots' counts, its
-functions' interpretations among them, and, if determinism is checked,
+functions' interpretations among them (a lower bound if a function's
+count already exceeds `maxBehaviours`), and, if determinism is checked,
 of their second copies' too
 (`check::enumeration_limit`). -/
 def Space.behaviours (sp : Space) (determinism : Bool) (funs : Array FunSlot := #[]) : Nat :=
@@ -1619,6 +1756,8 @@ def boundedMsg (subject : String) (passed n : Nat) (tests : Option Nat := none) 
 /-- Why the slot `x` cannot be enumerated, its type's `why` (`notEnumerable`):
 a variable's, or a hidden slot's, the type of a table or `match`. -/
 def notEnumerableWhy (x? : Option Name) (why : String) : String :=
+  if why == typeLimitMarker then
+    s!"its type expansion exceeds the limit of {maxEvalDepth} levels or {maxTypeNodes} nodes" else
   match x? with
   | none => s!"a table or `match` has a value of the type {why}, which is not enumerable"
   | some x => s!"`{x}` has the type {why}, which is not enumerable"

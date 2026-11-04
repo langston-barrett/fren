@@ -919,7 +919,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     | .error (x, why) => return .error (if why == tooManyMarker then tooManyMsg subject (maxBehaviours + 1) n (estimated := true) else notEnumerableMsg subject (notEnumerableWhy x why))
   let determinism := ks.contains .determinism && ecomp.vars.any (·.isDet)
   let count := space.behaviours determinism fslots
-  if !withinLimit count then return .error (tooManyMsg subject count n)
+  if !withinLimit count then return .error (tooManyMsg subject count n (estimated := fslots.any (·.count > maxBehaviours)))
   -- Each slot's Lean type and values: a variable's, its second copy's, or
   -- an unspecified value's.
   let own := c.vars.filter (·.defn?.isNone)

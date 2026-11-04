@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Verdicts
+import FrenCore.Enumeration
 import Impls.Check
 import Reqs.Eval
 -- keep-sorted end
@@ -19,6 +20,32 @@ namespace Fren.Impls
 open Fren.Core (CheckKind Verdict)
 open FrenCli.Eval (Status Confirmation Unreached UnreachedWarning statusOf evalExit reached counted triggerUnknown unreachedOf unreachedWarning testVerdict
   confirmation confirmedVerdict)
+
+impl expression_limit: eval::expression_limit for (d n : Nat) {
+  depth := d,
+  nodes := n,
+  accepted? := Fren.Core.Enumeration.withinEvalLimits d n,
+} by
+  intro d n _
+  simp [fren_spec, Fren.Core.Enumeration.withinEvalLimits,
+    Fren.Core.Enumeration.maxEvalDepth, Fren.Core.Enumeration.maxEvalNodes]
+
+impl type_expansion_limit: eval::type_expansion_limit for (d n : Nat) {
+  depth := d,
+  nodes := n,
+  accepted? := Fren.Core.Enumeration.withinTypeLimits d n,
+} by
+  intro d n _
+  simp [fren_spec, Fren.Core.Enumeration.withinTypeLimits,
+    Fren.Core.Enumeration.maxEvalDepth, Fren.Core.Enumeration.maxTypeNodes]
+
+impl evaluation_depth: eval::evaluation_depth for (n : Nat) {
+  requested := n,
+  budget := Fren.Core.Enumeration.boundedEvalDepth n,
+} by
+  intro n _
+  simp [fren_spec, Fren.Core.Enumeration.boundedEvalDepth,
+    Fren.Core.Enumeration.maxEvalDepth, Nat.min_def]
 
 def toStatus : Status → eval.Status
   | .Inadmissible => .Inadmissible

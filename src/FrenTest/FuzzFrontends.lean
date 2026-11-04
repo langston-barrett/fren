@@ -2813,9 +2813,51 @@ def itemRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6974⟩
 split off the seed so that its draws leave the other modes unchanged. -/
 def inductionRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6963⟩
 
+/-- Resource-bound probes have a mode of their own, so every old seed keeps
+its source. They cover large type unfoldings and function domains as well as
+ordinary types, nesting, definitions and comparisons within the budget. -/
+def resourceSpec (seed : Nat) : String :=
+  let header := "mod fz_resources\nset_option fren.evidence \"enumerated\"\n" ++
+    "set_option fren.lint.undecidable \"allow\"\n" ++
+    "set_option fren.lint.let_and_return \"allow\"\n" ++
+    "set_option fren.lint.assertions_on_constants \"allow\"\n"
+  let types := #["Bool", "Int", "Nat", "String", "Seq<Bool>", "Set<Bool>", "Rel<Bool, Bool>", "Leaf"]
+  let base := types[(seed / 32) % types.size]!
+  -- Nat is permitted directly and in a newtype, but not as a generic
+  -- argument or collection element.
+  let element := if base == "Nat" then "Int" else base
+  let leaf := "pub struct Leaf { flag?: Bool, number: Int }\n"
+  let args := ", ".intercalate (List.replicate 64 "Bool")
+  let values := ", ".intercalate (List.replicate 64 (if seed % 2 == 0 then "false" else "true"))
+  match seed % 32 with
+  | 0 => header ++ s!"pub fn choose?({args}): Bool\npub proc spec() \{ expect e: choose?({values}) or not choose?({values}) }\n"
+  | 1 => header ++ s!"pub enum One \{ Only }\npub fn choose({args}): One\npub proc spec() \{ expect e: choose({values}) = One::Only }\n"
+  | 2 => header ++ "set_option fren.enumeration.size 64\n" ++
+      "pub enum Tree { Leaf, Node(Tree, Tree) }\npub proc spec(x: Tree) { expect e: x = x }\n"
+  | 3 => header ++ leaf ++ "set_option fren.enumeration.size 64\n" ++
+      "pub enum Tree<A> { Leaf(A), Node(Tree<A>, Tree<A>) }\n" ++
+      s!"pub struct Wrapped(Tree<{element}>)\npub proc spec(x: Wrapped) \{ expect e: x = x }\n"
+  | 4 => header ++ "pub proc spec() {\n" ++
+      "    expect undecided: forall (i: Int), when 0 <= i < 1024, (forall (x: Int), x = x)\n" ++
+      "    expect late: not (forall (i: Int), when 0 <= i < 1024, i < 1023 and (forall (x: Int), x = x))\n}\n"
+  | _ =>
+    let decls := leaf ++ "pub enum T<A> { Leaf(A), More(T<A>) }\n" ++
+      s!"pub struct R<A> \{ value: A, flag?: Bool }\npub struct W({base})\n"
+    let ty := match seed % 8 with
+      | 0 => base | 1 => s!"Seq<{element}>" | 2 => s!"Set<{element}>" | 3 => s!"Rel<Bool, {element}>"
+      | 4 => s!"T<{element}>" | 5 => s!"R<{element}>" | 6 => "W" | _ => s!"Seq<Set<{element}>>"
+    let ops := if ty == "Int" || ty == "Nat" || ty == "String" then #["=", "!=", "<", "<=", ">", ">="] else #["=", "!="]
+    let op := ops[(seed / 256) % ops.size]!
+    let negs := String.join (List.replicate (2 * (seed % 12)) "not ")
+    let suffix := if ty == "Bool" then "?" else ""
+    header ++ decls ++ s!"pub proc spec(x{suffix}: {ty}): (det y{suffix}: {ty}) \{\n" ++
+      s!"    out y{suffix} := let copy{suffix} := x{suffix} in copy{suffix}\n" ++
+      s!"    expect e: {negs}(let a{suffix} := y{suffix}, b{suffix} := x{suffix} in a{suffix} {op} b{suffix})\n}\n"
+
 /-- How specs are generated: `--avoid-known`, and `--guards`, which
 generates guarded quantifiers alone (`Wide.genGuards`), many to a spec. -/
 structure Mode where
+  resources : Bool := false
   avoidKnown : Bool := false
   guards : Bool := false
   /-- Specs of `Wide.sitesProc`s alone (`Wide.genSites`). -/
@@ -2842,7 +2884,7 @@ structure Mode where
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  if m.keywords then
+  if m.resources then resourceSpec seed else if m.keywords then
     let block := Id.run (Wide.genKeywords.run' (rngOf seed))
     let spec := Id.run ((Wide.genKeywordsGrammar block).run' (grammarRngOf seed)) ++
       Id.run ((Wide.genKeywordsTail block).run' (tailRngOf seed))
@@ -2866,11 +2908,11 @@ the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
 `--fact-scopes` and `--induction-candidates` makes any static error a group
 error: these generators, like appended groups, promise to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.resources then #[] else if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
-  (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
+  (if m.resources then #["--resource-limits"] else #[]) ++ (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
     (if m.sites then #["--sites"] else #[]) ++ (if m.confirm then #["--confirm"] else #[]) ++
     (if m.scrutinees then #["--scrutinees"] else #[]) ++
     (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[]) ++
@@ -2882,9 +2924,9 @@ def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
-  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
+  if args.all (· ∈ ["--resource-limits", "--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
       "--keywords", "--fact-scopes", "--induction-candidates"]) then
-    some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
+    some { resources := args.contains "--resource-limits", avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
            keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
@@ -2893,7 +2935,7 @@ def Mode.ofArgs? (args : List String) : Option Mode :=
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
 def Mode.lean (m : Mode) : String :=
-  let fields := (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
+  let fields := (if m.resources then ["resources := true"] else []) ++ (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
     (if m.sites then ["sites := true"] else []) ++ (if m.confirm then ["confirm := true"] else []) ++
     (if m.scrutinees then ["scrutinees := true"] else []) ++
     (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else []) ++
@@ -3542,7 +3584,7 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
     ({ inductionForms := true }, 0, 20), ({ factScopes := true }, 0, 20),
-    ({ inductionCandidates := true }, 0, 20)]
+    ({ inductionCandidates := true }, 0, 20), ({ resources := true }, 0, 256)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -3704,6 +3746,11 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
     let ran ← runFrontends env path (mode.spec s) mode.confirm
     let c := ran.comparison
     let again := s!"`lake exe fren_fuzz_frontends{flags mode} --count 1 --seed {s}`"
+    if mode.resources then
+      for d in ran.cli do
+        if d.severity == "error" && !FrenTest.Frontends.isCheckResult d &&
+            !FrenTest.Frontends.isStoppedTrailer d && d.code? != some "F0645" then
+          failures := failures.push s!"seed {s}{flags mode}: unexpected error in resource fixture: {headOf d}"
     let (unlisted, vanished) := unmatched knownDifferences mode s c.decided c.undecided
     for f in unlisted do
       failures := failures.push s!"seed {s}{flags mode}: the front ends differ: {f.replace "\n" " "}\n  \
@@ -4114,10 +4161,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--resource-limits] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] --print SEED"
+  "       fren_fuzz_frontends [--resource-limits] [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4132,12 +4179,12 @@ unsafe def main (args : List String) : IO UInt32 := do
   if let "--files" :: files := args then
     IO.FS.createDirAll ".lake/fuzz"
     return ← mainFiles files ".lake/fuzz"
-  let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
+  let mode : Mode := { resources := args.contains "--resource-limits", avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
                        sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
                        inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
                        keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
                        inductionCandidates := args.contains "--induction-candidates" }
-  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
+  let args := args.filter (fun a => a != "--resource-limits" && a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
     && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))

@@ -174,6 +174,8 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     | throw (Fren.Core.Msg.internal s!"the evaluator does not know the meaning of a formula of `{Fren.Core.showComp c.path}`")
   -- And the definitions of the defined outputs, which the atoms read.
   let all := exprs.flatten ++ ec.defs.map fun (_, e) => ((.anonymous : Name), e)
+  if all.any (!·.2.withinLimits) then
+    throw (notEnumerableMsg subject s!"an expression exceeds the evaluator's limit of {maxEvalDepth} levels or {maxEvalNodes} nodes")
   -- No uninterpreted function whose contract has a postcondition
   -- (`contractBlocker?`, `check::contract_blocker`).
   let apps := all.flatMap (fun e => e.2.appsOf sp)
@@ -224,7 +226,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
       throw (if why == tooManyMarker then tooManyMsg subject (maxBehaviours + 1) n (estimated := true) else notEnumerableMsg subject (notEnumerableWhy x why))
   let determinism := ks.contains .determinism && ecomp.vars.any (·.isDet)
   let count := space.behaviours determinism fslots
-  if !withinLimit count then throw (tooManyMsg subject count n)
+  if !withinLimit count then throw (tooManyMsg subject count n (estimated := fslots.any (·.count > maxBehaviours)))
   -- Each slot's values, as the evaluator has them.
   let flat := sp.flatVars ec
   let tyOf (x : Name) : VTy :=
@@ -258,30 +260,24 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
         | none => slotOf[f]?.bind fun i => vals[i]?.bind (·[env[i]!]?)
       outOfRange := fun u => slotOf[u]?.bind fun i => vals[i]?.bind (·[env[i]!]?)
       defs := sp.defs.find?, shapes := sp.shapes.find?, recDefs := sp.recDefs.find?
-      defined := (defOf[·]?), definedCount := defs.size + 1
+      defined := (defOf[·]?), definedCount := min (defs.size + 1) evalDepth
       domain := fun pt => do
         let shape ← (Fren.Core.Enumeration.shapeOf sp.shapes.find? n pt).toOption
         let ty := VTy.ofCore pt.ty
         return ((shape.ordered n).toArray.map fun (v, _) => evalOf sp ty v, shape.exhausted n) }
-  let rec look (env : Array Nat) (fuel : Nat) (x : Name) : Option Val :=
-    match slotOf[x]? with
-    | some i => (vals[i]?.bind (·[env[i]!]?))
-    | none => match fuel, defs.find? (·.1 == x) with
-      | f + 1, some (_, e) => e.eval (interp env) (look env f)
-      | _, _ => none
-  let fuel := defs.size + 1
-  let evalFm (f : Fm) (env : Array Nat) : Bool := Fm.holds (interp env) (look env fuel) f
-  -- The same, with every index out of range unknown: where a value is
-  -- known this way, it is the same in every interpretation of them.
+  let baseLook (env : Array Nat) (x : Name) : Option Val := do
+    let i ← slotOf[x]?
+    vals[i]?.bind (·[env[i]!]?)
+  let look (env : Array Nat) := readDefined (interp env) (baseLook env) (defOf[·]?)
+  let fuel := evalDepth
+  let reading (env : Array Nat) : Interp := { interp env with lookup? := some (look env) }
+  let evalFm (f : Fm) (env : Array Nat) : Bool := Fm.holds (reading env) (look env fuel) f
+  -- The same, with every index out of range unknown.
   let strict (env : Array Nat) : Interp := { interp env with outOfRange := fun _ => none }
-  let rec lookStrict (env : Array Nat) (fuel : Nat) (x : Name) : Option Val :=
-    match slotOf[x]? with
-    | some i => (vals[i]?.bind (·[env[i]!]?))
-    | none => match fuel, defs.find? (·.1 == x) with
-      | f + 1, some (_, e) => e.eval (strict env) (lookStrict env f)
-      | _, _ => none
+  let lookStrict (env : Array Nat) := readDefined (strict env) (baseLook env) (defOf[·]?)
   let unknownFm (f : Fm) (env : Array Nat) : Bool :=
-    (Fm.value? (strict env) (lookStrict env fuel) f).isNone && (Fm.value? (interp env) (look env fuel) f).isSome
+    (Fm.value? { strict env with lookup? := some (lookStrict env) } (lookStrict env fuel) f).isNone &&
+      (Fm.value? (reading env) (look env fuel) f).isSome
   -- The slots that each atom reads: its variables', and those of the
   -- definitions of the defined outputs it mentions.
   let rec reads (fuel : Nat) (x : Name) : Array Nat :=
@@ -307,9 +303,13 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   let ats : Atoms := {
     slots := atomSlots, defs := atomDefs
     eval := fun k env => evalFm (atoms[k]!.2) env
-    -- Only a quantifier up to the bound leaves an atom's truth unknown.
-    known := fun k env => (Fm.value? (interp env) (look env fuel) atoms[k]!.2).isSome
-    total := !mayBeUnknown (all.map (·.2.hasQuantifier))
+    -- A quantifier or an evaluation depth limit can leave an atom unknown.
+    known := fun k env => (Fm.value? (reading env) (look env fuel) atoms[k]!.2).isSome
+    total := domains.isEmpty &&
+      c.vars.all (fun v => v.ptype.ty == .bool || v.ptype.ty == .int) &&
+      Ex.scalarTotal (all.map (·.2))
+    unknownReason := if mayBeUnknown (all.map (·.2.hasQuantifier)) then undecidedQuantifierReason
+      else s!"evaluation reached its depth limit of {maxEvalDepth}"
     sameDefined := fun d e₁ e₂ => look e₁ fuel d == look e₂ fuel d
     sameKnown := fun d e₁ e₂ => (look e₁ fuel d).isSome && (look e₂ fuel d).isSome
     defSlots := fun d => (reads fuel d).foldl (fun a s => if a.contains s then a else a.push s) #[]
@@ -317,6 +317,19 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     defReadsIndex := defIndexed fuel
     unknown := fun k env => atomIndexed[k]! && unknownFm (atoms[k]!.2) env
     defUnknown := fun d env => defIndexed fuel d && (lookStrict env fuel d).isNone && (look env fuel d).isSome }
+  -- Certify knownness once per atom over just its inputs, rather than
+  -- repeating an exhaustive doubtful search for every query. Determinism
+  -- reads definitions independently, so certify those too. Random extras
+  -- need not fit this bounded space and retain partial truth.
+  let ats := if ats.total || testing then ats else Id.run do
+    let knownFor (ss : Array Nat) (known : Array Nat → Bool) : Bool :=
+      let slots := ss.toList.mergeSort
+      let base := Array.replicate space.names.size 0
+      (firstChoice base slots (slots.map (space.within · n))
+        [(slots, fun env => !known env)]).isNone
+    let total := (List.range atoms.size).all (fun k => knownFor atomSlots[k]! (ats.known k)) &&
+      defs.all (fun (d, _) => knownFor (ats.defSlots d) (fun env => ats.sameKnown d env env))
+    return { ats with total }
   let render (s j : Nat) : String := ((vals[s]?.bind (·[j]?)).map (·.showAs sp (tyOf space.names[s]!))).getD "?"
   let defValue (d : Name) (env : Array Nat) : Option String := (look env fuel d).map (·.showAs sp (tyOf d))
   -- The variant of each value of a slot whose type is an enumeration, as
@@ -335,7 +348,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     let env := setAll (Array.replicate space.names.size 0) domainSlots assignment
     for (_, formula) in domains do
       let some es := formula.exprs? | throw (notEnumerableMsg subject "a type invariant is unsupported")
-      if es.any (fun (_, e) => (e.eval (interp env) (look env fuel)).isNone) then
+      if es.any (fun (_, e) => (e.eval (reading env) (look env fuel)).isNone) then
         throw (notEnumerableMsg subject "the evaluator cannot decide a type invariant in an enumerated interpretation")
   let ecomp := { ecomp with typesInterpreted := ecomp.typesInterpreted || !apps.isEmpty }
   let raw := Id.run (Fren.Core.checkComp (m := Id) (fun _ => Fren.Core.Enumeration.backend space ats (fun s j => pure (render s j)) (fun d e => pure (defValue d e)) (if testing then some (hash c.path) else none) variantOf facts outputFacts) ecomp ks)

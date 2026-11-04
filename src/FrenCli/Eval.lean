@@ -719,6 +719,9 @@ partial def Spec.flatVars (sp : Spec) (c : Comp) : Array Var := Id.run do
 
 /-- What the abstract types and functions mean, as far as it is known. -/
 structure Interp where
+  /-- Enumeration's variable lookup, which may evaluate a defined output.
+  It receives the remaining depth rather than starting a new budget. -/
+  lookup? : Option (Nat → Name → Option Val) := none
   /-- The values of a declared type that a quantifier without a domain
   ranges over, up to a bound, and whether they are all of its values:
   enumeration's (`Reqs/Check#quantifiers-up-to-the-bound`). Elsewhere
@@ -1056,6 +1059,40 @@ partial def typeHolds (shapes : Name → Option Fren.Core.DataShape) (t : Fren.C
       ((shapes p).bind (·.inst t.parts |>.parts[idx]?)).all fun ts => (ts.zip args).all fun (u, w) => typeHolds shapes u w
     | _, _ => true
 
+/-- Structural membership before evaluating invariants, bounded by the
+remaining depth. In particular an invalid nested `Nat` is false even when
+an outer invariant is unknown. The unbounded structural prepass must not
+run before the evaluator's guard. -/
+def typeHoldsAt (shapes : Name → Option Fren.Core.DataShape) (depth : Nat) (t : Fren.Core.PTy) (v : Val) : Option Bool :=
+  match depth with
+  | 0 => none
+  | depth + 1 => do
+    unless t.pat?.all (patHolds · v) do return false
+    match t.ty, v with
+    | .nat, .int i => return 0 ≤ i
+    | .set _, .set ms | .seq _, .seq ms =>
+      match t.elems[0]? with
+      | some e => ms.allM (typeHoldsAt shapes depth e)
+      | none => pure true
+    | .rel .., .set ms => ms.allM fun
+      | .pair a b => do
+        if let some left := t.elems[0]? then
+          unless ← typeHoldsAt shapes depth left a do return false
+        if let some right := t.elems[1]? then
+          unless ← typeHoldsAt shapes depth right b do return false
+        return true
+      | _ => pure true
+    | .newtype p _, v =>
+      match (shapes p).bind (·.parts[0]?) |>.bind (·[0]?) with
+      | some underlying => typeHoldsAt shapes depth underlying v
+      | none => pure true
+    | .record p _, .ctor _ idx args | .enum p _, .ctor _ idx args =>
+      match (shapes p).bind (·.inst t.parts |>.parts[idx]?) with
+      | some ts => (ts.zip args).allM fun (u, w) => typeHoldsAt shapes depth u w
+      | none => pure true
+    | _, _ => pure true
+termination_by depth
+
 /-- `Fren.Core.firstCase xs.toList take`, the case of `xs` that is taken,
 read from the array, from case `i` (`firstCaseIn_eq`): `take` of each
 case in turn, until one is taken or whether one is is unknown. -/
@@ -1131,34 +1168,16 @@ theorem someBool_eq (b : Bool) : someBool b = some b := by cases b <;> rfl
 
 /-- `Fren.Core.Enumeration.quantifiedTruth exact universal body
 (vs.toList.drop i)`, the truth of a quantifier, read from the array, from
-its `i`th value (`quantTruthIn_eq`): without the list of its values, nor
-the truths that it gives. Specialized at its call in `Ex.evalIn.quantV`,
-so that `body`, a closure of the quantifier's dozen parts, is neither
-allocated nor applied at each instance, where applying it counted a
-reference to each part and uncounted it again. -/
+its `i`th value (`quantTruthIn_eq`). Convert the domain once and use the
+shared constant-stack traversal, including when every instance is unknown. -/
 @[specialize] def quantTruthIn {α : Type} (exact universal : Bool) (body : α → Option Bool) (vs : Array α) (i : Nat := 0) :
     Option Bool :=
-  if h : i < vs.size then
-    match body vs[i] with
-    | some b => if b != universal then someBool b else quantTruthIn exact universal body vs (i + 1)
-    | none => if quantTruthIn exact universal body vs (i + 1) == some !universal then someBool !universal else none
-  else if exact then someBool universal else none
-termination_by vs.size - i
+  Fren.Core.Enumeration.quantifiedTruthTR exact universal body (vs.toList.drop i)
 
 theorem quantTruthIn_eq {α : Type} (exact universal : Bool) (body : α → Option Bool) (vs : Array α) (i : Nat) :
     quantTruthIn exact universal body vs i =
       Fren.Core.Enumeration.quantifiedTruth exact universal body (vs.toList.drop i) := by
-  induction h : vs.size - i generalizing i with
-  | zero =>
-    have hi : ¬ i < vs.size := by omega
-    rw [quantTruthIn, dif_neg hi, List.drop_eq_nil_of_le (by simp; omega)]
-    cases exact <;> simp [Fren.Core.Enumeration.quantifiedTruth, someBool_eq]
-  | succ n ih =>
-    have hi : i < vs.size := by omega
-    rw [quantTruthIn, dif_pos hi, List.drop_eq_getElem_cons (by simpa using hi)]
-    have ih := ih (i + 1) (by omega)
-    simp only [Fren.Core.Enumeration.quantifiedTruth, ih, Array.getElem_toList]
-    cases body vs[i] <;> simp [someBool_eq]
+  simp only [quantTruthIn, ← Fren.Core.Enumeration.quantifiedTruth_eq_TR]
 
 /-- Leaving out cases that are not taken does not change which case is:
 `Ex.dispatch` tries only the arms of a `match` whose patterns may match
@@ -1180,11 +1199,12 @@ theorem firstCase_filter (xs : List α) (take : α → Option (Option β)) (keep
 
 /-- `e` without the `Ex.strict`s around it: the body of a defined
 function, as the shape of a count reads it. -/
-def Ex.unstrict (strict : Bool := false) : Ex → Ex
-  -- Evaluated strictly, an application of arguments is not its body: it
-  -- is unknown where an argument is (`model::known_application`).
-  | .strict args e => if strict && !args.isEmpty then .strict args e else e.unstrict strict
-  | e => e
+def Ex.unstrict (strict : Bool := false) (e : Ex)
+    (depth : Nat := Fren.Core.Enumeration.maxEvalDepth) : Ex :=
+  match depth, e with
+  | depth + 1, .strict args e =>
+    if strict && !args.isEmpty then .strict args e else e.unstrict strict depth
+  | _, e => e
 
 /-- `e`, or, if it is a defined variable, its definition, through those
 of the defined variables it is, `fuel` deep (`Interp.defined`): the term
@@ -1238,23 +1258,33 @@ with 1 as more do. Each part is read through the definitions of the
 defined variables it is, as the Lean-hosted front end, which substitutes
 them, sees it; each condition with whether it is within a definition,
 which is evaluated on its own. -/
-partial def Ex.indicators? (defined : Name → Option Ex) (fuel : Nat) (inDef : Bool) (e : Ex) (strict : Bool := false) :
-    Option (List (Ex × Bool)) :=
-  let (e, unfolded) := e.unfoldDefined defined strict fuel
-  let inDef := inDef || unfolded
-  match e with
-  | .bin .add a b => do
-    return (← Ex.indicators? defined fuel inDef a strict) ++ (← Ex.indicators? defined fuel inDef b strict)
-  | .ite c x y => if x.isInt 1 defined fuel strict && y.isInt 0 defined fuel strict then some [(c, inDef)] else none
-  | e => match e.intLit? with
-    | some k => if 0 ≤ k then some (List.replicate (min k.toNat 2) (.lit (.bool true), inDef)) else none
-    | none => none
+def Ex.indicators? (defined : Name → Option Ex) (fuel : Nat) (inDef : Bool) (e : Ex) (strict : Bool := false)
+    (depth : Nat := Fren.Core.Enumeration.maxEvalDepth) : Option (List (Ex × Bool)) :=
+  match depth with
+  | 0 => none
+  | depth + 1 =>
+    match fuel, e with
+    | fuel + 1, .var n => do
+      let body ← defined n
+      Ex.indicators? defined fuel true body strict depth
+    | _, e =>
+      match e.unstrict strict depth with
+      | .bin .add a b => do
+        return (← Ex.indicators? defined fuel inDef a strict depth) ++
+          (← Ex.indicators? defined fuel inDef b strict depth)
+      | .ite c x y =>
+        if x.isInt 1 defined (min fuel depth) strict && y.isInt 0 defined (min fuel depth) strict then some [(c, inDef)] else none
+      | e => match e.intLit? with
+        | some k => if 0 ≤ k then some (List.replicate (min k.toNat 2) (.lit (.bool true), inDef)) else none
+        | none => none
+termination_by depth
 
 /-- For `a = 1`, `a <= 1` or `1 >= a`, where `a` is a sum of `if c then 1 else 0`
 (`Ex.indicators?`), the cardinality operation that it spells out and its
 conditions: the count of them that are `true`, compared with 1, as
 `exactly_one?` and `at_most_one?` are defined. -/
-def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : Ex) (strict : Bool := false) :
+def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : Ex) (strict : Bool := false)
+    (depth : Nat := Fren.Core.Enumeration.maxEvalDepth) :
     Option (Fren.Core.Cardinality × List (Ex × Bool)) :=
   let c? : Option Fren.Core.Cardinality := match op with
     | .eq => some .exactlyOne
@@ -1263,7 +1293,7 @@ def Ex.countOfOne? (defined : Name → Option Ex) (fuel : Nat) (op : Op) (a b : 
   -- `1 >= a` is `a <= 1` (`Reqs/Lang/Semantics#derived-forms`).
   let (a, b) := if op == .ge then (b, a) else (a, b)
   match c? with
-  | some c => if b.isInt 1 defined fuel strict then (Ex.indicators? defined fuel false a strict).map (c, ·) else none
+  | some c => if b.isInt 1 defined (min fuel depth) strict then (Ex.indicators? defined fuel false a strict depth).map (c, ·) else none
   | none => none
 
 /-- Whether `e` may be the integer 1 (`Ex.isInt`): only the literal or
@@ -1289,7 +1319,7 @@ theorem Ex.countOfOne?_of_not_mayBeOne (defined : Name → Option Ex) (fuel : Na
     (strict : Bool) (h : (Ex.countedOne op a b).mayBeOne = false) :
     Ex.countOfOne? defined fuel op a b strict = none := by
   unfold Ex.countedOne at h
-  have := Ex.isInt_one_of_not_mayBeOne defined fuel strict _ h
+  have := Ex.isInt_one_of_not_mayBeOne defined (min fuel Fren.Core.Enumeration.maxEvalDepth) strict _ h
   cases op <;> simp_all (config := { decide := true }) [Ex.countOfOne?]
 
 /-- `es.mapM f`: the values of `es` in order, or none at the first that
@@ -1400,28 +1430,36 @@ A step is a unit of the semantics, not of the evaluator: each application
 of a structural recursion's body, and each check of a declared invariant
 (`Reqs/Eval#fuel`). Anything else that evaluation does, however the
 evaluator is optimized, spends none, so an optimization cannot change
-which evaluations run out, and so which tests reach a check. It is far
-more than any evaluation needs: when it was introduced (October 2026),
-every evaluation in a check of Fren's own spec recursed less than 32 deep,
-counting every part, not only the steps. It is far beyond what parsing or
-the solver allow too: 20000 nested recursions evaluated fine, and with
-100000 the solver timed out first. -/
+which evaluations spend semantic fuel. The separate native recursion budget
+also limits these calls (`evalDepth`). -/
 def evalFuel : Nat := 1 <<< 20
 
-/-- How deep `Ex.eval` may recurse between two steps (`evalFuel`). Each
-call into an expression's parts, and `typeV`'s into a newtype's
-underlying type, spends a unit, but a quantifier's next bound name and
-`typeV`'s descent into a value's elements spend none. It only makes
-`Ex.eval` total. Between two steps, evaluation recurses no deeper than
-the expression evaluated, with the definitions that it reads
-(`Interp.defined`), is nested, and the newtypes it checks are. That no
-evaluation runs out of it rests on that, and on no source being anywhere
-near this deep, and is not tested. One that did would have an unknown
-value (`outOfFuel`), and its test would count as one without a value
-(`F0617`). Long before the bound, at a depth that no source reaches,
-the native stack overflows, so evaluation crashes rather than leave a
-value unknown; that is not tested either. -/
-def evalDepth : Nat := 1 <<< 20
+/-- The native recursion budget for evaluation (`eval::expression_limit`):
+256 nested expression, recursive-body, invariant, value-membership or
+quantifier-binder calls. Unlike semantic fuel, this budget is never reset
+inside an evaluation. Exhaustion gives an unknown value without panicking. -/
+def evalDepth : Nat := Fren.Core.Enumeration.maxEvalDepth
+
+/-- A shared expression, cached at a budget no greater than half the
+initial one. A caller with less remaining depth evaluates it at that
+depth instead: forcing an old thunk must not restore its creator's budget.
+Caching remains useful in ordinary shallow evaluations. -/
+structure Memo where
+  budget : Nat
+  cached : Thunk (Option Val)
+  run : Nat → Option Val
+  deriving Inhabited
+
+def Memo.ofFn (depth : Nat) (run : Nat → Option Val) : Memo :=
+  let budget := min depth (evalDepth / 2)
+  { budget, cached := Thunk.mk fun _ => run budget, run }
+
+def Memo.get (m : @& Memo) (depth : Nat) : Option Val :=
+  if m.budget ≤ depth then
+    match m.cached.get with
+    | some v => some v
+    | none => if m.budget < depth then m.run depth else none
+  else m.run depth
 
 /-- What evaluation gives when it runs out of fuel (`evalFuel`): an
 unknown value, which, since evaluation is monotone, can make no known
@@ -1460,28 +1498,32 @@ recursion's body its parameters, the first innermost.
 
 It is total: each step of evaluation, an application of a structural
 recursion's body or a check of an invariant, spends a unit of `fuel`
-(`evalFuel`), and each call into an expression's parts, between two
-steps, a unit of `depth` (`evalDepth`), but not a quantifier's next bound
-name, and without either its value is `outOfFuel`'s. -/
+(`evalFuel`), and each call into an expression's parts spends a unit of
+`depth` (`evalDepth`). Depth is also spent on a recursive
+body, an invariant, a nested value and a quantifier's next binder. Without
+depth its value is unknown; without semantic fuel it is `outOfFuel`'s. -/
 def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val))
-    (frame : @& Frame) (memos : @& Array (Thunk (Option Val))) (fuel depth : Nat) (e : @& Ex) : Option Val :=
+    (frame : @& Frame) (memos : @& Array Memo) (fuel depth : Nat) (e : @& Ex) : Option Val :=
   match depth with
-  | 0 => outOfFuel ()
+  | 0 => none
   | depth + 1 =>
   match e with
   | .lit v => some v
-  | .var n => look n
+  | .var n => match I.lookup? with
+    | some read => read depth n
+    | none => look n
   | .slot k => if h : k < slots.size then slots[k] else none
   | .bound n => match frame.find? n with
     | some v => v
     | none => locals.lookup n
   | .boundAt k => frame.get k
-  | .shared k => if k < memos.size then memos[memos.size - 1 - k]!.get else none
+  | .shared k => if k < memos.size then memos[memos.size - 1 - k]!.get depth else none
   | .known v => v
   | .memo lets e =>
     -- The first of `lets` innermost, as `.shared 0`.
     let ms := lets.foldr (init := memos) fun x ms =>
-      ms.push (Thunk.mk fun _ => x.evalIn I look locals slots frame memos fuel depth)
+      ms.push (Memo.ofFn depth fun remaining =>
+        x.evalIn I look locals slots frame memos fuel (min remaining depth))
     evalResult (e.evalIn I look locals slots frame ms fuel depth)
   | .not a => notV (a.evalIn I look locals slots frame memos fuel depth)
   | .neg a => match a.evalIn I look locals slots frame memos fuel depth with
@@ -1507,7 +1549,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     -- defined (`Reqs/Lang/Expressions#cardinality`), is known where they
     -- are, as the Lean-hosted front end, which sees the same term for
     -- both, has it (`Ex.countOfOne?`).
-    match if (Ex.countedOne op a b).mayBeOne then Ex.countOfOne? I.defined I.definedCount op a b I.strict else none with
+    match if (Ex.countedOne op a b).mayBeOne then Ex.countOfOne? I.defined (min I.definedCount depth) op a b I.strict depth else none with
     | some (c, conds) =>
       truthV (c.holds? (conds.map fun (x, inDef) =>
         match if inDef then x.evalIn I look [] #[] .nil #[] fuel depth else x.evalIn I look locals slots frame memos fuel depth with
@@ -1531,13 +1573,13 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     -- which gives each the value that `List.lookup` of them gives
     -- (`paramFrame`, `argFrame_eq`).
     match I.recDefs f with
-    -- An application of it is a step of evaluation (`evalFuel`), and
-    -- its body has a depth of its own (`evalDepth`).
+    -- An application spends semantic fuel and continues with the remaining
+    -- native recursion budget; resetting depth here would defeat the bound.
     | some (ps, body) => do
       let fr ← argFrame (·.evalIn I look locals slots frame memos fuel depth) ps args
       match fuel with
       | 0 => outOfFuel ()
-      | fuel + 1 => evalResult (body.evalIn I look [] #[] fr #[] fuel evalDepth)
+      | fuel + 1 => evalResult (body.evalIn I look [] #[] fr #[] fuel depth)
     | none => do I.fn f (← evalEach (·.evalIn I look locals slots frame memos fuel depth) args)
   | .pre _ _ _ e => e.evalIn I look locals slots frame memos fuel depth
   | .strict args e =>
@@ -1679,7 +1721,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
           | some c => truthOf (c.evalIn I look locals slots frame memos fuel depth), fun _ => v.evalIn I look locals slots frame memos fuel depth))
         rows.toList fun _ => do I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
-  | .const _ e => evalResult (e.evalIn I (fun _ => none) [] #[] .nil #[] fuel depth)
+  | .const _ e => evalResult (e.evalIn { I with lookup? := none } (fun _ => none) [] #[] .nil #[] fuel depth)
   | .typed t _ e => do truthV (typeV I fuel depth t (← e.evalIn I look locals slots frame memos fuel depth))
   -- The first arm whose pattern matches and whose guard holds; where none
   -- is taken, the interpretation's unspecified value of its type.
@@ -1770,34 +1812,33 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
 termination_by (fuel, depth + 1, 0)
 where
   /-- Check actual invariant predicates as well as structural type facts.
-  Every recursive call inspects a contained finite value, which spends no
-  `depth`, or, for a newtype, the same value at its underlying type, which
-  spends a unit. Checking an invariant is a step of evaluation
-  (`evalFuel`). -/
+  Every recursive call spends depth, including descent into a contained
+  value or a newtype's underlying type. Checking an invariant is a step
+  of evaluation (`evalFuel`). -/
   typeV (I : @& Interp) (fuel depth : Nat) (t : Fren.Core.PTy) (v : Val) : Option Bool :=
     match depth with
-    | 0 => outOfFuel ()
+    | 0 => none
     | depth + 1 => do
-    unless typeHolds I.shapes t v do return false
+    unless ← typeHoldsAt I.shapes (depth + 1) t v do return false
     for invariant in t.invariants do
       let (params, body, _) ← I.defs invariant.predicate
       let parameter ← params[0]?
       let fuel' + 1 := fuel | outOfFuel ()
-      let .bool holds ← body.evalIn I (fun _ => none) [(parameter, v)] #[] .nil #[] fuel' evalDepth | none
+      let .bool holds ← body.evalIn I (fun _ => none) [(parameter, v)] #[] .nil #[] fuel' depth | none
       unless holds do return false
     match t.ty, v with
     | .set _, .set values | .seq _, .seq values =>
       if let some elem := t.elems[0]? then
         for h : value in values do
-          unless ← typeV I fuel (depth + 1) elem value do return false
+          unless ← typeV I fuel depth elem value do return false
     | .rel .., .set values =>
       for h : value in values do
         match hv : value with
         | .pair a b =>
           if let some left := t.elems[0]? then
-            unless ← typeV I fuel (depth + 1) left a do return false
+            unless ← typeV I fuel depth left a do return false
           if let some right := t.elems[1]? then
-            unless ← typeV I fuel (depth + 1) right b do return false
+            unless ← typeV I fuel depth right b do return false
         | _ => pure ()
     | .newtype path _, value =>
       if let some underlying := ((I.shapes path).bind (·.parts[0]?) |>.bind (·[0]?)) then
@@ -1805,7 +1846,7 @@ where
     | .record path _, .ctor _ ctorIndex args | .enum path _, .ctor _ ctorIndex args =>
       if let some types := (I.shapes path).bind (·.inst t.parts |>.parts[ctorIndex]?) then
         for h : k in [0:min types.size args.size] do
-          unless ← typeV I fuel (depth + 1) types[k]! (args[k]'(by have := h.upper; simp at this; omega)) do return false
+          unless ← typeV I fuel depth types[k]! (args[k]'(by have := h.upper; simp at this; omega)) do return false
     | _, _ => pure ()
     return true
   termination_by (fuel, depth + 1, sizeOf v)
@@ -1826,14 +1867,15 @@ where
   `lets[k]` shared from where the `k`th is bound (`.lifted`). -/
   quantV (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val)) (fuel depth : Nat)
       (all : Bool) (names : @& Array Name) (doms : @& Array (Option Ex)) (tys : @& Array Fren.Core.PTy) (body : @& Ex)
-      (lets : @& Array (Array Ex)) (k : Nat) (frame : @& Frame) (memos : @& Array (Thunk (Option Val))) :
+      (lets : @& Array (Array Ex)) (k : Nat) (frame : @& Frame) (memos : @& Array Memo) :
       Option Val :=
     match depth with
-    | 0 => outOfFuel ()
+    | 0 => none
     | depth + 1 =>
     let memos := match lets[k]? with
       | some ls => ls.foldl (init := memos) fun ms x =>
-        ms.push (Thunk.mk fun _ => x.evalIn I look locals slots frame memos fuel depth)
+        ms.push (Memo.ofFn depth fun remaining =>
+          x.evalIn I look locals slots frame memos fuel (min remaining depth))
       | none => memos
     if h : k < names.size then
       -- Its domain, or, without one, the values of its type up to the
@@ -1854,7 +1896,7 @@ where
           match typed with
           | some true =>
             let frame' := .bind names[k] (some v) frame
-            match quantV I look locals slots fuel (depth + 1) all names doms tys body lets (k + 1) frame' memos with
+            match quantV I look locals slots fuel depth all names doms tys body lets (k + 1) frame' memos with
             | some (.bool b) => someBool b
             | _ => none
           | some false => someBool all
@@ -1874,39 +1916,56 @@ expressions unless they are given, and with all of `evalFuel` and
 a default is not borrowed (`@&`), whatever it is annotated. -/
 @[inline] def Ex.eval (I : @& Interp) (look : @& Look) (locals : List (Name × Val) := [])
     (slots : Array (Option Val) := #[]) (frame : Frame := .nil)
-    (memos : Array (Thunk (Option Val)) := #[]) (fuel : Nat := evalFuel) (depth : Nat := evalDepth) (e : @& Ex) :
+    (memos : Array Memo := #[]) (fuel : Nat := evalFuel) (depth : Nat := evalDepth) (e : @& Ex) :
     Option Val :=
-  e.evalIn I look locals slots frame memos fuel depth
+  e.evalIn I look locals slots frame memos fuel (Fren.Core.Enumeration.boundedEvalDepth depth)
 
-/-! How `Ex.eval` spends `fuel` and `depth` (`evalFuel`, `evalDepth`):
+/-- Read a variable or evaluate its definition at the remaining depth.
+The callback installed in the interpretation carries the budget through a
+chain of definitions, including the expression around each reference. -/
+def readDefined (I : Interp) (base : Look) (defined : Name → Option Ex) (depth : Nat) (x : Name) : Option Val :=
+  match base x with
+  | some v => some v
+  | none => match depth with
+    | 0 => none
+    | depth + 1 => do
+      let e ← defined x
+      e.eval { I with lookup? := some (fun remaining => readDefined I base defined (min remaining depth)) }
+        (readDefined I base defined depth) (depth := depth)
+termination_by depth
+
+/-! How `Ex.evalIn` spends `fuel` and `depth` (`evalFuel`, `evalDepth`):
 without depth it has no value; a part of an expression spends depth but
 no fuel; an application of a structural recursion spends a unit of fuel,
-and its body has a depth of its own, so that how deep the evaluator
-recurses between two steps cannot decide which evaluations run out. -/
+and its body continues at the remaining depth. -/
 
 example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Frame)
-    (m : Array (Thunk (Option Val))) (n : Nat) (e : Ex) : e.eval I look l s f m n 0 = none := by
-  rw [Ex.eval, Ex.evalIn]; rfl
+    (m : Array Memo) (fuel requested : Nat) (e : Ex) :
+    e.eval I look l s f m fuel requested = e.evalIn I look l s f m fuel (min requested evalDepth) := rfl
 
 example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Frame)
-    (m : Array (Thunk (Option Val))) (n d : Nat) (a : Ex) :
-    (Ex.not a).eval I look l s f m n (d + 1) = notV (a.eval I look l s f m n d) := by
-  rw [Ex.eval, Ex.evalIn]; rfl
+    (m : Array Memo) (n : Nat) (e : Ex) : e.evalIn I look l s f m n 0 = none := by
+  rw [Ex.evalIn]
+
+example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (f : Frame)
+    (m : Array Memo) (n d : Nat) (a : Ex) :
+    (Ex.not a).evalIn I look l s f m n (d + 1) = notV (a.evalIn I look l s f m n d) := by
+  rw [Ex.evalIn]
 
 example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Frame)
-    (m : Array (Thunk (Option Val))) (n d : Nat) (g : Name) (args : Array Ex) (ps : Array Name) (body : Ex)
+    (m : Array Memo) (n d : Nat) (g : Name) (args : Array Ex) (ps : Array Name) (body : Ex)
     (h : I.recDefs g = some (ps, body)) :
-    (Ex.app g args).eval I look l s fr m (n + 1) (d + 1) =
-      (evalEach (·.eval I look l s fr m (n + 1) d) args).bind fun vs =>
-        body.eval I look [] #[] (paramFrame ps vs) #[] n evalDepth := by
-  rw [Ex.eval, Ex.evalIn]; simp only [h, argFrame_eq, Ex.eval]
+    (Ex.app g args).evalIn I look l s fr m (n + 1) (d + 1) =
+      (evalEach (·.evalIn I look l s fr m (n + 1) d) args).bind fun vs =>
+        body.evalIn I look [] #[] (paramFrame ps vs) #[] n d := by
+  rw [Ex.evalIn]; simp only [h, argFrame_eq]
   cases evalEach (·.evalIn I look l s fr m (n + 1) d) args <;> rfl
 
 example (I : Interp) (look : Look) (l : List (Name × Val)) (s : Array (Option Val)) (fr : Frame)
-    (m : Array (Thunk (Option Val))) (d : Nat) (g : Name) (args : Array Ex) (ps : Array Name) (body : Ex)
+    (m : Array Memo) (d : Nat) (g : Name) (args : Array Ex) (ps : Array Name) (body : Ex)
     (h : I.recDefs g = some (ps, body)) :
-    (Ex.app g args).eval I look l s fr m 0 (d + 1) = none := by
-  rw [Ex.eval, Ex.evalIn]; simp only [h, argFrame_eq]; cases evalEach (·.evalIn I look l s fr m 0 d) args <;> rfl
+    (Ex.app g args).evalIn I look l s fr m 0 (d + 1) = none := by
+  rw [Ex.evalIn]; simp only [h, argFrame_eq]; cases evalEach (·.evalIn I look l s fr m 0 d) args <;> rfl
 
 /-- The expressions directly within `e`. -/
 def Ex.children : Ex → Array Ex
@@ -1933,6 +1992,45 @@ def Ex.children : Ex → Array Ex
   -- definedness check on the solver's word, where the Lean-hosted front end
   -- may refute it (#493).
   | .strict _ e => #[e]
+
+/-- Check the expression tree without recursing on the native stack. Unlike
+`children`, this includes strict arguments, which evaluation also traverses.
+The work list and the number of visits are bounded (`eval::expression_limit`). -/
+def Ex.withinLimits (e : Ex) : Bool := visit Fren.Core.Enumeration.maxEvalNodes [(e, 1)]
+where
+  visit : Nat → List (Ex × Nat) → Bool
+    | _, [] => true
+    | 0, _ :: _ => false
+    | fuel + 1, (e, depth) :: rest =>
+      if !Fren.Core.Enumeration.withinEvalLimits depth (Fren.Core.Enumeration.maxEvalNodes - fuel) then false else
+      let children := match e with
+        | .strict args body => args.push body
+        | e => e.children
+      if children.size > fuel then false else
+      visit fuel (children.foldr (fun child todo => (child, depth + 1) :: todo) rest)
+
+/-- A sufficient totality check for well-typed scalar formulas and their
+acyclic definitions. Every variable costs an extra unit for definition
+lookup; counting the whole dependency forest bounds any evaluation path.
+Other constructs keep enumeration's partial-truth checks. -/
+def Ex.scalarTotal (es : Array Ex) : Bool :=
+  if es.size > evalDepth then false else visit evalDepth es.toList
+where
+  visit : Nat → List Ex → Bool
+    | _, [] => true
+    | 0, _ :: _ => false
+    | fuel + 1, e :: rest =>
+      let allowed := match e with
+        | .lit (.bool _) | .lit (.int _) | .known (some (.bool _)) | .known (some (.int _))
+        | .var _ | .not _ | .neg _ | .ite .. | .when .. => true
+        | .bin op _ _ => (op matches .and | .or | .iff | .eq | .ne | .lt | .le | .gt | .ge | .add | .sub)
+        | _ => false
+      if !allowed then false else
+      match e with
+      | .var _ => match fuel with
+        | 0 => false
+        | fuel + 1 => visit fuel rest
+      | e => visit fuel (e.children.foldr List.cons rest)
 
 /-- Whether `e` has an unbounded quantifier: one with a bound name whose
 domain is not its type's listed values. -/
@@ -2211,7 +2309,7 @@ interpretation whose records', newtypes' and enumerations' parts are
   reads the interpretation's functions, or its definitions, as a subset
   type's invariant does: its value, which needs no
   environment, is computed once (`.known`). -/
-partial def Ex.compile (shapes : Name → Option Fren.Core.DataShape) (scope : Option (List Name)) (e : Ex) : Ex :=
+private partial def Ex.compileUnchecked (shapes : Name → Option Fren.Core.DataShape) (scope : Option (List Name)) (e : Ex) : Ex :=
   match e with
   | .bound n => match scope.bind (·.idxOf? n) with
     | some k => .boundAt k
@@ -2219,7 +2317,7 @@ partial def Ex.compile (shapes : Name → Option Fren.Core.DataShape) (scope : O
   | .lit v => .known (some v)
   | .var _ | .slot _ | .boundAt _ | .shared _ | .known _ => e
   -- Compiled again, its `match` with it, which is dispatched afresh.
-  | .dispatch _ m => m.compile shapes scope
+  | .dispatch _ m => m.compileUnchecked shapes scope
   | e => dispatched (fold (compound e))
 where
   /-- A `match` whose arms' patterns tell variants apart, with the arms
@@ -2264,7 +2362,7 @@ where
     if !readsFns && !readsDefs && !readsDomain && e.children.all (· matches .known _) then .known (e.eval { shapes } fun _ => none) else e
   /-- `e`, an expression with parts, with its parts compiled. -/
   compound (e : Ex) : Ex :=
-  let go (x : Ex) := x.compile shapes scope
+  let go (x : Ex) := x.compileUnchecked shapes scope
   match e with
   | .not a => .not (go a)
   | .neg a => .neg (go a)
@@ -2288,25 +2386,28 @@ where
   | .pre pos f gs a => .pre pos f (gs.map fun (n, g) => (n, go g)) (go a)
   | .strict args a => .strict (args.map go) (go a)
   -- Evaluated on its own, from an empty frame.
-  | .const p a => .const p (a.compile shapes (some []))
+  | .const p a => .const p (a.compileUnchecked shapes (some []))
   | .memo lets a => .memo (lets.map go) (go a)
   | .match s arms pos ps u pairs? =>
     .match (go s) (arms.map fun (p, g?, b) =>
       let inner := if p.altsBind then none else scope.map (p.binders.toList ++ ·)
-      (p, g?.map (·.compile shapes inner), b.compile shapes inner)) pos ps u pairs?
+      (p, g?.map (·.compileUnchecked shapes inner), b.compileUnchecked shapes inner)) pos ps u pairs?
   | .quant file pos all ns ds ts b =>
     -- The `k`th domain is evaluated with the names before it bound.
     let ds := ds.mapIdx fun k d? => d?.map fun d =>
       match d with
-      | .lit (.seq vs) => .lit (.seq (vs.filter fun v => ts[k]?.all (typeHolds shapes · v)))
-      | .lit (.set vs) => .lit (.set (vs.filter fun v => ts[k]?.all (typeHolds shapes · v)))
-      | d => d.compile shapes (scope.map ((ns.extract 0 k).toList.reverse ++ ·))
+      | .lit (.seq vs) => .lit (.seq (vs.filter fun v => ts[k]?.all (fun t => typeHoldsAt shapes evalDepth t v != some false)))
+      | .lit (.set vs) => .lit (.set (vs.filter fun v => ts[k]?.all (fun t => typeHoldsAt shapes evalDepth t v != some false)))
+      | d => d.compileUnchecked shapes (scope.map ((ns.extract 0 k).toList.reverse ++ ·))
     let listed (d? : Option Ex) : Bool := d? matches some (.lit (.seq _)) | some (.lit (.set _))
-    -- A literal domain's values are of their type already, unless it has
-    -- invariants, which `typeHolds` does not check, and which are checked
-    -- at each evaluation, under the interpretation's definitions: a
-    -- `Bool`, with no pattern, holds of any value (`typeHolds`).
-    let checked (k : Nat) : Bool := listed ds[k]! && ts[k]?.all (·.invariantFree shapes)
+    -- Discharge a literal domain's type check only when the bounded
+    -- prepass decided every retained value. An unknown membership must
+    -- remain a runtime check, as must an invariant that reads definitions.
+    let checked (k : Nat) : Bool := listed ds[k]! && ts[k]?.all fun t =>
+      t.invariantFree shapes && match ds[k]! with
+      | some (.lit (.seq vs)) | some (.lit (.set vs)) =>
+        vs.all fun v => typeHoldsAt shapes evalDepth t v == some true
+      | _ => false
     let ts := if (List.range ds.size).all checked then #[]
       else ts.mapIdx fun k t => if checked k then { ty := .bool } else t
     -- The position after the last of the bound names that `x` reads: the
@@ -2315,14 +2416,14 @@ where
       (ns.zipIdx.foldl (init := l) fun l (m, i) => if m == n then max l (i + 1) else l)
     let (b, found) := b.share (fun x => level x < ns.size) #[]
     let inner := scope.map (ns.toList.reverse ++ ·)
-    if found.isEmpty then .quant file pos all ns ds ts (b.compile shapes inner) else
+    if found.isEmpty then .quant file pos all ns ds ts (b.compileUnchecked shapes inner) else
     -- Pushed level by level, each level's in order, so that the body reads
     -- the `p`th pushed as the `found.size - 1 - p`th from the last.
     let levels := (List.range ns.size).toArray.map fun j => (found.zipIdx.filter (level ·.1 == j)).map (·.2)
     let pushed := levels.flatten
     let b := b.renumberShared fun k => found.size - 1 - (pushed.idxOf? k).getD 0
-    let lets := levels.mapIdx fun j ks => ks.map fun k => found[k]!.compile shapes (scope.map ((ns.extract 0 j).toList.reverse ++ ·))
-    .lifted lets (.quant file pos all ns ds ts (b.compile shapes inner))
+    let lets := levels.mapIdx fun j ks => ks.map fun k => found[k]!.compileUnchecked shapes (scope.map ((ns.extract 0 j).toList.reverse ++ ·))
+    .lifted lets (.quant file pos all ns ds ts (b.compileUnchecked shapes inner))
   | .table pos rows u =>
     let parts := rows.flatMap fun (_, c?, v) => (c?.map (·.costlyParts)).getD #[] ++ v.costlyParts
     -- Those that occur more than once.
@@ -2343,6 +2444,12 @@ where
       (acc.push (p, c?, v), lets)
     .memo (lets.map go) (.table pos (rows.map fun (p, c?, v) => (p, c?.map go, go v)) u)
   | e => e
+
+/-- Compile only bounded expressions. The iterative check runs before any
+recursive compiler pass, including sharing and binder analysis. An oversized
+expression remains unknown, as an evaluation that reaches the depth bound does. -/
+def Ex.compile (shapes : Name → Option Fren.Core.DataShape) (scope : Option (List Name)) (e : Ex) : Ex :=
+  if e.withinLimits then e.compileUnchecked shapes scope else .known none
 
 /-- A constraint of a procedure nested at `pfx`, such as `w.v` for call `v`
 of call `w`: `e` over the variables `pfx.x`. -/
@@ -2372,6 +2479,7 @@ def Atom.compiled (shapes : Name → Option Fren.Core.DataShape) (a : Atom) : At
   { a with run? := some (a.e.compile shapes (some [])) }
 
 def Atom.eval (a : Atom) (I : Interp) (look : Look) (fuel : Nat := evalFuel) : Option Bool :=
+  let I := { I with lookup? := I.lookup?.map fun read depth n => read depth (a.pfx ++ n) }
   match a.e.eval I (fun n => look (a.pfx ++ n)) (fuel := fuel) with
   | some (.bool b) => some b
   | _ => none

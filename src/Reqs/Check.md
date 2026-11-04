@@ -1994,6 +1994,14 @@ pub proc by_testing(
 
 ## Checking by enumeration
 
+The evaluator's [expression limits](Eval.md#fuel) also apply: a formula
+deeper than 256 levels or larger than 4194304 lowered nodes is refused with `F0645`.
+The combined expansion of its variable and function types has the same
+depth bound and a 262144-node bound, including constructors and finite integer domains (see
+[Evaluation limits](Eval.md#fuel)).
+An evaluation that reaches its native depth budget remains unknown and
+makes the check inconclusive; it must not count as a false formula.
+
 A check can also be decided by *enumerating* behaviours, smallest first,
 instead of asking the solver, in the style of SmallCheck (Runciman, Naylor
 and Lindblad, "SmallCheck and Lazy SmallCheck", Haskell '08) and of fair
@@ -2540,6 +2548,11 @@ shape to read, is refused ([`F0387`](Lang/Generics.md#type-parameters)),
 while one at a part of its own arguments, as `Box<Wide>` within
 `Box<Box<Wide>>`, is a smaller type, read as any other.
 
+The number of interpretations of a function is computed only up to one
+more than `MAX_BEHAVIOURS`. A count above the limit is reported as a lower
+bound. Functions with zero or one result value do not require listing
+their entire argument domain to count or order their interpretations.
+
 ### Quantifiers up to the bound
 
 A quantifier that enumeration evaluates ranges over its
@@ -2573,11 +2586,16 @@ A quantifier over a type that, without its patterns, has more than
 at the procedure, and none of its checks set to enumeration is run. A
 range that a guard gives with more than `MAX_ENUMERATED` values (see [the
 evaluator](Eval.md#quantifiers)) leaves its quantifier unknown, as it
-does in testing. Other than an index out of range, only a quantifier,
-guarded or not, can leave a formula unknown. So a procedure whose
-formulas, and the definitions they read, have none is searched as in
-[Searching](#searching), and the search never asks which atoms are known
-(`mayBeUnknown` in `FrenCore.Enumeration`, which both front ends use).
+does in testing. Other than an index out of range, a quantifier or an
+[evaluation limit](Eval.md#fuel) can leave a formula unknown. Both front
+ends detect quantifiers with `mayBeUnknown` in `FrenCore.Enumeration`.
+The Lean-hosted front end can skip knownness checks when there are none;
+the `fren` command skips them for scalar formulas whose whole dependency
+forest fits its depth budget, or after checking each atom and defined
+output over all assignments of its bounded inputs. Random extras retain
+knownness checks. Other formulas retain them because evaluation can reach
+its depth limit. An unknown formula must not become a false one or let a
+check pass because an assignment was silently discarded.
 
 `check::quantified_truth` states a quantifier's truth, over the truths of
 its instances, and `check::partial_not` and `check::partial_and` the
