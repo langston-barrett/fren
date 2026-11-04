@@ -186,18 +186,87 @@ pub mod testing
   The last two are checked on a sample of at most 24 mutants of each
   example. A new origin may need the examples strengthened, or new
   mutants listed.
-- **Enumeration agrees with the solver** (`lake test`): every ui test that
-  the binary checks without a static error is checked again with every
-  check set to enumeration (`set_option fren.evidence "enumerated"` before
-  its first item), and each verdict of enumeration must match the solver's
-  on the same check (see [Verdicts of
-  enumeration](../Check.md#verdicts-of-enumeration)): a failure is genuine,
-  so the solver must not pass the check, and a pass that is not bounded is
-  a decision, so the solver must not fail it; and a value given where a
-  subset type is declared, which stays the solver's, keeps its result.
-  The ui tests
-  `checks/enumerated*.fren` and `checks/evidence_obligations.fren` cover
-  enumeration in both front ends.
+- **Enumeration agrees with the solver** (`lake test`, `enumeration`):
+  each ui test and example in the binary's corpus (excluding hosted-only
+  files and files annotated with exit 2) runs with `Args.evidence?` forced
+  to the solver, then forced to enumeration. The argument overrides the
+  file's own settings, including scoped ones. A solver run with a static
+  error is skipped, after checking for internal errors. Every recorded
+  result must name the requested method, except functions, constants and
+  subset-value definedness obligations, which must name the solver.
+  Results are matched by item and every field of their check identity,
+  in both directions. A missing counterpart fails, except a solver check
+  that enumeration explicitly skips under `check::method_run`, or the
+  enumerated checks of the particular procedure named by an unsupported
+  enumeration diagnostic (`F0645`) or behaviour/quantifier cap diagnostic
+  (`F0644`, the 65,536-value limit). A redundancy check may also be absent
+  when its constraint's vacuity has no witness up to the bound, or the
+  procedure reports no input/output up to the bound: `check::redundancy_asked`
+  can skip it in the bounded search even when the solver runs it.
+  In a run that reaches checking, solver-only checks may never be omitted
+  and must keep their verdicts. The exact caller redundancy checks in
+  `cover.fren` and `constants.fren` whose bounded calls make the comparison
+  set empty are listed in `methodExceptions` with this semantic reason;
+  an entry fails as stale once its counterpart appears.
+  For the other matched results, a failure of enumeration is genuine, so
+  the solver must not pass the check; a pass that is not bounded is a
+  decision, so the solver must not fail it (see [Verdicts of
+  enumeration](../Check.md#verdicts-of-enumeration)). Known contradictions
+  are listed by file and exact check identity in `methodExceptions`, with
+  their issue or semantic reason. Known adapter defects use exact
+  diagnostic/check keys in the same registry. The seven internal errors,
+  four wrong-method checks (under each affected method), and 74 missing
+  enumeration counterparts tracked by #813 pass only while their exact
+  entries occur. Diagnostic keys include the requested method, severity,
+  code and headline; wrong-method keys include the requested and actual
+  methods; missing counterparts name the complete check identity. Known
+  entries are printed with their issue. Any applicable entry that
+  disappears fails as stale and must be removed as #813's fixes land.
+  Enumeration alone does not require an entry specific to random testing
+  to occur. Unexpected new errors, wrong methods and missing identities
+  still fail. At least 500 checks must be compared.
+  Both runs retain their diagnostics and exit status. Internal errors and
+  unexpected error diagnostics fail, even beside normal results, unless
+  they match an exact known entry above. Nonzero
+  exits fail unless explained: exit 1 by ordinary failed-check diagnostics
+  or `F0644`/`F0645`, exit 3 by warnings, and the solver baseline's exit 2 by
+  static-error diagnostics. Exit 2 under enumeration is expected only
+  when every error is the exact `F0215` rejection of enumeration for a
+  trait expectation and the stopped-checking header, and no results were
+  recorded (`lang::trait_expectation_evidence`). That rejection stops all
+  checks of the file, so it is reported and the file's comparisons are
+  skipped. Every other enumeration exit 2 fails.
+  Adapter regressions also inject missing counterparts, wrong recorded
+  methods, internal errors and unexplained exits, and run a spec with
+  conflicting source evidence settings under each forced method. The ui
+  tests `checks/enumerated*.fren` and `checks/evidence_obligations.fren`
+  cover enumeration in both front ends.
+- **Methods agree** (`methodsAgree`, on `main`): Fren's own requirements,
+  the same ui/example corpus as `enumeration`, and every seed of the
+  front-end fuzzer's fixed corpus run with argument overrides for the
+  solver, enumeration and random testing. Every record's method is
+  validated as above, including records left to the solver, before each
+  method's own records are selected. The union of those check identities
+  is compared with `check::methods_agree`; inconclusive results and
+  methods that did not run contribute no verdict. Missing checks are
+  counted separately from inconclusive ones; this job does not require
+  a counterpart for every check. It also checks that the exact documented
+  missing-check cases in the shared registry still occur. The same exact
+  `methodExceptions` apply
+  and fail when stale. Comparison floors for each corpus part guard
+  against a method silently ceasing to contribute.
+  Diagnostics and exit statuses are retained and checked as for
+  `enumeration`, with `F0639` accepted only under random testing and
+  `F0644`/`F0645` only under enumeration. These expected unsupported-method
+  diagnostics are reported with their corpus entry, method, code and
+  headline; every other error must be an ordinary failed-check diagnostic
+  or an exact known entry, or fail the job. The exact trait-expectation rejection (`F0215`) is
+  accepted for either non-solver method, with the exit-2 conditions above;
+  no checks of that run contribute, and its diagnostics are reported.
+  An internal error fails unless it matches an exact known entry, including
+  in the solver baseline of a spec with static errors. A solver baseline with ordinary static errors
+  skips that spec; every other method-specific exit 2 fails.
+  This job also runs the adapter regressions described above.
 - **Solver lifetime** (`lake test`, `solverLifetime`): 500 queries in a
   row must not grow the test driver's memory by more than 100 MB, as they
   did by 1.5 MB each while no solver was freed (see [Solver

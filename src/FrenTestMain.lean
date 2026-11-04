@@ -3516,10 +3516,6 @@ def backjumping (corpus : String) : IO (Array String) := do
 
 /-! ## Enumeration agrees with the solver -/
 
-/-- `src` with every check set to enumeration that no setting of its own
-sets otherwise (`Reqs/Check#checking-by-enumeration`). -/
-def enumeratedText (src : String) : String := "set_option fren.evidence \"enumerated\"\n" ++ src
-
 /-- The ui tests whose checks enumeration is compared with the solver's:
 those that the binary checks, without a static error. -/
 def enumerationCorpus : IO (Array FilePath) := do
@@ -3533,8 +3529,11 @@ Every check of Fren's own requirements, of the ui tests and of the
 front-end fuzzer's corpus runs under each method that applies, the solver,
 enumeration up to the size and random testing, each set by `fren check
 --evidence`, in place of the specs' own settings; and no two methods'
-verdicts on a check contradict each other (`check::methods_agree`). Model
-confirmation checks every counterexample and witness that the solver
+verdicts on a check contradict each other (`check::methods_agree`). The job
+also fails on internal errors, unexpected error diagnostics, unexplained
+exits, wrong-method records, stale known entries and missed comparison
+floors. Exact known entries excuse only their recorded differences.
+Model confirmation checks every counterexample and witness that the solver
 reports (`Reqs/Models`); this checks the other direction, a pass that rests
 on the solver's `unsat` alone, which a wrong encoding can make of a false
 claim. On `main` only (`methods-agree` in `ci.yml`). -/
@@ -3574,77 +3573,439 @@ def detailText : Fren.Core.Detail → String
   | .undecidedQuantifier n => s!"a quantifier undecided up to {n}"
   | .none => ""
 
-/-- The checks of `files` that `method` runs itself under `fren check
---evidence value`, by `methodKey`, and the run's exit code. A check that
-the method does not run, such as one that it skips (`check::method_run`),
-or one of a function, which only the solver runs, is not among them. -/
-def methodResults (files : Array String) (method : Fren.Core.ProofMethod) (value : String) (jobs? : Option Nat) :
-    IO (Std.HashMap String MethodFound × UInt32) := do
+/-- A run keeps every record, including the solver's obligations and
+function checks, and every diagnostic header from every input file. The
+rendered output is retained for a failed run's report. -/
+structure MethodRun where
+  records : Array (String × Fren.Core.CheckResult × Fren.Core.ProofMethod) := #[]
+  diags : Array (String × Option String × String) := #[]
+  output : String := ""
+  code : UInt32 := 0
+  deriving Inhabited
+
+/-- The checks of `files` under an argument override, which takes precedence
+over even a scoped evidence setting in the source. -/
+def methodResults (files : Array String) (value : String) (jobs? : Option Nat := none) : IO MethodRun := do
   let record ← IO.mkRef #[]
   let args : FrenCli.Args := { files, evidence? := Fren.Core.evidenceOf? value, jobs? }
-  let (_, code) ← IO.FS.withIsolatedStreams (FrenCli.check args (some record))
-  let found := (← record.get).foldl (init := ({} : Std.HashMap String MethodFound)) fun acc (item, r, m) =>
-    if m != method then acc else
-    acc.insert (methodKey item r) { kind := r.kind, verdict := r.verdict, bounded := r.bounded?.isSome, detail := detailText r.detail }
-  return (found, code)
+  let (output, code) ← IO.FS.withIsolatedStreams (FrenCli.check args (some record))
+  return { records := ← record.get, diags := (output.splitOn "\n").toArray.filterMap header?, output, code }
 
-/-- The contradictions that `methodsAgree` and `enumerationAgrees` expect,
-each a check by its file and `methodKey`, with why: a known bug, by its
-issue, or a difference that is not one. Each is narrow: a single check, and
-both fail on one that a run of its file no longer hits (`staleExceptions`),
-so that a fixed bug's entry does not stay. -/
+/-- A diagnostic that documents why this method cannot run a procedure.
+A code from another method is never an expected limitation. -/
+def unsupportedMethod (method : Fren.Core.ProofMethod) (code? : Option String) : Bool :=
+  (method == .enumerated && (code? == some "F0644" || code? == some "F0645")) || (method == .random && code? == some "F0639")
+
+/-- Forcing a non-solver method on a trait expectation is rejected before
+any checks run (`lang::trait_expectation_evidence`). This exact rejection
+may explain exit 2, together with the driver's stopped-checking header;
+other static errors and runs with partial records are not this case. -/
+def traitMethodRejected (method : Fren.Core.ProofMethod) (run : MethodRun) : Bool :=
+  let value := if method == .random then "random" else "enumerated"
+  let traitError := fun (sev, code?, text) => sev == "error" && code? == some "F0215" &&
+    text == (Fren.Core.traitEvidenceMsg value).headline
+  (method == .random || method == .enumerated) && run.code == 2 && run.records.isEmpty &&
+    run.diags.any traitError && run.diags.all fun d => d.1 != "error" || traitError d ||
+      (d.2.1.isNone && d.2.2 == Fren.Core.couldNotHeadline)
+
+/-- Whether a recorded check is one of the solver's, regardless of the
+requested method: functions/constants and subset-value obligations. -/
+def solverOnly (item : String) (r : Fren.Core.CheckResult) : Bool :=
+  item.startsWith "body " || (r.kind == .definedness && r.subsetTy?.isSome)
+
+/-- The run's errors, apart from ordinary failed checks and the method's
+documented limitations. No internal error is a static error to skip, even
+when the run also records normal checks. Nonzero statuses must be explained:
+1 by an error diagnostic, 3 by a warning; 2 is allowed on the solver's
+static-error baseline or the exact trait-method rejection. Every record
+must name the method requested for it. -/
+def methodRunFailures (method : Fren.Core.ProofMethod) (run : MethodRun) (staticOK := false) : Array (String × String) := Id.run do
+  let mut failures := #[]
+  let static := staticOK && run.code == 2 && run.diags.any fun (sev, _, _) => sev == "error"
+  let rejected := traitMethodRejected method run
+  let resultCodes := run.records.flatMap fun (_, r, _) =>
+    -- These flags affect wording; collect every form of the result's messages.
+    (#[false, true].flatMap fun priv => #[false, true].flatMap fun decidable =>
+      Fren.Core.messages priv r decidable).filterMap fun m =>
+        if m.severity == .error then m.msg.code? else none
+  for (severity, code?, text) in run.diags do
+    if text.startsWith "internal error" then failures := failures.push (s!"diagnostic|{repr method}|{severity}|{code?}|{text}", text)
+    else if severity == "error" && !static && !rejected && !unsupportedMethod method code? then
+      -- `printResult` specializes these three subset diagnostics.
+      let subset := (code? == some "F0660" && run.records.any fun (_, r, _) => r.kind == .realizable && r.verdict == .fail)
+        || ((code? == some "F0661" || code? == some "F0662") && run.records.any fun (_, r, _) =>
+          r.kind == .definedness && r.verdict == .fail)
+      unless subset || code?.any resultCodes.contains do
+        failures := failures.push (s!"diagnostic|{repr method}|{severity}|{code?}|{text}", s!"unexpected error{code?.map (s!"[{·}]") |>.getD ""}: {text}")
+  let explained := run.code == 0 || static || rejected
+    || (run.code == 1 && run.diags.any fun (sev, _, _) => sev == "error")
+    || (run.code == 3 && run.diags.any fun (sev, _, _) => sev == "warning")
+  unless explained do failures := failures.push (s!"exit|{run.code}", s!"unexpected exit status {run.code}")
+  for (item, r, actual) in run.records do
+    let expected := if solverOnly item r then .solver else method
+    unless actual == expected do
+      failures := failures.push (s!"recorded method|{repr method}|{repr actual}|{methodKey item r}", s!"`{methodKey item r}`: recorded {repr actual}, requested {repr expected}")
+  return failures
+
+/-- Only this method's records, after `methodRunFailures` has checked all
+records, including those left to the solver. -/
+def MethodRun.found (run : MethodRun) (method : Fren.Core.ProofMethod) : Std.HashMap String MethodFound :=
+  run.records.foldl (init := {}) fun acc (item, r, m) =>
+    if m != method then acc else acc.insert (methodKey item r)
+      { kind := r.kind, verdict := r.verdict, bounded := r.bounded?.isSome, detail := detailText r.detail }
+
+/-- Missing enumeration records are allowed only for a documented skip
+(`check::method_run`), a bounded vacuity/consistency result that can stop
+redundancy (`check::redundancy_asked`), or the particular procedure named
+by `F0644` (the behaviour cap) or `F0645` (an unsupported function).
+Solver-only obligations must still be present even in that procedure. -/
+def enumerationMayOmit (item : String) (r : Fren.Core.CheckResult) (run : MethodRun) : Bool :=
+  !solverOnly item r &&
+    ((Fren.Core.dispatchOf r.kind .component .enumerated).1 == .skip ||
+      (r.kind == .redundancy && run.records.any fun (other, v, m) => other == item && m == .enumerated &&
+        ((v.kind == .vacuity && v.prop? == r.prop? &&
+          (v.verdict == .fail || (v.bounded?.isSome && match v.detail with
+            | .unknown why => why.startsWith "no witness up to size"
+            | _ => false))) ||
+          (v.kind == .realizable && v.bounded?.isSome && match v.detail with
+            | .unknown why => why.startsWith "no input meets the assumptions up to size" || why.startsWith "no outputs up to size"
+            | _ => false))) ||
+      run.diags.any fun (sev, code?, text) => sev == "error" &&
+        ((code? == some "F0645" && text.startsWith s!"`{Fren.Core.showComp r.comp}` cannot be enumerated:") ||
+          (code? == some "F0644" && text.startsWith s!"`{Fren.Core.showComp r.comp}` has ")))
+
+/-- Known method differences, by file and exact check/diagnostic key, with
+an issue or semantic reason. Each excuses only the difference it names;
+unexpected differences fail. Both jobs fail on an applicable entry that
+no longer occurs (`staleExceptions`). The #813 entries go when its fixes
+land: they permit the existing defects, not new ones. -/
 def methodExceptions : Array (String × String × String) := #[
   -- A caller assumes a recursive function's result type, as its
   -- postconditions, whether or not its body meets it; the pass rests on the
   -- body's obligation, a premise (`Postconditions`) not applied yet.
   ("test/ui/checks/recursion_subset_result.fren",
-    "comp r.wrong_caller|Fren.Core.CheckKind.expect|(some c)|none|none|none|none|-|none", "#522")]
+    "comp r.wrong_caller|Fren.Core.CheckKind.expect|(some c)|none|none|none|none|-|none", "#522"),
+  -- The called procedure has no behaviour up to the size: `heater`'s
+  -- private margin must be temp - 100, and `band` needs inputs near 46.
+  -- The caller's own realizability can pass while A ∧ I ∧ R has no world
+  -- up to the bound, so `check::redundancy_asked` omits its guarantee.
+  ("test/ui/checks/cover.fren",
+    "missing enumeration|comp panel|Fren.Core.CheckKind.redundancy|(some shows)|none|none|none|none|-|none",
+    "bounded call to heater; check::redundancy_asked"),
+  ("test/ui/lang/constants.fren",
+    "missing enumeration|comp other.user|Fren.Core.CheckKind.redundancy|(some r)|none|none|none|none|-|none",
+    "bounded call to band; check::redundancy_asked"),
+  -- Existing internal errors and wrong-method records, scoped to the
+  -- requested method (and actual method or full diagnostic header). #813
+  ("test/ui/checks/recursive_subsets.fren",
+    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "#813"),
+  ("test/ui/checks/recursive_subsets.fren",
+    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.equation»)|none|none|none|none|-|none", "#813"),
+  ("test/ui/checks/recursive_subsets.fren",
+    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "#813"),
+  ("test/ui/checks/recursive_subsets.fren",
+    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.equation»)|none|none|none|none|-|none", "#813"),
+  ("test/ui/lang/generics_subset_types.fren",
+    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `generics_subset_types::giver`", "#813"),
+  ("test/ui/lints/labeled_constraints.fren",
+    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «left.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
+  ("test/ui/lints/labeled_constraints.fren",
+    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «right.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
+  ("test/ui/lints/labeled_constraints.fren",
+    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «left.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
+  ("test/ui/lints/labeled_constraints.fren",
+    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «right.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
+  ("examples/stoplight.fren",
+    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::watch`", "#813"),
+  ("examples/stoplight.fren",
+    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::observed`", "#813"),
+  ("examples/stoplight.fren",
+    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::first_walk`", "#813"),
+  ("examples/stoplight.fren",
+    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::prompt`", "#813"),
+  ("examples/stoplight.fren",
+    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::green_between_walks`", "#813"),
+  ("examples/stoplight.fren",
+    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::refines_cycle`", "#813")] ++ (#[
+  -- The 74 absent counterparts caused by the seven internal errors:
+  -- every identity is explicit and becomes stale independently. #813
+  ("test/ui/lang/generics_subset_types.fren", #[
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, x.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, d.0))|none|none|none|-|(some @invariant:generics_subset_types::Digit::invariant)",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, p.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, p.1))|none|none|none|-|(some @invariant:generics_subset_types::Pos::invariant)",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, t.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, t.1))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, s.0))|none|none|none|-|(some @invariant:generics_subset_types::Present::invariant)",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some ok)|none|none|none|none|-|none",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some bad)|none|none|none|none|-|none",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some pair)|none|none|none|none|-|none",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some marked)|none|none|none|none|-|none",
+    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some some)|none|none|none|none|-|none"]),
+  ("examples/stoplight.fren", #[
+    "comp stoplight.watch|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
+    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.watch|Fren.Core.CheckKind.redundancy|(some counts)|none|none|none|none|-|none",
+    "comp stoplight.watch|Fren.Core.CheckKind.determinism|(some next)|none|none|none|none|-|none",
+    "comp stoplight.watch|Fren.Core.CheckKind.disjointness|(some counts)|none|none|(some 0)|(some (0, 1))|Fren.Core.TableGoal.disjointness (Fren.Core.Split.table) 0 1|none",
+    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 1)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 0|none",
+    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 2)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 1|none",
+    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 3)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 2|none",
+    "comp stoplight.observed|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
+    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.observed|Fren.Core.CheckKind.determinism|(some next)|none|none|none|none|-|none",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.expect|(some not_yet)|none|none|none|none|-|none",
+    "comp stoplight.first_walk|Fren.Core.CheckKind.cover|(some walks)|none|none|none|none|-|none",
+    "comp stoplight.prompt|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
+    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some bounded)|none|none|none|none|-|none",
+    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some press_waits)|none|none|none|none|-|none",
+    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some tick_nears)|none|none|none|none|-|none",
+    "comp stoplight.prompt|Fren.Core.CheckKind.vacuity|(some press_waits)|none|none|none|none|-|none",
+    "comp stoplight.prompt|Fren.Core.CheckKind.vacuity|(some tick_nears)|none|none|none|none|-|none",
+    "comp stoplight.green_between_walks|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
+    "comp stoplight.green_between_walks|Fren.Core.CheckKind.inst|(some w)|(some (stoplight.watch, now.0))|none|none|none|-|(some @invariant:stoplight::Watched::green)",
+    "comp stoplight.green_between_walks|Fren.Core.CheckKind.inst|(some w)|(some (stoplight.watch, now.1))|none|none|none|-|(some @invariant:stoplight::Watched::yellow)",
+    "comp stoplight.green_between_walks|Fren.Core.CheckKind.expect|(some enough_green)|none|none|none|none|-|none",
+    "comp stoplight.green_between_walks|Fren.Core.CheckKind.vacuity|(some enough_green)|none|none|none|none|-|none",
+    "comp stoplight.refines_cycle|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
+    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
+    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
+    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
+    "comp stoplight.refines_cycle|Fren.Core.CheckKind.expect|(some refines_1)|none|none|none|none|-|none"])] : Array (String × Array String)).flatMap fun (file, keys) =>
+  keys.map fun key => (file, s!"missing enumeration|{key}", "#813")
 
-/-- The exceptions of `methodExceptions` whose file is among `ran` but that
-none of `hit`, each a file and a key, matched. -/
-def staleExceptions (ran : Array String) (hit : Array (String × String)) : Array String :=
+/-- Excuses only exact known adapter defects, recording each hit so that
+an entry that stops occurring fails as stale. New errors or records in
+the same file still fail. -/
+def knownMethodFailures (name : String) (problems : Array (String × String)) :
+    Array String × Array (String × String) := Id.run do
+  let mut failures := #[]
+  let mut hit := #[]
+  for (key, message) in problems do
+    let why? := (methodExceptions.find? fun (f, k, _) => f == name && k == key).map (·.2.2)
+    if why?.isSome then hit := hit.push (name, key)
+    else failures := failures.push message
+  return (failures, hit)
+
+/-- The known differences of the methods this job runs that did not occur.
+Diagnostic and wrong-method keys include the requested method; enumeration
+alone does not mark a random-only entry stale. Missing-check identities
+are relevant to both jobs, which both compare solver/enumeration records. -/
+def staleExceptions (ran : Array String) (hit : Array (String × String))
+    (methods : Array Fren.Core.ProofMethod := #[.solver, .enumerated, .random]) : Array String :=
   methodExceptions.filterMap fun (f, k, why) =>
-    if ran.contains f && !hit.contains (f, k) then
-      some s!"{f}: the exception `{k}` ({why}) matches no contradiction: remove it"
+    let methodScoped := k.startsWith "diagnostic|" || k.startsWith "recorded method|"
+    let applicable := !methodScoped || methods.any fun m =>
+      k.startsWith s!"diagnostic|{repr m}|" || k.startsWith s!"recorded method|{repr m}|"
+    if applicable && ran.contains f && !hit.contains (f, k) then
+      some s!"{f}: the exception `{k}` ({why}) matches no difference: remove it"
     else none
 
-/-- Each verdict of enumeration on the ui tests matches the solver's on the
-same check (`Reqs/Check#verdicts-of-enumeration`): a failure is genuine, so
-the solver must not pass the check, and a pass that is not bounded is a
-decision, so the solver must not fail it; and the obligations of pattern
-types, which stay the solver's, keep their results. -/
-def enumerationAgrees : IO (Array String) := do
+/-- Compares the union of check identities, allowing omissions only where
+`enumerationMayOmit` says why. Returns failures, the number compared and
+the known differences hit. -/
+def compareEnumeration (name : String) (solver enumerated : MethodRun) :
+    Array String × Nat × Array (String × String) := Id.run do
   let mut failures := #[]
+  let mut compared := 0
+  let mut hit := #[]
+  let ss := solver.records.foldl (init := ({} : Std.HashMap String Fren.Core.CheckResult)) fun acc (item, r, _) =>
+    acc.insert (methodKey item r) r
+  let es := enumerated.records.foldl (init := ({} : Std.HashMap String Fren.Core.CheckResult)) fun acc (item, r, _) =>
+    acc.insert (methodKey item r) r
+  for (item, s, _) in solver.records do
+    let key := methodKey item s
+    let some r := es.get? key | do
+      unless enumerationMayOmit item s enumerated do
+        let missing := s!"missing enumeration|{key}"
+        if methodExceptions.any fun (f, k, _) => f == name && k == missing then
+          hit := hit.push (name, missing)
+        else failures := failures.push s!"{name}: `{key}`: missing from enumeration"
+      continue
+    compared := compared + 1
+    if solverOnly item s then
+      unless r.verdict == s.verdict do
+        failures := failures.push s!"{name}: `{key}`: the solver-only check changed under enumeration"
+    else if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
+      if methodExceptions.any fun (g, k, _) => g == name && k == key then
+        hit := hit.push (name, key)
+        continue
+      let bounded := if r.bounded?.isSome then " up to the bound" else ""
+      failures := failures.push s!"{name}: `{key}`: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
+  for (item, r, _) in enumerated.records do
+    let key := methodKey item r
+    unless ss.contains key do
+      failures := failures.push s!"{name}: `{key}`: missing from the solver"
+  return (failures, compared, hit)
+
+/-- Regressions for the agreement jobs' adapters: source settings cannot
+select the wrong method, and partial or failed runs cannot look like
+agreement. The injected records exercise loss of just one check beside a
+normal result, rather than relying on a corpus-wide comparison floor. -/
+def methodAgreementChecks : IO (Array String) := do
+  let mut failures := #[]
+  let r : Fren.Core.CheckResult := { kind := .expect, comp := `c, prop? := some `e, verdict := .pass }
+  let solver : MethodRun := { records := #[("comp c", r, .solver)] }
+  let enumerated : MethodRun := { records := #[("comp c", r, .enumerated)] }
+  let lost : MethodRun := { records := #[("comp c", { r with prop? := some `other }, .enumerated)] }
+  unless (compareEnumeration "probe" solver enumerated).1.isEmpty do
+    failures := failures.push "agreement adapter: equal checks disagree"
+  unless (compareEnumeration "probe" solver lost).1.size == 2 do
+    failures := failures.push "agreement adapter: a missing counterpart in either direction is ignored"
+  let obligation := { r with kind := .definedness, subsetTy? := some "Small" }
+  let unsupported : MethodRun := { diags := #[("error", some "F0645", "`c` cannot be enumerated: unsupported function")], code := 1 }
+  unless enumerationMayOmit "comp c" r unsupported && !enumerationMayOmit "comp c" obligation unsupported
+      && !enumerationMayOmit "comp other" { r with comp := `other } unsupported
+      && enumerationMayOmit "comp c" { r with kind := .definedness } {} do
+    failures := failures.push "agreement adapter: omissions are not limited to documented skips and the named unsupported procedure"
+  let internal := { enumerated with diags := #[("error", none, "internal error: injected")], code := 1 }
+  unless !(methodRunFailures .enumerated internal).isEmpty
+      && !(methodRunFailures .enumerated { internal with code := 2 } (staticOK := true)).isEmpty
+      && !(methodRunFailures .enumerated { enumerated with code := 1 }).isEmpty
+      && !(methodRunFailures .enumerated { enumerated with code := 2 }).isEmpty
+      && !(methodRunFailures .enumerated { enumerated with code := 3 }).isEmpty
+      && !(methodRunFailures .enumerated { enumerated with code := 127 }).isEmpty
+      && !(methodRunFailures .solver { solver with code := 2 } (staticOK := true)).isEmpty
+      && !(methodRunFailures .enumerated solver).isEmpty do
+    failures := failures.push "agreement adapter: an internal error, unexplained exit or wrong recorded method is ignored"
+  unless (methodRunFailures .enumerated unsupported).isEmpty
+      && !(methodRunFailures .solver unsupported).isEmpty
+      && (methodRunFailures .random { unsupported with diags := #[("error", some "F0639", "unbounded quantifier")] }).isEmpty
+      && !(methodRunFailures .enumerated { unsupported with diags := #[("error", some "F0639", "unbounded quantifier")] }).isEmpty
+      && !(methodRunFailures .enumerated { unsupported with diags := unsupported.diags.push ("error", some "F0105", "unexpected") }).isEmpty do
+    failures := failures.push "agreement adapter: expected and unexpected method diagnostics are confused"
+  let capped := { unsupported with diags := #[("error", some "F0644", "`c` has 1000000 behaviours up to size 3, too many to enumerate")] }
+  unless (methodRunFailures .enumerated capped).isEmpty && enumerationMayOmit "comp c" r capped
+      && !enumerationMayOmit "comp c" obligation capped
+      && !enumerationMayOmit "comp other" { r with comp := `other } capped do
+    failures := failures.push "agreement adapter: the enumeration cap is not confined to its named procedure"
+  let redundancy := { r with kind := .redundancy }
+  let noWitness := { r with
+    kind := .vacuity, verdict := .inconclusive, bounded? := some 3
+    detail := .unknown "no witness up to size 3, but a larger one may exist" }
+  let bounded : MethodRun := { records := #[("comp c", noWitness, .enumerated)] }
+  unless enumerationMayOmit "comp c" redundancy bounded && !enumerationMayOmit "comp other" redundancy bounded
+      && !enumerationMayOmit "comp c" { redundancy with prop? := some `other } bounded
+      && !enumerationMayOmit "comp c" redundancy enumerated
+      && !enumerationMayOmit "comp c" redundancy { records := #[("comp c", { noWitness with detail := .undecidedQuantifier 3 }, .enumerated)] } do
+    failures := failures.push "agreement adapter: a bounded redundancy omission lacks its own vacuity/consistency result"
+  failures := failures ++ (← withText "trait.fren"
+      "trait T { fn bit?(Self): Bool\n expect e(s: Self) { expect same: bit?(s) or not bit?(s) } }\n".toList.toArray fun p => do
+    let mut fs := #[]
+    for (m, value) in comparedMethods.toList.drop 1 do
+      let run ← methodResults #[p] value
+      unless traitMethodRejected m run && (methodRunFailures m run).isEmpty
+          && !traitMethodRejected m { run with diags := run.diags.push ("error", some "F0105", "unexpected syntax error") }
+          && !(methodRunFailures m { run with diags := run.diags.push ("error", none, "internal error: injected") }).isEmpty do
+        fs := fs.push s!"agreement adapter: {value}'s trait rejection is not classified precisely\n{run.output}"
+    return fs)
+  let knownFile := "test/ui/lang/generics_subset_types.fren"
+  let knownError : MethodRun := {
+    code := 1
+    diags := #[("error", none, "internal error: the evaluator does not know the meaning of a formula of `generics_subset_types::giver`")] }
+  let (known, hits) := knownMethodFailures knownFile (methodRunFailures .enumerated knownError)
+  unless known.isEmpty && hits.size == 1
+      && !(knownMethodFailures knownFile (methodRunFailures .random knownError)).1.isEmpty
+      && !(knownMethodFailures knownFile (methodRunFailures .enumerated internal)).1.isEmpty do
+    failures := failures.push "agreement registry: an exact known error is not distinguished from a new error or method"
+  let given : Fren.Core.CheckResult := { kind := .realizable, comp := `generics_subset_types.giver, prop? := none, verdict := .pass }
+  let givenRun : MethodRun := { records := #[("comp generics_subset_types.giver", given, .solver)] }
+  let (knownMissing, _, missingHits) := compareEnumeration knownFile givenRun {}
+  let extra := { givenRun with
+    records := givenRun.records.push ("comp generics_subset_types.giver", { given with kind := .expect, prop? := some `new_check }, .solver) }
+  unless knownMissing.isEmpty && missingHits.size == 1
+      && (compareEnumeration knownFile extra {}).1.size == 1 do
+    failures := failures.push "agreement registry: a known missing counterpart hides a new identity"
+  let recordFile := "test/ui/checks/recursive_subsets.fren"
+  let recordResult := { r with comp := `recursive_subset, prop? := some (Name.mkSimple "properties.valid?@1.domain") }
+  let wrong : MethodRun := { records := #[("comp recursive_subset", recordResult, .solver)] }
+  unless (knownMethodFailures recordFile (methodRunFailures .enumerated wrong)).1.isEmpty
+      && (knownMethodFailures recordFile (methodRunFailures .random wrong)).1.isEmpty
+      && !(knownMethodFailures recordFile (methodRunFailures .enumerated
+        { wrong with records := #[("comp recursive_subset", recordResult, .lean)] })).1.isEmpty do
+    failures := failures.push "agreement registry: a known wrong-method record hides a new actual method"
+  let recordHits := methodExceptions.filterMap fun (f, key, _) => if f == recordFile then some (f, key) else none
+  let enumHits := recordHits.filter fun (_, key) => !key.startsWith s!"recorded method|{repr Fren.Core.ProofMethod.random}|"
+  unless (staleExceptions #[recordFile] recordHits).isEmpty
+      && !(staleExceptions #[recordFile] recordHits.pop).isEmpty
+      && (staleExceptions #[recordFile] enumHits (methods := #[.solver, .enumerated])).isEmpty
+      && !(staleExceptions #[recordFile] enumHits).isEmpty do
+    failures := failures.push "agreement registry: disappeared entries are not stale under exactly the methods run"
+  let text := "set_option fren.evidence \"enumerated\" in\nproc e(x?) { expect no: x? }\n\n" ++
+    "set_option fren.evidence \"random\" in\nproc r(x?) { expect yes: x? or not x? }\n"
+  failures := failures ++ (← withText "overrides.fren" text.toList.toArray fun p => do
+    let mut fs := #[]
+    for (m, value) in comparedMethods do
+      let run ← methodResults #[p] value
+      fs := fs ++ (methodRunFailures m run).map (fun (_, message) => s!"agreement override regression: {message}\n{run.output}")
+      unless run.code == 1 do fs := fs.push s!"agreement override regression: {value} did not report the failed expectation"
+      unless run.records.any (fun (_, r, actual) => r.comp == `e && actual == m)
+          && run.records.any (fun (_, r, actual) => r.comp == `r && actual == m) do
+        fs := fs.push s!"agreement override regression: {value} did not check both procedures"
+    return fs)
+  return failures
+
+/-- Forced enumeration and solver runs compare every check in their union,
+including the obligations and function checks that stay the solver's. -/
+def enumerationAgrees : IO (Array String) := do
+  let mut failures ← methodAgreementChecks
   let mut compared := 0
   let mut hit : Array (String × String) := #[]
   let corpus ← enumerationCorpus
   for f in corpus do
-    let src ← IO.FS.readFile f
-    let (solver, code) ← checkResultsOf #[f.toString]
-    if code == 2 then continue
-    let (enumerated, _) ← withText (f.fileName.getD "spec.fren") (enumeratedText src).toList.toArray fun p =>
-      checkResultsOf #[p]
-    for (item, rs) in enumerated do
-      let ss := solver.getD item #[]
-      for (k, r) in rs do
-        let some (_, s) := ss.find? (·.1 == k) | continue
-        compared := compared + 1
-        -- As `methodsAgree` compares them, with no verdict of random testing.
-        if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
-          -- The same narrow exceptions as `methodsAgree`'s.
-          if methodExceptions.any fun (g, key, _) => g == f.toString && key == methodKey item s then
-            hit := hit.push (f.toString, methodKey item s)
-            continue
-          let bounded := if r.bounded?.isSome then " up to the bound" else ""
-          failures := failures.push s!"{f}: `{item}` {k}: enumeration {repr r.verdict}{bounded}, but the solver {repr s.verdict}"
-    -- A value given where a subset type is declared stays the solver's
-    -- (`check::by_evidence`): its result is not dropped.
-    for (item, ss) in solver do
-      for (k, s) in ss do
-        unless s.kind == .definedness && s.subsetTy?.isSome do continue
-        let same := ((enumerated.getD item #[]).find? (·.1 == k)).any (·.2.verdict == s.verdict)
-        unless same do failures := failures.push s!"{f}: `{item}` {k}: the solver's obligation is missing with enumeration"
-  failures := failures ++ staleExceptions (corpus.map (·.toString)) hit
+    let solver ← methodResults #[f.toString] "solver"
+    let (fs, hs) := knownMethodFailures f.toString (methodRunFailures .solver solver (staticOK := true))
+    failures := failures ++ fs.map (s!"{f}: solver: {·}\n{solver.output}")
+    hit := hit ++ hs
+    if solver.code == 2 then continue
+    let enumerated ← methodResults #[f.toString] "enumerated"
+    let (fs, hs) := knownMethodFailures f.toString (methodRunFailures .enumerated enumerated)
+    failures := failures ++ fs.map (s!"{f}: enumeration: {·}\n{enumerated.output}")
+    hit := hit ++ hs
+    if traitMethodRejected .enumerated enumerated then
+      IO.println s!"enumeration: {f}: unsupported trait evidence (F0215); no checks ran"
+      continue
+    let (fs, n, hs) := compareEnumeration f.toString solver enumerated
+    failures := failures ++ fs
+    compared := compared + n
+    hit := hit ++ hs
+  for (file, key) in hit do
+    if methodExceptions.any fun (f, k, why) => f == file && k == key && why == "#813" then
+      IO.println s!"enumeration: known #813: {file}: {key}"
+  failures := failures ++ staleExceptions (corpus.map (·.toString)) hit (methods := #[.solver, .enumerated])
   return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
 
 /-- What `methodsAgree` counted. -/
@@ -3661,17 +4022,16 @@ structure MethodCounts where
   the size: no contradiction, as the counterexample may be larger. -/
   beyondSize : Nat := 0
   excepted : Nat := 0
-  /-- The exceptions that a contradiction matched, each a file and a key,
+  /-- The known differences hit, each a file and a key,
   and the names compared, for `staleExceptions`. -/
   hit : Array (String × String) := #[]
   ran : Array String := #[]
   /-- Specs with a static error, which no method checks. -/
   static : Nat := 0
-  /-- Runs that reported an error under their method alone (exit 2), as
-  `name: method`, such as `F0639` under random testing or `F0645` under
-  enumeration: the checks of the procedures that the error names are
-  missing from that run, and counted under "not run", while its other
-  checks are compared. -/
+  /-- Expected unsupported-method diagnostics, including their code and
+  headline: `F0639` under random testing, `F0644`/`F0645` under enumeration,
+  and `F0215` rejecting either method for a trait expectation.
+  Their missing checks count as "not run". Other errors fail. -/
   errored : Array String := #[]
   /-- Checks on which both the solver and enumeration, and both the solver
   and random testing, contributed a verdict (`methodFloors`). -/
@@ -3680,24 +4040,40 @@ structure MethodCounts where
   deriving Inhabited
 
 /-- Compares the methods on `files`, checked together as `name`, `jobs?`
-procedures at once, adding to `counts`; returns the contradictions. -/
+procedures at once, adding to `counts`; returns unlisted contradictions,
+internal errors, unexpected error diagnostics, unexplained exits and
+wrong-method records. `methodsAgree` also rejects stale known entries and
+missed comparison floors. -/
 def methodsAgreeOn (name : String) (files : Array String) (counts : IO.Ref MethodCounts)
     (jobs? : Option Nat := none) : IO (Array String) := do
   counts.modify fun c => { c with ran := c.ran.push name }
   let mut runs := #[]
-  for (m, value) in comparedMethods do
-    let (found, code) ← methodResults files m value jobs?
-    runs := runs.push (found, code)
-  if runs[0]!.2 == 2 then counts.modify fun c => { c with static := c.static + 1 }
-  else
-    for (_, code) in runs, (_, value) in comparedMethods do
-      if code == 2 then counts.modify fun c => { c with errored := c.errored.push s!"{name}: {value}" }
-  -- Every check that some method ran, by its key, in order.
-  let keys := (runs.foldl (init := (#[] : Array String)) fun acc (found, _) =>
-    acc ++ found.toArray.map (·.1)).qsort (· < ·) |>.toList.eraseDups
+  let mut solverRun : MethodRun := {}
   let mut failures := #[]
+  for (m, value) in comparedMethods do
+    let run ← methodResults files value jobs?
+    let (fs, hs) := knownMethodFailures name (methodRunFailures m run (staticOK := m == .solver))
+    failures := failures ++ fs.map (s!"{name}: {value}: {·}\n{run.output}")
+    counts.modify fun c => { c with hit := c.hit ++ hs }
+    if m == .solver && run.code == 2 then
+      counts.modify fun c => { c with static := c.static + 1 }
+      return failures
+    let unsupported := run.diags.filter fun (sev, code?, _) => sev == "error" &&
+      (unsupportedMethod m code? || (traitMethodRejected m run && code? == some "F0215"))
+    for (_, code?, text) in unsupported do
+      counts.modify fun c => { c with errored := c.errored.push s!"{name}: {value} [{code?.getD ""}]: {text}" }
+    if m == .solver then solverRun := run
+    if m == .enumerated && !traitMethodRejected m run then
+      -- `methodsAgree` does not require all counterparts, but it still
+      -- checks that the shared registry's exact missing-check cases occur.
+      let (_, _, hs) := compareEnumeration name solverRun run
+      counts.modify fun c => { c with hit := c.hit ++ hs }
+    runs := runs.push (run.found m)
+  -- Every check that some method ran, by its key, in order.
+  let keys := (runs.foldl (init := (#[] : Array String)) fun acc found =>
+    acc ++ found.toArray.map (·.1)).qsort (· < ·) |>.toList.eraseDups
   for key in keys do
-    let found := runs.map fun (f, _) => f.get? key
+    let found := runs.map fun f => f.get? key
     let verdictOf (i : Nat) := ((found[i]!).map (·.verdict)).getD .inconclusive
     let bounded := ((found[1]!).map (·.bounded)).getD false
     let some kind := (found.findSome? id).map (·.kind) | continue
@@ -3752,7 +4128,7 @@ def methodsCorpus : IO (Array FilePath) := enumerationCorpus
 fuzzer's corpus (`FrenTest.FuzzFrontends.corpus`). -/
 def methodsAgree (part : List String) : IO (Array String) := do
   let counts ← IO.mkRef ({} : MethodCounts)
-  let mut failures := #[]
+  let mut failures ← methodAgreementChecks
   let all := part.isEmpty
   if all || part == ["own"] then
     -- Two at a time: the solver, asked the checks that the requirements set
@@ -3773,15 +4149,17 @@ def methodsAgree (part : List String) : IO (Array String) := do
         failures := failures ++ (← withText "spec.fren" (mode.spec s).toList.toArray fun p =>
           methodsAgreeOn name #[p] counts)
   let c ← counts.get
+  for (file, key) in c.hit do
+    if methodExceptions.any fun (f, k, why) => f == file && k == key && why == "#813" then
+      IO.println s!"methodsAgree: known #813: {file}: {key}"
   failures := failures ++ staleExceptions c.ran c.hit
   let byMethod := (List.range comparedMethods.size).map fun i =>
     s!"{comparedMethods[i]!.2} decided {c.decided[i]!}, inconclusive {c.inconclusive[i]!}, not run {c.notRun[i]!}"
   IO.println s!"methodsAgree: {c.checks} checks, {c.compared} compared by at least two methods; {"; ".intercalate byMethod}; \
-    {c.beyondSize} counterexamples beside a pass up to the size; {c.excepted} excepted; {failures.size} contradictions"
+    {c.beyondSize} counterexamples beside a pass up to the size; {c.excepted} excepted; {failures.size} failures"
   IO.println s!"methodsAgree: {c.solverEnumerated} checks compared between the solver and enumeration, \
     {c.solverRandom} between the solver and random testing"
-  IO.println s!"methodsAgree: {c.static} specs with static errors; {c.errored.size} runs reported an error under their \
-    method alone, whose named procedures' checks are not run\
+  IO.println s!"methodsAgree: {c.static} specs with static errors; {c.errored.size} unsupported-method diagnostics explaining checks that did not run\
     {if c.errored.isEmpty then "" else s!": {", ".intercalate c.errored.toList}"}"
   -- The floors of the parts run, added up.
   let parts := if all then ["own", "ui", "fuzz"] else part.take 1

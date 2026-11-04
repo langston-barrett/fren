@@ -331,11 +331,16 @@ checks each of them three times, under `fren check --evidence` set to
 `solver`, to `enumerated` and to `random` (see [The `fren`
 command](Cli.md#evidence)), in place of the specs' own settings, so that
 every check runs under every method that applies, with enumeration at the
-size that the spec sets, or the default. It fails on every contradiction,
-reporting the spec, the check, each method's verdict and what it found,
-and counts in its summary the checks that each method decided, left
-inconclusive or did not run, and the counterexamples beside a pass up to
-the size. Model confirmation already checks every counterexample and
+size that the spec sets, or the default. It fails on unlisted
+contradictions, internal errors, unexpected error diagnostics, unexplained
+exits and wrong-method records, and on stale known entries or missed
+comparison floors. Exact known entries excuse only their recorded
+differences and must be removed when they stop occurring (see
+[Testing](dev/Testing.md)). A contradiction reports the spec, the check,
+each method's verdict and what it found. The summary counts the checks
+that each method decided, left inconclusive or did not run, and the
+counterexamples beside a pass up to the size.
+Model confirmation already checks every counterexample and
 witness that the solver reports ([Models](Models.md)); this checks the
 other direction too: a pass that rests only on the solver's `unsat`.
 
