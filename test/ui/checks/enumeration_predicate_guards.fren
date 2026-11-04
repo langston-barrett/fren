@@ -3,6 +3,7 @@
 -- predicate does not produce observations for its named members.
 mod enumeration_predicate_guards
 fn both?(a?, b?) := and { first: a?, second: b? }
+
 set_option fren.evidence "enumerated" in
 proc guarded(a?, b?, active?) {
     expect whole: not (when active?, both?(a?, b?))
@@ -14,6 +15,7 @@ proc guarded(a?, b?, active?) {
 fn natural?(n: Nat) := and { first: n != 1, second: n = 0 }
 --~^ info: `whole.enumeration_predicate_guards::natural?@1.first` is true
 --~^^ info: `whole.enumeration_predicate_guards::natural?@1.second` is true
+
 set_option fren.evidence "enumerated" in
 proc natural(n: Nat) {
     --~^ info: 1 check of `enumeration_predicate_guards::natural` holds for every behaviour up to size 3
