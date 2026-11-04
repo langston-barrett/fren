@@ -61,9 +61,10 @@ heading serves as the **Syntax** label. A note or rationale is a block
 quote, so it needs no label.
 
 Chapters under `src/Reqs/dev/` may group their rules about development under
-**Rules** in place of parts 3 and 4, without mixing it with **Legality rules**
-or **Dynamic semantics** for the same topic. Review checks this order and
-separation of labels. Only rules in these chapters may use this label.
+**Rules** in place of parts 3 and 4, without mixing it with
+**Legality rules** or **Dynamic semantics** for the same topic. Review
+checks this order and separation of labels. Only rules in these chapters
+may use this label.
 
 ## What is not a rule
 

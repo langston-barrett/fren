@@ -755,8 +755,9 @@ def ruleRequirementProblems (rules : Array (String × Rule × Array (ReqItem × 
       failures := failures.push s!"{here}: the rule `{r.id}` is formalized by `{i.path}`, which is declared before it, at line {i.line}"
   return failures
 
-/-- Check a chapter and its gap list for the `#guard`s below, using the
-same readers and requirement checks as `ruleLinks`. -/
+/-- Check a chapter and its gap list for the `#guard`s below with
+`reqsOfChapter` and `ruleRequirementProblems`. Requirement items come only
+from this chapter. `ruleLinks` reads them from the whole reference. -/
 def guardRuleChapter (md text gap : String) : Array String :=
   match reqItemsOf md text with
   | .error e => #[e]
