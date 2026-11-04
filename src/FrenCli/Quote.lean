@@ -34,9 +34,10 @@ the grammar needs. Nor is the layout of `e`. A quotation has no comments:
 a comment is an error, as the braces, strings and antiquotations of a
 quotation are read without them.
 
-The module is imported by `FrenCore.Lint`, which builds fixes with
-`fren_expr!`; it needs only the parser, not the elaborator of the
-`fren` command.
+`FrenCore.Lint.Matches`, `FrenCore.Lint.OperatorChecks` and
+`FrenCore.Lint.PatternTests` import this module to build fixes with
+`fren_expr!`. It needs only the parser, not the elaborator of the `fren`
+command.
 -/
 
 namespace FrenCli.Quote
@@ -248,8 +249,8 @@ def parseExpr (text : String) : Except String (Expr × Array Char) := do
 
 /-! ## Building the tree -/
 
-/-- The declaration `n` of `FrenCore.Lint`, which imports this module, as
-it is named where a quotation is elaborated. -/
+/-- The declaration `n` in namespace `Fren.Core`, provided by the
+`FrenCore.Lint.*` modules, as it is named where a quotation is elaborated. -/
 def core (n : Name) : Term := mkCIdent n
 
 /-- The text of `sp` in `src`. -/

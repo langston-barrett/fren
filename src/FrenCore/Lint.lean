@@ -26,25 +26,25 @@ import FrenCore.Lint.Variants
 /-!
 # Lints
 
-Lints (`Reqs/Lint`) as pure functions, shared by both front ends: their
-levels, how settings combine, the import and naming lints, unused
-variables, dead code, simpler `Bool` expressions, and expectations. Each
-front end records what happened while elaborating a file (`UseRecord`,
-`UsedName`, `ExpectationRecord`) and calls `importReports` and
-`expectationReports` at its end.
+This module gathers the `FrenCore/Lint/*` modules, which implement lints
+(`Reqs/Lint`) as pure functions shared by both front ends. It holds
+`opReportsIn` and `opReports`, which walk expression nodes and gather the
+operator and method lints' reports. The imported modules provide levels,
+settings, naming and import lints, unused variables, dead code, simpler
+`Bool` expressions, and expectations. Each front end records a file's
+`UseRecord`, `UsedName` and `ExpectationRecord` values and calls
+`importReports` and `expectationReports` at its end.
 
-A new lint is a constructor of `Lint` and a line of `Lint.info`, each in
-its sorted place, an explanation `FrenCore/Codes/CODE.md`, and a row of
-the table in `Reqs/Lint.md`; `Lint.all`, the Lean options
-(`Fren.Lint`) and the note that lists the lints follow from them. So
-lints added at once merge cleanly.
+A new lint is a constructor of `Lint` and a line of `Lint.info` in
+`FrenCore/Lint/Model.lean`, each in its sorted place, an explanation
+`FrenCore/Codes/CODE.md`, and a row of the table in `Reqs/Lint.md`;
+`Lint.all`, the Lean options (`Fren.Lint`) and the note that lists the
+lints follow from them. So lints added at once merge cleanly.
 -/
-
 
 open Lean
 
 namespace Fren.Core
-
 
 /-- The messages of the operator and method lints in `n`, which is in
 `slot` within `parent`, outermost first, where `inElse` says that `n` is
