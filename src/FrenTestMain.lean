@@ -4202,19 +4202,42 @@ def smtAgreement (env : Environment) : IO (Array String) := do
 /-- The specs whose obligations dumps both front ends must print alike
 (`Reqs/Cli#obligations`): a recursive function with a contract, a
 quantifier, a generic function and its instance, records,
-enumerations and checks by testing and enumeration, and recursive functions
+enumerations and checks by testing and enumeration, recursive functions
 and abstract types and functions of one name in two modules, beside a
-variable of that name. -/
+variable of that name, and nested newtypes erased to their underlying sort. -/
 def obligationsAgreementSpecs : List String :=
   ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
    "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren",
-   "test/cli/args/dump_obligations_modules.fren"]
+   "test/cli/args/dump_obligations_modules.fren", "test/ui/checks/dump_newtypes.fren"]
+
+/-- Canonicalization cases that generated queries need not produce:
+capture avoidance, pattern and recursive binders, merged quantifiers,
+and an unavailable query's error script. Run these as compiled code too,
+alongside `FrenTest.Obligations`'s build-time guards. -/
+def canonicalRegressions : Array String := Id.run do
+  let mut failures := #[]
+  let goal (s : String) := (Fren.Core.canonical s false).goal
+  unless goal "(define-fun f ((y Int)) Bool (forall ((x Int)) (> x y))) (assert (not (f x)))" ==
+      "(forall ((x#s0 Int)) (> x#s0 x))" do
+    failures := failures.push "canonical: unfolding captured a free argument"
+  unless goal "(define-fun d () Int x) (assert (not (= 0 (match l ((nil 0) ((cons x r) (+ x d)))))))" ==
+      "(= 0 (match l ((nil 0) ((cons x#s0 r) (+ x#s0 x)))))" do
+    failures := failures.push "canonical: unfolding captured a free name in a match case"
+  unless (Fren.Core.canonical "(define-fun y () Int 7) (define-fun-rec g ((y Int)) Int (g y)) \
+      (assert (not (> (g 2) 0)))" false).signature == #["(define-fun-rec g ((y Int)) Int (g y))"] do
+    failures := failures.push "canonical: unfolding replaced a recursive function's parameter"
+  unless goal "(assert (not (forall ((x Int)) (forall ((y Int)) (> x y)))))" ==
+      "(forall ((x Int) (y Int)) (> x y))" do
+    failures := failures.push "canonical: distinct nested quantifiers were not merged"
+  unless Fren.Core.errorScript "no query: \"early\"" == "(error \"no query: \"\"early\"\"\")" do
+    failures := failures.push "canonical: error script did not quote its message"
+  return failures
 
 /-- That the `fren` command's obligations dump (`--dump=obligations`) of each
 of `obligationsAgreementSpecs` is the Lean-hosted front end's, but for
 their metadata (`Fren.Core.withoutMetadata`). -/
 def obligationsAgreement (env : Environment) : IO (Array String) := do
-  let mut failures := #[]
+  let mut failures := canonicalRegressions
   for path in obligationsAgreementSpecs do
     let (out, _) ← runFren ["check", "--dump=obligations", path]
     let src ← IO.FS.readFile path

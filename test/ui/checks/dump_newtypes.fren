@@ -1,0 +1,9 @@
+-- Obligation dumps erase newtypes, including a newtype of a newtype, to
+-- the underlying sort and erase their constructors and selectors.
+pub struct Units(Int)
+pub struct Wrapped(Units)
+
+proc p(x: Wrapped): (y: Units) {
+    out y := x.0
+    expect same: y.0 = x.0.0
+}

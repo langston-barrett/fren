@@ -2736,7 +2736,27 @@ def knownDifferences : List Known :=
      difference := "line 28:10: only Lean reports error: `fz::c1` has 442137500 behaviours up to size 2, too \
        many to enumerate" },
    { mode := { avoidKnown := true }, seed := 1160173, issue := 493, alongside? := some evaluatorUnread,
-     difference := "exit: fren exits 1, and Lean's messages call for 2" }]
+     difference := "exit: fren exits 1, and Lean's messages call for 2" },
+   -- Run 267 found these on main; both seeds reproduce at dd28d924,
+   -- before #817. Lean cannot decide the expectation, while `fren`
+   -- reports its dependency or failure (#493).
+   { mode := { avoidKnown := true }, seed := 1267162, issue := 493,
+     alongside? := some "only Lean reports warning: could not decide whether `_` holds: INCOMPLETE",
+     difference := "line 141:12: only fren reports warning[F0664]: `fz::zpn::zpe1` rests on the realizability of \
+       `fz::zpn`, which did not pass" },
+   { mode := { avoidKnown := true }, seed := 1267162, issue := 493,
+     alongside? := some "only fren reports warning[F0664]: `_` rests on the realizability of `_`, which did not pass",
+     difference := "line 141:12: only Lean reports warning: could not decide whether `fz::zpn::zpe1` holds: INCOMPLETE" },
+   { mode := { avoidKnown := true }, seed := 1267186, issue := 493,
+     alongside? := some "only Lean reports warning: could not decide whether `_` holds",
+     difference := "line 167:12: only fren reports error[F0603]: expectation `fz::gr_apps::gr1` does not hold" },
+   { mode := { avoidKnown := true }, seed := 1267186, issue := 493,
+     alongside? := some "only fren reports error[F0603]: expectation `_` does not hold",
+     difference := "line 167:12: only Lean reports warning: could not decide whether `fz::gr_apps::gr1` holds" },
+   { mode := { avoidKnown := true }, seed := 1267186, issue := 493,
+     alongside? := some "only fren reports error[F0603]: expectation `_` does not hold",
+     difference := "summary: fren says `57 passed (1 by bounded enumeration), 17 failed, 18 inconclusive, 0 redundant`, \
+       Lean says `57 passed (1 by bounded enumeration), 16 failed, 19 inconclusive, 0 redundant`" }]
 
 /-- Whether the kind `s` (a `signature`) is of the pattern `p`, where each
 `*` stands for any text, and every other character for itself. -/
@@ -3190,7 +3210,7 @@ def corpusSpecs? : List String → Option (List (Mode × Nat))
 -- `--avoid-known` ones among them, and every job's specs are the corpus's
 -- or those.
 #guard listedOutside == ({}, 153) :: ([41, 1156065, 1160095, 3000319, 3102696, 3103202, 3100624, 1159002, 3102505,
-  3101311, 3104511, 1157147, 1158050, 3000892, 3102156, 1157298, 1160124, 1160173].map
+  3101311, 3104511, 1157147, 1158050, 3000892, 3102156, 1157298, 1160124, 1160173, 1267162, 1267186].map
     fun s => ({ avoidKnown := true }, s))
 #guard corpusJobs.all fun j => (corpusSpecs? (j.drop 1)).isSome
 -- The jobs keep every original mode and seed, in order, exactly once,
