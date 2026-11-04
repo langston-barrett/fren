@@ -48,8 +48,7 @@ diff from it, or, for a rebase, what the range-diff shows changed in
 the patch. Code that this leaves unchanged had its review: raise a point
 about it only if it is `[blocking]`. Mark any other point about it
 `[non-blocking]`, never `[non-blocking, fix before merge]`, and say that
-it goes to the area's queue rather than into this pull request. A full
-review that replaces the check has no such limit.
+it goes to the area's queue rather than into this pull request.
 
 The review of `{previous}`:
 
