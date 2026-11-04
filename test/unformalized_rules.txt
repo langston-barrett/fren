@@ -230,7 +230,7 @@ module.procedures -- what a module's items may be; the front ends' reading, from
 module.use.inclusion -- what an import brings and owes is the front ends' reading of `use`, from stage 3
 module.generic-type -- a definition: which theory a generic type is
 module.generic-type.sentences -- what a generic type's sentences are; the front ends' reading, with `module.meta.free`
-module.place.error -- the codes of the errors of the new forms are assigned at stage 3; `lang::sentence_place` decides acceptance
+module.place.error -- the codes of the errors of the new forms are assigned at stage 3, when `lang::fn_member` and `lang::block_accepts?` take their rows for these keywords from `lang::sentence_place`; `lang::sentence_place` decides acceptance
 module.abstract -- a definition of the abstract items, which the front ends extract
 module.role.domain -- partly formalized: `lang::sentence_role` gives the role; the restriction of the item's parameters is the meaning of a precondition
 module.role.theorem -- partly formalized: `lang::sentence_role` gives the role; in which interpretations a theorem holds is the checks' meaning
@@ -239,7 +239,7 @@ module.role.goal -- partly formalized: `lang::sentence_role` gives the role; tha
 module.ensure.sugar -- partly formalized: `lang::sentence_role` gives the role; what the clause states of `f(x)` is `lang::ensure_clause`'s
 module.meaning -- partly formalized: `lang::global_checks` gives the checks of a global expectation; the meaning of other sentences is stated as the same formula
 module.meaning.procedures -- partly formalized: `lang::global_checks` gives the checks of a global expectation's calls; the constraint of an `assume` item's calls on its procedures is not modelled
-module.signature -- partly formalized: the requirements decide that a law may apply a later item and that axioms are used wherever they are declared; that clauses keep the order of contracts, and the change to `lang::declared_before`, are stage 3's
+module.signature -- partly formalized: the requirements decide that an `assume`, `expect` or `law` item may apply a later item; that clauses keep the order of contracts, and the change to `lang::declared_before`, are stage 3's
 module.order.items -- a definition of the order of items
 module.use -- which sentences a check may use: how it uses them, by instantiation, comes with the second half of the design (#669), over its model
 module.meta.conservative -- metatheory: argued from the totality of structural recursion (#669)

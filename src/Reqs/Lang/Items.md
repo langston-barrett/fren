@@ -852,6 +852,10 @@ pub proc fn_member(
 }
 ```
 
+[Modules](ModulesAndInterfaces.md) designs an `expect` in a function's
+block, about the function's value at its parameters
+(`module.place.expect`).
+
 The result and the `let`s stand for their definitions, as a [`where`
 clause's](Let.md) do, and the result's definition is the function applied
 to its parameters. Each member's expression has, before its own `where`

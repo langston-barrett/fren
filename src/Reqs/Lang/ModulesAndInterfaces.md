@@ -339,6 +339,14 @@ pub proc sentence_member(
 > where `require` is, so that every spec of today stays valid
 > (`module.expansion`).
 
+> **Note:** `lang::sentence_place` decides again part of what
+> [`lang::fn_member`](Items.md#function-blocks) and
+> [`lang::block_accepts?`](Global.md) decide today, and differs from
+> `lang::fn_member` where `module.place.expect` accepts an `expect` in a
+> function's block. Stage 3 makes them one decision in `Fren.Core`: the
+> blocks' requirements take their rows for these keywords from
+> `lang::sentence_place`, so that both front ends call one function.
+
 ## Theorems and axioms
 
 Each lemma, `assume`, `expect` and `law` item, and each `require` and
@@ -520,9 +528,9 @@ r[module.use]
 A check of an item may use every axiom of its module and of the modules
 it imports, wherever it is declared, and each theorem declared before the
 item. No check uses a goal. A check of a sentence of today's forms uses
-today's laws and contracts as it does today: a trait's laws as quantified
-hypotheses of every check of the trait ([Traits](Traits.md#expectations)),
-wherever each is written, and contracts as
+today's laws and contracts as it does today: a trait's laws as the
+quantified hypotheses of the trait's checks that `traits.expect.checks`
+gives them to, wherever each is written, and contracts as
 [Contracts](Items.md#contracts) states.
 
 `lang::lemma_order` states which applications a lemma may have:
@@ -588,8 +596,8 @@ expect law_before_method() {
 > could rest on it: with `lemma l(n: N): h(n) >= 1` before a structural
 > recursion `h` whose contract claims `h(n) >= 1`, the check of `l` would
 > use `h`'s contract, and the check of `h`'s contract would use `l`, so
-> each would pass from the other, whatever `h` is. Axioms and goals rest on
-> no proof, so they may come anywhere.
+> each would pass from the other, whatever `h` is. No check rests on an
+> axiom's or a goal's proof, so they may come anywhere.
 
 ## Checks
 
@@ -600,8 +608,8 @@ A lemma has the checks of a [global
 expectation](../Check.md#global-expectations) with its parameters, its
 domain, its calls and its claims, each using the sentences that
 `module.use` gives. Induction by unfolding, which proves some theorems
-that these checks do not, is specified in [Structural
-recursion](Recursion.md) (#750).
+that these checks do not, is to be specified in Structural recursion by
+#750.
 
 r[module.axiom.check]
 An axiom is never proved. Until the realizability of axioms that relate
@@ -650,14 +658,17 @@ today's forms, has the same verdicts and messages as before this chapter.
 Today's forms are an `ensure` clause and an `assume` clause of a function
 or procedure, an `assume` member of a global expectation's block, an
 `expect` of a procedure, a global expectation or a trait, a global
-expectation, and a trait's `law`. A `require`, a lemma item, an `assume`
+expectation, and a trait's `law`, with the other members of today's
+blocks, such as a `cover` of a procedure or a global expectation, `let`,
+`call`, `use`, `exists` and `refines`. A `require`, a lemma item, an `assume`
 item, an `expect` in a function, and any member of a lemma's or an
 `assume` item's block are new. This chapter adds the new forms and changes
 nothing of how a sentence of today's forms is checked or reported. The
 second half of this design computes what each check is reported as, from
 a model of the module and through `check::reported_pass`, and checks this
 guarantee over it, with the exceptions that its instantiation and
-[induction by unfolding](Recursion.md) (#750) bring (#669).
+induction by unfolding, which is to be specified in Structural recursion
+by #750, bring (#669).
 
 > **Rationale:** The prior art: ACL2's `encapsulate` and functional
 > instantiation; Why3's theories and `clone`; the loose and initial
