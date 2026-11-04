@@ -2,6 +2,7 @@
 import Fren
 import FrenCore.Evidence
 import Impls.Check
+import Impls.Matching
 import Reqs.Check
 -- keep-sorted end
 open Fren.Lang
@@ -825,9 +826,167 @@ theorem closeApps_supported {F α : Type} [BEq F] [LawfulBEq F] (brings : F → 
           obtain ⟨_, ⟨a, ha, rfl⟩, hxa⟩ := hf
           exact .inr ⟨a, List.mem_append_left _ ((h1 a).mpr (.inr ha)), hxa⟩
 
+/-- A finite universe supplies enough rounds to `closeApps`, without an
+assumption that it has returned. Each nonempty next frontier removes at
+least one vertex from the unseen part of the universe. -/
+theorem closeApps_terminates {F α : Type} [BEq F] [LawfulBEq F]
+    (brings : F → Bool) (inside : F → Id (α × List F)) (vertices : List F)
+    (closed : ∀ a ∈ vertices, ∀ b ∈ (inside a).run.2, b ∈ vertices) :
+    ∀ (n : Nat) (seen work : List F) (acc : List (F × α)),
+    (vertices.filter fun x => !seen.contains x).length + 1 ≤ n →
+    (∀ x ∈ work, x ∈ vertices) →
+    ∃ r, (Fren.Core.closeApps brings inside n seen work acc).run = some r := by
+  intro n
+  induction n with
+  | zero => intro seen work acc hn; omega
+  | succ n ih =>
+    intro seen work acc hn hw
+    cases work with
+    | nil => exact ⟨acc, rfl⟩
+    | cons w ws =>
+      let rs := (w :: ws).map fun a => (inside a).run
+      let next := Fren.Core.newApps brings seen (rs.flatMap (·.2))
+      have hnext : ∀ b ∈ next, b ∈ vertices ∧ b ∉ seen := by
+        intro b hb
+        have ⟨hf, _, hs⟩ := (mem_newApps _ _ _ _).mp hb
+        simp only [rs, List.mem_flatMap, List.mem_map] at hf
+        obtain ⟨_, ⟨a, ha, rfl⟩, hb⟩ := hf
+        exact ⟨closed a (hw a ha) b hb, hs⟩
+      by_cases he : next = []
+      · refine ⟨acc ++ (w :: ws).zip (rs.map (·.1)), ?_⟩
+        simp only [Fren.Core.closeApps, Id.run_bind, List.idRun_mapM]
+        change (Fren.Core.closeApps brings inside n (seen ++ next) next _).run = _
+        rw [he]
+        cases n <;> rfl
+      · obtain ⟨b, hb⟩ := List.exists_mem_of_ne_nil next he
+        have hu := hnext b hb
+        have hfilter : (vertices.filter fun x => !(seen ++ next).contains x) =
+            (vertices.filter fun x => !seen.contains x).filter fun x => !next.contains x := by
+          simp only [List.filter_filter, List.contains_append, Bool.not_or, Bool.and_comm]
+        have hlt : (vertices.filter fun x => !(seen ++ next).contains x).length <
+            (vertices.filter fun x => !seen.contains x).length := by
+          rw [hfilter, List.length_filter_lt_length_iff_exists]
+          exact ⟨b, by simp [hu], by simp [hb]⟩
+        obtain ⟨r, hr⟩ := ih (seen ++ next) next (acc ++ (w :: ws).zip (rs.map (·.1)))
+          (by omega) (fun b hb => (hnext b hb).1)
+        refine ⟨r, ?_⟩
+        simpa only [Fren.Core.closeApps, Id.run_bind, List.idRun_mapM] using hr
+
 /-- The applications that the facts of `a` mention, of the pairs `rel`. -/
 def insideOf (rel : List (Nat × Nat)) (a : Nat) : Id (Unit × List Nat) :=
   pure ((), (rel.filter (·.1 == a)).map (·.2))
+
+theorem eraseDups_nodup (l : List Int) : l.eraseDups.Nodup := by
+  cases l with
+  | nil => simp
+  | cons a rest =>
+    rw [List.eraseDups_cons, List.nodup_cons]
+    refine ⟨by simp, eraseDups_nodup (rest.filter fun b => !b == a)⟩
+termination_by l.length
+decreasing_by have := List.length_filter_le (fun b => !b == a) rest; simp; omega
+
+/-- The finite candidate graph includes every seed and both endpoints. -/
+theorem mem_matching_universe {T : Type} [BEq T] [LawfulBEq T]
+    (written : List T) (rel : List (T × T)) (x : T) :
+    x ∈ Fren.Core.Matching.vertices written rel ↔
+      x ∈ written ∨ (∃ y, (x, y) ∈ rel) ∨ (∃ y, (y, x) ∈ rel) := by
+  simp only [Fren.Core.Matching.vertices, List.mem_eraseDups, List.mem_append, List.mem_map]
+  grind
+
+theorem matching_successor {T : Type} [BEq T] [LawfulBEq T] (rel : List (T × T)) (a b : T) :
+    b ∈ (Fren.Core.Matching.successors rel a).run.2 ↔ (a, b) ∈ rel := by
+  simp [Fren.Core.Matching.successors, List.mem_map, List.mem_filter]
+
+theorem matching_closure_ends {T : Type} [BEq T] [LawfulBEq T]
+    (written : List T) (rel : List (T × T)) (brings : T → Bool) :
+    ∃ r, Fren.Core.Matching.closure written rel brings = some r := by
+  apply closeApps_terminates brings (Fren.Core.Matching.successors rel) (Fren.Core.Matching.vertices written rel)
+  · intro a _ b hb
+    exact (mem_matching_universe written rel b).mpr (.inr (.inr ⟨a, (matching_successor rel a b).mp hb⟩))
+  · have := List.length_filter_le (fun x => !(written.filter brings).eraseDups.contains x)
+      (Fren.Core.Matching.vertices written rel)
+    omega
+  · intro x hx
+    exact (mem_matching_universe written rel x).mpr (.inl (List.mem_filter.mp (List.mem_eraseDups.mp hx)).1)
+
+-- No `_ends` hypothesis: the bound is computed from the input graph.
+impl finite_application_closure: check::finite_application_closure for
+    (written : List Int) (rel : List (Int × Int)) {
+  written := Fren.FinSet.ofList written,
+  inside := Fren.FinSet.ofList rel,
+  rounds := (Fren.Core.Matching.vertices written rel).length + 1,
+  ended? := (Fren.Core.Matching.closure written rel (fun _ => true)).isSome,
+  brought := Fren.FinSet.ofList
+    (((Fren.Core.Matching.closure written rel (fun _ => true)).getD []).map Prod.fst),
+} by
+  intro written rel _
+  obtain ⟨r, hr⟩ := matching_closure_ends written rel (fun _ => true)
+  have hrun := hr
+  unfold Fren.Core.Matching.closure at hrun
+  let roots := written.eraseDups
+  simp only [List.filter_eq_self.mpr (show ∀ x ∈ written, (fun _ => true) x = true from by simp)] at hrun
+  have ⟨hc, hs, _⟩ := closeApps_spec (fun _ => true) (Fren.Core.Matching.successors rel)
+    _ roots roots [] r (by simp) (by simp) hrun
+  have hbounded := closeApps_reached (fun _ => true) (Fren.Core.Matching.successors rel)
+    (fun x => x ∈ Fren.Core.Matching.vertices written rel)
+    (fun a b _ h => (mem_matching_universe written rel b).mpr
+      (.inr (.inr ⟨a, (matching_successor rel a b).mp h⟩)))
+    _ roots roots [] r (by simp) (by simp)
+    (fun x hx => (mem_matching_universe written rel x).mpr (.inl (List.mem_eraseDups.mp hx))) hrun
+  have hreach := closeApps_reached (fun _ => true) (Fren.Core.Matching.successors rel)
+    (fun x => x ∈ written ∨ ∃ w ∈ written, Relation.TransGen (fun a b => (a, b) ∈ rel) w x)
+    (by
+      intro a b ha hb
+      have hab := (matching_successor rel a b).mp hb
+      rcases ha with ha | ⟨w, hw, hp⟩
+      · exact .inr ⟨a, ha, .single hab⟩
+      · exact .inr ⟨w, hw, .tail hp hab⟩)
+    _ roots roots [] r (by simp) (by simp)
+    (fun x hx => .inl (List.mem_eraseDups.mp hx)) hrun
+  have huniverse : Fren.FinSet.ofList (Fren.Core.Matching.vertices written rel) =
+      Fren.FinSet.ofList written ∪ (Fren.FinSet.ofList rel).domain ∪ (Fren.FinSet.ofList rel).range := by
+    apply Fren.FinSet.ext
+    intro x
+    simp [mem_matching_universe, or_assoc]
+  have hcard : ((Fren.Core.Matching.vertices written rel).length : Int) =
+      ((Fren.FinSet.ofList written ∪ (Fren.FinSet.ofList rel).domain ∪ (Fren.FinSet.ofList rel).range).card) := by
+    rw [← huniverse, Fren.FinSet.card_ofList]
+    have h₁ := Fren.FinSet.length_le_of_nodup
+      (Fren.FinSet.nodup_nub (Fren.Core.Matching.vertices written rel))
+      (fun x hx => Fren.FinSet.mem_nub.mp hx)
+    have h₂ := Fren.FinSet.length_le_of_nodup
+      (eraseDups_nodup (written ++ rel.map Prod.fst ++ rel.map Prod.snd))
+      (fun x hx => Fren.FinSet.mem_nub.mpr hx)
+    simp only [Fren.Core.Matching.vertices] at h₁ ⊢
+    omega
+  have heq : Fren.FinSet.ofList (r.map Prod.fst) =
+      Fren.FinSet.ofList written ∪ (Fren.FinSet.ofList rel).closure.image (Fren.FinSet.ofList written) := by
+    apply Fren.FinSet.ext
+    intro x
+    simp only [Fren.FinSet.mem_union, Fren.FinSet.mem_image, Fren.FinSet.mem_closure, Fren.FinSet.mem_ofList]
+    constructor
+    · intro hx
+      rcases hreach x hx with h | ⟨w, hw, hp⟩
+      · exact .inl h
+      · exact .inr ⟨w, hw, hp⟩
+    · rintro (hx | ⟨w, hw, hp⟩)
+      · exact hs x (List.mem_eraseDups.mpr hx)
+      · have hstep : ∀ a b, a ∈ r.map Prod.fst → (a, b) ∈ rel → b ∈ r.map Prod.fst := by
+          intro a b ha hab
+          obtain ⟨p, hp, hpa⟩ := List.mem_map.mp ha
+          exact hc p hp b ((matching_successor rel p.1 b).mpr (by simpa [hpa] using hab)) rfl
+        induction hp with
+        | single hab => exact hstep _ _ (hs w (List.mem_eraseDups.mpr hw)) hab
+        | tail _ hab ih => exact hstep _ _ ih hab
+  simp only [fren_spec, check.application_vertices, hr, Option.isSome_some, Option.getD_some]
+  refine ⟨⟨by omega, heq⟩, trivial, ?_, ?_, ?_, ?_⟩
+  · intro x hx; exact hs x (List.mem_eraseDups.mpr hx)
+  · intro b hb
+    obtain ⟨a, ha, hab⟩ := Fren.FinSet.mem_image.mp hb
+    obtain ⟨p, hp, hpa⟩ := List.mem_map.mp (Fren.FinSet.mem_ofList.mp ha)
+    exact hc p hp b ((matching_successor rel p.1 b).mpr (by simpa [hpa] using hab)) rfl
+  · intro x hx; rw [← huniverse]; exact hbounded x hx
+  · rw [heq]; exact fun _ => id
 
 -- Both front ends' query builders take the applications whose facts a
 -- query has from `closeApps`, from those that its formulas mention and

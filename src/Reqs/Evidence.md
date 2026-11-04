@@ -953,6 +953,182 @@ query entry point's result. `test/ui/checks/fact_scope.fren` checks both
 front ends' verdicts, including the transitive case and a witness whose
 query mentions no such function.
 
+### Matching terms and finite closure
+
+The ground matching planned for modules (#758) needs a definition of
+term identity before either front end extracts its terms. The following
+model separates resolved references to definitions from application heads.
+An atom carries its type and resolved identity; an application carries
+its resolved function and type arguments in its symbol. Argument lists
+have any length. Other syntax can be represented by applications of
+distinct symbols. Source positions and the spelling of aliases are not
+part of these identities.
+
+r[matching.normalization] check::matching_normalization
+Two ground terms match exactly when their normalized syntax is equal.
+Normalization replaces references to `let`, `where`, `out :=` and constant
+definitions, transitively, in the scope of each definition. It preserves
+application heads, argument order, literals and free variables. It neither
+unfolds functions nor evaluates operators, and does not use equations
+from the query. Definitions are ordered and nonrecursive, as
+[Local definitions](Lang/Let.md) states. A definition that shadows another
+sees the earlier definition in its own value. References not in the
+definition environment stay references.
+
+```fren
+pub enum MatchingTerm {
+    Atom(String),
+    Reference(String),
+    Application(String, MatchingTerm),
+    Nil,
+    Cons(MatchingTerm, MatchingTerm),
+}
+
+-- Newest first. Each value is written in the scope of the tail.
+pub enum MatchingDefinitions {
+    Nil,
+    Cons(String, MatchingTerm, MatchingDefinitions),
+}
+
+pub fn definition_value(ds: MatchingDefinitions, n: String): MatchingTerm := match ds {
+    MatchingDefinitions::Nil => MatchingTerm::Reference(n),
+    MatchingDefinitions::Cons(k, v, rest) => if k = n then v else definition_value(rest, n),
+}
+
+pub fn normalize_term(ds: MatchingDefinitions, t: MatchingTerm): MatchingTerm := match t {
+    MatchingTerm::Atom(s) => MatchingTerm::Atom(s),
+    MatchingTerm::Reference(n) => definition_value(ds, n),
+    MatchingTerm::Application(f, args) => MatchingTerm::Application(f, normalize_term(ds, args)),
+    MatchingTerm::Nil => MatchingTerm::Nil,
+    MatchingTerm::Cons(a, b) => MatchingTerm::Cons(normalize_term(ds, a), normalize_term(ds, b)),
+}
+
+pub fn normalize_definitions(ds: MatchingDefinitions): MatchingDefinitions := match ds {
+    MatchingDefinitions::Nil => MatchingDefinitions::Nil,
+    MatchingDefinitions::Cons(n, v, rest) => MatchingDefinitions::Cons(
+        n,
+        normalize_term(normalize_definitions(rest), v),
+        normalize_definitions(rest)
+    ),
+}
+
+set_option fren.evidence "random" in
+pub proc matching_normalization(ds: MatchingDefinitions, a: MatchingTerm, b: MatchingTerm): (
+    det left: MatchingTerm,
+    det right: MatchingTerm,
+    det same?,
+) {
+    out left := normalize_term(normalize_definitions(ds), a)
+    out right := normalize_term(normalize_definitions(ds), b)
+    ensure equality: same? iff left = right
+
+    expect reflexive: when a = b, same?
+    expect symmetric: same? iff right = left
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "random" in
+expect matching_aliases() {
+    let value: MatchingTerm := MatchingTerm::Atom("Int:1")
+    let ds: MatchingDefinitions := MatchingDefinitions::Cons(
+        "out",
+        MatchingTerm::Reference("where"),
+        MatchingDefinitions::Cons(
+            "where",
+            MatchingTerm::Reference("let"),
+            MatchingDefinitions::Cons(
+                "let",
+                MatchingTerm::Reference("CONST"),
+                MatchingDefinitions::Cons("CONST", value, MatchingDefinitions::Nil)
+            )
+        )
+    )
+    call r := matching_normalization(ds, MatchingTerm::Reference("out"), value)
+    expect expanded: r.same?
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "random" in
+expect matching_opaque() {
+    let value: MatchingTerm := MatchingTerm::Atom("Int:1")
+    let ds: MatchingDefinitions := MatchingDefinitions::Cons("f", value, MatchingDefinitions::Nil)
+    call r := matching_normalization(ds, MatchingTerm::Application("f", MatchingTerm::Nil), value)
+    expect no_unfolding: not r.same?
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "random" in
+expect matching_shadow() {
+    let value: MatchingTerm := MatchingTerm::Atom("Int:1")
+    let ds: MatchingDefinitions := MatchingDefinitions::Cons(
+        "x",
+        MatchingTerm::Reference("x"),
+        MatchingDefinitions::Cons("x", value, MatchingDefinitions::Nil)
+    )
+    call r := matching_normalization(ds, MatchingTerm::Reference("x"), value)
+    expect own_scope: r.same?
+}
+```
+
+`Fren.Core.Matching` implements this term model. Its lookup decision also
+serves the shared obligations normalizer's substitution of an atom. The
+front ends' extraction of matching terms belongs to #758; no current
+query uses the new matching model to add instances.
+
+r[matching.closure.finite] check::finite_application_closure
+For a finite graph of candidate ground applications, closure visits each
+reachable application at most once and reaches a fixpoint within the
+number of vertices plus one rounds. The universe is computed from the
+query's applications and the endpoints of the graph, rather than supplied
+as a bound or as an assertion that traversal terminates. This holds even
+for cycles and repeated edges. Running out of rounds is not a partial
+closure or a successful check.
+
+The graph is the finite universe presented to this closure model. The
+module matching engine (#758) must construct that universe from the
+query and the ranked sentences, including closed terms and values of
+listed types; this requirement does not justify enumerating an unbounded
+stream of instances before building the graph.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub fn application_vertices(written: Set<Int>, inside: Rel<Int, Int>): Set<Int> :=
+    written union inside.domain union inside.range
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc finite_application_closure(
+    written: Set<Int>,       -- normalized ground application identities
+    inside: Rel<Int, Int>,   -- candidate applications in their facts
+): (det rounds: Int, det ended?, det brought: Set<Int>) {
+    out rounds := application_vertices(written, inside).card + 1
+    out brought := written union inside.closure.image(written)
+
+    ensure terminates: ended?
+    ensure seeds: written subset brought
+    ensure fixpoint: inside.image(brought) subset brought
+    ensure bounded: brought subset application_vertices(written, inside)
+    ensure reached: brought subset written union inside.closure.image(written)
+
+    expect empty: when written = {}, brought = {}
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+expect finite_cycle() {
+    call r := finite_application_closure({0}, {(0, 1), (1, 2), (2, 0)})
+    expect ended: r.ended?
+    expect bound: r.rounds = 4
+    expect exact: r.brought = {0, 1, 2}
+}
+```
+
+This binds to the same `Fren.Core.closeApps` that both front ends use
+today, with a proof of termination at the computed bound. The earlier
+`fact_applications` binding describes a returned closure; it assumes that
+the traversal has returned. This binding supplies the missing termination
+argument over every finite graph, with no bound on its size.
+
 `check::check_applies` states which functions' contracts a check rests
 on: those whose applications in its queries bring a postcondition as a
 fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,
