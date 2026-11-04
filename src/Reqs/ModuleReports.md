@@ -445,7 +445,8 @@ expect own_pass_becomes_settled() {
 }
 ```
 
-The Lean-hosted front end checks this chapter's items by name:
+The Lean-hosted front end checks this chapter's items by name, since a
+`#fren_check` without a path would check every earlier chapter again:
 
 ```fren
 #fren_check today_verdict

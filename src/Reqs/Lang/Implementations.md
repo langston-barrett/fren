@@ -1574,7 +1574,7 @@ not assumed to.
 
 **Dynamic semantics**
 
-r[implementation.report.unchecked] lang::caveat_premise, lang::laws_of_own_interface
+r[implementation.report.unchecked] lang::caveat_premise, lang::laws_of_own_interface, lang::translated_caveat_bounds
 The consistency of an `assume` item, and of a trait's laws, is not checked
 yet. A verdict carries `F0665` where
 [`check::law_premise`](../Evidence.md#the-laws-of-a-trait) gives it. Its
@@ -1624,11 +1624,12 @@ the laws, as stage 5 states, not at the check.
 -- Whether a check that rests on `u` rests on an axiom whose consistency
 -- is not checked: `u` is one, or is a lemma translated along an
 -- implementation that leaves a law trusted.
+set_option fren.lint.undecidable "allow" in
 pub fn caveat_source?(m: ModuleModel, u: ModuleSentence) := match u {
     ModuleSentence::Law(_, _) => true,
     ModuleSentence::TrustedLaw(_, _) => true,
     ModuleSentence::Assumed(_) => true,
-    ModuleSentence::Translated(x, _) => item_of(m, x).unproved != {},
+    ModuleSentence::Translated(x, _) => (exists (j: Int), 0 <= j < item_of(m, implemented(m, x)).laws and j in item_of(m, x).unproved),
     _ => false,
 }
 
@@ -1661,6 +1662,55 @@ pub proc caveat_premise(m: ModuleModel, n: ModuleSentence): (det laws?) {
     out laws? := rests_on_caveat?(m, n)
 
     expect axioms_have_none: when axiom?(n), not laws?
+}
+
+-- Keep the fixture's model construction inside a function so that
+-- enumeration ranges over the four Boolean choices, not ModuleModel.
+pub fn caveat_bounds_model(
+    include_negative?,
+    include_valid?,
+    include_end?,
+    include_large?
+): ModuleModel :=
+    let unproved: Set<Int> := (if include_negative? then {-1} else {})
+    union (if include_valid? then {0} else {}) union (if include_end? then {1} else {})
+    union (if include_large? then {5} else {}) in
+    ModuleModel {
+        items := ModuleItems::Cons(
+            MONOID,
+            ModuleItems::Cons(
+                { SUM with unproved },
+                ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil)
+            )
+        ),
+    }
+
+-- All 16 combinations of a negative number, valid law 0, the upper
+-- bound 1 and a larger number 5, for a one-law interface. Out-of-range
+-- entries must not make either the translation a caveat's source or its
+-- consumer carry F0665, including when mixed with the valid law.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "enumerated" in
+expect translated_caveat_bounds(include_negative?, include_valid?, include_end?, include_large?) {
+    expect source_bounded: caveat_source?(
+        caveat_bounds_model(
+            include_negative?,
+            include_valid?,
+            include_end?,
+            include_large?
+        ),
+        ModuleSentence::Translated(1, 0)
+    ) iff include_valid?
+    -- This is the expression that `caveat_premise` defines `laws?` with.
+    expect report_bounded: rests_on_caveat?(
+        caveat_bounds_model(
+            include_negative?,
+            include_valid?,
+            include_end?,
+            include_large?
+        ),
+        ModuleSentence::ModuleLemma(2)
+    ) iff include_valid?
 }
 
 -- A module of today's forms: interfaces without lemmas, global
@@ -2124,6 +2174,7 @@ The Lean-hosted front end checks this chapter's items by name, since a
 #fren_check arm_decided
 #fren_check laws_of_own_interface
 #fren_check caveat_premise
+#fren_check translated_caveat_bounds
 #fren_check today_caveat
 #fren_check today_global_caveat
 #fren_check today_caveats
