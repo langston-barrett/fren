@@ -1151,11 +1151,11 @@ def ownSpecFiles : Array String :=
 commands of `src/Reqs`, each as a path from the repository's root. -/
 def hostedSpecFiles : IO (Array String) := do
   let mut files := #[]
-  for entry in ← System.FilePath.readDir "src/Reqs" do
-    if entry.path.extension != some "lean" then continue
-    for line in (← IO.FS.readFile entry.path).splitOn "\n" do
+  for entry in ← sortedFiles "src/Reqs" "lean" do
+    for line in (← IO.FS.readFile entry).splitOn "\n" do
       if let [_, rest] := line.splitOn "#fren_md \"" then
-        if let some name := (rest.splitOn "\"").head? then files := files.push s!"src/Reqs/{name}"
+        if let some name := (rest.splitOn "\"").head? then
+          files := files.push (Fren.relativeTo "." (entry.parent.getD "" / name))
   return files
 
 /-- The lines of the `fren` blocks of the Markdown text `md`. -/
@@ -1191,31 +1191,46 @@ def afterLastCheck (ls : Array String) : Array String :=
 #guard afterLastCheck #["proc p() {}", "#fren_check"] == #[]
 #guard afterLastCheck #["proc p() {}", "#fren_check p", "pub proc q() {}", "expect e: true"] == #["p", "q", "e"]
 
+/-- The items left unchecked in a Lean module's expanded source chunks,
+each with its source path. A check covers only earlier declarations. -/
+def uncheckedHostedItems (chunks : Array (String × Array String)) : Array (String × String) := Id.run do
+  let mut failures := #[]
+  let checks := chunks.map fun (_, ls) => ls.filter (·.trimAscii.toString.startsWith "#fren_check")
+  for (path, ls) in chunks, k in [0:chunks.size] do
+    let pending := afterLastCheck ls
+    if pending.isEmpty then continue
+    let later := (checks.extract (k + 1) checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
+    let named := (checks.extract k checks.size).flatten.filterMap fun l =>
+      (l.trimAscii.toString.dropPrefix? "#fren_check ").map (·.toString.trimAscii.toString)
+    for i in pending do
+      unless later || named.contains i do
+        failures := failures.push (path, i)
+  return failures
+
+#guard uncheckedHostedItems #[("chapter.md", #["pub proc p() {}"]), ("wrapper.lean", #["#fren_check"])] == #[]
+#guard uncheckedHostedItems #[("chapter.md", #["pub proc p() {}", "#fren_check"])] == #[]
+#guard uncheckedHostedItems #[("wrapper.lean", #["#fren_check"]), ("chapter.md", #["pub proc p() {}"])] ==
+  #[("chapter.md", "p")]
+#guard uncheckedHostedItems #[("chapter.md", #["pub proc p() {}"]), ("wrapper.lean", #["#fren_check q"])] ==
+  #[("chapter.md", "p")]
+
 /-- The problems of Lean's checks of `src/Reqs`: each procedure or global
-expectation that a chapter declares, which a Lean file reads by
-`#fren_md`, is checked by a `#fren_check` without a path after it in its
-chapter or in a later chapter of that file, or by a `#fren_check` of it in
-its chapter. A `#fren_check` checks what is declared before it in its file
-(`Reqs/Lean#commands`), so an item after a file's last one is not checked in
-Lean at all: the hosted counterpart of `ownSpecFiles`. -/
+expectation in a chapter is checked in its Lean module. Expand each
+`#fren_md` in place, so a check in a Lean wrapper counts just as one in
+Markdown does. Imports do not check the importing module's items. -/
 def hostedChecks : IO (Array String) := do
   let mut failures := #[]
-  for entry in ← System.FilePath.readDir "src/Reqs" do
-    if entry.path.extension != some "lean" then continue
-    let chapters := (← IO.FS.readFile entry.path).splitOn "\n" |>.filterMap fun line =>
-      match line.splitOn "#fren_md \"" with
-      | [_, rest] => (rest.splitOn "\"").head?
-      | _ => none
-    let texts ← chapters.toArray.mapM fun (c : String) => IO.FS.readFile (("src" : FilePath) / "Reqs" / c)
-    let checks := texts.map chapterChecks
-    for c in chapters.toArray, t in texts, k in [0:texts.size] do
-      let pending := afterLastCheck (frenBlockLines t)
-      if pending.isEmpty then continue
-      let later := (checks.extract (k + 1) checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
-      let named := checks[k]!.filterMap fun l => (l.trimAscii.toString.dropPrefix? "#fren_check ").map (·.toString.trimAscii.toString)
-      for i in pending do
-        unless later || named.contains i do
-          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as it comes after its file's last `#fren_check` in a `fren` block: name it, as `#fren_check {i}`"
+  for entry in ← sortedFiles "src/Reqs" "lean" do
+    let mut chunks : Array (String × Array String) := #[]
+    for line in (← IO.FS.readFile entry).splitOn "\n" do
+      if let [_, rest] := line.splitOn "#fren_md \"" then
+        if let some name := (rest.splitOn "\"").head? then
+          let path := entry.parent.getD "" / name
+          chunks := chunks.push (Fren.relativeTo "." path, frenBlockLines (← IO.FS.readFile path))
+      else
+        chunks := chunks.push (entry.toString, #[line])
+    for (path, i) in uncheckedHostedItems chunks do
+      failures := failures.push s!"{path}: `{i}` is checked by no `#fren_check` in Lean, as it comes after its file's last `#fren_check`: name it, as `#fren_check {i}`"
   return failures
 
 /-- `QueryCache`'s answers in memory: a script asked again gets the answer
@@ -1726,9 +1741,10 @@ or `src/Reqs/M.lean:L:C: warning: text`, about a Markdown spec that the
 module reads: the spec, as a path from the repository's root, and the
 message, at its position in the spec (`Fren.elabMd` places it at the
 `#fren_md` and starts its text with `NAME.md:LINE:COL: `, the column from
-0). A message about the Lean file's own item, or Lean's summary of a
+0). Resolve relative spec labels from the Lean module's directory, `dir`.
+A message about the Lean file's own item, or Lean's summary of a
 `#fren_check` (`fren: …`), is none. -/
-def ownSpecMessage? (level : String) (message : String) : Option (String × Diagnostic) := do
+def ownSpecMessage? (level : String) (message : String) (dir : FilePath := "src/Reqs") : Option (String × Diagnostic) := do
   let severity ← match level with
     | "info" => some "info"
     | "warning" => some "warning"
@@ -1749,13 +1765,15 @@ def ownSpecMessage? (level : String) (message : String) : Option (String × Diag
       guard (name.endsWith ".md")
       let text := ": ".intercalate text
       guard (!text.startsWith "fren: ")
-      return (s!"src/Reqs/{name}", { line := ← line.toNat?, col := ← col.toNat?, severity, text })
+      return (Fren.relativeTo "." (dir / name), { line := ← line.toNat?, col := ← col.toNat?, severity, text })
     | _ => none
   | _ => none
 
 #guard (ownSpecMessage? "info" "src/Reqs/Lang.lean:33:0: Lang/Types.md:1041:10: cover goal `t` is met\n\nwitness: x = 1").map
   (fun (f, d) => (f, d.line, d.col, d.severity, d.text)) ==
   some ("src/Reqs/Lang/Types.md", 1041, 10, "info", "cover goal `t` is met\n\nwitness: x = 1")
+#guard (ownSpecMessage? "info" "src/Reqs/Lang/Types.lean:5:0: Types.md:1041:10: cover goal `t` is met" "src/Reqs/Lang").map
+  (fun (f, d) => (f, d.line, d.col)) == some ("src/Reqs/Lang/Types.md", 1041, 10)
 #guard (ownSpecMessage? "warning" "src/Reqs/Check.lean:15:0: warning: Check.md:3:4: could not decide").map
   (fun (f, d) => (f, d.line, d.severity)) == some ("src/Reqs/Check.md", 3, "warning")
 #guard (ownSpecMessage? "info" "src/Reqs/Fmt.lean:9:0: Fmt.md:461:0: fren: 100 passed, 0 failed").isNone
@@ -1797,10 +1815,10 @@ unless `-Kcheck_reqs` is set. -/
 def hostedOwnSpec : IO (Array (String × Diagnostic) × Array String) := do
   let mut msgs := #[]
   let mut problems := #[]
-  let modules := (← System.FilePath.readDir "src/Reqs").filter (·.path.extension == some "lean")
-  for entry in modules.qsort (·.fileName < ·.fileName) do
-    let some stem := entry.path.fileStem | continue
-    let trace : FilePath := ".lake" / "build" / "lib" / "lean" / "Reqs" / s!"{stem}.trace"
+  for entry in ← sortedFiles "src/Reqs" "lean" do
+    let relative := (entry.toString.dropPrefix "src/").toString
+    let stem := ((entry.withExtension "").toString.dropPrefix "src/Reqs/").toString.replace "/" "."
+    let trace : FilePath := ((".lake" : FilePath) / "build" / "lib" / "lean" / relative).withExtension "trace"
     let text ← match ← (IO.FS.readFile trace).toBaseIO with
       | .ok t => pure t
       | .error _ =>
@@ -1808,7 +1826,7 @@ def hostedOwnSpec : IO (Array (String × Diagnostic) × Array String) := do
         continue
     let entries := traceEntries text
     if let some p := traceProblem trace.toString stem entries then problems := problems.push p
-    msgs := msgs ++ entries.filterMap fun (level, message) => ownSpecMessage? level message
+    msgs := msgs ++ entries.filterMap fun (level, message) => ownSpecMessage? level message (entry.parent.getD "")
   return (msgs, problems)
 
 /-- Lean's note that it leaves checks to `fren check`: those set to random
@@ -2660,7 +2678,7 @@ would notice if those drifted. -/
 /-- Modules that import a root module's modules rather than the root, which
 would wait for its own build too: each must import exactly the root's. -/
 def rootCopies : List (String × List String) :=
-  [("Fren", ["Reqs.Check", "Reqs.Calls", "Reqs.Lang", "Reqs.Modules"])]
+  [("Fren", ["Reqs.Check", "Reqs.Calls", "Reqs.Lang.Base", "Reqs.Modules"])]
 
 /-- The modules of Impls whose library needs the tests, `ImplsTested` in
 `lakefile.lean` (`libraryModules`). -/
@@ -2776,11 +2794,11 @@ def lakeNeeds (lakefile decl : String) : Except String (String → Bool) := do
       let filter := (((d.splitOn "filter := ")[1]?.bind (·.splitOn "\n" |>.head?)).getD "").trimAscii.toString
       let inDir (p : String) := p.startsWith (path ++ "/")
       if filter == ".star" then needed := needed.push inDir
-      else if filter == ".ofFn fun p => p.extension == some \"md\" && (p.parent.bind (·.fileName)) == some \"Reqs\"" then
+      else if filter == ".ofFn fun p => p.extension == some \"md\" && (p.parent.bind (·.fileName)) == some \"Reqs\" && p.fileName != some \"ModuleReports.md\"" then
         -- The one custom filter in this lakefile. Accept its exact spelling,
         -- rather than treating an arbitrary function as all Markdown files.
         needed := needed.push fun p => inDir p && (System.FilePath.mk p).extension == some "md" &&
-          ((System.FilePath.mk p).parent.bind (·.fileName)) == some "Reqs"
+          ((System.FilePath.mk p).parent.bind (·.fileName)) == some "Reqs" && (System.FilePath.mk p).fileName != some "ModuleReports.md"
       else if let some exts := filter.dropPrefix? ".extension #[" then
         let some exts := exts.toString.dropSuffix? "]" | throw cannot
         let mut extensions := #[]
@@ -2990,6 +3008,12 @@ def libraries : IO (Array String) := do
   -- Give their library individual files, then omit each one in turn.
   let some (_, chapters) := (lakeDecls lakefile "lean_lib").find? (·.1 == "ReqsChapters")
     | return failures.push "libraries regression: no ReqsChapters fixture"
+  match lakeNeeds lakefile chapters with
+  | .error e => failures := failures.push e
+  | .ok needed =>
+    unless needed "src/Reqs/Models.md" && !needed "src/Reqs/ModuleReports.md" &&
+        !needed "src/Reqs/Lang/Implementations.md" do
+      failures := failures.push "libraries regression: ReqsChapters must need Models, but not the separately built ModuleReports or language chapters"
   let specs ← sortedFiles "src/Reqs" "md"
   let specs := specs.filter (·.parent == some (System.FilePath.mk "src/Reqs"))
   for omitted in #["Markdown", "Models"] do
@@ -3002,19 +3026,19 @@ def libraries : IO (Array String) := do
     unless got.any (fun e => (e.splitOn s!"src/Reqs/{omitted}.lean:").length > 1) do
       failures := failures.push s!"libraries regression: missing {omitted}.md was accepted"
   -- A later root takes precedence over an earlier explicit glob.
-  -- With all specs it passes; with only Lang specs it must reject Models.
+  -- With all specs it passes; with only Types it must reject Models.
   let lateRoot (input : String) := lakefile ++
     s!"\nlean_lib LateReqs where\n  roots := #[`Reqs]\n  globs := #[]\n  needs := #[`@/{input}]\n"
   let got ← checkLibraries (lateRoot "reqs_md")
   unless got.isEmpty do
     failures := failures.push s!"libraries regression: later root with every needed spec failed: {got}"
-  let got ← checkLibraries (lateRoot "reqs_lang_md")
+  let got ← checkLibraries (lateRoot "reqs_lang_types_md")
   unless got.contains "src/Reqs/Models.lean: reads `src/Reqs/Models.md`, which `LateReqs` in `lakefile.lean` does not need" do
     failures := failures.push "libraries regression: later root did not override the Models glob"
   -- Unsupported declarations must fail closed, including a changed custom filter.
   for (before, after) in #[
-      ("needs := #[`@/reqs_lang_md]", "needs := reqsNeeds"),
-      ("`@/reqs_lang_md", "`@/missing_input"),
+      ("needs := #[`@/reqs_lang_types_md]", "needs := reqsNeeds"),
+      ("`@/reqs_lang_types_md", "`@/missing_input"),
       ("filter := .extension #[\"md\"]", "filter := unknownFilter"),
       ("filter := .ofFn fun p =>", "filter := .ofFn fun q =>")] do
     let fixture := lakefile.replace before after
