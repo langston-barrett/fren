@@ -278,7 +278,7 @@ def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.
 written at `spans`, are `members`, and whose `{` ends at `openStop`
 (`lint::arbitrary_source_item_ordering`). An evidence setting is part of
 the member after it. -/
-def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
+def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Nat) (global := false) : M Unit := do
   let mut kinds := #[]
   let mut ranges : Array Fren.Core.Range := #[]
   let mut names := #[]
@@ -307,7 +307,7 @@ def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Na
     names := names.push (name?.map fun x => Name.mkSimple (declaredIdent x).1.name)
     mentioned := mentioned.push ms
   let some i := Fren.Core.firstOutOfOrder? kinds | return
-  let msg := Fren.Core.memberOrderMsg kinds[i]! kinds[i - 1]!
+  let msg := Fren.Core.memberOrderMsg kinds[i]! kinds[i - 1]! global
   let mentions := mentioned.map (·.filterMap fun n => names.findIdx? (· == some n))
   let at_ : Span := { start := ranges[i]!.start, stop := ranges[i]!.stop }
   match Fren.Core.memberOrderFix? (← get).src openStop ranges kinds mentions with
@@ -616,8 +616,8 @@ partial def Expr.clauseWrittenStop (label : Span) (e : Expr) : Nat :=
   | _ => e.span.stop
 
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's
-constraints. -/
-def lintDuplicateConstraints (members writtenMembers : Array Member) : M Unit := do
+constraints, or a global expectation's if `global`. -/
+def lintDuplicateConstraints (members writtenMembers : Array Member) (global := false) : M Unit := do
   let src := (← get).src
   let writtenLabels := writtenMembers.filterMap fun | .prop _ name _ => some name.span | _ => none
   -- Cover goals are compared with each other, and constraints with each other.
@@ -626,7 +626,7 @@ def lintDuplicateConstraints (members writtenMembers : Array Member) : M Unit :=
     for (i, j) in Fren.Core.repeatedConstraints (constraints.map fun (_, _, e) => e.clauseWritten src) do
       let (k, x, e) := constraints[i]!
       let (k', x', _) := constraints[j]!
-      let msg := Fren.Core.duplicateConstraintMsg k' k x'.name
+      let msg := Fren.Core.duplicateConstraintMsg k' k x'.name global
       if (Fren.Core.duplicateConstraint k' k true).2 then
         if !writtenLabels.contains x.span then
           -- Only a written label gives a removable member range. Never
@@ -921,7 +921,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err named[k]!.span (Fren.Core.dupMemberMsg declared[k]! global)
-  lintMemberOrder body spans openStop
+  lintMemberOrder body spans openStop global
   modify fun s => { s with inCompBody := true }
   -- Each variable, call, binding, definition and constraint reports its
   -- own first static error; after those of the variables, and of the
@@ -952,7 +952,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
         tables := tables ++ (← takeTables).map (fun (sp, q, g) => (p.name, Fren.Core.IndexPlace.prop, sp, q, g))
 
   lintManualNat (module ++ n) members
-  lintDuplicateConstraints members body
+  lintDuplicateConstraints members body global
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
   lintOutputs lcx members vars
   lintTrivialCover lcx members
@@ -1833,6 +1833,9 @@ def elabConst (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr) : 
 -- build of `fren` and `fren_test`; it now takes a few seconds on each.
 mutual
 partial def elabItem (item : Item) : M Unit := do
+  -- An item read whole whose first error is a clause's keyword's, of
+  -- which nothing else is reported (`lang::item_error`).
+  if let .broken span msg := item then err span msg
   -- Paths resolve in the module, but in a procedure's or a function's
   -- block with `use`s, which sets its own scope.
   modify fun s => { s with scope := s.module }
@@ -1910,6 +1913,8 @@ partial def elabItem (item : Item) : M Unit := do
     lintDeclared .global (Name.mkSimple shown.name) shown.span
     lintLines .global (Name.mkSimple shown.name) shown.span close
     elabInductions name header members ((← get).applied.size > applied)
+  -- Never reached: a broken item's error is thrown above, before its lints.
+  | .broken .. => pure ()
   | .law name params body => do
     -- Only a trait's members are laws, which the parser reads only there.
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
@@ -2186,7 +2191,8 @@ partial def elabTrait (isPub : Bool) (name : Ident) (members : Array Item) : M U
     | .use .. | .useGroup .. => (.other "`use`s", false, false, false, none)
     | .trait .. => (.other "traits", false, false, false, none)
     | .claim .. => (.other "claims", false, false, false, none)
-    | .check .. | .lintSetting .. => (.other "commands", false, false, false, none)
+    -- Never a member: a keyword error of a member breaks the trait.
+    | .check .. | .lintSetting .. | .broken .. => (.other "commands", false, false, false, none)
   let spanOf : Item → Span
     | .function _ f .. | .law f .. | .global f .. | .globalBlock f .. | .comp _ f .. | .enum _ f .. | .record _ f ..
     | .newtype _ f .. | .abstractType _ f | .typeAlias _ f _ | .subsetType _ f .. | .const _ f .. | .trait _ f .. => f.span

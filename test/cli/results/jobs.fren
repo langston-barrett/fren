@@ -18,7 +18,7 @@ proc c(x: Int): (y: Int) {
 }
 
 proc d(x: Int): (y: Int) {
-    assume small: x < 0
-    assume big: x > 0
+    require small: x < 0
+    require big: x > 0
     ensure r: y = x
 }

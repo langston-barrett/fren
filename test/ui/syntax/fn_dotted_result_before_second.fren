@@ -1,0 +1,7 @@
+-- A function's results' errors in source order, in both front ends
+-- (`lang::block_errors`): the first result's own syntax, a dotted name,
+-- before a second result (`F0445`).
+fn f(x: Int): (r.a: Int, s: Int) {  --~ error: `r.a` is not a single name
+    out r := x
+}
+--@ exit: 2

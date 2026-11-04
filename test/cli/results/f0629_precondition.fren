@@ -1,7 +1,7 @@
 -- An application that may not meet a precondition is reported at the
 -- function's name, with the precondition (F0629).
 fn nth(q: Seq<Int>, i: Int): (r: Int) {
-    assume in_range: 0 <= i < q.len
+    require in_range: 0 <= i < q.len
     out r := q[i]
 }
 

@@ -254,7 +254,7 @@ pub proc subset_inhabitation(lower: Int, upper: Int): (inhabited?) {
 }
 
 pub proc subset_earlier(clauses: Seq<SubsetClause>, position: Int, value: Int): (hypotheses?) {
-    assume position_exists: 0 <= position < clauses.len
+    require position_exists: 0 <= position < clauses.len
     ensure earlier_only: hypotheses? iff (forall (i: Int), when 0 <= i < position, subset_rule_holds?(clauses[i].rule, value))
     expect first_unconditional: when position = 0, hypotheses?
 }
@@ -414,8 +414,8 @@ pub proc fixed_inhabitation(
     allowed: Set<InhabitationWorld>,
     membership: Rel<InhabitationWorld, InhabitationValue>,
 ): (det satisfiable?, det inhabited_everywhere?) {
-    assume some_world: allowed != {}
-    assume fixed_meaning: forall (w: InhabitationWorld), forall (other: InhabitationWorld),
+    require some_world: allowed != {}
+    require fixed_meaning: forall (w: InhabitationWorld), forall (other: InhabitationWorld),
         forall (value: InhabitationValue), when w in allowed and other in allowed,
         (w, value) in membership iff (other, value) in membership
     out satisfiable? := exists (w: InhabitationWorld), exists (value: InhabitationValue),
@@ -429,7 +429,7 @@ pub proc varying_inhabitation(membership: Rel<InhabitationWorld, InhabitationVal
     det some_witness?,
     det inhabited_everywhere?,
 ) {
-    assume interpretation: membership = {(InhabitationWorld::First, InhabitationValue::Zero)}
+    require interpretation: membership = {(InhabitationWorld::First, InhabitationValue::Zero)}
     out some_witness? :=
         exists (w: InhabitationWorld), exists (value: InhabitationValue), (w, value) in membership
     out inhabited_everywhere? :=

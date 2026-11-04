@@ -25,6 +25,12 @@ inductive BlockMember where
   /-- `out r := e`. -/
   | define
   | assume
+  /-- `require n: e`, a procedure's or a function's precondition. Both
+  front ends report it before they ask `blockMemberReport?`, with
+  `preconditionReport?`'s message of its own, which names `assume`; it is
+  here so that `lang::block_member` states that the block does not accept
+  it. -/
+  | require
   | ensure
   | expect
   | cover
@@ -39,7 +45,7 @@ no outputs, so only assumptions, definitions, calls, claims and imports. -/
 def blockMemberAccepted (m : BlockMember) (det : Bool) : Bool :=
   !det && match m with
     | .let | .assume | .expect | .cover | .call | .refines | .use => true
-    | .result | .exists | .define | .ensure => false
+    | .result | .exists | .define | .require | .ensure => false
 
 /-- How a message names the member `m`. -/
 def BlockMember.text : BlockMember → String
@@ -48,6 +54,7 @@ def BlockMember.text : BlockMember → String
   | .let => "`let` members"
   | .define => "`out` members"
   | .assume => "`assume` members"
+  | .require => "`require` members"
   | .ensure => "`ensure` members"
   | .expect => "`expect` members"
   | .cover => "`cover` members"
@@ -71,5 +78,55 @@ block, written with `det` if `det`, before any other check of it
 `blockMemberMsg`, `F0417`. -/
 def blockMemberReport? (m : BlockMember) (det : Bool) : Option Msg :=
   if blockMemberAccepted m det then none else some (blockMemberMsg m det)
+
+/-! ## The keyword of a precondition -/
+
+/-- A word that starts a clause about a block's inputs: `require` or
+`assume` (`lang::PreconditionWord`). -/
+inductive PreconditionWord where
+  | require
+  | assume
+  deriving Inhabited, BEq, DecidableEq, Repr
+
+/-- The keyword of the clauses that constrain a block's inputs: `assume`
+in a global expectation's block, if `global`, and `require` in a
+procedure's or a function's (`lang::precondition_word`). -/
+def preconditionKeyword (global : Bool) : String := if global then "assume" else "require"
+
+/-- The keyword of `preconditionKeyword global`, in code, after its article,
+as messages name a clause: "an `assume`" or "a `require`". -/
+def aPrecondition (global : Bool) : String :=
+  s!"{if global then "an" else "a"} `{preconditionKeyword global}`"
+
+/-- `assume` where a procedure's or a function's precondition is written
+`require` (`F0169`), with the fix that writes it so. -/
+def assumeRenamedMsg : Msg :=
+  { code? := some "F0169", headline := "a precondition is written `require`, not `assume`"
+    label? := some "write `require`"
+    notes := #["note: `assume` starts a global expectation's assumptions; a procedure's or a function's precondition is a `require`"]
+    fixes := #[{ msg := "write `require`", replacement := "require" }] }
+
+/-- `require` in a global expectation's block (`F0417`), a member that it
+does not accept: its assumptions are written `assume`, which the fix
+writes instead. -/
+def requireInGlobalMsg : Msg :=
+  { code? := some "F0417", headline := "global expectations have no `require` members"
+    label? := some "write `assume`"
+    notes := #["note: `require` starts a procedure's or a function's precondition; a global expectation's assumptions are `assume`s"]
+    fixes := #[{ msg := "write `assume`", replacement := "assume" }] }
+
+/-- What both front ends report for a clause that starts with `w`, in a
+global expectation's block if `global`, and otherwise in a procedure's or
+a function's (`lang::precondition_word`): nothing if `w` is the block's
+`preconditionKeyword`; `F0169` for `assume` in a procedure or a
+function; `F0417` for `require` in a global expectation, a member that its
+block does not accept. Either is reported at the keyword, whose fix writes
+the block's keyword instead, once the item is read, if it has no error of
+its syntax (`firstItemError?`, `lang::item_error`). -/
+def preconditionReport? (global : Bool) (w : PreconditionWord) : Option Msg :=
+  match global, w with
+  | false, .assume => some assumeRenamedMsg
+  | true, .require => some requireInGlobalMsg
+  | _, _ => none
 
 end Fren.Core

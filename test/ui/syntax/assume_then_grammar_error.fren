@@ -1,0 +1,9 @@
+-- An error of Lean's grammar anywhere in an item comes before the error of
+-- a clause's keyword (`F0169`, `lang::item_error`), in both front ends: it
+-- is reported, and the `assume` is not.
+proc p(x: Int): (y: Int) {
+    assume a: x > 0
+    ensure r: y = x +
+    --~^[hosted] error: unexpected token '}'
+}  --~[cli] error: expected an expression, found `}`
+--@ exit: 2

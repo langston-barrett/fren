@@ -1,8 +1,8 @@
 warning[F0766]: these two comparisons cannot both hold
- --> test/cli/results/f0610_untested.fren:3:19
+ --> test/cli/results/f0610_untested.fren:3:20
   |
-3 |     assume never: x > 0 and x < 0
-  |                   ^^^^^^^^^^^^^^^ always `false`
+3 |     require never: x > 0 and x < 0
+  |                    ^^^^^^^^^^^^^^^ always `false`
   |
   = note: `and` and `or` may be swapped, or a value may not be the one meant
   = note: `contradictory_comparisons` is `warn` by default

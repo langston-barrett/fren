@@ -7,7 +7,7 @@ error[F0601]: `c` is not realizable
   = note: for the input
               x = -1
           no outputs satisfy `bad`
-  = help: weaken one of them, or add an `assume` that rules this input out
+  = help: weaken one of them, or add a `require` that rules this input out
 
 note[F0654]: the redundancy checks of `c` are not run by random testing
  --> test/cli/results/f0601_random_exhausted.fren:6:6
@@ -27,7 +27,7 @@ error[F0601]: `d` is not realizable
    = note: for the input
                x? = false
            no outputs satisfy `one` and `two`
-   = help: weaken one of them, or add an `assume` that rules this input out
+   = help: weaken one of them, or add a `require` that rules this input out
 
 note[F0654]: the redundancy checks of `d` are not run by random testing
   --> test/cli/results/f0601_random_exhausted.fren:12:6

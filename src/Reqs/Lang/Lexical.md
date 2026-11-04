@@ -188,8 +188,8 @@ set_option fren.lint.undecidable "allow" in
 pub proc path_shape(
     segs: Seq<String>,           -- a path's segments
 ): (det accepted?) {
-    assume nonempty: segs != []
-    assume identifiers: not "" in segs
+    require nonempty: segs != []
+    require identifiers: not "" in segs
 
     ensure rule: accepted? iff not "self" in segs.slice(1, segs.len)
 
@@ -250,7 +250,7 @@ pub proc reserved_word(
 ): (det reserved?) {
     ensure rule: reserved? iff lexeme in RESERVED
 
-    expect contextual: when lexeme is "when" | "ensure" | "cover" | "out" | "call" | "det", not reserved?
+    expect contextual: when lexeme is "when" | "require" | "assume" | "ensure" | "cover" | "out" | "call" | "det", not reserved?
     expect items: when lexeme is "proc" | "fn" | "enum" | "struct" | "trait", reserved?
     expect law_contextual: when lexeme = "law", not reserved?
     expect membership: when lexeme = "in", reserved?
@@ -284,7 +284,7 @@ These *contextual keywords* have special meaning at the start of a
 construct, and are otherwise ordinary identifiers:
 
 ```
-when  unless  not  true  false  det  out  call  assume  ensure  cover  law
+when  unless  not  true  false  det  out  call  require  assume  ensure  cover  law
 ```
 
 `law` starts a [law](Traits.md#laws) only as a member of a trait, so
@@ -597,7 +597,7 @@ pub proc punctuator_end(
     lexeme: String,
     remaining: String,       -- the input after the lexeme
 ): (det ends?) {
-    assume a_punctuator: lexeme in PUNCTUATORS
+    require a_punctuator: lexeme in PUNCTUATORS
     let longer: String := lexeme ++ remaining.at(0)
 
     call one := punctuator(longer)
@@ -625,7 +625,7 @@ pub proc longest_punctuator(
     lexeme: String,
     remaining: String,       -- the input after the lexeme
 ): (ends?) {
-    assume a_punctuator: lexeme in PUNCTUATORS
+    require a_punctuator: lexeme in PUNCTUATORS
 
     call one := punctuator(lexeme ++ remaining.at(0))
     call two := punctuator(lexeme ++ remaining.slice(0, 2))

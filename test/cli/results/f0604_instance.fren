@@ -1,6 +1,6 @@
 -- An instance's assumption that may not hold (F0604).
 proc sub(n: Int): (m: Int) {
-    assume nonneg: n >= 0
+    require nonneg: n >= 0
     ensure r: m = n
 }
 

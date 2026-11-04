@@ -96,7 +96,7 @@ pub proc structural_recursion(
     uses: Seq<RecUse>,     -- its uses of itself in its body, in order
 ): (det verdict: Recursion) {
     use self::Recursion::{NotRecursive, NotStructural, Structural}
-    assume params: n_params >= 1
+    require params: n_params >= 1
 
     ensure none: when uses = [], verdict = NotRecursive
     -- The first position at which every use decreases.

@@ -5,7 +5,7 @@ error[F0601]: `variants` is not realizable
   |      ^^^^^^^^ not realizable
   |
   = note: no outputs satisfy `round` and `square`
-  = help: weaken one of them, or add an `assume` that rules this input out
+  = help: weaken one of them, or add a `require` that rules this input out
 
 note: `round` forces s is Shape::Circle(_), but `square` forces s is Shape::Square(_)
  --> test/cli/results/f0601_forced_variants_both.fren:8:12
@@ -22,7 +22,7 @@ error[F0601]: `mixed` is not realizable
    = note: for the input
                x = 0
            no outputs satisfy `one` and `boxy`
-   = help: weaken one of them, or add an `assume` that rules this input out
+   = help: weaken one of them, or add a `require` that rules this input out
 
 note: `one` forces s is Shape::Circle(_), but `boxy` forces s is Shape::Rect(_, _)
   --> test/cli/results/f0601_forced_variants_both.fren:13:12

@@ -318,7 +318,7 @@ pub proc int_plus_one_in_chain(
     n_comparisons: Nat,
     drop_left?,            -- `int_plus_one`'s fix of it alone drops its left operand's offset
 ): (det fires?) {
-    assume position: comparison < n_comparisons
+    require position: comparison < n_comparisons
 
     ensure rule: fires? iff (if drop_left? then comparison = 0 else comparison + 1 = n_comparisons)
 }

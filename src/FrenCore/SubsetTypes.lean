@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
 import FrenCore.Generics
+import FrenCore.Global
 import FrenCore.Patterns
 -- keep-sorted end
 
@@ -499,13 +500,14 @@ def obligationMsg (subject ty cex : String) (priv : Array String) : Msg :=
         "help: guard the value with a condition that satisfies the constraint, or add an assumption that ensures it"] }
 
 /-- The message of a call's argument for the parameter `x` of `sub`, whose
-type `ty` its value may not have, with the counterexample `cex`. -/
-def instanceTypeMsg (subject sub x ty cex : String) : Msg :=
+type `ty` its value may not have, with the counterexample `cex`; `global`
+if the call is a global expectation's. -/
+def instanceTypeMsg (subject sub x ty cex : String) (global : Bool := false) : Msg :=
   { code? := some "F0661", headline := s!"the invariant of type `{ty}` does not hold for parameter `{x}` of `{sub}` in call {subject}"
     label? := some s!"may not have the type `{ty}`"
     notes := #[s!"counterexample: {cex}",
       s!"note: `{sub}` assumes that `{x}` has the type `{ty}`",
-      "help: pass the parameter a value of its type, or add an `assume` that guarantees it"] }
+      s!"help: pass the parameter a value of its type, or add {aPrecondition global} that guarantees it"] }
 
 end Fren.Core
 

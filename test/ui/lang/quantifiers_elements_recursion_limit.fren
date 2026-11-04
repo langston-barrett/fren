@@ -19,6 +19,6 @@ fn triples_nonneg?(q: Seq<Int>) :=
 
 -- Three bound names over an index set of seven terms: 343 instances.
 proc many(q: Seq<Int>) {
-    assume r: triples_nonneg?(q)
+    require r: triples_nonneg?(q)
     expect e: when q.len >= 3, q[1] + q[2] >= 0  --~ warning: would have more than 256 instances
 }

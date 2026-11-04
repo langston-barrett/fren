@@ -180,7 +180,7 @@ trait Lawless {
 -- assumption holds, as the item's other checks do, so it is not also a
 -- contradiction, and the trait reports as its twin over a contract does.
 proc bump(x: Int): (y: Int) {
-    assume nonneg: x >= 0
+    require nonneg: x >= 0
     ensure up: y = x + 1
 }
 

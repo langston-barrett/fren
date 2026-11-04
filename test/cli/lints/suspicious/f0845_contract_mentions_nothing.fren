@@ -6,7 +6,7 @@ const LIMIT: Int := 10
 pub fn limit(Int): Int
 
 pub fn scale(n: Int): (r: Int) {
-    assume sane: LIMIT > 0
+    require sane: LIMIT > 0
     ensure grows: r >= n
     ensure positive: limit(0) > 0
 }

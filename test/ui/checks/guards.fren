@@ -45,7 +45,7 @@ proc after_guard(m: Mode, t: Nat): (y: Int) {
 -- The checks are under the hypotheses of where the `match` is written:
 -- an assumption can make the arms complete, or an arm unreachable.
 proc hypotheses(x: Int): (s: Int) {
-    assume nonzero: x != 0
+    require nonzero: x != 0
 
     ensure r: s = match x {
         n if n > 0 => 1,
@@ -54,7 +54,7 @@ proc hypotheses(x: Int): (s: Int) {
 }
 
 proc ruled_out(x: Int): (s: Int) {
-    assume positive: x > 0
+    require positive: x > 0
 
     ensure q: s = match x {
         n if n < 0 => 0,  --~ error: arm 1 of a `match` in `ruled_out::q` is never taken

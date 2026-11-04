@@ -1,0 +1,23 @@
+-- An item whose `assume` is an error (`F0169`) is reported for that alone
+-- (`lang::item_error`), and nothing of it is declared: a later call of the
+-- procedure, or application of the function, cannot find it, in both
+-- front ends.
+proc p(x: Int): (y: Int) {
+    assume a: x > 0  --~ error: a precondition is written `require`, not `assume`
+    ensure r: y = x
+}
+
+fn f(x: Int): (r: Int) {
+    assume b: x > 0  --~ error: a precondition is written `require`, not `assume`
+    out r := x
+}
+
+proc q(x: Int): (z: Int) {
+    call c := p(x)  --~ error: cannot find `p` in this scope
+    ensure s: z = c.y
+}
+
+proc u(x: Int): (z: Int) {
+    ensure s: z = f(x)  --~ error: cannot find `f` in this scope
+}
+--@ exit: 2

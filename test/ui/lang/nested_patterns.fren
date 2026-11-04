@@ -65,7 +65,7 @@ pub enum Size { Fixed(Int), Any }
 pub enum Request { Read(Size), Stop }
 
 proc guarded(r: Request, q: Seq<Int>): (det first: Int) {
-    assume long: match r { Request::Read(Size::Fixed(n)) => q.len > n and n >= 0, _ => q != [] }
+    require long: match r { Request::Read(Size::Fixed(n)) => q.len > n and n >= 0, _ => q != [] }
 
     ensure first_def: first = match r {
         Request::Read(Size::Fixed(n)) => q[n],

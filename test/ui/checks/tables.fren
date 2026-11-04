@@ -52,13 +52,13 @@ proc guarded(x: Int): (y: Int) {
 
 -- An assumption's table is checked under the other assumptions only.
 proc assumed(x: Int, y: Int): (o: Int) {
-    assume nonneg: y >= 0
+    require nonneg: y >= 0
     --~^ warning: `y` is never negative, so it can be a `Nat`
-    assume r: table {
+    require r: table {
         y = 0 => x < 0,
         y > 0 => x >= 0,
     }
-    assume s: table {  --~ error: a table in `assumed::s` may have no row that holds
+    require s: table {  --~ error: a table in `assumed::s` may have no row that holds
         x > 5 => y > 5,
     }
 

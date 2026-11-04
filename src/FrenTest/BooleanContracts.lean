@@ -8,11 +8,11 @@ set_option fren.lint.dead_code "allow"
 fn healthy?(x?, y?) := and { first: x?, second: y? }
 #guard_msgs in
 fn choose?(x?, y?): (r?) {
- assume inputs: and { first: x?, second: y? }
+ require inputs: and { first: x?, second: y? }
  ensure result: and { both: healthy?(r?, x?), copy: r? iff y? }
 }
 fn actual?(x?, y?): (r?) {
- assume inputs: and { first: x?, second: y? }
+ require inputs: and { first: x?, second: y? }
  out r? := x? and y?
  ensure result: healthy?(r?, x?)
 }

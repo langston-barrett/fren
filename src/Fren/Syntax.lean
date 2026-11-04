@@ -421,11 +421,19 @@ scoped syntax (name := outMember) ("pub ")? (&"det ")? &"out " frenIdent (" : " 
 
 /-- `out r := e`, the definition of the result `r` (`F0444`). -/
 scoped syntax (name := defineMember) &"out " frenIdent " := " fren_expr (fren_where)? : fren_member
+/-- `assume n: e`, an assumption of a global expectation's block
+(`Reqs/Lang/Global`). In a procedure's or a function's block, the
+elaborator reports it (`F0169`): a precondition is written `require`. -/
 scoped syntax (name := assumeMember) &"assume " frenIdent " : " fren_expr (fren_where)? : fren_member
+/-- `require n: e`, a precondition of a procedure or a function
+(`Reqs/Lang/Procedures#members`), which the elaborator reads as an
+`assumeMember`. In a global expectation's block, it reports it (`F0417`). -/
+scoped syntax (name := requireMember) &"require " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := ensureMember) &"ensure " frenIdent " : " fren_expr (fren_where)? : fren_member
 scoped syntax (name := expectMember) &"expect " frenIdent " : " fren_expr (fren_where)? : fren_member
 /-- An omitted outer label is accepted only for an explicit Boolean block. -/
 scoped syntax (name := bareAssumeMember) (priority := low) &"assume " fren_expr (fren_where)? : fren_member
+scoped syntax (name := bareRequireMember) (priority := low) &"require " fren_expr (fren_where)? : fren_member
 scoped syntax (name := bareEnsureMember) (priority := low) &"ensure " fren_expr (fren_where)? : fren_member
 scoped syntax (name := bareExpectMember) (priority := low) &"expect " fren_expr (fren_where)? : fren_member
 /-- `cover n: e`, a scenario that the procedure must allow (`Reqs/Lang/Procedures#cover-goals`). -/
@@ -537,7 +545,7 @@ scoped syntax (name := fnCmd) ("pub ")? "fn " frenIdent (noWs fren_type_params)?
   (" := " fren_expr (fren_where)?)? : command
 
 /-- `fn f(x: T): (r: U) { members }`, a function written with its result
-and a block (`Reqs/Lang/Items#function-blocks`): `use`, `assume`, `let`,
+and a block (`Reqs/Lang/Items#function-blocks`): `use`, `require`, `let`,
 `out r := e` and `ensure` members, as a procedure's are. Other members, and
 more than one result, are parsed so that the elaborator reports them
 (`F0442`–`F0445`). -/

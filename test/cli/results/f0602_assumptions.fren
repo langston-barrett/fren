@@ -1,6 +1,6 @@
 -- Contradictory assumptions (F0602).
 proc c(x: Int): (y?) {
-    assume big: x > 10
-    assume small: x < 5
+    require big: x > 10
+    require small: x < 5
     ensure r: y? iff x > 7
 }

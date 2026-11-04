@@ -551,8 +551,10 @@ structure Evaluation where
 def Spec.evaluate (sp : Spec) (I : Interp) (c : Comp) (env : Env) : Evaluation := Id.run do
   let one (k : PropKind) := (c.ofKind k).map fun p =>
     (p, ({ label := p.name, pfx := .anonymous, e := p.e } : Atom).eval I env.look)
+  -- `c` is a procedure, never a global expectation: `fren eval` finds it
+  -- among `sp.comps` only.
   let kw : PropKind → String
-    | .assume => "assume" | .ensure => "ensure" | .expect => "expect" | .cover => "cover"
+    | .assume => Fren.Core.preconditionKeyword false | .ensure => "ensure" | .expect => "expect" | .cover => "cover"
   let as := one .assume
   let rs := one .ensure
   let es := one .expect

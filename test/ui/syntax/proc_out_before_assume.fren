@@ -1,0 +1,9 @@
+-- A procedure's block's errors in source order, in both front ends
+-- (`lang::block_errors`): an `out` that names no result before an
+-- `assume`.
+proc p(x: Int): (y: Int) {
+    out z := x  --~ error: `z` is not a result of the procedure
+    assume a: x > 0
+    ensure r: y = x
+}
+--@ exit: 2

@@ -455,7 +455,7 @@ def reqItemsOf (file md : String) : Except String (Array ReqItem) := do
         out := out.push { path := "::".intercalate (current.push n.name).toList, file, line := lineOf n.span.start, clauses }
     return out
 
-#guard ((reqItemsOf "f" "```fren\npub mod a::b\n\nproc p(x?): (y?) {\n    assume a: x?\n    ensure c: y? = x?\n    expect d: y?\n}\n```\n").toOption.getD #[]).map
+#guard ((reqItemsOf "f" "```fren\npub mod a::b\n\nproc p(x?): (y?) {\n    require a: x?\n    ensure c: y? = x?\n    expect d: y?\n}\n```\n").toOption.getD #[]).map
     (fun i => (i.path, i.line, i.clauses)) == #[("a::b::p", 4, #["c", "d"])]
 
 /-- The path of the requirement that is named as the rule `id` is: its
@@ -2247,7 +2247,7 @@ def stringCorpus (n : Nat) : String := Id.run do
         "s != t", s!"s.len + t.len = {i}", s!"({v} ++ {l}).len > {i}", s!"{v}.at({i}) = {l}",
         s!"{v}.slice(0, {i}) != {l}", s!"{v} < {l}"] 5
     out := out ++ s!"proc c{k}(s: String, t: String): (p?) \{\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect e: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -2270,7 +2270,7 @@ def setCorpus (n : Nat) : String := Id.run do
         s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
         "s = {}"] 5
     out := out ++ s!"proc c{k}(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -2295,7 +2295,7 @@ def relationCorpus (n : Nat) : String := Id.run do
         s!"(x, y) in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"x in {u}", s!"{u} subset s", s!"{u} != {b}.domain",
         s!"(x, x) in {a}", "r = {}", s!"{a} != \{}"] 5
     out := out ++ s!"proc c{k}(r: Rel<E, E>, q: Rel<E, E>, s: Set<E>, x: E, y: E): (p?) \{\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -2318,7 +2318,7 @@ def sequenceCorpus (n : Nat) : String := Id.run do
         s!"q.ends_with?([x, {j}])", s!"(q.len > {j} and q[{j}] = x)", s!"(0 <= i and i < r.len and r[i] > {j})",
         s!"{a}.len + {b}.len >= {j}"] 5
     out := out ++ s!"proc c{k}(q: Seq<Int>, r: Seq<Int>, x: Int, i: Int): (p?) \{\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 

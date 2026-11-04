@@ -150,7 +150,7 @@ pub fn content(Text): Content
 -- What `fren fmt` writes for a file's content.
 set_option fren.lint.undecidable "allow" in
 pub fn render(c: Content): (r: Text) {
-    assume of_a_file: exists (t: Text), parses?(t) and content(t) = c
+    require of_a_file: exists (t: Text), parses?(t) and content(t) = c
 
     ensure parses: parses?(r)
     ensure read_back: content(r) = c
@@ -158,7 +158,7 @@ pub fn render(c: Content): (r: Text) {
 
 -- What `fren fmt` writes for a file.
 pub fn format(source: Text): (formatted: Text) {
-    assume parses: parses?(source)
+    require parses: parses?(source)
 
     ensure parses_again: parses?(formatted)
     ensure kept: content(formatted) = content(source)
@@ -172,7 +172,7 @@ formatter, and `fmt::layout_free` of any two files:
 
 ```fren
 pub proc safe(source: Text): (det formatted: Text) {
-    assume parses: parses?(source)
+    require parses: parses?(source)
 
     ensure formats: formatted = format(source)
 
@@ -1260,7 +1260,7 @@ inside its braces, as a procedure's is, so it is indented by four spaces:
 
 ```text
 fn at(q: Seq<Int>, i: Int): (r: Int) {
-    assume in_range: 0 <= i < q.len
+    require in_range: 0 <= i < q.len
     out r := q[i]
 }
 ```
@@ -1330,7 +1330,7 @@ pub proc indent(
     comment?,                -- the line is a comment
 ): (det columns: Int) {
     -- A closing line's first token closes the innermost open bracket, which indents.
-    assume closes_innermost: when start = Closing, innermost_indents?(brackets)
+    require closes_innermost: when start = Closing, innermost_indents?(brackets)
 
     ensure closing: when start = Closing,
         columns = (if comment? then base(brackets) else opener(brackets))
@@ -1897,7 +1897,7 @@ pub proc group_layout(
     det braces?,             -- it is written with braces
     det vertical?,           -- it is written with one path on each line
 ) {
-    assume some_path: n_paths >= 1
+    require some_path: n_paths >= 1
 
     ensure braced: braces? iff n_paths > 1
     ensure vertical_rule: vertical? iff (braces? and (was_vertical? or not fits?))
@@ -1948,7 +1948,7 @@ pub proc in_block(
     comments: Lines,         -- the lines that comments are on
     nested?,                 -- it is the item of a `set_option ... in`
 ): (det alone?, det sorted?) {
-    assume in_order: first_line <= last_line
+    require in_order: first_line <= last_line
 
     -- It starts and ends its lines, which have no other token and no comment.
     ensure alone_rule: alone? iff (above?(before, first_line) and below?(after, last_line)

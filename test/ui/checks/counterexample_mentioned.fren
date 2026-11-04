@@ -5,8 +5,8 @@ set_option fren.lint.unused_variables "allow"
 set_option fren.lint.unused_assumption "allow"
 
 proc unmentioned(a: Int, b: Int, n: Nat, s: String): (p?) {
-    assume pinned: a = -1
-    assume small: n < 1
+    require pinned: a = -1
+    require small: n < 1
     ensure r: p? iff a > 0
     expect e: p?  --~ error: counterexample: a = -1, n = 0, p? = false
 }
@@ -14,14 +14,14 @@ proc unmentioned(a: Int, b: Int, n: Nat, s: String): (p?) {
 -- That a `Nat` is at least 0 is a formula of the query, so `n` is shown,
 -- though nothing else mentions it.
 proc nat_fact(a: Int, n: Nat) {
-    assume pinned: a = -1
+    require pinned: a = -1
     expect e: a > 0  --~ error: counterexample: a = -1, n = 0
 }
 
 -- A variable that only an assumption mentions is shown.
 proc assumed(a: Int, d: Int) {
-    assume pinned: a = -1
-    assume three: d = 3
+    require pinned: a = -1
+    require three: d = 3
     expect e: a > 0  --~ error: counterexample: a = -1, d = 3
 }
 

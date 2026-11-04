@@ -7,7 +7,7 @@ open Fren.Lang
 -- different values, as `fren check --examples` does (`Reqs/Lean#options`).
 
 proc pinned(x: Int): (y: Int) {
-    assume fixed: x = 0
+    require fixed: x = 0
     ensure low: y = x
     ensure high: y = x + 1
 }
@@ -18,7 +18,7 @@ error: `pinned` is not realizable
 note: for the input
           x = 0
       no outputs satisfy `low` and `high`
-help: weaken one of them, or add an `assume` that rules this input out
+help: weaken one of them, or add a `require` that rules this input out
 ---
 info: `low` forces y = 0, but `high` forces y = 1
 
@@ -40,7 +40,7 @@ error: `pinned` is not realizable
 note: for the input
           x = 0
       no outputs satisfy `low` and `high`
-help: weaken one of them, or add an `assume` that rules this input out
+help: weaken one of them, or add a `require` that rules this input out
 ---
 info: fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant
 -/

@@ -51,7 +51,7 @@ pub fn shrink<T>(s: Set<T>, x: T): (r: Set<T>) {
 
 -- A generic function without a body, over a set of the parameter.
 pub fn choose<T>(s: Set<T>): (r: T) {
-    assume nonempty: s != {}
+    require nonempty: s != {}
     ensure member: r in s
 }
 
@@ -62,7 +62,7 @@ proc instances(t: Term<Int, Bool>, n: Nm, s: Set<Nm>, k: Set<Int>, w: Seq<Nm>): 
     det g: Set<Nm>,
     det c: Int,
 ) {
-    assume some: k != {}
+    require some: k != {}
     out m := mentioned(t)
     out g := grow(s, n)
     out c := choose(k)
@@ -166,12 +166,12 @@ proc higher_order(r: Seq<Nm>) {
 -- and of one with a function parameter: read at the instance, as the body
 -- is.
 pub fn pick_first<T>(q: Seq<T>, d: T): (r: T) {
-    assume first: q[0] = d
+    require first: q[0] = d
     out r := d
 }
 
 pub fn apply_at?<T>(q: Seq<T>, d: T, f: fn(T) -> Bool): (r?) {
-    assume first: q[0] = d
+    require first: q[0] = d
     out r? := f(d)
 }
 

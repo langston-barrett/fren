@@ -21,11 +21,11 @@ proc shapes(
     p: Point,
     v: Wrapped,
 ) {
-    assume pinned: a = -1 and n = 2
-    assume sequences: q = [3, -4] and w = [Within::Element] and bs = [true, false]
-    assume set: s = {1, 2}
-    assume record: p = Point { x := -5, on? := true }
-    assume variant: v = Wrapped::Items([false, true])
+    require pinned: a = -1 and n = 2
+    require sequences: q = [3, -4] and w = [Within::Element] and bs = [true, false]
+    require set: s = {1, 2}
+    require record: p = Point { x := -5, on? := true }
+    require variant: v = Wrapped::Items([false, true])
     expect e: a > 0  --~ error: counterexample: a = -1, n = 2, q = [3, -4], w = [Within::Element], bs = [true, false], s = {1, 2}, p = Point { x := -5, on? := true }, v = Wrapped::Items([false, true])
 }
 
@@ -36,7 +36,7 @@ proc shapes(
 fn ignore(x: Int): Int := 0
 
 proc filled(a: Int, b: Int) {
-    assume pinned: ignore(b) = 0 and a = -1
+    require pinned: ignore(b) = 0 and a = -1
     expect e: a > 0  --~ error: counterexample: a = -1
 }
 

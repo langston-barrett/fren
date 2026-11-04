@@ -1,0 +1,8 @@
+-- An evidence setting before a precondition, written `require`: a
+-- precondition has no checks of its own to test (`F0215`).
+proc p(x: Int): (y: Int) {
+    set_option fren.evidence "random" in  --~ error: `fren.evidence` cannot be set for an assumption
+    require a: x > 0
+    ensure r: y = x
+}
+--@ exit: 2

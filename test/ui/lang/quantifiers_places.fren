@@ -21,7 +21,7 @@ proc sub(ok?): (same?) {
 }
 
 proc places(mode: Mode, limit: Nat): (free?, costly?, all_cheap?) {
-    assume affordable: exists (m: Mode), m = mode and cost(m) <= limit
+    require affordable: exists (m: Mode), m = mode and cost(m) <= limit
     out costly? := some_costly?(limit)
     -- A defined output.
     out all_cheap? := forall (m: Mode), cost(m) <= limit

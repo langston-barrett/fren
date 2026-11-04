@@ -4,7 +4,7 @@
 proc positive(x: Int): (det y: Int) {
     let next: Int := x + 1
     let twice: Int := next + 1
-    assume domain: twice > 0
+    require domain: twice > 0
     ensure result: y = x
 }
 

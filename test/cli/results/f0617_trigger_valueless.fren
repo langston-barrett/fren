@@ -16,7 +16,7 @@ expect g(a_q: Seq<Int>) {
     expect g: when a.q[7] > 0, a.big?
 }
 
-pub proc guarded(q: Seq<Int>) { assume seventh: when q[7] > 0, q.len > 7 }
+pub proc guarded(q: Seq<Int>) { require seventh: when q[7] > 0, q.len > 7 }
 
 pub proc user(z: Seq<Int>) { call u := guarded(z) }
 
@@ -39,14 +39,14 @@ pub proc held(q: Seq<Int>): (big?) {
 -- procedure or at a call.
 set_option fren.lint.contradictory_comparisons "allow" in
 pub proc holds(q: Seq<Int>, x: Int): (y: Int) {
-    assume a: when q[7] > 0, q.len < 100
-    assume b: x > 0 and x < 0
+    require a: when q[7] > 0, q.len < 100
+    require b: x > 0 and x < 0
     ensure r: y = x + q.len
 }
 
 set_option fren.lint.contradictory_comparisons "allow" in
 pub proc called(q: Seq<Int>): (w: Int) {
-    assume a: when q[7] > 0, q.len < 100
+    require a: when q[7] > 0, q.len < 100
     ensure s: w > 0 and w < 0
 }
 

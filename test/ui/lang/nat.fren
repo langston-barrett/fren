@@ -48,7 +48,7 @@ proc user(k: Nat) {
 fn half(Int): Int
 
 proc widened(q: Seq<Int>, k: Nat): (x: Int) {
-    assume in_range: k < q.len
+    require in_range: k < q.len
     ensure r: x = q[k] + half(k)
 
     expect member: when q = [3, 4], q[k] in {3, 4} and k in {0, 1}
@@ -56,7 +56,7 @@ proc widened(q: Seq<Int>, k: Nat): (x: Int) {
 
 -- An assumption that a `Nat` is at least 0 always holds.
 proc redundant(n: Nat): (y?) {
-    assume nonneg: n >= 0  --~ warning: `redundant::nonneg` is redundant: it always holds
+    require nonneg: n >= 0  --~ warning: `redundant::nonneg` is redundant: it always holds
     ensure r: y? iff n > 0
 
     expect zero: when n < 1, not y?

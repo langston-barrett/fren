@@ -1,0 +1,5 @@
+-- A procedure's precondition written `assume`: the help writes `require`.
+proc halve(x: Int): (y: Int) {
+    assume even: x mod 2 = 0
+    ensure r: 2 * y = x
+}

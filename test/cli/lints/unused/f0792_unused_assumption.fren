@@ -1,5 +1,5 @@
 -- `unused_assumption`, which has no fix.
 proc c(x: Int, n: Int): (y: Int) {
-    assume pos: n > 0
+    require pos: n > 0
     ensure r: y = x + 1
 }

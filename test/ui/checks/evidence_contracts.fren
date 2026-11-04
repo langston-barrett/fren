@@ -64,7 +64,7 @@ proc user_nat(n: Int): (y: Int) {  --~ warning: the realizability of `user_nat` 
 -- `bad`'s too, which `b`'s argument applies. That is conservative, and
 -- intended (`check::check_applies`).
 proc callee(x: Int): (y: Int) {
-    assume pos: x > 0
+    require pos: x > 0
     ensure r: y = x
 }
 

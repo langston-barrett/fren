@@ -1,2 +1,2 @@
 -- A `;` (F0101).
-proc c(x: Int) { assume a: x > 0; }
+proc c(x: Int) { require a: x > 0; }

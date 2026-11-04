@@ -1,8 +1,8 @@
 warning[F0810]: `n` is never negative, so it can be a `Nat`
- --> test/cli/fix/integers.fren:5:31
+ --> test/cli/fix/integers.fren:5:32
   |
-5 |     assume counts: k >= 0 and n >= 0 and x < y
-  |                               ^^^^^^ `n` is at least 0 by this assumption
+5 |     require counts: k >= 0 and n >= 0 and x < y
+  |                                ^^^^^^ `n` is at least 0 by this assumption
   |
   = note: a `Nat` parameter brings this assumption with its type
   = note: a call must then pass a `Nat` for `n`
@@ -11,20 +11,20 @@ warning[F0810]: `n` is never negative, so it can be a `Nat`
   = help: to allow it, `set_option fren.lint.manual_nat "allow"`
 
 warning[F0810]: `k` is never negative, so it can be a `Nat`
- --> test/cli/fix/integers.fren:5:20
+ --> test/cli/fix/integers.fren:5:21
   |
-5 |     assume counts: k >= 0 and n >= 0 and x < y
-  |                    ^^^^^^ `k` is at least 0 by this assumption
+5 |     require counts: k >= 0 and n >= 0 and x < y
+  |                     ^^^^^^ `k` is at least 0 by this assumption
   |
   = note: a `Nat` parameter brings this assumption with its type
   = note: a call must then pass a `Nat` for `k`
   = help: declare `k: Nat`, and remove `k >= 0` from `counts`, where nothing binds `k` to an `Int`
 
 warning[F0810]: `j` is never negative, so it can be a `Nat`
- --> test/cli/fix/integers.fren:6:19
+ --> test/cli/fix/integers.fren:6:20
   |
-6 |     assume order: j >= 0  -- why
-  |                   ^^^^^^ `j` is at least 0 by this assumption
+6 |     require order: j >= 0  -- why
+  |                    ^^^^^^ `j` is at least 0 by this assumption
   |
   = note: a `Nat` parameter brings this assumption with its type
   = note: a call must then pass a `Nat` for `j`
@@ -40,10 +40,10 @@ warning[F0810]: `m` is never negative, so it can be a `Nat`
   = help: declare `m: Nat`, and remove `m >= 0` from `rm`, where nothing binds `m` to an `Int`
 
 warning[F0792]: the assumption `order` constrains only parameters that nothing uses
- --> test/cli/fix/integers.fren:6:12
+ --> test/cli/fix/integers.fren:6:13
   |
-6 |     assume order: j >= 0  -- why
-  |            ^^^^^ constrains only unused parameters
+6 |     require order: j >= 0  -- why
+  |             ^^^^^ constrains only unused parameters
   |
   = note: no guarantee, expectation, definition, argument or binding mentions `j`, nor does another assumption tie them to a used variable
   = help: remove the assumption and its parameters, or use them

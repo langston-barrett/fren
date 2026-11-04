@@ -12,7 +12,7 @@ set_option fren.lint.assertions_on_constants "allow"
 const PREFIX: String := "user-"
 
 proc handle(name: String, taken?): (accepted?) {
-    assume nonempty: name != ""
+    require nonempty: name != ""
 
     ensure shape: accepted? iff (name.len <= 20 and not taken? and not name.contains?(" ")
         and name.starts_with?("a"))

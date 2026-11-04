@@ -80,7 +80,7 @@ result         := [evidence-setting "in"] ["det"] variable
 member         := ["det"] "exists" variable
                 | ["det"] "let" variable ":=" top
                 | "out" IDENT ":=" top
-                | "assume" IDENT ":" top
+                | "require" IDENT ":" top  -- "assume" in global expectation blocks
                 | "ensure" IDENT ":" top
                 | "expect" IDENT ":" top
                 | "cover" IDENT ":" top
@@ -98,7 +98,7 @@ path           := IDENT ("::" IDENT)*
 ```
 
 A function's block takes members too: those that are not `det`, of
-`assume`, `let`, `out` and `ensure`, and the others parse to be reported
+`require`, `let`, `out` and `ensure`, and the others parse to be reported
 (see [Function blocks](Lang/Items.md#function-blocks)).
 
 ## Expressions

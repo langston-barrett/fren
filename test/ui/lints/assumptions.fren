@@ -2,46 +2,46 @@
 -- inputs that nothing else mentions.
 
 proc left_over(x: Int, n: Int, t: Int): (y: Int) {
-    assume pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
-    assume small: n < 10  --~ warning: the assumption `small` constrains only parameters that nothing uses
+    require pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
+    require small: n < 10  --~ warning: the assumption `small` constrains only parameters that nothing uses
     -- `t` is used, and so `x` too.
-    assume below: x < t
+    require below: x < t
     ensure r: y = x + t
 }
 
 -- Another assumption ties `n` to `m`, which is used: without `a`, `pos`
 -- would not hold.
 proc linked(n: Int, m: Int): (y: Int) {
-    assume a: n > 0
-    assume b: m = 2 * n
+    require a: n > 0
+    require b: m = 2 * n
     ensure r: y = m
     expect pos: y > 0
 }
 
 -- A chain of three: `k` to `n` to `m`, which is used.
 proc chained(k: Int, n: Int, m: Int): (y: Int) {
-    assume a: k > 0
-    assume b: n = k + 1
-    assume c: m = 2 * n
+    require a: k > 0
+    require b: n = k + 1
+    require c: m = 2 * n
     ensure r: y = m
     expect pos: y > 2
 }
 
 -- A chain that reaches no used variable is reported link by link.
 proc unlinked(k: Int, n: Int): (y: Int) {
-    assume a: k > 0  --~ warning: the assumption `a` constrains only parameters that nothing uses
-    assume b: n = k + 1  --~ warning: the assumption `b` constrains only parameters that nothing uses
+    require a: k > 0  --~ warning: the assumption `a` constrains only parameters that nothing uses
+    require b: n = k + 1  --~ warning: the assumption `b` constrains only parameters that nothing uses
     ensure r: y = 1
 }
 
 pub proc sub(x: Int): (y: Int) {
-    assume pos: x > 0
+    require pos: x > 0
     ensure r: y = x
 }
 
 -- The assumption constrains an argument of a call.
 proc bound(x: Int): (y: Int) {
-    assume pos: x > 0
+    require pos: x > 0
     call w := sub(x)
 
     ensure r: y = w.y
@@ -49,14 +49,14 @@ proc bound(x: Int): (y: Int) {
 
 -- A definition is something else.
 proc defined(x: Int, k: Int): (y: Int) {
-    assume pos: k > 0
+    require pos: k > 0
     det let d: Int := k + 1
     ensure r: y = x + d
 }
 
 -- A global expectation in the file reads it.
 proc read_globally(z: Int): (y: Int) {
-    assume pos: z > 0
+    require pos: z > 0
     ensure r: y = 1
 }
 
@@ -68,7 +68,7 @@ expect g(a_z: Int) {
 
 -- A call of the procedure in the file gives its input, and the call's
 -- precondition check checks the assumption.
-proc instanced(k: Int) { assume pos: k > 0 }
+proc instanced(k: Int) { require pos: k > 0 }
 
 proc uses_instanced(): (y: Int) {
     call i := instanced(1)
@@ -77,8 +77,8 @@ proc uses_instanced(): (y: Int) {
 
 -- A global expectation's read reaches the other assumptions too.
 proc read_through(k: Int, z: Int): (y: Int) {
-    assume a: k > 0
-    assume b: z = k + 1
+    require a: k > 0
+    require b: z = k + 1
     ensure r: y = 1
 }
 
@@ -94,7 +94,7 @@ expect h(a_k: Int, a_z: Int) {
 pub fn gain(Int): Int
 
 proc pinned(n: Int): (y: Int) {
-    assume a: n = 3 and gain(n) > 0
+    require a: n = 3 and gain(n) > 0
     ensure r: y = gain(3)
     expect pos: y > 0
 }
@@ -104,7 +104,7 @@ pub enum Color { Red, Green }
 pub fn f(Color): Int
 
 proc rooted(n: Color): (y: Int) {
-    assume a: f(n) = 0
+    require a: f(n) = 0
     ensure r: y = 1
     expect root: f(Color::Red) = 0 or f(Color::Green) = 0
 }
@@ -113,7 +113,7 @@ proc rooted(n: Color): (y: Int) {
 const THREE: Int := 3
 
 proc constant(n: Int): (y: Int) {
-    assume a: n = THREE  --~ warning: the assumption `a` constrains only parameters that nothing uses
+    require a: n = THREE  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = THREE
 }
 
@@ -122,13 +122,13 @@ proc constant(n: Int): (y: Int) {
 pub fn loss(Int): Int
 
 proc own_function(n: Int): (y: Int) {
-    assume a: loss(n) > 0  --~ warning: the assumption `a` constrains only parameters that nothing uses
+    require a: loss(n) > 0  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = gain(1)
 }
 
 -- A variant is a value, not a function or a constant.
 proc variant(n: Color): (y: Int) {
-    assume a: n = Color::Red  --~ warning: the assumption `a` constrains only parameters that nothing uses
+    require a: n = Color::Red  --~ warning: the assumption `a` constrains only parameters that nothing uses
     ensure r: y = 1
 }
 
@@ -137,7 +137,7 @@ proc variant(n: Color): (y: Int) {
 type Key
 
 proc keyed(k1: Key, k2: Key, i: Key, j: Key): (same?) {
-    assume distinct: k1 != k2  --~ warning: the assumption `distinct` constrains only parameters that nothing uses
+    require distinct: k1 != k2  --~ warning: the assumption `distinct` constrains only parameters that nothing uses
     ensure r: same? iff i = j
     expect equal: when i = j, same?
 }
@@ -145,30 +145,30 @@ proc keyed(k1: Key, k2: Key, i: Key, j: Key): (same?) {
 -- A pair reported together: `a` guards the index in `b`, so `b` alone is not
 -- defined, and each message names the other.
 proc guarded_pair(n: Int, q: Seq<Int>): (y: Int) {
-    assume a: n >= 0 and n < q.len  --~ warning: these comparisons can be chained
+    require a: n >= 0 and n < q.len  --~ warning: these comparisons can be chained
     --~^ warning: `n` is never negative, so it can be a `Nat`
     --~^^ warning: the assumption `a` constrains only parameters that nothing uses
-    assume b: q[n] > 0  --~ warning: the assumption `b` constrains only parameters that nothing uses
+    require b: q[n] > 0  --~ warning: the assumption `b` constrains only parameters that nothing uses
     ensure r: y = 1
 }
 
 -- A cover goal is a use: whether it is reachable depends on the assumption.
 proc covered(n: Int): (y: Int) {
-    assume a: n > 0
+    require a: n > 0
     ensure r: y = 1
     cover g: n = 2  --~ info: cover goal `covered::g` is met
 }
 
 -- So is a guarantee with a `where` clause.
 proc where_clause(n: Int): (y: Int) {
-    assume a: n > 0
+    require a: n > 0
     ensure r: y = m where m := n
 }
 
 -- A `refines` claim checks only its abstraction's guarantees, and introduces
 -- none of its assumptions (`Lang/Refinement.md`), so it reads none of them.
 proc refined(n: Int): (y: Int) {
-    assume r: n > 0  --~ warning: the assumption `r` constrains only parameters that nothing uses
+    require r: n > 0  --~ warning: the assumption `r` constrains only parameters that nothing uses
     ensure e: y = 1
 }
 

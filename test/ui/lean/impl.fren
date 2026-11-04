@@ -26,7 +26,7 @@ impl bad_exit: exit for (ran : Bool) (v : Verdict) { ran? := ran, worst := v, co
 
 proc double(n: Int): (m: Int) {
   exists scratch: Int
-  assume nonneg: n >= 0
+  require nonneg: n >= 0
   ensure twice: m = 2 * n
   ensure copy: scratch = n
 }
@@ -58,7 +58,7 @@ impl not_comp: Verdict { }                          --~ error: expected a proced
 
 -- No values of the binders satisfy the assumptions, so it proves nothing.
 proc gated(on?): (lit?) {
-  assume powered: on?
+  require powered: on?
   ensure lit: lit? iff on?
 }
 impl never_on: gated for (b : Bool) { on? := false, lit? := b }   --~ warning: `never_on` holds only because no values of its binders satisfy the assumptions of `gated`

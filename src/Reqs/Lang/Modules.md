@@ -96,7 +96,7 @@ pub proc item_visible(
     middle: ModuleName,    -- any module, for `transitive`
 ): (visible?) {
     -- A submodule of a submodule is a submodule.
-    assume transitive: when descends?(here, middle) and descends?(middle, owner), descends?(here, owner)
+    require transitive: when descends?(here, middle) and descends?(middle, owner), descends?(here, owner)
 
     ensure rule: visible? iff (is_pub? or here = owner or descends?(here, owner))
 
@@ -193,7 +193,7 @@ pub proc resolve(
     use lang::BindingKind::Opened
 
     -- The prelude is only added to the scope.
-    assume nearer_inside: nearer subset bindings
+    require nearer_inside: nearer subset bindings
 
     out lookup := first.result
     out result := match lookup {
@@ -239,7 +239,7 @@ pub proc resolve_layers(
     n_glob: Int,         -- distinct items of this name opened by `use ...::*`
     prelude?,            -- the prelude gives the name
 ): (result: Resolution) {
-    assume counted: n_glob >= 0
+    require counted: n_glob >= 0
 
     ensure local_wins: when local?, result = Local
     ensure glob: unless local?, when n_glob = 1, result = Glob
@@ -425,7 +425,7 @@ pub proc two_segments(
     b_owner: ModuleName,             -- the module declaring `b`: `a`, if `a` is a module
     here: ModuleName,                -- the module where the path is written
 ): (det a_kind: Kind, det accepted?) {
-    assume nearer_inside: nearer subset bindings
+    require nearer_inside: nearer subset bindings
 
     -- What `a` is, when it is declared or imported by name.
     out a_kind := match first.lookup {

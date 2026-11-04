@@ -1,0 +1,8 @@
+-- A procedure's block's errors in source order, in both front ends
+-- (`lang::block_errors`, `lang::clause_errors`): a clause without a label
+-- that is not a Boolean block before an `out` that names no result.
+proc p(x: Int): (y: Int) {
+    ensure when x > 0, y = x  --~ error: expected a named clause or a Boolean block
+    out z := x
+}
+--@ exit: 2

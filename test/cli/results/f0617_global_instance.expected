@@ -1,7 +1,7 @@
 warning[F0610]: testing found no admissible behaviour of `m::guarded` in 100 tests
   --> test/cli/results/f0617_global_instance.fren:16:10
    |
-16 | pub proc guarded(q: Seq<Int>) { assume seventh: q[7] > 0 }
+16 | pub proc guarded(q: Seq<Int>) { require seventh: q[7] > 0 }
    |          ^^^^^^^ untested
    |
    = note: so none of its checks were tested

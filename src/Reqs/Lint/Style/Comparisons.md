@@ -303,7 +303,7 @@ pub proc chainable_comparison(left: Chain, right: Chain): (
     det flip_left?,          -- the fix writes the left conjunct the other way round
     det flip_right?,
 ) {
-    assume comparisons: left.steps != [] and right.steps != []
+    require comparisons: left.steps != [] and right.steps != []
 
     out fires? := exists (a? b?: Bool), chains_flipped?(left, right, a?, b?)
     out flip_left? := exists (b?: Bool), chains_flipped?(left, right, true, b?)
@@ -400,8 +400,8 @@ expect joined_inequalities(left: Chain, steps: Seq<Step>) {
 
 set_option fren.lint.undecidable "allow" in
 pub proc chainable_joined(left: Chain, right: Chain, flip_left?, flip_right?): (chain: Chain) {
-    assume nonempty: left.steps != [] and right.steps != []
-    assume chains: chains_flipped?(left, right, flip_left?, flip_right?)
+    require nonempty: left.steps != [] and right.steps != []
+    require chains: chains_flipped?(left, right, flip_left?, flip_right?)
 
     out chain := joined(oriented(left, flip_left?), oriented(right, flip_right?))
 

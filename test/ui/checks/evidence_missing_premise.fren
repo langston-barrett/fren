@@ -6,7 +6,7 @@
 set_option fren.lint.undecidable "allow"
 
 proc callee(rows: Seq<Seq<Int>>): (y: Int) {
-    assume empty: rows = []
+    require empty: rows = []
     ensure r: y = 0
 }
 

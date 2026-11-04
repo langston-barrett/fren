@@ -59,7 +59,7 @@ proc guarded(x: Int): (y: Int) {
 
 -- A guarantee's own hypotheses make the table complete.
 proc hypotheses(x: Int): (y: Int) {
-    assume small: 0 <= x <= 2
+    require small: 0 <= x <= 2
 
     ensure r: y = table { x = 0 => 10, x = 1 => 11, x = 2 => 12 }
 

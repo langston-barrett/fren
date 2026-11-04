@@ -80,9 +80,9 @@ which types have element types:
 pub type Ty
 
 pub fn kind(Ty): ValueType
-pub fn elem(t: Ty): (r: Ty) { assume collection: kind(t) in {ValueType::SetTy, ValueType::SeqTy} }
-pub fn left(t: Ty): (r: Ty) { assume relation: kind(t) = ValueType::RelTy }
-pub fn right(t: Ty): (r: Ty) { assume relation: kind(t) = ValueType::RelTy }
+pub fn elem(t: Ty): (r: Ty) { require collection: kind(t) in {ValueType::SetTy, ValueType::SeqTy} }
+pub fn left(t: Ty): (r: Ty) { require relation: kind(t) = ValueType::RelTy }
+pub fn right(t: Ty): (r: Ty) { require relation: kind(t) = ValueType::RelTy }
 ```
 
 `lang::newtype?` says whether a type is a [newtype](Items.md#newtypes),
@@ -311,7 +311,7 @@ pub proc subset_place(
 ): (det decidable?) {
     use self::SubsetPlace::{Element, Payload, Top}
 
-    assume payloads_only: when recursive?, place = Payload
+    require payloads_only: when recursive?, place = Payload
 
     ensure rule: decidable? iff not (place = Element or (place = Payload and recursive?))
 
@@ -339,7 +339,7 @@ pub proc pattern_finite(
     integers?,               -- the base type is `Int` or `Nat`
     bounded?,                -- the invariant is a pattern test, every alternative of whose pattern is a bounded range or an integer
 ): (det finite?) {
-    assume not_both: when integers?, not base_finite?
+    require not_both: when integers?, not base_finite?
 
     ensure rule: finite? iff (base_finite? or (integers? and bounded?))
 
@@ -400,7 +400,7 @@ pub proc pattern_count(alts: Seq<Alternative>): (
     det finite?,
     count: Nat,                  -- how many integers it matches, when finitely many
 ) {
-    assume few: alts.len <= 2
+    require few: alts.len <= 2
 
     ensure bounds: finite? iff ((alts = [] or bounded?(alts[0])) and (alts.len < 2 or bounded?(alts[1])))
     ensure none: when alts = [], count = 0
@@ -822,7 +822,7 @@ pub proc bool_naming(
     name: String,        -- the declared name
     annot: Annot,        -- `Missing` when there is no `: type`
 ): (accepted?) {
-    assume identifier: name.matches?(r"[A-Za-z_][A-Za-z0-9_']*\??")
+    require identifier: name.matches?(r"[A-Za-z_][A-Za-z0-9_']*\??")
 
     ensure q_is_bool: when name.ends_with?("?"), accepted? iff annot is Missing | BoolTy
     ensure bool_is_q: unless name.ends_with?("?"),
@@ -1001,8 +1001,8 @@ pub proc synthesizes(
 ): (det synthesizes?) {
     use self::Shape::{Construction, EmptyLiteral, Other, Pair, SharedParts}
 
-    assume counted: synthesizing <= parts
-    assume pair: when shape = Pair, parts = 2
+    require counted: synthesizing <= parts
+    require pair: when shape = Pair, parts = 2
 
     ensure rule: synthesizes? iff match shape {
         EmptyLiteral => false,
@@ -1107,10 +1107,10 @@ pub proc written_sequence(
 ): (det sequence?) {
     use self::WrittenShape::{Concat, Conditional, Let, Other, Parenthesized, SeqLiteral}
 
-    assume counted: sequences <= parts
-    assume no_parts: when shape is SeqLiteral | Other, parts = 0
-    assume two_parts: when shape is Concat | Conditional, parts = 2
-    assume one_part: when shape is Let | Parenthesized, parts = 1
+    require counted: sequences <= parts
+    require no_parts: when shape is SeqLiteral | Other, parts = 0
+    require two_parts: when shape is Concat | Conditional, parts = 2
+    require one_part: when shape is Let | Parenthesized, parts = 1
 
     ensure rule: sequence? iff match shape {
         SeqLiteral => true,

@@ -5,7 +5,7 @@
 set_option fren.dump "obligations"
 
 proc c(n: Int): (m: Int) {
-    assume a: n > 0
+    require a: n > 0
     ensure r: m = n + 1
 }
 --~$ info: ; obligations

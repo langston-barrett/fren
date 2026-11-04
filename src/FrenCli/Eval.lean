@@ -4399,6 +4399,8 @@ partial def lowerItem : Item → L Unit
     for m in members do
       if under m matches .global .. | .globalBlock .. then inTrait m
   | .law .. => pure ()
+  -- Never read: the evaluator reads only files that `parse` accepts.
+  | .broken .. => pure ()
   | .lintSetting _ _ _ _ _ body? => do if let some b := body? then lowerItem b
 where
   declareUse (segs : Array Ident) (glob : Bool) : L Unit := declareUseIn segs glob none

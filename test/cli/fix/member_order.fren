@@ -18,7 +18,7 @@ proc c(x: Int, shape: Shape): (
     set_option fren.evidence "random" in
     call w := helper(x)
     use self::Shape::Square
-    assume small: x < 100
+    require small: x < 100
 }
 
 -- Not fixed: in order, `z` would come before the instance it mentions.

@@ -137,10 +137,10 @@ pub proc earlier(
     k_owner: Nat,                -- the position of `owner` in `order`
     k_caller: Nat,               -- the position of `caller`
 ): (det earlier?) {
-    assume positions: k_owner < order.len and order[k_owner] = owner
+    require positions: k_owner < order.len and order[k_owner] = owner
         and k_caller < order.len and order[k_caller] = caller
     -- Call names are distinct.
-    assume distinct: when owner = caller, k_owner = k_caller
+    require distinct: when owner = caller, k_owner = k_caller
 
     ensure rule: earlier? iff k_owner < k_caller
 

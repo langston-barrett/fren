@@ -72,7 +72,7 @@ pub proc lookup(x: Int): (y: Int) {
 }
 
 pub proc caller(x: Int): (z: Int) {
-    assume a: x = 1234567
+    require a: x = 1234567
     call c := lookup(x)
     ensure q: z = c.y + 1
     expect wrong: z = 5
@@ -1121,10 +1121,10 @@ pub proc reported_pass(
     caveats: Set<Caveat>,        -- its caveats, as `check::pass_evidence` gives them
     settled?,                    -- it rests on no check that is not settled
 ): (det shown: Verdict, det by_testing?, det by_bound?, det weakened?, det unsettled?) {
-    assume own_within: own subset caveats
+    require own_within: own subset caveats
     -- A witness check's pass has no caveat, however it was found, and it
     -- rests on nothing.
-    assume witness_plain: when not proof?(kind), own = {} and caveats = {}
+    require witness_plain: when not proof?(kind), own = {} and caveats = {}
 
     ensure verdict_rule: shown = (if verdict = Verdict::Pass and not settled? then Verdict::Inconclusive else verdict)
     ensure testing: by_testing? iff (shown = Verdict::Pass and Caveat::Random in caveats)
@@ -1237,7 +1237,7 @@ pub proc hosted_runs(
     k: Int,                      -- the position of a check
 ): (det reported?) {
     -- Its premises are earlier checks, as both front ends order them.
-    assume in_order: earlier?(premises, k)
+    require in_order: earlier?(premises, k)
 
     -- Lean runs no check set to random testing, and stands for each that
     -- the item has as a premise with a pass whose own caveat is `Random`;

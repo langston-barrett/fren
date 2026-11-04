@@ -1,0 +1,17 @@
+-- `require` in a global expectation's block (`F0417`) is reported once
+-- the item is read, for that item alone, in both front ends
+-- (`lang::item_error`): the items before and after it are read and
+-- checked.
+proc p(x: Int): (y: Int) {
+    ensure r: y = w  --~ error: cannot find `w` in this scope
+}
+
+expect g(x: Int) {
+    require a: x > 0  --~ error: global expectations have no `require` members
+    expect e: x > 0
+}
+
+proc q(x: Int): (y: Int) {
+    ensure r: y = z  --~ error: cannot find `z` in this scope
+}
+--@ exit: 2

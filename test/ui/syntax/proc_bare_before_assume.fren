@@ -1,0 +1,9 @@
+-- A procedure's block's errors in source order, in both front ends
+-- (`lang::block_errors`, `lang::clause_errors`): a clause without a label
+-- that is not a Boolean block, an error of its own syntax, before an
+-- `assume`.
+proc p(x: Int): (y: Int) {
+    ensure y = x  --~ error: expected a named clause or a Boolean block
+    assume a: x > 0
+}
+--@ exit: 2

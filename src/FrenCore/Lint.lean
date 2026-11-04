@@ -1685,7 +1685,7 @@ def procWithoutOutputsMsg (n : Name) : Msg :=
     label? := some "constrains nothing"
     notes := #["note: it has no results, and each of its members is one a global expectation accepts, \
         and nothing in this file calls, refines or names it, so it is a claim about its parameters",
-      "help: write it as a global expectation, `expect` in place of `proc`, unless another file calls it"] }
+      "help: write it as a global expectation, `expect` in place of `proc` and `assume` in place of each `require`, unless another file calls it"] }
 
 /-- A procedure that `proc_without_outputs` may fire on, once the file's
 paths are known: its path, whether it is `pub`, its results and members,
@@ -3529,8 +3529,10 @@ inductive ConstraintKind where
   | cover
   deriving Inhabited, BEq, DecidableEq, Repr
 
-def ConstraintKind.keyword : ConstraintKind → String
-  | .assume => "assume"
+/-- The keyword of a constraint of this kind, in a global expectation's
+block if `global` (`preconditionKeyword`). -/
+def ConstraintKind.keyword (global : Bool := false) : ConstraintKind → String
+  | .assume => preconditionKeyword global
   | .ensure => "ensure"
   | .expect => "expect"
   | .cover => "cover"
@@ -3555,11 +3557,13 @@ def repeatedConstraints (texts : Array String) : Array (Nat × Nat) :=
   (Array.range texts.size).filterMap fun i => ((Array.range i).find? (same · i)).map (i, ·)
 
 /-- A constraint of kind `later`, written the same as the earlier `name`, of
-kind `earlier`. When the two are of one kind, the fix removes the later. -/
-def duplicateConstraintMsg (earlier later : ConstraintKind) (name : String) : Msg :=
+kind `earlier`. When the two are of one kind, the fix removes the later.
+`global` if they are a global expectation's. -/
+def duplicateConstraintMsg (earlier later : ConstraintKind) (name : String) (global : Bool := false) : Msg :=
+  let aConstraint := if earlier == .assume then aPrecondition global else s!"an `{earlier.keyword global}`"
   let notes := if earlier == later then #["help: remove it"]
     else if later == .expect then
-      #[s!"note: an `expect` that repeats an `{earlier.keyword}` tests nothing",
+      #[s!"note: an `expect` that repeats {aConstraint} tests nothing",
         "help: the expectation was probably meant to say something stronger"]
     else #["note: one of them is probably not the constraint meant"]
   { code? := some Lint.duplicateConstraint.code, headline := s!"this is written the same as `{name}`"
@@ -7441,11 +7445,16 @@ def memberOrderFix? (src : Array Char) (openStop : Nat) (members : Array Range) 
   let text := String.join (order.toList.map fun k => blankOf k ++ parts[k]!.2)
   return ({ start := first.start, stop := last.stop }, text)
 
-/-- A member of kind `member` written after one of kind `before`. -/
-def memberOrderMsg (member before : MemberKind) : Msg :=
+/-- A member of kind `member` written after one of kind `before`, in a
+global expectation's block if `global`. -/
+def memberOrderMsg (member before : MemberKind) (global : Bool := false) : Msg :=
   { code? := some Lint.arbitrarySourceItemOrdering.code, headline := s!"{member.describe} after {before.describe}"
     label? := some "out of order"
-    notes := #["note: the members of a procedure are written `use`, `assume`, `exists`, `let` and `out`, `call`, `ensure`, `expect`, then `cover`"] }
+    -- Each branch names its block's keyword by `preconditionKeyword`, so
+    -- that the keyword is written in one place.
+    notes := #[if global then
+        s!"note: the members of a global expectation are written `use`, `{preconditionKeyword global}`, `let`, `call`, `expect`, then `cover`"
+      else s!"note: the members of a procedure are written `use`, `{preconditionKeyword global}`, `exists`, `let` and `out`, `call`, `ensure`, `expect`, then `cover`"] }
 
 /-! ## Expectations -/
 

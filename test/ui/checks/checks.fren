@@ -1,7 +1,7 @@
 -- Each check failing, with what it names (`check`).
 
 proc exit(strict?, n_fail: Int, n_inconc: Int): (code: Int) {   --~ error: no outputs satisfy `failures` and `strict_inconc`
-    assume counts: n_fail >= 0 and n_inconc >= 0  --~ warning: `n_fail` is never negative
+    require counts: n_fail >= 0 and n_inconc >= 0  --~ warning: `n_fail` is never negative
     --~^ warning: `n_inconc` is never negative
     exists scratch: Int
 
@@ -16,9 +16,9 @@ proc exit(strict?, n_fail: Int, n_inconc: Int): (code: Int) {   --~ error: no ou
 }
 
 proc contradictory(x: Int, y: Int) {  --~ error: the assumptions of `contradictory` are unsatisfiable: `big`, `small` contradict each other
-    assume big: x > 10
-    assume small: x < 5
-    assume unrelated: y = 0
+    require big: x > 10
+    require small: x < 5
+    require unrelated: y = 0
     exists ok?
 
     ensure r: ok? iff x = y

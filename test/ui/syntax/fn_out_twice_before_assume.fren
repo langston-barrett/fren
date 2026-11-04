@@ -1,0 +1,8 @@
+-- A function's block's errors in source order, in both front ends
+-- (`lang::block_errors`): the result defined twice before an `assume`.
+fn g(x: Int): (r: Int) {
+    out r := x
+    out r := x  --~ error: result `r` is defined more than once
+    assume a: x > 0
+}
+--@ exit: 2

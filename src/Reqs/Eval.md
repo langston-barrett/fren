@@ -361,7 +361,7 @@ pub proc backjumping(
     same?,                       -- it is the behaviour that backtracking finds
     steps: Nat,                  -- the candidates that the search tries
 ) {
-    assume one_outcome: not (by_backtracking? and exhausted?)
+    require one_outcome: not (by_backtracking? and exhausted?)
 
     ensure finds: when by_backtracking?, found? and same? and steps <= backtracking_steps
     ensure fails: when exhausted?, not found? and steps <= backtracking_steps
@@ -581,7 +581,7 @@ pub proc unreached(
     unknown: Nat,        -- those of these in which the trigger had no value
     decided: Nat,        -- those of them in which the trigger held and the check had a value: the tests that reached it
 ): (det why: Unreached) {
-    assume counted: decided + unknown <= triggered <= found
+    require counted: decided + unknown <= triggered <= found
 
     ensure reached: when decided > 0, why = Unreached::Reached
     ensure untested: when found = 0, why = Unreached::Untested
@@ -622,8 +622,8 @@ pub proc unreached_warning(
     untested?,               -- the procedure has `F0610`
     call_assumption?,        -- the check is a call assumption
 ): (det shown: UnreachedWarning) {
-    assume counted: decided + unknown <= triggered <= found
-    assume valued_counted: valued <= found
+    require counted: decided + unknown <= triggered <= found
+    require valued_counted: valued <= found
 
     call u := unreached(found, triggered, unknown, decided)
 
@@ -658,9 +658,9 @@ pub proc test_verdict(
     n_tests: Nat,        -- the tests that reached the check (`reaches`)
     exhausted?,          -- for realizability: the search saw every output of such an input
 ): (det verdict: Verdict) {
-    assume testable: not kind is Kind::Vacuity | Kind::Redundancy
+    require testable: not kind is Kind::Vacuity | Kind::Redundancy
     -- A cover goal is reached by its witnesses, which refute nothing.
-    assume witnesses: when kind = Kind::Cover, not refuted?
+    require witnesses: when kind = Kind::Cover, not refuted?
 
     ensure definite: when refuted? and (kind != Kind::Realizability or exhausted?), verdict = Fail
     ensure not_found: when refuted? and kind = Kind::Realizability and not exhausted?, verdict = Inconclusive
