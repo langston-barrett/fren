@@ -540,9 +540,9 @@ arity errors, cross-column duplicate binders, correlated coverage holes,
 and recursive calls through payloads from each column. Generated Lean
 matches must bind the same values and retain structural recursive descent.
 
-This chapter comes after the last `#fren_check` of the chapters that share
-its Lean file, so it names its own procedures, which the Lean-hosted front
-end then checks, as the `fren` command checks every procedure:
+This chapter names its own procedures, which the Lean-hosted front end then
+checks, as the `fren` command checks every procedure, since a `#fren_check`
+without a path would check every earlier chapter again:
 
 ```fren
 #fren_check function_type_place

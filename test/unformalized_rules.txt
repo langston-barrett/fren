@@ -242,10 +242,10 @@ module.meaning -- partly formalized: `lang::global_checks` gives the checks of a
 module.meaning.procedures -- partly formalized: `lang::global_checks` gives the checks of a global expectation's calls; the constraint of an `assume` item's calls on its procedures is not modelled
 module.signature -- partly formalized: the requirements decide that an `assume`, `expect` or `law` item may apply a later item; that clauses keep the order of contracts, and the change to `lang::declared_before`, are stage 3's
 module.order.items -- a definition of the order of items
-module.use -- which sentences a check may use: how it uses them, by instantiation, comes with the second half of the design (#669), over its model, which also reports a verdict that rests on an `assume` item as one under today's unchecked laws is (`traits.expect.laws-unchecked`)
+module.use -- which sentences a check may use: how it uses them, by instantiation, is `module.use.instantiated`'s, and what a verdict that rests on an `assume` item reports is `implementation.report.unchecked`'s
 module.meta.conservative -- metatheory: argued from the totality of structural recursion (#669)
 module.meta.free -- metatheory: argued from the solver's datatypes and Lean's inductive types (#669)
-module.expansion -- not yet formalized: the second half of the design (#669) computes what each check is reported as from its model, through `check::reported_pass`, and checks strict expansion over it
+module.expansion -- partly formalized: `expansion::strict_expansion` checks it over the model of a module; that the model reads every spec of today's forms is the front ends', from stage 3
 
 # src/Reqs/dev/Testing.md
 lake.reader-inputs -- checked by concrete lakefile/source regressions; no formal binding for ownership, paths and input filters
@@ -269,10 +269,10 @@ module.closure -- the closure of a query's instances: no requirement computes it
 module.closure.finite -- argued in the rule; a requirement over terms comes with stage 3
 module.no-patterns -- an absence: no syntax states instances, and no setting changes them
 implementation.report.vacuity -- the meaning of checks under axioms that cannot hold together
-module.instance.models -- partly formalized: `lang::today_verdict` gives the verdicts of today's forms; the confirmation of a model against axioms is a check of stage 3
 implementation.report.lemma-verdict -- what a pass rests on, which Evidence formalizes; the sentences are those that `lang::module_rests_on` gives
-implementation.report.today-laws -- what is reported of today's laws, which the Modules chapter's rules state (#691)
+implementation.report.today-laws -- what is reported of today's laws, which `module.rules.laws` and `module.instance.quantifiers` state
 implementation.report.stage-5 -- stage 5's messages, which stage 5 states
 
 # src/Reqs/ModuleReports.md
+module.instance.models -- partly formalized: `expansion::today_verdict` gives the verdicts of today's forms; the confirmation of a model against axioms is a check of stage 3
 module.expansion.corpus -- a step of each stage's landing: comparing the corpus before and after

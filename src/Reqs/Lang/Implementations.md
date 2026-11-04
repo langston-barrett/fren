@@ -43,13 +43,13 @@ computed: the trust caveat `F0665` from the model, and the verdict of a
 check of today's forms from today's verdict and the answer of the query
 with the instances. The solver checks over every module that a spec of
 today's forms keeps its verdicts and messages, but for the passes and
-errors that the Modules chapter's strict expansion allows (#691).
+errors that `module.expansion` allows.
 
 > **Note:** This chapter is the second half of the design of #669, which
-> is not implemented yet. The first, in the Modules chapter (#691),
-> specifies modules as theories, lemma and `assume` items, which sentences
-> a check may use, and induction, and changes nothing of how today's forms
-> are checked. Implementations, written `mod x: I<T>` and replacing the
+> is not implemented yet. The first, [Modules](ModulesAndInterfaces.md),
+> specifies modules as theories, lemma and `assume` items and which
+> sentences a check may use, and changes nothing of how today's forms are
+> checked. Implementations, written `mod x: I<T>` and replacing the
 > `inst` to come of Traits stage 1, views, and instantiation come with
 > #669's stage 3. Until then [Traits](Traits.md) says what Fren does.
 
@@ -149,13 +149,16 @@ and for each implementation, each law of its interface as an obligation or
 as a trusted law, and each lemma of its interface translated along it.
 
 r[implementation.use] lang::module_rests_on, lang::axioms_used_anywhere
-The check of an item at a place uses every `assume` item of the module,
+The check of an item other than an interface, at a place, uses every `assume` item of the module,
 wherever it is declared, and each lemma of the module declared before that
 place.
 
 r[implementation.lemma-order] lang::module_rests_on
-The check of an interface's lemma uses the interface's laws, and its
-lemmas declared before it.
+The check of an interface's lemma or expectation uses only the interface's
+laws and its lemmas declared before it: an interface is a closed theory,
+whose checks use no `assume` item, module lemma or translated sentence of
+the module that declares it. An expectation uses all of the interface's
+lemmas.
 
 r[implementation.use.morphism] lang::module_rests_on, lang::lemma_before_implementation
 The check of an item at a place uses the sentences translated along each
@@ -222,6 +225,9 @@ pub struct ModuleItem {
     goals: Int,              -- an interface's expectations, numbered from 0
     implements: Int,         -- an implementation's interface, by its place
     unproved: Set<Int>,      -- the laws that an implementation leaves trusted
+    asked?,                  -- a lemma or `expect` item has `require` clauses or calls
+    asked_lemmas: Set<Int>,  -- an interface's lemmas with `require` clauses or calls
+    asked_goals: Set<Int>,   -- an interface's expectations with assumptions or calls
 }
 
 -- The items of a module in order, the first at place 0.
@@ -238,6 +244,9 @@ pub const NO_ITEM: ModuleItem := ModuleItem {
     goals := 0,
     implements := -1,
     unproved := {},
+    asked? := false,
+    asked_lemmas := {},
+    asked_goals := {},
 }
 
 pub fn item_at(items: ModuleItems, i: Int): ModuleItem := match items {
@@ -327,6 +336,18 @@ pub fn check_place(s: ModuleSentence): Int := match s {
     ModuleSentence::ModuleLemma(t) => t,
     ModuleSentence::ModuleGoal(t) => t,
     _ => -1,
+}
+
+-- Whether the item of the check of `s` has a vacuity check under the
+-- axioms, as `check::law_premise`'s `asked?` takes it: it has `require`
+-- clauses or calls, or, for a trait's expectation, assumptions or calls
+-- (`traits.expect.lawful`).
+pub fn asked_of?(m: ModuleModel, s: ModuleSentence) := match s {
+    ModuleSentence::InterfaceLemma(i, k) => k in item_of(m, i).asked_lemmas,
+    ModuleSentence::InterfaceGoal(i, k) => k in item_of(m, i).asked_goals,
+    ModuleSentence::ModuleLemma(t) => item_of(m, t).asked?,
+    ModuleSentence::ModuleGoal(t) => item_of(m, t).asked?,
+    _ => false,
 }
 
 -- The implementation that `s` is translated along, or -1.
@@ -480,6 +501,9 @@ pub const MONOID: ModuleItem := ModuleItem {
     goals := 0,
     implements := -1,
     unproved := {},
+    asked? := false,
+    asked_lemmas := {},
+    asked_goals := {},
 }
 
 pub const MODULE_LEMMA: ModuleItem := ModuleItem {
@@ -489,6 +513,9 @@ pub const MODULE_LEMMA: ModuleItem := ModuleItem {
     goals := 0,
     implements := -1,
     unproved := {},
+    asked? := false,
+    asked_lemmas := {},
+    asked_goals := {},
 }
 
 pub const SUM: ModuleItem := ModuleItem {
@@ -498,6 +525,9 @@ pub const SUM: ModuleItem := ModuleItem {
     goals := 0,
     implements := 0,
     unproved := {},
+    asked? := false,
+    asked_lemmas := {},
+    asked_goals := {},
 }
 
 -- An implementation of the interface at 0 that leaves its law trusted.
@@ -508,6 +538,9 @@ pub const HALF_SUM: ModuleItem := ModuleItem {
     goals := 0,
     implements := 0,
     unproved := {0},
+    asked? := false,
+    asked_lemmas := {},
+    asked_goals := {},
 }
 
 pub const PARTIAL: ModuleModel := ModuleModel {
@@ -619,6 +652,9 @@ pub const ASSUME_AFTER: ModuleModel := ModuleModel {
                 goals := 0,
                 implements := -1,
                 unproved := {},
+                asked? := false,
+                asked_lemmas := {},
+                asked_goals := {},
             },
             ModuleItems::Nil
         )
@@ -743,11 +779,11 @@ r[module.rules.kinds] lang::ensure_clause, lang::contract_without_result_used
 The binding rule applies to a lemma item and an `assume` item. An `expect`
 that does not meet it is checked, as every goal is. An `ensure` meets it.
 Its sentence is what the clause states of its function at its parameters
-(the Modules chapter's `ensure` as sugar, #691), so it has that application among its
+(`module.ensure.sugar`), so it has that application among its
 applications, whether or not the clause writes the result's name or the
 application. Its clause mentions only items
 declared before its function and the function itself
-(the Modules chapter's signature rule, #691), so its subject is its function, and that
+(`module.signature`), so its subject is its function, and that
 application, whose arguments are its quantified variables, binds them
 all. It is used at each application of its function, as a contract is
 ([Uninterpreted functions](Items.md#uninterpreted-functions)). An `ensure` clause of a procedure is
@@ -805,7 +841,7 @@ types are not listed, the instance is outside the [decidable
 core](Decidability.md). Of a lemma or `assume` item, `undecidable` reports
 it at the sentence, as it reports an [unbounded
 quantifier](Quantifiers.md#unbounded-quantifiers). Sentences of today's
-forms (as the Modules chapter defines them, #691) are linted as written, as today: a law with a
+forms (`module.expansion`) are linted as written, as today: a law with a
 variable of a type that is not listed is reported whether or not it is
 instantiated (`traits.law.undecidable`), and a contract's quantifiers as
 [Quantifiers](Quantifiers.md#unbounded-quantifiers) states. So a law gets
@@ -818,7 +854,7 @@ the set of all those instances.
 
 r[module.closure.finite]
 The closure of every query is finite. Take the items in reverse order
-(in the order of items that the Modules chapter states, #691). Apart from its anchors, which are applications of
+(`module.order.items`). Apart from its anchors, which are applications of
 the query and so add none, an instance applies its subject only to
 quantified variables, which matching binds to proper subterms of the query's
 applications, or to the arguments and outputs of its calls, which no
@@ -833,8 +869,7 @@ r[module.use.instantiated] lang::sentence_use
 A check instantiates the sentences that it may use and that meet the
 binding rule, whose subject the closure applies: every axiom of its module
 and of the modules it imports, wherever it is declared, and each theorem
-declared before the check's item, as the Modules chapter's `use` states
-(#691). An `ensure` is used as a [contract](Items.md#contracts) is.
+declared before the check's item, as `module.use` states. An `ensure` is used as a [contract](Items.md#contracts) is.
 
 r[module.use.subject] lang::sentence_use, lang::no_subject_used
 A sentence is used where its subject is applied by the query, or by an
@@ -1151,10 +1186,10 @@ pub proc ensure_clause(function: Int, variables: SentenceVariables, written: App
     )
 
     -- A clause applies only items declared before its function, and the
-    -- function itself only at its parameters (the Modules chapter's signature rule,
+    -- function itself only at its parameters (`module.signature`,
     -- `lang::contract_application`).
-    assume earlier_items: last_item(written) <= function
-    assume own_at_parameters: not has_compound?(written, function)
+    require earlier_items: last_item(written) <= function
+    require own_at_parameters: not has_compound?(written, function)
 
     expect subject_is_function: last_item(applications) = function
     expect instantiable: instantiation_verdict(variables, applications) = SentenceInstantiation::Instantiable
@@ -1186,16 +1221,11 @@ expect contract_without_result() {
 sentences visible to it and the items that its query applies:
 
 ```fren
--- What a sentence is to the checks that may use it: the role that the
--- Modules chapter's `lang::sentence_role` gives it from its keyword and
--- place (#691).
-pub enum UseRole { Axiom, Theorem, Goal }
-
--- A sentence visible to a check, by its role, whether it is a law of a
--- trait, and where it is declared.
+-- A sentence visible to a check, by its keyword, where it is written, and
+-- where it is declared.
 pub struct Sentence {
-    role: UseRole,
-    law?,
+    kind: SentenceKind,
+    place: SentencePlace,
     position: Int,                   -- its position in declaration order
     variables: SentenceVariables,
     applications: Applications,
@@ -1211,9 +1241,11 @@ pub fn applied_items(apps: Applications): Set<Int> := match apps {
 
 -- Whether `p` may be used by a check of the item at `check`, where its
 -- subject is applied: an axiom, wherever it is declared, or a theorem
--- declared before the item, that meets the binding rule.
+-- declared before the item, that meets the binding rule, each by the role
+-- that `lang::role_of` gives it (`module.role`).
 pub fn fact?(p: Sentence, check: Int) :=
-    (p.role = UseRole::Axiom or (p.role = UseRole::Theorem and p.position < check))
+    (role_of(p.kind, p.place) = SentenceRole::Axiom
+        or (role_of(p.kind, p.place) = SentenceRole::Theorem and p.position < check))
     and instantiation_verdict(p.variables, p.applications) = SentenceInstantiation::Instantiable
 
 -- Whether `p` is used where the query and the instances apply `items`.
@@ -1239,7 +1271,7 @@ pub fn reach(rounds: Sentences, all: Sentences, check: Int, items: Set<Int>): Se
 pub fn quantified_laws(ps: Sentences): Set<Int> := match ps {
     Sentences::Nil => {},
     Sentences::Cons(p, rest) =>
-        (if p.law?
+        (if p.kind = SentenceKind::Law
             and instantiation_verdict(p.variables, p.applications) != SentenceInstantiation::Instantiable
             then {p.position} else {}) union quantified_laws(rest),
 }
@@ -1270,10 +1302,10 @@ pub proc sentence_use(
 
 -- `assume made(fs: Fs, p: Path): exists?(mkdir(fs, p), p)`, with `mkdir`
 -- at 1, `exists?` at 2 and the axiom at 3.
-pub fn made(role: UseRole, law?): Sentences := Sentences::Cons(
+pub fn made(keyword: SentenceKind, place: SentencePlace): Sentences := Sentences::Cons(
     Sentence {
-        role,
-        law?,
+        kind := keyword,
+        place,
         position := 3,
         variables := TWO_VARIABLES,
         applications := Applications::Cons(
@@ -1290,7 +1322,7 @@ pub fn made(role: UseRole, law?): Sentences := Sentences::Cons(
 -- A check that applies `exists?` uses it, and reaches `mkdir`.
 set_option fren.evidence "random" in
 expect made_used() {
-    call r := sentence_use(4, made(UseRole::Axiom, false), {2})
+    call r := sentence_use(4, made(SentenceKind::Assume, SentencePlace::Module), {2})
     expect used: r.used = {3}
     expect reaches_mkdir: 1 in r.reached
 }
@@ -1298,7 +1330,7 @@ expect made_used() {
 -- One that applies only `mkdir` does not.
 set_option fren.evidence "random" in
 expect made_unused() {
-    call r := sentence_use(4, made(UseRole::Axiom, false), {1})
+    call r := sentence_use(4, made(SentenceKind::Assume, SentencePlace::Module), {1})
     expect unused: r.used = {}
 }
 
@@ -1306,13 +1338,13 @@ expect made_unused() {
 -- `assume` item, and a law, as by an expectation written before it.
 set_option fren.evidence "random" in
 expect axioms_anywhere() {
-    call assumed := sentence_use(2, made(UseRole::Axiom, false), {2})
+    call assumed := sentence_use(2, made(SentenceKind::Assume, SentencePlace::Module), {2})
     expect used_before: assumed.used = {3}
 }
 
 set_option fren.evidence "random" in
 expect laws_anywhere() {
-    call law_used := sentence_use(2, made(UseRole::Axiom, true), {2})
+    call law_used := sentence_use(2, made(SentenceKind::Law, SentencePlace::Interface), {2})
     expect used_before: law_used.used = {3}
 }
 
@@ -1320,8 +1352,8 @@ expect laws_anywhere() {
 -- and the law at 3, breaks the binding rule, so every check of its trait
 -- uses it quantified, whatever its query applies.
 pub const UNBOUND_LAW: Sentence := Sentence {
-    role := UseRole::Axiom,
-    law? := true,
+    kind := SentenceKind::Law,
+    place := SentencePlace::Interface,
     position := 3,
     variables := TWO_VARIABLES,
     applications := Applications::Cons(
@@ -1348,8 +1380,8 @@ expect no_subject_used() {
         3,
         Sentences::Cons(
             Sentence {
-                role := UseRole::Axiom,
-                law? := false,
+                kind := SentenceKind::Assume,
+                place := SentencePlace::Module,
                 position := 2,
                 variables := TWO_VARIABLES,
                 applications := Applications::Nil,
@@ -1363,7 +1395,7 @@ expect no_subject_used() {
 
 set_option fren.evidence "random" in
 expect lemmas_ranked() {
-    call lemma := sentence_use(2, made(UseRole::Theorem, false), {2})
+    call lemma := sentence_use(2, made(SentenceKind::Lemma, SentencePlace::Module), {2})
     expect not_before: lemma.used = {}
 }
 
@@ -1371,13 +1403,21 @@ expect lemmas_ranked() {
 -- function's own check does not use it, and a later check does.
 set_option fren.evidence "random" in
 expect defined_contract_not_own() {
-    call own := sentence_use(3, made(UseRole::Theorem, false), {2})
+    call own := sentence_use(
+        3,
+        made(SentenceKind::Ensure, SentencePlace::DefinedFunction),
+        {2},
+    )
     expect not_own: own.used = {}
 }
 
 set_option fren.evidence "random" in
 expect defined_contract_later() {
-    call later := sentence_use(4, made(UseRole::Theorem, false), {2})
+    call later := sentence_use(
+        4,
+        made(SentenceKind::Ensure, SentencePlace::DefinedFunction),
+        {2},
+    )
     expect used_later: later.used = {3}
 }
 ```
@@ -1393,8 +1433,8 @@ expect contract_without_result_used() {
         4,
         Sentences::Cons(
             Sentence {
-                role := UseRole::Axiom,
-                law? := false,
+                kind := SentenceKind::Ensure,
+                place := SentencePlace::UninterpretedFunction,
                 position := 3,
                 variables := TWO_VARIABLES,
                 applications := clause.applications,
@@ -1425,7 +1465,7 @@ expect contract_without_result_used() {
 
 ## Induction by unfolding
 
-[Structural recursion](Recursion.md) (#750) proves a claim of a global
+[Structural recursion](Recursion.md#induction) proves a claim of a global
 expectation by induction on one of its parameters, where its own check is
 Inconclusive, and states the candidates, the cases, their hypotheses and
 what is reported. This section states what the design of #669 adds to it:
@@ -1439,11 +1479,11 @@ lemma more_fuel(f: Fuel, e: Expr): when eval(f, e) is Some(v), eval(Fuel::More(f
 
 **Proof obligations**
 
-r[module.induction]
+r[module.induction] lang::induction_candidate, lang::induction_hypotheses, lang::induction_verdict
 A lemma item is checked by induction where a global expectation with its
-parameters, domain and claims would be (#750). The induction's candidates,
-cases, hypotheses and verdict are those of Recursion's induction, which
-reports a pass by induction as any other pass. Its strict expansion is
+parameters, domain and claims would be. The induction's candidates, cases,
+hypotheses and verdict are those of [Recursion's induction](Recursion.md#induction), which reports a
+pass by induction as any other pass. Its strict expansion is
 `module.expansion.induction`.
 
 r[module.induction.unfolding] lang::arm_decided
@@ -1477,7 +1517,7 @@ pub fn decided?(arms: Arms) := match arms {
     },
 }
 
-set_option fren.evidence "random" in
+set_option fren.evidence "solver" in
 pub proc arm_decided(arms: Arms): (det unfolds?) {
     out unfolds? := decided?(arms)
 
@@ -1517,9 +1557,11 @@ input `laws?` is what `lang::caveat_premise` computes from the model: that
 the check rests on an axiom whose consistency is not checked, a law, a law
 that an implementation leaves trusted or an `assume` item, directly or
 through a lemma translated along an implementation that leaves a law
-trusted. Its input `asked?` holds where the check's item has a vacuity
-check under those axioms: a lemma or a global expectation with `require`
-clauses or calls has one, as an item with assumptions or calls has today.
+trusted. Its input `asked?` is what `lang::asked_of?` computes from the
+model: that the check's item has a vacuity check under those axioms, as a
+lemma or a global expectation with `require` clauses or calls has, and as
+a trait's expectation with assumptions or calls has today
+(`traits.expect.lawful`).
 Contracts and the guarantees of calls carry no caveat, as today.
 
 r[implementation.report.today] lang::today_caveats, lang::today_caveat, lang::today_global_caveat
@@ -1528,41 +1570,13 @@ expectations, global expectations and items that state no claim,
 `lang::caveat_premise` gives `laws?` exactly as today: an expectation of
 an interface rests on its laws where it has some, and a global expectation
 on none. So `F0665` is the same as today on every check of such a module,
-as the Modules chapter's strict expansion requires (#691), and each pass
+as `module.expansion` requires, and each pass
 that it allows to be new carries `F0665` where `check::law_premise` gives
 it.
 
 r[implementation.report.vacuity]
 Where the axioms cannot hold together, every check that uses them holds
 vacuously.
-
-r[module.instance.models] lang::today_verdict::{answers_but_unsat_change_nothing, passes_stay, failures_stay}
-A model of a query whose hypotheses include instances of axioms is a
-model of those instances, not always of the axioms, so it is neither a
-counterexample nor a witness. A check whose sentences are all of today's
-forms keeps today's query, today's laws quantified among its hypotheses
-([Traits](Traits.md#expectations)) and its contracts as today, and adds
-the instances to it. Wherever the query with the instances does not give
-`unsat`, the check has today's verdict and messages, so no model of the
-instances alone is taken as a counterexample, and no pass that the
-quantified laws gave is lost. So the warning of `traits::Pos::undecided`
-in the ui test `test/ui/lang/traits.fren`, that it could not decide
-whether its assumptions hold with the laws, stays. Any other check
-reports such a model as a counterexample, or as a witness, only where Fren
-confirms that the model meets the axioms themselves, and is Inconclusive
-where it does not.
-
-r[module.expansion.instances] lang::today_verdict::{only_undecided_changes, new_pass_caveat}
-A check of today's forms that was not decided may be decided by the
-instances of today's laws, where the query with them gives `unsat`: an
-expectation may pass, carrying `F0665` exactly where
-[`check::law_premise`](../Evidence.md#the-laws-of-a-trait) gives it, and
-assumptions that contradict the laws may be an error (`F0602`) where today
-they are a warning that the check is not decided (`F0608`).
-`lang::today_verdict` computes the new verdict from today's, from the
-instances' answer and from induction, and checks over every module that
-nothing else changes, as the Modules chapter's strict expansion requires
-(#691).
 
 r[implementation.report.lemma-verdict]
 A check uses a lemma whatever the lemma's own verdict. Where the check
@@ -1616,7 +1630,7 @@ expect laws_of_own_interface(m: ModuleModel, n: ModuleSentence, i: Int, j: Int) 
 }
 
 set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
+set_option fren.evidence "solver" in
 pub proc caveat_premise(m: ModuleModel, n: ModuleSentence): (det laws?) {
     out laws? := rests_on_caveat?(m, n)
 
@@ -1646,6 +1660,9 @@ pub const STORE: ModuleModel := ModuleModel {
             goals := 1,
             implements := -1,
             unproved := {},
+            asked? := false,
+            asked_lemmas := {},
+            asked_goals := {},
         },
         ModuleItems::Cons(
             ModuleItem {
@@ -1655,6 +1672,9 @@ pub const STORE: ModuleModel := ModuleModel {
                 goals := 0,
                 implements := -1,
                 unproved := {},
+                asked? := false,
+                asked_lemmas := {},
+                asked_goals := {},
             },
             ModuleItems::Nil
         )
@@ -1695,53 +1715,6 @@ expect today_caveats(m: ModuleModel, n: ModuleSentence) {
 }
 ```
 
-`lang::today_verdict` is the verdict of a check of today's forms:
-
-```fren
--- A check's verdict.
-pub enum TodayVerdict { Pass, Fail, Inconclusive }
-
--- What the query with the instances added answers: `unsat`, or anything
--- else, a model or no answer.
-pub enum InstancesAnswer { Unsat, Other }
-
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "solver" in
-pub proc today_verdict(
-    m: ModuleModel,
-    n: ModuleSentence,               -- the check, of today's forms
-    before: TodayVerdict,            -- the verdict of today's query, with today's laws quantified
-    instances: InstancesAnswer,      -- the answer of that query with the instances added
-    vacuity?,                        -- the check asks whether the item's assumptions can hold
-    induction?,                      -- an induction on a candidate passes (`module.induction`, and Recursion's, #750)
-    asked?,                          -- the item has a vacuity check under the laws, as `check::law_premise` takes it
-): (det after: TodayVerdict, det before_caveat?, det after_caveat?) {
-    -- A model of today's query meets the quantified laws, and so their
-    -- instances.
-    assume sound: not (before = TodayVerdict::Fail and instances = InstancesAnswer::Unsat)
-
-    out after :=
-        if before != TodayVerdict::Inconclusive then before
-        else if instances = InstancesAnswer::Unsat then (if vacuity? then TodayVerdict::Fail else TodayVerdict::Pass)
-        else if induction? and not vacuity? then TodayVerdict::Pass
-        else TodayVerdict::Inconclusive
-    out before_caveat? :=
-        before = TodayVerdict::Pass and not vacuity? and rests_on_caveat?(m, n) and not asked?
-    out after_caveat? :=
-        after = TodayVerdict::Pass and not vacuity? and rests_on_caveat?(m, n) and not asked?
-
-    expect passes_stay: when before = TodayVerdict::Pass, after = TodayVerdict::Pass
-    expect failures_stay: when before = TodayVerdict::Fail, after = TodayVerdict::Fail
-    expect answers_but_unsat_change_nothing: when instances = InstancesAnswer::Other and not induction?,
-        after = before
-    expect only_undecided_changes: when after != before, before = TodayVerdict::Inconclusive
-    expect caveat_kept: when after = before, after_caveat? = before_caveat?
-    expect new_pass_caveat: when before = TodayVerdict::Inconclusive and after = TodayVerdict::Pass,
-        after_caveat? = (rests_on_caveat?(m, n) and not asked?)
-    expect contradiction_only_in_vacuity: when after = TodayVerdict::Fail and before != TodayVerdict::Fail, vacuity?
-}
-```
-
 ## Small modules
 
 `lang::small_modules_acyclic` checks `implementation.rests-on.acyclic`
@@ -1753,7 +1726,7 @@ sentences that rest on no sentence left, until none is left, which a
 cycle would stop. Orders that differ only in which of two interfaces, two
 implementations or three lemmas comes first give the same modules but for
 names, so it takes one order of each kind of item: 210 orders and 16
-modules of each, 3,360 modules. `fren check` decides it in about a minute on a Linux machine, by evaluation, once for each first item.
+modules of each, 3,360 modules. `fren check` decides it in about a minute on a Linux machine, by evaluation, once for each choice and each four first items.
 
 ```fren
 -- An item of a small module.
@@ -1780,6 +1753,9 @@ pub const SMALL_INTERFACE: ModuleItem := ModuleItem {
     goals := 1,
     implements := -1,
     unproved := {},
+    asked? := false,
+    asked_lemmas := {},
+    asked_goals := {},
 }
 
 pub fn implementation_item(implements: Int, partial?): ModuleItem := ModuleItem {
@@ -1789,6 +1765,9 @@ pub fn implementation_item(implements: Int, partial?): ModuleItem := ModuleItem 
     goals := 0,
     implements,
     unproved := if partial? then {1} else {},
+    asked? := false,
+    asked_lemmas := {},
+    asked_goals := {},
 }
 
 pub fn small_item(order: SmallItems, choice: SmallChoice, s: SmallItem): ModuleItem := match s {
@@ -1905,7 +1884,7 @@ pub fn removed_by?(m: ModuleModel, remaining: ModuleSentences, rounds: Rounds) :
     },
 }
 
--- A round for each sentence of a small module, at most 23.
+-- One more round than the 23 candidate sentences of a small module.
 pub const ENOUGH_ROUNDS: Rounds := Rounds::More(
     Rounds::More(
         Rounds::More(
@@ -1958,17 +1937,6 @@ pub fn acyclic_small?(order: SmallItems, choice: SmallChoice) :=
     } in
     removed_by?(m, present(m, candidates_from(order, 0)), ENOUGH_ROUNDS)
 
-pub fn every_choice_acyclic?(order: SmallItems) :=
-    forall (a?: Bool) (b?: Bool) (c?: Bool) (d?: Bool), acyclic_small?(
-        order,
-        SmallChoice {
-            x1_second? := a?,
-            x2_second? := b?,
-            x1_partial? := c?,
-            x2_partial? := d?,
-        }
-    )
-
 -- One order of each class: items of a kind in the order of their names.
 pub fn representative?(order: SmallItems) :=
     place_in(order, SmallItem::I1, 0) < place_in(order, SmallItem::I2, 0)
@@ -2008,10 +1976,10 @@ pub fn without(s: SmallItem, items: SmallItems): SmallItems := match items {
     SmallItems::Cons(x, rest) => if x = s then rest else SmallItems::Cons(x, without(s, rest)),
 }
 
-pub fn orders_acyclic?(os: SmallOrders) := match os {
+pub fn orders_acyclic?(os: SmallOrders, choice: SmallChoice) := match os {
     SmallOrders::Nil => true,
     SmallOrders::Cons(o, rest) =>
-        (not representative?(o) or every_choice_acyclic?(o)) and orders_acyclic?(rest),
+        (not representative?(o) or acyclic_small?(o, choice)) and orders_acyclic?(rest, choice),
 }
 
 pub const SMALL_ITEMS: SmallItems := SmallItems::Cons(
@@ -2034,11 +2002,49 @@ pub const SMALL_ITEMS: SmallItems := SmallItems::Cons(
     )
 )
 
--- Every small module whose first item is `first`.
+-- Every small module whose first four items are `first` to `fourth`, of
+-- the choice `x1_second?` to `x2_partial?`, so that each case is six
+-- orders, and enumeration still sees every order and choice.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "enumerated" in
-expect small_modules_acyclic(first: SmallItem) {
-    expect acyclic: orders_acyclic?(prefix_each(first, orders(without(first, SMALL_ITEMS))))
+expect small_modules_acyclic(
+    first: SmallItem,
+    second: SmallItem,
+    third: SmallItem,
+    fourth: SmallItem,
+    x1_second?,
+    x2_second?,
+    x1_partial?,
+    x2_partial?,
+) {
+    assume distinct: first != second and first != third and first != fourth
+        and second != third and second != fourth and third != fourth
+    expect acyclic: orders_acyclic?(
+        prefix_each(
+            first,
+            prefix_each(
+                second,
+                prefix_each(
+                    third,
+                    prefix_each(
+                        fourth,
+                        orders(
+                            without(
+                                fourth,
+                                without(third, without(second, without(first, SMALL_ITEMS)))
+                            )
+                        )
+                    )
+                )
+            )
+        ),
+        SmallChoice {
+            x1_second?,
+            x2_second?,
+            x1_partial?,
+            x2_partial?,
+        }
+    )
 }
 ```
 
@@ -2047,9 +2053,8 @@ expect small_modules_acyclic(first: SmallItem) {
 > locales and their interpretations; and Lean's and Coq's type classes,
 > whose instances are resolved where they are in scope.
 
-The Lean-hosted front end checks this chapter's items by name, since no
-`#fren_check` of its Lean file comes after it, and one without a path would
-check every earlier chapter again:
+The Lean-hosted front end checks this chapter's items by name, since a
+`#fren_check` without a path would check every earlier chapter again:
 
 ```fren
 #fren_check module_sentence
@@ -2093,6 +2098,5 @@ check every earlier chapter again:
 #fren_check today_caveat
 #fren_check today_global_caveat
 #fren_check today_caveats
-#fren_check today_verdict
 #fren_check small_modules_acyclic
 ```

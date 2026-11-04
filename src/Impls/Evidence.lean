@@ -121,7 +121,7 @@ trusted lang::dispatch: "the design of dispatch (#669, stage 3); no front end di
 trusted lang::sentence_instantiation: "the design of instantiation (#669, stage 3); no front end instantiates these items yet, and its examples are checked by testing"
 trusted lang::ensure_clause: "the design of contracts as sentences (#669, stage 3); nothing reads an ensure clause as a sentence yet, and its expectations are checked by testing"
 trusted lang::sentence_use: "the design of instantiation (#669, stage 3); no front end chooses what a check uses yet, and its examples are checked by testing"
-trusted lang::today_verdict: "the design of the verdicts of today's forms under instantiation (#669, stage 3); the solver checks strict expansion of it over every module"
+trusted expansion::today_verdict: "the design of the verdicts of today's forms under instantiation (#669, stage 3); the solver checks strict expansion of it over every model and kind"
 trusted lang::arm_decided: "the design of induction by unfolding (#669, stage 4); nothing implements unfolding yet, and its expectations are checked by testing"
 trusted lang::caveat_premise: "the design of what a check reports of the axioms it rests on (#669, stage 3); the solver checks it against today's reports of modules of today's forms"
 
