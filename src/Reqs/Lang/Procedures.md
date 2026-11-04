@@ -299,6 +299,10 @@ pub proc shadowing(
 
 ## Meaning
 
+[Modules](ModulesAndInterfaces.md) designs lemma and `assume` items that
+relate procedures through calls, procedures as members of interfaces, and
+`require` in place of a procedure's `assume`.
+
 A procedure is a relation between its inputs `i` and its outputs `o`. Let
 `A(i)` be the conjunction of its assumptions and `R(i, o)` the conjunction
 of its guarantees. The system meets the procedure if, whenever `A(i)`

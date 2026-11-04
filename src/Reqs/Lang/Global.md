@@ -86,6 +86,10 @@ pub proc block_member(
 }
 ```
 
+[Modules](ModulesAndInterfaces.md) designs lemma items, which have a global
+expectation's checks and which later checks use, and `require` in place of
+the block's `assume`.
+
 ## The short form
 
 `expect n: e`, without parameters or a block, is a claim about
