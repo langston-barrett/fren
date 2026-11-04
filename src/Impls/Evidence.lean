@@ -112,9 +112,9 @@ trusted lang::named: "no front end elaborates a name into the semantics' abstrac
 -- Modules as theories, and the items that state claims
 -- (`Reqs/Lang/ModulesAndInterfaces`), are a design that no front end
 -- implements yet (#669), so there is no code to bind them to.
-trusted lang::sentence_place: "the design of lemma, assume and law items (#669); no front end reads them yet, and its expectations are checked by enumeration"
-trusted lang::sentence_member: "the design of lemma, assume and law items (#669); no front end reads lemma or assume blocks yet, and its expectations are checked by enumeration"
-trusted lang::sentence_role: "the design of lemma, assume and law items (#669); no front end classifies these items yet, and its expectations are checked by testing"
+trusted lang::sentence_place: "the design of the places of claim items and clauses (#669); no front end decides acceptance by it yet, and its expectations are checked by enumeration"
+trusted lang::sentence_member: "the design of the blocks of lemma and assume items (#669); no front end decides block members by it yet, and its expectations are checked by enumeration"
+trusted lang::sentence_role: "the design of the roles of sentences (#669); no front end decides roles by it yet, and its expectations are checked by testing"
 trusted lang::lemma_order: "the design of the order of lemma items (#669, stage 3); nothing reads lemma items yet, and its expectations are checked by testing"
 
 -- The matrix of what each method can conclude is a design, refined by

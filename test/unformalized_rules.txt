@@ -241,7 +241,7 @@ module.meaning -- partly formalized: `lang::global_checks` gives the checks of a
 module.meaning.procedures -- partly formalized: `lang::global_checks` gives the checks of a global expectation's calls; the constraint of an `assume` item's calls on its procedures is not modelled
 module.signature -- partly formalized: the requirements decide that an `assume`, `expect` or `law` item may apply a later item; that clauses keep the order of contracts, and the change to `lang::declared_before`, are stage 3's
 module.order.items -- a definition of the order of items
-module.use -- which sentences a check may use: how it uses them, by instantiation, comes with the second half of the design (#669), over its model
+module.use -- which sentences a check may use: how it uses them, by instantiation, comes with the second half of the design (#669), over its model, which also reports a verdict that rests on an `assume` item as one under today's unchecked laws is (`traits.expect.laws-unchecked`)
 module.meta.conservative -- metatheory: argued from the totality of structural recursion (#669)
 module.meta.free -- metatheory: argued from the solver's datatypes and Lean's inductive types (#669)
 module.expansion -- not yet formalized: the second half of the design (#669) computes what each check is reported as from its model, through `check::reported_pass`, and checks strict expansion over it

@@ -494,9 +494,9 @@ check rests on (#669).
 
 **Legality rules**
 
-r[module.signature] lang::lemma_order::axioms_unordered, lang::law_before_method
+r[module.signature] lang::lemma_order::axioms_and_goals_unordered, lang::law_before_method
 A module's *signature* is its items other than its lemma, `assume`,
-`expect` and `law` items: its types, functions and procedures. A module
+`expect` and `law` items: its types, enumerations' variants, constants, functions and procedures. A module
 declares its signature as a whole. An `assume`, `expect` or `law` item
 may mention any item of its own module's signature, wherever it is
 declared, and the items of the modules that its module imports. This changes, for those items, the order of
@@ -504,8 +504,9 @@ declarations that [`lang::declared_before`](Items.md#items) states, and
 which [Global expectations](Global.md) states for a global expectation's
 procedures. A spec that is accepted today stays accepted, and stage 3
 changes `lang::declared_before` to match. A `require` or `ensure` clause mentions only
-the items declared before its function or procedure, and the item itself,
-as [Contracts](Items.md#contracts) states.
+the items declared before its function or procedure, and, in an `ensure`
+clause of a function, the function itself at its parameters, as
+[Contracts](Items.md#contracts) states.
 
 r[module.order.lemma] lang::lemma_order
 A lemma item applies and calls only the items declared before it, and the
@@ -554,7 +555,7 @@ pub proc lemma_order(
 ): (det reported: Int) {
     out reported := if keyword = SentenceKind::Lemma then first_later(applied, position, 0) else -1
 
-    expect axioms_unordered: when keyword in {
+    expect axioms_and_goals_unordered: when keyword in {
         SentenceKind::Assume,
         SentenceKind::Law,
         SentenceKind::Expect,
