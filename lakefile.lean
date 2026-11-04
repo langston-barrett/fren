@@ -130,11 +130,6 @@ lean_lib FrenElab where
 def reqsArgs : Array String :=
   if (get_config? check_reqs).isSome then #[] else #["-Dweak.fren.runChecks=false"]
 
--- SubsetTypes and BooleanBlocks allowed this lint for the later chapters
--- of the old Reqs.Lang module. Set their initial level without recording a
--- new user-written setting, which could itself receive a lint.
-def reqsLangArgs : Array String := reqsArgs ++ #["-Dweak.fren.lint.undecidable=allow"]
-
 -- Fren's own requirements, written in Fren, elaborated on every build. They
 -- are Markdown specs (`src/Reqs/*.md`) read by `#fren_md`, which Lake can't
 -- see, hence `needs`. The libraries after `Reqs` hold its modules by the
@@ -221,7 +216,7 @@ input_file reqs_lang_subset_types_md where
 lean_lib ReqsLangBooleanBlocks where
   globs := #[`Reqs.Lang.BooleanBlocks]
   needs := #[`@/reqs_lang_boolean_blocks_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_boolean_blocks_md where
   path := "src/Reqs/Lang/BooleanBlocks.md"
@@ -230,7 +225,7 @@ input_file reqs_lang_boolean_blocks_md where
 lean_lib ReqsLangItems where
   globs := #[`Reqs.Lang.Items]
   needs := #[`@/reqs_lang_items_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_items_md where
   path := "src/Reqs/Lang/Items.md"
@@ -239,7 +234,7 @@ input_file reqs_lang_items_md where
 lean_lib ReqsLangGenerics where
   globs := #[`Reqs.Lang.Generics]
   needs := #[`@/reqs_lang_generics_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_generics_md where
   path := "src/Reqs/Lang/Generics.md"
@@ -248,7 +243,7 @@ input_file reqs_lang_generics_md where
 lean_lib ReqsLangGenericFunctions where
   globs := #[`Reqs.Lang.GenericFunctions]
   needs := #[`@/reqs_lang_generic_functions_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_generic_functions_md where
   path := "src/Reqs/Lang/GenericFunctions.md"
@@ -257,7 +252,7 @@ input_file reqs_lang_generic_functions_md where
 lean_lib ReqsLangTraits where
   globs := #[`Reqs.Lang.Traits]
   needs := #[`@/reqs_lang_traits_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_traits_md where
   path := "src/Reqs/Lang/Traits.md"
@@ -266,7 +261,7 @@ input_file reqs_lang_traits_md where
 lean_lib ReqsLangPrelude where
   globs := #[`Reqs.Lang.Prelude]
   needs := #[`@/reqs_lang_prelude_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_prelude_md where
   path := "src/Reqs/Lang/Prelude.md"
@@ -275,7 +270,7 @@ input_file reqs_lang_prelude_md where
 lean_lib ReqsLangScope where
   globs := #[`Reqs.Lang.Scope]
   needs := #[`@/reqs_lang_scope_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_scope_md where
   path := "src/Reqs/Lang/Scope.md"
@@ -284,7 +279,7 @@ input_file reqs_lang_scope_md where
 lean_lib ReqsLangProcedures where
   globs := #[`Reqs.Lang.Procedures]
   needs := #[`@/reqs_lang_procedures_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_procedures_md where
   path := "src/Reqs/Lang/Procedures.md"
@@ -293,7 +288,7 @@ input_file reqs_lang_procedures_md where
 lean_lib ReqsLangGlobal where
   globs := #[`Reqs.Lang.Global]
   needs := #[`@/reqs_lang_global_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_global_md where
   path := "src/Reqs/Lang/Global.md"
@@ -302,7 +297,7 @@ input_file reqs_lang_global_md where
 lean_lib ReqsLangDecidability where
   globs := #[`Reqs.Lang.Decidability]
   needs := #[`@/reqs_lang_decidability_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_decidability_md where
   path := "src/Reqs/Lang/Decidability.md"
@@ -311,7 +306,7 @@ input_file reqs_lang_decidability_md where
 lean_lib ReqsLangPatterns where
   globs := #[`Reqs.Lang.Patterns]
   needs := #[`@/reqs_lang_patterns_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_patterns_md where
   path := "src/Reqs/Lang/Patterns.md"
@@ -320,7 +315,7 @@ input_file reqs_lang_patterns_md where
 lean_lib ReqsLangLet where
   globs := #[`Reqs.Lang.Let]
   needs := #[`@/reqs_lang_let_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_let_md where
   path := "src/Reqs/Lang/Let.md"
@@ -329,7 +324,7 @@ input_file reqs_lang_let_md where
 lean_lib ReqsLangQuantifiers where
   globs := #[`Reqs.Lang.Quantifiers]
   needs := #[`@/reqs_lang_quantifiers_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_quantifiers_md where
   path := "src/Reqs/Lang/Quantifiers.md"
@@ -338,7 +333,7 @@ input_file reqs_lang_quantifiers_md where
 lean_lib ReqsLangElementQuantifiers where
   globs := #[`Reqs.Lang.ElementQuantifiers]
   needs := #[`@/reqs_lang_element_quantifiers_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_element_quantifiers_md where
   path := "src/Reqs/Lang/ElementQuantifiers.md"
@@ -347,7 +342,7 @@ input_file reqs_lang_element_quantifiers_md where
 lean_lib ReqsLangSemantics where
   globs := #[`Reqs.Lang.Semantics]
   needs := #[`@/reqs_lang_semantics_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_semantics_md where
   path := "src/Reqs/Lang/Semantics.md"
@@ -356,7 +351,7 @@ input_file reqs_lang_semantics_md where
 lean_lib ReqsLangEvaluationRules where
   globs := #[`Reqs.Lang.EvaluationRules]
   needs := #[`@/reqs_lang_evaluation_rules_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_evaluation_rules_md where
   path := "src/Reqs/Lang/EvaluationRules.md"
@@ -365,7 +360,7 @@ input_file reqs_lang_evaluation_rules_md where
 lean_lib ReqsLangExpressions where
   globs := #[`Reqs.Lang.Expressions]
   needs := #[`@/reqs_lang_expressions_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_expressions_md where
   path := "src/Reqs/Lang/Expressions.md"
@@ -374,7 +369,7 @@ input_file reqs_lang_expressions_md where
 lean_lib ReqsLangHigherOrder where
   globs := #[`Reqs.Lang.HigherOrder]
   needs := #[`@/reqs_lang_higher_order_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_higher_order_md where
   path := "src/Reqs/Lang/HigherOrder.md"
@@ -383,7 +378,7 @@ input_file reqs_lang_higher_order_md where
 lean_lib ReqsLangRecursion where
   globs := #[`Reqs.Lang.Recursion]
   needs := #[`@/reqs_lang_recursion_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_recursion_md where
   path := "src/Reqs/Lang/Recursion.md"
@@ -392,7 +387,7 @@ input_file reqs_lang_recursion_md where
 lean_lib ReqsLangScopeLaws where
   globs := #[`Reqs.Lang.ScopeLaws]
   needs := #[`@/reqs_lang_scope_laws_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_scope_laws_md where
   path := "src/Reqs/Lang/ScopeLaws.md"
@@ -401,7 +396,7 @@ input_file reqs_lang_scope_laws_md where
 lean_lib ReqsLangModulesAndInterfaces where
   globs := #[`Reqs.Lang.ModulesAndInterfaces]
   needs := #[`@/reqs_lang_modules_and_interfaces_md]
-  moreLeanArgs := reqsLangArgs
+  moreLeanArgs := reqsArgs
 
 input_file reqs_lang_modules_and_interfaces_md where
   path := "src/Reqs/Lang/ModulesAndInterfaces.md"

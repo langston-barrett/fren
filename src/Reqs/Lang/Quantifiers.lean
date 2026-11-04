@@ -5,5 +5,5 @@ open Fren.Lang
 
 #fren_md "Quantifiers.md"
 
--- These items used to be checked by a later chapter in Reqs.Lang.
+-- Check items declared after the chapter's last #fren_check, if any.
 #fren_check

@@ -1217,7 +1217,8 @@ def uncheckedHostedItems (chunks : Array (String × Array String)) : Array (Stri
 /-- The problems of Lean's checks of `src/Reqs`: each procedure or global
 expectation in a chapter is checked in its Lean module. Expand each
 `#fren_md` in place, so a check in a Lean wrapper counts just as one in
-Markdown does. Imports do not check the importing module's items. -/
+Markdown does. A check in an imported module does not count for items
+declared in the importing module. -/
 def hostedChecks : IO (Array String) := do
   let mut failures := #[]
   for entry in ← sortedFiles "src/Reqs" "lean" do

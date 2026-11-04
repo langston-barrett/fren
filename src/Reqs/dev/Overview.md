@@ -5,9 +5,10 @@ How Fren is built and tested, and where it is going.
 New requirements are added to the reference first, and checked with Fren
 before they are implemented. The pages of the reference that contain `fren`
 blocks are read by thin Lean files in `src/Reqs` with `#fren_md`, so `lake
-build` elaborates them: `src/Reqs/Lang.lean` reads every page in
-`src/Reqs/Lang/` except Modules and Calls, which, like the other chapters,
-have their own Lean file and module. `lake test` checks the same pages with
+build` elaborates them. Each chapter in `src/Reqs/Lang/` has a Lean
+module alongside it, imported by the `src/Reqs/Lang.lean` umbrella, except
+Modules, Calls and Refinement, whose wrappers are `Reqs.Modules`,
+`Reqs.Calls` and `Reqs.Refine`. `lake test` checks the same pages with
 the `fren` command, and Lean checks them on `main`
 ([Testing](Testing.md#own-requirements)). Pages that are only prose, such
 as this one, are not read.
