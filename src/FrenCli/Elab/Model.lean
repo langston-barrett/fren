@@ -1329,7 +1329,7 @@ def noteRecUse (span : Span) (f : Name) (ps : Array Name) (u : Fren.Core.RecUse)
   if (← get).recUses.any (·.1 == span) then return
   modify fun s => { s with recUses := s.recUses.push (span, u) }
   let uses := (← get).recUses
-  if let .notStructural _ i := Fren.Core.recursion ps.size (uses.toList.map (·.2)) then
+  if let .notStructural _ i := Fren.Core.selfRecursion ps.size (uses.toList.map (·.2)) then
     -- A function always has a parameter; without one, the message names the function.
     err span (Fren.Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr))
 

@@ -1625,7 +1625,8 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
   modify fun s => { s with recUses := #[], recApps := #[], recMatches := #[] }
   let (smt, t) ← elabExpr cx body
   let uses := (← get).recUses
-  let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
+  -- Existing self-recursion is a singleton structural group.
+  let recursion := Fren.Core.selfRecursion vars.size (uses.toList.map (·.2))
   if let .structural i := recursion then
     if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
     modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path, recursiveDecreasing := s.recursiveDecreasing.insert path i }

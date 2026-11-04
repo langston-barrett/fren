@@ -1,0 +1,16 @@
+-- fren-covers: lang::structural_group, lang::structural_recursion
+set_option fren.lint.dead_code "allow"
+
+mod recursion_group_singleton
+
+pub enum T { End, Pair(T, T) }
+
+-- Each call decreases somewhere, but there is no common parameter.
+fn inconsistent(a: T, b: T): Int := match a {
+    T::End => 0,
+    T::Pair(l, _) => match b {
+        T::End => 0,
+        T::Pair(r, _) => inconsistent(l, b) + inconsistent(a, r),  --~ error: defined function `recursion_group_singleton::inconsistent` is not structurally recursive
+    },
+}
+

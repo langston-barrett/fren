@@ -2,6 +2,7 @@
 import Fren
 import FrenCli.Run
 import FrenTest.Frontends
+import FrenTest.FuzzRecursion
 import FrenTest.Messages
 import FrenTest.SpecTimeout
 import Lean.Elab.Frontend
@@ -2721,6 +2722,8 @@ structure Mode where
   /-- Specs of a clause written with the other block's keyword
   (`Wide.genKeywords`). -/
   keywords : Bool := false
+  /-- Singleton structural-group clients, including isolated invalid uses. -/
+  recursionPositions : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
@@ -2738,15 +2741,15 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
     Id.run ((if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
       else if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
-      else Wide.genWide m.avoidKnown).run' (rngOf seed))
+      else if m.recursionPositions then FrenTest.FuzzRecursion.gen else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
-`--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`
+`--induction-forms`, `--keywords` and `--recursion-positions`. The empty prefix of `--scrutinees`
 makes any static error a group error: that generator, like an appended
 group, promises to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
@@ -2754,18 +2757,19 @@ def Mode.args (m : Mode) : Array String :=
     (if m.sites then #["--sites"] else #[]) ++ (if m.confirm then #["--confirm"] else #[]) ++
     (if m.scrutinees then #["--scrutinees"] else #[]) ++
     (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[]) ++
-    (if m.keywords then #["--keywords"] else #[])
+    (if m.keywords then #["--keywords"] else #[]) ++
+    (if m.recursionPositions then #["--recursion-positions"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords"]) then
+      "--keywords", "--recursion-positions"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
-           keywords := args.contains "--keywords" }
+           keywords := args.contains "--keywords", recursionPositions := args.contains "--recursion-positions" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -2774,7 +2778,8 @@ def Mode.lean (m : Mode) : String :=
     (if m.sites then ["sites := true"] else []) ++ (if m.confirm then ["confirm := true"] else []) ++
     (if m.scrutinees then ["scrutinees := true"] else []) ++
     (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else []) ++
-    (if m.keywords then ["keywords := true"] else [])
+    (if m.keywords then ["keywords := true"] else []) ++
+    (if m.recursionPositions then ["recursionPositions := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3416,7 +3421,7 @@ def corpus : List (Mode × Nat × Nat) :=
   [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
-    ({ inductionForms := true }, 0, 20)]
+    ({ inductionForms := true }, 0, 20), ({ recursionPositions := true }, 0, 20)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -3988,10 +3993,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--recursion-positions] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4009,9 +4014,9 @@ unsafe def main (args : List String) : IO UInt32 := do
   let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
                        sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
                        inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
-                       keywords := args.contains "--keywords" }
+                       keywords := args.contains "--keywords", recursionPositions := args.contains "--recursion-positions" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
-    && a != "--inductions" && a != "--induction-forms" && a != "--keywords")
+    && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--recursion-positions")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0
