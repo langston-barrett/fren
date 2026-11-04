@@ -19,6 +19,7 @@ import Impls.Global
 import Impls.Guards
 import Impls.HigherOrder
 import Impls.Impl
+import Impls.Induction
 import Impls.Lang
 import Impls.Lint
 import Impls.Markdown
@@ -48,6 +49,9 @@ tested cli::fix_static_errors: "src/FrenTestMain.lean"
 
 tested lang::global_checks: "test/ui/lang/global.fren", "test/ui/lang/global_preconditions.fren"
 tested lang::global_successor: "test/ui/lang/global_preconditions.fren"
+tested lang::induction_candidate: "test/ui/checks/induction.fren"
+tested lang::induction_hypotheses: "test/ui/checks/induction.fren"
+tested lang::induction_verdict: "test/ui/checks/induction.fren"
 tested lang::trait_expectation: "test/ui/lang/traits.fren"
 tested view::inconclusive_reported: "src/FrenTest/InconclusiveReported.lean", "test/ui/lang/traits.fren", "test/ui/lang/traits_frontends.fren"
 tested refinement::positional_refinement: "test/ui/lang/refines.fren", "src/FrenTest/RefinesTests.lean"

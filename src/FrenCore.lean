@@ -9,6 +9,7 @@ import FrenCore.Evidence
 import FrenCore.FnBlocks
 import FrenCore.Generics
 import FrenCore.Goals
+import FrenCore.Induction
 import FrenCore.Lexical
 import FrenCore.Lint
 import FrenCore.Literate

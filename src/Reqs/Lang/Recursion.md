@@ -359,6 +359,214 @@ other hosted checks, solver steps use `trust := true`; no goal may be
 left unproved. Constructor matches with guards must preserve structural
 recursion, or be rejected by both front ends with `F0449`.
 
+## Induction
+
+A claim about every value of a recursive enumeration is often true by
+induction but not by one step of each function's equations, as `adds`
+below is: its check is Inconclusive (`F0450`), since `len` and `append`
+are opaque past their first step.
+
+```text
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn len(l: L): Int := match l { L::Nil => 0, L::Cons(_, r) => 1 + len(r) }
+
+pub fn append(a: L, b: L): L := match a {
+    L::Nil => b,
+    L::Cons(h, t) => L::Cons(h, append(t, b)),
+}
+
+expect len_append(a: L, b: L) {
+    expect adds: len(append(a, b)) = len(a) + len(b)
+}
+```
+
+Where a [global expectation](Global.md)'s check of a claim is
+Inconclusive, Fren tries to prove the claim by induction on each of the
+expectation's parameters that is a *candidate*, in the order of the
+parameters, until one proves it, where its generated function is accepted
+(below). `lang::induction_candidate` states which
+parameters are. The expectation's block has only assumptions, claims and
+scenarios, and applies no uninterpreted function. No parameter's type is a
+subset type, or has one as a type argument or an element type, as
+`lang::subset_widening`'s `restricted?` reads a declared type: a payload
+of a parameter's enumeration may still have one, as it brings an
+invariant as a fact, never an obligation. The parameter's type is a recursive
+enumeration with a payload of that same type. And the parameter is the
+argument at the decreasing parameter of an application of a structural
+recursion in the block, written as its name.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc induction_candidate(
+    members: Set<BlockMember>,   -- the kinds of the members of the expectation's block
+    abstract?,                   -- the block applies an uninterpreted function
+    constrained?,                -- some parameter's type is a subset type, or has one as a type argument or element type (`lang::subset_widening`'s `restricted?`)
+    recursive?,                  -- the parameter's type is an enumeration with a payload of that type (`lang::directly_recursive`)
+    decreasing?,                 -- the parameter is the argument at the decreasing parameter of an application in the block
+): (det candidate?) {
+    use self::BlockMember::{Assume, Cover, Expect}
+
+    ensure rule: candidate? iff (members subset {Assume, Expect, Cover} and not abstract? and not constrained?
+        and recursive? and decreasing?)
+}
+```
+
+`lang::directly_recursive` states when the parameter's type is one, from
+the types of its enumeration's variants' payloads, at its type arguments,
+as `G<Int>`'s payload `G<A>` is `G<Int>`: where some payload's type is the
+parameter's.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc directly_recursive(
+    ty: Int,                     -- the parameter's type, by an identifier
+    payloads: Seq<Seq<Int>>,     -- each variant's payloads' types, at the type's arguments, by an identifier
+): (det recursive?) {
+    ensure rule: recursive? iff (exists (k: Int), 0 <= k < payloads.len and ty in payloads[k])
+}
+```
+
+Induction on a parameter `x` is the check, by Hoare's rule
+([Contracts](#contracts)), of the contract of a function that Fren
+generates from the claim. Its parameters are the expectation's. Its body
+is a `match` on `x` with an arm for each variant, in order, whose pattern
+binds each payload. An arm's value is the conjunction of the function's
+applications to the arm's *children*, the payloads of `x`'s type, with the
+other parameters as `lang::induction_hypotheses` states. In an arm without
+children it is `true`. Its postcondition is the function's application to
+its parameters, and the claim under the expectation's assumptions.
+Of `adds`, it is, but for its name and its binders' names, which are
+generated, the function
+
+```text
+fn adds_on_a?(a: L, b: L): Bool := match a {
+    L::Nil => true,
+    L::Cons(p0, p1) => adds_on_a?(p1, b),
+}
+```
+
+with the postcondition, named `claim`, that a [function
+block](Items.md#function-blocks)'s `ensure` lowers to:
+
+```text
+ensure claim: adds_on_a?(a, b) and len(append(a, b)) = len(a) + len(b)
+```
+
+whose check has the claim at `p1` and `b` as a hypothesis where `a` is
+`L::Cons(p0, p1)`, from the postcondition at its recursive application.
+The postcondition has the function's application, so that its check has
+the body, and the facts of the applications in it. A Boolean payload is
+bound to a name that ends with `?`. The function, its body and its checks
+are internal, so nothing about them is reported. Its name, as its binders',
+starts with `#`, which no source can write, so nothing but the function
+itself can apply it: an application elsewhere would rest on its contract,
+which is checked only where the claim's own check is Inconclusive. Nor is
+a generated name ever offered as a similar name for one that is not found
+(`F0201`), since a fix that wrote it could not be read.
+
+In each arm, the function is applied once to each child, in order, at the
+position of `x`, and at each other position to the parameter there: the
+claim at the child, with the other parameters as they are, which are the
+case's ground terms of their types before any unfolding.
+`lang::induction_hypotheses` numbers the case's variables, which are the
+parameters, then the arm's payloads, and states the applications. Each
+argument at another position could be any term of its type, since the
+claim holds at every value of the other parameters; but each other choice
+of terms multiplies the applications, and a claim over several
+parameters of a type with several children, as `Models.md`'s are over
+`Expr<Id>`, would have thousands.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc induction_hypotheses(
+    types: Seq<Int>,            -- the type of each of the case's variables, by an identifier
+    n_params: Int,              -- how many of them are parameters
+    induction_on: Int,          -- the parameter that the induction is on
+    hypotheses: Set<Seq<Int>>,  -- the arguments of each application, by position among the case's variables
+): (det generated?) {
+    assume parameter: 0 <= induction_on < n_params <= types.len
+
+    ensure rule: generated? iff ((forall (h: Seq<Int>), when h in hypotheses, h.len = n_params
+        -- A child at the parameter's position.
+        and n_params <= h[induction_on] < types.len and types[h[induction_on]] = types[induction_on]
+        -- At each other position, the parameter there.
+        and (forall (j: Int), when 0 <= j < n_params and j != induction_on, h[j] = j))
+        -- Each child.
+        and (forall (c: Int), when n_params <= c < types.len and types[c] = types[induction_on],
+        exists (h: Seq<Int>), h in hypotheses and h[induction_on] = c))
+}
+```
+
+The induction passes where the generated function's postcondition passes.
+`lang::induction_verdict` states what is reported, from the claim's own
+check and the inductions tried, in order: a pass where the claim's check
+is Inconclusive and some induction passes, and the claim's own verdict
+otherwise. A pass is reported as any other; it is not reported that it
+was by induction. It is tried wherever the claim's check is Inconclusive,
+also where that check ran out of time, and then each candidate's check
+may take as long. But it is not tried where the check is Inconclusive
+because the solver's model of it contradicts Fren's semantics, an
+internal error that the check reports ([Reporting](../Models.md#reporting)):
+the translation that the induction's check would rest on is in doubt
+there, and a pass beside that error would contradict it. So induction
+never fails a check, and never changes a check that passes or fails: only
+an Inconclusive one may pass.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc induction_verdict(
+    direct: RecPost,
+    refuted?,                    -- the claim's check is Inconclusive as the solver's model of it contradicts Fren's semantics
+    attempts: Seq<RecPost>,
+): (det reported: RecPost) {
+    ensure rule: reported = (if direct = RecPost::Inconclusive and not refuted?
+        and (exists (k: Int), 0 <= k < attempts.len and attempts[k] = RecPost::Passed)
+        then RecPost::Passed else direct)
+
+    expect strict: when direct != RecPost::Inconclusive, reported = direct
+    expect internal_error_kept: when refuted?, reported = direct
+}
+```
+
+A candidate is tried only where its generated function is accepted: it
+elaborates as any defined function does, with no static error, and
+`lang::structural_recursion` makes it a structural recursion that
+decreases at `x`. Otherwise the candidate is not tried, and nothing is
+reported of it, so where no candidate is tried, the claim keeps its own
+check's verdict and message. That happens, for one, to an enumeration of
+another module: the function's patterns write its variants from the root
+(`self::` only for the expectation's own module), as a path in a pattern
+cannot be written ([Resolution](Modules.md#resolution)), so the function
+does not elaborate (#669).
+
+The induction is sound, and adds nothing to what checks trust, since it
+is a check of a structural recursion's contract by Hoare's rule:
+
+- The generated function, which is tried only where it is accepted (above),
+  is a structural recursion that decreases at `x`
+  (`lang::structural_recursion`). At `x`'s position, each of its
+  applications has a binder of a payload of `x`, its `match`'s scrutinee.
+  At any other position, the application to the parameters there has the
+  parameter itself. So its termination measure is the structural one, on
+  `x`.
+- Its contract holds by Hoare's rule. So for all values of the
+  parameters, the function's application and the claim under the
+  assumptions both hold, and the claim holds where the assumptions do,
+  which is what the expectation claims.
+- Each argument has its parameter's type, with no invariant to meet, since
+  no parameter has a subset type, and a child has `x`'s type. The function
+  has no precondition. So its applications have no obligation that its
+  check leaves unchecked.
+
+Induction on a parameter does not yet unfold an application beyond one
+step where the case decides its arm, nor take earlier claims as
+hypotheses. It does not apply to a global expectation in its short form,
+to children within a sequence, or to mutually recursive enumerations
+(#669).
+
 ## Generic recursion
 
 A generic function that is a structural recursion, as
@@ -592,6 +800,10 @@ functions to quantifier-free queries.
 #fren_check recursive_facts
 #fren_check merged_facts
 #fren_check recursive_post_result
+#fren_check induction_candidate
+#fren_check directly_recursive
+#fren_check induction_hypotheses
+#fren_check induction_verdict
 #fren_check recursion_formulas
 #fren_check recursive_counterexample
 #fren_check counterexample_confirmed

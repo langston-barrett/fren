@@ -966,6 +966,24 @@ partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Sym
       pure (← Fren.Core.checkCompLawful bk core ks examples interprets (some take), none)
   let (results, refuted) := applyRefutations raw (← log.get)
   let results := Fren.Core.recursiveResults c.recursive results
+  -- A claim of a global expectation that its check leaves inconclusive:
+  -- the postcondition of each function generated for induction on its
+  -- parameters, in order, until one passes (`lang::induction_verdict`).
+  let results ← results.mapM fun r => do
+    let some (_, fns) := c.inductions.find? fun (n, _) => r.kind == .expect && r.prop? == some n | return r
+    -- Not where the solver's model contradicts Fren's semantics, an
+    -- internal error that the check reports.
+    if r.verdict != .inconclusive || r.detail.modelRefuted then return r
+    let mut attempts := #[]
+    for f in fns do
+      let some b := st.inductionBodies.get? f | continue
+      let (rs, _, _) ← solveComp sv spec? sy b false #[.postcondition] limits cache dump? true examples false
+      let some p := rs.find? (·.kind == .postcondition) | continue
+      attempts := attempts.push p
+      if p.verdict == .pass then break
+    match Fren.Core.inductionVerdict r.verdict r.detail.modelRefuted (attempts.toList.map (·.verdict)), attempts.find? (·.verdict == .pass) with
+    | .pass, some p => return { r with verdict := .pass, detail := .none, applies := p.applies }
+    | _, _ => return r
   -- The contract of a generic function without a body, where its check at
   -- its type parameters' sorts does not pass: its check at each instance
   -- that the spec applies, in order of their names (`lang::generic_contract`).

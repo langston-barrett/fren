@@ -8,6 +8,7 @@ import FrenCore.Evidence
 import FrenCore.Generics
 import FrenCore.Global
 import FrenCore.Guards
+import FrenCore.Induction
 import FrenCore.Lint
 import FrenCore.Mentions
 import FrenCore.Names
@@ -394,6 +395,11 @@ structure CComp where
   short : Bool := false
   /-- A global expectation with a block (`Fren.Core.Comp.global`). -/
   global : Bool := false
+  /-- For a global expectation, the functions generated for induction on
+  its parameters, by its claims (`Reqs/Lang/Recursion#induction`): each
+  claim's name, with the paths of its functions, one for each candidate,
+  in order, whose bodies are in `State.inductionBodies`. -/
+  inductions : Array (Name × Array Name) := #[]
   /-- For an expectation of a trait: the trait's laws, each a closed
   formula (`Fren.Core.Comp.laws`), and the trait. -/
   laws : Array (Name × String) := #[]
@@ -822,6 +828,18 @@ structure State where
   /-- Structural recursions, used opaquely with one-step ground equations:
   each instance of a generic one too, by its name (`instantiate`). -/
   recursiveDefs : Std.HashSet Name := {}
+  /-- Of each structural recursion, by its path, the position of its
+  decreasing parameter (`lang::structural_recursion`). -/
+  recursiveDecreasing : Std.HashMap Name Nat := {}
+  /-- Of the item being elaborated, the variables that are the argument at
+  the decreasing parameter of an application of a structural recursion
+  in it, written as their names (`lang::induction_candidate`). -/
+  inductionArgs : Array Name := #[]
+  /-- The bodies of the functions generated for induction on global
+  expectations' parameters, by their paths (`CComp.inductions`), which
+  are checked only for those expectations, never as functions of the
+  spec's. -/
+  inductionBodies : Std.HashMap Name CComp := {}
   /-- Of each instance of a generic structural recursion, by its name, its
   function, and the facts that its parameters' types bring, at the
   instance, as its function's `CComp.vars` give them

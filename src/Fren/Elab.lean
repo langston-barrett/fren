@@ -12,6 +12,7 @@ import FrenCore.FnBlocks
 import FrenCore.Generics
 import FrenCore.Global
 import FrenCore.Guards
+import FrenCore.Induction
 import FrenCore.Lexical
 import FrenCore.Mentions
 import FrenCore.Patterns
@@ -5595,6 +5596,16 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       return t
     return ← `($(mkCIdentFrom p (info.ctor idx)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
+  -- A variable, written as its name, that is the argument at the
+  -- decreasing parameter of a structural recursion
+  -- (`lang::induction_candidate`).
+  if let some i := ((← getState).defined.get? path).bind (·.decreasing?) then
+    if let some a := args.getElems[i]? then
+      let a := unparen a
+      let a := if a.getNumArgs == 1 then a[0] else a
+      if a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 && (cx.binder? (pathSegs a)[0]!.getId).isNone then
+        let x := (pathSegs a)[0]!.getId
+        if cx.vars.any (·.name == x) then modifyLocal fun l => { l with inductionArgs := l.inductionArgs.push x }
   if let some d := ((← getState).defined.get? path).filter (!·.hoParams.isEmpty) then
     return ← hoAppTerm toTerm cx e p path d args.getElems expected?
   if let some d := (← getState).defined.get? path then
@@ -5639,6 +5650,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.inClosure then throwErrorAt p (Core.closureUninterpretedMsg path).text
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
+  modifyLocal fun l => { l with inductionAbstract := true }
   let a ← placeholderOf path
   if !a.typeParams.isEmpty then
     -- A generic function without a body, at the instance whose type
@@ -8908,6 +8920,131 @@ where it is reported. -/
 def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Msg)) :=
   return (← blockMembers stx).findSome? fun (ref, m, det) => (Core.blockMemberReport? m det).map (ref, ·)
 
+/-- `stx`, with each identifier named `n` named `m` instead. -/
+partial def renameIdent (n m : Name) : Syntax → Syntax
+  | .node info k args => .node info k (args.map (renameIdent n m))
+  | s@(.ident info raw v pre) => if v == n then .ident info raw m pre else s
+  | s => s
+
+/-- The text of each part of each identifier within `stx`. -/
+partial def identNames : Syntax → Array String
+  | .node _ _ args => args.foldl (fun acc a => acc ++ identNames a) #[]
+  | .ident _ _ v _ => v.components.toArray.map Core.nameText
+  | _ => #[]
+
+open Lang in
+/-- `stx`, with each expression or type that is the path of the one segment
+`n` replaced by `repl`. -/
+partial def substPath (n : Name) (repl : Syntax) : Syntax → Syntax
+  | .node info k args =>
+    if args.size == 1 && args[0]!.isOfKind ``Lang.fren_path && (pathSegs args[0]!).size == 1
+        && (pathSegs args[0]!)[0]!.getId == n then repl
+    else .node info k (args.map (substPath n repl))
+  | s => s
+
+open Lang in
+/-- Elaborates the functions generated for induction on the parameters of
+the global expectation at `path`, just elaborated, as a procedure `stx`,
+whose members, as a component's, are `members`
+(`Reqs/Lang/Recursion#induction`): one for each of its claims and each
+candidate, in order (`Core.inductionCandidate`). Each is an item of the
+module that nothing reports, whose body is not checked as a function's,
+but only for the expectation. -/
+def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : CommandElabM Unit := do
+  let st ← getState
+  let some c := st.globals.get? path | return
+  let l ← getLocal
+  let kinds := (← blockMembers stx).map (·.2.1)
+  let params := stx[4].getSepArgs.filter (·[3].isNone)
+  let names := params.map fun p => (declaredIdent p[1]).1.getId
+  let vars := names.filterMap fun x => c.vars.find? (·.name == x)
+  unless vars.size == params.size do return
+  let tys := vars.map (·.ptype.ty)
+  let constrained := vars.any (·.ptype.restricted)
+  let candidates := (List.range params.size).filter fun i =>
+    Core.inductionCandidate kinds.toList l.inductionAbstract constrained (Core.directlyRecursive st.shapeOf tys[i]!)
+      (l.inductionArgs.contains names[i]!)
+  if candidates.isEmpty then return
+  let assumptions := members.filterMap fun m => match constraint? m with
+    | some (.assume, _, e) => some e
+    | _ => none
+  let position := (charRange (← getFileMap).source stx[2]).start
+  let ref := stx[2]
+  -- Placeholders for the parts that are spliced in after parsing, under a
+  -- prefix that no name of the expectation starts with, so that renaming
+  -- them changes nothing that the expectation writes.
+  let written := identNames stx
+  let mut fresh := "fren_induction_"
+  while written.any (·.startsWith fresh) do fresh := fresh ++ "_"
+  let stem := fresh
+  let ph (s : String) : String := stem ++ s
+  let savedModule := l.currentModule
+  let mut inductions := #[]
+  for m in members do
+    let some (.expect, claim, e) := constraint? m | continue
+    let mut fns := #[]
+    for i in candidates do
+      let .enum ep _ := tys[i]! | continue
+      let some info := st.enums.get? ep | continue
+      let n := params.size
+      let fname := Core.inductionFnName (Core.nameText (declaredIdent stx[2]).1.getId) (Core.nameText claim.getId)
+        (Core.nameText names[i]!) position
+      let named (k : Nat) := Core.nameText names[k]!
+      -- Each variant, with its payload bound, and the function applied to
+      -- the case's variables as `inductionHypotheses` gives them.
+      let cases := Core.inductionCases st.shapeOf tys i
+      let variant (v : Name) := "::".intercalate (Core.variantSegments savedModule ep v)
+      let arms := (cases.zip info.variants).map fun ((payload, hyps), v) =>
+        let binder (k : Nat) := ph s!"p{k}" ++ (if payload[k]! matches .bool then "?" else "")
+        let arg (k : Nat) := if k < n then named k else binder (k - n)
+        let pattern := variant v ++ (if payload.isEmpty then ""
+          else "(" ++ ", ".intercalate ((List.range payload.size).map binder) ++ ")")
+        let apps := hyps.map fun h => s!"{ph "f?"}({", ".intercalate (h.map arg)})"
+        s!"{pattern} => {if apps.isEmpty then "true" else " and ".intercalate apps}"
+      let signature := params.mapIdx fun k p =>
+        Core.nameText p[1].getId ++ (if p[2].isNone then "" else s!": {ph s!"t{k}"}")
+      let text := s!"pub fn {ph "f?"}({", ".intercalate signature.toList}): Bool := match {named i} \{ {", ".intercalate arms.toList} }"
+      let held := if assumptions.isEmpty then ph "c" else s!"when {" and ".intercalate ((List.range assumptions.size).map fun k => ph s!"a{k}")}, {ph "c"}"
+      let postText := s!"{ph "f?"}({", ".intercalate (names.map Core.nameText).toList}) and ({held})"
+      let some cmd ← try some <$> parseAt `command text ref catch _ => pure none | continue
+      let some post ← try some <$> parseAt `fren_expr postText ref catch _ => pure none | continue
+      -- Every placeholder of the parsed text is renamed before any of the
+      -- expectation's own syntax is spliced in: the binders, and the
+      -- function's name, which no source can write, so it is parsed as
+      -- another; then the types, the assumptions, and the claim last.
+      let mut cmd := cmd
+      for ((payload, _), _) in cases.zip info.variants do
+        for t in payload, k in [0:payload.size] do
+          let b := t matches .bool
+          cmd := renameIdent (Name.mkSimple (ph s!"p{k}" ++ (if b then "?" else ""))) (Name.mkSimple (Core.inductionBinder k b)) cmd
+      cmd := renameIdent (Name.mkSimple (ph "f?")) (Name.mkSimple fname) cmd
+      for p in params, k in [0:n] do
+        unless p[2].isNone do cmd := substPath (Name.mkSimple (ph s!"t{k}")) p[2][1] cmd
+      let mut post := renameIdent (Name.mkSimple (ph "f?")) (Name.mkSimple fname) post
+      for a in assumptions, k in [0:assumptions.size] do
+        post := substPath (Name.mkSimple (ph s!"a{k}")) a post
+      post := substPath (Name.mkSimple (ph "c")) e post
+      let clause := mkNode ``Lang.fren_clause #[mkAtom "ensure", mkIdentFrom ref `claim, mkAtom ":", post, mkNullNode]
+      let function := mkNode ``Lang.fnCmd (cmd.getArgs.push (mkNullNode #[clause]))
+      -- Nothing about it is reported, and its body is checked only for
+      -- the expectation.
+      let saved ← get
+      let savedLocal ← getLocal
+      let failed ← try elabFunctionCore function function; pure false catch _ => pure true
+      let logged := (← get).messages.toList.drop saved.messages.toList.length
+      let fpath := savedLocal.currentModule ++ Name.mkSimple fname
+      let recursive := (((← getState).defined.get? fpath).bind (·.decreasing?)).isSome
+      if failed || logged.any (·.severity == .error) || !recursive || !((← getState).bodies.contains fpath) then
+        set saved
+        continue
+      modify fun s => { s with messages := saved.messages }
+      modifyLocal fun l => { l with
+        lintReports := savedLocal.lintReports, natReports := savedLocal.natReports, bodies := savedLocal.bodies
+        currentItem := savedLocal.currentItem }
+      fns := fns.push fpath
+    inductions := inductions.push (claim.getId, fns)
+  record (.globalInfo path { c with inductions })
+
 /-- `expect n(x: T) { members }`, a global expectation with a block
 (`Reqs/Lang/Global`): elaborated as a procedure is, but for the members it
 does not accept (`F0417`), and recorded as a global expectation, which
@@ -8943,7 +9080,8 @@ nothing calls. -/
       for p in m[3].getSepArgs do declareUse (pathSegs m[1] ++ pathSegs p) false p (some path)
   let scope := if members.any (fun m => m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember) then path
     else modName
-  modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[] }
+  modifyLocal fun l => { l with outsideCore := false, guardedUsed := false, undecidableDenied := false, relationalUsed := false, countRefs := #[]
+                                inductionArgs := #[], inductionAbstract := false }
   let named := members.filterMap memberName?
   for x in named do
     if let .original .. := x.getHeadInfo then discard (segName x)
@@ -8961,6 +9099,7 @@ nothing calls. -/
     for d in generated do
       elabCommand (← `(attribute [fren_spec] $(mkCIdent d)))
     modifyLocal fun l => { l with globals := l.globals.push path }.declared path
+    elabInductions stx path members
 
 open Lang in
 /-- Declared subset aliases reuse ordinary predicate functions and the
