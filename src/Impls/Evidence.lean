@@ -84,6 +84,7 @@ tested lang::named_conjunction: "src/FrenTest/NamedPredicateExpansion.lean", "te
 tested lang::named_identity: "src/FrenTest/NamedPredicateExpansion.lean", "src/FrenTest/BooleanModels.lean"
 tested lang::named_node: "src/FrenTest/NamedPredicateExpansion.lean", "test/cli/results/boolean_block_members.fren"
 tested lang::query_purpose: "src/FrenTest/SubsetInhabitation.lean"
+tested lang::set_card_expansion: "test/ui/lang/set_card.fren"
 tested lang::refinement_subset_domain: "src/FrenTest/SubsetObligations.lean"
 tested lang::subset_closed: "test/cli/types/f0373_subset_closed.fren"
 tested lang::subset_earlier: "src/FrenTest/SubsetObligations.lean"

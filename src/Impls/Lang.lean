@@ -5,6 +5,7 @@ import FrenCore.Generics
 import FrenCore.Guards
 import FrenCore.Patterns
 import FrenCore.Quantifier
+import FrenCore.SetCard
 import FrenCore.SubsetTypes
 import FrenCore.Traits
 import FrenCore.Ty
@@ -1535,6 +1536,19 @@ impl in_core: lang::in_core for (c : Fren.Core.Construct) (a m i g f r l : Bool)
 } by
   intro c a m i g f r l _
   cases c <;> simp [fren_spec, toConstruct, Fren.Core.inCore]
+
+-- Each entry stands for one distinct value in the complete universe;
+-- the lowering choice depends on the list's length, not on its entries.
+impl set_card_expansion: lang::set_card_expansion for (vs : Option (Array Int)) {
+  values := vs.map (fun xs => Fren.Seq.ofList xs.toList),
+  expanded? := (Fren.Core.setCardExpansion vs).isSome,
+} by
+  intro vs _
+  cases vs with
+  | none => simp [fren_spec, Fren.Core.setCardExpansion]
+  | some xs =>
+    simp [fren_spec, Fren.Core.setCardExpansion, Option.filter, Fren.Core.maxInstances,
+      Fren.Seq.len, Fren.Seq.ofList, Fren.Seq.toList] <;> omega
 
 /-! ## Lexical structure -/
 

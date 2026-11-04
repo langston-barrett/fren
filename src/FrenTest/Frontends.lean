@@ -143,12 +143,23 @@ def isCheckHeadline (h : String) : Bool :=
   || (h.startsWith "rows " && (h.splitOn " of a table in `").length > 1 && h.endsWith "` may both hold")
   || (rest "the assumption ").any (·.startsWith " of `")
   || (rest "expectation ").any (· == " does not hold")
-  || (rest "cover goal ").any fun r => r == " is met" || r.startsWith " cannot be met: "
+  || (rest "cover goal ").any (fun r => r == " is met" || r.startsWith " cannot be met: ")
   || r.startsWith " is vacuous: its condition can never hold"
   || r.startsWith " is redundant: "
   || r.startsWith " is not determined by the inputs: for the input "
   || h.startsWith "testing found no " || h.startsWith "testing never reached `"
   || isConflictHead h
+
+-- These follow the cover-goal test: its lambda must not capture them.
+#guard isCheckHeadline "`p::g` is vacuous: its condition can never hold, given `a`, `r`"
+#guard isCheckHeadline "`p::a` is redundant: it follows from `b`"
+#guard isCheckHeadline "`p::x` is not determined by the inputs: for the input i = 0, it can be 1 or 2"
+#guard isCheckHeadline "testing found no counterexample up to size 2"
+#guard isCheckHeadline "testing never reached `p::g`"
+#guard isCheckHeadline "`a` forces `x` to be 1"
+#guard isCheckHeadline "cover goal `p::g` is met"
+#guard isCheckHeadline "cover goal `p::g` cannot be met: its condition is false"
+#guard !isCheckHeadline "expected `)`, found `:=`"
 
 /-- A check's result, rather than a static error or a lint: by its code
 where the front end shows one (the binary), else by its headline. The

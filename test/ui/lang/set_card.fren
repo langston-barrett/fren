@@ -1,0 +1,54 @@
+-- Finite cardinality is a sum over a complete universe, including the
+-- expansion bound, generic payloads, records, newtypes and relation pairs.
+-- fren-covers: lang::set_card_expansion
+
+enum E { A, B, C }
+
+enum G<T> { A, B(T) }
+
+struct R { b?, e: E }
+
+struct N(Bool)
+
+struct Eight { a?, b?, c?, d?, e?, f?, g?, h? }
+
+proc finite(s: Set<E>, t: Set<E>, r: Rel<Bool, E>) {
+    expect bound: s.card <= 3
+    expect partition: s.card = (s inter t).card + (s minus t).card
+    expect singleton: when s = {E::A}, s.card = 1
+    expect full: when s = {E::A, E::B, E::C}, s.card = 3
+    expect pairs: r.card <= 6
+    expect full_pairs: when r = {
+        (true, E::A),
+        (true, E::B),
+        (true, E::C),
+        (false, E::A),
+        (false, E::B),
+        (false, E::C),
+    },
+        r.card = 6
+}
+
+proc aggregates(s: Set<G<R>>, t: Set<N>, u: Set<Eight>) {
+    expect generic: s.card <= 7
+    expect newtype: t.card <= 2
+    expect at_limit: u.card <= 256
+}
+
+proc at_limit(u: Set<Eight>) {
+    assume full: forall (x: Eight), x in u
+
+    expect count: u.card = 256
+}
+
+proc prelude(s: Set<Option<Bool>>, t: Set<Result<E, Bool>>) {
+    expect option: when s = {Option::None, Option::Some(true), Option::Some(false)}, s.card = 3
+    expect result: when t = {
+        Result::Ok(E::A),
+        Result::Ok(E::B),
+        Result::Ok(E::C),
+        Result::Err(true),
+        Result::Err(false),
+    },
+        t.card = 5
+}

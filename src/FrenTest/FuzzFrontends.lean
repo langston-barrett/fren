@@ -66,6 +66,9 @@ the spec's other checks; `genWide` includes one without it now and then.
 alone (`Wide.inductions`), which induction on a parameter may prove, and
 `--induction-forms` the forms in which the front ends read a candidate
 for it with code of their own (`Wide.inductionForms`).
+`--set-card` reproduces #820's set seeds and adds finite cardinalities of
+aggregate types and relation pairs (`Wide.genSetCard`). Its corpus and
+fresh runs reject shared internal errors and undecided queries too.
 `--confirm` generates what the confirmation of models evaluates
 (`Wide.genConfirmed`): `div` and `mod`, an index in an argument that a
 function's body never reads, and the formulas whose value confirmation
@@ -2404,6 +2407,63 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts avoidKnown).1
 
+/-- The set procedure from #818's decidable-core mode, with its original
+random draws (three for strings before the three for sets), so that #820's
+seed numbers reproduce exactly without depending on that unmerged PR. -/
+def setCardCore : R String := do
+  for _ in [0:3] do discard (below 2147483648)
+  let mut out := "mod sets\n\nset_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
+  let sets := #["s", "t", "(s union t)", "(s inter t)", "(s minus t)", "{1, 2}", "(t minus t)"]
+  let mut atoms : Array String := #[]
+  for _ in [0:3] do
+    let seed ← below 2147483648
+    let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+    let a := pick sets 1
+    let b := pick sets 2
+    let i := toString ((seed / 13) % 4)
+    atoms := atoms.push <| pick #[
+      s!"x in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"{a} != {b}", s!"{a}.card <= {i}",
+      s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
+      "s = {}"] 5
+  out := out ++ s!"proc c0(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
+    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+    expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- Finite cardinalities in each representation that the lowering can
+list: Booleans, variants, generic payloads, records, newtypes and pairs;
+under algebra, definitions, nesting, and every integer comparison. Draws
+come after `setCardCore`, preserving every original regression. -/
+def setCardForms : R String := do
+  let decls := "mod card_forms\n\nset_option fren.lint.unused_variables \"allow\"\n\n" ++
+    "enum E { A, B, C }\n\nenum G<T> { A, B(T) }\n\nstruct R<T> { x: T, y? }\n\n" ++
+    "struct N(Bool)\n\n"
+  let types := #[
+    ("Bool", "true", 2), ("E", "E::B", 3), ("G<Bool>", "G::B(true)", 3),
+    ("R<E>", "R { x := E::A, y? := true }", 6),
+    ("N", "N(true)", 2), ("G<R<Bool>>", "G::B(R { x := false, y? := true })", 5),
+    ("Option<Bool>", "Option::Some(true)", 3), ("Result<E, Bool>", "Result::Ok(E::A)", 5)]
+  let (ty, value, count) ← pick types
+  let recv ← pick #["s", "(s union t)", "(s inter t)", "(s minus t)", "{one}"]
+  let op ← pick #["=", "!=", "<", "<=", ">", ">="]
+  let bound ← below (count + 2)
+  let (other, otherValue, otherCount) ← pick types
+  let binder := if ty == "Bool" then "x?" else "x"
+  let claim := s!"{recv}.card {op} {bound}"
+  -- A typed constant also supplies Result's parameter absent from `Ok`.
+  let body := s!"const one: {ty} := {value}\n\nfn count(s: Set<{ty}>): Int := s.card\n\n" ++
+    s!"proc forms(s: Set<{ty}>, t: Set<{ty}>): (n: Int) \{\n    out n := {recv}.card\n\n" ++
+    s!"    expect bounds: 0 <= n <= {count}\n\n" ++
+    s!"    expect defined: count({recv}) = n\n\n" ++
+    s!"    expect singleton: when s = \{{value}}, s.card = 1\n\n" ++
+    s!"    expect comparison: ({claim}) iff (n {op} {bound})\n}\n\n" ++
+    s!"proc full(s: Set<{ty}>) \{\n    assume all: forall ({binder}: {ty}), {binder} in s\n\n    expect count: s.card = {count}\n}\n\n" ++
+    s!"proc pairs(r: Rel<{ty}, {other}>): (n: Int) \{\n    out n := r.card\n\n    expect bound: 0 <= n <= {count * otherCount}\n\n" ++
+    s!"    expect singleton: when r = \{({value}, {otherValue})}, n = 1\n}\n"
+  return decls ++ body
+
+def genSetCard : R String := do return (← setCardCore) ++ "\n" ++ (← setCardForms)
+
 end Wide
 
 /-! ### Running the front ends -/
@@ -2506,10 +2566,12 @@ structure Mode where
   /-- Specs of the forms in which the front ends read a candidate for
   induction (`Wide.inductionForms`). -/
   inductionForms : Bool := false
+  /-- Finite set cardinalities and #820's exact set seeds. -/
+  setCard : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  Id.run ((if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions else if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
+  Id.run ((if m.setCard then Wide.genSetCard else if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions else if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
     else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
     else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
@@ -2518,23 +2580,25 @@ the next; none for `--guards`, `--sites`, `--confirm`, `--inductions` and `--ind
 of `--scrutinees` makes any static error a group error: that generator,
 like an appended group, promises to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms then #[] else
+  if m.scrutinees || m.setCard then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
   (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
     (if m.sites then #["--sites"] else #[]) ++ (if m.confirm then #["--confirm"] else #[]) ++
     (if m.scrutinees then #["--scrutinees"] else #[]) ++
-    (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[])
+    (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[]) ++
+    (if m.setCard then #["--set-card"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
-  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms"]) then
+  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms", "--set-card"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
-           inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms" }
+           inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms",
+           setCard := args.contains "--set-card" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -2542,7 +2606,8 @@ def Mode.lean (m : Mode) : String :=
   let fields := (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
     (if m.sites then ["sites := true"] else []) ++ (if m.confirm then ["confirm := true"] else []) ++
     (if m.scrutinees then ["scrutinees := true"] else []) ++
-    (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else [])
+    (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else []) ++
+    (if m.setCard then ["setCard := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3140,10 +3205,15 @@ end
 `[SEED, SEED + COUNT)` of each mode, split into jobs by `corpusJobs`.
 Sized so that the whole corpus takes about 2 minutes of one CI machine. -/
 def corpus : List (Mode × Nat × Nat) :=
-  [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
+  ([({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
-    ({ inductionForms := true }, 0, 20)]
+    ({ inductionForms := true }, 0, 20)] : List (Mode × Nat × Nat)) ++
+    -- Every seed of #820, including the four refuted models, plus a
+    -- vacuous check that must not count as a shared static error.
+    ([3, 19, 162, 228, 292, 310, 358, 495, 566, 807, 815, 866, 963, 1067, 1164, 1166, 1195,
+      1376, 1480, 1499, 1691, 1934, 1942, 2003, 2012, 2085, 2117, 2161, 2173, 2274, 2310,
+      2370, 2548, 2631, 2790, 2993].map fun s => ({ setCard := true }, s, 1))
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -3290,12 +3360,20 @@ private def errAt (line : Nat) (code : String := "F0304") : Diagnostic :=
   not know the meaning of a formula of `fz::c0`" }] == #[3]
 end
 
+/-- Agreement on an internal error or an undecided finite-cardinality
+query still fails the cardinality regressions. -/
+def setCardProblems (ran : Ran) : Array String :=
+  (ran.cli ++ ran.hosted).filterMap fun d =>
+    let h := headOf d
+    if h.startsWith "internal error:" || h.startsWith "could not decide" then some h else none
+
 /-- Checks the specs of the corpus with both front ends, in this process.
 Each failure is a difference that `knownDifferences` does not list, or a
 listed one that no longer occurs (`unmatched`), leaving out those that
 the solvers' time limits explain; or a static error in a group that the
 generator appends after a cut (`appendedErrors`), which it must not
-append, whether or not the spec stops before it. -/
+append, whether or not the spec stops before it. Finite-cardinality
+regressions also reject shared internal errors and undecided queries. -/
 def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mode × Nat)) :
     IO (Array String) := do
   IO.FS.createDirAll dir
@@ -3304,6 +3382,9 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
   for (mode, s) in specs do
     let ran ← runFrontends env path (mode.spec s) mode.confirm
     let c := ran.comparison
+    if mode.setCard then
+      for problem in setCardProblems ran do
+        failures := failures.push s!"seed {s}{flags mode}: {problem}"
     let again := s!"`lake exe fren_fuzz_frontends{flags mode} --count 1 --seed {s}`"
     let (unlisted, vanished) := unmatched knownDifferences mode s c.decided c.undecided
     for f in unlisted do
@@ -3449,7 +3530,11 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) (compareDumps : B
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
     let ran ← runFrontends env run.spec text mode.confirm compareDumps
-    let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
+    let problems := if mode.setCard then setCardProblems ran ++
+      ((appendedErrors #[0] ran.cli ++ appendedErrors #[0] ran.hosted).map fun (_, d) =>
+        s!"unexpected static error: {headOf d}") else #[]
+    let (found, flaky, reports, errs) := (ran.comparison.found ++ problems,
+      problems.isEmpty && ran.comparison.flaky, ran.reports, ran.errors)
     -- The obligations dumps, compared without their metadata, and both
     -- written where they differ.
     let obligations := match ran.obligations? with
@@ -3715,10 +3800,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--set-card] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--set-card] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -3735,9 +3820,10 @@ unsafe def main (args : List String) : IO UInt32 := do
     return ← mainFiles files ".lake/fuzz"
   let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
                        sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
-                       inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms" }
+                       inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms",
+                       setCard := args.contains "--set-card" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
-    && a != "--inductions" && a != "--induction-forms")
+    && a != "--inductions" && a != "--induction-forms" && a != "--set-card")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

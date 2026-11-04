@@ -1,7 +1,9 @@
 -- keep-sorted start
 import Fren.FinSet
+import Fren.Model
 import Fren.Seq
 import FrenCore.Regex
+import FrenCore.SetCard
 import FrenCore.Str
 import Smt
 -- keep-sorted end
@@ -193,6 +195,39 @@ where
       return appT (symbolT "not") (mkApp2 (symbolT "str.in_re") (← tr b) (literalT (Fren.Core.belowPattern c !orEqual)))
     | _, _ => return mkApp2 (symbolT (if orEqual then "str.<=" else "str.<")) (← tr a) (← tr b)
 
+/-- Enumerate a cardinality's element sort from Fren's declarations. A
+cycle, an unlisted type or a product beyond the expansion bound retains
+native cardinality. Expressions are built directly so generated Lean
+continues to use `FinSet.card`, with its existing semantics and proofs. -/
+partial def setCardValues (ty : Expr) (seen : Array Expr := #[]) : MetaM (Option (Array Expr)) := do
+  if seen.contains ty then return none
+  if ty.isConstOf ``Bool then return some #[mkConst ``Bool.true, mkConst ``Bool.false]
+  let s ← Fren.getState
+  let targs := ty.getAppArgs
+  let ctors : Array (Name × Array Expr) ←
+    if ty.isAppOfArity ``Prod 2 then
+      pure #[(``Prod.mk, targs)]
+    else if let some e := s.enumOf? ty then
+      let ps := e.payloadsAt targs
+      pure (e.variants.mapIdx fun i _ => (e.ctor i, ps[i]?.getD #[]))
+    else if let some r := s.recordOf? ty then
+      pure #[(r.ctor, (r.fieldsAt targs).map (·.2))]
+    else if let some n := s.newtypeOf? ty then
+      pure #[(n.ctor, #[n.under])]
+    else return none
+  let mut out := #[]
+  for (c, ts) in ctors do
+    let mut combos : Array (Array Expr) := #[#[]]
+    for t in ts do
+      let some vs ← setCardValues t (seen.push ty) | return none
+      if combos.size * vs.size > Core.maxInstances then return none
+      combos := combos.flatMap fun pre => vs.map pre.push
+    let info ← getConstInfo c
+    let f := mkConst c (info.levelParams.map fun _ => Level.zero)
+    out := out ++ combos.map fun xs => mkAppN f (targs ++ xs)
+    if out.size > Core.maxInstances then return none
+  return some out
+
 /-- Fren's sets (`Fren.FinSet`), as cvc5's: every set is a unary relation, a
 set of 1-tuples (`Reqs/Cli`). -/
 @[smt_translate] def translateSet : Translator := fun e => do
@@ -232,7 +267,15 @@ set of 1-tuples (`Reqs/Cli`). -/
   | Insert.insert _ γ _ x s =>
     unless isSet γ do return none
     return mkApp2 (symbolT "set.insert") (← tuple x) (← tr s)
-  | Fren.FinSet.card _ _ s => return appT (symbolT "set.card") (← tr s)
+  | Fren.FinSet.card α _ s =>
+    let some vs := Core.setCardExpansion (← setCardValues α)
+      | return appT (symbolT "set.card") (← tr s)
+    let recv ← tr s
+    return ← Core.sumSetMembersM vs (literalT "0")
+      (fun v => do
+        let member := mkApp2 (symbolT "set.member") (← tuple v) recv
+        return mkApp3 (symbolT "ite") member (literalT "1") (literalT "0"))
+      (fun a b => pure (mkApp2 (symbolT "+") a b))
   | Fren.FinSet.join _ _ _ _ r q => return mkApp2 (symbolT "rel.join") (← tr r) (← tr q)
   | Fren.FinSet.inverse _ _ r => return appT (symbolT "rel.transpose") (← tr r)
   | Fren.FinSet.closure _ _ r => return appT (symbolT "rel.tclosure") (← tr r)

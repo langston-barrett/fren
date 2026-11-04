@@ -177,6 +177,20 @@ arithmetic*: membership, `union`, `inter`, `minus`, `subset`, `=`, `!=`,
 literals, and `card` in linear arithmetic. It is decidable, and cvc5's
 solver for sets with cardinality is a decision procedure for it.
 
+For a set whose element type can be listed in at most 256 values, Fren
+lowers `card` to the sum of `if v in s then 1 else 0` over that complete
+list. For a relation it lists the pairs, subject to the same bound. This
+avoids a failure of cvc5's native cardinality solver on finite element
+sorts (#820): it can exhaust the sort while constructing a model, or
+return a model that Fren's confirmation refutes. The classification of
+these operations is unchanged; types that cannot be listed within the
+bound retain native cardinality.
+
+`lang::set_card_expansion` states the lowering choice. `values` is the
+complete list of the element type's values, represented by their syntax
+indices, or `None` when the type cannot be listed. The choice reads the
+list itself, including its length.
+
 | Construct | In the core when |
 |---|---|
 | set literals, `in`, `union`, `inter`, `minus`, `subset`, `card`, `=` and `!=` on sets | always |
@@ -306,6 +320,13 @@ decided from the syntax, without the solver:
 
 ```fren
 pub mod lang
+
+pub proc set_card_expansion(values: Option<Seq<Int>>): (det expanded?) {
+    ensure rule: expanded? iff match values {
+        Option::Some(vs) => vs.len <= 256,
+        Option::None => false,
+    }
+}
 
 -- `StringCompare` is `=`, `!=` and the orderings on strings; `StringAtom`
 -- is `starts_with?`, `ends_with?`, `contains?` and `matches?`; `StringIndex`
