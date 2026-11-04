@@ -97,6 +97,9 @@ pub proc structural_recursion(
 ): (det verdict: Recursion) {
     use self::Recursion::{NotRecursive, NotStructural, Structural}
     require params: n_params >= 1
+    -- Applied uses have already passed the ordinary arity check.
+    require arities: forall (k: Int), when 0 <= k < uses.len and uses[k].form = RecForm::Applied,
+        uses[k].args.len = n_params
 
     ensure none: when uses = [], verdict = NotRecursive
     -- The first position at which every use decreases.

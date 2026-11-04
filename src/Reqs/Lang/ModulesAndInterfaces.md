@@ -138,7 +138,7 @@ implementations, which are specified apart:
 
 **Legality rules**
 
-r[module.theory]
+r[module.theory] lang::theory_signature
 A module is a *theory*: a list of *parameters*, a list of items, and the
 theory's *sentences*, which are the module's lemma, `assume`, `expect` and
 `law` items and its items' `require` and `ensure` clauses. Each of its
@@ -498,7 +498,7 @@ check rests on (#669).
 
 **Legality rules**
 
-r[module.signature] lang::lemma_order::axioms_and_goals_unordered, lang::law_before_method
+r[module.signature] lang::theory_signature, lang::lemma_order::axioms_and_goals_unordered, lang::law_before_method
 A module's *signature* is its items other than its lemma, `assume`,
 `expect` and `law` items: its types, enumerations' variants, constants, functions and procedures. A module
 declares its signature as a whole. An `assume`, `expect` or `law` item
@@ -609,6 +609,43 @@ expect law_before_method() {
 > whatever `h` is. No check rests on an
 > axiom's or a goal's proof, so they may come anywhere.
 
+## Theory signatures
+
+The signature model exposes an entry's kind and declaration, and the rest
+of its list. The equation for `theory_signature` applies at every tail of
+the list: an empty list has no declarations, a declaration is retained,
+and a sentence is skipped. Parameters are retained unchanged.
+
+```fren
+pub type TheoryName
+pub type TheoryDeclaration
+pub type TheoryEntries
+pub type TheoryDeclarations
+pub enum TheoryEntryKind { Declaration, Sentence }
+
+pub fn theory_entries_empty?(TheoryEntries)
+pub fn theory_entry_kind(TheoryEntries): TheoryEntryKind
+pub fn theory_entry_declaration(TheoryEntries): TheoryDeclaration
+pub fn theory_entries_rest(TheoryEntries): TheoryEntries
+pub fn theory_no_declarations(TheoryEntries): TheoryDeclarations
+pub fn theory_add_declaration(TheoryDeclaration, TheoryDeclarations): TheoryDeclarations
+pub fn signature_items(TheoryEntries): TheoryDeclarations
+
+pub proc theory_signature(parameters: TheoryDeclarations, entries: TheoryEntries): (
+    det signature_parameters: TheoryDeclarations,
+    det items: TheoryDeclarations,
+) {
+    out signature_parameters := parameters
+    ensure items_rule: items = if theory_entries_empty?(entries) then theory_no_declarations(entries)
+        else if theory_entry_kind(entries) = TheoryEntryKind::Declaration
+        then theory_add_declaration(
+            theory_entry_declaration(entries),
+            signature_items(theory_entries_rest(entries))
+        )
+        else signature_items(theory_entries_rest(entries))
+}
+```
+
 ## Checks
 
 **Proof obligations**
@@ -695,6 +732,7 @@ The Lean-hosted front end checks this chapter's items by name, since a
 `#fren_check` without a path would check every earlier chapter again:
 
 ```fren
+#fren_check theory_signature
 #fren_check sentence_place
 #fren_check sentence_member
 #fren_check sentence_role
