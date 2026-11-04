@@ -2093,9 +2093,18 @@ inductive Advice where
   deriving Inhabited, BEq, DecidableEq, Repr
 
 /-- What an inconclusive result advises (`view::inconclusive_advice`):
-in the decidable core, the solver ran out of time. -/
+in the decidable core, the solver reached a time or resource limit. -/
 def inconclusiveAdvice (decidable : Bool) : Advice :=
   if decidable then .raiseTimeout else .namesConstructs
+
+/-- An unknown solver answer in the decidable core is a bug unless the
+query reached its time or resource limit (`check::decidable_unknown`).
+The two spellings of each limit are the reasons that lean-smt and the
+standalone backend give, respectively. This is only for solver answers,
+not enumeration, model confirmation or an unsettled premise. -/
+def decidableUnknown (inCore : Bool) (reason : String) : Bool :=
+  inCore && !(reason == "TIMEOUT" || reason == "RESOURCEOUT" ||
+    reason == "the solver returned unknown (TIMEOUT)" || reason == "the solver returned unknown (RESOURCEOUT)")
 
 /-- The messages for one result. Passing checks produce none, but for a
 cover goal's witness. `decidable` says whether the procedure is in the
@@ -2198,6 +2207,13 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
             "help: strengthen those functions' contracts"]]
       else if let some (code, notes) := elementReasonNotes? w then
         #[one code s!"could not decide whether {what}{why}" (some "undecided") notes]
+      else if r.bounded?.isNone && decidableUnknown decidable w then
+        #[{ severity := .error, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?
+            msg := { code? := none
+                     headline := s!"internal error: the solver did not decide the {kindName r.kind} check of {subject} in the decidable core"
+                     label? := some "decidable query was not decided"
+                     notes := #[s!"note: the solver's reason was: {w}",
+                       "note: no time or resource limit was reached; this is a bug in Fren or the solver"] } }]
       else #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
     | _ => #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
   | .fail, .vacuousAssumptions core =>

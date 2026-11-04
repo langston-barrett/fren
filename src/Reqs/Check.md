@@ -148,6 +148,35 @@ use self::Outcome::{Sat, Unknown, Unsat}
 use self::Verdict::{Fail, Inconclusive, Pass}
 ```
 
+For an `Unknown` solver answer, `check::decidable_unknown` enforces the
+[decidable core's promise](Lang/Decidability.md#what-is-promised): if all
+constraints of the query are in the core and it reached neither its time
+nor its resource limit, report an internal error with the check, in place
+of the ordinary inconclusive warning. This is a bug in Fren or the solver.
+The reason is the solver answer's reason, not a fact computed by a front
+end: lean-smt gives the limit's name, and the standalone backend wraps it
+as below. Other reasons, including an empty one, are not limits.
+
+This rule is about queries that return `Unknown`, not enumeration, a model
+that recursive evaluation does not confirm, an expansion over sequence
+elements, or a pass made inconclusive by an unsettled premise. A limit
+keeps the ordinary inconclusive result, and its dependents keep the `F0664`
+note ([Evidence](Evidence.md)).
+
+```fren
+pub proc decidable_unknown(in_core?, reason: String): (det internal_error?) {
+    ensure rule: internal_error? iff (in_core? and not (
+        reason is "TIMEOUT" | "RESOURCEOUT" |
+        "the solver returned unknown (TIMEOUT)" | "the solver returned unknown (RESOURCEOUT)"
+        ))
+
+    expect timeout: when reason = "TIMEOUT", not internal_error?
+    expect resource_limit: when reason = "RESOURCEOUT", not internal_error?
+    expect incomplete: when in_core? and reason = "INCOMPLETE", internal_error?
+    expect opted_out: when not in_core?, not internal_error?
+}
+```
+
 Every check but realizability reaches its verdict from one outcome, in
 one of two ways. A check that asks the solver to *prove* something passes
 when it is proved, and fails on a model, a counterexample; a check that

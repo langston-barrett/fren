@@ -151,7 +151,10 @@ Each check yields one result for each thing it checks:
 A passing result is silent, except that a passing cover goal shows its
 witness (see below). A failing result is an error, except that a
 redundant constraint is a warning. An inconclusive result is a warning,
-with one exception. Fren's semantics may contradict the solver's model of
+with two exceptions. An unknown solver answer in the decidable core
+without reaching a time or resource limit has an internal error in place
+of its warning ([`check::decidable_unknown`](Check.md#verdicts)).
+Fren's semantics may contradict the solver's model of
 a counterexample or a witness that the result would show. The result is
 then still inconclusive, and the summary counts it so. But the only
 diagnostic printed for it is the internal error of [Reading
@@ -434,8 +437,8 @@ pub proc report_shows(kind: Kind, verdict: Verdict, shown: Shown): (det allowed?
 An inconclusive result is reported at the position of the corresponding
 failure, saying what could not be decided and why. What it advises
 depends on whether the procedure is in the [decidable
-core](Lang/Decidability.md): if it is, the solver ran out of time, so the
-advice is to raise the time limit; if some construct of it opted out of
+core](Lang/Decidability.md): if it is, the solver reached a time or resource
+limit, so the advice is to raise the limit; if some construct of it opted out of
 the core, the solver may have given up, so the advice names that.
 `view::inconclusive_advice` states this:
 
@@ -508,7 +511,9 @@ pub proc severity(kind: Kind, verdict: Verdict): (det level: Severity) {
 inconclusive result in silence: an undecided result of a check, whatever
 its kind, about a constraint or about the whole item, as the vacuity of an
 expectation of a trait under the laws is, has a warning among its
-messages, whatever made it undecided, but for one cause. A result whose
+messages, whatever made it undecided, but for two causes. A query in the
+decidable core that gives up without reaching a limit has an internal
+error instead (`check::decidable_unknown`). A result whose
 solver model Fren's semantics refutes has instead the internal error that
 reports the refuted model (see [Check results](#check-results)), and no
 warning. Neither the kind nor the place changes the messages' severity,
@@ -524,14 +529,15 @@ pub enum Undecided {
     Induction,               -- another postcondition of a simultaneous induction did not pass
     RecursiveContracts,      -- a counterexample that only recursive functions' contracts allow
     Elements,                -- an expansion over sequences' elements too large, or refuted
+    DecidableUnknown,        -- a core query gave up without reaching a limit
     Refuted,                 -- a model that Fren's semantics refutes
 }
 
-use self::Undecided::Refuted
+use self::Undecided::{DecidableUnknown, Refuted}
 
 pub proc inconclusive_reported(why: Undecided): (det warned?, det errored?) {
-    ensure warned_rule: warned? iff why != Refuted
-    ensure errored_rule: errored? iff why = Refuted
+    ensure warned_rule: warned? iff not why is Refuted | DecidableUnknown
+    ensure errored_rule: errored? iff why is Refuted | DecidableUnknown
 
     expect reported: warned? or errored?
 }

@@ -116,11 +116,6 @@ pub mod testing
 - **Fren's own requirements** (`lake test`, `ownSpec`): checked by the
   `fren` command; `lake build` only elaborates them, and Lean checks them
   on `main` (see [Own requirements](#own-requirements)).
-- **Conformance corpus** (`lake test`): random procedures whose
-  constraints are all in the [decidable core](../Lang/Decidability.md),
-  one corpus each for strings, sets, relations and sequences, from a fixed
-  seed, must be checked with no inconclusive result: the core promises
-  that the solver decides them.
 - **Formatting** (`lake test`): every `.fren` and Markdown spec in the
   repository must be formatted, as `fren fmt --check` says, except those
   listed as `--ignore` globs in `fmtIgnore` in `src/FrenTestMain.lean`:
@@ -376,7 +371,7 @@ pub mod testing
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--spec-timeout SECONDS]`): generates random
+  [--decidable] [--spec-timeout SECONDS]`): generates random
   specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
@@ -440,7 +435,14 @@ pub mod testing
   split off the seed, so its draws leave the other modes unchanged. Like
   `--scrutinees`, it has an empty cut: its corpus rejects generated static
   errors, which would stop the spec's checks.
-  A run with `--obligations` also compares the front ends' [obligations
+  `--decidable` moves
+  the former conformance generator here: each spec has random procedures
+  in the decidable core of strings, sets, relations and sequences, with no
+  opt-outs. Its own mode leaves all older seeds' specs unchanged, and a few
+  of its seeds are in the corpus, which rejects internal errors even when
+  both front ends agree. An unknown answer without reaching a time or
+  resource limit is an internal error (`check::decidable_unknown`). A run with
+  `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
   that a run compares the messages of what users run, which is what CI

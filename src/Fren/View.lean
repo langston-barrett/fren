@@ -103,7 +103,7 @@ def report (path : Name) (c : CompInfo) (r : CheckResult) : CommandElabM Unit :=
                          label? := some "not defined under the earlier invariants" }
         else msg.msg
       else if let some label := r.subsetTy?.bind (·.dropPrefix? "@invariant:") then
-        if msg.severity == .error then
+        if r.verdict == .fail && msg.severity == .error then
           { msg.msg with code? := some "F0661", headline := s!"invariant `{label}` does not hold", label? := some "violates the invariant"
                          notes := (msg.msg.notes.filter (·.startsWith "counterexample:")).push
                            "note: a value given for a subset type must satisfy each named invariant" }

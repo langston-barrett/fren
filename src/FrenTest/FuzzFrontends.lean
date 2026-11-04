@@ -73,6 +73,9 @@ function's body never reads, and the formulas whose value confirmation
 knows where an index is out of range; and it checks them with both front
 ends misreading models (`Fren.Core.misreadSet`), so that what one knows
 and the other does not is a message that differs.
+`--decidable` generates procedures in the decidable core of strings,
+sets, relations and sequences (`Wide.genDecidable`), in its own random
+stream so that every older mode's seeds are unchanged.
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -2713,6 +2716,103 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts avoidKnown).1
 
+/-- A random procedure in the decidable core of strings. -/
+def stringCore : R String := do
+  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\n"
+  let lits := #["\"\"", "\"a\"", "\"ab\"", "\"b\"", "\"F0\"", "\"x?\""]
+  let pats := #["r\"[a-z]*\"", "r\"a+b?\"", "r\".*[A-Z].*\"", "r\"[^_]*\"", "r\"(ab|ba){1,2}\"", "r\"F0[1-7][0-9]\""]
+  for k in [0:1] do
+    let mut atoms : Array String := #[]
+    for _ in [0:3] do
+      let seed ← below 2147483648
+      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+      let v := pick #["s", "t"] 1
+      let l := pick lits 2
+      let i := toString ((seed / 13) % 4)
+      atoms := atoms.push <| pick #[
+        s!"{v}.starts_with?({l})", s!"{v}.ends_with?({l})", s!"{v}.contains?({l})",
+        s!"{v}.matches?({pick pats 3})", s!"{v}.len <= {i}", s!"{v}.len + 1 >= {i}", s!"{v} = {l}", "s = t",
+        "s != t", s!"s.len + t.len = {i}", s!"({v} ++ {l}).len > {i}", s!"{v}.at({i}) = {l}",
+        s!"{v}.slice(0, {i}) != {l}", s!"{v} < {l}"] 5
+    out := out ++ s!"proc c{k}(s: String, t: String): (p?) \{\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      expect e: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- A random procedure in the decidable core of sets:
+Boolean algebra with cardinality. -/
+def setCore : R String := do
+  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
+  let sets := #["s", "t", "(s union t)", "(s inter t)", "(s minus t)", "{1, 2}", "(t minus t)"]
+  for k in [0:1] do
+    let mut atoms : Array String := #[]
+    for _ in [0:3] do
+      let seed ← below 2147483648
+      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+      let a := pick sets 1
+      let b := pick sets 2
+      let i := toString ((seed / 13) % 4)
+      atoms := atoms.push <| pick #[
+        s!"x in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"{a} != {b}", s!"{a}.card <= {i}",
+        s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
+        "s = {}"] 5
+    out := out ++ s!"proc c{k}(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- Relations over finite types, which are in the decidable core: the
+relational operators, with the set operators, but not `card`, which the core
+does not combine with them. -/
+def relationCore : R String := do
+  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
+  let rels := #["r", "q", "(r union q)", "(r inter q)", "(r minus q)", "(r join q)", "r.inverse", "r.closure",
+    "{(E::A, E::B), (E::B, E::C)}", "(q join r.closure)"]
+  let sets := #["s", "r.domain", "r.range", "r.image(s)", "q.image({E::A})", "{E::B}", "r.closure.image(s)"]
+  for k in [0:1] do
+    let mut atoms : Array String := #[]
+    for _ in [0:3] do
+      let seed ← below 2147483648
+      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+      let a := pick rels 1
+      let b := pick rels 2
+      let u := pick sets 3
+      atoms := atoms.push <| pick #[
+        s!"(x, y) in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"x in {u}", s!"{u} subset s", s!"{u} != {b}.domain",
+        s!"(x, x) in {a}", "r = {}", s!"{a} != \{}"] 5
+    out := out ++ s!"proc c{k}(r: Rel<E, E>, q: Rel<E, E>, s: Set<E>, x: E, y: E): (p?) \{\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- Sequences in the decidable core: indexing, `len`, `update`, equality,
+and operations with a literal operand. -/
+def sequenceCore : R String := do
+  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\n"
+  let seqs := #["q", "r", "[1, 2]", "q.update(0, x)", "r.update(i, 2)", "[x]", "[0, x, 1]"]
+  for k in [0:1] do
+    let mut atoms : Array String := #[]
+    for _ in [0:3] do
+      let seed ← below 2147483648
+      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+      let a := pick seqs 1
+      let b := pick seqs 2
+      let j := toString ((seed / 13) % 3)
+      atoms := atoms.push <| pick #[
+        s!"{a} = {b}", s!"{a} != {b}", s!"{a}.len <= {j}", s!"x in [1, {j}]", s!"q.starts_with?([{j}])",
+        s!"q.ends_with?([x, {j}])", s!"(q.len > {j} and q[{j}] = x)", s!"(0 <= i and i < r.len and r[i] > {j})",
+        s!"{a}.len + {b}.len >= {j}"] 5
+    out := out ++ s!"proc c{k}(q: Seq<Int>, r: Seq<Int>, x: Int, i: Int): (p?) \{\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- Random procedures in each theory's decidable core. A mode of its own
+keeps every older mode's seed unchanged. -/
+def genDecidable : R String := do
+  return "mod strings\n\n" ++ (← stringCore) ++ "mod sets\n\n" ++ (← setCore) ++
+    "mod relations\n\n" ++ (← relationCore) ++ "mod sequences\n\n" ++ (← sequenceCore)
+
 end Wide
 
 /-! ### Running the front ends -/
@@ -2726,7 +2826,7 @@ structure Ran where
   comparison : FrenTest.Frontends.Comparison
   /-- Both reports, as comments. -/
   reports : String
-  /-- The binary's error codes. -/
+  /-- The binary's error codes, or the headlines of errors without a code. -/
   errors : Array String
   /-- The binary's diagnostics. -/
   cli : Array Diagnostic
@@ -2774,7 +2874,7 @@ def runFrontends (env : Environment) (path : System.FilePath) (text : String) (m
     String.join (ds.toList.map fun d => s!"--   {d.line}:{d.col + 1}: {d.severity}{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}\n")
       ++ s!"--   summary: {s.getD "(none)"}\n"
   return { comparison, reports := s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
-           errors := cli.filterMap fun d => if d.severity == "error" then d.code? else none,
+           errors := cli.filterMap fun d => if d.severity == "error" then some (d.code?.getD (headOf d)) else none,
            cli, hosted, obligations? }
 
 unsafe def loadFren : IO Environment := do
@@ -2839,6 +2939,8 @@ structure Mode where
   /-- Specs of induction-candidate types, argument forms and comparisons
   (`Wide.inductionCandidates`). -/
   inductionCandidates : Bool := false
+  /-- Procedures in the decidable core of strings, sets, relations and sequences. -/
+  decidable : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
@@ -2854,7 +2956,8 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
     | _ => spec
   else if m.inductionCandidates then Id.run (Wide.inductionCandidates.run' (inductionRngOf seed))
   else
-    Id.run ((if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
+    Id.run ((if m.decidable then Wide.genDecidable
+      else if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
       else if m.scrutinees then Wide.duplicateScrutineeGroup
       else if m.factScopes then Wide.factScopes else if m.confirm then Wide.genConfirmed
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
@@ -2863,10 +2966,11 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
 `--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
-`--fact-scopes` and `--induction-candidates` makes any static error a group
-error: these generators, like appended groups, promise to add none. -/
+`--fact-scopes`, `--induction-candidates` and `--decidable` makes any static
+error a group error: these generators, like appended groups, promise to add
+none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
@@ -2876,19 +2980,20 @@ def Mode.args (m : Mode) : Array String :=
     (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[]) ++
     (if m.keywords then #["--keywords"] else #[]) ++
     (if m.factScopes then #["--fact-scopes"] else #[]) ++
-    (if m.inductionCandidates then #["--induction-candidates"] else #[])
+    (if m.inductionCandidates then #["--induction-candidates"] else #[]) ++
+    (if m.decidable then #["--decidable"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--decidable"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
            keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
-           inductionCandidates := args.contains "--induction-candidates" }
+           inductionCandidates := args.contains "--induction-candidates", decidable := args.contains "--decidable" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -2899,7 +3004,8 @@ def Mode.lean (m : Mode) : String :=
     (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else []) ++
     (if m.keywords then ["keywords := true"] else []) ++
     (if m.factScopes then ["factScopes := true"] else []) ++
-    (if m.inductionCandidates then ["inductionCandidates := true"] else [])
+    (if m.inductionCandidates then ["inductionCandidates := true"] else []) ++
+    (if m.decidable then ["decidable := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3542,7 +3648,7 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
     ({ inductionForms := true }, 0, 20), ({ factScopes := true }, 0, 20),
-    ({ inductionCandidates := true }, 0, 20)]
+    ({ inductionCandidates := true }, 0, 20), ({ decidable := true }, 0, 5)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -3712,6 +3818,12 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
     for k in vanished do
       failures := failures.push s!"seed {s}{flags mode}: the front ends no longer differ by `{k.difference}` (#{k.issue}); \
         remove it from `knownDifferences`, or, if a change to the generator removed it, leave every seed's spec as it was"
+    if mode.decidable then
+      -- CLI internal errors have no code; expected failed checks do.
+      -- A hosted-only error is already an unlisted front-end difference.
+      for d in ran.cli do
+        if d.severity == "error" && d.code?.isNone then
+          failures := failures.push s!"seed {s}{flags mode}: {d.text}\n  reproduce it with {again}"
     let cutLines := (mode.cuts s).map fun c => (c.splitOn "\n").length - 1
     for (start, d) in appendedErrors cutLines ran.cli do
       failures := failures.push s!"seed {s}{flags mode}: what the generator appends after line {start} adds a static \
@@ -4114,10 +4226,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4136,9 +4248,10 @@ unsafe def main (args : List String) : IO UInt32 := do
                        sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
                        inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
                        keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
-                       inductionCandidates := args.contains "--induction-candidates" }
+                       inductionCandidates := args.contains "--induction-candidates", decidable := args.contains "--decidable" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
-    && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates")
+    && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
+    && a != "--decidable")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

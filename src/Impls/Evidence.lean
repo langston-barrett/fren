@@ -62,6 +62,7 @@ tested refinement::refinement_result_domain: "test/ui/lang/refines_pattern.fren"
 tested refinement::refinement_singleton_domain: "test/ui/checks/refines_tested.fren"
 
 -- Concrete feature regressions and exhaustive finite backend checks.
+tested check::decidable_unknown: "src/FrenTest/InconclusiveReported.lean"
 tested check::branch_forcing: "src/FrenTest/BranchForcing.lean"
 tested check::branch_member_polarity: "src/FrenTest/BranchForcing.lean"
 tested check::branch_query_count: "src/FrenTest/BranchForcing.lean"

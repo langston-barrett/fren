@@ -14,12 +14,14 @@ fren.lint.undecidable "allow" in` before an item.
 Every query that Fren asks about a procedure or global expectation without
 an opt-out is in a fragment with a known decision procedure. That the
 fragment is decidable does not mean that the solver decides every query
-in it quickly, or at all: see [In practice](#in-practice) for where it
-does and where it does not. An `Inconclusive` verdict then means that the
-solver ran out of time, and the [message](../View.md#check-results) says
-to raise the time limit. With recursive functions, it may instead mean that evaluation did not
-confirm a model allowed by their contracts (`F0450`); strengthen those contracts
-rather than raising the time limit. In a procedure that opts out, it may also mean
+in it within its time or resource limit: see [In practice](#in-practice).
+An `Unknown` answer without reaching either limit is an internal error,
+reported with the check, rather than an ordinary inconclusive result
+([`check::decidable_unknown`](../Check.md#verdicts)). An `Inconclusive`
+verdict from reaching a limit keeps its [message](../View.md#check-results).
+With recursive functions, it may instead mean that evaluation did not
+confirm a model allowed by their contracts (`F0450`); strengthen those
+contracts rather than raising the time limit. In a procedure that opts out, it may also mean
 that the solver gave up, and the message says that instead.
 
 The rest of the language is decidable by three rules:
@@ -214,7 +216,7 @@ sets, and outside it otherwise:
 
 Fren does not expand the quantifier into the formula: the operators go to
 the solver as its relational operators, which decide them directly, with
-one exception, found by the conformance corpus: the solver does not
+one exception, found by fuzzing: the solver does not
 reliably combine relational operators with counting. Given both, it gives
 up, runs out of time, or even gives a wrong model, which Fren's model check
 then refutes. So in a procedure or global expectation that applies a
@@ -267,8 +269,10 @@ such facts. Models that evaluation does not confirm are Inconclusive
 
 Fren checks with cvc5 and does not add decision procedures of its own, so
 what the core promises is what cvc5 does with it. Where cvc5 does not
-decide a query in the core, the check is `Inconclusive`, and that is a
-limit of the solver, not a fault in the spec.
+decide a query in the core before its time or resource limit, the check
+is `Inconclusive`. If it gives up without reaching either limit, Fren
+reports an internal error with the check: the query was promised decidable,
+so this is a bug in Fren or the solver, not a fault in the spec.
 
 The solver decides these reliably and quickly:
 

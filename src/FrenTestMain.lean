@@ -2246,122 +2246,6 @@ def fmtBlanksKept (src out : String) : Array String := Id.run do
       failures := failures.push s!"a blank line before `{p.text}` (line {p.endLine + 1}) is lost, as its line is joined"
   return failures
 
-/-! ## Conformance corpus (`Reqs/Lang/Decidability`) -/
-
-/-- Random components whose constraints are all in the decidable core of
-strings, from a fixed seed. -/
-def stringCorpus (n : Nat) : String := Id.run do
-  let mut seed : Nat := 20261023
-  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\n"
-  let lits := #["\"\"", "\"a\"", "\"ab\"", "\"b\"", "\"F0\"", "\"x?\""]
-  let pats := #["r\"[a-z]*\"", "r\"a+b?\"", "r\".*[A-Z].*\"", "r\"[^_]*\"", "r\"(ab|ba){1,2}\"", "r\"F0[1-7][0-9]\""]
-  for k in [0:n] do
-    let mut atoms : Array String := #[]
-    for _ in [0:3] do
-      seed := (seed * 1103515245 + 12345) % 2147483648
-      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
-      let v := pick #["s", "t"] 1
-      let l := pick lits 2
-      let i := toString ((seed / 13) % 4)
-      atoms := atoms.push <| pick #[
-        s!"{v}.starts_with?({l})", s!"{v}.ends_with?({l})", s!"{v}.contains?({l})",
-        s!"{v}.matches?({pick pats 3})", s!"{v}.len <= {i}", s!"{v}.len + 1 >= {i}", s!"{v} = {l}", "s = t",
-        "s != t", s!"s.len + t.len = {i}", s!"({v} ++ {l}).len > {i}", s!"{v}.at({i}) = {l}",
-        s!"{v}.slice(0, {i}) != {l}", s!"{v} < {l}"] 5
-    out := out ++ s!"proc c{k}(s: String, t: String): (p?) \{\n    \
-      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
-      expect e: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
-  return out
-
-/-- Random components whose constraints are all in the decidable core of
-sets: Boolean algebra with cardinality. -/
-def setCorpus (n : Nat) : String := Id.run do
-  let mut seed : Nat := 20261024
-  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
-  let sets := #["s", "t", "(s union t)", "(s inter t)", "(s minus t)", "{1, 2}", "(t minus t)"]
-  for k in [0:n] do
-    let mut atoms : Array String := #[]
-    for _ in [0:3] do
-      seed := (seed * 1103515245 + 12345) % 2147483648
-      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
-      let a := pick sets 1
-      let b := pick sets 2
-      let i := toString ((seed / 13) % 4)
-      atoms := atoms.push <| pick #[
-        s!"x in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"{a} != {b}", s!"{a}.card <= {i}",
-        s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
-        "s = {}"] 5
-    out := out ++ s!"proc c{k}(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
-      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
-      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
-  return out
-
-/-- Relations over finite types, which are in the decidable core: the
-relational operators, with the set operators, but not `card`, which the core
-does not combine with them. -/
-def relationCorpus (n : Nat) : String := Id.run do
-  let mut seed : Nat := 20261024
-  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
-  let rels := #["r", "q", "(r union q)", "(r inter q)", "(r minus q)", "(r join q)", "r.inverse", "r.closure",
-    "{(E::A, E::B), (E::B, E::C)}", "(q join r.closure)"]
-  let sets := #["s", "r.domain", "r.range", "r.image(s)", "q.image({E::A})", "{E::B}", "r.closure.image(s)"]
-  for k in [0:n] do
-    let mut atoms : Array String := #[]
-    for _ in [0:3] do
-      seed := (seed * 1103515245 + 12345) % 2147483648
-      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
-      let a := pick rels 1
-      let b := pick rels 2
-      let u := pick sets 3
-      atoms := atoms.push <| pick #[
-        s!"(x, y) in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"x in {u}", s!"{u} subset s", s!"{u} != {b}.domain",
-        s!"(x, x) in {a}", "r = {}", s!"{a} != \{}"] 5
-    out := out ++ s!"proc c{k}(r: Rel<E, E>, q: Rel<E, E>, s: Set<E>, x: E, y: E): (p?) \{\n    \
-      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
-      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
-  return out
-
-/-- Sequences in the decidable core: indexing, `len`, `update`, equality,
-and operations with a literal operand. -/
-def sequenceCorpus (n : Nat) : String := Id.run do
-  let mut seed : Nat := 20261024
-  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\n"
-  let seqs := #["q", "r", "[1, 2]", "q.update(0, x)", "r.update(i, 2)", "[x]", "[0, x, 1]"]
-  for k in [0:n] do
-    let mut atoms : Array String := #[]
-    for _ in [0:3] do
-      seed := (seed * 1103515245 + 12345) % 2147483648
-      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
-      let a := pick seqs 1
-      let b := pick seqs 2
-      let j := toString ((seed / 13) % 3)
-      atoms := atoms.push <| pick #[
-        s!"{a} = {b}", s!"{a} != {b}", s!"{a}.len <= {j}", s!"x in [1, {j}]", s!"q.starts_with?([{j}])",
-        s!"q.ends_with?([x, {j}])", s!"(q.len > {j} and q[{j}] = x)", s!"(0 <= i and i < r.len and r[i] > {j})",
-        s!"{a}.len + {b}.len >= {j}"] 5
-    out := out ++ s!"proc c{k}(q: Seq<Int>, r: Seq<Int>, x: Int, i: Int): (p?) \{\n    \
-      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
-      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
-  return out
-
-/-- The corpora, by name. -/
-def corpora : List (String × (Nat → String)) :=
-  [("strings", stringCorpus), ("sets", setCorpus), ("relations", relationCorpus), ("sequences", sequenceCorpus)]
-
-/-- The solver decides every query of the corpus `name`: nothing is
-inconclusive but a pass that rests on a check that did not pass, such as
-an expectation of a procedure whose assumptions contradict each other
-(`F0664`, `Reqs/Evidence`). -/
-def conformance (name : String) (corpus : Nat → String) : IO (Array String) := do
-  IO.FS.createDirAll (".lake" / "corpus")
-  let file := s!".lake/corpus/{name}.fren"
-  IO.FS.writeFile file (corpus 40)
-  let (out, _) ← runFren ["check", file]
-  let resting := (out.splitOn "warning[F0664]").length - 1
-  if out.contains "could not check".toSlice || !out.contains s!" {resting} inconclusive".toSlice then
-    return #[s!"the {name} corpus ({file}) is not decided:\n{out}"]
-  return #[]
-
 /-- `src` laid out again at random, from `seed`, as `fmt::layout_free`
 allows: each gap whose line break a list or block decides, or that before
 the right side of a `:=` or `=>` (`fmt::right_side`) but a chain broken by
@@ -4453,7 +4337,7 @@ def jobs : IO (Array (List String)) := do
   let batches := (List.range n).toArray.map fun k =>
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
-    ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
+    ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString]
     ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
@@ -4505,9 +4389,6 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["queryCache"] => queryCache
   | ["solverStats"] => solverStats
   | ["solverLifetime"] => solverLifetime
-  | ["conformance", name] => match corpora.lookup name with
-    | some corpus => conformance name corpus
-    | none => throw (IO.userError s!"unknown corpus `{name}`")
   | ["formatting"] => formatting
   | ["fixing"] => fixing
   | ["libraries"] => libraries

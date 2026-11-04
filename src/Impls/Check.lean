@@ -33,6 +33,14 @@ def toVerdict : Verdict → check.Verdict
   | .fail => .Fail
   | .inconclusive => .Inconclusive
 
+impl decidable_unknown: check::decidable_unknown for (c : Bool) (r : String) {
+  in_core? := c,
+  reason := r,
+  internal_error? := Fren.Core.decidableUnknown c r,
+} by
+  intro c r _
+  simp [fren_spec, Fren.Core.decidableUnknown, Fren.Str.lit, and_assoc]
+
 instance : Fren.Finite CheckKind :=
   ⟨[.realizable, .inst, .«expect», .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness,
     .disjointness, .precondition, .postcondition, .reachability], by intro x; cases x <;> simp⟩
