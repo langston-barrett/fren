@@ -1,0 +1,125 @@
+; scopes: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not false))
+(check-sat)
+(reset)
+
+; scopes: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not true))
+(check-sat)
+(reset)
+
+; scopes: query 3
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-fun |::a| (Int) Int)
+(declare-fun |::b| (Int) Int)
+(define-fun |::a#e| ((|x| Int)) Bool (let ((let@0 (|::a| |x|))) (>= let@0 0)))
+(define-fun |::b#e| ((|x| Int)) Bool (let ((let@1 (|::b| |x|))) (= let@1 (+ (|::a| |x|) 1))))
+(declare-const |x| Int)
+(assert (|::b#e| |x|)) ; e
+(assert (|::a#e| |x|)) ; e
+(assert (not (> (|::b| |x|) 0)))
+(check-sat)
+(reset)
+
+; scopes: query 4
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-fun |::other| (Int) Int)
+(define-fun |::other#e| ((|x| Int)) Bool (let ((let@2 (|::other| |x|))) (< let@2 0)))
+(declare-const |x| Int)
+(assert (|::other#e| |x|)) ; e
+(assert (not (< (|::other| |x|) 0)))
+(check-sat)
+(reset)
+
+; scopes: query 5
+(set-logic QF_UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(declare-const |x| Int)
+(assert (not (not (= |x| 0))))
+(check-sat)
+(reset)
+
+note: cover goal `scopes::plain` is met
+  --> test/cli/args/dump_smt_fact_scope.fren:11:11
+   |
+11 |     cover plain: x = 0
+   |           ^^^^^ met
+   |
+   = witness: x = 0
+
+; [anonymous]: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not false))
+(check-sat)
+(reset)
+
+; [anonymous]: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(declare-const |a| Int)
+(assert (not (exists ((|a| Int)) (let ((let@0 |a|)) (>= let@0 0)))))
+(check-sat)
+(reset)
+
+; [anonymous]: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not false))
+(check-sat)
+(reset)
+
+; [anonymous]: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(declare-fun |::a| (Int) Int)
+(define-fun |::a#e| ((|x| Int)) Bool (let ((let@0 (|::a| |x|))) (>= let@0 0)))
+(declare-const |x| Int)
+(declare-const |b| Int)
+(assert (|::a#e| |x|)) ; e
+(assert (not (exists ((|b| Int)) (let ((let@1 |b|)) (= let@1 (+ (|::a| |x|) 1))))))
+(check-sat)
+(reset)
+
+; [anonymous]: query 1
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(assert (not false))
+(check-sat)
+(reset)
+
+; [anonymous]: query 2
+(set-logic UFDTLIA)
+(set-option :produce-models true)
+(set-option :tlimit-per 10000)
+(set-option :inst-when last-call)
+(declare-const |other| Int)
+(assert (not (exists ((|other| Int)) (let ((let@2 |other|)) (< let@2 0)))))
+(check-sat)
+(reset)
+
+fren: 7 passed, 0 failed, 0 inconclusive, 0 redundant
+exit=0
