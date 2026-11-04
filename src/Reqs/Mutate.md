@@ -453,7 +453,15 @@ pub fn occurrences(ids: DecisionIds, id: String): (n: Nat) {
     }
 
     ensure empty: when ids = DecisionIds::Nil, n = 0
-    ensure singleton: when ids = DecisionIds::Cons(id, DecisionIds::Nil), n = 1
+    ensure singleton: match ids {
+        DecisionIds::Cons(head, DecisionIds::Nil) => n = (if head = id then 1 else 0),
+        _ => true,
+    }
+    ensure pair: match ids {
+        DecisionIds::Cons(first, DecisionIds::Cons(second, DecisionIds::Nil)) =>
+            n = (if first = id then 1 else 0) + (if second = id then 1 else 0),
+        _ => true,
+    }
 }
 
 pub fn valid_ids?(ids: DecisionIds, selected: DecisionIds, decided: DecisionIds): (valid?) {
@@ -465,12 +473,36 @@ pub fn valid_ids?(ids: DecisionIds, selected: DecisionIds, decided: DecisionIds)
     }
 
     ensure empty: when ids = DecisionIds::Nil, valid?
+    ensure singleton: match ids {
+        DecisionIds::Cons(id, DecisionIds::Nil) =>
+            valid? iff occurrences(decided, id) = (if occurrences(selected, id) > 0 then 1 else 0),
+        _ => true,
+    }
 }
 
 pub proc ledger(selected: DecisionIds, decided: DecisionIds): (det valid?) {
     out valid? := valid_ids?(selected, selected, decided) and valid_ids?(decided, selected, decided)
 
     expect empty: when selected = DecisionIds::Nil and decided = DecisionIds::Nil, valid?
+    expect missing: when selected = DecisionIds::Cons("a", DecisionIds::Nil)
+        and decided = DecisionIds::Nil, not valid?
+    expect duplicate: when selected = DecisionIds::Cons("a", DecisionIds::Nil)
+        and decided = DecisionIds::Cons("a", DecisionIds::Cons("a", DecisionIds::Nil)), not valid?
+    expect unselected: when selected = DecisionIds::Nil
+        and decided = DecisionIds::Cons("a", DecisionIds::Nil), not valid?
+    expect once: when selected = DecisionIds::Cons("a", DecisionIds::Nil) and decided = selected, valid?
+}
+
+expect valid_ids_examples(id: String, other: String) {
+    assume distinct: id != other
+    let one: DecisionIds := DecisionIds::Cons(id, DecisionIds::Nil)
+    let both: DecisionIds := DecisionIds::Cons(id, DecisionIds::Cons(other, DecisionIds::Nil))
+
+    expect once: valid_ids?(one, one, one)
+    expect missing: not valid_ids?(one, one, DecisionIds::Nil)
+    expect duplicate: not valid_ids?(one, one, DecisionIds::Cons(id, one))
+    expect unselected: not valid_ids?(one, DecisionIds::Nil, one)
+    expect later_missing: not valid_ids?(both, both, one)
 }
 ```
 

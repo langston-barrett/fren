@@ -11,9 +11,10 @@ open Fren.Lang
 # What becomes of a mutant (`Reqs/Mutate`)
 
 The decisions in `FrenCli.MutateOutcome` and `FrenCli.MutateSelect`
-implement the comps of `mutate`. Each obligation over `Bool` is proved by
-`decide`, given the variables of `mutate::exit`'s instance, and each over
-`Nat` by `simp`.
+implement the comps of `mutate`. Boolean rules reduce by cases and
+`decide`; arithmetic rules use `simp` and `omega`. The whole-ledger proof
+uses induction on identifier lists to relate the Req's recursive counts
+and scans to the command's `List.count` and identifier scan.
 -/
 
 namespace Fren.Impls
@@ -26,10 +27,12 @@ def toMutantOutcome : Outcome → mutate.Outcome
   | .equivalent => .Equivalent
   | .unviable => .Unviable
 
+/-- Encode the command's identifier list as the Req's recursive ledger. -/
 def toDecisionIds : List String → mutate.DecisionIds
   | [] => .Nil
   | id :: ids => .Cons id (toDecisionIds ids)
 
+/-- The Req counts identifiers exactly as `List.count` does. -/
 theorem occurrences_toDecisionIds (ids : List String) (id : String) :
     mutate.occurrences (toDecisionIds ids) id = (ids.count id : Int) := by
   induction ids with
@@ -41,6 +44,7 @@ theorem occurrences_toDecisionIds (ids : List String) (id : String) :
       omega
     · simp [toDecisionIds, mutate.occurrences, ih, List.count_cons_of_ne h, h]
 
+/-- The Req's recursive scan checks every identifier of the encoded list. -/
 theorem valid_ids_toDecisionIds (ids selected decided : List String) :
     mutate.valid_ids? (toDecisionIds ids) (toDecisionIds selected) (toDecisionIds decided) =
       ids.all (fun id => decided.count id == (if selected.contains id then 1 else 0)) := by
