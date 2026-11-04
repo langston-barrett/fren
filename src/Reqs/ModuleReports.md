@@ -40,7 +40,7 @@ other check reports such a model as a counterexample, or as a witness,
 only where Fren confirms that the model meets the axioms themselves, and is
 Inconclusive where it does not.
 
-r[module.expansion.instances] expansion::today_verdict::{only_undecided_changes, unsat_by_kind, induction_only_claims}
+r[module.expansion.instances] expansion::today_verdict::{only_undecided_changes, unsat_by_kind, induction_only_claims, lawless_unchanged, refuted_kept}, expansion::realizability_unchanged
 A check of today's forms that was not decided may be decided by the
 instances of today's laws, where the query with them gives `unsat`. Its
 new verdict is the one that `unsat` gives a check of its kind, as
@@ -49,9 +49,13 @@ a proof, such as an expectation, and a failure of a witness check, a
 cover goal, a vacuity, redundancy or reachability check. So assumptions
 that contradict the laws are an error (`F0602`) where today they are a
 warning that the check is not decided (`F0608`), and a cover goal that the
-laws' instances rule out fails. An expectation's claim that was not
-decided may also pass by [induction](Lang/Recursion.md#induction)
-(`module.induction`).
+laws' instances rule out fails. A check whose kind's queries have no laws,
+realizability, keeps its verdict, as does one that
+is Inconclusive as the solver's model contradicts Fren's semantics
+([Reporting](Models.md#reporting)). An expectation's claim that is still
+not decided may also pass by the induction that `module.induction.unfolding`
+and `module.induction.lemmas` add to [Recursion's](Lang/Recursion.md#induction),
+as `lang::induction_verdict` decides.
 
 ```fren
 use check::{
@@ -66,7 +70,7 @@ use check::{
     reported_pass,
 }
 
-use lang::{ModuleModel, ModuleSentence, asked_of?, caveat_premise}
+use lang::{ModuleModel, ModuleSentence, RecPost, asked_of?, caveat_premise, induction_verdict}
 
 -- What the query with the instances added answers: `unsat`, or anything
 -- else, a model or no answer.
@@ -79,36 +83,68 @@ pub fn unsat_verdict(kind: Kind): Verdict :=
 -- Whether induction may decide a check of the kind: a claim's.
 pub fn induction_kind?(kind: Kind) := kind = Kind::Expectation
 
+pub fn as_post(v: Verdict): RecPost := match v {
+    Verdict::Pass => RecPost::Passed,
+    Verdict::Fail => RecPost::Failed,
+    Verdict::Inconclusive => RecPost::Inconclusive,
+}
+
+pub fn as_verdict(r: RecPost): Verdict := match r {
+    RecPost::Passed => Verdict::Pass,
+    RecPost::Failed => Verdict::Fail,
+    RecPost::Inconclusive => Verdict::Inconclusive,
+}
+
+-- What the instances decide of a check: today's verdict where it was
+-- decided, where the check's queries have no laws, or where its model
+-- contradicts Fren's semantics, and otherwise what `unsat` gives the kind.
+pub fn by_instances(kind: Kind, before: Verdict, instances: InstancesAnswer, refuted?): Verdict :=
+    if before != Verdict::Inconclusive or refuted? or not query_laws?(kind) then before
+    else if instances = InstancesAnswer::Unsat then unsat_verdict(kind)
+    else before
+
+set_option fren.lint.undecidable "allow" in
+pub fn some_passed?(attempts: Seq<RecPost>) :=
+    exists (k: Int), 0 <= k < attempts.len and attempts[k] = RecPost::Passed
+
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "solver" in
 pub proc today_verdict(
     kind: Kind,                      -- the check's kind
-    before: Verdict,                 -- its own verdict today, with today's laws quantified
+    before: Verdict,                 -- its verdict today: today's query, with today's laws quantified, and Recursion's induction
     instances: InstancesAnswer,      -- the answer of that query with the instances added
-    induction?,                      -- an induction on a candidate passes
+    refuted?,                        -- the check is Inconclusive as the solver's model contradicts Fren's semantics (Models.md#reporting)
+    unfolding: Seq<RecPost>,         -- the inductions that `module.induction.unfolding` and `module.induction.lemmas` add, on each candidate
 ): (det after: Verdict) {
     -- More hypotheses keep an `unsat` answer `unsat`, and a model of
     -- today's query meets the quantified laws, and so their instances.
-    require sound: when before != Verdict::Inconclusive, (instances = InstancesAnswer::Unsat) = from_unsat?(kind, before)
+    require sound: when before != Verdict::Inconclusive and query_laws?(kind),
+        (instances = InstancesAnswer::Unsat) = from_unsat?(kind, before)
 
+    call induced := induction_verdict(
+        as_post(by_instances(kind, before, instances, refuted?)),
+        refuted?,
+        unfolding,
+    )
     out after :=
-        if before != Verdict::Inconclusive then before
-        else if instances = InstancesAnswer::Unsat then unsat_verdict(kind)
-        else if induction? and induction_kind?(kind) then Verdict::Pass
-        else Verdict::Inconclusive
+        if induction_kind?(kind) then as_verdict(induced.reported) else by_instances(kind, before, instances, refuted?)
 
     expect passes_stay: when before = Verdict::Pass, after = Verdict::Pass
     expect failures_stay: when before = Verdict::Fail, after = Verdict::Fail
-    expect answers_but_unsat_change_nothing: when instances = InstancesAnswer::Other and not induction?,
+    expect answers_but_unsat_change_nothing: when instances = InstancesAnswer::Other and not some_passed?(unfolding),
         after = before
     expect only_undecided_changes: when after != before, before = Verdict::Inconclusive
     expect unsat_by_kind: when after != before and instances = InstancesAnswer::Unsat,
         from_unsat?(kind, after)
     expect induction_only_claims: when after != before and instances = InstancesAnswer::Other,
         proof?(kind) and induction_kind?(kind) and after = Verdict::Pass
+    expect lawless_unchanged: when not query_laws?(kind), after = before
+    expect refuted_kept: when refuted?, after = before
 }
 
 -- A cover goal of today's forms that is not decided today, and that the
 -- laws' instances rule out, fails.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "solver" in
 expect cover_ruled_out() {
     call r := today_verdict(
@@ -116,18 +152,35 @@ expect cover_ruled_out() {
         Verdict::Inconclusive,
         InstancesAnswer::Unsat,
         false,
+        [],
     )
     expect fails: r.after = Verdict::Fail
 }
 
--- A redundancy check that induction might help is not decided by it.
+-- A redundancy check is not decided by induction.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "solver" in
 expect induction_not_for_witnesses() {
     call r := today_verdict(
         Kind::Redundancy,
         Verdict::Inconclusive,
         InstancesAnswer::Other,
-        true,
+        false,
+        [RecPost::Passed],
+    )
+    expect stays: r.after = Verdict::Inconclusive
+}
+
+-- Realizability's queries have no laws, so their instances change nothing.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "solver" in
+expect realizability_unchanged() {
+    call r := today_verdict(
+        Kind::Realizability,
+        Verdict::Inconclusive,
+        InstancesAnswer::Unsat,
+        false,
+        [],
     )
     expect stays: r.after = Verdict::Inconclusive
 }
@@ -137,7 +190,7 @@ expect induction_not_for_witnesses() {
 
 **Dynamic semantics**
 
-r[module.expansion.computed] expansion::strict_expansion::{shown_kept, passes_stay, failures_stay, caveats_kept, only_undecided_changes, new_verdict_from_query}
+r[module.expansion.computed] expansion::strict_expansion::{shown_kept, passes_stay, failures_stay, caveats_kept, only_undecided_changes, new_verdict_from_query, lawless_kept, refuted_kept}
 Of a check of today's forms whose own verdict today is not Inconclusive,
 everything that is shown is the same as today: its verdict, whether it is
 counted among the passes by testing or by bound, `F0663`, `F0664` and
@@ -146,8 +199,10 @@ one that the check's kind gives the query's answer.
 
 r[module.expansion.induction] expansion::strict_expansion::{new_pass_reported, new_pass_caveat}
 A check of today's forms that today is Inconclusive may pass, by the
-instances of today's laws or by induction by unfolding
-([Recursion](Lang/Recursion.md#induction)). The new pass is reported as
+instances of today's laws or by the induction that
+`module.induction.unfolding` and `module.induction.lemmas` add to
+[Recursion's](Lang/Recursion.md#induction), unless the solver's model of it
+contradicts Fren's semantics. The new pass is reported as
 every pass is, by `check::reported_pass`: it is shown as Inconclusive, with
 `F0664`, where it rests on a check that is not settled, and gets `F0663`
 where its caveats are more than its own method's. It carries `F0665`
@@ -166,18 +221,20 @@ expect strict_expansion(
     m: ModuleModel,
     n: ModuleSentence,               -- the check's sentence
     kind: Kind,                      -- the check's kind
-    before: Verdict,                 -- its own verdict today, with today's laws quantified
+    before: Verdict,                 -- its own verdict today: today's query, with today's laws quantified, and Recursion's induction
     instances: InstancesAnswer,
-    induction?,
+    refuted?,
+    unfolding: Seq<RecPost>,
     own: Set<Caveat>,                -- the caveats of its own method, the same before and after
     caveats: Set<Caveat>,            -- its caveats, which the checks it rests on give, the same before and after
     settled?,                        -- it rests on no check that is not settled, before and after
 ) {
-    assume sound: when before != Verdict::Inconclusive, (instances = InstancesAnswer::Unsat) = from_unsat?(kind, before)
+    assume sound: when before != Verdict::Inconclusive and query_laws?(kind),
+        (instances = InstancesAnswer::Unsat) = from_unsat?(kind, before)
     assume own_within: own subset caveats
     assume witness_plain: when not proof?(kind), own = {} and caveats = {}
 
-    call v := today_verdict(kind, before, instances, induction?)
+    call v := today_verdict(kind, before, instances, refuted?, unfolding)
     call caveat := caveat_premise(m, n)
     call old := reported_pass(kind, before, own, caveats, settled?)
     call new := reported_pass(kind, v.after, own, caveats, settled?)
@@ -193,7 +250,9 @@ expect strict_expansion(
     expect only_undecided_changes: when new.shown != old.shown, old.shown = Verdict::Inconclusive
     expect new_verdict_from_query: when v.after != before,
         (instances = InstancesAnswer::Unsat and v.after = unsat_verdict(kind))
-        or (induction? and induction_kind?(kind) and v.after = Verdict::Pass)
+        or (induction_kind?(kind) and v.after = Verdict::Pass)
+    expect lawless_kept: when not query_laws?(kind), v.after = before
+    expect refuted_kept: when refuted?, v.after = before
     expect new_pass_reported: when before = Verdict::Inconclusive and v.after = Verdict::Pass,
         new.unsettled? = (not settled?) and new.weakened? = (settled? and caveats != own)
     expect new_pass_caveat: when before = Verdict::Inconclusive and v.after = Verdict::Pass,
@@ -208,5 +267,6 @@ The Lean-hosted front end checks this chapter's items by name:
 #fren_check today_verdict
 #fren_check cover_ruled_out
 #fren_check induction_not_for_witnesses
+#fren_check realizability_unchanged
 #fren_check strict_expansion
 ```

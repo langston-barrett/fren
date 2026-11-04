@@ -791,10 +791,12 @@ what it states of a call of the procedure at its inputs, which is its
 matched application, and it is used at each call, as a call's constraint
 is today ([Procedures](Procedures.md#meaning)).
 
-r[module.rules.laws] lang::unbound_law_quantified
-A `law` that meets the binding rule is instantiated as a lemma is. A `law`
-that does not is not an error, and is used only as today, as a quantified
-hypothesis of every check of its trait ([Traits](Traits.md#laws)).
+r[module.rules.laws] lang::unbound_law_quantified, lang::get_put_kept
+Every `law` stays, as today, a quantified hypothesis of every check of its
+trait ([Traits](Traits.md#laws)). A `law` that meets the binding rule is
+also instantiated as a lemma is, and its instances are added to those
+checks' queries (`module.instance.models`). A `law` that does not is not
+an error, and is used only quantified.
 
 r[module.rules.report] lang::sentence_instantiation
 The error of a lemma or `assume` item that breaks the binding rule names
@@ -1266,14 +1268,13 @@ pub fn reach(rounds: Sentences, all: Sentences, check: Int, items: Set<Int>): Se
         Sentences::Cons(_, rest) => reach(rest, all, check, items union brought(all, check, items)),
     }
 
--- The laws of `ps` that break the binding rule, which every check of
--- their trait uses as today, quantified (`module.rules.laws`).
+-- The laws of `ps`, which every check of their trait uses as today,
+-- quantified, whether or not they are also instantiated
+-- (`module.rules.laws`).
 pub fn quantified_laws(ps: Sentences): Set<Int> := match ps {
     Sentences::Nil => {},
     Sentences::Cons(p, rest) =>
-        (if p.kind = SentenceKind::Law
-            and instantiation_verdict(p.variables, p.applications) != SentenceInstantiation::Instantiable
-            then {p.position} else {}) union quantified_laws(rest),
+        (if p.kind = SentenceKind::Law then {p.position} else {}) union quantified_laws(rest),
 }
 
 pub fn used_positions(ps: Sentences, check: Int, items: Set<Int>): Set<Int> := match ps {
@@ -1370,6 +1371,23 @@ expect unbound_law_quantified() {
     call r := sentence_use(4, Sentences::Cons(UNBOUND_LAW, Sentences::Nil), {})
     expect quantified: r.kept_quantified = {3}
     expect not_instantiated: r.used = {}
+}
+
+-- `get_put` at 3, which meets the binding rule: a check of its trait at 4
+-- that applies `get` both instantiates it and keeps it quantified.
+pub const GET_PUT_LAW: Sentence := Sentence {
+    kind := SentenceKind::Law,
+    place := SentencePlace::Interface,
+    position := 3,
+    variables := GET_PUT_VARIABLES,
+    applications := GET_PUT_APPLICATIONS,
+}
+
+set_option fren.evidence "random" in
+expect get_put_kept() {
+    call r := sentence_use(4, Sentences::Cons(GET_PUT_LAW, Sentences::Nil), {2})
+    expect instantiated: r.used = {3}
+    expect quantified: r.kept_quantified = {3}
 }
 
 -- `assume one(x: T, y: T): x = y`, about the abstract type `T` at 1 alone,
@@ -2087,6 +2105,7 @@ The Lean-hosted front end checks this chapter's items by name, since a
 #fren_check axioms_anywhere
 #fren_check laws_anywhere
 #fren_check unbound_law_quantified
+#fren_check get_put_kept
 #fren_check no_subject_used
 #fren_check lemmas_ranked
 #fren_check defined_contract_not_own

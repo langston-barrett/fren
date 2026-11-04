@@ -112,6 +112,8 @@ tested model::fill_rule: "src/FrenTest/ModelDefaults.lean"
 -- No front end elaborates a name into the semantics' abstract syntax yet,
 -- so there is no code to bind `lang::named` to; its expectations are
 -- checked by the solver.
+trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
+
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`) are a design that no front end implements
 -- yet (#669, stage 3), so there is no code to bind them to.
@@ -124,8 +126,6 @@ trusted lang::sentence_use: "the design of instantiation (#669, stage 3); no fro
 trusted expansion::today_verdict: "the design of the verdicts of today's forms under instantiation (#669, stage 3); the solver checks strict expansion of it over every model and kind"
 trusted lang::arm_decided: "the design of induction by unfolding (#669, stage 4); nothing implements unfolding yet, and its expectations are checked by testing"
 trusted lang::caveat_premise: "the design of what a check reports of the axioms it rests on (#669, stage 3); the solver checks it against today's reports of modules of today's forms"
-
-trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
 
 -- Modules as theories, and the items that state claims
 -- (`Reqs/Lang/ModulesAndInterfaces`), are a design that no front end
