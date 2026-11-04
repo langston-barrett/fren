@@ -236,7 +236,7 @@ module.role.domain -- partly formalized: `lang::sentence_role` gives the role; t
 module.role.theorem -- partly formalized: `lang::sentence_role` gives the role; in which interpretations a theorem holds is the checks' meaning
 module.role.axiom -- partly formalized: `lang::sentence_role` gives the role; that the interpretations are those meeting every axiom is the checks' meaning
 module.role.goal -- partly formalized: `lang::sentence_role` gives the role; that Fren proves it as a theorem is the checks'
-module.ensure.sugar -- partly formalized: `lang::sentence_role` gives the role; what the clause states of `f(x)` is `lang::ensure_clause`'s
+module.ensure.sugar -- partly formalized: `lang::sentence_role` gives the role; what the clause states of `f(x)` is the meaning of a contract, which Items' Contracts states
 module.meaning -- partly formalized: `lang::global_checks` gives the checks of a global expectation; the meaning of other sentences is stated as the same formula
 module.meaning.procedures -- partly formalized: `lang::global_checks` gives the checks of a global expectation's calls; the constraint of an `assume` item's calls on its procedures is not modelled
 module.signature -- partly formalized: the requirements decide that an `assume`, `expect` or `law` item may apply a later item; that clauses keep the order of contracts, and the change to `lang::declared_before`, are stage 3's

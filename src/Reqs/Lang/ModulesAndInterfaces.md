@@ -528,10 +528,8 @@ r[module.use]
 A check of an item may use every axiom of its module and of the modules
 it imports, wherever it is declared, and each theorem declared before the
 item. No check uses a goal. A check of a sentence of today's forms uses
-today's laws and contracts as it does today: a trait's laws as the
-quantified hypotheses of the trait's checks that `traits.expect.checks`
-gives them to, wherever each is written, and contracts as
-[Contracts](Items.md#contracts) states.
+today's laws and contracts unchanged, as `traits.expect.checks` and
+[Contracts](Items.md#contracts) state.
 
 `lang::lemma_order` states which applications a lemma may have:
 
@@ -592,11 +590,14 @@ expect law_before_method() {
 > **Rationale:** Axioms are used wherever they are declared, since no
 > axiom is proved and so none can rest on a check that rests on it.
 > Theorems are ranked, so that no proof rests on itself. Lemmas keep the
-> order of declarations because a theorem that mentioned a later item
-> could rest on it: with `lemma l(n: N): h(n) >= 1` before a structural
-> recursion `h` whose contract claims `h(n) >= 1`, the check of `l` would
-> use `h`'s contract, and the check of `h`'s contract would use `l`, so
-> each would pass from the other, whatever `h` is. No check rests on an
+> order of declarations because an application brings its function's
+> contract wherever it is written ([Contracts](Items.md#contracts)), so a
+> theorem that applied a later item could rest on it: with
+> `lemma l(n: N): h(n) >= 1` before a structural recursion `h` whose
+> contract claims `h(n) >= 1`, the check of `l` would have `h`'s contract
+> from its application of `h`, and the check of `h`'s contract may use `l`,
+> declared before it (`module.use`), so each would pass from the other,
+> whatever `h` is. No check rests on an
 > axiom's or a goal's proof, so they may come anywhere.
 
 ## Checks
@@ -611,17 +612,15 @@ domain, its calls and its claims, each using the sentences that
 that these checks do not, is to be specified in Structural recursion by
 #750.
 
-r[module.axiom.check]
+r[module.axiom.check] check::realizability
 An axiom is never proved. Until the realizability of axioms that relate
-several items is specified (#669, stage 5), Fren checks of a module's
-axioms only what it checks today: the realizability of each uninterpreted
-function's `ensure` clauses ([Realizability](../Check.md#contracts-of-uninterpreted-functions),
-`F0631`, `F0632`).
+several items is specified (#669, stage 5), the axioms of today's forms
+have the checks that today's forms have, unchanged
+([Realizability](../Check.md#realizability), `traits.expect.lawful`),
+and an `assume` item has none.
 
-> **Note:** Today's realizability check is kept, so
-> `module.expansion` holds of it: a spec of today's forms has the same
-> realizability verdicts and messages. Stage 5 adds the tiers that check
-> `assume` items and laws that relate several items.
+> **Note:** Stage 5 adds the tiers that check `assume` items and laws that
+> relate several items.
 
 ## Metatheory
 
@@ -653,8 +652,9 @@ no query states freeness. It is argued.
 **Dynamic semantics**
 
 r[module.expansion]
-A spec that Fren accepts today, whose items and clauses are all of
-today's forms, has the same verdicts and messages as before this chapter.
+A spec that Fren accepts today, whose sentences and block members are all
+of today's forms, has the same verdicts and messages as before this
+chapter.
 Today's forms are an `ensure` clause and an `assume` clause of a function
 or procedure, an `assume` member of a global expectation's block, an
 `expect` of a procedure, a global expectation or a trait, a global
