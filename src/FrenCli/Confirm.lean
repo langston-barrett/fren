@@ -682,7 +682,7 @@ def applyRefutations (results : Array Fren.Core.CheckResult) (log : Array Refuta
     if r.detail matches .refuted .. then out := out.push r; continue
     match log.find? (·.about r) with
     | some x =>
-      out := out.push { r with verdict := confirmedVerdict r.verdict .Refuted, detail := .unknown "the solver's model was refuted" }
+      out := out.push { r with verdict := confirmedVerdict r.verdict .Refuted, detail := .unknown Fren.Core.refutedModelReason }
       errs := errs.push (r, x.msg r)
     | none => out := out.push r
   return (out, errs)

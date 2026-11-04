@@ -192,14 +192,16 @@ theorem some_passed (as : List Verdict) :
 
 -- Both front ends report what `inductionVerdict` gives, of the claim's own
 -- verdict and those of the inductions tried, in order.
-impl induction_verdict: lang::induction_verdict for (d : Verdict) (as : List Verdict) {
+impl induction_verdict: lang::induction_verdict for (d : Verdict) (r : Bool) (as : List Verdict) {
   direct := toRecPost d,
+  «refuted?» := r,
   attempts := Fren.Seq.ofList (as.map toRecPost),
-  reported := toRecPost (inductionVerdict d as),
+  reported := toRecPost (inductionVerdict d r as),
 } by
-  intro d as
+  intro d r as
   simp only [fren_spec, some_passed]
   intro _
-  cases d <;> by_cases h : Verdict.pass ∈ as <;> simp (config := { decide := true }) [inductionVerdict, toRecPost, h]
+  cases d <;> cases r <;> by_cases h : Verdict.pass ∈ as <;>
+    simp (config := { decide := true }) [inductionVerdict, toRecPost, h]
 
 end Fren.Impls

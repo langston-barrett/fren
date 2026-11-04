@@ -63,7 +63,9 @@ includes such a procedure now and then too. `--sites` generates
 does not synthesize its type where it is not checked, an error that stops
 the spec's other checks; `genWide` includes one without it now and then.
 `--inductions` generates global expectations over recursive enumerations
-alone (`Wide.inductions`), which induction on a parameter may prove.
+alone (`Wide.inductions`), which induction on a parameter may prove, and
+`--induction-forms` the forms in which the front ends read a candidate
+for it with code of their own (`Wide.inductionForms`).
 `--confirm` generates what the confirmation of models evaluates
 (`Wide.genConfirmed`): `div` and `mod`, an index in an argument that a
 function's body never reads, and the formulas whose value confirmation
@@ -1184,6 +1186,62 @@ def inductions : R String := do
   -- must not pass, last.
   if ← chance 30 then
     out := out ++ "\nexpect id_off(a: IdList) {\n    expect c: idlen(a) != 5\n}\n"
+  return out
+
+/-- Global expectations in the forms where the two front ends read a
+candidate for induction with code of their own (`lang::induction_candidate`,
+`--induction-forms`): a decreasing argument in parentheses or nested in
+another application; one hidden by a `match` arm's binder that shadows the
+parameter; a recursion applied only to another expression; the other members
+of a block (`let`, `use`, a call, a `cover`, a claim under an evidence
+setting, an assumption that is a Boolean block); an uninterpreted
+function, generic or not; a parameter of a type alias, of a nested instance
+of a generic enumeration, and of an enumeration with a payload of a subset
+type; and an enumeration of another module, which is not tried
+(`Reqs/Lang/Recursion#induction`). Each claim holds, so no result depends
+on a model. A mode of its own, so that no other seed's spec changes. -/
+def inductionForms : R String := do
+  let mut out := "mod jforms\n\npub enum JL { Nil, Cons(Int, JL) }\n" ++
+    "pub enum JG<A> { Z, S(A, JG<A>) }\n" ++
+    "pub type JList := JL\n" ++
+    "pub type JPos = n: Int where positive: n >= 1\n" ++
+    "set_option fren.lint.undecidable \"allow\" in\npub enum JP { Nil, Cons(JPos, JP) }\n" ++
+    "pub fn jlen(l: JL): Int := match l { JL::Nil => 0, JL::Cons(_, r) => 1 + jlen(r) }\n" ++
+    "pub fn japp(a: JL, b: JL): JL := match a {\n" ++
+    "    JL::Nil => b,\n    JL::Cons(h, t) => JL::Cons(h, japp(t, b)),\n}\n" ++
+    "pub fn jcount<A>(g: JG<A>): Int := match g { JG::Z => 0, JG::S(_, r) => 1 + jcount(r) }\n" ++
+    "pub fn jplen(l: JP): Int := match l { JP::Nil => 0, JP::Cons(_, r) => 1 + jplen(r) }\n" ++
+    "pub fn jw(JL): Int\n" ++
+    "pub fn jgw<T>(T): Int\n" ++
+    "pub proc jmeasure(l: JL): (det n: Int) {\n    ensure value: n = jlen(l)\n}\n"
+  let adds (a b : String) := s!"jlen(japp({a}, {b})) = jlen({a}) + jlen({b})"
+  -- Each form, with the parameters it is over and its block, drawn or not.
+  let forms : Array (String × String × String) := #[
+    ("parens", "a: JL, b: JL", s!"expect c: {adds "(a)" "b"}"),
+    ("nested", "a: JL, b: JL, c: JL",
+      "expect holds: jlen(japp(japp(a, b), c)) = jlen(a) + jlen(b) + jlen(c)"),
+    ("shadowed", "a: JL, b: JL",
+      "expect c: match b {\n        JL::Nil => jlen(a) >= 0,\n        JL::Cons(_, a!) => jlen(a) >= 0,\n    }"),
+    ("other_arg", "a: JL", "expect c: jlen(JL::Cons(1, a)) >= 1"),
+    ("let_member", "a: JL, b: JL", s!"let n: Int := jlen(a)\n    expect c: n + jlen(b) = jlen(a) + jlen(b)"),
+    ("use_member", "a: JL", "use self::JL::{Nil}\n    expect c: japp(a, Nil) = a"),
+    ("call_member", "a: JL, b: JL", "call m := jmeasure(japp(a, b))\n    expect c: m.n = jlen(a) + jlen(b)"),
+    ("cover_member", "a: JL, b: JL", s!"cover nonempty: a != JL::Nil\n    expect c: {adds "a" "b"}"),
+    ("evidence", "a: JL, b: JL", s!"set_option fren.evidence \"solver\" in\n    expect c: {adds "a" "b"}"),
+    ("block_assume", "a: JL, b: JL",
+      "assume e: and {\n        empty: b = JL::Nil,\n        zero: jlen(b) = 0,\n    }\n    expect c: jlen(japp(a, b)) = jlen(a)"),
+    ("abstract", "a: JL, b: JL", s!"expect c: {adds "a" "b"} + jw(a) - jw(a)"),
+    ("generic_abstract", "a: JL, b: JL", s!"expect c: {adds "a" "b"} + jgw(a) - jgw(a)"),
+    ("alias", "a: JList, b: JL", s!"expect c: {adds "a" "b"}"),
+    ("nested_instance", "g: JG<JG<Int>>", "expect c: jcount(g) >= 0"),
+    ("subset_payload", "l: JP", "expect c: jplen(l) >= 0")]
+  for (n, params, body) in forms do
+    if ← chance 50 then out := out ++ s!"\nexpect jf_{n}({params}) \{\n    {body}\n}\n"
+  -- An enumeration of another module, last, as its module's `use` ends
+  -- the spec.
+  if ← chance 30 then
+    out := out ++ "\nmod jother\n\nuse jforms::{JL, japp, jlen}\n" ++
+      s!"\nexpect jf_module(a: JL, b: JL) \{\n    expect c: {adds "a" "b"}\n}\n"
   return out
 
 /-- Generic functions whose type parameters are element types
@@ -2442,35 +2500,38 @@ structure Mode where
   /-- Specs of global expectations over recursive enumerations alone
   (`Wide.inductions`). -/
   inductions : Bool := false
+  /-- Specs of the forms in which the front ends read a candidate for
+  induction (`Wide.inductionForms`). -/
+  inductionForms : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  Id.run ((if m.inductions then Wide.inductions else if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
+  Id.run ((if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions else if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
     else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
     else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
-the next; none for `--guards`, `--sites`, `--confirm` and `--inductions`. The empty prefix
+the next; none for `--guards`, `--sites`, `--confirm`, `--inductions` and `--induction-forms`. The empty prefix
 of `--scrutinees` makes any static error a group error: that generator,
 like an appended group, promises to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm || m.inductions then #[] else
+  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
   (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
     (if m.sites then #["--sites"] else #[]) ++ (if m.confirm then #["--confirm"] else #[]) ++
     (if m.scrutinees then #["--scrutinees"] else #[]) ++
-    (if m.inductions then #["--inductions"] else #[])
+    (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
-  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions"]) then
+  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
-           inductions := args.contains "--inductions" }
+           inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -2478,7 +2539,7 @@ def Mode.lean (m : Mode) : String :=
   let fields := (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
     (if m.sites then ["sites := true"] else []) ++ (if m.confirm then ["confirm := true"] else []) ++
     (if m.scrutinees then ["scrutinees := true"] else []) ++
-    (if m.inductions then ["inductions := true"] else [])
+    (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3078,7 +3139,8 @@ Sized so that the whole corpus takes about 2 minutes of one CI machine. -/
 def corpus : List (Mode × Nat × Nat) :=
   [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
-    ({ inductions := true }, 0, 20)]
+    ({ inductions := true }, 0, 20),
+    ({ inductionForms := true }, 0, 20)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -3650,10 +3712,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -3670,9 +3732,9 @@ unsafe def main (args : List String) : IO UInt32 := do
     return ← mainFiles files ".lake/fuzz"
   let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
                        sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
-                       inductions := args.contains "--inductions" }
+                       inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
-    && a != "--inductions")
+    && a != "--inductions" && a != "--induction-forms")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

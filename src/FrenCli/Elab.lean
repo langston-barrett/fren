@@ -2031,21 +2031,17 @@ partial def elabInductions (name : Ident) (header body : Array Member) (abstract
     let .prop .expect claim e := m | continue
     let mut fns := #[]
     for i in candidates do
-      if let some f ← elabInduction claim e i assumptions then fns := fns.push f
+      if let some f ← elabInduction shown params tys claim e i assumptions then fns := fns.push f
     inductions := inductions.push (Name.mkSimple claim.name, fns)
   modify fun s => { s with globals := s.globals.modify (s.globals.size - 1) fun g => { g with inductions } }
 where
   /-- The function generated for induction on the parameter at `i` of the
-  claim `e`, named `claim`, under the assumptions `assumptions`, elaborated:
-  its path, or none if it is not a structural recursion. -/
-  elabInduction (claim : Ident) (e : Expr) (i : Nat) (assumptions : Array Expr) : M (Option Name) := do
+  claim `e`, named `claim`, under the assumptions `assumptions`, of the
+  expectation named `shown`, whose parameters are `params`, of types `tys`,
+  elaborated: its path, or none if it is not a structural recursion. -/
+  elabInduction (shown : Ident) (params : Array (Ident × Option (Array Ident))) (tys : Array Ty) (claim : Ident)
+      (e : Expr) (i : Nat) (assumptions : Array Expr) : M (Option Name) := do
     let st ← get
-    let shown := (declaredIdent name).1
-    let params := header.filterMap fun
-      | .var true _ _ x ty none => some (x, ty)
-      | _ => none
-    let some c := st.globals.back? | return none
-    let tys := params.filterMap fun (x, _) => (c.vars.find? (·.name == Name.mkSimple (declaredIdent x).1.name)).map (·.ty)
     let .enum ep _ := tys[i]! | return none
     let some d := st.dataOf? ep | return none
     let sp := e.span

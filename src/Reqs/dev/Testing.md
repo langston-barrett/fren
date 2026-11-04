@@ -522,7 +522,7 @@ pub mod testing
   itself is tested in `FrenTest/FrontendsCompare.lean`.
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
-  `--sites`, `--confirm`, `--scrutinees` and `--inductions`
+  `--sites`, `--confirm`, `--scrutinees`, `--inductions` and `--induction-forms`
   (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of at
   most five specs each, including those listed outside the ranges. Each

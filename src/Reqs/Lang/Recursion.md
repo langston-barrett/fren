@@ -507,17 +507,27 @@ is Inconclusive and some induction passes, and the claim's own verdict
 otherwise. A pass is reported as any other; it is not reported that it
 was by induction. It is tried wherever the claim's check is Inconclusive,
 also where that check ran out of time, and then each candidate's check
-may take as long. So induction never fails a check, and never changes a
-check that passes or fails: only an Inconclusive one may pass.
+may take as long. But it is not tried where the check is Inconclusive
+because the solver's model of it contradicts Fren's semantics, an
+internal error that the check reports ([Reporting](../Models.md#reporting)):
+the translation that the induction's check would rest on is in doubt
+there, and a pass beside that error would contradict it. So induction
+never fails a check, and never changes a check that passes or fails: only
+an Inconclusive one may pass.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
-pub proc induction_verdict(direct: RecPost, attempts: Seq<RecPost>): (det reported: RecPost) {
-    ensure rule: reported = (if direct = RecPost::Inconclusive
+pub proc induction_verdict(
+    direct: RecPost,
+    refuted?,                    -- the claim's check is Inconclusive as the solver's model of it contradicts Fren's semantics
+    attempts: Seq<RecPost>,
+): (det reported: RecPost) {
+    ensure rule: reported = (if direct = RecPost::Inconclusive and not refuted?
         and (exists (k: Int), 0 <= k < attempts.len and attempts[k] = RecPost::Passed)
         then RecPost::Passed else direct)
 
     expect strict: when direct != RecPost::Inconclusive, reported = direct
+    expect internal_error_kept: when refuted?, reported = direct
 }
 ```
 

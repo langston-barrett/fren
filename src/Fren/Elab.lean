@@ -8920,21 +8920,6 @@ where it is reported. -/
 def blockMemberError? (stx : Syntax) : CommandElabM (Option (Syntax × Core.Msg)) :=
   return (← blockMembers stx).findSome? fun (ref, m, det) => (Core.blockMemberReport? m det).map (ref, ·)
 
-open Lang in
-/-- What a member of a global expectation's block is (`lang::BlockMember`),
-as the `fren` command reads it. -/
-def blockMemberKind (m : Syntax) : Core.BlockMember :=
-  if m.isOfKind ``Lang.existsMember then .exists
-  else if m.isOfKind ``Lang.letMember then .let
-  else if m.isOfKind ``Lang.defineMember then .define
-  else if m.isOfKind ``Lang.assumeMember || m.isOfKind ``Lang.bareAssumeMember then .assume
-  else if m.isOfKind ``Lang.ensureMember || m.isOfKind ``Lang.bareEnsureMember then .ensure
-  else if m.isOfKind ``Lang.expectMember || m.isOfKind ``Lang.bareExpectMember then .expect
-  else if m.isOfKind ``Lang.coverMember then .cover
-  else if m.isOfKind ``Lang.callMember then .call
-  else if m.isOfKind ``Lang.refinesMember then .refines
-  else .use
-
 /-- `stx`, with each identifier named `n` named `m` instead. -/
 partial def renameIdent (n m : Name) : Syntax → Syntax
   | .node info k args => .node info k (args.map (renameIdent n m))
@@ -8969,7 +8954,7 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
   let st ← getState
   let some c := st.globals.get? path | return
   let l ← getLocal
-  let kinds ← stx[8].getArgs.mapM fun m0 => return blockMemberKind (← unwrapEvidence m0).1
+  let kinds := (← blockMembers stx).map (·.2.1)
   let params := stx[4].getSepArgs.filter (·[3].isNone)
   let names := params.map fun p => (declaredIdent p[1]).1.getId
   let vars := names.filterMap fun x => c.vars.find? (·.name == x)

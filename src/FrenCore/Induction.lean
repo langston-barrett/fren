@@ -84,12 +84,28 @@ def inductionCases (shapes : Lean.Name → Option DataShape) (params : Array Ty)
   | some parts => parts.map fun ps => (ps, inductionHypotheses flat i (ps.toList.map (·.flat)))
   | none => #[]
 
+/-- Why the `fren` command makes a check inconclusive where evaluation
+refutes the solver's model of it, an internal error that it reports beside
+the check (`eval::confirmed_verdict`). -/
+def refutedModelReason : String := "the solver's model was refuted"
+
+/-- Whether the detail `d` of an inconclusive check says that the solver's
+model contradicts Fren's semantics, an internal error that the check
+reports (`model::report`): its check's translation is in doubt, so no
+induction overrides it (`lang::induction_verdict`). -/
+def Detail.modelRefuted : Detail → Bool
+  | .refuted .. => true
+  | .unknown w => w == refutedModelReason
+  | _ => false
+
 /-- What a global expectation's check reports, where its own check gives
-`direct` and the inductions tried give `attempts`, in order
-(`lang::induction_verdict`): a pass where its check is inconclusive and an
-induction passes, and its own check's verdict otherwise. -/
-def inductionVerdict (direct : Verdict) (attempts : List Verdict) : Verdict :=
-  if direct == .inconclusive && attempts.contains .pass then .pass else direct
+`direct`, the solver's model of it contradicts Fren's semantics if
+`refuted` (`Detail.modelRefuted`), and the inductions tried give
+`attempts`, in order (`lang::induction_verdict`): a pass where its check is
+inconclusive, not because of such a model, and an induction passes, and its
+own check's verdict otherwise. -/
+def inductionVerdict (direct : Verdict) (refuted : Bool) (attempts : List Verdict) : Verdict :=
+  if direct == .inconclusive && !refuted && attempts.contains .pass then .pass else direct
 
 /-- The name of the function generated for induction on the parameter `x`
 of the claim `claim` of the global expectation `n`, whose name starts at
