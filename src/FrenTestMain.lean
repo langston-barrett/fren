@@ -3334,6 +3334,11 @@ def withText (name : String) (chars : Array Char) (f : String → IO α) : IO α
     f path.toString
 
 /-- What `fren mutate` decides about the mutants of the example `path`:
+- **complete ledger:** every run (full, sample, each shard, each
+  expectation-deleted derivative and the exhaustive sample) decides exactly
+  the ID multiset selected from its independently generated mutants, reports
+  no error diagnostic, and exits with 3 exactly when a mutant survives,
+  otherwise 0;
 - **adequate:** the example passes `fren check`, and every mutant is killed
   but those listed as equivalent, each of which survives or is shown
   equivalent;

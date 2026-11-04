@@ -41,16 +41,27 @@ theorem occurrences_toDecisionIds (ids : List String) (id : String) :
       omega
     · simp [toDecisionIds, mutate.occurrences, ih, List.count_cons_of_ne h, h]
 
-impl mutant_decision: mutate::decision for (s : Bool) (id : String) (ids : List String) (e : Bool) {
-  selected? := s,
-  id := id,
-  decided := toDecisionIds ids,
-  command_error? := e,
-  valid? := FrenCli.Mutate.decisionValid s id ids e,
+theorem valid_ids_toDecisionIds (ids selected decided : List String) :
+    mutate.valid_ids? (toDecisionIds ids) (toDecisionIds selected) (toDecisionIds decided) =
+      ids.all (fun id => decided.count id == (if selected.contains id then 1 else 0)) := by
+  induction ids with
+  | nil => rfl
+  | cons head rest ih =>
+    rw [Bool.eq_iff_iff]
+    by_cases h : head ∈ selected <;>
+      simp [toDecisionIds, mutate.valid_ids?, ih, occurrences_toDecisionIds, h] <;> omega
+
+impl mutant_ledger: mutate::ledger for (s d : Array String) {
+  selected := toDecisionIds s.toList,
+  decided := toDecisionIds d.toList,
+  valid? := (FrenCli.Mutate.decisionError? s d).isNone,
 } by
-  intro s id ids e _
-  simp only [fren_spec, occurrences_toDecisionIds]
-  cases s <;> cases e <;> simp [FrenCli.Mutate.decisionValid] <;> omega
+  intro s d _
+  simp only [fren_spec]
+  rw [Bool.eq_iff_iff]
+  simp [valid_ids_toDecisionIds, FrenCli.Mutate.decisionError?,
+    Option.isNone_iff_eq_none, Array.find?_eq_none]
+  simp [Array.forall_mem_iff_forall_getElem, Array.getElem_mem]
 
 impl mutant_same_decision: mutate::same_decision for (a b : Outcome) {
   full := toMutantOutcome a,

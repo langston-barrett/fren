@@ -83,7 +83,8 @@ private def modes : Array (Array String) :=
   !(problems #["a"] { killed #["a"] with code }).isEmpty
 #guard (problems #["a"] { decisions := #[{ id := "a", outcome := .survived, killers := #[] }], code := 3 }).isEmpty
 #guard !(problems #["a"] { decisions := #[{ id := "a", outcome := .survived, killers := #[] }] }).isEmpty
-#guard !FrenCli.Mutate.decisionValid true "a" ["a"] true
+#guard (FrenCli.Mutate.decisionError? #[] #[]).isNone
+#guard (FrenCli.Mutate.decisionError? #[] #["a"]).isSome
 
 #eval show IO Unit from do
   let decisions ← IO.mkRef (killed #["a"]).decisions

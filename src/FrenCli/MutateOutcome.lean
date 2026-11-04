@@ -21,17 +21,12 @@ inductive Outcome where
   | unviable
   deriving BEq, Inhabited, Repr
 
-/-- Checks the decision ledger against selection for one identifier
-(`mutate::decision`). A command error supplies no decision. -/
-def decisionValid (selected : Bool) (id : String) (decided : List String) (commandError : Bool) : Bool :=
-  !commandError && decided.count id == (if selected then 1 else 0)
-
 /-- An identifier whose decisions disagree with selection, if any.
 Checks selected identifiers too, so an absent decision cannot disappear
-from the check. -/
+from the check (`mutate::ledger`). -/
 def decisionError? (selected decided : Array String) : Option String :=
   let ids := decided.toList
-  (selected ++ decided).find? fun id => !decisionValid (selected.contains id) id ids false
+  (selected ++ decided).find? fun id => ids.count id != (if selected.contains id then 1 else 0)
 
 /-- Equivalence may time out in one run: survival and equivalence have the
 same decision for sample/shard invariance (`mutate::same_decision`). -/
