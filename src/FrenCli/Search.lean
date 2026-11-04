@@ -217,6 +217,7 @@ partial def Ex.lits : Ex → Array Int
   | .const _ e => e.lits
   -- The bounds of the patterns of the type, which the values must meet.
   | .typed _ is e => is ++ e.lits
+  | .obligation _ e => e.lits
 
 /-- The expressions that `e`, a constraint over the search's environment
 (`Ex.slot`), equates the variable at index `x` with. -/
@@ -243,7 +244,7 @@ partial def Ex.equated (x : Nat) : Ex → Array Ex
   | .range lo hi => lo.equated x ++ hi.equated x
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.equated x)).getD #[] ++ v.equated x
   | .const .. => #[]
-  | .typed _ _ e => e.equated x
+  | .typed _ _ e | .obligation _ e => e.equated x
 
 /-- The small sets of the candidates `elems` of their elements: the empty
 set and singletons (`smallValues`). -/
@@ -461,7 +462,7 @@ partial def Ex.vars : Ex → Array Name
   | .range lo hi => lo.vars ++ hi.vars
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.vars)).getD #[] ++ v.vars
   | .const .. => #[]
-  | .typed _ _ e => e.vars
+  | .typed _ _ e | .obligation _ e => e.vars
 
 /-- What a search of a problem computes from its variables and
 constraints alone, before it reads the environment or draws a random
@@ -689,7 +690,7 @@ partial def Ex.slots : Ex → Array Nat
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => (c?.map (·.slots)).getD #[] ++ v.slots
   | .pre _ _ gs e => gs.flatMap (·.2.slots) ++ e.slots
   | .strict args e => args.flatMap (·.slots) ++ e.slots
-  | .typed _ _ e => e.slots
+  | .typed _ _ e | .obligation _ e => e.slots
 
 /-- What `Problem.search` computes of `p` before it reads its environment,
 compiled with `shapes`: the names of its environment and their indexes,
@@ -935,7 +936,7 @@ partial def Ex.strLits : Ex → Array String × Array String
   | .range lo hi => join #[lo, hi]
   | .table _ rows _ => join (rows.flatMap fun (_, c?, v) => c?.toArray.push v)
   | .const _ e => e.strLits
-  | .typed _ _ e => e.strLits
+  | .typed _ _ e | .obligation _ e => e.strLits
 where
   join (es : Array Ex) : Array String × Array String :=
     es.foldl (fun (ls, ps) e => let (l, p) := e.strLits; (ls ++ l, ps ++ p)) (#[], #[])

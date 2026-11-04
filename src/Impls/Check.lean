@@ -20,6 +20,18 @@ namespace Fren.Impls
 open Fren.Core (Answer Verdict CheckKind realizableVerdict expectVerdict vacuityVerdict coverVerdict
   determinismVerdict redundancyAsked kindsFor reachabilityAsked completenessAsked reachUses)
 
+interp check::EvidenceSubject := Lean.Name
+
+impl expanded_evidence: check::expanded_evidence for (ns : Array Lean.Name) (n : Lean.Name) (owner : Option Lean.Name) {
+  selected := Fren.FinSet.ofArray ns,
+  leaf := n,
+  owner := owner.getD .anonymous,
+  has_owner? := owner.isSome,
+  included? := Fren.Core.evidenceSelected ns n owner,
+} by
+  intro ns n owner _
+  cases owner <;> simp [fren_spec, Fren.Core.evidenceSelected, Fren.FinSet.mem_ofArray]
+
 instance : Fren.Finite Answer := ⟨[.sat, .unsat, .unknown], by intro x; cases x <;> simp⟩
 instance : Fren.Finite Verdict := ⟨[.pass, .fail, .inconclusive], by intro x; cases x <;> simp⟩
 

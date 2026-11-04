@@ -2710,6 +2710,48 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
 
+/-- Call-input obligations with two named parts, and predicate leaves with
+inherited evidence (#813). The separate mode preserves every existing seed. -/
+def enumerationObligations : R String := do
+  let (base, good, bad) ← pick #[
+    ("Bool", "true", "false"), ("Int", "0", "1"), ("Nat", "0", "1"),
+    ("String", "\"\"", "\"a\""), ("E", "E::A", "E::B"),
+    ("N", "N(0)", "N(1)"), ("R", "R { value := 0 }", "R { value := 1 }"),
+    ("Set<Bool>", "{}", "{true}"), ("Seq<Bool>", "[]", "[true]"),
+    ("Rel<Bool, Bool>", "{}", "{(true, true)}"),
+    ("Option<Int>", "Option::None", "Option::Some(1)")]
+  let valueName := if base == "Bool" then "value?" else "value"
+  let localName := if base == "Bool" then "saved?" else "saved"
+  let declarations := "mod enum_obligations\nset_option fren.lint.undecidable \"allow\"\npub enum E { A, B }\npub struct N(Int)\npub struct R { value: Int }\n" ++
+    "pub struct Pair<A, B> { first: A, second: B }\npub enum Choice<T> { Empty, One(T), Two(T, T) }\n" ++
+    s!"pub type Narrow = {valueName}: {base} where first: {valueName} != {bad} and second: {valueName} = {good}\n"
+  let value ← pick #[good, bad]
+  -- Every giving site, including nested generic payloads and fields.
+  let (ty, arg) ← if base == "Nat" then pure ("Narrow", value) else pick #[
+    ("Narrow", value), ("Pair<Narrow, Narrow>", s!"Pair \{ first := {value}, second := {good} }"),
+    ("Option<Narrow>", s!"Option::Some({value})"),
+    ("Choice<Narrow>", s!"Choice::Two({value}, {good})"),
+    ("Set<Narrow>", s!"\{{value}}"), ("Seq<Narrow>", s!"[{value}]"),
+    ("Rel<Narrow, Narrow>", s!"\{({value}, {good})}"),
+    ("Option<Pair<Narrow, Narrow>>", s!"Option::Some(Pair \{ first := {good}, second := {value} })"),
+    ("Pair<Option<Narrow>, Choice<Narrow>>", s!"Pair \{ first := Option::Some({value}), second := Choice::One({good}) }")]
+  let argument := if base == "Bool" && ty == "Narrow" then "arg?" else "arg"
+  let copy := if base == "Bool" && ty == "Narrow" then "copy?" else "copy"
+  let definition ← pick #[arg, s!"if flag? then {arg} else {arg}", s!"let {copy}: {ty.replace "Narrow" base} := {arg} in {copy}"]
+  let option ← pick #["enumerated", "enumerated+random"]
+  let wrapper ← pick #["p?(value)", "when flag?, p?(value)", "unless flag?, p?(value)",
+    "let saved := value in p?(saved)", "not p?(value)",
+    "p?(saved) where saved := value", "when flag?, let saved := value in p?(saved)",
+    "let saved := value in not p?(saved)", "not (when flag?, p?(value))"]
+  let wrapper := (wrapper.replace "value" valueName).replace "saved" localName
+  let member ← pick #["", "set_option fren.evidence \"solver\" in ", "set_option fren.evidence \"enumerated\" in "]
+  return declarations ++ s!"pub proc accept({argument}: {ty}) \{}\n" ++
+    s!"set_option fren.enumeration.size 1 in\nset_option fren.evidence \"{option}\" in\n" ++
+    s!"pub proc caller(flag?) \{ call c := accept({definition}) }\n" ++
+    s!"pub fn p?({valueName}: {base}) := and \{ first: {valueName} != {bad}, second: {valueName} = {good} }\n" ++
+    s!"set_option fren.enumeration.size 1 in\nset_option fren.evidence \"{option}\" in\n" ++
+    s!"pub proc predicates({valueName}: {base}, flag?) \{ {member}expect property: {wrapper} }\n"
+
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts avoidKnown).1
 
@@ -2839,10 +2881,13 @@ structure Mode where
   /-- Specs of induction-candidate types, argument forms and comparisons
   (`Wide.inductionCandidates`). -/
   inductionCandidates : Bool := false
+  enumerationObligations : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  if m.keywords then
+  if m.enumerationObligations then
+    Id.run (Wide.enumerationObligations.run' (rngOf seed))
+  else if m.keywords then
     let block := Id.run (Wide.genKeywords.run' (rngOf seed))
     let spec := Id.run ((Wide.genKeywordsGrammar block).run' (grammarRngOf seed)) ++
       Id.run ((Wide.genKeywordsTail block).run' (tailRngOf seed))
@@ -2863,10 +2908,11 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
 `--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
-`--fact-scopes` and `--induction-candidates` makes any static error a group
-error: these generators, like appended groups, promise to add none. -/
+`--fact-scopes`, `--induction-candidates` and `--enumeration-obligations` makes
+any static error a group error: these generators, like appended groups,
+promise to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.scrutinees || m.factScopes || m.inductionCandidates || m.enumerationObligations then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
@@ -2876,19 +2922,21 @@ def Mode.args (m : Mode) : Array String :=
     (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[]) ++
     (if m.keywords then #["--keywords"] else #[]) ++
     (if m.factScopes then #["--fact-scopes"] else #[]) ++
-    (if m.inductionCandidates then #["--induction-candidates"] else #[])
+    (if m.inductionCandidates then #["--induction-candidates"] else #[]) ++
+    (if m.enumerationObligations then #["--enumeration-obligations"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--enumeration-obligations"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
            keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
-           inductionCandidates := args.contains "--induction-candidates" }
+           inductionCandidates := args.contains "--induction-candidates"
+           enumerationObligations := args.contains "--enumeration-obligations" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -2899,7 +2947,8 @@ def Mode.lean (m : Mode) : String :=
     (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else []) ++
     (if m.keywords then ["keywords := true"] else []) ++
     (if m.factScopes then ["factScopes := true"] else []) ++
-    (if m.inductionCandidates then ["inductionCandidates := true"] else [])
+    (if m.inductionCandidates then ["inductionCandidates := true"] else []) ++
+    (if m.enumerationObligations then ["enumerationObligations := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3542,7 +3591,9 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
     ({ inductionForms := true }, 0, 20), ({ factScopes := true }, 0, 20),
-    ({ inductionCandidates := true }, 0, 20)]
+    ({ inductionCandidates := true }, 0, 20),
+    ({ enumerationObligations := true }, 0, 20), ({ enumerationObligations := true }, 438, 1),
+    ({ enumerationObligations := true }, 555, 1)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -4114,10 +4165,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--enumeration-obligations] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--enumeration-obligations] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4136,9 +4187,11 @@ unsafe def main (args : List String) : IO UInt32 := do
                        sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
                        inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
                        keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
-                       inductionCandidates := args.contains "--induction-candidates" }
+                       inductionCandidates := args.contains "--induction-candidates"
+                       enumerationObligations := args.contains "--enumeration-obligations" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
-    && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates")
+    && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
+    && a != "--enumeration-obligations")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

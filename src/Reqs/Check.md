@@ -2032,6 +2032,24 @@ bound above 64 is the error `F0154`, at the number, and the default is
 used instead. Before a member, it is `F0216`, as any option but
 `fren.evidence` is.
 
+A check generated from a named predicate clause inherits the evidence of
+its written constraint, including a member's override. Its generated name
+alone does not select its method. `check::expanded_evidence` computes the
+selection from the selected written names and the generated check's owner:
+
+```fren
+pub type EvidenceSubject
+
+pub proc expanded_evidence(
+    selected: Set<EvidenceSubject>,
+    leaf: EvidenceSubject,
+    owner: EvidenceSubject,
+    has_owner?,
+): (det included?) {
+    ensure selection: included? iff leaf in selected or (has_owner? and owner in selected)
+}
+```
+
 `check::evidence_value` gives what each value sets, and `check::by_evidence`
 how each check is run, as `check::method_run` of [Proof
 methods](Methods.md#what-runs-today) says:

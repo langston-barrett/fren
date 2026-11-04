@@ -393,11 +393,22 @@ where
     (match e with
       -- An instance's, by its function's (`Reqs/Lang/Recursion#generic-recursion`).
       | .app f _ => if sp.recDefs.contains f then #[(sp.instanceOf.find? f).getD f] else #[]
+      | .obligation c _ => consNames c
       -- And those of the invariants of a subset type that a value is
       -- checked against, which evaluation applies.
       | .typed t _ _ => typeNames t
       | _ => #[])
       ++ e.children.flatMap names
+  consNames : Fren.Core.Cons → Array Name
+    | .predicate i => match sp.defs.find? i.predicate with
+      | some (_, body, _) => names body
+      | none => #[]
+    | .fields _ _ cs => cs.flatMap (consNames ∘ Prod.snd)
+    | .newtype _ c | .elems _ _ c => consNames c
+    | .payloads _ _ cs => cs.flatMap fun (_, _, c) => consNames c
+    | .pairs _ _ a b => a.toArray.flatMap consNames ++ b.toArray.flatMap consNames
+    | .all cs => cs.flatMap consNames
+    | _ => #[]
   typeNames (t : Fren.Core.PTy) : Array Name :=
     t.invariants.flatMap (fun i => match sp.defs.find? i.predicate with
       | some (_, body, _) => names body
@@ -639,10 +650,12 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
       { name := i.name, comp := i.comp
         bindings := (i.bindings, .atoms ((ei?.map (bindingAtoms .anonymous)).getD #[]))
         behaviour := (i.behaviour, .atoms ((d?.map (sp.meaning · i.name (typedInputs := false))).getD #[]))
-        -- An input's type's obligation, which the evaluator does not
-        -- know of, is not confirmed.
+        -- Giving-site obligations are the separate named parts of the
+        -- input's obligation, rather than its whole-type constraint.
         assumes := i.assumes.map fun (a, s) =>
-          let e? := d?.bind fun d => (d.constraints.find? (·.name == a)).map (·.e)
+          let e? := d?.bind fun d =>
+            let constraints := if i.typed.any (·.1 == a) then d.inputObligations else d.constraints
+            (constraints.find? (·.name == a)).map (·.e)
           (a, (s, match e? with
             | some e => .atoms #[{ label := i.name ++ a, pfx := i.name, e }]
             | none => if i.typed.any (·.1 == a) then .unknown else .atoms #[]))

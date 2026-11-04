@@ -3776,8 +3776,7 @@ def enumerationMayOmit (item : String) (r : Fren.Core.CheckResult) (run : Method
 /-- Known method differences, by file and exact check/diagnostic key, with
 an issue or semantic reason. Each excuses only the difference it names;
 unexpected differences fail. Both jobs fail on an applicable entry that
-no longer occurs (`staleExceptions`). The #813 entries go when its fixes
-land: they permit the existing defects, not new ones. -/
+no longer occurs (`staleExceptions`). -/
 def methodExceptions : Array (String × String × String) := #[
   -- A caller assumes a recursive function's result type, as its
   -- postconditions, whether or not its body meets it; the pass rests on the
@@ -3793,128 +3792,18 @@ def methodExceptions : Array (String × String × String) := #[
     "bounded call to heater; check::redundancy_asked"),
   ("test/ui/lang/constants.fren",
     "missing enumeration|comp other.user|Fren.Core.CheckKind.redundancy|(some r)|none|none|none|none|-|none",
-    "bounded call to band; check::redundancy_asked"),
-  -- Existing internal errors and wrong-method records, scoped to the
-  -- requested method (and actual method or full diagnostic header). #813
-  ("test/ui/checks/recursive_subsets.fren",
-    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/checks/recursive_subsets.fren",
-    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.equation»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/checks/recursive_subsets.fren",
-    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/checks/recursive_subsets.fren",
-    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.equation»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/lang/generics_subset_types.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `generics_subset_types::giver`", "#813"),
-  ("test/ui/lints/labeled_constraints.fren",
-    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «left.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/lints/labeled_constraints.fren",
-    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «right.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/lints/labeled_constraints.fren",
-    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «left.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/lints/labeled_constraints.fren",
-    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «right.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::watch`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::observed`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::first_walk`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::prompt`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::green_between_walks`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::refines_cycle`", "#813")] ++ (#[
-  -- The 74 absent counterparts caused by the seven internal errors:
-  -- every identity is explicit and becomes stale independently. #813
-  ("test/ui/lang/generics_subset_types.fren", #[
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, x.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, d.0))|none|none|none|-|(some @invariant:generics_subset_types::Digit::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, p.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, p.1))|none|none|none|-|(some @invariant:generics_subset_types::Pos::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, t.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, t.1))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, s.0))|none|none|none|-|(some @invariant:generics_subset_types::Present::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some ok)|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some bad)|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some pair)|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some marked)|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some some)|none|none|none|none|-|none"]),
-  ("examples/stoplight.fren", #[
-    "comp stoplight.watch|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.watch|Fren.Core.CheckKind.redundancy|(some counts)|none|none|none|none|-|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.determinism|(some next)|none|none|none|none|-|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.disjointness|(some counts)|none|none|(some 0)|(some (0, 1))|Fren.Core.TableGoal.disjointness (Fren.Core.Split.table) 0 1|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 1)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 0|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 2)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 1|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 3)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 2|none",
-    "comp stoplight.observed|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.observed|Fren.Core.CheckKind.determinism|(some next)|none|none|none|none|-|none",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.expect|(some not_yet)|none|none|none|none|-|none",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.cover|(some walks)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some bounded)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some press_waits)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some tick_nears)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.vacuity|(some press_waits)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.vacuity|(some tick_nears)|none|none|none|none|-|none",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.inst|(some w)|(some (stoplight.watch, now.0))|none|none|none|-|(some @invariant:stoplight::Watched::green)",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.inst|(some w)|(some (stoplight.watch, now.1))|none|none|none|-|(some @invariant:stoplight::Watched::yellow)",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.expect|(some enough_green)|none|none|none|none|-|none",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.vacuity|(some enough_green)|none|none|none|none|-|none",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.expect|(some refines_1)|none|none|none|none|-|none"])] : Array (String × Array String)).flatMap fun (file, keys) =>
-  keys.map fun key => (file, s!"missing enumeration|{key}", "#813")
+    "bounded call to band; check::redundancy_asked")]
 
 /-- Excuses only exact known adapter defects, recording each hit so that
 an entry that stops occurring fails as stale. New errors or records in
 the same file still fail. -/
-def knownMethodFailures (name : String) (problems : Array (String × String)) :
+def knownMethodFailures (name : String) (problems : Array (String × String))
+    (exceptions : Array (String × String × String) := methodExceptions) :
     Array String × Array (String × String) := Id.run do
   let mut failures := #[]
   let mut hit := #[]
   for (key, message) in problems do
-    let why? := (methodExceptions.find? fun (f, k, _) => f == name && k == key).map (·.2.2)
+    let why? := (exceptions.find? fun (f, k, _) => f == name && k == key).map (·.2.2)
     if why?.isSome then hit := hit.push (name, key)
     else failures := failures.push message
   return (failures, hit)
@@ -3924,8 +3813,9 @@ Diagnostic and wrong-method keys include the requested method; enumeration
 alone does not mark a random-only entry stale. Missing-check identities
 are relevant to both jobs, which both compare solver/enumeration records. -/
 def staleExceptions (ran : Array String) (hit : Array (String × String))
-    (methods : Array Fren.Core.ProofMethod := #[.solver, .enumerated, .random]) : Array String :=
-  methodExceptions.filterMap fun (f, k, why) =>
+    (methods : Array Fren.Core.ProofMethod := #[.solver, .enumerated, .random])
+    (exceptions : Array (String × String × String) := methodExceptions) : Array String :=
+  exceptions.filterMap fun (f, k, why) =>
     let methodScoped := k.startsWith "diagnostic|" || k.startsWith "recorded method|"
     let applicable := !methodScoped || methods.any fun m =>
       k.startsWith s!"diagnostic|{repr m}|" || k.startsWith s!"recorded method|{repr m}|"
@@ -3936,7 +3826,8 @@ def staleExceptions (ran : Array String) (hit : Array (String × String))
 /-- Compares the union of check identities, allowing omissions only where
 `enumerationMayOmit` says why. Returns failures, the number compared and
 the known differences hit. -/
-def compareEnumeration (name : String) (solver enumerated : MethodRun) :
+def compareEnumeration (name : String) (solver enumerated : MethodRun)
+    (exceptions : Array (String × String × String) := methodExceptions) :
     Array String × Nat × Array (String × String) := Id.run do
   let mut failures := #[]
   let mut compared := 0
@@ -3950,7 +3841,7 @@ def compareEnumeration (name : String) (solver enumerated : MethodRun) :
     let some r := es.get? key | do
       unless enumerationMayOmit item s enumerated do
         let missing := s!"missing enumeration|{key}"
-        if methodExceptions.any fun (f, k, _) => f == name && k == missing then
+        if exceptions.any fun (f, k, _) => f == name && k == missing then
           hit := hit.push (name, missing)
         else failures := failures.push s!"{name}: `{key}`: missing from enumeration"
       continue
@@ -3959,7 +3850,7 @@ def compareEnumeration (name : String) (solver enumerated : MethodRun) :
       unless r.verdict == s.verdict do
         failures := failures.push s!"{name}: `{key}`: the solver-only check changed under enumeration"
     else if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
-      if methodExceptions.any fun (g, k, _) => g == name && k == key then
+      if exceptions.any fun (g, k, _) => g == name && k == key then
         hit := hit.push (name, key)
         continue
       let bounded := if r.bounded?.isSome then " up to the bound" else ""
@@ -4031,38 +3922,80 @@ def methodAgreementChecks : IO (Array String) := do
           && !(methodRunFailures m { run with diags := run.diags.push ("error", none, "internal error: injected") }).isEmpty do
         fs := fs.push s!"agreement adapter: {value}'s trait rejection is not classified precisely\n{run.output}"
     return fs)
+  let registry : Array (String × String × String) := #[
+    ("test/ui/lang/generics_subset_types.fren",
+      "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `generics_subset_types::giver`", "regression fixture"),
+    ("test/ui/lang/generics_subset_types.fren",
+      "missing enumeration|comp generics_subset_types.giver|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none", "regression fixture"),
+    ("test/ui/checks/recursive_subsets.fren",
+      "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "regression fixture"),
+    ("test/ui/checks/recursive_subsets.fren",
+      "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "regression fixture")]
   let knownFile := "test/ui/lang/generics_subset_types.fren"
   let knownError : MethodRun := {
     code := 1
     diags := #[("error", none, "internal error: the evaluator does not know the meaning of a formula of `generics_subset_types::giver`")] }
-  let (known, hits) := knownMethodFailures knownFile (methodRunFailures .enumerated knownError)
+  let (known, hits) := knownMethodFailures knownFile (methodRunFailures .enumerated knownError) (exceptions := registry)
   unless known.isEmpty && hits.size == 1
-      && !(knownMethodFailures knownFile (methodRunFailures .random knownError)).1.isEmpty
-      && !(knownMethodFailures knownFile (methodRunFailures .enumerated internal)).1.isEmpty do
+      && !(knownMethodFailures knownFile (methodRunFailures .random knownError) (exceptions := registry)).1.isEmpty
+      && !(knownMethodFailures knownFile (methodRunFailures .enumerated internal) (exceptions := registry)).1.isEmpty do
     failures := failures.push "agreement registry: an exact known error is not distinguished from a new error or method"
   let given : Fren.Core.CheckResult := { kind := .realizable, comp := `generics_subset_types.giver, prop? := none, verdict := .pass }
   let givenRun : MethodRun := { records := #[("comp generics_subset_types.giver", given, .solver)] }
-  let (knownMissing, _, missingHits) := compareEnumeration knownFile givenRun {}
+  let (knownMissing, _, missingHits) := compareEnumeration knownFile givenRun {} (exceptions := registry)
   let extra := { givenRun with
     records := givenRun.records.push ("comp generics_subset_types.giver", { given with kind := .expect, prop? := some `new_check }, .solver) }
   unless knownMissing.isEmpty && missingHits.size == 1
-      && (compareEnumeration knownFile extra {}).1.size == 1 do
+      && (compareEnumeration knownFile extra {} (exceptions := registry)).1.size == 1 do
     failures := failures.push "agreement registry: a known missing counterpart hides a new identity"
   let recordFile := "test/ui/checks/recursive_subsets.fren"
   let recordResult := { r with comp := `recursive_subset, prop? := some (Name.mkSimple "properties.valid?@1.domain") }
   let wrong : MethodRun := { records := #[("comp recursive_subset", recordResult, .solver)] }
-  unless (knownMethodFailures recordFile (methodRunFailures .enumerated wrong)).1.isEmpty
-      && (knownMethodFailures recordFile (methodRunFailures .random wrong)).1.isEmpty
+  unless (knownMethodFailures recordFile (methodRunFailures .enumerated wrong) (exceptions := registry)).1.isEmpty
+      && (knownMethodFailures recordFile (methodRunFailures .random wrong) (exceptions := registry)).1.isEmpty
       && !(knownMethodFailures recordFile (methodRunFailures .enumerated
-        { wrong with records := #[("comp recursive_subset", recordResult, .lean)] })).1.isEmpty do
+        { wrong with records := #[("comp recursive_subset", recordResult, .lean)] }) (exceptions := registry)).1.isEmpty do
     failures := failures.push "agreement registry: a known wrong-method record hides a new actual method"
-  let recordHits := methodExceptions.filterMap fun (f, key, _) => if f == recordFile then some (f, key) else none
+  let recordHits := registry.filterMap fun (f, key, _) => if f == recordFile then some (f, key) else none
   let enumHits := recordHits.filter fun (_, key) => !key.startsWith s!"recorded method|{repr Fren.Core.ProofMethod.random}|"
-  unless (staleExceptions #[recordFile] recordHits).isEmpty
-      && !(staleExceptions #[recordFile] recordHits.pop).isEmpty
-      && (staleExceptions #[recordFile] enumHits (methods := #[.solver, .enumerated])).isEmpty
-      && !(staleExceptions #[recordFile] enumHits).isEmpty do
+  unless (staleExceptions #[recordFile] recordHits (exceptions := registry)).isEmpty
+      && !(staleExceptions #[recordFile] recordHits.pop (exceptions := registry)).isEmpty
+      && (staleExceptions #[recordFile] enumHits (methods := #[.solver, .enumerated]) (exceptions := registry)).isEmpty
+      && !(staleExceptions #[recordFile] enumHits (exceptions := registry)).isEmpty do
     failures := failures.push "agreement registry: disappeared entries are not stale under exactly the methods run"
+  -- Each call obligation must be evaluated separately: replacing every
+  -- part by whole-type membership would make both low and high fail.
+  let obligations := "type Limits = n: Int where low: n >= 0 and high: n <= 1\n" ++
+    "struct Pair<A, B> { first: A, second: B }\n" ++
+    "proc accept(x: Limits) {}\nproc accept_pair(x: Pair<Limits, Limits>) {}\n" ++
+    "proc below() { call c := accept(-1) }\nproc above() { call c := accept(2) }\n" ++
+    "proc pair() { call c := accept_pair(Pair { first := -1, second := 2 }) }\n" ++
+    "fn named?(n: Int) := and { low: n >= 0, high: n <= 1 }\n" ++
+    "proc expanded(n: Int) { expect check: named?(n) }\n" ++
+    "proc bound(n: Int) { expect check: let saved := n in named?(saved) }\n"
+  failures := failures ++ (← withText "obligations.fren" obligations.toList.toArray fun p => do
+    let mut fs := #[]
+    let solver ← methodResults #[p] "solver"
+    let enumerated ← methodResults #[p] "enumerated"
+    for (method, run) in #[(Fren.Core.ProofMethod.solver, solver), (.enumerated, enumerated)] do
+      fs := fs ++ (methodRunFailures method run).map (fun (_, message) => s!"obligation regression: {message}\n{run.output}")
+      for (comp, expected) in #[(`below, #[false, true]), (`above, #[true, false]), (`pair, #[false, true, true, false])] do
+        let checks := run.records.filter fun (_, r, _) => r.comp == comp && r.kind == .inst
+        unless checks.size == expected.size do
+          fs := fs.push s!"obligation regression: {repr method} lost call obligations of {comp}\n{run.output}"
+        for (_, r, _) in checks do
+          let some (_, target) := r.target? | fs := fs.push "obligation regression: missing call target"; continue
+          let .num _ k := target | fs := fs.push "obligation regression: missing obligation index"; continue
+          unless expected[k]?.any (fun pass => r.verdict == if pass then .pass else .fail) do
+            fs := fs.push s!"obligation regression: {repr method} gave the wrong verdict to {comp}/{target}\n{run.output}"
+    fs := fs ++ (compareEnumeration "obligation regression" solver enumerated).1
+    for (method, value) in comparedMethods.toList.drop 1 do
+      let run ← methodResults #[p] value
+      for comp in #[`expanded, `bound] do
+        let leaves := run.records.filter fun (_, r, _) => r.comp == comp && r.kind == .expect
+        unless leaves.size == 2 && leaves.all (fun (_, _, actual) => actual == method) do
+          fs := fs.push s!"evidence regression: generated predicate leaves of {comp} lost {value}\n{run.output}"
+    return fs)
   let text := "set_option fren.evidence \"enumerated\" in\nproc e(x?) { expect no: x? }\n\n" ++
     "set_option fren.evidence \"random\" in\nproc r(x?) { expect yes: x? or not x? }\n"
   failures := failures ++ (← withText "overrides.fren" text.toList.toArray fun p => do
@@ -4101,9 +4034,6 @@ def enumerationAgrees : IO (Array String) := do
     failures := failures ++ fs
     compared := compared + n
     hit := hit ++ hs
-  for (file, key) in hit do
-    if methodExceptions.any fun (f, k, why) => f == file && k == key && why == "#813" then
-      IO.println s!"enumeration: known #813: {file}: {key}"
   failures := failures ++ staleExceptions (corpus.map (·.toString)) hit (methods := #[.solver, .enumerated])
   return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
 
@@ -4248,9 +4178,6 @@ def methodsAgree (part : List String) : IO (Array String) := do
         failures := failures ++ (← withText "spec.fren" (mode.spec s).toList.toArray fun p =>
           methodsAgreeOn name #[p] counts)
   let c ← counts.get
-  for (file, key) in c.hit do
-    if methodExceptions.any fun (f, k, why) => f == file && k == key && why == "#813" then
-      IO.println s!"methodsAgree: known #813: {file}: {key}"
   failures := failures ++ staleExceptions c.ran c.hit
   let byMethod := (List.range comparedMethods.size).map fun i =>
     s!"{comparedMethods[i]!.2} decided {c.decided[i]!}, inconclusive {c.inconclusive[i]!}, not run {c.notRun[i]!}"

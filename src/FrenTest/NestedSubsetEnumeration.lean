@@ -33,10 +33,32 @@ proc bad_output(): (r?: Truth) { ensure opposite: not r? }
 set_option fren.evidence "enumerated" in
 set_option fren.lint.constant_output "allow" in
 proc bad_definition(): (r: Positive) { out r := 0 }
+type EmptySequence = values: Seq<Bool> where empty: values = []
+set_option fren.lint.unused_variables "allow" in
+set_option fren.lint.undecidable "allow" in
+proc relation(values: Rel<EmptySequence, EmptySequence>) {}
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
+proc good_relation() { call c := relation({([], [])}) }
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
+proc bad_relation() { call c := relation({([true], [])}) }
 open Lean Elab Command in
 elab "#check_nested_enumeration" : command => do
   liftTermElabM do
     let state ← Fren.getState
+    for (path, expected) in #[(`nested_subset_enumeration.good_relation, #[true, true]),
+        (`nested_subset_enumeration.bad_relation, #[false, true])] do
+      let some comp := state.comps.get? path | throwError "missing relation component"
+      let (_, _, checked, _) ← Fren.checkComp comp #[.inst] (some Fren.Enumerate.enumerate)
+      let some (.ok checked) := checked | throwError "relation obligations were not enumerated"
+      unless checked.results.size == 2 do throwError "a relation obligation disappeared"
+      for result in checked.results do
+        let some (_, .num _ k) := result.target? | throwError "relation obligation lost its identity"
+        unless expected[k]?.any (fun pass => result.verdict == if pass then .pass else .fail) do
+          throwError "relation membership was bounded by its component types instead of its pairs"
     for path in #[`nested_subset_enumeration.records, `nested_subset_enumeration.wrappers,
         `nested_subset_enumeration.payloads, `nested_subset_enumeration.shared] do
       let some comp := state.comps.get? path | throwError "missing enumeration component {path}"

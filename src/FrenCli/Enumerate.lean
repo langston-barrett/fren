@@ -104,6 +104,7 @@ partial def Eval.Ex.appsIn (sp : Spec) (seenFns seenTypes : NameSet) (e : Ex) : 
       nested ++ inner
     | none => #[f] ++ nested
   | .typed t _ _ => nested ++ typeAppsIn sp seenFns seenTypes t
+  | .obligation c _ => nested ++ consAppsIn sp seenFns seenTypes c
   | .quant _ _ _ _ _ tys _ => nested ++ tys.flatMap (typeAppsIn sp seenFns seenTypes)
   | .table _ _ (some u) | .match _ _ _ _ (some u) _ => #[u] ++ nested
   -- `[][0]` is the unspecified value itself, as a table's is.
@@ -111,6 +112,20 @@ partial def Eval.Ex.appsIn (sp : Spec) (seenFns seenTypes : NameSet) (e : Ex) : 
   -- After its parts, as the hosted front end's `Enum.nthOr` reads it.
   | .index _ _ _ u => nested ++ #[u, indexRead]
   | _ => nested
+
+/-- Dependencies of just the selected giving-site obligation. -/
+partial def consAppsIn (sp : Spec) (seenFns seenTypes : NameSet) : Fren.Core.Cons → Array Name
+  | .predicate i =>
+    if seenFns.contains i.predicate then #[] else
+    match sp.defs.find? i.predicate with
+    | some (_, body, _) => body.appsIn sp (seenFns.insert i.predicate) seenTypes
+    | none => #[i.predicate]
+  | .fields _ _ cs => cs.flatMap fun (_, c) => consAppsIn sp seenFns seenTypes c
+  | .newtype _ c | .elems _ _ c => consAppsIn sp seenFns seenTypes c
+  | .payloads _ _ cs => cs.flatMap fun (_, _, c) => consAppsIn sp seenFns seenTypes c
+  | .pairs _ _ a b => a.toArray.flatMap (consAppsIn sp seenFns seenTypes) ++ b.toArray.flatMap (consAppsIn sp seenFns seenTypes)
+  | .all cs => cs.flatMap (consAppsIn sp seenFns seenTypes)
+  | _ => #[]
 
 partial def typeAppsIn (sp : Spec) (seenFns seenTypes : NameSet) (t : Fren.Core.PTy) : Array Name :=
   let own := t.invariants.flatMap fun i =>

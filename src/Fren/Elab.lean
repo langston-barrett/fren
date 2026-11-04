@@ -2884,7 +2884,7 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
   | .pairs _ _ ca cb =>
     let (u, v) := (mkIdent (Name.mkSimple s!"fren_a{depth}"), mkIdent (Name.mkSimple s!"fren_b{depth}"))
     let parts := (← ca.toArray.mapM (consTerm · u (depth + 1))) ++ (← cb.toArray.mapM (consTerm · v (depth + 1)))
-    `(∀ $u:ident $v:ident, ($u, $v) ∈ $x → $((← conjTerm parts).getD (← `(True))))
+    `(Fren.relationObligation (∀ $u:ident $v:ident, ($u, $v) ∈ $x → $((← conjTerm parts).getD (← `(True)))))
   | .all cs =>
     let ts ← cs.mapM (consTerm · x depth)
     return (← conjTerm ts).getD (← `(True))
@@ -8931,11 +8931,9 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
   if ok then
     let (relational, counts) ← checkCounts
-    let expandEvidence (evidence : Core.Tested) : Core.Tested :=
-      { evidence with props := evidence.props ++ props.filterMap fun prop =>
-          if prop.evidenceOwner?.any evidence.props.contains && !evidence.props.contains prop.name then some prop.name else none }
-    let tested := expandEvidence tested
-    let enumerated := expandEvidence enumerated
+    let owners := props.map fun prop => (prop.name, prop.evidenceOwner?)
+    let tested := tested.expandProps owners
+    let enumerated := enumerated.expandProps owners
     let info : CompInfo := { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
                              decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
                              relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed
