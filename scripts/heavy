@@ -41,7 +41,17 @@ Wait for the 1-minute load to be below this value, for at most 10 minutes;
 slots and memory still apply. `HEAVY_MAX_LOAD=off` overrides the file.
 
 Every completed job appends a JSON line to ~/.cache/heavy/log.jsonl
-(`HEAVY_LOG` overrides the path). Logging never fails a job. `--stats`
+(`HEAVY_LOG` overrides the path), including the job's user/system CPU
+seconds and CPU seconds per run second. On Linux, orphaned workers in its
+process group are adopted and waited for too. Machine CPU busy fractions
+come from /proc/stat intervals at start, about every 30 seconds and end;
+busy excludes idle and iowait. Unavailable readings give null summaries.
+One-second samples also record CPU by executable name, live concurrency,
+runnable pressure against online logical CPUs, and machine context-switch
+rates. Process status switch counts complement wait4's final involuntary
+switch total. A historical per-kind memory prediction is frozen beside
+actual peak RSS; it does not yet change admission's live-RSS rule.
+Logging never fails a job. `--stats`
 compares completions in the last HOURS (default 24), by admission policy
 and job kind. `--alternate` switches the file setting between VALUE and
 absent every MINUTES, logging each flip for the policy exposure times.
@@ -65,6 +75,8 @@ and lease accounting, namespace translation and local termination with
 scratch state and tiny jobs.
 """
 import contextlib
+import ctypes
+import heapq
 import fcntl
 import json
 import math
@@ -86,6 +98,8 @@ DEFAULT_MEM_FRACTION = 0.8
 START_FRACTION = 0.6
 LOAD_GRACE_SECONDS = 600
 LOAD_SAMPLE_SECONDS = 30
+PREDICTION_JOBS = 20
+PREDICTION_SECONDS = 7 * 86400
 REPORT_STALE_SECONDS = 10
 REGISTRY_WAIT_SECONDS = 0.2
 REGISTRY_RETRY_SECONDS = 0.01
@@ -244,14 +258,295 @@ def sample_load(record, load_reader, now, last=None):
 
 
 def process_stat(text):
-    """Identity and RSS in the caller's procfs view; comm can contain ')'."""
+    """Identity, group and self CPU ticks; comm may contain spaces or ')'."""
     left, right = text.index("("), text.rindex(")")
-    fields = text[right + 1:].split()
-    pid, ppid, pgrp, start, rss = (int(v) for v in
-        (text[:left], fields[1], fields[2], fields[19], fields[21]))
-    if pid <= 0 or min(ppid, pgrp, start, rss) < 0:
+    fields = text[right + 1:].split()  # Begins at field 3 (state).
+    pid, ppid, pgrp, user, system, start, rss = (int(v) for v in
+                                              (text[:left], fields[1], fields[2], fields[11],
+                                               fields[12], fields[19], fields[21]))
+    if pid <= 0 or min(pgrp, user, system, start, rss) < 0:
         raise ValueError("invalid process counters")
-    return {"pid": pid, "ppid": ppid, "pgrp": pgrp, "start": start, "rss_pages": rss}
+    return {"pid": pid, "ppid": ppid, "comm": text[left + 1:right], "state": fields[0],
+            "pgrp": pgrp, "ticks": user + system, "start": start, "rss_pages": rss}
+
+
+def cpu_ticks(path="/proc/stat"):
+    """Aggregate CPU counters: user, nice, system, idle, iowait, irq,
+    softirq and steal. Guest times are already included in user/nice."""
+    try:
+        with open(path) as f:
+            fields = f.readline().split()
+        if not fields or fields[0] != "cpu" or len(fields) < 5:
+            return None
+        ticks = tuple(int(v) for v in fields[1:9])
+        if any(v < 0 for v in ticks):
+            return None
+        return ticks + (0,) * (8 - len(ticks))
+    except (OSError, ValueError):
+        return None
+
+
+
+def cpu_interval(before, after):
+    """Busy/total ticks between adjacent readings, or None without a
+    usable interval. A reset (including a decreasing iowait) rebaselines."""
+    if before is None or after is None:
+        return None
+    delta = [end - start for start, end in zip(before, after)]
+    total = sum(delta)
+    if any(v < 0 for v in delta) or total <= 0:
+        return None
+    return {"busy_ticks": total - delta[3] - delta[4], "total_ticks": total}
+
+
+
+def sample_cpu(record, now, last=None, final=False, reader=None):
+    if last is not None and not final and now - last[0] < LOAD_SAMPLE_SECONDS:
+        return last
+    ticks = (reader or cpu_ticks)()
+    if last is not None:
+        interval = cpu_interval(last[1], ticks)
+        if interval is not None:
+            record["cpu_busy_samples"].append(interval)
+    return now, ticks
+
+
+
+def cpu_summary(record):
+    # A signal handler can reap while another wait4 caller resumes. Append
+    # each usage atomically below, then fold after all reaping has finished.
+    usages = record.pop("_cpu_usage", [])
+    record["cpu_user_seconds"] += sum(u[0] for u in usages)
+    record["cpu_system_seconds"] += sum(u[1] for u in usages)
+    record["involuntary_context_switches"] = record.get("involuntary_context_switches", 0) + sum(u[3] for u in usages)
+    record["peak_rss_kb"] = max([record["peak_rss_kb"]] + [u[2] for u in usages])
+    samples = record["cpu_busy_samples"]
+    busy = sum(s["busy_ticks"] for s in samples)
+    total = sum(s["total_ticks"] for s in samples)
+    record.update(cpu_busy_mean=busy / total if total else None,
+                  cpu_busy_max=max((s["busy_ticks"] / s["total_ticks"] for s in samples),
+                                   default=None))
+    record["cpu_seconds"] = record["cpu_user_seconds"] + record["cpu_system_seconds"]
+    seconds = record["run_seconds"]
+    record["cpu_parallelism"] = record["cpu_seconds"] / seconds if seconds > 0 else None
+
+
+
+def machine_counters(path="/proc/stat"):
+    """Independent runnable-task, logical-CPU and context-switch readings."""
+    try:
+        with open(path) as f:
+            lines = [line.split() for line in f]
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    cores = len({p[0] for p in lines if len(p) >= 5 and re.fullmatch(r"cpu\d+", p[0])
+                 and all(v.isdigit() for v in p[1:5])})
+    if cores:
+        out["cpu_cores"] = cores
+    for parts in lines:
+        if len(parts) == 2 and parts[0] in ("ctxt", "procs_running"):
+            try:
+                value = int(parts[1])
+                if value >= 0:
+                    out[parts[0]] = value
+            except ValueError:
+                pass
+    return out
+
+
+
+class MachineSampler:
+    def __init__(self):
+        self.running_count = self.running_sum = self.oversubscribed = 0
+        self.running_max = self.ratio_max = None
+        self.ratio_sum = 0.0
+        self.rate_count = self.switches = 0
+        self.seconds = 0.0
+        self.rate_max = None
+        self.last = None
+
+    def sample(self, now, reading):
+        cores, running, ctxt = (reading.get(k) for k in ("cpu_cores", "procs_running", "ctxt"))
+        if cores is not None and cores > 0 and running is not None:
+            ratio = running / cores
+            self.running_count += 1
+            self.running_sum += running
+            self.ratio_sum += ratio
+            self.running_max = max(self.running_max or 0, running)
+            self.ratio_max = max(self.ratio_max or 0, ratio)
+            self.oversubscribed += running > cores
+        if self.last is not None and ctxt is not None:
+            before, previous = self.last
+            if previous is not None and now > before and ctxt >= previous:
+                seconds, switches = now - before, ctxt - previous
+                self.rate_count += 1
+                self.seconds += seconds
+                self.switches += switches
+                self.rate_max = max(self.rate_max or 0, switches / seconds)
+        self.last = now, ctxt
+
+    def finish(self, record):
+        count = self.running_count
+        record.update(
+            procs_running_sample_count=count,
+            procs_running_mean=self.running_sum / count if count else None,
+            procs_running_max=self.running_max,
+            runnable_per_core_mean=self.ratio_sum / count if count else None,
+            runnable_per_core_max=self.ratio_max,
+            oversubscribed_fraction=self.oversubscribed / count if count else None,
+            ctxt_rate_sample_count=self.rate_count,
+            ctxt_observed_seconds=self.seconds, ctxt_switches=self.switches,
+            ctxt_per_second_mean=self.switches / self.seconds if self.seconds else None,
+            ctxt_per_second_max=self.rate_max)
+
+
+
+def process_switches(text):
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0] == "nonvoluntary_ctxt_switches:":
+            value = int(fields[1])
+            return value if value >= 0 else None
+    return None
+
+
+
+def group_processes(pgid, proc="/proc"):
+    """Linux process-group snapshots, or None when procfs is unavailable.
+    Read self utime/stime only: child times would count workers twice."""
+    try:
+        entries = os.listdir(proc)
+    except OSError:
+        return None
+    found = []
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        path = os.path.join(proc, entry)
+        try:
+            with open(os.path.join(path, "stat")) as f:
+                row = process_stat(f.read())
+            if row["pid"] != int(entry) or row["pgrp"] != pgid:
+                continue
+            try:
+                row["name"] = os.path.basename(os.readlink(os.path.join(path, "exe")))
+                row["name"] = row["name"].removesuffix(" (deleted)")
+            except OSError:
+                row["name"] = None  # Zombies have no exe link; retain a cached name below.
+            try:
+                with open(os.path.join(path, "status")) as f:
+                    row["switches"] = process_switches(f.read())
+            except (OSError, ValueError):
+                row["switches"] = None
+            with open(os.path.join(path, "stat")) as f:
+                check = process_stat(f.read())
+            if (check["pid"], check["start"], check["pgrp"]) == (row["pid"], row["start"], pgid):
+                found.append(row)
+        except (OSError, ValueError, IndexError):
+            continue  # Processes can disappear or become unreadable during a scan.
+    return found
+
+
+
+class ProcessSampler:
+    def __init__(self, started, ticks_per_second):
+        self.started = started
+        self.hz = ticks_per_second if ticks_per_second and ticks_per_second > 0 else None
+        self.previous = {}
+        self.names = {}
+        self.seen = set()
+        self.samples = 0
+        self.switches = 0
+        self.switch_samples = 0
+
+    def sample(self, now, boot_now, rows):
+        if rows is None or not self.hz:
+            # Do not bridge an unreadable scan when estimating per-process cores.
+            for state in self.previous.values():
+                state["gap"] = True
+            return
+        self.samples += 1
+        counts = {}
+        for row in rows:
+            identity = row["pid"], row["start"]
+            before = self.previous.get(identity)
+            name = row["name"] or (before["name"] if before and row["comm"] == before["comm"]
+                                    else row["comm"])
+            data = self.names.setdefault(name, {"core_seconds": 0.0, "observed_core_seconds": 0.0,
+                                               "observed_process_seconds": 0.0,
+                                               "peak_cores_per_process": None, "peak_process_count": 0,
+                                               "processes_seen": 0})
+            if (name, identity) not in self.seen:
+                self.seen.add((name, identity))
+                data["processes_seen"] += 1
+            if row["state"] not in ("Z", "X"):
+                counts[name] = counts.get(name, 0) + 1
+            ticks = row["ticks"] - (before["ticks"] if before else 0)
+            # Newly observed group members were born after the job started.
+            # Their lifetime CPU is known, though their birth time is tick-rounded.
+            if before:
+                elapsed = now - before["at"]
+            elif boot_now is not None:
+                elapsed = min(now - self.started, max(0, boot_now - row["start"] / self.hz))
+            else:
+                elapsed = 0
+            if ticks >= 0:
+                seconds = ticks / self.hz
+                data["core_seconds"] += seconds
+                if elapsed > 0 and not (before and before["gap"]):
+                    data["observed_core_seconds"] += seconds
+                    data["observed_process_seconds"] += elapsed
+                    peak = data["peak_cores_per_process"]
+                    data["peak_cores_per_process"] = max(peak or 0, seconds / elapsed)
+            switches = row["switches"]
+            previous_switches = before["switches"] if before else None
+            if switches is not None:
+                self.switch_samples += 1
+                if previous_switches is not None:
+                    self.switches += max(0, switches - previous_switches)
+                else:
+                    self.switches += switches
+            self.previous[identity] = {**row, "name": name, "at": now, "gap": False,
+                                       "switches": switches if switches is not None else previous_switches}
+        for name, count in counts.items():
+            self.names[name]["peak_process_count"] = max(self.names[name]["peak_process_count"], count)
+
+    def finish(self, record):
+        for data in self.names.values():
+            seconds = data["observed_process_seconds"]
+            data["mean_cores_per_process"] = data["observed_core_seconds"] / seconds if seconds else None
+        record.update(process_cpu=self.names if self.samples else None,
+                      process_samples=self.samples,
+                      nonvoluntary_ctxt_switches=self.switches if self.switch_samples else None)
+
+
+
+def predict_peak_rss(kind, state=STATE, environ=None, now=None):
+    """Max actual peak of the latest 20 matching jobs in seven days.
+    Freeze before execution; absent history is unknown, never zero."""
+    environ = os.environ if environ is None else environ
+    now = time.time() if now is None else now
+    recent = []
+    try:
+        with open(environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl"), "rb") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                    ended, peak = row["ended_at"], row["peak_rss_kb"]
+                    if (row.get("event", "job") == "job" and row["job_kind"] == kind
+                            and type(ended) in (int, float) and math.isfinite(ended)
+                            and now - PREDICTION_SECONDS <= ended <= now
+                            and type(peak) is int and peak > 0):
+                        heapq.heappush(recent, (ended, peak))
+                        if len(recent) > PREDICTION_JOBS:
+                            heapq.heappop(recent)
+                except (ValueError, TypeError, KeyError, OverflowError):
+                    continue
+    except (OSError, ValueError):
+        pass
+    return max((p for _, p in recent), default=None), len(recent)
+
 
 
 def append_log(record, state=STATE, environ=None):
@@ -965,10 +1260,12 @@ def memory_victim(running, cap):
     return total, max(eligible, key=lambda j: j["order"])["job_id"] if total > cap and eligible else None
 
 
-def group_gone(pgid, reap):
+def group_gone(pgid, reap, subreaper=False):
     """Leader reaping alone leaves workers to probe in our PID namespace."""
     if not reap():
         return False
+    if subreaper:
+        return True
     if os.getpid() == 1:
         # Namespace init adopts orphaned workers. Reap them only after wait4
         # has collected the leader's status and RSS, then probe the group.
@@ -988,14 +1285,14 @@ def group_gone(pgid, reap):
     return False
 
 
-def kill_group(pgid, reap):
+def kill_group(pgid, reap, subreaper=False):
     for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
         # A reaped leader is not an empty group while workers remain.
         # Probe that local group until it disappears, including escalation.
         # Block reentrant signal handlers around the completion check/signal.
         previous = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
         try:
-            if group_gone(pgid, reap):
+            if group_gone(pgid, reap, subreaper):
                 return
             os.killpg(pgid, sig)
         except (ProcessLookupError, PermissionError):
@@ -1004,37 +1301,80 @@ def kill_group(pgid, reap):
             signal.pthread_sigmask(signal.SIG_SETMASK, previous)
         deadline = time.monotonic() + wait
         while time.monotonic() < deadline:
-            if group_gone(pgid, reap):
+            if group_gone(pgid, reap, subreaper):
                 return
             time.sleep(0.2)
+
+
+@contextlib.contextmanager
+def child_subreaper():
+    """On Linux, adopt orphaned descendants so wait4 can account for them.
+    Elsewhere wait4 accounts for the child and its waited-for descendants.
+    Restore the setting for callers that invoke main more than once."""
+    enabled = False
+    previous = ctypes.c_int()
+    if platform.system() == "Linux":
+        try:
+            prctl = ctypes.CDLL(None).prctl
+            # PR_GET_CHILD_SUBREAPER / PR_SET_CHILD_SUBREAPER (linux/prctl.h).
+            enabled = (prctl(37, ctypes.byref(previous), 0, 0, 0) == 0
+                       and prctl(36, 1, 0, 0, 0) == 0)
+        except (OSError, AttributeError):
+            pass
+    try:
+        yield enabled
+    finally:
+        if enabled:
+            prctl(36, previous.value, 0, 0, 0)
+
 
 
 def reap_child(child, record, flags=os.WNOHANG):
     """Keep the kernel RSS high-water mark too, including for subsecond jobs.
     The sampled process-group sum also accounts for parallel workers."""
-    if child.returncode is not None:
-        return True
-    try:
-        pid, status, usage = os.wait4(child.pid, flags)
-    except ChildProcessError:
-        # Reaping may be interrupted by a signal handler that also reaps.
-        # The successful wait4 caller stores the status when it resumes.
-        return child.returncode is not None
-    if pid:
-        child.returncode = os.waitstatus_to_exitcode(status)
+    group = getattr(child, "heavy_subreaper", False)
+    while group or child.returncode is None:
+        try:
+            pid, status, usage = os.wait4(-child.pid if group else child.pid, flags)
+        except ChildProcessError:
+            # A signal handler may have reaped it; the successful caller
+            # stores its status and usage when it resumes.
+            return child.returncode is not None
+        if not pid:
+            return False
+        if pid == child.pid:
+            child.returncode = os.waitstatus_to_exitcode(status)
         kb = usage.ru_maxrss / 1024 if platform.system() == "Darwin" else usage.ru_maxrss
-        record["peak_rss_kb"] = max(record["peak_rss_kb"], int(kb))
-
-    return child.returncode is not None
+        record["peak_rss_kb"] = max(record.get("peak_rss_kb", 0), int(kb))
+        record.setdefault("_cpu_usage", []).append((usage.ru_utime, usage.ru_stime, int(kb), usage.ru_nivcsw))
+    return True
 
 
 def run_command(f, command, shown, record, state, environ, load_reader):
+    with child_subreaper() as group:
+        return monitor_command(f, command, shown, record, state, environ, load_reader, group)
+
+
+
+def monitor_command(f, command, shown, record, state, environ, load_reader, group):
+    record.setdefault("cpu_busy_samples", [])
+    record["cpu_scope"] = "process_group" if group else "waited_tree"
     sampled = sample_load(record, load_reader, time.monotonic())
+    cpu_sampled = sample_cpu(record, time.monotonic())
+    machine = MachineSampler()
+    machine.sample(time.monotonic(), machine_counters())
+    try:
+        hz = os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError):
+        hz = None
+    processes = ProcessSampler(time.monotonic(), hz)
+    completed = False
     try:
         child = subprocess.Popen(command, start_new_session=True)
     except OSError as e:
         print(f"heavy: cannot run `{shown}`: {e.strerror}", file=sys.stderr)
         return 127
+    child.heavy_subreaper = group
     reap = lambda: reap_child(child, record)
     handlers = {}
     try:
@@ -1042,7 +1382,7 @@ def run_command(f, command, shown, record, state, environ, load_reader):
             proc_group = visible_group(child.pid)
         except (OSError, ValueError, StopIteration) as e:
             print(f"heavy: cannot identify the command's memory in this procfs view: {e}", file=sys.stderr)
-            kill_group(child.pid, reap)
+            kill_group(child.pid, reap, group)
             reap_child(child, record, 0)
             return 125
         own = getattr(f, "heavy_job", None)
@@ -1058,13 +1398,22 @@ def run_command(f, command, shown, record, state, environ, load_reader):
                 write_status(f, text)
             except (OSError, ValueError) as e:
                 print(f"heavy: cannot publish the command's slot status: {e}", file=sys.stderr)
-                kill_group(child.pid, reap)
+                kill_group(child.pid, reap, group)
                 reap_child(child, record, 0)
                 return 125
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-            handlers[sig] = signal.signal(sig, lambda s, _: kill_group(child.pid, reap))
+            handlers[sig] = signal.signal(sig, lambda s, _: kill_group(child.pid, reap, group))
         while True:
-            if reap():
+            now = time.monotonic()
+            try:
+                boot_now = time.clock_gettime(getattr(time, "CLOCK_BOOTTIME", time.CLOCK_MONOTONIC))
+            except OSError:
+                boot_now = None
+            processes.sample(now, boot_now, group_processes(proc_group))
+            completed = reap()
+            if completed or now - machine.last[0] >= 1:
+                machine.sample(time.monotonic(), machine_counters())
+            if completed:
                 break
             try:
                 rss = group_rss_kb().get(proc_group, 0)
@@ -1077,11 +1426,12 @@ def run_command(f, command, shown, record, state, environ, load_reader):
                     total, victim = rss, None
             except (OSError, ValueError) as e:
                 print(f"heavy: cannot maintain shared memory accounting: {e}", file=sys.stderr)
-                kill_group(child.pid, reap)
+                kill_group(child.pid, reap, group)
                 reap_child(child, record, 0)
                 return 125
             record["peak_rss_kb"] = max(record["peak_rss_kb"], rss)
             sampled = sample_load(record, load_reader, time.monotonic(), sampled)
+            cpu_sampled = sample_cpu(record, time.monotonic(), cpu_sampled)
             if ((own is not None and victim == own["job_id"])
                     or rss > cap):
                 reason = (f"its process group uses {rss / 1048576:.1f} GB" if rss > cap
@@ -1089,7 +1439,7 @@ def run_command(f, command, shown, record, state, environ, load_reader):
                 print(f"heavy: killed `{shown}`: {reason}, over the {cap / 1048576:.1f} GB cap "
                       f"(HEAVY_MEM_GB, {os.path.join(state, 'mem_gb')}); run it again when "
                       "fewer jobs run", file=sys.stderr)
-                kill_group(child.pid, reap)
+                kill_group(child.pid, reap, group)
                 reap_child(child, record, 0)
                 return 137
             time.sleep(1)
@@ -1098,18 +1448,32 @@ def run_command(f, command, shown, record, state, environ, load_reader):
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
 
+        sample_cpu(record, time.monotonic(), cpu_sampled, final=True)
+        if not completed:
+            machine.sample(time.monotonic(), machine_counters())
+        machine.finish(record)
+        processes.finish(record)
 
 def run(f, command, shown, kind, record, began, state, environ, load_reader):
     record.update(event="job", command=shown, job_kind=kind,
-                  worktree=os.getcwd(), peak_rss_kb=0, load_samples=[])
+                  worktree=os.getcwd(), peak_rss_kb=0, load_samples=[],
+                  cpu_user_seconds=0.0, cpu_system_seconds=0.0, cpu_busy_samples=[],
+                  cpu_scope="waited_tree", involuntary_context_switches=0,
+                  process_cpu=None, process_samples=0, nonvoluntary_ctxt_switches=None)
     own = getattr(f, "heavy_job", {})
     record.update(job_id=own.get("job_id"), admission_order=own.get("order"),
-                  pid_namespace=own.get("pid_namespace"), memory_accounting="slot_owner_reports_v3")
+                  pid_namespace=own.get("pid_namespace"),
+                  memory_accounting="slot_owner_reports_v3")
+    MachineSampler().finish(record)
+    prediction, history_jobs = predict_peak_rss(kind, state, environ, record["started_at"])
+    record.update(predicted_peak_rss_kb=prediction, prediction_jobs=history_jobs,
+                  prediction_method="max_last_20_same_kind_7d")
     code = run_command(f, command, shown, record, state, environ, load_reader)
     record.update(ended_at=time.time(), run_seconds=time.monotonic() - began, exit_status=code)
     loads = record["load_samples"]
     record.update(load_mean=sum(loads) / len(loads) if loads else None,
                   load_max=max(loads) if loads else None)
+    cpu_summary(record)
     append_log(record, state, environ)
     return code
 
