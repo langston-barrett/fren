@@ -1919,8 +1919,7 @@ piece; otherwise, but for the trailing commas of lists and claims and for
 def fmtPieces (path src : String) (all := false) : Option (List (FrenCli.Fmt.PieceKind × String) × Array (Array String)) := do
   let src := if Fren.Core.isMarkdownFile path then Fren.Core.unwrapMarkdown src else src
   let chars := src.toList.toArray
-  let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
-  let lay ← (FrenCli.parseLayout toks chars).toOption
+  let (toks, comments, lay) ← (FrenCli.Fmt.parseAll chars).toOption
   let inUse (k : Nat) : Bool := lay.uses.any fun (f, l) => f ≤ k && k ≤ l
   let isStr (k : Nat) : Bool := toks[k]?.any (·.tok matches .str _)
   let startsLine (c : FrenCli.Span) : Bool := Id.run do
@@ -1991,8 +1990,7 @@ of its `use` items, which formatting moves or rewrites, with its tokens and
 layout. -/
 def blankPieces (src : String) : Option (Array BlankPiece × Array FrenCli.Token × FrenCli.Layout) := do
   let chars := src.toList.toArray
-  let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
-  let lay ← (FrenCli.parseLayout toks chars).toOption
+  let (toks, comments, lay) ← (FrenCli.Fmt.parseAll chars).toOption
   let (lineOf, starts) := FrenCli.Fmt.lineTable chars
   let blankLine (l : Nat) : Bool :=
     (chars.extract starts[l]! ((starts[l + 1]?.map (· - 1)).getD chars.size)).all Char.isWhitespace
@@ -2042,8 +2040,7 @@ item's first line, before the next item, each with how many lines it is
 below that line and how far it reaches. -/
 def apartLines (out : String) (blanks : Std.HashMap Nat Nat) : Std.HashSet Nat := Id.run do
   let chars := out.toList.toArray
-  let .ok (toks, comments) := FrenCli.lexWithComments chars | return {}
-  let .ok lay := FrenCli.parseLayout toks chars | return {}
+  let .ok (toks, comments, lay) := FrenCli.Fmt.parseAll chars | return {}
   let (lineOf, starts) := FrenCli.Fmt.lineTable chars
   let text (l : Nat) : String :=
     String.ofList (chars.extract starts[l]! ((starts[l + 1]?.map (· - 1)).getD chars.size)).toList
@@ -2086,8 +2083,7 @@ def apartLines (out : String) (blanks : Std.HashMap Nat Nat) : Std.HashSet Nat :
 and the token after it. -/
 def chainGaps (src : String) : Std.HashSet Nat := Id.run do
   let chars := src.toList.toArray
-  let some (toks, comments) := (FrenCli.lexWithComments chars).toOption | return {}
-  let some lay := (FrenCli.parseLayout toks chars).toOption | return {}
+  let some (toks, comments, lay) := (FrenCli.Fmt.parseAll chars).toOption | return {}
   let kept := FrenCli.Fmt.keptChains toks comments lay
   let mut gaps : Std.HashSet Nat := {}
   for h : c in [0:lay.chains.size] do
@@ -2104,10 +2100,11 @@ blank line of `src` that does not start a line of `out` is after a gap
 whose line break a list or block decides and whose blank lines go
 (`fmt::line_break`): after an opening bracket, a record update's `{` or
 `with`, before a closing bracket, before a block's `{`, or before the right
-side of a `:=` or `=>` (`fmt::right_side`), or before or after an operator
-of a chain that the formatter lays out (`fmt::chain_layout`), whose blank
-lines go too, also where a line starts there. Pieces after a
-`use` item are left out, as imports are merged and sorted. -/
+side of a `:=`, `=>` or laid-out clause's `:` (`fmt::right_side`), or before
+or after an operator of a chain that the formatter lays out
+(`fmt::chain_layout`), whose blank lines go too, also where a line starts
+there. Pieces after a `use` item are left out, as imports are merged and
+sorted. -/
 def fmtBlanksKept (src out : String) : Array String := Id.run do
   let some (ps, _, lay) := blankPieces src | return #[]
   let some (qs, toks', lay') := blankPieces out | return #[]
@@ -2118,7 +2115,8 @@ def fmtBlanksKept (src out : String) : Array String := Id.run do
     if b.kind == .members then joinable := joinable.insert b.opening
     joinable := (joinable.insert (b.lead + 1)).insert b.closing
     if b.lead != b.opening then joinable := joinable.insert (b.opening + 1)
-  -- And the gap before each right side of a `:=` or `=>` (`fmt::right_side`).
+  -- And the gap before each managed right side, a laid-out clause's
+  -- included (`fmt::right_side`).
   for (_, first, _, _) in lay.rightSides do joinable := joinable.insert first
   -- And the gaps before and after the operators of a chain that the
   -- formatter lays out (`fmt::chain_layout`), whose blank lines go.
@@ -2128,7 +2126,8 @@ def fmtBlanksKept (src out : String) : Array String := Id.run do
   -- the closing brackets of those that indent.
   let mut opens : Std.HashSet Nat := {}
   for b in lay'.bracketed do opens := (opens.insert b.opening).insert b.lead
-  -- A `:=` or `=>` that ends a line is followed by its right side.
+  -- A managed right side, a laid-out clause's included, follows an
+  -- operator that ends a line.
   for (op, _, _, _) in lay'.rightSides do opens := opens.insert op
   for h : k in [0:toks'.size] do
     if toks'[k].tok == .kw "{" || toks'[k].tok == .kw "::{" then opens := opens.insert k
@@ -2279,8 +2278,9 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
 
 /-- `src` laid out again at random, from `seed`, as `fmt::layout_free`
 allows: each gap whose line break a list or block decides, or that before
-the right side of a `:=` or `=>` (`fmt::right_side`) but a chain broken by
-hand, with no comment in it and none on its lines, is laid out again. One whose blank lines go
+the right side of a `:=`, `=>` or laid-out clause's `:` (`fmt::right_side`)
+but an expression broken by hand, with no comment in it and none on its
+lines, is laid out again. One whose blank lines go
 (`fmt::line_break`, `fmt::blank_lines`: after an opening bracket, a record
 update's `{` or `with`, before a closing bracket, before a block's `{`, or
 before a right side)
@@ -2307,8 +2307,7 @@ the gaps and indentation of lines with comments, and gaps with no space,
 where one could change what the parser reads, as in `f(x)` or `0..=9`. -/
 def relaid (src : String) (seed : Nat) (apart : Std.HashSet Nat := {}) : Option String := do
   let chars := src.toList.toArray
-  let (toks, comments) ← (FrenCli.lexWithComments chars).toOption
-  let lay ← (FrenCli.parseLayout toks chars).toOption
+  let (toks, comments, lay) ← (FrenCli.Fmt.parseAll chars).toOption
   let (lineOf, _) := FrenCli.Fmt.lineTable chars
   let mut commented : Std.HashSet Nat := {}
   for c in comments do
@@ -2349,10 +2348,10 @@ def relaid (src : String) (seed : Nat) (apart : Std.HashSet Nat := {}) : Option 
         let last := b.closing - 1
         if b.commas.back? == some last then edits := edits.push (toks[last]!.span.start, toks[last]!.span.stop, "")
         else edits := edits.push (toks[last]!.span.stop, toks[last]!.span.stop, ",")
-  -- The gap before the right side of each `:=`, `=>` or clause's `:`, whose
-  -- blank lines go (`fmt::right_side`): a space, a line break or a blank
-  -- line. But for an expression broken by hand, with a line break outside
-  -- its brackets, whose gap is content.
+  -- The gap before each managed right side, a laid-out clause's included,
+  -- whose blank lines go (`fmt::right_side`): a space, a line break or a
+  -- blank line. But for an expression broken by hand, with a line break
+  -- outside its brackets, whose gap is content.
   let firsts : Std.HashSet Nat := lay.rightSides.foldl (fun acc (_, f, _, _) => acc.insert f) {}
   -- The gaps before and after the operators of each chain that the
   -- formatter lays out (`fmt::chain_layout`).

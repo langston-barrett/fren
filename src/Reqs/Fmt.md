@@ -103,9 +103,10 @@ condition, which principle 6 keeps.
    (`fmt::right_side`'s `breaks?`). One shape breaks *after* its operator:
    a single short name before `iff` or `=`, as in `ensure rule: noted? iff`,
    whose right operand then starts the next line, one level in
-   (`fmt::chain_side`). A call whose arguments must be vertical wherever
-   it is hugs its operator rather than the chain breaking, as in
-   `lhs = f(` (`fmt::hugs?`).
+   (`fmt::chain_side`). A call after at most 4 columns, each token taking
+   its width and a space, or whose arguments must be vertical wherever it
+   is, hugs its operator rather than the chain breaking, as in `lhs = f(`
+   (`fmt::hugs?`).
 6. **Leave a choice to the author only where no rule decides it well**:
    the line breaks of a chain that is not its line's expression, such as a
    guard's condition before its body (`fmt::chain_kept`), the other line
@@ -147,9 +148,9 @@ what it keeps. A file's *content* is what formatting keeps of it:
 - for now, its line breaks but those that a [list or block](#lists-and-blocks)
   decides, such as those between the members of a procedure and the one
   before a block's `{`, those before the [right side](#right-sides) of a
-  `:=` or `=>`, or of a clause's `:`, but an expression broken by hand, and
-  those before and after the operators of a [chain](#chains) that the
-  formatter lays out, a line break before a
+  `:=` or `=>`, or of a laid-out clause's `:`, but an expression broken by
+  hand, and those before and after the operators of a [chain](#chains)
+  that the formatter lays out, a line break before a
   [comma](#commas-and-comments) counting as one after it.
 
 `fmt::format` is what `fren fmt` writes for a file that parses. It writes
@@ -337,7 +338,7 @@ pub enum Gap {
     BeforeClose,             -- before its closing bracket
     UpdatedRecord,           -- after a record update's `{`, before the record it updates
     BlockBrace,              -- before a block's `{`
-    RightSide,               -- after a `:=` or `=>`, before its right side (`fmt::right_side`)
+    RightSide,               -- after a `:=`, `=>` or laid-out clause's `:` (`fmt::right_side`)
     Operator,                -- before an operator of a chain that the formatter lays out (`fmt::chain_layout`)
     AfterOperator,           -- after such an operator, where it breaks after it (`fmt::chain_side`)
 }
@@ -1087,12 +1088,16 @@ out target :=
 
 The expression of a clause, after the `:` of its name, as in `ensure r:`,
 `expect e:` or a law's `law l(x: T):`, is a right side too where it is
-wholly a chain, and its form is `Form::Chain`. It starts the next line
-where the chain breaks on the clause's line, as `fmt::chain_layout` says,
-so that the chain's operators are indented under its first operand rather
-than under the clause, and it stays on the clause's line otherwise (#546's
-decision 4). On the next line, the chain breaks again only if it still
-does not fit there:
+wholly a chain whose operators may start a line and whose operator gaps
+are laid out, as `fmt::clause_side` decides, and its form is `Form::Chain`.
+Otherwise the gap after the clause's `:` is content and keeps its line
+break: in particular, where the whole expression is a membership, a
+multiplicative chain containing `mod`, or a chain that keeps its operator
+gaps (`fmt::chain_kept`). A laid-out chain starts the next line where it
+breaks on the clause's line, as `fmt::chain_layout` says, so that its
+operators are indented under its first operand rather than under the
+clause. It stays on the clause's line otherwise (#546's decision 4). On
+the next line, the chain breaks again only if it still does not fit there:
 
 ```text
 expect substituted_under_binder:
@@ -1110,18 +1115,45 @@ stays on the operator's line, and a line break that it decides goes
 before the comments that start the right side's line, as for an element
 of a list ([`fmt::break_before`](#comments-before-an-element)). The gap
 gets a line break as `fmt::line_break` says for `Gap::RightSide`, which
-breaks it where a comment forces it too. The parser gives the right sides,
-their forms and the lists, and the formatter's decision implements
+breaks it where a comment forces it too. The parser records the right
+sides, their forms and the lists. `fmt::clause_side` selects the clause
+gaps the formatter decides, from the recorded chains and `fmt::chain_kept`.
+The formatter's decisions implement `fmt::clause_side` and
 `fmt::right_side`, proved in Lean:
 
 ```fren
+-- Recorded chains: their first and last tokens and whether `fmt::chain_kept` keeps their gaps.
+pub enum ClauseChains { Nil, Chain(Int, Int, Bool, ClauseChains) }
+
+pub fn clause_chain?(chains: ClauseChains, first: Int, last: Int): (found?) {
+    out found? := match chains {
+        ClauseChains::Nil => false,
+        ClauseChains::Chain(start, stop, kept?, rest) =>
+            start = first and stop = last and not kept? or clause_chain?(rest, first, last),
+    }
+    ensure empty: when chains = ClauseChains::Nil, not found?
+}
+
+pub proc clause_side(chains: ClauseChains, first: Int, last: Int): (det managed?) {
+    out managed? := clause_chain?(chains, first, last)
+
+    expect absent: when chains = ClauseChains::Nil, not managed?
+    expect whole: when chains = ClauseChains::Chain(first, last, false, ClauseChains::Nil), managed?
+    expect kept: when chains = ClauseChains::Chain(first, last, true, ClauseChains::Nil), not managed?
+    -- A recorded chain inside a membership or a parenthesized expression is not the whole clause.
+    expect same_start: when chains = ClauseChains::Chain(first, last - 1, false, ClauseChains::Nil),
+        not managed?
+    expect same_end: when chains = ClauseChains::Chain(first + 1, last, false, ClauseChains::Nil),
+        not managed?
+}
+
 -- The outermost expression of a right side.
 pub enum Form {
     Arms,                    -- a `match` or a table, with arms
     Conditional,             -- an `if`
     Bracketed,               -- a call, a parenthesized expression, a literal, a record update or a Boolean block
     Other,                   -- any other expression, such as an operation
-    Chain,                   -- a chain that is a clause's expression (`fmt::chain_layout`)
+    Chain,                   -- the whole clause is a laid-out chain (`fmt::clause_side`)
 }
 
 -- A right side stays on the operator's line, its bracket's elements or arms breaking: it is wholly a
@@ -1551,12 +1583,13 @@ proc c(mode: Mode) {
 }
 ```
 
-A `:=` or `=>` whose [right side](#right-sides) starts the next line
-indents as a bracket does, until its right side ends: the right side's
-first line is indented four spaces more than the operator's line, as an
-element is, and a line that continues it four more again, past the column
-where the right side starts, but for the links of an expression broken by
-hand, which line up with its first line ([Right sides](#right-sides)). A
+A `:=`, `=>` or laid-out clause's `:` whose [right side](#right-sides)
+starts the next line indents as a bracket does, until its right side ends:
+the right side's first line is indented four spaces more than the
+operator's line, as an element is, and a line that continues it four more
+again, past the column where the right side starts, but for the links of
+an expression broken by hand, which line up with its first line
+([Right sides](#right-sides)). A
 broken [chain](#chains) indents as a bracket does too, from its first
 token to its last, so the lines that start with its operators are indented
 four spaces more than the line it starts on. So a
@@ -1942,7 +1975,9 @@ proved in Lean:
 pub proc blank_lines(
     blank: Nat,              -- blank lines before the line in the input
     first?,                  -- the line is the first of its file or block
-    after_open?,             -- the line before it ends with a bracket that indents, `with`, or `:=` or `=>`
+    -- The line before it ends with a bracket that indents, `with`, `:=`, `=>` or a laid-out
+    -- clause's `:`.
+    after_open?,
     before_close?,           -- the line starts with the closing bracket of one
     apart?,                  -- `fmt::apart` sets the line apart from the item before it
 ): (det kept: Int) {

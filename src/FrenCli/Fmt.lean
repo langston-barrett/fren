@@ -17,12 +17,13 @@ line, and from the outside in whether its line fits, where it is its
 line's expression (`fmt::own_line`), and for a block, whether its line
 continues its item (`fmt::continued`). A line break that a list decides
 before an element goes before the comments that start the element's line
-(`fmt::break_before`). It decides whether the right side of a `:=` or `=>`
-starts the next line (`fmt::right_side`), and if so, indents it as inside a
-bracket. It decides which chains of operators keep their line breaks
-(`fmt::chain_kept`), and whether each other one breaks before its
-operators (`fmt::chain_layout`), from the outside in, and if so, indents
-it as inside a bracket. It keeps the other line breaks. It decides, for
+(`fmt::break_before`). It decides whether the right side of a `:=`, `=>`
+or laid-out clause's `:` starts the next line (`fmt::right_side`), and if
+so, indents it as inside a bracket. It decides which chains of operators
+keep their line breaks (`fmt::chain_kept`), and whether each other one
+breaks before its operators (`fmt::chain_layout`), from the outside in,
+and if so, indents it as inside a bracket. It keeps the other line breaks.
+It decides, for
 each line, its indentation (`fmt::indent`), the spaces between its tokens
 (`fmt::space`), where its trailing comment goes (`fmt::comment_column`),
 and how many blank lines precede it (`fmt::blank_lines`), once the
@@ -735,6 +736,15 @@ def keptChains (toks : Array Token) (comments : Array Span) (lay : Layout) : Arr
     if keeps then keptOpen := keptOpen.push c
   return kept
 
+/-- The clause gaps the formatter decides, after `chain_kept`: a clause
+whose whole chain keeps its operator gaps keeps its clause gap too. All
+consumers of formatting metadata use this layout (`fmt::clause_side`). -/
+def clauseLayout (toks : Array Token) (comments : Array Span) (lay : Layout) : Layout :=
+  let kept := keptChains toks comments lay
+  let chains := lay.chains.toList.zip kept.toList |>.map fun (c, k) => (c.first, c.last, k)
+  { lay with rightSides := lay.rightSides.filter fun (_, first, last, form) =>
+      form != .chain || Parser.clauseChain chains first last }
+
 /-- A token or a comment, with the lines it starts and ends on, and the
 column where it starts. -/
 structure Piece where
@@ -812,7 +822,7 @@ inductive Role where
   | joined
   /-- Before a block's `{`. -/
   | blockBrace
-  /-- After a `:=` or `=>`, before its right side. -/
+  /-- After a `:=`, `=>` or laid-out clause's `:`, before its right side. -/
   | rightSide
   /-- Before an operator of a chain that the formatter lays out
   (`fmt::chain_layout`). -/
@@ -1001,10 +1011,10 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     for k in b.commas do
       if !trailing.contains k then governed := governed.set! (elementBreak (pieceAt (k + 1))) (some (c, .afterComma))
     governed := governed.set! (pieceAt b.closing) (some (c, .beforeClose))
-  -- The gap before each right side of a `:=` or `=>`, whose line break
-  -- `fmt::right_side` decides: before its first token, or before the
-  -- comments that start its line. Each is given by its index in
-  -- `lay.rightSides`.
+  -- The gap before each right side of a `:=`, `=>` or laid-out clause's
+  -- `:`, whose line break `fmt::right_side` decides: before its first
+  -- token, or before the comments that start its line. Each is given by
+  -- its index in `lay.rightSides`.
   let mut rightGap : Std.HashMap Nat Nat := {}
   let mut gapOf : Std.HashMap Nat Nat := {}
   let mut rightOf : Std.HashMap Nat Nat := {}
@@ -1392,9 +1402,9 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
     while stack.head?.any fun (t, b, _) => b == .operator && endsHere t do
       stack := stack.tail
     if flatUntil == some k then flatUntil := none
-    -- A `:=` or `=>`: whether its right side starts the next line
-    -- (`fmt::right_side`), and if so, the right side is inside it, as
-    -- inside a bracket that indents.
+    -- A `:=`, `=>` or laid-out clause's `:`: whether its right side starts
+    -- the next line (`fmt::right_side`), and if so, the right side is
+    -- inside it, as inside a bracket that indents.
     if let some r := rightOf[k]? then
       let (_, first, last, form) := lay.rightSides[r]!
       if let some g := gapOf[r]? then
@@ -1541,10 +1551,12 @@ def layout (src : Array Char) (toks : Array Token) (comments : Array Span) (lay 
 /-- An error that stops a file from being formatted. -/
 abbrev Error := Span × Msg
 
+/-- Tokens, comments and formatting metadata, with clause gaps retained
+only for chains the formatter lays out (`fmt::clause_side`). -/
 def parseAll (src : Array Char) : Except Error (Array Token × Array Span × Layout) := do
   let (toks, comments) ← (lexWithComments src).mapError fun e => (e.span, e.msg)
   let lay ← (parseLayout toks src).mapError fun e => (e.span, e.msg)
-  return (toks, comments, lay)
+  return (toks, comments, clauseLayout toks comments lay)
 
 /-- Whether the file must be laid out before its imports are organized,
 as whether a `use` member is in a block of imports (`fmt::in_block`)

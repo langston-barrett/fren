@@ -56,6 +56,8 @@ proc chains(
     -- ...and so does a call after a short left operand, or one whose arguments must split wherever
     -- it is, but not a call with flat arguments after a longer left operand (#546's decision 3).
     ensure short: t = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c + a + b)
+    -- The short left operand alone allows hugging even when the arguments are below their limit.
+    ensure short_flat: t = evaluate_for_nested_chain_width(alpha_beta_gamma, delta_epsilon_zeta, eta_theta_iota)
     ensure split_anyway: eval(alpha_beta_gamma, delta_epsilon_zeta) = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c)
     ensure long_left: alpha_beta_gamma = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota, c + a)
     ensure long_call_left: eval(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota) = f(alpha_beta_gamma, eta_theta_iota, c + a + b)
@@ -78,6 +80,8 @@ proc chains(
     ensure guard_body: when alpha_beta_gamma > 0,
         total = alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + delta_epsilon_zeta
     -- A chain inside a kept chain keeps its line breaks even where it could fit on one line.
+    -- Kept lines use ordinary continuation indentation (`fmt::continued`, `fmt::indent`): a
+    -- grouping's parentheses do not indent, and `chain_layout` adds no operator indentation here.
     ensure held_chain: when a > 0 and (
         alpha_beta_gamma
             + delta_epsilon_zeta
@@ -95,9 +99,36 @@ proc chains(
         and c > 0
     -- `in` cannot start a line, so a chain with it is not laid out.
     ensure membership: alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + 1000000 in s
+    -- Its clause gap is content too, even with a recorded `+` chain sharing its first token.
+    ensure membership_kept:
+        alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + 1000000 in s
+    -- A chain in the right operand shares the membership's end, not its whole range.
+    ensure membership_rhs_kept:
+        a in s union s
+    -- A blank line in that gap stays as well.
+    ensure membership_blank:
+
+        a in s
+    assume membership_assumed:
+        b in s
+    expect membership_expected:
+        c in s
+    cover membership_covered:
+        a in s
+    -- A parenthesized chain and a prefixed one are not whole clause chains either.
+    ensure parenthesized_kept:
+        (a + b > c)
+    ensure prefix_kept:
+        not (a > b and b > c)
     -- Nor can `mod`; a multiplicative chain containing it keeps its line breaks.
     ensure remainder: total = alpha_beta_gamma * delta_epsilon_zeta mod 17
         * eta_theta_iota
+    -- Formatting precedes type checking: a bare `mod` is handled too, though it is not Boolean.
+    expect remainder_kept:
+        alpha_beta_gamma mod (delta_epsilon_zeta + eta_theta_iota)
+    -- The top operator may be `*`: one `mod` anywhere in its multiplicative chain excludes it.
+    expect mixed_remainder_kept:
+        alpha_beta_gamma mod 17 * delta_epsilon_zeta
     -- Every operator of a chained comparison is laid out.
     ensure comparison: 0 <= alpha_beta_gamma + delta_epsilon_zeta < eta_theta_iota + alpha_beta_gamma <= delta_epsilon_zeta
 }
@@ -106,9 +137,48 @@ proc chains(
 fn moved(alpha_beta_gamma: Int, delta_epsilon_zeta: Int, eta_theta_iota: Int): Bool := alpha_beta_gamma > 1000000
     and delta_epsilon_zeta > 2000000 and eta_theta_iota > 3000000 and alpha_beta_gamma < eta_theta_iota
 
+-- Named members use the same classification in function and global expectation blocks.
+fn function_block(x: Int, s: Set<Int>): (r: Int) {
+    assume member:
+        x in s
+    out r := x
+}
+
+expect global_block(x: Int, s: Set<Int>) {
+    assume member:
+        x in s
+    expect again:
+        x in s
+}
+
 -- A trait law's and a binderless global expectation's clauses lay out their chains too.
 trait Ordered {
     law bounded(n: Int): n > 10000000000000000000 and n < 20000000000000000000 and n != 30000000000000000000
+    -- Both unsupported operators leave a law's clause gap alone.
+    law membership(x: Int, s: Set<Int>):
+        x in s
+    law remainder(x: Int):
+        x mod 2
 }
 
 expect global_chain: 100000000000000000000000000000 > 0 and 200000000000000000000000000000 > 0 and 300000000000000000000000000000 > 0
+
+-- The same applies to binderless global clauses, including a blank clause gap.
+expect global_membership:
+
+    1 in {1, 2}
+
+expect global_remainder:
+    4 mod 2
+
+-- Global binders and a grouping leave the clause gap as content as well.
+expect global_quantified:
+    forall (x: Int), x in {x}
+
+expect global_parenthesized:
+    (1 < 2)
+
+-- Even a recorded chain can keep its operator gaps, here because another item follows on its
+-- line. Its clause gap stays content, rather than being joined because no chain is laid out.
+expect shared_first:
+    1 < 2 expect shared_second: 2 < 3

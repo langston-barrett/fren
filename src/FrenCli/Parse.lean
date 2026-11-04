@@ -566,8 +566,8 @@ def leanCommands : List String :=
    "namespace", "section", "end", "variable", "set_option", "attribute", "macro", "syntax",
    "notation", "#check", "#eval", "#print", "#guard_msgs"]
 
-/-- The form of the right side of a `:=` or `=>`, its outermost expression
-(`fmt::Form`). -/
+/-- The form of the right side of a `:=`, `=>` or clause's `:`, its
+outermost expression (`fmt::Form`). -/
 inductive RightForm where
   /-- A `match` or a table, with arms. -/
   | arms
@@ -577,7 +577,8 @@ inductive RightForm where
   Boolean block. -/
   | bracketed
   | other
-  /-- An operation of binary operators that is a clause's expression. -/
+  /-- A recorded chain that is a clause's whole expression. The formatter
+  leaves its clause gap alone if the chain keeps its operator gaps. -/
   | chain
   deriving BEq, DecidableEq, Repr, Inhabited
 
@@ -684,11 +685,11 @@ structure Layout where
   /-- The spans of the operations of binary operators, each with that of
   its right operand. -/
   pairs : Array (Span × Span) := #[]
-  /-- The right sides of `:=` and `=>` that are expressions: the operator,
-  and the first and last tokens of its right side. -/
+  /-- The right sides of `:=` and `=>`, and candidate clause chains after
+  `:`: the operator and the first and last tokens of its right side. -/
   rightSides : Array (Nat × Nat × Nat × RightForm) := #[]
-  /-- The chains of binary operators whose line breaks the formatter
-  decides (`fmt::chain_layout`). -/
+  /-- The chains whose operators may start a line. The formatter decides
+  which keep their line breaks (`fmt::chain_kept`). -/
   chains : Array Chain := #[]
   /-- The top-level items, the `import` and `open` lines of the header
   included, in order: the first and last tokens of each, an item's first
@@ -793,17 +794,23 @@ def rightSide (x : P Expr) : P Expr := do
       else .other
     modify fun s => { s with layout.rightSides := s.layout.rightSides.push (first - 1, first, last, form) }
   return e
-/-- Runs `x`, which parses the expression of a clause after the `:` just
-consumed, recording it as a right side of that `:` (`Layout.rightSides`)
-where it is wholly an operation of binary operators, which starts the next
-line where it breaks on the clause's (`fmt::right_side`). -/
+/-- Whether a whole clause is a recorded chain whose operator gaps the
+formatter decides (`fmt::clause_side`), from each chain's first and last
+tokens and whether its gaps are kept (`fmt::chain_kept`). -/
+def clauseChain (chains : List (Nat × Nat × Bool)) (first last : Nat) : Bool :=
+  chains.any fun (f, l, kept) => f == first && l == last && !kept
+
+/-- Runs `x` after a clause's `:`, recording a candidate right side only
+when its whole token range is a chain that `chainOf` records. In particular,
+`in` and `mod` leave the clause gap as content. Whether a recorded chain
+keeps its operator gaps is decided later, by the formatter. -/
 def clauseSide (x : P Expr) : P Expr := do
   let first := (← get).pos
   let e ← x
   let s ← get
   let last := s.pos - 1
-  if first > 0 && last ≥ first && (e matches .bin .. | .chain ..)
-      && e.span.start == s.toks[first]!.span.start && e.span.stop == s.toks[last]!.span.stop then
+  if first > 0 && last ≥ first && clauseChain
+      (s.layout.chains.toList.map fun c => (c.first, c.last, false)) first last then
     modify fun s => { s with layout.rightSides := s.layout.rightSides.push (first - 1, first, last, .chain) }
   return e
 /-- Records that the next token closes the innermost open list or block. -/

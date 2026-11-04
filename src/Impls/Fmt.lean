@@ -303,6 +303,36 @@ def toForm : FrenCli.RightForm → fmt.Form
   | .other => .Other
   | .chain => .Chain
 
+def toClauseChains : List (Nat × Nat × Bool) → fmt.ClauseChains
+  | [] => .Nil
+  | (first, last, kept) :: cs => .Chain first last kept (toClauseChains cs)
+
+theorem clause_chain_toClauseChains (cs : List (Nat × Nat × Bool)) (f l : Nat) :
+    fmt.«clause_chain?» (toClauseChains cs) f l = FrenCli.Parser.clauseChain cs f l := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    obtain ⟨first, last, kept⟩ := c
+    simp only [toClauseChains, fmt.«clause_chain?», FrenCli.Parser.clauseChain, List.any_cons, ih]
+    have hf : decide ((first : Int) = f) = (first == f) := by
+      by_cases h : first = f
+      · subst first; simp
+      · simp [show (first : Int) ≠ f by omega, beq_false_of_ne h]
+    have hl : decide ((last : Int) = l) = (last == l) := by
+      by_cases h : last = l
+      · subst last; simp
+      · simp [show (last : Int) ≠ l by omega, beq_false_of_ne h]
+    simp only [Bool.decide_or, Bool.decide_and, decide_not, Bool.decide_coe, hf, hl]
+
+impl clause_side: fmt::clause_side for (cs : List (Nat × Nat × Bool)) (f l : Nat) {
+  chains := toClauseChains cs,
+  first := f,
+  last := l,
+  managed? := FrenCli.Parser.clauseChain cs f l,
+} by
+  intro cs f l _
+  simp [fren_spec, clause_chain_toClauseChains]
+
 impl right_side: fmt::right_side for (f : FrenCli.RightForm) (h w l a b i k : Bool) (e n x y : Nat) {
   form := toForm f,
   chained? := h,
