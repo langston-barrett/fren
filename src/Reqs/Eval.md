@@ -96,6 +96,41 @@ name, `#` and a number, such as `Name#0`. Within one behaviour, two values
 of an abstract type written alike are equal, and two written differently
 are not.
 
+## Expansion limit
+
+While reading a spec for evaluation, Fren eagerly copies defined-function
+bodies at their applications and renames their binders. A short chain of
+functions can therefore require exponentially many expression nodes.
+Reading one source item may copy at most `MAX_EXPANSION_NODES` nodes,
+across all of its expansions, contracts and binder renamings. The budget
+resets at the next source item, including across files, and temporary
+changes of lexical scope never refund work. This bounds copying work,
+not the memory of the source, its values or the solver.
+
+Before a traversal copies an expression, it reserves one unit for each
+node it will visit, counting every occurrence of a shared subtree. This
+walk stops when the remaining budget is exhausted, before making the
+copy. A function-parameter substitution spends one unit at each node it
+copies and reserves the work of each closure-body substitution too.
+Arguments retained for strict evaluation count; the closed body of a
+constant is shared and does not. On exhaustion, reading stops with an
+expansion-limit diagnostic. `fren check` then exits with code 2 before
+asking the solver anything, since it cannot confirm models without the
+evaluator's reading. Smaller definitions or separate source items can
+bring an item within the limit.
+
+```fren
+pub const MAX_EXPANSION_NODES: Int := 2097152
+
+pub proc expansion_budget(): (det initial: Nat) { ensure bound: initial = MAX_EXPANSION_NODES }
+
+pub proc expansion_step(remaining: Nat): (det copy?, det after: Nat) {
+    ensure allowed: copy? iff remaining > 0
+    ensure spent: when copy?, after + 1 = remaining
+    ensure exhausted: unless copy?, after = 0
+}
+```
+
 ## Higher-order functions
 
 The evaluator unfolds an application of a [higher-order

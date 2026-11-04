@@ -2,6 +2,7 @@
 import Fren
 import FrenCli.Eval
 import FrenCli.Run
+import FrenTest.Expansion
 import FrenTest.Frontends
 import FrenTest.FuzzFrontends
 import FrenTest.Jobs

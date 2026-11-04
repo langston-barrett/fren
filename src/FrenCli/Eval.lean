@@ -4,6 +4,7 @@ import FrenCli.Guard
 import FrenCli.Parse
 import FrenCore.Check
 import FrenCore.Enumeration
+import FrenCore.Expansion
 import FrenCore.Names
 import FrenCore.Patterns
 import FrenCore.Regex
@@ -2506,6 +2507,9 @@ structure LState where
   applied itself, in a structural recursion (`Spec.recDefs`). -/
   lowering : Option Name := none
   selfApplied : Bool := false
+  /-- Nodes left for eager expansion in the current source item. Kept
+  across temporary changes of the lexical state. -/
+  expansionLeft : Nat := Fren.Core.maxExpansionNodes
 
 abbrev L := StateT LState (Except String)
 
@@ -2633,6 +2637,20 @@ def readFields (e : Ex) (ty : VTy) (fs : List String) : L (Ex × VTy) := do
 
 def evalClosed (e : Ex) : Option Val := e.eval {} fun _ => none
 
+/-- Children that copying traverses: arguments of `strict` are copied,
+while the closed body of a constant is shared. -/
+def Ex.copyChildren : Ex → List Ex
+  | .const .. => []
+  | .strict args e => args.toList ++ [e]
+  | e => e.children.toList
+
+/-- Reserve the work before a pure traversal can allocate its copy. -/
+def copying (e : Ex) (f : Ex → Ex) : L Ex := do
+  let some left := Fren.Core.expansionBudget Ex.copyChildren (← get).expansionLeft [e]
+    | throw Fren.Core.expansionLimitMsg
+  modify fun s => { s with expansionLeft := left }
+  return f e
+
 /-- `e` with each binder, and each mention of one, renamed by `f`. -/
 partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .lit v => .lit v
@@ -2671,6 +2689,9 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
     .match (e.renameBound f) (arms.map fun (p, g?, b) => (p.rename f, g?.map (·.renameBound f), b.renameBound f)) pos ps u t
   | .quant file pos all ns ds ts b => .quant file pos all (ns.map f) (ds.map (·.map (·.renameBound f))) ts (b.renameBound f)
   | .range lo hi => .range (lo.renameBound f) (hi.renameBound f)
+
+/-- Binder renaming while reading a spec, charged before copying. -/
+def renameForRead (e : Ex) (f : Name → Name) : L Ex := copying e (·.renameBound f)
 
 /-- `e` with each variable renamed by `f`. -/
 partial def Ex.renameVars (f : Name → Name) : Ex → Ex
@@ -2979,46 +3000,44 @@ closure's body, with the closure's parameters standing for the arguments
 (`Reqs/Lang/HigherOrder#meaning`): the closure's names are unique, and
 those of the body it is unfolded into made unique, so that none captures
 another. -/
-partial def Ex.substFns (σ : List (Name × Array Name × Ex)) : Ex → Ex
+partial def Ex.substFns (σ : List (Name × Array Name × Ex)) (e : Ex) : L Ex := do
+  let some left := Fren.Core.expansionStep (← get).expansionLeft | throw Fren.Core.expansionLimitMsg
+  modify fun s => { s with expansionLeft := left }
+  let go := Ex.substFns σ
+  match e with
   | .app g args =>
-    let args := args.map (·.substFns σ)
+    let args ← args.mapM go
     match σ.lookup g with
-    | some (ps, b) => b.subst (ps.zip args).toList
-    | none => .app g args
-  | .lit v => .lit v
-  | .var n => .var n
-  | .slot k => .slot k
-  | .boundAt k => .boundAt k
-  | .shared k => .shared k
-  | .known v => .known v
-  | .lifted lets q => .lifted (lets.map (·.map (·.substFns σ))) (q.substFns σ)
-  | .dispatch ks m => .dispatch ks (m.substFns σ)
-  | .memo lets e => .memo (lets.map (·.substFns σ)) (e.substFns σ)
-  | .bound n => .bound n
-  | .not a => .not (a.substFns σ)
-  | .neg a => .neg (a.substFns σ)
-  | .bin op a b => .bin op (a.substFns σ) (b.substFns σ)
-  | .when negated c d => .when negated (c.substFns σ) (d.substFns σ)
-  | .ite c a b => .ite (c.substFns σ) (a.substFns σ) (b.substFns σ)
-  | .pre pos g gs e => .pre pos g (gs.map fun (p, x) => (p, x.substFns σ)) (e.substFns σ)
-  | .strict args e => .strict (args.map (·.substFns σ)) (e.substFns σ)
-  | .cardinality c args => .cardinality c (args.map (·.substFns σ))
-  | .method m r args => .method m (r.substFns σ) (args.map (·.substFns σ))
-  | .matches r p re => .matches (r.substFns σ) p re
-  | .setLit es => .setLit (es.map (·.substFns σ))
-  | .pair a b => .pair (a.substFns σ) (b.substFns σ)
-  | .seqLit es => .seqLit (es.map (·.substFns σ))
-  | .index q i pos u => .index (q.substFns σ) (i.substFns σ) pos u
-  | .card e => .card (e.substFns σ)
-  | .ctor ty idx args => .ctor ty idx (args.map (·.substFns σ))
-  | .field e idx => .field (e.substFns σ) idx
-  | .update e fs => .update (e.substFns σ) (fs.map fun (k, x) => (k, x.substFns σ))
-  | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substFns σ), v.substFns σ)) u
-  | .const p e => .const p e
-  | .typed t is a => .typed t is (a.substFns σ)
-  | .match e arms pos ps u t => .match (e.substFns σ) (arms.map fun (p, g?, b) => (p, g?.map (·.substFns σ), b.substFns σ)) pos ps u t
-  | .quant file pos all ns ds ts b => .quant file pos all ns (ds.map (·.map (·.substFns σ))) ts (b.substFns σ)
-  | .range lo hi => .range (lo.substFns σ) (hi.substFns σ)
+    | some (ps, b) => copying b (·.subst (ps.zip args).toList)
+    | none => return .app g args
+  | .lit _ | .var _ | .slot _ | .boundAt _ | .shared _ | .known _ | .bound _ | .const .. => return e
+  | .lifted lets q => return .lifted (← lets.mapM (·.mapM go)) (← go q)
+  | .dispatch ks m => return .dispatch ks (← go m)
+  | .memo lets e => return .memo (← lets.mapM go) (← go e)
+  | .not a => return .not (← go a)
+  | .neg a => return .neg (← go a)
+  | .bin op a b => return .bin op (← go a) (← go b)
+  | .when negated c d => return .when negated (← go c) (← go d)
+  | .ite c a b => return .ite (← go c) (← go a) (← go b)
+  | .pre pos g gs e => return .pre pos g (← gs.mapM fun (p, x) => return (p, ← go x)) (← go e)
+  | .strict args e => return .strict (← args.mapM go) (← go e)
+  | .cardinality c args => return .cardinality c (← args.mapM go)
+  | .method m r args => return .method m (← go r) (← args.mapM go)
+  | .matches r p re => return .matches (← go r) p re
+  | .setLit es => return .setLit (← es.mapM go)
+  | .pair a b => return .pair (← go a) (← go b)
+  | .seqLit es => return .seqLit (← es.mapM go)
+  | .index q i pos u => return .index (← go q) (← go i) pos u
+  | .card e => return .card (← go e)
+  | .ctor ty idx args => return .ctor ty idx (← args.mapM go)
+  | .field e idx => return .field (← go e) idx
+  | .update e fs => return .update (← go e) (← fs.mapM fun (k, x) => return (k, ← go x))
+  | .table pos rows u => return .table pos (← rows.mapM fun (p, c?, v) => return (p, ← c?.mapM go, ← go v)) u
+  | .typed t is a => return .typed t is (← go a)
+  | .match e arms pos ps u t =>
+    return .match (← go e) (← arms.mapM fun (p, g?, b) => return (p, ← g?.mapM go, ← go b)) pos ps u t
+  | .quant file pos all ns ds ts b => return .quant file pos all ns (← ds.mapM (·.mapM go)) ts (← go b)
+  | .range lo hi => return .range (← go lo) (← go hi)
 
 /-- The value of a bound of a range pattern. -/
 def boundValue : Bound → L Int
@@ -3181,12 +3200,12 @@ partial def fnItemAt (path : Name) (targs? : Option (Array Fren.Core.Ty)) : L Fn
     let own := tps.mapIdx fun k p => Fren.Core.Ty.abstract (Fren.Core.typeParamPath path k p)
     if let some inst ← recursiveInstance path (Fren.Core.appliedInstance path tps outer own) then
       apps := (path, inst) :: apps
-  let rename (e : Ex) : Ex := e.mapNames (fun u => (renamed.lookup u).getD u) (fun g => (apps.lookup g).getD g)
+  let rename (e : Ex) : L Ex := copying e (·.mapNames (fun u => (renamed.lookup u).getD u) (fun g => (apps.lookup g).getD g))
   return {
     ty := atInstance
-    defn? := item.defn?.map fun (ps, body, r) => (ps, rename body, atInstance r)
-    pres? := item.pres?.map fun (ps, pres) => (ps, pres.map fun (n, g) => (n, rename g))
-    contract? := item.contract?.map fun (ps, pres, posts) => (ps, pres.map rename, posts.map rename) }
+    defn? := ← item.defn?.mapM fun (ps, body, r) => return (ps, ← rename body, atInstance r)
+    pres? := ← item.pres?.mapM fun (ps, pres) => return (ps, ← pres.mapM fun (n, g) => return (n, ← rename g))
+    contract? := ← item.contract?.mapM fun (ps, pres, posts) => return (ps, ← pres.mapM rename, ← posts.mapM rename) }
 
 /-- The instance of the generic function without a body at `path` at the
 type arguments `targs`, a function of its own, with its parameters' and
@@ -3477,7 +3496,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       let withPres (x : Ex) : L Ex := do
         let some (ps, pres) := item.pres? | return x
         let σ := (ps.zip args).toList
-        return .pre segs[0]!.span.start path (pres.map fun (n, g) => (n, g.subst σ)) x
+        return .pre segs[0]!.span.start path (← pres.mapM fun (n, g) => return (n, ← copying g (·.subst σ))) x
       -- A defined function's body, with its parameters standing for the
       -- arguments.
       if let some (ps, body, r) := item.defn? then
@@ -3486,7 +3505,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         if (← get).lowering == some path then
           modify fun s => { s with selfApplied := true }
           return (← withPres (.app path args), r)
-        return (← withPres (.strict args (body.subst (ps.zip args).toList)), r)
+        return (← withPres (.strict args (← copying body (·.subst (ps.zip args).toList))), r)
       -- A generic function without a body, at its instance
       -- (`bodilessInstance`), a function of its own, with the instance's
       -- contract.
@@ -3709,12 +3728,19 @@ partial def lowerHigherOrder (cx : Cx) (span : Span) (path : Name) (ts : Array (
   for a in args, t in ts, p in ps do
     if let .inr (pts, _) := t then
       fσ := fσ ++ [(p, ← lowerFnArg cx span (pts.map item.ty) a)]
-  let x := ((body.renameBound ren).subst σ).substFns fσ
+  let renamed ← renameForRead body ren
+  let instantiated ← copying renamed (·.subst σ)
+  let x ← instantiated.substFns fσ
   -- With its preconditions at its arguments, if it has any.
   -- Its preconditions are over its value parameters, as its body is.
-  let x := match item.pres? with
-    | some (_, pres) => Ex.pre span.start path (pres.map fun (n, g) => (n, ((g.renameBound ren).subst σ).substFns fσ)) x
-    | none => x
+  let x ← match item.pres? with
+    | some (_, pres) => do
+      let pres ← pres.mapM fun (n, g) => do
+        let renamed ← renameForRead g ren
+        let instantiated ← copying renamed (·.subst σ)
+        return (n, ← instantiated.substFns fσ)
+      pure (Ex.pre span.start path pres x)
+    | none => pure x
   return (x, r)
 
 /-- A closure, or a function's name `g`, which is the closure `|x1, ...,
@@ -3789,7 +3815,7 @@ partial def lowerPredicateClauses (cx : Cx) (expression : Expr) (splitConjunctio
       let some definition := saved.spec.defs.find? helper | continue
       let instantiate (body : Ex) (asGuard : Bool := false) (main : Bool := false) : L Ex := do
         let body := if asGuard then Ex.not body else body
-        set { saved with spec.defs := saved.spec.defs.insert path (definition.1, body, definition.2.2) }
+        set { saved with expansionLeft := (← get).expansionLeft, spec.defs := saved.spec.defs.insert path (definition.1, body, definition.2.2) }
         let value := (← lowerExpr cx ((if main then wrapValue else wrap) expression)).1
         return if asGuard then .not value else value
       let value ← instantiate definition.2.1 false true
@@ -3806,7 +3832,7 @@ partial def lowerPredicateClauses (cx : Cx) (expression : Expr) (splitConjunctio
           pure { member with formula, evaluationGuard? := some guard }
         pure { group with members, wanted := if negated then !group.wanted else group.wanted }
       clauses := clauses.push (name, value, branches, groups)
-    set saved
+    set { saved with expansionLeft := (← get).expansionLeft }
     return some (path, clauses)
   | _ => return none
 
@@ -4059,7 +4085,7 @@ def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (v
       if defined || !post then
         constraints := constraints.push { kind := (if post then .ensure else .assume), name := n ++ cn, e := actual }
   unless pres.isEmpty do
-    let entry := (ps.map (path ++ ·.1), pres.map fun (cn, g) => (cn, g.renameBound (path ++ ·)))
+    let entry := (ps.map (path ++ ·.1), ← pres.mapM fun (cn, g) => return (cn, ← renameForRead g (path ++ ·)))
     modify fun s => { s with spec.pres := s.spec.pres.insert path entry }
   unless defined || posts.isEmpty do
     modify fun s => { s with spec.contracts := s.spec.contracts.insert path (ps.map (·.1), pres.map (·.2), posts) }
@@ -4267,7 +4293,7 @@ partial def lowerItem : Item → L Unit
       -- Binders named after the function, so that substituting arguments
       -- never captures a binder of theirs: theirs are a procedure's or another
       -- function's.
-      let b := b.renameBound (path ++ ·)
+      let b ← renameForRead b (path ++ ·)
       modify fun s => { s with spec.defs := s.spec.defs.insert path (all.map (path ++ ·), b, r)
                                spec.recDefs := if recursive then s.spec.recDefs.insert path (all.map (path ++ ·), b) else s.spec.recDefs }
       if body.conjunctionRoot || (observedMembers body).isSome || (← lowerPredicateClauses { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } body).isSome then
@@ -4278,7 +4304,7 @@ partial def lowerItem : Item → L Unit
         for ((label, expression), k) in (leaves.push ({ name := "#whole", span := body.span }, body)).zipIdx do
           let memberName := Name.num (Name.str path "#member") k
           let (value, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } expression
-          let value := value.renameBound (path ++ ·)
+          let value ← renameForRead value (path ++ ·)
           modify fun s => { s with spec.defs := s.spec.defs.insert memberName (all.map (path ++ ·), value, r) }
           let cx : Cx := { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams }
           let mut branches := #[]
@@ -4289,10 +4315,10 @@ partial def lowerItem : Item → L Unit
                 let (value, _) ← lowerExpr cx value
                 return ({
                   name := Name.mkSimple (label.map (·.name) |>.getD (toString (i + 1)))
-                  formula := value.renameBound (path ++ ·)
+                  formula := ← renameForRead value (path ++ ·)
                   range? := some { start := source.start, stop := source.stop }
                 } : Fren.Core.BranchMember Ex)
-              let guard ← guard.mapM fun guard => do pure ((← lowerExpr cx guard).1.renameBound (path ++ ·))
+              let guard ← guard.mapM fun guard => do renameForRead (← lowerExpr cx guard).1 (path ++ ·)
               branches := #[{ owner := .anonymous, kind, members := entries, guard? := guard }]
           if let some group := observedMembers expression then
             let entries ← group.members.zipIdx.mapM fun ((label, source, value, guard), i) => do
@@ -4300,8 +4326,8 @@ partial def lowerItem : Item → L Unit
               let (guard, _) ← lowerExpr cx guard
               return ({
                 name := Name.mkSimple (label.map (·.name) |>.getD (toString (i + 1)))
-                formula := value.renameBound (path ++ ·)
-                evaluationGuard? := some (guard.renameBound (path ++ ·))
+                formula := ← renameForRead value (path ++ ·)
+                evaluationGuard? := some (← renameForRead guard (path ++ ·))
                 range? := some { start := source.start, stop := source.stop }
               } : Fren.Core.BranchMember Ex)
             groups := #[{ owner := .anonymous, op := group.op, wanted := group.wanted, members := entries }]
@@ -4317,10 +4343,24 @@ partial def lowerItem : Item → L Unit
               nestedNumber := nestedNumber + 1
               let name := (if label.name.isEmpty then "" else label.name ++ ".") ++ nestedPrefix ++ (if child.isEmpty then "" else "." ++ child)
               let rename (n : Name) := if !child.isEmpty then n else Name.mkSimple (nestedPrefix ++ "." ++ n.toString)
-              let mappedBranches := childBranches.map fun group => { (group.map (·.renameBound (path ++ ·))) with members := group.members.map fun member => { (member.map (·.renameBound (path ++ ·))) with name := rename member.name } }
-              let mappedGroups := childGroups.map fun group => { (group.map (·.renameBound (path ++ ·))) with members := group.members.map fun member => { (member.map (·.renameBound (path ++ ·))) with name := rename member.name } }
+              let mappedBranches ← childBranches.mapM fun group => do
+                let members ← group.members.mapM fun member => do
+                  let formula ← renameForRead member.formula (path ++ ·)
+                  let valueFormula? ← member.valueFormula?.mapM (renameForRead · (path ++ ·))
+                  let evaluationGuard? ← member.evaluationGuard?.mapM (renameForRead · (path ++ ·))
+                  pure { member with name := rename member.name, formula, valueFormula?, evaluationGuard? }
+                let guard? ← group.guard?.mapM (renameForRead · (path ++ ·))
+                pure { group with members, guard? }
+              let mappedGroups ← childGroups.mapM fun group => do
+                let members ← group.members.mapM fun member => do
+                  let formula ← renameForRead member.formula (path ++ ·)
+                  let valueFormula? ← member.valueFormula?.mapM (renameForRead · (path ++ ·))
+                  let evaluationGuard? ← member.evaluationGuard?.mapM (renameForRead · (path ++ ·))
+                  pure { member with name := rename member.name, formula, valueFormula?, evaluationGuard? }
+                pure { group with members }
+              let value ← renameForRead value (path ++ ·)
               modify fun s => { s with
-                spec.defs := s.spec.defs.insert helper (all.map (path ++ ·), value.renameBound (path ++ ·), r)
+                spec.defs := s.spec.defs.insert helper (all.map (path ++ ·), value, r)
                 namedBranches := s.namedBranches.insert helper mappedBranches
                 namedGroups := s.namedGroups.insert helper mappedGroups }
               members := members.push (name, helper)
@@ -4414,7 +4454,7 @@ def lowerFrom (st : LState) (files : Array (Array Item)) (callTargs : Std.HashMa
     st := { st with module := .anonymous, scope := .anonymous }
     for item in items do
       -- Paths resolve in the module, but in a block with `use`s.
-      st := (← (lowerItem item).run { st with scope := st.module }).2
+      st := (← (lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes }).2
     st := { st with file := st.file + 1 }
   return st
 
@@ -4430,7 +4470,7 @@ def preludeState : Except String LState := do
   let mut st : LState := { module := Fren.Core.preludeModule, scope := Fren.Core.preludeModule }
   for item in items do
     -- Paths resolve in the module, but in a block with `use`s.
-    st := (← (lowerItem item).run { st with scope := st.module }).2
+    st := (← (lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes }).2
   return { st with module := .anonymous, scope := .anonymous }
 
 /-- The spec of the files' items, which the elaborator accepted, with the

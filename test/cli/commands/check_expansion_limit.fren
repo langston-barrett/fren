@@ -1,0 +1,26 @@
+-- Reduced from runaway-check.fren: coordination_projection composes
+-- tier_scaled calls that repeatedly copy their arguments. Recursion and
+-- records are unnecessary: duplicating one argument already grows exponentially.
+--@ args: check --jobs 2
+
+pub fn twice(n: Int): Int := n + n
+
+pub fn projection(n: Int): Int := twice(
+    twice(
+        twice(
+            twice(
+                twice(
+                    twice(
+                        twice(
+                            twice(
+                                twice(
+                                    twice(twice(twice(twice(twice(twice(twice(twice(twice(n)))))))))
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+)

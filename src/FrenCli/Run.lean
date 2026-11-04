@@ -1187,6 +1187,12 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- that makes it reads some of what `st` reaches (`elaborateReading`).
   let forSolving ← IO.lazyPure fun _ => st.forSolving
   let read ← reading
+  -- Stop before constructing or solving queries: model confirmation needs
+  -- this reading, and more solver work cannot repair an expansion limit.
+  if let .error e := read then
+    if e == Fren.Core.expansionLimitMsg then
+      IO.eprint (Fren.Core.renderPlain .error { code? := none, headline := e } args.paint)
+      return exitCode false none
   let sv ← shared args forSolving
   let prelude := sv.prelude
   -- A query asked again, as some checks of a procedure share one, is

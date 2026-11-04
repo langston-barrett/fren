@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Verdicts
+import FrenCore.Expansion
 import Impls.Check
 import Reqs.Eval
 -- keep-sorted end
@@ -19,6 +20,18 @@ namespace Fren.Impls
 open Fren.Core (CheckKind Verdict)
 open FrenCli.Eval (Status Confirmation Unreached UnreachedWarning statusOf evalExit reached counted triggerUnknown unreachedOf unreachedWarning testVerdict
   confirmation confirmedVerdict)
+
+impl expansion_budget: eval::expansion_budget {
+  initial := Fren.Core.maxExpansionNodes,
+} by decide
+
+impl expansion_step: eval::expansion_step for (remaining : Nat) {
+  remaining := remaining,
+  copy? := (Fren.Core.expansionStep remaining).isSome,
+  after := (Fren.Core.expansionStep remaining).getD 0,
+} by
+  intro remaining _
+  cases remaining <;> simp [fren_spec, Fren.Core.expansionStep] <;> omega
 
 def toStatus : Status → eval.Status
   | .Inadmissible => .Inadmissible

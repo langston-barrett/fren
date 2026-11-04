@@ -1,0 +1,2 @@
+error: evaluator expansion limit exceeded (2097152 copied expression nodes per source item); simplify the defined functions or split the item
+exit=2
