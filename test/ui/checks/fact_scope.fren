@@ -1,0 +1,16 @@
+-- fren-covers: check::fact_applications
+-- Each query has its own closure, including facts mentioned only by facts.
+fn a(x: Int): (r: Int) { ensure e: r >= 0 }
+fn b(x: Int): (r: Int) { ensure e: r = a(x) + 1 }
+fn other(x: Int): (r: Int) { ensure e: r < 0 }
+
+proc scopes(x: Int) {
+    expect chain: b(x) > 0
+    expect separate: other(x) < 0
+    -- The other queries' abstract functions must not hide this witness.
+    cover plain: x = 0  --~ info: witness: x = 0
+    -- Omitting the transitive fact of `a(x)` would admit a false witness.
+    cover impossible: b(x) <= 0  --~ error: cover goal `scopes::impossible` cannot be met: no behaviour satisfies it
+}
+
+--@ summary: 7 passed, 1 failed, 0 inconclusive, 0 redundant

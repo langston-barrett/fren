@@ -938,6 +938,21 @@ pub proc fact_applications(
 }
 ```
 
+Closure is scoped to each query, not to its whole item or file. An
+application's facts are added only if the query's hypotheses or goal, or a
+fact already reached from them, mentions that application. Occurrence in
+another expectation or cover goal does not count. Changing the facts of
+applications outside this closure leaves the query's facts, contract
+premises and verdict unchanged. Occurrence only through a reached fact
+does count: dropping `a(s)`'s fact above would change both verdicts.
+
+`FrenTest.AppFacts.closeApps_congr` proves equality of the ordered closure
+returned by `Fren.Core.closeApps` with a pure `inside`, in `Id`, as the
+CLI's builder calls it. The `appFactsWith` guards in that module check the
+query entry point's result. `test/ui/checks/fact_scope.fren` checks both
+front ends' verdicts, including the transitive case and a witness whose
+query mentions no such function.
+
 `check::check_applies` states which functions' contracts a check rests
 on: those whose applications in its queries bring a postcondition as a
 fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,

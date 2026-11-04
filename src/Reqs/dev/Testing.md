@@ -372,7 +372,8 @@ pub mod testing
   summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
-  [--confirm] [--scrutinees] [--keywords] [--spec-timeout SECONDS]`): generates random
+  [--confirm] [--scrutinees] [--keywords] [--fact-scopes]
+  [--spec-timeout SECONDS]`): generates random
   specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
@@ -424,7 +425,13 @@ pub mod testing
   item, which both must report instead, and often followed by an item with messages of its own,
   which an error of a clause's keyword must leave to be reported. Its
   errors are on purpose, and an error stops every other check of a spec,
-  so `lake test`'s corpus leaves the mode out. A run with
+  so `lake test`'s corpus leaves the mode out. `--fact-scopes`
+  generates separate queries with disjoint contract chains, over scalar,
+  collection and compound result types, with applications under binders
+  and through definitions, and a cover goal that mentions none of them.
+  The mode compares the front ends' reports on these queries;
+  `test/ui/checks/fact_scope.fren` pins the expected verdicts and witness.
+  A run with
   `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
@@ -542,7 +549,7 @@ pub mod testing
   itself is tested in `FrenTest/FrontendsCompare.lean`.
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
-  `--sites`, `--confirm`, `--scrutinees`, `--inductions` and `--induction-forms`
+  `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms` and `--fact-scopes`
   (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of at
   most five specs each, including those listed outside the ranges. Each

@@ -1,0 +1,12 @@
+--@ args: check --dump-smt
+-- fren-covers: check::fact_applications
+-- Closure must be per query; `b(x)` also needs `a(x)`'s fact transitively.
+fn a(x: Int): (r: Int) { ensure e: r >= 0 }
+fn b(x: Int): (r: Int) { ensure e: r = a(x) + 1 }
+fn other(x: Int): (r: Int) { ensure e: r < 0 }
+
+proc scopes(x: Int) {
+    expect chain: b(x) > 0
+    expect separate: other(x) < 0
+    cover plain: x = 0
+}
