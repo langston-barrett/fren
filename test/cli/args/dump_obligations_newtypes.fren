@@ -1,3 +1,4 @@
+--@ args: check --dump=obligations
 -- Obligation dumps erase newtypes, including a newtype of a newtype, to
 -- the underlying sort and erase their constructors and selectors.
 pub struct Units(Int)
