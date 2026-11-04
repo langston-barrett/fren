@@ -401,16 +401,39 @@ set_option fren.lint.undecidable "allow" in
 pub proc induction_candidate(
     members: Set<BlockMember>,   -- the kinds of the members of the expectation's block
     abstract?,                   -- the block applies an uninterpreted function
-    constrained?,                -- some parameter's type is a subset type, or has one as a type argument or element type (`lang::subset_widening`'s `restricted?`)
-    recursive?,                  -- the parameter's type is an enumeration with a payload of that type (`lang::directly_recursive`)
-    decreasing?,                 -- the parameter is the argument at the decreasing parameter of an application in the block
+    restrictions: Set<Bool>,     -- `lang::subset_widening`'s `restricted?` for every declared parameter type
+    ty: Int,                     -- the parameter's type, by an identifier
+    payloads: Set<Set<Int>>,      -- each variant's payload types, at the type arguments; empty for a non-enumeration
+    parameter: Int,              -- the parameter, by an identifier
+    arguments: Set<Int>,         -- unshadowed local variables written at structural recursions' decreasing arguments
 ): (det candidate?) {
     use self::BlockMember::{Assume, Cover, Expect}
 
-    ensure rule: candidate? iff (members subset {Assume, Expect, Cover} and not abstract? and not constrained?
-        and recursive? and decreasing?)
+    ensure rule: candidate? iff (members subset {Assume, Expect, Cover} and not abstract? and not (true in restrictions)
+        and (exists (part: Set<Int>), part in payloads and ty in part) and parameter in arguments)
 }
 ```
+
+`lang::induction_argument` states which written names are collected at the
+decreasing argument: a name of a local variable, without a binder shadowing
+it. Parentheses do not change the expression; a path of several segments,
+a field or any other expression is not a variable's written name.
+
+```fren
+pub proc induction_argument(
+    argument: Int,               -- the argument's single-segment name, by an identifier
+    variables: Set<Int>,         -- local variables in scope
+    bound: Set<Int>,             -- names bound by enclosing expressions
+): (det collect?) {
+    ensure rule: collect? iff (argument in variables and not (argument in bound))
+}
+```
+
+`lang::induction_candidate` computes the restriction across all parameters
+and the membership of this parameter among decreasing arguments. The front
+ends extract variable paths, declared parameter types and enum shapes.
+Shared Core code instantiates payload types, selects candidates, and
+constructs the function bodies and postconditions.
 
 `lang::directly_recursive` states when the parameter's type is one, from
 the types of its enumeration's variants' payloads, at its type arguments,
@@ -458,8 +481,12 @@ whose check has the claim at `p1` and `b` as a hypothesis where `a` is
 `L::Cons(p0, p1)`, from the postcondition at its recursive application.
 The postcondition has the function's application, so that its check has
 the body, and the facts of the applications in it. A Boolean payload is
-bound to a name that ends with `?`. The function, its body and its checks
-are internal, so nothing about them is reported. Its name, as its binders',
+bound to a name that ends with `?`. Where a front end parses a template
+before splicing the expectation's syntax into it, its temporary names must
+avoid every name in the expectation and every segment of each generated
+variant path, including an enum's name hidden by a type alias. Replacing a
+temporary name never changes a variant path. The function, its body and
+its checks are internal, so nothing about them is reported. Its name, as its binders',
 starts with `#`, which no source can write, so nothing but the function
 itself can apply it: an application elsewhere would rest on its contract,
 which is checked only where the claim's own check is Inconclusive. Nor is
@@ -815,6 +842,7 @@ functions to quantifier-free queries.
 #fren_check recursive_facts
 #fren_check merged_facts
 #fren_check recursive_post_result
+#fren_check induction_argument
 #fren_check induction_candidate
 #fren_check directly_recursive
 #fren_check induction_hypotheses

@@ -1,0 +1,28 @@
+-- Temporary parser names must avoid generated variant paths, including
+-- names hidden behind aliases. The expectation's syntax alone does not
+-- contain either colliding name. Both claims need induction to pass.
+--@ summary: 4 passed, 0 failed, 0 inconclusive, 0 redundant
+set_option fren.lint.non_camel_case_types "allow"
+
+pub enum Collision { fren_induction_p0, Cons(Int, Collision) }
+
+pub fn variant_count(l: Collision): Int := match l {
+    Collision::fren_induction_p0 => 0,
+    Collision::Cons(_, r) => 1 + variant_count(r),
+}
+
+expect variant_nonnegative(a: Collision) {
+    expect nonnegative: variant_count(a) >= 0
+}
+
+pub enum fren_induction_p0 { Z, S(Int, fren_induction_p0) }
+pub type Alias := fren_induction_p0
+
+pub fn alias_count(l: Alias): Int := match l {
+    fren_induction_p0::Z => 0,
+    fren_induction_p0::S(_, r) => 1 + alias_count(r),
+}
+
+expect alias_nonnegative(a: Alias) {
+    expect nonnegative: alias_count(a) >= 0
+}

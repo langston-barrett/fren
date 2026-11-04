@@ -15,17 +15,30 @@ theorem inductionMember_iff (m : BlockMember) :
     inductionMember m = true ↔ toBlockMember m = .Assume ∨ toBlockMember m = .Expect ∨ toBlockMember m = .Cover := by
   cases m <;> decide
 
--- Both front ends decide which parameters induction is tried on with
--- `inductionCandidate`, of the kinds of the block's members.
-impl induction_candidate: lang::induction_candidate for (ms : List BlockMember) (a c r d : Bool) {
+impl induction_argument: lang::induction_argument for (variables bound : List Int) (x : Int) {
+  argument := x,
+  variables := Fren.FinSet.ofList variables,
+  bound := Fren.FinSet.ofList bound,
+  «collect?» := Fren.Core.inductionArgument variables (bound.contains ·) x,
+} by
+  intro variables bound x
+  simp [fren_spec, Fren.Core.inductionArgument, Fren.FinSet.mem_ofList]
+
+-- `inductionCandidates` calls this rule on the declared parameter types,
+-- instantiated variant payloads and collected decreasing arguments. No
+-- front end decides the aggregate restriction or parameter membership.
+impl induction_candidate: lang::induction_candidate for (ms : List BlockMember) (a : Bool)
+    (rs : List Bool) (t : Int) (ps : List (List Int)) (x : Int) (args : List Int) {
   members := Fren.FinSet.ofList (ms.map toBlockMember),
   «abstract?» := a,
-  «constrained?» := c,
-  «recursive?» := r,
-  «decreasing?» := d,
-  «candidate?» := inductionCandidate ms a c r d,
+  restrictions := Fren.FinSet.ofList rs,
+  ty := t,
+  payloads := Fren.FinSet.ofList (ps.map Fren.FinSet.ofList),
+  parameter := x,
+  arguments := Fren.FinSet.ofList args,
+  «candidate?» := inductionCandidate ms a rs t ps x args,
 } by
-  intro ms a c r d
+  intro ms a rs t ps x args
   have members : ms.all inductionMember = true ↔
       Fren.FinSet.ofList (ms.map toBlockMember) ⊆ ({.Assume, .Expect, .Cover} : Fren.FinSet lang.BlockMember) := by
     simp only [List.all_eq_true, Fren.FinSet.subset_def, Fren.FinSet.mem_ofList, List.mem_map, Fren.FinSet.mem_insert,
@@ -35,12 +48,17 @@ impl induction_candidate: lang::induction_candidate for (ms : List BlockMember) 
       exact (inductionMember_iff m).mp (h m hm)
     · intro h m hm
       exact (inductionMember_iff m).mpr (h _ ⟨m, hm, rfl⟩)
-  simp only [fren_spec, inductionCandidate, Bool.and_eq_true, Bool.not_eq_true', members]
-  cases a <;> cases c <;> cases r <;> cases d <;> simp
+  simp [fren_spec, inductionCandidate, Fren.Core.payloadOfType, members, List.any_eq_true, Fren.FinSet.mem_ofList]
+  intro _ _ _ _
+  constructor
+  · rintro ⟨p, hp, ht⟩
+    exact ⟨Fren.FinSet.ofList p, ⟨p, hp, rfl⟩, by simpa only [Fren.FinSet.mem_ofList] using ht⟩
+  · rintro ⟨_, ⟨p, hp, rfl⟩, ht⟩
+    exact ⟨p, hp, by simpa only [Fren.FinSet.mem_ofList] using ht⟩
 
--- Both front ends decide whether a parameter's type has a payload of its
--- own type with `directlyRecursive`, which compares the payloads' types at
--- the type's arguments with `payloadOfType`.
+-- The payload membership used by `directlyRecursive` and candidate
+-- selection: compare payload types instantiated at the type arguments
+-- with `payloadOfType`.
 impl directly_recursive: lang::directly_recursive for (ps : List (List Nat)) (t : Nat) {
   ty := t,
   payloads := Fren.Seq.ofList (ps.map fun p => Fren.Seq.ofList (p.map Int.ofNat)),

@@ -5600,13 +5600,13 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   -- A variable, written as its name, that is the argument at the
   -- decreasing parameter of a structural recursion
   -- (`lang::induction_candidate`).
-  if let some i := ((← getState).defined.get? path).bind (·.decreasing?) then
-    if let some a := args.getElems[i]? then
-      let a := unparen a
-      let a := if a.getNumArgs == 1 then a[0] else a
-      if a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 && (cx.binder? (pathSegs a)[0]!.getId).isNone then
-        let x := (pathSegs a)[0]!.getId
-        if cx.vars.any (·.name == x) then modifyLocal fun l => { l with inductionArgs := l.inductionArgs.push x }
+  let writtenArgs := args.getElems.map fun a =>
+    let a := unparen a
+    let a := if a.getNumArgs == 1 then a[0] else a
+    if a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 then some (pathSegs a)[0]!.getId else none
+  if let some x := Core.inductionArgument? (((← getState).defined.get? path).bind (·.decreasing?))
+      writtenArgs (cx.vars.map (·.name)) (fun x => (cx.binder? x).isSome) then
+    modifyLocal fun l => { l with inductionArgs := l.inductionArgs.push x }
   if let some d := ((← getState).defined.get? path).filter (!·.hoParams.isEmpty) then
     return ← hoAppTerm toTerm cx e p path d args.getElems expected?
   if let some d := (← getState).defined.get? path then
@@ -9167,7 +9167,7 @@ open Lang in
 the global expectation at `path`, just elaborated, as a procedure `stx`,
 whose members, as a component's, are `members`
 (`Reqs/Lang/Recursion#induction`): one for each of its claims and each
-candidate, in order (`Core.inductionCandidate`). Each is an item of the
+candidate, in order (`Core.inductionCandidates`). Each is an item of the
 module that nothing reports, whose body is not checked as a function's,
 but only for the expectation, and which is kept apart from the defined
 functions (`State.inductionFns`). -/
@@ -9181,10 +9181,8 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
   let vars := names.filterMap fun x => c.vars.find? (·.name == x)
   unless vars.size == params.size do return
   let tys := vars.map (·.ptype.ty)
-  let constrained := vars.any (·.ptype.restricted)
-  let candidates := (List.range params.size).filter fun i =>
-    Core.inductionCandidate kinds.toList l.inductionAbstract constrained (Core.directlyRecursive st.shapeOf tys[i]!)
-      (l.inductionArgs.contains names[i]!)
+  let candidates := Core.inductionCandidates st.shapeOf kinds.toList l.inductionAbstract
+    (vars.map fun v => (v.name, v.ptype)) l.inductionArgs
   if candidates.isEmpty then return
   let assumptions := members.filterMap fun m => match constraint? m with
     | some (.assume, _, e) => some e
@@ -9192,9 +9190,14 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
   let position := (charRange (← getFileMap).source stx[2]).start
   let ref := stx[2]
   -- Placeholders for the parts that are spliced in after parsing, under a
-  -- prefix that no name of the expectation starts with, so that renaming
-  -- them changes nothing that the expectation writes.
-  let written := identNames stx
+  -- prefix that no name in the expectation or the generated patterns
+  -- starts with: renaming must not rewrite a variant or an enum's name
+  -- hidden by an alias in the expectation's signature.
+  let patternNames := candidates.toArray.flatMap fun i => match tys[i]! with
+    | .enum ep _ => ((st.enums.get? ep).map fun info => info.variants.flatMap fun v =>
+        (Core.variantSegments l.currentModule ep v).toArray).getD #[]
+    | _ => #[]
+  let written := identNames stx ++ patternNames
   let mut fresh := "fren_induction_"
   while written.any (·.startsWith fresh) do fresh := fresh ++ "_"
   let stem := fresh
@@ -9210,23 +9213,25 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
       let n := params.size
       let fname := Core.inductionFnName (Core.nameText (declaredIdent stx[2]).1.getId) (Core.nameText claim.getId)
         (Core.nameText names[i]!) position
-      let named (k : Nat) := Core.nameText names[k]!
-      -- Each variant, with its payload bound, and the function applied to
-      -- the case's variables as `inductionHypotheses` gives them.
       let cases := Core.inductionCases st.shapeOf tys i
-      let variant (v : Name) := "::".intercalate (Core.variantSegments savedModule ep v)
-      let arms := (cases.zip info.variants).map fun ((payload, hyps), v) =>
-        let binder (k : Nat) := ph s!"p{k}" ++ (if payload[k]! matches .bool then "?" else "")
-        let arg (k : Nat) := if k < n then named k else binder (k - n)
-        let pattern := variant v ++ (if payload.isEmpty then ""
-          else "(" ++ ", ".intercalate ((List.range payload.size).map binder) ++ ")")
-        let apps := hyps.map fun h => s!"{ph "f?"}({", ".intercalate (h.map arg)})"
-        s!"{pattern} => {if apps.isEmpty then "true" else " and ".intercalate apps}"
+      let builder : Core.InductionSyntax String := {
+        truth := "true"
+        app := fun f xs => s!"{f}({", ".intercalate xs})"
+        conjoin := fun a b => s!"({a}) and ({b})"
+        guard := fun a b => s!"when {a}, {b}"
+        matchOn := fun x arms =>
+          let arms := arms.map fun arm =>
+            let pattern := "::".intercalate arm.variant ++ (if arm.binders.isEmpty then ""
+              else "(" ++ ", ".intercalate arm.binders.toList ++ ")")
+            s!"{pattern} => {arm.value}"
+          s!"match {x} \{ {", ".intercalate arms.toList} }" }
+      let (bodyText, postText) := Core.buildInduction builder st.shapeOf savedModule ep info.variants
+        (names.map Core.nameText) tys (ph "f?") i
+        (assumptions.mapIdx fun k _ => ph s!"a{k}") (ph "c")
+        (fun k b => ph s!"p{k}" ++ (if b then "?" else ""))
       let signature := params.mapIdx fun k p =>
         Core.nameText p[1].getId ++ (if p[2].isNone then "" else s!": {ph s!"t{k}"}")
-      let text := s!"pub fn {ph "f?"}({", ".intercalate signature.toList}): Bool := match {named i} \{ {", ".intercalate arms.toList} }"
-      let held := if assumptions.isEmpty then ph "c" else s!"when {" and ".intercalate ((List.range assumptions.size).map fun k => ph s!"a{k}")}, {ph "c"}"
-      let postText := s!"{ph "f?"}({", ".intercalate (names.map Core.nameText).toList}) and ({held})"
+      let text := s!"pub fn {ph "f?"}({", ".intercalate signature.toList}): Bool := {bodyText}"
       let some cmd ← try some <$> parseAt `command text ref catch _ => pure none | continue
       let some post ← try some <$> parseAt `fren_expr postText ref catch _ => pure none | continue
       -- Every placeholder of the parsed text is renamed before any of the
