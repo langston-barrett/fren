@@ -130,7 +130,7 @@ pub proc one_character(
     det last?,           -- `s.at(s.len - 1) = t`
     det slice?,          -- `s.slice(i, 1) = u`
 ) {
-    assume one: t.len = 1
+    require one: t.len = 1
 
     ensure first: first? iff s.starts_with?(t)
     ensure last: last? iff s.ends_with?(t)
@@ -153,7 +153,7 @@ pub proc index_test(
     use self::Comparison::{Eq, Ge, Gt, Le, Lt, Ne}
     use self::IndexTest::{Absent, AtStart, Found, Other}
 
-    assume positions: position >= -1
+    require positions: position >= -1
 
     ensure rule: test = match op {
         Ge if bound = 0 => Found,
@@ -214,7 +214,7 @@ pub proc redundant_slicing(
     det fires?,
     slice?,              -- `s.slice(i, n) = u`
 ) {
-    assume written: when whole?, i = 0 and n = s.len
+    require written: when whole?, i = 0 and n = s.len
 
     ensure rule: fires? iff whole?
     ensure value: when fires?, slice? iff s = u
@@ -264,7 +264,7 @@ pub proc unnecessary_min_or_max(
 ): (det fix: MinMaxFix) {
     use self::MinMaxFix::{Argument, Receiver, Unchanged}
 
-    assume within: argument <= last
+    require within: argument <= last
 
     ensure rule: fix = (if argument = Position::V0 then (if max? then Receiver else Argument)
         else if argument = last then (if max? then Argument else Receiver) else Unchanged)

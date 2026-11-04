@@ -1,0 +1,7 @@
+-- A function's precondition is written `require`, not `assume`, in its
+-- block (`F0169`).
+fn first(q: Seq<Int>): (r: Int) {
+    assume nonempty: q != []  --~ error: a precondition is written `require`, not `assume`
+    out r := q[0]
+}
+--@ exit: 2

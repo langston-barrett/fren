@@ -138,7 +138,7 @@
   (goal false)
 )
 (obligation
-  ; at 44:12
+  ; at 44:13
   (item c::p)
   (check redundancy known)
   (evidence solver)

@@ -359,7 +359,7 @@ the inputs. If no values of the binders satisfy them, the obligation holds
 whatever the code computes, and says nothing about it. This can happen
 because of the terms, such as `temp := 1000` when an assumption bounds
 `temp`, or because of an interpretation: with `interp arity := fun _ =>
--1`, no name satisfies `assume nonneg: arity(n) >= 0`. The checks hold
+-1`, no name satisfies `require nonneg: arity(n) >= 0`. The checks hold
 under every interpretation, so they cannot see this; it depends on the one
 the implementation uses.
 

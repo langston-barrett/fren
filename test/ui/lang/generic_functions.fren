@@ -27,7 +27,7 @@ fn head<T>(l: List<T>): Option<T> := match l { List::Cons(x, _) => Option::Some(
 
 -- A result that only the expected type gives an argument, with a contract.
 fn nothing<T>(n: Int): (result: Option<T>) {
-    assume positive: n > 0
+    require positive: n > 0
     out result := let r: Option<T> := Option::None in r
     ensure empty: let r: Option<T> := nothing(n) in r = Option::None
 }

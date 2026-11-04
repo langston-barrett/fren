@@ -15,7 +15,7 @@ pub fn size(t: Tree): Int := match t {
 }
 
 proc recursion(t: Tree) {
-    assume pinned: t = Tree::Node(Tree::Leaf, 2, Tree::Node(Tree::Leaf, 3, Tree::Leaf))
+    require pinned: t = Tree::Node(Tree::Leaf, 2, Tree::Node(Tree::Leaf, 3, Tree::Leaf))
     expect e: size(t) = 1  --~ error: internal error: the solver's model for the expectation check of `recursion::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 

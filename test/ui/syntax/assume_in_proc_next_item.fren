@@ -1,0 +1,17 @@
+-- `assume` in a procedure's block (`F0169`) is reported once the item is
+-- read, for that item alone, in both front ends (`lang::item_error`): each
+-- such item reports its own, and the items after it are read and checked.
+proc p(x: Int): (y: Int) {
+    assume a: x > 0  --~ error: a precondition is written `require`, not `assume`
+    ensure r: y = x
+}
+
+fn f(x: Int): (r: Int) {
+    assume b: x > 0  --~ error: a precondition is written `require`, not `assume`
+    out r := x
+}
+
+proc q(x: Int): (y: Int) {
+    ensure r: y = z  --~ error: cannot find `z` in this scope
+}
+--@ exit: 2

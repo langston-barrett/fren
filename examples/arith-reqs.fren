@@ -30,29 +30,29 @@ fn step?<T>(a: Layer<T>, b: Layer<T>, left: T, right: T, result: Layer<T>) := ma
 }
 
 proc semantics(a: Layer<Int>, b: Layer<Int>, rho: Int, result: Layer<Int>) {
-    assume step: step?(a, b, value(a, rho), value(b, rho), result)
+    require step: step?(a, b, value(a, rho), value(b, rho), result)
     expect preserves_value: value(result, rho) = value(a, rho) + value(b, rho)
 }
 
 proc literals(n: Int, m: Int, left: Int, right: Int, result: Layer<Int>) {
-    assume step: step?(Layer::Val(n), Layer::Val(m), left, right, result)
+    require step: step?(Layer::Val(n), Layer::Val(m), left, right, result)
     expect collapses: result = Layer::Val(n + m)
 }
 
 proc residual(a: Layer<Int>, b: Layer<Int>, left: Int, right: Int, result: Layer<Int>) {
-    assume normal: not (a is Layer::Val(_) and b is Layer::Val(_))
-    assume step: step?(a, b, left, right, result)
+    require normal: not (a is Layer::Val(_) and b is Layer::Val(_))
+    require step: step?(a, b, left, right, result)
     expect preserves_structure: result = Layer::Add(left, right)
 }
 
 proc dynamic_operand(a: Layer<Int>, b: Layer<Int>, left: Int, right: Int, result: Layer<Int>) {
-    assume dynamic: a = Layer::Var or b = Layer::Var
-    assume step: step?(a, b, left, right, result)
+    require dynamic: a = Layer::Var or b = Layer::Var
+    require step: step?(a, b, left, right, result)
     expect stays_dynamic: not result is Layer::Val(_)
 }
 
 proc occurrence(a: Layer<Bool>, b: Layer<Bool>, result: Layer<Bool>) {
-    assume step: step?(a, b, uses_var?(a), uses_var?(b), result)
+    require step: step?(a, b, uses_var?(a), uses_var?(b), result)
     expect preserves_variable: uses_var?(result) iff (uses_var?(a) or uses_var?(b))
 }
 

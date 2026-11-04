@@ -1,8 +1,8 @@
 warning[F0761]: this precondition mentions no variable
- --> test/cli/lints/suspicious/f0845_contract_mentions_nothing.fren:9:18
+ --> test/cli/lints/suspicious/f0845_contract_mentions_nothing.fren:9:19
   |
-9 |     assume sane: LIMIT > 0
-  |                  ^^^^^^^^^ the same in every behaviour
+9 |     require sane: LIMIT > 0
+  |                   ^^^^^^^^^ the same in every behaviour
   |
   = note: it is either always true, and says nothing, or always false
   = note: `assertions_on_constants` is `warn` by default

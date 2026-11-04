@@ -345,7 +345,7 @@ when it fires:
 pub proc double_parens(
     depth: Int,          -- pairs of parentheses, each directly around the next
 ): (det fires?) {
-    assume counts: depth >= 1
+    require counts: depth >= 1
 
     ensure rule: fires? iff depth >= 2
 }
@@ -611,9 +611,9 @@ pub proc manual_at_most_one_defined(
     use lang::{Cardinality, Env, Expr, Interp, Outcome, Value, eval}
 
     -- The operands are `Bool`s where they are well-defined.
-    assume booleans: eval(i, env, a) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
+    require booleans: eval(i, env, a) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
         and eval(i, env, b) is Outcome::Undefined | Outcome::Defined(Value::True | Value::False)
-    assume no_obligation: unless obligation?, eval(i, env, a) is Outcome::Defined(_) and eval(i, env, b) is Outcome::Defined(_)
+    require no_obligation: unless obligation?, eval(i, env, a) is Outcome::Defined(_) and eval(i, env, b) is Outcome::Defined(_)
 
     let conjunct: Outcome := eval(i, env, Expr::And(a, b))
     let counted: Outcome := eval(

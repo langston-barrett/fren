@@ -57,7 +57,7 @@ proc clash_ok(x: Int): (y?) { ensure r: let g! := 4, LIMIT! := 5 in y? iff x > g
 --~^ warning: binder `LIMIT` should have a snake case name
 
 -- A name mentions what its definition mentions.
-proc assumed(x: Int): (o: Int) { assume a: let v := o in v > x }
+proc assumed(x: Int): (o: Int) { require a: let v := o in v > x }
 --~^ error: assumptions may only mention parameters, but `o` is an output
 proc argument(x: Int): (o: Int) { ensure r: let v := o in f(v) = x }
 --~^ error: the arguments of a function may not mention an output, but `o` is one
@@ -67,11 +67,11 @@ proc linear(x: Int): (o: Int) { ensure r: let k := 3 in o = k * x }
 
 -- A definition that nothing mentions counts for nothing: what it mentions
 -- is not checked, directly or through another unused definition.
-proc unused_assumed(x: Int): (o: Int) { assume a: let v := o in x > 0 ensure r: o = x }
-proc unused_chain(x: Int): (o: Int) { assume a: let v := o, w := v in x > 0 ensure r: o = x }
-proc used_chain(x: Int): (o: Int) { assume a: let v := o, w := v in w > x ensure r: o = x }
+proc unused_assumed(x: Int): (o: Int) { require a: let v := o in x > 0 ensure r: o = x }
+proc unused_chain(x: Int): (o: Int) { require a: let v := o, w := v in x > 0 ensure r: o = x }
+proc used_chain(x: Int): (o: Int) { require a: let v := o, w := v in w > x ensure r: o = x }
 --~^ error: assumptions may only mention parameters, but `o` is an output
-proc unused_nested(x: Int): (o: Int) { assume a: let v := o in (let w := v in x > 0) ensure r: o = x }
+proc unused_nested(x: Int): (o: Int) { require a: let v := o in (let w := v in x > 0) ensure r: o = x }
 proc operator_type(x: Int): (y?) { ensure r: y? iff (let a := x in a and y?) }
 --~^ error: type mismatch: expected `Bool`, found `Int`
 proc unused_argument(x: Int): (o: Int) { ensure r: f(let v := o in x) = o }

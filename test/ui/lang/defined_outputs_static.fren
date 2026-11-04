@@ -16,7 +16,7 @@ proc in_assumption(x: Int): (p: Int) {
     exists o: Int
     let d: Int := o + x
 
-    assume a: d > 0                 --~ error: assumptions may only mention parameters, but `o` is an output
+    require a: d > 0                 --~ error: assumptions may only mention parameters, but `o` is an output
     ensure r: p = o
 }
 

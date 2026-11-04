@@ -11,9 +11,10 @@ open Fren.Lang
 # What becomes of a mutant (`Reqs/Mutate`)
 
 The decisions in `FrenCli.MutateOutcome` and `FrenCli.MutateSelect`
-implement the comps of `mutate`. Each obligation over `Bool` is proved by
-`decide`, given the variables of `mutate::exit`'s instance, and each over
-`Nat` by `simp`.
+implement the comps of `mutate`. Boolean rules reduce by cases and
+`decide`; arithmetic rules use `simp` and `omega`. The whole-ledger proof
+uses induction on identifier lists to relate the Req's recursive counts
+and scans to the command's `List.count` and identifier scan.
 -/
 
 namespace Fren.Impls
@@ -25,6 +26,54 @@ def toMutantOutcome : Outcome → mutate.Outcome
   | .survived => .Survived
   | .equivalent => .Equivalent
   | .unviable => .Unviable
+
+/-- Encode the command's identifier list as the Req's recursive ledger. -/
+def toDecisionIds : List String → mutate.DecisionIds
+  | [] => .Nil
+  | id :: ids => .Cons id (toDecisionIds ids)
+
+/-- The Req counts identifiers exactly as `List.count` does. -/
+theorem occurrences_toDecisionIds (ids : List String) (id : String) :
+    mutate.occurrences (toDecisionIds ids) id = (ids.count id : Int) := by
+  induction ids with
+  | nil => simp [toDecisionIds, mutate.occurrences]
+  | cons head rest ih =>
+    by_cases h : head = id
+    · subst head
+      simp [toDecisionIds, mutate.occurrences, ih]
+      omega
+    · simp [toDecisionIds, mutate.occurrences, ih, List.count_cons_of_ne h, h]
+
+/-- The Req's recursive scan checks every identifier of the encoded list. -/
+theorem valid_ids_toDecisionIds (ids selected decided : List String) :
+    mutate.valid_ids? (toDecisionIds ids) (toDecisionIds selected) (toDecisionIds decided) =
+      ids.all (fun id => decided.count id == (if selected.contains id then 1 else 0)) := by
+  induction ids with
+  | nil => rfl
+  | cons head rest ih =>
+    rw [Bool.eq_iff_iff]
+    by_cases h : head ∈ selected <;>
+      simp [toDecisionIds, mutate.valid_ids?, ih, occurrences_toDecisionIds, h] <;> omega
+
+impl mutant_ledger: mutate::ledger for (s d : Array String) {
+  selected := toDecisionIds s.toList,
+  decided := toDecisionIds d.toList,
+  valid? := (FrenCli.Mutate.decisionError? s d).isNone,
+} by
+  intro s d _
+  simp only [fren_spec]
+  rw [Bool.eq_iff_iff]
+  simp [valid_ids_toDecisionIds, FrenCli.Mutate.decisionError?,
+    Option.isNone_iff_eq_none, Array.find?_eq_none]
+  simp [Array.forall_mem_iff_forall_getElem, Array.getElem_mem]
+
+impl mutant_same_decision: mutate::same_decision for (a b : Outcome) {
+  full := toMutantOutcome a,
+  other := toMutantOutcome b,
+  same? := FrenCli.Mutate.sameDecision a b,
+} by
+  intro a b _
+  cases a <;> cases b <;> decide
 
 impl mutant_kill: mutate::kill for (b a : Fren.Core.Verdict) {
   before := toVerdict b,

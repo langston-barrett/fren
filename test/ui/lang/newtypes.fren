@@ -15,7 +15,7 @@ pub struct Tagged(Mode)
 pub struct Tags(Set<Int>)
 
 proc timer(elapsed: Ms, budget: Ms, size: Bytes): (det left: Ms, det over?, det total: Ms) {
-    assume positive: elapsed >= Ms(0) and budget >= Ms(0)
+    require positive: elapsed >= Ms(0) and budget >= Ms(0)
     out left := budget - elapsed
     out over? := elapsed > budget
     out total := elapsed + budget
@@ -65,7 +65,7 @@ fn cost(Ms): Ms
 fn half(m: Ms): Ms := Ms(m.0 div 2)
 
 proc collections(times: Set<Ms>, queue: Seq<Ms>, job: Job): (det longest: Ms, det halved: Ms) {
-    assume some: queue.len = 1 and queue[0] in times
+    require some: queue.len = 1 and queue[0] in times
     out longest := job.took
     out halved := half(job.took)
 
@@ -90,7 +90,7 @@ proc uses(now: Ms) {
 pub struct Slot { start: Ms, tags: Set<Ms> }
 
 proc shown(t: Ms, s: Slot): (det next: Ms) {
-    assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
+    require pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
     out next := t + Ms(1)
 
     expect small: next < Ms(4)  --~ error: expectation `shown::small` does not hold

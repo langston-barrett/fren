@@ -20,7 +20,7 @@ proc distinct(a: Name, b: Name): (
     same?,
     first: Name,                    -- an output of an abstract type
 ) {
-    assume injective: when arity(a) = arity(b), a = b
+    require injective: when arity(a) = arity(b), a = b
     ensure r: same? iff a = b
     ensure pick: first = a
 

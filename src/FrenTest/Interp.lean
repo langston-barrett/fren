@@ -79,7 +79,7 @@ fn arity(Key): Int
 
 set_option fren.lint.unused_assumption "allow" in
 proc ranked(k: Key): (ok?) {
-    assume nonneg: arity(k) >= 0
+    require nonneg: arity(k) >= 0
     ensure rule: ok?
 }
 
@@ -149,7 +149,7 @@ mod interp_typed_contract
 
 type CappedByte = n: Int where invariant: n is 0..=255
 fn capped(n: Int): (r: CappedByte) {
-    assume nonneg: n >= 0
+    require nonneg: n >= 0
     ensure within: r <= n
 }
 

@@ -88,7 +88,7 @@ core](../../Lang/Decidability.md#strings), so both opt out:
 set_option fren.lint.unicode_not_nfc "allow" in
 set_option fren.lint.undecidable "allow" in
 pub proc nfc_written(s: String): (det cafe?) {
-    assume composed: not s.contains?("e\u0301")
+    require composed: not s.contains?("e\u0301")
     out cafe? := s.replace_all("\u00e9", "e\u0301") = "café"
 
     expect never_equal: s != "café"
@@ -97,7 +97,7 @@ pub proc nfc_written(s: String): (det cafe?) {
 set_option fren.lint.unicode_not_nfc "allow" in
 set_option fren.lint.undecidable "allow" in
 pub proc nfc_fixed(s: String): (det cafe?) {
-    assume composed: not s.contains?("e\u0301")
+    require composed: not s.contains?("e\u0301")
     out cafe? := s = "café"
 }
 

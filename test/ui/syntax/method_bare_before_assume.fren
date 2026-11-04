@@ -1,0 +1,10 @@
+-- A trait method's block's errors in source order, in both front ends
+-- (`lang::block_errors`, `lang::clause_errors`): a clause without a label
+-- that is not a Boolean block before an `assume`.
+trait Sized {
+    fn size(s: Self, n: Int): (r: Int) {
+        ensure r = n  --~ error: expected a named clause or a Boolean block
+        assume a: n > 0
+    }
+}
+--@ exit: 2

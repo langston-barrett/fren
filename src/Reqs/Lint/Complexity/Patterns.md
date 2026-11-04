@@ -60,7 +60,7 @@ that `_`, the fix, matches what the or-pattern does:
 
 ```fren
 pub proc wildcard_in_or_patterns(alts: Seq<Pat>, x: Val): (det fires?) {
-    assume size: 2 <= alts.len <= 4
+    require size: 2 <= alts.len <= 4
 
     -- an alternative is `_`
     det let wildcard? := (exists (s: Slot), pos(s) < alts.len and alts[pos(s)] = Pat::Wild)
@@ -147,9 +147,9 @@ pub fn gap_after?(alts: Seq<Pat>, s: Slot) :=
     }
 
 pub proc manual_range_patterns(alts: Seq<Pat>, v: Int): (det fires?) {
-    assume size: 2 <= alts.len <= 4
+    require size: 2 <= alts.len <= 4
     -- A range matches some integer (`F0349`).
-    assume ranges: forall (s: Slot), when pos(s) < alts.len,
+    require ranges: forall (s: Slot), when pos(s) < alts.len,
         reaches?(lower_of(alts[pos(s)]), upper_of(alts[pos(s)]))
 
     det let n_alternatives: Int := alts.len
@@ -187,8 +187,8 @@ pub proc range_union(
 ): (
     det joined?,         -- they leave no gap
 ) {
-    assume sorted: lo1 <= lo2 <= hi2 and lo1 <= hi1
-    assume between: lo1 <= n <= hi1.max(hi2)
+    require sorted: lo1 <= lo2 <= hi2 and lo1 <= hi1
+    require between: lo1 <= n <= hi1.max(hi2)
 
     ensure rule: joined? iff lo2 <= hi1 + 1
 

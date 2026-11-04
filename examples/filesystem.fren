@@ -206,30 +206,30 @@ pub fn empty_rooted?(q: Path): (proved?) {
 }
 
 pub fn mkdir_keeps_rooted?(before: FileSystem, p: Path, q: Path): (proved?) {
-    assume valid: valid?(FileSystem::Mkdir(before, p))
-    assume rooted: rooted_at?(before, q)
+    require valid: valid?(FileSystem::Mkdir(before, p))
+    require rooted: rooted_at?(before, q)
     out proved? := true
     ensure law: proved? and rooted_at?(FileSystem::Mkdir(before, p), q)
 }
 
 pub fn write_keeps_rooted?(before: FileSystem, p: Path, data: Bytes, q: Path): (proved?) {
-    assume valid: valid?(FileSystem::Write(before, p, data))
-    assume rooted: rooted_at?(before, q)
+    require valid: valid?(FileSystem::Write(before, p, data))
+    require rooted: rooted_at?(before, q)
     out proved? := true
     ensure law: proved? and rooted_at?(FileSystem::Write(before, p, data), q)
 }
 
 pub fn rm_keeps_rooted?(before: FileSystem, p: Path, q: Path): (proved?) {
-    assume valid: valid?(FileSystem::Rm(before, p))
-    assume rooted: rooted_at?(before, q)
+    require valid: valid?(FileSystem::Rm(before, p))
+    require rooted: rooted_at?(before, q)
     out proved? := parent_under?(q, p)
     ensure law: proved? and rooted_at?(FileSystem::Rm(before, p), q)
 }
 
 pub fn mv_keeps_rooted?(before: FileSystem, src: Path, dst: Path, q: Path): (proved?) {
-    assume valid: valid?(FileSystem::Mv(before, src, dst))
-    assume rooted: rooted_at?(before, q)
-    assume rooted_moved: rooted_at?(before, append(src, strip(q, dst)))
+    require valid: valid?(FileSystem::Mv(before, src, dst))
+    require rooted: rooted_at?(before, q)
+    require rooted_moved: rooted_at?(before, append(src, strip(q, dst)))
     out proved? := parent_under?(q, src) and parent_under?(q, dst) and parent_under?(dst, src)
         and parent_stays_under?(q, dst) and parent_strip?(q, dst) and parent_append?(src, strip(q, dst))
     ensure law: proved? and rooted_at?(FileSystem::Mv(before, src, dst), q)
@@ -342,7 +342,7 @@ pub fn subtree_law?(l: Listing, p: Path, r: Path): (proved?) {
 
 -- Lemma: `rm` removes exactly what is below `p`.
 pub fn rm_law?(l: Listing, p: Path, q: Path): (proved?) {
-    assume not_root: p != Root
+    require not_root: p != Root
     out proved? := match l {
         Listing::Empty => true,
         Listing::File(_, _, more) => rm_law?(more, p, q),
@@ -360,9 +360,9 @@ pub fn rm_law?(l: Listing, p: Path, q: Path): (proved?) {
 
 -- Lemma: `graft` puts `x` at `p`, and changes nothing else.
 pub fn graft_law?(l: Listing, p: Path, x: Node, q: Path): (proved?) {
-    assume not_root: p != Root
-    assume parent_dir: view(l, parent(p)) = Entry::Dir
-    assume absent: view(l, p) = Entry::Missing
+    require not_root: p != Root
+    require parent_dir: view(l, parent(p)) = Entry::Dir
+    require absent: view(l, p) = Entry::Missing
     out proved? := match l {
         Listing::Empty => true,
         Listing::File(m, _, more) => match p {
@@ -383,9 +383,9 @@ pub fn graft_law?(l: Listing, p: Path, x: Node, q: Path): (proved?) {
 
 -- Lemma: the tree's `mkdir` makes `p` and changes nothing else.
 pub fn mkdir_law?(l: Listing, p: Path, q: Path): (proved?) {
-    assume not_root: p != Root
-    assume parent_dir: view(l, parent(p)) = Entry::Dir
-    assume absent: view(l, p) = Entry::Missing
+    require not_root: p != Root
+    require parent_dir: view(l, parent(p)) = Entry::Dir
+    require absent: view(l, p) = Entry::Missing
     out proved? :=
         graft_law?(l, p, Node::Dir(Listing::Empty), q) and subtree_law?(l, p, strip(q, p))
     ensure law: proved? and view(mkdir(l, p), q) = (if q = p then Entry::Dir else view(l, q))
@@ -393,9 +393,9 @@ pub fn mkdir_law?(l: Listing, p: Path, q: Path): (proved?) {
 
 -- Lemma: the tree's `write` puts `data` at `p` and changes nothing else.
 pub fn write_law?(l: Listing, p: Path, data: Bytes, q: Path): (proved?) {
-    assume not_root: p != Root
-    assume parent_dir: view(l, parent(p)) = Entry::Dir
-    assume not_dir: view(l, p) != Entry::Dir
+    require not_root: p != Root
+    require parent_dir: view(l, parent(p)) = Entry::Dir
+    require not_dir: view(l, p) != Entry::Dir
     out proved? := rm_law?(l, p, parent(p)) and rm_law?(l, p, p) and rm_law?(l, p, q)
         and graft_law?(rm(l, p), p, Node::File(data), q) and subtree_law?(l, p, strip(q, p))
     ensure law: proved? and view(write(l, p, data), q) = (if q = p then Entry::File(data) else view(l, q))
@@ -403,11 +403,11 @@ pub fn write_law?(l: Listing, p: Path, data: Bytes, q: Path): (proved?) {
 
 -- Lemma: the tree's `mv` moves what is below `src` to below `dst`.
 pub fn mv_law?(l: Listing, src: Path, dst: Path, q: Path): (proved?) {
-    assume src_not_root: src != Root
-    assume dst_not_root: dst != Root
-    assume parent_dir: view(l, parent(dst)) = Entry::Dir
-    assume absent: view(l, dst) = Entry::Missing
-    assume not_into_itself: not under?(dst, src)
+    require src_not_root: src != Root
+    require dst_not_root: dst != Root
+    require parent_dir: view(l, parent(dst)) = Entry::Dir
+    require absent: view(l, dst) = Entry::Missing
+    require not_into_itself: not under?(dst, src)
     out proved? := parent_under?(dst, src) and rm_law?(l, src, parent(dst)) and rm_law?(l, src, dst)
         and rm_law?(l, src, q) and graft_law?(rm(l, src), dst, node(l, src), q)
         and subtree_law?(l, src, strip(q, dst))
@@ -431,36 +431,36 @@ pub fn empty_refines?(q: Path): (proved?) {
 }
 
 pub fn mkdir_refines?(l: Listing, before: FileSystem, p: Path, q: Path): (proved?) {
-    assume valid: valid?(FileSystem::Mkdir(before, p))
-    assume here: agrees?(l, before, q)
-    assume at_parent: agrees?(l, before, parent(p))
-    assume at_p: agrees?(l, before, p)
+    require valid: valid?(FileSystem::Mkdir(before, p))
+    require here: agrees?(l, before, q)
+    require at_parent: agrees?(l, before, parent(p))
+    require at_p: agrees?(l, before, p)
     out proved? := mkdir_law?(l, p, q)
     ensure law: proved? and agrees?(mkdir(l, p), FileSystem::Mkdir(before, p), q)
 }
 
 pub fn write_refines?(l: Listing, before: FileSystem, p: Path, data: Bytes, q: Path): (proved?) {
-    assume valid: valid?(FileSystem::Write(before, p, data))
-    assume here: agrees?(l, before, q)
-    assume at_parent: agrees?(l, before, parent(p))
-    assume at_p: agrees?(l, before, p)
+    require valid: valid?(FileSystem::Write(before, p, data))
+    require here: agrees?(l, before, q)
+    require at_parent: agrees?(l, before, parent(p))
+    require at_p: agrees?(l, before, p)
     out proved? := write_law?(l, p, data, q)
     ensure law: proved? and agrees?(write(l, p, data), FileSystem::Write(before, p, data), q)
 }
 
 pub fn rm_refines?(l: Listing, before: FileSystem, p: Path, q: Path): (proved?) {
-    assume valid: valid?(FileSystem::Rm(before, p))
-    assume here: agrees?(l, before, q)
+    require valid: valid?(FileSystem::Rm(before, p))
+    require here: agrees?(l, before, q)
     out proved? := rm_law?(l, p, q)
     ensure law: proved? and agrees?(rm(l, p), FileSystem::Rm(before, p), q)
 }
 
 pub fn mv_refines?(l: Listing, before: FileSystem, src: Path, dst: Path, q: Path): (proved?) {
-    assume valid: valid?(FileSystem::Mv(before, src, dst))
-    assume here: agrees?(l, before, q)
-    assume at_parent: agrees?(l, before, parent(dst))
-    assume at_dst: agrees?(l, before, dst)
-    assume moved: agrees?(l, before, append(src, strip(q, dst)))
+    require valid: valid?(FileSystem::Mv(before, src, dst))
+    require here: agrees?(l, before, q)
+    require at_parent: agrees?(l, before, parent(dst))
+    require at_dst: agrees?(l, before, dst)
+    require moved: agrees?(l, before, append(src, strip(q, dst)))
     out proved? := mv_law?(l, src, dst, q)
     ensure law: proved? and agrees?(mv(l, src, dst), FileSystem::Mv(before, src, dst), q)
 }

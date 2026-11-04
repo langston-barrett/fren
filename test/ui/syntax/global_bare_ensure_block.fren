@@ -1,0 +1,10 @@
+-- An `ensure` without a label, a Boolean block, is a member that a global
+-- expectation's block does not accept (`F0417`, `lang::block_member`), in
+-- both front ends, as an `ensure` with one is.
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
+
+expect even(x: Int) {
+    call d := double(x)
+    ensure and { a: d.y > x }  --~ error: global expectations have no `ensure` members
+}
+--@ exit: 2

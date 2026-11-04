@@ -5,7 +5,7 @@ error[F0601]: `bad_output` is not realizable
    |      ^^^^^^^^^^ not realizable
    |
    = note: no outputs satisfy `opposite`
-   = help: weaken one of them, or add an `assume` that rules this input out
+   = help: weaken one of them, or add a `require` that rules this input out
 
 error[F0661]: invariant `Positive::invariant` does not hold
   --> test/cli/results/nested_subset_enumeration.fren:26:49

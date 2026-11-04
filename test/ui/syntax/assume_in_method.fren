@@ -1,0 +1,9 @@
+-- A trait method's precondition is written `require`, not `assume`
+-- (`F0169`), unlabelled or not.
+trait Sized {
+    fn size(s: Self, n: Int): (r: Int) {
+        assume and { a: n > 0 }  --~ error: a precondition is written `require`, not `assume`
+        ensure low: r >= 0
+    }
+}
+--@ exit: 2

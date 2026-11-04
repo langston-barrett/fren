@@ -1,0 +1,9 @@
+-- A function's block's errors in source order, in both front ends
+-- (`lang::block_errors`): `refines`, which only a global expectation's
+-- block takes, before an `assume`.
+fn g(x: Int): (r: Int) {
+    refines c spec(x)  --~ error: `refines` is accepted only in global expectation blocks
+    assume a: x > 0
+    out r := x
+}
+--@ exit: 2

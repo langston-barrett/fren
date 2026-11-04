@@ -5,7 +5,7 @@
 set_option fren.lint.dead_code "allow"
 
 fn nth(q: Seq<Int>, i: Int): (r: Int) {
-    assume in_range: 0 <= i < q.len
+    require in_range: 0 <= i < q.len
     out r := q[i]
 }
 
@@ -15,28 +15,28 @@ proc unguarded(q: Seq<Int>): (y: Int) {
 
 -- An assumption's application is checked under the other assumptions.
 proc assumed(q: Seq<Int>, i: Int): (y: Int) {
-    assume valid: 0 <= i < q.len
-    assume positive: nth(q, i) > 0
-    assume first: nth(q, 1) > 0  --~ error: the precondition `in_range` of `nth` may not hold at this application in `assumed::first`
+    require valid: 0 <= i < q.len
+    require positive: nth(q, i) > 0
+    require first: nth(q, 1) > 0  --~ error: the precondition `in_range` of `nth` may not hold at this application in `assumed::first`
 
     ensure r: y = nth(q, i)
 }
 
 -- Each application of a function with two preconditions is two checks.
 fn ratio(a: Int, b: Int): (r: Int) {
-    assume nonneg: a >= 0
-    assume nonzero: b != 0
+    require nonneg: a >= 0
+    require nonzero: b != 0
     out r := a + b
 }
 
 proc ratios(a: Int, b: Int): (y: Int) {
-    assume a_nonneg: a >= 0  --~ warning: `a` is never negative
+    require a_nonneg: a >= 0  --~ warning: `a` is never negative
     ensure r: y = ratio(a, b)  --~ error: the precondition `nonzero` of `ratio` may not hold at this application in `ratios::r`
 }
 
 -- A postcondition that the body does not meet.
 fn decrement(n: Int): (r: Int) {
-    assume positive: n > 0
+    require positive: n > 0
     out r := n - 1
     ensure natural: r >= 0
     ensure wrong: r > 0  --~ error: the postcondition `wrong` of `decrement` does not hold
@@ -45,7 +45,7 @@ fn decrement(n: Int): (r: Int) {
 -- An application in a function's body is checked under its preconditions,
 -- and so is one in its postconditions.
 fn head(q: Seq<Int>): (r: Int) {
-    assume nonempty: q != []
+    require nonempty: q != []
     out r := nth(q, 0)
     ensure at_zero: r = nth(q, 0)
 }
@@ -54,8 +54,8 @@ fn careless(q: Seq<Int>): Int := nth(q, 0)  --~ error: the precondition `in_rang
 
 -- A precondition's application is checked under the other preconditions.
 fn second(q: Seq<Int>): (r: Int) {
-    assume long: q.len > 1
-    assume sorted: nth(q, 0) <= nth(q, 1)
+    require long: q.len > 1
+    require sorted: nth(q, 0) <= nth(q, 1)
     out r := q[1]
 }
 
@@ -102,7 +102,7 @@ const NONE: Int := nth([], 0)  --~ error: the precondition `in_range` of `nth` m
 enum Pick { First, Last, Neither }
 
 proc picked(p: Pick, q: Seq<Int>): (y: Int) {
-    assume nonempty: q != []
+    require nonempty: q != []
     ensure r: y = match p {
         Pick::First => nth(q, 0),
         Pick::Last => nth(q, q.len - 1),

@@ -33,7 +33,7 @@ use self::Level::Forbid
 
 -- The abstract view: a flag, rather than a level.
 pub proc forbidding(forbidden?, count: Int): (stops?) {
-    assume some: count > 0
+    require some: count > 0
     ensure r: stops? iff forbidden?
 }
 

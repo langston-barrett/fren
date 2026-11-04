@@ -5,14 +5,14 @@
 set_option fren.lint.contradictory_comparisons "allow" in
 pub proc p(x: Int): (y: Int) {
     let next: Int := x + 1
-    assume a: next > 0
-    assume b: x > 0 and x < 0
+    require a: next > 0
+    require b: x > 0 and x < 0
     ensure r: y = x
 }
 
 pub proc q(x: Int): (y: Int) {
     let next: Int := x + 1
-    assume a: next > 0
+    require a: next > 0
     ensure r: y = x
     expect e: y >= 0
 }
@@ -22,7 +22,7 @@ pub proc q(x: Int): (y: Int) {
 pub proc partial_unread(x: Int, q: Seq<Int>): (y: Int, z: Int) {
     let n: Int := x + 1
     let d: Int := q[7]
-    assume a: n > 0
+    require a: n > 0
     ensure r: y = n
     ensure s: z = d
 }
@@ -33,14 +33,14 @@ pub proc partial_unread(x: Int, q: Seq<Int>): (y: Int, z: Int) {
 -- from its output. In `d1`, `a` has no value, so no input is admissible.
 pub proc d6(x: Int, q: Seq<Int>): (y: Int, z: Int) {
     let d: Int := q[7]
-    assume a: when q.len > 7, d > 0
+    require a: when q.len > 7, d > 0
     ensure r: y = x
     ensure s: z = d
 }
 
 pub proc d1(q: Seq<Int>): (y: Int) {
     let d: Int := q[7]
-    assume a: d > 0
+    require a: d > 0
     ensure r: y = d
 }
 
@@ -51,19 +51,19 @@ pub proc d1(q: Seq<Int>): (y: Int) {
 -- guarantee alone, with no `F0617` at the call.
 pub proc k_def(x: Int): (w: Int) {
     let n: Int := x + 1
-    assume a: n > 0
+    require a: n > 0
     ensure s: w = x
 }
 
 pub proc u_bad(z: Int) {
-    assume neg: z < -5
+    require neg: z < -5
     call u := k_def(z)
 }
 
 set_option fren.lint.contradictory_comparisons "allow" in
 pub proc k_def_ens(x: Int): (w: Int) {
     let n: Int := x + 1
-    assume a: n > 0
+    require a: n > 0
     ensure s: w > 0 and w < 0
 }
 

@@ -11,7 +11,7 @@ pub const LIMIT: Int := 3
 
 set_option fren.evidence "enumerated+random" in  --~ error: `fren.evidence` cannot be set to `"enumerated+random"` for a function
 pub fn above(x: Int): (r: Int) {
-    assume small: x < LIMIT
+    require small: x < LIMIT
     ensure greater: r > x
 }
 

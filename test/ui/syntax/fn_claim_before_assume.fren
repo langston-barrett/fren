@@ -1,0 +1,9 @@
+-- A function's block's errors in source order, in both front ends
+-- (`lang::block_errors`): an `expect`, which the block does not take yet,
+-- before an `assume`, which is not reached.
+fn g(x: Int): (r: Int) {
+    expect e: x > 0  --~ error: a function's block takes no `expect` yet
+    assume a: x > 0
+    out r := x
+}
+--@ exit: 2

@@ -59,7 +59,7 @@ pub proc membership_chain(
     later_indexes?,      -- a value after the first indexes a sequence
     patterns?,           -- each value is one that a pattern writes
 ): (det fires?) {
-    assume counts: n >= 2
+    require counts: n >= 2
 
     ensure rule: fires? iff (same_left? and n >= 3 and not later_indexes? and not patterns?)
 }
@@ -310,7 +310,7 @@ proc invalid_upcast_exact(
     left?,
     n: Int,              -- the call's value
 ) {
-    assume range: n >= lowest
+    require range: n >= lowest
 
     call p := invalid_upcast_comparisons(op, bound, lowest, left?)
 
@@ -390,7 +390,7 @@ pub proc needless_raw_string_hashes(
     det fewest: Int,         -- the `#`s that the fix writes
 ) {
     -- The literal ends where its `#`s say: no `"` in its body is followed by as many.
-    assume counts: -1 <= longest < hashes
+    require counts: -1 <= longest < hashes
 
     ensure fewest_rule: fewest = longest + 1
     ensure rule: fires? iff hashes > fewest

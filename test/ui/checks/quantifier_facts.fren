@@ -26,7 +26,7 @@ proc nats(n: Int): (ok?) {
 -- A precondition is asked where the application is, for every value of the
 -- bound name where its guard holds.
 fn nth(q: Seq<Int>, i: Int): (r: Int) {
-    assume in_range: 0 <= i < q.len
+    require in_range: 0 <= i < q.len
     out r := q[i]
 }
 

@@ -372,7 +372,7 @@ pub mod testing
   summary.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
-  [--confirm] [--scrutinees] [--spec-timeout SECONDS]`): generates random
+  [--confirm] [--scrutinees] [--keywords] [--spec-timeout SECONDS]`): generates random
   specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
@@ -412,7 +412,19 @@ pub mod testing
   calls, fields, definitions and nested expressions, including generic
   types and lambda matches. It has its own mode to preserve the older
   generators' seeds and keep earlier static errors from stopping these
-  checks. Its corpus rejects generated static errors. A run with
+  checks. Its corpus rejects generated static errors. `--keywords`
+  generates one block, a procedure's, a function's, a trait method's or a
+  global expectation's, with a clause written with the other block's
+  keyword among parts that the block rejects or that are errors of their
+  own syntax, so that both front ends must report the same first error of
+  the block ([The keyword of an
+  assumption](../Lang/Procedures.md#the-keyword-of-an-assumption)), now and
+  then after an item of each kind that holds clauses with such a clause in
+  one of its members, and with an error of Lean's grammar later in the
+  item, which both must report instead, and often followed by an item with messages of its own,
+  which an error of a clause's keyword must leave to be reported. Its
+  errors are on purpose, and an error stops every other check of a spec,
+  so `lake test`'s corpus leaves the mode out. A run with
   `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
@@ -428,7 +440,10 @@ pub mod testing
     or a comment, since Lean places a parse error at the end of the token
     before the offending one, and nothing else is compared. An
     item is one Lean command, so any other error of Lean's in it means
-    that Lean parsed what the `fren` command rejects. Lean's parse errors
+    that Lean parsed what the `fren` command rejects. `F0169` is not
+    among these parse errors: both front ends report it once the item is
+    read, for that item alone ([`lang::item_error`](../Lang/Procedures.md#the-keyword-of-an-assumption)),
+    so what follows it is compared. Lean's parse errors
     are its messages that start with `unexpected`, `unterminated`, or
     `expected` but do not go on with `, but`, as Fren's own do.
   - Lean's parse errors stand for the `fren` command's static
@@ -655,8 +670,8 @@ pub proc shard(
     det runs?,                  -- some shard runs the job at `i`
     k: Int,                     -- the shard that runs it, or -1
 ) {
-    assume shards: n >= 1
-    assume position: 0 <= i < jobs.len
+    require shards: n >= 1
+    require position: 0 <= i < jobs.len
 
     ensure kept: runs? iff not skipped?(jobs[i], skip?)
     ensure once: if runs? then 0 <= k < n else k = -1
@@ -711,7 +726,7 @@ pub proc solver_credit(
     stop: Nat,                  -- when it ended
     first: Nat,                 -- when the first query left out started
 ): (det credit_after: Nat, det covered_after: Nat) {
-    assume times: first <= start <= stop
+    require times: first <= start <= stop
 
     ensure new_time: credit_after = credit + (if stop > start.max(covered) then stop - start.max(covered) else 0)
     ensure covers: covered_after = covered.max(stop)
@@ -873,7 +888,7 @@ pub proc fresh(
     changed: Set<File>,     -- the files changed since its last build
     rebuilt?,               -- Lake rebuilds it
 ): (det fresh?) {
-    assume lake: when needs inter changed != {}, rebuilt?
+    require lake: when needs inter changed != {}, rebuilt?
     ensure rule: fresh? iff (rebuilt? or reads inter changed = {})
 
     expect read_needed: when reads subset needs, fresh?

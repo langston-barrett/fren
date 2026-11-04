@@ -99,7 +99,7 @@ pub proc manual_record_update(
     n_fields: Nat,     -- the fields of the record
     n_copied: Nat,     -- the fields copied from `r`
 ): (det fires?) {
-    assume within: n_copied <= n_fields
+    require within: n_copied <= n_fields
 
     ensure rule: fires? iff n_copied < n_fields < 2 * n_copied
 

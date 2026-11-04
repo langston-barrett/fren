@@ -95,7 +95,7 @@ mutant whose guard leaves an arm never taken, or a `match` with no arm
 taken somewhere, is killed by the [reachability](Check.md#reachability) or
 [completeness](Check.md#completeness) check.
 
-Mutants change what a spec asserts: the expressions of `assume`s, `ensure`s,
+Mutants change what a spec asserts: the expressions of `require`s, `assume`s, `ensure`s,
 definitions of results and `let` variables, arguments of calls, constants and defined functions,
 including the definitions of their [`let`s and `where`
 clauses](Lang/Let.md), which are changed like any other expression. The
@@ -189,7 +189,7 @@ pub proc skip(
 ): (
     det run?,           -- the check runs on the mutant
 ) {
-    assume determined: unless changed?, after = before
+    require determined: unless changed?, after = before
 
     call k := kill(before, after)
 
@@ -400,7 +400,7 @@ So a larger sample contains a smaller one, with the same seed:
 
 ```fren
 pub proc samples_nest(rank: Nat, smaller: Nat, larger: Nat) {
-    assume nested: smaller <= larger
+    require nested: smaller <= larger
 
     call small := sample(rank, smaller)
     call large := sample(rank, larger)
@@ -436,6 +436,92 @@ pub proc shards_partition(remainder: Nat, j: Nat, k: Nat) {
 ```
 
 ## Output
+
+Except with `--list`, every selected mutant gets exactly one decision.
+A missing or duplicate decision is an internal error, even when the
+summary's counts otherwise agree. `mutate::ledger` checks every selected
+and recorded identifier, computing selection from the selected identifiers
+themselves, so neither an omission nor an unselected decision escapes:
+
+```fren
+pub enum DecisionIds { Nil, Cons(String, DecisionIds) }
+
+pub fn occurrences(ids: DecisionIds, id: String): (n: Nat) {
+    out n := match ids {
+        DecisionIds::Nil => 0,
+        DecisionIds::Cons(head, rest) => (if head = id then 1 else 0) + occurrences(rest, id),
+    }
+
+    ensure empty: when ids = DecisionIds::Nil, n = 0
+    ensure singleton: match ids {
+        DecisionIds::Cons(head, DecisionIds::Nil) => n = (if head = id then 1 else 0),
+        _ => true,
+    }
+    ensure pair: match ids {
+        DecisionIds::Cons(first, DecisionIds::Cons(second, DecisionIds::Nil)) =>
+            n = (if first = id then 1 else 0) + (if second = id then 1 else 0),
+        _ => true,
+    }
+}
+
+pub fn valid_ids?(ids: DecisionIds, selected: DecisionIds, decided: DecisionIds): (valid?) {
+    out valid? := match ids {
+        DecisionIds::Nil => true,
+        DecisionIds::Cons(id, rest) =>
+            occurrences(decided, id) = (if occurrences(selected, id) > 0 then 1 else 0)
+            and valid_ids?(rest, selected, decided),
+    }
+
+    ensure empty: when ids = DecisionIds::Nil, valid?
+    ensure singleton: match ids {
+        DecisionIds::Cons(id, DecisionIds::Nil) =>
+            valid? iff occurrences(decided, id) = (if occurrences(selected, id) > 0 then 1 else 0),
+        _ => true,
+    }
+}
+
+pub proc ledger(selected: DecisionIds, decided: DecisionIds): (det valid?) {
+    out valid? := valid_ids?(selected, selected, decided) and valid_ids?(decided, selected, decided)
+
+    expect empty: when selected = DecisionIds::Nil and decided = DecisionIds::Nil, valid?
+    expect missing: when selected = DecisionIds::Cons("a", DecisionIds::Nil)
+        and decided = DecisionIds::Nil, not valid?
+    expect duplicate: when selected = DecisionIds::Cons("a", DecisionIds::Nil)
+        and decided = DecisionIds::Cons("a", DecisionIds::Cons("a", DecisionIds::Nil)), not valid?
+    expect unselected: when selected = DecisionIds::Nil
+        and decided = DecisionIds::Cons("a", DecisionIds::Nil), not valid?
+    expect once: when selected = DecisionIds::Cons("a", DecisionIds::Nil) and decided = selected, valid?
+}
+
+expect valid_ids_examples(id: String, other: String) {
+    assume distinct: id != other
+    let one: DecisionIds := DecisionIds::Cons(id, DecisionIds::Nil)
+    let both: DecisionIds := DecisionIds::Cons(id, DecisionIds::Cons(other, DecisionIds::Nil))
+
+    expect once: valid_ids?(one, one, one)
+    expect missing: not valid_ids?(one, one, DecisionIds::Nil)
+    expect duplicate: not valid_ids?(one, one, DecisionIds::Cons(id, one))
+    expect unselected: not valid_ids?(one, DecisionIds::Nil, one)
+    expect later_missing: not valid_ids?(both, both, one)
+}
+```
+
+With the same spec, checker and seed, the full run, a sample and every
+shard give each selected mutant the same decision and killing checks.
+Whether the solver proves equivalence within its wall-clock time limit
+may differ, so survival and equivalence count as the same decision here:
+
+```fren
+pub proc same_decision(full: Outcome, other: Outcome): (det same?) {
+    let full_kind: Outcome := if full = Equivalent then Survived else full
+    let other_kind: Outcome := if other = Equivalent then Survived else other
+    ensure rule: same? iff full_kind = other_kind
+
+    expect reflexive: when full = other, same?
+    expect killed_stays_killed: when same? and full = Killed, other = Killed
+    expect unviable_stays_unviable: when same? and full = Unviable, other = Unviable
+}
+```
 
 Each surviving mutant is a warning, `F0613`, at the change, with the
 mutant shown as a suggested edit. After them comes a summary, on

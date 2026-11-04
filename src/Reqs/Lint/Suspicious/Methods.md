@@ -123,7 +123,7 @@ pub proc no_effect_replace(
     replaced?,           -- `s.replace(a, b) = u`
     replaced_all?,         -- `s.replace_all(a, b) = u`
 ) {
-    assume written: when same?, a = b
+    require written: when same?, a = b
 
     ensure rule: fires? iff same?
     ensure first: when fires?, replaced? iff s = u

@@ -66,7 +66,7 @@ pub proc split(line: String, indent: Nat, run: Nat, lead: Nat): (
     det info: String,     -- the rest of the line: its info string
     det fence?,
 ) {
-    assume runs: runs?(line, indent, run, lead)
+    require runs: runs?(line, indent, run, lead)
 
     out marker := if line.at(indent) is "`" | "~" then line.at(indent) else ""
     out info := line.slice(indent + run + lead, line.len - indent - run - lead)
@@ -135,7 +135,7 @@ pub proc step(
     det opens?,           -- the line opens a block
     det kept?,            -- the line is the spec's: in the body of a `fren` block
 ) {
-    assume runs: runs?(line, indent, run, lead)
+    require runs: runs?(line, indent, run, lead)
 
     call parts := split(line, indent, run, lead)
     call block := block_kind(opening.info)

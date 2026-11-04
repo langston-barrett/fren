@@ -81,7 +81,7 @@ pub proc definition_order(
 ): (
     det means?,          -- the name means the definition
 ) {
-    assume positions: k_def < n and k_use <= n
+    require positions: k_def < n and k_use <= n
 
     ensure rule: means? iff k_def < k_use
 
@@ -167,7 +167,7 @@ applications](Expressions.md#function-applications), of [linear
 arithmetic](Expressions.md#linear-arithmetic) and of the [decidable
 core](Decidability.md). A definition that nothing mentions, directly or
 through the definitions that the body mentions, counts for nothing, so
-those rules are not checked in it: `assume a: let v := o in x > 0` mentions
+those rules are not checked in it: `require a: let v := o in x > 0` mentions
 only `x`. Its names are still declared before use, and it is still typed,
 and a divisor in it must still be a constant, since its value is needed
 to translate the definition. A `++` in a definition is checked against

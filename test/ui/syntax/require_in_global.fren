@@ -1,0 +1,11 @@
+-- A global expectation's assumptions are written `assume`: `require`, a
+-- procedure's precondition, is a member that its block does not accept
+-- (`F0417`), reported at the keyword, with a fix that writes `assume`.
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
+
+expect even(x: Int) {
+    require small: x < 10  --~ error: global expectations have no `require` members
+    call d := double(x)
+    expect e: d.y mod 2 = 0
+}
+--@ exit: 2

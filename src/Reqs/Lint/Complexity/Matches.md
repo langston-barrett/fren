@@ -27,7 +27,7 @@ pub proc trivial_match(
     n_arms: Int,
     binds?,              -- the first arm's pattern binds a name
 ): (det fires?) {
-    assume counts: n_arms >= 1
+    require counts: n_arms >= 1
 
     ensure rule: fires? iff (n_arms = 1 and not binds?)
 }
@@ -291,8 +291,8 @@ pub fn first_taken?(arms: Seq<ArmGuard>, s: Slot, k: Slot, skip?) :=
     and (forall (r: Slot), when pos(r) < pos(s) and not (skip? and r = k), not taken_at?(arms, r))
 
 proc trivial_guard_dropped(arms: Seq<ArmGuard>, k: Slot) {
-    assume size: arms.len <= 4
-    assume dropped: pos(k) < arms.len and arms[pos(k)].guard = Guard::Literal(false)
+    require size: arms.len <= 4
+    require dropped: pos(k) < arms.len and arms[pos(k)].guard = Guard::Literal(false)
 
     expect same_arm: forall (s: Slot), first_taken?(arms, s, k, false) iff first_taken?(arms, s, k, true)
 }
@@ -550,7 +550,7 @@ pub proc redundant_guards(
     o: Int,                  -- the value of a name outside the pattern
 ): (det fires?, det fixed: Pat) {
     -- The binders of a pattern have distinct names (`lang::distinct_names`).
-    assume distinct: match pattern {
+    require distinct: match pattern {
         Pat::Variant(_, l, m) => leaf_name(l) < 0 or leaf_name(l) != leaf_name(m),
         _ => true,
     }

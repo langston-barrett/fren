@@ -14,7 +14,7 @@ result     := [evidence-setting "in"] ["det"] variable
 member     := ["det"] "exists" variable
             | ["det"] "let" variable ":=" top
             | "out" IDENT ":=" top
-            | "assume" IDENT ":" top
+            | "require" IDENT ":" top
             | "ensure" IDENT ":" top
             | "expect" IDENT ":" top
             | "cover" IDENT ":" top
@@ -73,8 +73,12 @@ depends on where they are: at the start of a member, an `exists` or a
   such as a parameter, is an error (`F0444`): a value of the block's own
   is a `let`. A result is defined by one `out` member at most (`F0421`);
   without one, the system chooses it.
-- **Assumptions** (`assume n: e`) constrain the environment. An assumption
-  must mention only parameters.
+- **Assumptions** (`require n: e`) constrain the environment: they are the
+  procedure's preconditions. An assumption must mention only parameters.
+  `assume` is the keyword of a [global expectation](Global.md)'s
+  assumptions, and in a procedure's block it is an error (`F0169`), as
+  `require` is in a global expectation's (`F0417`); see [The keyword of an
+  assumption](#the-keyword-of-an-assumption).
 - **Guarantees** (`ensure n: e`) constrain the system: every behaviour of the
   system must satisfy them.
 - **Expectations** (`expect n: e`) are claims that follow from the
@@ -152,7 +156,7 @@ pub proc variable_type(
     constituents: Rel<DeclaredTy, DeclaredTy>,       -- (t, u): t has a field, payload or element of type u
     defined?,                                        -- it is a `let`, or a result that an `out` member defines
 ): (det accepted?) {
-    assume only_outputs: when defined?, output?
+    require only_outputs: when defined?, output?
 
     call facts := type_facts(ty, constituents)
 
@@ -179,6 +183,180 @@ explicitly. Members may appear in any order, though the lint
 [`arbitrary_source_item_ordering`](../Lint/Restriction.md) asks for one;
 a variable may be mentioned before its declaration. A procedure may have
 no parameters, no results and no members at all.
+
+### The keyword of an assumption
+
+A procedure's or a function's assumption is written `require n: e`, a
+global expectation's `assume n: e` (see [Global expectations](Global.md)).
+Each is an error in the other's block: `assume` in a procedure's or a
+function's block (`F0169`), and `require` in a global expectation's, a
+member that it does not accept (`F0417`). Each is reported at the
+keyword, with a fix that writes the block's keyword instead. It is
+reported once the whole item is read, and only if the item has no other
+static error of its syntax (see the order of a block's errors, below):
+an error of Lean's grammar anywhere in the item comes first, and so does
+an error of any part of the block. In a global expectation, `require`'s
+`F0417` comes before the `F0417` of any other member that the block does
+not accept (`lang::block_member` in [Global expectations](Global.md)). An
+item with such an error reports it alone, and both front ends read and
+check the file's other items. The messages that name a block's assumptions
+name them by its keyword. `require` and `assume` are contextual keywords,
+which start a clause and are names anywhere else, so a parameter or a
+variable may be named either. `lang::precondition_word` states this:
+
+```fren
+pub enum PreconditionWord { Require, Assume }
+
+-- What is reported for a clause that starts with the word: nothing, or an error.
+pub enum PreconditionReport { NoReport, F0169, F0417 }
+
+pub proc precondition_word(
+    word: PreconditionWord,
+    global?,             -- in a global expectation's block, not a procedure's or a function's
+): (det keyword: String, det report: PreconditionReport) {
+    use self::PreconditionWord::{Assume, Require}
+
+    out keyword := if global? then "assume" else "require"
+    ensure report_rule: report = (if word = Assume and not global? then PreconditionReport::F0169
+        else if word = Require and global? then PreconditionReport::F0417
+        else PreconditionReport::NoReport)
+
+    expect one_keyword: report = PreconditionReport::NoReport iff (word = Require iff not global?)
+    expect written: report = PreconditionReport::NoReport iff (word = Require iff keyword = "require")
+    expect renamed: when not global? and word = Assume, report = PreconditionReport::F0169
+}
+```
+
+A block's static errors of syntax are reported in source order, the
+first of them only, part by part: the item's name and parameters, then
+each result, then each member, an evidence setting before a member being
+a part of its own. Of one part, the errors come in the order the part is
+read: a modifier that it does not take, before it is read (a function's
+result written `det` or after an evidence setting, `F0442`); the errors
+of its own syntax, as it is read, among them a clause without a label
+that is not a Boolean block; and that the block does not take the part,
+once it is read (a function's second result, `F0445`; a member that a
+function's block does not take, `F0442`, `F0443`; an `out` that names no
+result, `F0444`, or the result again; `refines` outside a global
+expectation). The `F0417` of a member other than `require` that a global
+expectation's block does not accept is not among these: it is reported
+once the whole block is read (`lang::block_member`), so after any of
+them. So both front ends report the same first error of a block's
+syntax, but where an error of Lean's grammar follows an earlier error of
+the block: the Lean front end then reports the grammar error, and the
+`fren` command, which reads the item in source order, the earlier error.
+`lang::clause_errors` states which errors a clause has, from its keyword,
+its block and how it is written: a clause without a label is a Boolean
+block, under any leading `when`, `unless` or `let`, and so before a
+`where`, which means a leading `let` ([Let](Let.md)), and a `cover`
+always has a name. Each front end only reads these from its own
+representation of the clause, and reports the errors at the keyword:
+
+```fren
+pub enum ClauseWord { Require, Assume, Ensure, Expect, Cover }
+
+-- Whether a clause that starts with the word, in a global expectation's block
+-- if `global?`, is written with the other block's keyword.
+pub fn wrong_keyword?(word: ClauseWord, global?) :=
+    (word = ClauseWord::Assume and not global?) or (word = ClauseWord::Require and global?)
+
+pub proc clause_errors(
+    word: ClauseWord,
+    global?,             -- in a global expectation's block
+    read?,               -- the clause is read, with no error of its own syntax otherwise
+    labelled?,           -- once read: written `word n: e`
+    block_root?,         -- once read: its expression is a Boolean block, under any `when`, `unless`, `let` or `where`
+): (det keyword?, det syntax?) {
+    use self::ClauseWord::{Assume, Cover, Require}
+
+    ensure keyword_rule: keyword? iff wrong_keyword?(word, global?)
+    ensure syntax_rule: syntax? iff (read? and not labelled? and (word = Cover or not block_root?))
+
+    expect labelled_read: when labelled?, not syntax?
+    expect blocks_read: when block_root? and word != Cover, not syntax?
+    expect keyword_unread: when not read?, keyword? iff ((word = Assume and not global?) or (word = Require and global?))
+}
+```
+
+`lang::part_error` states the order within a part, and
+`lang::block_errors` across two parts, the earlier part's first, which
+over a whole block, part by part, gives the first part that has one. A
+clause's keyword error is none of these: `lang::item_error` states that an
+item reports it only if it has no static error of its syntax, Lean's
+grammar's anywhere in the item or a part's. Which clauses count is decided
+by the item's structure, its `ItemShape`: every clause of every block of the
+item, at any depth. That covers a procedure's, a function's and a global
+expectation's members, and a trait's members, a method's, a procedure's
+or an expectation's, those that the trait does not take included, and an
+item under a `set_option ... in`. Each front end only reads the shape from
+its own representation of the item:
+
+```fren
+-- A kind of static error of a part of a block, in the order the part is read.
+pub ordered enum BlockCheck { Modifier, Syntax, Rejected }
+
+pub proc part_error(
+    modifier?,           -- a modifier that the part does not take
+    syntax?,             -- an error of the part's own syntax (of a clause's, `clause_errors`)
+    rejected?,           -- the block does not take the part
+): (det reported: Option<BlockCheck>) {
+    use self::BlockCheck::{Modifier, Rejected, Syntax}
+
+    ensure rule: reported = (if modifier? then Option::Some(Modifier)
+        else if syntax? then Option::Some(Syntax)
+        else if rejected? then Option::Some(Rejected)
+        else Option::None)
+
+    expect modifier_first: when modifier?, reported = Option::Some(Modifier)
+    expect rejected_last: when reported = Option::Some(Rejected), not (modifier? or syntax?)
+    expect none: reported = Option::None iff not (modifier? or syntax? or rejected?)
+}
+
+pub proc block_errors(
+    earlier: Option<BlockCheck>,     -- the error reported of the earlier part, if any
+    later: Option<BlockCheck>,       -- of the later part
+): (det reported: Option<BlockCheck>, det from_earlier?) {
+    ensure rule: reported = (if earlier = Option::None then later else earlier)
+    ensure source: from_earlier? iff earlier != Option::None
+
+    expect earlier_wins: when earlier != Option::None, reported = earlier
+}
+
+-- The clauses of an item: none; a clause that starts with the word, in a
+-- global expectation's block if marked, then the rest; or a member's own,
+-- then the rest.
+pub enum ItemShape { End, Clause(ClauseWord, Bool, ItemShape), Member(ItemShape, ItemShape) }
+
+-- Whether some clause of an item of the shape is written with the other block's keyword.
+pub fn any_wrong_keyword?(shape: ItemShape) := match shape {
+    ItemShape::End => false,
+    ItemShape::Clause(word, global?, rest) =>
+        wrong_keyword?(word, global?) or any_wrong_keyword?(rest),
+    ItemShape::Member(member, rest) => any_wrong_keyword?(member) or any_wrong_keyword?(rest),
+}
+
+-- What an item reports first: nothing, an error of its syntax, or one of a clause's keyword.
+pub enum ItemError { NoError, Syntax, Keyword }
+
+set_option fren.enumeration.size 2 in
+set_option fren.evidence "enumerated" in
+pub proc item_error(
+    syntax?,             -- a static error of the item's syntax: Lean's grammar's, or a part's (`block_errors`)
+    shape: ItemShape,        -- the item's clauses, every member's at any depth, those the item rejects included
+): (det keyword?, det reported: ItemError) {
+    ensure keyword_rule: keyword? iff any_wrong_keyword?(shape)
+    ensure rule: reported = (if syntax? then ItemError::Syntax else if keyword? then ItemError::Keyword
+        else ItemError::NoError)
+
+    expect syntax_first: when syntax?, reported = ItemError::Syntax
+    expect keyword_alone: reported = ItemError::Keyword iff (keyword? and not syntax?)
+    expect member_clause: when shape = ItemShape::Member(
+        ItemShape::Clause(ClauseWord::Assume, false, ItemShape::End),
+        ItemShape::End
+    ),
+        keyword?
+}
+```
 
 ## Shadowing
 
@@ -416,7 +594,7 @@ pub proc nat_variable(
     own_output?,         -- an output of the procedure itself, rather than a parameter or a call's variable
     defined?,            -- a defined variable
 ): (det brought: Brought) {
-    assume only_outputs: when defined?, own_output?
+    require only_outputs: when defined?, own_output?
 
     ensure rule: brought = (if defined? then Brought::Nothing
         else if own_output? then Brought::Guarantee

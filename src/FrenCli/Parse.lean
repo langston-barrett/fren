@@ -4,6 +4,7 @@ import FrenCore.Closures
 import FrenCore.Evidence
 import FrenCore.FnBlocks
 import FrenCore.Generics
+import FrenCore.Global
 import FrenCore.Names
 import FrenCore.Procedures
 import FrenCore.SubsetTypes
@@ -340,7 +341,7 @@ def subsetCheckIdent (typeName : Ident) (part : String) : Ident :=
 wrap an explicit Boolean block. -/
 partial def Expr.blockRoot : Expr → Bool
   | .block .. => true
-  | .when _ _ _ body => body.blockRoot
+  | .when _ _ _ body | .«let» _ _ body _ => body.blockRoot
   | _ => false
 
 /-- The positive clause positions that distribute into independent leaves. -/
@@ -554,7 +555,20 @@ its lowering (`Reqs/Lang/Items#function-blocks`). -/
   /-- `law n(x: T, y?): e`, a member of a trait: its variables, each with its
   type after `:` if written, and its equation. -/
   | law (name : Ident) (params : Array (Ident × Option (Array Ident))) (body : Expr)
+  /-- An item, read whole with no error of its syntax, whose first error
+  is a clause's keyword's (`lang::item_error`): the error, which the
+  elaborator reports, and nothing else of the item. -/
+  | broken (span : Span) (msg : Fren.Core.Msg)
   deriving Inhabited
+
+/-- `it`, broken by the error `msg` at `span`: the item under any
+`set_option ... in`, whose setting stays, as the Lean front end reads the
+setting and then fails the item under it. -/
+def Item.breakWith (it : Item) (span : Span) (msg : Fren.Core.Msg) : Item :=
+  match it with
+  | .lintSetting stx opt value valueSpan removal (some body) =>
+    .lintSetting stx opt value valueSpan removal (some (body.breakWith span msg))
+  | _ => .broken span msg
 
 structure ParseError where
   span : Span
@@ -696,6 +710,11 @@ structure PState where
   /-- The lists and blocks open at the current token, innermost last, with
   their commas so far. -/
   openLists : Array Bracketed := #[]
+  /-- The clauses of the item being read, in source order, each with its
+  keyword, whether it is in a global expectation's block, and where its
+  keyword is: the item's structure (`Fren.Core.ItemShape`), from which it
+  reports a keyword error once it is read whole (`Fren.Core.itemError?`). -/
+  clauses : Array (Fren.Core.ClauseWord × Bool × Span) := #[]
 
 abbrev P := StateT PState (Except ParseError)
 
@@ -1768,7 +1787,7 @@ def member : P Member := do
   if let some m := det? <|> pub? then
     let mod := if isDet then "det" else "pub"
     let what := if isWord t "call" then "a call"
-      else if isWord t "assume" || isWord t "ensure" || isKw t "expect" || isWord t "cover" then "a constraint"
+      else if isWord t "assume" || isWord t "require" || isWord t "ensure" || isKw t "expect" || isWord t "cover" then "a constraint"
       else if isWord t "out" then "`out`"
       else if isKw t "exists" then "`exists`" else if isKw t "let" then "`let`"
       else t.tok.describe
@@ -1815,26 +1834,58 @@ def member : P Member := do
     closeList
     discard (expectKw ")")
     return .inst x comp args (start.to (← lastSpan))
-  let kind? := if isWord t "assume" then some PropKind.assume
+  -- A clause about the inputs is written `assume` in a global
+  -- expectation's block, and `require` in a procedure's or a function's
+  -- (`lang::precondition_word`).
+  let global := (← get).proc?.any (·.global)
+  let word? : Option Fren.Core.ClauseWord := if isWord t "assume" then some .assume
+    else if isWord t "require" then some .require
     else if isWord t "ensure" then some .ensure
     else if isKw t "expect" then some .expect
     else if isWord t "cover" then some .cover
     else none
+  let kind? := word?.map fun
+    | .require | .assume => PropKind.assume
+    | .ensure => .ensure
+    | .expect => .expect
+    | .cover => .cover
   if isKw t "," then
     err t.span "F0104" "expected a member or `}`, found `,`" (some "unexpected `,`")
       #["note: the members of a procedure are not separated by commas"] #[{ msg := "remove it", replacement := "" }]
   let some kind := kind?
-    | fail t "a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`"
-        #["use", "assume", "exists", "let", "out", "call", "det", "ensure", "expect", "cover"]
+    | let pre := Fren.Core.preconditionKeyword global
+      fail t s!"a member (`use`, `{pre}`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`"
+        #["use", pre, "exists", "let", "out", "call", "det", "ensure", "expect", "cover"]
   discard bump
   let state ← get
-  if ((← peek).tok matches .ident _) && (state.toks[state.pos + 1]?).any (isKw · ":") then
-    let x ← ident
-    discard (expectKw ":")
-    return .prop kind x (← top)
-  let expression ← top
-  unless kind != .cover && expression.blockRoot do fail t "a named clause or a Boolean block"
-  return .prop kind { name := "", span := t.span } expression
+  let clause : P Member := do
+    if ((← peek).tok matches .ident _) && (state.toks[state.pos + 1]?).any (isKw · ":") then
+      let x ← ident
+      discard (expectKw ":")
+      return .prop kind x (← top)
+    return .prop kind { name := "", span := t.span } (← top)
+  -- The clause is part of the item's structure, from which the error of
+  -- its keyword is reported once the item is read whole
+  -- (`Fren.Core.itemError?`, `lang::item_error`).
+  if let some w := word? then
+    modify fun s => { s with clauses := s.clauses.push (w, global, t.span) }
+  -- The errors of its syntax, the first of them as both front ends report
+  -- it (`Fren.Core.firstPartError?`, `lang::part_error`): its own, and,
+  -- once it is read, that of how it is written (`Fren.Core.clauseSyntaxError?`,
+  -- `lang::clause_errors`), at the keyword.
+  let read ← try Except.ok <$> clause catch e => pure (.error e)
+  let form? : Option Fren.Core.ClauseForm := match read with
+    | .ok (.prop _ x e) => some { labelled := !x.name.isEmpty, blockRoot := e.blockRoot }
+    | _ => none
+  let own : List (Fren.Core.BlockCheck × ParseError) := match read with
+    | .error e => [(.syntax, e)]
+    | .ok _ => []
+  let written : List (Fren.Core.BlockCheck × ParseError) :=
+    ((word?.bind (Fren.Core.clauseSyntaxError? · form?)).map fun msg => (.syntax, { span := t.span, msg })).toList
+  if let some e := Fren.Core.firstPartError? (own ++ written) then throw e
+  match read with
+  | .ok m => return m
+  | .error e => throw e
 
 /-- The names that the tokens within `sp` mention: each identifier's
 first segment, without the `!` of shadowing. -/
@@ -1868,7 +1919,7 @@ def withDefs (defs : Array (Ident × Option (Array Ident) × Expr)) (e : Expr) :
 /-- A function written with a result and a block, after its parameters
 (`Reqs/Lang/Items#function-blocks`): `: (r: T) { members }`. It is the
 function whose body is its `out` member's expression and whose contract is
-its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
+its `require`s and `ensure`s, each with the result, `r := f(x)`, and the
 `let`s it needs as a `where` clause (`F0442`–`F0445`, `F0165`). -/
 def fnBlock (isPub : Bool) (name : Ident) (typeParams : Array Ident)
     (params : Array (Array Ident × Option (Array Ident))) : P Item := do
@@ -2013,7 +2064,7 @@ def procRest (name : Ident) (global := false) : P (Array Member × Array Member 
     let x ← ident
     let ty ← type?
     if let some d ← eatKw ":=" then
-      throw { span := d.span, msg := Fren.Core.inputDefinitionMsg }
+      throw { span := d.span, msg := Fren.Core.inputDefinitionMsg global }
     header := header.push (.var true true false x ty none)
     if !(← listComma) then break
   closeList
@@ -2357,7 +2408,8 @@ def header : P Unit := do
       modify fun s => { s with layout.items := s.layout.items.push (first, first + 1) }
     else break
 
-/-- Parses a file, stopping at the first error. -/
+/-- Parses a file, stopping at the first error of its syntax. An item that
+has none but has a clause's keyword's error is broken (`lang::item_error`). -/
 def file : P (Array Item) := do
   header
   let mut items := #[]
@@ -2365,22 +2417,47 @@ def file : P (Array Item) := do
     if (← peek).tok == .eof then break
     let start := (← peek).span.start
     let first := (← get).pos
-    modify fun s => { s with itemStarts := s.itemStarts.push start, items := #[] }
-    items := items.push (← item)
+    modify fun s => { s with itemStarts := s.itemStarts.push start, items := #[], clauses := #[] }
+    let it ← item
+    let shape := Fren.Core.ItemShape.ofList (← get).clauses.toList
+    items := items.push (match Fren.Core.itemError? none shape (fun msg span => (span, msg)) with
+      | some (span, msg) => it.breakWith span msg
+      | none => it)
     modify fun s => { s with layout.items := s.layout.items.push (first, s.pos - 1) }
   return items
 
+/-- The error of the first item of `items` that a keyword error breaks
+(`Item.broken`), under any `set_option ... in`, if any. -/
+def firstBroken? (items : Array Item) : Option ParseError :=
+  items.findSome? brokenIn?
+where
+  brokenIn? : Item → Option ParseError
+    | .broken span msg => some { span, msg }
+    | .lintSetting _ _ _ _ _ (some body) => brokenIn? body
+    | _ => none
+
 end Parser
 
-def parse (toks : Array Token) (src : Array Char) : Except ParseError (Array Item) :=
-  (Parser.file).run' { toks, src }
+/-- The items of a file, or the error of its parser, or of its first broken
+item (`Parser.firstBroken?`): what the evaluator reads, which needs a whole
+file. -/
+def parse (toks : Array Token) (src : Array Char) : Except ParseError (Array Item) := do
+  let items ← (Parser.file).run' { toks, src }
+  match Parser.firstBroken? items with
+  | some e => throw e
+  | none => pure items
 
-/-- The items of a file, with where each starts in the source. -/
+/-- The items of a file, with where each starts in the source: what the
+elaborator reads, which reports a broken item's error and checks the
+others (`lang::item_error`). -/
 def parseItems (toks : Array Token) (src : Array Char) : Except ParseError (Array Item × Array Nat) :=
   (fun (items, s) => (items, s.itemStarts)) <$> (Parser.file).run { toks, src }
 
 /-- The layout of a file that parses. -/
-def parseLayout (toks : Array Token) (src : Array Char) : Except ParseError Layout :=
-  (·.2.layout) <$> (Parser.file).run { toks, src }
+def parseLayout (toks : Array Token) (src : Array Char) : Except ParseError Layout := do
+  let (items, s) ← (Parser.file).run { toks, src }
+  match Parser.firstBroken? items with
+  | some e => throw e
+  | none => pure s.layout
 
 end FrenCli

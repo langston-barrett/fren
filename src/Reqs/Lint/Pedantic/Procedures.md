@@ -12,7 +12,8 @@ something of its parameters, which is what a global expectation is for. A
 global expectation means what its expectations mean in a procedure with its
 parameters as inputs, its assumptions, its calls and its definitions, and no
 outputs or guarantees (see [Meaning](../../Lang/Global.md#meaning)). So the
-rewrite that the message suggests, `expect` in place of `proc`, keeps what
+rewrite that the message suggests, `expect` in place of `proc` and
+`assume` in place of each `require`, keeps what
 each claim means and how it is checked: each expectation and cover goal,
 the preconditions of the calls, and that the assumptions can hold
 together. The procedure's realizability check had no guarantee to realize.

@@ -1,2 +1,2 @@
 -- Members separated by commas (F0104).
-proc c(x: Int) { assume a: x > 0, assume b: x < 9 }
+proc c(x: Int) { require a: x > 0, require b: x < 9 }

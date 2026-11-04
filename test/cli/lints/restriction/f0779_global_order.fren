@@ -1,0 +1,8 @@
+-- `arbitrary_source_item_ordering` in a global expectation: its note
+-- names a global expectation's members, whose assumptions are `assume`s.
+set_option fren.lint.arbitrary_source_item_ordering "warn"
+
+expect global_unordered(x: Int) {
+    expect e: x < 101
+    assume small: x < 100
+}

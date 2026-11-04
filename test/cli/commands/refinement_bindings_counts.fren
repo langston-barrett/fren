@@ -10,7 +10,7 @@ proc related(r: Rel<E, E>, s: Set<E>): (t: Rel<E, E>, size: Int) {
 }
 
 proc counted(n: Int): (size: Int) {
-    assume pos: n >= 0
+    require pos: n >= 0
     ensure r: size = 0 or n > 0
 }
 

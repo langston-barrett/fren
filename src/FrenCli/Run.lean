@@ -512,11 +512,13 @@ def parseText (chars : Array Char) : Parsed :=
     | .ok (items, starts) => .ok (toks, items, starts, literalLints chars toks comments)
 
 /-- The items of a parsed file, or the headline of its lexer's or else its
-parser's error: what the evaluator reads of it (`readItems`), by
-`parsedItems_parseText`. -/
+parser's error, or that of its first broken item (`Parser.firstBroken?`):
+what the evaluator reads of it (`readItems`), by `parsedItems_parseText`. -/
 def parsedItems : Parsed → Except String (Array Item)
   | .error (_, msg) => throw msg.headline
-  | .ok (_, items, _) => pure items
+  | .ok (_, items, _) => match Parser.firstBroken? items with
+    | some e => throw e.msg.headline
+    | none => pure items
 
 /-- The evaluator's reading of a file's items (`readItems`, which
 `specStateOf` lowers) is that of the elaborator's parse of it, so that it
@@ -525,9 +527,16 @@ theorem parsedItems_parseText (chars : Array Char) : parsedItems (parseText char
   unfold parseText readItems lex parse parseItems
   rcases h : lexWithComments chars with e | ⟨toks, comments⟩
   · rfl
-  · rcases h' : StateT.run Parser.file { toks, src := chars } with e | ⟨items, s⟩ <;>
-      simp only [StateT.run', h', Functor.map, Except.map] <;>
-      simp only [StateT.run] at h' <;> simp only [h'] <;> rfl
+  · rcases h' : StateT.run Parser.file { toks, src := chars } with e | ⟨items, s⟩
+    · simp only [StateT.run', h', Functor.map, Except.map]
+      simp only [StateT.run] at h'
+      simp only [h']
+      rfl
+    · simp only [StateT.run', h', Functor.map, Except.map]
+      simp only [StateT.run] at h'
+      simp only [h']
+      -- A file that parses: both stop at its first broken item.
+      rcases hb : Parser.firstBroken? items with _ | e <;> simp only [parsedItems, hb, Bind.bind, Except.bind] <;> rfl
 
 /-- `elabText st file chars`, where `p` is `parseText chars`: the same
 cases, after the same lexing and parsing, so that a file parsed once can
@@ -2027,6 +2036,12 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       inconclusive := inconclusive || Mutate.inconclusive rs rs'
     return (killers, inconclusive)
   let mut tallies : Std.HashMap Lean.Name Mutate.Tally := {}
+  -- This ledger belongs to the command, including when there is no test
+  -- probe. Every decision goes through the same recorder.
+  let decisions ← IO.mkRef (#[] : Array String)
+  let record (d : Decision) : IO Unit := do
+    decisions.modify (·.push d.id)
+    if let some probe := probe? then probe.decisions.modify (·.push d)
   for m in selected do
     let chars' := m.apply files[m.file]!.2
     let parsed' := parseText chars'
@@ -2042,7 +2057,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       if let some e := errors.find? (·.lint?.isNone) then
         report (Msg.internal s!"the mutant `{m.id}` has a static error: {e.msg.headline}") .error
       tally := tally.add .unviable
-      if let some probe := probe? then probe.decisions.modify (·.push { id := m.id, outcome := .unviable, killers := #[] })
+      record { id := m.id, outcome := .unviable, killers := #[] }
     else
       let spec'? := mutantSpec parsed prefixes m parsed' st'.callTargs
       if let .error e := spec'? then
@@ -2063,7 +2078,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       let equivalent? ← if killed then pure (some false) else Mutate.equivalent st prelude st' Mutate.equivalenceTimeout cache
       let outcome := Mutate.outcome true killed (equivalent? == some true)
       tally := tally.add outcome
-      if let some probe := probe? then probe.decisions.modify (·.push { id := m.id, outcome, killers := killers₁ ++ killers₂ })
+      record { id := m.id, outcome, killers := killers₁ ++ killers₂ }
       if outcome == .survived then report (Mutate.survivedMsg m equivalent?.isNone (inconclusive₁ || inconclusive₂))
       if args.checker == .both && Mutate.missed bySolver byTesting then
         tally := { tally with missed := tally.missed + 1 }
@@ -2074,6 +2089,11 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       printAt p path chars severity msg { start := m.span.start, stop := m.span.stop }
       shown.modify (·.push msg)
       sevs.modify (·.push severity)
+  if let some id := Mutate.decisionError? (selected.map (·.id)) (← decisions.get) then
+    let msg := Msg.internal s!"the decisions for mutant `{id}` do not match selection"
+    IO.eprint (Fren.Core.renderPlain .error msg p)
+    shown.modify (·.push msg)
+    sevs.modify (·.push .error)
   -- Each check once, though both ways of checking ran it.
   let notPassing := ((← solved.get).toArray ++ (← tested.get).toArray).foldl (init := ({} : Std.HashSet String)) fun acc (k, rs) =>
     (Mutate.keyed rs).foldl (init := acc) fun acc (rk, r) =>

@@ -40,7 +40,7 @@ example (n cx cy : Nat) :
 
 -- Neither an abstract assumption nor a similarly named private let is a premise.
 proc impossible(x: Int): (r: Int) {
-  assume unavailable: false
+  require unavailable: false
   let y: Int := x + 1
   ensure impossible: r = y
 }
@@ -115,7 +115,7 @@ expect failed_proof(n: Nat) {
 }
 
 proc false_spec(x: Int): (r: Int) {
-  assume excluded: false
+  require excluded: false
   ensure impossible: false
 }
 -- If spec assumptions were introduced, contradiction would succeed.

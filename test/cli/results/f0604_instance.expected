@@ -5,7 +5,7 @@ error[F0604]: the assumption `nonneg` of `sub` may not hold for call `c::s`
   |          ^ may violate `sub::nonneg`
   |
   = counterexample: i = -1
-  = help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it
+  = help: choose the call's arguments so that the assumption holds, or add a `require` that guarantees it
 
 warning[F0664]: the realizability of `c` rests on the assumption `sub::nonneg` of call `s`, which did not pass
  --> test/cli/results/f0604_instance.fren:7:6

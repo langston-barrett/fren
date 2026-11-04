@@ -5,7 +5,7 @@ warning[F0846]: procedure `colder_is_cold` has no outputs
   |      ^^^^^^^^^^^^^^ constrains nothing
   |
   = note: it has no results, and each of its members is one a global expectation accepts, and nothing in this file calls, refines or names it, so it is a claim about its parameters
-  = help: write it as a global expectation, `expect` in place of `proc`, unless another file calls it
+  = help: write it as a global expectation, `expect` in place of `proc` and `assume` in place of each `require`, unless another file calls it
   = note: `proc_without_outputs` is set to `warn`
 
 warning[F0846]: procedure `nothing` has no outputs
@@ -15,7 +15,7 @@ warning[F0846]: procedure `nothing` has no outputs
    |      ^^^^^^^ constrains nothing
    |
    = note: it has no results, and each of its members is one a global expectation accepts, and nothing in this file calls, refines or names it, so it is a claim about its parameters
-   = help: write it as a global expectation, `expect` in place of `proc`, unless another file calls it
+   = help: write it as a global expectation, `expect` in place of `proc` and `assume` in place of each `require`, unless another file calls it
 
 For more information about this error, try `fren --explain F0846`.
 exit=0

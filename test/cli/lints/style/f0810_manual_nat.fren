@@ -1,6 +1,6 @@
 -- `manual_nat`, on an input and an output.
 proc c(n: Int, k: Int): (m: Int) {
-    assume counts: n >= 0 and k < n
+    require counts: n >= 0 and k < n
 
     ensure r: 0 <= m and m <= n - k
 }

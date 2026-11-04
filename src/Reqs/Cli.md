@@ -320,7 +320,7 @@ pub proc logic(
     use self::Logic::{All, HigherOrder, Quantified, QuantifierFree}
     use self::Theory::{Sequences, Sets, Strings}
 
-    assume relations_are_sets: when projection?, Sets in theories
+    require relations_are_sets: when projection?, Sets in theories
 
     ensure base: when theories = {},
         logic = (if kind = Realizability or quantified? then Quantified else QuantifierFree)
@@ -496,8 +496,8 @@ pub proc query_symbols(a: QuerySymbol, b: QuerySymbol): (
     det same?,                   -- `a` and `b` have one symbol
 ) {
     -- Each is of a name, which never contains `#`, and has its number in decimal.
-    assume names: not base(a).contains?("#") and not base(b).contains?("#")
-    assume numbers: decimal?(a) and decimal?(b)
+    require names: not base(a).contains?("#") and not base(b).contains?("#")
+    require numbers: decimal?(a) and decimal?(b)
 
     out symbol_a := text(a)
     out symbol_b := text(b)
@@ -577,7 +577,7 @@ pub proc goal_introduction(
     i: Int,                      -- a position among them
 ): (det introduced?) {           -- the head at `i` is introduced
     -- At most `Fren.Core.goalIntroductionLimit` heads; a goal with more, which no spec writes, keeps the rest.
-    assume within_limit: heads.len <= 1024
+    require within_limit: heads.len <= 1024
 
     ensure rule: introduced? iff introducible_through?(heads, i)
 }
@@ -929,7 +929,7 @@ pub proc query_cache(
 ): (det hit?) {
     use self::Answer::{Sat, Unknown}
 
-    assume kept: when found?, answer != Unknown
+    require kept: when found?, answer != Unknown
     ensure rule: hit? iff (found? and stored = asked and not (want_model? and answer = Sat))
 
     expect exact: when hit?, stored.script = asked.script and stored.solver = asked.solver
@@ -955,7 +955,7 @@ pub proc query_entry(
 ): (det text?, det read: Option<Entry>) {
     use self::Answer::{SatWithModel, Unknown}
 
-    assume model_only_kept: when written.answer != SatWithModel, written.model = []
+    require model_only_kept: when written.answer != SatWithModel, written.model = []
     ensure kept: text? iff (written.answer != Unknown
         and (forall (b: Binding), when b in written.model, all_text?(b.name)))
     out read := if text? then Option::Some(written) else Option::None
@@ -974,7 +974,7 @@ pub proc contradicts(
 ): (det contradiction?) {
     use self::Answer::{SatWithModel, Unknown, Unsat}
 
-    assume both_kept: fresh != Unknown and kept != Unknown
+    require both_kept: fresh != Unknown and kept != Unknown
     ensure rule: contradiction? iff ((fresh = Unsat) != (kept = Unsat)
         or (fresh = SatWithModel and kept = SatWithModel and not same_model?))
 

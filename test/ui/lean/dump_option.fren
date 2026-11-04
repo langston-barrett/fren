@@ -7,7 +7,7 @@
 set_option fren.dump "obligation"
 
 proc c(n: Int): (m: Int) {
-    assume a: n > 0
+    require a: n > 0
     ensure r: m = n + 1
 }
 --~$ warning: `fren.dump` is `"obligation"`, which is not a dump that `#fren_check` prints: only `"obligations"` is; checking without a dump

@@ -397,7 +397,7 @@ pub proc instantiation(
         (if param_index(ty) < arguments.len then arguments[param_index(ty)] else ty)
         else with_parts(ty, instantiated)
 
-    assume each_part: instantiated.len = parts(ty).len
+    require each_part: instantiated.len = parts(ty).len
 }
 ```
 
@@ -506,7 +506,7 @@ pub proc type_argument_inference(
     out known? := expected? or (giver >= 0 and matched?)
     out argument := if expected? then expected_arg else widened(matched)
 
-    assume as_many: synthesizes.len = declared.len
+    require as_many: synthesizes.len = declared.len
 
     expect from_expected: when expected?, known? and argument = expected_arg
     expect no_giver: when not expected? and giver < 0, not known?
@@ -667,8 +667,8 @@ pub proc construction_order(
         ++ (if params >= 3 then [expected? or Gives(P2) in values] else [])
     out unknown? := false in given
 
-    assume few: values.len <= 3 and params <= 3
-    assume own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
+    require few: values.len <= 3 and params <= 3
+    require own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
 
     expect each_once: order.len = values.len
     expect expected_in_order: when expected? and values.len = 3, order = [0, 1, 2] and not unknown?
@@ -793,7 +793,7 @@ pub proc instance_values(
     out pair_finite? := a >= 0 and b >= 0
     out list := -1
 
-    assume counts: a >= -1 and b >= -1
+    require counts: a >= -1 and b >= -1
 
     expect option_finite: option >= 0 iff a >= 0
     expect option_bool: when a = 2, option = 3

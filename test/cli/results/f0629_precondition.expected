@@ -6,7 +6,7 @@ error[F0629]: the precondition `in_range` of `nth` may not hold at this applicat
   |
   = counterexample: q = [], x = 0
   = note: where a precondition fails, the application's value is unknown, or not what the function is for
-  = help: guard the application, as in `p(x) and f(x) = y`, or assume what the precondition needs
+  = help: guard the application, as in `p(x) and f(x) = y`, or add a `require` that implies the precondition
 
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 

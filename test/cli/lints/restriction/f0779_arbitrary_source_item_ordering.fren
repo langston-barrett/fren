@@ -4,5 +4,5 @@ set_option fren.lint.arbitrary_source_item_ordering "warn"
 
 pub proc c(x: Int): (p?) {
     ensure r: p? iff x > 0
-    assume a: x < 10
+    require a: x < 10
 }

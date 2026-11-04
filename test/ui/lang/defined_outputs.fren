@@ -35,7 +35,7 @@ proc chained(a: Int): (total: Int) {
 fn f(Int): Int
 
 proc mentions(x: Int): (y: Int) {
-    assume positive: k > 0
+    require positive: k > 0
     let k: Int := x + 1
 
     call w := chained(k)

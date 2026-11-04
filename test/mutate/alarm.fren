@@ -5,7 +5,7 @@
 mod alarm
 
 pub proc threshold(x: Int, limit: Int): (det over?) {
-    assume positive: limit > 0
+    require positive: limit > 0
     ensure rule: over? iff x > limit
 
     expect small: when x <= 1, not over?

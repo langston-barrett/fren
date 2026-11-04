@@ -187,7 +187,7 @@ pub proc unused_closure_params(
     call s := scope(body)
 
     -- The parameters left out are those written with a leading `_`.
-    assume left_out: forall (x: Local), x in opted_out iff opted_out?(written_name(x))
+    require left_out: forall (x: Local), x in opted_out iff opted_out?(written_name(x))
 
     out unused := (names minus opted_out) minus s.free
 
@@ -212,8 +212,8 @@ pub proc unused_definitions(
     body: Set<Local>,                    -- the names free in the body
     k: DefIndex,
 ): (det unused?) {
-    assume one_name: forall (p: DefIndex) (a b: Local), when (p, a) in names and (p, b) in names, a = b
-    assume earlier: uses.domain subset names.domain
+    require one_name: forall (p: DefIndex) (a b: Local), when (p, a) in names and (p, b) in names, a = b
+    require earlier: uses.domain subset names.domain
 
     ensure rule: unused? iff (k in names.domain and not (exists (x: Local),
         (k, x) in names and ((x in body and not (exists (m: DefIndex), k < m and (m, x) in names))
@@ -326,17 +326,17 @@ not a use: it checks only the abstraction's guarantees, and introduces
 none of its assumptions, so removing one changes no verdict of the
 refinement. An input is also used when another assumption mentions it and a
 used variable, since the assumption constrains the two together, and so
-on transitively: with `assume a: n > 0`, `assume b: m = 2 * n` and `ensure r:
+on transitively: with `require a: n > 0`, `require b: m = 2 * n` and `ensure r:
 y = m`, `m` is used, so `n` is, and without `a`, `y > 0` would not follow.
 An uninterpreted function links assumptions in the same way as a
 variable, through its values: it is *used* when one of the above applies
 it, and an assumption that applies a used function is used, as is an
-input it mentions. With `assume a: n = 3 and g(n) > 0` and `ensure r: y =
+input it mentions. With `require a: n = 3 and g(n) > 0` and `ensure r: y =
 g(3)`, `a` says that `g(3) > 0`, so it is used. A constant's value and a
 defined function's body apply no uninterpreted function, so they link
 nothing. With these rules, removing a reported assumption together with
 the reported assumptions it is linked to never makes a check fail. Alone,
-it may: with `assume a: n >= 0 and n < q.len` and `assume b: q[n] > 0`,
+it may: with `require a: n >= 0 and n < q.len` and `require b: q[n] > 0`,
 both are reported, but `a` guards the index in `b`, so `b` without `a` is
 not defined (`F0611`). So the message names the reported assumptions
 linked to it. The variables `V` and functions of such a group are

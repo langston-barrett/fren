@@ -1,0 +1,7 @@
+-- A procedure's precondition, unlabelled, under a leading `when`, is
+-- written `require`, not `assume` (`F0169`), reported at the keyword.
+proc p(x: Int, b?): (y: Int) {
+    assume when b?, and { pos: x > 0 }  --~ error: a precondition is written `require`, not `assume`
+    ensure r: y = x
+}
+--@ exit: 2

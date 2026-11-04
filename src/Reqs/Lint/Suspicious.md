@@ -13,7 +13,7 @@ indexes](Suspicious/Methods.md), of [literals](Suspicious/Literals.md), of
 
 `duplicate_constraint` fires on a constraint of a procedure that is
 written the same as an earlier one of the procedure, whatever their
-kinds, `assume`, `ensure` or `expect`, and on a global expectation in the
+kinds, `require`, `ensure` or `expect`, or `assume` in a global expectation, and on a global expectation in the
 [short form](../Lang/Global.md#the-short-form) written the same as an
 earlier one of its module in the same file. A global expectation with a
 block is checked as a procedure is: its constraints are compared with each
@@ -38,9 +38,9 @@ before it. This keeps the meaning: a constraint
 that repeats one of its kind adds nothing to the procedure, and an
 expectation that repeats one claims nothing more, and a cover goal that
 repeats one is met exactly when that one is, so it checks nothing more. An `expect` that repeats
-an `ensure` or an `assume` is not fixed: it tests nothing, since it follows
+an `ensure` or a `require` is not fixed: it tests nothing, since it follows
 from what it repeats, and was probably meant to say something stronger,
-which the message says. Nor is an `ensure` that repeats an `assume`, or the
+which the message says. Nor is an `ensure` that repeats a `require`, or the
 reverse, since the two mean different things. `lint::duplicate_constraint`
 states this, from the two as [written](Meaning.md#expressions-as-written):
 
@@ -60,7 +60,7 @@ pub proc duplicate_constraint(
     det fixed?,          -- the fix removes the later
 ) {
     -- A cover goal is compared only with cover goals.
-    assume covers_apart: (earlier = ConstraintKind::Cover) iff (later = ConstraintKind::Cover)
+    require covers_apart: (earlier = ConstraintKind::Cover) iff (later = ConstraintKind::Cover)
     out same? := earlier_text = later_text
 
     ensure rule: fires? iff same?

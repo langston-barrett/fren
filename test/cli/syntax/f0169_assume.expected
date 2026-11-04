@@ -1,0 +1,17 @@
+error[F0169]: a precondition is written `require`, not `assume`
+ --> test/cli/syntax/f0169_assume.fren:3:5
+  |
+3 |     assume even: x mod 2 = 0
+  |     ^^^^^^ write `require`
+  |
+  = note: `assume` starts a global expectation's assumptions; a procedure's or a function's precondition is a `require`
+help: write `require`
+  |
+3 -     assume even: x mod 2 = 0
+3 +     require even: x mod 2 = 0
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0169`.
+exit=2

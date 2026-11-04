@@ -6,6 +6,7 @@ declared with `type`. See [Types](Lang/Types.md#abstract-types).
 **Admissible input.** An input that satisfies the procedure's assumptions.
 
 **Assumption.** A constraint on a procedure's inputs, declared with
+`require`, or on a global expectation's parameters, declared with
 `assume`: what the environment promises. See [Procedures](Lang/Procedures.md).
 
 **Behaviour.** An interpretation, with a value for each of a procedure's
@@ -46,7 +47,7 @@ evaluated. See [Checks](Check.md#completeness).
 **Constraint.** An assumption, guarantee, expectation or cover goal.
 
 **Contract.** The preconditions and postconditions of a function, written
-in its block with `assume` and `ensure`. See
+in its block with `require` and `ensure`. See
 [Items](Lang/Items.md#contracts).
 
 **Counterexample.** Values of a procedure's variables that satisfy the
@@ -247,9 +248,11 @@ Its base type determines static type equivalence. See
 `ensure`: what the function gives, wherever its arguments meet its
 preconditions. See [Items](Lang/Items.md#contracts).
 
-**Precondition.** A clause of a function's contract, declared with
-`assume`: what each application's arguments must meet. See
-[Items](Lang/Items.md#contracts).
+**Precondition.** A clause declared with `require`: of a function's
+contract, what each application's arguments must meet (see
+[Items](Lang/Items.md#contracts)), or of a procedure, an **Assumption**
+about its inputs, what each call's arguments must meet (see
+[Procedures](Lang/Procedures.md)).
 
 **Prelude.** The items that every spec can use without declaring or
 importing them, `Option<T>` and `Result<T, E>` and their variants, which

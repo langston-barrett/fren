@@ -1,4 +1,4 @@
 --@ argv: trace --dump=smt test/cli/args/dump_trace.fren
 -- `--dump=smt` is an option of `fren check` alone, which the error
 -- names as written.
-proc c(n: Int) { assume a: n > 0 }
+proc c(n: Int) { require a: n > 0 }

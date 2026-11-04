@@ -4,13 +4,13 @@
 pub proc helper(v: Int): (w: Int) { ensure r: w = v }
 
 pub proc first(q: Seq<Int>): (y: Int) {
-    assume nonempty: q != []
+    require nonempty: q != []
     call h := helper(q[0])
     ensure r: y = h.w
 }
 
 pub proc exact(q: Seq<Int>): (y: Int) {
-    assume nonempty: q != []
+    require nonempty: q != []
     ensure r: y = q[0]
 }
 

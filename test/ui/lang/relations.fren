@@ -22,7 +22,7 @@ proc grant(
     b: User,
     c: User,
 ): (granted?) {
-    assume admins_exist: Admin in roles.range
+    require admins_exist: Admin in roles.range
 
     -- A user holds their own roles and those of everyone they act for, directly or not.
     ensure rule: granted? iff requested subset ((delegates.closure union {(user, user)}) join roles).image({user})
@@ -55,7 +55,7 @@ proc shapes(r: Rel<User, Role>, u: User): (held?) {
 -- the decidable core, in higher-order logic in both front ends.
 set_option fren.lint.undecidable "allow" in
 proc ids(r: Rel<Int, Int>): (p?) {
-    assume one: (1, 2) in r
+    require one: (1, 2) in r
     ensure rule: p? iff 1 in r.domain
 
     expect has: p?
@@ -70,7 +70,7 @@ fn has_one?(r: Rel<Int, Int>): (b?) { out b? := 1 in r.domain }
 
 set_option fren.lint.undecidable "allow" in
 proc through_definition(r: Rel<Int, Int>): (p?) {
-    assume one: (1, 2) in r
+    require one: (1, 2) in r
     ensure rule: p? iff has_one?(r)
 
     expect has: p?

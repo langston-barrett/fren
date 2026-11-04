@@ -65,7 +65,7 @@ proc binder_output(i: Int): (z: Int) { exists s: S ensure r: z = match s { S::A(
 proc binder_input(s: S): (z: Int) { ensure r: z = match s { S::A(a) => f(a), _ => 0 } }
 proc field_output(i: Int): (z: Int) { exists p: P ensure r: z = f(p.x) + i }
 --~^ error: the arguments of a function may not mention an output, but `p` is one
-proc binder_assume(i: Int) { exists s: S assume a: match s { S::A(a) => a > 0, _ => true } ensure r: s = S::B }
+proc binder_assume(i: Int) { exists s: S require a: match s { S::A(a) => a > 0, _ => true } ensure r: s = S::B }
 --~^ error: assumptions may only mention parameters, but `s` is an output
 proc binder_linear(s: S, t: S): (z: Int) {
     ensure r: z = (match s { S::A(a) => a, _ => 0 }) * (match t { S::A(b) => b, _ => 0 }) }   --~ error: nonlinear arithmetic is not supported

@@ -14,7 +14,7 @@ proc severity_of(x: Int): (v: Int) { ensure r: v = x }
 
 proc in_order(x: Int, shape: Shape): (y: Int) {
     use self::Shape::Square
-    assume small: x < 100
+    require small: x < 100
     let z: Int := x + 1
     call w := severity_of(x)
     ensure r: y = double(x) + triple(x) + triple(z) + half(x) + unknown(x) + w.v
@@ -23,7 +23,13 @@ proc in_order(x: Int, shape: Shape): (y: Int) {
 
 proc unordered(x: Int): (y: Int) {
     ensure r: y = x
-    assume small: x < 100  --~ warning: an assumption after a guarantee
+    require small: x < 100  --~ warning: an assumption after a guarantee
+}
+
+-- In a global expectation, whose assumptions are written `assume`.
+expect global_unordered(x: Int) {
+    expect e: x < 101
+    assume small: x < 100  --~ warning: an assumption after an expectation
 }
 
 -- With an evidence setting, which is part of the member after it.

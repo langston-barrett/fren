@@ -15,7 +15,7 @@ pub fn len(l: L): Int := match l {
 }
 
 proc p(l: L, n: Int) {
-    assume small: n < 0
+    require small: n < 0
     expect e: len(l) != n  --~ warning: could not decide whether `p::e` holds
     expect f: len(l) > 2  --~ error: expectation `p::f` does not hold
     cover g: len(l) = 3  --~ warning: could not decide whether `p::g` can be met

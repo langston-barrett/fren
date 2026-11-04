@@ -47,7 +47,7 @@ proc stuck(a?): (b?) {  --~ error: `stuck` is not realizable
 -- An instance's assumption, and a table without `_` whose unspecified
 -- value, a `Bool`, is enumerated too.
 proc gate(m: Mode): (det open?: Bool) {
-    assume on: m != Mode::Off
+    require on: m != Mode::Off
     out open? := table {
         m = Mode::Heat => true,
         m = Mode::Cool => false,

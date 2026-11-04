@@ -15,7 +15,7 @@ fn other<T>(x: T, y: T): (r: T) {  --~ error: the postconditions of `generic_uni
 
 -- Realizable for every type: the precondition gives a second value.
 fn other_than<T>(x: T, y: T): (r: T) {
-    assume apart: x != y
+    require apart: x != y
     ensure moves: other_than(x, y) != x
 }
 
@@ -27,7 +27,7 @@ fn wrapped<T>(x: T): (r: Option<T>) {  --~ error: the postconditions of `generic
 
 -- At an instance, its postconditions hold of each application.
 proc swapped(a: Int, b: Int): (det c: Int) {
-    assume apart: a != b
+    require apart: a != b
     out c := other_than(a, b)
 
     expect moved: c != a

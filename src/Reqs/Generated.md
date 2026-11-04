@@ -38,7 +38,7 @@ pub proc lean_name(
     current: Seq<String>,        -- the current Lean namespace's components, [] at the root
     path: Seq<String>,           -- the item's path's segments
 ): (name: Seq<String>) {
-    assume item: path != []
+    require item: path != []
     out name := current ++ NAMESPACE ++ path
 
     expect length: name.len = current.len + 2 + path.len
@@ -523,7 +523,7 @@ procedure's variables:
 
 | Definition | Meaning |
 |---|---|
-| `p.assume.n`, `p.ensure.n`, `p.expect.n`, `p.cover.n` | the assumption, guarantee, expectation or cover goal `n` |
+| `p.assume.n`, `p.ensure.n`, `p.expect.n`, `p.cover.n` | the assumption (written `require`, or `assume` in a global expectation), guarantee, expectation or cover goal `n` |
 | `p.call.w` | the call `w`: its arguments, and the [meaning](Lang/Procedures.md#meaning) of the called procedure |
 | `p.assumes` | the conjunction of the assumptions |
 | `p.ensures` | the conjunction of the guarantees |

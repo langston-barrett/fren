@@ -1,7 +1,7 @@
 -- `unused_assumption` on two linked assumptions: each message names the
 -- other, since `a` guards the index in `b`.
 proc c(n: Int, q: Seq<Int>): (y: Int) {
-    assume a: n >= 0 and n < q.len
-    assume b: q[n] > 0
+    require a: n >= 0 and n < q.len
+    require b: q[n] > 0
     ensure r: y = 1
 }

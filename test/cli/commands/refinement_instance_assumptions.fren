@@ -2,12 +2,12 @@
 -- the abstract component's instance `g` is a hypothesis, so it is not
 -- tested, and the summary counts one test, the expectation `r`.
 pub proc guarded(k: Int): (m: Int) {
-    assume pos: k > 0
+    require pos: k > 0
     ensure r: m = k
 }
 
 pub proc abstract(x: Int): (y: Int) {
-    assume pos: x > 0
+    require pos: x > 0
     call g := guarded(x)
     ensure r: y >= g.m
 }

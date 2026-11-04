@@ -2,7 +2,7 @@
 -- allow, each met by a witness or ruled out by its constraints.
 
 proc heater(temp: Int): (alarm?) {
-    assume sane: temp < 1000
+    require sane: temp < 1000
     exists margin: Int
 
     ensure r: alarm? iff temp > 100   --~ info: Assuming `sane` and the cover goal `silent`, `r` cannot hold.
@@ -21,7 +21,7 @@ proc heater(temp: Int): (alarm?) {
 -- does not check `silent` again. A goal over an instance's variables
 -- checks the instance's guarantees in context.
 proc panel(t: Int): (lit?) {
-    assume sane: t < 1000
+    require sane: t < 1000
 
     call h := heater(t)
 

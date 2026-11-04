@@ -48,12 +48,12 @@ swap-arithmetic-m::sub::r-db4611c658f2 test/cli/commands/mutate_list.fren:35:55 
 shift-integer-m::sub::r-ba2a33fafb20 test/cli/commands/mutate_list.fren:35:57 `1` changed to `2`
 shift-integer-m::sub::r-902a3dcac216 test/cli/commands/mutate_list.fren:35:57 `1` changed to `0`
 swap-and-or-m::sub::r-1433844be7c3 test/cli/commands/mutate_list.fren:35:59 `or` changed to `and`
-drop-conjunct-m::c::bounded-2ed241eeee14 test/cli/commands/mutate_list.fren:38:21 `x >= 0 and x <= LIMIT` changed to `x >= 0`
-drop-conjunct-m::c::bounded-decb5fe79381 test/cli/commands/mutate_list.fren:38:21 `x >= 0 and x <= LIMIT` changed to `x <= LIMIT`
-swap-comparison-m::c::bounded-0b1690c266c8 test/cli/commands/mutate_list.fren:38:23 `>=` changed to `>`
-shift-integer-m::c::bounded-dfc2e76ee279 test/cli/commands/mutate_list.fren:38:26 `0` changed to `1`
-swap-and-or-m::c::bounded-ee228067b07a test/cli/commands/mutate_list.fren:38:28 `and` changed to `or`
-swap-comparison-m::c::bounded-3738feccde07 test/cli/commands/mutate_list.fren:38:34 `<=` changed to `<`
+drop-conjunct-m::c::bounded-2ed241eeee14 test/cli/commands/mutate_list.fren:38:22 `x >= 0 and x <= LIMIT` changed to `x >= 0`
+drop-conjunct-m::c::bounded-decb5fe79381 test/cli/commands/mutate_list.fren:38:22 `x >= 0 and x <= LIMIT` changed to `x <= LIMIT`
+swap-comparison-m::c::bounded-0b1690c266c8 test/cli/commands/mutate_list.fren:38:24 `>=` changed to `>`
+shift-integer-m::c::bounded-dfc2e76ee279 test/cli/commands/mutate_list.fren:38:27 `0` changed to `1`
+swap-and-or-m::c::bounded-ee228067b07a test/cli/commands/mutate_list.fren:38:29 `and` changed to `or`
+swap-comparison-m::c::bounded-3738feccde07 test/cli/commands/mutate_list.fren:38:35 `<=` changed to `<`
 swap-arithmetic-m::c::y-7627612d3e58 test/cli/commands/mutate_list.fren:39:23 `+` changed to `-`
 shift-integer-m::c::y-d1b6b12c1386 test/cli/commands/mutate_list.fren:39:25 `1` changed to `2`
 shift-integer-m::c::y-fbb6a75c4c90 test/cli/commands/mutate_list.fren:39:25 `1` changed to `0`

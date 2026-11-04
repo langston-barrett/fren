@@ -10,7 +10,7 @@ warning[F0617]: testing never reached `m::c::e` in 100 tests: its trigger had no
 warning[F0610]: testing found no admissible behaviour of `m::guarded` in 100 tests
   --> test/cli/results/f0617_trigger_valueless.fren:19:10
    |
-19 | pub proc guarded(q: Seq<Int>) { assume seventh: when q[7] > 0, q.len > 7 }
+19 | pub proc guarded(q: Seq<Int>) { require seventh: when q[7] > 0, q.len > 7 }
    |          ^^^^^^^ untested
    |
    = note: so none of its checks were tested

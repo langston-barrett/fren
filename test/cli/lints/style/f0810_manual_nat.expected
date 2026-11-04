@@ -14,10 +14,10 @@ help: write `0 <= m <= n - k`
   |
 
 warning[F0810]: `n` is never negative, so it can be a `Nat`
- --> test/cli/lints/style/f0810_manual_nat.fren:3:20
+ --> test/cli/lints/style/f0810_manual_nat.fren:3:21
   |
-3 |     assume counts: n >= 0 and k < n
-  |                    ^^^^^^ `n` is at least 0 by this assumption
+3 |     require counts: n >= 0 and k < n
+  |                     ^^^^^^ `n` is at least 0 by this assumption
   |
   = note: a `Nat` parameter brings this assumption with its type
   = note: a call must then pass a `Nat` for `n`

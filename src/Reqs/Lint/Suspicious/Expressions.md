@@ -723,7 +723,7 @@ pub proc same_rows(
     det fires?,
     det fixed?,          -- it has a fix
 ) {
-    assume size: 1 <= rows.len <= 4
+    require size: 1 <= rows.len <= 4
 
     det let n_rows: Int := rows.len
     -- the rows' values are written the same
@@ -821,10 +821,10 @@ pub proc ifs_same_cond_never_taken(
 ) {
     use lang::{Outcome, Site, TestContext, Value, eval}
 
-    assume within: test_at < operands
-    assume texts: tests.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
+    require within: test_at < operands
+    require texts: tests.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
         and 0 <= b < forms.len and forms[a] = forms[b], tests[a].text = tests[b].text)
-    assume one_scope: forall (a: Int), when 0 <= a < tests.len, tests[a].scope = scope
+    require one_scope: forall (a: Int), when 0 <= a < tests.len, tests[a].scope = scope
 
     call c := ifs_same_cond(forms, k)
     call earlier_test := lang::test_scope(

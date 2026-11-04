@@ -9,7 +9,7 @@ open Fren.Lang
 mod contract_test
 
 pub fn nth(q: Seq<Int>, i: Int): (r: Int) {
-    assume in_range: 0 <= i < q.len
+    require in_range: 0 <= i < q.len
     out r := q[i]
 }
 
@@ -45,7 +45,7 @@ info: contract_test.rank.ensures : ∀ (x : contract_test.Key),
 
 -- `decide` proves it, under the preconditions.
 fn level(k: Key, on?): (r: Nat) {
-    assume chosen: on?
+    require chosen: on?
     ensure positive: r > 0
 }
 

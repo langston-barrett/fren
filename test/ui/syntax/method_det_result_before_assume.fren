@@ -1,0 +1,9 @@
+-- A trait method's block's errors in source order, in both front ends
+-- (`lang::block_errors`): a `det` result before an `assume`.
+trait Sized {
+    fn size(s: Self, n: Int): (det r: Int) {  --~ error: a function's block takes no `det`
+        assume a: n > 0
+        ensure low: r >= 0
+    }
+}
+--@ exit: 2

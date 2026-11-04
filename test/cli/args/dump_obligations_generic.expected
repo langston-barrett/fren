@@ -44,7 +44,7 @@
   (goal false)
 )
 (obligation
-  ; at 19:12
+  ; at 19:13
   (item c)
   (check redundancy some)
   (evidence solver)
