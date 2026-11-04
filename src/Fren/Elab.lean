@@ -9169,7 +9169,8 @@ whose members, as a component's, are `members`
 (`Reqs/Lang/Recursion#induction`): one for each of its claims and each
 candidate, in order (`Core.inductionCandidate`). Each is an item of the
 module that nothing reports, whose body is not checked as a function's,
-but only for the expectation. -/
+but only for the expectation, and which is kept apart from the defined
+functions (`State.inductionFns`). -/
 def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : CommandElabM Unit := do
   let st ← getState
   let some c := st.globals.get? path | return
@@ -9261,6 +9262,7 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
       modifyLocal fun l => { l with
         lintReports := savedLocal.lintReports, natReports := savedLocal.natReports, bodies := savedLocal.bodies
         currentItem := savedLocal.currentItem }
+      record (.inductionFn fpath)
       fns := fns.push fpath
     inductions := inductions.push (claim.getId, fns)
   record (.globalInfo path { c with inductions })

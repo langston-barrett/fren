@@ -264,14 +264,19 @@ where
     | .const _ ls => ls
     | _ => []
 
+/-- Whether a failure in Lean with the message `msg` is a limit of Lean's,
+its maximum recursion depth or heartbeats, reached: if `runtime` or the
+message says so. -/
+def limitReached (msg : String) (runtime : Bool) : Bool :=
+  runtime || (msg.splitOn "maximum recursion depth").length > 1 ||
+    (msg.splitOn "maximum number of heartbeats").length > 1
+
 /-- What a failure in Lean of `what`, such as checking a procedure, with
 the message `msg`, is reported as: a limit of Lean's, its maximum
 recursion depth or heartbeats, reached, which the user may raise, if
 `runtime` or the message says so; else an internal error, a bug in Fren. -/
 def failureMsg (what msg : String) (runtime : Bool) : Core.Msg :=
-  let limit := runtime || (msg.splitOn "maximum recursion depth").length > 1 ||
-    (msg.splitOn "maximum number of heartbeats").length > 1
-  if limit then
+  if limitReached msg runtime then
     { code? := none, headline := s!"{what} in Lean reached a limit: {msg}"
       notes := #["note: Lean stopped at one of its limits; raising it, with `set_option maxRecDepth` or `set_option maxHeartbeats` before `#fren_check`, may let the check finish"] }
   else Core.Msg.internal s!"{what} in Lean failed: {msg}"
@@ -1909,9 +1914,18 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
       if r.verdict != .inconclusive || r.detail.modelRefuted then return r
       let mut attempts := #[]
       for f in fns do
-        let some b := st0.bodies.get? f | continue
-        -- Under a heartbeat limit of its own, as the nested checks below.
-        let (rs, _, _, _) ← withCurrHeartbeats (checkComp b #[.postcondition] none hooks?)
+        let some (_, _, b) := st0.inductionFns.get? f | continue
+        -- With the function among the defined ones only for its own check
+        -- (`State.inductionFns`), under a heartbeat limit of its own, as
+        -- the nested checks below. An attempt that reaches a limit of
+        -- Lean's does not pass, and the claim stays as its check left it.
+        let saved ← getState
+        modifyEnv (frenExt.modifyState · (·.withInductionFn f))
+        let rs? ← tryCatchRuntimeEx (some <$> withCurrHeartbeats (checkComp b #[.postcondition] none hooks?))
+          fun ex => do
+            if limitReached (← ex.toMessageData.toString) ex.isRuntime then pure none else throw ex
+        modifyEnv (frenExt.modifyState · fun _ => saved)
+        let some (rs, _, _, _) := rs? | continue
         let some p := rs.find? (·.kind == .postcondition) | continue
         attempts := attempts.push p
         if p.verdict == .pass then break
