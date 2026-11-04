@@ -11,9 +11,7 @@ pub fn variant_count(l: Collision): Int := match l {
     Collision::Cons(_, r) => 1 + variant_count(r),
 }
 
-expect variant_nonnegative(a: Collision) {
-    expect nonnegative: variant_count(a) >= 0
-}
+expect variant_nonnegative(a: Collision) { expect nonnegative: variant_count(a) >= 0 }
 
 pub enum fren_induction_p0 { Z, S(Int, fren_induction_p0) }
 pub type Alias := fren_induction_p0
@@ -23,6 +21,4 @@ pub fn alias_count(l: Alias): Int := match l {
     fren_induction_p0::S(_, r) => 1 + alias_count(r),
 }
 
-expect alias_nonnegative(a: Alias) {
-    expect nonnegative: alias_count(a) >= 0
-}
+expect alias_nonnegative(a: Alias) { expect nonnegative: alias_count(a) >= 0 }
