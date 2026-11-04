@@ -327,9 +327,14 @@ pub mod testing
   `--jobs 1` with a copy of the cache of its own, so it does not answer
   from the shared path's answers either; and the ui tests' runs keep no
   answers. A case whose outputs differ only where queries reached their
-  time limit (each block that differs says so, is at the place of a check
-  that one of those is about, or is a line of the summary) runs again
-  once, and is skipped if it still differs so; `lake test` shows each skip
+  time limit runs again once, and is skipped if it still differs so. Each
+  differing decided diagnostic must match one timeout of the other run,
+  at most once, by its full file, line and column and its check question:
+  the same subject and kind, including any target, type, and row or arm
+  numbers named in the message. Unrecognized or ambiguous results cannot
+  match. A timeout may instead correspond to a silent passing check.
+  Summary counts and explain hints are excused only when these timeouts
+  explain every diagnostic difference; `lake test` shows each skip
   as a `skipped: …` line. Any other difference fails.
 - **Differential fuzzing** (`lake exe fren_fuzz [--count N] [--seed N]
   [--out DIR]`): generates random specs and compares each verdict of

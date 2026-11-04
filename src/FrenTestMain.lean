@@ -10,6 +10,7 @@ import FrenTest.OutOfFuel
 import FrenTest.Quote
 import FrenTest.ReadingBeside
 import FrenTest.SmallValues
+import FrenTest.TimeoutMatch
 import FrenTest.Ui
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -59,6 +60,7 @@ reported sorted.
 -- fren-covers: cli::agreement, fmt::safe
 
 open System Lean FrenTest.Ui FrenTest.Jobs
+open FrenTest.TimeoutMatch (onlyTimedOut)
 
 /-- The files under `dir`, in its subdirectories too, with extension `ext`. -/
 def sortedFiles (dir : FilePath) (ext : String) : IO (Array FilePath) := do
@@ -1573,64 +1575,6 @@ def copyTree (src dst : FilePath) : IO Unit := do
     let target := dst / rel
     if let some p := target.parent then IO.FS.createDirAll p
     IO.FS.writeBinFile target (← IO.FS.readBinFile f)
-
-/-- Whether an output says that a solver query reached its time limit,
-which a busier machine makes likelier (`Reqs/Cli#parallel-checking`). -/
-def timedOut (out : String) : Bool := out.contains "returned unknown (TIMEOUT)".toSlice
-
-/-- The blocks of a run's output: each diagnostic, from its line that
-starts with a letter (`warning[F0608]: …`) to the next such line, and each
-line of the summary. -/
-def outputBlocks (out : String) : Array String := Id.run do
-  let mut blocks : Array String := #[]
-  for l in out.splitOn "\n" do
-    let starts := l.toList.head?.any Char.isAlpha
-    if starts || blocks.isEmpty then blocks := blocks.push l
-    else blocks := blocks.modify (blocks.size - 1) (· ++ "\n" ++ l)
-  return blocks
-
-/-- Where a diagnostic block points (`--> FILE:LINE:COL`), if it does. -/
-def blockSite (block : String) : Option String :=
-  (block.splitOn "\n").findSome? fun l => match l.splitOn "--> " with
-    | [_, site] => some site.trimAscii.toString
-    | _ => none
-
-/-- `xs` without one occurrence of each of `ys`. -/
-def removeEach (xs ys : Array String) : Array String :=
-  ys.foldl (init := xs) fun acc y => match acc.idxOf? y with
-    | some i => acc.eraseIdx! i
-    | none => acc
-
-/-- Whether outputs `a` and `b` differ only because queries reached their
-time limit: some block that differs says so, and every block that differs
-is one that says so, or one at the place of a check that one of those is
-about, or a line of the summary, whose counts and codes those change. A
-wrong result elsewhere differs at a place where no query timed out. -/
-def onlyTimedOut (a b : String) : Bool :=
-  let (xs, ys) := (outputBlocks a, outputBlocks b)
-  let diff := removeEach xs ys ++ removeEach ys xs
-  let timed := diff.filter timedOut
-  let sites := timed.filterMap blockSite
-  let summary (block : String) :=
-    block.startsWith "fren: " || block.startsWith "Some errors have" || block.startsWith "For more information"
-  !timed.isEmpty && diff.all fun block => timedOut block || summary block || (blockSite block).any sites.contains
-
--- A check that timed out on one side only, which the other refuted, is
--- excused; the same with a wrong result at another check is not, nor is a
--- difference with no time limit reached.
-private def timedOutSide : String :=
-  "warning[F0608]: could not decide whether `p::r` is redundant: the solver returned unknown (TIMEOUT)\n --> a.fren:3:5\n" ++
-  "fren: 1 passed, 0 failed, 1 inconclusive, 0 redundant"
-private def refutedSide : String :=
-  "error[F0601]: `p::e` fails\n --> a.fren:3:5\n  = note: x = 1\n" ++
-  "fren: 1 passed, 1 failed, 0 inconclusive, 0 redundant"
-private def wrongElsewhere : String :=
-  "error[F0601]: `p::e` fails\n --> a.fren:3:5\n  = note: x = 1\n" ++
-  "error[F0601]: `p::f` fails\n --> a.fren:9:5\n  = note: x = 2\n" ++
-  "fren: 0 passed, 2 failed, 0 inconclusive, 0 redundant"
-#guard onlyTimedOut timedOutSide refutedSide
-#guard !onlyTimedOut timedOutSide wrongElsewhere
-#guard !onlyTimedOut refutedSide wrongElsewhere
 
 /-- `out` without the lines of `--verify-query-cache`'s report
 (`fren: compared …`), which only a run that compares writes. -/
