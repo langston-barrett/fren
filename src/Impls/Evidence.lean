@@ -115,7 +115,8 @@ tested model::fill_rule: "src/FrenTest/ModelDefaults.lean"
 trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
 
 -- Implementations, dispatch and what each check rests on
--- (`Reqs/Lang/Implementations`) are a design that no front end implements
+-- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under
+-- them (`Reqs/ModuleReports`), are a design that no front end implements
 -- yet (#669, stage 3), so there is no code to bind them to.
 trusted lang::module_sentence: "the design of implementations (#669, stage 3); no front end reads a module as this model yet, and its examples are checked by testing"
 trusted lang::module_rests_on: "the design of what each check rests on (#669, stage 3); the solver proves its cases ranked and the enumeration of small modules checks them acyclic"

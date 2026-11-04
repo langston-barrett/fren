@@ -7,8 +7,9 @@ that today is Inconclusive (`module.expansion`). This chapter checks that
 guarantee, *strict expansion*, over the model of
 [Implementations](Lang/Implementations.md). Nothing in it takes a report or
 a verdict that it could compute as an input. It computes a check's new own
-verdict from its kind, today's verdict and the answer of the query with
-the instances (`expansion::today_verdict`), the axioms that the check
+verdict from its kind, today's verdict and, where today's verdict is
+Inconclusive, the answer of the same query with the instances added
+(`expansion::today_verdict`), the axioms that the check
 rests on in the model (`lang::caveat_premise`, `lang::asked_of?`), and the
 rules that show every check: [`check::reported_pass`](Evidence.md#reports)
 for its verdict, `F0663` and `F0664`, and
@@ -26,19 +27,22 @@ pub mod expansion
 
 r[module.instance.models] expansion::today_verdict::{answers_but_unsat_change_nothing, passes_stay, failures_stay}
 A model of a query whose hypotheses include instances of axioms is a
-model of those instances, not always of the axioms, so it is neither a
+model of those instances, not always of the axioms, and is neither a
 counterexample nor a witness. A check whose sentences are all of today's
-forms keeps today's query, today's laws quantified among its hypotheses
+forms asks today's query, today's laws quantified among its hypotheses
 ([Traits](Lang/Traits.md#expectations)) and its contracts as today, and
-adds the instances to it. Wherever the query with the instances does not
-give `unsat`, the check has today's verdict and messages, so no model of
-the instances alone is taken as a counterexample or as a witness, and no
-pass that the quantified laws gave is lost. So the warning of
-`traits::Pos::undecided` in the ui test `test/ui/lang/traits.fren`, that it
-could not decide whether its assumptions hold with the laws, stays. Any
-other check reports such a model as a counterexample, or as a witness,
-only where Fren confirms that the model meets the axioms themselves, and is
-Inconclusive where it does not.
+takes its verdict. Only where that verdict is Inconclusive does Fren ask
+the same query with the instances added, and where that query does not
+give `unsat`, the check keeps today's verdict and messages. Any other
+check reports a model of the instances as a counterexample, or as a
+witness, only where Fren confirms that the model meets the axioms
+themselves, and is Inconclusive where it does not.
+
+> **Note:** So no model of the instances alone is taken as a
+> counterexample or as a witness, and no pass that today's query gives is
+> lost, even where the instances make a query run out of time. The warning
+> of a check that cannot decide whether its assumptions hold with the
+> laws, as `traits::Pos::undecided` in the ui tests, stays.
 
 r[module.expansion.instances] expansion::today_verdict::{only_undecided_changes, unsat_by_kind, induction_only_claims, lawless_unchanged, refuted_kept}, expansion::realizability_unchanged
 A check of today's forms that was not decided may be decided by the
@@ -46,16 +50,17 @@ instances of today's laws, where the query with them gives `unsat`. Its
 new verdict is the one that `unsat` gives a check of its kind, as
 [`check::from_unsat?`](Evidence.md#the-laws-of-a-trait) states: a pass of
 a proof, such as an expectation, and a failure of a witness check, a
-cover goal, a vacuity, redundancy or reachability check. So assumptions
-that contradict the laws are an error (`F0602`) where today they are a
-warning that the check is not decided (`F0608`), and a cover goal that the
-laws' instances rule out fails. A check whose kind's queries have no laws,
+cover goal, a vacuity, redundancy or reachability check. A check whose kind's queries have no laws,
 realizability, keeps its verdict, as does one that
 is Inconclusive as the solver's model contradicts Fren's semantics
 ([Reporting](Models.md#reporting)). An expectation's claim that is still
 not decided may also pass by the induction that `module.induction.unfolding`
 and `module.induction.lemmas` add to [Recursion's](Lang/Recursion.md#induction),
 as `lang::induction_verdict` decides.
+
+> **Note:** So assumptions that contradict the laws are an error
+> (`F0602`) where today they are a warning that the check is not decided
+> (`F0608`), and a cover goal that the laws' instances rule out fails.
 
 ```fren
 use check::{
@@ -116,11 +121,6 @@ pub proc today_verdict(
     refuted?,                        -- the check is Inconclusive as the solver's model contradicts Fren's semantics (Models.md#reporting)
     unfolding: Seq<RecPost>,         -- the inductions that `module.induction.unfolding` and `module.induction.lemmas` add, on each candidate
 ): (det after: Verdict) {
-    -- More hypotheses keep an `unsat` answer `unsat`, and a model of
-    -- today's query meets the quantified laws, and so their instances.
-    require sound: when before != Verdict::Inconclusive and query_laws?(kind),
-        (instances = InstancesAnswer::Unsat) = from_unsat?(kind, before)
-
     call induced := induction_verdict(
         as_post(by_instances(kind, before, instances, refuted?)),
         refuted?,
@@ -229,8 +229,6 @@ expect strict_expansion(
     caveats: Set<Caveat>,            -- its caveats, which the checks it rests on give, the same before and after
     settled?,                        -- it rests on no check that is not settled, before and after
 ) {
-    assume sound: when before != Verdict::Inconclusive and query_laws?(kind),
-        (instances = InstancesAnswer::Unsat) = from_unsat?(kind, before)
     assume own_within: own subset caveats
     assume witness_plain: when not proof?(kind), own = {} and caveats = {}
 

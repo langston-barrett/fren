@@ -535,7 +535,8 @@ order in which they are declared.
 r[module.use]
 A check of an item may use every axiom of its module and of the modules
 it imports, wherever it is declared, and each theorem declared before the
-item. No check uses a goal. A check of a sentence of today's forms uses
+item, but for the checks of an interface, which use only its own laws and
+lemmas (`implementation.lemma-order`). No check uses a goal. A check of a sentence of today's forms uses
 today's laws and contracts unchanged, as `traits.expect.checks` and
 [Contracts](Items.md#contracts) state.
 

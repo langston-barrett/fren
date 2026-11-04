@@ -39,11 +39,11 @@ the proof.
 The chapter also states how a check uses a sentence, by instantiating it
 at the terms of its query, and what it reports of the axioms it rests on.
 These are what could change how a spec of today is checked, so each is
-computed: the trust caveat `F0665` from the model, and the verdict of a
-check of today's forms from today's verdict and the answer of the query
-with the instances. The solver checks over every module that a spec of
-today's forms keeps its verdicts and messages, but for the passes and
-errors that `module.expansion` allows.
+computed from the model, as the trust caveat `F0665` is.
+[Reports of modules](../ModuleReports.md) computes the verdict of a check
+of today's forms, and checks over every model that a spec of today's
+forms keeps its verdicts and messages, but for the passes and errors that
+`module.expansion` allows.
 
 > **Note:** This chapter is the second half of the design of #669, which
 > is not implemented yet. The first, [Modules](ModulesAndInterfaces.md),
@@ -201,10 +201,12 @@ which hold by `implementation.theorems` of what they rest on.
 
 r[implementation.counterexamples] lang::lemma_before_implementation, lang::own_translated_lemma
 The two cycles that reviews of #691 found are rejected. A lemma at 4 does
-not use a lemma translated along an implementation at 5, so the
-implementation's obligation, proved from the lemma, does not rest on
-itself. An obligation does not use a lemma translated along its own
-implementation, which would rest on the obligation.
+not use a lemma translated along an implementation at 5. An obligation
+does not use a lemma translated along its own implementation, which would
+rest on the obligation.
+
+> **Note:** So the obligation of the implementation at 5, proved from the
+> lemma at 4, does not rest on itself.
 
 ```fren
 -- What an item of a module is, to the checks that may use it.
@@ -846,8 +848,10 @@ quantifier](Quantifiers.md#unbounded-quantifiers). Sentences of today's
 forms (`module.expansion`) are linted as written, as today: a law with a
 variable of a type that is not listed is reported whether or not it is
 instantiated (`traits.law.undecidable`), and a contract's quantifiers as
-[Quantifiers](Quantifiers.md#unbounded-quantifiers) states. So a law gets
-the same `undecidable` messages as today, and once each.
+[Quantifiers](Quantifiers.md#unbounded-quantifiers) states.
+
+> **Note:** So a law gets the same `undecidable` messages as today, and
+> once each.
 
 r[module.closure]
 Fren instantiates each sentence that the check uses at the terms of the
@@ -862,10 +866,12 @@ quantified variables, which matching binds to proper subterms of the query's
 applications, or to the arguments and outputs of its calls, which no
 instance adds, to values of listed types, and to closed terms of the
 sentence. It applies
-every other item only where that item comes before the subject. So the
-arguments of each item's applications are among finitely many terms, once
-the applications of the items after it are finitely many. No bound on the
-number of rounds is part of the language.
+every other item only where that item comes before the subject. No bound
+on the number of rounds is part of the language.
+
+> **Rationale:** Taken in reverse order, the arguments of each item's
+> applications are among finitely many terms, once the applications of the
+> items after it are finitely many.
 
 r[module.use.instantiated] lang::sentence_use
 A check instantiates the sentences that it may use and that meet the
@@ -1587,10 +1593,11 @@ Of a module of today's forms, whose items are interfaces with laws and
 expectations, global expectations and items that state no claim,
 `lang::caveat_premise` gives `laws?` exactly as today: an expectation of
 an interface rests on its laws where it has some, and a global expectation
-on none. So `F0665` is the same as today on every check of such a module,
-as `module.expansion` requires, and each pass
-that it allows to be new carries `F0665` where `check::law_premise` gives
-it.
+on none.
+
+> **Note:** So `F0665` is the same as today on every check of such a
+> module, as `module.expansion` requires, and each pass that it allows to
+> be new carries `F0665` where `check::law_premise` gives it.
 
 r[implementation.report.vacuity]
 Where the axioms cannot hold together, every check that uses them holds
@@ -1744,7 +1751,9 @@ sentences that rest on no sentence left, until none is left, which a
 cycle would stop. Orders that differ only in which of two interfaces, two
 implementations or three lemmas comes first give the same modules but for
 names, so it takes one order of each kind of item: 210 orders and 16
-modules of each, 3,360 modules. `fren check` decides it in about a minute on a Linux machine, by evaluation, once for each choice and each four first items.
+modules of each, 3,360 modules. Its cases are the 840 choices of the
+first four items with the 16 choices of the implementations, 13,440
+cases, each of six orders, and the chapter's check enumerates them all.
 
 ```fren
 -- An item of a small module.
