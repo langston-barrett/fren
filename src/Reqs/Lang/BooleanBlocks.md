@@ -134,7 +134,7 @@ disjunction is an ordinary Boolean subexpression, not independent clauses.
 No distributed leaf may assume its own truth when its definedness,
 vacuity, expectation or membership is checked.
 
-Top-level unlabelled `assume`, `ensure` and `expect` clauses remain
+Top-level unlabelled `require`, `assume`, `ensure` and `expect` clauses remain
 otherwise unchanged: omitting a clause label is accepted only when the
 expression, after leading guards, is one of these explicit blocks. Such
 a root block's labelled children become sibling clause names; unnamed

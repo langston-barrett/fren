@@ -267,7 +267,7 @@ pub proc signature_complete(
     has_false?,              -- a head is `false`
     covers_integers?,        -- the heads' literals and ranges together match every value: every integer, or every one at least 0 for a `Nat`
 ): (det complete?) {
-    assume counted: n_variants > 0 and n_named <= n_variants
+    require counted: n_variants > 0 and n_named <= n_variants
 
     ensure rule: complete? iff match column {
         ColumnType::EnumType => n_named = n_variants,
@@ -389,9 +389,9 @@ pub proc pattern_overlap(
     witness: SimpleValue,          -- a value that both match, where they overlap
 ) {
     -- Both are patterns of one type: of integers, or of an enumeration.
-    assume typed: not (first.shape = PatternShape::Integers and second.shape = PatternShape::Variant)
+    require typed: not (first.shape = PatternShape::Integers and second.shape = PatternShape::Variant)
         and not (first.shape = PatternShape::Variant and second.shape = PatternShape::Integers)
-    assume variants: first.variant >= 0 and second.variant >= 0
+    require variants: first.variant >= 0 and second.variant >= 0
 
     ensure common: when overlap?,
         matches?(first, witness) and matches?(second, witness) and (not nat? or witness.number >= 0)

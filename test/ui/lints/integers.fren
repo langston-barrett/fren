@@ -130,14 +130,14 @@ proc bounds(x: Int): (b1: Int, b2: Int, b3: Int, b4: Int, c1: Int, c2: Int, c3: 
 }
 
 proc naturals(n: Int, k: Int, j: Int, i: Int, h: Int, c?): (m: Int, p: Int, q: Int) {
-    assume counts: n >= 0 and k > n  --~ warning: these comparisons can be chained
+    require counts: n >= 0 and k > n  --~ warning: these comparisons can be chained
     --~^ warning: `n` is never negative, so it can be a `Nat`
-    assume order: (0 <= j)  --~ warning: `j` is never negative, so it can be a `Nat`
+    require order: (0 <= j)  --~ warning: `j` is never negative, so it can be a `Nat`
     --~^ warning: the assumption `order` constrains only parameters that nothing uses
     -- Under `when` or `or`, or not `0`: no lint.
-    assume guarded: when c?, i >= 0
-    assume either: i >= 0 or k = 1
-    assume shifted: h >= 1  --~ warning: the assumption `shifted` constrains only parameters that nothing uses
+    require guarded: when c?, i >= 0
+    require either: i >= 0 or k = 1
+    require shifted: h >= 1  --~ warning: the assumption `shifted` constrains only parameters that nothing uses
 
     ensure r: m >= 0 and m <= n  --~ warning: these comparisons can be chained
     --~^ warning: `m` is never negative, so it can be a `Nat`
@@ -151,18 +151,18 @@ proc naturals(n: Int, k: Int, j: Int, i: Int, h: Int, c?): (m: Int, p: Int, q: I
 -- An instance that binds an `Int`, or a refinement that reads one by name,
 -- keeps the variable an `Int`: no lint there.
 proc held(v: Int): (w: Int) {
-    assume nonneg: v >= 0
+    require nonneg: v >= 0
     ensure r: w = v
 }
 
 proc binds(a: Int, b: Int): (c: Int) {
-    assume order: a >= b
+    require order: a >= b
     call p := held(a - b)
     ensure r: c = p.w
 }
 
 proc free(v: Int): (w: Int) {
-    assume nonneg: v >= 0  --~ warning: `v` is never negative
+    require nonneg: v >= 0  --~ warning: `v` is never negative
     ensure r: w = v
 }
 
@@ -172,12 +172,12 @@ proc binds_nat(a: Nat): (c: Int) {
 }
 
 proc concrete(v: Int): (w: Int) {
-    assume nonneg: v >= 0
+    require nonneg: v >= 0
     ensure r: w = v + 1
 }
 
 proc abstract(v: Int): (w: Int) {
-    assume nonneg: v >= 0  --~ warning: `v` is never negative
+    require nonneg: v >= 0  --~ warning: `v` is never negative
     ensure r: w > v
 }
 

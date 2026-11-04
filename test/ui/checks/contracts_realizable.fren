@@ -19,14 +19,14 @@ fn other(n: Int): (r: Int) {   --~ error: no value of `other` satisfies `c`
 
 -- A precondition rules out the arguments where it would be false.
 fn guarded(n: Int): (r: Int) {
-    assume positive: n > 0
+    require positive: n > 0
     ensure c: n > 0 and r > n
 }
 
 -- Contradictory preconditions.
 fn never(n: Int): (result: Int) {   --~ error: the preconditions of `never` are unsatisfiable: `p`, `q` contradict each other
-    assume p: n > 0
-    assume q: n < 0
+    require p: n > 0
+    require q: n < 0
     ensure r: result = n
 }
 

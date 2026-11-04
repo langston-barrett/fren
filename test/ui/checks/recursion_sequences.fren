@@ -19,7 +19,7 @@ proc seq_payload(a: F) {
 }
 
 proc seq_input(a: F, q: Seq<Int>) {
-    assume pinned: q = [2] and a = F::L(q)
+    require pinned: q = [2] and a = F::L(q)
     expect e: evf(a) != q  --~ error: counterexample: a = F::L([2]), q = [2]
 }
 

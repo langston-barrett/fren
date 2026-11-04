@@ -14,8 +14,8 @@ fn all_pos?(q: Seq<Int>) := forall (x: Int), when x in q, x > 0
 
 -- The function does not apply `depth`: expanded, so the expectation holds.
 proc firsts(q: Seq<Int>) {
-    assume pos: all_pos?(q)
-    assume long: q.len > 1
+    require pos: all_pos?(q)
+    require long: q.len > 1
     expect e: q[0] > 0 and q[1] > 0
 }
 
@@ -24,7 +24,7 @@ fn deep_pos?(t: T, q: Seq<Int>) := depth(t) >= 0 and (forall (x: Int), when x in
 -- The function applies `depth`, and is unfolded to find its application:
 -- its quantifier is expanded there too.
 proc deep_firsts(t: T, q: Seq<Int>) {
-    assume pos: deep_pos?(t, q)
-    assume long: q.len > 1
+    require pos: deep_pos?(t, q)
+    require long: q.len > 1
     expect e: q[0] > 0 and q[1] > 0
 }

@@ -1,0 +1,12 @@
+-- After an evidence setting, `require` in a global expectation's block is
+-- still a member that it does not accept (`F0417`), reported at the
+-- keyword.
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
+
+expect even(x: Int) {
+    set_option fren.evidence "random" in
+    require small: x < 10  --~ error: global expectations have no `require` members
+    call d := double(x)
+    expect e: d.y mod 2 = 0
+}
+--@ exit: 2

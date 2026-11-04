@@ -43,7 +43,7 @@ use a
 use b
 
 proc p(s: a::T, t: b::T, j: a::K, k: b::K, depth: Int): (y: Int) {
-    assume known: depth = a::key(j) + b::key(k)
+    require known: depth = a::key(j) + b::key(k)
     ensure r: y = a::depth(s) + b::depth(t) + depth  --~ warning: could not decide whether `c::p::r` is redundant
     expect pos: y > depth
 }

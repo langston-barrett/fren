@@ -58,14 +58,14 @@
 -pub proc only_use(m: Mode): (on?) {
 -    use self::Mode::Heat
 +pub fn g(x: Int): (r: Int) {
-+    assume p: x > 0
++    require p: x > 0
 +    out r := x + 1
 @@ -79,6 +89,0 @@
 -pub proc e(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat  set_option fren.evidence "random" in expect s: on? or m = Mode::Cool }
 -
 -pub proc f(n: Int): (y: Int) { ensure r: y = match n { 0 => 1, _ => 0 } }
 -
--pub fn g(x: Int): (r: Int) { assume p: x > 0  out r := x + 1 }
+-pub fn g(x: Int): (r: Int) { require p: x > 0  out r := x + 1 }
 -
 @@ -89 +94,2 @@
 -pub proc j(x: Int): (y: Int) { ensure a: y = x

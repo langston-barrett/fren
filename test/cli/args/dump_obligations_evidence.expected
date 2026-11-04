@@ -80,7 +80,7 @@
   (goal false)
 )
 (obligation
-  ; at 15:12
+  ; at 15:13
   (item c)
   (check redundancy pos)
   (evidence solver)

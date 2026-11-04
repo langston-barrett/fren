@@ -47,7 +47,7 @@ proc records_not(t: T, u: T): (o1: T, o2: T) {
 }
 
 proc covers(x: Int): (y: Int, z?) {
-    assume positive: x > 0
+    require positive: x > 0
 
     ensure r: y = x + 1
     ensure s: z? iff y > 5

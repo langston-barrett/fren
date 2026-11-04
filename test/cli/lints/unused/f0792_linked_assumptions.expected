@@ -1,23 +1,23 @@
 warning[F0804]: these comparisons can be chained
- --> test/cli/lints/unused/f0792_linked_assumptions.fren:4:15
+ --> test/cli/lints/unused/f0792_linked_assumptions.fren:4:16
   |
-4 |     assume a: n >= 0 and n < q.len
-  |               ^^^^^^^^^^^^^^^^^^^^ comparisons that share an operand
+4 |     require a: n >= 0 and n < q.len
+  |                ^^^^^^^^^^^^^^^^^^^^ comparisons that share an operand
   |
   = help: `fren fix` can fix this
   = note: `chainable_comparison` is `warn` by default
   = help: to allow it, `set_option fren.lint.chainable_comparison "allow"`
 help: write `0 <= n < q.len`
   |
-4 -     assume a: n >= 0 and n < q.len
-4 +     assume a: 0 <= n < q.len
+4 -     require a: n >= 0 and n < q.len
+4 +     require a: 0 <= n < q.len
   |
 
 warning[F0810]: `n` is never negative, so it can be a `Nat`
- --> test/cli/lints/unused/f0792_linked_assumptions.fren:4:15
+ --> test/cli/lints/unused/f0792_linked_assumptions.fren:4:16
   |
-4 |     assume a: n >= 0 and n < q.len
-  |               ^^^^^^ `n` is at least 0 by this assumption
+4 |     require a: n >= 0 and n < q.len
+  |                ^^^^^^ `n` is at least 0 by this assumption
   |
   = note: a `Nat` parameter brings this assumption with its type
   = note: a call must then pass a `Nat` for `n`
@@ -26,10 +26,10 @@ warning[F0810]: `n` is never negative, so it can be a `Nat`
   = help: to allow it, `set_option fren.lint.manual_nat "allow"`
 
 warning[F0792]: the assumption `a` constrains only parameters that nothing uses
- --> test/cli/lints/unused/f0792_linked_assumptions.fren:4:12
+ --> test/cli/lints/unused/f0792_linked_assumptions.fren:4:13
   |
-4 |     assume a: n >= 0 and n < q.len
-  |            ^ constrains only unused parameters
+4 |     require a: n >= 0 and n < q.len
+  |             ^ constrains only unused parameters
   |
   = note: no guarantee, expectation, definition, argument or binding mentions `n`, `q`, nor does another assumption tie them to a used variable
   = note: it is linked to `b`, reported too, which may need it: remove them together
@@ -38,10 +38,10 @@ warning[F0792]: the assumption `a` constrains only parameters that nothing uses
   = help: to allow it, `set_option fren.lint.unused_assumption "allow"`
 
 warning[F0792]: the assumption `b` constrains only parameters that nothing uses
- --> test/cli/lints/unused/f0792_linked_assumptions.fren:5:12
+ --> test/cli/lints/unused/f0792_linked_assumptions.fren:5:13
   |
-5 |     assume b: q[n] > 0
-  |            ^ constrains only unused parameters
+5 |     require b: q[n] > 0
+  |             ^ constrains only unused parameters
   |
   = note: no guarantee, expectation, definition, argument or binding mentions `q`, `n`, nor does another assumption tie them to a used variable
   = note: it is linked to `a`, reported too, which may need it: remove them together

@@ -1,8 +1,8 @@
 error[F0401]: assumptions may only mention parameters, but `y` is an output
- --> test/cli/instances/f0401_out.fren:3:15
+ --> test/cli/instances/f0401_out.fren:3:16
   |
-3 |     assume a: y > 0
-  |               ^ an output
+3 |     require a: y > 0
+  |                ^ an output
   |
   = note: assumptions constrain the environment, not the system
   = help: if it constrains the outputs, make it an `ensure`

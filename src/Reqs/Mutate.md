@@ -95,7 +95,7 @@ mutant whose guard leaves an arm never taken, or a `match` with no arm
 taken somewhere, is killed by the [reachability](Check.md#reachability) or
 [completeness](Check.md#completeness) check.
 
-Mutants change what a spec asserts: the expressions of `assume`s, `ensure`s,
+Mutants change what a spec asserts: the expressions of `require`s, `assume`s, `ensure`s,
 definitions of results and `let` variables, arguments of calls, constants and defined functions,
 including the definitions of their [`let`s and `where`
 clauses](Lang/Let.md), which are changed like any other expression. The
@@ -189,7 +189,7 @@ pub proc skip(
 ): (
     det run?,           -- the check runs on the mutant
 ) {
-    assume determined: unless changed?, after = before
+    require determined: unless changed?, after = before
 
     call k := kill(before, after)
 
@@ -400,7 +400,7 @@ So a larger sample contains a smaller one, with the same seed:
 
 ```fren
 pub proc samples_nest(rank: Nat, smaller: Nat, larger: Nat) {
-    assume nested: smaller <= larger
+    require nested: smaller <= larger
 
     call small := sample(rank, smaller)
     call large := sample(rank, larger)

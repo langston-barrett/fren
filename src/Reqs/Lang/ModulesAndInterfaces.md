@@ -321,7 +321,7 @@ pub proc sentence_member(
     det?,                      -- written with `det`, which no member of these blocks may be
 ): (det accepted?) {
     use self::SentenceMember::{Call, Cover, Ensure, Expect, Let, Require, Use}
-    assume blocks: block in {SentenceKind::Lemma, SentenceKind::Assume}
+    require blocks: block in {SentenceKind::Lemma, SentenceKind::Assume}
 
     ensure rule: accepted? iff (not det? and (member in {Require, Ensure, Call, Let, Use}
         or (block = SentenceKind::Lemma and member in {Expect, Cover})))

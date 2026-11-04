@@ -237,7 +237,7 @@ pub proc call_type_argument(
     matched?,                      -- matching the first giver's type against its declared type gives `k` an argument
     matched: Ty,                   -- that argument
 ): (det giver: Int, det known?, det argument: Ty) {
-    assume as_many: synthesizes.len = declared.len
+    require as_many: synthesizes.len = declared.len
 
     out giver := first_giver(declared, synthesizes, k)
     out known? := result_matched? or (giver >= 0 and matched?)
@@ -288,8 +288,8 @@ pub proc call_order(
     use self::Arg::{P0, P1, P2}
     use self::ArgMode::{Gives, Waits}
 
-    assume few: values.len <= 2 and params <= 3 and from_result.len = params
-    assume own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
+    require few: values.len <= 2 and params <= 3 and from_result.len = params
+    require own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
 
     -- The arguments' positions, in the order in which they are elaborated:
     -- those that do not wait, in order, then those that do.
@@ -396,9 +396,9 @@ pub proc uninterpreted_instance(
     det fact_type: Ty,           -- the type whose constraint each of its applications brings
     det nat?,                    -- each of its applications is at least 0
 ) {
-    assume few: declared.len <= 3 and arguments.len <= 3
+    require few: declared.len <= 3 and arguments.len <= 3
     -- Each inferred type argument is widened.
-    assume widened: (arguments.len < 1 or kind(arguments[0]) != ValueType::NatTy)
+    require widened: (arguments.len < 1 or kind(arguments[0]) != ValueType::NatTy)
         and (arguments.len < 2 or kind(arguments[1]) != ValueType::NatTy)
         and (arguments.len < 3 or kind(arguments[2]) != ValueType::NatTy)
 
@@ -600,7 +600,7 @@ pub proc applied_instance(
     inner: Seq<Ty>,      -- the application's type arguments, over the function's type parameters
     outer: Seq<Ty>,      -- the type arguments of the function's instance
 ): (det applied: Seq<Ty>) {
-    assume few: inner.len <= 3
+    require few: inner.len <= 3
 
     out applied := (if inner.len > 0 then [instantiated(inner[0], outer)] else [])
         ++ (if inner.len > 1 then [instantiated(inner[1], outer)] else [])

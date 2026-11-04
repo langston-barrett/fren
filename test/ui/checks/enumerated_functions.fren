@@ -43,11 +43,11 @@ proc both(x: Id): (det big?) {  --~ error: `both` cannot be enumerated: it appli
 
 -- A contract of preconditions alone does not keep its function from being
 -- enumerated: they constrain its arguments, not its interpretations.
-fn picky(m: Mode): (r: Int) { assume pre: m != Mode::Off }
+fn picky(m: Mode): (r: Int) { require pre: m != Mode::Off }
 
 set_option fren.evidence "enumerated" in
 proc picked(m: Mode): (det y: Int) {  --~ info: 3 checks of `picked` hold for every behaviour up to size 3
-    assume a: m != Mode::Off
+    require a: m != Mode::Off
     out y := picky(m)
     expect e: y != 2  --~ error: counterexample: m = Mode::Heat, y = 2
 }

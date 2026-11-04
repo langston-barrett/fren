@@ -42,7 +42,7 @@ expect abstraction(level: Level) {
 -- The indexes of a binding are checked where it is read: an input's under
 -- the assumptions, an output's under the assumptions and the instances.
 proc first_of(n: Int, x: Int): (y: Int) {
-    assume pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
+    require pos: n > 0  --~ warning: the assumption `pos` constrains only parameters that nothing uses
     ensure r: y = x
 }
 

@@ -485,7 +485,7 @@ pub proc class_char(
 ): (
     det escaped?,         -- the fix writes it `\c`, rather than `c`
 ) {
-    assume one: c.len = 1
+    require one: c.len = 1
 
     ensure rule: escaped? iff c in {"\\", "]", "^", "-"}
 }

@@ -4,6 +4,6 @@
 -- where the Lean-hosted front end warns of an unknown `fren.dump` and checks
 -- without a dump (`test/ui/lean/dump_option.fren`, `Reqs/Cli#obligations`).
 proc c(n: Int): (m: Int) {
-    assume a: n > 0
+    require a: n > 0
     ensure r: m = n + 1
 }

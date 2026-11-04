@@ -1,0 +1,14 @@
+-- An item under a `set_option ... in` has its clauses read as the item's
+-- (`lang::item_error`, its `ItemShape`): `assume` in it is `F0169`, in both
+-- front ends, and the item after it is checked. The setting is read, and is
+-- in effect at no item, since the one under it fails.
+set_option fren.lint.unused_variables "allow" in  --~ warning: this lint setting is in effect at no item
+proc p(x: Int): (y: Int) {
+    assume a: x > 0  --~ error: a precondition is written `require`, not `assume`
+    ensure r: y = x
+}
+
+proc q(x: Int): (y: Int) {
+    ensure r: y = z  --~ error: cannot find `z` in this scope
+}
+--@ exit: 2

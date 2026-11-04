@@ -14,7 +14,7 @@ pub fn scale(n: Int): (r: Int) {
 }
 
 pub fn shift(n: Int): (r: Int) {
-    assume known: known?(0)  --~ warning: the precondition `known` says nothing about `shift`
+    require known: known?(0)  --~ warning: the precondition `known` says nothing about `shift`
     out r := n + 1
 }
 
@@ -28,7 +28,7 @@ pub fn twice(n: Int): (r: Int) {
 
 -- Mentioning nothing.
 pub fn clamp(n: Int): (r: Int) {
-    assume sane: LIMIT > 0  --~ warning: this precondition mentions no variable
+    require sane: LIMIT > 0  --~ warning: this precondition mentions no variable
     ensure trivially: true  --~ warning: this postcondition mentions no variable
     ensure bounded: r <= LIMIT
 }
@@ -37,7 +37,7 @@ pub fn clamp(n: Int): (r: Int) {
 -- precondition check, and a postcondition of an uninterpreted function
 -- makes its contract unrealizable.
 pub fn never(n: Int): (r: Int) {
-    assume nope: false  --~ warning: so every application of the function fails its precondition check
+    require nope: false  --~ warning: so every application of the function fails its precondition check
     out r := n
 }
 
@@ -65,14 +65,14 @@ pub fn both(n: Int): (r: Int) {
 
 -- Not fired: the clause mentions a parameter, the value, or the function.
 pub fn steps(n: Int): (r: Int) {
-    assume small: n < LIMIT
+    require small: n < LIMIT
     ensure applied: steps(n) >= 0
     ensure with_other: r > limit(n)
 }
 
 -- A field read from a parameter is the parameter's.
 pub fn first(q: Seq<Int>): (r: Int) {
-    assume long: q.len > 1
+    require long: q.len > 1
     out r := q[1]
 }
 
@@ -85,6 +85,6 @@ pub fn seven(n: Int): (r: Int) {
 
 -- A function parameter is the function's too, whether read or applied.
 pub fn apply(g: fn(Int) -> Int, n: Int): (r: Int) {
-    assume zero_ok: g(0) >= limit(0)
+    require zero_ok: g(0) >= limit(0)
     out r := g(n)
 }

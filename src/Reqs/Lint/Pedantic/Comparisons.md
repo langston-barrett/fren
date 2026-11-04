@@ -115,7 +115,7 @@ pub proc manual_ordering(
     use self::Comparison::{Ge, Gt, Le, Lt}
     use self::OrderingFix::{Compare, Unchanged}
 
-    assume within: forall (v: Position), when names?(named, v), v <= last
+    require within: forall (v: Position), when names?(named, v), v <= last
 
     ensure first: forall (m: Position), when some_named?(named, last) and bounded?(named, last, m, true),
         fix = Compare(if negated? then Gt else Le, m)

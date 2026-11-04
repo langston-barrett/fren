@@ -11,23 +11,23 @@ fn unnamed(Int): (r: Int) {   --~ error: the parameters of uninterpreted functio
 }
 
 fn typed(n: Int): (r: Int) {
-    assume big: n + 1   --~ error: type mismatch: expected `Bool`, found `Int`
+    require big: n + 1   --~ error: type mismatch: expected `Bool`, found `Int`
     out r := n
 }
 
 fn clash(n: Int): (r: Int) {
-    assume n: n > 0     --~ error: `n` is defined multiple times
+    require n: n > 0     --~ error: `n` is defined multiple times
     out r := n
 }
 
 fn twice(n: Int): (r: Int) {
-    assume p: n > 0
+    require p: n > 0
     out r := n
     ensure p: r > 0   --~ error: `p` is defined multiple times
 }
 
 fn circular(n: Int): (r: Int) {
-    assume small: circular(n) < 10   --~ error: a precondition of `circular` cannot apply `circular`
+    require small: circular(n) < 10   --~ error: a precondition of `circular` cannot apply `circular`
 }
 
 fn other_args(n: Int): (r: Int) {
@@ -45,7 +45,7 @@ fn questioned(n: Int): (r: Int) {
 }
 
 fn outside(n: Int): (r: Int) {
-    assume known: m > 0   --~ error: cannot find `m` in this scope
+    require known: m > 0   --~ error: cannot find `m` in this scope
     out r := n
 }
 
@@ -54,6 +54,6 @@ fn outside(n: Int): (r: Int) {
 fn arity(Name): Nat
 
 fn positive_arity(n: Name): (r: Nat) {
-    assume some_arity: arity(n) > 0
+    require some_arity: arity(n) > 0
     ensure bounded: r <= arity(n)
 }

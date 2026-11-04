@@ -16,7 +16,7 @@ refuted.
 open FrenCli FrenCli.Eval
 
 def contractSrc : String := "fn nth(q: Seq<Int>, i: Int): (r: Int) {
-    assume in_range: 0 <= i < q.len
+    require in_range: 0 <= i < q.len
     out r := q[i]
     ensure same: r = q[i]
 }

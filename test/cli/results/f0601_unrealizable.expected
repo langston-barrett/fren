@@ -7,7 +7,7 @@ error[F0601]: `c` is not realizable
   = note: for the input
               x = -1
           no outputs satisfy `big` and `small`
-  = help: weaken one of them, or add an `assume` that rules this input out
+  = help: weaken one of them, or add a `require` that rules this input out
 
 fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
 

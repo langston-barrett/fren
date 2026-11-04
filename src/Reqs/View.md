@@ -106,7 +106,7 @@ pub enum Group { Syntax, Names, Types, Instances, Traceability, Results, Lints }
 pub proc code_group(code: String): (det group: Group) {
     use self::Group::{Instances, Lints, Names, Results, Syntax, Traceability, Types}
 
-    assume well_formed: code.len = 5 and (code.starts_with?("F01") or code.starts_with?("F02")
+    require well_formed: code.len = 5 and (code.starts_with?("F01") or code.starts_with?("F02")
         or code.starts_with?("F03") or code.starts_with?("F04") or code.starts_with?("F05")
         or code.starts_with?("F06") or code.starts_with?("F07") or code.starts_with?("F08"))
 
@@ -285,7 +285,7 @@ pub proc clash_text(
     other_forced: Forced,    -- what they force of the output
     other_blanks: String,    -- the wildcards of its variant, if it is one
 ): (said: String, other_said: String, text: String) {
-    assume some_other: count >= 1
+    require some_other: count >= 1
     out said := match forced {   -- what the guarantee forces, as the note says it
         Forced::Value(v) => output ++ " = " ++ v,
         Forced::Variant(c, n) =>
@@ -322,7 +322,7 @@ error[F0601]: `http::retry` is not realizable
               attempt = 4
               retry_after = Seconds(31)
           no outputs satisfy `transient`, `honor_server` and `latency_budget`
-  = help: weaken one of them, or add an `assume` that rules this input out
+  = help: weaken one of them, or add a `require` that rules this input out
 
 note: `transient` forces retry? = true, but `honor_server` and `latency_budget` force retry? = false
   --> retry.fren:18:12

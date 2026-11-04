@@ -8,7 +8,7 @@
 -- on every sequence of up to three, so testing refutes its refinement only
 -- on a longer one.
 proc sorted3(q: Seq<Int>): (sorted?) {
-    assume short: q.len <= 3
+    require short: q.len <= 3
 
     ensure r: sorted? iff ((q.len < 2 or q[0] <= q[1]) and (q.len < 3 or q[1] <= q[2]))
 }

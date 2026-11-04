@@ -5,7 +5,7 @@
 --@ only: cli
 
 proc first_of(n: Int, x: Int): (y: Int) {
-    assume pos: n > 0  --~[cli] warning: the assumption `pos` constrains only parameters that nothing uses
+    require pos: n > 0  --~[cli] warning: the assumption `pos` constrains only parameters that nothing uses
     ensure r: y = x
 }
 

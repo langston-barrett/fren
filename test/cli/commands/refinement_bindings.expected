@@ -1,8 +1,8 @@
 warning[F0792]: the assumption `some` constrains only parameters that nothing uses
-  --> test/cli/commands/refinement_bindings.fren:36:12
+  --> test/cli/commands/refinement_bindings.fren:36:13
    |
-36 |     assume some: count > 0
-   |            ^^^^ constrains only unused parameters
+36 |     require some: count > 0
+   |             ^^^^ constrains only unused parameters
    |
    = note: no guarantee, expectation, definition, argument or binding mentions `count`, nor does another assumption tie them to a used variable
    = help: remove the assumption and its parameters, or use them

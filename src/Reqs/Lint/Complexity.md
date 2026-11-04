@@ -496,7 +496,7 @@ pub proc zero_prefixed_literal(
     det fires?,
     det is_fix?,         -- the fix of `lexeme` writes `fixed`
 ) {
-    assume literal: lexeme.matches?(r"[0-9]([0-9_]*[0-9])?|0[xXbBoO][0-9a-fA-F_]*[0-9a-fA-F]")
+    require literal: lexeme.matches?(r"[0-9]([0-9_]*[0-9])?|0[xXbBoO][0-9a-fA-F_]*[0-9a-fA-F]")
     let zeros: String := lexeme.slice(0, lexeme.len - fixed.len)
 
     ensure rule: fires? iff lexeme.matches?(r"0[0-9][0-9_]*")

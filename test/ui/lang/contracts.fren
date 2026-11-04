@@ -1,5 +1,5 @@
 -- Contracts on functions (`Reqs/Lang/Items#contracts`): preconditions
--- written `assume`, postconditions written `ensure`, after the signature
+-- written `require`, postconditions written `ensure`, after the signature
 -- and the body. An uninterpreted function's postconditions are what is
 -- known of it; a defined function's are claims about its body.
 set_option fren.lint.dead_code "allow"
@@ -8,7 +8,7 @@ type Name
 
 -- A precondition, where the body is defined only on some arguments.
 fn nth(q: Seq<Int>, i: Int): (r: Int) {
-    assume in_range: 0 <= i < q.len
+    require in_range: 0 <= i < q.len
     out r := q[i]
 }
 
@@ -26,12 +26,12 @@ fn arity(n: Name): (r: Nat) { ensure positive: r > 0 }
 -- A precondition qualifies the postconditions: where it fails, nothing is
 -- known.
 fn shrink(n: Int): (r: Int) {
-    assume big: n > 10
+    require big: n > 10
     ensure smaller: r < n
 }
 
 proc reads(q: Seq<Int>): (y: Int) {
-    assume long: q.len >= 2
+    require long: q.len >= 2
 
     ensure first: y = nth(q, 0)
 

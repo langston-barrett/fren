@@ -95,7 +95,7 @@ states when it fires:
 pub proc wildcard_single_variant(
     n_matched: Int,      -- variants that no other arm names
 ): (det fires?) {
-    assume reachable: n_matched >= 1
+    require reachable: n_matched >= 1
 
     ensure rule: fires? iff n_matched = 1
 }
@@ -141,7 +141,7 @@ pub proc if_chain_match(
     det fires?,
     det wildcard?,         -- the fix keeps the final `else`, as the `_` arm
 ) {
-    assume counts: n_tests >= 1
+    require counts: n_tests >= 1
 
     ensure rule: fires? iff (variant_tests? and n_tests >= 2 and n_repeated = 0)
     ensure fix: wildcard? iff n_untested > 0
@@ -600,7 +600,7 @@ pub proc match_bool(
     o: Int,
 ): (det fires?) {
     -- The `match` is exhaustive, and its second arm is reachable.
-    assume accepted: first = BoolPat::Wild or second = BoolPat::Wild or first != second
+    require accepted: first = BoolPat::Wild or second = BoolPat::Wild or first != second
 
     -- the first arm is `true` or `false`, and the second the other or `_`
     det let literals? := first != BoolPat::Wild and (second = BoolPat::Wild or second != first)
@@ -743,7 +743,7 @@ pub proc match_bool_wildcard(
     use lang::Expr::{If, Literal, Match, NoMatch}
     use lang::Outcome::{Defined, Undefined}
 
-    assume boolean: lang::eval(i, env, s) is Defined(lang::Value::True) | Defined(lang::Value::False) | Undefined
+    require boolean: lang::eval(i, env, s) is Defined(lang::Value::True) | Defined(lang::Value::False) | Undefined
 
     ensure agrees: agrees?(
         lang::eval(i, env, if first? then If(s, x, y) else If(s, y, x)),
@@ -997,7 +997,7 @@ pub proc manual_table(
     branches: Seq<Int>,      -- the value of each branch
     z: Int,                  -- the final `else`
 ): (det fires?) {
-    assume sizes: 1 <= tests.len <= 4 and holds.len = tests.len and branches.len = tests.len
+    require sizes: 1 <= tests.len <= 4 and holds.len = tests.len and branches.len = tests.len
 
     -- tests in the chain
     det let n_tests: Int := tests.len
@@ -1045,9 +1045,9 @@ pub proc match_could_be_table(
     guarded?,                -- some arm has a guard
     x: Val,                  -- a value of the scrutinee
 ): (det fires?) {
-    assume size: 1 <= arms.len <= 4
+    require size: 1 <= arms.len <= 4
     -- The patterns are of one type: of integers, or of an enumeration.
-    assume typed: not ((exists (s: Slot), pos(s) < arms.len and integers_pattern?(arms[pos(s)]))
+    require typed: not ((exists (s: Slot), pos(s) < arms.len and integers_pattern?(arms[pos(s)]))
         and (exists (s: Slot), pos(s) < arms.len and variants_pattern?(arms[pos(s)])))
 
     ensure rule: fires? iff (arms.len >= 2 and not guarded?

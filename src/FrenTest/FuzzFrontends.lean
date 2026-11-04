@@ -887,7 +887,7 @@ def enumContracts (name : String) : R String := do
     let i ← below names.size
     let f := names[i]!
     names := names.eraseIdx! i
-    let pre := s!"    assume p: x >= {← pick #["-2", "-1", "0"]}\n"
+    let pre := s!"    require p: x >= {← pick #["-2", "-1", "0"]}\n"
     let post := s!"    ensure q: r > {← pick #["x", "x - 1"]}\n"
     let decl ← match ← below 4 with
       | 0 => pure s!"pub fn {f}(x: Int): (r: Int) \{\n{pre}}\n"
@@ -903,7 +903,7 @@ def enumContracts (name : String) : R String := do
     left := left.eraseIdx! i
   let sum := " + ".intercalate apps.toList
   let options := "set_option fren.enumeration.size 2 in\nset_option fren.evidence \"enumerated\" in\n"
-  return decls ++ s!"\n{options}pub proc {name}(x: Int): (det y: Int) \{\n    assume a: x != 5\n    \
+  return decls ++ s!"\n{options}pub proc {name}(x: Int): (det y: Int) \{\n    require a: x != 5\n    \
     out y := {sum}\n    expect e: y != {← below 3}\n}\n"
 
 /-- Procedures checked by the solver whose outputs have subset types: of
@@ -929,7 +929,7 @@ def subsetOutputs : R String := do
   for c in [0:(← below 2) + 1] do
     let mut results := #[]
     let mut body := ""
-    if ← chance 40 then body := body ++ s!"    assume a: x > {← below 4}\n"
+    if ← chance 40 then body := body ++ s!"    require a: x > {← below 4}\n"
     for k in [0:(← below 2) + 1] do
       let ty ← pick #["Sp", "Ss", "Sbox", "Sr", "Nat"]
       let n := s!"o{k}"
@@ -1082,7 +1082,7 @@ def factChain : R String := do
       | 10 => pure ("", s!"ensure e: r = {app} + fcp({arg})")
       | 11 => pure ("", s!"ensure e: r = fcg(b?, true, {arg}) + {app}")
       | _ => pure ("", s!"ensure e: r = fcsum(Fl::Cons({c}, fcl({arg}))) + {app}")
-    let pre := if ← chance 30 then s!"    assume p: b?\n" else ""
+    let pre := if ← chance 30 then s!"    require p: b?\n" else ""
     -- A `Nat` result only where the clause gives its value: where it only
     -- bounds it by an `Int`, Lean's realizability query often times out
     -- (#493).
@@ -1247,6 +1247,49 @@ def inductionForms : R String := do
       s!"\nexpect jf_module(a: JL, b: JL) \{\n    expect c: {adds "a" "b"}\n}\n"
   return out
 
+/-- Preconditions in each form that a clause about the inputs takes
+(`lang::precondition_word`): `require` in a procedure's block, labelled,
+with a `where` clause, as a labelled `and` block, as an unlabelled one and
+under a leading `when`, in a function's block, labelled or as an unlabelled
+`and` block, alone, under a leading `when` or `let` or before a `where`, a
+generic function's and a trait method's; and the
+`assume` of a global expectation that calls the procedure, where the
+preconditions hold. Its checks pass, and nothing here is a static error.
+The procedure is checked by the solver: a global expectation over one
+checked by random testing is a difference of its own (only the `fren`
+command says what rests on it, `F0663`).
+It is appended to specs of the corpus, so it is written from a grammar of
+its own. -/
+def requireForms : R String := do
+  let low ← pick #["-3", "-1", "0"]
+  let mut body := s!"    require n0: x > {low}\n"
+  if ← chance 50 then body := body ++ "    require n1: y >= x - k where k := 2\n"
+  if ← chance 50 then body := body ++ s!"    require n2: and \{ a: x > {low} - 1, b: y > -9 }\n"
+  if ← chance 50 then body := body ++ "    require and { c: x != 3, d: b? or y > 0 }\n"
+  if ← chance 50 then body := body ++ "    require when b?, and { e: y > 0 }\n"
+  body := body ++ "    out r := x\n    ensure q: r = x\n"
+  let mut out := s!"pub proc pw_proc(x: Int, y: Int, b?): (det r: Int) \{\n{body}}\n"
+  if ← chance 60 then
+    out := out ++ s!"\npub fn pw_fn(x: Int): (r: Int) \{\n    require p: x > {low}\n    out r := x + 1\n    ensure s: r > {low}\n}\n"
+  if ← chance 50 then
+    out := out ++ "\npub fn pw_generic<T>(q: Seq<T>, d: T): (r: T) {\n    require first: q != [] and q[0] = d\n    out r := d\n}\n"
+  if ← chance 40 then
+    out := out ++ "\npub trait PwTrait {\n    fn pw_method(s: Self, x: Int): (r: Int) {\n        require p: x > 0\n        ensure q: r >= 0\n    }\n}\n"
+  if ← chance 60 then
+    out := out ++ "\nexpect pw_global(x: Int, y: Int) {\n    assume big: x > 5 and y > x\n    call c := pw_proc(x, y, true)\n" ++
+      "    expect e: c.r = x\n}\n"
+  -- After every earlier draw, so that what the seed gave before stays: a
+  -- function's preconditions without a label, a Boolean block, alone,
+  -- under a leading `when` or `let`, or before a `where`, and an
+  -- application that meets them.
+  if ← chance 50 then
+    let pre ← pick #[s!"require and \{ p: x > {low} }", s!"require when x > 0, and \{ p: x > {low} }",
+      s!"require and \{ p: x > {low}, q: x > {low} - 1 }", s!"require and \{ p: x > k } where k := {low}",
+      s!"require let m := {low} in and \{ p: x > m }"]
+    out := out ++ s!"\npub fn pw_bare(x: Int): (r: Int) \{\n    {pre}\n    out r := x + 1\n}\n" ++
+      "\nproc pw_bare_use(x: Int): (y: Int) {\n    require big: x > 5\n    ensure e: y = pw_bare(x)\n}\n"
+  return out
+
 /-- Generic functions whose type parameters are element types
 (`lang::element_parameter`): sets, sequences and relations of them, nested
 and within an instance, in signatures, bodies and contracts, defined and
@@ -1270,7 +1313,7 @@ def genericElements (sc : WScope) : R String := do
     "pub fn ge_first<T>(q: Seq<T>, d: T): T := if q != [] then q[0] else d\n" ++
     "pub fn ge_at<T>(q: Seq<T>): T := q[0]\n" ++
     "pub fn ge_apply?<T>(q: Seq<T>, f: fn(T) -> Bool) := f(q[0])\n" ++
-    "pub fn ge_pick<T>(q: Seq<T>, d: T): (r: T) {\n    assume first: q[0] = d\n    out r := d\n    ensure same: r = q[0]\n}\n" ++
+    "pub fn ge_pick<T>(q: Seq<T>, d: T): (r: T) {\n    require first: q[0] = d\n    out r := d\n    ensure same: r = q[0]\n}\n" ++
     "pub fn ge_head<T>(q: Seq<T>): (r: T) {\n    ensure m: r = q[0]\n}\n" ++
     "pub fn ge_len<T>(q: Seq<T>): Int := q.len\n" ++
     "pub fn ge_all?<T>(q: Seq<T>, s: Set<T>) := forall (x: T), when x in q, x in s\n" ++
@@ -1287,7 +1330,7 @@ def genericElements (sc : WScope) : R String := do
   let post ← pick #["not x in r", "r subset s", "r = s", "r.card < s.card"]
   out := out ++ s!"pub fn ge_drop<T>(s: Set<T>, x: T): (r: Set<T>) \{\n    out r := s minus \{x}\n    ensure q: {post}\n}\n"
   if ← chance 50 then
-    out := out ++ "pub fn ge_choose<T>(s: Set<T>): (r: T) {\n    assume ne: s != {}\n    ensure m: r in s\n}\n"
+    out := out ++ "pub fn ge_choose<T>(s: Set<T>): (r: T) {\n    require ne: s != {}\n    ensure m: r in s\n}\n"
   -- The element type, and two of its values, distinct where it has two.
   let tys := #[("Int", "1", "2"), ("Bool", "true", "false"), ("String", "\"a\"", "\"b\""), ("Atom", "", ""),
     ("Option<Int>", "Option::None", "Option::Some(0)")] ++
@@ -1415,7 +1458,7 @@ def claimProcs : R String := do
       return a
     let mut body := ""
     let mut results := ""
-    if !ins.isEmpty && (← chance 40) then body := body ++ s!"    assume za: {← int 1} >= 0\n"
+    if !ins.isEmpty && (← chance 40) then body := body ++ s!"    require za: {← int 1} >= 0\n"
     let hasLet ← chance 40
     if hasLet then body := body ++ s!"    {if ← chance 15 then "det " else ""}let zl: Int := {← int 1}\n"
     let hasCall ← chance 40
@@ -1464,7 +1507,7 @@ def claimProcs : R String := do
       | _ => return "true"
     let pre ← clause
     let pre := if pre.startsWith "zr" || pre.startsWith s!"zf{k}" then "zn > ZK" else pre
-    out := out ++ s!"pub fn zf{k}(zn: Int): (zr: Int) \{\n    let zh: Int := zg(1)\n    assume zpre: {pre}\n" ++
+    out := out ++ s!"pub fn zf{k}(zn: Int): (zr: Int) \{\n    let zh: Int := zg(1)\n    require zpre: {pre}\n" ++
       s!"    ensure zpost: {← clause}\n}\n"
   -- Drawn after the above, so that a spec the group wrote before keeps it:
   -- clauses that read a field of a parameter, of a sequence or a record,
@@ -1483,16 +1526,16 @@ def claimProcs : R String := do
     | 4 => return "forall (zb?: Bool), zg(if zb? then 1 else 0) > 0"
     | 5 => return "zr > 0"
     | _ => return "and { zl1: zr > ZK, zl2: zg(1) > 0 }"
-  out := out ++ s!"pub fn zfs(zq: Seq<Int>, zs: Zs): (zr: Int) \{\n    assume zpre: {← fieldClause false}\n" ++
+  out := out ++ s!"pub fn zfs(zq: Seq<Int>, zs: Zs): (zr: Int) \{\n    require zpre: {← fieldClause false}\n" ++
     s!"    ensure zpost: {← fieldClause true}\n}\n"
   let hoClause ← pick #["zk(0) > ZK", "zk(zn) >= zn", "zn > 0", "zg(0) > 0", "and { zl1: zk(1) > 0, zl2: zg(1) > 0 }"]
-  out := out ++ s!"pub fn zho(zk: fn(Int) -> Int, zn: Int): (zr: Int) \{\n    assume zpre: {hoClause}\n    out zr := zk(zn)\n}\n"
+  out := out ++ s!"pub fn zho(zk: fn(Int) -> Int, zn: Int): (zr: Int) \{\n    require zpre: {hoClause}\n    out zr := zk(zn)\n}\n"
   -- Drawn after the above too: procedures whose members are unlabelled
   -- Boolean blocks, of each kind, which are members of their keywords'
   -- kinds, so that a guarantee among them keeps the lint quiet.
   for k in [0:(← below 2) + 1] do
     let mut body := ""
-    if ← chance 50 then body := body ++ "    assume and { zua: zx > 0, zub: zx < 9 }\n"
+    if ← chance 50 then body := body ++ "    require and { zua: zx > 0, zub: zx < 9 }\n"
     if ← chance 30 then body := body ++ "    ensure and { zuc: zx + 1 > zx, zud: zx - 1 < zx }\n"
     body := body ++ s!"    expect and \{ zue: zx >= {← below 3}, zuf: zg(zx) != zx }\n"
     out := out ++ s!"proc zu{k}(zx: Int) \{\n{body}}\n"
@@ -1743,6 +1786,160 @@ def genericRecursion (sc : WScope) : R String := do
       s!"pub proc gr_apps(l: Gl<{ty}>) \{\n{body}}\n"
   return out ++ s!"pub proc gr_apps(l: Gl<{ty}>, m: Gl<{ty}>, t: Gt<{ty}, {ty2}>, w: Gl<{ty2}>) \{\n{body}}\n"
 
+/-- A spec for `--keywords`: one block, a procedure's, a function's, a
+trait method's or a global expectation's, with one clause written with the
+other block's keyword (`assume` in a procedure's or a function's, `require`
+in a global expectation's), alone or among parts that the block rejects,
+before or after it: a modifier or a second result of a function's, an
+`out` of another name or of the result again, `refines`, a claim, a call
+or an `exists` in a function's block, a dotted name, a foreign operator,
+or a clause without a label that is not a Boolean block; or, no error, one
+that is, with a `where` or under a `let`.
+No part is an error of Lean's grammar, which Lean would report instead
+of any error of the block's: a `det` claim, or an evidence setting before
+the `}`. Its static errors are on purpose, so it is a mode of its own, which
+`lake test`'s corpus does not check; both front ends must report the same
+first error of the block (`lang::block_errors`). `genKeywordsItem` now
+and then writes an item of another kind before it, `genKeywordsGrammar`
+puts an error of Lean's grammar in its item, and `genKeywordsTail` writes
+the item after it. -/
+def genKeywords : R String := do
+  let block ← below 4
+  let global := block == 3
+  let wrong := if global then "require" else "assume"
+  let clause ← match ← below 5 with
+    | 0 => pure s!"{wrong} a: x > 0"
+    | 1 => pure s!"{wrong} a: x > k where k := 1"
+    | 2 => pure s!"{wrong} a: and \{ b: x > 0, c: x < 9 }"
+    | 3 => pure s!"{wrong} and \{ b: x > 0 }"
+    | _ => pure s!"{wrong} when x > 0, and \{ b: x < 9 }"
+  -- Parts that the block rejects, or that are errors of their own syntax.
+  let fnParts := #["out s := x", "out r := x\nout r := x", "refines c spec(x)", "expect e: x > 0",
+    "cover g: x > 0", "call w := cb(x)", "exists z: Int", "det let z: Int := x", "ensure q: r == 1",
+    "set_option fren.evidence \"random\" in", "let d.e: Int := x"]
+  let procParts := #["out z := x", "ensure q: y == 1", "let d.e: Int := x",
+    "set_option fren.evidence \"random\" in", "set_option fren.foo \"x\" in"]
+  let globalParts := #["ensure q: x > 0", "out y := x", "expect q: x == 1", "let d.e: Int := x",
+    "set_option fren.evidence \"random\" in"]
+  let pool := if block == 3 then globalParts else if block == 0 then procParts else fnParts
+  let mut before := #[]
+  for _ in [0:← below 3] do before := before.push (← pick pool)
+  -- After the clause, no evidence setting, which Lean's grammar would
+  -- reject before the `}` and so before any check of the block.
+  let mut after := #[]
+  for _ in [0:← below 2] do
+    let part ← pick pool
+    unless part.startsWith "set_option" do after := after.push part
+  -- A function's results: one, or with a modifier, a second, or a dotted
+  -- name, the first's own error.
+  let result ← match ← below 6 with
+    | 0 => pure "det r: Int"
+    | 1 => pure "r: Int, s: Int"
+    | 2 => pure "r.a: Int, s: Int"
+    | 3 => pure "set_option fren.evidence \"random\" in r: Int"
+    | _ => pure "r: Int"
+  -- Drawn after every other draw, so that a spec that has none is the one
+  -- that the seed gave before: now and then, a clause without a label that
+  -- is not a Boolean block, an error of its own syntax
+  -- (`lang::clause_errors`), somewhere before the clause, with the block's
+  -- keyword or the other's, under a leading `when` or with a `where`; or
+  -- one that is a Boolean block with a `where` or under a `let`, no error.
+  if ← chance 50 then
+    let bareParts := if global then #["expect x > 0", "assume x > 0", "require x > 0", "ensure x > 0",
+        "expect when x > 0, x < 9", "assume x > k where k := 1", "assume and { u: x > k } where k := 1"]
+      else if block == 0 then #["ensure y = x", "require x > 0", "assume x > 0", "expect when x > 0, y = x",
+        "ensure y = k where k := x", "require let m := 1 in and { u: x > m }"]
+      else #["require x > 0", "assume x > 0", "ensure r = x", "require when x > 0, x < 9", "expect x > 0",
+        "require and { u: x > k } where k := 1"]
+    let bare ← pick bareParts
+    let at_ ← below (before.size + 1)
+    before := before.insertIdxIfInBounds at_ bare
+  let members := before ++ #[clause] ++ after
+  -- Each line of each member, at the indentation `ind`.
+  let bodyAt (ind : String) := String.join (members.toList.flatMap fun m =>
+    (m.splitOn "\n").map (ind ++ · ++ "\n"))
+  let body := bodyAt "    "
+  let decls := "pub proc cb(x: Int): (v: Int) { ensure e: v = x }\n" ++
+    "pub proc spec(x: Int): (v: Int) { ensure e: v = x }\n"
+  return decls ++ match block with
+    | 0 => s!"\npub proc kw(x: Int): (y: Int) \{\n{body}    ensure r: y = x\n}\n"
+    | 1 => s!"\npub fn kw(x: Int): ({result}) \{\n{body}}\n"
+    | 2 => s!"\npub trait KwTrait \{\n    fn kw(s: Self, x: Int): ({result}) \{\n{bodyAt "        "}    }\n}\n"
+    | _ => s!"\nexpect kw(x: Int) \{\n    call c := cb(x)\n{body}    expect z: c.v = x\n}\n"
+
+/-- The item after `genKeywords`' block (`--keywords`), with messages of
+its own, which neither front end may lose to the block's keyword error
+(`lang::item_error`): now and then, a procedure with a name that
+nothing declares (`F0201`), one with an unused parameter, one whose
+expectation fails (`F0603`), or an application that may not meet a
+function's precondition (`F0629`). It is drawn from a generator of its own
+(`Mode.spec`), so that the block before it is the one that the seed gave
+before. -/
+def genKeywordsTail (block : String) : R String := do
+  if !(← chance 75) then return ""
+  -- An item that names the block's own, a procedure's or a function's,
+  -- which its keyword error breaks.
+  let names := if (block.splitOn "\npub proc kw(").length > 1 then
+      #["\nproc kw_after(x: Int): (y: Int) {\n    call c := kw(x)\n    ensure r: y = c.y\n}\n"]
+    else if (block.splitOn "\npub fn kw(").length > 1 then
+      #["\nproc kw_after(x: Int): (y: Int) {\n    ensure r: y = kw(x)\n}\n"]
+    else #[]
+  pick (#["\nproc kw_after(x: Int): (y: Int) {\n    ensure r: y = x + missing\n}\n",
+    "\nproc kw_after(x: Int): (y: Int) {\n    ensure r: y = 1\n}\n",
+    "\nproc kw_after(x: Int): (y: Int) {\n    ensure r: y = x\n    expect e: y > 0\n}\n",
+    "\nfn kw_pre(x: Int): (r: Int) {\n    require p: x > 0\n    out r := x\n}\n" ++
+      "\nproc kw_after(x: Int): (y: Int) {\n    ensure r: y = kw_pre(x)\n}\n"] ++ names)
+
+/-- An item of each kind that can hold clauses, with a clause written with
+the other block's keyword in one of its members (`--keywords`,
+`lang::item_error`): a procedure, a function, a global expectation, a
+trait's method, procedure or expectation (a procedure being a member that
+the trait does not take), a trait inside a trait, and a procedure under a
+`set_option ... in`. The clause is labelled, a Boolean block without a
+label, or under a leading `when`. It is drawn from a generator of its own
+(`Mode.spec`), and goes before `genKeywords`' block. -/
+def genKeywordsItem : R String := do
+  if !(← chance 60) then return ""
+  let kind ← below 8
+  let global := kind == 2 || kind == 5
+  let wrong := if global then "require" else "assume"
+  let form ← pick #[s!"{wrong} ka: x > 0", s!"{wrong} and \{ ka: x > 0 }", s!"{wrong} when x > 0, and \{ kb: x < 9 }"]
+  -- Each line of the item's member, at the indentation `ind`.
+  let at_ (ind : String) := ind ++ form ++ "\n"
+  return match kind with
+    | 0 => s!"\npub proc kx(x: Int): (y: Int) \{\n{at_ "    "}    ensure r: y = x\n}\n"
+    | 1 => s!"\npub fn kx(x: Int): (r: Int) \{\n{at_ "    "}    out r := x\n}\n"
+    | 2 => s!"\nexpect kx(x: Int) \{\n{at_ "    "}    expect e: x >= 0\n}\n"
+    | 3 => s!"\npub trait KxTrait \{\n    fn kx(s: Self, x: Int): (r: Int) \{\n{at_ "        "}        out r := x\n    }\n}\n"
+    | 4 => s!"\npub trait KxTrait \{\n    fn kc(Self): Int\n    proc kx(x: Int): (y: Int) \{\n{at_ "        "}" ++
+        "        ensure r: y = x\n    }\n}\n"
+    | 5 => s!"\npub trait KxTrait \{\n    fn kc(Self): Int\n    expect kx(s: Self, x: Int) \{\n{at_ "        "}" ++
+        "        expect e: kc(s) = kc(s)\n    }\n}\n"
+    | 6 => s!"\npub trait KxTrait \{\n    fn kc(Self): Int\n    trait KxInner \{\n        fn kx(s: Self, x: Int): (r: Int) \{\n" ++
+        s!"{at_ "            "}            out r := x\n        }\n    }\n}\n"
+    | _ => s!"\nset_option fren.lint.unused_variables \"allow\" in\npub proc kx(x: Int): (y: Int) \{\n{at_ "    "}" ++
+        "    ensure r: y = x\n}\n"
+
+/-- An error of Lean's grammar later in `genKeywords`' item (`--keywords`),
+which both front ends must report instead of any error of a clause's
+keyword (`lang::item_error`): now and then, a member on a line of its own
+before the block's `}`, or a clause written with the other block's keyword
+whose Boolean block spans lines, with the grammar error inside. It is
+drawn from a generator of its own (`Mode.spec`). `block` is the spec that
+`genKeywords` gave. -/
+def genKeywordsGrammar (block : String) : R String := do
+  if !(← chance 30) then return block
+  let global := (block.splitOn "\nexpect kw(").length > 1
+  let trait := block.endsWith "    }\n}\n"
+  let ind := if trait then "        " else "    "
+  let wrong := if global then "require" else "assume"
+  let lines ← pick #[s!"{ind}expect zz: x +\n",
+    s!"{ind}{wrong} zz: and \{\n{ind}    zb: x +\n{ind}}\n",
+    s!"{ind}{wrong} zz: and \{\n{ind}    zb: x > 0,\n{ind}    zc: x < (1\n{ind}}\n"]
+  -- Before the `}` that closes the block: a method's, before the trait's.
+  let close := if trait then "    }\n}\n" else "}\n"
+  return (block.dropEnd close.length).toString ++ lines ++ close
+
 /-- A spec of what the confirmation of models evaluates (`--confirm`,
 `Reqs/Models#known-values`): `div` and `mod` by a literal, positive or
 negative; an index in an argument that a function's body never reads,
@@ -1886,7 +2083,7 @@ def genConfirmed : R String := do
     "pub fn cf_pick?(s: Seq<Ce>, a: Int) := match s[1] { Ce::P(_) => a > 1, Ce::Q => a > 1 }\n"
   for i in [0:(← below 3) + 1] do
     let mut body := s!"    out r := {← int}\n"
-    for j in [0:← below 2] do body := body ++ s!"    assume ca{j}: {← bool}\n"
+    for j in [0:← below 2] do body := body ++ s!"    require ca{j}: {← bool}\n"
     for j in [0:(← below 3) + 1] do body := body ++ s!"    expect cx{j}: {← bool}\n"
     if ← chance 50 then body := body ++ s!"    cover cg0: {← bool}\n"
     let enumerated ← chance 30
@@ -2221,7 +2418,7 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
       let names := #["nat", "c", "post", "equation", "ok"]
       if ← chance 30 then
         let n := if ← chance 30 then "nat" else "p"
-        clauses := clauses ++ s!"    assume {n}0: {← gen { csc with vars := csc.vars.pop } .bool 2}\n"
+        clauses := clauses ++ s!"    require {n}0: {← gen { csc with vars := csc.vars.pop } .bool 2}\n"
       for j in [0:(← below 2) + 1] do
         let n ← pick names
         let n := if j == 0 && n == "nat" then n else s!"{n}{j}"
@@ -2313,7 +2510,7 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
     for e in countExpects, k in [0:countExpects.size] do
       body := body ++ s!"    expect cx{k}: {e}\n"
     for k in [0:← below 2] do
-      body := body ++ s!"    assume a{k}: {← gen { csc with onlyIns := true } .bool 2}\n"
+      body := body ++ s!"    require a{k}: {← gen { csc with onlyIns := true } .bool 2}\n"
     for k in [0:(← below 3) + 1] do
       body := body ++ s!"    ensure q{k}: {← gen csc .bool 3}\n"
     for k in [0:← below 3] do
@@ -2397,6 +2594,9 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
   -- prove, last too.
   cuts := cuts.push out
   if ← chance 40 then out := out ++ "\n" ++ (← inductions)
+  -- Preconditions written `require`, in each of its forms, last too.
+  cuts := cuts.push out
+  if ← chance 40 then out := out ++ "\n" ++ (← requireForms)
   -- Only variables have the type `P`, each declared on a line of its own.
   let types (s : String) := if genericPay then (s.replace ": P\n" ": P<Int>\n").replace ": P,\n" ": P<Int>,\n" else s
   return (types out, cuts.map types)
@@ -2488,6 +2688,18 @@ unsafe def mainFiles (files : List String) (dir : String) : IO UInt32 := do
 
 def rngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0xf407⟩
 
+/-- The generator of `--keywords`' following item (`Wide.genKeywordsTail`),
+split off the seed, so that its draws leave `genKeywords`' unchanged. -/
+def tailRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6b77⟩
+
+/-- The generator of `--keywords`' grammar errors (`Wide.genKeywordsGrammar`),
+split off the seed too. -/
+def grammarRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6772⟩
+
+/-- The generator of `--keywords`' item of each kind (`Wide.genKeywordsItem`),
+split off the seed too. -/
+def itemRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6974⟩
+
 /-- How specs are generated: `--avoid-known`, and `--guards`, which
 generates guarded quantifiers alone (`Wide.genGuards`), many to a spec. -/
 structure Mode where
@@ -2506,35 +2718,54 @@ structure Mode where
   /-- Specs of the forms in which the front ends read a candidate for
   induction (`Wide.inductionForms`). -/
   inductionForms : Bool := false
+  /-- Specs of a clause written with the other block's keyword
+  (`Wide.genKeywords`). -/
+  keywords : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  Id.run ((if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions else if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
-    else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
-    else Wide.genWide m.avoidKnown).run' (rngOf seed))
+  if m.keywords then
+    let block := Id.run (Wide.genKeywords.run' (rngOf seed))
+    let spec := Id.run ((Wide.genKeywordsGrammar block).run' (grammarRngOf seed)) ++
+      Id.run ((Wide.genKeywordsTail block).run' (tailRngOf seed))
+    -- The item of `Wide.genKeywordsItem` after the declarations that
+    -- `genKeywords` writes first.
+    let decls := "pub proc spec(x: Int): (v: Int) { ensure e: v = x }\n"
+    match spec.splitOn decls with
+    | [before, after] => before ++ decls ++ Id.run (Wide.genKeywordsItem.run' (itemRngOf seed)) ++ after
+    | _ => spec
+  else
+    Id.run ((if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
+      else if m.scrutinees then Wide.duplicateScrutineeGroup else if m.confirm then Wide.genConfirmed
+      else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
+      else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
-the next; none for `--guards`, `--sites`, `--confirm`, `--inductions` and `--induction-forms`. The empty prefix
-of `--scrutinees` makes any static error a group error: that generator,
-like an appended group, promises to add none. -/
+the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
+`--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`
+makes any static error a group error: that generator, like an appended
+group, promises to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms then #[] else
+  if m.scrutinees then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
   (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
     (if m.sites then #["--sites"] else #[]) ++ (if m.confirm then #["--confirm"] else #[]) ++
     (if m.scrutinees then #["--scrutinees"] else #[]) ++
-    (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[])
+    (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[]) ++
+    (if m.keywords then #["--keywords"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
-  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms"]) then
+  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
+      "--keywords"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
-           inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms" }
+           inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
+           keywords := args.contains "--keywords" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -2542,7 +2773,8 @@ def Mode.lean (m : Mode) : String :=
   let fields := (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
     (if m.sites then ["sites := true"] else []) ++ (if m.confirm then ["confirm := true"] else []) ++
     (if m.scrutinees then ["scrutinees := true"] else []) ++
-    (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else [])
+    (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else []) ++
+    (if m.keywords then ["keywords := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -2674,7 +2906,7 @@ def knownDifferences : List Known :=
    { mode := { avoidKnown := true }, seed := 3103202, issue := 493, afterStaticError := true,
      difference := "line 28:103: only Lean reports error: Application type mismatch: The argument" },
    { mode := { avoidKnown := true }, seed := 3100624, issue := 493, afterStaticError := true,
-     difference := "line 41:17: only Lean reports warning: `n1` is never negative, so it can be a `Nat`" },
+     difference := "line 41:18: only Lean reports warning: `n1` is never negative, so it can be a `Nat`" },
    -- After a static error, only Lean reports a name as an `Unknown
    -- identifier`.
    { mode := { avoidKnown := true }, seed := 1159002, issue := 295, afterStaticError := true,
@@ -2720,7 +2952,7 @@ def knownDifferences : List Known :=
        reports no parse error at or just before that line, in its item)" },
    -- Only Lean notes why unsatisfiable assumptions cannot hold.
    { mode := { avoidKnown := true }, seed := 1160124, issue := 493,
-     difference := "line 21:12: only Lean reports info: `a0` cannot hold." },
+     difference := "line 21:13: only Lean reports info: `a0` cannot hold." },
    { mode := { avoidKnown := true }, seed := 1160124, issue := 493,
      difference := "line 10:88: only Lean reports info: Both operands of `a0` cannot be true: the stated \
        premises require `a0.fz::f1?@1.2` to be false." },
@@ -3715,10 +3947,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -3735,9 +3967,10 @@ unsafe def main (args : List String) : IO UInt32 := do
     return ← mainFiles files ".lake/fuzz"
   let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
                        sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
-                       inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms" }
+                       inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
+                       keywords := args.contains "--keywords" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
-    && a != "--inductions" && a != "--induction-forms")
+    && a != "--inductions" && a != "--induction-forms" && a != "--keywords")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

@@ -1,0 +1,10 @@
+-- A trait's expectation is a global expectation: `require` in its block is
+-- `F0417`, in both front ends (`lang::item_error`, its `ItemShape`).
+trait Sized {
+    fn size(Self): Int
+    expect big(s: Self) {
+        require a: size(s) > 0  --~ error: global expectations have no `require` members
+        expect e: size(s) >= 0
+    }
+}
+--@ exit: 2

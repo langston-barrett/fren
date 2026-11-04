@@ -7,13 +7,13 @@ set_option fren.lint.unused_variables "allow"
 set_option fren.lint.unused_assumption "allow"
 
 proc caught(a: Int) {
-    assume pinned: a = -1
+    require pinned: a = -1
     expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `caught::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 -- Within a sequence too.
 proc in_sequence(q: Seq<Int>) {
-    assume pinned: q = [1, 2]
+    require pinned: q = [1, 2]
     expect e: q.len = 3  --~ error: internal error: the solver's model for the expectation check of `in_sequence::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
@@ -22,13 +22,13 @@ proc in_sequence(q: Seq<Int>) {
 fn ignore(x: Int): Int := 0
 
 proc free(a: Int, b: Int) {
-    assume pinned: ignore(b) = 0 and a = -1
+    require pinned: ignore(b) = 0 and a = -1
     expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `free::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 -- A model without integers is read right, and its counterexample shown.
 proc unaffected(x?, y?) {
-    assume ax: x?
+    require ax: x?
     expect e: y?  --~ error: counterexample: x? = true, y? = false
 }
 

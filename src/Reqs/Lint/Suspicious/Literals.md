@@ -117,7 +117,7 @@ proc const_is_empty_exact(
     n: Nat,
     length: Int,         -- the literal's `len` or `card`
 ) {
-    assume lengths: (if set? then (if n = 0 then length = 0 else 1 <= length <= n)
+    require lengths: (if set? then (if n = 0 then length = 0 else 1 <= length <= n)
         else length = n)
 
     call p := const_is_empty(op, bound, left?, set?, n)
@@ -287,10 +287,10 @@ pub proc duplicate_elements_members(
     operands: Nat,                -- the chain's operands
     test_at: Nat,                 -- the test's position among them, from 0
 ) {
-    assume within: test_at < operands
-    assume texts: elements.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
+    require within: test_at < operands
+    require texts: elements.len = forms.len and (forall (a b: Int), when 0 <= a < forms.len
         and 0 <= b < forms.len and forms[a] = forms[b], elements[a].text = elements[b].text)
-    assume one_scope: forall (a: Int), when 0 <= a < elements.len, elements[a].scope = scope
+    require one_scope: forall (a: Int), when 0 <= a < elements.len, elements[a].scope = scope
 
     call removed := duplicate_elements(forms, k)
     call first := first_same(forms, k)

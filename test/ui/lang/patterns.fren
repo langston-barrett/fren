@@ -20,7 +20,7 @@ proc in_case(case: Case, name: String): (det conventional?) {
 }
 
 proc codes(code: String): (lint?) {
-    assume well_formed: code.matches?(r"F0[1-7][0-9][0-9]")
+    require well_formed: code.matches?(r"F0[1-7][0-9][0-9]")
 
     ensure r: lint? iff code.starts_with?("F07")
 

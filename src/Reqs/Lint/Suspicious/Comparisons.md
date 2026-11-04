@@ -85,7 +85,7 @@ pub proc absurd_ordered(
     use self::AbsurdValue::{AlwaysFalse, AlwaysTrue, NotFixed}
     use self::Comparison::{Ge, Gt, Le, Lt}
 
-    assume within: variant <= last
+    require within: variant <= last
 
     ensure rule: value = (if not op in {Lt, Le, Gt, Ge} then NotFixed
         else if (forall (x: Position), when x <= last, compared?(op, variant, right?, x)) then AlwaysTrue

@@ -3,7 +3,7 @@
 enum Mode { Off, On }
 
 proc c(m: Mode, x: Int): (y: Int) {
-    assume pos: x > 0
+    require pos: x > 0
     ensure on: when m = Mode::On, y = x
     ensure off: when m = Mode::Off, y = 0
 }

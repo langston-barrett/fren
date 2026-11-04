@@ -1,0 +1,10 @@
+-- `require` without a label in a global expectation's block, not a
+-- Boolean block: the error of its own syntax comes before `F0417`
+-- (`lang::clause_errors`, `lang::part_error`), in both front ends.
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
+
+expect even(x: Int) {
+    require x < 10  --~ error: expected a named clause or a Boolean block
+    call d := double(x)
+}
+--@ exit: 2

@@ -1,0 +1,14 @@
+-- A trait inside a trait, a member that the outer trait does not take,
+-- still has its clauses read, at any depth: `assume` in its method is
+-- `F0169`, which comes first, in both front ends (`lang::item_error`, its
+-- `Shape`).
+trait Outer {
+    fn size(Self): Int
+    trait Inner {
+        fn count(s: Self, n: Int): (r: Int) {
+            assume a: n > 0  --~ error: a precondition is written `require`, not `assume`
+            out r := n
+        }
+    }
+}
+--@ exit: 2

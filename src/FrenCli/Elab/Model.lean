@@ -1106,7 +1106,10 @@ nothing (`Reqs/View#static-errors`). -/
 def State.keepLints (s t : State) : State :=
   { s with lintReports := t.lintReports, lintFixes := t.lintFixes, used := t.used, usedItems := t.usedItems
            useRecords := t.useRecords, useLocs := t.useLocs, items := t.items, declared := t.declared
-           seenSettings := t.seenSettings, globalReads := t.globalReads, hofParams := t.hofParams, fnArgs := t.fnArgs }
+           seenSettings := t.seenSettings, globalReads := t.globalReads, hofParams := t.hofParams, fnArgs := t.fnArgs
+           -- A `set_option ... in` before the item is read whatever becomes
+           -- of the item, as the Lean front end reads it.
+           settings := t.settings, settingRemovals := t.settingRemovals }
 
 /-- Why an item failed: its static errors, the last of which stopped it,
 and the state when it did, whose lints outlive it (`State.keepLints`). -/

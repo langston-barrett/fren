@@ -21,7 +21,7 @@ pub proc needless_update(
     n_fields: Nat,     -- the fields of `r`'s record
     n_given: Nat,      -- the fields the update gives, each at most once
 ): (det fires?) {
-    assume within: n_given <= n_fields
+    require within: n_given <= n_fields
 
     ensure rule: fires? iff n_given = n_fields
 }

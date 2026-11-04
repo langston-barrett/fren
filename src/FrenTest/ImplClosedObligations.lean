@@ -5,7 +5,7 @@ open Fren.Lang
 mod impl_closed_obligations
 pub type Atom
 pub proc list_domain(items: Seq<Atom>): (count: Int) {
-  assume nonempty: items != []
+  require nonempty: items != []
   ensure length: count = items.len
 }
 interp Atom := Lean.Name

@@ -215,7 +215,7 @@ is for its [trigger](../Lang/Procedures.md#triggers). `lint::absolute_paths` sta
 pub proc absolute_paths(
     n_segments: Int,     -- the path's segments
 ): (det fires?) {
-    assume counts: n_segments >= 1
+    require counts: n_segments >= 1
 
     ensure rule: fires? iff n_segments >= 3
 }
@@ -254,7 +254,7 @@ pub proc precedence(
 ## The order of members
 
 `arbitrary_source_item_ordering` fires on a procedure whose members are
-not in this order: `use`, `assume`, `exists`, `let` and `out`, `call`,
+not in this order: `use`, `require`, `exists`, `let` and `out`, `call`,
 `ensure`, `expect`, then `cover`. Only kinds are ordered: the members of
 one kind may be in any order, and a `let` and an `out`, which defines a
 result as a `let` defines a private variable, are of one kind. A `set_option
@@ -262,7 +262,7 @@ fren.evidence ... in` is part of the member after it. The order reads as
 a contract, after the signature, which gives the procedure's parameters
 and results: what it assumes of its parameters, then the variables it
 chooses or defines, the procedures it calls, and what it guarantees and
-claims of them. An `assume` mentions only parameters, so it comes first,
+claims of them. A `require` mentions only parameters, so it comes first,
 before a definition that relies on it for its definedness, such as `let
 y := q[i]`. A call's arguments may mention a `let`, and the guarantees its
 variables, so `call` comes between the two, and cover goals, which claim
@@ -340,7 +340,7 @@ pub proc arbitrary_source_item_ordering(
     det first: Int,              -- where it is reported, or `-1`
     det keeps_mentions?,         -- in order, each mention comes after what it mentions
 ) {
-    assume positions: forall (m: Mention), when m in mentions,
+    require positions: forall (m: Mention), when m in mentions,
         0 <= m.mentioner < kinds.len and 0 <= m.mentioned < kinds.len
 
     -- Some member is written after one of a later kind.
@@ -373,13 +373,13 @@ pub proc member_order_written(group: Group): (det shown: Severity, det error?) {
     out error? := is_error?
     let is_error? := shown = Error
     exists spare?
-    assume known: group != Group::Decidability
+    require known: group != Group::Decidability
     use view::Severity::{Error, Info, Warning}
 }
 
 pub proc member_order_fixed(group: Group): (det shown: Severity, det error?) {
     use view::Severity::{Error, Info, Warning}
-    assume known: group != Group::Decidability
+    require known: group != Group::Decidability
     exists spare?
     let is_error? := shown = Error
     out error? := is_error?

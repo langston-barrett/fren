@@ -3,5 +3,5 @@ proc sub(a: Int): (b: Int) { ensure r: b = a }
 
 proc c(i: Int) {
     call s := sub(i)
-    assume a: s.b > 0
+    require a: s.b > 0
 }

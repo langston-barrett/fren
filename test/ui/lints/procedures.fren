@@ -11,7 +11,7 @@ enum Mode { Heat, Cool }
 -- Each member that a global expectation's block accepts.
 proc colder_is_cold(a: Int, b: Int, m: Mode) {  --~ warning: procedure `colder_is_cold` has no outputs
     use self::Mode::Heat
-    assume sorted: a <= b
+    require sorted: a <= b
     let gap: Int := b - a
     call x := band(a)
     call y := band(b)
@@ -38,12 +38,12 @@ proc tested_claim(n: Int) {  --~ warning: procedure `tested_claim` has no output
 -- assumption and an expectation, which a global expectation accepts, and a
 -- guarantee, which it does not.
 proc unlabelled_claims(n: Int) {  --~ warning: procedure `unlabelled_claims` has no outputs
-    assume and { big: n > 0, small: n < 9 }
+    require and { big: n > 0, small: n < 9 }
     expect and { above: n >= 1, below: n <= 8 }
 }
 
 proc unlabelled_guarantee(n: Int) {
-    assume small: n < 3
+    require small: n < 3
     ensure and { a: n + 1 > n, b: n - 1 < n }  --~ warning: `unlabelled_guarantee::a` is redundant
     --~^ warning: `unlabelled_guarantee::b` is redundant
 }
@@ -71,7 +71,7 @@ pub proc public_claim(n: Int) { expect e: n + 1 > n }
 proc with_result(n: Int): (m: Int) { out m := n }
 
 proc with_guarantee(n: Int) {
-    assume small: n < 3
+    require small: n < 3
     ensure e: n + 1 > n  --~ warning: `with_guarantee::e` is redundant: it always holds
 }
 
@@ -94,7 +94,7 @@ proc caller(n: Int): (m: Int) {
 }
 
 proc refined(n: Int) {
-    assume big: n > 0
+    require big: n > 0
     expect positive: n >= 1
 }
 

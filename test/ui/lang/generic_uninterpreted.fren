@@ -16,12 +16,12 @@ fn choose<T>(a: T, b: T): (r: T) { ensure either: choose(a, b) = a or choose(a, 
 
 -- Only a precondition, which each application's arguments must meet, at
 -- its instance.
-fn get<T>(o: Option<T>): (r: T) { assume present: o != Option::None }
+fn get<T>(o: Option<T>): (r: T) { require present: o != Option::None }
 
 -- A contract at an instance: its postconditions hold of each application,
 -- and decide the counterexample, which both front ends show alike.
 proc at_int(x: Int, y: Int): (det c: Int) {
-    assume pinned: x = 1 and y = 2
+    require pinned: x = 1 and y = 2
     out c := choose(x, y)
 
     expect from_inputs: c = x or c = y

@@ -1,7 +1,7 @@
 -- Snapshot of the binary's full output for failing checks: message layout,
 -- help and notes, counterexample values, the summary and the exit code.
 proc exit(n_fail: Int, n_inconc: Int): (code: Int) {
-    assume counts: n_fail >= 0 and n_inconc >= 0
+    require counts: n_fail >= 0 and n_inconc >= 0
     exists scratch: Int
     ensure failures: when n_fail > 0, code = 1
     ensure inconc: when n_inconc > 0, code = 3

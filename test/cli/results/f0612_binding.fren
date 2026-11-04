@@ -4,7 +4,7 @@
 enum Reply { Empty, Value(Int) }
 
 proc q(r: Reply): (det w: Int) {
-    assume only: r = Reply::Empty
+    require only: r = Reply::Empty
     ensure x: w = 0
     expect bound: when r is Reply::Value(v), v = 1
     expect unbound: when r is Reply::Value(_), w = 1

@@ -25,7 +25,7 @@ use view::Severity
 | `allow_attributes` | `F0780` | `restriction` | `allow` | a `set_option` that sets a lint or a group to `allow` (see [Allowed lints](Lint/Restriction.md#allowed-lints)) |
 | `almost_complete_range` | `F0757` | `suspicious` | `warn` | a range in a pattern one character short of an alphabet, such as `a-y` (see [Ranges of characters](Lint/Suspicious/Literals.md#ranges-of-characters)) |
 | `arbitrary_source_item_ordering` | `F0779` | `restriction` | `allow` | a procedure whose members are out of order, such as an `exists` after an `ensure` (see [The order of members](Lint/Restriction.md#the-order-of-members)) |
-| `assertions_on_constants` | `F0761` | `style` | `warn` | an `assume`, `ensure` or `expect`, or a clause of a function's contract, that mentions no variable, such as `ensure r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
+| `assertions_on_constants` | `F0761` | `style` | `warn` | a `require`, `assume`, `ensure` or `expect`, or a clause of a function's contract, that mentions no variable, such as `ensure r: true` (see [Constant constraints](Lint/Style.md#constant-constraints)) |
 | `bool_equality` | `F0731` | `pedantic` | `allow` | `a = b` on `Bool`s (see [Boolean equality](Lint/Pedantic.md#boolean-equality)) |
 | `branches_sharing_code` | `F0778` | `pedantic` | `allow` | `if c then a op x else b op x`, whose branches share an operand (see [Branches sharing code](Lint/Pedantic/Conditionals.md#branches-sharing-code)) |
 | `card_zero` | `F0716` | `style` | `warn` | a comparison of a set's or relation's `card` with `0` or `1` that says whether it is empty, such as `s.card = 0` (see [Empty collections](Lint/Style.md#empty-collections)) |
@@ -75,7 +75,7 @@ use view::Severity
 | `manual_forall` | `F0826` | `style` | `warn` | three or more operands of a run of `and` or `or` that are one expression at each variant of an enumeration, such as `Mode::Heat in s and Mode::Cool in s and Mode::Off in s` (see [Operands at each variant](Lint/Style/Let.md#operands-at-each-variant)) |
 | `manual_method` | `F0732` | `complexity` | `warn` | a search written with `index_of`, `slice` or `at`, such as `s.index_of(t, 0) >= 0` (see [Searches](Lint/Complexity/Methods.md#searches)) |
 | `manual_min_max` | `F0813` | `complexity` | `warn` | a conditional that is `min` or `max`, such as `if a < b then a else b` (see [Lesser and greater](Lint/Complexity/Integers.md#lesser-and-greater)) |
-| `manual_nat` | `F0810` | `style` | `warn` | an `Int` input or output that an assumption or a guarantee keeps at least 0, as in `assume counts: n >= 0` (see [Natural numbers](Lint/Style/Naturals.md#integers-kept-at-least-0)) |
+| `manual_nat` | `F0810` | `style` | `warn` | an `Int` input or output that an assumption or a guarantee keeps at least 0, as in `require counts: n >= 0` (see [Natural numbers](Lint/Style/Naturals.md#integers-kept-at-least-0)) |
 | `manual_ordering` | `F0841` | `pedantic` | `allow` | a membership in the first or last variants of an ordered enumeration, such as `s in {Severity::Silent, Severity::Info}` (see [Orderings written out](Lint/Pedantic/Comparisons.md#orderings-written-out)) |
 | `manual_pattern_char_comparison` | `F0756` | `style` | `warn` | an alternation of single characters in a pattern, such as `a\|b` (see [Classes of characters](Lint/Style.md#classes-of-characters)) |
 | `manual_pattern_test` | `F0805` | `style` | `warn` | two or more equations of one expression with values that patterns write, such as `x = 429 or x = 503`, or the disequations of its dual (see [Pattern tests written out](Lint/Style/PatternTests.md)) |
@@ -442,7 +442,7 @@ core, so the refinement is checked by testing:
 
 ```fren
 pub proc stepwise(settings: Seq<Level>): (accepted?) {
-    assume three: settings.len = 3
+    require three: settings.len = 3
 
     call first := setting(Warn, settings[0])
     call second := setting(first.level, settings[1])
@@ -479,7 +479,7 @@ pub proc effective(
     det level: Level,
     det error?,          -- the `set_option` tries to change a forbidden lint
 ) {
-    assume no_cli_expect: cli != Expect
+    require no_cli_expect: cli != Expect
 
     ensure cli_rule: after_cli = if cli_set? and (default_level != Forbid or cli = Forbid)
         then cli else default_level

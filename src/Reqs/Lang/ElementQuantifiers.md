@@ -221,7 +221,7 @@ pub proc index_set(
 ): (
     det index_set?,                -- `terms` is the index set of the others
 ) {
-    assume neighbours: before.len = positions.len and after.len = positions.len
+    require neighbours: before.len = positions.len and after.len = positions.len
 
     ensure rule: index_set? iff (terms != [] and terms[0] = zero
         and (forall (t: IndexTerm), when t in lasts, t in terms)
@@ -276,7 +276,7 @@ pub proc element_projection(
 ): (
     det projection?,            -- `projected` and `updated` are made so
 ) {
-    assume zero: 0 in ix
+    require zero: 0 in ix
 
     ensure rule: projection? iff (projected.len = q.len
         and (forall (t: Int), when t in ix and 0 <= t < q.len, projected[t] = q[t])

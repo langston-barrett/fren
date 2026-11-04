@@ -92,7 +92,7 @@ error[F0601]: `http::retry` is not realizable
                attempt = 4
                retry_after = Seconds(31)
            no outputs satisfy `transient`, `honor_server` and `latency_budget`
-   = help: weaken one of them, or add an `assume` that rules this input out
+   = help: weaken one of them, or add a `require` that rules this input out
 
 note: `transient` forces decision is Decision::RetryAfter(_), but `honor_server` and `latency_budget` force decision = Decision::GiveUp
   --> retry.fren:19:12

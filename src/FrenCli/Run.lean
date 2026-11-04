@@ -512,11 +512,13 @@ def parseText (chars : Array Char) : Parsed :=
     | .ok (items, starts) => .ok (toks, items, starts, literalLints chars toks comments)
 
 /-- The items of a parsed file, or the headline of its lexer's or else its
-parser's error: what the evaluator reads of it (`readItems`), by
-`parsedItems_parseText`. -/
+parser's error, or that of its first broken item (`Parser.firstBroken?`):
+what the evaluator reads of it (`readItems`), by `parsedItems_parseText`. -/
 def parsedItems : Parsed → Except String (Array Item)
   | .error (_, msg) => throw msg.headline
-  | .ok (_, items, _) => pure items
+  | .ok (_, items, _) => match Parser.firstBroken? items with
+    | some e => throw e.msg.headline
+    | none => pure items
 
 /-- The evaluator's reading of a file's items (`readItems`, which
 `specStateOf` lowers) is that of the elaborator's parse of it, so that it
@@ -525,9 +527,16 @@ theorem parsedItems_parseText (chars : Array Char) : parsedItems (parseText char
   unfold parseText readItems lex parse parseItems
   rcases h : lexWithComments chars with e | ⟨toks, comments⟩
   · rfl
-  · rcases h' : StateT.run Parser.file { toks, src := chars } with e | ⟨items, s⟩ <;>
-      simp only [StateT.run', h', Functor.map, Except.map] <;>
-      simp only [StateT.run] at h' <;> simp only [h'] <;> rfl
+  · rcases h' : StateT.run Parser.file { toks, src := chars } with e | ⟨items, s⟩
+    · simp only [StateT.run', h', Functor.map, Except.map]
+      simp only [StateT.run] at h'
+      simp only [h']
+      rfl
+    · simp only [StateT.run', h', Functor.map, Except.map]
+      simp only [StateT.run] at h'
+      simp only [h']
+      -- A file that parses: both stop at its first broken item.
+      rcases hb : Parser.firstBroken? items with _ | e <;> simp only [parsedItems, hb, Bind.bind, Except.bind] <;> rfl
 
 /-- `elabText st file chars`, where `p` is `parseText chars`: the same
 cases, after the same lexing and parsing, so that a file parsed once can

@@ -1,0 +1,28 @@
+-- A clause without a label is a Boolean block under any leading `let`, and
+-- before a `where`, which means a leading `let`, as under a leading `when`
+-- (`lang::clause_errors`), in both front ends: in a procedure's block, a
+-- function's, and a global expectation's `assume`. Each block's leaves are
+-- its clauses.
+pub proc p(x: Int): (y: Int) {
+    require and { a: x > k } where k := 0
+    require let m := 9 in and { b: x < m }
+    ensure and { c: y > x - k } where k := 1
+}
+
+pub fn f(x: Int): (r: Int) {
+    require and { d: x > k } where k := 0
+    require let m := 9 in and { e: x < m }
+    out r := x + 1
+}
+
+expect g(x: Int) {
+    assume and { h: x > k } where k := 0
+    assume let m := 9 in and { i: x < m }
+    call c := p(x)
+    expect j: c.y >= x and f(x) = x + 1
+}
+
+proc q(): (z: Int) {
+    ensure s: z = f(0)  --~ error: the precondition `d` of `f` may not hold at this application in `q::s`
+}
+--@ exit: 1

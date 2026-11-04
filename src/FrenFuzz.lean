@@ -483,7 +483,7 @@ def genSpec : R GSpec := do
       -- Its bindings are in the order of the callee's parameters.
       let args := ", ".intercalate (i.bindings.toList.map (·.2))
       out := out ++ s!"    call {i.name} := {comps[i.comp]!.name}({args})\n"
-    for (n, e) in c.assumes do out := out ++ s!"    assume {n}: {e}\n"
+    for (n, e) in c.assumes do out := out ++ s!"    require {n}: {e}\n"
     for (n, e) in c.reqs do out := out ++ s!"    ensure {n}: {e}\n"
     for (n, e) in c.expects do out := out ++ s!"    expect {n}: {e}\n"
     for (n, e) in c.covers do out := out ++ s!"    cover {n}: {e}\n"

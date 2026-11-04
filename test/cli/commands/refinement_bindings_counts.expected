@@ -42,10 +42,10 @@ error[F0714]: this is outside the decidable core: the solver does not reliably c
    = help: say what the members are, with `in` and `subset`, rather than how many there are
 
 warning[F0810]: `n` is never negative, so it can be a `Nat`
-  --> test/cli/commands/refinement_bindings_counts.fren:13:17
+  --> test/cli/commands/refinement_bindings_counts.fren:13:18
    |
-13 |     assume pos: n >= 0
-   |                 ^^^^^^ `n` is at least 0 by this assumption
+13 |     require pos: n >= 0
+   |                  ^^^^^^ `n` is at least 0 by this assumption
    |
    = note: a `Nat` parameter brings this assumption with its type
    = note: a call must then pass a `Nat` for `n`

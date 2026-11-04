@@ -1,0 +1,11 @@
+-- A trait's procedure, a member that the trait does not take (`F0222`),
+-- still has its clauses read: `assume` in it is `F0169`, which comes first,
+-- in both front ends (`lang::item_error`, its `ItemShape`).
+trait Counter {
+    fn count(Self): Int
+    proc reset(c: Int): (d: Int) {
+        assume a: c > 0  --~ error: a precondition is written `require`, not `assume`
+        ensure zero: d = 0
+    }
+}
+--@ exit: 2
