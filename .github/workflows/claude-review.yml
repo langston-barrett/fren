@@ -2,7 +2,9 @@ name: pr-review
 # Claude's review of a pull request's head, by the review rules of
 # AGENTS.md, once `pre-merge` has passed on it: a full review, or a light
 # check ("fixes only" or "rebase only") when the last comment that names
-# the head asks for one (.github/pr-review/kind.py). An update from `main`
+# the head asks for one (.github/pr-review/kind.py); a light check that
+# finds more changed than the request lists asks for a full review instead
+# (compose.py). An update from `main`
 # of a reviewed head gets none, and nor does a head whose last comment that
 # names it starts with "wording only", if the head's only parent is the
 # head of the last clean review before that comment and it changes neither
@@ -220,11 +222,12 @@ jobs:
         # Read, Grep and Glob only in the checkout (`./**`), and Write only
         # for review.md (Edit's rules hold for Write); a headless run denies
         # what is not allowed. The denials are a second layer, should a
-        # path's form slip past `./**`. A full review runs on Opus; a light
-        # check (`fixes`, `rebase`), which reads only what changed since a
-        # clean review, runs on Sonnet, to save the plan's Opus quota.
+        # path's form slip past `./**`. A light check (`fixes`, `rebase`),
+        # which reads only what changed since a clean review, runs on Sonnet
+        # (`claude-sonnet-5`), to save the plan's Opus quota; any other kind,
+        # a full review included, runs on Opus.
         claude_args: >-
-          --model ${{ needs.prepare.outputs.kind == 'full' && 'claude-opus-5-5' || 'claude-sonnet-5' }}
+          --model ${{ (needs.prepare.outputs.kind == 'fixes' || needs.prepare.outputs.kind == 'rebase') && 'claude-sonnet-5' || 'claude-opus-5-5' }}
           --allowedTools "Read(./**),Grep(./**),Glob(./**),Write(./review.md),Edit(./review.md)"
           --disallowedTools "Agent,Task,Bash,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Read(//proc/**),Read(//sys/**),Read(//dev/**),Read(//etc/**),Read(//tmp/**),Read(//var/**),Read(//run/**),Read(//root/**),Read(//opt/**),Read(//usr/**),Read(//snap/**),Read(//mnt/**),Read(//home/runner/.*/**),Read(//home/runner/work/_temp/**),Read(//home/runner/work/_actions/**),Read(//home/runner/work/_tool/**),Read(//home/runner/runners/**),Read(//home/runner/actions-runner/**)"
     - if: ${{ always() }}
