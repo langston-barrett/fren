@@ -202,7 +202,10 @@ input_dir reqs_dev_md where
 -- `Impls` builds, imports them, so they are built in `ImplsTested`, the last
 -- library that has them (see the top of this file). A module that makes one
 -- elsewhere fails `lake test`'s `libraries` job, which also checks that
--- `testReaders` in `src/FrenTestMain.lean` lists these three.
+-- `testReaders` in `src/FrenTestMain.lean` lists these three. The files
+-- named by their `tested` claims and the converse scan (`fren.testGlobs`)
+-- must be among their library's actual `needs`; an unreadable dependency
+-- declaration fails the job.
 @[default_target] lean_lib Impls
 
 lean_lib ImplsTested where

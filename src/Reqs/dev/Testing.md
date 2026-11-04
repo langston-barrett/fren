@@ -102,12 +102,14 @@ pub mod testing
   reaches only by an import, with those of the last library that has it.
   So no module is in the globs of two libraries; each module of `Reqs`
   reads only the specs that its library needs; only the modules of `Impls`
-  whose library needs the tests, `ImplsTested`, make `tested` claims; and
-  only the tests of `FrenTestFiles`, whose library needs the files that
-  they read, read files with `#fren_md`, and they, and the files that they
-  read, read only files that it needs. Also, the modules that copy a root
-  module's imports, to keep it off the build's critical path, import
-  exactly its modules.
+  whose library needs the tests, `ImplsTested`, make `tested` claims.
+  The files named by those claims and the converse scan (`fren.testGlobs`)
+  must be among that library's actual `needs`; an unreadable dependency
+  declaration fails the check. Only the tests of `FrenTestFiles`, whose
+  library needs the files that they read, read files with `#fren_md`, and
+  they, and the files that they read, read only files that it needs.
+  Also, the modules that copy a root module's imports, to keep it off the
+  build's critical path, import exactly its modules.
 - **Lean-only behaviour** (`lake build`): `#guard_msgs` tests in
   `src/FrenTest` and `src/FrenTestFiles`, e.g. the shape of generated
   definitions.
@@ -865,12 +867,21 @@ pub proc ui_file(
 A test's result is *fresh* when it is that of the files it reads as they
 are now: its module was rebuilt after the last change to any of them, or
 none of them changed. Lake rebuilds a module when a file that its library
-needs changed since its last build, which Fren trusts; that each module
-that reads files, with `#fren_md`, reads only files that its library
-needs is what the `libraries` job checks, by reading the sources and
-`lakefile.lean`, so it is tested, not proved. `testing::fresh` states how
-the two give freshness: whenever the files read are among those needed,
-the result is fresh.
+needs changed since its last build, which Fren trusts.
+
+**Rules**
+
+r[lake.reader-inputs]
+The `libraries` job rejects a reader in `Reqs`, `ImplsTested`, or
+`FrenTestFiles` if a file it reads through `#fren_md`, `tested`, or the
+converse scan (`fren.testGlobs`) is outside its owning library's actual
+`needs`, or if a dependency declaration cannot be read.
+
+The job checks the real sources and resolves library ownership and input
+paths and filters from `lakefile.lean`. This rule has no formal Req
+binding; its regressions exercise the concrete check. The abstract
+`testing::fresh` states how the subset gives freshness: whenever the
+files read are among those needed, the result is fresh.
 
 The same goes for the driver itself: `lake test` runs `fren_test`, its
 test driver, after Lake has rebuilt it from the sources as they are now.
