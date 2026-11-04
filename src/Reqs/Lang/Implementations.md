@@ -874,10 +874,11 @@ on the number of rounds is part of the language.
 > items after it are finitely many.
 
 r[module.use.instantiated] lang::sentence_use
-A check instantiates the sentences that it may use and that meet the
-binding rule, whose subject the closure applies: every axiom of its module
-and of the modules it imports, wherever it is declared, and each theorem
-declared before the check's item, as `module.use` states. An `ensure` is used as a [contract](Items.md#contracts) is.
+A check instantiates the sentences that `module.use` gives it and that
+meet the binding rule, whose subject the closure applies. In particular,
+an interface's checks use only its own laws and lemmas
+(`implementation.lemma-order`). An `ensure` is used as a
+[contract](Items.md#contracts) is.
 
 r[module.use.subject] lang::sentence_use, lang::no_subject_used
 A sentence is used where its subject is applied by the query, or by an
@@ -1596,8 +1597,8 @@ an interface rests on its laws where it has some, and a global expectation
 on none.
 
 > **Note:** So `F0665` is the same as today on every check of such a
-> module, as `module.expansion` requires, and each pass that it allows to
-> be new carries `F0665` where `check::law_premise` gives it.
+> module whose own verdict is unchanged, as `module.expansion` requires.
+> Each new own verdict carries `F0665` where `check::law_premise` gives it.
 
 r[implementation.report.vacuity]
 Where the axioms cannot hold together, every check that uses them holds

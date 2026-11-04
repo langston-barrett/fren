@@ -245,7 +245,7 @@ module.order.items -- a definition of the order of items
 module.use -- which sentences a check may use: how it uses them, by instantiation, is `module.use.instantiated`'s, and what a verdict that rests on an `assume` item reports is `implementation.report.unchecked`'s
 module.meta.conservative -- metatheory: argued from the totality of structural recursion (#669)
 module.meta.free -- metatheory: argued from the solver's datatypes and Lean's inductive types (#669)
-module.expansion -- partly formalized: `expansion::strict_expansion` checks it over the model of a module; that the model reads every spec of today's forms is the front ends', from stage 3
+module.expansion -- partly formalized: `expansion::strict_expansion` and `expansion::laws_expansion` check the reports from the queries, premises and module model; that these read every spec of today's forms is the front ends', from stage 3
 
 # src/Reqs/dev/Testing.md
 lake.reader-inputs -- checked by concrete lakefile/source regressions; no formal binding for ownership, paths and input filters

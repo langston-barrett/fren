@@ -666,8 +666,11 @@ no query states freeness. It is argued.
 r[module.expansion] expansion::strict_expansion
 A spec that Fren accepts today, whose sentences and block members are all
 of today's forms, has the same verdicts and messages as before #669, but
-for the checks that were Inconclusive and that `module.expansion.instances`
-and `module.expansion.induction` let be decided.
+for the checks that were shown as Inconclusive: `module.expansion.instances`
+and `module.expansion.induction` may decide their own verdicts, or settle
+their premises so that a check already passing on its own loses `F0664`
+and is shown as a pass. A shown pass stays a pass, and a shown failure
+stays a failure, with the same messages.
 Today's forms are a `require` clause and an `ensure` clause of a function
 or procedure, an `assume` member of a global expectation's block, an
 `expect` of a procedure, a global expectation or a trait, a global
