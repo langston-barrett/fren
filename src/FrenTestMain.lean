@@ -384,7 +384,7 @@ structure Rule where
 
 /-- The labels whose rules in chapter `md` each have a requirement, or are
 listed in `unformalizedFile` (`Reqs/dev/Style#rules-and-requirements`).
-`Rules` is used only in chapters under `src/Reqs/dev/`. -/
+`Rules` requires formalization only in chapters under `src/Reqs/dev/`. -/
 def formalLabels (md : String) : Array String :=
   #["Legality rules", "Dynamic semantics"] ++ (if md.startsWith "src/Reqs/dev/" then #["Rules"] else #[])
 
@@ -720,7 +720,7 @@ def implBindings : IO (Array (String × String × String)) := do
 /-- The problems of rules under labels that require formalization, and of
 the gap list: every such rule has a requirement or is listed, and not both
 unless it is partly formalized (`Reqs/dev/Style#rules-and-requirements`).
-The label `Rules` is an error outside chapters under `src/Reqs/dev/`. -/
+A rule under `Rules` outside chapters under `src/Reqs/dev/` is an error. -/
 def ruleRequirementProblems (rules : Array (String × Rule × Array (ReqItem × Array String)))
     (listed : Array Listed) : Array String := Id.run do
   let mut failures := #[]
@@ -784,6 +784,16 @@ def guardRuleChapter (md text gap : String) : Array String :=
   ["", "\n```fren\npub mod testing\n\nconst example: Bool := true\n```\n"].all fun block =>
     guardRuleChapter md ("**Rules**\n\nr[testing.example]\nAn example holds.\n" ++ block) "" ==
       #[s!"{md}:3: **Rules** is used only in chapters under src/Reqs/dev/"]
+-- The restriction is on identified rules; a bare label has no rules to check.
+#guard (guardRuleChapter "src/Reqs/Lang/Testing.md"
+  "**Rules**\n\nA paragraph without a rule identifier.\n" "").isEmpty
+-- A gap entry cannot make Rules normative in a language chapter: both
+-- the gap entry and the rule's label are rejected.
+#guard guardRuleChapter "src/Reqs/Lang/Testing.md"
+    "**Rules**\n\nr[testing.example]\nAn example holds.\n"
+    "# src/Reqs/Lang/Testing.md\ntesting.example -- checked by review\n" ==
+  #["test/unformalized_rules.txt:2: `testing.example` (src/Reqs/Lang/Testing.md:3) is not under a label that requires formalization in this chapter, so it needs no requirement: remove its line",
+    "src/Reqs/Lang/Testing.md:3: **Rules** is used only in chapters under src/Reqs/dev/"]
 
 /-- The rules of the reference with their requirements, by chapter, the
 rules that tests cite, each with the test, and the problems that
@@ -843,10 +853,10 @@ def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem �
     ++ "For each rule of a chapter of the reference that has rule identifiers:\n"
     ++ "the requirements that formalize it, the `impl`s bound to them, and the\n"
     ++ "tests that cite it (see [Writing the reference](Style.md#rules-and-requirements)).\n"
-    ++ "A rule of **Legality rules**, **Dynamic semantics**, or (in `dev/`) **Rules** with no\n"
-    ++ "requirement, or any rule with no test, says **none**, and one whose\n"
-    ++ "requirements formalize only part of it says *partly*. This page is\n"
-    ++ "written when the book is built.\n"
+    ++ "A rule of **Legality rules**, **Dynamic semantics**, or (in `dev/`)\n"
+    ++ "**Rules** with no requirement, or any rule with no test, says **none**,\n"
+    ++ "and one whose requirements formalize only part of it says *partly*.\n"
+    ++ "This page is written when the book is built.\n"
   for (md, rules) in chapters do
     let formal := rules.filter ((formalLabels md).contains ·.1.label)
     let untested := rules.filter fun (r, _) => !tests.any (·.2 == r.id)
@@ -866,6 +876,16 @@ def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem �
       out := out ++ s!"| [`{r.id}`]({rel md}#r-{r.id}) | {r.label} | {reqCell} | {implCell} | {testCell} |\n"
   return out
 
+-- Rules counts toward required formalization, and displays a missing
+-- requirement, only in dev chapters.
+#guard Id.run do
+  let rule : Rule := { id := "testing.example", line := 3, label := "Rules", text := "", links := "" }
+  let report := rulesReportText
+    #[("src/Reqs/dev/Testing.md", #[(rule, #[])]), ("src/Reqs/Lang/Testing.md", #[(rule, #[])])] #[] #[] #[]
+  return [("dev", 1, "**none**"), ("Lang", 0, "")].all fun (dir, count, cell) =>
+    report.contains (s!"## [src/Reqs/{dir}/Testing.md](../{dir}/Testing.md)\n\n1 rules, {count} under labels that require formalization, {count} of which have no requirement").toSlice &&
+    report.contains (s!"| [`testing.example`](../{dir}/Testing.md#r-testing.example) | Rules | {cell} |  | **none** |").toSlice
+
 /-- The rules of the reference and their requirements and tests
 (`Reqs/dev/Style#rules-and-requirements`): every rule of **Legality rules**
 or **Dynamic semantics**, or **Rules** in a `dev/` chapter, has a requirement,
@@ -878,8 +898,9 @@ rule's prose names a requirement in parentheses; each requirement that
 formalizes a rule and is declared in its chapter is declared after it;
 each item of a module named as one of its chapter's constructs, whose
 name is shaped as a rule identifier, is named as a rule, or, if it has
-clauses, each of them whose name is so shaped is; and every rule that a
-test cites exists. -/
+clauses, each of them whose name is so shaped is; every rule that a test
+cites exists; and only chapters under `src/Reqs/dev/` have rules under
+**Rules**. -/
 def ruleReqs : IO (Array String) := return (← ruleLinks).2.2
 
 /-- The text of the report of the rules (`rulesReportText`), for

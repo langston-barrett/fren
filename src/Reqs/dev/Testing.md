@@ -73,7 +73,8 @@ pub mod testing
   chapter's constructs has a rule of its name, or, if it has clauses, each
   of them does, where the name is shaped as a rule identifier; and every
   rule that a test cites with `--@ reference: ID` exists
-  (see [Writing the reference](Style.md#rules-and-requirements)). The
+  (see [Writing the reference](Style.md#rules-and-requirements)). Only
+  chapters under `src/Reqs/dev/` have rules under **Rules**. The
   report of these links, a page of the book under [Writing the
   reference](Style.md), is written when the book is built.
 - **Snapshots** (`lake test`): `test/cli/**/X.fren` must make the `fren` command print
