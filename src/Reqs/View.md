@@ -457,7 +457,8 @@ the user may raise, as Lean's maximum recursion depth or heartbeats, is
 reported as that limit reached, saying how to raise it; any other failure
 is an internal error, a bug in Fren. In Lean, each solver query, each step
 that builds or reads a model, each nested check of an instance's contract
-and each cover goal's question and witness has the heartbeat limit to
+or of an induction ([Induction](Lang/Recursion.md#induction)) and each
+cover goal's question and witness has the heartbeat limit to
 itself, as each query has the time limit: a procedure does not reach the
 limit only by having many clauses, which the `fren` command, having no
 such limit, checks.

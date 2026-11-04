@@ -515,6 +515,17 @@ there, and a pass beside that error would contradict it. So induction
 never fails a check, and never changes a check that passes or fails: only
 an Inconclusive one may pass.
 
+Each attempt has limits of its own, as each nested check has
+([Check results](../View.md#check-results)): its own heartbeats in the
+Lean front end, and its own solver time in each. An attempt that reaches a
+limit, of the solver's time or of Lean's heartbeats or recursion depth, is
+Inconclusive, as a check that reaches one is: it does not pass, so it
+changes nothing, and the claim keeps its own check's verdict. It never
+makes the claim's check, or the item's, fail. Nor does a function
+generated for one expectation weigh on the checks of others: it is apart
+from the spec's defined functions, and its check is the only one that has
+it.
+
 ```fren
 set_option fren.lint.undecidable "allow" in
 pub proc induction_verdict(
@@ -528,6 +539,10 @@ pub proc induction_verdict(
 
     expect strict: when direct != RecPost::Inconclusive, reported = direct
     expect internal_error_kept: when refuted?, reported = direct
+    -- Attempts that do not pass, those that reach a limit among them,
+    -- change nothing.
+    expect unpassed_kept: when not (exists (k: Int), 0 <= k < attempts.len and attempts[k] = RecPost::Passed),
+        reported = direct
 }
 ```
 
