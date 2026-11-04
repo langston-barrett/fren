@@ -116,10 +116,6 @@ trusted lang::sentence_place: "the design of lemma, assume and law items (#669);
 trusted lang::sentence_member: "the design of lemma, assume and law items (#669); no front end reads lemma or assume blocks yet, and its expectations are checked by enumeration"
 trusted lang::sentence_role: "the design of lemma, assume and law items (#669); no front end classifies these items yet, and its expectations are checked by testing"
 trusted lang::lemma_order: "the design of the order of lemma items (#669, stage 3); nothing reads lemma items yet, and its expectations are checked by testing"
-trusted lang::induction_variables: "the design of induction by unfolding (#669, stage 4); nothing implements it yet, and its expectations are checked by testing"
-trusted lang::arm_decided: "the design of induction by unfolding (#669, stage 4); nothing implements it yet, and its expectations are checked by testing"
-trusted lang::induction_verdict: "the design of induction by unfolding (#669, stage 4); nothing implements it yet, and its expectations are checked by testing"
-trusted lang::strict_expansion: "the guarantee of #669, which each stage confirms by comparing the messages of Fren's own specs and of the ui tests before and after"
 
 -- The matrix of what each method can conclude is a design, refined by
 -- what runs today (`check::method_run`), which is bound to `dispatchOf`.

@@ -20,8 +20,8 @@ which construct each case is. [Modules and visibility](Modules.md) states
 how modules name and hide their items.
 
 This chapter specifies modules, their signatures and imports, the items and
-clauses that state claims, which of them a check may use, and induction by
-unfolding. It changes nothing of how a spec of today is checked. How a
+clauses that state claims, and which of them a check may use. It changes
+nothing of how a spec of today is checked. How a
 check instantiates a sentence, implementations, their obligations, the
 translation of sentences along them, views, dispatch, and what each check
 reports are specified apart, over one model of what each check rests on
@@ -344,7 +344,8 @@ pub proc sentence_member(
 Each lemma, `assume`, `expect` and `law` item, and each `require` and
 `ensure` clause, is one of its module's sentences. A sentence is a
 theorem, which Fren proves, or an axiom, which Fren takes as given and
-checks only for consistency.
+never proves. Of its consistency, Fren checks only what `module.axiom.check`
+says.
 
 **Legality rules**
 
@@ -408,7 +409,7 @@ calls, as an environment that is never implemented does.
 pub enum SentenceRole {
     Domain,      -- it restricts its item's parameters
     Theorem,     -- Fren proves it, and later checks use it
-    Axiom,       -- Fren takes it as given, and checks its consistency
+    Axiom,       -- Fren takes it as given, and never proves it
     Goal,        -- Fren proves it, and no other check uses it
 }
 
@@ -598,8 +599,9 @@ r[module.theorem.check]
 A lemma has the checks of a [global
 expectation](../Check.md#global-expectations) with its parameters, its
 domain, its calls and its claims, each using the sentences that
-`module.use` gives. A theorem that these checks do not prove is checked by
-induction, where `module.induction` applies.
+`module.use` gives. Induction by unfolding, which proves some theorems
+that these checks do not, is specified in [Structural
+recursion](Recursion.md) (#750).
 
 r[module.axiom.check]
 An axiom is never proved. Until the realizability of axioms that relate
@@ -638,358 +640,24 @@ injectivity and exhaustiveness (CASL's free types; the initial algebra of
 its constructors). `module.generic-type.sentences` relies on it, so that
 no query states freeness. It is argued.
 
-## Induction by unfolding
-
-A theorem about a recursive enumeration is often true by induction but not
-by one step of each function's definition. Fren proves it by induction on
-one of its variables, unfolding the definitions where each case decides
-them, as Liquid Haskell's proof by logical evaluation (PLE) does (Vazou et
-al., POPL 2018).
-
-```text
-lemma more_fuel(f: Fuel, e: Expr): when eval(f, e) is Some(v), eval(Fuel::More(f), e) = Some(v)
-```
-
-**Proof obligations**
-
-r[module.induction]
-A lemma or an `expect` with a quantified variable whose type is a
-recursive enumeration is checked by induction on such a variable at each
-check of a claim of it, `ensure` or `expect`, that is Inconclusive. Its
-other checks, such as its vacuity and its `cover` members, which ask
-whether something can hold, never are. A check whose counterexample evaluation does
-not confirm is Inconclusive ([Recursion](Recursion.md#counterexamples-and-completeness)),
-so a check that fails has a confirmed counterexample.
-
-r[module.induction.variable] lang::induction_variables
-The *candidates* are the quantified variables, of a recursive enumeration,
-that are the argument at the decreasing parameter of some application of a
-[structural recursion](Recursion.md) in the sentence. Fren tries each, in the order of the
-variables, until one proves the sentence.
-
-r[module.induction.cases]
-Induction on `x` has one case for each variant of `x`'s type, in which `x`
-is that variant with fresh variables for its payload. The *children* are
-those of its payload's fresh variables whose type is `x`'s.
-
-r[module.induction.hypotheses]
-Each case has, as hypotheses, the sentence at each child, with each other
-quantified variable at each ground term of its type that the case has.
-
-r[module.induction.unfolding] lang::arm_decided
-In each case, an application of a structural recursion unfolds into the arm
-of its body that the case decides: the arm that the case's hypotheses
-imply is taken, where they rule out every earlier arm. An application whose arm the case does not decide
-stays opaque, with its contract.
-
-r[module.induction.fixpoint]
-Unfolding repeats at the applications that the unfolded arms bring, until
-no application unfolds. Each application unfolds once.
-
-r[module.induction.lemmas]
-Each case uses the sentences that `module.use` gives.
-
-r[module.induction.verdict] lang::induction_verdict
-The induction passes where every case passes. A sentence whose check is
-Inconclusive stays Inconclusive where no candidate's induction passes. The
-induction never fails a check, and never changes a pass or a failure.
-
-r[module.induction.evidence]
-A pass by induction is a proof of a [structural recursion's
-contract](Recursion.md#contracts) by Hoare induction, with the sentence as
-the contract of a function generated from the cases. It adds nothing to
-what the checks trust.
-
-```fren
--- Whether each parameter's type is a recursive enumeration, in order.
-pub enum ParamTypes { Nil, Cons(Bool, ParamTypes) }
-
--- The applications of structural recursions in a sentence: each by the
--- quantified variable that is its argument at the function's decreasing
--- parameter, by position, or -1 where that argument is not one.
-pub enum Recursions { Nil, Cons(Int, Recursions) }
-
-pub fn decreasing_variables(apps: Recursions): Set<Int> := match apps {
-    Recursions::Nil => {},
-    Recursions::Cons(v, rest) => (if v >= 0 then {v} else {}) union decreasing_variables(rest),
-}
-
--- The candidates, the first variable at position `k`.
-pub fn candidate_positions(types: ParamTypes, decreasing: Set<Int>, k: Int): Set<Int> :=
-    match types {
-        ParamTypes::Nil => {},
-        ParamTypes::Cons(recursive?, rest) =>
-            (if recursive? and k in decreasing then {k} else {}) union candidate_positions(rest, decreasing, k + 1),
-    }
-
-set_option fren.evidence "random" in
-pub proc induction_variables(types: ParamTypes, apps: Recursions): (det candidates: Set<Int>) {
-    out candidates := candidate_positions(types, decreasing_variables(apps), 0)
-
-    expect decreasing_only: when apps = Recursions::Nil, candidates = {}
-}
-
--- What a case's hypotheses say of an arm of a structural recursion's body:
--- that it is taken, that it is not, or neither.
-pub enum ArmStatus { Taken, Excluded, Open }
-
--- The arms of the body, in order.
-pub enum Arms { Nil, Cons(ArmStatus, Arms) }
-
-pub fn decided?(arms: Arms) := match arms {
-    Arms::Nil => false,
-    Arms::Cons(status, rest) => match status {
-        ArmStatus::Taken => true,
-        ArmStatus::Excluded => decided?(rest),
-        ArmStatus::Open => false,
-    },
-}
-
-set_option fren.evidence "random" in
-pub proc arm_decided(arms: Arms): (det unfolds?) {
-    out unfolds? := decided?(arms)
-
-    expect first_taken: when arms is Arms::Cons(ArmStatus::Taken, _), unfolds?
-    expect open_first: when arms is Arms::Cons(ArmStatus::Open, _), not unfolds?
-}
-
--- A check's verdict.
-pub enum CheckVerdict { Pass, Fail, Inconclusive }
-
--- The verdicts of the inductions on the candidates, in the order tried.
-pub enum Inductions { Nil, Cons(CheckVerdict, Inductions) }
-
-pub fn some_pass?(attempts: Inductions) := match attempts {
-    Inductions::Nil => false,
-    Inductions::Cons(v, rest) => v = CheckVerdict::Pass or some_pass?(rest),
-}
-
-set_option fren.evidence "random" in
-pub proc induction_verdict(direct: CheckVerdict, attempts: Inductions): (
-    det verdict: CheckVerdict,
-) {
-    out verdict :=
-        if direct != CheckVerdict::Inconclusive then direct
-        else if some_pass?(attempts) then CheckVerdict::Pass else CheckVerdict::Inconclusive
-
-    expect never_fails: when direct != CheckVerdict::Fail, verdict != CheckVerdict::Fail
-    expect direct_kept: when direct = CheckVerdict::Pass, verdict = CheckVerdict::Pass
-}
-```
-
-> **Note:** A child within a sequence, as of `Seq<Self>`, and mutually
-> recursive types need recursive types beyond those that `F0387` allows
-> (#602, #604). Then a case has the hypothesis `forall c, when c in cs,
-> P(c)`, instantiated at the positions that the case mentions, and the
-> unfolding of a mutual type goes on until the original type returns.
-
-> **Rationale:** In the experiment of #669, of about 25 theorems of
-> `examples/stlc.fren`, induction by unfolding proved 6, and the 3 laws of
-> the lints, each in 5 to 309 ms, with 1 or 2 unfoldings in each case, and
-> its unfolding ended on every function. With earlier lemmas as
-> hypotheses, it proved about 11. cvc5's `--quant-ind` proved the same easy
-> cases, and ran out of time on the rest. Hoare induction alone proved one.
-> The instances are many, as each hypothesis is copied for each path of
-> guards, so stage 1 removes the copies first.
-
 ## Strict expansion
 
 **Dynamic semantics**
 
-r[module.expansion] lang::strict_expansion
+r[module.expansion]
 A spec that Fren accepts today, whose items and clauses are all of
-today's forms, has the same
-verdicts and messages as before this chapter, but for the exception
-below. Today's forms are an `ensure` clause and
-an `assume` clause of a function or procedure, an `expect` of a procedure,
-a global expectation or a trait, a global expectation, and a trait's
-`law`. A `require`, a lemma item, an `assume` item, an `expect` in a
-function, and any member of a lemma's or an `assume` item's block are new.
-This chapter changes nothing of how a sentence of today's forms is checked
-or reported: today's laws stay quantified hypotheses, and contracts are
-used as today. A new pass that the exception below gives, and that rests
-on a trait's laws, carries `F0665` exactly where
-[`check::law_premise`](../Evidence.md#the-laws-of-a-trait) gives it, as a
-pass that rests on them does today, so that no pass hides that it rests on
-laws whose consistency is not checked. Instantiating sentences, today's
-laws among them, and what a check then reports, come with the second half
-of this design, which computes them from a model of the module and checks
-strict expansion over it (#669).
-
-r[module.expansion.induction] lang::strict_expansion, lang::induction_pass_gains_f0665
-A check that was Inconclusive may pass by induction (`module.induction`).
-Its pass carries `F0665` where `check::law_premise` gives it, and gains no
-other message.
-
-r[module.expansion.corpus]
-Each stage that lands compares the messages of Fren's own specs and of the
-ui tests, before and after, and every difference is one that
-`module.expansion` allows.
-
-```fren
--- An item or clause of a spec, by its keyword and its place.
-pub struct WrittenSentence { kind: SentenceKind, place: SentencePlace }
-
--- Whether an item or clause is of today's language.
-pub fn today_form?(w: WrittenSentence) := match w.kind {
-    SentenceKind::Ensure =>
-        w.place in {
-            SentencePlace::DefinedFunction,
-            SentencePlace::UninterpretedFunction,
-            SentencePlace::Procedure,
-        },
-    SentenceKind::Assume =>
-        w.place in {
-            SentencePlace::DefinedFunction,
-            SentencePlace::UninterpretedFunction,
-            SentencePlace::Procedure,
-            SentencePlace::GlobalBlock,
-        },
-    SentenceKind::Expect =>
-        w.place in {
-            SentencePlace::Procedure,
-            SentencePlace::GlobalBlock,
-            SentencePlace::Module,
-            SentencePlace::Interface,
-        },
-    SentenceKind::Law => w.place = SentencePlace::Interface,
-    _ => false,
-}
-
--- What a check reports: its verdict, and the codes of its messages.
-pub struct Report { verdict: CheckVerdict, messages: Set<String> }
-
--- Whether a new pass gains no message but `F0665`, and that one exactly
--- where `check::law_premise` gives it.
-pub fn caveat_only?(before: Report, after: Report, laws_caveat?) :=
-    after.messages minus {"F0665"} subset before.messages and ("F0665" in after.messages iff laws_caveat?)
-
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-pub proc strict_expansion(
-    written: Seq<WrittenSentence>,       -- the spec's items and clauses that state claims
-    before: Report,              -- what the check reports before this chapter
-    after: Report,               -- and after it
-    attempts: Inductions,        -- the verdicts of the inductions on the candidates (`lang::induction_verdict`)
-    laws_caveat?,                -- `check::law_premise` gives the new verdict `F0665`; Evidence's requirements are checked after this chapter's, so it is not called here
-): (det new_forms?, det allowed?) {
-    out new_forms? := exists (k: Int), 0 <= k < written.len and not today_form?(written[k])
-    out allowed? := new_forms? or after = before
-        or (before.verdict = CheckVerdict::Inconclusive and after.verdict = CheckVerdict::Pass and some_pass?(attempts)
-        and caveat_only?(before, after, laws_caveat?))
-
-    expect laws_are_today: when written = [
-        WrittenSentence {
-            kind := SentenceKind::Law,
-            place := SentencePlace::Interface,
-        },
-    ],
-        not new_forms?
-    expect lemmas_are_new: when written = [
-        WrittenSentence {
-            kind := SentenceKind::Lemma,
-            place := SentencePlace::Module,
-        },
-    ],
-        new_forms?
-    expect passes_stay: when not new_forms? and before.verdict = CheckVerdict::Pass and allowed?, after.verdict = CheckVerdict::Pass
-    expect failures_stay: when not new_forms? and before.verdict = CheckVerdict::Fail and allowed?, after.verdict = CheckVerdict::Fail
-    expect messages_kept: when not new_forms? and before.verdict != CheckVerdict::Inconclusive and allowed?,
-        after = before
-}
-
--- An Inconclusive check that passes by induction loses its warning, and
--- gains `F0665` only where `check::law_premise` gives it.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect induction_pass_allowed() {
-    call r := strict_expansion(
-        [],
-        Report {
-            verdict := CheckVerdict::Inconclusive,
-            messages := {"F0450"},
-        },
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {},
-        },
-        Inductions::Cons(CheckVerdict::Pass, Inductions::Nil),
-        false,
-    )
-    expect allowed: r.allowed?
-}
-
--- An expectation of a trait with laws, and with no assumptions or calls,
--- that passes by induction carries `F0665`, as `traits::KV::overwritten`
--- does today.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect induction_pass_gains_f0665() {
-    call r := strict_expansion(
-        [],
-        Report {
-            verdict := CheckVerdict::Inconclusive,
-            messages := {"F0450"},
-        },
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {"F0665"},
-        },
-        Inductions::Cons(CheckVerdict::Pass, Inductions::Nil),
-        true,
-    )
-    expect allowed: r.allowed?
-}
-
--- A new pass by induction that `check::law_premise` gives `F0665` must
--- carry it.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect caveat_not_hidden() {
-    call r := strict_expansion(
-        [],
-        Report {
-            verdict := CheckVerdict::Inconclusive,
-            messages := {"F0450"},
-        },
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {},
-        },
-        Inductions::Nil,
-        true,
-    )
-    expect not_allowed: not r.allowed?
-}
-
--- A spec whose one claim is an `ensure` clause of an uninterpreted function
--- is of today's forms, so a check that passes today because of it must not
--- become Inconclusive.
-set_option fren.lint.undecidable "allow" in
-set_option fren.evidence "random" in
-expect contract_without_result_kept() {
-    call r := strict_expansion(
-        [
-            WrittenSentence {
-                kind := SentenceKind::Ensure,
-                place := SentencePlace::UninterpretedFunction,
-            },
-        ],
-        Report {
-            verdict := CheckVerdict::Pass,
-            messages := {},
-        },
-        Report {
-            verdict := CheckVerdict::Inconclusive,
-            messages := {"F0450"},
-        },
-        Inductions::Nil,
-        false,
-    )
-    expect today: not r.new_forms?
-    expect not_allowed: not r.allowed?
-}
-```
+today's forms, has the same verdicts and messages as before this chapter.
+Today's forms are an `ensure` clause and an `assume` clause of a function
+or procedure, an `assume` member of a global expectation's block, an
+`expect` of a procedure, a global expectation or a trait, a global
+expectation, and a trait's `law`. A `require`, a lemma item, an `assume`
+item, an `expect` in a function, and any member of a lemma's or an
+`assume` item's block are new. This chapter adds the new forms and changes
+nothing of how a sentence of today's forms is checked or reported. The
+second half of this design computes what each check is reported as, from
+a model of the module and through `check::reported_pass`, and checks this
+guarantee over it, with the exceptions that its instantiation and
+[induction by unfolding](Recursion.md) (#750) bring (#669).
 
 > **Rationale:** The prior art: ACL2's `encapsulate` and functional
 > instantiation; Why3's theories and `clone`; the loose and initial
@@ -1008,12 +676,4 @@ check every earlier chapter again:
 #fren_check law_before_method
 #fren_check lemma_order
 #fren_check lemma_before_function
-#fren_check induction_variables
-#fren_check arm_decided
-#fren_check induction_verdict
-#fren_check strict_expansion
-#fren_check contract_without_result_kept
-#fren_check induction_pass_allowed
-#fren_check induction_pass_gains_f0665
-#fren_check caveat_not_hidden
 ```
