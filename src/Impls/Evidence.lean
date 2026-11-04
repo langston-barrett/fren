@@ -112,6 +112,19 @@ tested model::fill_rule: "src/FrenTest/ModelDefaults.lean"
 -- No front end elaborates a name into the semantics' abstract syntax yet,
 -- so there is no code to bind `lang::named` to; its expectations are
 -- checked by the solver.
+-- Implementations, dispatch and what each check rests on
+-- (`Reqs/Lang/Implementations`) are a design that no front end implements
+-- yet (#669, stage 3), so there is no code to bind them to.
+trusted lang::module_sentence: "the design of implementations (#669, stage 3); no front end reads a module as this model yet, and its examples are checked by testing"
+trusted lang::module_rests_on: "the design of what each check rests on (#669, stage 3); the solver proves its cases ranked and the enumeration of small modules checks them acyclic"
+trusted lang::dispatch: "the design of dispatch (#669, stage 3); no front end dispatches to implementations yet, and its expectations are checked by the solver"
+trusted lang::sentence_instantiation: "the design of instantiation (#669, stage 3); no front end instantiates these items yet, and its examples are checked by testing"
+trusted lang::ensure_clause: "the design of contracts as sentences (#669, stage 3); nothing reads an ensure clause as a sentence yet, and its expectations are checked by testing"
+trusted lang::sentence_use: "the design of instantiation (#669, stage 3); no front end chooses what a check uses yet, and its examples are checked by testing"
+trusted lang::today_verdict: "the design of the verdicts of today's forms under instantiation (#669, stage 3); the solver checks strict expansion of it over every module"
+trusted lang::arm_decided: "the design of induction by unfolding (#669, stage 4); nothing implements unfolding yet, and its expectations are checked by testing"
+trusted lang::caveat_premise: "the design of what a check reports of the axioms it rests on (#669, stage 3); the solver checks it against today's reports of modules of today's forms"
+
 trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
 
 -- Modules as theories, and the items that state claims
