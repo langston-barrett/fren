@@ -93,12 +93,12 @@ r[module.syntax]
 ```
 lemma          := "lemma" IDENT "(" [variable ("," variable)* [","]] ")" claim-body
 assume         := "assume" IDENT "(" [variable ("," variable)* [","]] ")" claim-body
-claim-body     := ":" top | "{" claim-member* "}"
-claim-member   := require | ensure | "expect" IDENT ":" top | "cover" IDENT ":" top
-                | call | "let" variable ":=" top | use
-require        := "require" IDENT ":" top
-ensure         := "ensure" IDENT ":" top
+claim-body     := ":" top | "{" member* "}"
 ```
+
+A block's `member` is a [procedure's](Procedures.md), and
+`lang::sentence_member` decides which members a lemma's or an `assume`
+item's block accepts (`module.block`).
 
 r[module.syntax.forms]
 An `expect` is accepted everywhere but in an `assume` item's block: as an
@@ -159,8 +159,8 @@ parameters are its type parameters and an implementation of each bound at
 them, and its sentences are `f`'s `require` and `ensure` clauses.
 
 r[module.procedures]
-The items of a module or interface may be procedures, abstract or not, and
-its lemma and `assume` items may relate them through calls
+The items of a module or interface may be procedures, which are abstract
+items (`module.abstract`), and its lemma and `assume` items may relate them through calls
 (`module.meaning.procedures`).
 
 ## Imports and generic types
@@ -482,7 +482,11 @@ expect assume_through_definition() {
 
 > **Rationale:** An `assume` about defined items alone could contradict
 > their definitions, and needs no trust: it is a lemma, and defined items
-> are a conservative extension (`module.meta.conservative`).
+> are a conservative extension (`module.meta.conservative`). The rule
+> excludes only that case. An `assume` item that also mentions an abstract
+> item can still constrain defined items, or contradict itself, as
+> `assume a(x: T): false` does; stage 5's tiers check that, and until then
+> each verdict that rests on it says so (`implementation.report.unchecked`).
 
 ## Order and use
 
@@ -502,11 +506,14 @@ may mention any item of its own module's signature, wherever it is
 declared, and the items of the modules that its module imports. This changes, for those items, the order of
 declarations that [`lang::declared_before`](Items.md#items) states, and
 which [Global expectations](Global.md) states for a global expectation's
-procedures. A spec that is accepted today stays accepted, and stage 3
-changes `lang::declared_before` to match. A `require` or `ensure` clause mentions only
+procedures. A spec that is accepted today stays accepted. A `require` or `ensure` clause mentions only
 the items declared before its function or procedure, and, in an `ensure`
 clause of a function, the function itself at its parameters, as
-[Contracts](Items.md#contracts) states.
+[Contracts](Items.md#contracts) states. An `expect` member of a function's
+block (`module.place.expect`) mentions what the function's `ensure`
+clauses may.
+
+> **Note:** Stage 3 changes `lang::declared_before` to match.
 
 r[module.order.lemma] lang::lemma_order
 A lemma item applies and calls only the items declared before it, and the
@@ -528,7 +535,8 @@ order in which they are declared.
 r[module.use]
 A check of an item may use every axiom of its module and of the modules
 it imports, wherever it is declared, and each theorem declared before the
-item. No check uses a goal. A check of a sentence of today's forms uses
+item, but for the checks of an interface, which use only its own laws and
+lemmas (`implementation.lemma-order`). No check uses a goal. A check of a sentence of today's forms uses
 today's laws and contracts unchanged, as `traits.expect.checks` and
 [Contracts](Items.md#contracts) state.
 
@@ -609,9 +617,9 @@ r[module.theorem.check]
 A lemma has the checks of a [global
 expectation](../Check.md#global-expectations) with its parameters, its
 domain, its calls and its claims, each using the sentences that
-`module.use` gives. Induction by unfolding, which proves some theorems
-that these checks do not, is to be specified in Structural recursion by
-#750.
+`module.use` gives. Induction, which proves some theorems that these
+checks do not, is that of [Structural recursion](Recursion.md#induction),
+by unfolding as `module.induction` states.
 
 r[module.axiom.check] check::realizability
 An axiom is never proved. Until the realizability of axioms that relate
@@ -621,7 +629,10 @@ have the checks that today's forms have, unchanged
 and an `assume` item has none.
 
 > **Note:** Stage 5 adds the tiers that check `assume` items and laws that
-> relate several items.
+> relate several items. Until then, a verdict that rests on an `assume`
+> item carries `F0665` as one under today's unchecked laws does
+> (`traits.expect.laws-unchecked`), as `implementation.report.unchecked`
+> states.
 
 ## Metatheory
 
@@ -652,33 +663,36 @@ no query states freeness. It is argued.
 
 **Dynamic semantics**
 
-r[module.expansion]
+r[module.expansion] expansion::strict_expansion
 A spec that Fren accepts today, whose sentences and block members are all
-of today's forms, has the same verdicts and messages as before this
-chapter.
-Today's forms are an `ensure` clause and an `assume` clause of a function
+of today's forms, has the same verdicts and messages as before #669, but
+for the checks that were shown as Inconclusive: `module.expansion.instances`
+and `module.expansion.induction` may decide their own verdicts, or settle
+their premises so that a check already passing on its own loses `F0664`
+and is shown as a pass. A shown pass stays a pass, and a shown failure
+stays a failure, with the same messages.
+Today's forms are a `require` clause and an `ensure` clause of a function
 or procedure, an `assume` member of a global expectation's block, an
 `expect` of a procedure, a global expectation or a trait, a global
 expectation, and a trait's `law`, with the other members of today's
 blocks, such as a `cover` of a procedure or a global expectation, `let`,
-`call`, `use`, `exists` and `refines`. A `require`, a lemma item, an `assume`
-item, an `expect` in a function, and any member of a lemma's or an
-`assume` item's block are new. This chapter adds the new forms and changes
-nothing of how a sentence of today's forms is checked or reported. The
-second half of this design computes what each check is reported as, from
-a model of the module and through `check::reported_pass`, and checks this
-guarantee over it, with the exceptions that its instantiation and
-induction by unfolding, which is to be specified in Structural recursion
-by #750, bring (#669).
+`call`, `use`, `exists` and `refines`. A lemma item, an `assume` item, an
+`expect` in a function, and any member of a lemma's or an `assume` item's
+block are new. This chapter adds the new forms and changes nothing of how
+a sentence of today's forms is checked or reported.
+
+> **Note:** [Reports of modules](../ModuleReports.md) computes what each
+> check is reported as, from a model of the module and through
+> `check::reported_pass`, and checks this guarantee over it
+> (`module.expansion.computed`).
 
 > **Rationale:** The prior art: ACL2's `encapsulate` and functional
 > instantiation; Why3's theories and `clone`; the loose and initial
 > semantics of CASL, Larch, OBJ and Maude; Isabelle's locales; Event-B's
 > feasibility obligations; and TLA+'s `ASSUME` and `THEOREM` (#669).
 
-The Lean-hosted front end checks this chapter's items by name, since no
-`#fren_check` of its Lean file comes after it, and one without a path would
-check every earlier chapter again:
+The Lean-hosted front end checks this chapter's items by name, since a
+`#fren_check` without a path would check every earlier chapter again:
 
 ```fren
 #fren_check sentence_place

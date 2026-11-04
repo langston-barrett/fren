@@ -118,9 +118,8 @@ expect constant_value(binding: Binding, definition: Expr<Id>, i: Interp, env: En
 }
 ```
 
-The Lean-hosted front end checks this chapter's procedures by name, since no
-`#fren_check` of its Lean file comes after it, and one without a path would
-check every earlier chapter again:
+The Lean-hosted front end checks this chapter's procedures by name, since a
+`#fren_check` without a path would check every earlier chapter again:
 
 ```fren
 #fren_check test_local
