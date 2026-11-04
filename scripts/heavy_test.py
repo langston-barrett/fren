@@ -6,6 +6,7 @@ They use scratch state directories, injected load and tiny Python jobs.
 """
 
 import contextlib
+import ctypes
 import importlib.machinery
 import importlib.util
 import io
@@ -16,6 +17,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 from unittest import mock
 
 # Loading `heavy` must leave no `__pycache__` in the checkout.
@@ -289,6 +291,306 @@ def test_job_log():
         for args in (["--alternate"], ["--alternate", "0", "8"],
                      ["--alternate", "60", "nan"], ["--alternate", "60", "8", "x"]):
             assert tiny_job(state, args).returncode == 2
+
+
+def proc_line(pid=123, name="lean", group=7, user=10, system=20, start=100, state="R", parent=1, pages=3):
+    fields = ["0"] * 50
+    for i, value in ((0, state), (1, parent), (2, group), (11, user), (12, system),
+                     (13, 99999), (14, 88888), (19, start), (21, pages)):
+        fields[i] = str(value)
+    return f"{pid} ({name}) " + " ".join(fields)
+
+
+def test_slot_identity():
+    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim
+    with tempfile.TemporaryDirectory() as state:
+        first = open(os.path.join(state, "slot0"), "a+")
+        second = open(os.path.join(state, "slot1"), "a+")
+        try:
+            with heavy.registry(state):
+                assert heavy.claim_slot(first, "slot0", state, {"enqueued_at": 10})
+                assert heavy.claim_slot(second, "slot1", state, {"enqueued_at": 10})
+            # Different namespaces can have the same numeric PID. Neither
+            # liveness, accounting nor eviction may resolve those foreign IDs.
+            first.heavy_job.update(local_pgid=5, pid_namespace="pid:[100]")
+            second.heavy_job.update(local_pgid=5, pid_namespace="pid:[200]")
+            heavy.publish_memory(first, 40, state)
+            heavy.publish_memory(second, 30, state)
+            with mock.patch.object(heavy, "group_rss_kb", side_effect=AssertionError("foreign PID lookup")):
+                assert heavy.heavy_rss_kb(state) == 70
+                total, victim = heavy.memory_victim(heavy.jobs(state), 60)
+            assert total == 70 and victim == second.heavy_job["job_id"]
+            assert first.heavy_job["job_id"] != second.heavy_job["job_id"]
+            assert first.heavy_job["order"] < second.heavy_job["order"]
+            assert heavy.memory_victim(heavy.jobs(state), 70) == (70, None)
+            # A stale live report blocks admission; it does not become zero.
+            stale = dict(first.heavy_job, updated_monotonic=heavy.time.monotonic() - heavy.REPORT_STALE_SECONDS - 1)
+            with heavy.registry(state):
+                heavy.atomic_state(heavy.report_path(state, "slot0"), stale)
+            assert heavy.heavy_rss_kb(state, 80) > 0.6 * 80
+            assert heavy.memory_victim(heavy.jobs(state), 80) == (70, None)
+            assert heavy.jobs(state)[0]["rss_kb"] == 40
+            assert heavy.jobs(state)[0]["fresh"] is False
+            # Wall-clock changes cannot turn reservations into eviction evidence.
+            with mock.patch.object(heavy.time, "time", return_value=-1000000):
+                assert heavy.memory_victim(heavy.jobs(state), 80) == (70, None)
+            heavy.publish_memory(first, 40, state)
+            saved = dict(second.heavy_job)
+            heavy.release_slot(second, state)
+            # A dead lease's stale metadata is ignored, including after PID reuse.
+            heavy.atomic_state(heavy.report_path(state, "slot1"), saved)
+            assert heavy.heavy_rss_kb(state) == 40
+            second = open(os.path.join(state, "slot1"), "a+")
+            with heavy.registry(state):
+                assert heavy.claim_slot(second, "slot1", state, {"enqueued_at": 9})
+            assert second.heavy_job["job_id"] != saved["job_id"]
+            assert second.heavy_job["order"] > saved["order"]  # No wall-clock or PID ordering.
+            assert heavy.heavy_rss_kb(state) == 40
+        finally:
+            if not first.closed:
+                heavy.release_slot(first, state)
+            if not second.closed:
+                heavy.release_slot(second, state)
+        with open(os.path.join(state, "slot0"), "a+") as legacy:
+            heavy.fcntl.flock(legacy, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+            assert heavy.heavy_rss_kb(state, 80) > 0.6 * 80  # Empty does not mean unheld.
+            legacy.write("5 10 foreign-job\n")
+            legacy.flush()
+            assert heavy.heavy_rss_kb(state, 80) > 0.6 * 80  # Legacy IDs are not globally valid.
+        assert heavy.jobs(state) == []
+
+
+def test_proc_namespace_translation():
+    # fren-covers: testing::heavy_lease
+    with tempfile.TemporaryDirectory() as proc:
+        for pid in ("self", "1", "6", "901", "902", "903"):
+            os.mkdir(os.path.join(proc, pid))
+        for pid, ns in (("self", "pid:[inner]"), ("1", "pid:[outer]")):
+            os.mkdir(os.path.join(proc, pid, "ns"))
+            os.symlink(ns, os.path.join(proc, pid, "ns", "pid"))
+        for pid, text, ids in (
+                ("self", proc_line(pid=900, group=900), "900 5"),
+                ("6", proc_line(pid=6, group=6, parent=999), "6"),
+                ("901", proc_line(pid=901, group=901, parent=900), "901 6"),
+                ("902", proc_line(pid=902, group=902, parent=999), "902 6"),
+                ("903", proc_line(pid=903, group=903, parent=900), "903 7")):
+            with open(os.path.join(proc, pid, "stat"), "w") as f:
+                f.write(text)
+            with open(os.path.join(proc, pid, "status"), "w") as f:
+                f.write(f"NSpid:\t{ids}\n")
+        with mock.patch.object(heavy.os, "getpid", return_value=5):
+            assert heavy.visible_group(6, proc, "Linux") == 901
+        # Equal numeric caller PIDs are insufficient without a namespace match.
+        with open(os.path.join(proc, "self", "status"), "w") as f:
+            f.write("NSpid:\t900 900\n")
+        with mock.patch.object(heavy.os, "getpid", return_value=900):
+            assert heavy.visible_group(6, proc, "Linux") == 901
+
+
+def test_memory_victim():
+    # fren-covers: testing::heavy_memory_victim, testing::heavy_owned_signal
+    older = {"job_id": "old", "order": 1, "rss_kb": 60}
+    newer = {"job_id": "new", "order": 2, "rss_kb": 20}
+    for leases in ([older, newer], [newer, older]):
+        assert heavy.memory_victim(leases, 80) == (80, None)
+        assert heavy.memory_victim(leases, 79) == (80, "new")
+    assert heavy.memory_victim([], 1) == (0, None)
+    stale = dict(newer, fresh=False)
+    assert heavy.memory_victim([older, stale], 80) == (80, None)
+    assert heavy.memory_victim([older, stale], 79) == (80, "new")
+    missing = dict(newer, rss_kb=None)
+    assert heavy.memory_victim([older, missing], 1) == (60, None)
+    legacy = {"job_id": None, "order": None, "rss_kb": None}
+    for leases in ([legacy], [older, legacy, newer], [newer, legacy, older]):
+        assert heavy.memory_victim(leases, 1)[1] is None
+
+
+def test_group_completion():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    for reaped in (False, True):
+        for exists in (False, True):
+            effect = None if exists else ProcessLookupError()
+            with mock.patch.object(heavy.os, "killpg", side_effect=effect) as probe:
+                assert heavy.group_gone(5, lambda: reaped) == (reaped and not exists)
+                assert probe.call_count == int(reaped)
+                if probe.called:
+                    probe.assert_called_once_with(5, 0)
+    with mock.patch.object(heavy.os, "killpg", side_effect=PermissionError()):
+        assert not heavy.group_gone(5, lambda: True)
+
+
+@contextlib.contextmanager
+def adopt_workers():
+    """The harness reaps its orphaned worker, independently of heavy's mode."""
+    libc = ctypes.CDLL(None)
+    previous = ctypes.c_int()
+    assert libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0
+    assert libc.prctl(36, 1, 0, 0, 0) == 0
+    try:
+        yield True
+    finally:
+        assert libc.prctl(36, previous.value, 0, 0, 0) == 0
+
+
+def test_fallback_escalation():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    if heavy.platform.system() != "Linux":
+        return
+    # The harness adopts/reaps the orphan, as a working init would. The
+    # heavy instance under test has subreaping disabled and waits only for
+    # its leader; the harness must not reap that leader on its behalf.
+    with adopt_workers() as enabled, tempfile.TemporaryDirectory() as state:
+        assert enabled
+        ready = os.path.join(state, "worker")
+        worker = ("import os,pathlib,signal,sys,time; "
+                  "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                  "pathlib.Path(sys.argv[1]+'.tmp').write_text(str(os.getpid())); "
+                  "os.replace(sys.argv[1]+'.tmp',sys.argv[1]); "
+                  "memory=bytearray(48*1024*1024); time.sleep(60)")
+        leader = ("import subprocess,sys,time; "
+                  f"subprocess.Popen([sys.executable,'-c',{worker!r},{ready!r}], "
+                  "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); time.sleep(60)")
+        launcher = ("import contextlib,runpy,sys; h=runpy.run_path(sys.argv[1]); "
+                    "sys.exit(h['main'](sys.argv[3:],state=sys.argv[2],load_reader=lambda:0))")
+        env = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="0.04", HEAVY_MAX_LOAD="off")
+        env.pop("HEAVY_LOG", None)
+        child = subprocess.Popen([sys.executable, "-I", "-B", "-c", launcher,
+                                  os.path.join(HERE, "heavy"), state, sys.executable, "-c", leader],
+                                 env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        pid, reaper = None, None
+        status = []
+        stop = threading.Event()
+        def reap_worker():
+            while not stop.is_set():
+                try:
+                    found, code = os.waitpid(pid, os.WNOHANG)
+                    if found:
+                        status.append(code)
+                        return
+                except ChildProcessError:
+                    pass  # The leader has not exited/reparented the worker yet.
+                stop.wait(0.02)
+        try:
+            deadline = heavy.time.monotonic() + 15
+            while not os.path.exists(ready) and child.poll() is None and heavy.time.monotonic() < deadline:
+                heavy.time.sleep(0.02)
+            assert os.path.exists(ready), child.communicate(timeout=15)
+            with open(ready) as f:
+                pid = int(f.read())
+            reaper = threading.Thread(target=reap_worker, daemon=True)
+            reaper.start()
+            out, err = child.communicate(timeout=20)
+            reaper.join(timeout=1)
+            assert child.returncode == 137, (out, err)
+            assert status and os.waitstatus_to_exitcode(status[0]) == -signal.SIGKILL
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                pass
+            else:
+                raise AssertionError("worker survived fallback group termination")
+            with open(os.path.join(state, "log.jsonl")) as f:
+                assert json.loads(f.read())["exit_status"] == 137
+        finally:
+            if pid is not None and not status:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if child.poll() is None:
+                child.terminate()
+            child.communicate(timeout=15)
+            if reaper:
+                reaper.join(timeout=5)
+            stop.set()
+
+
+def test_no_signal_after_reap():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    with mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()) as probe:
+        heavy.kill_group(5, lambda: True)
+        probe.assert_called_once_with(5, 0)
+
+
+def test_pid_namespace_jobs():
+    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim, testing::heavy_owned_signal
+    if heavy.platform.system() != "Linux":
+        return
+    base = ["unshare", "--user", "--map-root-user", "--pid", "--fork", "--kill-child=KILL"]
+    variants = [base + ["--mount-proc", "--"], base + ["--"]]
+    supported = []
+    for prefix in variants:
+        try:
+            probe = subprocess.run(prefix + ["true"], capture_output=True, text=True, timeout=10)
+            if probe.returncode == 0:
+                supported.append(prefix)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    if not supported:
+        if os.environ.get("HEAVY_REQUIRE_PIDNS_TEST") == "1":
+            raise AssertionError("PID namespace integration is required but unshare is unavailable")
+        print("heavy: skipped PID namespace integration (kernel/container forbids unshare)")
+        return
+    for prefix in supported:
+        with tempfile.TemporaryDirectory() as state:
+            ready = [os.path.join(state, f"ready{i}") for i in range(2)]
+            stop = os.path.join(state, "stop")
+            worker = ("import pathlib,sys,time; memory=bytearray(int(sys.argv[3])*1024*1024); "
+                      "pathlib.Path(sys.argv[1]).write_text('ready'); "
+                      "exec('while not pathlib.Path(sys.argv[2]).exists(): time.sleep(0.05)')")
+            launcher = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
+                        "sys.exit(h['main']([sys.executable,'-c',sys.argv[3],*sys.argv[4:]], "
+                        "state=sys.argv[2],load_reader=lambda:0))")
+            env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.1", HEAVY_MAX_LOAD="off")
+            env.pop("HEAVY_LOG", None)
+            children = []
+            def launch(index, size):
+                p = subprocess.Popen(prefix + [sys.executable, "-I", "-B", "-c", launcher,
+                                     os.path.join(HERE, "heavy"), state, worker,
+                                     ready[index], stop, str(size)], env=env,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     text=True, start_new_session=True)
+                children.append(p)
+                return p
+            def await_report():
+                deadline = heavy.time.monotonic() + 20
+                while heavy.time.monotonic() < deadline:
+                    reports = heavy.jobs(state)
+                    if (os.path.exists(ready[0]) and reports
+                            and all(j["rss_kb"] is not None for j in reports)
+                            and heavy.heavy_rss_kb(state) >= 32 * 1024):
+                        return reports
+                    if children[0].poll() is not None:
+                        out, err = children[0].communicate()
+                        raise AssertionError(f"namespace job exited early: {out}\n{err}")
+                    heavy.time.sleep(0.05)
+                raise AssertionError("namespaced job did not publish its memory")
+            try:
+                oldest = launch(0, 32)
+                reports = await_report()
+                assert len(reports) == 1 and reports[0]["pid_namespace"] != heavy.pid_namespace()
+                newest = launch(1, 64)
+                out, err = newest.communicate(timeout=30)
+                assert newest.returncode == 137, f"{prefix}: {out}\n{err}"
+                assert "over the" in err and oldest.poll() is None
+                with open(os.path.join(state, "log.jsonl")) as f:
+                    row = [json.loads(line) for line in f][-1]
+                assert row["exit_status"] == 137 and row["peak_rss_kb"] < 0.1 * GB
+                assert row["job_id"] != reports[0]["job_id"]
+                assert row["pid_namespace"] != reports[0]["pid_namespace"]
+                assert row["admission_order"] > reports[0]["order"]
+                with open(stop, "w") as f:
+                    f.write("stop")
+                out, err = oldest.communicate(timeout=20)
+                assert oldest.returncode == 0, f"{prefix}: {out}\n{err}"
+                assert heavy.jobs(state) == []
+            finally:
+                for p in children:
+                    if p.poll() is None:
+                        os.killpg(p.pid, signal.SIGKILL)
+                    p.communicate(timeout=10)
+        print("heavy: PID namespace integration passed " + ("with matching procfs" if "--mount-proc" in prefix
+                                                            else "with ancestor procfs"))
 
 
 def test_admission_snapshot():
@@ -670,14 +972,95 @@ def test_alternate_ignored_hangup():
             assert [json.loads(line)["max_load"] for line in f] == [8, "off", "off"]
 
 
+def test_report_clock():
+    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim
+    with tempfile.TemporaryDirectory() as state:
+        slot = open(os.path.join(state, "slot0"), "a+")
+        try:
+            with heavy.registry(state):
+                assert heavy.claim_slot(slot, "slot0", state, {"enqueued_at": 0})
+            heavy.publish_memory(slot, 40, state)
+            stamp = slot.heavy_job["updated_monotonic"]
+            with mock.patch.object(heavy.time, "time", return_value=10**12), \
+                 mock.patch.object(heavy.time, "monotonic", return_value=stamp + 1):
+                assert heavy.jobs(state)[0]["fresh"]
+                assert heavy.heavy_rss_kb(state, 80) == 40
+            for now in (stamp - 1, stamp + heavy.REPORT_STALE_SECONDS + 1):
+                with mock.patch.object(heavy.time, "monotonic", return_value=now):
+                    row = heavy.jobs(state)[0]
+                    assert not row["fresh"] and row["rss_kb"] == 40
+                    assert heavy.heavy_rss_kb(state, 80) == 80
+                    assert heavy.memory_victim([row], 80) == (40, None)
+        finally:
+            heavy.release_slot(slot, state)
+
+
+def test_stopped_owner():
+    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim, testing::heavy_owned_signal
+    if heavy.platform.system() != "Linux":
+        return
+    with tempfile.TemporaryDirectory() as state:
+        stop = os.path.join(state, "stop")
+        ready = [os.path.join(state, f"ready{i}") for i in range(2)]
+        worker = ("import pathlib,sys,time; memory=bytearray(4*1024*1024); "
+                  "pathlib.Path(sys.argv[1]).write_text('ready'); "
+                  "exec('while not pathlib.Path(sys.argv[2]).exists(): time.sleep(0.05)')")
+        launcher = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
+                    "sys.exit(h['main']([sys.executable,'-c',sys.argv[3],*sys.argv[4:]], "
+                    "state=sys.argv[2],load_reader=lambda:0))")
+        env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.5", HEAVY_MAX_LOAD="off")
+        env.pop("HEAVY_LOG", None)
+        children = []
+        try:
+            for index in range(2):
+                child = subprocess.Popen([sys.executable, "-I", "-B", "-c", launcher,
+                    os.path.join(HERE, "heavy"), state, worker, ready[index], stop],
+                    env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                children.append(child)
+                deadline = heavy.time.monotonic() + 15
+                while not os.path.exists(ready[index]) and child.poll() is None and heavy.time.monotonic() < deadline:
+                    heavy.time.sleep(0.05)
+                assert os.path.exists(ready[index]) and child.poll() is None
+            # Stop only our older monitor. Its command remains alive in its
+            # own process group, as with terminal job control.
+            os.kill(children[0].pid, signal.SIGSTOP)
+            deadline = heavy.time.monotonic() + heavy.REPORT_STALE_SECONDS + 2
+            while heavy.time.monotonic() < deadline:
+                assert children[1].poll() is None, children[1].communicate()
+                heavy.time.sleep(0.1)
+            reports = heavy.jobs(state)
+            assert len(reports) == 2 and sum(not r["fresh"] for r in reports) == 1
+            cap = int(0.5 * GB)
+            assert heavy.heavy_rss_kb(state, cap) > 0.6 * cap
+            total, victim = heavy.memory_victim(reports, cap)
+            assert total < cap and victim is None
+            os.kill(children[0].pid, signal.SIGCONT)
+            with open(stop, "w") as f:
+                f.write("stop")
+            for child in children:
+                out, err = child.communicate(timeout=15)
+                assert child.returncode == 0, (out, err)
+        finally:
+            if children and children[0].poll() is None:
+                os.kill(children[0].pid, signal.SIGCONT)
+            with open(stop, "w") as f:
+                f.write("stop")
+            for child in children:
+                if child.poll() is None:
+                    child.terminate()
+                child.communicate(timeout=15)
+
+
 def main():
-    tests = [test_parse_args, test_missing_command, test_recheck_wait_message,
-             test_physical_memory, test_overrides, test_offline_command,
-             test_load_admission, test_job_log, test_admission_snapshot, test_job_kinds,
-             test_policy_flip_while_waiting,
+    tests = [test_parse_args, test_missing_command, test_recheck_wait_message, test_physical_memory,
+             test_overrides, test_offline_command, test_load_admission, test_job_log,
+             test_admission_snapshot, test_job_kinds, test_policy_flip_while_waiting,
              test_stats_and_appends, test_short_appends, test_policy_comparison,
              test_partial_policy_coverage, test_alternate, test_alternate_hangup,
-             test_alternate_ignored_hangup]
+             test_alternate_ignored_hangup, test_slot_identity, test_proc_namespace_translation,
+             test_memory_victim, test_group_completion, test_fallback_escalation,
+             test_no_signal_after_reap, test_pid_namespace_jobs, test_report_clock,
+             test_stopped_owner]
     for t in tests:
         t()
     print(f"heavy: {len(tests)} tests passed")

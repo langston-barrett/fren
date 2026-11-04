@@ -944,6 +944,70 @@ a file takes effect without a restart:
 A setting that is set but is not a positive finite number is ignored,
 with a warning.
 
+Slot locks, not numeric PIDs, determine whether jobs are live. Each owner
+has a unique `job_id` and a sequence number allocated under `registry.lock`.
+It atomically publishes its own process-group RSS about every second in
+`.slotN.json` while holding `slotN`; admission sums these reports across
+namespaces. Acquisition and release also hold the registry lock, so a new
+holder cannot inherit the previous holder's report. Slot files themselves
+are never replaced or removed while in use. A report without a held lock
+is ignored, including after a crash or PID reuse. An empty slot status
+file does not mean its lock is unheld.
+
+Reports include the owner's `/proc/self/ns/pid` identity and label numeric
+PIDs as namespace-local diagnostics. No other owner resolves or signals
+those PIDs. Newest means the greatest sequence number, not the greatest
+PID or wall-clock timestamp. Each owner checks the combined total and only
+the selected owner terminates its own command. Local signaling first reaps the
+leader nonblocking, then probes the local group with `killpg(PGID, 0)`:
+a reaped leader alone does not mean the workers are gone. TERM-to-KILL
+escalation continues while the group exists. Signal handlers are blocked
+around the completion check and signal, and restored after monitoring.
+
+
+If `/proc` belongs to an ancestor PID namespace, the owner translates its
+own child through parentage and `NSpid` before measuring it in that procfs
+view. This covers both `unshare --pid --fork` with an inherited `/proc` and
+jobs with a remounted `/proc`, such as bwrap jobs. If it cannot identify its
+own group, or cannot measure or publish its memory, it stops its own
+command and exits with 125 rather than applying a foreign numeric PID.
+Job records identify this protocol as `memory_accounting` =
+`"slot_owner_reports_v3"`, alongside `job_id`, `admission_order` and `pid_namespace`.
+
+Reports use protocol version 3 and `updated_monotonic`, sampled from
+`time.monotonic()` in a shared time namespace. PID namespaces do not
+change that clock. Wall-clock corrections do not affect freshness, and
+Linux's monotonic clock excludes suspended time, so resume does not age
+all reports by the suspension's duration. Reports use a common clock;
+time namespaces with different monotonic offsets are outside this protocol.
+
+Admission and eviction have different totals. For admission, a held lease
+with missing, malformed, incompatible, future-dated or older-than-ten-second
+memory data reserves one full cap, blocking new work. A fresh lease counts
+its reported RSS. For eviction, each compatible lease counts its last
+reported RSS even if stale, and an unrecognized lease counts zero measured
+memory. Reservations alone cannot select a victim. If any lease lacks a
+compatible identity or reading, no global victim is selected; running jobs
+still enforce their own cap. Otherwise, eviction selects the greatest
+admission sequence only when the sum of last reported RSS exceeds the cap.
+A stale reading may underestimate current use; it remains measurement
+evidence rather than a bound on an unobserved process's memory.
+
+All heavy copies must use compatible reports, and old holders must drain
+before relying on the combined cap. Cleanup can leave metadata behind
+after a write error; unlocking still makes that report inactive. Accounting
+is sampled, not a kernel memory cgroup limit. A stopped monitor cannot
+publish new RSS, but its last reading never becomes a whole-cap eviction
+charge merely because it stops reporting.
+
+`scripts/heavy_test.py` checks lease accounting and local termination, and
+runs the cross-namespace cap integration with inherited and remounted
+procfs where unprivileged PID namespaces are supported. If the kernel or
+container refuses `unshare`, that integration prints a skip; portable
+lease and translation tests still run. `HEAVY_REQUIRE_PIDNS_TEST=1` makes
+lack of PID-namespace support a failure. Hosted CI may skip this integration,
+so its result alone does not establish cross-namespace coverage.
+
 Each completed job appends one JSON line to `~/.cache/heavy/log.jsonl`,
 or `HEAVY_LOG` if set. It records the shortened command, worktree,
 enqueue, start and end times (Unix seconds), monotonic wait and run
@@ -963,6 +1027,133 @@ paths, seeds and numbers while retaining executable and script basenames,
 flags and job names. Tests use scratch directories, including for logs.
 A missing bare command exits with 127 before waiting or taking a slot;
 it has no admission and produces no job record.
+
+The following requirements compute admission and eviction from the same
+raw compatible reports. Time values use one integral unit of the shared
+monotonic clock. Python tests check the concrete lock, clock, procfs and
+signal operations through `tested` claims in `Impls.Trace`.
+
+```fren
+pub struct MemoryOwner { job: String, sequence: Int }
+pub struct MemoryReport { owner: MemoryOwner, rss: Int, updated: Int }
+pub enum MemoryLeases { Nil, Cons(Option<MemoryReport>, MemoryLeases) }
+
+pub fn valid_report?(r: MemoryReport) := r.rss >= 0 and r.owner.sequence > 0
+
+pub fn fresh_report?(r: MemoryReport, now: Int, ttl: Nat) := 0 <= now - r.updated <= ttl
+
+pub fn admission_memory(cap: Nat, report: Option<MemoryReport>, now: Int, ttl: Nat): Int :=
+    match report {
+        Option::Some(r) => if valid_report?(r) and fresh_report?(r, now, ttl) then r.rss else cap,
+        Option::None => cap,
+    }
+
+pub fn eviction_memory(report: Option<MemoryReport>): Int := match report {
+    Option::Some(r) => if valid_report?(r) then r.rss else 0,
+    Option::None => 0,
+}
+
+pub proc heavy_lease(cap: Nat, locked?, report: Option<MemoryReport>, now: Int, ttl: Nat): (
+    det live?,
+    det admission: Int,
+    det eviction: Int,
+) {
+    ensure live: live? iff locked?
+    out admission := if locked? then admission_memory(cap, report, now, ttl) else 0
+    out eviction := if locked? then eviction_memory(report) else 0
+    expect unlocked: unless locked?, admission = 0 and eviction = 0
+    expect stale: match report {
+        Option::Some(r) => (when locked? and valid_report?(r) and not fresh_report?(r, now, ttl),
+            admission = cap and eviction = r.rss),
+        Option::None => true,
+    }
+}
+
+pub fn admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): Int := match leases {
+    MemoryLeases::Nil => 0,
+    MemoryLeases::Cons(report, rest) =>
+        admission_memory(cap, report, now, ttl) + admission_total(cap, rest, now, ttl),
+}
+
+pub fn eviction_total(leases: MemoryLeases): Int := match leases {
+    MemoryLeases::Nil => 0,
+    MemoryLeases::Cons(report, rest) => eviction_memory(report) + eviction_total(rest),
+}
+
+pub fn leases_ordered?(leases: MemoryLeases) := match leases {
+    MemoryLeases::Nil => true,
+    MemoryLeases::Cons(report, rest) =>
+        (match report {
+            Option::Some(r) => valid_report?(r),
+            Option::None => false,
+        })
+        and leases_ordered?(rest),
+}
+
+pub fn newest_owner(first: Option<MemoryOwner>, second: Option<MemoryOwner>): Option<MemoryOwner> :=
+    match first, second {
+        Option::None, _ => second,
+        _, Option::None => first,
+        Option::Some(a), Option::Some(b) => if b.sequence > a.sequence then second else first,
+    }
+
+pub fn latest_owner(leases: MemoryLeases): Option<MemoryOwner> := match leases {
+    MemoryLeases::Nil => Option::None,
+    MemoryLeases::Cons(report, rest) => newest_owner(
+        match report {
+            Option::Some(r) => if valid_report?(r) then Option::Some(r.owner) else Option::None,
+            Option::None => Option::None,
+        },
+        latest_owner(rest)
+    ),
+}
+
+pub proc heavy_memory_victim(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (
+    det admission: Int,
+    det total: Int,
+    det selected: Option<MemoryOwner>,
+) {
+    out admission := admission_total(cap, leases, now, ttl)
+    out total := eviction_total(leases)
+    out selected :=
+        if total > cap and leases_ordered?(leases) then latest_owner(leases) else Option::None
+    expect within_cap: when total <= cap, selected = Option::None
+    expect legacy: unless leases_ordered?(leases), selected = Option::None
+    expect stale_fits: match leases {
+        MemoryLeases::Cons(Option::Some(r), rest) => (when not fresh_report?(r, now, ttl) and r.rss + eviction_total(rest) <= cap,
+            selected = Option::None),
+        _ => true,
+    }
+}
+
+pub proc heavy_group_gone(leader_reaped?, group_exists?): (det gone?) {
+    ensure rule: gone? iff leader_reaped? and not group_exists?
+    expect worker: when group_exists?, not gone?
+    expect leader_running: unless leader_reaped?, not gone?
+}
+
+pub proc heavy_owned_signal(
+    own: String,
+    leases: MemoryLeases,
+    cap: Nat,
+    own_rss: Nat,
+    now: Int,
+    ttl: Nat,
+    requested?,
+    leader_reaped?,
+    group_exists?,
+): (det signal?) {
+    call eviction := heavy_memory_victim(cap, leases, now, ttl)
+    call termination := heavy_group_gone(leader_reaped?, group_exists?)
+    let memory_requested? := match eviction.selected {
+        Option::Some(owner) => owner.job = own,
+        Option::None => own_rss > cap,
+    }
+    ensure rule: signal? iff (requested? or memory_requested?) and not termination.gone?
+    expect completed: when termination.gone?, not signal?
+    expect escalation: when requested? and group_exists?, signal?
+}
+```
 
 The log has no automatic size limit or rotation, and `--stats` reads it
 all, including the load samples of long jobs. Keep the raw log for the
