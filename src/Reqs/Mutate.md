@@ -437,6 +437,51 @@ pub proc shards_partition(remainder: Nat, j: Nat, k: Nat) {
 
 ## Output
 
+Except with `--list`, every selected mutant gets exactly one decision.
+A missing or duplicate decision is an internal error, even when the
+summary's counts otherwise agree. An error running the command is never
+a mutant's decision. `mutate::decision` checks the recorded identifiers
+against selection for each identifier, including any not selected:
+
+```fren
+pub enum DecisionIds { Nil, Cons(String, DecisionIds) }
+
+pub fn occurrences(ids: DecisionIds, id: String): (n: Nat) {
+    out n := match ids {
+        DecisionIds::Nil => 0,
+        DecisionIds::Cons(head, rest) => (if head = id then 1 else 0) + occurrences(rest, id),
+    }
+
+    ensure empty: when ids = DecisionIds::Nil, n = 0
+    ensure singleton: when ids = DecisionIds::Cons(id, DecisionIds::Nil), n = 1
+}
+
+pub proc decision(selected?, id: String, decided: DecisionIds, command_error?): (det valid?) {
+    ensure rule: valid? iff not command_error? and occurrences(decided, id) = (if selected? then 1 else 0)
+
+    expect selected_once: when selected?, valid? iff (not command_error? and occurrences(decided, id) = 1)
+    expect unselected_absent: when valid? and not selected?, occurrences(decided, id) = 0
+    expect error_is_not_decision: when command_error?, not valid?
+}
+```
+
+With the same spec, checker and seed, the full run, a sample and every
+shard give each selected mutant the same decision and killing checks.
+Whether the solver proves equivalence within its wall-clock time limit
+may differ, so survival and equivalence count as the same decision here:
+
+```fren
+pub proc same_decision(full: Outcome, other: Outcome): (det same?) {
+    let full_kind: Outcome := if full = Equivalent then Survived else full
+    let other_kind: Outcome := if other = Equivalent then Survived else other
+    ensure rule: same? iff full_kind = other_kind
+
+    expect reflexive: when full = other, same?
+    expect killed_stays_killed: when same? and full = Killed, other = Killed
+    expect unviable_stays_unviable: when same? and full = Unviable, other = Unviable
+}
+```
+
 Each surviving mutant is a warning, `F0613`, at the change, with the
 mutant shown as a suggested edit. After them comes a summary, on
 standard error:

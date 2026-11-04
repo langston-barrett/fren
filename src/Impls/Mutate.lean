@@ -26,6 +26,40 @@ def toMutantOutcome : Outcome → mutate.Outcome
   | .equivalent => .Equivalent
   | .unviable => .Unviable
 
+def toDecisionIds : List String → mutate.DecisionIds
+  | [] => .Nil
+  | id :: ids => .Cons id (toDecisionIds ids)
+
+theorem occurrences_toDecisionIds (ids : List String) (id : String) :
+    mutate.occurrences (toDecisionIds ids) id = (ids.count id : Int) := by
+  induction ids with
+  | nil => simp [toDecisionIds, mutate.occurrences]
+  | cons head rest ih =>
+    by_cases h : head = id
+    · subst head
+      simp [toDecisionIds, mutate.occurrences, ih]
+      omega
+    · simp [toDecisionIds, mutate.occurrences, ih, List.count_cons_of_ne h, h]
+
+impl mutant_decision: mutate::decision for (s : Bool) (id : String) (ids : List String) (e : Bool) {
+  selected? := s,
+  id := id,
+  decided := toDecisionIds ids,
+  command_error? := e,
+  valid? := FrenCli.Mutate.decisionValid s id ids e,
+} by
+  intro s id ids e _
+  simp only [fren_spec, occurrences_toDecisionIds]
+  cases s <;> cases e <;> simp [FrenCli.Mutate.decisionValid] <;> omega
+
+impl mutant_same_decision: mutate::same_decision for (a b : Outcome) {
+  full := toMutantOutcome a,
+  other := toMutantOutcome b,
+  same? := FrenCli.Mutate.sameDecision a b,
+} by
+  intro a b _
+  cases a <;> cases b <;> decide
+
 impl mutant_kill: mutate::kill for (b a : Fren.Core.Verdict) {
   before := toVerdict b,
   after := toVerdict a,
