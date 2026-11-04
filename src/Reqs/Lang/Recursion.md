@@ -449,7 +449,12 @@ Induction on a parameter `x` is the check, by Hoare's rule
 ([Contracts](#contracts)), of the contract of a function that Fren
 generates from the claim. Its parameters are the expectation's. Its body
 is a `match` on `x` with an arm for each variant, in order, whose pattern
-binds each payload. An arm's value is the conjunction of the function's
+binds each payload and names the variant by the variant's own path. No
+binder or other generated name may stand for the variant or rewrite any
+segment of that path, including an enumeration's name hidden by a type
+alias. This requirement holds even where the candidate is not tried: an
+arm with a rewritten variant path is not a permitted generated function.
+An arm's value is the conjunction of the function's
 applications to the arm's *children*, the payloads of `x`'s type, with the
 other parameters as `lang::induction_hypotheses` states. In an arm without
 children it is `true`. Its postcondition is the function's application to
@@ -482,6 +487,31 @@ itself can apply it: an application elsewhere would rest on its contract,
 which is checked only where the claim's own check is Inconclusive. Nor is
 a generated name ever offered as a similar name for one that is not found
 (`F0201`), since a fix that wrote it could not be read.
+
+For example, the claim below passes by induction, although its syntax
+never mentions the base variant's name:
+
+```text
+set_option fren.lint.non_camel_case_types "allow"
+
+pub enum Collision { fren_induction_p0, Cons(Int, Collision) }
+
+pub fn variant_count(l: Collision): Int := match l {
+    Collision::fren_induction_p0 => 0,
+    Collision::Cons(_, r) => 1 + variant_count(r),
+}
+
+expect variant_nonnegative(a: Collision) { expect nonnegative: variant_count(a) >= 0 }
+```
+
+The generated base arm names `self::Collision::fren_induction_p0` and has
+value `true`. Rewriting that path to `self::Collision::#0`, with a payload
+binder in place of the variant, violates the rule; dropping the function
+and leaving `variant_nonnegative::nonnegative` Inconclusive does not
+satisfy it. An alias does not change a variant's own path either: if
+`Alias` names the enumeration `fren_induction_p0`, its variant `Z` is still
+named by `fren_induction_p0::Z`, with the module qualification above,
+never by a generated binder in place of the enumeration's name.
 
 In each arm, the function is applied once to each child, in order, at the
 position of `x`, and at each other position to the parameter there: the
