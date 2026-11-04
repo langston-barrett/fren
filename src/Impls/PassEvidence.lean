@@ -899,7 +899,7 @@ theorem matching_successor {T : Type} [BEq T] [LawfulBEq T] (rel : List (T × T)
 
 theorem matching_closure_ends {T : Type} [BEq T] [LawfulBEq T]
     (written : List T) (rel : List (T × T)) (brings : T → Bool) :
-    ∃ r, Fren.Core.Matching.closure written rel brings = some r := by
+    ∃ r, (Fren.Core.Matching.closure written rel brings).2 = some r := by
   apply closeApps_terminates brings (Fren.Core.Matching.successors rel) (Fren.Core.Matching.vertices written rel)
   · intro a _ b hb
     exact (mem_matching_universe written rel b).mpr (.inr (.inr ⟨a, (matching_successor rel a b).mp hb⟩))
@@ -914,13 +914,15 @@ impl finite_application_closure: check::finite_application_closure for
     (written : List Int) (rel : List (Int × Int)) {
   written := Fren.FinSet.ofList written,
   inside := Fren.FinSet.ofList rel,
-  rounds := (Fren.Core.Matching.vertices written rel).length + 1,
-  ended? := (Fren.Core.Matching.closure written rel (fun _ => true)).isSome,
+  rounds := (Fren.Core.Matching.closure written rel (fun _ => true)).1,
+  ended? := (Fren.Core.Matching.closure written rel (fun _ => true)).2.isSome,
   brought := Fren.FinSet.ofList
-    (((Fren.Core.Matching.closure written rel (fun _ => true)).getD []).map Prod.fst),
+    (((Fren.Core.Matching.closure written rel (fun _ => true)).2.getD []).map Prod.fst),
 } by
   intro written rel _
   obtain ⟨r, hr⟩ := matching_closure_ends written rel (fun _ => true)
+  have hrounds : (Fren.Core.Matching.closure written rel (fun _ => true)).1 =
+      (Fren.Core.Matching.vertices written rel).length + 1 := rfl
   have hrun := hr
   unfold Fren.Core.Matching.closure at hrun
   let roots := written.eraseDups
@@ -978,7 +980,7 @@ impl finite_application_closure: check::finite_application_closure for
         induction hp with
         | single hab => exact hstep _ _ (hs w (List.mem_eraseDups.mpr hw)) hab
         | tail _ hab ih => exact hstep _ _ ih hab
-  simp only [fren_spec, check.application_vertices, hr, Option.isSome_some, Option.getD_some]
+  simp only [fren_spec, check.application_vertices, hrounds, hr, Option.isSome_some, Option.getD_some]
   refine ⟨⟨by omega, heq⟩, trivial, ?_, ?_, ?_, ?_⟩
   · intro x hx; exact hs x (List.mem_eraseDups.mpr hx)
   · intro b hb

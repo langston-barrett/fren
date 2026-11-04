@@ -55,10 +55,12 @@ def successors {T : Type} [BEq T] (inside : List (T × T)) (a : T) : Id (Unit ×
   pure ((), (inside.filter (·.1 == a)).map Prod.snd)
 
 /-- Run today's shared closure traversal at a bound computed from the
-finite graph. The binding proves that this cannot run out of rounds. -/
+finite graph, returning the rounds passed to `closeApps` with its result.
+The binding proves that this cannot run out of rounds. -/
 def closure {T : Type} [BEq T] [LawfulBEq T] (written : List T) (inside : List (T × T))
-    (brings : T → Bool) : Option (List (T × Unit)) :=
+    (brings : T → Bool) : Nat × Option (List (T × Unit)) :=
+  let rounds := (vertices written inside).length + 1
   let roots := (written.filter brings).eraseDups
-  (closeApps brings (successors inside) ((vertices written inside).length + 1) roots roots []).run
+  (rounds, (closeApps brings (successors inside) rounds roots roots []).run)
 
 end Fren.Core.Matching

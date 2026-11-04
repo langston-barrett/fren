@@ -35,17 +35,26 @@ def aliases : List (String × Term) :=
 #guard Fren.Core.Sx.subst #[("x", .atom "first"), ("x", .atom "second")] (.atom "x") == .atom "first"
 
 def reached (roots : List Nat) (edges : List (Nat × Nat)) (brings : Nat → Bool := fun _ => true) : Option (List Nat) :=
-  (closure roots edges brings).map (List.map Prod.fst)
+  (closure roots edges brings).2.map (List.map Prod.fst)
 
 #guard reached [] [(0, 1)] == some []
 #guard reached [9, 9] [] == some [9]
 #guard reached [0] [(0, 1), (0, 1), (1, 2), (2, 0), (8, 9)] == some [0, 1, 2]
 #guard reached [0] [(0, 1), (1, 2)] (· != 1) == some [0]
 
+-- The reported bound comes from the same call as the traversal result.
+-- Count all distinct vertices, including unreachable ones and filtered seeds.
+#guard closure ([] : List Nat) [] (fun _ => true) == (1, some [])
+#guard closure [9, 9] [] (fun _ => true) == (2, some [(9, ())])
+#guard closure [0] [(0, 1), (0, 1), (1, 2), (2, 0), (8, 9)] (fun _ => true) ==
+  (6, some [(0, ()), (1, ()), (2, ())])
+#guard closure [0] [(0, 1), (1, 2)] (fun _ => false) == (4, some [])
+
 -- More than the small bounded graphs used in examples: the final
 -- frontier is processed even when it adds no vertex.
 def chain : List (Nat × Nat) := (List.range 64).map fun n => (n, n + 1)
 #guard reached [0] chain == some (List.range 65)
+#guard (closure [0] chain (fun _ => true)).1 == 66
 #guard (Fren.Core.closeApps (fun _ => true) (successors chain) 64 [0] [0] []).run == none
 
 end FrenTest.Matching
