@@ -953,6 +953,63 @@ query entry point's result. `test/ui/checks/fact_scope.fren` checks both
 front ends' verdicts, including the transitive case and a witness whose
 query mentions no such function.
 
+`check::check_applies` states which functions' contracts a check rests
+on: those whose applications in its queries bring a postcondition as a
+fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,
+and whose functions they record for each check, `Fren.Core.withApplies`),
+or, for a check passed by random testing, which asks the solver nothing,
+every function with a contract that its item applies: a test's
+interpretation of such a function meets its postconditions where it can
+(`Reqs/Eval`), and where they cannot hold it has no value, so no test there
+finds a counterexample. Instances of generic functions and recursive
+functions are left to `InstanceContract` and `Postconditions` (#522).
+Where a front end runs the checks of a kind of an item together, as it runs
+all of an item's call assumption checks, its redundancy checks and its
+determinism checks, each of them is given the functions of all of their
+queries (`Fren.Core.withAllApplies`), so `queried` is a superset of its
+own. That is conservative: a function too many only adds a premise, which
+can cap a pass but never strengthens one, and both front ends share it
+through `Fren.Core.checkComp`. The ui test
+`test/ui/checks/evidence_contracts.fren` pins it: the assumption check of
+a call whose arguments apply no contract still rests on the contract that
+a later call's arguments apply.
+
+```fren
+pub proc check_applies(
+    queried: Set<Int>,           -- the functions whose postconditions its queries' facts have
+    item_applies: Set<Int>,      -- the functions with contracts that its item applies
+    random?,                     -- it was passed by random testing
+): (det applies: Set<Int>) {
+    out applies := if random? then item_applies else queried
+}
+```
+
+`check::runs_premises` states that a front end that reports a check runs
+every check that it rests on, so that the evidence of each is known where
+it is reported:
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc runs_premises(
+    reported: Set<Int>,          -- the checks that a front end reports, by position
+    premises: Rel<Int, Int>,     -- each check, with the checks whose passes it takes as premises
+    k: Int,                      -- the position of a check
+): (det run: Set<Int>) {
+    out run := reported union premises.closure.image(reported)
+
+    expect premises_run: when k in reported, rests_on(premises, k) subset run
+}
+```
+
+The postcondition checks of a recursive function are by induction, with
+the function's own postconditions as hypotheses at its recursive
+applications (`lang::recursive_facts`), so they rest on each other;
+`lang::recursive_post_result` is this rule within them: one of them is not
+reported as a pass while another is unproved. That relation is cyclic, so
+it stays apart from `check::pass_evidence`, whose premises are earlier
+checks: from outside the function, its postcondition checks are one
+premise, settled where all of them pass.
+
 ### Matching terms and finite closure
 
 The ground matching planned for modules (#758) needs a definition of
@@ -1076,13 +1133,12 @@ front ends' extraction of matching terms belongs to #758; no current
 query uses the new matching model to add instances.
 
 r[matching.closure.finite] check::finite_application_closure
-For a finite graph of candidate ground applications, closure visits each
-reachable application at most once and reaches a fixpoint within the
-number of vertices plus one rounds. The universe is computed from the
-query's applications and the endpoints of the graph, rather than supplied
-as a bound or as an assertion that traversal terminates. This holds even
-for cycles and repeated edges. Running out of rounds is not a partial
-closure or a successful check.
+For a finite graph of candidate ground applications, closure returns
+exactly the reachable fixpoint. Every reached application brings its
+facts. It reports the number of vertices plus one as `rounds`, alongside
+a successful closure. The universe is computed from the query's
+applications and the endpoints of the graph. This holds even for cycles
+and repeated edges.
 
 The graph is the finite universe presented to this closure model. The
 module matching engine (#758) must construct that universe from the
@@ -1123,68 +1179,16 @@ expect finite_cycle() {
 }
 ```
 
-This binds to the same `Fren.Core.closeApps` that both front ends use
-today, with a proof of termination at the computed bound. The earlier
-`fact_applications` binding describes a returned closure; it assumes that
-the traversal has returned. This binding supplies the missing termination
-argument over every finite graph, with no bound on its size.
-
-`check::check_applies` states which functions' contracts a check rests
-on: those whose applications in its queries bring a postcondition as a
-fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,
-and whose functions they record for each check, `Fren.Core.withApplies`),
-or, for a check passed by random testing, which asks the solver nothing,
-every function with a contract that its item applies: a test's
-interpretation of such a function meets its postconditions where it can
-(`Reqs/Eval`), and where they cannot hold it has no value, so no test there
-finds a counterexample. Instances of generic functions and recursive
-functions are left to `InstanceContract` and `Postconditions` (#522).
-Where a front end runs the checks of a kind of an item together, as it runs
-all of an item's call assumption checks, its redundancy checks and its
-determinism checks, each of them is given the functions of all of their
-queries (`Fren.Core.withAllApplies`), so `queried` is a superset of its
-own. That is conservative: a function too many only adds a premise, which
-can cap a pass but never strengthens one, and both front ends share it
-through `Fren.Core.checkComp`. The ui test
-`test/ui/checks/evidence_contracts.fren` pins it: the assumption check of
-a call whose arguments apply no contract still rests on the contract that
-a later call's arguments apply.
-
-```fren
-pub proc check_applies(
-    queried: Set<Int>,           -- the functions whose postconditions its queries' facts have
-    item_applies: Set<Int>,      -- the functions with contracts that its item applies
-    random?,                     -- it was passed by random testing
-): (det applies: Set<Int>) {
-    out applies := if random? then item_applies else queried
-}
-```
-
-`check::runs_premises` states that a front end that reports a check runs
-every check that it rests on, so that the evidence of each is known where
-it is reported:
-
-```fren
-set_option fren.lint.undecidable "allow" in
-pub proc runs_premises(
-    reported: Set<Int>,          -- the checks that a front end reports, by position
-    premises: Rel<Int, Int>,     -- each check, with the checks whose passes it takes as premises
-    k: Int,                      -- the position of a check
-): (det run: Set<Int>) {
-    out run := reported union premises.closure.image(reported)
-
-    expect premises_run: when k in reported, rests_on(premises, k) subset run
-}
-```
-
-The postcondition checks of a recursive function are by induction, with
-the function's own postconditions as hypotheses at its recursive
-applications (`lang::recursive_facts`), so they rest on each other;
-`lang::recursive_post_result` is this rule within them: one of them is not
-reported as a pass while another is unproved. That relation is cyclic, so
-it stays apart from `check::pass_evidence`, whose premises are earlier
-checks: from outside the function, its postcondition checks are one
-premise, settled where all of them pass.
+This Req binds to `Fren.Core.Matching.closure`. That entry point calls
+`Fren.Core.closeApps` with the candidate graph's vertex count plus one
+rounds; `closeApps_terminates` proves that this call returns for every
+finite graph. Both front ends use the same traversal through
+`appFactsWith`, but choose bounds that count functions. Neither front end
+calls `Matching.closure` or uses its vertex bound. Their termination
+argument still depends on the order of contracts described with
+`fact_applications` above. The Req checks the returned set and the reported
+`rounds`; the iteration count and uniqueness of visits are properties of
+the traversal that this Req does not state.
 
 ### The laws of a trait
 
