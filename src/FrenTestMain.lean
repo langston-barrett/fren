@@ -2919,7 +2919,9 @@ def matrixTargets (workflow : String) : Array String := Id.run do
 /-- Each copy of a root's imports is the root's; no module is in the globs
 of two libraries; each module of Reqs reads only the specs that its
 library needs; only modules whose library needs the tests make `tested`
-claims; and only the tests whose library needs the files that they read,
+claims, and the files those claims and the converse scan (`fren.testGlobs`)
+name are among its actual `needs`; unreadable dependency declarations fail;
+and only the tests whose library needs the files that they read,
 `FrenTestFiles`, read files with `#fren_md`; and `pre-merge`'s build
 jobs together build exactly the default targets. -/
 -- fren-covers: testing::library_reads
@@ -3062,6 +3064,24 @@ def libraries : IO (Array String) := do
       ("filter := .ofFn fun p =>", "filter := .ofFn fun q =>")] do
     if (← checkLibraries (lakefile.replace before after)).isEmpty then
       failures := failures.push s!"libraries regression: unreadable declaration `{after}` was accepted"
+  -- The spec must constrain imports independently of needs: adding an
+  -- unneeded development-file import to Models must kill read_needed.
+  let spec ← IO.FS.readFile "src/Reqs/dev/Testing.md"
+  let before := "ReaderModule::Models => {ReadInput::ChaptersMd},"
+  let mutant := spec.replace before
+    "ReaderModule::Models => {ReadInput::ChaptersMd, ReadInput::DevMd},"
+  if (spec.splitOn before).length != 2 then
+    failures := failures.push "libraries regression: unneeded-read mutation must apply exactly once"
+  else
+    let dir : System.FilePath := ".lake/libraries-test"
+    IO.FS.createDirAll dir
+    let path := dir / "Testing.md"
+    IO.FS.writeFile path mutant
+    let (out, code) ← runCheck #[path.toString]
+    unless code == 1 &&
+        (out.splitOn "expectation `testing::library_reads::read_needed` does not hold").length > 1 &&
+        (out.splitOn "counterexample: m = ReaderModule::Models").length > 1 do
+      failures := failures.push s!"libraries regression: unneeded-read mutation was not killed (exit {code}):\n{out}"
   return failures
 
 /-! ## Mutants
