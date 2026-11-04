@@ -3,7 +3,8 @@
 set_option fren.lint.unused_variables "allow"
 
 proc types(x: Int): (ok?) {
-    ensure r: ok? iff 0 <= x < "a"
+    ensure r: when 0 <= x
+        < "a", ok?
     --~^ error: type mismatch: expected `Int`, found `String`
 }
 

@@ -2349,10 +2349,10 @@ def relaid (src : String) (seed : Nat) (apart : Std.HashSet Nat := {}) : Option 
         let last := b.closing - 1
         if b.commas.back? == some last then edits := edits.push (toks[last]!.span.start, toks[last]!.span.stop, "")
         else edits := edits.push (toks[last]!.span.stop, toks[last]!.span.stop, ",")
-  -- The gap before the right side of each `:=` and `=>`, whose blank lines
-  -- go (`fmt::right_side`): a space, a line break or a blank line. But for
-  -- a chain broken by hand, with a line break outside its brackets, whose
-  -- gap is content.
+  -- The gap before the right side of each `:=`, `=>` or clause's `:`, whose
+  -- blank lines go (`fmt::right_side`): a space, a line break or a blank
+  -- line. But for an expression broken by hand, with a line break outside
+  -- its brackets, whose gap is content.
   let firsts : Std.HashSet Nat := lay.rightSides.foldl (fun acc (_, f, _, _) => acc.insert f) {}
   -- The gaps before and after the operators of each chain that the
   -- formatter lays out (`fmt::chain_layout`).

@@ -346,7 +346,8 @@ proc long_enough(x: Int, text: String): (
     ensure r43: y43 = x + 44
     ensure r44: y44 = x + 45
     -- A line that continues a clause counts.
-    ensure r45: y45 = x + 46
+    ensure r45: when x > 0
+        and x != 1000, y45 = x + 46
     /- a block comment
        of two lines -/
 }

@@ -39,9 +39,11 @@ proc chains(
     -- ...and the operators of an inner chain that starts on the line of an outer one are indented past
     -- the outer one's.
     ensure nested: ok? iff alpha_beta_gamma + delta_epsilon_zeta + eta_theta_iota + alpha_beta_gamma + delta_epsilon_zeta > eta_theta_iota
-    -- A call that cannot fit beside a nested chain's operator hugs it instead of splitting after
-    -- a break at `=`. Its operator line is four columns farther in than a chain on its own.
+    -- A call with flat arguments after a long left operand breaks at `=`, even when that line is
+    -- still too wide. Its arguments can then split, since the call is its line's expression.
     ensure nested_call: alpha_beta_gamma + delta_epsilon_zeta = evaluate_for_nested_chain_width(alpha_beta_gamma, delta_epsilon_zeta, eta_theta_iota) iff ok?
+    -- Arguments over their width limit are vertical wherever the call is, so that call hugs `=`.
+    ensure nested_wide: alpha_beta_gamma + delta_epsilon_zeta = evaluate_for_nested_chain_width(alpha_beta_gamma, delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma) iff ok?
     -- A clause's chain that breaks starts the next line, and breaks there only if it still does
     -- not fit (#546's decision 4).
     expect higher_order: typeof(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota) = Some(alpha_beta_gamma)
@@ -51,8 +53,8 @@ proc chains(
         Boxed::Box(n) => n,
     }
     ensure record: q = P { x := alpha_beta_gamma + delta_epsilon_zeta, y := eta_theta_iota + alpha_beta_gamma }
-    -- ...and so does a call after a short left operand, or one that would not fit on a line of its
-    -- own, but not one that would (#546's decision 3).
+    -- ...and so does a call after a short left operand, or one whose arguments must split wherever
+    -- it is, but not a call with flat arguments after a longer left operand (#546's decision 3).
     ensure short: t = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c + a + b)
     ensure split_anyway: eval(alpha_beta_gamma, delta_epsilon_zeta) = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota + alpha_beta_gamma, c)
     ensure long_left: alpha_beta_gamma = f(alpha_beta_gamma + delta_epsilon_zeta, eta_theta_iota, c + a)

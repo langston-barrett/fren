@@ -103,8 +103,8 @@ condition, which principle 6 keeps.
    (`fmt::right_side`'s `breaks?`). One shape breaks *after* its operator:
    a single short name before `iff` or `=`, as in `ensure rule: noted? iff`,
    whose right operand then starts the next line, one level in
-   (`fmt::chain_side`). A call after an operator that would not fit on a
-   line of its own anyway hugs it rather than the chain breaking, as in
+   (`fmt::chain_side`). A call whose arguments must be vertical wherever
+   it is hugs its operator rather than the chain breaking, as in
    `lhs = f(` (`fmt::hugs?`).
 6. **Leave a choice to the author only where no rule decides it well**:
    the line breaks of a chain that is not its line's expression, such as a
@@ -1046,8 +1046,8 @@ pub fn proof?(kind: Kind) :=
     }
 ```
 
-An operation, an `if` or a chain broken by hand after a signature that
-spans several lines, on the line that starts with the `)` of its
+An operation, an `if` or an expression broken by hand after a signature
+that spans several lines, on the line that starts with the `)` of its
 parameters, as `) :=` or `): Int :=`, always starts the next line, so that
 it does not read as part of the signature. A whole `match`, table or
 bracketed expression there hugs or moves as anywhere else, as rustfmt
@@ -1247,7 +1247,7 @@ A chain breaks where it does not fit on its line:
    closing bracket, as rustfmt keeps a right operand on the last line of a
    left one, as in `}).card >= 0`.
 
-A last operand hugs a chain, breaking in place rather than the chain,
+A last operand hugs a chain, staying on its operator's line,
 where its first line would end with the brace of a record literal or
 update, a `match`, a table or a Boolean block, and the line fits up to that
 brace, as rustfmt keeps a right operand whose first line ends with `{` on
@@ -1255,11 +1255,14 @@ its operator's line; or where the chain has one operator, and its right
 operand is wholly a call, a method call or a sequence or set literal, and
 the line fits up to its bracket, after at most 4 columns, each token taking
 its width and a space, as rustfmt keeps a right operand on the line of a
-left one at most 4 wide, or where that operand would not fit on a line of
-its own with its operator anyway, as it cannot be on one line, or is too
-long (#546's decision 3). So breaking at `=` keeps a call on one line, or
-is not done. A chain in a list on one line stays on that line, as a list in
-it does:
+left one at most 4 wide, or where that operand's list cannot be on one
+line wherever it is, as its arguments exceed their width limit or hold a
+line break or a list that must be vertical (#546's decision 3). A call
+after a longer left operand whose list can be flat breaks at the operator
+when the line is too long, even if the call would still be too wide with
+the operator on a line of its own: the call is then its line's expression,
+so `fmt::own_line` lets its arguments split there. A chain in a list on one
+line stays on that line, as a list in it does:
 
 ```text
 ensure r: total = a + b + c + match x {
@@ -1335,22 +1338,13 @@ pub enum LastOperand {
     Other,                   -- any other expression
 }
 
--- The last operand hugs the chain, breaking in place rather than the chain, where the line fits up to
--- its opening bracket: a brace ends its first line, or it is a bracketed list after a short left
--- operand, or one that would not fit on a line of its own anyway (#546's decision 3).
-pub fn hugs?(
-    operators: Int,
-    last: LastOperand,
-    list_last?,
-    before: Int,
-    head_end: Int,
-    next_end: Int
-) :=
+-- The last operand hugs the chain where the line fits up to its opening bracket: a brace ends its
+-- first line, or it is a bracketed list after a short left operand, or one whose list must be
+-- vertical wherever it is (#546's decision 3).
+pub fn hugs?(operators: Int, last: LastOperand, list_last?, before: Int, head_end: Int) :=
     head_end <= 100
         and (last = LastOperand::Brace
-            or (operators = 1
-                and last = LastOperand::Bracket
-                and (before <= 4 or list_last? or next_end > 100)))
+            or (operators = 1 and last = LastOperand::Bracket and (before <= 4 or list_last?)))
 
 -- A chain must break whatever its line: a line break kept, or a comment, is before its last operator,
 -- outside a list, or, with two operators or more, a list that cannot be on one line is.
@@ -1366,7 +1360,6 @@ pub proc chain_layout(
     last: LastOperand,
     before: Int,             -- the columns before its last operand, each token taking its width and a space
     head_end: Int,           -- where its line would end, up to the brace or bracket of its last operand
-    next_end: Int,           -- where its last operator and operand would end on a line of their own
     line_end: Int,           -- where its line would end, with it on that line, as rule 2 counts
     -- Of the chain that is its whole last operand, if any (0 operators if none): its operators,
     -- `forced_before?` and `list_before?`.
@@ -1379,7 +1372,7 @@ pub proc chain_layout(
             and not flat?
             and (must_break?(operators, forced_before?, list_before?)
                 or must_break?(last_operators, last_forced?, last_list?)
-                or (not hugs?(operators, last, list_last?, before, head_end, next_end)
+                or (not hugs?(operators, last, list_last?, before, head_end)
                     and (list_last? or line_end > 100))))
 
     -- `ok? iff a > 0 and (match x {` ... `}) and b > 0`: where its last operand must break, so does
@@ -1397,10 +1390,10 @@ pub proc chain_layout(
         and last = LastOperand::Bracket and before <= 4 and head_end <= 100, not broken?
     expect split_anyway: when last_operators = 0 and operators = 1 and not forced_before?
         and last = LastOperand::Bracket and list_last? and head_end <= 100, not broken?
-    -- ...but `typeof(Ctx::Empty, e) = Some(` ... `)` breaks before `=` where `= Some(` ... `)` then fits
-    -- on a line of its own (#546's decision 4).
+    -- ...but a call that can be flat breaks off a longer left operand, even where it is too wide
+    -- on the operator's line: its arguments can then split on that line (#546's decision 4).
     expect long_call: when operators = 1 and not flat? and last = LastOperand::Bracket and before > 4
-        and not list_last? and next_end <= 100 < line_end, broken?
+        and not list_last? and line_end > 100, broken?
     -- `(table {` ... `}).card >= 0`: one operator stays after a left operand that spans lines...
     expect spanning_left: when last_operators = 0 and operators = 1 and not forced_before? and not list_last?
         and line_end <= 100, not broken?
