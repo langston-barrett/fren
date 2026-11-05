@@ -1,0 +1,85 @@
+-- Datatype parameters inside collection payloads and fields (#602).
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.assertions_on_constants "allow"
+mod datatype_elements
+
+pub enum Bag<T> { Empty, Many(Set<T>) }
+pub struct Collections<A, B> { set: Set<A>, seq: Seq<B>, rel: Rel<A, B> }
+pub enum Deep<T> { Wrap(Option<Seq<Set<T>>>) }
+pub enum Chain<T> { Nil, Cons(Seq<T>, Chain<T>) }
+pub enum Key { A, B }
+
+pub fn contents<T>(b: Bag<T>): Set<T> := match b {
+    Bag::Empty => {},
+    Bag::Many(s) => s,
+}
+
+pub fn pack<T>(x: T): Bag<T> := Bag::Many({x})
+pub fn wrap<T>(x: T): Deep<T> := Deep::Wrap(Option::Some([{x}]))
+
+pub fn unpack<T>(d: Deep<T>): Seq<Set<T>> := match d {
+    Deep::Wrap(Option::Some(q)) => q,
+    _ => [],
+}
+
+pub fn fields<A, B>(a: A, b: B): Collections<A, B> :=
+    Collections { set := {a}, seq := [b], rel := {(a, b)} }
+
+pub const EMPTY: Bag<Bool> := Bag::Many({})
+pub const WORDS: Bag<String> := Bag::Many({"a", "b"})
+
+proc instances(x: Int, b?, k: Key) {
+    expect empty: contents(EMPTY) = {}
+    expect ints: contents(pack(x)) = {x}
+    expect bools: contents(pack(b?)) = {b?}
+    expect strings: contents(WORDS) = {"a", "b"}
+    expect enums: contents(pack(k)) = {k}
+    expect instances: contents(pack(Option::Some(x))) = {Option::Some(x)}
+    expect nested: unpack(wrap(x)) = [{x}]
+    expect set: fields(x, b?).set = {x}
+    expect seq: fields(x, b?).seq = [b?]
+    expect rel: fields(x, b?).rel = {(x, b?)}
+    expect update: { fields(x, b?) with seq := [] }.seq = []
+    expect different: contents(pack(x)) = {}  --~ error: expectation `datatype_elements::instances::different` does not hold
+}
+
+-- Read collection payloads of a directly recursive datatype, including a
+-- generic structural recursion. Its recursive occurrence still has the
+-- declared arguments.
+pub fn length<T>(c: Chain<T>): Int := match c {
+    Chain::Nil => 0,
+    Chain::Cons(q, tail) => q.len + length(tail),
+}
+
+proc recursive(c: Chain<Bool>) {
+    expect length: let tail: Chain<Bool> := Chain::Nil in
+        length(Chain::Cons([true], tail)) = 1 + length(tail)
+    expect wrong_length: length(Chain::Cons([true], Chain::Nil)) = 0
+    --~^ error: expectation `datatype_elements::recursive::wrong_length` does not hold
+    -- Reads a model's constant sequence of Booleans, stored in the
+    -- datatype argument of a recursive function, as Lean `Bool`s, so that
+    -- evaluation can refute the candidate counterexample: the Lean front
+    -- end read them as propositions, and the claim was undecided with a
+    -- type mismatch instead (`Reqs/Models#reading`). One-step equations
+    -- do not prove it.
+    expect two_cells: length(Chain::Cons([true], Chain::Cons([false], Chain::Nil))) = 2
+    --~^ warning: this check fails under the contracts of `datatype_elements::length`
+    expect head: when c = Chain::Cons([true], Chain::Nil),
+        (match c {
+            Chain::Nil => [],
+            Chain::Cons(q, _) => q,
+        }) = [true]
+}
+
+set_option fren.enumeration.size 2 in
+set_option fren.evidence "enumerated" in
+proc enumerated(b: Bag<Bool>, r: Collections<Bool, Key>, n?): (det d: Deep<Bool>) {  --~ info: 5 checks of `datatype_elements::enumerated` hold for every behaviour up to size 2
+    out d := wrap(n?)
+    expect payload: contents(b) subset {true, false}
+    expect fields: r.set subset {true, false}
+    expect nested: unpack(d) = [{n?}]
+}
+
+-- Enumeration compiles the generated Lean types, selectors, generic
+-- definitions and their instances.
+--@ exit: 1

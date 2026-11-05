@@ -10,6 +10,7 @@ import FrenTest.MutateDecisions
 import FrenTest.OutOfFuel
 import FrenTest.Quote
 import FrenTest.ReadingBeside
+import FrenTest.Resolved
 import FrenTest.SmallValues
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
@@ -1058,10 +1059,34 @@ def errorCodes : IO (Array String) := do
         failures := failures.push s!"{c.code}: a fixed example still fails:\n{good}\n{out}"
   return failures
 
+/-- The lint wrappers in import order, with each shared dependency read
+once. Follow only lint imports: the other requirements retain their order
+in `ownSpecFiles`. A chapter added with one `#fren_md` is also an input to
+the binary checks, mutation and shared-path tests. -/
+partial def lintSpecFilesFrom (entry : FilePath) (seen : Array FilePath) : IO (Array FilePath × Array String) := do
+  if seen.contains entry then return (seen, #[])
+  let mut seen := seen.push entry
+  let mut files := #[]
+  let source ← IO.FS.readFile entry
+  let header ← Lean.parseImports' source entry.toString
+  for imported in header.imports do
+    let name := imported.module.toString
+    unless name.startsWith "Reqs.Lint." do continue
+    let path : FilePath := "src" / (name.replace "." "/" ++ ".lean")
+    let (visited, chapters) ← lintSpecFilesFrom path seen
+    seen := visited
+    files := files ++ chapters
+  for line in source.splitOn "\n" do
+    if let [_, rest] := line.splitOn "#fren_md \"" then
+      if let some name := (rest.splitOn "\"").head? then
+        files := files.push (Fren.relativeTo "." (entry.parent.getD "" / name))
+  return (seen, files)
+
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
-def ownSpecFiles : Array String :=
-  #[
+def ownSpecFiles : IO (Array String) := do
+  let lint ← lintSpecFilesFrom "src/Reqs/Lint.lean" #[]
+  return #[
     "Lang/Overview",
     "Lang/Lexical",
     "Lang/Types",
@@ -1098,44 +1123,6 @@ def ownSpecFiles : Array String :=
     "View",
     "Cli",
     "Lint",
-    "Lint/Meaning",
-    "Lint/Unused",
-    "Lint/NonstandardStyle",
-    "Lint/Style",
-    "Lint/Style/Comparisons",
-    "Lint/Style/PatternTests",
-    "Lint/Style/PatternTestFixes",
-    "Lint/Style/Naturals",
-    "Lint/Style/Records",
-    "Lint/Style/Matches",
-    "Lint/Style/Let",
-    "Lint/Style/Closures",
-    "Lint/Complexity",
-    "Lint/Complexity/Comparisons",
-    "Lint/Complexity/Operators",
-    "Lint/Complexity/Methods",
-    "Lint/Complexity/Matches",
-    "Lint/Complexity/Patterns",
-    "Lint/Complexity/Integers",
-    "Lint/Complexity/Updates",
-    "Lint/Suspicious",
-    "Lint/Suspicious/Expressions",
-    "Lint/Suspicious/Methods",
-    "Lint/Suspicious/Literals",
-    "Lint/Suspicious/Comparisons",
-    "Lint/Suspicious/Integers",
-    "Lint/Pedantic",
-    "Lint/Pedantic/Matches",
-    "Lint/Pedantic/Records",
-    "Lint/Pedantic/Text",
-    "Lint/Pedantic/Comparisons",
-    "Lint/Pedantic/Conditionals",
-    "Lint/Pedantic/Booleans",
-    "Lint/Pedantic/Procedures",
-    "Lint/Restriction",
-    "Lint/Decidability",
-    "Lint/Printing",
-    "Lint/Rewrites",
     "Eval",
     "Lang/Refinement",
     "Mutate",
@@ -1145,7 +1132,7 @@ def ownSpecFiles : Array String :=
     "Trace",
     "Markdown",
     "dev/Testing",
-  ].map fun r => s!"src/Reqs/{r}.md"
+  ].flatMap fun r => if r == "Lint" then lint.2 else #[s!"src/Reqs/{r}.md"]
 
 /-- The Markdown specs that the Lean front end reads, by the `#fren_md`
 commands of `src/Reqs`, each as a path from the repository's root. -/
@@ -1233,6 +1220,20 @@ def hostedChecks : IO (Array String) := do
     for (path, i) in uncheckedHostedItems chunks do
       failures := failures.push s!"{path}: `{i}` is checked by no `#fren_check` in Lean, as it comes after its file's last `#fren_check`: name it, as `#fren_check {i}`"
   return failures
+
+/-- Every lint chapter is reached once through the umbrella, and no
+wrapper or Markdown chapter is omitted from the binary's input list. -/
+def lintChapters : IO (Array String) := do
+  let (_, files) ← lintSpecFilesFrom "src/Reqs/Lint.lean" #[]
+  let hosted := (← hostedSpecFiles).filter fun p =>
+    p == "src/Reqs/Lint.md" || p.startsWith "src/Reqs/Lint/"
+  let disk := #["src/Reqs/Lint.md"] ++ (← sortedFiles "src/Reqs/Lint" "md").map (·.toString)
+  let mut failures := #[]
+  if files.toList.eraseDups.length != files.size then
+    failures := failures.push "lint chapters: a Markdown chapter is read more than once"
+  unless files.qsort (· < ·) == hosted.qsort (· < ·) && files.qsort (· < ·) == disk.qsort (· < ·) do
+    failures := failures.push s!"lint chapters: umbrella {files.toList}, wrappers {hosted.toList} and Markdown {disk.toList} differ"
+  return failures ++ (← hostedChecks)
 
 /-- `QueryCache`'s answers in memory: a script asked again gets the answer
 that it got first (`Reqs/Cli#solver-queries`), whichever of its maps
@@ -1650,7 +1651,7 @@ def sharedOwnStart (root : FilePath) (cache? : Option String) (ref : IO (String 
     IO (Task (Except IO.Error Agreement)) := do
   let dir := root / "own"
   copyTree (cache?.getD "/nonexistent") dir
-  IO.asTask (sharedAgrees (["check", "--query-cache", dir.toString] ++ ownSpecFiles.toList) ref) .dedicated
+  IO.asTask (sharedAgrees (["check", "--query-cache", dir.toString] ++ (← ownSpecFiles).toList) ref) .dedicated
 
 /-- The `fren` binary's path through `check` and `quickcheck`, where the
 spec and what else the threads read is read once, marked persistent and
@@ -1677,7 +1678,7 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
       | some own => pure (pure own)
       | none => do
         copyTree (cache.getD "/nonexistent") (root / "ref")
-        pure (runFren (["check", "--jobs", "1", "--query-cache", (root / "ref").toString] ++ ownSpecFiles.toList))
+        pure (runFren (["check", "--jobs", "1", "--query-cache", (root / "ref").toString] ++ (← ownSpecFiles).toList))
     -- The tests' path runs once, whichever run of the binary's path it is
     -- compared with.
     let refTask ← IO.asTask ref .dedicated
@@ -1695,7 +1696,7 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
       let (refOut, refCode) ← refOnce
       let dir := root / "again"
       copyTree ((if own?.isSome then cache else some (root / "ref").toString).getD "/nonexistent") dir
-      sharedAgrees (["check", "--query-cache", dir.toString] ++ ownSpecFiles.toList) (pure (refOut, refCode))
+      sharedAgrees (["check", "--query-cache", dir.toString] ++ (← ownSpecFiles).toList) (pure (refOut, refCode))
     let (f, s) ← sharedCase (← IO.ofExcept own.get) again
     failures := failures ++ f
     skips := skips ++ s
@@ -1709,10 +1710,11 @@ chapter that the Lean front end does; Lean checks every chapter too
 (`hostedChecks`); and the binary's shared path agrees with the tests'
 (`sharedSpec`), with this job's query cache, once it is filled. -/
 def ownSpec : IO (Array String) := do
-  let missing := (← hostedSpecFiles).filter (!ownSpecFiles.contains ·)
+  let files ← ownSpecFiles
+  let missing := (← hostedSpecFiles).filter (!files.contains ·)
   let (queryCache?, verifyQueryCache?) ← ownSpecCaches
   let (out, code) ← IO.FS.withIsolatedStreams
-    (FrenCli.check { files := ownSpecFiles, queryCache?, verifyQueryCache? })
+    (FrenCli.check { files, queryCache?, verifyQueryCache? })
   -- A contradiction leaves a mark next to the cache, so that CI does not
   -- save it (`Reqs/dev/Testing#query-cache`).
   if let some dir := queryCache? then
@@ -1885,9 +1887,10 @@ def ownSpecAgreement : IO (Array String) := do
   let (hosted, problems) ← hostedOwnSpec
   unless problems.isEmpty do return problems
   let (queryCache?, _) ← ownSpecCaches
-  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := ownSpecFiles, queryCache? })
+  let files ← ownSpecFiles
+  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files, queryCache? })
   let mut failures := if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"]
-  for f in ownSpecFiles do
+  for f in files do
     let text := Fren.Core.unwrapMarkdown (← IO.FS.readFile f)
     let (cli, lean) := ownSpecReports text (cliDiagnostics f out).1
       (hosted.filterMap fun (g, d) => if g == f then some d else none)
@@ -1895,7 +1898,7 @@ def ownSpecAgreement : IO (Array String) := do
       failures := failures.push s!"{f}: {d}"
   -- Lean's messages about a spec that the binary does not check.
   for (g, d) in hosted do
-    unless ownSpecFiles.contains g do
+    unless files.contains g do
       failures := failures.push s!"{g}:{d.line}: Lean reports about a spec that `ownSpecFiles` lacks: {FrenTest.Frontends.headOf d}"
   return failures
 
@@ -3065,7 +3068,7 @@ def mutationCorpus : IO (Array (Array String)) := do
   let snaps := (← sortedFiles ("test" / "cli") "fren").filter fun f =>
     let n := f.fileName.getD ""
     n.startsWith "mutate_" || n.startsWith "f0613" || n.startsWith "f0614"
-  return #[ownSpecFiles] ++ (snaps ++ (← decisionExamples)).map fun f => #[f.toString]
+  return #[← ownSpecFiles] ++ (snaps ++ (← decisionExamples)).map fun f => #[f.toString]
 
 /-- The files of a group, read as `fren` reads them. -/
 def readGroup (paths : Array String) : IO (Array (String × Array Char)) :=
@@ -3603,7 +3606,7 @@ def backjumpingOf (paths : Array String) : IO (Array String × Nat) := do
 
 /-- `backjumpingOf` Fren's own requirements, or each ui test. -/
 def backjumping (corpus : String) : IO (Array String) := do
-  let groups : Array (Array String) ← if corpus == "reqs" then pure #[ownSpecFiles] else
+  let groups : Array (Array String) ← if corpus == "reqs" then pure #[← ownSpecFiles] else
     do pure ((← uiFiles).map fun f => #[f.toString])
   let mut failures := #[]
   let mut problems := 0
@@ -4232,7 +4235,7 @@ def methodsAgree (part : List String) : IO (Array String) := do
   if all || part == ["own"] then
     -- Two at a time: the solver, asked the checks that the requirements set
     -- to other methods, took 9.4 GB at two, and 13.8 GB at four, on macOS.
-    failures := failures ++ (← methodsAgreeOn "src/Reqs" ownSpecFiles counts (jobs? := some 2))
+    failures := failures ++ (← methodsAgreeOn "src/Reqs" (← ownSpecFiles) counts (jobs? := some 2))
   let (k, n) := match part with
     | ["ui", k, n] => (k.toNat?.getD 0, n.toNat?.getD 1)
     | _ => (0, 1)
@@ -4359,12 +4362,18 @@ def smtAgreement (env : Environment) : IO (Array String) := do
 quantifier, a generic function and its instance, records,
 enumerations and checks by testing and enumeration, recursive functions
 and abstract types and functions of one name in two modules, beside a
-variable of that name. The newtype snapshot also pins their erasure to the
-underlying sort, with no constructor or selector left in the dump. -/
+variable of that name, and generic datatypes with collection payloads and
+fields. For these datatypes, the comparison checks that the extra
+tuple-sort initialization declarations leave the canonical query
+unchanged; it does not check which tuple sorts either front end creates.
+The ui tests check their creation by exercising the solver. The newtype
+snapshot also pins the newtypes' erasure to the underlying sort, with no
+constructor or selector left in the dump. -/
 def obligationsAgreementSpecs : List String :=
   ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
    "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren",
-   "test/cli/args/dump_obligations_modules.fren", "test/cli/args/dump_obligations_newtypes.fren"]
+   "test/cli/args/dump_obligations_modules.fren", "test/cli/args/dump_obligations_newtypes.fren",
+   "test/ui/lang/datatype_elements_solver.fren"]
 
 /-- Canonicalization cases that generated queries need not produce:
 capture avoidance, pattern and recursive binders, merged quantifiers,
@@ -4454,12 +4463,12 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["readingBeside"]]
+    ++ #[["readingBeside"], ["resolvedDump"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4511,10 +4520,12 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["formatting"] => formatting
   | ["fixing"] => fixing
   | ["libraries"] => libraries
+  | ["lintChapters"] => lintChapters
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
-  | ["readingBeside"] => FrenTest.ReadingBeside.agree ownSpecFiles
+  | ["readingBeside"] => do FrenTest.ReadingBeside.agree (← ownSpecFiles)
+  | ["resolvedDump"] => FrenTest.Resolved.check
   | ["enumeration"] => enumerationAgrees
   -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
   | "methodsAgree" :: part => methodsAgree part

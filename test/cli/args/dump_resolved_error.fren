@@ -1,0 +1,3 @@
+--@ args: check --dump=resolved
+-- A static error suppresses the whole resolved dump.
+proc bad(x: Int): (y?) { out y? := x }

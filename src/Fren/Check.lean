@@ -4,6 +4,7 @@ import Fren.Lint
 import Fren.Model
 import Fren.SeqElems
 import Fren.SmtTranslate
+import Fren.SolverSorts
 import FrenCore.Check
 import FrenCore.Goals
 import FrenCore.Induction
@@ -1188,7 +1189,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
     (snapshots? : Option (IO.Ref (Array Smt.Model)) := none)
     (fnOf : Expr → Option Name := fun _ => none) (applied? : Option (IO.Ref (Array Name)) := none)
-    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) :
+    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) (sortHooks? : Option ElabHooks := none) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -1236,13 +1237,14 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let goal := intro.goal
       -- The premises after the hypotheses, as the binary asserts them.
       let premises := intro.premises
+      withSolverCollectionSorts sortHooks? (#[goal] ++ premises ++ hs ++ recFvs) fun sortHints => do
       -- With `script?`, the query's script, as lean-smt writes it, kept
       -- there, and nothing asked (`Fren.Core.obligationsOf`).
       if let some r := script? then
         let mv ← mkFreshExprMVar goal
         let (_, text) ← queryShown do
           Smt.smt { trust := true, showQuery := true, embeddings := true, intros := false } mv.mvarId!
-            (premises.reverse ++ hs.reverse ++ recFvs)
+            (premises.reverse ++ hs.reverse ++ recFvs ++ sortHints)
         r.set text
         return (.unknown "not asked", false)
       -- Each attempt on a goal of its own.
@@ -1267,7 +1269,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
                         ++ (if finiteModel then Core.finiteModelOptions else []) ++ Core.quantifierOptions "ALL"
                         ++ logic ++ cvc5Defaults ++ requeryOptions
                         ++ resourceLimitOptions (← getOptions) ++ quietOptions }
-              mv.mvarId! (premises.reverse ++ hs.reverse ++ recFvs) with
+              mv.mvarId! (premises.reverse ++ hs.reverse ++ recFvs ++ sortHints) with
         | .sat (some m) =>
           let values := m.values.filterMap fun (k, v) =>
             match (vars.find? (·.2 == k)).map (·.1.name) with
@@ -2001,6 +2003,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         (modelOptional := k == .cover) bounded instances (finiteModel := generic || c.finiteModel)
         (snapshots? := if full.memberGroups.isEmpty then none else some memberModels) fnOf
         (if script?.isSome then none else some applied) (heads.size + 1) script?
+        (hooks?.map fun h => { h with leanType := fun t => do rep (← h.leanType t), coreTy := fun t => h.coreTy (unrep t) })
     -- What each of its checks asks, for `set_option fren.dump
     -- "obligations"`, with its query's script as lean-smt would be given
     -- it, from a cache of its own, so that no answer is taken for it

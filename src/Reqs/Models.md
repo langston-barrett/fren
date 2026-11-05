@@ -41,6 +41,14 @@ results](View.md#check-results)), and the confirmation below evaluates the
 query at those same values, not at the solver's. So a value that the reader
 misreads is either still a counterexample, or is caught.
 
+A collection's element sort decides the types of its reconstructed
+values, including within a generic datatype's payloads or fields. In
+particular, an SMT Boolean element becomes a Lean `Bool`, not a
+proposition. This applies both to a sequence built from units and to a
+solver's constant sequence value, whose elements are stored as its value
+rather than its children. A nonempty `Seq<Bool>` must therefore remain
+well-typed when it is read from a model for confirmation.
+
 A value that a reader cannot read, such as a term of a shape that it does
 not know, is shown as the solver writes it, and the parts of the query
 that read it are undecided. Reading a value of every type back exactly as

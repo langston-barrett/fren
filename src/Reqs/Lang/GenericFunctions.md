@@ -38,8 +38,8 @@ may be an argument of an instance, as in `Option<T>`, the whole type of a
 parameter or the result, as `d` and the result of `unwrap_or` are, and an
 element type of a set, a sequence or a relation, as in `Set<T>`, `Seq<T>`
 and `Rel<A, B>`, wherever the function writes a type: in its signature,
-its body and its contract. A generic type's type parameter is not an
-element type, for now (`F0387`, see [Type
+its body and its contract. A generic type's type parameter may also be an
+element type within its declaration (see [Type
 parameters](Generics.md#type-parameters)).
 
 ```text
@@ -60,9 +60,10 @@ pub mod lang
 pub enum ParamOwner { Datatype, Function }
 
 pub proc element_parameter(owner: ParamOwner): (det accepted?) {
-    ensure rule: accepted? iff owner = ParamOwner::Function
+    ensure rule: accepted?
 
     expect functions: when owner = ParamOwner::Function, accepted?
+    expect datatypes: when owner = ParamOwner::Datatype, accepted?
 }
 ```
 
