@@ -773,28 +773,28 @@ how a sentence is instantiated.
 
 **Legality rules**
 
-r[module.subject] lang::sentence_instantiation
+r[module.subject] lang::sentence_instantiation, lang::ground_subject_step
 A sentence's *subject* is the item, of those it applies or calls, that
 comes last in that order.
 
-r[module.anchor] lang::sentence_instantiation
+r[module.anchor] lang::sentence_instantiation, lang::ground_selection_step
 An *anchor* of a sentence is an application of its subject, as a function,
 that mentions no name that a quantifier within the sentence binds, and
 that has an argument that is neither a quantified variable nor a closed
 term. Where the sentence has no such application, each application of its
 subject, as a function, that mentions no such name is an anchor.
 
-r[module.matched] lang::sentence_instantiation
+r[module.matched] lang::sentence_instantiation, lang::ground_rule_step
 The *matched* applications of a sentence are its anchors and each of its
 calls that mentions no name that a quantifier within the sentence binds.
 
-r[module.binding] lang::sentence_instantiation
+r[module.binding] lang::sentence_instantiation, lang::ground_variables_step
 Each quantified variable of a sentence that occurs in an application of
 it, and whose type is not [listed](Quantifiers.md#types), occurs in a
 matched application. A variable that does not is an error that names it
 (the *binding rule*).
 
-r[module.binding.outside] lang::outside_variable, lang::theory_instance
+r[module.binding.outside] lang::{outside_variable, theory_instance, ground_listed_step}
 A quantified variable that the sentence mentions only outside its
 applications, as `n` in `law bounded(s: Self, n: Int): when n > 0, h(s) >=
 0`, needs no term: it stays quantified within each instance.
@@ -834,7 +834,7 @@ An *instance* of a sentence is the sentence with a ground term in place of
 each of its quantified variables that has one. It holds wherever the
 sentence does.
 
-r[module.instance.matching]
+r[module.instance.matching] lang::{ground_match_step, ground_normalization, ground_join_step, ground_rule_step}
 Fren takes the instances at which all the matched applications of the
 sentence are terms of the query at once: each anchor an application of the
 query, and each call a call of the query, with the same arguments once the
@@ -847,12 +847,12 @@ r[module.instance.ground] lang::{theory_ground_term, theory_variable_images, the
 An application of the query that mentions a name that a quantifier of the
 query binds is not a term at which a sentence is instantiated.
 
-r[module.instance.listed] lang::listed_variable
+r[module.instance.listed] lang::listed_variable, lang::ground_listed_step
 A quantified variable of a listed type that no matched application binds
 takes each value of its type, as a [quantifier over listed
 types](Quantifiers.md#meaning) does.
 
-r[module.instance.unused] lang::sentence_instantiation
+r[module.instance.unused] lang::sentence_instantiation, lang::ground_listed_step
 A quantified variable that the sentence does not mention takes no term.
 
 r[module.instance.hypothesis] lang::theory_instance
@@ -2494,4 +2494,645 @@ The Lean-hosted front end checks this chapter's items by name, since a
 #fren_check today_global_caveat
 #fren_check today_caveats
 #fren_check small_modules_acyclic
+```
+
+### Ground matching equations
+
+These equations refine `module.instance.matching` and the normalization
+of [matching terms](../Evidence.md#matching-terms-and-finite-closure) over
+the shared theory syntax. Extraction supplies resolved identities, lexical
+definition environments, declaration order, term types and finite listed
+values. The core computes applications, subjects, anchors, binding and
+substitutions. Definitions have no escaping binder indices: sentence
+parameters and free query locals have their own resolved names. Applied
+item heads stay opaque; only query aliases and item constants are references
+to definitions. Builtins, literals, types and bound indices retain syntax.
+
+A match extends one simultaneous substitution and never captures a query
+binder. Every anchor and outer call must match at once. Listed variables
+without images take their values after matching; unused variables and
+outside-only unlisted variables retain their quantifiers. The recursive
+calls below are the same operation at immediate subterms or list tails.
+`Fren.Core.GroundMatching` implements these equations. Neither front end
+uses the engine yet; ranked candidate construction and application closure
+follow in unit 9b, and claim item integration in unit 10.
+
+```fren
+pub type GroundContext
+pub type GroundImages
+pub type GroundDefinitions
+pub type GroundResult
+
+pub fn ground_type_present?(GroundContext, TheoryTerm)
+pub fn ground_type(GroundContext, TheoryTerm): Ty
+pub fn ground_image_present?(GroundImages, TheoryName)
+pub fn ground_image(GroundImages, TheoryName): TheoryTerm
+pub fn ground_extend(GroundImages, TheoryName, TheoryTerm): GroundImages
+pub fn ground_parameter_present?(TheoryVariables, TheoryName)
+pub fn ground_parameter(TheoryVariables, TheoryName): Ty
+pub fn ground_success(GroundImages): GroundResult
+pub fn ground_failure(GroundImages): GroundResult
+pub fn ground_succeeded?(GroundResult)
+pub fn ground_result_images(GroundResult): GroundImages
+
+pub fn ground_match(
+    GroundContext,
+    TheoryVariables,
+    TheoryTerm,
+    TheoryTerm,
+    GroundImages
+): GroundResult
+
+pub proc ground_match_step(
+    ctx: GroundContext,
+    variables: TheoryVariables,
+    pattern: TheoryTerm,
+    target: TheoryTerm,
+    images: GroundImages,
+): (det result: GroundResult) {
+    ensure rule: result = match theory_term_kind(pattern) {
+        TheoryTermKind::Variable =>
+            if not ground_parameter_present?(variables, theory_term_name(pattern))
+            then if pattern = target then ground_success(images) else ground_failure(images)
+            else if not ground_term?(target, 0) or not ground_type_present?(ctx, target)
+            or ground_type(ctx, target) != ground_parameter(variables, theory_term_name(pattern))
+            then ground_failure(images)
+            else if ground_image_present?(images, theory_term_name(pattern))
+            then if ground_image(images, theory_term_name(pattern)) = target then ground_success(images) else ground_failure(images)
+            else ground_success(ground_extend(images, theory_term_name(pattern), target)),
+        TheoryTermKind::Apply =>
+            if theory_term_kind(target) != TheoryTermKind::Apply then ground_failure(images)
+            else if ground_succeeded?(
+                ground_match(
+                    ctx,
+                    variables,
+                    theory_term_left(pattern),
+                    theory_term_left(target),
+                    images
+                )
+            )
+            then ground_match(
+                ctx,
+                variables,
+                theory_term_right(pattern),
+                theory_term_right(target),
+                ground_result_images(
+                    ground_match(
+                        ctx,
+                        variables,
+                        theory_term_left(pattern),
+                        theory_term_left(target),
+                        images
+                    )
+                )
+            )
+            else ground_failure(images),
+        TheoryTermKind::All =>
+            if theory_term_kind(target) = TheoryTermKind::All and theory_term_type(pattern) = theory_term_type(target)
+            then ground_match(
+                ctx,
+                variables,
+                theory_term_left(pattern),
+                theory_term_left(target),
+                images
+            )
+            else ground_failure(images),
+        TheoryTermKind::Exists =>
+            if theory_term_kind(target) = TheoryTermKind::Exists and theory_term_type(pattern) = theory_term_type(target)
+            then ground_match(
+                ctx,
+                variables,
+                theory_term_left(pattern),
+                theory_term_left(target),
+                images
+            )
+            else ground_failure(images),
+        _ => if pattern = target then ground_success(images) else ground_failure(images),
+    }
+}
+
+pub proc ground_parameter_step(variables: TheoryVariables, name: TheoryName): (
+    det present?,
+    det result: Ty,
+) {
+    ensure presence: present? iff name in theory_variable_names(variables)
+    ensure rule: result = if theory_variables_empty?(variables) then theory_variable_type(variables)
+        else if theory_variable_name(variables) = name then theory_variable_type(variables)
+        else ground_parameter(theory_variables_rest(variables), name)
+}
+
+pub proc ground_extension_step(
+    images: GroundImages,
+    name: TheoryName,
+    value: TheoryTerm,
+    queried: TheoryName,
+): (det present?, det result: TheoryTerm) {
+    -- The matcher extends only a name without an existing image.
+    require fresh: not ground_image_present?(images, name)
+    ensure presence: present? iff queried = name or ground_image_present?(images, queried)
+    ensure lookup: result = if queried = name then value else ground_image(images, queried)
+}
+
+pub fn ground_definitions_empty?(GroundDefinitions)
+pub fn ground_definition_name(GroundDefinitions): TheoryTerm
+pub fn ground_definition_value(GroundDefinitions): TheoryTerm
+pub fn ground_definitions_rest(GroundDefinitions): GroundDefinitions
+pub fn ground_add_definition(TheoryTerm, TheoryTerm, GroundDefinitions): GroundDefinitions
+pub fn ground_lookup(GroundDefinitions, TheoryTerm): TheoryTerm
+pub fn ground_normalize(GroundDefinitions, TheoryTerm): TheoryTerm
+pub fn ground_normalize_definitions(GroundDefinitions): GroundDefinitions
+
+pub proc ground_normalization(defs: GroundDefinitions, term: TheoryTerm, other: TheoryTerm): (
+    det lookup_value: TheoryTerm,
+    det normalized: TheoryTerm,
+    det normalized_definitions: GroundDefinitions,
+    det same?,
+) {
+    ensure lookup_rule: lookup_value = if ground_definitions_empty?(defs) then term
+        else if ground_definition_name(defs) = term then ground_definition_value(defs)
+        else ground_lookup(ground_definitions_rest(defs), term)
+    ensure term_rule: normalized = match theory_term_kind(term) {
+        TheoryTermKind::Apply => theory_apply(
+            if theory_term_kind(theory_term_left(term)) = TheoryTermKind::Item then theory_term_left(term)
+                else ground_normalize(defs, theory_term_left(term)),
+            ground_normalize(defs, theory_term_right(term))
+        ),
+        TheoryTermKind::All => theory_all(
+            theory_term_type(term),
+            ground_normalize(defs, theory_term_left(term))
+        ),
+        TheoryTermKind::Exists => theory_exists(
+            theory_term_type(term),
+            ground_normalize(defs, theory_term_left(term))
+        ),
+        TheoryTermKind::Query | TheoryTermKind::Item => ground_lookup(defs, term),
+        _ => term,
+    }
+    ensure definitions_rule: normalized_definitions = if ground_definitions_empty?(defs) then defs
+        else ground_add_definition(
+            ground_definition_name(defs),
+            ground_normalize(
+                ground_normalize_definitions(ground_definitions_rest(defs)),
+                ground_definition_value(defs)
+            ),
+            ground_normalize_definitions(ground_definitions_rest(defs))
+        )
+    ensure equality: same? iff ground_normalize(ground_normalize_definitions(defs), term)
+        = ground_normalize(ground_normalize_definitions(defs), other)
+}
+
+pub type GroundOrder
+pub type GroundSubject
+
+pub fn ground_order_empty?(GroundOrder)
+pub fn ground_order_first(GroundOrder): TheoryName
+pub fn ground_order_rest(GroundOrder): GroundOrder
+pub fn ground_no_subject(GroundOrder): GroundSubject
+pub fn ground_named(TheoryName): GroundSubject
+pub fn ground_subject_present?(GroundSubject)
+pub fn ground_subject_name(GroundSubject): TheoryName
+pub fn ground_subject(GroundOrder, TheoryTerms): GroundSubject
+pub fn ground_uses?(TheoryTerms, TheoryName)
+pub fn ground_items(GroundContext): Set<TheoryName>
+pub fn ground_head(TheoryTerm): TheoryTerm
+pub fn ground_args(TheoryTerm): TheoryTerms
+pub fn ground_append(TheoryTerms, TheoryTerms): TheoryTerms
+pub fn ground_no_terms(TheoryTerm): TheoryTerms
+pub fn ground_outer?(TheoryTerm, Nat)
+pub fn ground_mentions?(TheoryName, TheoryTerm)
+pub fn ground_vars_mention?(TheoryVariables, TheoryTerm)
+pub fn ground_compound_arg?(TheoryVariables, TheoryTerm)
+pub fn ground_apps(GroundContext, TheoryTerm): TheoryTerms
+pub fn ground_argument_apps(GroundContext, TheoryTerm): TheoryTerms
+
+pub proc ground_shape_step(
+    ctx: GroundContext,
+    term: TheoryTerm,
+    variables: TheoryVariables,
+    name: TheoryName,
+    depth: Nat,
+): (
+    det head: TheoryTerm,
+    det args: TheoryTerms,
+    det outer?,
+    det mentions?,
+    det compound?,
+    det apps: TheoryTerms,
+    det argument_apps: TheoryTerms,
+) {
+    ensure head_rule: head = if theory_term_kind(term) = TheoryTermKind::Apply
+        then ground_head(theory_term_left(term)) else term
+    ensure args_rule: args = if theory_term_kind(term) = TheoryTermKind::Apply
+        then ground_append(
+            ground_args(theory_term_left(term)),
+            theory_add_term(theory_term_right(term), ground_no_terms(term))
+        )
+        else ground_no_terms(term)
+    ensure outer_rule: outer? iff match theory_term_kind(term) {
+        TheoryTermKind::Bound => theory_term_index(term) < depth,
+        TheoryTermKind::Apply =>
+            ground_outer?(theory_term_left(term), depth) and ground_outer?(theory_term_right(term), depth),
+        TheoryTermKind::All | TheoryTermKind::Exists =>
+            ground_outer?(theory_term_left(term), depth + 1),
+        _ => true,
+    }
+    ensure mentions_rule: mentions? iff match theory_term_kind(term) {
+        TheoryTermKind::Variable => theory_term_name(term) = name,
+        TheoryTermKind::Apply =>
+            ground_mentions?(name, theory_term_left(term)) or ground_mentions?(name, theory_term_right(term)),
+        TheoryTermKind::All | TheoryTermKind::Exists =>
+            ground_mentions?(name, theory_term_left(term)),
+        _ => false,
+    }
+    ensure compound_rule: compound? iff theory_term_kind(term) != TheoryTermKind::Variable and ground_vars_mention?(variables, term)
+    ensure apps_rule: apps = match theory_term_kind(term) {
+        TheoryTermKind::Apply => ground_append(
+            if theory_term_kind(ground_head(term)) = TheoryTermKind::Item and theory_term_name(ground_head(term)) in ground_items(ctx)
+                then theory_add_term(term, ground_no_terms(term)) else ground_no_terms(term),
+            ground_append(
+                ground_argument_apps(ctx, theory_term_left(term)),
+                ground_apps(ctx, theory_term_right(term))
+            )
+        ),
+        TheoryTermKind::All | TheoryTermKind::Exists => ground_apps(ctx, theory_term_left(term)),
+        _ => ground_no_terms(term),
+    }
+    ensure arguments_rule: argument_apps = if theory_term_kind(term) = TheoryTermKind::Apply
+        then ground_append(
+            ground_argument_apps(ctx, theory_term_left(term)),
+            ground_apps(ctx, theory_term_right(term))
+        )
+        else ground_no_terms(term)
+}
+
+pub proc ground_subject_step(order: GroundOrder, apps: TheoryTerms, name: TheoryName): (
+    det subject: GroundSubject,
+    det subject_used?,
+) {
+    ensure subject_rule: subject = if ground_order_empty?(order) then ground_no_subject(order)
+        else if ground_subject_present?(ground_subject(ground_order_rest(order), apps))
+        then ground_subject(ground_order_rest(order), apps)
+        else if ground_uses?(apps, ground_order_first(order)) then ground_named(ground_order_first(order))
+        else ground_no_subject(order)
+    ensure uses_rule: subject_used? iff not theory_terms_empty?(apps) and (
+        (theory_term_kind(ground_head(theory_first_term(apps))) = TheoryTermKind::Item
+        and theory_term_name(ground_head(theory_first_term(apps))) = name)
+        or ground_uses?(theory_terms_rest(apps), name)
+        )
+}
+
+pub fn ground_subject_apps(GroundSubject, TheoryTerms): TheoryTerms
+pub fn ground_compound_apps(TheoryVariables, TheoryTerms): TheoryTerms
+pub fn ground_anchors(TheoryVariables, TheoryTerms): TheoryTerms
+pub fn ground_any_mentions?(TheoryName, TheoryTerms)
+pub fn ground_listed?(GroundContext, Ty)
+pub fn ground_binding?(GroundContext, TheoryTerms, TheoryTerms, TheoryVariables)
+
+pub fn ground_any_compound?(TheoryVariables, TheoryTerms)
+
+pub proc ground_selection_step(
+    subject: GroundSubject,
+    apps: TheoryTerms,
+    variables: TheoryVariables,
+    name: TheoryName,
+): (
+    det subject_apps: TheoryTerms,
+    det compounds: TheoryTerms,
+    det anchors: TheoryTerms,
+    det mentioned?,
+    det compound_argument?,
+) {
+    ensure subjects_rule: subject_apps = if theory_terms_empty?(apps) then apps else
+        if ground_subject_present?(subject)
+        and theory_term_kind(ground_head(theory_first_term(apps))) = TheoryTermKind::Item
+        and theory_term_name(ground_head(theory_first_term(apps))) = ground_subject_name(subject)
+        and ground_outer?(theory_first_term(apps), 0)
+        then theory_add_term(
+            theory_first_term(apps),
+            ground_subject_apps(subject, theory_terms_rest(apps))
+        )
+        else ground_subject_apps(subject, theory_terms_rest(apps))
+    ensure compounds_rule: compounds = if theory_terms_empty?(apps) then apps else
+        if ground_any_compound?(variables, ground_args(theory_first_term(apps)))
+        then theory_add_term(
+            theory_first_term(apps),
+            ground_compound_apps(variables, theory_terms_rest(apps))
+        )
+        else ground_compound_apps(variables, theory_terms_rest(apps))
+    ensure anchors_rule: anchors = if theory_terms_empty?(ground_compound_apps(variables, apps))
+        then apps else ground_compound_apps(variables, apps)
+    ensure mentions_rule: mentioned? iff not theory_terms_empty?(apps) and (
+        ground_mentions?(name, theory_first_term(apps)) or ground_any_mentions?(name, theory_terms_rest(apps))
+        )
+    ensure compound_arguments_rule: compound_argument? iff not theory_terms_empty?(apps) and (
+        ground_compound_arg?(variables, theory_first_term(apps)) or ground_any_compound?(variables, theory_terms_rest(apps))
+        )
+}
+
+pub proc ground_variables_step(
+    ctx: GroundContext,
+    variables: TheoryVariables,
+    term: TheoryTerm,
+    apps: TheoryTerms,
+    matched: TheoryTerms,
+): (det mentions?, det binding?) {
+    ensure mentions_rule: mentions? iff not theory_variables_empty?(variables) and (
+        ground_mentions?(theory_variable_name(variables), term) or ground_vars_mention?(theory_variables_rest(variables), term)
+        )
+    ensure binding_rule: binding? iff theory_variables_empty?(variables) or (
+        (ground_listed?(ctx, theory_variable_type(variables))
+        or not ground_any_mentions?(theory_variable_name(variables), apps)
+        or ground_any_mentions?(theory_variable_name(variables), matched))
+        and ground_binding?(ctx, apps, matched, theory_variables_rest(variables))
+        )
+}
+
+pub type GroundMatches
+pub fn ground_matches_empty?(GroundMatches)
+pub fn ground_matches_first(GroundMatches): GroundImages
+pub fn ground_matches_rest(GroundMatches): GroundMatches
+pub fn ground_no_matches(TheoryVariables): GroundMatches
+pub fn ground_add_match(GroundImages, GroundMatches): GroundMatches
+pub fn ground_append_matches(GroundMatches, GroundMatches): GroundMatches
+pub fn ground_unique_matches(GroundMatches): GroundMatches
+
+pub fn ground_targets(
+    GroundContext,
+    TheoryVariables,
+    TheoryTerm,
+    TheoryTerms,
+    GroundImages
+): GroundMatches
+
+pub fn ground_many(
+    GroundContext,
+    TheoryVariables,
+    TheoryTerm,
+    TheoryTerms,
+    GroundMatches
+): GroundMatches
+
+pub fn ground_join(
+    GroundContext,
+    TheoryVariables,
+    TheoryTerms,
+    TheoryTerms,
+    GroundMatches
+): GroundMatches
+
+pub proc ground_join_step(
+    ctx: GroundContext,
+    variables: TheoryVariables,
+    pattern: TheoryTerm,
+    patterns: TheoryTerms,
+    targets: TheoryTerms,
+    images: GroundImages,
+    substitutions: GroundMatches,
+): (det target_matches: GroundMatches, det many: GroundMatches, det joined: GroundMatches) {
+    ensure targets_rule: target_matches = if theory_terms_empty?(targets) then ground_no_matches(variables)
+        else if ground_term?(theory_first_term(targets), 0)
+        and ground_succeeded?(
+            ground_match(ctx, variables, pattern, theory_first_term(targets), images)
+        )
+        then ground_add_match(
+            ground_result_images(
+                ground_match(ctx, variables, pattern, theory_first_term(targets), images)
+            ),
+            ground_targets(ctx, variables, pattern, theory_terms_rest(targets), images)
+        )
+        else ground_targets(ctx, variables, pattern, theory_terms_rest(targets), images)
+    ensure many_rule: many = if ground_matches_empty?(substitutions) then substitutions else
+        ground_append_matches(
+            ground_targets(
+                ctx,
+                variables,
+                pattern,
+                targets,
+                ground_matches_first(substitutions)
+            ),
+            ground_many(
+                ctx,
+                variables,
+                pattern,
+                targets,
+                ground_matches_rest(substitutions)
+            )
+        )
+    ensure join_rule: joined = if theory_terms_empty?(patterns) then substitutions else
+        ground_join(
+            ctx,
+            variables,
+            theory_terms_rest(patterns),
+            targets,
+            ground_many(
+                ctx,
+                variables,
+                theory_first_term(patterns),
+                targets,
+                substitutions
+            )
+        )
+}
+
+pub fn ground_listed_values(GroundContext, Ty): TheoryTerms
+
+pub fn ground_typed_extensions(
+    GroundContext,
+    TheoryName,
+    Ty,
+    TheoryTerms,
+    GroundImages
+): GroundMatches
+
+pub fn ground_listed_extensions(
+    GroundContext,
+    TheoryTerms,
+    TheoryName,
+    Ty,
+    GroundImages
+): GroundMatches
+
+pub fn ground_listed_many(GroundContext, TheoryTerms, TheoryName, Ty, GroundMatches): GroundMatches
+
+pub fn ground_complete_listed(
+    GroundContext,
+    TheoryTerms,
+    TheoryVariables,
+    GroundMatches
+): GroundMatches
+
+pub proc ground_listed_step(
+    ctx: GroundContext,
+    terms: TheoryTerms,
+    name: TheoryName,
+    ty: Ty,
+    values: TheoryTerms,
+    images: GroundImages,
+    substitutions: GroundMatches,
+    variables: TheoryVariables,
+): (
+    det typed: GroundMatches,
+    det extended: GroundMatches,
+    det many: GroundMatches,
+    det completed: GroundMatches,
+) {
+    ensure typed_rule: typed = if theory_terms_empty?(values) then ground_no_matches(variables)
+        else if ground_term?(theory_first_term(values), 0) and ground_type_present?(ctx, theory_first_term(values))
+        and ground_type(ctx, theory_first_term(values)) = ty
+        then ground_add_match(
+            ground_extend(images, name, theory_first_term(values)),
+            ground_typed_extensions(ctx, name, ty, theory_terms_rest(values), images)
+        )
+        else ground_typed_extensions(ctx, name, ty, theory_terms_rest(values), images)
+    ensure extensions_rule: extended =
+        if ground_image_present?(images, name) or not ground_any_mentions?(name, terms) or not ground_listed?(ctx, ty)
+        then ground_add_match(images, ground_no_matches(variables))
+        else ground_typed_extensions(ctx, name, ty, ground_listed_values(ctx, ty), images)
+    ensure many_rule: many = if ground_matches_empty?(substitutions) then substitutions else
+        ground_append_matches(
+            ground_listed_extensions(ctx, terms, name, ty, ground_matches_first(substitutions)),
+            ground_listed_many(ctx, terms, name, ty, ground_matches_rest(substitutions))
+        )
+    ensure completion_rule: completed = if theory_variables_empty?(variables) then substitutions else
+        ground_complete_listed(
+            ctx,
+            terms,
+            theory_variables_rest(variables),
+            ground_listed_many(
+                ctx,
+                terms,
+                theory_variable_name(variables),
+                theory_variable_type(variables),
+                substitutions
+            )
+        )
+}
+
+pub fn ground_apps_list(GroundContext, TheoryTerms): TheoryTerms
+pub fn ground_call_apps(GroundContext, TheoryTerms): TheoryTerms
+pub fn ground_outer_apps(TheoryTerms): TheoryTerms
+pub fn ground_order(GroundContext): GroundOrder
+pub fn ground_initial_matches(TheoryVariables): GroundMatches
+
+pub proc ground_sentence_lists_step(ctx: GroundContext, terms: TheoryTerms): (
+    det apps: TheoryTerms,
+    det calls: TheoryTerms,
+    det outer_apps: TheoryTerms,
+) {
+    ensure apps_rule: apps = if theory_terms_empty?(terms) then terms else
+        ground_append(
+            ground_apps(ctx, theory_first_term(terms)),
+            ground_apps_list(ctx, theory_terms_rest(terms))
+        )
+    ensure calls_rule: calls = if theory_terms_empty?(terms) then terms else
+        ground_append(
+            ground_apps_list(ctx, ground_args(theory_first_term(terms))),
+            ground_call_apps(ctx, theory_terms_rest(terms))
+        )
+    ensure outer_rule: outer_apps = if theory_terms_empty?(terms) then terms else
+        if ground_outer?(theory_first_term(terms), 0) then theory_add_term(
+            theory_first_term(terms),
+            ground_outer_apps(theory_terms_rest(terms))
+        )
+        else ground_outer_apps(theory_terms_rest(terms))
+}
+
+pub fn ground_rule_apps(GroundContext, TheorySentence): TheoryTerms
+pub fn ground_rule_subject(GroundContext, TheorySentence): GroundSubject
+pub fn ground_rule_anchors(GroundContext, TheorySentence): TheoryTerms
+
+pub proc ground_rule_step(
+    ctx: GroundContext,
+    sentence: TheorySentence,
+    query_apps: TheoryTerms,
+    query_calls: TheoryTerms,
+): (
+    det apps: TheoryTerms,
+    det subject: GroundSubject,
+    det anchors: TheoryTerms,
+    det binding?,
+    det substitutions: GroundMatches,
+) {
+    ensure apps_rule: apps = ground_append(
+        ground_apps_list(
+            ctx,
+            theory_add_term(
+                theory_sentence_domain(sentence),
+                theory_sentence_claims(sentence)
+            )
+        ),
+        ground_call_apps(ctx, theory_sentence_calls(sentence))
+    )
+    ensure subject_rule: subject = ground_subject(
+        ground_order(ctx),
+        ground_append(
+            ground_rule_apps(ctx, sentence),
+            theory_sentence_calls(sentence)
+        )
+    )
+    ensure anchors_rule: anchors = ground_anchors(
+        theory_sentence_variables(sentence),
+        ground_subject_apps(
+            ground_rule_subject(ctx, sentence),
+            ground_rule_apps(ctx, sentence)
+        )
+    )
+    ensure binding_rule: binding? iff ground_binding?(
+        ctx,
+        ground_append(
+            ground_rule_apps(ctx, sentence),
+            theory_sentence_calls(sentence)
+        ),
+        ground_append(
+            ground_rule_anchors(ctx, sentence),
+            ground_outer_apps(theory_sentence_calls(sentence))
+        ),
+        theory_sentence_variables(sentence)
+    )
+    ensure matches_rule: substitutions = if not binding? or (
+        ground_subject_present?(ground_rule_subject(ctx, sentence)) and not ground_uses?(
+            ground_append(query_apps, query_calls),
+            ground_subject_name(ground_rule_subject(ctx, sentence))
+        )
+        ) then ground_no_matches(theory_sentence_variables(sentence))
+        else ground_unique_matches(
+            ground_complete_listed(
+                ctx,
+                theory_add_term(
+                    theory_sentence_domain(sentence),
+                    ground_append(
+                        theory_sentence_calls(sentence),
+                        theory_sentence_claims(sentence)
+                    )
+                ),
+                theory_sentence_variables(sentence),
+                ground_join(
+                    ctx,
+                    theory_sentence_variables(sentence),
+                    ground_outer_apps(theory_sentence_calls(sentence)),
+                    query_calls,
+                    ground_join(
+                        ctx,
+                        theory_sentence_variables(sentence),
+                        ground_rule_anchors(ctx, sentence),
+                        query_apps,
+                        ground_initial_matches(theory_sentence_variables(sentence))
+                    )
+                )
+            )
+        )
+}
+
+#fren_check ground_match_step
+#fren_check ground_parameter_step
+#fren_check ground_extension_step
+#fren_check ground_normalization
+#fren_check ground_shape_step
+#fren_check ground_subject_step
+#fren_check ground_selection_step
+#fren_check ground_variables_step
+#fren_check ground_join_step
+#fren_check ground_listed_step
+#fren_check ground_sentence_lists_step
+#fren_check ground_rule_step
 ```
