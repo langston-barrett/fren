@@ -438,18 +438,140 @@ input_file reqs_refine_md where
   path := "src/Reqs/Lang/Refinement.md"
   text := true
 
+-- Each lint group has its own Markdown dependency. The umbrella reads
+-- no Markdown; subchapters in a group elaborate in parallel where their
+-- imports allow it. A new chapter can be read with one #fren_md in its
+-- group's wrapper; the binary tests follow the wrappers too.
 lean_lib ReqsLint where
   globs := #[`Reqs.Lint]
-  needs := #[`@/reqs_lint_md, `@/reqs_lint_chapter_md]
   moreLeanArgs := reqsArgs
 
-input_dir reqs_lint_md where
-  path := "src/Reqs/Lint"
+lean_lib ReqsLintBase where
+  globs := #[`Reqs.Lint.Base]
+  needs := #[`@/reqs_lint_base_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_base_md where
+  path := "src/Reqs/Lint.md"
+  text := true
+
+lean_lib ReqsLintMeaning where
+  globs := #[`Reqs.Lint.Meaning]
+  needs := #[`@/reqs_lint_meaning_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_meaning_md where
+  path := "src/Reqs/Lint/Meaning.md"
+  text := true
+
+lean_lib ReqsLintUnused where
+  globs := #[`Reqs.Lint.Unused]
+  needs := #[`@/reqs_lint_unused_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_unused_md where
+  path := "src/Reqs/Lint/Unused.md"
+  text := true
+
+lean_lib ReqsLintNonstandardStyle where
+  globs := #[`Reqs.Lint.NonstandardStyle]
+  needs := #[`@/reqs_lint_nonstandard_style_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_nonstandard_style_md where
+  path := "src/Reqs/Lint/NonstandardStyle.md"
+  text := true
+
+lean_lib ReqsLintStyle where
+  globs := #[.andSubmodules `Reqs.Lint.Style]
+  needs := #[`@/reqs_lint_style_md, `@/reqs_lint_style_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_style_md where
+  path := "src/Reqs/Lint/Style.md"
+  text := true
+
+input_dir reqs_lint_style_chapters_md where
+  path := "src/Reqs/Lint/Style"
   text := true
   filter := .extension #["md"]
 
-input_file reqs_lint_chapter_md where
-  path := "src/Reqs/Lint.md"
+lean_lib ReqsLintComplexity where
+  globs := #[.andSubmodules `Reqs.Lint.Complexity]
+  needs := #[`@/reqs_lint_complexity_md, `@/reqs_lint_complexity_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_complexity_md where
+  path := "src/Reqs/Lint/Complexity.md"
+  text := true
+
+input_dir reqs_lint_complexity_chapters_md where
+  path := "src/Reqs/Lint/Complexity"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintSuspicious where
+  globs := #[.andSubmodules `Reqs.Lint.Suspicious]
+  needs := #[`@/reqs_lint_suspicious_md, `@/reqs_lint_suspicious_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_suspicious_md where
+  path := "src/Reqs/Lint/Suspicious.md"
+  text := true
+
+input_dir reqs_lint_suspicious_chapters_md where
+  path := "src/Reqs/Lint/Suspicious"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintPedantic where
+  globs := #[.andSubmodules `Reqs.Lint.Pedantic]
+  needs := #[`@/reqs_lint_pedantic_md, `@/reqs_lint_pedantic_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_pedantic_md where
+  path := "src/Reqs/Lint/Pedantic.md"
+  text := true
+
+input_dir reqs_lint_pedantic_chapters_md where
+  path := "src/Reqs/Lint/Pedantic"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintRestriction where
+  globs := #[`Reqs.Lint.Restriction]
+  needs := #[`@/reqs_lint_restriction_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_restriction_md where
+  path := "src/Reqs/Lint/Restriction.md"
+  text := true
+
+lean_lib ReqsLintDecidability where
+  globs := #[`Reqs.Lint.Decidability]
+  needs := #[`@/reqs_lint_decidability_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_decidability_md where
+  path := "src/Reqs/Lint/Decidability.md"
+  text := true
+
+lean_lib ReqsLintPrinting where
+  globs := #[`Reqs.Lint.Printing]
+  needs := #[`@/reqs_lint_printing_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_printing_md where
+  path := "src/Reqs/Lint/Printing.md"
+  text := true
+
+lean_lib ReqsLintRewrites where
+  globs := #[`Reqs.Lint.Rewrites]
+  needs := #[`@/reqs_lint_rewrites_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_rewrites_md where
+  path := "src/Reqs/Lint/Rewrites.md"
   text := true
 
 lean_lib ReqsDev where
