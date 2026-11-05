@@ -1,48 +1,153 @@
-"""For codex-agent's `fix` job: find the agent's pull request, its model and
-effort (from its branch, agent/<issue>-<model>-<effort>), and the round;
-write the brief with the review or the failed run's log to
-$RUNNER_TEMP/agent/prompt.md. Sets skip=true when there's nothing to do."""
-import json, os, re, subprocess, sys
+"""Resolve a completed review or failing pre-merge to a current agent head."""
+import io
+import importlib.util
+import os
+from pathlib import Path
+import re
+import subprocess
+import zipfile
+
+from common import MODELS, api, comments, output, prompt, trusted
 
 MAX_ROUNDS = 3
+LIMIT = "codex-agent has answered 3 rounds; leaving this pull request to the coordinator."
+REVIEW = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues|blocking issues)(?:\s|$)")
+ROUND = re.compile(r"codex-agent fix round (\d+)(?:,| made no change:| rejected:)")
 
-def gh(*args):
-    return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
 
-def out(**kv):
-    with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-        for k, v in kv.items():
-            f.write(f"{k}={v}\n")
+def reviewed_pr(repo, run_id):
+    # A pr-review workflow_run itself has head_branch=main and no PRs.
+    # Its context artifact was uploaded by the trusted prepare job, which
+    # runs no PR code. Read only log.txt from it; never extract its files.
+    artifacts = api(f"repos/{repo}/actions/runs/{run_id}/artifacts")["artifacts"]
+    contexts = [a for a in artifacts if re.fullmatch(r"context-\d+", a["name"]) and not a["expired"]]
+    if len(contexts) != 1:
+        return None
+    artifact = contexts[0]
+    pr = artifact["name"].removeprefix("context-")
+    info = api(f"repos/{repo}/pulls/{pr}")
+    if not agent_pr(info, repo):
+        return None
+    archive = subprocess.check_output([
+        "gh", "api", f"repos/{repo}/actions/artifacts/{artifact['id']}/zip"])
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        line = z.read("log.txt").decode().splitlines()[0]
+    if line != f"commit {info['head']['sha']}":
+        return None
+    return info
+
+
+def agent_pr(info, repo):
+    head = info["head"]
+    return (info["state"] == "open" and not info["draft"] and
+            head.get("repo") is not None and head["repo"]["full_name"] == repo and
+            re.fullmatch(r"agent/\d+-(luna|terra)-(low|medium|high)", head["ref"]) is not None)
+
+
+def review_bot(item):
+    return (item.get("user", {}).get("login") == "github-actions[bot]" and
+            item["user"].get("type") == "Bot")
+
+
+def generated_review(repo, run_id, pr, head):
+    """Recover trusted automation output, not arbitrary bot-comment text.
+
+    GitHub gives its bot author_association=NONE. Human comments still
+    require the trusted associations. For automation, the completed run's
+    context has already identified this repository's current agent head;
+    revalidate its review artifact with the workflow's own checker and
+    require the posted bot comment to match that exact output.
+    """
+    artifacts = api(f"repos/{repo}/actions/runs/{run_id}/artifacts")["artifacts"]
+    reviews = [a for a in artifacts if a["name"] == f"review-{pr}" and not a["expired"]]
+    if len(reviews) != 1:
+        return None
+    archive = subprocess.check_output([
+        "gh", "api", f"repos/{repo}/actions/artifacts/{reviews[0]['id']}/zip"])
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        raw = z.read("review.md").decode().strip()
+        names = set(z.read("names.txt").decode().splitlines()) - {""}
+    path = Path(__file__).resolve().parent.parent / "pr-review/check.py"
+    spec = importlib.util.spec_from_file_location("review_check", path)
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+    first = raw.splitlines()[0] if raw else ""
+    if first.endswith("(fixes only)"):
+        kind = "fixes"
+    elif first.endswith("(rebase only)"):
+        kind = "rebase"
+    else:
+        kind = "full"
+    body, ok = checker.comment(raw, head, kind,
+                               f"https://github.com/{repo}/actions/runs/{run_id}",
+                               names, checker.hashed_names())
+    return body if ok else None
+
 
 def main():
     env, repo = os.environ, os.environ["REPO"]
-    if env["EVENT"] == "issue_comment":
-        pr = env["PR"]
-        what = "The review of your pull request's current head has blocking issues. Fix every [blocking] finding at every instance it lists, and any [non-blocking] ones that are small. If you disagree with a finding, say why in your comment instead of changing the code.\n\n" + env["COMMENT"]
+    run_id = env["RUN_ID"]
+    if env["RUN_NAME"] == "pr-review":
+        info = reviewed_pr(repo, run_id)
+        if info is None:
+            return output(mode="skip")
     else:
-        prs = json.loads(gh("pr", "list", "-R", repo, "--head", env["RUN_BRANCH"], "--json", "number"))
-        if not prs:
-            return out(skip="true")
-        pr = str(prs[0]["number"])
-        log = subprocess.run(["gh", "run", "view", env["RUN_ID"], "-R", repo, "--log-failed"], capture_output=True, text=True).stdout
-        lines = [l for l in log.splitlines() if re.search(r"error:|FAIL|crashed|warning:", l)]
-        what = "Your pull request's `pre-merge` run failed. Fix the cause. The failing lines of its log:\n\n" + "\n".join(lines[:80])
-    info = json.loads(gh("pr", "view", pr, "-R", repo, "--json", "headRefName,state,commits,body"))
-    branch = info["headRefName"]
-    m = re.fullmatch(r"agent/(\d+)-(.+)-(low|medium|high)", branch)
-    if info["state"] != "OPEN" or not branch.startswith("agent/") or not m:
-        return out(skip="true")
-    model, effort = m.group(2), m.group(3)
-    done = sum(1 for c in json.loads(gh("api", f"repos/{repo}/issues/{pr}/comments", "--paginate"))
-               if c["body"].startswith("codex-agent fix round"))
+        prs = api(f"repos/{repo}/pulls?state=open&head={repo.split('/')[0]}:{env['RUN_BRANCH']}")
+        if len(prs) != 1:
+            return output(mode="skip")
+        info = prs[0]
+        if not agent_pr(info, repo) or info["head"]["sha"] != env["RUN_SHA"]:
+            return output(mode="skip")
+    pr, head, branch = str(info["number"]), info["head"]["sha"], info["head"]["ref"]
+    thread = api(f"repos/{repo}/issues/{pr}/comments", pages=True)
+    if env["RUN_NAME"] == "pr-review":
+        generated = generated_review(repo, run_id, pr, head) if any(
+            review_bot(c) and REVIEW.match(c["body"]) for c in thread) else None
+        reviews = []
+        for item in thread:
+            if not REVIEW.match(item["body"]):
+                continue
+            if trusted(item):
+                reviews.append(item["body"])
+            elif review_bot(item) and generated and item["body"].strip() == generated.strip():
+                reviews.append(generated)
+        if not reviews:
+            return output(mode="skip")
+        review = reviews[-1]
+        match = REVIEW.match(review)
+        if match.group(1) != head or match.group(2) != "blocking issues":
+            return output(mode="skip")
+        what = ("The review of your current head has blocking issues. Fix every [blocking] "
+                "finding at every instance, and the small [non-blocking] findings. If you "
+                "disagree, explain why in your comment.\n\n" + review)
+    else:
+        log = subprocess.check_output([
+            "gh", "run", "view", run_id, "-R", repo, "--log-failed"], text=True)
+        lines = [line for line in log.splitlines() if re.search(r"error:|FAIL|crashed|warning:", line)]
+        what = "Your current head's pre-merge failed. Fix the cause. Failing log lines:\n\n" + "\n".join(lines[:80])
+    # Count only the publisher's trusted comments, never arbitrary users'
+    # imitations. The maximum round also survives a retried trigger.
+    rounds = [int(m.group(1)) for c in thread if trusted(c)
+              if (m := ROUND.match(c["body"]))]
+    done = max(rounds, default=0)
+    mode = "fix"
     if done >= MAX_ROUNDS:
-        gh("pr", "comment", pr, "-R", repo, "--body", f"codex-agent has answered {done} rounds; leaving this pull request to the coordinator.")
-        return out(skip="true")
-    temp = os.path.join(env["RUNNER_TEMP"], "agent")
-    os.makedirs(temp, exist_ok=True)
-    brief = open(".github/codex-agent/brief.md").read().replace("{{TEMP}}", temp)
-    with open(os.path.join(temp, "prompt.md"), "w") as f:
-        f.write(brief + f"\n\n## This round\n\nYou wrote pull request #{pr} (branch {branch}), which is checked out with your earlier work. Write the commit message to {temp}/commit-msg.txt and a comment saying what changed for each finding, with the checks you ran, to {temp}/comment.md.\n\n" + what + f"\n\n## The pull request's description\n\n{info['body']}\n")
-    out(skip="false", pr=pr, branch=branch, model=model, effort=effort, round=done + 1)
+        # A separate publisher posts this once, with no write token here.
+        mode = "limit" if done == MAX_ROUNDS and not any(
+            trusted(c) and c["body"] == LIMIT for c in thread) else "skip"
+    issue, name, effort = re.fullmatch(r"agent/(\d+)-(luna|terra)-(low|medium|high)", branch).groups()
+    if mode == "fix":
+        inline = comments(api(f"repos/{repo}/pulls/{pr}/comments", pages=True))
+        body = (info["body"] or "") if trusted(info) else "(description omitted: untrusted author)"
+        prompt(issue, done + 1,
+               f"## This round\n\nYou wrote PR #{pr} ({branch}), checked out with your earlier work. "
+               "Write what changed for each finding and your checks to ../agent/comment.md, "
+               "and the commit message to ../agent/commit-msg.txt.\n\n" + what +
+               f"\n\n## Trusted PR discussion\n\n{comments(thread)}\n\n{inline}"
+               f"\n\n## PR description\n\n{body}")
+    output(mode=mode, issue=issue, pr=pr, branch=branch, base=head,
+           model=MODELS[name], effort=effort, round=done + 1)
 
-main()
+
+if __name__ == "__main__":
+    main()

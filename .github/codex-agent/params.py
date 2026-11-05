@@ -1,12 +1,9 @@
-"""Decide the issue, model and effort of a codex-agent run, check that the
-labeller may write, and write Codex's brief to $RUNNER_TEMP/agent/prompt.md."""
-import json, os, subprocess, sys
+"""Prepare a trusted issue's prompt and publishing metadata, without writes."""
+import os
+import subprocess
 
-MODELS = {"luna": "gpt-6-luna", "terra": "gpt-6.1-terra"}
-EFFORTS = {"low", "medium", "high"}
+from common import MODELS, EFFORTS, api, comments, output, prompt, trusted
 
-def gh(*args):
-    return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
 
 def main():
     env = os.environ
@@ -15,21 +12,22 @@ def main():
         issue, name, effort = env["IN_ISSUE"], env["IN_MODEL"], env["IN_EFFORT"]
     else:
         issue = env["EV_ISSUE"]
-        rest = env["LABEL"].removeprefix("agent/")
-        name, _, effort = rest.partition("-")
-        perm = json.loads(gh("api", f"repos/{repo}/collaborators/{env['SENDER']}/permission"))["permission"]
+        name, _, effort = env["LABEL"].removeprefix("agent/").partition("-")
+        perm = api(f"repos/{repo}/collaborators/{env['SENDER']}/permission")["permission"]
         if perm not in ("admin", "maintain", "write"):
-            sys.exit(f"{env['SENDER']} may not start codex-agent ({perm})")
+            raise ValueError(f"{env['SENDER']} may not start codex-agent ({perm})")
     if name not in MODELS or effort not in EFFORTS or not issue.isdigit():
-        sys.exit(f"unknown model, effort or issue: {name!r} {effort!r} {issue!r}")
-    data = json.loads(gh("issue", "view", issue, "-R", repo, "--json", "title,body,comments"))
-    comments = "\n\n".join(f"Comment:\n{c['body']}" for c in data["comments"])
-    temp = os.path.join(env["RUNNER_TEMP"], "agent")
-    os.makedirs(temp, exist_ok=True)
-    with open(os.path.join(temp, "prompt.md"), "w") as f:
-        f.write(open(".github/codex-agent/brief.md").read().replace("{{TEMP}}", temp))
-        f.write(f"\n\n## The issue: #{issue}, {data['title']}\n\n{data['body']}\n\n{comments}\n")
-    with open(env["GITHUB_OUTPUT"], "a") as out:
-        out.write(f"issue={issue}\nmodel={MODELS[name]}\neffort={effort}\n")
+        raise ValueError(f"unknown model, effort or issue: {name!r} {effort!r} {issue!r}")
+    data = api(f"repos/{repo}/issues/{issue}")
+    if not trusted(data) or "pull_request" in data or data["state"] != "open":
+        return output(mode="skip")
+    thread = comments(api(f"repos/{repo}/issues/{issue}/comments", pages=True))
+    branch = f"agent/{issue}-{name}-{effort}"
+    base = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    prompt(issue, 0, f"## The issue: #{issue}, {data['title']}\n\n{data['body'] or ''}\n\n{thread}")
+    output(mode="issue", issue=issue, pr="", branch=branch, base=base,
+           model=MODELS[name], effort=effort, round=0)
 
-main()
+
+if __name__ == "__main__":
+    main()
