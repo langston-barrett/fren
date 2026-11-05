@@ -104,9 +104,14 @@ def test_reservation_wait_message():
 
     environ = {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}
     for recheck in (False, True):
-        for rss, reason in ((None, "no compatible report"), (1, "stale or future-dated report")):
+        cases = [([{"slot": "slot1", "rss_kb": 1, "fresh": False}], "stale or future-dated report"),
+                 ([{"slot": "slot1", "rss_kb": None, "fresh": False,
+                    "legacy": True, "legacy_rss_kb": 2 * GB}], f"legacy RSS: {2 * GB} KB"),
+                 ([{"slot": "slot1", "rss_kb": None, "fresh": False, "legacy": True},
+                   {"slot": "slot2", "rss_kb": GB // 5, "fresh": True}],
+                  f"shared legacy forecast: {GB // 2} KB")]
+        for rows, reason in cases:
             with tempfile.TemporaryDirectory() as state:
-                rows = [{"slot": "slot1", "rss_kb": rss, "fresh": False}]
                 readings = [[], rows] if recheck else [rows]
                 stderr = io.StringIO()
                 with contextlib.redirect_stderr(stderr), \
@@ -116,13 +121,14 @@ def test_reservation_wait_message():
                     assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
                                                      environ, lambda: 0), Waiting)
                 assert f"slot1 ({reason})" in stderr.getvalue()
-                assert "resume stopped monitors or drain incompatible heavy jobs" in stderr.getvalue()
+                assert "resume stopped monitors or reduce running memory" in stderr.getvalue()
                 assert "slots busy" not in stderr.getvalue()
 
     # A prior generic load warning must not hide a later reservation warning.
     with tempfile.TemporaryDirectory() as state:
         stderr = io.StringIO()
-        rows = [{"slot": "slot0", "rss_kb": None, "fresh": False}]
+        rows = [{"slot": "slot0", "rss_kb": None, "fresh": False,
+                 "legacy": True, "legacy_rss_kb": 2 * GB}]
         with contextlib.redirect_stderr(stderr), \
              mock.patch.object(heavy, "jobs", side_effect=[[], rows]), \
              mock.patch.object(heavy.time, "sleep", side_effect=[None, Waiting]), \
@@ -130,7 +136,7 @@ def test_reservation_wait_message():
             assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
                           dict(environ, HEAVY_MAX_LOAD="1"), lambda: 100), Waiting)
         assert "waiting for memory or load" in stderr.getvalue()
-        assert "slot0 (no compatible report)" in stderr.getvalue()
+        assert f"slot0 (legacy RSS: {2 * GB} KB)" in stderr.getvalue()
 
 
 def test_physical_memory():
@@ -256,7 +262,7 @@ def test_load_admission():
     assert admit(0, 0, 100, 8, lambda: None)  # Missing OS load fails open.
 
 
-def tiny_job(state, command, overrides=None):
+def tiny_job(state, command, overrides=None, timeout=30):
     # Invoke main in a fresh process, with no real load or shared state.
     code = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
             "sys.exit(h['main'](sys.argv[3:], state=sys.argv[2], load_reader=lambda: 0.5))")
@@ -265,7 +271,7 @@ def tiny_job(state, command, overrides=None):
     environ.update(overrides or {})
     return subprocess.run([sys.executable, "-I", "-B", "-c", code,
                            os.path.join(HERE, "heavy"), state] + command,
-                          env=environ, capture_output=True, text=True, timeout=30)
+                          env=environ, capture_output=True, text=True, timeout=timeout)
 
 
 def test_job_log():
@@ -337,6 +343,7 @@ def proc_line(pid=123, name="lean", group=7, user=10, system=20, start=100, stat
 
 
 def test_slot_identity():
+    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim
     with tempfile.TemporaryDirectory() as state:
         first = open(os.path.join(state, "slot0"), "a+")
         second = open(os.path.join(state, "slot1"), "a+")
@@ -388,14 +395,16 @@ def test_slot_identity():
                 heavy.release_slot(second, state)
         with open(os.path.join(state, "slot0"), "a+") as legacy:
             heavy.fcntl.flock(legacy, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
-            assert heavy.heavy_rss_kb(state, 80) > 0.6 * 80  # Empty does not mean unheld.
+            assert heavy.jobs(state)[0]["legacy"]  # Empty does not mean unheld.
+            assert heavy.heavy_rss_kb(state, 80) == 40
             legacy.write("5 10 foreign-job\n")
             legacy.flush()
-            assert heavy.heavy_rss_kb(state, 80) > 0.6 * 80  # Legacy IDs are not globally valid.
+            assert heavy.heavy_rss_kb(state, 80) == 40  # Never resolve this foreign PID.
         assert heavy.jobs(state) == []
 
 
 def test_proc_namespace_translation():
+    # fren-covers: testing::heavy_lease
     with tempfile.TemporaryDirectory() as proc:
         for pid in ("self", "1", "6", "901", "902", "903"):
             os.mkdir(os.path.join(proc, pid))
@@ -432,6 +441,7 @@ def test_proc_namespace_translation():
 
 
 def test_memory_victim():
+    # fren-covers: testing::heavy_memory_victim, testing::heavy_owned_signal
     older = {"job_id": "old", "order": 1, "rss_kb": 60}
     newer = {"job_id": "new", "order": 2, "rss_kb": 20}
     for leases in ([older, newer], [newer, older]):
@@ -442,13 +452,221 @@ def test_memory_victim():
     assert heavy.memory_victim([older, stale], 80) == (80, None)
     assert heavy.memory_victim([older, stale], 79) == (80, "new")
     missing = dict(newer, rss_kb=None)
-    assert heavy.memory_victim([older, missing], 1) == (60, None)
+    assert heavy.memory_victim([older, missing], 1) == (60, "old")
     legacy = {"job_id": None, "order": None, "rss_kb": None}
-    for leases in ([legacy], [older, legacy, newer], [newer, legacy, older]):
-        assert heavy.memory_victim(leases, 1)[1] is None
+    assert heavy.memory_victim([legacy], 1) == (0, None)
+    for leases in ([older, legacy, newer], [newer, legacy, older]):
+        assert heavy.memory_victim(leases, 1) == (80, "new")
+    measured = dict(legacy, legacy=True, legacy_rss_kb=30)
+    assert heavy.memory_victim([newer, measured], 49) == (50, "new")
+    assert heavy.memory_victim([newer, measured], 50) == (50, None)
+    assert heavy.memory_victim([measured], 1) == (30, None)  # Never target a legacy owner.
+    assert heavy.memory_victim([newer, dict(measured, legacy_rss_kb=-30)], 19) == (20, "new")
+    assert heavy.memory_victim([older, dict(newer, order=0, rss_kb=100)], 79) == (60, None)
+    assert heavy.memory_victim([older, dict(newer, rss_kb=-100)], 59) == (60, "old")
+
+
+def test_legacy_reservations():
+    # fren-covers: testing::heavy_legacy_lease, testing::heavy_memory_victim
+    with tempfile.TemporaryDirectory() as state:
+        for cap in range(5, 101):
+            share = heavy.legacy_reservation(cap)
+            assert 0 < share and 5 * share <= 3 * cap
+            assert heavy.can_start(0, share, cap, None)
+            for observed in (None, -1, 0, 1, cap, 2 * cap):
+                charged = heavy.legacy_reservation(cap, observed)
+                assert charged == (observed if observed is not None and observed >= 0 else share)
+                if observed is not None and 5 * observed > 3 * cap:
+                    assert not heavy.can_start(0, charged, cap, None)
+            for count in range(1, 9):
+                rows = [{"slot": f"slot{i}", "legacy": True, "legacy_rss_kb": None,
+                         "rss_kb": None, "fresh": False} for i in range(count)]
+                with mock.patch.object(heavy, "jobs", return_value=rows):
+                    assert heavy.heavy_rss_kb(state, cap) == share
+        unknown = {"slot": "slot0", "legacy": True, "legacy_rss_kb": None,
+                   "rss_kb": None, "fresh": False}
+        known = dict(unknown, slot="slot1", legacy_rss_kb=10)
+        with mock.patch.object(heavy, "jobs", return_value=[unknown, known]):
+            assert heavy.heavy_rss_kb(state, 100) == 60
+            assert heavy.can_start(0, heavy.heavy_rss_kb(state, 100), 100, None)
+        with mock.patch.object(heavy, "jobs", return_value=[unknown, dict(known, legacy_rss_kb=11)]):
+            assert not heavy.can_start(0, heavy.heavy_rss_kb(state, 100), 100, None)
+    assert heavy.legacy_reservation(100, 0) == 0  # Verified zero differs from unknown.
+    assert heavy.legacy_reservation(0) == 1
+
+
+def test_report_owner():
+    # fren-covers: testing::heavy_report_owner
+    monitor = {"pid": 5, "start": 20, "namespace": "pid:[100]"}
+    report = {"job_id": "job", "updated_monotonic": 100, "monitor": monitor}
+    for now in (99, 100, 100 + heavy.REPORT_STALE_SECONDS,
+                101 + heavy.REPORT_STALE_SECONDS):
+        fresh = 0 <= now - 100 <= heavy.REPORT_STALE_SECONDS
+        assert heavy.report_current(report, "job", None, now) == fresh
+        assert heavy.report_current(report, "job", monitor, now)
+        for key, value in (("pid", 6), ("start", 21), ("namespace", "pid:[200]")):
+            assert not heavy.report_current(report, "job", dict(monitor, **{key: value}), now)
+        assert not heavy.report_current(report, "other", monitor, now)
+
+
+def test_legacy_proc_readings():
+    # fren-covers: testing::heavy_legacy_lease
+    with tempfile.TemporaryDirectory() as proc, mock.patch.object(heavy.platform, "release", return_value="6.0"):
+        key = (0, 47, 32388)
+        text = ("3: FLOCK ADVISORY WRITE 900 00:2f:32388 0 EOF\n"
+                "4: -> FLOCK ADVISORY WRITE 901 00:2f:32388 0 EOF\n"
+                "5: OFDLCK ADVISORY WRITE -1 00:2f:32389 0 EOF\n"
+                "6: FLOCK ADVISORY READ 901 00:2f:32390 0 EOF\n")
+        with open(os.path.join(proc, "locks"), "w") as f:
+            f.write(text)
+        for pid, parent, group, pages in ((900, 1, 800, 2), (901, 900, 901, 10),
+                                         (902, 901, 901, 20), (5, 999, 5, 10000)):
+            os.mkdir(os.path.join(proc, str(pid)))
+            with open(os.path.join(proc, str(pid), "stat"), "w") as f:
+                f.write(proc_line(pid=pid, parent=parent, group=group, pages=pages))
+        assert heavy.flock_owners(proc) == {key: 900}
+        with open(os.path.join(proc, "900", "status"), "w") as f:
+            f.write("Name:\tlegacy\n")
+        assert raises(lambda: heavy.monitor_identity(900, proc), ValueError)
+        lease = {"lock_key": key, "legacy": True, "legacy_rss_kb": None}
+        heavy.legacy_readings([lease], proc, "Linux")
+        assert lease["legacy_rss_kb"] == 30 * os.sysconf("SC_PAGE_SIZE") // 1024
+        # A foreign numeric PID in a status file has no role in this lookup:
+        # the very large unrelated group 5 must never count as the job.
+        changed = {"lock_key": key, "legacy": True, "legacy_rss_kb": None}
+        with mock.patch.object(heavy, "flock_owners", side_effect=[{key: 900}, {key: 5}]):
+            heavy.legacy_readings([changed], proc, "Linux")
+        assert changed["legacy_rss_kb"] is None
+        hidden = {"lock_key": key, "legacy": True, "legacy_rss_kb": None}
+        with mock.patch.object(heavy, "flock_owners", return_value={}):
+            heavy.legacy_readings([hidden], proc, "Linux")
+        assert hidden["legacy_rss_kb"] is None
+        old_kernel = {"lock_key": key, "legacy": True, "legacy_rss_kb": None}
+        with mock.patch.object(heavy.platform, "release", return_value="4.8"), \
+             mock.patch.object(heavy, "flock_owners", side_effect=AssertionError("unqualified PID view")):
+            heavy.legacy_readings([old_kernel], proc, "Linux")
+        assert old_kernel["legacy_rss_kb"] is None
+        calls = []
+        def reused_pid(view):
+            calls.append(True)
+            if len(calls) == 2:
+                with open(os.path.join(proc, "900", "stat"), "w") as f:
+                    f.write(proc_line(pid=900, group=800, start=101))
+            return {key: 900}
+        reused = {"lock_key": key, "legacy": True, "legacy_rss_kb": None}
+        with mock.patch.object(heavy, "flock_owners", side_effect=reused_pid):
+            heavy.legacy_readings([reused], proc, "Linux")
+        assert reused["legacy_rss_kb"] is None
+
+
+def test_legacy_report_reuse():
+    # fren-covers: testing::heavy_lease, testing::heavy_legacy_lease, testing::heavy_memory_victim
+    with tempfile.TemporaryDirectory() as state:
+        slot = open(os.path.join(state, "slot0"), "a+")
+        with heavy.registry(state):
+            assert heavy.claim_slot(slot, "slot0", state, {"enqueued_at": 0})
+        heavy.publish_memory(slot, 1000, state)
+        saved = dict(slot.heavy_job)
+        heavy.release_slot(slot, state)
+        heavy.atomic_state(heavy.report_path(state, "slot0"), dict(saved, monitor=[]))
+        assert heavy.read_report(heavy.report_path(state, "slot0")) is None
+        heavy.atomic_state(heavy.report_path(state, "slot0"), saved)
+        with open(os.path.join(state, "slot0"), "w+") as legacy:
+            heavy.fcntl.flock(legacy, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+            legacy.write("5 10 foreign-job\n")
+            legacy.flush()
+            row = heavy.jobs(state)[0]
+            assert row["legacy"] and row["job_id"] is None and row["rss_kb"] is None
+            assert heavy.heavy_rss_kb(state, 100) == 50
+            assert heavy.memory_victim([row], 1) == (0, None)
+            # A status token for another owner cannot authenticate the report.
+            legacy.seek(0)
+            legacy.truncate()
+            legacy.write("0 0 [heavy-job=" + "0" * 32 + "]\n")
+            legacy.flush()
+            row = heavy.jobs(state)[0]
+            assert row["legacy"] and row["rss_kb"] is None
+            assert heavy.heavy_rss_kb(state, 100) == 50
+        if heavy.platform.system() == "Linux":
+            # A different legacy owner can stop before overwriting the status.
+            # Kernel lock ownership must also reject that stale report.
+            with open(os.path.join(state, "slot0"), "w") as f:
+                f.write(f"0 0 [heavy-job={saved['job_id']}]\n")
+            ready = os.path.join(state, "ready")
+            code = ("import fcntl,pathlib,sys,time; f=open(sys.argv[1],'a+'); "
+                    "fcntl.flock(f,fcntl.LOCK_EX); pathlib.Path(sys.argv[2]).touch(); time.sleep(30)")
+            owner = subprocess.Popen([sys.executable, "-I", "-B", "-c", code,
+                                      os.path.join(state, "slot0"), ready])
+            try:
+                deadline = heavy.time.monotonic() + 5
+                while not os.path.exists(ready) and owner.poll() is None and heavy.time.monotonic() < deadline:
+                    heavy.time.sleep(0.01)
+                assert os.path.exists(ready) and owner.poll() is None
+                row = heavy.jobs(state)[0]
+                assert row["legacy"] and row["rss_kb"] is None
+                assert heavy.heavy_rss_kb(state, 100) == 50
+            finally:
+                owner.terminate()
+                owner.wait(timeout=5)
+
+
+def test_legacy_coexistence():
+    # fren-covers: testing::heavy_legacy_lease, testing::heavy_lease
+    # Unknown legacy memory remains charged, but a free slot can admit new work.
+    for slots in (2, 4):
+        with tempfile.TemporaryDirectory() as state, contextlib.ExitStack() as stack:
+            for index in range(slots - 1):
+                legacy = stack.enter_context(open(os.path.join(state, f"slot{index}"), "w+"))
+                heavy.fcntl.flock(legacy, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+                legacy.write("5 10 foreign-job\n")
+                legacy.flush()
+            cap = int(0.5 * GB)
+            assert heavy.heavy_rss_kb(state, cap) == cap // 2
+            result = tiny_job(state, [sys.executable, "-c", "pass"],
+                              {"HEAVY_SLOTS": str(slots), "HEAVY_MEM_GB": "0.5"}, timeout=10)
+            assert result.returncode == 0, result.stderr
+            rows = heavy.jobs(state)
+            assert len(rows) == slots - 1 and all(row["legacy"] for row in rows)
+    if heavy.platform.system() != "Linux":
+        return
+    with tempfile.TemporaryDirectory() as state:
+        ready, stop = os.path.join(state, "ready"), os.path.join(state, "stop")
+        owner = """
+import fcntl, os, pathlib, subprocess, sys, time
+with open(os.path.join(sys.argv[1], 'slot0'), 'w+') as slot:
+    fcntl.flock(slot, fcntl.LOCK_EX)
+    worker = subprocess.Popen([sys.executable, '-c',
+        "import pathlib,sys,time; memory=bytearray(4*1024*1024); pathlib.Path(sys.argv[1]).touch(); time.sleep(30)",
+        sys.argv[2]], start_new_session=True)
+    slot.write(f'{worker.pid} {time.time()} legacy-job\\n'); slot.flush()
+    try:
+        while not pathlib.Path(sys.argv[3]).exists(): time.sleep(0.01)
+    finally:
+        worker.terminate(); worker.wait(timeout=5)
+"""
+        legacy = subprocess.Popen([sys.executable, "-I", "-B", "-c", owner, state, ready, stop])
+        try:
+            deadline = heavy.time.monotonic() + 10
+            while not os.path.exists(ready) and legacy.poll() is None and heavy.time.monotonic() < deadline:
+                heavy.time.sleep(0.01)
+            assert os.path.exists(ready) and legacy.poll() is None
+            row = heavy.jobs(state)[0]
+            assert row["legacy"]
+            if row["legacy_rss_kb"] is not None:
+                assert row["legacy_rss_kb"] >= 4 * 1024
+            cap = int(0.5 * GB)
+            assert 5 * heavy.heavy_rss_kb(state, cap) <= 3 * cap
+            result = tiny_job(state, [sys.executable, "-c", "pass"],
+                              {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "0.5"}, timeout=10)
+            assert result.returncode == 0 and legacy.poll() is None, result.stderr
+        finally:
+            with open(stop, "w") as f:
+                f.write("stop")
+            legacy.wait(timeout=10)
 
 
 def test_group_completion():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
     for reaped in (False, True):
         for exists in (False, True):
             effect = None if exists else ProcessLookupError()
@@ -475,6 +693,7 @@ def adopt_workers():
 
 
 def test_fallback_escalation():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
     if heavy.platform.system() != "Linux":
         return
     # The harness adopts/reaps the orphan, as a working init would. The
@@ -547,12 +766,32 @@ def test_fallback_escalation():
 
 
 def test_no_signal_after_reap():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
     with mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()) as probe:
         heavy.kill_group(5, lambda: True)
         probe.assert_called_once_with(5, 0)
 
 
+def test_status_failure_cleanup():
+    # fren-covers: testing::heavy_owned_signal
+    with tempfile.TemporaryDirectory() as state, tempfile.TemporaryFile(mode="w+") as slot:
+        record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
+        slot.heavy_job = {"job_id": "job"}
+        with mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=42)), \
+             mock.patch.object(heavy, "visible_group", return_value=42), \
+             mock.patch.object(heavy, "write_status", side_effect=OSError("disk full")), \
+             mock.patch.object(heavy, "group_rss_kb", return_value={42: 1}), \
+             mock.patch.object(heavy, "mem_cap_kb", return_value=100), \
+             mock.patch.object(heavy, "reap_child", return_value=False) as reap, \
+             mock.patch.object(heavy, "kill_group") as kill, \
+             contextlib.redirect_stderr(io.StringIO()):
+            assert heavy.run_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0) == 125
+            kill.assert_called_once()
+            assert kill.call_args.args[0] == 42 and reap.call_args.args[-1] == 0
+
+
 def test_pid_namespace_jobs():
+    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim, testing::heavy_owned_signal
     if heavy.platform.system() != "Linux":
         return
     base = ["unshare", "--user", "--map-root-user", "--pid", "--fork", "--kill-child=KILL"]
@@ -1012,6 +1251,7 @@ def test_alternate_ignored_hangup():
 
 
 def test_registry_signals_and_release():
+    # fren-covers: testing::heavy_registry, testing::heavy_lease
     with tempfile.TemporaryDirectory() as state:
         signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
         delivered = []
@@ -1078,6 +1318,7 @@ def test_registry_signals_and_release():
 
 
 def test_own_cap_with_other_victim():
+    # fren-covers: testing::heavy_owned_signal
     with tempfile.TemporaryDirectory() as state, tempfile.TemporaryFile(mode="w+") as slot:
         slot.heavy_job = {"job_id": "older"}
         rows = [{"job_id": "older", "order": 1, "rss_kb": 101},
@@ -1129,6 +1370,7 @@ def registry_timeout_paths(state):
 
 
 def test_stopped_registry_holder():
+    # fren-covers: testing::heavy_registry, testing::heavy_lease, testing::heavy_owned_signal
     if heavy.platform.system() != "Linux":
         return
     with tempfile.TemporaryDirectory() as state:
@@ -1201,6 +1443,7 @@ with h['registry'](sys.argv[2]):
 
 
 def test_report_clock():
+    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim
     with tempfile.TemporaryDirectory() as state:
         slot = open(os.path.join(state, "slot0"), "a+")
         try:
@@ -1215,14 +1458,23 @@ def test_report_clock():
             for now in (stamp - 1, stamp + heavy.REPORT_STALE_SECONDS + 1):
                 with mock.patch.object(heavy.time, "monotonic", return_value=now):
                     row = heavy.jobs(state)[0]
-                    assert not row["fresh"] and row["rss_kb"] == 40
-                    assert heavy.heavy_rss_kb(state, 80) == 80
-                    assert heavy.memory_victim([row], 80) == (40, None)
+                    assert not row["fresh"]
+                    if row.get("legacy"):
+                        # Without visible kernel ownership, stale status cannot
+                        # distinguish a stopped monitor from a legacy successor.
+                        assert row["rss_kb"] is None
+                        assert heavy.heavy_rss_kb(state, 80) == 40
+                        assert heavy.memory_victim([row], 80) == (0, None)
+                    else:
+                        assert row["rss_kb"] == 40
+                        assert heavy.heavy_rss_kb(state, 80) == 80
+                        assert heavy.memory_victim([row], 80) == (40, None)
         finally:
             heavy.release_slot(slot, state)
 
 
 def test_stopped_owner():
+    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim, testing::heavy_owned_signal
     if heavy.platform.system() != "Linux":
         return
     with tempfile.TemporaryDirectory() as state:
@@ -1296,8 +1548,9 @@ def main():
              test_stats_and_appends, test_short_appends, test_policy_comparison,
              test_partial_policy_coverage, test_alternate, test_alternate_hangup,
              test_alternate_ignored_hangup, test_slot_identity, test_proc_namespace_translation,
-             test_memory_victim, test_group_completion, test_fallback_escalation,
-             test_no_signal_after_reap, test_pid_namespace_jobs, test_report_clock,
+             test_memory_victim, test_legacy_reservations, test_report_owner, test_legacy_proc_readings,
+             test_legacy_report_reuse, test_legacy_coexistence, test_group_completion, test_fallback_escalation,
+             test_no_signal_after_reap, test_status_failure_cleanup, test_pid_namespace_jobs, test_report_clock,
              test_stopped_owner, test_registry_signals_and_release,
              test_own_cap_with_other_victim, test_stopped_registry_holder]
     for t in tests:

@@ -32,6 +32,8 @@ tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren
 tested modules::two_segments: "test/ui/lang/scoping.fren", "test/ui/lang/prelude.fren"
 tested testing::heavy_registry: "scripts/heavy_test.py"
 tested testing::heavy_lease: "scripts/heavy_test.py"
+tested testing::heavy_legacy_lease: "scripts/heavy_test.py"
+tested testing::heavy_report_owner: "scripts/heavy_test.py"
 tested testing::heavy_memory_victim: "scripts/heavy_test.py"
 tested testing::heavy_group_gone: "scripts/heavy_test.py"
 tested testing::heavy_owned_signal: "scripts/heavy_test.py"
