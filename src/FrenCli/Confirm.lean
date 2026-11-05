@@ -498,6 +498,7 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
     -- `exists` (`CComp.natFacts`), so that an output that the guarantees
     -- allow but its subset type does not refutes nothing.
     existsOutputs := fun f => do return (← b.existsOutputs f.1, .exOutputs outs (.conj #[outputTypes, f.2]))
+    outputApplications? := b.outputApplications?.map fun extract f => extract f.1
     pin := fun n v => do return (← b.pin n v).map (·, .pin n v)
     pinVariant := fun n v => do return (← b.pinVariant n v).map fun (k, f) => (k, (f, .pinVariant n v))
     -- The values read, which the confirmation evaluates (`Reqs/Models#reading`).

@@ -81,3 +81,46 @@ private def unknownBackend (reason : String) : Backend Id Bool Unit where
     let bounded := messages false { r with bounded? := some 3 }
     unless bounded.all (·.severity == .warning) do
       throw <| IO.userError "a bounded enumeration result was mistaken for an undecided core query"
+
+-- The shared query classifier receives applications, rather than a front
+-- end's precomputed decision. Exercise it through realizability's protocol.
+-- fren-covers: check::output_query_core
+#eval show IO Unit from do
+  let c : Comp Bool := { path := `query, vars := #[{ name := `x, role := .input, isPub := true },
+      { name := `y, role := .output, isPub := true }], assumes := #[], reqs := #[], expects := #[], triggers := #[] }
+  for apps in [[], [["x"]], [["y"]], [["x"], ["x", "y"]]] do
+    let bk := { unknownBackend "INCOMPLETE" with
+      query := fun _ _ model => pure (if model then .unknown "INCOMPLETE" else .sat #[])
+      outputApplications? := some fun _ => pure apps }
+    let r := checkRealizableUniversal bk c
+    let core := !(apps.any (·.contains "y"))
+    unless r.outputQueryInCore == core && (messages false r).all (·.severity == if core then .error else .warning) do
+      throw <| IO.userError s!"incorrect generated output query classification for {apps}"
+    let defined := checkRealizableUniversal bk { c with defs := #[(`y, true, true)] }
+    unless defined.outputQueryInCore && (messages false defined).all (·.severity == .error) do
+      throw <| IO.userError "a substituted output was treated as quantified"
+    let assumeUnknown := { bk with query := fun _ _ model => pure (if model then .unsat else .unknown "INCOMPLETE") }
+    let assumption := checkRealizableUniversal assumeUnknown c
+    unless assumption.outputQueryInCore && (messages false assumption).all (·.severity == .error) do
+      throw <| IO.userError "an undecided core assumption query was hidden by the output formula"
+    for reason in ["", "INCOMPLETE"] do
+      for outputReason in ["TIMEOUT", "INCOMPLETE"] do
+        let both := { bk with query := fun _ _ model => pure (.unknown (if model then outputReason else reason)) }
+        let r := checkRealizableUniversal both c
+        unless r.outputQueryInCore && (match r.detail with | .unknown w => w == reason | _ => false) do
+          throw <| IO.userError "the assumptions query's give-up was hidden by the output query"
+        unless (messages false r).all (·.severity == .error) do
+          throw <| IO.userError "an undecided core assumption query lost its internal error"
+    let outputEmpty := { bk with query := fun _ _ model => pure (.unknown (if model then "" else "TIMEOUT")) }
+    let empty := checkRealizableUniversal { outputEmpty with outputApplications? := none } c
+    unless (match empty.detail with | .unknown w => w.isEmpty | _ => false) && (messages false empty).all (·.severity == .error) do
+      throw <| IO.userError "an empty output-query reason was replaced by the assumptions query's timeout"
+    for reason in [recursiveReason #[`total], elementUnconfirmedReason,
+        "another postcondition used by simultaneous induction did not pass"] do
+      let synthetic := { bk with
+        query := fun _ _ model => pure (.unknown (if model then "INCOMPLETE" else reason))
+        outputApplications? := none }
+      let r := checkRealizableUniversal synthetic c
+      unless (match r.detail with | .unknown w => w == "INCOMPLETE" | _ => false) &&
+          (messages false r).all (·.severity == .error) do
+        throw <| IO.userError "a non-solver assumption result hid the output query's give-up"

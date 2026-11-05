@@ -1399,6 +1399,18 @@ def queryText (prelude : Prelude) (c : CComp) (limits : Limits) (strings sets : 
   let p ← prepare prelude c strings sets projection quantified funs kind contractFns none recursiveSyms hyps goal
   return queryScript p.logic p.options prelude p.vars limits p.hyps p.goal
 
+/-- The variable symbols in each opaque application of an unfolded formula. -/
+private partial def outputApplications (opaqueHeads vars : Std.HashSet String) (e : SeqElems.SExpr) : List (List String) :=
+  match e with
+  | .atom _ => []
+  | .list ts =>
+    let own := match ts[0]? with
+      | some (SeqElems.SExpr.atom f) => if opaqueHeads.contains f then
+          [(ts.extract 1 |>.flatMap fun a => (quotedSymbols (toString a)).filter vars.contains).toList]
+        else []
+      | _ => []
+    own ++ ts.toList.flatMap (outputApplications opaqueHeads vars)
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite, which puts in `HO_ALL` those of its queries that
@@ -1442,6 +1454,21 @@ def backendWith (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits :
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj
+  outputApplications? := some fun body => do
+    let opaqueHeads := prelude.decls.foldl (init := ({} : Std.HashSet String)) fun acc d =>
+      match SeqElems.parse d.text with
+      | .list #[.atom "declare-fun", .atom f, _, _] => acc.insert f
+      | _ => acc
+    -- Dependency extraction must unfold pure definitions too: unlike
+    -- `queryDefinitions`, `ignore(y) := 0` must erase its argument here.
+    let defs := prelude.decls.foldl (init := ({} : Std.HashMap String (Array String × SeqElems.SExpr))) fun acc d =>
+      match SeqElems.parse d.text with
+      | .list #[.atom "define-fun", .atom f, .list ps, _, value] =>
+        acc.insert f (ps.filterMap (fun | .list #[.atom p, _] => some p | _ => none), value)
+      | _ => acc
+    let fs := (c.natFacts true).map (·.2) |>.push body
+    let vars := Std.HashSet.ofArray (c.vars.map fun v => Fren.Core.nameText v.name)
+    return fs.toList.flatMap fun f => outputApplications opaqueHeads vars ((SeqElems.parse f).unfold defs)
   existsOutputs f := do
     -- Defined outputs are substituted, never searched for.
     let outs := c.vars.filter fun v => v.role == .output && v.defn?.isNone

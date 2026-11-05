@@ -435,12 +435,18 @@ pub proc report_shows(kind: Kind, verdict: Verdict, shown: Shown): (det allowed?
 ```
 
 An inconclusive result is reported at the position of the corresponding
-failure, saying what could not be decided and why. What it advises
-depends on whether the procedure is in the [decidable
-core](Lang/Decidability.md): if it is, the solver reached a time or resource
-limit, so the advice is to raise the limit; if some construct of it opted out of
-the core, the solver may have given up, so the advice names that.
-`view::inconclusive_advice` states this:
+failure, saying what could not be decided and why. If the solver gives no
+answer and an implicit output invariant puts its query outside the core
+(`check::output_query_core`), the warning names the opaque application to
+a quantified output. It advises defining the output or changing its
+type's invariant, without claiming a lint opt-out.
+
+Ordinary warnings for other undecided solver queries depend on whether
+the procedure is in the [decidable core](Lang/Decidability.md): if it is,
+the solver reached a time or resource limit, so the advice is to raise the
+limit; if some construct of it opted out of the core, the solver may have
+given up, so the advice names that. `view::inconclusive_advice` states this
+advice:
 
 ```fren
 pub enum Advice { RaiseTimeout, NamesConstructs }

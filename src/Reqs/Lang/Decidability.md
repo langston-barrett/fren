@@ -1,7 +1,9 @@
 # Decidability
 
-Every check of a spec is decidable unless the spec explicitly opts out.
-Each theory beyond Booleans, integers, datatypes and uninterpreted
+Every check of a spec is decidable unless the spec explicitly opts out
+or an implicit output type invariant applies an opaque function to a
+quantified output (see [What is promised](#what-is-promised)). Each theory
+beyond Booleans, integers, datatypes and uninterpreted
 functions has a *decidable core*, which Fren recognizes from the syntax
 alone: from the operators, the types of their operands, and which operands
 are constants. A construct outside the core is reported by the
@@ -12,9 +14,10 @@ fren.lint.undecidable "allow" in` before an item.
 ## What is promised
 
 Every query that Fren asks about a procedure or global expectation without
-an opt-out is in a fragment with a known decision procedure. That the
-fragment is decidable does not mean that the solver decides every query
-in it within its time or resource limit: see [In practice](#in-practice).
+an opt-out or an opaque application to a quantified output is in a
+fragment with a known decision procedure. That the fragment is decidable
+does not mean that the solver decides every query in it within its time
+or resource limit: see [In practice](#in-practice).
 An `Unknown` answer without reaching either limit is an internal error,
 reported with the check, rather than an ordinary inconclusive result
 ([`check::decidable_unknown`](../Check.md#verdicts)). An `Inconclusive`
@@ -31,9 +34,19 @@ The rest of the language is decidable by three rules:
    types (see [Procedures](Procedures.md#members)), unless they are
    [defined](Procedures.md#definitions), in which case they are
    replaced by their definitions.
-3. A function's arguments never mention an output (see
+3. A function's explicit arguments never mention an output (see
    [Calls](Calls.md#call-variables)), so the quantifier never
    reaches under a function.
+
+An output's subset invariant is implicit, so it can apply an opaque
+function to the output's value without that argument restriction. Its
+realizability query then quantifies under a function. The shared rule
+[`check::output_query_core`](../Check.md#verdicts) checks the generated
+formula and conservatively excludes such queries, even over finite
+outputs, from the promise about an `Unknown` answer. No lint opt-out is
+implied: an undecided result explains this boundary instead. Defining
+the output removes its quantifier. This exception changes neither the
+facts reflected at recursive applications nor the opacity of recursion.
 
 A [quantifier](Quantifiers.md) over listed types adds no quantifier to a
 query: it ranges over a finite type, and is expanded into a conjunction

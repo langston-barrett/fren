@@ -41,6 +41,14 @@ impl decidable_unknown: check::decidable_unknown for (c : Bool) (r : String) {
   intro c r _
   simp [fren_spec, Fren.Core.decidableUnknown, Fren.Str.lit, and_assoc]
 
+impl output_query_core: check::output_query_core for (outs : List String) (apps : List (List String)) {
+  outputs := Fren.Seq.ofList outs,
+  applications := Fren.Seq.ofList (apps.map Fren.Seq.ofList),
+  in_core? := Fren.Core.outputQueryInCore outs apps,
+} by
+  intro outs apps _
+  simp [fren_spec, Fren.Core.outputQueryInCore, List.all_eq_true, Fren.Seq.mem_iff]
+
 instance : Fren.Finite CheckKind :=
   ⟨[.realizable, .inst, .«expect», .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness,
     .disjointness, .precondition, .postcondition, .reachability], by intro x; cases x <;> simp⟩

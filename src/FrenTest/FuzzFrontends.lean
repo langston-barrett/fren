@@ -75,7 +75,9 @@ ends misreading models (`Fren.Core.misreadSet`), so that what one knows
 and the other does not is a message that differs.
 `--decidable` generates procedures in the decidable core of strings,
 sets, relations and sequences (`Wide.genDecidable`), in its own random
-stream so that every older mode's seeds are unchanged.
+stream so that every older mode's seeds are unchanged, then appends
+implicit output invariants to check the rule for generated queries
+(`Wide.outputInvariantCore`).
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -2807,11 +2809,78 @@ def sequenceCore : R String := do
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
-/-- Random procedures in each theory's decidable core. A mode of its own
-keeps every older mode's seed unchanged. -/
+/-- Procedures whose output invariants apply an opaque recursion under
+realizability's quantifier, or whose outputs are replaced by definitions.
+Drawn after the older core generators so their existing specs stay
+unchanged up to this addition. -/
+def outputInvariantCore : R String := do
+  let carriers := #[
+    ("Int", "@", "0", false), ("Nat", "@", "0", false),
+    ("Bool", "(if @ then 1 else 0)", "false", false),
+    ("Mode", "(if @ = Mode::A then 0 else 1)", "Mode::A", false),
+    ("Carrier", "@.value", "Carrier { value := 0 }", false),
+    ("WrappedInt", "@.0", "WrappedInt(0)", false),
+    ("Payload", "(match @ { Payload::A(k) => k, Payload::B => 0 })", "Payload::B", false),
+    ("Atom", "0", "token(true)", false),
+    ("String", "@.len", "\"\"", true),
+    ("Set<Int>", "@.card", "{}", true),
+    ("Rel<Int, Int>", "@.card", "{}", true),
+    ("Seq<Int>", "@.len", "[]", true),
+    ("L", "(match @ { L::Nil => 0, L::Cons(k, _) => k })", "L::Nil", true)]
+  let (ty, value, witness, unbounded) ← pick carriers
+  let name := if ty == "Bool" then "n?" else "n"
+  let alias := if ty == "Bool" then "v?" else "v"
+  let field := if ty == "Bool" then "value?" else "value"
+  let bound := (← below 3) + 1
+  let mut out := "mod output_invariants\n\nset_option fren.lint.unused_variables \"allow\"\n\n" ++
+    "pub enum Mode { A, B }\npub struct Carrier { value: Int }\npub struct WrappedInt(Int)\n" ++
+    "pub type Atom\npub fn token(Bool): Atom\n" ++
+    "pub enum Payload { A(Int), B }\npub enum L { Nil, Cons(Int, L) }\n" ++
+    "pub fn total(l: L): (r: Int) {\n" ++
+    "    out r := match l { L::Nil => 0, L::Cons(n, rest) => n.abs + total(rest) }\n" ++
+    "    ensure nonnegative: r >= 0\n    ensure empty: when l = L::Nil, r = 0\n}\n" ++
+    "pub fn generic_total<T>(a: T, l: L): (r: Int) {\n" ++
+    "    out r := match l { L::Nil => 0, L::Cons(n, rest) => n.abs + generic_total(a, rest) }\n" ++
+    "    ensure nonnegative: r >= 0\n    ensure empty: when l = L::Nil, r = 0\n}\n" ++
+    "pub fn fixed<T>(unused: T): L := L::Nil\n"
+  let appAt (name : String) := if ty == "Atom" then s!"generic_total({name}, L::Cons(0, L::Nil))"
+    else s!"total(L::Cons({value.replace "@" name}, L::Nil))"
+  let direct := appAt name
+  out := out ++ s!"pub fn observe<T>(unused: T, {name}: {ty}): Int := {appAt alias} where {alias} := {name}\n"
+  let app ← pick #[direct, s!"observe(true, {name})", s!"(let {alias} := {name} in {appAt alias})",
+    s!"total(fixed({name}))"]
+  let comparison ← pick #[s!"{app} >= {bound}", s!"{bound} <= {app}", s!"{app} > {bound - 1}",
+    s!"{app} = {bound}", s!"{app} != -1"]
+  out := out ++ s!"pub type Refined = {name}: {ty} where invariant: ({comparison}) or {name} = {witness}\n" ++
+    "pub type Alias := Refined\n"
+  -- Abstract types can be procedure variables, never fields or payloads.
+  if ty != "Atom" then
+    out := out ++ s!"pub struct Box \{ {field}: Alias }\npub struct Wrapped(Alias)\n" ++
+      "pub enum Choice { V(Alias) }\npub struct Outer { inner: Box }\n"
+  let shapes := if ty == "Atom" then #[("Refined", "y"), ("Alias", "y")] else
+    #[ ("Refined", "y"), ("Alias", "y"), ("Box", s!"y.{field}"),
+       ("Wrapped", "y.0"), ("Choice", "(match y { Choice::V(v) => v })"), ("Outer", s!"y.inner.{field}") ]
+  let (result, read) ← pick shapes
+  let output := if ty == "Bool" && (result == "Refined" || result == "Alias") then "y?" else "y"
+  let read := if ty == "Bool" then
+      if read == "y" then output else read.replace "Choice::V(v) => v" "Choice::V(v?) => v?"
+    else read
+  if unbounded || (← chance 30) then
+    let input := if output == "y?" then "x?" else "x"
+    out := out ++ s!"proc generated({input}: {result}): ({output}: {result}) \{ out {output} := {input} }\n"
+  else
+    let input := if ty == "Bool" then "x?" else "x"
+    let op ← pick (if ty == "Int" || ty == "Nat" then #["=", "!=", ">=", ">", "<=", "<"] else #["=", "!="])
+    out := out ++ s!"proc generated({input}: {ty}): ({output}: {result}) \{ ensure g: {read} {op} {input} }\n"
+  return out
+
+/-- Random procedures in each theory's decidable core, followed by output
+invariant cases. A mode of its own keeps every older mode's seed
+unchanged. -/
 def genDecidable : R String := do
-  return "mod strings\n\n" ++ (← stringCore) ++ "mod sets\n\n" ++ (← setCore) ++
+  let out := "mod strings\n\n" ++ (← stringCore) ++ "mod sets\n\n" ++ (← setCore) ++
     "mod relations\n\n" ++ (← relationCore) ++ "mod sequences\n\n" ++ (← sequenceCore)
+  return out ++ (← outputInvariantCore)
 
 end Wide
 
@@ -3648,7 +3717,8 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
     ({ inductionForms := true }, 0, 20), ({ factScopes := true }, 0, 20),
-    ({ inductionCandidates := true }, 0, 20), ({ decidable := true }, 0, 5)]
+    ({ inductionCandidates := true }, 0, 20), ({ decidable := true }, 0, 5),
+    ({ decidable := true }, 8182108, 1), ({ decidable := true }, 8182118, 1)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/

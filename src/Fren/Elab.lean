@@ -2859,7 +2859,7 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
       let type ← whnf (← inferType value)
       if type.isConstOf ``Int then `(Int.toNat $x) else pure x
       else pure x
-    `($(mkCIdent f.decl) $(f.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $x)
+    `(@$(mkCIdent f.decl) $(f.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $x)
   | .pat ty p => patTerm ty p x
   | .atLeast0 => `(0 ≤ $x)
   | .fields path _ cs =>
@@ -4733,7 +4733,7 @@ def notePreconditions (cx : ExprCtx) (ref : Syntax) (path : Name) (args : Array 
   unless cx.noteIndexes do return
   let some k := (← getState).contracts.get? path | return
   let pres ← k.pres.mapM fun pre => do
-    let some (tps, targs) := inst? | return (pre.name, ← `($(mkCIdent pre.decl) $(pre.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*))
+    let some (tps, targs) := inst? | return (pre.name, ← `(@$(mkCIdent pre.decl) $(pre.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*))
     return (pre.name, ← `(@$(mkCIdent pre.decl) $(← usesTerms pre.uses path tps targs)* $args*))
   let guarded (g : Term) : Term := cx.guards.foldr (fun c acc => Unhygienic.run `($c → $acc)) g
   for (q, goal) in Core.preconditionQuestions guarded path pres do
@@ -5483,14 +5483,14 @@ def hoAppTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let some c := c? | continue
       for (ref, q?, pred) in c.obligations do
         let g ← if generic then `(@$(mkCIdent decl) $(← usesTerms uses path d.typeParams targs)* $inOrder* $pred)
-          else `($(mkCIdent decl) $(uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder* $pred)
+          else `(@$(mkCIdent decl) $(uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder* $pred)
         modifyLocal fun l => { l with vias := l.vias.push (ref.getPos?, path) }
         match q? with
         | some q => modifyLocal fun l => { l with tables := l.tables.push (ref, q, g) }
         | none => modifyLocal fun l => { l with indexes := l.indexes.push (ref, g) }
   if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
   if generic then return ← `(@$(mkCIdentFrom p d.decl) $(← usesTerms d.uses path d.typeParams targs)* $inOrder*)
-  `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder*)
+  `(@$(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder*)
 
 open Lang in
 /-- `p(args)`: a method, a variant with a payload, or a function applied.
@@ -5648,7 +5648,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     -- Its body's quantifiers are part of the queries
     -- (`Reqs/Lang/Quantifiers#guards`).
     if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
-    return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
+    return ← `(@$(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.inClosure then throwErrorAt p (Core.closureUninterpretedMsg path).text
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   modifyLocal fun l => { l with inductionAbstract := true }
@@ -6656,7 +6656,7 @@ def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
     (tables : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) (props : Array PropInfo := #[])
     (fn? : Option Name := none) : TermElabM Unit := do
   if tables.isEmpty && !props.any (·.kind == .ensure) then return
-  let uses ← usesOf (tables.map (·.2.2.2.2) ++ props.map (·.body))
+  let uses ← usesOf (vars.filterMap (·.fact?) ++ tables.map (·.2.2.2.2) ++ props.map (·.body))
   let info : CompInfo := { path := path.getPrefix, vars, props, ref, decl, uses, fn?
                            decidable := !(← getLocal).outsideCore, guarded := (← getLocal).guardedUsed
                            indexes := tables }
@@ -8817,7 +8817,9 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
     lintOutputs lcx members vars
     lintTrivialCover lcx members
     lintCaseSplitGuarantees lcx members vars
-    let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ defs.map (·.2))
+    -- A subset's invariant is erased from its Lean type, but still brings
+    -- the placeholders used by the generated assumptions and guarantees.
+    let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ vars.filterMap (·.fact?) ++ defs.map (·.2))
     if good then addCompDefs vars declBase fvs uses props values defs
     let closed ← values.mapM fun (d, v) => return (d, ← mkLambdaFVars fvs v)
     return (props, insts, uses, closed, indexes, good)

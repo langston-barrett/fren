@@ -441,7 +441,18 @@ pub mod testing
   opt-outs. Its own mode leaves all older seeds' specs unchanged, and a few
   of its seeds are in the corpus, which rejects internal errors even when
   both front ends agree. An unknown answer without reaching a time or
-  resource limit is an internal error (`check::decidable_unknown`). A run with
+  resource limit is an internal error (`check::decidable_unknown`). After
+  those procedures it appends an output-invariant case
+  (`Wide.outputInvariantCore`): an opaque recursion in an invariant, through
+  a generic definition, `let` or a helper's `where` clause, over integers,
+  naturals, Booleans, enumerations, records, newtypes and abstract types,
+  directly or through an alias; concrete carriers also nest in data. A
+  generic recursion covers an abstract carrier. Defined outputs also cover
+  strings, sets, relations, sequences and recursive enumerations.
+  Definitions that ignore parameters check that only the arguments left
+  after unfolding count. These exercise the rule for generated queries
+  (`check::output_query_core`) without changing any older random draw or
+  adding a static error. A run with
   `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so

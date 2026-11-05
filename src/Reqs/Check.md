@@ -163,6 +163,34 @@ elements, or a pass made inconclusive by an unsettled premise. A limit
 keeps the ordinary inconclusive result, and its dependents keep the `F0664`
 note ([Evidence](Evidence.md)).
 
+The procedure's syntax alone is insufficient for realizability: an
+output's subset invariant can apply an opaque function to its value,
+although an explicit function argument cannot mention an output.
+`check::output_query_core` checks the generated output formula as well.
+`outputs` names the outputs still quantified after definitions are
+substituted; `applications` lists the variable names in the arguments of
+each opaque application in the guarantees and output type facts, with
+defined functions and aliases unfolded. Recursive functions are opaque
+here too. No application may depend on one of those outputs. This is a
+conservative boundary, including finite outputs; it changes no verdict
+or recursive equation. An undecided query beyond it keeps its warning
+and explains the generated quantifier, without claiming that the user
+allowed the `undecidable` lint.
+
+When both realizability queries are undecided, a non-limit solver
+`Unknown` in the assumptions query takes precedence: a limit or an opaque
+application in the output query must not hide its internal error.
+Otherwise use the output query's unknown answer, if any, and then the
+assumptions query's. Keep the selected query's reason even when it is empty.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc output_query_core(outputs: Seq<String>, applications: Seq<Seq<String>>): (det in_core?) {
+    ensure rule: in_core? iff (forall (args: Seq<String>), when args in applications,
+        forall (name: String), when name in args, not name in outputs)
+}
+```
+
 ```fren
 pub proc decidable_unknown(in_core?, reason: String): (det internal_error?) {
     ensure rule: internal_error? iff (in_core? and not (

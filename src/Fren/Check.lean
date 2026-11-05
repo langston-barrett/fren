@@ -1023,10 +1023,27 @@ def Core.Backend.ownHeartbeats (b : Core.Backend MetaM Expr Expr) : Core.Backend
     query := fun hyps goal wantModel => withCurrHeartbeats (b.query hyps goal wantModel)
     modelBool? := b.modelBool?.map fun f model formula => withCurrHeartbeats (f model formula)
     existsOutputs := fun body => withCurrHeartbeats (b.existsOutputs body)
+    outputApplications? := b.outputApplications?.map fun extract body => withCurrHeartbeats (extract body)
     pin := fun n val => withCurrHeartbeats (b.pin n val)
     pinVariant := fun n val => withCurrHeartbeats (b.pinVariant n val)
     render := fun n val => withCurrHeartbeats (b.render n val)
     confirm? := b.confirm?.map fun f hyps goal model => withCurrHeartbeats (f hyps goal model) }
+
+/-- The variable names in each opaque application of a formula already
+unfolded as the solver sees it. -/
+private partial def outputApplications (isOpaque : Expr → Bool) (vars : Array (Name × Expr)) (e : Expr) : List (List String) :=
+  match e with
+  | .app .. =>
+    let args := e.getAppArgs
+    let own := if isOpaque e.getAppFn then
+        [(vars.filterMap fun (n, x) =>
+          if args.any (·.containsFVar x.fvarId!) then some (Core.nameText n) else none).toList]
+      else []
+    own ++ args.toList.flatMap (outputApplications isOpaque vars)
+  | .lam _ t b _ | .forallE _ t b _ => outputApplications isOpaque vars t ++ outputApplications isOpaque vars b
+  | .letE _ t v b _ => outputApplications isOpaque vars t ++ outputApplications isOpaque vars v ++ outputApplications isOpaque vars b
+  | .mdata _ b | .proj _ _ b => outputApplications isOpaque vars b
+  | _ => []
 
 /-- The lean-smt backend, for a procedure whose variables are the free variables
 `fvs`, and whose variables other than its parameters have second copies `primes`
@@ -1331,6 +1348,14 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     falseF := mkConst ``False
     notF := mkNot
     conj := fun ps => mkAndN ps.toList
+    outputApplications? := some fun body => do
+      let st ← getState
+      let recursive := st.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
+        if d.recursive then d.solver?.elim acc acc.insert else acc
+      let isOpaque (e : Expr) := e.isFVar || (e.constName?.any recursive.contains)
+      let vars := c.vars.zip fvs |>.map fun (v, x) => (v.name, x)
+      let fs ← (outFacts.push body).toList.mapM unfoldDefined
+      return fs.flatMap (outputApplications isOpaque vars)
     existsOutputs := fun body =>
       -- The procedure's own outputs, not their second copies.
       -- Defined outputs are substituted, never searched for.
