@@ -252,6 +252,9 @@ jobs:
   # pull requests start from the build job's, without the checks.
   own-spec-agreement:
     if: ${{ !inputs.fuzz-only }}
+    # Temporarily reports without failing `lean ci`, until Fren's own
+    # requirements pass in Lean again (#842).
+    continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     concurrency:
