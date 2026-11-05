@@ -865,3 +865,11 @@ pub proc smt_encoding(
         "(declare-datatypes ((|List| 1)) ((par (|T|) ((List~Nil) (List~Cons (|List::Cons::0| |T|) (|List::Cons::1| (|List| |T|)))))))\n"
 }
 ```
+
+The concrete tuple sorts of an instance's sets and relations are created
+explicitly, through all of its payloads and fields, including fields the
+query never reads and collections nested within another instance. This
+applies to instances in function signatures and quantified types as well
+as procedure variables. A parametric declaration alone does not create
+these concrete tuple sorts. The extra sort aliases or unconstrained
+collection declarations add no assertion about the spec's values.

@@ -73,6 +73,11 @@ def spec : R String := do
   let evidence ← below 5
   let directive := if evidence == 0 && depth == 0 && (base == "Bool" || base == "Key") then
     "set_option fren.enumeration.size 2 in\nset_option fren.evidence \"enumerated\" in\n" else ""
+  -- No explicit collection variable or literal creates the concrete tuple
+  -- sorts of these instances. Both solver backends must initialize the
+  -- fields even when only the enclosing values are compared.
+  let values := s!"pub proc values(p: Payload<{base}>, q: Payload<{base}>, r: Record<{base}>, s: Record<{base}>) \{\n" ++
+    "    expect payloads: p = q\n    expect records: r = s\n}\n"
   return "set_option fren.lint.dead_code \"allow\"\n" ++
     "set_option fren.lint.undecidable \"allow\"\nmod datatype_fuzz\n" ++
     "pub enum Key { A, B }\npub struct Ms(Int)\npub struct Box<T> { value: T }\n" ++
@@ -89,6 +94,6 @@ def spec : R String := do
     "    expect field: (Record { value := v }).value = v\n" ++
     "    expect update: { Record { value := v } with value := w }.value = w\n" ++
     s!"    expect constant: get(CLOSED) = {closed}\n" ++ recChecks ++
-    "}\n"
+    "}\n" ++ values
 
 end FrenTest.FuzzDatatypeElements

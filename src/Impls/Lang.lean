@@ -2757,7 +2757,7 @@ impl element_parameter: lang::element_parameter for (o : Fren.Core.ParamOwner) {
   accepted? := Fren.Core.elementParamAccepted o,
 } by
   intro o _
-  cases o <;> simp [fren_spec, toParamOwner, Fren.Core.elementParamAccepted, Fren.Core.typeParamPlaceAccepted]
+  cases o <;> simp [fren_spec, Fren.Core.elementParamAccepted, Fren.Core.typeParamPlaceAccepted]
 
 interp lang::ty_mentions? := fun (t : Fren.Core.Ty) (k : Nat) => t.mentions k
 

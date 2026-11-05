@@ -1,0 +1,17 @@
+-- The collection instances occur in function signatures, without a
+-- procedure variable whose type explicitly creates their tuple sorts.
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.undecidable "allow"
+mod datatype_elements_solver_signatures
+
+pub enum Key { A, B }
+pub struct Collections<A, B> { set: Set<A>, seq: Seq<B>, rel: Rel<A, B> }
+
+pub fn arbitrary(Bool): Collections<Bool, Key>
+
+proc signatures(x?) { expect result: arbitrary(x?).set subset {true, false} }
+
+pub fn from_function?(f: fn(Bool) -> Collections<Bool, Key>): (r?) {
+    out r? := f(true).set subset {true, false}
+    ensure result: r?
+}

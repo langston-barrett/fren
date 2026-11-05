@@ -4364,7 +4364,8 @@ underlying sort, with no constructor or selector left in the dump. -/
 def obligationsAgreementSpecs : List String :=
   ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
    "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren",
-   "test/cli/args/dump_obligations_modules.fren", "test/cli/args/dump_obligations_newtypes.fren"]
+   "test/cli/args/dump_obligations_modules.fren", "test/cli/args/dump_obligations_newtypes.fren",
+   "test/ui/lang/datatype_elements_solver.fren"]
 
 /-- Canonicalization cases that generated queries need not produce:
 capture avoidance, pattern and recursive binders, merged quantifiers,
