@@ -174,7 +174,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     (t : Fren.Core.Tested := c.enumerated) (testing : Bool := false) :
     Except Fren.Core.Msg Enumerated := do
   let n := c.enumSize
-  let paired := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
+  let paired ← pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
   let (core, ks) := paired.only t kinds
   let (ecomp, sourceAtoms) := core.atoms
   -- Shape enumeration is only an optimization. General named invariants

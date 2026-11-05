@@ -67,6 +67,9 @@ that lead to each invariant. Failing one part does not falsify another:
 for a type whose invariants are `low: n >= 0` and `high: n <= 1`, giving
 `2` fails `high` and satisfies `low`. Whole-type membership cannot replace
 either individual obligation. Each obligation keeps its own check record.
+Random testing, enumeration and model confirmation use the same parts;
+a part guarded by an inactive variant is true, even if another variant's
+part fails.
 A relation's obligation checks the pairs actually in that relation, even
 when either component's type has values beyond the enumeration bound.
 

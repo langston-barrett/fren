@@ -1896,6 +1896,24 @@ or result, that of its checks, which takes precedence:
 | a global expectation | all of its checks, as before a procedure |
 | a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the arguments of the abstract procedure's calls |
 
+A check generated from a named predicate clause inherits the evidence of
+its written constraint, including a member's override, for every evidence
+value. A leaf is selected by its own name or by its written owner's name.
+`check::expanded_evidence` computes that selection:
+
+```fren
+pub type EvidenceSubject
+
+pub proc expanded_evidence(
+    selected: Set<EvidenceSubject>,
+    leaf: EvidenceSubject,
+    owner: EvidenceSubject,
+    has_owner?,
+): (det included?) {
+    ensure selection: included? iff leaf in selected or (has_owner? and owner in selected)
+}
+```
+
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
 evidence of every later procedure, global expectation and
 [refinement](Lang/Refinement.md) in the file, and
@@ -2031,24 +2049,6 @@ the checks that the later items set to enumeration; the default is 3. A
 bound above 64 is the error `F0154`, at the number, and the default is
 used instead. Before a member, it is `F0216`, as any option but
 `fren.evidence` is.
-
-A check generated from a named predicate clause inherits the evidence of
-its written constraint, including a member's override. Its generated name
-alone does not select its method. `check::expanded_evidence` computes the
-selection from the selected written names and the generated check's owner:
-
-```fren
-pub type EvidenceSubject
-
-pub proc expanded_evidence(
-    selected: Set<EvidenceSubject>,
-    leaf: EvidenceSubject,
-    owner: EvidenceSubject,
-    has_owner?,
-): (det included?) {
-    ensure selection: included? iff leaf in selected or (has_owner? and owner in selected)
-}
-```
 
 `check::evidence_value` gives what each value sets, and `check::by_evidence`
 how each check is run, as `check::method_run` of [Proof

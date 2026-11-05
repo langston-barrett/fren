@@ -3967,9 +3967,14 @@ def methodAgreementChecks : IO (Array String) := do
   -- part by whole-type membership would make both low and high fail.
   let obligations := "type Limits = n: Int where low: n >= 0 and high: n <= 1\n" ++
     "struct Pair<A, B> { first: A, second: B }\n" ++
+    "enum Choice<T> { Empty, One(T), Two(T, T) }\n" ++
     "proc accept(x: Limits) {}\nproc accept_pair(x: Pair<Limits, Limits>) {}\n" ++
+    "proc accept_choice(x: Choice<Limits>) {}\n" ++
     "proc below() { call c := accept(-1) }\nproc above() { call c := accept(2) }\n" ++
     "proc pair() { call c := accept_pair(Pair { first := -1, second := 2 }) }\n" ++
+    "proc empty() { call c := accept_choice(Choice::Empty) }\n" ++
+    "proc one() { call c := accept_choice(Choice::One(2)) }\n" ++
+    "proc two() { call c := accept_choice(Choice::Two(-1, 2)) }\n" ++
     "fn named?(n: Int) := and { low: n >= 0, high: n <= 1 }\n" ++
     "proc expanded(n: Int) { expect check: named?(n) }\n" ++
     "proc bound(n: Int) { expect check: let saved := n in named?(saved) }\n"
@@ -3977,15 +3982,20 @@ def methodAgreementChecks : IO (Array String) := do
     let mut fs := #[]
     let solver ← methodResults #[p] "solver"
     let enumerated ← methodResults #[p] "enumerated"
-    for (method, run) in #[(Fren.Core.ProofMethod.solver, solver), (.enumerated, enumerated)] do
+    let random ← methodResults #[p] "random"
+    for (method, run) in #[(Fren.Core.ProofMethod.solver, solver), (.enumerated, enumerated), (.random, random)] do
       fs := fs ++ (methodRunFailures method run).map (fun (_, message) => s!"obligation regression: {message}\n{run.output}")
-      for (comp, expected) in #[(`below, #[false, true]), (`above, #[true, false]), (`pair, #[false, true, true, false])] do
+      for (comp, expected) in #[(`below, #[false, true]), (`above, #[true, false]), (`pair, #[false, true, true, false]),
+          (`empty, #[true, true, true, true, true, true]), (`one, #[true, false, true, true, true, true]),
+          (`two, #[true, true, false, true, true, false])] do
         let checks := run.records.filter fun (_, r, _) => r.comp == comp && r.kind == .inst
         unless checks.size == expected.size do
           fs := fs.push s!"obligation regression: {repr method} lost call obligations of {comp}\n{run.output}"
         for (_, r, _) in checks do
           let some (_, target) := r.target? | fs := fs.push "obligation regression: missing call target"; continue
           let .num _ k := target | fs := fs.push "obligation regression: missing obligation index"; continue
+          -- A reached part passes testing with Random evidence
+          -- (`eval::test_verdict`), including an inactive variant's part.
           unless expected[k]?.any (fun pass => r.verdict == if pass then .pass else .fail) do
             fs := fs.push s!"obligation regression: {repr method} gave the wrong verdict to {comp}/{target}\n{run.output}"
     fs := fs ++ (compareEnumeration "obligation regression" solver enumerated).1

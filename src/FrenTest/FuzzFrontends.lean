@@ -2712,9 +2712,10 @@ def genWideCuts (avoidKnown : Bool := false) : R (String × Array String) := do
 
 /-- Relation obligations below fields, payloads and collection quantifiers,
 at calls and in the procedure's own inputs and defined outputs.
-Drawn after `enumerationObligations`' original cases. -/
-def enumerationRelations : R String := do
-  let (base, good, bad) ← pick #[
+Drawn after `enumerationObligations`' original cases. `natural` appends
+Nat-based subset types without changing the original draws. -/
+def enumerationRelations (natural : Bool := false) : R String := do
+  let (base, good, bad) ← if natural then pure ("Nat", "0", "1") else pick #[
     ("Bool", "true", "false"), ("Int", "0", "1"), ("String", "\"\"", "\"a\""),
     ("E", "E::A", "E::B"), ("N", "N(0)", "N(1)"),
     ("R", "R { value := 0 }", "R { value := 1 }"),
@@ -2726,6 +2727,11 @@ def enumerationRelations : R String := do
   let right ← pick #[good, bad]
   let otherLeft ← pick #[good, bad]
   let otherRight ← pick #[good, bad]
+  -- Nat may occur in fields and non-recursive payloads, but not directly
+  -- as an element or type argument. Put the Nat-based subset in a field
+  -- before using it inside relations and their surrounding types.
+  let wrap (v : String) := if natural then s!"NatBox \{ value := {v} }" else v
+  let (left, right, otherLeft, otherRight) := (wrap left, wrap right, wrap otherLeft, wrap otherRight)
   let (relation, first, second) ← pick #[
     ("Rel<Narrow, Narrow>", s!"\{({left}, {right})}", s!"\{({otherLeft}, {otherRight})}"),
     ("Rel<Narrow, Bool>", s!"\{({left}, true)}", s!"\{({otherLeft}, false)}"),
@@ -2746,6 +2752,8 @@ def enumerationRelations : R String := do
     (s!"Set<Option<{relation}>>", s!"\{Option::Some({first})}", "{Option::None}"),
     (s!"Seq<Set<{relation}>>", s!"[\{{first}}]", "[{}]"),
     ("RelBox", first, second)]
+  let relation := if natural then relation.replace "Narrow" "NatBox" else relation
+  let ty := if natural then ty.replace "Narrow" "NatBox" else ty
   -- Newtypes have no type parameters. Keep the function's result erased
   -- and construct the constrained newtype at its giving site instead.
   let erased := (if ty == "RelBox" then relation else ty).replace "Narrow" base
@@ -2755,10 +2763,12 @@ def enumerationRelations : R String := do
   let given := if ty == "RelBox" then "RelBox(nested_value(flag?))" else "nested_value(flag?)"
   -- Copying the input exercises both type facts. The call separately
   -- checks its named parts; output type-giving checks use the solver.
-  return "\nmod enum_relation_obligations\nset_option fren.lint.undecidable \"allow\"\n" ++
+  let moduleName := if natural then "enum_natural_relation_obligations" else "enum_relation_obligations"
+  return s!"\nmod {moduleName}\nset_option fren.lint.undecidable \"allow\"\n" ++
     "pub enum E { A, B }\npub struct N(Int)\npub struct R { value: Int }\n" ++
     "pub struct Pair<A, B> { first: A, second: B }\npub enum Choice<T> { Empty, One(T), Two(T, T) }\n" ++
     s!"pub type Narrow = {valueName}: {base} where first: {valueName} != {bad} and second: {valueName} = {good}\n" ++
+    (if natural then "pub struct NatBox { value: Narrow }\n" else "") ++
     s!"pub struct RelBox({relation})\n" ++
     s!"pub proc accept_nested(arg: {ty}) \{}\n" ++
     s!"pub fn nested_value(flag?): {erased} := {definition}\n" ++ options ++
@@ -2767,10 +2777,11 @@ def enumerationRelations : R String := do
     "    call c := accept_nested(value)\n    out copy := value\n    expect same: copy = value\n}\n"
 
 /-- Call-input obligations with two named parts, and predicate leaves with
-inherited evidence (#813). The separate mode preserves every existing seed.
-`relations` appends additional cases without changing the original draws. -/
-def enumerationObligations (relations : Bool := false) : R String := do
-  let (base, good, bad) ← pick #[
+inherited evidence (#813). `natural` generates additional Nat-based cases
+and `guardOrders` further wrapper orders over every base type, drawn after
+both modes' original cases. -/
+def enumerationObligationCases (natural : Bool := false) (guardOrders : Bool := false) : R String := do
+  let (base, good, bad) ← if natural then pure ("Nat", "0", "1") else pick #[
     ("Bool", "true", "false"), ("Int", "0", "1"), ("Nat", "0", "1"),
     ("String", "\"\"", "\"a\""), ("E", "E::A", "E::B"),
     ("N", "N(0)", "N(1)"), ("R", "R { value := 0 }", "R { value := 1 }"),
@@ -2779,12 +2790,26 @@ def enumerationObligations (relations : Bool := false) : R String := do
     ("Option<Int>", "Option::None", "Option::Some(1)")]
   let valueName := if base == "Bool" then "value?" else "value"
   let localName := if base == "Bool" then "saved?" else "saved"
-  let declarations := "mod enum_obligations\nset_option fren.lint.undecidable \"allow\"\npub enum E { A, B }\npub struct N(Int)\npub struct R { value: Int }\n" ++
+  let moduleName := if natural then "enum_natural_obligations" else if guardOrders then "enum_guard_obligations" else "enum_obligations"
+  let declarations := s!"mod {moduleName}\nset_option fren.lint.undecidable \"allow\"\n" ++
+    "pub enum E { A, B }\npub struct N(Int)\npub struct R { value: Int }\n" ++
     "pub struct Pair<A, B> { first: A, second: B }\npub enum Choice<T> { Empty, One(T), Two(T, T) }\n" ++
-    s!"pub type Narrow = {valueName}: {base} where first: {valueName} != {bad} and second: {valueName} = {good}\n"
+    s!"pub type Narrow = {valueName}: {base} where first: {valueName} != {bad} and second: {valueName} = {good}\n" ++
+    (if natural then "pub struct NatField { value: Narrow }\npub struct NatNewtype(Narrow)\n" ++
+      "pub enum NatPayload { Empty, One(Narrow), Two(Narrow, Narrow) }\n" else "")
   let value ← pick #[good, bad]
   -- Every giving site, including nested generic payloads and fields.
-  let (ty, arg) ← if base == "Nat" then pure ("Narrow", value) else pick #[
+  let field := s!"NatField \{ value := {value} }"
+  let payload := s!"NatPayload::Two({value}, {good})"
+  let (ty, arg) ← if natural then pick #[
+    ("Narrow", value), ("NatField", field), ("NatNewtype", s!"NatNewtype({value})"),
+    ("NatPayload", payload), ("Set<NatField>", s!"\{{field}}"), ("Seq<NatPayload>", s!"[{payload}]"),
+    ("Rel<NatField, NatPayload>", s!"\{({field}, {payload})}"),
+    ("Option<NatField>", s!"Option::Some({field})"),
+    ("Pair<NatField, NatPayload>", s!"Pair \{ first := {field}, second := {payload} }"),
+    ("Option<Pair<NatField, NatPayload>>", s!"Option::Some(Pair \{ first := {field}, second := {payload} })"),
+    ("Pair<Option<NatField>, Choice<NatPayload>>", s!"Pair \{ first := Option::Some({field}), second := Choice::One({payload}) }")]
+    else if base == "Nat" then pure ("Narrow", value) else pick #[
     ("Narrow", value), ("Pair<Narrow, Narrow>", s!"Pair \{ first := {value}, second := {good} }"),
     ("Option<Narrow>", s!"Option::Some({value})"),
     ("Choice<Narrow>", s!"Choice::Two({value}, {good})"),
@@ -2796,20 +2821,39 @@ def enumerationObligations (relations : Bool := false) : R String := do
   let copy := if base == "Bool" && ty == "Narrow" then "copy?" else "copy"
   let definition ← pick #[arg, s!"if flag? then {arg} else {arg}", s!"let {copy}: {ty.replace "Narrow" base} := {arg} in {copy}"]
   let option ← pick #["enumerated", "enumerated+random"]
-  let wrapper ← pick #["p?(value)", "when flag?, p?(value)", "unless flag?, p?(value)",
+  let wrapper ← if natural || guardOrders then pick #[
+    "let saved := value in when flag?, p?(saved)",
+    "let saved := value in unless flag?, p?(saved)",
+    "(when flag?, p?(saved)) where saved := value",
+    "(unless flag?, p?(saved)) where saved := value",
+    "let saved := value in when gate?, p?(saved) where gate? := flag?",
+    "let saved := value in unless gate?, p?(saved) where gate? := flag?",
+    "when flag?, let saved := value in p?(saved)",
+    "unless flag?, let saved := value in p?(saved)"] else pick #[
+    "p?(value)", "when flag?, p?(value)", "unless flag?, p?(value)",
     "let saved := value in p?(saved)", "not p?(value)",
     "p?(saved) where saved := value", "when flag?, let saved := value in p?(saved)",
     "let saved := value in not p?(saved)", "not (when flag?, p?(value))"]
   let wrapper := (wrapper.replace "value" valueName).replace "saved" localName
   let member ← pick #["", "set_option fren.evidence \"solver\" in ", "set_option fren.evidence \"enumerated\" in "]
-  let original := declarations ++ s!"pub proc accept({argument}: {ty}) \{}\n" ++
+  return declarations ++ s!"pub proc accept({argument}: {ty}) \{}\n" ++
     s!"set_option fren.enumeration.size 1 in\nset_option fren.evidence \"{option}\" in\n" ++
     s!"pub proc caller(flag?) \{ call c := accept({definition}) }\n" ++
     s!"pub fn p?({valueName}: {base}) := and \{ first: {valueName} != {bad}, second: {valueName} = {good} }\n" ++
     s!"set_option fren.enumeration.size 1 in\nset_option fren.evidence \"{option}\" in\n" ++
     s!"pub proc predicates({valueName}: {base}, flag?) \{ {member}expect property: {wrapper} }\n"
-  if !relations then return original
-  return original ++ (← enumerationRelations)
+
+/-- The original enumeration cases, optionally followed by relation cases,
+then Nat-based subset types and further `let`/`where` guard orders. All new
+draws follow both modes' existing draws, preserving their original specs
+as prefixes. -/
+def enumerationObligations (relations : Bool := false) : R String := do
+  let original ← enumerationObligationCases
+  let originalRelations ← if relations then enumerationRelations else pure ""
+  let natural ← enumerationObligationCases true
+  let naturalRelations ← if relations then enumerationRelations true else pure ""
+  let guardOrders ← enumerationObligationCases (guardOrders := true)
+  return original ++ originalRelations ++ "\n" ++ natural ++ naturalRelations ++ "\n" ++ guardOrders
 
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts avoidKnown).1
@@ -2914,8 +2958,9 @@ def itemRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6974⟩
 split off the seed so that its draws leave the other modes unchanged. -/
 def inductionRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6963⟩
 
-/-- How specs are generated: `--avoid-known`, and `--guards`, which
-generates guarded quantifiers alone (`Wide.genGuards`), many to a spec. -/
+/-- The generator modes selected by command-line flags. Each specialized
+mode generates specs of the constructs described by its field; otherwise
+`Wide.genWide` generates a mix, optionally avoiding known differences. -/
 structure Mode where
   avoidKnown : Bool := false
   guards : Bool := false
@@ -2940,6 +2985,8 @@ structure Mode where
   /-- Specs of induction-candidate types, argument forms and comparisons
   (`Wide.inductionCandidates`). -/
   inductionCandidates : Bool := false
+  /-- Specs of call-input obligations with two named parts and of predicate
+  leaves with inherited evidence (`Wide.enumerationObligations`). -/
   enumerationObligations : Bool := false
   /-- Append nested relation cases after the original enumeration cases. -/
   enumerationRelations : Bool := false
@@ -2975,7 +3022,7 @@ promise to add none. `--enumeration-relations` keeps the original
 enumeration spec as its prefix, so its additional cases must add no static
 error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.enumerationRelations then #[Id.run ((Wide.enumerationObligations false).run' (rngOf seed))] else
+  if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
   if m.scrutinees || m.factScopes || m.inductionCandidates || m.enumerationObligations then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
@@ -4157,9 +4204,12 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   let run : Run := { dir, id := toString (← IO.Process.getPID) }
   IO.FS.writeFile run.results ""
   let mut next := seed
+  -- The appended enumeration groups put more declarations in each spec;
+  -- restart their workers sooner to keep the retained environments small.
+  let perWorker := if mode.enumerationObligations || mode.enumerationRelations then workerSpecs / 2 else workerSpecs
   while next < seed + count do
     IO.FS.writeFile run.progress ""
-    let batch := min (seed + count - next) workerSpecs
+    let batch := min (seed + count - next) perWorker
     let args := #["--worker", run.id, "--count", toString batch, "--seed", toString next, "--out", dir]
       ++ mode.args ++ (if compareDumps then #["--obligations"] else #[])
     for f in [run.solver, run.solver.addExtension "tmp"] do

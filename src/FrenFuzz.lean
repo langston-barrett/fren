@@ -858,7 +858,9 @@ def runOne (dir : System.FilePath) (text : String) (timeout : Nat) :
     let log ← IO.mkRef #[]
     let bk := backend prelude st.datatypes { c with funFacts := st.funFacts, bounded := st.bounded c } { timeoutSecs := timeout } none (st.usesStrings || st.usesSeqs) (st.usesSets || st.usesSeqs)
       st.usesProjection (funs := st.appFuns) (recursiveSyms := st.recursiveSyms)
-    let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
+    let core ← match pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start)) with
+      | .ok core => pure core
+      | .error msg => found := found.push msg.headline; continue
     -- Every clash of a conflict, where it depends on no interpretation
     -- (`Fren.Core.Comp.realizableInterpreted`), as `fren check` decides.
     let interprets (f : String) : Bool := prelude.interprets (quotedSymbols f)

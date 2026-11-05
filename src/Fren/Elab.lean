@@ -2845,8 +2845,9 @@ partial def patTerm (ty : Core.Ty) (p : Core.Pat) (x : Term) : TermElabM Term :=
 
 /-- The constraint `c` of the term `x` (`Core.Cons`), as the `fren`
 command's `consSmt` says, where `depth` numbers the bound variables of the
-quantifiers around it. -/
-partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM Term := do
+quantifiers around it. `natAsInt` is true at the root of a Nat-valued
+uninterpreted function's facts, where the solver represents it by Int. -/
+partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) (natAsInt : Bool := false) : TermElabM Term := do
   let st ← getState
   match c with
   | .predicate i =>
@@ -2854,10 +2855,10 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
     -- A Nat result is represented by Int in uninterpreted-function facts.
     -- Its nonnegativity is a separate base fact; evaluate the invariant
     -- on the corresponding Nat value while retaining that base fact.
-    let x ← if (f.ptys.1[0]?).any (·.ty == .nat) then do
-      let value ← elabTerm x none
-      let type ← whnf (← inferType value)
-      if type.isConstOf ``Int then `(Int.toNat $x) else pure x
+    -- Do not elaborate `x` here: a collection's binder is syntax whose
+    -- quantifier has not been elaborated yet. Projections and collection
+    -- members already have their declared Lean types.
+    let x ← if natAsInt && (f.ptys.1[0]?).any (·.ty == .nat) then `(Int.toNat $x)
       else pure x
     `($(mkCIdent f.decl) $(f.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $x)
   | .pat ty p => patTerm ty p x
@@ -2886,14 +2887,14 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
     let parts := (← ca.toArray.mapM (consTerm · u (depth + 1))) ++ (← cb.toArray.mapM (consTerm · v (depth + 1)))
     `(Fren.relationObligation (∀ $u:ident $v:ident, ($u, $v) ∈ $x → $((← conjTerm parts).getD (← `(True)))))
   | .all cs =>
-    let ts ← cs.mapM (consTerm · x depth)
+    let ts ← cs.mapM (consTerm · x depth natAsInt)
     return (← conjTerm ts).getD (← `(True))
 
 /-- The constraint `c` of a value of the Lean type `ty`, as a predicate:
 `fun x => c x`. -/
 def predOf (ty : Expr) (c : Core.Cons) : TermElabM Expr :=
   withLocalDeclD `fren_x ty fun x => do
-    let p ← elabProp (← consTerm c (mkIdent `fren_x))
+    let p ← elabProp (← consTerm c (mkIdent `fren_x) (natAsInt := ty.isConstOf ``Int))
     mkLambdaFVars #[x] p
 
 /-- The constraint `c` of a value of the Lean type `ty`, which mentions the

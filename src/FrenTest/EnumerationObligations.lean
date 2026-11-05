@@ -42,4 +42,34 @@ private def unknown : Cons := .predicate { nonnegative with predicate := `unknow
   { defs := ({} : Lean.NameMap (Array Lean.Name × Ex × VTy)).insert `low
       (#[`n], .app `choose #[.bound `n], .bool) } == #[`choose]
 
+-- Giving-site parts are numbered independently by the solver reader and
+-- evaluator. Swapping their invariant labels must fail before pairing a
+-- check with another part's expression, even when the names still match.
+private def pairParts (labels : Array (Option String)) : Except Fren.Core.Msg Unit := do
+  let parts : Array Constraint := labels.mapIdx fun k label =>
+    { kind := .assume, name := .num `x k, e := .obligation low (.var `x), typed? := label }
+  let callee : Comp := { path := `accept, vars := #[], constraints := #[], insts := #[], inputObligations := parts }
+  let caller : Comp := {
+    path := `caller, vars := #[], constraints := #[],
+    insts := #[{ name := `c, comp := `accept, bindings := #[] }] }
+  let core : Fren.Core.Comp String := {
+    path := `caller, vars := #[], assumes := #[], reqs := #[], expects := #[], triggers := #[]
+    insts := #[{
+      name := `c, comp := `accept, bindings := "", behaviour := "",
+      assumes := #[(.num `x 0, "low"), (.num `x 1, "high")],
+      typed := #[(.num `x 0, "@invariant:low"), (.num `x 1, "@invariant:high")] }] }
+  let _ ← FrenCli.pairCore { comps := #[callee] } caller core #[]
+  pure ()
+
+#guard (pairParts #[some "@invariant:low", some "@invariant:high"]).isOk
+
+private def pairingError (labels : Array (Option String)) : String :=
+  match pairParts labels with
+  | .ok _ => ""
+  | .error msg => msg.headline
+
+#guard (pairingError #[some "@invariant:high", some "@invariant:low"]).startsWith "internal error:"
+#guard (pairingError #[some "@invariant:low"]).contains "<missing>"
+#guard (pairingError #[none, some "@invariant:high"]).contains "<missing>"
+
 -- fren-covers: lang::subset_obligations

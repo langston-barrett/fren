@@ -57,6 +57,28 @@ proc own_relation(values: Rel<EmptySequence, EmptySequence>): (copy: Rel<EmptySe
   out copy := values
   expect same: copy = values
 }
+-- Nat predicates below these generated quantifiers must be built without
+-- trying to elaborate their as-yet unbound element/pair names.
+type NaturalZero = value: Nat where zero: value = 0
+struct NatField { value: NaturalZero }
+enum NatPayload { Empty, Value(NaturalZero) }
+set_option fren.lint.undecidable "allow"
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+proc nat_sets(values: Set<NatField>) {
+  expect zero: forall (v: NatField), when v in values, v.value = 0
+}
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+proc nat_sequences(values: Seq<NatPayload>) {
+  expect zero: forall (v: NatPayload), when v in values, v = NatPayload::Empty or v = NatPayload::Value(0)
+}
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+proc nat_relations(values: Rel<NatField, NatPayload>): (copy: Rel<NatField, NatPayload>) {
+  out copy := values
+  expect same: copy = values
+}
 open Lean Elab Command in
 elab "#check_nested_enumeration" : command => do
   liftTermElabM do
@@ -75,7 +97,8 @@ elab "#check_nested_enumeration" : command => do
           throwError "relation membership was bounded by its component types instead of its pairs"
     for path in #[`nested_subset_enumeration.records, `nested_subset_enumeration.wrappers,
         `nested_subset_enumeration.payloads, `nested_subset_enumeration.shared,
-        `nested_subset_enumeration.own_relation] do
+        `nested_subset_enumeration.own_relation, `nested_subset_enumeration.nat_sets,
+        `nested_subset_enumeration.nat_sequences, `nested_subset_enumeration.nat_relations] do
       let some comp := state.comps.get? path | throwError "missing enumeration component {path}"
       let (_, _, checked, _) ← Fren.checkComp comp #[.expect] (some Fren.Enumerate.enumerate)
       let some checked := checked | throwError "enumeration was not requested for {path}"

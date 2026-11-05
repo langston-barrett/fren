@@ -557,9 +557,19 @@ meaning of the constraint of `ec` of the same name. Each index's
 definedness is paired by its position, one of `positions`, in order, the
 `n`th of the item's indexes at a position with the `n`th goal there, and
 each question about a table's rows likewise by where it is reported, one
-of `tablePositions`, and the question. -/
+of `tablePositions`, and the question. A giving-site obligation whose typed
+text differs between the readers is an internal error. -/
 def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions : Array Nat)
-    (tablePositions : Array Nat := #[]) : Fren.Core.Comp (String × Fm) :=
+    (tablePositions : Array Nat := #[]) : Except Fren.Core.Msg (Fren.Core.Comp (String × Fm)) := do
+  -- The two readers derive and number giving-site obligations separately.
+  -- A shared name must denote the same part, not merely the same index.
+  for i in core.insts do
+    let d? := (ec.insts.find? (·.name == i.name)).bind (sp.comp? ·.comp)
+    for (a, text) in i.typed do
+      let typed? := (d?.bind fun d => d.inputObligations.find? (·.name == a)).bind (·.typed?)
+      if typed? != some text then
+        throw (Fren.Core.Msg.internal s!"the evaluator's call obligation `{Fren.Core.showComp (core.path ++ i.name ++ a)}` \
+          has typed text `{typed?.getD "<missing>"}`, expected `{text}`")
   -- The expressions an index or a table can be in: the constraint, the
   -- definition, the call's bindings or the body that it names.
   let exsOf (n : Name) : Array Ex :=
@@ -595,7 +605,8 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     let eg := ec.memberGroups.find? (·.owner == g.owner)
     { owner := g.owner, op := g.op, wanted := g.wanted,
       members := g.members.map fun m => pairedMember m (eg.bind fun eg => eg.members.find? (·.name == m.name)) }
-  { path := core.path, vars := core.vars, branchGroups := groups, memberGroups := observed
+  return {
+    path := core.path, vars := core.vars, branchGroups := groups, memberGroups := observed
     inhabitation := core.inhabitation
     defs := core.defs.map fun (d, eq, e) => (d, (eq, defn d), (e, defn d))
     assumes := props core.assumes, expects := props core.expects
