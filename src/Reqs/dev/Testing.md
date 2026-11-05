@@ -558,7 +558,7 @@ pub mod testing
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
-  `--fact-scopes` and `--induction-candidates`
+  `--fact-scopes`, `--induction-candidates` and `--datatype-elements`
   (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of at
   most five specs each, including those listed outside the ranges. Each

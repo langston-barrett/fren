@@ -2285,8 +2285,8 @@ partial def elabBasePTy (segs : Array Ident) : M Fren.Core.PTy := do
   if segs.size == 1 && segs[0]!.name == "String" then
     modify fun s => { s with usesStrings := true }
     return .plain .string
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
-  -- generic type's type parameter (`lang::element_parameter`), and whose
+  -- An element type, which is never a `Nat` (`lang::nat_place`), may be a
+  -- type parameter (`lang::element_parameter`), and its
   -- constraint, if any, quantifies over the elements, outside the
   -- decidable core (`lang::subset_place`).
   let elem (segs : Array Ident) : M Fren.Core.PTy := do

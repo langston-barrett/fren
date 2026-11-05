@@ -354,18 +354,17 @@ inductive ParamOwner where
   | function
   deriving Inhabited, DecidableEq, Repr
 
-/-- Whether a type parameter of `owner` is accepted as an element type, as
-in `Set<T>` (`lang::element_parameter`): a generic function's is, as its
-type parameter is an uninterpreted sort within it, and a generic
-enumeration's or record's is not, for now. -/
-def elementParamAccepted : ParamOwner → Bool
-  | .function => true
-  | .datatype => false
-
 /-- Whether a type parameter is accepted at `place` (`lang::type_parameter_place`). -/
 def typeParamPlaceAccepted : ParamPlace → Bool
-  | .whole | .argument | .ownParameter => true
-  | .ownOther | .element => false
+  | .whole | .argument | .ownParameter | .element => true
+  | .ownOther => false
+
+/-- Whether a type parameter of `owner` is accepted as an element type, as
+in `Set<T>` (`lang::element_parameter`), within a generic function or a
+generic enumeration's or record's declaration. -/
+def elementParamAccepted : ParamOwner → Bool
+  | .function => true
+  | .datatype => typeParamPlaceAccepted .element
 
 /-- Where a recursive payload of a generic enumeration writes the
 enumeration's own type (`lang::recursive_payload`): `declared` if with its
