@@ -48,10 +48,10 @@ name: pr-review
 # dependency, an outsider's comment.
 #
 # No job saves or restores a cache. The comment counts as the pull
-# request's review, for everything, as the user decided, so it says which
-# probes it ran and which it could not (check.py requires that). The pull
-# request's text still reaches the model, and could try to steer its
-# verdict; the brief has the model report such text as a finding.
+# request's review, for everything, so it says which probes it ran and
+# which it could not (check.py requires that). The pull request's text
+# still reaches the model, and could try to steer its verdict; the brief
+# has the model report such text as a finding.
 #
 # Only comments by the repository's owner, members and collaborators count
 # as reviews or requests for a light check (kind.py).

@@ -5,6 +5,7 @@ import Reqs.Eval
 import Reqs.Fmt
 import Reqs.Lint
 import Reqs.Modules
+import Reqs.Testing
 import Reqs.Trace
 -- keep-sorted end
 open Fren.Lang
@@ -29,6 +30,14 @@ tested cli::substitution_scope: "test/ui/checks/recursion_capture.fren", "src/Fr
 tested eval::backjumping: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
 tested modules::two_segments: "test/ui/lang/scoping.fren", "test/ui/lang/prelude.fren"
+tested testing::heavy_registry: "scripts/heavy_test.py"
+tested testing::heavy_wait_message: "scripts/heavy_test.py"
+tested testing::heavy_lease: "scripts/heavy_test.py"
+tested testing::heavy_legacy_lease: "scripts/heavy_test.py"
+tested testing::heavy_report_owner: "scripts/heavy_test.py"
+tested testing::heavy_memory_victim: "scripts/heavy_test.py"
+tested testing::heavy_group_gone: "scripts/heavy_test.py"
+tested testing::heavy_owned_signal: "scripts/heavy_test.py"
 -- The sorts and declarations that the `fren` command gives the solver are
 -- strings, which Lean does not reduce far enough to compare: the snapshot of
 -- `--dump-smt` shows them for the examples.

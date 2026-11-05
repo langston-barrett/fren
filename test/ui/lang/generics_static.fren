@@ -34,7 +34,7 @@ proc not_recursive(x: Option<Digit>, y: List<Option<Int>>) { expect e: x != Opti
 enum Twice<T, T> { A(T) }  --~ error: type parameter `T` is defined multiple times
 enum Shadow<Int> { A(Int) }  --~ error: type parameter `Int` has the name of the built-in type `Int`
 enum Item<Pair> { A(Pair) }  --~ error: type parameter `Pair` has the name of a record
-enum Elements<T> { A(Set<T>) }  --~ error: type parameter `T` cannot be an element type, for now
+pub enum Elements<T> { A(Set<T>) }
 enum Nested<T> { Leaf(T), Node(Nested<Pair<T, T>>) }  --~ error: a recursive payload must be `generics_static::Nested<T>`
 enum Swapped<A, B> { Nil, Cons(A, Swapped<B, A>) }  --~ error: a recursive payload must be `generics_static::Swapped<A, B>`
 enum Bare<T> { Nil, Cons(T, Bare) }  --~ error: a recursive payload must be `generics_static::Bare<T>`
