@@ -4628,7 +4628,8 @@ def parseValue (st : LState) (module : Name) (ty : VTy) (text : String) : Except
     | .ok r => pure r
     | .error e => throw e.msg.headline
   unless ps.toks[ps.pos]?.any (·.tok == .eof) do throw s!"`{text}` is not a value"
-  let (((ex, t), nat), _) ← ((do return (← lowerExpr {} e, ← natTyped e)).run { st with module }).mapError toString
+  let (((ex, t), nat), _) ← ((do return (← lowerExpr {} e, ← natTyped e)).run
+    { st with module, expansionLeft := Fren.Core.maxExpansionNodes }).mapError toString
   -- Typed as at a binding of the type (`lang::widening`): a `Nat` is read
   -- as an `Int`, and a literal as a `Nat`.
   let t := if nat && ty == .nat then .nat else if t == .nat && ty == .int then .int else t

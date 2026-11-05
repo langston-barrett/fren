@@ -35,7 +35,9 @@ impl expansion_step: eval::expansion_step for (remaining : Nat) {
 
 /-- A small expression-tree model; shared children remain separate
 occurrences in the work list. The generic reservation theorem covers
-arbitrary child arities as well. -/
+arbitrary child arities as well. Correspondence between `Ex.copyChildren`
+and the copying traversal is checked separately, per constructor, in
+`FrenTest.Expansion`; this model is not a proof of that correspondence. -/
 def copyTreeChildren : eval.CopyTree → List eval.CopyTree
   | .Leaf => []
   | .Branch left right => [left, right]

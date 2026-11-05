@@ -222,6 +222,13 @@ tests that need that reading. The message suggests simplifying its definitions
 or splitting it. This is a limit on preparation for evaluation, separate
 from evaluation's fuel and the solver's limits.
 
+If only a generated mutant exceeds the allowance, `fren mutate` also
+stops the whole run with code 2, without a mutation summary or an outcome
+for that mutant. Its diagnostic names the mutant and points into the
+mutant's source, including any line shifts caused by the mutation.
+The original spec may be within the allowance; the stop avoids reporting
+a kill rate for a run that could not read every selected mutant.
+
 The bound gives more than five times the 1,587,728 visits used by the
 largest item in Fren's own requirements when it was chosen. It leaves
 room for growth while stopping the expansion that exhausted a 6 GiB run.

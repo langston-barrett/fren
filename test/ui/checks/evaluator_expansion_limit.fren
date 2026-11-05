@@ -1,6 +1,6 @@
--- Reduced from runaway-check.fren: coordination_projection composes
--- tier_scaled calls that repeatedly copy their arguments. Recursion and
--- records are unnecessary: duplicating one argument already grows exponentially.
+-- A function nests calls to an argument-doubling function.
+-- Substitution shares repeated arguments, but later copying traverses
+-- every occurrence, so a short nesting requires exponential work.
 
 pub fn twice(n: Int): Int := n + n
 

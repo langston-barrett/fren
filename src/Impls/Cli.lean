@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Color
+import FrenCli.Eval
 import FrenCli.Exit
 import FrenCli.QueryStore
 import FrenCli.SeqElems
@@ -34,14 +35,19 @@ impl evidence_in_effect: cli::evidence_in_effect for (o s : Option Fren.Core.Evi
   intro o s _
   rcases o with _ | ⟨_ | _, _ | _⟩ <;> rcases s with _ | ⟨_ | _, _ | _⟩ <;> decide
 
-impl reader_acceptance: cli::accepts for (hosted leanCode limited : Bool) {
-  construct := if leanCode then cli.Construct.LeanCode else cli.Construct.Fren,
-  front_end := if hosted then cli.FrontEnd.Hosted else cli.FrontEnd.Standalone,
-  reading := if limited then cli.Reading.ExpansionLimit else cli.Reading.Ready,
-  accepted? := Fren.Core.readerAccepted hosted leanCode limited,
+-- The standalone command's resource stop, after language acceptance.
+-- This binds `ReadError.stopsCommand`, not either front end's Lean-code or
+-- hosted acceptance decision. Invalid readings are outside this resource
+-- limit and retain their command's existing error handling.
+impl standalone_reading_acceptance: cli::accepts for (error : FrenCli.Eval.ReadError) {
+  construct := cli.Construct.Fren,
+  front_end := cli.FrontEnd.Standalone,
+  reading := if error.isLimit then cli.Reading.ExpansionLimit else cli.Reading.Ready,
+  accepted? := !error.stopsCommand,
 } by
-  intro hosted leanCode limited _
-  cases hosted <;> cases leanCode <;> cases limited <;> decide
+  intro error _
+  cases error <;> simp [fren_spec, FrenCli.Eval.ReadError.isLimit,
+    FrenCli.Eval.ReadError.stopsCommand, Fren.Core.readerAccepted]
 
 impl exit_code: cli::exit for (ran : Bool) (s : Option Severity) {
   ran? := ran,

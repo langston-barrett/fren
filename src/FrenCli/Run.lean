@@ -1137,7 +1137,7 @@ it with the caller's own reading of the same files. -/
 /-- All commands report a reading resource limit at its source item and
 exit 2. Other failures retain the command's existing internal-error code. -/
 def reportReadFailure (paint : Paint) (files : Array (String × Array Char)) (error : Eval.ReadError)
-    (invalidExit : UInt32 := 1) : IO UInt32 := do
+    (invalidExit : UInt32 := 1) (notes : Array String := #[]) : IO UInt32 := do
   match error with
   | .expansionLimit site? =>
     let site := site?.getD default
@@ -1145,16 +1145,24 @@ def reportReadFailure (paint : Paint) (files : Array (String × Array Char)) (er
       code? := none,
       headline := s!"{Fren.Core.expansionLimitHeadline} while reading `{Fren.Core.showPath site.path}`",
       label? := some s!"more than {Fren.Core.maxExpansionNodes} copying visits",
-      notes := #[s!"note: the evaluator allows {Fren.Core.maxExpansionNodes} copying visits per source item",
+      notes := notes ++ #[s!"note: the evaluator allows {Fren.Core.maxExpansionNodes} copying visits per source item",
         "help: simplify this item's definitions or split it into smaller items"] }
     printDiag paint files { file := site.file, span := site.span, msg }
-    return 2
+    return exitCode false none
   | .invalid message =>
     printDiag paint files {
       file := 0
       span := default
       msg := Msg.internal s!"the evaluator cannot read the spec: {message}" }
     return invalidExit
+
+/-- A mutant-only resource failure stops mutation testing without a
+summary. Name the mutant and render the reading's span against its source,
+which may have different offsets and lines from the original file. -/
+def reportMutantReadFailure (paint : Paint) (files : Array (String × Array Char))
+    (mutant : Mutate.Mutant) (chars : Array Char) (error : Eval.ReadError) : IO UInt32 :=
+  reportReadFailure paint (files.set! mutant.file (files[mutant.file]!.1, chars)) error
+    (notes := #[s!"note: on the mutant `{mutant.id}`"])
 
 /-- The report of `--timings` (`Reqs/Cli#timings`): for each procedure
 and global expectation, with its total time, the time of its solver's
@@ -2086,7 +2094,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
     else
       let spec'? := mutantSpec parsed prefixes m parsed' st'.callTargs
       if let .error e := spec'? then
-        if e.stopsCommand then return ← reportReadFailure p files e
+        if e.stopsCommand then return ← reportMutantReadFailure p files m chars' e
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
       let preludeText' := st'.preludeText

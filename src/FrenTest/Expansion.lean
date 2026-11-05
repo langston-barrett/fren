@@ -40,6 +40,71 @@ def leaf : Ex := .bound `x
 -- Constants' closed bodies stay shared, even when the body is large.
 #guard leftAfter 1 (.const `closed (.strict #[leaf, leaf] leaf)) == some 0
 
+/-- One fixture for every constructor, with distinct bound-name leaves
+in every copied expression field. The count is independent of `children`
+and the renaming check verifies that the copying traversal visits them. -/
+def constructorCases : Array (String × Ex × Nat) := Id.run do
+  let b (i : Nat) := Ex.bound (.num `child i)
+  return #[
+    ("lit", .lit (.int 0), 0),
+    ("var", .var `x, 0),
+    ("slot", .slot 0, 0),
+    ("bound", b 0, 0),
+    ("boundAt", .boundAt 0, 0),
+    ("shared", .shared 0, 0),
+    ("memo", .memo #[b 0, b 1] (b 2), 3),
+    ("known", .known none, 0),
+    ("lifted", .lifted #[#[b 0], #[], #[b 1, b 2]] (b 3), 4),
+    ("dispatch", .dispatch #[#[0]] (b 0), 1),
+    ("not", .not (b 0), 1),
+    ("neg", .neg (b 0), 1),
+    ("bin", .bin .add (b 0) (b 1), 2),
+    ("when", .when false (b 0) (b 1), 2),
+    ("ite", .ite (b 0) (b 1) (b 2), 3),
+    ("app", .app `f #[b 0, b 1], 2),
+    ("ctor", .ctor `T 0 #[b 0, b 1], 2),
+    ("field", .field (b 0) 0, 1),
+    ("update", .update (b 0) #[(0, b 1), (1, b 2)], 3),
+    ("match", .match (b 0) #[(.wild, some (b 1), b 2), (.wild, none, b 3)] 0 #[] none none, 4),
+    ("method", .method .len (b 0) #[b 1, b 2], 3),
+    ("matches", .matches (b 0) "" .none, 1),
+    ("setLit", .setLit #[b 0, b 1], 2),
+    ("pair", .pair (b 0) (b 1), 2),
+    ("seqLit", .seqLit #[b 0, b 1], 2),
+    ("index", .index (b 0) (b 1) 0 `unspecified, 2),
+    ("card", .card (b 0), 1),
+    ("cardinality", .cardinality .exactlyOne #[b 0, b 1], 2),
+    ("quant", .quant 0 0 true #[] #[some (b 0), none, some (b 1)] #[] (b 2), 3),
+    ("range", .range (b 0) (b 1), 2),
+    ("table", .table 0 #[(0, some (b 0), b 1), (0, none, b 2)] none, 3),
+    ("const", .const `closed (b 0), 0),
+    ("pre", .pre 0 `f #[(`first, b 0), (`second, b 1)] (b 2), 3),
+    ("strict", .strict #[b 0, b 1] (b 2), 3),
+    ("typed", .typed { ty := .int } #[] (b 0), 1)]
+
+-- Adding a constructor requires adding its fixture, rather than silently
+-- leaving the new copying path outside this test.
+run_cmd do
+  let some (.inductInfo info) := (← Lean.getEnv).find? ``Ex
+    | throwError "Ex is not an inductive type"
+  unless info.ctors.map (·.getString!) == (constructorCases.map (·.1)).toList do
+    throwError "copying fixtures must cover every Ex constructor, in declaration order"
+
+#guard constructorCases.all fun (_, e, n) =>
+  leftAfter n e == none && leftAfter (n + 1) e == some 0 && leftAfter (n + 2) e == some 1
+
+#guard constructorCases.all fun (_, e, n) =>
+  let renamed := e.renameBound (fun name => .str name "renamed")
+  let children := renamed.copyChildren
+  children.length == n && (children.zipIdx).all fun (child, i) =>
+    match child with
+    | .bound name => name == .str (.num `child i) "renamed"
+    | _ => false
+
+#guard match (Ex.const `closed leaf).renameBound (fun name => .str name "renamed") with
+  | .const _ (.bound name) => name == `x
+  | _ => false
+
 -- Higher-order substitution charges both its traversal and each closure
 -- body before substitution; the latter may have shared arguments too.
 def closureSubstitution (n : Nat) : Option Nat :=
@@ -57,6 +122,17 @@ def resets : Bool := Id.run do
   return st.expansionLeft < Fren.Core.maxExpansionNodes
 
 #guard resets
+
+/-- Eval inputs get their own allowance even when the spec's last item
+spent all of its budget. A function application needs copying work. -/
+def valueResets : Bool := Id.run do
+  let .ok items := readItems "pub fn identity(n: Int): Int := n\n".toList.toArray | return false
+  let .ok st := lowerAll #[items] {} | return false
+  match parseValue { st with expansionLeft := 0 } .anonymous .int "identity(7)" with
+  | .ok (.int 7) => true
+  | _ => false
+
+#guard valueResets
 
 /-- Expanding named predicate members temporarily changes the definition
 being applied. Restoring that lexical state must not refund the copies. -/
@@ -93,6 +169,22 @@ def refinementSpends (budget : Nat) : Bool := Id.run do
   match (ReadError.expansionLimit none).at { file := 3, span := { start := 7, stop := 11 }, path := `outer.item } with
   | .expansionLimit (some site) => site.file == 3 && site.span.start == 7 && site.path == `outer.item
   | _ => false
+
+-- A resource failure after a mutation is located using the changed
+-- source, not the original offsets, and identifies the generated mutant.
+#eval show IO Unit from do
+  let original := "pub fn projection(n: Int): Int := n\n".toList.toArray
+  let mutant : Mutate.Mutant := { (default : Mutate.Mutant) with
+    file := 0, span := { start := 0, stop := 0 }, after := "-- first new line\n-- second new line\n",
+    id := "shift-before-projection" }
+  let chars := mutant.apply original
+  let .ok items := readItems chars | throw (IO.userError "the mutant fixture must parse")
+  let error := ReadError.expansionLimit (some (readSite 0 .anonymous items[0]!))
+  let (output, code) ← IO.FS.withIsolatedStreams <|
+    reportMutantReadFailure {} #[("mutant-limit.fren", original)] mutant chars error
+  unless code == exitCode false none && output.contains "mutant-limit.fren:3:8" &&
+      output.contains "3 | pub fn projection" && output.contains "note: on the mutant `shift-before-projection`" do
+    throw (IO.userError s!"mutant resource failure lost its source or identity:\n{output}")
 
 /-- A diamond of local definitions preserves its two variable mentions
 without duplicating them exponentially. This also exercises the shape
