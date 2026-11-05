@@ -4362,8 +4362,12 @@ quantifier, a generic function and its instance, records,
 enumerations and checks by testing and enumeration, recursive functions
 and abstract types and functions of one name in two modules, beside a
 variable of that name, and generic datatypes with collection payloads and
-fields, whose tuple sorts both front ends create. The newtype snapshot also pins their erasure to the
-underlying sort, with no constructor or selector left in the dump. -/
+fields. For these datatypes, the comparison checks that the extra
+tuple-sort initialization declarations leave the canonical query
+unchanged; it does not check which tuple sorts either front end creates.
+The ui tests check their creation by exercising the solver. The newtype
+snapshot also pins the newtypes' erasure to the underlying sort, with no
+constructor or selector left in the dump. -/
 def obligationsAgreementSpecs : List String :=
   ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
    "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren",
