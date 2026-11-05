@@ -1084,8 +1084,9 @@ def run_command(f, command, shown, record, state, environ, load_reader):
             sampled = sample_load(record, load_reader, time.monotonic(), sampled)
             if ((own is not None and victim == own["job_id"])
                     or rss > cap):
-                print(f"heavy: killed `{shown}`: heavy jobs last reported "
-                      f"{total / 1048576:.1f} GB, over the {cap / 1048576:.1f} GB cap "
+                reason = (f"its process group uses {rss / 1048576:.1f} GB" if rss > cap
+                          else f"heavy jobs last reported {total / 1048576:.1f} GB")
+                print(f"heavy: killed `{shown}`: {reason}, over the {cap / 1048576:.1f} GB cap "
                       f"(HEAVY_MEM_GB, {os.path.join(state, 'mem_gb')}); run it again when "
                       "fewer jobs run", file=sys.stderr)
                 kill_group(child.pid, reap)
@@ -1134,21 +1135,21 @@ def heavy_rss_kb(state=STATE, cap=None, reservations=None):
                     if observed is not None and observed >= 0:
                         reservations.append(f"{job['slot']} (legacy RSS: {observed} KB)")
                 elif not job["fresh"]:
-                    reason = ("no compatible report" if job["rss_kb"] is None
-                              else "stale or future-dated report")
-                    reservations.append(f"{job['slot']} ({reason})")
+                    reservations.append(f"{job['slot']} (stale or future-dated report)")
             if unobserved:
                 names = ", ".join(sorted(j["slot"] for j in unobserved))
                 reservations.append(f"{names} (shared legacy forecast: {legacy_reservation(cap)} KB)")
         measured = sum(max(0, j.get("legacy_rss_kb") or 0) if j.get("legacy")
                        else j["rss_kb"] if j["fresh"] else cap for j in running)
         return measured + (legacy_reservation(cap) if unobserved else 0)
+    except RegistryBusy:
+        raise  # Admission must name a registry wait, not a memory shortfall.
     except OSError:
         return math.inf
 
 
-def memory_wait_message(state, reservations):
-    if reservations:
+def memory_wait_message(state, reservations, memory_blocked):
+    if memory_blocked and reservations:
         slots = ", ".join(sorted(reservations))
         return (f"heavy: waiting for memory: {slots}; resume stopped monitors or "
                 f"reduce running memory (see {state})")
@@ -1212,6 +1213,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
         print(f"heavy: cannot tell the physical memory ({e}); set HEAVY_MEM_GB", file=sys.stderr)
         return 2
     warned = None
+    registry_message = f"heavy: waiting for registry lock (see {state})"
     while True:
         slots = slot_count(environ, state)
         limit = max_load(environ, state)
@@ -1220,14 +1222,23 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
         # job that starts now would likely be the one killed when they grow.
         cap = mem_cap_kb(environ, state)
         reservations = []
-        if not can_start(time.monotonic() - queued, heavy_rss_kb(state, cap, reservations),
+        try:
+            rss = heavy_rss_kb(state, cap, reservations)
+        except RegistryBusy:
+            if registry_message != warned:
+                print(registry_message, file=sys.stderr)
+                warned = registry_message
+            time.sleep(5)
+            continue
+        if not can_start(time.monotonic() - queued, rss,
                          cap, limit, load_reader):
-            message = memory_wait_message(state, reservations)
+            message = memory_wait_message(state, reservations, rss > START_FRACTION * cap)
             if message != warned:
                 print(message, file=sys.stderr)
                 warned = message
             time.sleep(5)
             continue
+        wait_message = f"heavy: all {slots} slots busy, waiting (see {state})"
         for i in range(slots):
             f = open(os.path.join(state, f"slot{i}"), "a+")
             try:
@@ -1235,6 +1246,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
                     claimed = claim_slot(f, f"slot{i}", state, record)
             except RegistryBusy:
                 f.close()
+                wait_message = registry_message
                 break  # Admission waits; do not run without a registered lease.
             except (OSError, ValueError) as e:
                 f.close()
@@ -1251,16 +1263,20 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             record["wait_policy_changed"] |= (limit, slots) != initial
             if i >= slots:
                 release_slot(f, state)
+                wait_message = f"heavy: slot count changed, retrying (see {state})"
                 break
             cap = mem_cap_kb(environ, state)
             reservations = []
-            if not can_start(waited, heavy_rss_kb(state, cap, reservations),
+            try:
+                rss = heavy_rss_kb(state, cap, reservations)
+            except RegistryBusy:
+                release_slot(f, state)
+                wait_message = registry_message
+                break
+            if not can_start(waited, rss,
                              cap, limit, load_reader):
                 release_slot(f, state)
-                message = memory_wait_message(state, reservations)
-                if message != warned:
-                    print(message, file=sys.stderr)
-                    warned = message
+                wait_message = memory_wait_message(state, reservations, rss > START_FRACTION * cap)
                 break
             admitted = time.monotonic()
             record.update(started_at=time.time(), wait_seconds=admitted - queued,
@@ -1271,9 +1287,9 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
                 return run(f, command, shown, kind, record, admitted, state, environ, load_reader)
             finally:
                 release_slot(f, state)
-        if not warned:
-            warned = f"heavy: all {slots} slots busy, waiting (see {state})"
-            print(warned, file=sys.stderr)
+        if wait_message != warned:
+            print(wait_message, file=sys.stderr)
+            warned = wait_message
         time.sleep(2)
 
 

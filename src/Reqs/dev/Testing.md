@@ -1032,6 +1032,9 @@ With a free slot, new work starts whenever the sum of these charges is at
 most 60% of the cap. Legacy holders therefore do not require a coordinated
 drain before a new version can admit work. A memory wait names each reserving
 slot and its stale-report charge or legacy estimate.
+Those details appear only when the memory threshold blocks admission;
+a load-only wait does not recommend freeing memory. A registry deadline
+reports a registry wait, including races at slot acquisition and recheck.
 
 On Linux 4.9 and later, legacy measurements discover the current flock
 holder by device and inode in
@@ -1138,6 +1141,16 @@ pub proc heavy_registry(available?, now: Int, deadline: Int, held?, requested?):
     expect bounded: when now >= deadline, not retry?
     expect stopped: unless available?, not acquired? and (retry? or timed_out?)
     expect masked: when held? and requested?, deferred?
+}
+
+pub proc heavy_wait_message(rss: Nat, cap: Nat, reservations: Seq<String>, registry_busy?): (
+    det memory_details?,
+    det registry_message?,
+) {
+    ensure memory: memory_details? iff not registry_busy? and 5 * rss > 3 * cap and reservations != []
+    ensure registry: registry_message? iff registry_busy?
+    expect load_only: when 5 * rss <= 3 * cap, not memory_details?
+    expect registry_priority: when registry_busy?, registry_message? and not memory_details?
 }
 
 pub struct MemoryOwner { job: String, sequence: Int }
