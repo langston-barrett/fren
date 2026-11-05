@@ -256,14 +256,13 @@ does, for the rules above.
 Applications of [structural recursions](Recursion.md) are opaque,
 with ground postconditions and one step of defining equations at each
 application. Applications introduced by that step receive postconditions
-only, but in the check of an
-[induction](Recursion.md#unfolding-in-an-induction), which unfolds up to
-three steps. This is finite and adds no quantifiers, even for constant arguments,
-so recursion never raises `undecidable`. Completeness is modulo this
-opacity: facts requiring more of a recursive body than its one-step
-equations and contract are not promised. Strengthen its contract to prove
-such facts. Models that evaluation does not confirm are Inconclusive
-(`F0450`).
+only, but in the check of an [induction](Recursion.md#unfolding-in-an-induction),
+which unfolds up to three steps. This is finite and adds no quantifiers,
+even for constant arguments, so recursion never raises `undecidable`.
+Completeness is modulo this opacity: facts requiring more of a recursive
+body than its one-step equations and contract are not promised. Strengthen
+its contract to prove such facts. Models that evaluation does not confirm
+are Inconclusive (`F0450`).
 
 ## In practice
 

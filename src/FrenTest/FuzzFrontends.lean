@@ -1136,12 +1136,11 @@ checks leave Inconclusive and induction on a parameter may prove
 (`Reqs/Lang/Recursion#induction`): over a list, a tree with two children
 and a `Bool` payload, and an instance of a generic enumeration; with
 parameters of those types, of `Int`, of `Bool` and of a payload's type,
-in either order;
-under an assumption or not; claims that one step of each function proves,
-that need more (which the deeper unfolding of an induction's check may
-prove), and in a Boolean block; and the forms
-that rule induction out: a call, an uninterpreted function, a parameter of
-a subset type. Each claim holds, so no result depends on a model, but for
+in either order; under an assumption or not; claims that one step of each
+function proves, that need more (which the deeper unfolding of an
+induction's check may prove), and in a Boolean block; and the forms that
+rule induction out: a call, an uninterpreted function, a parameter of a
+subset type. Each claim holds, so no result depends on a model, but for
 one false claim now and then, which fails under its function's contract
 with a counterexample that evaluation does not confirm, not the internal
 error of a model that contradicts Fren's semantics: so it stays
@@ -1254,11 +1253,12 @@ more than one step of each function's equations, as the check of a function
 generated for induction does (`Reqs/Lang/Recursion#unfolding-in-an-induction`):
 over a list and a tree with two children and a `Bool` payload, claims whose
 base case needs the equations at a depth that grows with a constant's size,
-of 1 to 4 elements or levels, so that both sides of the bound are reached; with another parameter now and then, in either order;
-and a claim with no parameter, which no induction checks, and whose
-constant arguments need the equations at depth 1. Each claim holds, so no
-result depends on a model. Its generator is split off the seed, so its
-draws leave the other modes unchanged. -/
+of 1 to 4 elements or levels, so that both sides of the bound are reached;
+with another parameter now and then, in either order; and a claim with no
+parameter, which no induction checks, and whose constant arguments need
+the equations at depth 1. Each claim holds, so no result depends on a
+model. Its generator is split off the seed, so its draws leave the other
+modes unchanged. -/
 def unfoldings : R String := do
   let mut out := "mod uunfold\n\n" ++
     "pub enum UL { Nil, Cons(Int, UL) }\n" ++
@@ -2913,8 +2913,9 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
 `--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
-`--fact-scopes`, `--induction-candidates` and `--unfoldings` makes any static error a group
-error: these generators, like appended groups, promise to add none. -/
+`--fact-scopes`, `--induction-candidates` and `--unfoldings` makes any static
+error a group error: these generators, like appended groups, promise to
+add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
   if m.scrutinees || m.factScopes || m.inductionCandidates || m.unfoldings then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2

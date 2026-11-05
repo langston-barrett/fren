@@ -148,6 +148,11 @@ def isInductionFn : Lean.Name → Bool
   | .str _ s => s.startsWith "#induction#"
   | _ => false
 
+#guard isInductionFn (.str `m (inductionFnName "e" "c" "a" 0))
+#guard !isInductionFn `m.f
+#guard isInductionFn (instanceName (.str `m (inductionFnName "e" "c" "a" 0)) #[.int, .bool])
+#guard !isInductionFn (instanceName `m.f #[.int, .bool])
+
 /-- The segments of the path that names the variant `v` of the enumeration
 `e` within the module `module`: from `self` where `e` is the module's,
 and otherwise from the root, which a pattern's path cannot be written from
