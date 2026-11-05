@@ -801,6 +801,17 @@ def test_group_completion():
                     probe.assert_called_once_with(5, 0)
     with mock.patch.object(heavy.os, "killpg", side_effect=PermissionError()):
         assert not heavy.group_gone(5, lambda: True)
+    with mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()) as probe:
+        assert not heavy.group_gone(5, lambda: False, True)
+        probe.assert_not_called()
+        assert heavy.group_gone(5, lambda: True, True)
+        heavy.kill_group(5, lambda: True, True)
+        assert probe.call_args_list == [mock.call(5, 0)] * 2
+    with mock.patch.object(heavy.os, "killpg") as probe:
+        assert not heavy.group_gone(5, lambda: True, True)
+        probe.assert_called_once_with(5, 0)
+    with mock.patch.object(heavy.os, "killpg", side_effect=PermissionError()):
+        assert not heavy.group_gone(5, lambda: True, True)
 
 
 def test_namespace_init_reaping():
@@ -846,9 +857,10 @@ def test_namespace_init_workers():
         leader = ("import subprocess,sys,time; "
                   f"subprocess.Popen([sys.executable,'-c',{worker!r},{ready!r}]); time.sleep(60)")
         launcher = """
-import os, pathlib, runpy, sys
+import contextlib, os, pathlib, runpy, sys
 assert os.getpid() == 1
 h = runpy.run_path(sys.argv[1])
+h['main'].__globals__['child_subreaper'] = contextlib.contextmanager(lambda: iter([False]))
 waitpid = os.waitpid
 def record_reap(pid, flags):
     result = waitpid(pid, flags)
@@ -1799,7 +1811,6 @@ def test_cpu_ticks():
         assert heavy.cpu_ticks(state) is None  # Unreadable / unavailable is non-fatal.
 
 
-
 def test_cpu_samples():
     # fren-covers: testing::heavy_busy, testing::heavy_cpu
     zero = (0,) * 8
@@ -1853,7 +1864,6 @@ def test_cpu_samples():
         assert row["cpu_seconds"] == 0 and row["exit_status"] == 127
 
 
-
 def test_cpu_monitor():
     # fren-covers: testing::heavy_cpu, testing::heavy_busy
     record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": [],
@@ -1879,6 +1889,7 @@ def test_cpu_monitor():
          mock.patch.object(heavy, "visible_group", return_value=42), \
          mock.patch.object(heavy, "machine_counters", return_value={}), \
          mock.patch.object(heavy, "mem_cap_kb", return_value=GB), \
+         mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()), \
          mock.patch.object(heavy.signal, "signal"):
         assert heavy.monitor_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0.5, False) == 7
     assert record["cpu_busy_samples"] == [
@@ -1895,6 +1906,36 @@ def test_cpu_monitor():
     assert heavy.reap_child(child, record)
     assert record["cpu_seconds"] == 3.75
 
+
+def test_monitor_group_completion():
+    # fren-covers: testing::heavy_group_gone
+    for subreaper in (False, True):
+        record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
+        child = SimpleNamespace(pid=42, returncode=0)
+        with tempfile.TemporaryDirectory() as state, \
+             tempfile.TemporaryFile(mode="w+") as slot, \
+             mock.patch.object(heavy.subprocess, "Popen", return_value=child), \
+             mock.patch.object(heavy, "reap_child", return_value=True), \
+             mock.patch.object(heavy, "visible_group", return_value=42), \
+             mock.patch.object(heavy, "group_processes", return_value=[]), \
+             mock.patch.object(heavy, "group_rss_kb", return_value={42: 10}), \
+             mock.patch.object(heavy, "jobs", return_value=[]), \
+             mock.patch.object(heavy, "publish_memory") as publish, \
+             mock.patch.object(heavy, "mem_cap_kb", return_value=100), \
+             mock.patch.object(heavy, "machine_counters", return_value={}), \
+             mock.patch.object(heavy, "cpu_ticks", return_value=None), \
+             mock.patch.object(heavy.os, "getpid", return_value=2), \
+             mock.patch.object(heavy.os, "killpg", side_effect=[None, ProcessLookupError()]) as probe, \
+             mock.patch.object(heavy.time, "sleep") as sleep, \
+             mock.patch.object(heavy.signal, "signal"), \
+             mock.patch.object(heavy, "kill_group", side_effect=AssertionError("normal completion signaled")):
+            assert heavy.monitor_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0, subreaper) == 0
+            # Even with the leader collected and group waits exhausted,
+            # monitor/account once more while the original group exists.
+            assert probe.call_args_list == [mock.call(42, 0)] * 2
+            publish.assert_called_once_with(slot, 10, state)
+            sleep.assert_called_once_with(1)
+            assert record["peak_rss_kb"] == 10
 
 
 def test_cpu_descendants():
@@ -1931,9 +1972,8 @@ def test_cpu_descendants():
             assert row["cpu_seconds"] < 2 * (user + system)
 
 
-
 def test_cpu_reaping():
-    # fren-covers: testing::heavy_cpu
+    # fren-covers: testing::heavy_cpu, testing::heavy_group_gone
     record = {"peak_rss_kb": 0, "cpu_user_seconds": 0, "cpu_system_seconds": 0,
               "cpu_busy_samples": [], "run_seconds": 2}
     child = SimpleNamespace(pid=42, returncode=None, heavy_subreaper=True)
@@ -1967,7 +2007,6 @@ def test_cpu_reaping():
     assert record["involuntary_context_switches"] == 18 and record["cpu_seconds"] == 10
 
 
-
 def test_child_subreaper():
     def prctl(op, value, *unused):
         if op == 37:
@@ -1996,6 +2035,74 @@ def test_child_subreaper():
             assert not enabled
 
 
+def test_cpu_many_waits():
+    # fren-covers: testing::heavy_cpu
+    record = {"peak_rss_kb": 0, "cpu_user_seconds": 0, "cpu_system_seconds": 0,
+              "cpu_busy_samples": [], "run_seconds": 10}
+    child = SimpleNamespace(pid=42, returncode=None, heavy_subreaper=True)
+    usage = SimpleNamespace(ru_utime=0.25, ru_stime=0.5, ru_maxrss=100, ru_nivcsw=3)
+    count = [0]
+    def wait(pid, flags):
+        assert pid == -42 and flags == os.WNOHANG
+        assert len(repr(record)) < 500
+        if count[0] == 4000:
+            raise ChildProcessError
+        count[0] += 1
+        return (42 if count[0] == 1 else 42 + count[0]), 0, usage
+    with mock.patch.object(heavy.os, "wait4", side_effect=wait), \
+         mock.patch.object(heavy.platform, "system", return_value="Linux"):
+        assert heavy.reap_child(child, record)
+    heavy.cpu_summary(record)
+    assert record["cpu_user_seconds"] == 1000 and record["cpu_system_seconds"] == 2000
+    assert record["cpu_seconds"] == 3000 and record["involuntary_context_switches"] == 12000
+    assert record["peak_rss_kb"] == 100
+
+
+def test_cpu_signal_fold():
+    # fren-covers: testing::heavy_cpu
+    handled = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+    for sig in handled:
+        record = {"peak_rss_kb": 0, "cpu_user_seconds": 0, "cpu_system_seconds": 0,
+                  "cpu_busy_samples": [], "run_seconds": 2}
+        child = SimpleNamespace(pid=42, returncode=None, heavy_subreaper=True)
+        sent, observed = [], []
+        class LeaderUsage:
+            ru_stime, ru_maxrss, ru_nivcsw = 1, 100, 7
+            @property
+            def ru_utime(self):
+                # Interrupt after the old aggregate is read, before the
+                # replacement is stored: the signal must wait for that store.
+                if not sent:
+                    sent.append(sig)
+                    os.kill(os.getpid(), sig)
+                return 2
+        worker = SimpleNamespace(ru_utime=3, ru_stime=4, ru_maxrss=200, ru_nivcsw=11)
+        results = iter([(42, 7 << 8, LeaderUsage()), (43, 0, worker)])
+        def wait(pid, flags):
+            # Exercise the blocking cleanup path too, with no new signal mask.
+            assert flags == 0 and handled.isdisjoint(signal.pthread_sigmask(signal.SIG_BLOCK, []))
+            try:
+                return next(results)
+            except StopIteration:
+                raise ChildProcessError from None
+        def on_signal(signo, frame):
+            observed.append(record.get("_cpu_usage"))
+            assert heavy.reap_child(child, record, 0)
+        previous_handler = signal.signal(sig, on_signal)
+        previous_mask = signal.pthread_sigmask(signal.SIG_UNBLOCK, handled)
+        try:
+            with mock.patch.object(heavy.os, "wait4", side_effect=wait), \
+                 mock.patch.object(heavy.platform, "system", return_value="Linux"):
+                assert heavy.reap_child(child, record, 0)
+        finally:
+            signal.signal(sig, previous_handler)
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        assert sent == [sig] and observed == [(2, 1, 100, 7)]
+        heavy.cpu_summary(record)
+        assert child.returncode == 7
+        assert record["cpu_user_seconds"] == record["cpu_system_seconds"] == 5
+        assert record["peak_rss_kb"] == 200 and record["involuntary_context_switches"] == 18
+
 
 def test_process_readings():
     # fren-covers: testing::heavy_counter_rate
@@ -2016,8 +2123,10 @@ def test_process_readings():
             with open(os.path.join(path, "status"), "w") as f:
                 f.write("nonvoluntary_ctxt_switches: 7\n")
             os.symlink("/nix/store/example/bin/fren_fuzz_frontends", os.path.join(path, "exe"))
-        readings = heavy.group_processes(7, proc)
+        live = set()
+        readings = heavy.group_processes(7, proc, live)
         assert len(readings) == 1
+        assert live == {(123, 100), (124, 100)}  # Includes the other group.
         assert readings[0]["name"] == "fren_fuzz_frontends" and readings[0]["switches"] == 7
         rss = heavy.group_rss_kb(proc, "Linux")
         assert rss[7] == rss[8] == 3 * os.sysconf("SC_PAGE_SIZE") // 1024
@@ -2030,11 +2139,9 @@ def test_process_readings():
         assert heavy.group_processes(7, os.path.join(proc, "missing")) is None
 
 
-
 def process_row(pid, name, ticks, switches=0, start=10000, state="R"):
     return {"pid": pid, "name": name, "comm": (name or "unknown")[:15],
             "ticks": ticks, "switches": switches, "start": start, "state": state}
-
 
 
 def test_process_sampling():
@@ -2103,6 +2210,43 @@ def test_process_sampling():
     assert record["process_cpu"]["lean"]["core_seconds"] == 1
 
 
+def test_process_lifetime_retention():
+    # fren-covers: testing::heavy_counter_rate
+    sampler = heavy.ProcessSampler(0, 100)
+    for i in range(1, 4001):
+        sampler.sample(i, i, [process_row(i, "lean", 100, 2, start=i * 100 - 50)])
+        assert len(sampler.previous) == 1
+        assert len(repr(sampler.__dict__)) < 2000
+    record = {}
+    sampler.finish(record)
+    data = record["process_cpu"]["lean"]
+    assert data["processes_seen"] == 4000
+    assert data["core_seconds"] == 4000
+    assert record["nonvoluntary_ctxt_switches"] == 8000
+    sampler.sample(4001, 4001, [])
+    assert sampler.previous == {}
+    sampler.finish(record)
+    assert data["processes_seen"] == 4000 and data["core_seconds"] == 4000
+
+
+def test_process_group_reentry():
+    # fren-covers: testing::heavy_counter_rate
+    sampler = heavy.ProcessSampler(0, 100)
+    identity = (7, 0)
+    sampler.sample(1, 1, [process_row(7, "lean", 100, 10, start=0)], {identity})
+    sampler.sample(2, 2, [], {identity})  # Alive in another process group.
+    assert len(sampler.previous) == 1
+    sampler.sample(3, 3, [process_row(7, "lean", 300, 30, start=0)], {identity})
+    sampler.sample(4, 4, [process_row(7, "lean", 400, 40, start=0)], {identity})
+    record = {}
+    sampler.finish(record)
+    data = record["process_cpu"]["lean"]
+    assert data["core_seconds"] == 4 and data["processes_seen"] == 1
+    assert data["observed_core_seconds"] == data["observed_process_seconds"] == 2
+    assert record["nonvoluntary_ctxt_switches"] == 40
+    sampler.sample(5, 5, [], set())  # The lifetime really ended.
+    assert sampler.previous == {}
+
 
 def test_machine_pressure():
     # fren-covers: testing::heavy_pressure, testing::heavy_counter_rate
@@ -2151,7 +2295,6 @@ def test_machine_pressure():
     assert record["procs_running_sample_count"] == 0
 
 
-
 def test_memory_prediction():
     # fren-covers: testing::heavy_memory_prediction
     with tempfile.TemporaryDirectory() as state:
@@ -2192,7 +2335,6 @@ def test_memory_prediction():
         assert record["peak_rss_kb"] == 999
 
 
-
 def test_process_integration():
     # fren-covers: testing::heavy_counter_rate, testing::heavy_pressure
     code = ("import os,time; start=time.process_time(); "
@@ -2213,9 +2355,92 @@ def test_process_integration():
             assert row["ctxt_per_second_mean"] >= 0
 
 
+def test_subreaper_outside_parent():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    if heavy.platform.system() != "Linux":
+        return
+    with heavy.child_subreaper() as enabled, tempfile.TemporaryDirectory() as state:
+        assert enabled
+        ready, outside, reaped = [os.path.join(state, name) for name in ("worker", "outside", "reaped")]
+        worker = ("import os,pathlib,signal,sys,time; "
+                  "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                  "pathlib.Path(sys.argv[1]+'.tmp').write_text(str(os.getpid())); "
+                  "os.replace(sys.argv[1]+'.tmp',sys.argv[1]); time.sleep(60)")
+        parent = ("import os,pathlib,subprocess,sys,time; "
+                  f"child=subprocess.Popen([sys.executable,'-c',{worker!r},sys.argv[1]]); "
+                  "exec('while not pathlib.Path(sys.argv[1]).exists(): time.sleep(0.01)'); "
+                  "os.setpgid(0,0); pathlib.Path(sys.argv[2]+'.tmp').write_text(str(os.getpid())); "
+                  "os.replace(sys.argv[2]+'.tmp',sys.argv[2]); result=child.wait(); "
+                  "pathlib.Path(sys.argv[3]+'.tmp').write_text(str(result)); "
+                  "os.replace(sys.argv[3]+'.tmp',sys.argv[3]); time.sleep(60)")
+        leader = ("import pathlib,subprocess,sys,time\n"
+                  f"subprocess.Popen([sys.executable,'-c',{parent!r},{ready!r},{outside!r},{reaped!r}])\n"
+                  f"while not pathlib.Path({outside!r}).exists(): time.sleep(0.01)\n"
+                  "raise SystemExit(7)\n")
+        child = subprocess.Popen([sys.executable, "-I", "-B", "-c", leader], start_new_session=True)
+        child.heavy_subreaper = True
+        record = {"peak_rss_kb": 0}
+        reap = lambda: heavy.reap_child(child, record)
+        worker_pid, parent_pid = None, None
+        try:
+            deadline = heavy.time.monotonic() + 15
+            while (child.returncode is None or not os.path.exists(outside)) and heavy.time.monotonic() < deadline:
+                reap()
+                heavy.time.sleep(0.02)
+            assert child.returncode == 7 and os.path.exists(outside)
+            with open(ready) as f:
+                worker_pid = int(f.read())
+            with open(outside) as f:
+                parent_pid = int(f.read())
+            assert os.getpgid(parent_pid) == parent_pid
+            assert os.getpgid(worker_pid) == child.pid
+            assert reap()  # ECHILD for -PGID, while the grandchild is not adoptable.
+            assert not heavy.group_gone(child.pid, reap, True), "ECHILD hid a live group member"
+            heavy.kill_group(child.pid, reap, True)
+            assert child.returncode == 7
+            os.kill(parent_pid, 0)  # The outside parent stayed alive throughout.
+            deadline = heavy.time.monotonic() + 5
+            while not os.path.exists(reaped) and heavy.time.monotonic() < deadline:
+                heavy.time.sleep(0.02)
+            assert os.path.exists(reaped)
+            with open(reaped) as f:
+                assert int(f.read()) == -signal.SIGKILL
+            assert raises(lambda: os.kill(worker_pid, 0), ProcessLookupError)
+        finally:
+            if child.returncode is None:
+                child.kill()
+                child.wait(timeout=10)
+            if parent_pid is None and os.path.exists(outside):
+                with open(outside) as f:
+                    parent_pid = int(f.read())
+            if worker_pid is None and os.path.exists(ready):
+                with open(ready) as f:
+                    worker_pid = int(f.read())
+            # Kill/reap the adopted outside parent first, so any surviving
+            # worker becomes our child and cannot be reused before our wait.
+            if parent_pid is not None:
+                try:
+                    os.kill(parent_pid, signal.SIGKILL)
+                    os.waitpid(parent_pid, 0)
+                except (ProcessLookupError, ChildProcessError):
+                    pass
+            if worker_pid is not None:
+                try:
+                    found, _ = os.waitpid(worker_pid, os.WNOHANG)
+                    if not found:
+                        os.kill(worker_pid, signal.SIGKILL)
+                        os.waitpid(worker_pid, 0)
+                except ChildProcessError:
+                    pass  # Its parent already waited for it.
+
 
 def main():
-    tests = [test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_cpu_descendants, test_cpu_reaping, test_child_subreaper, test_process_readings, test_process_sampling, test_machine_pressure, test_memory_prediction, test_process_integration, test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
+    tests = [test_process_lifetime_retention, test_process_group_reentry,
+             test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_monitor_group_completion,
+             test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
+             test_child_subreaper, test_process_readings,
+             test_process_sampling, test_machine_pressure, test_memory_prediction, test_process_integration,
+             test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
              test_registry_wait_messages,
              test_physical_memory,
              test_overrides, test_offline_command, test_load_admission, test_job_log,
@@ -2225,7 +2450,7 @@ def main():
              test_alternate_ignored_hangup, test_slot_identity, test_proc_namespace_translation,
              test_memory_victim, test_legacy_reservations, test_report_owner, test_legacy_proc_readings,
              test_legacy_report_reuse, test_legacy_coexistence, test_group_completion, test_fallback_escalation,
-             test_namespace_init_reaping, test_namespace_init_workers,
+             test_namespace_init_reaping, test_namespace_init_workers, test_subreaper_outside_parent,
              test_no_signal_after_reap, test_status_failure_cleanup, test_pid_namespace_jobs, test_report_clock,
              test_stopped_owner, test_registry_signals_and_release,
              test_own_cap_with_other_victim, test_stopped_registry_holder, test_unverified_owners]

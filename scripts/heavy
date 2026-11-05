@@ -264,7 +264,7 @@ def process_stat(text):
     pid, ppid, pgrp, user, system, start, rss = (int(v) for v in
                                               (text[:left], fields[1], fields[2], fields[11],
                                                fields[12], fields[19], fields[21]))
-    if pid <= 0 or min(pgrp, user, system, start, rss) < 0:
+    if pid <= 0 or min(ppid, pgrp, user, system, start, rss) < 0:
         raise ValueError("invalid process counters")
     return {"pid": pid, "ppid": ppid, "comm": text[left + 1:right], "state": fields[0],
             "pgrp": pgrp, "ticks": user + system, "start": start, "rss_pages": rss}
@@ -286,7 +286,6 @@ def cpu_ticks(path="/proc/stat"):
         return None
 
 
-
 def cpu_interval(before, after):
     """Busy/total ticks between adjacent readings, or None without a
     usable interval. A reset (including a decreasing iowait) rebaselines."""
@@ -297,7 +296,6 @@ def cpu_interval(before, after):
     if any(v < 0 for v in delta) or total <= 0:
         return None
     return {"busy_ticks": total - delta[3] - delta[4], "total_ticks": total}
-
 
 
 def sample_cpu(record, now, last=None, final=False, reader=None):
@@ -311,15 +309,14 @@ def sample_cpu(record, now, last=None, final=False, reader=None):
     return now, ticks
 
 
-
 def cpu_summary(record):
-    # A signal handler can reap while another wait4 caller resumes. Append
-    # each usage atomically below, then fold after all reaping has finished.
-    usages = record.pop("_cpu_usage", [])
-    record["cpu_user_seconds"] += sum(u[0] for u in usages)
-    record["cpu_system_seconds"] += sum(u[1] for u in usages)
-    record["involuntary_context_switches"] = record.get("involuntary_context_switches", 0) + sum(u[3] for u in usages)
-    record["peak_rss_kb"] = max([record["peak_rss_kb"]] + [u[2] for u in usages])
+    # Reaping folds each result under a short signal mask. Retain only its
+    # aggregate, even when a long job waits for many thousands of workers.
+    usage = record.pop("_cpu_usage", (0, 0, 0, 0))
+    record["cpu_user_seconds"] += usage[0]
+    record["cpu_system_seconds"] += usage[1]
+    record["involuntary_context_switches"] = record.get("involuntary_context_switches", 0) + usage[3]
+    record["peak_rss_kb"] = max(record["peak_rss_kb"], usage[2])
     samples = record["cpu_busy_samples"]
     busy = sum(s["busy_ticks"] for s in samples)
     total = sum(s["total_ticks"] for s in samples)
@@ -329,7 +326,6 @@ def cpu_summary(record):
     record["cpu_seconds"] = record["cpu_user_seconds"] + record["cpu_system_seconds"]
     seconds = record["run_seconds"]
     record["cpu_parallelism"] = record["cpu_seconds"] / seconds if seconds > 0 else None
-
 
 
 def machine_counters(path="/proc/stat"):
@@ -353,7 +349,6 @@ def machine_counters(path="/proc/stat"):
             except ValueError:
                 pass
     return out
-
 
 
 class MachineSampler:
@@ -401,7 +396,6 @@ class MachineSampler:
             ctxt_per_second_max=self.rate_max)
 
 
-
 def process_switches(text):
     for line in text.splitlines():
         fields = line.split()
@@ -411,8 +405,7 @@ def process_switches(text):
     return None
 
 
-
-def group_processes(pgid, proc="/proc"):
+def group_processes(pgid, proc="/proc", live=None):
     """Linux process-group snapshots, or None when procfs is unavailable.
     Read self utime/stime only: child times would count workers twice."""
     try:
@@ -427,7 +420,11 @@ def group_processes(pgid, proc="/proc"):
         try:
             with open(os.path.join(path, "stat")) as f:
                 row = process_stat(f.read())
-            if row["pid"] != int(entry) or row["pgrp"] != pgid:
+            if row["pid"] != int(entry):
+                continue
+            if live is not None:
+                live.add((row["pid"], row["start"]))
+            if row["pgrp"] != pgid:
                 continue
             try:
                 row["name"] = os.path.basename(os.readlink(os.path.join(path, "exe")))
@@ -448,19 +445,17 @@ def group_processes(pgid, proc="/proc"):
     return found
 
 
-
 class ProcessSampler:
     def __init__(self, started, ticks_per_second):
         self.started = started
         self.hz = ticks_per_second if ticks_per_second and ticks_per_second > 0 else None
         self.previous = {}
         self.names = {}
-        self.seen = set()
         self.samples = 0
         self.switches = 0
         self.switch_samples = 0
 
-    def sample(self, now, boot_now, rows):
+    def sample(self, now, boot_now, rows, live=None):
         if rows is None or not self.hz:
             # Do not bridge an unreadable scan when estimating per-process cores.
             for state in self.previous.values():
@@ -468,6 +463,7 @@ class ProcessSampler:
             return
         self.samples += 1
         counts = {}
+        current = {}
         for row in rows:
             identity = row["pid"], row["start"]
             before = self.previous.get(identity)
@@ -477,8 +473,9 @@ class ProcessSampler:
                                                "observed_process_seconds": 0.0,
                                                "peak_cores_per_process": None, "peak_process_count": 0,
                                                "processes_seen": 0})
-            if (name, identity) not in self.seen:
-                self.seen.add((name, identity))
+            seen_names = before["seen_names"] if before else set()
+            if name not in seen_names:
+                seen_names.add(name)
                 data["processes_seen"] += 1
             if row["state"] not in ("Z", "X"):
                 counts[name] = counts.get(name, 0) + 1
@@ -507,8 +504,17 @@ class ProcessSampler:
                     self.switches += max(0, switches - previous_switches)
                 else:
                     self.switches += switches
-            self.previous[identity] = {**row, "name": name, "at": now, "gap": False,
-                                       "switches": switches if switches is not None else previous_switches}
+            current[identity] = {**row, "name": name, "at": now, "gap": False,
+                                 "seen_names": seen_names,
+                                 "switches": switches if switches is not None else previous_switches}
+        # A live worker can leave and rejoin the group. Keep its baseline
+        # across that gap without adding CPU or counting the lifetime again.
+        if live is not None:
+            for identity, before in self.previous.items():
+                if identity in live and identity not in current:
+                    current[identity] = dict(before, gap=True)
+        # Completed lifetimes' contributions remain only in per-name totals.
+        self.previous = current
         for name, count in counts.items():
             self.names[name]["peak_process_count"] = max(self.names[name]["peak_process_count"], count)
 
@@ -519,7 +525,6 @@ class ProcessSampler:
         record.update(process_cpu=self.names if self.samples else None,
                       process_samples=self.samples,
                       nonvoluntary_ctxt_switches=self.switches if self.switch_samples else None)
-
 
 
 def predict_peak_rss(kind, state=STATE, environ=None, now=None):
@@ -546,7 +551,6 @@ def predict_peak_rss(kind, state=STATE, environ=None, now=None):
     except (OSError, ValueError):
         pass
     return max((p for _, p in recent), default=None), len(recent)
-
 
 
 def append_log(record, state=STATE, environ=None):
@@ -1261,12 +1265,11 @@ def memory_victim(running, cap):
 
 
 def group_gone(pgid, reap, subreaper=False):
-    """Leader reaping alone leaves workers to probe in our PID namespace."""
+    """Even subreaping can leave group members parented outside the group.
+    Exhausting wait4 is not evidence that the local process group is gone."""
     if not reap():
         return False
-    if subreaper:
-        return True
-    if os.getpid() == 1:
+    if not subreaper and os.getpid() == 1:
         # Namespace init adopts orphaned workers. Reap them only after wait4
         # has collected the leader's status and RSS, then probe the group.
         while True:
@@ -1328,7 +1331,6 @@ def child_subreaper():
             prctl(36, previous.value, 0, 0, 0)
 
 
-
 def reap_child(child, record, flags=os.WNOHANG):
     """Keep the kernel RSS high-water mark too, including for subsecond jobs.
     The sampled process-group sum also accounts for parallel workers."""
@@ -1345,15 +1347,22 @@ def reap_child(child, record, flags=os.WNOHANG):
         if pid == child.pid:
             child.returncode = os.waitstatus_to_exitcode(status)
         kb = usage.ru_maxrss / 1024 if platform.system() == "Darwin" else usage.ru_maxrss
-        record["peak_rss_kb"] = max(record.get("peak_rss_kb", 0), int(kb))
-        record.setdefault("_cpu_usage", []).append((usage.ru_utime, usage.ru_stime, int(kb), usage.ru_nivcsw))
+        # A handler can reap between wait4 and this fold. Mask only the
+        # bounded update, never a wait4 that might block during cleanup.
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
+        try:
+            before = record.get("_cpu_usage", (0, 0, 0, 0))
+            record["_cpu_usage"] = (before[0] + usage.ru_utime, before[1] + usage.ru_stime,
+                                     max(before[2], int(kb)), before[3] + usage.ru_nivcsw)
+            record["peak_rss_kb"] = max(record.get("peak_rss_kb", 0), int(kb))
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
     return True
 
 
 def run_command(f, command, shown, record, state, environ, load_reader):
     with child_subreaper() as group:
         return monitor_command(f, command, shown, record, state, environ, load_reader, group)
-
 
 
 def monitor_command(f, command, shown, record, state, environ, load_reader, group):
@@ -1409,8 +1418,10 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
                 boot_now = time.clock_gettime(getattr(time, "CLOCK_BOOTTIME", time.CLOCK_MONOTONIC))
             except OSError:
                 boot_now = None
-            processes.sample(now, boot_now, group_processes(proc_group))
-            completed = reap()
+            live = set()
+            readings = group_processes(proc_group, live=live)
+            processes.sample(now, boot_now, readings, live)
+            completed = group_gone(child.pid, reap, group)
             if completed or now - machine.last[0] >= 1:
                 machine.sample(time.monotonic(), machine_counters())
             if completed:

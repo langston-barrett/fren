@@ -1110,17 +1110,28 @@ Each job also records `cpu_user_seconds` and `cpu_system_seconds`, from
 heavy's monitor and other jobs. On Linux, heavy becomes a child subreaper
 while the command runs: it adopts and reaps orphaned workers in the
 command's process group too, even after the command exits or is killed.
-It holds the slot until those workers finish, retaining the command's
-exit status. On other systems, or if Linux refuses the subreaper setting,
+It holds the slot until the original process group disappears, retaining
+the command's exit status. A background daemon remaining in that group
+keeps heavy running and holding its slot. Long-lived services must leave
+that process group to fall outside the wait. An unreaped zombie can also
+keep the group visible until its parent reaps it. On other systems, or if
+Linux refuses the subreaper setting,
 usage covers only the command and descendants that their parents waited
-for; orphaned workers can be missed. Processes that leave the job's
+for; orphaned workers' usage can be missed. Processes that leave the job's
 process group are outside this accounting guarantee. `cpu_scope` is
 `"process_group"` when subreaping is enabled, otherwise `"waited_tree"`.
+This names the wait4 selection, not complete descendant accounting.
+A group member can still be waited by a parent that has left the group,
+so heavy may never receive that member's usage. Exhausting group waits
+does not prove group absence: normal completion and termination both
+probe the original local process group, without waiting for other groups.
 `cpu_parallelism` is `cpu_seconds / run_seconds`, or `null` for a zero run
 duration. It is the average number of CPU cores used during the run, so it can exceed 1;
 it is not a fraction of the machine's capacity. A command that fails to
 launch has zero CPU seconds. Rechecking a reaped process never counts it
-again.
+again. Each wait result is folded into constant-size CPU, peak-RSS and
+switch totals. Termination signals are blocked only for this counter
+update, never around a blocking wait.
 
 On Linux, machine CPU counters are sampled from the aggregate `cpu` line
 of `/proc/stat` at execution start, about every 30 seconds, and at
@@ -1160,6 +1171,13 @@ change attributes the interval to its new name. A zombie retains its last
 known executable name when its `comm` is unchanged; otherwise the kernel's
 possibly shortened `comm` is used. Zombies contribute final counters but
 not concurrent live counts. Linux documents the [process stat fields](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html).
+
+After a successful scan, only lifetimes still visible in procfs retain
+counter baselines and the executable names they have used. A worker that
+leaves and rejoins the group retains its baseline while alive, so its
+earlier CPU and switch counters are not added again. Missing group
+observations do not provide a per-process rate window. Completed lifetimes
+contribute to per-name totals without retaining their process rows.
 
 These are sampled estimates: processes or final increments that disappear
 between scans can be missed. Missing scans do not inflate per-process rates
@@ -1214,8 +1232,8 @@ how much memory it needed to finish. `prediction_jobs` records the number
 used, and `prediction_method` is `"max_last_20_same_kind_7d"`. With no usable
 history, the prediction is `null`, not zero. Malformed records are skipped;
 `HEAVY_LOG` selects the prediction's source as well as the destination.
-The current memory admission rule uses live RSS, without a per-kind
-estimate. This prediction is telemetry for assessing an admission model;
+The current memory admission rule uses live RSS and lease reservations,
+without a per-kind estimate. This prediction is telemetry for assessing an admission model;
 it does not yet change that rule. Work amounts and build-cache states can
 vary within a kind, so historical peaks do not guarantee a future fit.
 
@@ -1661,10 +1679,20 @@ pub proc heavy_memory_victim(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat)
     }
 }
 
-pub proc heavy_group_gone(leader_reaped?, group_exists?): (det gone?) {
-    ensure rule: gone? iff leader_reaped? and not group_exists?
-    expect worker: when group_exists?, not gone?
+-- These are outcomes of the local killpg(PGID, 0) probe. Permission denied
+-- still establishes existence. ECHILD alone misses non-adoptable workers.
+pub enum GroupProbe { Missing, Present, Denied }
+
+pub proc heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe: GroupProbe): (
+    det gone?,
+) {
+    ensure rule: gone? iff leader_reaped? and (not subreaper? or not group_wait_pending?)
+        and probe = GroupProbe::Missing
+    expect worker: when probe != GroupProbe::Missing, not gone?
     expect leader_running: unless leader_reaped?, not gone?
+    expect wait_pending: when subreaper? and group_wait_pending?, not gone?
+    cover nonchild_worker: subreaper? and leader_reaped? and not group_wait_pending?
+        and probe = GroupProbe::Present
 }
 
 pub proc heavy_owned_signal(
@@ -1675,11 +1703,13 @@ pub proc heavy_owned_signal(
     now: Int,
     ttl: Nat,
     requested?,
+    subreaper?,
     leader_reaped?,
-    group_exists?,
+    group_wait_pending?,
+    probe: GroupProbe,
 ): (det signal?) {
     call eviction := heavy_memory_victim(cap, leases, now, ttl)
-    call termination := heavy_group_gone(leader_reaped?, group_exists?)
+    call termination := heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe)
     let memory_requested? := match eviction.selected {
         Option::Some(owner) => owner.job = own or own_rss > cap,
         Option::None => own_rss > cap,
@@ -1687,12 +1717,12 @@ pub proc heavy_owned_signal(
     ensure rule: signal? iff (requested? or memory_requested?) and not termination.gone?
     expect own_cap: when own_rss > cap and not termination.gone?, signal?
     expect completed: when termination.gone?, not signal?
-    expect escalation: when requested? and group_exists?, signal?
+    expect escalation: when requested? and probe != GroupProbe::Missing, signal?
 }
 ```
 
-The log has no automatic size limit or rotation, and `--stats` reads it
-all, including the load samples of long jobs. Keep the raw log for the
+The log has no automatic size limit or rotation, and `--stats` and memory
+prediction read it all, including long jobs' load and busy samples. Keep the raw log for the
 trial. Archive it between trials while the controller and heavy jobs
 are stopped; preserve the flip records with their jobs so that exposure
 can still be measured. Automatic retention remains future work.
