@@ -34,7 +34,7 @@ pub mod testing
   `cli::agreement` is tested. The Lean front end runs them with
   `fren.checkTypeCache`, under which each type that it takes from its
   cache of the types of terms (`typeOf`) is checked against the term's
-  type elaborated again, an error where they differ: on a Mac, in one
+  type elaborated again, an error where they differ: locally, in one
   run each, the ui tests of `test/ui/lang` took 61 s of CPU with it and
   57 s without. See `src/FrenTest/Ui.lean` for the format, and
   [Expectations](#expectations) for when a file passes.
@@ -1320,7 +1320,7 @@ request of its own rather than slowing every pull request down.
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
 | Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the chapter split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
-| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen, on macOS: more than a `lake test` shard can spare |
+| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
 | The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-merge`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
@@ -1331,7 +1331,7 @@ has passed, as the artifact
 `fren-SHA`, and `fren_test`, once shard 0 has built it, as
 `fren_test-SHA`, where SHA is the full sha of the pull request's head.
 They are kept for 3 days. They are Linux binaries, built on
-`ubuntu-24.04`, which run on Linux machines such as sky but not on macOS.
+`ubuntu-24.04`, which run on Linux but not on macOS.
 On `main`, `lean ci`'s shard 0 uploads its stripped `fren_test` as
 `fren_test-SHA` too, where SHA is `main`'s commit, for the book; that one
 has no `MERGE_SHA`, since it is built from that commit itself.

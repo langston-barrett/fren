@@ -572,7 +572,7 @@ target mimalloc_lazy_commit.o pkg : FilePath := do
 -- so the library is its modules.
 --
 -- Unlike `Fren.Elab`, `FrenCli.Elab` and its support modules keep `-O3`.
--- Before the module split, clang took some 40 s on its C code (on a Mac),
+-- Before the module split, clang took some 40 s on its C code (locally),
 -- spread over its functions since no function elaborates every kind of
 -- item (`FrenCli.elabItem`). At `-O0` (3 s), the binary elaborated 40–50%
 -- slower, and `lake test`, whose mutation jobs elaborate Fren's own
