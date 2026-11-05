@@ -1,41 +1,29 @@
--- `Fren`'s modules rather than `Fren`, which imports only them: importing
--- it would wait for its own build too, on the build's critical path.
--- `lake test` checks that the list is `Fren`'s.
--- keep-sorted start
-import Fren.Check
-import Fren.Impl
-import Fren.Literate
-import Fren.Spec
-import Fren.Trace
-import Fren.View
--- keep-sorted end
-open Fren.Lang
-
--- The requirements are in the chapters of the manual under Lang/, which
--- share the module `lang`.
-#fren_md "Lang/Overview.md"
-#fren_md "Lang/Lexical.md"
-#fren_md "Lang/Types.md"
-#fren_md "Lang/SubsetTypes.md"
-#fren_md "Lang/BooleanBlocks.md"
-#fren_md "Lang/Items.md"
-#fren_md "Lang/Generics.md"
-#fren_md "Lang/GenericFunctions.md"
-#fren_md "Lang/Traits.md"
-#fren_md "Lang/Prelude.md"
-#fren_md "Lang/Scope.md"
-#fren_md "Lang/Procedures.md"
-#fren_md "Lang/Global.md"
-#fren_md "Lang/Decidability.md"
-#fren_md "Lang/Patterns.md"
-#fren_md "Lang/Let.md"
-#fren_md "Lang/Quantifiers.md"
-#fren_md "Lang/ElementQuantifiers.md"
-#fren_md "Lang/Semantics.md"
-#fren_md "Lang/EvaluationRules.md"
-#fren_md "Lang/Expressions.md"
-#fren_md "Lang/HigherOrder.md"
-#fren_md "Lang/Recursion.md"
-#fren_md "Lang/ScopeLaws.md"
-#fren_md "Lang/ModulesAndInterfaces.md"
-#fren_md "Lang/Implementations.md"
+-- The chapters share the Fren module `lang`; Lean builds their independent
+-- requirements in parallel, while this import preserves the complete API.
+-- Keep the manual's order for the shared environment extension.
+import Reqs.Lang.Overview
+import Reqs.Lang.Lexical
+import Reqs.Lang.Types
+import Reqs.Lang.SubsetTypes
+import Reqs.Lang.BooleanBlocks
+import Reqs.Lang.Items
+import Reqs.Lang.Generics
+import Reqs.Lang.GenericFunctions
+import Reqs.Lang.Traits
+import Reqs.Lang.Prelude
+import Reqs.Lang.Scope
+import Reqs.Lang.Procedures
+import Reqs.Lang.Global
+import Reqs.Lang.Decidability
+import Reqs.Lang.Patterns
+import Reqs.Lang.Let
+import Reqs.Lang.Quantifiers
+import Reqs.Lang.ElementQuantifiers
+import Reqs.Lang.Semantics
+import Reqs.Lang.EvaluationRules
+import Reqs.Lang.Expressions
+import Reqs.Lang.HigherOrder
+import Reqs.Lang.Recursion
+import Reqs.Lang.ScopeLaws
+import Reqs.Lang.ModulesAndInterfaces
+import Reqs.Lang.Implementations

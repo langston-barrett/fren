@@ -1,5 +1,5 @@
--- `Reqs.Check`, `Reqs.Calls`, `Reqs.Lang` and `Reqs.Modules` import these
--- modules rather than this one; `lake test` checks that their lists agree.
+-- `Reqs.Check`, `Reqs.Calls`, `Reqs.Lang.Base` and `Reqs.Modules` import
+-- these modules rather than this one; `lake test` checks that their lists agree.
 -- keep-sorted start
 import Fren.Check
 import Fren.Impl
