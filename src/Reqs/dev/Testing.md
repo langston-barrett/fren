@@ -34,7 +34,7 @@ pub mod testing
   `cli::agreement` is tested. The Lean front end runs them with
   `fren.checkTypeCache`, under which each type that it takes from its
   cache of the types of terms (`typeOf`) is checked against the term's
-  type elaborated again, an error where they differ: on a Mac, in one
+  type elaborated again, an error where they differ: locally, in one
   run each, the ui tests of `test/ui/lang` took 61 s of CPU with it and
   57 s without. See `src/FrenTest/Ui.lean` for the format, and
   [Expectations](#expectations) for when a file passes.
@@ -567,7 +567,8 @@ pub mod testing
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
-  `--fact-scopes`, `--induction-candidates` and `--unfoldings`
+  `--fact-scopes`, `--induction-candidates`, `--unfoldings` and
+  `--datatype-elements`
   (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of at
   most five specs each, including those listed outside the ranges. Each
@@ -949,7 +950,7 @@ a file takes effect without a restart:
   `~/.cache/heavy/mem_gb`, else 80% of the machine's physical memory,
   summed over each job's process group. A job waits to start while the
   running ones use more than 60% of the cap; when they use more than
-  the cap, heavy kills the newest and exits with 137.
+  the cap, heavy kills the newest compatible owner and exits with 137.
 - **Load (off by default):** `HEAVY_MAX_LOAD`, else the number in
   `~/.cache/heavy/max_load`. A waiting job also needs the 1-minute load
   to be below this value. After 10 minutes waiting it may start whatever
@@ -959,6 +960,138 @@ a file takes effect without a restart:
 
 A setting that is set but is not a positive finite number is ignored,
 with a warning.
+
+Slot locks, not numeric PIDs, determine whether jobs are live. Each owner
+has a unique `job_id` and a sequence number allocated under `registry.lock`.
+It atomically publishes its own process-group RSS about every second in
+`.slotN.json` while holding `slotN`; admission sums these reports across
+namespaces. Acquisition and release also hold the registry lock, so a new
+compatible holder cannot inherit the previous holder's report. Slot files themselves
+are never replaced or removed while in use. A report without a held lock
+is ignored, including after a crash or PID reuse. An empty slot status
+file does not mean its lock is unheld.
+
+Each new holder writes its `job_id` at the end of the slot status as
+`[heavy-job=...]`; the leading PID and timestamp remain readable by legacy
+copies. A report must match that token. On Linux, ownership verification
+requires a matching kernel lock entry and a readable monitor identity.
+Its PID namespace, local PID and process start counter must match the
+report's monitor identity. These are read through the
+kernel's PID in this procfs view, never through a PID from slot text.
+Without a visible owner, a matching token is accepted only for fresh reports;
+after ten seconds an unverified stale report is treated as legacy. Missing,
+malformed and mismatched reports are legacy too. Thus a legacy holder that
+reuses a crashed owner's status cannot reserve the entire cap indefinitely.
+
+Every registry acquisition uses nonblocking attempts with a 0.2-second
+monotonic deadline. A timeout blocks admission and skips shared accounting
+for that monitor tick; local RSS measurement and the job's own cap still
+apply. Release also has this deadline: on timeout it closes the slot and
+leaves inactive metadata. Once it holds the registry lock, it closes the
+slot before releasing it, even if cleanup fails. Termination signals are
+unblocked only after the registry lock is released, so child cleanup cannot
+hold up the registry. A stopped holder can prevent shared accounting from
+progressing, but cannot make another monitor wait indefinitely on the lock.
+
+Reports include the owner's `/proc/self/ns/pid` identity and label numeric
+PIDs as namespace-local diagnostics. No other owner resolves or signals
+those PIDs. Newest means the greatest sequence number, not the greatest
+PID or wall-clock timestamp. Each owner checks the combined total and only
+the selected owner terminates its own command for the combined cap. Every
+owner also terminates its own command if its local RSS exceeds the cap, even
+when another owner is selected or stopped. Local signaling first reaps the
+leader nonblocking, then probes the local group with `killpg(PGID, 0)`:
+a reaped leader alone does not mean the workers are gone. TERM-to-KILL
+escalation continues while the group exists. SIGINT, SIGTERM and SIGHUP are
+blocked around the completion check and signal, and while the registry lock
+is held; handlers are restored after monitoring.
+When heavy is PID 1 of its namespace, it also reaps adopted orphan workers
+after collecting the leader's exit status and RSS. Dead workers must not
+keep the process group visible as zombies until both escalation waits expire.
+
+If `/proc` belongs to an ancestor PID namespace, the owner translates its
+own child through parentage and `NSpid` before measuring it in that procfs
+view. Linux requires `NSpid` in `/proc/self/status` for every job, and in
+candidate status files when translating from ancestor procfs. Kernels and
+procfs emulations without these entries are unsupported. This covers both
+`unshare --pid --fork` with an inherited `/proc` and jobs with a remounted
+`/proc`, such as bwrap jobs. If it cannot identify its own group, or cannot
+measure or publish its memory for a reason other than the bounded registry
+timeout above, it stops its own command and exits with 125 rather than
+applying a foreign numeric PID.
+Job records identify this protocol as `memory_accounting` =
+`"slot_owner_reports_v3"`, alongside `job_id`, `admission_order` and `pid_namespace`.
+
+Reports use protocol version 3 and `updated_monotonic`, sampled from
+`time.monotonic()` in a shared time namespace. PID namespaces do not
+change that clock. Wall-clock corrections do not affect freshness, and
+Linux's monotonic clock excludes suspended time, so resume does not age
+all reports by the suspension's duration. Reports use a common clock;
+time namespaces with different monotonic offsets are outside this protocol.
+
+Admission and eviction have different totals. Admission counts a fresh
+compatible report's RSS. A verified current owner with stale or future-dated
+data reserves one full cap. A legacy holder with verified visible RSS
+contributes that reading. All unobserved legacy holders together reserve
+`ceil(cap / 2)`, at least 1 KB, once for the entire set. This shared forecast
+leaves admission room even when several legacy holders occupy the other
+slots. It is not a claim that an unknown holder uses zero. Charging a full
+cap for every unknown holder made coexistence impossible even when a slot
+and substantial memory were free.
+With a free slot, new work starts whenever the sum of these charges is at
+most 60% of the cap. Legacy holders therefore do not require a coordinated
+drain before a new version can admit work. A memory wait names each reserving
+slot and its stale-report charge or legacy estimate.
+Those details appear only when the memory threshold blocks admission;
+a load-only wait does not recommend freeing memory. A registry deadline
+reports a registry wait, including races at slot acquisition and recheck.
+
+On Linux 4.9 and later, legacy measurements discover the current flock
+holder by device and inode in
+[`/proc/locks`](https://man7.org/linux/man-pages/man5/proc_locks.5.html),
+then sum its direct child process groups in that same procfs view. The scan
+rechecks the lock owner and its process start counter. It runs outside the
+registry lock. Filtered, inaccessible or changed ownership leaves the
+reading unknown and uses the forecast. A numeric PID in a legacy slot is
+never resolved, so an unrelated process with that number cannot inflate it.
+Older kernels and other systems use the fixed forecast.
+Kernel verification also requires the slot's `stat` device and inode to
+match the identifiers in `/proc/locks`. On filesystems where the device
+identifiers differ, including btrfs subvolumes and some stacked filesystems,
+the owner cannot be matched. Compatible reports then use the freshness
+fallback, an unverified stale report becomes legacy after ten seconds, and
+legacy RSS remains unobserved. In that case the lookup cannot verify stopped
+owners or measure legacy holders; accounting uses freshness and the shared
+forecast instead. The current implementation does not translate filesystem
+device identifiers.
+
+Eviction counts compatible owners' last reported RSS and verified legacy
+measurements. Forecasts never contribute to this total. When it exceeds the
+cap, only the greatest compatible admission sequence is selected; legacy
+holders are never signal targets. A partially unknown set of leases does
+not suppress eviction when its known measurements alone exceed the cap.
+Running monitors also enforce their own cap. Old versions keep their own
+admission and eviction rules, so global newest-first ordering applies only
+among compatible owners.
+
+Legacy forecasts can underestimate invisible memory. Mixed-version
+accounting cannot guarantee a hard combined memory limit; a shared kernel
+limit is needed for that. A stale reading can also underestimate current
+use. This policy keeps visible measurements and forecasts separate while
+allowing deployment across worktrees on different bases.
+Cleanup can leave metadata behind after a write error; unlocking still
+makes that report inactive. Accounting is sampled, not a kernel memory
+cgroup limit. A stopped monitor cannot publish new RSS, but its last reading
+never becomes a whole-cap eviction charge merely because it stops reporting.
+
+`scripts/heavy_test.py` runs in the `lint` workflow, not in `lake test`.
+It checks lease accounting, bounded registry waits and local termination, and
+runs the cross-namespace cap integration with inherited and remounted
+procfs where unprivileged PID namespaces are supported. If the kernel or
+container refuses `unshare`, that integration prints a skip; portable
+lease and translation tests still run. `HEAVY_REQUIRE_PIDNS_TEST=1` makes
+lack of PID-namespace support a failure. Hosted CI may skip this integration,
+so its result alone does not establish cross-namespace coverage.
 
 Each completed job appends one JSON line to `~/.cache/heavy/log.jsonl`,
 or `HEAVY_LOG` if set. It records the shortened command, worktree,
@@ -979,6 +1112,351 @@ paths, seeds and numbers while retaining executable and script basenames,
 flags and job names. Tests use scratch directories, including for logs.
 A missing bare command exits with 127 before waiting or taking a slot;
 it has no admission and produces no job record.
+
+The following requirements compute compatibility, admission and eviction
+from raw held-slot observations: a report, its status token, the observed
+monitor identity and any independently measured legacy RSS. `MemoryLeases`
+does not classify its entries in advance. `heavy_lease` calls
+`heavy_report_owner`; the recursive accounting functions use the same
+`report_owner?` definition, so victim selection and owned signaling also
+decide compatibility. A legacy job can admit new work only when a slot is
+free and the memory rule holds. Time values use one integral unit of the
+shared monotonic clock. Python tests check the concrete lock, clock, procfs and
+signal operations through `tested` claims in `Impls.Trace`; these tests run
+in the `lint` workflow, not in `lake test`. `heavy_registry` models the retry
+and signal-deferral decisions, including refusal to retry after the deadline.
+These are per-attempt rules: the supplied deadline does not model its
+allocation once per acquisition, nor a finite sequence of retries. The Req
+cannot reject a deadline recomputed on every retry or a blocking flock.
+The stopped-lock-holder subprocess test checks concrete bounded progress;
+no Req here proves that Python uses nonblocking flock or that the OS schedules
+a monitor. Elaborating each `tested` claim reads its named file and requires
+a matching `fren-covers` marker. `fren.testGlobs` controls the separate
+converse scan for markers without matching claims; its current patterns
+omit `scripts/`.
+The lease and victim requirements alone take lock state and reports as inputs,
+so they cannot detect an unbounded wait before those inputs are read.
+
+```fren
+pub proc heavy_registry(available?, now: Int, deadline: Int, held?, requested?): (
+    det acquired?,
+    det retry?,
+    det timed_out?,
+    det deferred?,
+) {
+    ensure acquired: acquired? iff available?
+    ensure retry: retry? iff not available? and now < deadline
+    ensure timeout: timed_out? iff not available? and now >= deadline
+    ensure defer_signal: deferred? iff held? and requested?
+    expect bounded: when now >= deadline, not retry?
+    expect stopped: unless available?, not acquired? and (retry? or timed_out?)
+    expect masked: when held? and requested?, deferred?
+}
+
+pub proc heavy_wait_message(rss: Nat, cap: Nat, reservations: Seq<String>, registry_busy?): (
+    det memory_details?,
+    det registry_message?,
+) {
+    ensure memory: memory_details? iff not registry_busy? and 5 * rss > 3 * cap and reservations != []
+    ensure registry: registry_message? iff registry_busy?
+    expect load_only: when 5 * rss <= 3 * cap, not memory_details?
+    expect registry_priority: when registry_busy?, registry_message? and not memory_details?
+}
+
+pub struct MemoryOwner { job: String, sequence: Int }
+pub struct MonitorIdentity { pid: Int, start: Int, space: String }
+
+pub struct MemoryReport {
+    owner: MemoryOwner,
+    rss: Int,
+    updated: Int,
+    monitor: Option<MonitorIdentity>,
+}
+
+-- Raw observations of a held slot, before compatibility is decided.
+pub struct MemoryLease {
+    report: Option<MemoryReport>,
+    status_job: String,
+    observed: Option<MonitorIdentity>,
+    legacy_rss: Option<Int>,
+}
+
+pub const UNKNOWN_LEASE: MemoryLease := MemoryLease {
+    report := Option::None,
+    status_job := "",
+    observed := Option::None,
+    legacy_rss := Option::None,
+}
+
+pub enum MemoryLeases {
+    Nil,
+    Cons(MemoryLease, MemoryLeases),
+}
+
+pub fn legacy_reservation(cap: Nat, observed: Option<Int>): Int := match observed {
+    Option::Some(rss) => if rss >= 0 then rss else ((cap + 1) div 2).max(1),
+    Option::None => ((cap + 1) div 2).max(1),
+}
+
+pub fn legacy_memory(observed: Option<Int>): Int := match observed {
+    Option::Some(rss) => rss.max(0),
+    Option::None => 0,
+}
+
+pub proc heavy_legacy_lease(cap: Nat, free?, locked?, observed: Option<Int>, other: Nat): (
+    det live?,
+    det admission: Int,
+    det eviction: Int,
+    det fits?,
+) {
+    ensure live: live? iff locked?
+    out admission := if locked? then legacy_reservation(cap, observed) else 0
+    out eviction := if locked? then legacy_memory(observed) else 0
+    ensure memory_rule: fits? iff free? and 5 * (admission + other) <= 3 * cap
+    expect coexists: when cap >= 5 and free? and observed = Option::None and other = 0, fits?
+    expect full: unless free?, not fits?
+    expect measured: match observed {
+        Option::Some(rss) => (when locked? and rss >= 0, admission >= rss and eviction = rss),
+        Option::None => eviction = 0,
+    }
+    expect high_memory: when locked? and 5 * eviction > 3 * cap, not fits?
+    expect unlocked: unless locked?, admission = 0 and eviction = 0
+}
+
+pub fn valid_report?(r: MemoryReport) := r.rss >= 0 and r.owner.sequence > 0
+
+pub fn fresh_report?(r: MemoryReport, now: Int, ttl: Nat) := 0 <= now - r.updated <= ttl
+
+pub fn report_owner?(
+    report: Option<MemoryReport>,
+    status_job: String,
+    observed: Option<MonitorIdentity>,
+    now: Int,
+    ttl: Nat
+) := match report {
+    Option::Some(r) =>
+        valid_report?(r) and status_job = r.owner.job and (match observed {
+            Option::Some(m) => r.monitor = Option::Some(m),
+            Option::None => fresh_report?(r, now, ttl),
+        }),
+    Option::None => false,
+}
+
+pub proc heavy_report_owner(
+    report: Option<MemoryReport>,
+    status_job: String,
+    observed: Option<MonitorIdentity>,
+    now: Int,
+    ttl: Nat,
+): (det compatible?) {
+    out compatible? := report_owner?(report, status_job, observed, now, ttl)
+    expect replaced: match report, observed {
+        Option::Some(r), Option::Some(m) => (when r.monitor != Option::Some(m), not compatible?),
+        Option::Some(r), Option::None => (unless fresh_report?(r, now, ttl), not compatible?),
+        _, _ => not compatible?,
+    }
+    expect token: match report {
+        Option::Some(r) => (when status_job != r.owner.job, not compatible?),
+        Option::None => not compatible?,
+    }
+}
+
+pub fn admission_memory(cap: Nat, report: Option<MemoryReport>, now: Int, ttl: Nat): Int :=
+    match report {
+        Option::Some(r) =>
+            if valid_report?(r) then (if fresh_report?(r, now, ttl) then r.rss else cap)
+            else legacy_reservation(cap, Option::None),
+        Option::None => legacy_reservation(cap, Option::None),
+    }
+
+pub fn eviction_memory(report: Option<MemoryReport>): Int := match report {
+    Option::Some(r) => if valid_report?(r) then r.rss else 0,
+    Option::None => 0,
+}
+
+pub proc heavy_lease(cap: Nat, locked?, lease: MemoryLease, now: Int, ttl: Nat): (
+    det live?,
+    det admission: Int,
+    det eviction: Int,
+) {
+    call owner := heavy_report_owner(lease.report, lease.status_job, lease.observed, now, ttl)
+    ensure live: live? iff locked?
+    out admission :=
+        if not locked? then 0
+        else if owner.compatible? then admission_memory(cap, lease.report, now, ttl)
+        else legacy_reservation(cap, lease.legacy_rss)
+    out eviction :=
+        if not locked? then 0
+        else if owner.compatible? then eviction_memory(lease.report)
+        else legacy_memory(lease.legacy_rss)
+    expect unlocked: unless locked?, admission = 0 and eviction = 0
+    expect unknown: when locked? and lease.report = Option::None and lease.legacy_rss = Option::None,
+        admission > 0 and eviction = 0
+    expect stale: match lease.report, lease.observed {
+        Option::Some(r), Option::Some(m) => (when locked? and valid_report?(r)
+            and lease.status_job = r.owner.job and r.monitor = Option::Some(m)
+            and not fresh_report?(r, now, ttl),
+            admission = cap and eviction = r.rss),
+        _, _ => true,
+    }
+    expect unverified_stale: match lease.report {
+        Option::Some(r) => (when locked? and lease.observed = Option::None and not fresh_report?(r, now, ttl),
+            admission = legacy_reservation(cap, lease.legacy_rss) and eviction = legacy_memory(lease.legacy_rss)),
+        Option::None => true,
+    }
+    expect wrong_token: match lease.report {
+        Option::Some(r) => (when locked? and lease.status_job != r.owner.job,
+            admission = legacy_reservation(cap, lease.legacy_rss) and eviction = legacy_memory(lease.legacy_rss)),
+        Option::None => true,
+    }
+}
+
+pub fn observed_admission(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
+    out rss := match leases {
+        MemoryLeases::Nil => 0,
+        MemoryLeases::Cons(lease, rest) =>
+            (if report_owner?(lease.report, lease.status_job, lease.observed, now, ttl)
+                then admission_memory(cap, lease.report, now, ttl) else legacy_memory(lease.legacy_rss))
+            + observed_admission(cap, rest, now, ttl),
+    }
+    ensure empty: when leases = MemoryLeases::Nil, rss = 0
+    ensure single_legacy: match leases {
+        MemoryLeases::Cons(lease, MemoryLeases::Nil) => (unless report_owner?(
+            lease.report,
+            lease.status_job,
+            lease.observed,
+            now,
+            ttl
+        ),
+            rss = legacy_memory(lease.legacy_rss)),
+        _ => true,
+    }
+}
+
+pub fn unknown_legacy?(leases: MemoryLeases, now: Int, ttl: Nat) := match leases {
+    MemoryLeases::Nil => false,
+    MemoryLeases::Cons(lease, rest) =>
+        (not report_owner?(lease.report, lease.status_job, lease.observed, now, ttl) and (match lease.legacy_rss {
+            Option::Some(rss) => rss < 0,
+            Option::None => true,
+        })) or unknown_legacy?(rest, now, ttl),
+}
+
+pub fn admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): Int :=
+    observed_admission(cap, leases, now, ttl)
+    + (if unknown_legacy?(leases, now, ttl) then legacy_reservation(cap, Option::None) else 0)
+
+pub fn eviction_total(leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
+    out rss := match leases {
+        MemoryLeases::Nil => 0,
+        MemoryLeases::Cons(lease, rest) =>
+            (if report_owner?(lease.report, lease.status_job, lease.observed, now, ttl)
+                then eviction_memory(lease.report) else legacy_memory(lease.legacy_rss))
+            + eviction_total(rest, now, ttl),
+    }
+    ensure empty: when leases = MemoryLeases::Nil, rss = 0
+    ensure single_legacy: match leases {
+        MemoryLeases::Cons(lease, MemoryLeases::Nil) => (unless report_owner?(
+            lease.report,
+            lease.status_job,
+            lease.observed,
+            now,
+            ttl
+        ),
+            rss = legacy_memory(lease.legacy_rss)),
+        _ => true,
+    }
+}
+
+pub fn newest_owner(first: Option<MemoryOwner>, second: Option<MemoryOwner>): Option<MemoryOwner> :=
+    match first, second {
+        Option::None, _ => second,
+        _, Option::None => first,
+        Option::Some(a), Option::Some(b) => if b.sequence > a.sequence then second else first,
+    }
+
+pub fn latest_owner(leases: MemoryLeases, now: Int, ttl: Nat): (owner: Option<MemoryOwner>) {
+    out owner := match leases {
+        MemoryLeases::Nil => Option::None,
+        MemoryLeases::Cons(lease, rest) => newest_owner(
+            match lease.report {
+                Option::Some(r) =>
+                    if report_owner?(lease.report, lease.status_job, lease.observed, now, ttl)
+                    then Option::Some(r.owner) else Option::None,
+                Option::None => Option::None,
+            },
+            latest_owner(rest, now, ttl)
+        ),
+    }
+    ensure empty: when leases = MemoryLeases::Nil, owner = Option::None
+}
+
+pub proc heavy_memory_victim(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (
+    det admission: Int,
+    det total: Int,
+    det selected: Option<MemoryOwner>,
+) {
+    out admission := admission_total(cap, leases, now, ttl)
+    out total := eviction_total(leases, now, ttl)
+    out selected := if total > cap then latest_owner(leases, now, ttl) else Option::None
+    expect within_cap: when total <= cap, selected = Option::None
+    expect legacy: when latest_owner(leases, now, ttl) = Option::None, selected = Option::None
+    expect estimates_only: match leases {
+        MemoryLeases::Cons(lease, MemoryLeases::Nil) => (when lease.report = Option::None and lease.legacy_rss = Option::None,
+            selected = Option::None and total = 0),
+        _ => true,
+    }
+    expect shared_forecast: when leases = MemoryLeases::Cons(
+        UNKNOWN_LEASE,
+        MemoryLeases::Cons(UNKNOWN_LEASE, MemoryLeases::Nil)
+    ),
+        admission = legacy_reservation(cap, Option::None) and total = 0
+    expect stale_fits: match leases {
+        MemoryLeases::Cons(lease, rest) => match lease.report {
+            Option::Some(r) => (when report_owner?(
+                lease.report,
+                lease.status_job,
+                lease.observed,
+                now,
+                ttl
+            )
+                and not fresh_report?(r, now, ttl) and r.rss + eviction_total(rest, now, ttl) <= cap,
+                selected = Option::None),
+            Option::None => true,
+        },
+        _ => true,
+    }
+}
+
+pub proc heavy_group_gone(leader_reaped?, group_exists?): (det gone?) {
+    ensure rule: gone? iff leader_reaped? and not group_exists?
+    expect worker: when group_exists?, not gone?
+    expect leader_running: unless leader_reaped?, not gone?
+}
+
+pub proc heavy_owned_signal(
+    own: String,
+    leases: MemoryLeases,
+    cap: Nat,
+    own_rss: Nat,
+    now: Int,
+    ttl: Nat,
+    requested?,
+    leader_reaped?,
+    group_exists?,
+): (det signal?) {
+    call eviction := heavy_memory_victim(cap, leases, now, ttl)
+    call termination := heavy_group_gone(leader_reaped?, group_exists?)
+    let memory_requested? := match eviction.selected {
+        Option::Some(owner) => owner.job = own or own_rss > cap,
+        Option::None => own_rss > cap,
+    }
+    ensure rule: signal? iff (requested? or memory_requested?) and not termination.gone?
+    expect own_cap: when own_rss > cap and not termination.gone?, signal?
+    expect completed: when termination.gone?, not signal?
+    expect escalation: when requested? and group_exists?, signal?
+}
+```
 
 The log has no automatic size limit or rotation, and `--stats` reads it
 all, including the load samples of long jobs. Keep the raw log for the
@@ -1329,7 +1807,7 @@ request of its own rather than slowing every pull request down.
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
 | Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the chapter split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
-| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen, on macOS: more than a `lake test` shard can spare |
+| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
 | The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-merge`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
@@ -1340,7 +1818,7 @@ has passed, as the artifact
 `fren-SHA`, and `fren_test`, once shard 0 has built it, as
 `fren_test-SHA`, where SHA is the full sha of the pull request's head.
 They are kept for 3 days. They are Linux binaries, built on
-`ubuntu-24.04`, which run on Linux machines such as sky but not on macOS.
+`ubuntu-24.04`, which run on Linux but not on macOS.
 On `main`, `lean ci`'s shard 0 uploads its stripped `fren_test` as
 `fren_test-SHA` too, where SHA is `main`'s commit, for the book; that one
 has no `MERGE_SHA`, since it is built from that commit itself.
