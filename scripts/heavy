@@ -25,11 +25,12 @@ greatest admission sequence terminates its own group (TERM, then KILL) and
 exits with 137. Every owner also enforces its own cap. Registry waits have a
 short deadline: on timeout admission waits and monitors enforce their own
 cap until shared accounting resumes. Failure to identify, measure or publish
-memory otherwise stops the command with exit 125. All holders must drain
-before mixing incompatible protocol versions.
-The files are re-read on every use, so changing one takes effect
-for running jobs too. An unset, empty, invalid, infinite or non-positive
-setting falls through to the next, with a warning unless it is unset.
+memory otherwise stops the command with exit 125. Linux requires `NSpid` in
+procfs status; systems without it fail identification with exit 125. All
+holders must drain before mixing incompatible protocol versions. The files
+are re-read on every use, so changing one takes effect for running jobs too.
+An unset, empty, invalid, infinite or non-positive setting falls through to
+the next, with a warning unless it is unset.
 
 Load (opt-in): `HEAVY_MAX_LOAD`, else ~/.cache/heavy/max_load, else off.
 Wait for the 1-minute load to be below this value, for at most 10 minutes;
@@ -613,7 +614,9 @@ def pid_namespace():
 def visible_group(child_pid, proc="/proc", system=None):
     """Translate our own child's local PID into the procfs view's PGID.
     With an ancestor's /proc mount, NSpid locates the child among our own
-    children. Never resolve another slot's numeric PID this way."""
+    children. Linux requires NSpid in the caller's status and, for ancestor
+    procfs, in candidate status files. Never resolve another slot's numeric
+    PID this way."""
     if (system or platform.system()) != "Linux":
         return child_pid
     with open(os.path.join(proc, "self", "stat")) as f:
@@ -943,13 +946,29 @@ def run(f, command, shown, kind, record, began, state, environ, load_reader):
     return code
 
 
-def heavy_rss_kb(state=STATE, cap=None):
-    """Admission reserves a full cap for each stale or unknown held lease."""
+def heavy_rss_kb(state=STATE, cap=None, reservations=None):
+    """Admission reserves a full cap for each stale or unknown held lease.
+    Optionally collect the slots and reasons behind those reservations."""
     try:
         cap = mem_cap_kb(state=state) if cap is None else cap
-        return sum(j["rss_kb"] if j["fresh"] else cap for j in jobs(state))
+        running = jobs(state)
+        if reservations is not None:
+            for job in running:
+                if not job["fresh"]:
+                    reason = ("no compatible report" if job["rss_kb"] is None
+                              else "stale or future-dated report")
+                    reservations.append(f"{job['slot']} ({reason})")
+        return sum(j["rss_kb"] if j["fresh"] else cap for j in running)
     except OSError:
         return math.inf
+
+
+def memory_wait_message(state, reservations):
+    if reservations:
+        slots = ", ".join(sorted(reservations))
+        return (f"heavy: waiting for memory: {slots}; resume stopped monitors or "
+                f"drain incompatible heavy jobs (see {state})")
+    return f"heavy: waiting for memory or load (see {state})"
 
 
 def main(argv, state=STATE, environ=None, load_reader=load_average):
@@ -1008,7 +1027,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     except (OSError, ValueError, subprocess.CalledProcessError) as e:
         print(f"heavy: cannot tell the physical memory ({e}); set HEAVY_MEM_GB", file=sys.stderr)
         return 2
-    warned = False
+    warned = None
     while True:
         slots = slot_count(environ, state)
         limit = max_load(environ, state)
@@ -1016,12 +1035,13 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
         # Start no job while the running ones already use most of the cap: a
         # job that starts now would likely be the one killed when they grow.
         cap = mem_cap_kb(environ, state)
-        if not can_start(time.monotonic() - queued, heavy_rss_kb(state, cap),
+        reservations = []
+        if not can_start(time.monotonic() - queued, heavy_rss_kb(state, cap, reservations),
                          cap, limit, load_reader):
-            if not warned:
-                print(f"heavy: waiting for memory or load (see {state})",
-                      file=sys.stderr)
-                warned = True
+            message = memory_wait_message(state, reservations)
+            if message != warned:
+                print(message, file=sys.stderr)
+                warned = message
             time.sleep(5)
             continue
         for i in range(slots):
@@ -1049,12 +1069,14 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
                 release_slot(f, state)
                 break
             cap = mem_cap_kb(environ, state)
-            if not can_start(waited, heavy_rss_kb(state, cap),
+            reservations = []
+            if not can_start(waited, heavy_rss_kb(state, cap, reservations),
                              cap, limit, load_reader):
                 release_slot(f, state)
-                if not warned:
-                    print(f"heavy: waiting for memory or load (see {state})", file=sys.stderr)
-                    warned = True
+                message = memory_wait_message(state, reservations)
+                if message != warned:
+                    print(message, file=sys.stderr)
+                    warned = message
                 break
             admitted = time.monotonic()
             record.update(started_at=time.time(), wait_seconds=admitted - queued,
@@ -1066,8 +1088,8 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             finally:
                 release_slot(f, state)
         if not warned:
-            print(f"heavy: all {slots} slots busy, waiting (see {state})", file=sys.stderr)
-            warned = True
+            warned = f"heavy: all {slots} slots busy, waiting (see {state})"
+            print(warned, file=sys.stderr)
         time.sleep(2)
 
 

@@ -98,6 +98,41 @@ def test_recheck_wait_message():
             heavy.fcntl.flock(slot, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
 
 
+def test_reservation_wait_message():
+    class Waiting(Exception):
+        pass
+
+    environ = {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}
+    for recheck in (False, True):
+        for rss, reason in ((None, "no compatible report"), (1, "stale or future-dated report")):
+            with tempfile.TemporaryDirectory() as state:
+                rows = [{"slot": "slot1", "rss_kb": rss, "fresh": False}]
+                readings = [[], rows] if recheck else [rows]
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), \
+                     mock.patch.object(heavy, "jobs", side_effect=readings), \
+                     mock.patch.object(heavy.time, "sleep", side_effect=Waiting), \
+                     mock.patch.object(heavy, "run", side_effect=AssertionError("admitted")):
+                    assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
+                                                     environ, lambda: 0), Waiting)
+                assert f"slot1 ({reason})" in stderr.getvalue()
+                assert "resume stopped monitors or drain incompatible heavy jobs" in stderr.getvalue()
+                assert "slots busy" not in stderr.getvalue()
+
+    # A prior generic load warning must not hide a later reservation warning.
+    with tempfile.TemporaryDirectory() as state:
+        stderr = io.StringIO()
+        rows = [{"slot": "slot0", "rss_kb": None, "fresh": False}]
+        with contextlib.redirect_stderr(stderr), \
+             mock.patch.object(heavy, "jobs", side_effect=[[], rows]), \
+             mock.patch.object(heavy.time, "sleep", side_effect=[None, Waiting]), \
+             mock.patch.object(heavy, "run", side_effect=AssertionError("admitted")):
+            assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
+                          dict(environ, HEAVY_MAX_LOAD="1"), lambda: 100), Waiting)
+        assert "waiting for memory or load" in stderr.getvalue()
+        assert "slot0 (no compatible report)" in stderr.getvalue()
+
+
 def test_physical_memory():
     meminfo = "MemFree:  1000 kB\nMemTotal:       32864960 kB\nSwapTotal: 0 kB\n"
     assert heavy.meminfo_kb(meminfo) == 32864960
@@ -302,7 +337,6 @@ def proc_line(pid=123, name="lean", group=7, user=10, system=20, start=100, stat
 
 
 def test_slot_identity():
-    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim
     with tempfile.TemporaryDirectory() as state:
         first = open(os.path.join(state, "slot0"), "a+")
         second = open(os.path.join(state, "slot1"), "a+")
@@ -362,7 +396,6 @@ def test_slot_identity():
 
 
 def test_proc_namespace_translation():
-    # fren-covers: testing::heavy_lease
     with tempfile.TemporaryDirectory() as proc:
         for pid in ("self", "1", "6", "901", "902", "903"):
             os.mkdir(os.path.join(proc, pid))
@@ -399,7 +432,6 @@ def test_proc_namespace_translation():
 
 
 def test_memory_victim():
-    # fren-covers: testing::heavy_memory_victim, testing::heavy_owned_signal
     older = {"job_id": "old", "order": 1, "rss_kb": 60}
     newer = {"job_id": "new", "order": 2, "rss_kb": 20}
     for leases in ([older, newer], [newer, older]):
@@ -417,7 +449,6 @@ def test_memory_victim():
 
 
 def test_group_completion():
-    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
     for reaped in (False, True):
         for exists in (False, True):
             effect = None if exists else ProcessLookupError()
@@ -444,7 +475,6 @@ def adopt_workers():
 
 
 def test_fallback_escalation():
-    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
     if heavy.platform.system() != "Linux":
         return
     # The harness adopts/reaps the orphan, as a working init would. The
@@ -517,14 +547,12 @@ def test_fallback_escalation():
 
 
 def test_no_signal_after_reap():
-    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
     with mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()) as probe:
         heavy.kill_group(5, lambda: True)
         probe.assert_called_once_with(5, 0)
 
 
 def test_pid_namespace_jobs():
-    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim, testing::heavy_owned_signal
     if heavy.platform.system() != "Linux":
         return
     base = ["unshare", "--user", "--map-root-user", "--pid", "--fork", "--kill-child=KILL"]
@@ -984,7 +1012,6 @@ def test_alternate_ignored_hangup():
 
 
 def test_registry_signals_and_release():
-    # fren-covers: testing::heavy_registry, testing::heavy_lease
     with tempfile.TemporaryDirectory() as state:
         signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
         delivered = []
@@ -1051,7 +1078,6 @@ def test_registry_signals_and_release():
 
 
 def test_own_cap_with_other_victim():
-    # fren-covers: testing::heavy_owned_signal
     with tempfile.TemporaryDirectory() as state, tempfile.TemporaryFile(mode="w+") as slot:
         slot.heavy_job = {"job_id": "older"}
         rows = [{"job_id": "older", "order": 1, "rss_kb": 101},
@@ -1103,7 +1129,6 @@ def registry_timeout_paths(state):
 
 
 def test_stopped_registry_holder():
-    # fren-covers: testing::heavy_registry, testing::heavy_lease, testing::heavy_owned_signal
     if heavy.platform.system() != "Linux":
         return
     with tempfile.TemporaryDirectory() as state:
@@ -1176,7 +1201,6 @@ with h['registry'](sys.argv[2]):
 
 
 def test_report_clock():
-    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim
     with tempfile.TemporaryDirectory() as state:
         slot = open(os.path.join(state, "slot0"), "a+")
         try:
@@ -1199,7 +1223,6 @@ def test_report_clock():
 
 
 def test_stopped_owner():
-    # fren-covers: testing::heavy_lease, testing::heavy_memory_victim, testing::heavy_owned_signal
     if heavy.platform.system() != "Linux":
         return
     with tempfile.TemporaryDirectory() as state:
@@ -1230,6 +1253,14 @@ def test_stopped_owner():
                 # Stop outside the child's critical section so reading the
                 # stale report below does not contend with a stopped holder.
                 os.kill(children[0].pid, signal.SIGSTOP)
+                deadline = heavy.time.monotonic() + 5
+                while heavy.time.monotonic() < deadline:
+                    with open(f"/proc/{children[0].pid}/stat") as f:
+                        if f.read().rpartition(")")[2].split()[0] == "T":
+                            break
+                    heavy.time.sleep(0.01)
+                else:
+                    raise AssertionError("monitor did not stop before registry unlock")
             deadline = heavy.time.monotonic() + heavy.REPORT_STALE_SECONDS + 2
             while heavy.time.monotonic() < deadline:
                 assert children[1].poll() is None, children[1].communicate()
@@ -1258,7 +1289,8 @@ def test_stopped_owner():
 
 
 def main():
-    tests = [test_parse_args, test_missing_command, test_recheck_wait_message, test_physical_memory,
+    tests = [test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
+             test_physical_memory,
              test_overrides, test_offline_command, test_load_admission, test_job_log,
              test_admission_snapshot, test_job_kinds, test_policy_flip_while_waiting,
              test_stats_and_appends, test_short_appends, test_policy_comparison,

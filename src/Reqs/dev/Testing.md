@@ -958,11 +958,11 @@ Every registry acquisition uses nonblocking attempts with a 0.2-second
 monotonic deadline. A timeout blocks admission and skips shared accounting
 for that monitor tick; local RSS measurement and the job's own cap still
 apply. Release also has this deadline: on timeout it closes the slot and
-leaves inactive metadata. On successful cleanup it closes the slot before
-releasing the registry lock. Termination signals are unblocked only after
-the registry lock is released, so child cleanup cannot hold up the registry.
-A stopped holder can prevent shared accounting from progressing, but cannot
-make another monitor wait indefinitely on the lock.
+leaves inactive metadata. Once it holds the registry lock, it closes the
+slot before releasing it, even if cleanup fails. Termination signals are
+unblocked only after the registry lock is released, so child cleanup cannot
+hold up the registry. A stopped holder can prevent shared accounting from
+progressing, but cannot make another monitor wait indefinitely on the lock.
 
 Reports include the owner's `/proc/self/ns/pid` identity and label numeric
 PIDs as namespace-local diagnostics. No other owner resolves or signals
@@ -979,11 +979,14 @@ is held; handlers are restored after monitoring.
 
 If `/proc` belongs to an ancestor PID namespace, the owner translates its
 own child through parentage and `NSpid` before measuring it in that procfs
-view. This covers both `unshare --pid --fork` with an inherited `/proc` and
-jobs with a remounted `/proc`, such as bwrap jobs. If it cannot identify its
-own group, or cannot measure or publish its memory for a reason other than
-the bounded registry timeout above, it stops its own command and exits with
-125 rather than applying a foreign numeric PID.
+view. Linux requires `NSpid` in `/proc/self/status` for every job, and in
+candidate status files when translating from ancestor procfs. Kernels and
+procfs emulations without these entries are unsupported. This covers both
+`unshare --pid --fork` with an inherited `/proc` and jobs with a remounted
+`/proc`, such as bwrap jobs. If it cannot identify its own group, or cannot
+measure or publish its memory for a reason other than the bounded registry
+timeout above, it stops its own command and exits with 125 rather than
+applying a foreign numeric PID.
 Job records identify this protocol as `memory_accounting` =
 `"slot_owner_reports_v3"`, alongside `job_id`, `admission_order` and `pid_namespace`.
 
@@ -997,14 +1000,17 @@ time namespaces with different monotonic offsets are outside this protocol.
 Admission and eviction have different totals. For admission, a held lease
 with missing, malformed, incompatible, future-dated or older-than-ten-second
 memory data reserves one full cap, blocking new work. A fresh lease counts
-its reported RSS. For eviction, each compatible lease counts its last
-reported RSS even if stale, and an unrecognized lease counts zero measured
-memory. Reservations alone cannot select a victim. If any lease lacks a
-compatible identity or reading, no global victim is selected; running jobs
-still enforce their own cap. Otherwise, eviction selects the greatest
-admission sequence only when the sum of last reported RSS exceeds the cap.
-A stale reading may underestimate current use; it remains measurement
-evidence rather than a bound on an unobserved process's memory.
+its reported RSS. Admission names the reserving slots and whether their
+reports are incompatible or stale/future-dated, with a reminder to resume
+stopped monitors or drain incompatible heavy jobs. For eviction, each
+compatible lease counts its last reported RSS even if stale, and an
+unrecognized lease counts zero measured memory. Reservations alone cannot
+select a victim. If any lease lacks a compatible identity or reading, no
+global victim is selected; running jobs still enforce their own cap.
+Otherwise, eviction selects the greatest admission sequence only when the
+sum of last reported RSS exceeds the cap. A stale reading may underestimate
+current use; it remains measurement evidence rather than a bound on an
+unobserved process's memory.
 
 All heavy copies must use compatible reports, and old holders must drain
 before relying on the combined cap. In particular, a crashed version-3
@@ -1013,11 +1019,10 @@ readers can then attribute the dead holder's RSS and order to that old holder
 and select a live version-3 victim from a phantom total. Drain all holders
 before changing protocol versions; this protocol does not identify reports
 written by a previous holder when a legacy holder reuses the slot.
-Cleanup can leave metadata behind after a write error; unlocking still makes
-that report inactive. Accounting
-is sampled, not a kernel memory cgroup limit. A stopped monitor cannot
-publish new RSS, but its last reading never becomes a whole-cap eviction
-charge merely because it stops reporting.
+Cleanup can leave metadata behind after a write error; unlocking still
+makes that report inactive. Accounting is sampled, not a kernel memory
+cgroup limit. A stopped monitor cannot publish new RSS, but its last reading
+never becomes a whole-cap eviction charge merely because it stops reporting.
 
 `scripts/heavy_test.py` runs in the `lint` workflow, not in `lake test`.
 It checks lease accounting, bounded registry waits and local termination, and
@@ -1054,9 +1059,13 @@ monotonic clock. Python tests check the concrete lock, clock, procfs and
 signal operations through `tested` claims in `Impls.Trace`; these tests run
 in the `lint` workflow, not in `lake test`. `heavy_registry` models the retry
 and signal-deferral decisions, including refusal to retry after the deadline.
-With an advancing clock and scheduled retries this bounds acquisition waits.
-It does not prove that Python uses nonblocking flock or that the OS schedules
-a monitor: the stopped-lock-holder test checks concrete bounded progress.
+These are per-attempt rules: the supplied deadline does not model its
+allocation once per acquisition, nor a finite sequence of retries. The Req
+cannot reject a deadline recomputed on every retry or a blocking flock.
+The stopped-lock-holder subprocess test checks concrete bounded progress;
+no Req here proves that Python uses nonblocking flock or that the OS schedules
+a monitor. The Python test file has no `fren-covers` markers: `fren.testGlobs`
+does not scan `scripts/`, so such markers would not be checked.
 The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
