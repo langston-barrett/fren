@@ -1,0 +1,50 @@
+-- Solver checks must initialize instantiated collection sorts even when
+-- the formula never reads those fields. Enumeration bypasses this path.
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.undecidable "allow"
+set_option fren.lint.assertions_on_constants "allow"
+mod datatype_elements_solver
+
+pub enum Key { A, B }
+pub enum Bag<T> { Empty, Many(Set<T>) }
+pub struct Collections<A, B> { set: Set<A>, seq: Seq<B>, rel: Rel<A, B> }
+pub struct Box<T> { value: T }
+pub enum Chain<T> { Nil, Cons(Set<T>, Chain<T>) }
+
+-- The unused relation field needs the concrete tuple sort (Bool, Key).
+-- cvc5 crashed while computing the cardinality of this record.
+proc unused_field(r: Collections<Bool, Key>) { expect finite: r.set subset {true, false} }
+
+-- A whole-value comparison need not mention any collection expression.
+-- This used to fail inside cvc5's specialized constructor lookup.
+proc whole_values(b: Bag<Bool>) {
+    expect empty: b = Bag::Empty  --~ error: expectation `datatype_elements_solver::whole_values::empty` does not hold
+}
+
+proc wrapped(r: Box<Collections<Bool, Key>>) { expect nested: r.value.set subset {true, false} }
+
+proc recursive(c: Chain<Bool>) {
+    expect recursive: match c {
+        Chain::Nil => true,
+        Chain::Cons(s, _) => s subset {true, false},
+    }
+}
+
+proc quantified() {
+    expect quantified: forall (r: Collections<Bool, Key>), r.set subset {true, false}
+}
+
+-- The prelude's Result has a different order of type parameters in SMT.
+proc prelude(r: Result<Collections<Bool, Key>, Int>) {
+    expect fields: match r {
+        Result::Ok(c) => c.set subset {true, false},
+        Result::Err(_) => true,
+    }
+}
+
+pub fn same?<T>(a: Bag<T>, b: Bag<T>): (r?) {
+    out r? := a = b
+    ensure rule: r? iff a = b
+}
+
+--@ exit: 1

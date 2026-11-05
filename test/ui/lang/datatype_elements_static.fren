@@ -1,0 +1,19 @@
+-- Collection element parameters are substituted before checking values.
+set_option fren.lint.dead_code "allow"
+mod datatype_elements_static
+
+pub enum Bag<T> { Many(Set<T>) }
+pub struct Fields<A, B> { seq: Seq<A>, rel: Rel<A, B> }
+
+proc payload(x: Int): (det b: Bag<Bool>) {
+    out b := Bag::Many({x})  --~ error: type mismatch: expected `Set<Bool>`, found `Set<Int>`
+}
+
+proc field(b?): (det r: Fields<Int, Bool>) {
+    out r := Fields { seq := [b?], rel := {} }  --~ error: type mismatch: expected `Seq<Int>`, found `Seq<Bool>`
+}
+
+proc update(r: Fields<Int, Bool>): (det s: Fields<Int, Bool>) {
+    out s := { r with rel := {(1, 2)} }  --~ error: type mismatch: expected `Rel<Int, Bool>`, found `Rel<Int, Int>`
+}
+--@ exit: 2
