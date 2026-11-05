@@ -1,0 +1,118 @@
+name: codex-agent
+
+# Codex works on a small follow-up issue in CI and opens a pull request,
+# which then goes through `pre-merge` and `pr-review` like any other. A
+# label `agent/<model>-<effort>` on an issue starts it (`agent/luna-low`,
+# `agent/terra-medium`, ...), or a manual run names the issue, model and
+# effort. Meant for small, self-contained follow-ups, to use CI's spare
+# runners and compare models and effort levels on the same kind of work.
+#
+# zizmor: ignore[dangerous-triggers] it runs only on issues written by the
+# repository's owner, members or collaborators, and only when someone with
+# write access added the label (checked below). Codex runs with no GitHub
+# token; the push and the pull request come after it, in steps of their own.
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number
+        required: true
+      model:
+        description: luna or terra
+        default: luna
+      effort:
+        description: low, medium or high
+        default: medium
+
+permissions: {}
+
+concurrency:
+  group: codex-agent-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.event.label.name, 'agent/') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      issues: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - id: params
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        EVENT: ${{ github.event_name }}
+        LABEL: ${{ github.event.label.name }}
+        SENDER: ${{ github.event.sender.login }}
+        IN_ISSUE: ${{ inputs.issue }}
+        IN_MODEL: ${{ inputs.model }}
+        IN_EFFORT: ${{ inputs.effort }}
+        EV_ISSUE: ${{ github.event.issue.number }}
+      run: python3 .github/codex-agent/params.py
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ github.sha }}
+    - name: Install Codex
+      run: npm install -g @openai/codex@0.166.0
+    - name: Codex works on the issue
+      env:
+        CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        MODEL: ${{ steps.params.outputs.model }}
+        EFFORT: ${{ steps.params.outputs.effort }}
+      run: |
+        set -euo pipefail
+        umask 077
+        mkdir -p ~/.codex
+        printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+        mkdir -p "$RUNNER_TEMP/agent"
+        status=0
+        codex exec -m "$MODEL" -c model_reasoning_effort="$EFFORT" -s danger-full-access \
+          --json -o "$RUNNER_TEMP/agent/last.md" "$(cat "$RUNNER_TEMP/agent/prompt.md")" \
+          > "$RUNNER_TEMP/agent/log.jsonl" || status=$?
+        rm -f ~/.codex/auth.json
+        grep -o '"usage":{[^}]*}' "$RUNNER_TEMP/agent/log.jsonl" | tail -1 || true
+        exit "$status"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      if: ${{ always() }}
+      with:
+        name: codex-agent-${{ steps.params.outputs.issue }}-${{ steps.params.outputs.model }}-${{ steps.params.outputs.effort }}
+        path: ${{ runner.temp }}/agent
+        retention-days: 14
+    - name: Push the branch and open the pull request
+      env:
+        GH_TOKEN: ${{ secrets.FREN_DEV_TOKEN }}
+        REPO: ${{ github.repository }}
+        ISSUE: ${{ steps.params.outputs.issue }}
+        BRANCH: agent/${{ steps.params.outputs.issue }}-${{ steps.params.outputs.model }}-${{ steps.params.outputs.effort }}
+        MODEL: ${{ steps.params.outputs.model }}
+        EFFORT: ${{ steps.params.outputs.effort }}
+      run: |
+        set -euo pipefail
+        if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+          gh issue comment "$ISSUE" -R "$REPO" --body "codex-agent ($MODEL, $EFFORT effort) made no change; see the run's artifact."
+          exit 0
+        fi
+        if { git diff --name-only; git ls-files --others --exclude-standard; } | grep -q '^\.github/'; then
+          gh issue comment "$ISSUE" -R "$REPO" --body "codex-agent ($MODEL, $EFFORT effort) changed files under .github/, which it may not; no pull request opened. See the run's artifact."
+          exit 1
+        fi
+        title=$(head -1 "$RUNNER_TEMP/agent/pr-title.txt" 2>/dev/null || echo "Fix #$ISSUE")
+        git config user.name fren-dev
+        git config user.email 352592472+fren-dev@users.noreply.github.com
+        git checkout -b "$BRANCH"
+        git add -A
+        git commit -q -F "$RUNNER_TEMP/agent/commit-msg.txt" 2>/dev/null || git commit -q -m "$title"
+        git push -q "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/$BRANCH"
+        { cat "$RUNNER_TEMP/agent/pr-body.md" 2>/dev/null || cat "$RUNNER_TEMP/agent/last.md"; printf '\n\nCloses #%s. Written by %s at %s effort in the `codex-agent` workflow.\n' "$ISSUE" "$MODEL" "$EFFORT"; } > "$RUNNER_TEMP/body.md"
+        url=$(gh pr create -R "$REPO" --head "$BRANCH" --base main --title "$title" --body-file "$RUNNER_TEMP/body.md")
+        gh issue comment "$ISSUE" -R "$REPO" --body "codex-agent ($MODEL, $EFFORT effort) opened $url."
