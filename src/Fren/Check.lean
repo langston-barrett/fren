@@ -872,11 +872,14 @@ where
     else k xs
 
 /-- Ground equations and contract facts for recursive applications. The queue
-preserves origin through contracts: equation-introduced applications and their
-contracts receive no further equations. `allowPosts` lets induction proofs
-require evidence for a self-contract before using or expanding it. -/
+keeps each application's depth, how many equations away from the query it
+is, through contracts, and an application brings an equation only where its
+depth is less than `unfoldings` (`Core.recursiveFacts`). `allowPosts` lets
+induction proofs require evidence for a self-contract before using or
+expanding it. -/
 partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
-    (allowPosts : DefinedInfo → Expr → Array Expr → MetaM Bool := fun _ _ _ => pure true) : MetaM (Array (Name × Expr)) := do
+    (allowPosts : DefinedInfo → Expr → Array Expr → MetaM Bool := fun _ _ _ => pure true)
+    (unfoldings : Nat := 1) : MetaM (Array (Name × Expr)) := do
   let st ← getState
   let recs := st.defined.toArray.filterMap fun (_, d) =>
     if d.recursive then d.solver?.map (·, d) else none
@@ -887,14 +890,14 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
   if recs.isEmpty then return #[]
   let mut work := #[]
   for f in hyps.map (·.2) |>.push goal do
-    work := work ++ (← scan recs f #[] false #[])
+    work := work ++ (← scan recs f #[] 0 #[])
   let mut out := #[]
-  let mut seen : Array (Expr × Array Expr × Bool) := #[]
+  let mut seen : Array (Expr × Array Expr × Nat) := #[]
   let mut done := 0
   while done < work.size do
-    let (app, gs, introduced, ancestors) := work[done]!
+    let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, introduced)
+    let key := (app, gs, depth)
     if seen.contains key || ancestors.contains app then continue
     seen := seen.push key
     let .const c _ := app.getAppFn | continue
@@ -925,12 +928,12 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     let implies (ps : Array Expr) (q : Expr) := ps.foldr (fun p b => mkForall `h .default p b) q
     for (name, f) in (if ← allowPosts d app gs then Core.postconditionFacts implies pres posts else #[]) do
       out := out.push ((name, f), gs)
-      work := work ++ (← scan recs f gs introduced ancestors)
-    if (Core.recursiveFacts introduced).2 then
+      work := work ++ (← scan recs f gs depth ancestors)
+    if (Core.recursiveFacts depth (unfoldings := unfoldings)).2 then
       if let some body := d.recBody? then
         let body ← unfoldDefined ((atI body).beta args)
         out := out.push ((`equation, ← mkEq app body), gs)
-        work := work ++ (← scan recs body gs true ancestors)
+        work := work ++ (← scan recs body gs (depth + 1) ancestors)
   -- Each fact once, where it is first found, under its weakest paths, as
   -- the binary asserts it.
   let implies (gs : Array Expr) (f : Expr) := gs.foldr (fun g b => mkForall `h .default g b) f
@@ -942,7 +945,7 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     (n, Core.guardedFact implies disj f ps)
 where
   scan (recs : NameMap DefinedInfo) (e : Expr) (gs : Array Expr)
-      (introduced : Bool) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Bool × Array Expr)) := do
+      (depth : Nat) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Nat × Array Expr)) := do
     -- A formula without a recursive symbol has no application to find:
     -- `find?` visits each shared subterm once, where the descent below
     -- would visit it once for each path to it.
@@ -952,18 +955,18 @@ where
     if (e.find? recursive).isNone then return #[]
     -- Descend through binders to find closed applications, but never export
     -- an application or a guard containing a binder-local variable.
-    let own := if (Core.recursiveFacts introduced e.hasLooseBVars).1 && recursive e.getAppFn && e.isApp then
-      #[(e, gs.filter (!·.hasLooseBVars), introduced, ancestors)] else #[]
+    let own := if (Core.recursiveFacts depth e.hasLooseBVars).1 && recursive e.getAppFn && e.isApp then
+      #[(e, gs.filter (!·.hasLooseBVars), depth, ancestors)] else #[]
     if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 then
       let args := e.getAppArgs
       let guard := if e.isAppOfArity ``And 2 then args[0]! else mkNot args[0]!
-      return own ++ (← scan recs args[0]! gs introduced ancestors)
-        ++ (← scan recs args[1]! (gs.push guard) introduced ancestors)
+      return own ++ (← scan recs args[0]! gs depth ancestors)
+        ++ (← scan recs args[1]! (gs.push guard) depth ancestors)
     else if e.isAppOfArity ``ite 5 then
       let args := e.getAppArgs
-      return own ++ (← scan recs args[1]! gs introduced ancestors)
-        ++ (← scan recs args[3]! (gs.push args[1]!) introduced ancestors)
-        ++ (← scan recs args[4]! (gs.push (mkNot args[1]!)) introduced ancestors)
+      return own ++ (← scan recs args[1]! gs depth ancestors)
+        ++ (← scan recs args[3]! (gs.push args[1]!) depth ancestors)
+        ++ (← scan recs args[4]! (gs.push (mkNot args[1]!)) depth ancestors)
     else match e with
     | .app .. =>
       -- Instance and proof arguments are elaboration artifacts, not
@@ -972,12 +975,12 @@ where
       let info ← getFunInfo e.getAppFn
       let args := e.getAppArgs.zipIdx.filter fun (_, i) =>
         !(info.paramInfo[i]?.any fun p => p.isInstance || p.isProp)
-      return own ++ (← args.flatMapM fun (arg, _) => scan recs arg gs introduced ancestors)
+      return own ++ (← args.flatMapM fun (arg, _) => scan recs arg gs depth ancestors)
     | .forallE _ p q _ =>
       let guards := if !p.hasLooseBVars && (← isProp p) then gs.push p else gs
-      return (← scan recs p gs introduced ancestors) ++ (← scan recs q guards introduced ancestors)
-    | .lam _ p q _ => return (← scan recs p gs introduced ancestors) ++ (← scan recs q gs introduced ancestors)
-    | .mdata _ b => scan recs b gs introduced ancestors
+      return (← scan recs p gs depth ancestors) ++ (← scan recs q guards depth ancestors)
+    | .lam _ p q _ => return (← scan recs p gs depth ancestors) ++ (← scan recs q gs depth ancestors)
+    | .mdata _ b => scan recs b gs depth ancestors
     | _ => return own
 
 /-- The value in a function's own contract is its body, once. Applications
@@ -1209,7 +1212,9 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     let hyps ← (Core.recursionFormulas unfoldedFacts appFacts unfoldedHyps).mapM
       fun (n, t) => return (n, ← contractBody c fvs t)
     let goal ← contractBody c fvs (← match unfolded? with | some (_, g) => pure g | none => unfoldDefined goal)
-    let reflected ← recursiveQueryFacts hyps goal
+    -- Deeper in the check of a function generated for induction
+    -- (`lang::unfoldings`).
+    let reflected ← recursiveQueryFacts hyps goal (unfoldings := Core.unfoldings (c.fn?.any Core.isInductionFn))
     let hyps := reflected ++ hyps
     let goal ← smtBinders goal
     let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)

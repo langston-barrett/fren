@@ -200,16 +200,21 @@ Each application also brings one step of its defining equations. For an
 arm `C(xs) => body`, the equation is `t is C(xs) => f(t) = body`, with
 selectors substituted for `xs`. Arm guards are extra conditions and earlier
 arms take precedence, exactly as in `match`. Applications introduced by
-this unfolding bring postconditions only, never another unfolding. Thus a
-query has finitely many ground equations. This holds in every context,
-including a function's own contract check.
+this unfolding bring postconditions only, never another unfolding, but in
+the check of an [induction](#unfolding-in-an-induction), which unfolds a
+few steps more. Thus a query has finitely many ground equations. This
+holds in every context, including a function's own contract check.
 
-The following structured policy is shared by both front ends. `Written`
-means an application in the query; `Reflected` means one
-introduced by the one-step defining equation. Applications found while
-expanding a contract inherit the originating application’s origin, including
-through further contracts. A work queue visits each application, guards and
-origin once; a contract expansion also stops when it revisits an application
+The following structured policy is shared by both front ends. An
+application's *depth* is how many defining equations away from the query
+it is: 0 for one in the query, and one more than an application's for one
+in that application's equation. Applications found while expanding a
+contract inherit the originating application’s depth, including through
+further contracts. An application brings its equation where its depth is
+less than the query's *unfoldings*, which `lang::unfoldings` states: 1,
+so that only the query's own applications bring one, but in an
+induction's check. A work queue visits each application, guards and
+depth once; a contract expansion also stops when it revisits an application
 on its ancestry path. Before scanning, the CLI expands the nonrecursive
 definitions and contract clauses that apply, directly or through others, a
 recursive or uninterpreted function, or a selector whose payload brings a
@@ -243,17 +248,21 @@ work queue finds it: both front ends decide the result type's fact from
 postconditions.
 
 ```fren
-pub enum RecApplication { Written, Reflected }
 pub struct RecFacts { result_type?, posts?, equation? }
 
 pub proc recursive_facts(
-    origin: RecApplication,
+    depth: Nat,              -- how many equations away from the query the application is
+    unfoldings: Nat,         -- the query's unfoldings (`lang::unfoldings`)
     bound?,                  -- the application mentions a quantifier-bound variable
     constrained_result?,     -- the function's declared result type has a constraint
 ): (det facts: RecFacts) {
     ensure result_type: facts.result_type? iff constrained_result? and not bound?
     ensure posts: facts.posts? iff not bound?
-    ensure equation: facts.equation? iff not bound? and origin = RecApplication::Written
+    ensure equation: facts.equation? iff not bound? and depth < unfoldings
+
+    -- Outside an induction's check, only the query's own applications
+    -- bring an equation.
+    expect one_step: when unfoldings = 1, facts.equation? iff not bound? and depth = 0
 
     -- The result type is a hypothesis wherever the postconditions are.
     expect with_posts: when constrained_result?, facts.result_type? = facts.posts?
@@ -626,9 +635,68 @@ is a check of a structural recursion's contract by Hoare's rule:
   has no precondition. So its applications have no obligation that its
   check leaves unchecked.
 
-Induction on a parameter does not yet unfold an application beyond one
-step where the case decides its arm, nor take earlier claims as
-hypotheses. It does not apply to a global expectation in its short form,
+### Unfolding in an induction
+
+A claim that needs more than the first step of each function's equations
+at the case's children is not proved by the step above alone. `long`
+below, for one, needs `append(L::Nil, b) = b` where `a` is
+`L::Cons(h, L::Nil)`: the equation of `append` at the child `t`, an
+application that the equation of `append(a, b)` brings.
+
+```text
+expect long(a: L, b: L) {
+    assume nonempty: a != L::Nil
+    expect longer: len(append(a, b)) > len(b)
+}
+```
+
+So the check of a function generated for induction unfolds a few steps
+deeper than any other check: its applications bring their equations at
+depths 0, 1 and 2 ([Solver encoding](#solver-encoding)), where every other
+check's bring them only at depth 0. `lang::unfoldings` states the query's
+unfoldings. Which check is an induction's is read from the path of the
+function whose contract it checks, whose name, a generated one, no other
+function has.
+
+```fren
+pub proc unfoldings(
+    induction?,                  -- the check is of a function generated for induction
+): (det steps: Nat) {
+    ensure rule: steps = (if induction? then 3 else 1)
+}
+```
+
+The deeper unfolding is sound:
+
+- Each equation is a theorem: a structural recursion is total, so the
+  equation of each of its arms holds at every argument, under the arm's
+  tests. An equation at an argument whose arm the query does not decide
+  says nothing false, as it is guarded by the arm's tests.
+- The postconditions at the deeper applications of the spec's functions
+  are their contracts, which hold at any application, as at the first
+  step.
+- The generated function's own applications at depth 1 and deeper come
+  only from its equations at the children, and so are at strict
+  descendants of `x`, where its postcondition holds by strong structural
+  induction. Its application to the parameters themselves stands for its
+  body ([Contracts](#contracts)), so its postcondition is never a
+  hypothesis there.
+
+And the unfolding is finite: the depth bounds the equations, and each
+application, guards and depth is visited once. Without the bound it would
+not be: `len(x)` unfolds to an application at `x`'s tail, that to one at
+its tail's tail, and so on.
+
+Elsewhere, one step is the policy that every check's verdict rests on. An
+induction can only turn an Inconclusive claim into a pass
+(`lang::induction_verdict`), so its deeper unfolding changes no other
+verdict, nor the size of any query outside its attempts. Nothing reports
+that an attempt's unfolding reached its bound: as with a time limit, the
+claim keeps its own check's verdict and message.
+
+Induction on a parameter does not yet unfold an application beyond three
+steps, nor only where the query decides the arm, nor take earlier claims
+as hypotheses. It does not apply to a global expectation in its short form,
 to children within a sequence, or to mutually recursive enumerations
 (#669).
 
@@ -870,6 +938,7 @@ functions to quantifier-free queries.
 #fren_check directly_recursive
 #fren_check induction_hypotheses
 #fren_check induction_verdict
+#fren_check unfoldings
 #fren_check recursion_formulas
 #fren_check recursive_counterexample
 #fren_check counterexample_confirmed

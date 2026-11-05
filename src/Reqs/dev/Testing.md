@@ -376,7 +376,7 @@ pub mod testing
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--spec-timeout SECONDS]`): generates random
+  [--unfoldings] [--spec-timeout SECONDS]`): generates random
   specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
@@ -439,7 +439,13 @@ pub mod testing
   assumptions and comparisons of recursive applications. Its generator is
   split off the seed, so its draws leave the other modes unchanged. Like
   `--scrutinees`, it has an empty cut: its corpus rejects generated static
-  errors, which would stop the spec's checks.
+  errors, which would stop the spec's checks. `--unfoldings` generates
+  global expectations over a list and a tree whose claims induction
+  proves only by [unfolding more than one
+  step](../Lang/Recursion.md#unfolding-in-an-induction), up to and past
+  the bound, and a claim with no parameter that needs more than one step
+  too. Its generator is split off the seed, and its cut is empty, as
+  `--induction-candidates`'s is.
   A run with `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
@@ -558,7 +564,7 @@ pub mod testing
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
-  `--fact-scopes` and `--induction-candidates`
+  `--fact-scopes`, `--induction-candidates` and `--unfoldings`
   (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of at
   most five specs each, including those listed outside the ranges. Each

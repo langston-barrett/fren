@@ -44,7 +44,7 @@ application of an uninterpreted function with a
 [contract](Lang/Items.md#contracts) can hold only where the contract is
 realizable, and those about an application of a [recursive
 function](Lang/Recursion.md#solver-encoding), its postconditions as ground
-facts beside one step of its equations, only where its postconditions
+facts beside the steps of its equations that the query unfolds, only where its postconditions
 hold, which their checks by induction show. And a variable, parameter,
 existential output or uninterpreted application whose type is a [subset
 type](Lang/SubsetTypes.md) brings the type's invariants as assumptions,

@@ -3561,17 +3561,27 @@ impl prelude_sort: lang::prelude_sort for (s : String) {
 
 -- The shared policies used when constructing recursive queries and reporting
 -- their results; these bind the structured requirements to the real helpers.
-impl recursive_facts: lang::recursive_facts for (introduced bound constrained : Bool) {
+impl recursive_facts: lang::recursive_facts for (depth unfoldings : Nat) (bound constrained : Bool) {
+  depth := depth,
+  unfoldings := unfoldings,
   bound? := bound,
-  origin := if introduced then lang.RecApplication.Reflected else lang.RecApplication.Written,
   constrained_result? := constrained,
-  facts := { result_type? := Fren.Core.recursiveResultFact constrained && (Fren.Core.recursiveFacts introduced bound).1,
-             posts? := (Fren.Core.recursiveFacts introduced bound).1,
-             equation? := (Fren.Core.recursiveFacts introduced bound).2 },
+  facts := { result_type? := Fren.Core.recursiveResultFact constrained && (Fren.Core.recursiveFacts depth bound unfoldings).1,
+             posts? := (Fren.Core.recursiveFacts depth bound unfoldings).1,
+             equation? := (Fren.Core.recursiveFacts depth bound unfoldings).2 },
 } by
-  intro introduced bound constrained _
-  cases introduced <;> cases bound <;> cases constrained <;>
-    simp [fren_spec, Fren.Core.recursiveFacts, Fren.Core.recursiveResultFact]
+  intro depth unfoldings bound constrained _
+  cases bound <;> cases constrained <;> by_cases h : depth < unfoldings <;>
+    simp [fren_spec, Fren.Core.recursiveFacts, Fren.Core.recursiveResultFact, h]
+
+-- Both front ends give the query's builder `unfoldings`, of whether the
+-- check is of a function generated for induction (`Core.isInductionFn`).
+impl unfoldings: lang::unfoldings for (induction : Bool) {
+  «induction?» := induction,
+  steps := Fren.Core.unfoldings induction,
+} by
+  intro induction _
+  cases induction <;> simp [fren_spec, Fren.Core.unfoldings, Fren.Core.inductionUnfoldings]
 
 impl recursive_post_result: lang::recursive_post_result for (r : lang.RecPost) (failed : Bool) {
   result := r,

@@ -1138,7 +1138,8 @@ and a `Bool` payload, and an instance of a generic enumeration; with
 parameters of those types, of `Int`, of `Bool` and of a payload's type,
 in either order;
 under an assumption or not; claims that one step of each function proves,
-that need more (Inconclusive still), and in a Boolean block; and the forms
+that need more (which the deeper unfolding of an induction's check may
+prove), and in a Boolean block; and the forms
 that rule induction out: a call, an uninterpreted function, a parameter of
 a subset type. Each claim holds, so no result depends on a model, but for
 one false claim now and then, which fails under its function's contract
@@ -1246,6 +1247,47 @@ def inductionForms : R String := do
   if ← chance 30 then
     out := out ++ "\nmod jother\n\nuse jforms::{JL, japp, jlen}\n" ++
       s!"\nexpect jf_module(a: JL, b: JL) \{\n    expect c: {adds "a" "b"}\n}\n"
+  return out
+
+/-- Global expectations whose claims induction proves only by unfolding
+more than one step of each function's equations, as the check of a function
+generated for induction does (`Reqs/Lang/Recursion#unfolding-in-an-induction`):
+over a list and a tree with two children and a `Bool` payload, claims whose
+base case needs the equations at a depth that grows with a constant's size,
+of 1 to 4 elements or levels, so that both sides of the bound are reached; with another parameter now and then, in either order;
+and a claim with no parameter, which no induction checks, and whose
+constant arguments need the equations at depth 1. Each claim holds, so no
+result depends on a model. Its generator is split off the seed, so its
+draws leave the other modes unchanged. -/
+def unfoldings : R String := do
+  let mut out := "mod uunfold\n\n" ++
+    "pub enum UL { Nil, Cons(Int, UL) }\n" ++
+    "pub enum UT { Leaf(Bool), Node(UT, Int, UT) }\n" ++
+    "pub fn ulen(l: UL): Int := match l { UL::Nil => 0, UL::Cons(_, r) => 1 + ulen(r) }\n" ++
+    "pub fn uapp(a: UL, b: UL): UL := match a {\n" ++
+    "    UL::Nil => b,\n    UL::Cons(h, t) => UL::Cons(h, uapp(t, b)),\n}\n" ++
+    "pub fn uleaves(t: UT): Int := match t { UT::Leaf(_) => 1, UT::Node(l, _, r) => uleaves(l) + uleaves(r) }\n" ++
+    "pub fn ugraft(t: UT, s: UT): UT := match t {\n" ++
+    "    UT::Leaf(_) => s,\n    UT::Node(l, n, r) => UT::Node(ugraft(l, s), n, r),\n}\n"
+  -- A list of `n` elements, and a tree of height `n` with `n + 1` leaves.
+  let mut i := 0
+  for n in [1, 2, 3, 4] do
+    if ← chance 60 then
+      let mut l := "UL::Nil"
+      for _ in [0:n] do l := s!"UL::Cons({← below 10}, {l})"
+      let mut t := s!"UT::Leaf({← pick #["true", "false"]})"
+      for _ in [0:n] do t := s!"UT::Node(UT::Leaf({← pick #["true", "false"]}), {← below 10}, {t})"
+      let extra ← chance 30
+      let swap ← chance 50
+      let ps (p : String) := if !extra then p else if swap then s!"k: Int, {p}" else s!"{p}, k: Int"
+      let more := if extra then " + k - k" else ""
+      if ← chance 70 then
+        out := out ++ s!"\nexpect ul_{i}({ps "a: UL"}) \{\n    expect c: ulen(uapp(a, {l})) = ulen(a) + {n}{more}\n}\n"
+      if ← chance 70 then
+        out := out ++ s!"\nexpect ut_{i}({ps "t: UT"}) \{\n    expect c: uleaves(ugraft(t, {t})) = uleaves(t) + {n}{more}\n}\n"
+    i := i + 1
+  if ← chance 40 then
+    out := out ++ s!"\nset_option fren.lint.assertions_on_constants \"allow\" in\nexpect uconst: ulen(uapp(UL::Nil, UL::Cons({← below 10}, UL::Nil))) = 1\n"
   return out
 
 /-- Specs of induction candidacy and function construction: each samples a
@@ -2813,6 +2855,10 @@ def itemRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6974⟩
 split off the seed so that its draws leave the other modes unchanged. -/
 def inductionRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6963⟩
 
+/-- The generator of `--unfoldings` (`Wide.unfoldings`), split off the
+seed so that its draws leave the other modes unchanged. -/
+def unfoldingRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x756e⟩
+
 /-- How specs are generated: `--avoid-known`, and `--guards`, which
 generates guarded quantifiers alone (`Wide.genGuards`), many to a spec. -/
 structure Mode where
@@ -2839,6 +2885,9 @@ structure Mode where
   /-- Specs of induction-candidate types, argument forms and comparisons
   (`Wide.inductionCandidates`). -/
   inductionCandidates : Bool := false
+  /-- Specs of claims that induction proves only by unfolding more than
+  one step (`Wide.unfoldings`). -/
+  unfoldings : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
@@ -2853,6 +2902,7 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
     | [before, after] => before ++ decls ++ Id.run (Wide.genKeywordsItem.run' (itemRngOf seed)) ++ after
     | _ => spec
   else if m.inductionCandidates then Id.run (Wide.inductionCandidates.run' (inductionRngOf seed))
+  else if m.unfoldings then Id.run (Wide.unfoldings.run' (unfoldingRngOf seed))
   else
     Id.run ((if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
       else if m.scrutinees then Wide.duplicateScrutineeGroup
@@ -2863,10 +2913,10 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
 `--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
-`--fact-scopes` and `--induction-candidates` makes any static error a group
+`--fact-scopes`, `--induction-candidates` and `--unfoldings` makes any static error a group
 error: these generators, like appended groups, promise to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.scrutinees || m.factScopes || m.inductionCandidates || m.unfoldings then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
@@ -2876,19 +2926,20 @@ def Mode.args (m : Mode) : Array String :=
     (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[]) ++
     (if m.keywords then #["--keywords"] else #[]) ++
     (if m.factScopes then #["--fact-scopes"] else #[]) ++
-    (if m.inductionCandidates then #["--induction-candidates"] else #[])
+    (if m.inductionCandidates then #["--induction-candidates"] else #[]) ++
+    (if m.unfoldings then #["--unfoldings"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--unfoldings"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
            keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
-           inductionCandidates := args.contains "--induction-candidates" }
+           inductionCandidates := args.contains "--induction-candidates", unfoldings := args.contains "--unfoldings" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -2899,7 +2950,8 @@ def Mode.lean (m : Mode) : String :=
     (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else []) ++
     (if m.keywords then ["keywords := true"] else []) ++
     (if m.factScopes then ["factScopes := true"] else []) ++
-    (if m.inductionCandidates then ["inductionCandidates := true"] else [])
+    (if m.inductionCandidates then ["inductionCandidates := true"] else []) ++
+    (if m.unfoldings then ["unfoldings := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3542,7 +3594,7 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
     ({ inductionForms := true }, 0, 20), ({ factScopes := true }, 0, 20),
-    ({ inductionCandidates := true }, 0, 20)]
+    ({ inductionCandidates := true }, 0, 20), ({ unfoldings := true }, 0, 10)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -4114,10 +4166,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--unfoldings] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--unfoldings] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4136,9 +4188,10 @@ unsafe def main (args : List String) : IO UInt32 := do
                        sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
                        inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
                        keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
-                       inductionCandidates := args.contains "--induction-candidates" }
+                       inductionCandidates := args.contains "--induction-candidates", unfoldings := args.contains "--unfoldings" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
-    && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates")
+    && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
+    && a != "--unfoldings")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0
