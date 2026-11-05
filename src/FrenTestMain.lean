@@ -4359,7 +4359,8 @@ def smtAgreement (env : Environment) : IO (Array String) := do
 quantifier, a generic function and its instance, records,
 enumerations and checks by testing and enumeration, recursive functions
 and abstract types and functions of one name in two modules, beside a
-variable of that name. The newtype snapshot also pins their erasure to the
+variable of that name, and generic datatypes with collection payloads and
+fields, whose tuple sorts both front ends create. The newtype snapshot also pins their erasure to the
 underlying sort, with no constructor or selector left in the dump. -/
 def obligationsAgreementSpecs : List String :=
   ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
