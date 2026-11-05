@@ -258,7 +258,9 @@ implementation.theorems -- partly formalized: `lang::translated_grounded` gives 
 implementation.view -- a view is an implementation in the model; its syntax is not decided yet (#669)
 module.binding.outside -- partly formalized: `lang::outside_variable` gives the verdict and `lang::theory_instance` retains variables without images; choosing which variables need no image remains part of matching
 module.rules.kinds -- partly formalized: `lang::ensure_clause` and its examples cover why an `ensure` meets the binding rule; which items the rule applies to is stage 3's reading of them
+module.instance -- partly formalized: `lang::theory_instance` computes the syntactic instance; its soundness is argued rather than stated as a requirement
 module.instance.matching -- selecting substitutions by matching query applications remains stage 3's; `lang::theory_instance` applies the selected terms
+module.instance.ground -- partly formalized: `lang::theory_ground_term` checks encoded bound indices; identifying the query's quantified names and encoding their binders remain the consumer's (stage 3)
 module.instance.listed -- partly formalized: `lang::listed_variable` gives the verdict; that the variable takes each value of its type is how instances are built, from stage 3
 module.instance.unused -- partly formalized: `lang::sentence_instantiation` gives the verdict; selecting no image for an unused variable remains part of matching
 module.instance.hypothesis -- partly formalized: `lang::theory_instance` preserves the domain, calls and claims; adding the hypothesis and its ground applications to a query remains stage 3's
