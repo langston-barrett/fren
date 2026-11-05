@@ -382,8 +382,9 @@ jobs:
             return 1
           fi
         }
-        # One part at a time: on macOS, `own` (two procedures at once) took
-        # 9.4 GB and `ui` (as many as there are cores, 14 there) 8.8 GB.
+        # One part at a time: measured locally, on macOS, `own` (two
+        # procedures at once) took 9.4 GB and `ui` (one per core, 14
+        # there) 8.8 GB.
         code=0
         part own || code=1
         part ui 0 1 || code=1

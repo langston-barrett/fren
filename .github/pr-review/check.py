@@ -50,7 +50,7 @@ import sys
 
 # The first line of a review: `Review of <full head sha>: VERDICT`, as
 # AGENTS.md has a review start. The comment counts as the review of the
-# head, for everything, as the user decided; `kind.py` reads it so too.
+# head, for everything; `kind.py` reads it so too.
 PREFIX = "Review of"
 
 HERE = os.path.dirname(os.path.abspath(__file__))

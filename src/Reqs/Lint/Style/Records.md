@@ -78,7 +78,8 @@ as new values, as in `Point { x := n, y := p.y }`, the literal is about as
 long and says as plainly what each field is, so the lint does not fire. `r` is a
 value of the literal's own record, as the elaborator types it, so that
 the update has the literal's type; for a value of another record with
-fields of the same names, the lint does not fire. Of the values that
+fields of the same names, the lint does not fire. A value of an instance
+of a generic record, as `Box<Int>` of `Box<T>`, is a value of that record. Of the values that
 fields are copied from, by their text as
 [written](../../Lint.md#written-the-same), `r` is the one with the most
 copies, and the first of those with as many. A literal that copies every

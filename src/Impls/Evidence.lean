@@ -16,6 +16,7 @@ import Impls.Eval
 import Impls.Fmt
 import Impls.Generated
 import Impls.Global
+import Impls.GroundMatching
 import Impls.Guards
 import Impls.HigherOrder
 import Impls.Impl
@@ -130,6 +131,21 @@ tested lang::theory_variable_images: "src/FrenTest/Theories.lean"
 tested lang::theory_term_list: "src/FrenTest/Theories.lean"
 tested lang::theory_translation: "src/FrenTest/Theories.lean"
 tested lang::theory_instance: "src/FrenTest/Theories.lean"
+
+-- Structural matching equations are proved for every input; these tests
+-- exercise their composition before front-end integration in unit 10.
+tested lang::ground_match_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_parameter_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_extension_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_normalization: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_shape_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_subject_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_selection_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_variables_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_join_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_listed_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_sentence_lists_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_rule_step: "src/FrenTest/GroundMatching.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under

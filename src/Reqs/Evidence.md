@@ -1021,7 +1021,7 @@ have any length. Other syntax can be represented by applications of
 distinct symbols. Source positions and the spelling of aliases are not
 part of these identities.
 
-r[matching.normalization] check::matching_normalization
+r[matching.normalization] check::matching_normalization, lang::ground_normalization
 Two ground terms match exactly when their normalized syntax is equal.
 Normalization replaces references to `let`, `where`, `out :=` and constant
 definitions, transitively, in the scope of each definition. It preserves

@@ -14,9 +14,9 @@ q, P` holds if `P` holds of every element of `q`, and in Lean it is `∀ x, x �
 q → P`. What sets it apart is that both front ends expand it, at each
 query, into instances at finitely many positions of `q`, so that the
 query stays quantifier-free, as [rule 1](Decidability.md#what-is-promised)
-promises. There is no syntax of its own: the user's decision on #234 is
-that Fren has no quantifier constructs for collections, so this is the
-guarded `forall` of #259, recognized.
+promises. There is no syntax of its own: Fren has no quantifier
+constructs for collections (#234), so this is the guarded `forall`
+of #259, recognized.
 
 ## Why it is decidable
 

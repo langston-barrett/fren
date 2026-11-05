@@ -3,6 +3,7 @@ import FrenCli.Cvc5
 import FrenCli.Elab
 import FrenCli.QueryStore
 import FrenCli.SeqElems
+import FrenCli.SolverSorts
 import FrenCli.SolverStats
 import FrenCore.Check
 import FrenCore.Goals
@@ -107,6 +108,10 @@ def usedParams (decls : Array PreludeDecl) : Std.HashMap String (Array Bool) := 
 mentions. -/
 structure Prelude where
   decls : Array PreludeDecl
+  /-- Payload and field types, for initializing tuples at instances. -/
+  datatypes : Array DataDecl := #[]
+  /-- No per-query traversal when the declarations have no implicit tuple. -/
+  tupleSortsNeeded : Bool := false
   /-- The declaration of each symbol. -/
   owner : Std.HashMap String Nat
   /-- The declarations that each declaration mentions. -/
@@ -186,12 +191,12 @@ def recursionReach (decls : Array PreludeDecl) (defs : Std.HashMap String (Array
         changed := true
   return reach.toArray
 
-def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) : Prelude :=
+def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) (datatypes : Array DataDecl := #[]) : Prelude :=
   let marked := SeqElems.markedDefs (decls.map (·.text))
   let decls := if marked.isEmpty then decls else decls.map fun d => { d with text := SeqElems.plainText d.text }
   let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
   let unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads marked
-  { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
+  { decls, datatypes, tupleSortsNeeded := SolverSorts.needed datatypes, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
     used := Thunk.mk fun _ => usedParams decls
     smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked
     unfolds
@@ -203,7 +208,7 @@ def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) : Pre
 /-- The prelude of the queries of `st`'s spec, with the selectors whose
 payloads bring facts, which every front end of the CLI asks with. -/
 def State.queryPrelude (st : State) : Prelude :=
-  Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
+  Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1)) st.datatypes
 
 /-- A `State`, `st`, with what checking each of its items reads of it that
 is the same for every item (`FrenCli.solveComp`), built once for all of
@@ -372,7 +377,20 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   -- `mapQuoted` of the whole script, piece by piece: each piece is whole
   -- commands, which close their quoted symbols and string literals, so
   -- the pieces' are the script's, and the prelude's are computed once.
-  let defs := String.join ((prelude.neededDecls (quotedSymbols body)).toList.map (prelude.smtTexts[·]!.get))
+  let needed := prelude.neededDecls (quotedSymbols body)
+  let tuples := if prelude.tupleSortsNeeded then
+      SolverSorts.tupleSorts prelude.datatypes (String.join (needed.toList.map (prelude.decls[·]!.text)) ++ body)
+    else #[]
+  -- cvc5's implicit substitution into a datatype does not initialize its
+  -- concrete tuple encodings. Register them after their last sort
+  -- dependency, before a definition or assertion can use the instance.
+  let aliases := tuples.mapIdx fun i sort =>
+    let deps := (quotedSymbols sort).filterMap prelude.owner.get?
+    let after := deps.foldl (fun acc k => some (max (acc.getD k) k)) none
+    (after, solverText s!"(define-sort |#fren.tuple.{i}| () {sort})\n")
+  let defs := if aliases.isEmpty then String.join (needed.toList.map (prelude.smtTexts[·]!.get)) else
+    needed.foldl (init := String.join ((aliases.filter (·.1.isNone)).toList.map (·.2))) fun acc k =>
+      acc ++ prelude.smtTexts[k]!.get ++ String.join ((aliases.filter (·.1 == some k)).toList.map (·.2))
   -- Higher-order only if the script, including the definitions that it
   -- includes, projects a relation (`cli::logic`).
   let logic := Fren.Core.queryLogic logic (Fren.Core.projectsRelation defs || Fren.Core.projectsRelation body)
