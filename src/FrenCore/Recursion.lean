@@ -140,7 +140,7 @@ def counterexampleReported (hyps : Array (Bool × Option Bool)) (goal : Bool × 
     (hyps.all (·.2 == some true) && goal.2 == some false) factsRecursive
 
 /-- The formulas whose applications of recursive functions a query reflects,
-with their one-step equations and postconditions (`lang::recursion_formulas`):
+with their defining equations and postconditions (`lang::recursion_formulas`):
 the facts that its variables' types bring, `varFacts`, those of the
 applications that it has, `appFacts` (`Fren.Core.appFactsWith`,
 `check::fact_applications`), and then its own hypotheses, `hyps`. Both

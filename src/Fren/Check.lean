@@ -719,7 +719,7 @@ private def sharedConjunctions : Nat → Expr
   (sharedConjunctions 64) #[]).map (·.1) == #[`r]
 
 /-- The recursive symbols a query uses, including dependencies needed by
-its one-step equations, each at the instances that it applies, the
+its defining equations, each at the instances that it applies, the
 dependencies of a generic one's at the instance
 (`Reqs/Lang/Recursion#generic-recursion`). Each becomes an uninterpreted
 local. -/
@@ -937,10 +937,11 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
   -- Each fact once, where it is first found, under its weakest paths, as
   -- the binary asserts it.
   let implies (gs : Array Expr) (f : Expr) := gs.foldr (fun g b => mkForall `h .default g b) f
-  let conj (gs : Array Expr) := if gs.isEmpty then mkConst ``True else gs.pop.foldr mkAnd gs.back!
-  let disj (ps : List (Array Expr)) := match ps.reverse with
-    | [] => mkConst ``False
-    | p :: rest => rest.foldl (fun b q => mkOr (conj q) b) (conj p)
+  -- A linear tree of many guard paths reaches Lean's recursion limit
+  -- before the solver sees the facts; keep their connective depth small.
+  let conj (gs : Array Expr) := if gs.isEmpty then mkConst ``True else balanced mkAnd gs
+  let disj (ps : List (Array Expr)) :=
+    if ps.isEmpty then mkConst ``False else balanced mkOr (ps.toArray.map conj)
   return (Core.mergeGuarded Core.guardsWithin out.toList).toArray.map fun ((n, f), ps) =>
     (n, Core.guardedFact implies disj f ps)
 where
@@ -1215,7 +1216,10 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- Deeper in the check of a function generated for induction
     -- (`lang::unfoldings`).
     let reflected ← recursiveQueryFacts hyps goal (unfoldings := Core.unfoldings (c.fn?.any Core.isInductionFn))
-    let hyps := reflected ++ hyps
+    -- A large local context becomes a linear telescope when lean-smt
+    -- preprocesses it. Keep the reflected facts in one balanced formula.
+    let hyps := if reflected.isEmpty then hyps else
+      #[(Name.mkSimple "#recursive_facts", balanced mkAnd (reflected.map (·.2)))] ++ hyps
     let goal ← smtBinders goal
     let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
     -- Each instance of a generic function without a body, a local of its

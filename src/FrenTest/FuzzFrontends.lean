@@ -1256,9 +1256,11 @@ base case needs the equations at a depth that grows with a constant's size,
 of 1 to 4 elements or levels, so that both sides of the bound are reached;
 with another parameter now and then, in either order; and a claim with no
 parameter, which no induction checks, and whose constant arguments need
-the equations at depth 1. Each claim holds, so no result depends on a
-model. Its generator is split off the seed, so its draws leave the other
-modes unchanged. -/
+the equations at depth 1. Appended forms use generic lists, assumptions
+and Boolean blocks, and a binary recursion whose deeper equations bring
+another function's contract. Each claim holds, so no result depends on a
+model. Its generator is split off the seed, and appended forms draw last,
+so the other modes and every existing spec's prefix stay unchanged. -/
 def unfoldings : R String := do
   let mut out := "mod uunfold\n\n" ++
     "pub enum UL { Nil, Cons(Int, UL) }\n" ++
@@ -1288,6 +1290,32 @@ def unfoldings : R String := do
     i := i + 1
   if ← chance 40 then
     out := out ++ s!"\nset_option fren.lint.assertions_on_constants \"allow\" in\nexpect uconst: ulen(uapp(UL::Nil, UL::Cons({← below 10}, UL::Nil))) = 1\n"
+  -- Draw only after the original generator, preserving every old prefix.
+  out := out ++ "\npub enum UG<T> { Nil, Cons(T, UG<T>) }\n" ++
+    "pub fn uglen<T>(l: UG<T>): Int := match l { UG::Nil => 0, UG::Cons(_, r) => 1 + uglen(r) }\n" ++
+    "pub fn ugapp<T>(a: UG<T>, b: UG<T>): UG<T> := match a {\n" ++
+    "    UG::Nil => b,\n    UG::Cons(h, t) => UG::Cons(h, ugapp(t, b)),\n}\n"
+  let ty ← pick #["Int", "Bool"]
+  let n := (← below 4) + 1
+  let mut suffix := "UG::Nil"
+  for _ in [0:n] do
+    let value ← if ty == "Int" then toString <$> below 10 else pick #["true", "false"]
+    suffix := s!"UG::Cons({value}, {suffix})"
+  out := out ++ s!"\nexpect ug_assume(a: UG<{ty}>, b: UG<{ty}>) \{\n" ++
+    s!"    assume fixed: b = {suffix}\n    expect c: uglen(ugapp(a, b)) = uglen(a) + {n}\n}\n" ++
+    s!"\nexpect ug_block(a: UG<{ty}>) \{\n    expect c: and \{\n" ++
+    s!"        length: uglen(ugapp(a, {suffix})) = uglen(a) + {n},\n" ++
+    "        identity: ugapp(a, UG::Nil) = a,\n    }\n}\n"
+  -- The two leaf applications are at depth 2; their equations introduce
+  -- `uweight` at depth 3, where its contract still brings facts.
+  out := out ++ "\npub fn uweight(t: UT): (n: Int) {\n    out n := match t {\n" ++
+    "        UT::Leaf(_) => 1,\n        UT::Node(l, _, r) => uweight(l) + uweight(r),\n    }\n" ++
+    "    ensure positive: n >= 1\n}\n" ++
+    "pub fn ubranch(t: UT): Int := match t {\n" ++
+    "    UT::Leaf(b?) => uweight(UT::Leaf(b?)),\n    UT::Node(l, _, r) => ubranch(l) + ubranch(r),\n}\n" ++
+    "\nexpect ubinary(t: UT) {\n    expect c: ubranch(UT::Node(\n" ++
+    s!"        UT::Node(UT::Leaf(true), {← below 10}, UT::Leaf(false)), {← below 10}, t\n" ++
+    "    )) >= ubranch(t) + 2\n}\n"
   return out
 
 /-- Specs of induction candidacy and function construction: each samples a

@@ -3574,15 +3574,6 @@ impl recursive_facts: lang::recursive_facts for (depth unfoldings : Nat) (bound 
   cases bound <;> cases constrained <;> by_cases h : depth < unfoldings <;>
     simp [fren_spec, Fren.Core.recursiveFacts, Fren.Core.recursiveResultFact, h]
 
--- Both front ends give the query's builder `unfoldings`, of whether the
--- check is of a function generated for induction (`Core.isInductionFn`).
-impl unfoldings: lang::unfoldings for (induction : Bool) {
-  «induction?» := induction,
-  steps := Fren.Core.unfoldings induction,
-} by
-  intro induction _
-  cases induction <;> simp [fren_spec, Fren.Core.unfoldings, Fren.Core.inductionUnfoldings]
-
 impl recursive_post_result: lang::recursive_post_result for (r : lang.RecPost) (failed : Bool) {
   result := r,
   another_unproved? := failed,

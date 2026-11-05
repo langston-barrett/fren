@@ -202,8 +202,8 @@ selectors substituted for `xs`. Arm guards are extra conditions and earlier
 arms take precedence, exactly as in `match`. Applications introduced by
 this unfolding bring postconditions only, never another unfolding, but in
 the check of an [induction](#unfolding-in-an-induction), which unfolds a
-few steps more. Thus a query has finitely many ground equations. This
-holds in every context, including a function's own contract check.
+few steps more. Thus a query has finitely many ground equations in every
+context, including a function's own contract check.
 
 The following structured policy is shared by both front ends. An
 application's *depth* is how many defining equations away from the query
@@ -313,14 +313,15 @@ pub proc merged_facts(
 ```
 
 An application is ground when its arguments mention no variable bound by
-an enclosing quantifier. Both front ends collect its one-step equations
-and postconditions as top-level facts wherever it appears, including beneath
-quantifiers. An application mentioning a quantifier-bound variable brings
-no top-level facts. Guards mentioning such variables are not exported either;
-ground facts retain only guards independent of those variables. No fact may
-refer to a variable outside its binder. If the remaining facts cannot prove
-a check and evaluation does not confirm its model, both front ends report
-Inconclusive with the same `F0450` diagnostic.
+an enclosing quantifier. Both front ends collect its equations, within the
+query's unfolding bound, and postconditions as top-level facts wherever it
+appears, including beneath quantifiers. An application mentioning a
+quantifier-bound variable brings no top-level facts. Guards mentioning
+such variables are not exported either; ground facts retain only guards
+independent of those variables. No fact may refer to a variable outside
+its binder. If the remaining facts cannot prove a check and evaluation
+does not confirm its model, both front ends report Inconclusive with the
+same `F0450` diagnostic.
 
 ## Contracts
 
@@ -654,15 +655,26 @@ So the check of a function generated for induction unfolds a few steps
 deeper than any other check: its applications bring their equations at
 depths 0, 1 and 2 ([Solver encoding](#solver-encoding)), where every other
 check's bring them only at depth 0. `lang::unfoldings` states the query's
-unfoldings. Which check is an induction's is read from the path of the
-function whose contract it checks, whose name, a generated one, no other
-function has.
+unfoldings. `lang::induction_function` recognizes the function whose
+contract is checked by the `#induction#` prefix of its last path segment,
+which no source can write. An absent function, an empty path or a numeric
+last segment is represented by the empty string, which has no such
+prefix. The generated name (`inductionFnName`) always has this prefix,
+and a generic instance keeps it before its type arguments.
 
 ```fren
+pub fn induction_function?(last_segment: String) := last_segment.starts_with?("#induction#")
+
+pub proc induction_function(
+    last_segment: String,        -- the function's last string segment, or "" if none
+): (det induction?) {
+    ensure rule: induction? iff induction_function?(last_segment)
+}
+
 pub proc unfoldings(
-    induction?,                  -- the check is of a function generated for induction
+    last_segment: String,        -- the function whose contract is checked, as above
 ): (det steps: Nat) {
-    ensure rule: steps = (if induction? then 3 else 1)
+    ensure rule: steps = (if induction_function?(last_segment) then 3 else 1)
 }
 ```
 
@@ -686,6 +698,11 @@ And the unfolding is finite: the depth bounds the equations, and each
 application, guards and depth is visited once. Without the bound it would
 not be: `len(x)` unfolds to an application at `x`'s tail, that to one at
 its tail's tail, and so on.
+
+The hosted front end groups reflected recursive facts in one balanced
+conjunction, and builds conjunctions and disjunctions of guard paths as
+balanced trees. Their connective depth grows logarithmically with the
+number of operands.
 
 Elsewhere, one step is the policy that every check's verdict rests on. An
 induction can only turn an Inconclusive claim into a pass
@@ -744,8 +761,8 @@ sorts and at each instance:
   front end gives each its own local, from the solver form, which takes the
   type arguments and their `Inhabited` instances first. Each of its
   applications brings its postconditions and its declared result type's
-  constraint, at the instance, and, if written, one step of the instance's
-  body, as above ([Solver encoding](#solver-encoding)).
+  constraint, at the instance, and its equations within the query's
+  unfolding bound, as above ([Solver encoding](#solver-encoding)).
 - Evaluation, testing and enumeration apply the instance's definition.
 - A counterexample of the check at the sorts is confirmed by evaluation as
   any other is ([Counterexamples and completeness](#counterexamples-and-completeness)),
@@ -772,7 +789,7 @@ sorts and at each instance:
 
 Termination of what the checks collect does not change: an instance's facts
 apply only itself and the instances of earlier functions, so each round of
-`check::fact_applications` and each work queue of the one-step equations
+`check::fact_applications` and each work queue of finite ground equations
 ends as without generics. The hosted front end does not yet generate a
 Lean theorem for a generic recursion's contract, as it does for other
 recursions ([Contracts](#contracts)): the theorem would be at the type
@@ -791,15 +808,15 @@ says only that evaluation did not confirm it, not which. Both front ends
 use this rule and diagnostic.
 
 The formulas whose recursive applications a query reflects, with their
-one-step equations, are its own, the facts that its variables' types
-bring, and the facts of the applications that it has, transitively
-(`check::fact_applications`): of `fn one(l: L): (r: Int) { ensure e: r =
-total(L::Cons(1, l)) }`, a query that mentions `one(l)` has the one-step
-equation of `total(L::Cons(1, l))` too, so that `one(l) >= 1` follows where
-`total`'s body adds the absolute values of the list's elements; and of
-`type Big = l: L where invariant: total(l) >= 5`, a query over `x: Big`
-has the one-step equations of `total(x)`, so that `x is L::Nil` cannot
-hold.
+equations within its unfolding bound, are its own, the facts that its
+variables' types bring, and the facts of the applications that it has,
+transitively (`check::fact_applications`): of `fn one(l: L): (r: Int) {
+ensure e: r = total(L::Cons(1, l)) }`, a query that mentions `one(l)` has
+the defining equation of `total(L::Cons(1, l))` too, so that `one(l) >= 1`
+follows where `total`'s body adds the absolute values of the list's
+elements; and of `type Big = l: L where invariant: total(l) >= 5`, a query
+over `x: Big` has the defining equations of `total(x)`, so that
+`x is L::Nil` cannot hold.
 
 A model is confirmed against the query's own hypotheses and goal: where
 they apply a recursive function, evaluation of the real definitions on the
@@ -920,11 +937,11 @@ expect counterexample_confirmed_refines(
 ```
 
 Checks are complete modulo recursive functions being opaque. A fact that
-follows from the body beyond one step, but not from the contract, need not
-be provable. Strengthen the function's contract to make such a fact
-available. Recursion itself never raises `undecidable`: its applications,
-ground facts and finite one-step equations add only uninterpreted
-functions to quantifier-free queries.
+follows from the body beyond the equations its query unfolds, but not
+from the contract, need not be provable. Strengthen the function's
+contract to make such a fact available. Recursion itself never raises
+`undecidable`: its applications, ground facts and finite equations add
+only uninterpreted functions to quantifier-free queries.
 
 ```fren
 #fren_check self_application
@@ -938,6 +955,7 @@ functions to quantifier-free queries.
 #fren_check directly_recursive
 #fren_check induction_hypotheses
 #fren_check induction_verdict
+#fren_check induction_function
 #fren_check unfoldings
 #fren_check recursion_formulas
 #fren_check recursive_counterexample

@@ -825,8 +825,9 @@ structure State where
   namedPredicates : NameMap NamedPredicate := {}
   namedOccurrences : Std.HashMap String Nat := {}
   contractIndexes : Array (Name × Fren.Core.IndexPlace × Span × String × Option (String × Bool)) := #[]
-  /-- Structural recursions, used opaquely with one-step ground equations:
-  each instance of a generic one too, by its name (`instantiate`). -/
+  /-- Structural recursions, used opaquely with finite ground equations
+  (`lang::recursive_facts`): each instance of a generic one too, by its
+  name (`instantiate`). -/
   recursiveDefs : Std.HashSet Name := {}
   /-- Of each structural recursion, by its path, the position of its
   decreasing parameter (`lang::structural_recursion`). -/
