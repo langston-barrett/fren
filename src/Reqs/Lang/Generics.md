@@ -67,6 +67,8 @@ opens a newtype's types or a function's parameters, not type parameters.
 `lang::type_bracket` states what the bracket after the name does:
 
 ```fren
+pub mod lang
+
 -- The punctuator right after a type's name, or after a generic
 -- declaration's name.
 pub enum Bracket { Angle, Paren, Other }

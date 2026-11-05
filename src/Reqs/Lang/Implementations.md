@@ -61,7 +61,7 @@ pub mod lang
 
 **Legality rules**
 
-r[implementation.morphism]
+r[implementation.morphism] lang::{theory_term_translation, theory_term_list, theory_translation}
 An implementation `mod x: I<T>` of an interface `I` maps `I`'s `Self` to
 `T` and each method of `I` that it defines to that definition. Each
 sentence of `I`, translated, is a sentence of the module that declares the
@@ -772,7 +772,7 @@ it, and whose type is not [listed](Quantifiers.md#types), occurs in a
 matched application. A variable that does not is an error that names it
 (the *binding rule*).
 
-r[module.binding.outside] lang::outside_variable
+r[module.binding.outside] lang::outside_variable, lang::theory_instance
 A quantified variable that the sentence mentions only outside its
 applications, as `n` in `law bounded(s: Self, n: Int): when n > 0, h(s) >=
 0`, needs no term: it stays quantified within each instance.
@@ -807,7 +807,7 @@ its first unbound variable. A law that breaks it gets no message
 
 **Dynamic semantics**
 
-r[module.instance]
+r[module.instance] lang::{theory_term_substitution, theory_variable_images, theory_term_list, theory_instance}
 An *instance* of a sentence is the sentence with a ground term in place of
 each of its quantified variables that has one. It holds wherever the
 sentence does.
@@ -821,7 +821,7 @@ alike, once each name that a `let`, a `where` clause or an `out :=`
 defines, and each constant, is replaced by its definition. An application
 of a function is not replaced by the function's body.
 
-r[module.instance.ground]
+r[module.instance.ground] lang::{theory_ground_term, theory_variable_images, theory_instance}
 An application of the query that mentions a name that a quantifier of the
 query binds is not a term at which a sentence is instantiated.
 
@@ -833,12 +833,12 @@ types](Quantifiers.md#meaning) does.
 r[module.instance.unused] lang::sentence_instantiation
 A quantified variable that the sentence does not mention takes no term.
 
-r[module.instance.hypothesis]
+r[module.instance.hypothesis] lang::theory_instance
 Each instance adds its claims, under its domain, as one hypothesis of the
 query. The applications and calls that the instance has are terms of the
 query too, but for those that mention a name that stays quantified.
 
-r[module.instance.quantifiers]
+r[module.instance.quantifiers] lang::theory_instance
 A quantifier within a sentence, and a variable that stays quantified
 (`module.binding.outside`), are quantifiers of each instance. Where their
 types are not listed, the instance is outside the [decidable
@@ -1488,6 +1488,228 @@ expect contract_without_result_used() {
 > instances that F\*'s `SMTPat` and Dafny's triggers have the author
 > choose.
 
+## Translation and substitution of terms
+
+This model exposes the structure of resolved terms, lists and sentences
+through their constructors and projections. Its equations apply at every
+subterm and tail. Sentence parameters, indices bound by inner quantifiers,
+and free names of the query occupy separate namespaces. Applications have
+a function and an argument; successive applications record several
+arguments. A type argument records a type. Literals also record built-in
+operations, which a morphism does not rename.
+
+A morphism supplies images of types and signature items. Each image belongs
+to the target theory and is not translated again. The type map includes
+substitution within type arguments. The same translation applies to the
+domain, the calls and the claims of a sentence.
+
+```fren
+pub type TheoryTerm
+pub type TheoryTerms
+pub type TheoryVariables
+pub type TheorySentence
+pub type TheoryMorphism
+pub type TheorySubstitution
+
+pub enum TheoryTermKind { Variable, Bound, Query, Item, Literal, TypeArg, Apply, All, Exists }
+
+pub fn theory_term_kind(TheoryTerm): TheoryTermKind
+pub fn theory_term_name(TheoryTerm): TheoryName
+pub fn theory_term_index(TheoryTerm): Nat
+pub fn theory_term_type(TheoryTerm): Ty
+pub fn theory_term_left(TheoryTerm): TheoryTerm
+pub fn theory_term_right(TheoryTerm): TheoryTerm
+pub fn theory_item(TheoryName): TheoryTerm
+pub fn theory_type_arg(Ty): TheoryTerm
+pub fn theory_apply(TheoryTerm, TheoryTerm): TheoryTerm
+pub fn theory_all(Ty, TheoryTerm): TheoryTerm
+pub fn theory_exists(Ty, TheoryTerm): TheoryTerm
+pub fn theory_type_image(TheoryMorphism, Ty): Ty
+pub fn theory_item_image(TheoryMorphism, TheoryName): TheoryName
+pub fn translate_term(TheoryMorphism, TheoryTerm): TheoryTerm
+
+pub proc theory_term_translation(m: TheoryMorphism, term: TheoryTerm): (
+    det translated: TheoryTerm,
+) {
+    ensure rule: translated = match theory_term_kind(term) {
+        TheoryTermKind::Item => theory_item(theory_item_image(m, theory_term_name(term))),
+        TheoryTermKind::TypeArg => theory_type_arg(theory_type_image(m, theory_term_type(term))),
+        TheoryTermKind::Apply => theory_apply(
+            translate_term(m, theory_term_left(term)),
+            translate_term(m, theory_term_right(term))
+        ),
+        TheoryTermKind::All => theory_all(
+            theory_type_image(m, theory_term_type(term)),
+            translate_term(m, theory_term_left(term))
+        ),
+        TheoryTermKind::Exists => theory_exists(
+            theory_type_image(m, theory_term_type(term)),
+            translate_term(m, theory_term_left(term))
+        ),
+        _ => term,
+    }
+}
+
+pub fn ground_term?(TheoryTerm, Nat)
+
+pub proc theory_ground_term(term: TheoryTerm, depth: Nat): (det ground?) {
+    ensure rule: ground? iff match theory_term_kind(term) {
+        TheoryTermKind::Variable => false,
+        TheoryTermKind::Bound => theory_term_index(term) < depth,
+        TheoryTermKind::Apply =>
+            ground_term?(theory_term_left(term), depth) and ground_term?(theory_term_right(term), depth),
+        TheoryTermKind::All | TheoryTermKind::Exists =>
+            ground_term?(theory_term_left(term), depth + 1),
+        _ => true,
+    }
+}
+
+pub fn theory_variable_names(TheoryVariables): Set<TheoryName>
+pub fn theory_image_present?(TheorySubstitution, TheoryName)
+pub fn theory_image_term(TheorySubstitution, TheoryName): TheoryTerm
+pub fn substitute_term(TheorySubstitution, TheoryVariables, TheoryTerm): TheoryTerm
+
+pub proc theory_term_substitution(
+    s: TheorySubstitution,
+    variables: TheoryVariables,
+    term: TheoryTerm,
+): (det substituted: TheoryTerm) {
+    ensure rule: substituted = match theory_term_kind(term) {
+        TheoryTermKind::Variable =>
+            if theory_term_name(term) in theory_variable_names(variables) and theory_image_present?(s, theory_term_name(term))
+            then theory_image_term(s, theory_term_name(term)) else term,
+        TheoryTermKind::Apply => theory_apply(
+            substitute_term(s, variables, theory_term_left(term)),
+            substitute_term(s, variables, theory_term_right(term))
+        ),
+        TheoryTermKind::All => theory_all(
+            theory_term_type(term),
+            substitute_term(s, variables, theory_term_left(term))
+        ),
+        TheoryTermKind::Exists => theory_exists(
+            theory_term_type(term),
+            substitute_term(s, variables, theory_term_left(term))
+        ),
+        _ => term,
+    }
+}
+
+pub fn theory_variables_empty?(TheoryVariables)
+pub fn theory_variable_name(TheoryVariables): TheoryName
+pub fn theory_variable_type(TheoryVariables): Ty
+pub fn theory_variables_rest(TheoryVariables): TheoryVariables
+pub fn theory_no_variables(TheoryVariables): TheoryVariables
+pub fn theory_add_variable(TheoryName, Ty, TheoryVariables): TheoryVariables
+pub fn remaining_variables(TheorySubstitution, TheoryVariables): TheoryVariables
+pub fn ground_images?(TheorySubstitution, TheoryVariables)
+pub fn translate_variables(TheoryMorphism, TheoryVariables): TheoryVariables
+
+pub proc theory_variable_images(
+    m: TheoryMorphism,
+    s: TheorySubstitution,
+    variables: TheoryVariables,
+): (det accepted?, det remaining: TheoryVariables, det translated: TheoryVariables) {
+    ensure ground_rule: accepted? iff theory_variables_empty?(variables) or (
+        (not theory_image_present?(s, theory_variable_name(variables))
+        or ground_term?(theory_image_term(s, theory_variable_name(variables)), 0))
+        and ground_images?(s, theory_variables_rest(variables))
+        )
+    ensure remaining_rule: remaining = if theory_variables_empty?(variables) then theory_no_variables(variables)
+        else if theory_image_present?(s, theory_variable_name(variables))
+        then remaining_variables(s, theory_variables_rest(variables))
+        else theory_add_variable(
+            theory_variable_name(variables),
+            theory_variable_type(variables),
+            remaining_variables(s, theory_variables_rest(variables))
+        )
+    ensure translation_rule: translated = if theory_variables_empty?(variables) then theory_no_variables(variables)
+        else theory_add_variable(
+            theory_variable_name(variables),
+            theory_type_image(m, theory_variable_type(variables)),
+            translate_variables(m, theory_variables_rest(variables))
+        )
+}
+
+pub fn theory_terms_empty?(TheoryTerms)
+pub fn theory_first_term(TheoryTerms): TheoryTerm
+pub fn theory_terms_rest(TheoryTerms): TheoryTerms
+pub fn theory_no_terms(TheoryTerms): TheoryTerms
+pub fn theory_add_term(TheoryTerm, TheoryTerms): TheoryTerms
+pub fn translate_terms(TheoryMorphism, TheoryTerms): TheoryTerms
+pub fn substitute_terms(TheorySubstitution, TheoryVariables, TheoryTerms): TheoryTerms
+
+pub proc theory_term_list(
+    m: TheoryMorphism,
+    s: TheorySubstitution,
+    variables: TheoryVariables,
+    terms: TheoryTerms,
+): (det translated: TheoryTerms, det substituted: TheoryTerms) {
+    ensure translation_rule: translated = if theory_terms_empty?(terms) then theory_no_terms(terms)
+        else theory_add_term(
+            translate_term(m, theory_first_term(terms)),
+            translate_terms(m, theory_terms_rest(terms))
+        )
+    ensure substitution_rule: substituted = if theory_terms_empty?(terms) then theory_no_terms(terms)
+        else theory_add_term(
+            substitute_term(s, variables, theory_first_term(terms)),
+            substitute_terms(s, variables, theory_terms_rest(terms))
+        )
+}
+
+pub fn theory_sentence_role(TheorySentence): SentenceRole
+pub fn theory_sentence_variables(TheorySentence): TheoryVariables
+pub fn theory_sentence_domain(TheorySentence): TheoryTerm
+pub fn theory_sentence_calls(TheorySentence): TheoryTerms
+pub fn theory_sentence_claims(TheorySentence): TheoryTerms
+
+pub fn theory_sentence(
+    SentenceRole,
+    TheoryVariables,
+    TheoryTerm,
+    TheoryTerms,
+    TheoryTerms
+): TheorySentence
+
+pub proc theory_translation(m: TheoryMorphism, sentence: TheorySentence): (
+    det translated: TheorySentence,
+) {
+    out translated := theory_sentence(
+        theory_sentence_role(sentence),
+        translate_variables(m, theory_sentence_variables(sentence)),
+        translate_term(m, theory_sentence_domain(sentence)),
+        translate_terms(m, theory_sentence_calls(sentence)),
+        translate_terms(m, theory_sentence_claims(sentence))
+    )
+}
+
+pub proc theory_instance(s: TheorySubstitution, sentence: TheorySentence): (
+    det accepted?,
+    det instance_sentence: TheorySentence,
+) {
+    out accepted? := ground_images?(s, theory_sentence_variables(sentence))
+    out instance_sentence :=
+        if not accepted? then sentence else theory_sentence(
+            theory_sentence_role(sentence),
+            remaining_variables(s, theory_sentence_variables(sentence)),
+            substitute_term(
+                s,
+                theory_sentence_variables(sentence),
+                theory_sentence_domain(sentence)
+            ),
+            substitute_terms(
+                s,
+                theory_sentence_variables(sentence),
+                theory_sentence_calls(sentence)
+            ),
+            substitute_terms(
+                s,
+                theory_sentence_variables(sentence),
+                theory_sentence_claims(sentence)
+            )
+        )
+}
+```
+
 ## Induction by unfolding
 
 [Structural recursion](Recursion.md#induction) proves a claim of a global
@@ -2135,6 +2357,13 @@ The Lean-hosted front end checks this chapter's items by name, since a
 `#fren_check` without a path would check every earlier chapter again:
 
 ```fren
+#fren_check theory_term_translation
+#fren_check theory_ground_term
+#fren_check theory_term_substitution
+#fren_check theory_variable_images
+#fren_check theory_term_list
+#fren_check theory_translation
+#fren_check theory_instance
 #fren_check module_sentence
 #fren_check module_rests_on
 #fren_check rests_on_ranked

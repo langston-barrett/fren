@@ -7,4 +7,3 @@ open Fren.Lang
 
 -- The requirements are in Models.md, which is also a chapter of the manual.
 #fren_md "Models.md"
-#fren_md "ModuleReports.md"

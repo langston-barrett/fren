@@ -97,6 +97,9 @@ pub proc structural_recursion(
 ): (det verdict: Recursion) {
     use self::Recursion::{NotRecursive, NotStructural, Structural}
     require params: n_params >= 1
+    -- Applied uses have already passed the ordinary arity check.
+    require arities: forall (k: Int), when 0 <= k < uses.len and uses[k].form = RecForm::Applied,
+        uses[k].args.len = n_params
 
     ensure none: when uses = [], verdict = NotRecursive
     -- The first position at which every use decreases.
@@ -401,21 +404,38 @@ set_option fren.lint.undecidable "allow" in
 pub proc induction_candidate(
     members: Set<BlockMember>,   -- the kinds of the members of the expectation's block
     abstract?,                   -- the block applies an uninterpreted function
-    constrained?,                -- some parameter's type is a subset type, or has one as a type argument or element type (`lang::subset_widening`'s `restricted?`)
-    recursive?,                  -- the parameter's type is an enumeration with a payload of that type (`lang::directly_recursive`)
-    decreasing?,                 -- the parameter is the argument at the decreasing parameter of an application in the block
+    restrictions: Set<Bool>,     -- `lang::subset_widening`'s `restricted?` for every declared parameter type
+    ty: Int,                     -- the parameter's type, by an identifier
+    payloads: Set<Set<Int>>,     -- each variant's payload types, at the type arguments; empty for a non-enumeration
+    parameter: Int,              -- the parameter, by an identifier
+    arguments: Set<Int>,         -- unshadowed local variables written at structural recursions' decreasing arguments
 ): (det candidate?) {
     use self::BlockMember::{Assume, Cover, Expect}
 
-    ensure rule: candidate? iff (members subset {Assume, Expect, Cover} and not abstract? and not constrained?
-        and recursive? and decreasing?)
+    ensure rule: candidate? iff (members subset {Assume, Expect, Cover} and not abstract? and not (true in restrictions)
+        and (exists (part: Set<Int>), part in payloads and ty in part) and parameter in arguments)
 }
 ```
 
-`lang::directly_recursive` states when the parameter's type is one, from
-the types of its enumeration's variants' payloads, at its type arguments,
-as `G<Int>`'s payload `G<A>` is `G<Int>`: where some payload's type is the
-parameter's.
+`lang::induction_argument` states which written names are collected at the
+decreasing argument: a name of a local variable, without a binder shadowing
+it. Parentheses do not change the expression; a path of several segments,
+a field or any other expression is not a variable's written name.
+
+```fren
+pub proc induction_argument(
+    argument: Int,               -- the argument's single-segment name, by an identifier
+    variables: Set<Int>,         -- local variables in scope
+    bound: Set<Int>,             -- names bound by enclosing expressions
+): (det collect?) {
+    ensure rule: collect? iff (argument in variables and not (argument in bound))
+}
+```
+
+The payload condition of `lang::induction_candidate` is
+`lang::directly_recursive`'s: the parameter's type is a recursive enumeration
+with a payload of that same type. Payload types are instantiated at the
+enumeration's type arguments, as `G<Int>`'s payload `G<A>` is `G<Int>`.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -432,7 +452,12 @@ Induction on a parameter `x` is the check, by Hoare's rule
 ([Contracts](#contracts)), of the contract of a function that Fren
 generates from the claim. Its parameters are the expectation's. Its body
 is a `match` on `x` with an arm for each variant, in order, whose pattern
-binds each payload. An arm's value is the conjunction of the function's
+binds each payload and names the variant by the variant's own path. No
+binder or other generated name may stand for the variant or rewrite any
+segment of that path, including an enumeration's name hidden by a type
+alias. This requirement holds even where the candidate is not tried: an
+arm with a rewritten variant path is not a permitted generated function.
+An arm's value is the conjunction of the function's
 applications to the arm's *children*, the payloads of `x`'s type, with the
 other parameters as `lang::induction_hypotheses` states. In an arm without
 children it is `true`. Its postcondition is the function's application to
@@ -465,6 +490,31 @@ itself can apply it: an application elsewhere would rest on its contract,
 which is checked only where the claim's own check is Inconclusive. Nor is
 a generated name ever offered as a similar name for one that is not found
 (`F0201`), since a fix that wrote it could not be read.
+
+For example, the claim below passes by induction, although its syntax
+never mentions the base variant's name:
+
+```text
+set_option fren.lint.non_camel_case_types "allow"
+
+pub enum Collision { fren_induction_p0, Cons(Int, Collision) }
+
+pub fn variant_count(l: Collision): Int := match l {
+    Collision::fren_induction_p0 => 0,
+    Collision::Cons(_, r) => 1 + variant_count(r),
+}
+
+expect variant_nonnegative(a: Collision) { expect nonnegative: variant_count(a) >= 0 }
+```
+
+The generated base arm names `self::Collision::fren_induction_p0` and has
+value `true`. Rewriting that path to `self::Collision::#0`, with a payload
+binder in place of the variant, violates the rule; dropping the function
+and leaving `variant_nonnegative::nonnegative` Inconclusive does not
+satisfy it. An alias does not change a variant's own path either: if
+`Alias` names the enumeration `fren_induction_p0`, its variant `Z` is still
+named by `fren_induction_p0::Z`, with the module qualification above,
+never by a generated binder in place of the enumeration's name.
 
 In each arm, the function is applied once to each child, in order, at the
 position of `x`, and at each other position to the parameter there: the
@@ -815,6 +865,7 @@ functions to quantifier-free queries.
 #fren_check recursive_facts
 #fren_check merged_facts
 #fren_check recursive_post_result
+#fren_check induction_argument
 #fren_check induction_candidate
 #fren_check directly_recursive
 #fren_check induction_hypotheses

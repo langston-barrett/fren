@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Check
+import FrenCore.Definitions
 import FrenCore.Evidence
 -- keep-sorted end
 
@@ -300,7 +301,7 @@ part of it uses has its bound name renamed apart (`freshName`). -/
 partial def Sx.subst (σ : Array (String × Sx)) (e : Sx) : Sx :=
   if σ.isEmpty then e else
   match e with
-  | .atom a => ((σ.find? (·.1 == a)).map (·.2)).getD e
+  | .atom a => definitionValue σ a e
   | .list xs => match e.binder? with
     | none => .list (xs.map (·.subst σ))
     | some b =>

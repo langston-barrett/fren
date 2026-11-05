@@ -2007,7 +2007,7 @@ partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Id
 the global expectation `name`, just elaborated, whose header and block are
 `header` and `body`, where its block applies an uninterpreted function if
 `abstract` (`Reqs/Lang/Recursion#induction`): one for each of its claims
-and each candidate, in order (`Fren.Core.inductionCandidate`). Each is an
+and each candidate, in order (`Fren.Core.inductionCandidates`). Each is an
 item of the module that nothing reports, whose body is kept in
 `State.inductionBodies` rather than checked as a function's. -/
 partial def elabInductions (name : Ident) (header body : Array Member) (abstract : Bool) : M Unit := do
@@ -2023,10 +2023,8 @@ partial def elabInductions (name : Ident) (header body : Array Member) (abstract
   let vars := params.filterMap fun (x, _) => c.vars.find? (·.name == Name.mkSimple (declaredIdent x).1.name)
   unless vars.size == params.size do return
   let tys := vars.map (·.ty)
-  let constrained := vars.any (·.ptype.restricted)
-  let candidates := (List.range params.size).filter fun i =>
-    Fren.Core.inductionCandidate kinds.toList abstract constrained (Fren.Core.directlyRecursive st.shapeOf tys[i]!)
-      (st.inductionArgs.contains vars[i]!.name)
+  let candidates := Fren.Core.inductionCandidates st.shapeOf kinds.toList abstract
+    (vars.map fun v => (v.name, v.ptype)) st.inductionArgs
   if candidates.isEmpty then return
   let assumptions := members.filterMap fun
     | .prop .assume _ e => some e
@@ -2053,23 +2051,20 @@ where
     let ident (s : String) : Ident := { name := s, span := sp }
     let fname := Fren.Core.inductionFnName shown.name claim.name (declaredIdent params[i]!.1).1.name name.span.start
     let fn := ident fname
-    let n := params.size
-    let named (k : Nat) := Expr.path sp #[ident (declaredIdent params[k]!.1).1.name]
-    -- Each variant, with its payload bound, and the function applied to
-    -- the case's variables as `inductionHypotheses` gives them.
-    let cases := Fren.Core.inductionCases st.shapeOf tys i
-    let arms := (cases.zip d.ctors).map fun ((payload, hyps), (v, _)) =>
-      let binder (k : Nat) := ident (Fren.Core.inductionBinder k (payload[k]! matches .bool))
-      let arg (k : Nat) := if k < n then named k else Expr.path sp #[binder (k - n)]
-      let pattern := Pattern.variant sp ((Fren.Core.variantSegments st.module ep v).toArray.map ident)
-        (if payload.isEmpty then none else some ((List.range payload.size).toArray.map fun k => Pattern.variant sp #[binder k] none))
-      let apps := hyps.toArray.map fun h => Expr.app sp #[fn] (h.toArray.map arg)
-      let value := if apps.isEmpty then Expr.bool sp true else apps.extract 1 apps.size |>.foldl (Expr.bin sp "and") apps[0]!
-      (pattern, none, value)
-    let fnBody := Expr.match sp (named i) arms false
-    let held := if assumptions.isEmpty then e
-      else Expr.when sp false (assumptions.extract 1 assumptions.size |>.foldl (Expr.bin sp "and") assumptions[0]!) e
-    let post := Expr.bin sp "and" (.app sp #[fn] ((List.range n).toArray.map named)) held
+    let builder : Fren.Core.InductionSyntax Expr := {
+      truth := .bool sp true
+      app := fun f xs => .app sp #[ident f] (xs.toArray.map fun x => .path sp #[ident x])
+      conjoin := .bin sp "and"
+      guard := .when sp false
+      matchOn := fun x arms =>
+        let arms := arms.map fun arm =>
+          let pattern := Pattern.variant sp (arm.variant.toArray.map ident)
+            (if arm.binders.isEmpty then none
+             else some (arm.binders.map fun x => Pattern.variant sp #[ident x] none))
+          (pattern, none, arm.value)
+        .match sp (.path sp #[ident x]) arms false }
+    let (fnBody, post) := Fren.Core.buildInduction builder st.shapeOf st.module ep (d.ctors.map (·.1))
+      (params.map fun p => (declaredIdent p.1).1.name) tys fname i assumptions e
     let item := Item.function true fn #[] (params.map fun (x, ty) => (#[x], ty)) (some #[ident "Bool"]) (some fnBody)
       #[(true, ident "claim", post)] sp {}
     let before ← get
