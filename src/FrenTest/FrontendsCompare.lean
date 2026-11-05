@@ -328,4 +328,26 @@ def defRefuted : Diagnostic :=
 -- Without misread models, the messages are compared as they are.
 #guard !(compare misreadSpec { diags := #[refuted "a = 2"] } { diags := #[shown "a = 4"] }).1.isEmpty
 
+/-! ## The specified evaluator-reading exception -/
+
+def limitSource : String := "pub fn projection(n: Int): Int := n + n\n"
+def limitReport : Report := {
+  diags := #[err 1 (Fren.Core.expansionLimitHeadline ++ " while reading `projection`")]
+  exit? := some 2
+}
+
+#guard agrees limitSource limitReport { diags := #[], summary? := some none0 }
+-- Hosted check results have no counterpart when preparation stopped.
+#guard agrees limitSource limitReport
+  { diags := #[err 1 "expectation `p::q` does not hold"], summary? := some none0 }
+-- The exception cannot hide static errors, lints, arbitrary errors,
+-- missing locations, a wrong exit or results emitted after exhaustion.
+#guard differs limitSource limitReport { diags := #[err 1 "unknown identifier `n`"] }
+#guard differs limitSource limitReport { diags := #[warn 1 "unused variable `n`"] }
+#guard differs limitSource { limitReport with exit? := some 1 } { diags := #[] }
+#guard differs limitSource { limitReport with summary? := some none0 } { diags := #[] }
+#guard differs limitSource { limitReport with diags := #[{ limitReport.diags[0]! with line := 0 }] } { diags := #[] }
+#guard differs limitSource { diags := #[err 1 "internal error: the evaluator cannot read the spec"], exit? := some 2 } { diags := #[] }
+#guard differs limitSource { diags := #[], exit? := some 2 } { diags := #[] }
+
 end FrenTest.FrontendsCompare

@@ -33,6 +33,41 @@ impl expansion_step: eval::expansion_step for (remaining : Nat) {
   intro remaining _
   cases remaining <;> simp [fren_spec, Fren.Core.expansionStep] <;> omega
 
+/-- A small expression-tree model; shared children remain separate
+occurrences in the work list. The generic reservation theorem covers
+arbitrary child arities as well. -/
+def copyTreeChildren : eval.CopyTree → List eval.CopyTree
+  | .Leaf => []
+  | .Branch left right => [left, right]
+
+def copyTreeNodes : eval.CopyTree → Nat
+  | .Leaf => 1
+  | .Branch left right => 1 + copyTreeNodes left + copyTreeNodes right
+
+theorem copyTree_rule (tree : eval.CopyTree) :
+    copyTreeNodes tree = 1 + ((copyTreeChildren tree).map copyTreeNodes).sum := by
+  cases tree <;> simp [copyTreeNodes, copyTreeChildren] <;> omega
+
+theorem copyTree_visits (tree : eval.CopyTree) :
+    (copyTreeNodes tree : Int) = eval.copy_visits tree := by
+  induction tree <;> simp_all [copyTreeNodes, eval.copy_visits, Int.natCast_add]
+
+impl expansion_count: eval::expansion_count for (tree : eval.CopyTree) (remaining : Nat) {
+  tree := tree,
+  remaining := remaining,
+  fits? := (Fren.Core.expansionBudget copyTreeChildren remaining [tree]).isSome,
+  after := (Fren.Core.expansionBudget copyTreeChildren remaining [tree]).getD 0,
+} by
+  intro tree remaining _
+  have visits := copyTree_visits tree
+  rw [Fren.Core.expansionBudget_count copyTreeChildren copyTreeNodes copyTree_rule]
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero]
+  by_cases fits : copyTreeNodes tree ≤ remaining
+  · simp [fits, fren_spec]
+    omega
+  · simp [fits, fren_spec]
+    omega
+
 def toStatus : Status → eval.Status
   | .Inadmissible => .Inadmissible
   | .Violates => .Violates

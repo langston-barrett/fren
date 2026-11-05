@@ -3,6 +3,7 @@ import FrenCli.Color
 import FrenCli.Exit
 import FrenCli.QueryStore
 import FrenCli.SeqElems
+import FrenCore.Expansion
 import FrenCore.Obligations
 import FrenCore.Symbols
 import Impls.QueryCache
@@ -32,6 +33,15 @@ impl evidence_in_effect: cli::evidence_in_effect for (o s : Option Fren.Core.Evi
 } by
   intro o s _
   rcases o with _ | ⟨_ | _, _ | _⟩ <;> rcases s with _ | ⟨_ | _, _ | _⟩ <;> decide
+
+impl reader_acceptance: cli::accepts for (hosted leanCode limited : Bool) {
+  construct := if leanCode then cli.Construct.LeanCode else cli.Construct.Fren,
+  front_end := if hosted then cli.FrontEnd.Hosted else cli.FrontEnd.Standalone,
+  reading := if limited then cli.Reading.ExpansionLimit else cli.Reading.Ready,
+  accepted? := Fren.Core.readerAccepted hosted leanCode limited,
+} by
+  intro hosted leanCode limited _
+  cases hosted <;> cases leanCode <;> cases limited <;> decide
 
 impl exit_code: cli::exit for (ran : Bool) (s : Option Severity) {
   ran? := ran,

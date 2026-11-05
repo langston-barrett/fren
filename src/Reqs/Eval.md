@@ -96,41 +96,6 @@ name, `#` and a number, such as `Name#0`. Within one behaviour, two values
 of an abstract type written alike are equal, and two written differently
 are not.
 
-## Expansion limit
-
-While reading a spec for evaluation, Fren eagerly copies defined-function
-bodies at their applications and renames their binders. A short chain of
-functions can therefore require exponentially many expression nodes.
-Reading one source item may copy at most `MAX_EXPANSION_NODES` nodes,
-across all of its expansions, contracts and binder renamings. The budget
-resets at the next source item, including across files, and temporary
-changes of lexical scope never refund work. This bounds copying work,
-not the memory of the source, its values or the solver.
-
-Before a traversal copies an expression, it reserves one unit for each
-node it will visit, counting every occurrence of a shared subtree. This
-walk stops when the remaining budget is exhausted, before making the
-copy. A function-parameter substitution spends one unit at each node it
-copies and reserves the work of each closure-body substitution too.
-Arguments retained for strict evaluation count; the closed body of a
-constant is shared and does not. On exhaustion, reading stops with an
-expansion-limit diagnostic. `fren check` then exits with code 2 before
-asking the solver anything, since it cannot confirm models without the
-evaluator's reading. Smaller definitions or separate source items can
-bring an item within the limit.
-
-```fren
-pub const MAX_EXPANSION_NODES: Int := 2097152
-
-pub proc expansion_budget(): (det initial: Nat) { ensure bound: initial = MAX_EXPANSION_NODES }
-
-pub proc expansion_step(remaining: Nat): (det copy?, det after: Nat) {
-    ensure allowed: copy? iff remaining > 0
-    ensure spent: when copy?, after + 1 = remaining
-    ensure exhausted: unless copy?, after = 0
-}
-```
-
 ## Higher-order functions
 
 The evaluator unfolds an application of a [higher-order
@@ -243,6 +208,57 @@ that it reads and the newtypes that it checks are nested, and no spec comes
 near the bound. That rests on source size. Long before the bound, at a
 depth that no source reaches, the evaluator's native stack overflows, so
 evaluation crashes rather than leave a value unknown. Neither is tested.
+
+## Expansion limit
+
+The standalone commands `fren check`, `fren quickcheck`, `fren eval` and
+`fren mutate` allow up to `MAX_EXPANSION_NODES` visits to expression nodes
+while preparing one source item for evaluation. Each occurrence counts,
+including another occurrence of the same definition. The allowance starts
+again at the next item; inspecting a definition in another scope does not
+restore visits already spent. Going past it reports an expansion-limit
+error at the item's name and exits with code 2, before running the checks or
+tests that need that reading. The message suggests simplifying its definitions
+or splitting it. This is a limit on preparation for evaluation, separate
+from evaluation's fuel and the solver's limits.
+
+The bound gives more than five times the 1,587,728 visits used by the
+largest item in Fren's own requirements when it was chosen. It leaves
+room for growth while stopping the expansion that exhausted a 6 GiB run.
+The hosted checker does not prepare this independent evaluator reading;
+its acceptance can therefore differ at this limit, as
+[`cli::accepts` and `cli::agreement`](Cli.md#agreement-with-lean) specify.
+
+`eval::expansion_count` models a traversal's expression tree: each leaf
+and branch is one visit, and two occurrences count twice even if they
+are the same subtree. A traversal succeeds exactly when those visits
+fit, including equality at the bound, and leaves the unused allowance.
+`eval::expansion_step` states how an individual visit spends it.
+
+```fren
+pub const MAX_EXPANSION_NODES: Int := 8388608
+
+pub proc expansion_budget(): (det initial: Nat) { ensure bound: initial = MAX_EXPANSION_NODES }
+
+pub enum CopyTree { Leaf, Branch(CopyTree, CopyTree) }
+
+pub fn copy_visits(tree: CopyTree): Nat := match tree {
+    CopyTree::Leaf => 1,
+    CopyTree::Branch(left, right) => 1 + copy_visits(left) + copy_visits(right),
+}
+
+pub proc expansion_count(tree: CopyTree, remaining: Nat): (det fits?, det after: Nat) {
+    ensure fits: fits? iff copy_visits(tree) <= remaining
+    ensure spent: when fits?, after + copy_visits(tree) = remaining
+    ensure exhausted: unless fits?, after = 0
+}
+
+pub proc expansion_step(remaining: Nat): (det copy?, det after: Nat) {
+    ensure allowed: copy? iff remaining > 0
+    ensure spent: when copy?, after + 1 = remaining
+    ensure exhausted: unless copy?, after = 0
+}
+```
 
 ## Searching for behaviours
 

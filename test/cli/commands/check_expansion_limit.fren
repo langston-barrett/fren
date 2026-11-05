@@ -24,3 +24,5 @@ pub fn projection(n: Int): Int := twice(
         )
     )
 )
+
+pub proc p(n: Int): (det result: Int) { out result := n }

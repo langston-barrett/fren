@@ -1,0 +1,1 @@
+--@ argv: eval --proc p test/cli/commands/check_expansion_limit.fren

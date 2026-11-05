@@ -2511,7 +2511,47 @@ structure LState where
   across temporary changes of the lexical state. -/
   expansionLeft : Nat := Fren.Core.maxExpansionNodes
 
-abbrev L := StateT LState (Except String)
+/-- The source item whose independent evaluator reading failed. -/
+structure ReadSite where
+  file : Nat
+  span : Span
+  path : Name
+  deriving Inhabited
+
+/-- Resource exhaustion is distinct from a bug in the evaluator's reading. -/
+inductive ReadError where
+  | invalid (message : String)
+  | expansionLimit (site? : Option ReadSite := none)
+  deriving Inhabited
+
+instance : ToString ReadError where
+  toString
+    | .invalid message => message
+    | .expansionLimit _ => Fren.Core.expansionLimitMsg
+
+def ReadError.isLimit : ReadError → Bool
+  | .expansionLimit _ => true
+  | .invalid _ => false
+
+/-- The standalone command cannot continue without a usable reading.
+The hosted front end's exception is specified by `cli::accepts`. -/
+def ReadError.stopsCommand (error : ReadError) : Bool :=
+  !Fren.Core.readerAccepted false false error.isLimit
+
+def ReadError.at (site : ReadSite) : ReadError → ReadError
+  | .expansionLimit none => .expansionLimit (some site)
+  | e => e
+
+abbrev L := StateT LState (Except ReadError)
+
+-- Existing reading failures are strings; only the resource limit bypasses
+-- these handlers, so it cannot accidentally become an internal error.
+instance : MonadExceptOf String L where
+  throw message := throwThe ReadError (.invalid message)
+  tryCatch action handler := tryCatchThe ReadError action fun
+    | .invalid message => handler message
+    | e => throwThe ReadError e
+
 
 def liftE (x : Except Fren.Core.Error α) : L α :=
   match x with
@@ -2647,7 +2687,7 @@ def Ex.copyChildren : Ex → List Ex
 /-- Reserve the work before a pure traversal can allocate its copy. -/
 def copying (e : Ex) (f : Ex → Ex) : L Ex := do
   let some left := Fren.Core.expansionBudget Ex.copyChildren (← get).expansionLeft [e]
-    | throw Fren.Core.expansionLimitMsg
+    | throwThe ReadError (.expansionLimit none)
   modify fun s => { s with expansionLeft := left }
   return f e
 
@@ -3001,7 +3041,7 @@ closure's body, with the closure's parameters standing for the arguments
 those of the body it is unfolded into made unique, so that none captures
 another. -/
 partial def Ex.substFns (σ : List (Name × Array Name × Ex)) (e : Ex) : L Ex := do
-  let some left := Fren.Core.expansionStep (← get).expansionLeft | throw Fren.Core.expansionLimitMsg
+  let some left := Fren.Core.expansionStep (← get).expansionLeft | throwThe ReadError (.expansionLimit none)
   modify fun s => { s with expansionLeft := left }
   let go := Ex.substFns σ
   match e with
@@ -3011,6 +3051,45 @@ partial def Ex.substFns (σ : List (Name × Array Name × Ex)) (e : Ex) : L Ex :
     | some (ps, b) => copying b (·.subst (ps.zip args).toList)
     | none => return .app g args
   | .lit _ | .var _ | .slot _ | .boundAt _ | .shared _ | .known _ | .bound _ | .const .. => return e
+  | .lifted lets q => return .lifted (← lets.mapM (·.mapM go)) (← go q)
+  | .dispatch ks m => return .dispatch ks (← go m)
+  | .memo lets e => return .memo (← lets.mapM go) (← go e)
+  | .not a => return .not (← go a)
+  | .neg a => return .neg (← go a)
+  | .bin op a b => return .bin op (← go a) (← go b)
+  | .when negated c d => return .when negated (← go c) (← go d)
+  | .ite c a b => return .ite (← go c) (← go a) (← go b)
+  | .pre pos g gs e => return .pre pos g (← gs.mapM fun (p, x) => return (p, ← go x)) (← go e)
+  | .strict args e => return .strict (← args.mapM go) (← go e)
+  | .cardinality c args => return .cardinality c (← args.mapM go)
+  | .method m r args => return .method m (← go r) (← args.mapM go)
+  | .matches r p re => return .matches (← go r) p re
+  | .setLit es => return .setLit (← es.mapM go)
+  | .pair a b => return .pair (← go a) (← go b)
+  | .seqLit es => return .seqLit (← es.mapM go)
+  | .index q i pos u => return .index (← go q) (← go i) pos u
+  | .card e => return .card (← go e)
+  | .ctor ty idx args => return .ctor ty idx (← args.mapM go)
+  | .field e idx => return .field (← go e) idx
+  | .update e fs => return .update (← go e) (← fs.mapM fun (k, x) => return (k, ← go x))
+  | .table pos rows u => return .table pos (← rows.mapM fun (p, c?, v) => return (p, ← c?.mapM go, ← go v)) u
+  | .typed t is a => return .typed t is (← go a)
+  | .match e arms pos ps u t =>
+    return .match (← go e) (← arms.mapM fun (p, g?, b) => return (p, ← g?.mapM go, ← go b)) pos ps u t
+  | .quant file pos all ns ds ts b => return .quant file pos all ns (← ds.mapM (·.mapM go)) ts (← go b)
+  | .range lo hi => return .range (← go lo) (← go hi)
+
+/-- Copying substitution used while expanding refinement locals. Each
+visit spends the same budget as body substitution, including repeated
+visits to a shared local definition. -/
+partial def Ex.substVarsForRead (f : Name → L Ex) (e : Ex) : L Ex := do
+  let some left := Fren.Core.expansionStep (← get).expansionLeft | throwThe ReadError (.expansionLimit none)
+  modify fun s => { s with expansionLeft := left }
+  let go := Ex.substVarsForRead f
+  match e with
+  | .var n => f n
+  | .app g args => return .app g (← args.mapM go)
+  | .lit _ | .slot _ | .boundAt _ | .shared _ | .known _ | .bound _ | .const .. => return e
   | .lifted lets q => return .lifted (← lets.mapM (·.mapM go)) (← go q)
   | .dispatch ks m => return .dispatch ks (← go m)
   | .memo lets e => return .memo (← lets.mapM go) (← go e)
@@ -3882,10 +3961,10 @@ partial def refinementEquations : Ex → Array (Name × Ex)
 /-- Inline only specification locals before substituting call arguments.
 Keeping those steps separate avoids capturing a caller variable that has
 one of the specification's parameter names. -/
-partial def inlineRefinementLocals (locals : Array (Name × Ex)) (e : Ex) : Ex :=
-  e.substVars fun n => match locals.find? (·.1 == n) with
+partial def inlineRefinementLocals (locals : Array (Name × Ex)) (e : Ex) : L Ex :=
+  e.substVarsForRead fun n => match locals.find? (·.1 == n) with
     | some (_, value) => inlineRefinementLocals locals value
-    | none => .var n
+    | none => pure (.var n)
 
 def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Unit := do
   let body := splitConjunctionMembers body
@@ -3998,27 +4077,29 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
       let mut subs : Array (Name × Ex) := #[]
       for v in params, arg in args do subs := subs.push (v.name, (← lowerExpr cx arg).1)
       for v in results, given in actual do subs := subs.push (v.name, .var (declName w ++ given.name))
-      let replace (ss : Array (Name × Ex)) (e : Ex) := e.substVars fun n =>
+      let replace (ss : Array (Name × Ex)) (e : Ex) := copying e fun e => e.substVars fun n =>
         ((ss.find? (·.1 == n)).map (·.2)).getD (.var n)
       let sp := (← get).spec
       let internal := (sp.flatVars a).filter (!·.name.isAtomic)
       let names := internal.map fun v => Name.mkSimple s!"#refines{refinesIndex}.{v.name}"
       for v in internal, n in names do subs := subs.push (v.name, .bound n)
       let locals := a.defs.filter (fun (n, _) => !results.any (·.name == n))
-      let translate (e : Ex) := replace subs (inlineRefinementLocals locals e)
+      let translate (e : Ex) : L Ex := do replace subs (← inlineRefinementLocals locals e)
       let typed := a.typeConstraints.filter fun p => (params ++ results).any (fun v => p.name == Name.num v.name 0)
-      let claims := (a.constraints.filter (fun p => p.kind == .ensure && p.typed?.isNone)).map (fun p => translate p.e)
-        ++ typed.map (fun p => translate p.e)
-        ++ a.defs.filterMap (fun (n, e) => if results.any (·.name == n) then
-          some (.bin .eq (translate (.var n)) (translate e)) else none)
+      let claims ← (a.constraints.filter (fun p => p.kind == .ensure && p.typed?.isNone)).mapM (fun p => translate p.e)
+      let typed ← typed.mapM (fun p => translate p.e)
+      let defined ← a.defs.filterMapM fun (n, e) => do
+        if !results.any (·.name == n) then return none
+        return some (.bin .eq (← translate (.var n)) (← translate e))
+      let claims := claims ++ typed ++ defined
       let claim := claims.foldl (fun e p => Ex.bin .and e p) (.lit (.bool true))
-      let rawCalls := (sp.insts a).map (fun atom => atom.e.renameVars (atom.pfx ++ ·))
-      let calls := rawCalls.map translate
+      let rawCalls ← (sp.insts a).mapM (fun atom => copying atom.e (·.renameVars (atom.pfx ++ ·)))
+      let calls ← rawCalls.mapM translate
       let claim := if calls.isEmpty then claim else
         Ex.when false (calls.foldl (fun e p => Ex.bin .and e p) (.lit (.bool true))) claim
-      let equations : Array (Name × Ex) := (rawCalls.flatMap refinementEquations).filterMap fun (n, value) => do
-        let k ← internal.findIdx? (·.name == n)
-        return (names[k]!, translate value)
+      let equations ← (rawCalls.flatMap refinementEquations).filterMapM fun (n, value) => do
+        let some k := internal.findIdx? (·.name == n) | return none
+        return some (names[k]!, ← translate value)
       let mut remaining : Array (Var × Name) := internal.zip names
       let mut orderedNames : Array Name := #[]
       let mut tys : Array Fren.Core.PTy := #[]
@@ -4445,32 +4526,44 @@ partial def lowerItem : Item → L Unit
 where
   declareUse (segs : Array Ident) (glob : Bool) : L Unit := declareUseIn segs glob none
 
+/-- The name token of the outer source item, under option wrappers.
+Generated subset and trait helpers retain their enclosing item's location. -/
+partial def readSite (file : Nat) (module : Name) : Item → ReadSite
+  | .lintSetting _ _ _ _ _ (some item) => readSite file module item
+  | .enum _ name .. | .record _ name .. | .newtype _ name .. | .abstractType _ name
+  | .typeAlias _ name .. | .subsetType _ name .. | .function _ name .. | .const _ name ..
+  | .comp _ name .. | .global name .. | .globalBlock name .. | .trait _ name .. | .law name .. =>
+    { file, span := name.span, path := module ++ itemName name }
+  | _ => { file, span := default, path := module }
+
 /-- The state after the files' items, from the state `st` of the files
 before them. Each file starts at the root module. -/
 def lowerFrom (st : LState) (files : Array (Array Item)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    Except String LState := do
+    Except ReadError LState := do
   let mut st := { st with callTargs }
   for items in files do
     st := { st with module := .anonymous, scope := .anonymous }
     for item in items do
       -- Paths resolve in the module, but in a block with `use`s.
-      st := (← (lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes }).2
+      st := (← ((lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes }).mapError
+        (·.at (readSite st.file st.module item))).2
     st := { st with file := st.file + 1 }
   return st
 
 /-- The state with the prelude lowered into it, before every spec
 (`Reqs/Lang/Prelude`): its items, in the prelude's module. -/
-def preludeState : Except String LState := do
+def preludeState : Except ReadError LState := do
   let chars := Fren.Core.preludeSource.toList.toArray
   let items ← match lex chars with
-    | .error e => throw e.msg.headline
+    | .error e => throw (.invalid e.msg.headline)
     | .ok toks => match parse toks chars with
-      | .error e => throw e.msg.headline
+      | .error e => throw (.invalid e.msg.headline)
       | .ok items => pure items
   let mut st : LState := { module := Fren.Core.preludeModule, scope := Fren.Core.preludeModule }
   for item in items do
     -- Paths resolve in the module, but in a block with `use`s.
-    st := (← (lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes }).2
+    st := (← ((lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes }).mapError
+      (·.at (readSite st.file st.module item))).2
   return { st with module := .anonymous, scope := .anonymous }
 
 /-- The spec of the files' items, which the elaborator accepted, with the
@@ -4480,7 +4573,7 @@ after another is lowering them together: `lowerFrom st (a ++ b) t` is
 `lowerFrom st a t >>= (lowerFrom · b t)`, which `fren mutate` relies on to
 lower only the files from a mutant's. -/
 def lowerAll (files : Array (Array Item)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    Except String LState := do lowerFrom (← preludeState) files callTargs
+    Except ReadError LState := do lowerFrom (← preludeState) files callTargs
 
 def VTy.show : VTy → String
   | .bool => "Bool"
@@ -4535,7 +4628,7 @@ def parseValue (st : LState) (module : Name) (ty : VTy) (text : String) : Except
     | .ok r => pure r
     | .error e => throw e.msg.headline
   unless ps.toks[ps.pos]?.any (·.tok == .eof) do throw s!"`{text}` is not a value"
-  let (((ex, t), nat), _) ← (do return (← lowerExpr {} e, ← natTyped e)).run { st with module }
+  let (((ex, t), nat), _) ← ((do return (← lowerExpr {} e, ← natTyped e)).run { st with module }).mapError toString
   -- Typed as at a binding of the type (`lang::widening`): a `Nat` is read
   -- as an `Int`, and a literal as a `Nat`.
   let t := if nat && ty == .nat then .nat else if t == .nat && ty == .int then .int else t
