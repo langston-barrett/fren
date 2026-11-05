@@ -208,6 +208,12 @@ rest on the obligation.
 > **Note:** So the obligation of the implementation at 5, proved from the
 > lemma at 4, does not rest on itself.
 
+The solver model stores every finite item order as a sequence, so lookup
+and length have their exact meanings in its witness checks. Enumeration
+uses a linked representation: it cannot index a sequence within a
+recursive function. Both use the same predicates, whose accessor gives
+raw items; the predicates compute sentence validity, scope and dependencies.
+
 ```fren
 -- What an item of a module is, to the checks that may use it.
 pub enum ModuleItemKind {
@@ -232,11 +238,8 @@ pub struct ModuleItem {
     asked_goals: Set<Int>,   -- an interface's expectations with assumptions or calls
 }
 
--- The items of a module in order, the first at place 0.
-pub enum ModuleItems { Nil, Cons(ModuleItem, ModuleItems) }
-
 -- A module: its items in order, each at its place.
-pub struct ModuleModel { items: ModuleItems }
+pub struct ModuleModel { items: Seq<ModuleItem> }
 
 -- What is at a place where no item is.
 pub const NO_ITEM: ModuleItem := ModuleItem {
@@ -251,16 +254,28 @@ pub const NO_ITEM: ModuleItem := ModuleItem {
     asked_goals := {},
 }
 
-pub fn item_at(items: ModuleItems, i: Int): ModuleItem := match items {
-    ModuleItems::Nil => NO_ITEM,
-    ModuleItems::Cons(item, rest) => if i = 0 then item else item_at(rest, i - 1),
-}
+-- A sequence retains every finite item order, with lookup and length
+-- available to the solver rather than hidden behind recursive contracts.
+pub fn item_at(items: Seq<ModuleItem>, i: Int): ModuleItem :=
+    if 0 <= i < items.len then items[i] else NO_ITEM
 
 pub fn item_of(m: ModuleModel, i: Int): ModuleItem := item_at(m.items, i)
 
-pub fn item_count(items: ModuleItems): Int := match items {
+pub fn item_count(items: Seq<ModuleItem>): Int := items.len
+
+-- A linked representation for executable enumeration: recursive sequence
+-- indexes cannot be enumerated. Both representations use the shared
+-- predicates, with only their raw-item accessor differing.
+pub enum ModuleItems { Nil, Cons(ModuleItem, ModuleItems) }
+
+pub fn linked_item_at(items: ModuleItems, i: Int): ModuleItem := match items {
+    ModuleItems::Nil => NO_ITEM,
+    ModuleItems::Cons(item, rest) => if i = 0 then item else linked_item_at(rest, i - 1),
+}
+
+pub fn linked_item_count(items: ModuleItems): Int := match items {
     ModuleItems::Nil => 0,
-    ModuleItems::Cons(_, rest) => 1 + item_count(rest),
+    ModuleItems::Cons(_, rest) => 1 + linked_item_count(rest),
 }
 
 -- A sentence that a check may see, by the place of the item that declares
@@ -292,34 +307,45 @@ pub fn declared_at(s: ModuleSentence): Int := match s {
     ModuleSentence::Assumed(a) => a,
 }
 
+pub fn kind_at_from?(get: fn(Int) -> ModuleItem, i: Int, wanted: ModuleItemKind) :=
+    0 <= i and get(i).kind = wanted
+
 pub fn kind_at?(m: ModuleModel, i: Int, wanted: ModuleItemKind) :=
-    0 <= i and item_of(m, i).kind = wanted
+    kind_at_from?(|place| item_of(m, place), i, wanted)
 
 -- The place of the interface that the implementation at `x` implements.
-pub fn implemented(m: ModuleModel, x: Int): Int := item_of(m, x).implements
+pub fn implemented_from(get: fn(Int) -> ModuleItem, x: Int): Int := get(x).implements
+
+pub fn implemented(m: ModuleModel, x: Int): Int := implemented_from(|place| item_of(m, place), x)
+
+pub fn implementation_at_from?(get: fn(Int) -> ModuleItem, x: Int) :=
+    kind_at_from?(get, x, ModuleItemKind::Implementation) and kind_at_from?(get, implemented_from(get, x), ModuleItemKind::Interface)
 
 pub fn implementation_at?(m: ModuleModel, x: Int) :=
-    kind_at?(m, x, ModuleItemKind::Implementation) and kind_at?(m, implemented(m, x), ModuleItemKind::Interface)
+    implementation_at_from?(|place| item_of(m, place), x)
 
 -- Whether `s` is a sentence of `m`.
 set_option fren.lint.undecidable "allow" in
-pub fn sentence_of?(m: ModuleModel, s: ModuleSentence) := match s {
+pub fn sentence_of_from?(get: fn(Int) -> ModuleItem, s: ModuleSentence) := match s {
     ModuleSentence::Law(i, k) =>
-        kind_at?(m, i, ModuleItemKind::Interface) and 0 <= k < item_of(m, i).laws,
+        kind_at_from?(get, i, ModuleItemKind::Interface) and 0 <= k < get(i).laws,
     ModuleSentence::InterfaceLemma(i, k) =>
-        kind_at?(m, i, ModuleItemKind::Interface) and 0 <= k < item_of(m, i).lemmas,
+        kind_at_from?(get, i, ModuleItemKind::Interface) and 0 <= k < get(i).lemmas,
     ModuleSentence::InterfaceGoal(i, k) =>
-        kind_at?(m, i, ModuleItemKind::Interface) and 0 <= k < item_of(m, i).goals,
+        kind_at_from?(get, i, ModuleItemKind::Interface) and 0 <= k < get(i).goals,
     ModuleSentence::Obligation(x, k) =>
-        implementation_at?(m, x) and 0 <= k < item_of(m, implemented(m, x)).laws and not k in item_of(m, x).unproved,
+        implementation_at_from?(get, x) and 0 <= k < get(implemented_from(get, x)).laws and not k in get(x).unproved,
     ModuleSentence::TrustedLaw(x, k) =>
-        implementation_at?(m, x) and 0 <= k < item_of(m, implemented(m, x)).laws and k in item_of(m, x).unproved,
+        implementation_at_from?(get, x) and 0 <= k < get(implemented_from(get, x)).laws and k in get(x).unproved,
     ModuleSentence::Translated(x, k) =>
-        implementation_at?(m, x) and 0 <= k < item_of(m, implemented(m, x)).lemmas,
-    ModuleSentence::ModuleLemma(t) => kind_at?(m, t, ModuleItemKind::Lemma),
-    ModuleSentence::ModuleGoal(t) => kind_at?(m, t, ModuleItemKind::Goal),
-    ModuleSentence::Assumed(a) => kind_at?(m, a, ModuleItemKind::Assume),
+        implementation_at_from?(get, x) and 0 <= k < get(implemented_from(get, x)).lemmas,
+    ModuleSentence::ModuleLemma(t) => kind_at_from?(get, t, ModuleItemKind::Lemma),
+    ModuleSentence::ModuleGoal(t) => kind_at_from?(get, t, ModuleItemKind::Goal),
+    ModuleSentence::Assumed(a) => kind_at_from?(get, a, ModuleItemKind::Assume),
 }
+
+pub fn sentence_of?(m: ModuleModel, s: ModuleSentence) :=
+    sentence_of_from?(|place| item_of(m, place), s)
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
@@ -377,39 +403,53 @@ pub fn interface_uses?(i: Int, own: Int, goal?, u: ModuleSentence) := match u {
 
 -- `implementation.dispatch.order`: whether the check of the item at `p`
 -- may take the implementation at `x`.
+pub fn implementation_in_scope_from?(get: fn(Int) -> ModuleItem, p: Int, x: Int) :=
+    implementation_at_from?(get, x) and x < p
+
 pub fn implementation_in_scope?(m: ModuleModel, p: Int, x: Int) :=
-    implementation_at?(m, x) and x < p
+    implementation_in_scope_from?(|place| item_of(m, place), p, x)
 
 -- `implementation.use`, `implementation.use.morphism` and
 -- `implementation.self`: what the check of the item at `p` uses, where
 -- `own` is the implementation whose obligation it is, or -1.
-pub fn item_uses?(m: ModuleModel, p: Int, own: Int, u: ModuleSentence) := match u {
+pub fn item_uses_from?(get: fn(Int) -> ModuleItem, p: Int, own: Int, u: ModuleSentence) := match u {
     ModuleSentence::Assumed(_) => true,
     ModuleSentence::ModuleLemma(t) => t < p,
-    ModuleSentence::Obligation(y, _) => y != own and implementation_in_scope?(m, p, y),
-    ModuleSentence::Translated(y, _) => y != own and implementation_in_scope?(m, p, y),
-    ModuleSentence::TrustedLaw(y, _) => y = own or implementation_in_scope?(m, p, y),
+    ModuleSentence::Obligation(y, _) => y != own and implementation_in_scope_from?(get, p, y),
+    ModuleSentence::Translated(y, _) => y != own and implementation_in_scope_from?(get, p, y),
+    ModuleSentence::TrustedLaw(y, _) => y = own or implementation_in_scope_from?(get, p, y),
     _ => false,
 }
+
+pub fn item_uses?(m: ModuleModel, p: Int, own: Int, u: ModuleSentence) :=
+    item_uses_from?(|place| item_of(m, place), p, own, u)
 
 -- `implementation.theorems`: what the lemma `k` translated along the
 -- implementation at `x` rests on.
-pub fn translation_rests?(m: ModuleModel, x: Int, k: Int, u: ModuleSentence) := match u {
-    ModuleSentence::Obligation(y, _) => y = x,
-    ModuleSentence::TrustedLaw(y, _) => y = x,
-    ModuleSentence::InterfaceLemma(i, l) => i = implemented(m, x) and l = k,
-    _ => false,
-}
+pub fn translation_rests_from?(get: fn(Int) -> ModuleItem, x: Int, k: Int, u: ModuleSentence) :=
+    match u {
+        ModuleSentence::Obligation(y, _) => y = x,
+        ModuleSentence::TrustedLaw(y, _) => y = x,
+        ModuleSentence::InterfaceLemma(i, l) => i = implemented_from(get, x) and l = k,
+        _ => false,
+    }
 
-pub fn rests_case?(m: ModuleModel, n: ModuleSentence, u: ModuleSentence) := match n {
-    ModuleSentence::InterfaceLemma(i, k) => interface_uses?(i, k, false, u),
-    ModuleSentence::InterfaceGoal(i, k) => interface_uses?(i, k, true, u),
-    ModuleSentence::Obligation(x, _) => item_uses?(m, x, x, u),
-    ModuleSentence::ModuleLemma(t) => item_uses?(m, t, -1, u),
-    ModuleSentence::ModuleGoal(t) => item_uses?(m, t, -1, u),
-    ModuleSentence::Translated(x, k) => translation_rests?(m, x, k, u),
-    _ => false,
-}
+pub fn translation_rests?(m: ModuleModel, x: Int, k: Int, u: ModuleSentence) :=
+    translation_rests_from?(|place| item_of(m, place), x, k, u)
+
+pub fn rests_case_from?(get: fn(Int) -> ModuleItem, n: ModuleSentence, u: ModuleSentence) :=
+    match n {
+        ModuleSentence::InterfaceLemma(i, k) => interface_uses?(i, k, false, u),
+        ModuleSentence::InterfaceGoal(i, k) => interface_uses?(i, k, true, u),
+        ModuleSentence::Obligation(x, _) => item_uses_from?(get, x, x, u),
+        ModuleSentence::ModuleLemma(t) => item_uses_from?(get, t, -1, u),
+        ModuleSentence::ModuleGoal(t) => item_uses_from?(get, t, -1, u),
+        ModuleSentence::Translated(x, k) => translation_rests_from?(get, x, k, u),
+        _ => false,
+    }
+
+pub fn rests_case?(m: ModuleModel, n: ModuleSentence, u: ModuleSentence) :=
+    rests_case_from?(|place| item_of(m, place), n, u)
 
 pub fn rests_between?(m: ModuleModel, n: ModuleSentence, u: ModuleSentence) :=
     sentence_of?(m, n) and sentence_of?(m, u) and rests_case?(m, n, u)
@@ -545,13 +585,9 @@ pub const HALF_SUM: ModuleItem := ModuleItem {
     asked_goals := {},
 }
 
-pub const PARTIAL: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(MONOID, ModuleItems::Cons(HALF_SUM, ModuleItems::Nil)),
-}
+pub const PARTIAL: ModuleModel := ModuleModel { items := [MONOID, HALF_SUM] }
 
-pub const TOTAL: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(MONOID, ModuleItems::Cons(SUM, ModuleItems::Nil)),
-}
+pub const TOTAL: ModuleModel := ModuleModel { items := [MONOID, SUM] }
 
 -- A total implementation proves its law.
 set_option fren.lint.undecidable "allow" in
@@ -577,19 +613,14 @@ expect partial_unproved() {
 }
 
 pub const LATE_IMPLEMENTATION: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(
+    items := [
         MONOID,
-        ModuleItems::Cons(
-            MODULE_LEMMA,
-            ModuleItems::Cons(
-                MODULE_LEMMA,
-                ModuleItems::Cons(
-                    MODULE_LEMMA,
-                    ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Cons(SUM, ModuleItems::Nil))
-                )
-            )
-        )
-    ),
+        MODULE_LEMMA,
+        MODULE_LEMMA,
+        MODULE_LEMMA,
+        MODULE_LEMMA,
+        SUM,
+    ],
 }
 
 -- The obligation of the implementation at 5 may use the lemma at 4.
@@ -644,23 +675,20 @@ expect own_translated_lemma() {
 
 -- An `assume` item is used wherever it is declared.
 pub const ASSUME_AFTER: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(
+    items := [
         MODULE_LEMMA,
-        ModuleItems::Cons(
-            ModuleItem {
-                kind := ModuleItemKind::Assume,
-                laws := 0,
-                lemmas := 0,
-                goals := 0,
-                implements := -1,
-                unproved := {},
-                asked? := false,
-                asked_lemmas := {},
-                asked_goals := {},
-            },
-            ModuleItems::Nil
-        )
-    ),
+        ModuleItem {
+            kind := ModuleItemKind::Assume,
+            laws := 0,
+            lemmas := 0,
+            goals := 0,
+            implements := -1,
+            unproved := {},
+            asked? := false,
+            asked_lemmas := {},
+            asked_goals := {},
+        },
+    ],
 }
 
 set_option fren.lint.undecidable "allow" in
@@ -708,13 +736,7 @@ pub proc dispatch(
 -- a check that names neither is an error, and one that names `product`
 -- takes it.
 pub const TWO_MONOIDS: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(
-        MONOID,
-        ModuleItems::Cons(
-            SUM,
-            ModuleItems::Cons(SUM, ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil))
-        )
-    ),
+    items := [MONOID, SUM, SUM, MODULE_LEMMA],
 }
 
 set_option fren.lint.undecidable "allow" in
@@ -1796,7 +1818,7 @@ not assumed to.
 
 **Dynamic semantics**
 
-r[implementation.report.unchecked] lang::caveat_premise, lang::laws_of_own_interface, lang::translated_caveat_bounds
+r[implementation.report.unchecked] lang::caveat_premise, lang::caveat_calculation, lang::laws_of_own_interface, lang::translated_caveat_bounds
 The consistency of an `assume` item, and of a trait's laws, is not checked
 yet. A verdict carries `F0665` where
 [`check::law_premise`](../Evidence.md#the-laws-of-a-trait) gives it. Its
@@ -1843,24 +1865,34 @@ verdict, and where stage 5 finds the laws inconsistent, it reports that at
 the laws, as stage 5 states, not at the check.
 
 ```fren
+-- Whether the implementation at `x` leaves an actual law trusted.
+set_option fren.lint.undecidable "allow" in
+pub fn trusted_laws_from?(get: fn(Int) -> ModuleItem, x: Int) :=
+    exists (j: Int), 0 <= j < get(implemented_from(get, x)).laws and j in get(x).unproved
+
+pub fn trusted_laws?(m: ModuleModel, x: Int) := trusted_laws_from?(|place| item_of(m, place), x)
+
 -- Whether a check that rests on `u` rests on an axiom whose consistency
 -- is not checked: `u` is one, or is a lemma translated along an
 -- implementation that leaves a law trusted.
 set_option fren.lint.undecidable "allow" in
-pub fn caveat_source?(m: ModuleModel, u: ModuleSentence) := match u {
+pub fn caveat_source_from?(get: fn(Int) -> ModuleItem, u: ModuleSentence) := match u {
     ModuleSentence::Law(_, _) => true,
     ModuleSentence::TrustedLaw(_, _) => true,
     ModuleSentence::Assumed(_) => true,
-    ModuleSentence::Translated(x, _) => (exists (j: Int), 0 <= j < item_of(m, implemented(m, x)).laws and j in item_of(m, x).unproved),
+    ModuleSentence::Translated(x, _) => trusted_laws_from?(get, x),
     _ => false,
 }
+
+pub fn caveat_source?(m: ModuleModel, u: ModuleSentence) :=
+    caveat_source_from?(|place| item_of(m, place), u)
 
 -- Whether `n` rests on a sentence of `m` that is a caveat's source, of
 -- each kind of sentence in turn. Of laws, only those of the interface whose
 -- check it is, and all alike (`lang::laws_of_own_interface`), so law 0
 -- stands for them.
 set_option fren.lint.undecidable "allow" in
-pub fn rests_on_caveat?(m: ModuleModel, n: ModuleSentence) :=
+pub fn caveat_by_sentences?(m: ModuleModel, n: ModuleSentence) :=
     let count := item_count(m.items) in
     (item_of(m, check_place(n)).laws > 0 and rests_between?(m, n, ModuleSentence::Law(check_place(n), 0)))
     or (exists (y: Int), 0 <= y < count and (exists (j: Int), 0 <= j < item_of(m, implemented(m, y)).laws
@@ -1868,6 +1900,51 @@ pub fn rests_on_caveat?(m: ModuleModel, n: ModuleSentence) :=
     or (exists (a: Int), 0 <= a < count and rests_between?(m, n, ModuleSentence::Assumed(a)))
     or (exists (y: Int), 0 <= y < count and (exists (k: Int), 0 <= k < item_of(m, implemented(m, y)).lemmas
         and rests_between?(m, n, ModuleSentence::Translated(y, k)) and caveat_source?(m, ModuleSentence::Translated(y, k))))
+
+-- On valid sentences, which checks use the trusted laws of the
+-- implementation at `y`. An obligation uses its own and earlier ones;
+-- a translated lemma uses its own implementation's laws.
+pub fn trusts_at?(n: ModuleSentence, y: Int) := match n {
+    ModuleSentence::Obligation(x, _) => y <= x,
+    ModuleSentence::ModuleLemma(p) => y < p,
+    ModuleSentence::ModuleGoal(p) => y < p,
+    ModuleSentence::Translated(x, _) => y = x,
+    _ => false,
+}
+
+pub fn owns_laws_from?(get: fn(Int) -> ModuleItem, n: ModuleSentence) := match n {
+    ModuleSentence::InterfaceLemma(i, _) => get(i).laws > 0,
+    ModuleSentence::InterfaceGoal(i, _) => get(i).laws > 0,
+    _ => false,
+}
+
+pub fn owns_laws?(m: ModuleModel, n: ModuleSentence) :=
+    owns_laws_from?(|place| item_of(m, place), n)
+
+pub fn uses_assumptions?(n: ModuleSentence) :=
+    n is ModuleSentence::Obligation(_, _) or n is ModuleSentence::ModuleLemma(_) or n is ModuleSentence::ModuleGoal(_)
+
+-- Factor sentence validity and the trusted-law search out of the
+-- relation's cases. A translated source's trusted law is already used
+-- directly at every check that uses the translation.
+set_option fren.lint.undecidable "allow" in
+pub fn rests_on_caveat_from?(get: fn(Int) -> ModuleItem, count: Int, n: ModuleSentence) :=
+    sentence_of_from?(get, n) and (owns_laws_from?(get, n)
+        or (exists (y: Int), 0 <= y < count and implementation_at_from?(get, y)
+        and trusts_at?(n, y) and trusted_laws_from?(get, y))
+        or (uses_assumptions?(n) and (exists (a: Int), 0 <= a < count
+        and kind_at_from?(get, a, ModuleItemKind::Assume))))
+
+pub fn rests_on_caveat?(m: ModuleModel, n: ModuleSentence) :=
+    rests_on_caveat_from?(|place| item_of(m, place), item_count(m.items), n)
+
+-- Check the factored calculation against the relation on every model,
+-- including malformed counts and out-of-range entries in `unproved`.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "solver" in
+expect caveat_calculation(m: ModuleModel, n: ModuleSentence) {
+    expect same: rests_on_caveat?(m, n) iff caveat_by_sentences?(m, n)
+}
 
 -- Only the checks of an interface rest on its laws, and on each of them
 -- where on one.
@@ -1886,50 +1963,62 @@ pub proc caveat_premise(m: ModuleModel, n: ModuleSentence): (det laws?) {
     expect axioms_have_none: when axiom?(n), not laws?
 }
 
--- Keep the fixture's model construction inside a function so that
--- enumeration ranges over the four Boolean choices, not ModuleModel.
-pub fn caveat_bounds_model(
+-- Keep the fixture linked so enumeration needs no unspecified value for
+-- an out-of-range sequence index. Its only inputs are four Booleans.
+pub fn caveat_bounds_items(
     include_negative?,
     include_valid?,
     include_end?,
     include_large?
-): ModuleModel :=
+): ModuleItems :=
     let unproved: Set<Int> := (if include_negative? then {-1} else {})
     union (if include_valid? then {0} else {}) union (if include_end? then {1} else {})
     union (if include_large? then {5} else {}) in
-    ModuleModel {
-        items := ModuleItems::Cons(
-            MONOID,
-            ModuleItems::Cons(
-                { SUM with unproved },
-                ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil)
-            )
-        ),
-    }
+    ModuleItems::Cons(
+        MONOID,
+        ModuleItems::Cons(
+            { SUM with unproved },
+            ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil)
+        )
+    )
 
--- All 16 combinations of a negative number, valid law 0, the upper
+-- Prove all 16 combinations of a negative number, valid law 0, the upper
 -- bound 1 and a larger number 5, for a one-law interface. Out-of-range
 -- entries must not make either the translation a caveat's source or its
 -- consumer carry F0665, including when mixed with the valid law.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "enumerated" in
 expect translated_caveat_bounds(include_negative?, include_valid?, include_end?, include_large?) {
-    expect source_bounded: caveat_source?(
-        caveat_bounds_model(
-            include_negative?,
-            include_valid?,
-            include_end?,
-            include_large?
+    expect source_bounded: caveat_source_from?(
+        |place| linked_item_at(
+            caveat_bounds_items(
+                include_negative?,
+                include_valid?,
+                include_end?,
+                include_large?
+            ),
+            place
         ),
         ModuleSentence::Translated(1, 0)
     ) iff include_valid?
     -- This is the expression that `caveat_premise` defines `laws?` with.
-    expect report_bounded: rests_on_caveat?(
-        caveat_bounds_model(
-            include_negative?,
-            include_valid?,
-            include_end?,
-            include_large?
+    expect report_bounded: rests_on_caveat_from?(
+        |place| linked_item_at(
+            caveat_bounds_items(
+                include_negative?,
+                include_valid?,
+                include_end?,
+                include_large?
+            ),
+            place
+        ),
+        linked_item_count(
+            caveat_bounds_items(
+                include_negative?,
+                include_valid?,
+                include_end?,
+                include_large?
+            )
         ),
         ModuleSentence::ModuleLemma(2)
     ) iff include_valid?
@@ -1950,7 +2039,7 @@ pub fn today_forms?(m: ModuleModel) :=
 -- `Store`, a trait with one law and one expectation, and a global
 -- expectation after it.
 pub const STORE: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(
+    items := [
         ModuleItem {
             kind := ModuleItemKind::Interface,
             laws := 1,
@@ -1962,21 +2051,18 @@ pub const STORE: ModuleModel := ModuleModel {
             asked_lemmas := {},
             asked_goals := {},
         },
-        ModuleItems::Cons(
-            ModuleItem {
-                kind := ModuleItemKind::Goal,
-                laws := 0,
-                lemmas := 0,
-                goals := 0,
-                implements := -1,
-                unproved := {},
-                asked? := false,
-                asked_lemmas := {},
-                asked_goals := {},
-            },
-            ModuleItems::Nil
-        )
-    ),
+        ModuleItem {
+            kind := ModuleItemKind::Goal,
+            laws := 0,
+            lemmas := 0,
+            goals := 0,
+            implements := -1,
+            unproved := {},
+            asked? := false,
+            asked_lemmas := {},
+            asked_goals := {},
+        },
+    ],
 }
 
 -- Its expectation rests on its law, as `F0665` of `Store::read_back` says
@@ -2150,20 +2236,21 @@ pub fn candidates_from(order: SmallItems, k: Int): ModuleSentences := match orde
     SmallItems::Cons(s, rest) => append_sentences(sentences_at(s, k), candidates_from(rest, k + 1)),
 }
 
-pub fn present(m: ModuleModel, ns: ModuleSentences): ModuleSentences := match ns {
+pub fn present(m: ModuleItems, ns: ModuleSentences): ModuleSentences := match ns {
     ModuleSentences::Nil => ModuleSentences::Nil,
     ModuleSentences::Cons(n, rest) =>
-        if sentence_of?(m, n) then ModuleSentences::Cons(n, present(m, rest)) else present(m, rest),
+        if sentence_of_from?(|i| linked_item_at(m, i), n) then ModuleSentences::Cons(n, present(m, rest)) else present(m, rest),
 }
 
-pub fn rests_on_some?(m: ModuleModel, n: ModuleSentence, us: ModuleSentences) := match us {
+pub fn rests_on_some?(m: ModuleItems, n: ModuleSentence, us: ModuleSentences) := match us {
     ModuleSentences::Nil => false,
-    ModuleSentences::Cons(u, rest) => rests_case?(m, n, u) or rests_on_some?(m, n, rest),
+    ModuleSentences::Cons(u, rest) =>
+        rests_case_from?(|i| linked_item_at(m, i), n, u) or rests_on_some?(m, n, rest),
 }
 
 -- The sentences of `ns` that rest on a sentence of `remaining`.
 pub fn still_resting(
-    m: ModuleModel,
+    m: ModuleItems,
     ns: ModuleSentences,
     remaining: ModuleSentences
 ): ModuleSentences := match ns {
@@ -2176,7 +2263,7 @@ pub fn still_resting(
 -- How many rounds of removal are left.
 pub enum Rounds { Out, More(Rounds) }
 
-pub fn removed_by?(m: ModuleModel, remaining: ModuleSentences, rounds: Rounds) := match remaining {
+pub fn removed_by?(m: ModuleItems, remaining: ModuleSentences, rounds: Rounds) := match remaining {
     ModuleSentences::Nil => true,
     ModuleSentences::Cons(_, _) => match rounds {
         Rounds::Out => false,
@@ -2232,9 +2319,7 @@ pub const ENOUGH_ROUNDS: Rounds := Rounds::More(
 )
 
 pub fn acyclic_small?(order: SmallItems, choice: SmallChoice) :=
-    let m := ModuleModel {
-        items := small_items(order, choice, order),
-    } in
+    let m := small_items(order, choice, order) in
     removed_by?(m, present(m, candidates_from(order, 0)), ENOUGH_ROUNDS)
 
 -- One order of each class: items of a kind in the order of their names.
@@ -2402,6 +2487,7 @@ The Lean-hosted front end checks this chapter's items by name, since a
 #fren_check contract_without_result_used
 #fren_check arm_decided
 #fren_check laws_of_own_interface
+#fren_check caveat_calculation
 #fren_check caveat_premise
 #fren_check translated_caveat_bounds
 #fren_check today_caveat
