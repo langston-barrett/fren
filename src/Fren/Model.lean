@@ -840,9 +840,11 @@ definedness goal: `p`, marked with the type, as written, so that the check
 reports it (`Reqs/Check#subset-types`). -/
 def typeObligation (_ty : String) (p : Prop) : Prop := p
 
-/-- A relation's giving-site obligation, kept as a unit while enumerating
-its actual pairs. The solver sees the unchanged proposition. -/
+/-- A relation's type constraint, kept as a unit while enumerating
+its actual pairs. The solver and proofs see the unchanged proposition. -/
 def relationObligation (p : Prop) : Prop := p
+
+@[simp, fren_spec] theorem relationObligation_eq (p : Prop) : relationObligation p = p := rfl
 
 /-- A distributed predicate leaf's obligation cannot assume that leaf. -/
 def leafObligation (p : Prop) : Prop := p
