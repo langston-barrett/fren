@@ -1,0 +1,29 @@
+; resolved
+(file "test/cli/args/dump_resolved_failed.fren"
+  (surface "--@ args: check --dump=resolved\n-- A failed check still prints its resolved surface and keeps its exit code.\nproc bad(x: Int): (det y: Int) {\n    out y := x\n    expect wrong: y != x\n}\n")
+  (type 118 119 "Int")
+  (type 121 124 "Int")
+  (type 132 133 "Int")
+  (type 135 138 "Int")
+  (expr 155 156 "Int")
+  (local 155 156 "x")
+  (expr 175 181 "Bool")
+  (expr 175 176 "Int")
+  (local 175 176 "y")
+  (expr 180 181 "Int")
+  (local 180 181 "x")
+)
+; end of resolved
+error[F0603]: expectation `bad::wrong` does not hold
+ --> test/cli/args/dump_resolved_failed.fren:5:12
+  |
+5 |     expect wrong: y != x
+  |            ^^^^^ does not follow from the guarantees
+  |
+  = counterexample: x = 0, y = 0
+  = help: strengthen the guarantees so that it follows, or correct the expectation
+
+fren: 2 passed, 1 failed, 0 inconclusive, 0 redundant
+
+For more information about this error, try `fren --explain F0603`.
+exit=1
