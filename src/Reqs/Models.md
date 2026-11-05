@@ -965,8 +965,27 @@ where the model has `n` values of it, and each value as one of these, so
 the Lean-hosted front end evaluates the formula at that type, or at `Nat`
 where the model has no value of the type, and compares two values as the
 model has them, as the `fren` command does. A generic function's
-body, which compares its type parameter's values with a classical decision,
-compares them there with that type's own, as enumeration does.
+body, which compares its type parameter's values with a classical
+decision, compares them there with that type's own, as enumeration does.
+Generic structural recursions are specialized at those types too, so
+their compiled definitions can be evaluated beside an unknown variable:
+the known-value rules still decide a conjunction with a false operand.
+Confirmation of a recursive query uses these same known-value rules,
+with the model read correctly, before its report is read with the
+injected misread. A missing variable stays unknown in that evaluation
+too; giving it an arbitrary inhabitant could confirm a model whose
+hypotheses cannot be evaluated.
+
+A quantifier over an abstract type or a type parameter, directly or
+within an unfolded definition, is unknown. Lean would decide it over
+the model's finite values alone. This applies even where the body does
+not read the bound name; the generated formula keeps that binder's type
+for confirmation. The same applies to an unused binder over any unlisted
+type. The surrounding formula still follows the known-value rules: an
+unknown quantifier conjoined with a false operand is false. Unfolding a
+function keeps its arguments strict, so
+an unknown argument still makes the application unknown even when its
+body does not read that argument.
 
 The formulas that the Lean-hosted front end does not evaluate are
 `Undefined` to it:
@@ -975,11 +994,11 @@ The formulas that the Lean-hosted front end does not evaluate are
 - those whose value an index under a binder, such as a quantifier's or a
   `match` arm's, may change;
 - those that read an index within a definition that is not unfolded, a
-  structural recursion's, or a variable that has no value in a formula
-  that applies one;
-- those that quantify over an abstract type or a type parameter, directly
-  or within a definition that they apply, which `lang::eval` does not
-  decide, and which Lean would decide over the model's `n` values alone;
+  structural recursion's;
+- those that still apply a structural recursion's solver form after
+  specialization and also read an index or a variable that has no value;
+- those whose value a quantifier over a sort hidden within a structural
+  recursion may change;
 - those that Lean cannot compile.
 
 A generated [selector](Generated.md) of a payload is total in the same way
@@ -994,13 +1013,19 @@ that may take no arm reads the empty sequence, an index.
 misread in an index, a quotient and a remainder; that neither refutes a
 model by an index out of range; and that both leave unknown an application
 whose argument is. `test/ui/misread/misread_abstract.fren` checks that
-both catch a misread in a formula that compares values of an abstract
-type or a type parameter, gives them to a function, decides an `if` by
-them, or has one that the model leaves free.
-`test/ui/misread/misread_type_parameter.fren` checks that both show a
-misread model on the solver's word where the formula that would
-contradict it applies a function to a value of a type parameter that the
-model leaves free, which is unknown, and both catch it at `Int`.
+both catch a misread in a formula that compares values of an abstract type
+or a type parameter, gives them to a function, including a higher-order
+one, decides an `if` by them, finds them within relations' pairs, sets,
+sequences, generic fields and payloads, applies a generic structural
+recursion, or has a free variable, a defined variable or a call's output
+that the model leaves out. It also checks that quantifiers over a sort,
+directly or within a definition, stay unknown instead of ranging over just
+the model's values, while a false conjunct still decides the surrounding
+formula. The recursive cases also check that a free value stays unknown
+before reporting. `test/ui/misread/misread_type_parameter.fren` checks
+that both show a misread model on the solver's word where the formula that
+would contradict it applies a function to a value of a type parameter that
+the model leaves free, which is unknown, and both catch it at `Int`.
 
 ## Reporting
 

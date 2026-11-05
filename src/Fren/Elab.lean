@@ -6089,19 +6089,22 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       -- to expand (`Fren.Elems`).
       let marked (n : Nat) (q : Expr) : Expr := if inCore then Elems.mark n q else q
       let x ← zetaReduce x
-      -- Only over the bound names that it mentions: one that it does not
-      -- would be a non-dependent `∀`, an implication from a type, which
-      -- lean-smt cannot translate, and every type has values, so leaving
-      -- it out changes nothing.
+      -- lean-smt cannot translate a non-dependent `∀` from a type.
+      -- Every type has values, so its solver formula omits an unused
+      -- binder. Keep its type for confirmation, which must still leave
+      -- this unbounded quantifier unknown (`Fren.unusedQuantifier`).
+      let omitted := if inCore then #[] else free.filter fun (fv, _, _) => !x.containsFVar fv.fvarId!
+      let keepOmitted (q : Expr) : TermElabM Expr :=
+        omitted.foldrM (init := q) fun (_, ty, _) q => mkAppM ``Fren.unusedQuantifier #[ty, q]
       let free := if inCore then free else free.filter fun (fv, _, _) => x.containsFVar fv.fvarId!
-      if free.isEmpty then return x
+      if free.isEmpty then return ← keepOmitted x
       let marked := marked free.size
       let cons ← free.filterMapM fun (fv, ty, pt) => return (← factPred? ty pt).map (·.beta #[fv])
       if forall? then
-        return marked (← mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x))
+        return ← keepOmitted (marked (← mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x)))
       else
-        return marked (← free.foldrM (init := cons.foldr mkAnd x) fun (fv, _, _) acc => do
-          mkAppM ``Exists #[← mkLambdaFVars #[fv] acc])
+        keepOmitted (marked (← free.foldrM (init := cons.foldr mkAnd x) fun (fv, _, _) acc => do
+          mkAppM ``Exists #[← mkLambdaFVars #[fv] acc]))
     -- The names of enclosing `let`s and `where`s are locals here, which the
     -- `have`s that define them bind again: what mentions them is closed
     -- over them, and applied to their names.

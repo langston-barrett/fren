@@ -71,9 +71,12 @@ type, comparison and binder forms (`Wide.inductionCandidates`).
 (`Wide.genConfirmed`): `div` and `mod`, an index in an argument that a
 function's body never reads, the formulas whose value confirmation
 knows where an index is out of range, and values of an abstract type and
-of a type parameter; and it checks them with both front
-ends misreading models (`Fren.Core.misreadSet`), so that what one knows
-and the other does not is a message that differs.
+of a type parameter, nested in containers, tuples, fields and payloads,
+quantified over directly and through definitions, given to higher-order
+functions and generic structural recursions, and omitted from a model at `let`s and calls;
+and it checks them with both front ends misreading models
+(`Fren.Core.misreadSet`), so that what one knows and the other does not
+is a message that differs.
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -2005,7 +2008,110 @@ def genKeywordsGrammar (block : String) : R String := do
   let close := if trait then "    }\n}\n" else "}\n"
   return (block.dropEnd close.length).toString ++ lines ++ close
 
-/-- A spec of what the confirmation of models evaluates (`--confirm`,
+/-- Non-flat values of a sort, appended by `genConfirmed` after all its
+older draws. Generic containers carry a function's type parameter in
+fields and payloads; explicit abstract type arguments are forbidden.
+A newtype cannot itself contain a sort (`Reqs/Lang/Generics`), so it
+occurs beside one in a relation's pair. Each legal shape is used
+directly, through a definition, in comparisons and as an argument to
+a function, including a higher-order one. Quantifiers and structural
+recursions also read the sort through generic definitions. No static error is deliberate here: it
+would stop the older checks too. Record inputs are equated while the
+pinned lean-smt cannot reliably reconstruct distinct nested values. -/
+def confirmedSorts : R String := do
+  let op : R String := pick #["=", "!=", "<", "<=", ">", ">="]
+  -- General sequence comparisons and alternating quantifiers can be
+  -- outside the decidable core. They still test confirmation when the
+  -- solver finds a model; the lint must not stop the spec's checks.
+  let out := "\nset_option fren.lint.undecidable \"allow\"\n" ++
+    "pub struct CfBox<A> { value: A }\npub struct CfTag(Int)\n" ++
+    "pub enum CfWrap<A> { Empty, One(A), Two(A, Int) }\n" ++
+    "pub enum CfList<A> { Nil, Cons(A, CfList<A>) }\n" ++
+    "pub fn cf_id<A>(x: A): A := x\n" ++
+    "pub fn cf_sort_lab<A>(x: A): Int := 3\n" ++
+    "pub fn cf_apply<A>(f: fn(A) -> Int, x: A): Int := 0\n" ++
+    "pub proc cf_copy(x: CfN): (v: CfN) { out v := x }\n" ++
+    "pub fn cf_exists?<A>(x: A) := exists (y: A), y != x\n" ++
+    "pub fn cf_forall?<A>(x: A) := forall (y: A), y = x\n" ++
+    "pub fn cf_len<A>(l: CfList<A>): Int := match l { CfList::Nil => 0, CfList::Cons(_, r) => 1 + cf_len(r) }\n" ++
+    "pub fn cf_has?<A>(l: CfList<A>, x: A) := match l { CfList::Nil => false, CfList::Cons(y, r) => y = x or cf_has?(r, x) }\n"
+  -- One or two layers, each wrapping the preceding type. Datatypes are
+  -- declared above; nesting is in their arguments and in parameters.
+  let mut ty := "SORT"
+  let mut abstractTy := "SORT"
+  for _ in [0:(← below 2) + 1] do
+    ty ← pick #[s!"Seq<{ty}>", s!"Set<{ty}>", s!"Rel<{ty}, Int>", s!"Rel<CfTag, {ty}>",
+      s!"Option<{ty}>", s!"CfBox<{ty}>", s!"CfWrap<{ty}>", s!"CfList<{ty}>"]
+    abstractTy ← pick #[s!"Seq<{abstractTy}>", s!"Set<{abstractTy}>", s!"Rel<{abstractTy}, Int>", s!"Rel<CfTag, {abstractTy}>"]
+  let comparison (x y : String) : R String := do
+    match ← below 5 with
+    | 0 => return s!"{x} {← pick #["=", "!="]} {y}"
+    | 1 => return s!"cf_same({x}, {y}) {← op} {← below 3}"
+    | 2 => return s!"{← pick #[s!"cf_ig({x})", s!"cf_sort_lab({x})", s!"cf_apply(cf_sort_lab, {x})"]} {← op} {← below 4}"
+    | 3 => return s!"(if {x} = {y} then a else b) {← op} {← below 3}"
+    | _ => return s!"cf_same(cf_id({x}), {y}) {← op} {← below 3}"
+  let atom ← comparison "x" "y"
+  let defined ← comparison "z" "cf_id(y)"
+  let join ← pick #["and", "or"]
+  let mut shapes := s!"pub proc cf_shape_copy(x: {abstractTy.replace "SORT" "CfN"}): (v: {abstractTy.replace "SORT" "CfN"}) \{ out v := x }\n"
+  for generic in [false, true] do
+    let shape := if generic then ty.replace "SORT" "T" else abstractTy.replace "SORT" "CfN"
+    let name := if generic then "cf_shape_generic" else "cf_shape_abstract"
+    let head := if generic then s!"pub fn {name}<T>" else s!"pub proc {name}"
+    let call := if generic then "" else "    call c := cf_shape_copy(y)\n"
+    -- Keep the draws and record shapes, but defer independent record
+    -- values: lean-smt can omit their payloads from its sort domain.
+    let record := generic && (ty.splitOn "CfBox<").length > 1
+    let alias := if record then "    require same_record: x = y\n" else ""
+    let called ← comparison "z" "c.v"
+    let post := if generic then
+      s!"    ensure e: {name}(x, y, a, b) > 0 {join} {defined}\n"
+      else s!"    expect e: a > 0 {join} {called}\n"
+    shapes := shapes ++ s!"\n{head}(x: {shape}, y: {shape}, a: Int, b: Int): (r: Int) \{\n" ++
+      s!"    let z: {shape} := cf_id(x)\n{call}{alias}" ++
+      s!"    require pinned: a = -1 {join} ({atom} {join} {defined})\n    out r := a\n{post}}\n"
+  -- Quantify both directly and through a definition. A second quantifier
+  -- may be nested, and the integer may decide a surrounding connective.
+  let quantifier (t : String) : R String := do
+    let exists_ ← chance 50
+    let body := if exists_ then "y != x" else "y = x"
+    let direct := if exists_ then s!"(exists (y: {t}), {body})" else s!"(forall (y: {t}), {body})"
+    let helper := if exists_ then "cf_exists?(x)" else "cf_forall?(x)"
+    match ← below 6 with
+    | 0 => return direct
+    | 1 => return helper
+    | 2 => return s!"(forall (z: {t}), (exists (y: {t}), y != z) or z = x)"
+    | 3 => return s!"({direct} {← pick #["and", "or"]} {helper})"
+    | 4 => return s!"(forall (unused: {t}), a = -1)"
+    | _ => return s!"(exists (unused: {t}), a = -1)"
+  let qa ← quantifier "CfN"
+  let qg ← quantifier "T"
+  let beside (q : String) : R String := do
+    let connective ← pick #["and", "or"]
+    return if ← chance 50 then s!"{q} {connective} a = -1" else s!"a = -1 {connective} {q}"
+  let quantified := s!"\npub proc cf_quantified(x: CfN, a: Int) \{\n    require pinned: {← beside qa}\n    expect e: a > 0\n}\n" ++
+    s!"\npub fn cf_quantified_generic<T>(x: T, a: Int): (r: Int) \{\n    require pinned: {← beside qg}\n    out r := a\n    ensure e: cf_quantified_generic(x, a) > 0\n}\n"
+  -- Unknown `let` and call values, with no equality to force a model
+  -- value. The recursive case also leaves `x` free beside a known list.
+  let recursive ← chance 50
+  let recAtom := if recursive then "cf_len(l) = 2" else "cf_has?(l, x)"
+  let mut definitions := ""
+  for generic in [false, true] do
+    let t := if generic then "T" else "CfN"
+    let name := if generic then "cf_defined_generic" else "cf_defined_abstract"
+    let head := if generic then s!"pub fn {name}<T>" else s!"pub proc {name}"
+    let call := if generic then "" else "    call c := cf_copy(z)\n"
+    let post := if generic then s!"    ensure e: {name}(x, l, a) > 0\n" else "    expect e: a > 0 and cf_ig(c.v) = 0\n"
+    let listParam := if generic then s!", l: CfList<{t}>" else ""
+    let recAtom := if generic then s!" and {recAtom}" else ""
+    definitions := definitions ++ s!"\n{head}(x: {t}{listParam}, a: Int): (r: Int) \{\n" ++
+      s!"    let z: {t} := cf_id(x)\n{call}" ++
+      s!"    require pinned: a = -1{recAtom} and cf_ig(z) = 0 and cf_apply(cf_sort_lab, x) = 0\n    out r := a\n{post}}\n"
+  -- A pair of related checks per seed keeps workers' memory bounded
+  -- (#650); fresh seeds cover each family, and the ui pins regressions.
+  return out ++ (← pick #[shapes, quantified, definitions])
+
+/-- The prefix of a spec of what confirmation evaluates (`--confirm`,
 `Reqs/Models#known-values`): `div` and `mod` by a literal, positive or
 negative; an index in an argument that a function's body never reads,
 which leaves the application unknown out of range
@@ -2020,9 +2126,11 @@ that may be unknown, spelled out too, through a function and against a
 constant, and an `if`, a `match` and a table whose condition or scrutinee
 may be, with branches, arms or rows equal or not; and values of an
 abstract type and of a type parameter, compared, given to functions,
-deciding an `if` and in a sequence. A mode of its own, so that the specs
+deciding an `if` and in a sequence. `genConfirmed` appends
+`confirmedSorts`'s nested values, quantifiers, structural recursions and
+omitted definitions and call outputs. A mode of its own, so that the specs
 of the other modes' seeds are as they were. -/
-def genConfirmed : R String := do
+def genConfirmedBase : R String := do
   let k : R String := do return toString (← below 4)
   let divisor : R String := pick #["2", "3", "-2", "(-3)"]
   let int : R String := do
@@ -2218,6 +2326,13 @@ def genConfirmed : R String := do
     generics := generics ++ s!"    ensure gy{j}: cfg(x, y, p, a, b) {← op} {← k} {← pick #["and", "or"]} {← atAbstract "x" "y" "p" true}\n"
   out := out ++ s!"\npub fn cfg<T>(x: T, y: T, p: Seq<T>, a: Int, b: Int): (r: Int) \{\n{generics}    out r := a\n}\n"
   return out
+
+/-- The original confirmation spec followed by the non-flat sort group.
+`Mode.cuts` keeps the prefix so that the corpus rejects a static error
+in the appended group even if both front ends report it alike. -/
+def genConfirmed : R String := do
+  let base ← genConfirmedBase
+  return base ++ (← confirmedSorts)
 
 /-- `[]` and `{}` as methods' arguments, which take their element types
 from their receivers (`Reqs/Lang/Expressions`): in one procedure, over
@@ -2894,12 +3009,14 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
       else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
-the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
+the next; `--confirm` keeps the prefix before `Wide.confirmedSorts`;
+none for `--guards`, `--sites`, `--inductions`,
 `--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
 `--fact-scopes` and `--induction-candidates` makes any static error a group
 error: these generators, like appended groups, promise to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.confirm then #[Id.run (Wide.genConfirmedBase.run' (rngOf seed))]
+  else if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=

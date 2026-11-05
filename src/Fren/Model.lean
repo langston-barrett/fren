@@ -1216,6 +1216,11 @@ sees it, beside its declaration `decl`, whose body is a Lean `match`
 (`DefinedInfo.solver?`): not a Fren name, which has no `#`. -/
 def solverName (decl : Name) : Name := decl.str "#solver"
 
+/-- A quantifier's unused binder over an unlisted type, erased for the
+solver because every type is inhabited, retained for model confirmation:
+Fren's evaluator still leaves that unbounded quantifier unknown. -/
+@[inline] def unusedQuantifier (_α : Type) (p : Prop) : Prop := p
+
 /-- `e` with the definitions that `p` holds of unfolded, as
 `Meta.deltaExpand` unfolds them, where a defined function with a solver
 form (`DefinedInfo.solver?`) is unfolded to that form instead of its
@@ -1223,8 +1228,9 @@ declaration's body, so that the solver sees the same terms whatever form
 the declaration has. -/
 def deltaDefined (s : State) (e : Expr) (p : Name → Bool) (keepLastArm := false) : CoreM Expr := do
   -- The last arm of a complete `match` is its body, except to the reader of
-  -- a model's values (`Fren.lastArm`).
-  let p := fun n => p n || (!keepLastArm && n == ``Fren.lastArm)
+  -- a model's values (`Fren.lastArm`). An unused quantifier's binder also
+  -- remains for confirmation, and is erased for the solver.
+  let p := fun n => p n || (!keepLastArm && (n == ``Fren.lastArm || n == ``Fren.unusedQuantifier))
   -- Each declaration with a solver form: that form, how many of the
   -- arguments, its placeholders', the form does not take, as a structural
   -- recursion's does not, and the positions among those of the ones it

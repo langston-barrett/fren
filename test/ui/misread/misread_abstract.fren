@@ -7,6 +7,7 @@
 set_option fren.lint.unused_variables "allow"
 set_option fren.lint.unused_assumption "allow"
 set_option fren.lint.dead_code "allow"
+set_option fren.lint.undecidable "allow"
 
 type Name
 
@@ -74,11 +75,184 @@ fn generic_if<T>(x: T, y: T, a: Int): (r: Int) {
 
 -- ...and free, given to a function whose body does not read it.
 fn ignore<U>(x: U): Int := 0
+fn identity<T>(x: T): T := x
 
 fn at_free<T>(x: T, a: Int): (r: Int) {
     require pinned: ignore(x) = 0 and a = -1
     out r := a
     ensure positive: at_free(x, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_free::positive` makes its hypothesis `at_free.pinned` false in Fren's semantics
+}
+
+-- A quantifier ranges over the whole sort, not just the model's one
+-- value. In that model `exists x: Fin 1, x != n` would be false and its
+-- universal dual true, but Fren's evaluation leaves both unknown, also
+-- when a definition contains the quantifier. An uninterpreted observer
+-- keeps one sort value in the model, without constraining its whole
+-- domain by another quantifier. The claim pins `a` without a separate
+-- integer hypothesis, and its free argument keeps it unknown after the
+-- injected shift, so it cannot hide a wrongly decided quantifier.
+fn another?<T>(n: T) := exists (x: T), x != n
+fn only?<T>(n: T) := forall (x: T), x = n
+fn observe<T>(T): Int
+
+fn abstract_exists<U>(unused: U, n: Name, free: Name, a: Int): (r: Int) {
+    require observed: observe(n) = 0
+    require pinned: (exists (x: Name), x != n) or a = -1
+    out r := a
+    ensure e: abstract_exists(unused, n, free, a) != -1 and ignore(free) = 0  --~ error: the postcondition `e` of `abstract_exists` does not hold
+}
+
+fn abstract_forall<U>(unused: U, n: Name, free: Name, a: Int): (r: Int) {
+    require observed: observe(n) = 0
+    require pinned: not (forall (x: Name), x = n) or a = -1
+    out r := a
+    ensure e: abstract_forall(unused, n, free, a) != -1 and ignore(free) = 0  --~ error: the postcondition `e` of `abstract_forall` does not hold
+}
+
+fn abstract_quantified_and<U>(unused: U, n: Name, a: Int): (r: Int) {
+    require pinned: (exists (x: Name), x != n) and a = -1
+    out r := a
+    ensure e: abstract_quantified_and(unused, n, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `abstract_quantified_and::e` makes its hypothesis `abstract_quantified_and.pinned` false in Fren's semantics
+}
+
+-- An unused bound name is still a quantifier. Two distinct model values
+-- force its finite stand-in even though the body does not read the name.
+fn abstract_forall_unused<U>(unused: U, n: Name, m: Name, free: Name, a: Int): (r: Int) {
+    require distinct: n != m
+    require pinned: (forall (unused_value: Name), a = -1) or a = -1
+    out r := a
+    ensure e: abstract_forall_unused(unused, n, m, free, a) != -1 and ignore(free) = 0  --~ error: the postcondition `e` of `abstract_forall_unused` does not hold
+}
+
+fn at_quantifier<T>(x: T, free: T, a: Int): (r: Int) {
+    require observed: observe(x) = 0
+    require pinned: another?(x) or a = -1
+    out r := a
+    ensure positive: at_quantifier(x, free, a) != -1 and ignore(free) = 0  --~ error: the postcondition `positive` of `at_quantifier` does not hold
+}
+
+fn at_universal<T>(x: T, free: T, a: Int): (r: Int) {
+    require observed: observe(x) = 0
+    require pinned: not only?(x) or a = -1
+    out r := a
+    ensure positive: at_universal(x, free, a) != -1 and ignore(free) = 0  --~ error: the postcondition `positive` of `at_universal` does not hold
+}
+
+-- The model can omit every value of `T`. Its fallback type still stands
+-- for a sort when the quantifier's bound name is unused.
+fn at_universal_unused<T>(x: T, a: Int): (r: Int) {
+    require pinned: a = -1 or (forall (unused: T), a = -1)
+    out r := a
+    ensure positive: at_universal_unused(x, a) != -1 and ignore(x) = 0  --~ error: the postcondition `positive` of `at_universal_unused` does not hold
+}
+
+-- The same erased-binder rule applies to any unlisted type, even when
+-- its type is unrelated to the model's abstract sorts.
+fn concrete_unused(x: Name, a: Int): (r: Int) {
+    require pinned: a = -1 or (forall (unread: Int), a = -1)
+    out r := a
+    ensure positive: concrete_unused(x, a) != -1 and ignore(x) = 0  --~ error: the postcondition `positive` of `concrete_unused` does not hold
+}
+
+-- A generic type parameter may occur in fields and payloads. An
+-- explicit abstract type argument, such as `Option<Name>`, is forbidden.
+-- A tuple is represented by a relation's pair; tuples are not parameter
+-- types in source syntax. The newtype is beside the sort, not around it.
+struct SortBox<T> { value: T }
+struct Tag(Int)
+enum Wrapped<T> { Empty, One(T), Two(T, Int) }
+
+fn at_option<T>(o: Option<T>, a: Int): (r: Int) {
+    require pinned: o is Option::Some(_) and a = -1 and ignore(o) = 0
+    out r := a
+    ensure positive: at_option(o, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_option::positive` makes its hypothesis `at_option.pinned` false in Fren's semantics
+}
+
+proc abstract_pair(x: Rel<Name, Tag>, a: Int) {
+    require pinned: x.card = 1 and a = -1 and ignore(x) = 0
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_pair::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc abstract_set(s: Set<Name>, a: Int) {
+    require pinned: s.card = 1 and a = -1 and ignore(s) = 0
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_set::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+fn at_nested<T>(o: Option<SortBox<Seq<T>>>, a: Int): (r: Int) {
+    require pinned: o is Option::Some(_) and a = -1 and ignore(o) = 0
+    out r := a
+    ensure positive: at_nested(o, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_nested::positive` makes its hypothesis `at_nested.pinned` false in Fren's semantics
+}
+
+fn at_payload<T>(o: Wrapped<T>, a: Int): (r: Int) {
+    require pinned: o is Wrapped::Two(_, _) and a = -1 and ignore(o) = 0
+    out r := a
+    ensure positive: at_payload(o, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_payload::positive` makes its hypothesis `at_payload.pinned` false in Fren's semantics
+}
+
+fn at_record<T>(x: SortBox<T>, y: SortBox<T>, a: Int): (r: Int) {
+    require pinned: x = y and a = -1 and same(x, y) = 1
+    out r := a
+    ensure positive: at_record(x, y, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_record::positive` makes its hypothesis `at_record.pinned` false in Fren's semantics
+}
+
+-- Both a defined variable and a call's output may be absent from the
+-- model. Their reads are unknown even though the definitions ignore them;
+-- the false integer conjunct still refutes the misread model.
+proc copy(x: Name): (v: Name) { out v := x }
+
+proc abstract_defined(x: Name, a: Int) {
+    let z: Name := identity(x)
+    call c := copy(z)
+    require pinned: a = -1 and label(z) = 3
+    expect e: a > 0 and ignore(c.v) = 0  --~ error: internal error: the solver's model for the expectation check of `abstract_defined::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+fn at_defined<T>(x: T, a: Int): (r: Int) {
+    let z: T := identity(x)
+    require pinned: a = -1 and ignore(z) = 0
+    out r := a
+    ensure positive: at_defined(x, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_defined::positive` makes its hypothesis `at_defined.pinned` false in Fren's semantics
+}
+
+enum SortList<T> { Nil, Cons(T, SortList<T>) }
+
+fn rec_len<T>(l: SortList<T>): Int := match l {
+    SortList::Nil => 0,
+    SortList::Cons(_, r) => 1 + rec_len(r),
+}
+
+fn rec_has?<T>(l: SortList<T>, x: T) := match l {
+    SortList::Nil => false,
+    SortList::Cons(y, r) => y = x or rec_has?(r, x),
+}
+
+-- Specialization compiles generic recursion at the model's sort. The
+-- recursive confirmation first reads the model correctly: `x` is free,
+-- so `ignore(x)` is unknown and the model cannot be confirmed. It must
+-- not substitute an arbitrary inhabitant for `x`. This is the probe
+-- from review finding 2.
+fn at_rec<T>(x: T, q: SortList<T>, a: Int): (r: Int) {
+    require pinned: a = -1 and rec_len(q) = 2 and ignore(x) = 0
+    out r := a
+    ensure positive: at_rec(x, q, a) > 0  --~ warning: does not confirm the counterexample: it refutes it, or cannot evaluate it
+}
+
+fn at_rec_has<T>(q: SortList<T>, x: T, a: Int): (r: Int) {
+    require pinned: rec_has?(q, x) and a = -1
+    out r := a
+    ensure positive: at_rec_has(q, x, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_rec_has::positive` makes its hypothesis `at_rec_has.pinned` false in Fren's semantics
+}
+
+-- A function type over a sort is not a quantified proposition, including
+-- the implicit type of an argument retained for strict evaluation.
+fn higher_label(x: Name): Int := 0
+fn higher_apply(f: fn(Name) -> Int, x: Name): Int := 0
+
+proc abstract_higher(x: Name, y: Name, a: Int) {
+    require eq: x = y
+    require pinned: a = -1 and higher_apply(higher_label, x) = 0
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_higher::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 --@ exit: 1

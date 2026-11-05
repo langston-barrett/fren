@@ -372,6 +372,31 @@ def unfoldDefined (e : Expr) (keepLastArm := false) : MetaM Expr := do
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
   Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains keepLastArm))
 
+/-- Unfold definitions for evaluation while retaining strict arguments.
+`lastArm` keeps an unused argument unknown where its value is unknown,
+even after unfolding has erased its read from the function's body. Named
+clauses are formulas, so their unused parameters impose no strict read. -/
+def unfoldStrict (e : Expr) : MetaM Expr := do
+  let s ← getState
+  let definitions := s.defined.toArray.map (·.2)
+  let clauses := s.contracts.foldl (init := ({} : NameSet)) fun acc _ k =>
+    (k.pres ++ k.posts).foldl (fun acc p => acc.insert p.decl) acc
+  let unfolded ← Meta.transform e (pre := fun x => do
+    let .const c ls := x.getAppFn | return .continue
+    let d? := definitions.find? fun d => d.decl == c || d.solver? == some c
+    if d?.any (·.recursive) then return .continue
+    let own := d?.isSome || clauses.contains c || c == ``Fren.typeObligation
+      || definitions.any fun d => d.oblDecls.any (·.1 == c)
+    unless own do return .continue
+    let name := (d?.bind (·.solver?)).getD c
+    let app := mkAppN (mkConst name ls) x.getAppArgs
+    let some body ← Meta.delta? app (· == name) | return .continue
+    let mut body := body
+    if d?.isSome then
+      for arg in x.getAppArgs do body ← mkAppM ``Fren.lastArm #[arg, body]
+    return .visit body)
+  Meta.zetaReduce (← Lean.Core.betaReduce unfolded)
+
 /-- The procedure's variables, and the second copies of the copied ones,
 each with its local and its value in `model`, as `readValue` reads it, or
 its type's default value if the model leaves it free
@@ -516,13 +541,20 @@ def partialOp (e : Expr) : Bool :=
 
 /-- Whether a part of `e` is `found`, directly unless `within`, or within the
 definitions of the spec's functions and clauses that it applies, and their
-auxiliary definitions, such as their `match`es. -/
-partial def readsWhere (found : Expr → Bool) (e : Expr) (within := false) : MetaM Bool := do
+auxiliary definitions, such as their `match`es. With `propositions`, only
+propositions match: a function type may have a quantifier's syntax too. -/
+partial def readsWhere (found : Expr → Bool) (e : Expr) (within := false) (propositions := false) : MetaM Bool := do
   let s ← getState
   let own := s.defined.foldl (init := #[``Fren.typeObligation]) fun acc _ d => acc.push d.decl ++ d.oblDecls.map (·.1)
   let own := s.contracts.foldl (init := own) fun acc _ k => acc ++ (k.pres ++ k.posts).map (·.decl)
   let rec go (e : Expr) (direct : Bool) (seen : NameSet) : MetaM (Bool × NameSet) := do
-    if direct && (e.find? found).isSome then return (true, seen)
+    if direct && (e.find? found).isSome then
+      if !propositions then return (true, seen)
+      let hit ← IO.mkRef false
+      let _ ← Meta.transform e (pre := fun x => do
+        if found x && (← isProp x) then hit.set true
+        return .continue)
+      if ← hit.get then return (true, seen)
     let mut seen := seen
     for c in e.getUsedConstants do
       if seen.contains c || !own.any (·.isPrefixOf c) then continue
@@ -556,8 +588,6 @@ partial def valueSorts (ty val : Expr) (acc : Array (FVarId × Expr)) : MetaM (A
     let some (_, xs) := val.appArg!.listLit? | return acc
     return ← xs.foldlM (fun acc x => valueSorts ty.appArg! x acc) acc
   let st ← getState
-  if let some n := st.newtypeOf? ty then
-    if val.isAppOfArity n.ctor 1 then return ← valueSorts n.under val.appArg! acc
   let .const c _ := val.getAppFn | return acc
   let targs := ty.getAppArgs
   if let some e := st.enumOfDecl? c.getPrefix <|> st.enumOf? ty then
@@ -606,16 +636,41 @@ def atSorts (sortTys : Array (FVarId × Expr)) (e : Expr) : MetaM Expr := do
       to := to.push (← synthInstance (mkApp (mkConst ``Inhabited [1]) (tyOf (t.getArg! 0).fvarId!)))
   return e.replaceFVars from_ to
 
-/-- Whether `x` quantifies over a type that mentions one of `tys`, the
-types that `atSorts` gives the sorts: Lean would decide it over the model's
-values of the sort alone, which Fren's semantics does not
+/-- Whether `x` may retain an unused unbounded binder, or quantify over a
+type that mentions one of `tys`, the types that `atSorts` gives the sorts:
+Lean would decide it over the model's values of the sort alone, which
+Fren's semantics does not. The caller also checks that `x` is a
+proposition, since a function type is also a `forallE`
 (`Reqs/Models#how-the-front-ends-evaluate`). -/
 def quantifiesOver (tys : Array Expr) (x : Expr) : Bool :=
-  let mentions (t : Expr) := tys.any fun ty => (t.find? (· == ty)).isSome
+  if x.isAppOfArity ``Fren.unusedQuantifier 2 then true else
+  let mentions (t : Expr) := tys.any fun ty => (t.find? (fun part => part.consumeMData == ty.consumeMData)).isSome
   match x with
   -- Not an implication, whose body never reads its hypothesis's proof.
-  | .forallE _ t b _ => b.hasLooseBVar 0 && mentions t
+  | .forallE _ t b _ =>
+    (b.hasLooseBVar 0 || tys.any (fun ty => t.consumeMData == ty.consumeMData)) && mentions t
   | _ => x.isAppOfArity ``Exists 2 && mentions x.appFn!.appArg!
+
+-- Source annotations do not turn a vacuous quantifier into an implication.
+#guard quantifiesOver #[.mdata {} (mkConst ``Nat)]
+  (.forallE `unused (mkConst ``Nat) (mkConst ``True) .default)
+
+#guard quantifiesOver #[mkConst ``Nat]
+  (mkApp2 (mkConst ``Fren.unusedQuantifier) (mkConst ``Nat) (mkConst ``True))
+
+/-- A quantifier over a model's sort is unknown, rather than decided over
+its finite stand-in. Encode just that operand as an unspecified Boolean,
+so the known-value rules may still decide the surrounding formula. -/
+def unknownQuantifiers (tys : Array Expr) (e : Expr) : MetaM Expr := do
+  if (e.find? (quantifiesOver tys)).isNone then return e
+  let bool := mkConst ``Bool
+  let empty ← mkAppOptM ``EmptyCollection.emptyCollection #[some (mkApp (mkConst ``Fren.Seq [0]) bool), none]
+  let unknown := mkApp4 (mkConst ``Fren.Seq.nth [0]) bool (mkConst ``instInhabitedBool) empty (mkIntLit 0)
+  let prop ← mkEq unknown (mkConst ``Bool.true)
+  Meta.transform e (pre := fun x => do
+    -- A function type is also a `forallE`, but is not a proposition.
+    if quantifiesOver tys x && (← isProp x) then return .done prop
+    return .continue)
 
 /-- `e` at the values `values` (`modelValues`), as confirmation evaluates
 it (`Reqs/Models#confirmation`): each variable without a value read as
@@ -624,18 +679,27 @@ unknown, an index of the empty sequence (`Enumerate.isUnspecified`), as the
 each sort, of an abstract type or a type parameter, at the type that the
 model's values give it (`atSorts`); if it then has no local, such as an
 uninterpreted function's: as it applies the defined functions and clauses,
-and with them unfolded, as a query's are (`unfoldDefined`), with each
-decision that Lean finds an instance for computable, and each generic
+and with them unfolded, retaining strict arguments (`unfoldStrict`), with
+each decision that Lean finds an instance for computable, and each generic
 structural recursion at its instance, as enumeration has them
 (`computableDecisions`, `specializeRecursions`), each with each index, an
 unspecified value too, read as `Enum.nthOr`, which `decideAll` leaves
 unknown out of range (`Enumerate.knownOf`), as the `fren` command's
-evaluator does. None if it quantifies over a sort (`quantifiesOver`), or if
-a `partialOp` remains within a definition that is not unfolded; one that
-applies a structural recursion, whose solver form is not compiled, is `e`
-itself, and none if it has a `partialOp` at all, an unknown variable too. -/
+evaluator does. A quantifier over a sort is an unknown operand
+(`unknownQuantifiers`); none if one remains hidden within a recursion, or
+if a `partialOp` remains within a definition that is not unfolded; one that
+still applies a structural recursion's solver form after specialization,
+which is not compiled, is `e` itself, and none if it has a `partialOp`
+at all, an unknown variable too. Specialized recursions take the general
+path, whose known-value rules can decide a formula beside an unknown. -/
 def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option (Expr × Expr)) := do
   let sortTys ← sortTypes values
+  let mut standIns := #[]
+  let mut sourceVars := collectFVars {} e
+  for (x, _) in values do sourceVars := collectFVars sourceVars (← instantiateMVars (← inferType x))
+  for x in sourceVars.fvarIds do
+    if (← instantiateMVars (← x.getType)).isSort then
+      standIns := standIns.push (((sortTys.find? (·.1 == x)).map (·.2)).getD (mkConst ``Nat))
   let given := values.filterMap fun (x, v?) => v?.map (x, ·)
   -- A variable without a value, unknown: at its type at the sorts, which
   -- must have an `Inhabited` instance, as every type that a sequence's
@@ -654,18 +718,24 @@ def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option (E
   let some e ← try some <$> atSorts sortTys (← Meta.zetaReduce (e.replaceFVars (given.map (·.1)) (given.map (·.2))))
     catch _ => pure none | return none
   if e.hasFVar || e.hasMVar then return none
-  let unfolded ← specializeRecursions (← computableDecisions (← unfoldDefined e (keepLastArm := true)))
-  let standIns := sortTys.map (·.2)
-  if ← readsWhere (quantifiesOver standIns) unfolded <||> readsWhere (quantifiesOver standIns) e then return none
+  let prepare (p : Expr) := do
+    specializeRecursions (← computableDecisions (← unknownQuantifiers standIns p))
+  let unfolded ← prepare (← unfoldDefined e (keepLastArm := true))
+  -- Without a sort or an erased binder, the original application already
+  -- preserves strict reads. Avoid unfolding it a second time in that case.
+  let needsStrict ← if standIns.isEmpty then readsWhere (·.isAppOfArity ``Fren.unusedQuantifier 2) e else pure true
+  let applied ← prepare (← if needsStrict then unfoldStrict e else pure e)
+  -- A quantifier still hidden in a recursion cannot be replaced here.
+  if needsStrict && (← readsWhere (quantifiesOver standIns) unfolded (propositions := true)) then return none
   let recursive := (← getState).defined.foldl (init := #[]) fun acc _ d =>
     if d.recursive then acc ++ d.solver?.toArray else acc
   if (unfolded.find? fun x => x.constName?.any recursive.contains).isSome then
-    if ← readsWhere partialOp e then return none
+    if ← readsWhere partialOp applied then return none
     return some (e, e)
   if (unfolded.find? fun x => partialOp x && !x.isAppOf ``Fren.Seq.nth).isSome then return none
   if ← readsWhere partialOp unfolded (within := true) then return none
   let read (e : Expr) : MetaM Expr := return (← Enumerate.readIndexes e (unspecified := true)).1
-  return some (← read e, ← read unfolded)
+  return some (← read applied, ← read unfolded)
 
 /-- The truth of each proposition of `ps` that has one, as `atModel` gives
 it, applied and unfolded: by the compiled evaluation of the unfolded one's
@@ -735,22 +805,10 @@ def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
     (hyps : Array (Name × Expr)) (goal : Expr) (model : Array (Name × Expr)) : MetaM (Option (Array Bool)) := do
   try
     let read ← modelValues c fvs primes model
-    let vars := read.map (·.1)
-    let values ← read.mapM fun (x, v?) => match v? with
-      | some v => pure v
-      | none => do mkAppOptM ``Inhabited.default #[some (← inferType x), none]
-    let instantiate (e : Expr) := e.replaceFVars vars values
-    -- A generic structural recursion's type parameters, locals of the
-    -- check at their sorts, at the types that the model's values give them,
-    -- as lean-smt reads a sort (a `Fin n`), or else `Nat`, each with its
-    -- `Inhabited` instance: a counterexample at every type is one at those
-    -- (`Reqs/Lang/Recursion#generic-recursion`).
-    let sortTys ← sortTypes read
-    let ps ← ((hyps.map (instantiate ∘ Prod.snd)).push (mkNot (instantiate goal))).mapM fun p => do specializeRecursions (← atSorts sortTys p)
-    let bools ← ps.mapM fun p => do
-      if p.hasFVar || p.hasMVar then throwError "model leaves free values"
-      pure (mkApp2 (mkConst ``Decidable.decide) p (← synthInstance (mkApp (mkConst ``Decidable) p)))
-    return some (← compileValues Bool (mkConst ``Bool) bools)
+    -- A missing value is unknown here too, never an arbitrary default.
+    -- The same evaluation confirms ordinary and recursive models.
+    let ps := (hyps.map (·.2)).push (mkNot goal)
+    return (← decideAll (← ps.mapM (atModel read))).mapM id
   catch _ => return none
 
 /-- The structural recursions in the state, each by its solver form. -/

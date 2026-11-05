@@ -408,7 +408,19 @@ pub mod testing
   models](../Models.md#known-values) evaluates: `div` and `mod` by a
   literal, an index in an argument that a function's body never reads,
   and the formulas whose value confirmation knows where an index is out
-  of range. It checks them with both front ends misreading models, as
+  of range; values of an abstract type and of a generic function's type
+  parameter, compared, given to functions, including higher-order ones,
+  and deciding an `if`, with abstract values nested in sets, sequences
+  and relations' pairs, and type parameters also in generic records and
+  enumeration payloads;
+  quantifiers over those types, directly and within generic definitions;
+  generic structural recursions at those types; and defined variables
+  and call outputs that the model may omit. A newtype, which cannot
+  contain an abstract type, occurs beside it in a relation's pair. It
+  appends one paired group per seed to limit worker growth
+  (#650). The generator equates record inputs while the pinned lean-smt
+  can omit distinct payload values from its reported sort domain. It
+  checks both front ends misreading models, as
   `FREN_MISREAD_MODELS` makes them ([Testing](../Models.md#testing)), so
   that what one front end knows and the other does not is a message that
   differs: one refutes the model, and the other shows it. `--scrutinees`
