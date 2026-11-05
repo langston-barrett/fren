@@ -157,7 +157,8 @@ partial def modelValue (ty value : Expr) : MetaM Expr := do
       | _ => pure (mkApp (mkConst ``Classical.propDecidable) value)
     return mkApp2 (mkConst ``Decidable.decide) value decision
   if ty.isConstOf ``Nat then
-    if let some i := intValue? value then return mkNatLit i.toNat
+    if let some i := intValue? value then
+      if 0 ≤ i then return mkNatLit i.toNat
   return fromModel ty value
 
 /-- The total SMT value of a partial source table/match is free at its

@@ -11,6 +11,7 @@ import FrenTest.OutOfFuel
 import FrenTest.Quote
 import FrenTest.ReadingBeside
 import FrenTest.SmallValues
+import FrenTest.SolverPairing
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
 import Lean.Elab.Frontend
@@ -4024,6 +4025,7 @@ def methodAgreementChecks : IO (Array String) := do
 including the obligations and function checks that stay the solver's. -/
 def enumerationAgrees : IO (Array String) := do
   let mut failures ← methodAgreementChecks
+  failures := failures ++ (← FrenTest.SolverPairing.check)
   let mut compared := 0
   let mut hit : Array (String × String) := #[]
   let corpus ← enumerationCorpus
