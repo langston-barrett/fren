@@ -30,6 +30,7 @@ tested cli::substitution_scope: "test/ui/checks/recursion_capture.fren", "src/Fr
 tested eval::backjumping: "src/FrenTestMain.lean"
 tested cli::accepts: "test/ui/lean/lean_code.fren", "test/ui/lean/lean_impl.fren"
 tested modules::two_segments: "test/ui/lang/scoping.fren", "test/ui/lang/prelude.fren"
+tested testing::heavy_registry: "scripts/heavy_test.py"
 tested testing::heavy_lease: "scripts/heavy_test.py"
 tested testing::heavy_memory_victim: "scripts/heavy_test.py"
 tested testing::heavy_group_gone: "scripts/heavy_test.py"

@@ -329,8 +329,9 @@ def test_slot_identity():
                 heavy.atomic_state(heavy.report_path(state, "slot0"), stale)
             assert heavy.heavy_rss_kb(state, 80) > 0.6 * 80
             assert heavy.memory_victim(heavy.jobs(state), 80) == (70, None)
-            assert heavy.jobs(state)[0]["rss_kb"] == 40
-            assert heavy.jobs(state)[0]["fresh"] is False
+            rows = {r["slot"]: r for r in heavy.jobs(state)}
+            assert rows["slot0"]["rss_kb"] == 40
+            assert rows["slot0"]["fresh"] is False
             # Wall-clock changes cannot turn reservations into eviction evidence.
             with mock.patch.object(heavy.time, "time", return_value=-1000000):
                 assert heavy.memory_victim(heavy.jobs(state), 80) == (70, None)
@@ -380,11 +381,21 @@ def test_proc_namespace_translation():
                 f.write(f"NSpid:\t{ids}\n")
         with mock.patch.object(heavy.os, "getpid", return_value=5):
             assert heavy.visible_group(6, proc, "Linux") == 901
-        # Equal numeric caller PIDs are insufficient without a namespace match.
+        # Equal numeric caller PIDs are insufficient in an ancestor procfs view.
         with open(os.path.join(proc, "self", "status"), "w") as f:
             f.write("NSpid:\t900 900\n")
         with mock.patch.object(heavy.os, "getpid", return_value=900):
             assert heavy.visible_group(6, proc, "Linux") == 901
+        # On a host NSpid has one entry. Neither root's namespace symlink
+        # nor a scan of unrelated processes is needed for the fast path.
+        with open(os.path.join(proc, "self", "status"), "w") as f:
+            f.write("NSpid:\t900\n")
+        with open(os.path.join(proc, "6", "stat"), "w") as f:
+            f.write(proc_line(pid=6, group=6, parent=900))
+        with mock.patch.object(heavy.os, "getpid", return_value=900), \
+             mock.patch.object(heavy.os, "readlink", side_effect=PermissionError()), \
+             mock.patch.object(heavy.os, "listdir", side_effect=AssertionError("host scan")):
+            assert heavy.visible_group(6, proc, "Linux") == 6
 
 
 def test_memory_victim():
@@ -437,8 +448,8 @@ def test_fallback_escalation():
     if heavy.platform.system() != "Linux":
         return
     # The harness adopts/reaps the orphan, as a working init would. The
-    # heavy instance under test has subreaping disabled and waits only for
-    # its leader; the harness must not reap that leader on its behalf.
+    # heavy instance under test reaps only its leader; the harness must
+    # not reap that leader on its behalf.
     with adopt_workers() as enabled, tempfile.TemporaryDirectory() as state:
         assert enabled
         ready = os.path.join(state, "worker")
@@ -972,6 +983,198 @@ def test_alternate_ignored_hangup():
             assert [json.loads(line)["max_load"] for line in f] == [8, "off", "off"]
 
 
+def test_registry_signals_and_release():
+    # fren-covers: testing::heavy_registry, testing::heavy_lease
+    with tempfile.TemporaryDirectory() as state:
+        signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+        delivered = []
+
+        def handler(sig, frame):
+            # A handler must run only after the registry is unlocked.
+            with open(os.path.join(state, "registry.lock")) as lock:
+                heavy.fcntl.flock(lock, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+            delivered.append(sig)
+
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+        previous = {sig: signal.signal(sig, handler) for sig in signals}
+        try:
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, signals)
+            for fail in (False, True):
+                try:
+                    with heavy.registry(state):
+                        mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+                        assert set(signals) <= mask
+                        for sig in signals:
+                            signal.raise_signal(sig)
+                        assert not delivered
+                        if fail:
+                            raise ValueError("critical section failed")
+                except ValueError:
+                    assert fail
+                assert set(delivered) == set(signals)
+                delivered.clear()
+                assert not (set(signals) & signal.pthread_sigmask(signal.SIG_BLOCK, ()))
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+        slot = open(os.path.join(state, "slot0"), "a+")
+        with heavy.registry(state):
+            assert heavy.claim_slot(slot, "slot0", state, {"enqueued_at": 0})
+        registry = heavy.registry
+        observations = []
+
+        @contextlib.contextmanager
+        def observe_release(state):
+            try:
+                with registry(state):
+                    yield
+            finally:
+                # This is exactly the old gap between registry unlock and close.
+                with mock.patch.object(heavy, "registry", registry):
+                    observations.append((slot.closed, heavy.jobs(state)))
+
+        with mock.patch.object(heavy, "registry", side_effect=observe_release):
+            heavy.release_slot(slot, state)
+        assert observations == [(True, [])]
+        for operation in ("unlink", "truncate"):
+            slot = open(os.path.join(state, "slot0"), "a+")
+            with registry(state):
+                assert heavy.claim_slot(slot, "slot0", state, {"enqueued_at": 0})
+            observations.clear()
+            target = heavy.os if operation == "unlink" else slot
+            with mock.patch.object(heavy, "registry", side_effect=observe_release), \
+                 mock.patch.object(target, operation, side_effect=OSError("cleanup failed")):
+                heavy.release_slot(slot, state)
+            assert observations == [(True, [])]
+
+
+def test_own_cap_with_other_victim():
+    # fren-covers: testing::heavy_owned_signal
+    with tempfile.TemporaryDirectory() as state, tempfile.TemporaryFile(mode="w+") as slot:
+        slot.heavy_job = {"job_id": "older"}
+        rows = [{"job_id": "older", "order": 1, "rss_kb": 101},
+                {"job_id": "stopped-newer", "order": 2, "rss_kb": 1, "fresh": False}]
+        record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
+        with mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=42)), \
+             mock.patch.object(heavy, "visible_group", return_value=42), \
+             mock.patch.object(heavy, "group_rss_kb", return_value={42: 101}), \
+             mock.patch.object(heavy, "publish_memory"), \
+             mock.patch.object(heavy, "jobs", return_value=rows), \
+             mock.patch.object(heavy, "mem_cap_kb", return_value=100), \
+             mock.patch.object(heavy, "reap_child", return_value=False), \
+             mock.patch.object(heavy, "kill_group") as kill, \
+             contextlib.redirect_stderr(io.StringIO()):
+            assert heavy.run_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0) == 137
+            assert kill.call_count == 1
+
+
+def registry_timeout_paths(state):
+    # Run in a separate process so the harness can time out a regression
+    # even if one of these calls accidentally uses a blocking flock again.
+    before = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    assert raises(lambda: heavy.jobs(state), heavy.RegistryBusy)
+    assert heavy.heavy_rss_kb(state, 100) == math.inf
+    slot = open(os.path.join(state, "slot1"), "a+")
+    try:
+        slot.heavy_job = {"rss_kb": 0}
+        slot.heavy_slot = "slot1"
+        assert raises(lambda: heavy.publish_memory(slot, 1, state), heavy.RegistryBusy)
+        heavy.release_slot(slot, state)
+        assert slot.closed
+    finally:
+        slot.close()
+    # A race after admission's first reading also waits on timeout.
+    sleep = heavy.time.sleep
+
+    def admission_sleep(seconds):
+        if seconds >= 1:
+            raise RuntimeError("admission waited")
+        sleep(seconds)
+
+    env = {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}
+    with mock.patch.object(heavy, "heavy_rss_kb", return_value=0), \
+         mock.patch.object(heavy.time, "sleep", side_effect=admission_sleep), \
+         mock.patch.object(heavy, "run", side_effect=AssertionError("admitted without registry")), \
+         contextlib.redirect_stderr(io.StringIO()):
+        assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state, env), RuntimeError)
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, ()) == before
+
+
+def test_stopped_registry_holder():
+    # fren-covers: testing::heavy_registry, testing::heavy_lease, testing::heavy_owned_signal
+    if heavy.platform.system() != "Linux":
+        return
+    with tempfile.TemporaryDirectory() as state:
+        ready = os.path.join(state, "monitor-ready")
+        go = os.path.join(state, "go")
+        locked = os.path.join(state, "locked")
+        launcher = """
+import pathlib, runpy, sys, time
+h = runpy.run_path(sys.argv[1])
+publish = h['publish_memory']
+def pause(f, rss, state):
+    pathlib.Path(sys.argv[3]).touch()
+    deadline = time.monotonic() + 15
+    while not pathlib.Path(sys.argv[4]).exists():
+        if time.monotonic() >= deadline:
+            raise ValueError('harness did not release monitor')
+        time.sleep(0.01)
+    return publish(f, rss, state)
+h['run_command'].__globals__['publish_memory'] = pause
+sys.exit(h['main']([sys.executable, '-c', 'import time; memory=bytearray(16*1024*1024); time.sleep(30)'],
+    state=sys.argv[2], load_reader=lambda: 0))
+"""
+        holder_code = """
+import os, pathlib, runpy, signal, sys
+h = runpy.run_path(sys.argv[1])
+with h['registry'](sys.argv[2]):
+    pathlib.Path(sys.argv[3]).touch()
+    os.kill(os.getpid(), signal.SIGSTOP)
+"""
+        env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.01", HEAVY_MAX_LOAD="off")
+        env.pop("HEAVY_LOG", None)
+        monitor = subprocess.Popen([sys.executable, "-I", "-B", "-c", launcher,
+            os.path.join(HERE, "heavy"), state, ready, go], env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        holder = None
+
+        def await_file(path, child):
+            deadline = heavy.time.monotonic() + 10
+            while not os.path.exists(path) and child.poll() is None and heavy.time.monotonic() < deadline:
+                heavy.time.sleep(0.01)
+            assert os.path.exists(path) and child.poll() is None
+
+        try:
+            await_file(ready, monitor)
+            holder = subprocess.Popen([sys.executable, "-I", "-B", "-c", holder_code,
+                os.path.join(HERE, "heavy"), state, locked])
+            await_file(locked, holder)
+            # All registry entry points must return or raise within a deadline.
+            probe = "import runpy,sys; h=runpy.run_path(sys.argv[1]); h['registry_timeout_paths'](sys.argv[2])"
+            result = subprocess.run([sys.executable, "-I", "-B", "-c", probe,
+                os.path.join(HERE, "heavy_test.py"), state], capture_output=True, text=True, timeout=5)
+            assert result.returncode == 0, (result.stdout, result.stderr)
+            with open(go, "w") as f:
+                f.write("go")
+            out, err = monitor.communicate(timeout=5)
+            assert monitor.returncode == 137, (out, err)
+            assert "heavy: killed" in err
+            # The stopped holder remains stopped throughout that decision.
+            with open(f"/proc/{holder.pid}/stat") as f:
+                assert f.read().split(")")[-1].split()[0] == "T"
+        finally:
+            if holder is not None and holder.poll() is None:
+                os.kill(holder.pid, signal.SIGCONT)
+                holder.wait(timeout=5)
+            with open(go, "w") as f:
+                f.write("go")
+            if monitor.poll() is None:
+                monitor.terminate()
+            monitor.communicate(timeout=15)
+
+
 def test_report_clock():
     # fren-covers: testing::heavy_lease, testing::heavy_memory_victim
     with tempfile.TemporaryDirectory() as state:
@@ -1023,7 +1226,10 @@ def test_stopped_owner():
                 assert os.path.exists(ready[index]) and child.poll() is None
             # Stop only our older monitor. Its command remains alive in its
             # own process group, as with terminal job control.
-            os.kill(children[0].pid, signal.SIGSTOP)
+            with heavy.registry(state):
+                # Stop outside the child's critical section so reading the
+                # stale report below does not contend with a stopped holder.
+                os.kill(children[0].pid, signal.SIGSTOP)
             deadline = heavy.time.monotonic() + heavy.REPORT_STALE_SECONDS + 2
             while heavy.time.monotonic() < deadline:
                 assert children[1].poll() is None, children[1].communicate()
@@ -1060,7 +1266,8 @@ def main():
              test_alternate_ignored_hangup, test_slot_identity, test_proc_namespace_translation,
              test_memory_victim, test_group_completion, test_fallback_escalation,
              test_no_signal_after_reap, test_pid_namespace_jobs, test_report_clock,
-             test_stopped_owner]
+             test_stopped_owner, test_registry_signals_and_release,
+             test_own_cap_with_other_victim, test_stopped_registry_holder]
     for t in tests:
         t()
     print(f"heavy: {len(tests)} tests passed")
