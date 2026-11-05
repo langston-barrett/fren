@@ -37,6 +37,7 @@ import Impls.Scope
 import Impls.Semantics
 import Impls.SubsetTypes
 import Impls.Testing
+import Impls.Theories
 import Impls.Trace
 import Impls.TypeFacts
 import Impls.View
@@ -114,6 +115,18 @@ tested model::fill_rule: "src/FrenTest/ModelDefaults.lean"
 -- so there is no code to bind `lang::named` to; its expectations are
 -- checked by the solver.
 trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
+
+-- The eight theory-core requirements below have `impl`s proved for every
+-- input in `Impls/Theories.lean`; these tests are regression cross-checks.
+-- Front ends adopt the structural core in later units of #761.
+tested lang::theory_signature: "src/FrenTest/Theories.lean"
+tested lang::theory_term_translation: "src/FrenTest/Theories.lean"
+tested lang::theory_term_substitution: "src/FrenTest/Theories.lean"
+tested lang::theory_ground_term: "src/FrenTest/Theories.lean"
+tested lang::theory_variable_images: "src/FrenTest/Theories.lean"
+tested lang::theory_term_list: "src/FrenTest/Theories.lean"
+tested lang::theory_translation: "src/FrenTest/Theories.lean"
+tested lang::theory_instance: "src/FrenTest/Theories.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under
