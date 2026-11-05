@@ -2749,15 +2749,15 @@ def toParamOwner : Fren.Core.ParamOwner → lang.ParamOwner
   | .datatype => .Datatype
   | .function => .Function
 
--- For a generic type's type parameter and a generic function's, with the
--- check that both front ends make of an element type
+-- For a generic type's type parameter, including nested collection
+-- payloads and fields, and a generic function's, with the shared check
 -- (`Core.elementParamAccepted`).
 impl element_parameter: lang::element_parameter for (o : Fren.Core.ParamOwner) {
   owner := toParamOwner o,
   accepted? := Fren.Core.elementParamAccepted o,
 } by
   intro o _
-  cases o <;> simp [fren_spec, toParamOwner, Fren.Core.elementParamAccepted]
+  cases o <;> simp [fren_spec, Fren.Core.elementParamAccepted, Fren.Core.typeParamPlaceAccepted]
 
 interp lang::ty_mentions? := fun (t : Fren.Core.Ty) (k : Nat) => t.mentions k
 
