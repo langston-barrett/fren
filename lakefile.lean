@@ -479,7 +479,11 @@ input_dir reqs_dev_md where
 
 lean_lib ImplsTested where
   globs := #[`Impls.Evidence, `Impls.Lint, `Impls.Trace]
-  needs := #[`@/tests, `@/test_lean, `@/test_files_lean, `@/test_main]
+  needs := #[`@/tests, `@/test_lean, `@/test_files_lean, `@/test_main, `@/heavy_test_py]
+
+input_file heavy_test_py where
+  path := "scripts/heavy_test.py"
+  text := true
 
 input_dir tests where
   path := "test"
