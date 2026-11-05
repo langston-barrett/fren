@@ -627,6 +627,11 @@ def test_legacy_coexistence():
             assert result.returncode == 0, result.stderr
             rows = heavy.jobs(state)
             assert len(rows) == slots - 1 and all(row["legacy"] for row in rows)
+            # The memory forecast alone cannot admit a job with no free slot.
+            occupied = stack.enter_context(open(os.path.join(state, f"slot{slots - 1}"), "w+"))
+            heavy.fcntl.flock(occupied, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+            assert raises(lambda: tiny_job(state, [sys.executable, "-c", "pass"],
+                {"HEAVY_SLOTS": str(slots), "HEAVY_MEM_GB": "0.5"}, timeout=1), subprocess.TimeoutExpired)
     if heavy.platform.system() != "Linux":
         return
     with tempfile.TemporaryDirectory() as state:
@@ -677,6 +682,69 @@ def test_group_completion():
                     probe.assert_called_once_with(5, 0)
     with mock.patch.object(heavy.os, "killpg", side_effect=PermissionError()):
         assert not heavy.group_gone(5, lambda: True)
+
+
+def test_namespace_init_reaping():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    with mock.patch.object(heavy.os, "getpid", return_value=1), \
+         mock.patch.object(heavy.os, "waitpid", side_effect=[(7, 0), (0, 0)]) as wait, \
+         mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()) as probe:
+        assert not heavy.group_gone(5, lambda: False)
+        wait.assert_not_called()  # The leader must first be collected by wait4.
+        assert heavy.group_gone(5, lambda: True)
+        assert wait.call_args_list == [mock.call(-1, os.WNOHANG)] * 2
+        probe.assert_called_once_with(5, 0)
+    with mock.patch.object(heavy.os, "getpid", return_value=1), \
+         mock.patch.object(heavy.os, "waitpid", side_effect=ChildProcessError()), \
+         mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()):
+        assert heavy.group_gone(5, lambda: True)
+    with mock.patch.object(heavy.os, "getpid", return_value=2), \
+         mock.patch.object(heavy.os, "waitpid") as wait, \
+         mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()):
+        assert heavy.group_gone(5, lambda: True)
+        wait.assert_not_called()
+
+
+def test_namespace_init_workers():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    if heavy.platform.system() != "Linux":
+        return
+    prefix = ["unshare", "--user", "--map-root-user", "--pid", "--fork", "--kill-child=KILL", "--"]
+    try:
+        probe = subprocess.run(prefix + ["true"], capture_output=True, timeout=10)
+        supported = probe.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        supported = False
+    if not supported:
+        assert os.environ.get("HEAVY_REQUIRE_PIDNS_TEST") != "1", "PID namespace init integration is required"
+        print("heavy: skipped PID namespace init integration (kernel/container forbids unshare)")
+        return
+    with tempfile.TemporaryDirectory() as state:
+        ready = os.path.join(state, "worker")
+        worker = ("import pathlib,sys,time; memory=bytearray(48*1024*1024); "
+                  "pathlib.Path(sys.argv[1]).touch(); time.sleep(60)")
+        leader = ("import subprocess,sys,time; "
+                  f"subprocess.Popen([sys.executable,'-c',{worker!r},{ready!r}]); time.sleep(60)")
+        launcher = ("import os,runpy,sys; assert os.getpid()==1; h=runpy.run_path(sys.argv[1]); "
+                    "sys.exit(h['main']([sys.executable,'-c',sys.argv[3]],state=sys.argv[2],load_reader=lambda:0))")
+        env = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="0.04", HEAVY_MAX_LOAD="off")
+        env.pop("HEAVY_LOG", None)
+        child = subprocess.Popen(prefix + [sys.executable, "-I", "-B", "-c", launcher,
+            os.path.join(HERE, "heavy"), state, leader], env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = heavy.time.monotonic() + 10
+            while not os.path.exists(ready) and child.poll() is None and heavy.time.monotonic() < deadline:
+                heavy.time.sleep(0.01)
+            assert os.path.exists(ready), child.communicate(timeout=10)
+            # A zombie-only group used to consume both five-second waits.
+            out, err = child.communicate(timeout=8)
+            assert child.returncode == 137 and "heavy: killed" in err, (out, err)
+            print("heavy: PID namespace init reaped orphan workers without escalation waits")
+        finally:
+            if child.poll() is None:
+                child.terminate()
+            child.communicate(timeout=15)
 
 
 @contextlib.contextmanager
@@ -774,20 +842,26 @@ def test_no_signal_after_reap():
 
 def test_status_failure_cleanup():
     # fren-covers: testing::heavy_owned_signal
-    with tempfile.TemporaryDirectory() as state, tempfile.TemporaryFile(mode="w+") as slot:
-        record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
-        slot.heavy_job = {"job_id": "job"}
-        with mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=42)), \
-             mock.patch.object(heavy, "visible_group", return_value=42), \
-             mock.patch.object(heavy, "write_status", side_effect=OSError("disk full")), \
-             mock.patch.object(heavy, "group_rss_kb", return_value={42: 1}), \
-             mock.patch.object(heavy, "mem_cap_kb", return_value=100), \
-             mock.patch.object(heavy, "reap_child", return_value=False) as reap, \
-             mock.patch.object(heavy, "kill_group") as kill, \
-             contextlib.redirect_stderr(io.StringIO()):
-            assert heavy.run_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0) == 125
-            kill.assert_called_once()
-            assert kill.call_args.args[0] == 42 and reap.call_args.args[-1] == 0
+    cases = [(True, "cannot maintain shared memory accounting"),
+             (False, "cannot publish the command's slot status")]
+    for registered, message in cases:
+        with tempfile.TemporaryDirectory() as state, tempfile.TemporaryFile(mode="w+") as slot:
+            record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
+            if registered:
+                slot.heavy_job = {"job_id": "job"}
+            stderr = io.StringIO()
+            with mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=42)), \
+                 mock.patch.object(heavy, "visible_group", return_value=42), \
+                 mock.patch.object(heavy, "write_status", side_effect=OSError("disk full")), \
+                 mock.patch.object(heavy, "group_rss_kb", return_value={42: 1}), \
+                 mock.patch.object(heavy, "mem_cap_kb", return_value=100), \
+                 mock.patch.object(heavy, "reap_child", return_value=False) as reap, \
+                 mock.patch.object(heavy, "kill_group") as kill, \
+                 contextlib.redirect_stderr(stderr):
+                assert heavy.run_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0) == 125
+                assert stderr.getvalue() == f"heavy: {message}: disk full\n"
+                kill.assert_called_once()
+                assert kill.call_args.args[0] == 42 and reap.call_args.args[-1] == 0
 
 
 def test_pid_namespace_jobs():
@@ -1550,6 +1624,7 @@ def main():
              test_alternate_ignored_hangup, test_slot_identity, test_proc_namespace_translation,
              test_memory_victim, test_legacy_reservations, test_report_owner, test_legacy_proc_readings,
              test_legacy_report_reuse, test_legacy_coexistence, test_group_completion, test_fallback_escalation,
+             test_namespace_init_reaping, test_namespace_init_workers,
              test_no_signal_after_reap, test_status_failure_cleanup, test_pid_namespace_jobs, test_report_clock,
              test_stopped_owner, test_registry_signals_and_release,
              test_own_cap_with_other_victim, test_stopped_registry_holder]

@@ -963,9 +963,10 @@ file does not mean its lock is unheld.
 
 Each new holder writes its `job_id` at the end of the slot status as
 `[heavy-job=...]`; the leading PID and timestamp remain readable by legacy
-copies. A report must match that token. On Linux, when the kernel's lock
-owner is visible, its PID namespace, local PID and process start counter
-must also match the report's monitor identity. These are read through the
+copies. A report must match that token. On Linux, ownership verification
+requires a matching kernel lock entry and a readable monitor identity.
+Its PID namespace, local PID and process start counter must match the
+report's monitor identity. These are read through the
 kernel's PID in this procfs view, never through a PID from slot text.
 Without a visible owner, a matching token is accepted only for fresh reports;
 after ten seconds an unverified stale report is treated as legacy. Missing,
@@ -994,6 +995,9 @@ a reaped leader alone does not mean the workers are gone. TERM-to-KILL
 escalation continues while the group exists. SIGINT, SIGTERM and SIGHUP are
 blocked around the completion check and signal, and while the registry lock
 is held; handlers are restored after monitoring.
+When heavy is PID 1 of its namespace, it also reaps adopted orphan workers
+after collecting the leader's exit status and RSS. Dead workers must not
+keep the process group visible as zombies until both escalation waits expire.
 
 If `/proc` belongs to an ancestor PID namespace, the owner translates its
 own child through parentage and `NSpid` before measuring it in that procfs
@@ -1038,6 +1042,15 @@ registry lock. Filtered, inaccessible or changed ownership leaves the
 reading unknown and uses the forecast. A numeric PID in a legacy slot is
 never resolved, so an unrelated process with that number cannot inflate it.
 Older kernels and other systems use the fixed forecast.
+Kernel verification also requires the slot's `stat` device and inode to
+match the identifiers in `/proc/locks`. On filesystems where the device
+identifiers differ, including btrfs subvolumes and some stacked filesystems,
+the owner cannot be matched. Compatible reports then use the freshness
+fallback, an unverified stale report becomes legacy after ten seconds, and
+legacy RSS remains unobserved. In that case the lookup cannot verify stopped
+owners or measure legacy holders; accounting uses freshness and the shared
+forecast instead. The current implementation does not translate filesystem
+device identifiers.
 
 Eviction counts compatible owners' last reported RSS and verified legacy
 measurements. Forecasts never contribute to this total. When it exceeds the
@@ -1087,9 +1100,15 @@ flags and job names. Tests use scratch directories, including for logs.
 A missing bare command exits with 127 before waiting or taking a slot;
 it has no admission and produces no job record.
 
-The following requirements compute admission and eviction from the same
-raw compatible reports. Time values use one integral unit of the shared
-monotonic clock. Python tests check the concrete lock, clock, procfs and
+The following requirements compute compatibility, admission and eviction
+from raw held-slot observations: a report, its status token, the observed
+monitor identity and any independently measured legacy RSS. `MemoryLeases`
+does not classify its entries in advance. `heavy_lease` calls
+`heavy_report_owner`; the recursive accounting functions use the same
+`report_owner?` definition, so victim selection and owned signaling also
+decide compatibility. A legacy job can admit new work only when a slot is
+free and the memory rule holds. Time values use one integral unit of the
+shared monotonic clock. Python tests check the concrete lock, clock, procfs and
 signal operations through `tested` claims in `Impls.Trace`; these tests run
 in the `lint` workflow, not in `lake test`. `heavy_registry` models the retry
 and signal-deferral decisions, including refusal to retry after the deadline.
@@ -1131,10 +1150,24 @@ pub struct MemoryReport {
     monitor: Option<MonitorIdentity>,
 }
 
+-- Raw observations of a held slot, before compatibility is decided.
+pub struct MemoryLease {
+    report: Option<MemoryReport>,
+    status_job: String,
+    observed: Option<MonitorIdentity>,
+    legacy_rss: Option<Int>,
+}
+
+pub const UNKNOWN_LEASE: MemoryLease := MemoryLease {
+    report := Option::None,
+    status_job := "",
+    observed := Option::None,
+    legacy_rss := Option::None,
+}
+
 pub enum MemoryLeases {
     Nil,
-    Cons(Option<MemoryReport>, MemoryLeases),
-    Legacy(Option<Int>, MemoryLeases),
+    Cons(MemoryLease, MemoryLeases),
 }
 
 pub fn legacy_reservation(cap: Nat, observed: Option<Int>): Int := match observed {
@@ -1147,7 +1180,7 @@ pub fn legacy_memory(observed: Option<Int>): Int := match observed {
     Option::None => 0,
 }
 
-pub proc heavy_legacy_lease(cap: Nat, slots: Nat, locked?, observed: Option<Int>, other: Nat): (
+pub proc heavy_legacy_lease(cap: Nat, free?, locked?, observed: Option<Int>, other: Nat): (
     det live?,
     det admission: Int,
     det eviction: Int,
@@ -1156,8 +1189,9 @@ pub proc heavy_legacy_lease(cap: Nat, slots: Nat, locked?, observed: Option<Int>
     ensure live: live? iff locked?
     out admission := if locked? then legacy_reservation(cap, observed) else 0
     out eviction := if locked? then legacy_memory(observed) else 0
-    ensure memory_rule: fits? iff 5 * (admission + other) <= 3 * cap
-    expect coexists: when cap >= 5 and slots >= 2 and observed = Option::None and other = 0, fits?
+    ensure memory_rule: fits? iff free? and 5 * (admission + other) <= 3 * cap
+    expect coexists: when cap >= 5 and free? and observed = Option::None and other = 0, fits?
+    expect full: unless free?, not fits?
     expect measured: match observed {
         Option::Some(rss) => (when locked? and rss >= 0, admission >= rss and eviction = rss),
         Option::None => eviction = 0,
@@ -1170,23 +1204,38 @@ pub fn valid_report?(r: MemoryReport) := r.rss >= 0 and r.owner.sequence > 0
 
 pub fn fresh_report?(r: MemoryReport, now: Int, ttl: Nat) := 0 <= now - r.updated <= ttl
 
+pub fn report_owner?(
+    report: Option<MemoryReport>,
+    status_job: String,
+    observed: Option<MonitorIdentity>,
+    now: Int,
+    ttl: Nat
+) := match report {
+    Option::Some(r) =>
+        valid_report?(r) and status_job = r.owner.job and (match observed {
+            Option::Some(m) => r.monitor = Option::Some(m),
+            Option::None => fresh_report?(r, now, ttl),
+        }),
+    Option::None => false,
+}
+
 pub proc heavy_report_owner(
-    r: MemoryReport,
+    report: Option<MemoryReport>,
     status_job: String,
     observed: Option<MonitorIdentity>,
     now: Int,
     ttl: Nat,
 ): (det compatible?) {
-    let owner_matches? := match observed {
-        Option::Some(m) => r.monitor = Option::Some(m),
-        Option::None => fresh_report?(r, now, ttl),
+    out compatible? := report_owner?(report, status_job, observed, now, ttl)
+    expect replaced: match report, observed {
+        Option::Some(r), Option::Some(m) => (when r.monitor != Option::Some(m), not compatible?),
+        Option::Some(r), Option::None => (unless fresh_report?(r, now, ttl), not compatible?),
+        _, _ => not compatible?,
     }
-    ensure rule: compatible? iff status_job = r.owner.job and owner_matches?
-    expect replaced: match observed {
-        Option::Some(m) => (when r.monitor != Option::Some(m), not compatible?),
-        Option::None => (unless fresh_report?(r, now, ttl), not compatible?),
+    expect token: match report {
+        Option::Some(r) => (when status_job != r.owner.job, not compatible?),
+        Option::None => not compatible?,
     }
-    expect token: when status_job != r.owner.job, not compatible?
 }
 
 pub fn admission_memory(cap: Nat, report: Option<MemoryReport>, now: Int, ttl: Nat): Int :=
@@ -1202,19 +1251,39 @@ pub fn eviction_memory(report: Option<MemoryReport>): Int := match report {
     Option::None => 0,
 }
 
-pub proc heavy_lease(cap: Nat, locked?, report: Option<MemoryReport>, now: Int, ttl: Nat): (
+pub proc heavy_lease(cap: Nat, locked?, lease: MemoryLease, now: Int, ttl: Nat): (
     det live?,
     det admission: Int,
     det eviction: Int,
 ) {
+    call owner := heavy_report_owner(lease.report, lease.status_job, lease.observed, now, ttl)
     ensure live: live? iff locked?
-    out admission := if locked? then admission_memory(cap, report, now, ttl) else 0
-    out eviction := if locked? then eviction_memory(report) else 0
+    out admission :=
+        if not locked? then 0
+        else if owner.compatible? then admission_memory(cap, lease.report, now, ttl)
+        else legacy_reservation(cap, lease.legacy_rss)
+    out eviction :=
+        if not locked? then 0
+        else if owner.compatible? then eviction_memory(lease.report)
+        else legacy_memory(lease.legacy_rss)
     expect unlocked: unless locked?, admission = 0 and eviction = 0
-    expect unknown: when locked? and report = Option::None, admission > 0 and eviction = 0
-    expect stale: match report {
-        Option::Some(r) => (when locked? and valid_report?(r) and not fresh_report?(r, now, ttl),
+    expect unknown: when locked? and lease.report = Option::None and lease.legacy_rss = Option::None,
+        admission > 0 and eviction = 0
+    expect stale: match lease.report, lease.observed {
+        Option::Some(r), Option::Some(m) => (when locked? and valid_report?(r)
+            and lease.status_job = r.owner.job and r.monitor = Option::Some(m)
+            and not fresh_report?(r, now, ttl),
             admission = cap and eviction = r.rss),
+        _, _ => true,
+    }
+    expect unverified_stale: match lease.report {
+        Option::Some(r) => (when locked? and lease.observed = Option::None and not fresh_report?(r, now, ttl),
+            admission = legacy_reservation(cap, lease.legacy_rss) and eviction = legacy_memory(lease.legacy_rss)),
+        Option::None => true,
+    }
+    expect wrong_token: match lease.report {
+        Option::Some(r) => (when locked? and lease.status_job != r.owner.job,
+            admission = legacy_reservation(cap, lease.legacy_rss) and eviction = legacy_memory(lease.legacy_rss)),
         Option::None => true,
     }
 }
@@ -1222,49 +1291,56 @@ pub proc heavy_lease(cap: Nat, locked?, report: Option<MemoryReport>, now: Int, 
 pub fn observed_admission(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
     out rss := match leases {
         MemoryLeases::Nil => 0,
-        MemoryLeases::Cons(report, rest) =>
-            (match report {
-                Option::Some(r) =>
-                    if valid_report?(r) then admission_memory(cap, report, now, ttl) else 0,
-                Option::None => 0,
-            }) + observed_admission(cap, rest, now, ttl),
-        MemoryLeases::Legacy(observed, rest) =>
-            legacy_memory(observed) + observed_admission(cap, rest, now, ttl),
+        MemoryLeases::Cons(lease, rest) =>
+            (if report_owner?(lease.report, lease.status_job, lease.observed, now, ttl)
+                then admission_memory(cap, lease.report, now, ttl) else legacy_memory(lease.legacy_rss))
+            + observed_admission(cap, rest, now, ttl),
     }
     ensure empty: when leases = MemoryLeases::Nil, rss = 0
     ensure single_legacy: match leases {
-        MemoryLeases::Legacy(observed, MemoryLeases::Nil) => rss = legacy_memory(observed),
+        MemoryLeases::Cons(lease, MemoryLeases::Nil) => (unless report_owner?(
+            lease.report,
+            lease.status_job,
+            lease.observed,
+            now,
+            ttl
+        ),
+            rss = legacy_memory(lease.legacy_rss)),
         _ => true,
     }
 }
 
-pub fn unknown_legacy?(leases: MemoryLeases) := match leases {
+pub fn unknown_legacy?(leases: MemoryLeases, now: Int, ttl: Nat) := match leases {
     MemoryLeases::Nil => false,
-    MemoryLeases::Cons(report, rest) =>
-        (match report {
-            Option::Some(r) => not valid_report?(r),
-            Option::None => true,
-        }) or unknown_legacy?(rest),
-    MemoryLeases::Legacy(observed, rest) =>
-        (match observed {
+    MemoryLeases::Cons(lease, rest) =>
+        (not report_owner?(lease.report, lease.status_job, lease.observed, now, ttl) and (match lease.legacy_rss {
             Option::Some(rss) => rss < 0,
             Option::None => true,
-        }) or unknown_legacy?(rest),
+        })) or unknown_legacy?(rest, now, ttl),
 }
 
 pub fn admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): Int :=
     observed_admission(cap, leases, now, ttl)
-    + (if unknown_legacy?(leases) then legacy_reservation(cap, Option::None) else 0)
+    + (if unknown_legacy?(leases, now, ttl) then legacy_reservation(cap, Option::None) else 0)
 
-pub fn eviction_total(leases: MemoryLeases): (rss: Int) {
+pub fn eviction_total(leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
     out rss := match leases {
         MemoryLeases::Nil => 0,
-        MemoryLeases::Cons(report, rest) => eviction_memory(report) + eviction_total(rest),
-        MemoryLeases::Legacy(observed, rest) => legacy_memory(observed) + eviction_total(rest),
+        MemoryLeases::Cons(lease, rest) =>
+            (if report_owner?(lease.report, lease.status_job, lease.observed, now, ttl)
+                then eviction_memory(lease.report) else legacy_memory(lease.legacy_rss))
+            + eviction_total(rest, now, ttl),
     }
     ensure empty: when leases = MemoryLeases::Nil, rss = 0
     ensure single_legacy: match leases {
-        MemoryLeases::Legacy(observed, MemoryLeases::Nil) => rss = legacy_memory(observed),
+        MemoryLeases::Cons(lease, MemoryLeases::Nil) => (unless report_owner?(
+            lease.report,
+            lease.status_job,
+            lease.observed,
+            now,
+            ttl
+        ),
+            rss = legacy_memory(lease.legacy_rss)),
         _ => true,
     }
 }
@@ -1276,16 +1352,17 @@ pub fn newest_owner(first: Option<MemoryOwner>, second: Option<MemoryOwner>): Op
         Option::Some(a), Option::Some(b) => if b.sequence > a.sequence then second else first,
     }
 
-pub fn latest_owner(leases: MemoryLeases): (owner: Option<MemoryOwner>) {
+pub fn latest_owner(leases: MemoryLeases, now: Int, ttl: Nat): (owner: Option<MemoryOwner>) {
     out owner := match leases {
         MemoryLeases::Nil => Option::None,
-        MemoryLeases::Legacy(_, rest) => latest_owner(rest),
-        MemoryLeases::Cons(report, rest) => newest_owner(
-            match report {
-                Option::Some(r) => if valid_report?(r) then Option::Some(r.owner) else Option::None,
+        MemoryLeases::Cons(lease, rest) => newest_owner(
+            match lease.report {
+                Option::Some(r) =>
+                    if report_owner?(lease.report, lease.status_job, lease.observed, now, ttl)
+                    then Option::Some(r.owner) else Option::None,
                 Option::None => Option::None,
             },
-            latest_owner(rest)
+            latest_owner(rest, now, ttl)
         ),
     }
     ensure empty: when leases = MemoryLeases::Nil, owner = Option::None
@@ -1297,23 +1374,33 @@ pub proc heavy_memory_victim(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat)
     det selected: Option<MemoryOwner>,
 ) {
     out admission := admission_total(cap, leases, now, ttl)
-    out total := eviction_total(leases)
-    out selected := if total > cap then latest_owner(leases) else Option::None
+    out total := eviction_total(leases, now, ttl)
+    out selected := if total > cap then latest_owner(leases, now, ttl) else Option::None
     expect within_cap: when total <= cap, selected = Option::None
-    expect legacy: when latest_owner(leases) = Option::None, selected = Option::None
+    expect legacy: when latest_owner(leases, now, ttl) = Option::None, selected = Option::None
     expect estimates_only: match leases {
-        MemoryLeases::Legacy(Option::None, MemoryLeases::Nil) =>
-            selected = Option::None and total = 0,
+        MemoryLeases::Cons(lease, MemoryLeases::Nil) => (when lease.report = Option::None and lease.legacy_rss = Option::None,
+            selected = Option::None and total = 0),
         _ => true,
     }
-    expect shared_forecast: when leases = MemoryLeases::Legacy(
-        Option::None,
-        MemoryLeases::Legacy(Option::None, MemoryLeases::Nil)
+    expect shared_forecast: when leases = MemoryLeases::Cons(
+        UNKNOWN_LEASE,
+        MemoryLeases::Cons(UNKNOWN_LEASE, MemoryLeases::Nil)
     ),
         admission = legacy_reservation(cap, Option::None) and total = 0
     expect stale_fits: match leases {
-        MemoryLeases::Cons(Option::Some(r), rest) => (when valid_report?(r) and not fresh_report?(r, now, ttl) and r.rss + eviction_total(rest) <= cap,
-            selected = Option::None),
+        MemoryLeases::Cons(lease, rest) => match lease.report {
+            Option::Some(r) => (when report_owner?(
+                lease.report,
+                lease.status_job,
+                lease.observed,
+                now,
+                ttl
+            )
+                and not fresh_report?(r, now, ttl) and r.rss + eviction_total(rest, now, ttl) <= cap,
+                selected = Option::None),
+            Option::None => true,
+        },
         _ => true,
     }
 }

@@ -839,7 +839,8 @@ def release_slot(f, state):
 
 def flock_owners(proc="/proc"):
     """Kernel-reported flock holders, with IDs in this procfs view.
-    Never resolve a numeric PID from a legacy slot's diagnostic text."""
+    Never resolve a numeric PID from a legacy slot's diagnostic text.
+    Devices here must match stat's devices; otherwise verification falls back."""
     found = {}
     with open(os.path.join(proc, "locks")) as f:
         for line in f:
@@ -968,6 +969,16 @@ def group_gone(pgid, reap):
     """Leader reaping alone leaves workers to probe in our PID namespace."""
     if not reap():
         return False
+    if os.getpid() == 1:
+        # Namespace init adopts orphaned workers. Reap them only after wait4
+        # has collected the leader's status and RSS, then probe the group.
+        while True:
+            try:
+                pid, _ = os.waitpid(-1, os.WNOHANG)
+            except ChildProcessError:
+                break
+            if pid == 0:
+                break
     try:
         os.killpg(pgid, 0)
     except ProcessLookupError:
@@ -1039,16 +1050,17 @@ def run_command(f, command, shown, record, state, environ, load_reader):
             own.update(started_at=record["started_at"], local_pgid=child.pid, proc_pgid=proc_group)
         text = (f"{child.pid} {record['started_at']} {os.getcwd()} {shown} "
                 f"[local PID; namespace={pid_namespace()}]")
-        try:
-            if own is not None:
-                f.heavy_status = text  # Publish with the first RSS, under registry.
-            else:
+        if own is not None:
+            # A write failure is handled below as a shared-accounting failure.
+            f.heavy_status = text  # Publish with the first RSS, under registry.
+        else:
+            try:
                 write_status(f, text)
-        except (OSError, ValueError) as e:
-            print(f"heavy: cannot publish the command's slot status: {e}", file=sys.stderr)
-            kill_group(child.pid, reap)
-            reap_child(child, record, 0)
-            return 125
+            except (OSError, ValueError) as e:
+                print(f"heavy: cannot publish the command's slot status: {e}", file=sys.stderr)
+                kill_group(child.pid, reap)
+                reap_child(child, record, 0)
+                return 125
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             handlers[sig] = signal.signal(sig, lambda s, _: kill_group(child.pid, reap))
         while True:
