@@ -772,7 +772,7 @@ it, and whose type is not [listed](Quantifiers.md#types), occurs in a
 matched application. A variable that does not is an error that names it
 (the *binding rule*).
 
-r[module.binding.outside] lang::outside_variable, lang::theory_instance
+r[module.binding.outside] lang::{outside_variable, theory_instance, ground_listed_step}
 A quantified variable that the sentence mentions only outside its
 applications, as `n` in `law bounded(s: Self, n: Int): when n > 0, h(s) >=
 0`, needs no term: it stays quantified within each instance.
@@ -2557,12 +2557,12 @@ pub fn ground_normalize(GroundDefinitions, TheoryTerm): TheoryTerm
 pub fn ground_normalize_definitions(GroundDefinitions): GroundDefinitions
 
 pub proc ground_normalization(defs: GroundDefinitions, term: TheoryTerm, other: TheoryTerm): (
-    det lookup: TheoryTerm,
+    det lookup_value: TheoryTerm,
     det normalized: TheoryTerm,
     det normalized_definitions: GroundDefinitions,
     det same?,
 ) {
-    ensure lookup_rule: lookup = if ground_definitions_empty?(defs) then term
+    ensure lookup_rule: lookup_value = if ground_definitions_empty?(defs) then term
         else if ground_definition_name(defs) = term then ground_definition_value(defs)
         else ground_lookup(ground_definitions_rest(defs), term)
     ensure term_rule: normalized = match theory_term_kind(term) {
@@ -3036,4 +3036,17 @@ pub proc ground_rule_step(
             )
         )
 }
+
+#fren_check ground_match_step
+#fren_check ground_parameter_step
+#fren_check ground_extension_step
+#fren_check ground_normalization
+#fren_check ground_shape_step
+#fren_check ground_subject_step
+#fren_check ground_selection_step
+#fren_check ground_variables_step
+#fren_check ground_join_step
+#fren_check ground_listed_step
+#fren_check ground_sentence_lists_step
+#fren_check ground_rule_step
 ```

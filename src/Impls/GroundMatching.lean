@@ -114,7 +114,7 @@ impl ground_normalization: lang::ground_normalization for (ds : List (TheoryTerm
   defs := ds,
   term := t,
   other := other,
-  lookup := lookup ds t,
+  lookup_value := lookup ds t,
   normalized := Fren.Core.GroundMatching.normalize ds t,
   normalized_definitions := Fren.Core.GroundMatching.definitions ds,
   same? := Fren.Core.GroundMatching.same ds t other,
