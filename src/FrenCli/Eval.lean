@@ -1440,26 +1440,47 @@ quantifier-binder calls. Unlike semantic fuel, this budget is never reset
 inside an evaluation. Exhaustion gives an unknown value without panicking. -/
 def evalDepth : Nat := Fren.Core.Enumeration.maxEvalDepth
 
-/-- A shared expression, cached at a budget no greater than half the
-initial one. A caller with less remaining depth evaluates it at that
-depth instead: forcing an old thunk must not restore its creator's budget.
-Caching remains useful in ordinary shallow evaluations. -/
+/-- Lazy entries for a shared expression's remaining depth budgets. Only
+paths to requested entries are allocated, and each entry caches unknown
+values too. A balanced tree avoids an array of 257 thunks per expression. -/
+inductive MemoCache where
+  | value (cached : Thunk (Option Val))
+  | split (pivot : Nat) (left right : Thunk MemoCache)
+  deriving Inhabited
+
+/-- Entries at depths `lo` through `lo + width`, inclusive. -/
+def MemoCache.ofFn (run : Nat → Option Val) (lo width : Nat) : MemoCache :=
+  match width with
+  | 0 => .value (Thunk.mk fun _ => run lo)
+  | width + 1 =>
+    let half := (width + 1) / 2
+    .split (lo + half)
+      (Thunk.mk fun _ => MemoCache.ofFn run lo half)
+      (Thunk.mk fun _ => MemoCache.ofFn run (lo + half + 1) (width - half))
+termination_by width
+decreasing_by all_goals omega
+
+def MemoCache.get (cache : MemoCache) (depth fuel : Nat) : Option Val :=
+  match fuel, cache with
+  | 0, _ => none
+  | _ + 1, .value cached => cached.get
+  | fuel + 1, .split pivot left right =>
+    (if depth ≤ pivot then left.get else right.get).get depth fuel
+
+/-- A shared expression, cached separately for each remaining depth. A
+shallower caller never restores its creator's budget, and a deeper caller
+never inherits an unknown value caused only by a smaller budget. -/
 structure Memo where
   budget : Nat
-  cached : Thunk (Option Val)
-  run : Nat → Option Val
+  cached : MemoCache
   deriving Inhabited
 
 def Memo.ofFn (depth : Nat) (run : Nat → Option Val) : Memo :=
-  let budget := min depth (evalDepth / 2)
-  { budget, cached := Thunk.mk fun _ => run budget, run }
+  let budget := min depth evalDepth
+  { budget, cached := MemoCache.ofFn run 0 budget }
 
 def Memo.get (m : @& Memo) (depth : Nat) : Option Val :=
-  if m.budget ≤ depth then
-    match m.cached.get with
-    | some v => some v
-    | none => if m.budget < depth then m.run depth else none
-  else m.run depth
+  m.cached.get (min depth m.budget) (m.budget + 1)
 
 /-- What evaluation gives when it runs out of fuel (`evalFuel`): an
 unknown value, which, since evaluation is monotone, can make no known
@@ -1503,11 +1524,11 @@ recursion's body or a check of an invariant, spends a unit of `fuel`
 body, an invariant, a nested value and a quantifier's next binder. Without
 depth its value is unknown; without semantic fuel it is `outOfFuel`'s. -/
 def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val))
-    (frame : @& Frame) (memos : @& Array Memo) (fuel depth : Nat) (e : @& Ex) : Option Val :=
+    (frame : @& Frame) (memos : @& Array Memo) (fuel depth : Nat) (whole : @& Ex) : Option Val :=
   match depth with
   | 0 => none
   | depth + 1 =>
-  match e with
+  match whole with
   | .lit v => some v
   | .var n => match I.lookup? with
     | some read => read depth n
@@ -1700,102 +1721,56 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     let mut vs := vs
     for (k, x) in fs do vs := vs.set! k (← x.evalIn I look locals slots frame memos fuel depth)
     return .ctor ty idx vs
-  -- The first row whose condition holds; where none does, the
-  -- interpretation's unspecified value of its type.
-  -- As the arms `_ if C => v` and `_ => v` (`Fren.Core.firstCase`).
-  -- `firstCaseIn`'s case, passed on (`firstCaseThen_eq`).
+  -- A table's rows are the `if`s that they are in both front ends
+  -- (`chainKnownBy`, which is `chainKnown`). Evaluate each condition and
+  -- selected body once, including when the body is unknown: retrying it
+  -- through a fallback makes nested unknown results exponential.
   | .table _ rows unspec? =>
-    (firstCaseThen rows (fun (_, c?, v) => match c? with
-      | none => some (some v)
-      | some c => match c.evalIn I look locals slots frame memos fuel depth with
-        | some (.bool true) => some (some v)
-        | some (.bool false) => some none
-        | _ => none)
-      (fun v => v.evalIn I look locals slots frame memos fuel depth)
-      fun _ => do I.fn (← unspec?) #[]) <|>
-      -- Where whether a row is taken is unknown, the rows decide it as the
-      -- `if`s that they are, as the Lean-hosted front end's definitions
-      -- are (`chainKnownBy`, which is `chainKnown`).
-      chainKnownBy (fun (_, c?, v) => (match c? with
-          | none => some true
-          | some c => truthOf (c.evalIn I look locals slots frame memos fuel depth), fun _ => v.evalIn I look locals slots frame memos fuel depth))
-        rows.toList fun _ => do I.fn (← unspec?) #[]
+    chainKnownBy (fun (_, c?, v) => (match c? with
+        | none => some true
+        | some c => truthOf (c.evalIn I look locals slots frame memos fuel depth),
+      fun _ => v.evalIn I look locals slots frame memos fuel depth))
+      rows.toList fun _ => do I.fn (← unspec?) #[]
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => evalResult (e.evalIn { I with lookup? := none } (fun _ => none) [] #[] .nil #[] fuel depth)
   | .typed t _ e => do truthV (typeV I fuel depth t (← e.evalIn I look locals slots frame memos fuel depth))
-  -- The first arm whose pattern matches and whose guard holds; where none
-  -- is taken, the interpretation's unspecified value of its type.
-  -- The first arm that is taken: whose pattern matches and whose guard
-  -- holds (`Fren.Core.firstCase`, `lang::guarded_match`).
-  | .match e arms _ _ unspec? _ => (do
-    let v ← e.evalIn I look locals slots frame memos fuel depth
-    -- Whether the pattern matches, decided first, so that an arm that
-    -- does not match binds nothing (`Pat.matches`, `Pat.bindInto`).
-    firstCaseThen arms (fun (p, g?, body) => match p.matches v with
-      | false => some none
-      -- The binders in the frame, the first innermost.
-      | true =>
-        let fr := p.bindInto v frame
-        match g? with
-        | none => some (some (fr, body))
-        | some g => match g.evalIn I look locals slots fr memos fuel depth with
-          | some (.bool true) => some (some (fr, body))
-          | some (.bool false) => some none
-          | _ => none)
-      (fun (fr, body) => body.evalIn I look locals slots fr memos fuel depth)
-      fun _ => do I.fn (← unspec?) #[]) <|>
-    -- Where whether an arm is taken is unknown, the arms decide it as the
-    -- `if`s that they are: an arm's test and its guard, and its body, with
-    -- the binders bound, or unknown where a scrutinee is (`armCase`,
-    -- `chainKnownBy`, which is `chainKnown`). The scrutinees of a `match`
-    -- of several are its vector's values, which each pattern tests on its
-    -- own.
-    let scrutinees? : Option (Array Ex) := match e with
-      | .ctor t _ xs => if t == Fren.Core.matchVectorPath then some xs else none
+  -- Match once, with constructor dispatch where compiled. Unknown
+  -- scrutinees, guards and selected bodies use the same traversal, so
+  -- none is evaluated again by a fallback (`Reqs/Eval#fuel`).
+  | .match e arms _ _ unspec? _ | .dispatch _ (.match e arms _ _ unspec? _) =>
+    let byCtor? : Option (Array (Array Nat)) := match whole with
+      | .dispatch byCtor _ => some byCtor
       | _ => none
-    let values : Array (Option Val) := match scrutinees? with
-      | some xs => xs.map fun x => x.evalIn I look locals slots frame memos fuel depth
+    -- The scrutinees of a `match` of several are its vector's values,
+    -- each evaluated once, even where one is unknown. Reuse them both for
+    -- constructor dispatch and for the partial pattern tests (`armCase`).
+    let vector? : Option (Name × Nat × Array Ex) := match e with
+      | .ctor t i xs => if t == Fren.Core.matchVectorPath then some (t, i, xs) else none
+      | _ => none
+    let values : Array (Option Val) := match vector? with
+      | some (_, _, xs) => xs.map fun x => x.evalIn I look locals slots frame memos fuel depth
       | none => #[e.evalIn I look locals slots frame memos fuel depth]
+    let value? := match vector? with
+      | some (t, i, _) => (values.mapM id).map (Val.ctor t i)
+      | none => values[0]!
     let case (arm : Pat × Option Ex × Ex) : Option Bool × (Unit → Option Val) :=
       let (p, g?, body) := arm
-      let pats := match scrutinees?, p with
-        | some _, .ctor _ ps => ps
-        | some xs, p => xs.map fun _ => p
-        | none, p => #[p]
-      let (test, fr) := armCase (pats.zip values) frame
+      let (test, fr) := match value? with
+        | some v => if p.matches v then (some true, p.bindInto v frame) else (some false, frame)
+        | none =>
+          let pats := match vector?, p with
+            | some _, .ctor _ ps => ps
+            | some (_, _, xs), p => xs.map fun _ => p
+            | none, p => #[p]
+          armCase (pats.zip values) frame
       let guard := if test == some false then some false else match g? with
         | none => some true
         | some g => truthOf (g.evalIn I look locals slots fr memos fuel depth)
       (Fren.Core.Enumeration.andTruth test guard, fun _ => body.evalIn I look locals slots fr memos fuel depth)
-    chainKnownBy case arms.toList fun _ => do I.fn (← unspec?) #[]
-  -- The same arm as the `match` takes: those left out are those whose
-  -- patterns do not match the value, which `firstCase` passes over
-  -- (`firstCase_filter`).
-  -- Where the dispatch gives no value, as where the scrutinee is unknown,
-  -- the `match` may still decide it as its `if`s.
-  | .dispatch byCtor m@(.match e arms _ _ unspec? _) => (do
-    let v ← e.evalIn I look locals slots frame memos fuel depth
-    let take (arm : Pat × Option Ex × Ex) : Option (Option (Frame × Ex)) :=
-      let (p, g?, body) := arm
-      match p.matches v with
-      | false => some none
-      | true =>
-        let fr := p.bindInto v frame
-        match g? with
-        | none => some (some (fr, body))
-        | some g => match g.evalIn I look locals slots fr memos fuel depth with
-          | some (.bool true) => some (some (fr, body))
-          | some (.bool false) => some none
-          | _ => none
-    let ks? := match v with
-      | .ctor _ idx _ => byCtor[idx]?
-      | _ => none
-    let found (taken : Frame × Ex) : Option Val :=
-      taken.2.evalIn I look locals slots taken.1 memos fuel depth
-    match ks? with
-    | some ks => firstCaseThen ks (fun k => take arms[k]!) found fun _ => do I.fn (← unspec?) #[]
-    | none => firstCaseThen arms take found fun _ => do I.fn (← unspec?) #[]) <|>
-    evalResult (m.evalIn I look locals slots frame memos fuel depth)
+    let selected : Option (List (Pat × Option Ex × Ex)) := match value?, byCtor? with
+      | some (.ctor _ idx _), some byCtor => (byCtor[idx]?).map fun (ks : Array Nat) => ks.toList.map (arms[·]!)
+      | _, _ => none
+    chainKnownBy case (selected.getD arms.toList) fun _ => do I.fn (← unspec?) #[]
   | .dispatch _ m => evalResult (m.evalIn I look locals slots frame memos fuel depth)
   | .range lo hi => do
     let .int a ← lo.evalIn I look locals slots frame memos fuel depth | none

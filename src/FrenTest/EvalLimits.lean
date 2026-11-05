@@ -18,6 +18,43 @@ def check : IO (Array String) := do
   let check (ok : Bool) (message : String) : IO Unit := do
     unless ok do failures.modify (·.push message)
   let yes : Ex := .lit (.bool true)
+  let no : Ex := .lit (.bool false)
+  -- A selected unknown body used to be retried by the partial-case
+  -- fallback, doubling the work at every level. Unknown scrutinees and
+  -- guards must not restart nested evaluations either. Keep the leaf open
+  -- so compilation cannot fold away the regression.
+  let wraps : Array (String × (Ex → Ex)) := #[
+    ("match body", fun body => .match yes #[(.wild, none, body)] 0 #[] none none),
+    ("table body", fun body => .table 0 #[(0, some yes, body)] none),
+    ("dispatch body", fun body => .dispatch #[#[0]]
+      (.match (.ctor `Case 0 #[]) #[(.ctor 0 #[], none, body)] 0 #[] none none)),
+    ("match scrutinee", fun scrutinee => .match scrutinee
+      #[(.bool true, none, yes), (.bool false, none, no)] 0 #[] none none),
+    ("match guard", fun guard => .match yes
+      #[(.wild, some guard, yes), (.wild, none, no)] 0 #[] none none),
+    ("table guard", fun guard => .table 0 #[(0, some guard, yes), (0, none, no)] none),
+    ("match vector", fun scrutinee => .match (.ctor Fren.Core.matchVectorPath 0 #[scrutinee, yes])
+      #[(.ctor 0 #[.bool true, .bool true], none, yes), (.wild, none, no)] 0 #[] none none)]
+  for (label, wrap) in wraps do
+    for (leaf, expected) in [(Ex.var `missing, none), (yes, some (Val.bool true))] do
+      let nested := (List.range (40 + extra)).foldl (fun body _ => wrap body) leaf
+      check (nested.eval {} (fun _ => none) == expected) s!"{label} changed its value"
+      check ((nested.compile (fun _ => none) (some [])).eval {} (fun _ => none) == expected)
+        s!"compiled {label} changed its value"
+  for (label, wrap) in wraps.extract 0 3 do
+    let call : Ex := .app `caseLoop #[]
+    let I : Interp := { recDefs := fun _ => some (#[], wrap call) }
+    check ((call.eval I (fun _ => none)).isNone) s!"{label} retried a depth-limited recursion"
+  -- A single cache budget left every shared read below it uncached.
+  -- Nested additions then expanded to 2^40 evaluations despite sharing.
+  for leaf in [Ex.lit (.int 0), .var `missing] do
+    let additions := (List.range (40 + extra)).foldl
+      (fun body _ => Ex.memo #[body] (.bin .add (.shared 0) (.shared 0))) leaf
+    check (additions.eval {} (fun _ => none) == leaf.eval {} (fun _ => none))
+      "depth-sensitive memoization repeated a shared expression"
+  let keyed := Memo.ofFn (evalDepth + extra) fun d => some (.int d)
+  for d in [0:evalDepth + 2] do
+    check (keyed.get d == some (.int (min d evalDepth))) "a memo reused another depth's result"
   let many := 10000 + extra
   check (quantifiedTruth true true (fun (_ : Nat) => none) (List.range many) == none)
     "unknown quantifier instances retained recursive frames"

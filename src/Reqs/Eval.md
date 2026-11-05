@@ -214,6 +214,22 @@ model confirmation cannot confirm it, and enumeration reports an inconclusive
 check with the depth limit as its reason. A quantifier may also be undecided
 at that point; its ordinary undecided diagnostic covers either cause.
 
+During one case selection, a `match` or table evaluates each scrutinee,
+condition and selected body at most once. An unknown result, including one
+left unknown by the depth bound, is retained without retrying the same
+evaluation through another case selection strategy. Constructor dispatch
+follows the same rule. The partial-case traversal still compares the
+possible branches when a condition is unknown; it does not restart that
+condition or its scrutinee. Runtime regressions nest unknown bodies,
+scrutinees and guards in raw and compiled expressions to catch repeated
+work that value equations alone cannot distinguish.
+
+Shared expressions cache their results separately at each remaining depth,
+including unknown results. A read with less remaining depth cannot restore
+the creator's budget, and one with more cannot inherit a cached unknown
+caused only by a smaller budget. Repeated reads at the same depth reuse
+one evaluation, so nested sharing does not expand into repeated work.
+
 Before recursively compiling an expression for evaluation, Fren checks its
 lowered expression tree iteratively. The root has depth 1; at most 256
 levels and 4194304 nodes are accepted. An oversized expression compiles to an

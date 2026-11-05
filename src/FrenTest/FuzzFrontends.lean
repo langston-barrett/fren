@@ -2816,7 +2816,7 @@ def inductionRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x6963⟩
 /-- Resource-bound probes have a mode of their own, so every old seed keeps
 its source. They cover large type unfoldings and function domains as well as
 ordinary types, nesting, definitions and comparisons within the budget. -/
-def resourceSpec (seed : Nat) : String :=
+def resourceBaseSpec (seed : Nat) : String :=
   let header := "mod fz_resources\nset_option fren.evidence \"enumerated\"\n" ++
     "set_option fren.lint.undecidable \"allow\"\n" ++
     "set_option fren.lint.let_and_return \"allow\"\n" ++
@@ -2853,6 +2853,53 @@ def resourceSpec (seed : Nat) : String :=
     header ++ decls ++ s!"pub proc spec(x{suffix}: {ty}): (det y{suffix}: {ty}) \{\n" ++
       s!"    out y{suffix} := let copy{suffix} := x{suffix} in copy{suffix}\n" ++
       s!"    expect e: {negs}(let a{suffix} := y{suffix}, b{suffix} := x{suffix} in a{suffix} {op} b{suffix})\n}\n"
+
+/-- Selected cases, including partial results, appended after the existing
+resource fixtures so their declarations and random choices stay unchanged.
+Vary the result type, nesting, definitions and comparisons independently. -/
+def resourceCaseSpec (seed : Nat) : String := Id.run do
+  let cases := #[("Bool", "true", "false"), ("Int", "0", "1"), ("Nat", "LOW", "HIGH"),
+    ("String", "\"a\"", "\"b\""), ("Seq<Bool>", "[true]", "[false]"),
+    ("Set<Bool>", "{true}", "{false}"), ("Rel<Bool, Bool>", "{(true, true)}", "{(false, false)}"),
+    ("Box", "Box(0)", "Box(1)"), ("Tag", "Tag::A", "Tag::B"),
+    ("RecordValue", "RecordValue { flag? := true, number := 0 }", "RecordValue { flag? := false, number := 1 }"),
+    ("AbstractValue", "x", "y"), ("RecursiveValue", "RecursiveValue::Z", "RecursiveValue::S(RecursiveValue::Z)"),
+    ("Holder<Seq<Bool>>", "Holder { value := [true] }", "Holder { value := [false] }")]
+  let (ty, left, right) := cases[seed % cases.size]!
+  let header := "mod fz_resource_cases\n" ++
+    "pub enum Tag { A, B }\npub struct Box(Int)\n" ++
+    "pub struct RecordValue { flag?: Bool, number: Int }\npub type AbstractValue\n" ++
+    "pub enum RecursiveValue { Z, S(RecursiveValue) }\npub struct Holder<A> { value: A }\n" ++
+    "pub fn unknown?(b?): Bool := forall (i: Int), i = i and b?\n" ++
+    (if ty == "Nat" then "pub const LOW: Nat := 0\npub const HIGH: Nat := 1\n" else "")
+  -- Hidden quantifiers in cases over open values already differ (#493).
+  -- Keep abstract results under known conditions, as the confirmation
+  -- generator also excludes abstract values from partial evaluation.
+  let condition := if ty == "AbstractValue" then "true" else "unknown?(true)"
+  let mut body := s!"if {condition} then {left} else {right}"
+  -- Collections, records, newtypes and abstract values cannot be matched,
+  -- even by a wildcard. Vary their result type under a Boolean scrutinee.
+  let scrutinee := if ["Bool", "Int", "Nat", "String", "Tag", "RecursiveValue"].contains ty then left else "true"
+  for k in [0:2 + (seed / 36) % 4] do
+    body := match (seed / 9 + k) % 4 with
+      | 0 => s!"match ({scrutinee}) \{ _ => {body} }"
+      | 1 => s!"table \{ true => {body}, _ => {right} }"
+      | 2 => s!"match Tag::A \{ Tag::A => {body}, Tag::B => {right} }"
+      | _ => s!"match {condition} \{ true => {body}, false => {right} }"
+  let suffix := if ty == "Bool" then "?" else ""
+  let parameters := if ty == "AbstractValue" then "x: AbstractValue, y: AbstractValue" else s!"x{suffix}: {ty}"
+  let arguments := if ty == "AbstractValue" then "x, y" else left
+  let inputs := if ty == "AbstractValue" then parameters else ""
+  let (decl, resultBody) := match (seed / cases.size) % 3 with
+    | 0 => ("", body)
+    | 1 => (s!"pub fn value{suffix}({parameters}): {ty} := {body}\n", s!"value{suffix}({arguments})")
+    | _ => ("", s!"let v{suffix} := {body} in v{suffix}")
+  let ops := if ty == "Int" || ty == "Nat" || ty == "String" then #["=", "!=", "<", "<=", ">", ">="] else #["=", "!="]
+  let op := ops[(seed / (cases.size * 3)) % ops.size]!
+  return header ++ decl ++ s!"pub proc cases({inputs}) \{ expect result: ({resultBody}) {op} {left} }\n"
+
+/-- The original resource spec followed by cases with partial values. -/
+def resourceSpec (seed : Nat) : String := resourceBaseSpec seed ++ resourceCaseSpec seed
 
 /-- How specs are generated: `--avoid-known`, and `--guards`, which
 generates guarded quantifiers alone (`Wide.genGuards`), many to a spec. -/
@@ -2906,9 +2953,11 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
 `--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
 `--fact-scopes` and `--induction-candidates` makes any static error a group
-error: these generators, like appended groups, promise to add none. -/
+error: these generators, like appended groups, promise to add none. The
+resource mode keeps its original fixture as a prefix, so that its appended
+cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.resources then #[] else if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.resources then #[resourceBaseSpec seed] else if m.scrutinees || m.factScopes || m.inductionCandidates then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
