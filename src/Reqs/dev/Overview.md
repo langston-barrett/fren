@@ -14,6 +14,15 @@ the `fren` command, and Lean checks them on `main`
 ([Testing](Testing.md#own-requirements)). Pages that are only prose, such
 as this one, are not read.
 
+The lint chapters have wrappers under `src/Reqs/Lint/`, imported by
+`src/Reqs/Lint.lean`. Independent wrappers build in parallel, with Markdown
+dependencies by lint group. To add a subchapter to an existing directory
+group, add one `#fren_md "Style/New.md"` before the final `#fren_check` in
+that group's wrapper, here `src/Reqs/Lint/Style.lean`. The binary tests and
+mutation corpus follow those wrappers, so their chapter list needs no separate
+entry. A larger chapter can instead have its own wrapper alongside its
+Markdown, importing its prerequisites, and an import in `Reqs.Lint`.
+
 - [Architecture](Architecture.md): design principles and libraries
 - [Testing](Testing.md): the kinds of tests and where they live
 - [Writing the reference](Style.md): the register and layout of its chapters
