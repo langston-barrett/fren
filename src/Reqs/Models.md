@@ -952,18 +952,35 @@ A quotient or remainder is by a constant that is not 0 (see [Division and
 remainder](Lang/Expressions.md#division-and-remainder)), where Lean's value
 is Fren's, so the Lean-hosted front end evaluates it as Lean does.
 
+A free variable without a default value (see [Free
+values](#free-values)) is unknown to both front ends, as `lang::eval` has
+a variable that its environment does not bind, and so, to the Lean-hosted
+front end, is a defined variable, or a call's, that the model leaves out:
+it reads each as the unspecified value of its type, an index of the empty
+sequence, which it reads as unknown, as above.
+
+A value of an abstract type, or of a generic function's type parameter,
+which is one, is the solver's: lean-smt reads the type's sort as `Fin n`,
+where the model has `n` values of it, and each value as one of these, so
+the Lean-hosted front end evaluates the formula at that type, or at `Nat`
+where the model has no value of the type, and compares two values as the
+model has them, as the `fren` command does. A generic function's
+body, which compares its type parameter's values with a classical decision,
+compares them there with that type's own, as enumeration does.
+
 The formulas that the Lean-hosted front end does not evaluate are
 `Undefined` to it:
 
-- those that apply an uninterpreted function, or read a free variable
-  without a default value;
+- those that apply an uninterpreted function;
 - those whose value an index under a binder, such as a quantifier's or a
   `match` arm's, may change;
 - those that read an index within a definition that is not unfolded, a
-  structural recursion's;
-- those that mention a value of an abstract type, or of a generic
-  function's type parameter, which is one, and those that Lean cannot
-  compile.
+  structural recursion's, or a variable that has no value in a formula
+  that applies one;
+- those that quantify over an abstract type or a type parameter, directly
+  or within a definition that they apply, which `lang::eval` does not
+  decide, and which Lean would decide over the model's `n` values alone;
+- those that Lean cannot compile.
 
 A generated [selector](Generated.md) of a payload is total in the same way
 as an index, by a `| _ => default` arm for the other variants, but it is
@@ -976,10 +993,14 @@ that may take no arm reads the empty sequence, an index.
 `test/ui/misread/misread_index.fren` checks that both front ends catch a
 misread in an index, a quotient and a remainder; that neither refutes a
 model by an index out of range; and that both leave unknown an application
-whose argument is. `test/ui/misread/misread_type_parameter.fren` checks
-that both show a misread model on the solver's word where the formula that
-would contradict it mentions a value of a type parameter that the model
-leaves free, and both catch it at `Int`.
+whose argument is. `test/ui/misread/misread_abstract.fren` checks that
+both catch a misread in a formula that compares values of an abstract
+type or a type parameter, gives them to a function, decides an `if` by
+them, or has one that the model leaves free.
+`test/ui/misread/misread_type_parameter.fren` checks that both show a
+misread model on the solver's word where the formula that would
+contradict it applies a function to a value of a type parameter that the
+model leaves free, which is unknown, and both catch it at `Int`.
 
 ## Reporting
 

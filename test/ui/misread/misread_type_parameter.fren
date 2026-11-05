@@ -1,13 +1,12 @@
 -- Run with `FREN_MISREAD_MODELS` set (`Reqs/Models#testing`). A generic
 -- function's checks hold for every type, so their models have values of
 -- its type parameter, which confirmation treats as a value of an abstract
--- type (`Reqs/Models#free-values`), and which the model leaves free. An
--- application is strict, so `ignore(x)` is unknown there, though `ignore`
--- never reads `x` (`model::known_application`), and the `fren` command
--- leaves `pinned` undecided; the Lean-hosted front end does not evaluate a
--- formula that mentions a value of an abstract type at all
--- (`Reqs/Models#how-the-front-ends-evaluate`). So both show the misread
--- model on the solver's word.
+-- type (`Reqs/Models#free-values`), and which the model leaves free, with
+-- no default value: unknown to both front ends. An application is strict,
+-- so `ignore(x)` is unknown there, though `ignore` never reads `x`
+-- (`model::known_application`), and so is `pinned`. So both show the
+-- misread model on the solver's word. `misread_abstract.fren` has the
+-- formulas of such values that both decide.
 
 set_option fren.lint.unused_variables "allow"
 set_option fren.lint.unused_assumption "allow"

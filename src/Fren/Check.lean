@@ -390,135 +390,6 @@ def modelValues (c : CompInfo) (fvs primes : Array Expr) (model : Array (Name ×
     -- defined one's, or a call's, value follows from the others.
     | none => if v.name.isAtomic && v.defn?.isNone then return (x, ← defaultValue v.type) else return (x, none)
 
-/-- Whether `e` is an index, which may be out of range, or a quotient or
-remainder by other than a nonzero numeral: an operation whose value in
-Lean's definitions differs from Fren's where Fren's semantics gives none,
-and the solver's interpretation does
-(`Reqs/Models#how-the-front-ends-evaluate`). The elaborator writes `div`
-and `mod` only by a nonzero numeral (`divTerm`).
-
-A generated selector of a payload is total in the same way, by a
-`| _ => default` arm (`Reqs/Generated`), and is deliberately not here: a
-read of a payload is evaluated only where the model's value has the
-variant that a `match` arm or a pattern test matched, since every such read
-is under that test's `ite`, which Lean does not evaluate on the branch not
-taken; and a `match` that may take no arm reads the empty sequence, which
-is an index. -/
-def partialOp (e : Expr) : Bool :=
-  e.isAppOfArity ``Fren.Seq.nth 4 ||
-    (e.isAppOfArity ``HDiv.hDiv 6 || e.isAppOfArity ``HMod.hMod 6) && !(Enumerate.countLit? e.appArg!).any (· != 0)
-
-/-- Whether a part of `e` is `found`, directly unless `within`, or within the
-definitions of the spec's functions and clauses that it applies, and their
-auxiliary definitions, such as their `match`es. -/
-partial def readsWhere (found : Expr → Bool) (e : Expr) (within := false) : MetaM Bool := do
-  let s ← getState
-  let own := s.defined.foldl (init := #[``Fren.typeObligation]) fun acc _ d => acc.push d.decl ++ d.oblDecls.map (·.1)
-  let own := s.contracts.foldl (init := own) fun acc _ k => acc ++ (k.pres ++ k.posts).map (·.decl)
-  let rec go (e : Expr) (direct : Bool) (seen : NameSet) : MetaM (Bool × NameSet) := do
-    if direct && (e.find? found).isSome then return (true, seen)
-    let mut seen := seen
-    for c in e.getUsedConstants do
-      if seen.contains c || !own.any (·.isPrefixOf c) then continue
-      seen := seen.insert c
-      let some v := (← getEnv).find? c |>.bind (·.value?) | continue
-      let (r, seen') ← go v true seen
-      if r then return (true, seen')
-      seen := seen'
-    return (false, seen)
-  return (← go e (!within) {}).1
-
-/-- Whether `e` applies one of `targets`, directly or within the
-functions and clauses that it applies. -/
-def readsAny (targets : Array Name) (e : Expr) : MetaM Bool :=
-  readsWhere (fun x => x.constName?.any targets.contains) e
-
-/-- `e` at the values `values` (`modelValues`), as confirmation evaluates
-it (`Reqs/Models#confirmation`), if it then has no local, and so no value
-of an abstract type or a type parameter: as it applies the defined functions and clauses, and
-with them unfolded, as a query's are (`unfoldDefined`), each with each
-index, an unspecified value too, read as `Enum.nthOr`, which `decideAll`
-leaves unknown out of range (`Enumerate.knownOf`), as the `fren` command's
-evaluator does. None if a `partialOp` remains within a definition that is
-not unfolded; one that applies a structural recursion, whose solver form
-is not compiled, is `e` itself, and none if it has a `partialOp` at all. -/
-def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option (Expr × Expr)) := do
-  let given := values.filterMap fun (x, v?) => v?.map (x, ·)
-  -- Without `let`s, which bind lazily, as `lang::eval`'s do: a definition
-  -- that the body never reads is not evaluated.
-  let e ← Meta.zetaReduce (e.replaceFVars (given.map (·.1)) (given.map (·.2)))
-  if e.hasFVar || e.hasMVar then return none
-  let unfolded ← unfoldDefined e (keepLastArm := true)
-  let recursive := (← getState).defined.foldl (init := #[]) fun acc _ d =>
-    if d.recursive then acc ++ d.solver?.toArray else acc
-  if (unfolded.find? fun x => x.constName?.any recursive.contains).isSome then
-    if ← readsWhere partialOp e then return none
-    return some (e, e)
-  if (unfolded.find? fun x => partialOp x && !x.isAppOf ``Fren.Seq.nth).isSome then return none
-  if ← readsWhere partialOp unfolded (within := true) then return none
-  let read (e : Expr) : MetaM Expr := return (← Enumerate.readIndexes e (unspecified := true)).1
-  return some (← read e, ← read unfolded)
-
-/-- The truth of each proposition of `ps` that has one, as `atModel` gives
-it, applied and unfolded: by the compiled evaluation of the unfolded one's
-decision, unknown where either reads an index out of range
-(`Enumerate.knownOf`), the applied one in an argument that a body does not
-read, since evaluation is strict, as the `fren` command's is; none for one
-that cannot be decided. -/
-def decideAll (ps : Array (Option (Expr × Expr))) : MetaM (Array (Option Bool)) := do
-  let decideOf (p : Expr) : MetaM Expr := return mkApp2 (mkConst ``Decidable.decide) p (← Enumerate.decidableOf p)
-  let optBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)
-  let decision (applied p : Expr) : MetaM Expr := do
-    let v ← mkAppOptM ``Option.some #[mkConst ``Bool, ← decideOf p]
-    let known ← #[applied, p].filterMapM fun e => do
-      if Enumerate.hasIndex e then some <$> Enumerate.knownOf decideOf e else pure none
-    if known.isEmpty then return v
-    mkAppM ``cond #[known.foldl (mkApp2 (mkConst ``and)) (mkConst ``Bool.true), v,
-      ← mkAppOptM ``Option.none #[mkConst ``Bool]]
-  let ds ← ps.mapM fun p? => do
-    let some (applied, p) := p? | return none
-    try some <$> decision applied p catch _ => return none
-  let known := ds.filterMap id
-  -- All at once, and one at a time where that fails.
-  let values ← try pure (some (← compileValues (Option Bool) optBool known)) catch _ => pure none
-  let mut k := 0
-  let mut out := #[]
-  for d? in ds do
-    match d? with
-    | none => out := out.push none
-    | some d =>
-      match values with
-      | some vs => out := out.push (vs[k]?.join)
-      | none => out := out.push (← try pure ((← compileValues (Option Bool) optBool #[d])[0]?.join) catch _ => pure none)
-      k := k + 1
-  return out
-
-/-- What `model`, a counterexample or witness of the query of `hyps` and
-`goal`, contradicts in Fren's semantics, which the generated definitions
-compute, at the values that `render` shows (`Reqs/Models#confirmation`): the
-first hypothesis that is false there, or the goal, if it is true; none if
-neither, or if Lean cannot evaluate them. -/
-def confirmModel (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
-    (model : Array (Name × Expr)) : MetaM (Option Core.Contradiction) := do
-  let values ← modelValues c fvs primes model (← Core.misreadModels)
-  let truths ← decideAll ((← hyps.mapM (atModel values ·.2)).push (← atModel values goal))
-  return Core.contradiction? (hyps.zipWith (fun (n, _) t => (n, t)) truths) truths.back?.join
-
-/-- Whether `model` is contradicted in a formula that applies none of the
-recursive functions `recs`: a bug in Fren, which the report of the model
-shows (`Reqs/Models#reporting`), not evidence about the functions'
-contracts (`Reqs/Lang/Recursion`). Read without the injected misread, as
-the recursive confirmation is. -/
-def plainContradiction (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
-    (model : Array (Name × Expr)) (recs : Array Name) : MetaM Bool := do
-  let values ← modelValues c fvs primes model
-  let formulas := (hyps.map (·.2)).push goal
-  let recursive ← formulas.mapM (readsAny recs ·)
-  -- A formula that applies a recursive function is not evaluated here.
-  let truths ← decideAll (← (formulas.zip recursive).mapM fun (e, r) => if r then pure none else atModel values e)
-  let atK (k : Nat) : Option Bool × Bool := ((truths[k]?).join, recursive[k]?.getD false)
-  return Core.plainContradiction (hyps.mapIdx fun k (n, _) => (n, atK k)) (atK hyps.size)
-
 /-- `e` with each decision that its definitions got classically, as a
 generic function's body gets one for its type parameter
 (`Reqs/Lang/GenericFunctions#meaning`), replaced by the instance that Lean
@@ -625,6 +496,237 @@ partial def matchSorts (declared actual : Expr) (acc : Array (FVarId × Expr)) :
     (declared.getAppArgs.zip actual.getAppArgs).foldl (fun acc (d, a) => matchSorts d a acc) acc
   else acc
 
+/-- Whether `e` is an index, which may be out of range, or a quotient or
+remainder by other than a nonzero numeral: an operation whose value in
+Lean's definitions differs from Fren's where Fren's semantics gives none,
+and the solver's interpretation does
+(`Reqs/Models#how-the-front-ends-evaluate`). The elaborator writes `div`
+and `mod` only by a nonzero numeral (`divTerm`).
+
+A generated selector of a payload is total in the same way, by a
+`| _ => default` arm (`Reqs/Generated`), and is deliberately not here: a
+read of a payload is evaluated only where the model's value has the
+variant that a `match` arm or a pattern test matched, since every such read
+is under that test's `ite`, which Lean does not evaluate on the branch not
+taken; and a `match` that may take no arm reads the empty sequence, which
+is an index. -/
+def partialOp (e : Expr) : Bool :=
+  e.isAppOfArity ``Fren.Seq.nth 4 ||
+    (e.isAppOfArity ``HDiv.hDiv 6 || e.isAppOfArity ``HMod.hMod 6) && !(Enumerate.countLit? e.appArg!).any (· != 0)
+
+/-- Whether a part of `e` is `found`, directly unless `within`, or within the
+definitions of the spec's functions and clauses that it applies, and their
+auxiliary definitions, such as their `match`es. -/
+partial def readsWhere (found : Expr → Bool) (e : Expr) (within := false) : MetaM Bool := do
+  let s ← getState
+  let own := s.defined.foldl (init := #[``Fren.typeObligation]) fun acc _ d => acc.push d.decl ++ d.oblDecls.map (·.1)
+  let own := s.contracts.foldl (init := own) fun acc _ k => acc ++ (k.pres ++ k.posts).map (·.decl)
+  let rec go (e : Expr) (direct : Bool) (seen : NameSet) : MetaM (Bool × NameSet) := do
+    if direct && (e.find? found).isSome then return (true, seen)
+    let mut seen := seen
+    for c in e.getUsedConstants do
+      if seen.contains c || !own.any (·.isPrefixOf c) then continue
+      seen := seen.insert c
+      let some v := (← getEnv).find? c |>.bind (·.value?) | continue
+      let (r, seen') ← go v true seen
+      if r then return (true, seen')
+      seen := seen'
+    return (false, seen)
+  return (← go e (!within) {}).1
+
+/-- Whether `e` applies one of `targets`, directly or within the
+functions and clauses that it applies. -/
+def readsAny (targets : Array Name) (e : Expr) : MetaM Bool :=
+  readsWhere (fun x => x.constName?.any targets.contains) e
+
+/-- The type of each value of a sort, of an abstract type or a type
+parameter, within `val`, a value of the type `ty` as `readValue` reads it,
+with the sort's local, added to `acc`, each sort once: what lean-smt reads
+the sort as, a `Fin n`. -/
+partial def valueSorts (ty val : Expr) (acc : Array (FVarId × Expr)) : MetaM (Array (FVarId × Expr)) := do
+  if ty.isFVar then
+    if acc.any (·.1 == ty.fvarId!) then return acc
+    let actual ← instantiateMVars (← inferType val)
+    return if actual.hasFVar then acc else acc.push (ty.fvarId!, actual)
+  if !ty.hasFVar then return acc
+  if ty.isAppOfArity ``Prod 2 && val.isAppOfArity ``Prod.mk 4 then
+    return ← valueSorts ty.appArg! val.appArg! (← valueSorts ty.appFn!.appArg! val.appFn!.appArg! acc)
+  if (ty.isAppOfArity ``Fren.Seq 1 && val.isAppOfArity ``Fren.Seq.ofList 2)
+      || (ty.isAppOfArity ``Fren.FinSet 1 && val.isAppOfArity ``Fren.FinSet.ofList 2) then
+    let some (_, xs) := val.appArg!.listLit? | return acc
+    return ← xs.foldlM (fun acc x => valueSorts ty.appArg! x acc) acc
+  let st ← getState
+  if let some n := st.newtypeOf? ty then
+    if val.isAppOfArity n.ctor 1 then return ← valueSorts n.under val.appArg! acc
+  let .const c _ := val.getAppFn | return acc
+  let targs := ty.getAppArgs
+  if let some e := st.enumOfDecl? c.getPrefix <|> st.enumOf? ty then
+    if let some idx := e.ctorIdx? c then
+      let tys := (e.payloadsAt targs)[idx]?.getD #[]
+      let args := val.getAppArgs.extract e.params.size
+      if args.size == tys.size then
+        return ← (tys.zip args).foldlM (fun acc (t, a) => valueSorts t a acc) acc
+  if let some r := st.recordOfDecl? c.getPrefix then
+    let args := val.getAppArgs.extract r.params.size
+    if c == r.ctor && args.size == r.fields.size then
+      return ← ((r.fieldsAt targs).zip args).foldlM (fun acc ((_, t), a) => valueSorts t a acc) acc
+  return acc
+
+/-- The types that lean-smt reads the sorts of the types of `values`'
+variables as (a `Fin n`), where a value's type, or a part of the value,
+shows one (`matchSorts`, `valueSorts`):
+the sorts of the abstract types and of a generic function's type
+parameters, which are locals of the check (`withNatUses`). -/
+def sortTypes (values : Array (Expr × Option Expr)) : MetaM (Array (FVarId × Expr)) := do
+  let mut sortTys : Array (FVarId × Expr) := #[]
+  for (x, v?) in values do
+    let some v := v? | continue
+    sortTys := matchSorts (← instantiateMVars (← inferType x)) (← instantiateMVars (← inferType v)) sortTys
+    -- And within the value, whose type `readValue` writes at the declared
+    -- types, a sort's local, as of a sequence's elements.
+    sortTys ← valueSorts (← instantiateMVars (← inferType x)) v sortTys
+  return sortTys
+
+/-- `e` with each local that is a sort, of an abstract type or a type
+parameter, at the type that `sortTys` gives it (`sortTypes`), or else
+`Nat`, and each local `Inhabited` instance of one with that type's. -/
+def atSorts (sortTys : Array (FVarId × Expr)) (e : Expr) : MetaM Expr := do
+  let xs := (collectFVars {} e).fvarIds
+  let mut sorts : Array FVarId := #[]
+  for x in xs do
+    if (← instantiateMVars (← x.getType)).isSort then sorts := sorts.push x
+  if sorts.isEmpty then return e
+  let tyOf (x : FVarId) : Expr := ((sortTys.find? (·.1 == x)).map (·.2)).getD (mkConst ``Nat)
+  let mut from_ : Array Expr := sorts.map .fvar
+  let mut to : Array Expr := sorts.map tyOf
+  for x in xs do
+    let t ← instantiateMVars (← x.getType)
+    if t.isAppOfArity ``Inhabited 1 && (t.getArg! 0).isFVar && sorts.contains (t.getArg! 0).fvarId! then
+      from_ := from_.push (.fvar x)
+      to := to.push (← synthInstance (mkApp (mkConst ``Inhabited [1]) (tyOf (t.getArg! 0).fvarId!)))
+  return e.replaceFVars from_ to
+
+/-- Whether `x` quantifies over a type that mentions one of `tys`, the
+types that `atSorts` gives the sorts: Lean would decide it over the model's
+values of the sort alone, which Fren's semantics does not
+(`Reqs/Models#how-the-front-ends-evaluate`). -/
+def quantifiesOver (tys : Array Expr) (x : Expr) : Bool :=
+  let mentions (t : Expr) := tys.any fun ty => (t.find? (· == ty)).isSome
+  match x with
+  -- Not an implication, whose body never reads its hypothesis's proof.
+  | .forallE _ t b _ => b.hasLooseBVar 0 && mentions t
+  | _ => x.isAppOfArity ``Exists 2 && mentions x.appFn!.appArg!
+
+/-- `e` at the values `values` (`modelValues`), as confirmation evaluates
+it (`Reqs/Models#confirmation`): each variable without a value read as
+unknown, an index of the empty sequence (`Enumerate.isUnspecified`), as the
+`fren` command's evaluator reads a variable that its environment lacks, and
+each sort, of an abstract type or a type parameter, at the type that the
+model's values give it (`atSorts`); if it then has no local, such as an
+uninterpreted function's: as it applies the defined functions and clauses,
+and with them unfolded, as a query's are (`unfoldDefined`), with each
+decision that Lean finds an instance for computable, and each generic
+structural recursion at its instance, as enumeration has them
+(`computableDecisions`, `specializeRecursions`), each with each index, an
+unspecified value too, read as `Enum.nthOr`, which `decideAll` leaves
+unknown out of range (`Enumerate.knownOf`), as the `fren` command's
+evaluator does. None if it quantifies over a sort (`quantifiesOver`), or if
+a `partialOp` remains within a definition that is not unfolded; one that
+applies a structural recursion, whose solver form is not compiled, is `e`
+itself, and none if it has a `partialOp` at all, an unknown variable too. -/
+def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option (Expr × Expr)) := do
+  let sortTys ← sortTypes values
+  let given := values.filterMap fun (x, v?) => v?.map (x, ·)
+  -- A variable without a value, unknown: at its type at the sorts, which
+  -- must have an `Inhabited` instance, as every type that a sequence's
+  -- elements may have does, or else it stays, and `e` is not evaluated.
+  let unknowns ← values.filterMapM fun (x, v?) => do
+    if v?.isSome then return none
+    try
+      let ty ← atSorts sortTys (← instantiateMVars (← inferType x))
+      let inst ← synthInstance (mkApp (mkConst ``Inhabited [1]) ty)
+      let empty ← mkAppOptM ``EmptyCollection.emptyCollection #[some (mkApp (mkConst ``Fren.Seq [0]) ty), none]
+      return some (x, mkApp4 (mkConst ``Fren.Seq.nth [0]) ty inst empty (← mkNumeral (mkConst ``Int) 0))
+    catch _ => return none
+  let given := given ++ unknowns
+  -- Without `let`s, which bind lazily, as `lang::eval`'s do: a definition
+  -- that the body never reads is not evaluated.
+  let some e ← try some <$> atSorts sortTys (← Meta.zetaReduce (e.replaceFVars (given.map (·.1)) (given.map (·.2))))
+    catch _ => pure none | return none
+  if e.hasFVar || e.hasMVar then return none
+  let unfolded ← specializeRecursions (← computableDecisions (← unfoldDefined e (keepLastArm := true)))
+  let standIns := sortTys.map (·.2)
+  if ← readsWhere (quantifiesOver standIns) unfolded <||> readsWhere (quantifiesOver standIns) e then return none
+  let recursive := (← getState).defined.foldl (init := #[]) fun acc _ d =>
+    if d.recursive then acc ++ d.solver?.toArray else acc
+  if (unfolded.find? fun x => x.constName?.any recursive.contains).isSome then
+    if ← readsWhere partialOp e then return none
+    return some (e, e)
+  if (unfolded.find? fun x => partialOp x && !x.isAppOf ``Fren.Seq.nth).isSome then return none
+  if ← readsWhere partialOp unfolded (within := true) then return none
+  let read (e : Expr) : MetaM Expr := return (← Enumerate.readIndexes e (unspecified := true)).1
+  return some (← read e, ← read unfolded)
+
+/-- The truth of each proposition of `ps` that has one, as `atModel` gives
+it, applied and unfolded: by the compiled evaluation of the unfolded one's
+decision, unknown where either reads an index out of range
+(`Enumerate.knownOf`), the applied one in an argument that a body does not
+read, since evaluation is strict, as the `fren` command's is; none for one
+that cannot be decided. -/
+def decideAll (ps : Array (Option (Expr × Expr))) : MetaM (Array (Option Bool)) := do
+  let decideOf (p : Expr) : MetaM Expr := return mkApp2 (mkConst ``Decidable.decide) p (← Enumerate.decidableOf p)
+  let optBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)
+  let decision (applied p : Expr) : MetaM Expr := do
+    let v ← mkAppOptM ``Option.some #[mkConst ``Bool, ← decideOf p]
+    let known ← #[applied, p].filterMapM fun e => do
+      if Enumerate.hasIndex e then some <$> Enumerate.knownOf decideOf e else pure none
+    if known.isEmpty then return v
+    mkAppM ``cond #[known.foldl (mkApp2 (mkConst ``and)) (mkConst ``Bool.true), v,
+      ← mkAppOptM ``Option.none #[mkConst ``Bool]]
+  let ds ← ps.mapM fun p? => do
+    let some (applied, p) := p? | return none
+    try some <$> decision applied p catch _ => return none
+  let known := ds.filterMap id
+  -- All at once, and one at a time where that fails.
+  let values ← try pure (some (← compileValues (Option Bool) optBool known)) catch _ => pure none
+  let mut k := 0
+  let mut out := #[]
+  for d? in ds do
+    match d? with
+    | none => out := out.push none
+    | some d =>
+      match values with
+      | some vs => out := out.push (vs[k]?.join)
+      | none => out := out.push (← try pure ((← compileValues (Option Bool) optBool #[d])[0]?.join) catch _ => pure none)
+      k := k + 1
+  return out
+
+/-- What `model`, a counterexample or witness of the query of `hyps` and
+`goal`, contradicts in Fren's semantics, which the generated definitions
+compute, at the values that `render` shows (`Reqs/Models#confirmation`): the
+first hypothesis that is false there, or the goal, if it is true; none if
+neither, or if Lean cannot evaluate them. -/
+def confirmModel (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
+    (model : Array (Name × Expr)) : MetaM (Option Core.Contradiction) := do
+  let values ← modelValues c fvs primes model (← Core.misreadModels)
+  let truths ← decideAll ((← hyps.mapM (atModel values ·.2)).push (← atModel values goal))
+  return Core.contradiction? (hyps.zipWith (fun (n, _) t => (n, t)) truths) truths.back?.join
+
+/-- Whether `model` is contradicted in a formula that applies none of the
+recursive functions `recs`: a bug in Fren, which the report of the model
+shows (`Reqs/Models#reporting`), not evidence about the functions'
+contracts (`Reqs/Lang/Recursion`). Read without the injected misread, as
+the recursive confirmation is. -/
+def plainContradiction (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
+    (model : Array (Name × Expr)) (recs : Array Name) : MetaM Bool := do
+  let values ← modelValues c fvs primes model
+  let formulas := (hyps.map (·.2)).push goal
+  let recursive ← formulas.mapM (readsAny recs ·)
+  -- A formula that applies a recursive function is not evaluated here.
+  let truths ← decideAll (← (formulas.zip recursive).mapM fun (e, r) => if r then pure none else atModel values e)
+  let atK (k : Nat) : Option Bool × Bool := ((truths[k]?).join, recursive[k]?.getD false)
+  return Core.plainContradiction (hyps.mapIdx fun k (n, _) => (n, atK k)) (atK hyps.size)
+
 /-- Evaluate a model using real definitions, before reporting a recursive
 counterexample: the value of each of `hyps` at it, and then the goal's
 negation's, or none where evaluation fails, which is not confirmation
@@ -643,26 +745,8 @@ def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
     -- as lean-smt reads a sort (a `Fin n`), or else `Nat`, each with its
     -- `Inhabited` instance: a counterexample at every type is one at those
     -- (`Reqs/Lang/Recursion#generic-recursion`).
-    let mut sortTys : Array (FVarId × Expr) := #[]
-    for (x, v?) in read do
-      let some v := v? | continue
-      sortTys := matchSorts (← instantiateMVars (← inferType x)) (← instantiateMVars (← inferType v)) sortTys
-    let atSorts (e : Expr) : MetaM Expr := do
-      let xs := (collectFVars {} e).fvarIds
-      let mut sorts : Array FVarId := #[]
-      for x in xs do
-        if (← instantiateMVars (← x.getType)).isSort then sorts := sorts.push x
-      if sorts.isEmpty then return e
-      let tyOf (x : FVarId) : Expr := ((sortTys.find? (·.1 == x)).map (·.2)).getD (mkConst ``Nat)
-      let mut from_ : Array Expr := sorts.map .fvar
-      let mut to : Array Expr := sorts.map tyOf
-      for x in xs do
-        let t ← instantiateMVars (← x.getType)
-        if t.isAppOfArity ``Inhabited 1 && (t.getArg! 0).isFVar && sorts.contains (t.getArg! 0).fvarId! then
-          from_ := from_.push (.fvar x)
-          to := to.push (← synthInstance (mkApp (mkConst ``Inhabited [1]) (tyOf (t.getArg! 0).fvarId!)))
-      return e.replaceFVars from_ to
-    let ps ← ((hyps.map (instantiate ∘ Prod.snd)).push (mkNot (instantiate goal))).mapM fun p => do specializeRecursions (← atSorts p)
+    let sortTys ← sortTypes read
+    let ps ← ((hyps.map (instantiate ∘ Prod.snd)).push (mkNot (instantiate goal))).mapM fun p => do specializeRecursions (← atSorts sortTys p)
     let bools ← ps.mapM fun p => do
       if p.hasFVar || p.hasMVar then throwError "model leaves free values"
       pure (mkApp2 (mkConst ``Decidable.decide) p (← synthInstance (mkApp (mkConst ``Decidable) p)))

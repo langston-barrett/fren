@@ -69,8 +69,9 @@ for it (`Wide.inductionForms`); `--induction-candidates` generates declared
 type, comparison and binder forms (`Wide.inductionCandidates`).
 `--confirm` generates what the confirmation of models evaluates
 (`Wide.genConfirmed`): `div` and `mod`, an index in an argument that a
-function's body never reads, and the formulas whose value confirmation
-knows where an index is out of range; and it checks them with both front
+function's body never reads, the formulas whose value confirmation
+knows where an index is out of range, and values of an abstract type and
+of a type parameter; and it checks them with both front
 ends misreading models (`Fren.Core.misreadSet`), so that what one knows
 and the other does not is a message that differs.
 -/
@@ -2017,10 +2018,10 @@ whole arm, an or-pattern with a `_` alternative, `let` and `is`;
 and the rules that know more than `lang::eval`: a count with an argument
 that may be unknown, spelled out too, through a function and against a
 constant, and an `if`, a `match` and a table whose condition or scrutinee
-may be, with branches, arms or rows equal or not. A mode of its own, so
-that the specs of the other modes' seeds are as they were. No value of an
-abstract type or of a type parameter, which the Lean-hosted front end does
-not evaluate. -/
+may be, with branches, arms or rows equal or not; and values of an
+abstract type and of a type parameter, compared, given to functions,
+deciding an `if` and in a sequence. A mode of its own, so that the specs
+of the other modes' seeds are as they were. -/
 def genConfirmed : R String := do
   let k : R String := do return toString (← below 4)
   let divisor : R String := pick #["2", "3", "-2", "(-3)"]
@@ -2184,6 +2185,38 @@ def genConfirmed : R String := do
   let mut binders := ""
   for j in [0:(← below 3) + 1] do binders := binders ++ s!"    expect cb{j}: {← binderBool}\n"
   out := out ++ s!"\npub proc cfb(a: Int, b: Int, q: Seq<Int>, s: Seq<Ce>, o: Seq<Co>): (r: Int) \{\n    out r := a\n{binders}}\n"
+  -- Values of an abstract type and of a generic function's type parameter,
+  -- which the model gives as its sort's values or leaves free: compared,
+  -- given to a function, a generic one too, which compares them in its
+  -- body or never reads them, deciding an `if`, and in a sequence, beside
+  -- an integer that may decide the formula. Drawn after every other draw,
+  -- as the binders are.
+  let atAbstract (x y q : String) (generic : Bool) : R String := do
+    let lab := if generic then s!"cf_ig({x})" else s!"cf_lab({x})"
+    let atom ← match ← below 8 with
+      | 0 => pure s!"{x} {← pick #["=", "!="]} {y}"
+      | 1 => pure s!"cf_same({x}, {y}) = {← pick #["0", "1"]}"
+      | 2 => pure s!"{lab} {← op} {← k}"
+      | 3 => pure s!"(if {x} = {y} then a else b) {← op} {← k}"
+      | 4 => pure s!"(if {x} = {y} then a > 1 else b > 1)"
+      | 5 => pure s!"{q}.len {← op} {← k}"
+      | 6 => pure s!"(when {q} != [], {q}[0] {← pick #["=", "!="]} {x})"
+      | _ => pure s!"cf_ig({y}) = 0"
+    match ← below 3 with
+    | 0 => return atom
+    | 1 => return s!"({atom} {← pick #["and", "or"]} a {← op} {← k})"
+    | _ => return s!"(a {← op} {← k} {← pick #["and", "or"]} {atom})"
+  out := out ++ "\npub type CfN\npub fn cf_lab(n: CfN): Int := 3\npub fn cf_ig<U>(x: U): Int := 0\n" ++
+    "pub fn cf_same<T>(x: T, y: T): Int := if x = y then 1 else 0\n"
+  let mut abstracts := ""
+  for j in [0:(← below 2) + 1] do abstracts := abstracts ++ s!"    require cn{j}: {← atAbstract "n" "m" "p" false}\n"
+  for j in [0:(← below 2) + 1] do abstracts := abstracts ++ s!"    expect cy{j}: {← atAbstract "n" "m" "p" false}\n"
+  out := out ++ s!"\npub proc cfa(a: Int, b: Int, n: CfN, m: CfN, p: Seq<CfN>): (r: Int) \{\n    out r := a\n{abstracts}}\n"
+  let mut generics := ""
+  for j in [0:(← below 2) + 1] do generics := generics ++ s!"    require gn{j}: {← atAbstract "x" "y" "p" true}\n"
+  for j in [0:(← below 2) + 1] do
+    generics := generics ++ s!"    ensure gy{j}: cfg(x, y, p, a, b) {← op} {← k} {← pick #["and", "or"]} {← atAbstract "x" "y" "p" true}\n"
+  out := out ++ s!"\npub fn cfg<T>(x: T, y: T, p: Seq<T>, a: Int, b: Int): (r: Int) \{\n{generics}    out r := a\n}\n"
   return out
 
 /-- `[]` and `{}` as methods' arguments, which take their element types

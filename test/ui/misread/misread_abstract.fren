@@ -1,0 +1,84 @@
+-- Run with `FREN_MISREAD_MODELS` set (`Reqs/Models#testing`). Both front
+-- ends evaluate a formula that mentions a value of an abstract type or of
+-- a generic function's type parameter, each value of the type as the
+-- model gives it (`Reqs/Models#how-the-front-ends-evaluate`), so both
+-- catch a misread whose contradiction is in such a formula.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.dead_code "allow"
+
+type Name
+
+fn label(n: Name): Int := 3
+
+-- The model's values of `Name`, compared...
+proc abstract_eq(n: Name, m: Name, a: Int) {
+    require pinned: n = m and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_eq::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc abstract_neq(n: Name, m: Name, a: Int) {
+    require pinned: n != m and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_neq::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- ...given to a function...
+proc abstract_given(n: Name, m: Name, a: Int) {
+    require same: n = m
+    require pinned: a = -1 and label(n) = 3
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_given::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- ...within a sequence...
+proc abstract_seq(q: Seq<Name>, a: Int) {
+    require pinned: q.len = 2 and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_seq::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- ...and deciding an `if`.
+proc int_if(x: Name, y: Name, a: Int) {
+    require pinned: (if x = y then 0 else 1) = a
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `int_if::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc bool_if(x: Name, y: Name, a: Int) {
+    require pinned: if x = y then a = 0 else a = 1
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `bool_if::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- A variable that the model leaves free, with no default value, is
+-- unknown, and so is `label(n)`, but `a = -1` decides the `and`, on
+-- either side (`check::partial_and`).
+proc abstract_free(n: Name, a: Int) {
+    require pinned: a = -1 and label(n) = 3
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_free::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- Likewise at a type parameter: compared...
+fn at_eq<T>(x: T, y: T, a: Int): (r: Int) {
+    require pinned: x = y and a = -1
+    out r := a
+    ensure positive: at_eq(x, y, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_eq::positive` makes its hypothesis `at_eq.pinned` false in Fren's semantics
+}
+
+-- ...in a generic function's body, which compares them classically, and
+-- which the evaluation compares at the model's type...
+fn same<T>(x: T, y: T): Int := if x = y then 1 else 0
+
+fn generic_if<T>(x: T, y: T, a: Int): (r: Int) {
+    require pinned: same(x, y) = 1 and a = -1
+    out r := a
+    ensure positive: generic_if(x, y, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `generic_if::positive` makes its hypothesis `generic_if.pinned` false in Fren's semantics
+}
+
+-- ...and free, given to a function whose body does not read it.
+fn ignore<U>(x: U): Int := 0
+
+fn at_free<T>(x: T, a: Int): (r: Int) {
+    require pinned: ignore(x) = 0 and a = -1
+    out r := a
+    ensure positive: at_free(x, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_free::positive` makes its hypothesis `at_free.pinned` false in Fren's semantics
+}
+
+--@ exit: 1
