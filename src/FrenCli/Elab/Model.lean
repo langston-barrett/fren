@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Guard
 import FrenCli.Parse
+import FrenCli.Resolved
 import FrenCore.Checking
 import FrenCore.Closures
 import FrenCore.Enumeration
@@ -791,6 +792,8 @@ structure HigherOrderFn where
   deriving Inhabited, BEq
 
 structure State where
+  /-- Surface annotations, collected only for `check --dump=resolved`. -/
+  resolved? : Option (Array ResolvedAnnotation) := none
   itemExcludeGroups : Array Name := #[]
   itemBranches : Array (Fren.Core.BranchGroup String) := #[]
   itemMemberGroups : Array (Fren.Core.MemberGroup String) := #[]
@@ -1119,20 +1122,29 @@ structure Failure where
 
 abbrev M := StateT State (Except Failure)
 
+/-- Records a fact where it was resolved or typed, before its lowering.
+Ordinary checking retains no annotations. -/
+def noteResolved (kind : String) (span : Span) (value : Unit → String) : M Unit := do
+  if (← get).resolved?.isSome then
+    modify fun s => { s with resolved? := s.resolved?.map (·.push { file := s.file, span, kind, value := value () }) }
+
 def err (span : Span) (msg : Msg) : M α := do
   let s ← get
   throw { diags := s.itemErrors.push { file := s.file, span, msg }, state := s }
 
-/-- Validation and inhabitation are compiler-generated procedures. Their
-source expressions have already received their expression lints; procedural
-unused-variable and manual-assumption suggestions do not apply to them. -/
+/-- Compiler-generated validators and induction functions reuse source
+expressions that have already received their expression lints; procedural
+unused-variable and manual-assumption suggestions do not apply to them.
+Their generated syntax also adds nothing to the resolved surface. -/
 def withoutGhostLints (action : M α) : M α := do
   let before ← get
   let restore (st : State) : State := { st with
     lintReports := before.lintReports
     lintFixes := before.lintFixes
     natReports := before.natReports
+    resolved? := before.resolved?
   }
+  modify fun st => { st with resolved? := none }
   -- Also on a static error, which keeps the state it failed in.
   let result ← tryCatch action fun failure => throw { failure with state := restore failure.state }
   modify restore
@@ -1245,6 +1257,7 @@ def resolve (segs : Array Ident) (extra : Array Name := #[]) : M Resolved := do
   if let some u := table.importVia scope (segNames segs) then
     modify fun s => { s with used := s.used.push u }
   modify fun s => { s with usedItems := s.usedItems.push r.usedItem }
+  noteResolved "name" (segs[0]!.span.to segs.back!.span) fun _ => resolvedPath r.path
   return r
 
 /-- Reports a lint at the level in effect. -/
