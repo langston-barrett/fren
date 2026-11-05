@@ -1028,10 +1028,11 @@ leaves admission room even when several legacy holders occupy the other
 slots. It is not a claim that an unknown holder uses zero. Charging a full
 cap for every unknown holder made coexistence impossible even when a slot
 and substantial memory were free.
-With a free slot, new work starts whenever the sum of these charges is at
-most 60% of the cap. Legacy holders therefore do not require a coordinated
-drain before a new version can admit work. A memory wait names each reserving
-slot and its stale-report charge or legacy estimate.
+With a free slot, new work may start when the sum of these charges is at
+most 60% of the cap and the load rule allows it. Legacy holders therefore
+do not require a coordinated drain before a new version can admit work.
+A memory wait names reserving slots with their stale-report charges,
+verified legacy RSS or shared legacy forecast.
 Those details appear only when the memory threshold blocks admission;
 a load-only wait does not recommend freeing memory. A registry deadline
 reports a registry wait, including races at slot acquisition and recheck.
@@ -1193,6 +1194,10 @@ pub fn legacy_memory(observed: Option<Int>): Int := match observed {
     Option::None => 0,
 }
 
+-- An isolated-lease view: all other leases are compatible or measured.
+-- admission includes the forecast only for the sole unobserved legacy lease;
+-- other sums the other charges and excludes the shared forecast. For arbitrary
+-- sets, use admission_total, which adds that forecast only once.
 pub proc heavy_legacy_lease(cap: Nat, free?, locked?, observed: Option<Int>, other: Nat): (
     det live?,
     det admission: Int,
@@ -1264,6 +1269,9 @@ pub fn eviction_memory(report: Option<MemoryReport>): Int := match report {
     Option::None => 0,
 }
 
+-- An isolated-lease view: an unobserved legacy lease's admission is its charge
+-- only when it is the sole such lease. These outputs are not additive over
+-- unknown holders; admission_total adds their shared forecast once.
 pub proc heavy_lease(cap: Nat, locked?, lease: MemoryLease, now: Int, ttl: Nat): (
     det live?,
     det admission: Int,
