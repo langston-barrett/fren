@@ -1,0 +1,25 @@
+-- fren-covers: check::predicate_check_site
+-- Leading guards keep a whole-predicate failure at the written label.
+mod predicate_check_locations
+
+fn both?(a?, b?) := and { first: a?, second: b? }
+--~^ info: `e.predicate_check_locations::both?@1.first` is true
+--~^^ info: `e.predicate_check_locations::both?@1.second` is true
+--~^^^? info: `e.predicate_check_locations::both?@1.first` is unknown
+--~^^^^? info: `e.predicate_check_locations::both?@1.second` is unknown
+fn any?(a?, b?) := or { first: a?, second: b? }
+--~^ info: `f.predicate_check_locations::any?@1.first` is false
+--~^^ info: `f.predicate_check_locations::any?@1.second` is false
+--~^^^? info: `f.predicate_check_locations::any?@1.first` is unknown
+--~^^^^? info: `f.predicate_check_locations::any?@1.second` is unknown
+
+proc guarded(a?, b?, active?) {
+    expect e:  -- Keep the label on a different line from the predicate.
+        when active?,  -- Peeling this guard must retain the label.
+        not both?(a?, b?)
+    --~^^^ error: expectation `predicate_check_locations::guarded::e` does not hold
+    expect f:  -- The same rule applies to a positive disjunction.
+        when active?,  -- This check is kept whole.
+        any?(a?, b?)
+    --~^^^ error: expectation `predicate_check_locations::guarded::f` does not hold
+}

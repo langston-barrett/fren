@@ -759,6 +759,23 @@ pub proc clash_notes(
 ```
 
 
+### Predicate check locations
+
+The default diagnostic site for an independent predicate member is that
+member's definition. A predicate kept as a whole check uses the written
+check's label, including below leading `when`, `unless`, `let` and `where`
+wrappers. Cover goals keep the whole predicate. An empty member path
+denotes a whole predicate; a nonempty path denotes a split member.
+`check::predicate_check_site` decides which source is used:
+
+```fren
+pub proc predicate_check_site(member_path: String, cover?): (at_member?) {
+    ensure source: at_member? iff (member_path != "" and not cover?)
+    expect whole: when member_path = "", not at_member?
+    expect cover_goal: when cover?, not at_member?
+}
+```
+
 ### Conditional branch cores
 
 [Named Boolean blocks](Lang/BooleanBlocks.md#branch-conflict-explanations)

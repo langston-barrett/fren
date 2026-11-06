@@ -2843,17 +2843,67 @@ def enumerationObligationCases (natural : Bool := false) (guardOrders : Bool := 
     s!"set_option fren.enumeration.size 1 in\nset_option fren.evidence \"{option}\" in\n" ++
     s!"pub proc predicates({valueName}: {base}, flag?) \{ {member}expect property: {wrapper} }\n"
 
+/-- Whole and split predicate checks under guards, negation and bindings.
+These draws follow all existing enumeration cases. -/
+def predicateCheckLocations : R String := do
+  let (base, good, bad) ← pick #[
+    ("Bool", "true", "false"), ("Int", "0", "1"), ("Nat", "0", "1"),
+    ("String", "\"\"", "\"a\""), ("E", "E::A", "E::B"),
+    ("N", "N(0)", "N(1)"), ("R", "R { value := 0 }", "R { value := 1 }"),
+    ("Set<Bool>", "{}", "{true}"), ("Seq<Bool>", "[]", "[true]"),
+    ("Rel<Bool, Bool>", "{}", "{(true, true)}"),
+    ("Option<Int>", "Option::None", "Option::Some(1)")]
+  let value := if base == "Bool" then "value?" else "value"
+  let saved := if base == "Bool" then "saved?" else "saved"
+  let option ← pick #["solver", "enumerated", "enumerated+random"]
+  let guard ← pick #["when", "unless"]
+  let order ← below 8
+  let wrap (representative expression : String) : String :=
+    let bound := expression.replace "VALUE" saved
+    let expression := expression.replace "VALUE" representative
+    match order with
+    | 0 => s!"{guard} active?, {expression}"
+    | 1 => s!"let {saved}: {base} := {representative} in {guard} active?, {bound}"
+    | 2 => s!"{guard} active?, let {saved}: {base} := {representative} in {bound}"
+    | 3 => s!"({guard} active?, {bound}) where {saved}: {base} := {representative}"
+    | 4 => s!"{guard} active?, ({bound}) where {saved}: {base} := {representative}"
+    | 5 => s!"let {saved}: {base} := {representative} in {guard} gate?, {bound} where gate? := active?"
+    | 6 => s!"when active?, unless other?, {expression}"
+    | _ => s!"unless active?, when other?, {expression}"
+  -- A separate lint gap under `where` is outside these placement cases.
+  -- Keep cover goals, but do not compare the unrelated trigger lint.
+  let mut out := "\nmod enum_predicate_locations\nset_option fren.lint.trivial_cover \"allow\"\n" ++
+    "pub enum E { A, B }\npub struct N(Int)\npub struct R { value: Int }\n"
+  for op in #["and", "or", "iff", "one"] do
+    out := out ++ s!"pub fn p_{op}?({value}: {base}, other?) := {op} \{ first: {value} != {bad}, second: other? }\n"
+  for op in #["and", "or", "iff", "one"] do
+    -- Closed typed representatives make member notes comparable without
+    -- relying on which valid data model each backend chooses.
+    let representative := if op == "and" then good else bad
+    out := out ++ s!"set_option fren.enumeration.size 1 in\nset_option fren.evidence \"{option}\" in\n" ++
+      s!"pub proc {op}_checks(active?, other?) \{\n" ++
+      s!"    expect positive: {wrap representative s!"p_{op}?(VALUE, other?)"}\n" ++
+      s!"    expect negative: {wrap representative s!"not p_{op}?(VALUE, other?)"}\n" ++
+      s!"    cover witness: {wrap representative s!"p_{op}?(VALUE, other?)"}\n}\n"
+  -- Contracts use the same source policy as procedure constraints.
+  let op ← pick #["and", "or", "iff", "one"]
+  out := out ++ s!"pub fn contracted?(active?): (result?) \{\n" ++
+    "    out result? := true\n" ++
+    s!"    ensure post: {guard} active?, not p_{op}?({good}, result?)\n}\n"
+  return out
+
 /-- The original enumeration cases, optionally followed by relation cases,
-then Nat-based subset types and further `let`/`where` guard orders. All new
-draws follow both modes' existing draws, preserving their original specs
-as prefixes. -/
+then Nat-based subset types, further `let`/`where` guard orders and whole
+predicate check locations. All new draws follow both modes' existing
+draws, preserving their original specs as prefixes. -/
 def enumerationObligations (relations : Bool := false) : R String := do
   let original ← enumerationObligationCases
   let originalRelations ← if relations then enumerationRelations else pure ""
   let natural ← enumerationObligationCases true
   let naturalRelations ← if relations then enumerationRelations true else pure ""
   let guardOrders ← enumerationObligationCases (guardOrders := true)
-  return original ++ originalRelations ++ "\n" ++ natural ++ naturalRelations ++ "\n" ++ guardOrders
+  let locations ← predicateCheckLocations
+  return original ++ originalRelations ++ "\n" ++ natural ++ naturalRelations ++ "\n" ++ guardOrders ++ locations
 
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts avoidKnown).1
@@ -2985,8 +3035,9 @@ structure Mode where
   /-- Specs of induction-candidate types, argument forms and comparisons
   (`Wide.inductionCandidates`). -/
   inductionCandidates : Bool := false
-  /-- Specs of call-input obligations with two named parts and of predicate
-  leaves with inherited evidence (`Wide.enumerationObligations`). -/
+  /-- Specs of call-input obligations with two named parts, predicate leaves
+  with inherited evidence and whole-predicate check locations
+  (`Wide.enumerationObligations`). -/
   enumerationObligations : Bool := false
   /-- Append nested relation cases after the original enumeration cases. -/
   enumerationRelations : Bool := false

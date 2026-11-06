@@ -590,7 +590,7 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
             let branches := clause.branches.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
             let groups := clause.groups.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
             modify fun s => { s with itemBranches := s.itemBranches ++ branches, itemMemberGroups := s.itemMemberGroups ++ groups }
-            let sourceRef := kind != .cover && !clause.name.isEmpty
+            let sourceRef := Fren.Core.predicateCheckAtMember clause.name (kind == .cover)
             expanded := expanded.push ({
               file? := some clause.file
               sourceRef
@@ -1162,8 +1162,11 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
     let entries ← if let some (predicate, templates) ← predicateClauses cx e then do
         let occurrence := occurrences.getD predicate 0 + 1
         occurrences := occurrences.insert predicate occurrence
-        pure <| templates.map fun entry => { entry with
-          name := if entry.name.isEmpty then x.name else x.name ++ "." ++ Fren.Core.showPath predicate ++ "@" ++ toString occurrence ++ "." ++ entry.name }
+        pure <| templates.map fun entry =>
+          let sourceRef := Fren.Core.predicateCheckAtMember entry.name false
+          ({ entry with
+            name := if entry.name.isEmpty then x.name else x.name ++ "." ++ Fren.Core.showPath predicate ++ "@" ++ toString occurrence ++ "." ++ entry.name
+            span := if sourceRef then entry.span else x.span }, sourceRef)
       else do
         let (nb, ng) := ((← get).itemBranches.size, (← get).itemMemberGroups.size)
         annotateBranches cx (n ++ cn) e
@@ -1171,8 +1174,8 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
         modify fun s => { s with
           itemBranches := s.itemBranches.extract 0 nb ++ (s.itemBranches.extract nb).map (·.map output)
           itemMemberGroups := s.itemMemberGroups.extract 0 ng ++ (s.itemMemberGroups.extract ng).map (·.map output) }
-        pure #[{ file := (← get).file, name := x.name, span := x.span, formula := smt : NamedClause }]
-    for entry in entries do
+        pure #[({ file := (← get).file, name := x.name, span := x.span, formula := smt : NamedClause }, false)]
+    for (entry, sourceRef) in entries do
       let cn := Name.mkSimple entry.name
       let owner := n ++ cn
       let sym := clauseSym path cn
@@ -1180,6 +1183,7 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
       if post then k := { k with posts := k.posts.push (cn, sym) } else k := { k with pres := k.pres.push (cn, sym) }
       props := props.push ({
         file? := some entry.file
+        sourceRef
         kind := if post then .ensure else .assume
         name := owner
         span := entry.span

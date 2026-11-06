@@ -9,6 +9,35 @@ namespace FrenTest.SolverPairing
 
 open FrenCli Lean
 
+/-- A vacuity query needs only the guard, but observing a closed record
+member still needs its datatype and no unused predicate arguments. -/
+private def observationDeclarations : IO (Array String) := do
+  let src := "mod observation_declarations\n\
+    pub struct R { value: Int }\n\
+    pub fn choice?(value: R, other?) := or { first: value != R { value := 1 }, second: other? }\n\
+    pub proc observed(active?, other?) {\n\
+        expect output: let saved := R { value := 1 } in when active?, choice?(saved, other?)\n\
+    }\n"
+  let files := #[("observations.fren", src.toList.toArray)]
+  let st := elabText (initialState #[]) 0 files[0]!.2
+  unless st.diags.all (·.severity != .error) do
+    return #["the observation-declarations regression failed to elaborate"]
+  let .ok sp := specOf files st.callTargs
+    | return #["the observation-declarations regression has no evaluator spec"]
+  let some c := st.comps.find? (·.path == `observation_declarations.observed)
+    | return #["the observation-declarations regression has no procedure"]
+  let cache ← QueryCache.new
+  let (results, refuted, error?) ← solveComp st.forSolving (.ok sp) (symbolsOf (.ok sp))
+    c false #[.expect, .vacuity] {} cache
+  if error?.isSome || !refuted.isEmpty then
+    return #["the observation-declarations regression failed to check"]
+  let vacuity := results.filter (·.kind == .vacuity)
+  if vacuity.isEmpty || vacuity.any (fun result =>
+      let first := result.memberValues.filter fun value => (value.name.toString (escape := false)).endsWith ".first"
+      first.size != 1 || first.any (fun value => value.evaluated? != some true || value.value? != some false)) then
+    return #["a vacuity query lost the closed record member's value"]
+  return #[]
+
 def check : IO (Array String) := do
   let src := "type Nonnegative = n: Int where lower: n >= 0\n\
     proc accept(n: Nonnegative) {}\n\
@@ -39,6 +68,6 @@ def check : IO (Array String) := do
   unless refuted.isEmpty && results.any (fun r =>
       r.kind == .expect && r.prop? == some `independent && r.verdict == .pass) do
     return #["a pairing mismatch lost the independent solver result"]
-  return #[]
+  return ← observationDeclarations
 
 end FrenTest.SolverPairing
