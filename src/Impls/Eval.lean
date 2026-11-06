@@ -8,10 +8,11 @@ open Fren.Lang
 /-!
 # The evaluator's decisions (`Reqs/Eval`)
 
-The decisions in `FrenCli.Verdicts` implement the comps of `eval`: for
-whatever the search and the evaluator found, the status, verdict, exit code
-or confirmation is as required. Each obligation is proved by `decide`, or,
-over a number of tests, by cases on whether there were any.
+The verdict decisions in `FrenCli.Verdicts` and shared confirmation policy
+in `FrenCore.Check` implement the comps of `eval`: for whatever the search
+and the evaluator found, the status, verdict, exit code or confirmation is
+as required. Each obligation is proved by `decide`, or, over a number of
+tests, by cases on whether there were any.
 -/
 
 namespace Fren.Impls
@@ -140,6 +141,17 @@ impl confirm_model: eval::confirm for (h g a : Bool) {
 } by
   intro h g a _
   cases h <;> cases g <;> cases a <;> decide
+
+impl outputs_goal: eval::outputs_goal for (truth : Option Bool) {
+  known? := truth.isSome,
+  value? := truth.getD false,
+  goal_known? := (Core.outputGoalTruth truth).isSome,
+  goal_true? := (Core.outputGoalTruth truth).getD false,
+} by
+  intro truth _
+  cases truth with
+  | none => decide
+  | some v => cases v <;> decide
 
 impl confirmed: eval::confirmed_verdict for (v : Verdict) (c : Confirmation) {
   solver := toVerdict v,

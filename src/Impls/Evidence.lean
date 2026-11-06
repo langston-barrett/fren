@@ -68,6 +68,10 @@ tested refinement::refinement_result_domain: "test/ui/lang/refines_pattern.fren"
 tested refinement::refinement_singleton_domain: "test/ui/checks/refines_tested.fren"
 
 -- Concrete feature regressions and exhaustive finite backend checks.
+tested check::decidable_unknown: "src/FrenTest/InconclusiveReported.lean"
+tested check::unknown_reason: "src/FrenTest/InconclusiveReported.lean"
+tested check::output_query_core: "src/FrenTest/InconclusiveReported.lean",
+  "src/FrenTest/OutputQueryCore.lean", "test/ui/checks/output_query_core.fren"
 tested check::branch_forcing: "src/FrenTest/BranchForcing.lean"
 tested check::branch_member_polarity: "src/FrenTest/BranchForcing.lean"
 tested check::branch_query_count: "src/FrenTest/BranchForcing.lean"
@@ -202,10 +206,11 @@ trusted check::combined: "no front end combines the verdicts of several methods 
 tested check::runs_premises: "test/ui/checks/evidence_premises.fren", "test/ui/checks/evidence_missing_premise.fren", "test/ui/checks/evidence_refinement.fren", "test/ui/checks/evidence_contracts.fren", "src/FrenTest/EvidencePremises.lean", "src/FrenTest/EvidenceLib.lean", "src/FrenTest/EvidenceClient.lean"
 
 tested eval::outputs_seen: "src/FrenTest/OutputsSeen.lean"
--- The search of the evaluator's realizability goal (`FrenCli.Confirm`,
--- `Fm.exOutputs`) is not a function of the sets that the Req takes, so the
--- ui test checks it through the `fren` command.
-tested eval::outputs_confirm: "test/ui/checks/realizable_subset_outputs.fren"
+-- The evaluator's realizability search is not a function of the sets that
+-- the Req takes. UI tests exercise the actual output goals in both front
+-- ends, including finite carriers whose false goals stay unconfirmed.
+tested eval::outputs_goal: "test/ui/checks/realizable_recursive_bool_outputs.fren"
+tested eval::outputs_confirm: "test/ui/checks/realizable_subset_outputs.fren", "test/ui/checks/realizable_recursive_bool_outputs.fren"
 
 tested check::general_branch_explanation: "src/FrenTest/BranchForcing.lean"
 tested check::retry_alternatives_general: "src/FrenTest/BranchForcing.lean"
