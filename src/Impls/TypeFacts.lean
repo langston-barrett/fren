@@ -1,6 +1,6 @@
 -- keep-sorted start
 import FrenCore.TypeFacts
-import Impls.Lang
+import Impls.Lang.Types
 -- keep-sorted end
 open Fren.Lang
 
