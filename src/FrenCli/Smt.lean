@@ -1238,19 +1238,21 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
   for f in hyps.map (·.2) |>.push goal do
     work := work ++ scan recs (expand f) #[] 0 #[]
   let mut out := #[]
-  let mut seen : Std.HashSet (SeqElems.SExpr × Array String × Nat) := {}
+  let mut seen : Std.HashMap (SeqElems.SExpr × Array String) Nat := {}
   let mut done := 0
   while done < work.size do
     let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, depth)
-    if seen.contains key then continue
-    seen := seen.insert key
+    let key := (app, gs)
+    if !Fren.Core.recursiveDepthImproves seen[key]? depth then continue
     let .list xs := app | continue
     let .atom head := xs[0]! | continue
     let args := xs.extract 1
     let text := toString app
     if ancestors.contains text then continue
+    -- A shallower visit subsumes equal and deeper visits, but a later
+    -- strictly shallower one must still expand its additional equations.
+    seen := seen.insert key depth
     let ancestors := ancestors.push text
     let domain := ((prelude.byQuoted.get[head]?.bind (prelude.decls[·]?)).map fun d =>
       let ps := (d.recursion?.map (·.1)).getD #[]
@@ -1424,6 +1426,18 @@ def queryText (prelude : Prelude) (c : CComp) (limits : Limits) (strings sets : 
   let p ← prepare prelude c strings sets projection quantified funs kind contractFns none recursiveSyms hyps goal
   return queryScript p.logic p.options prelude p.vars limits p.hyps p.goal p.observations
 
+/-- The variable symbols in each opaque application of an unfolded formula. -/
+private partial def outputApplications (opaqueHeads vars : Std.HashSet String) (e : SeqElems.SExpr) : List (List String) :=
+  match e with
+  | .atom _ => []
+  | .list ts =>
+    let own := match ts[0]? with
+      | some (SeqElems.SExpr.atom f) => if opaqueHeads.contains f then
+          [(ts.extract 1 |>.flatMap fun a => (quotedSymbols (toString a)).filter vars.contains).toList]
+        else []
+      | _ => []
+    own ++ ts.toList.flatMap (outputApplications opaqueHeads vars)
+
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a
 type that is not finite, which puts in `HO_ALL` those of its queries that
@@ -1467,6 +1481,21 @@ def backendWith (prelude : Prelude) (dts : Array DataDecl) (c : CComp) (limits :
   falseF := "false"
   notF f := s!"(not {f})"
   conj := conj
+  outputApplications? := some fun body => do
+    let opaqueHeads := prelude.decls.foldl (init := ({} : Std.HashSet String)) fun acc d =>
+      match SeqElems.parse d.text with
+      | .list #[.atom "declare-fun", .atom f, _, _] => acc.insert f
+      | _ => acc
+    -- Dependency extraction must unfold pure definitions too: unlike
+    -- `queryDefinitions`, `ignore(y) := 0` must erase its argument here.
+    let defs := prelude.decls.foldl (init := ({} : Std.HashMap String (Array String × SeqElems.SExpr))) fun acc d =>
+      match SeqElems.parse d.text with
+      | .list #[.atom "define-fun", .atom f, .list ps, _, value] =>
+        acc.insert f (ps.filterMap (fun | .list #[.atom p, _] => some p | _ => none), value)
+      | _ => acc
+    let fs := (c.natFacts true).map (·.2) |>.push body
+    let vars := Std.HashSet.ofArray (c.vars.map fun v => Fren.Core.nameText v.name)
+    return fs.toList.flatMap fun f => outputApplications opaqueHeads vars ((SeqElems.parse f).unfold defs)
   existsOutputs f := do
     -- Defined outputs are substituted, never searched for.
     let outs := c.vars.filter fun v => v.role == .output && v.defn?.isNone

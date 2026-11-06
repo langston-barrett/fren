@@ -130,6 +130,9 @@ proc po(): (y: BigI) {}
 
 proc pi(x: BigI): (det y: Int) { out y := x + 1 }
 
+-- `q`'s output invariant puts the opaque `total(Cons(y, Nil))` under
+-- realizability's quantifier over `y`. This generated query is outside
+-- the core (`check::output_query_core`), despite no explicit opt-out.
 pub proc q(x: Int): (y: BigI) {   --~ warning: could not decide whether `q` is realizable
     ensure g: y >= x
 }

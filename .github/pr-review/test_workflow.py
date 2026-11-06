@@ -6,7 +6,11 @@ and the configuration and links of the pull request's tree are removed
 before the model runs."""
 
 import os
+from pathlib import Path
 import re
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,11 +44,54 @@ class ReviewJob(unittest.TestCase):
         steps = review_steps()
         head = first(steps, r"ref: \$\{\{ needs\.prepare\.outputs\.head \}\}")
         removed = first(steps, r"-type l -print0")
-        model = first(steps, r"anthropics/claude-code-action")
         self.assertLess(head, removed)
-        self.assertLess(removed, model)
-        for name in ("CLAUDE.md", "AGENTS.md", ".mcp.json", ".claude"):
+        for pattern in (r"anthropics/claude-code-action", r"name: Review with Codex in isolation"):
+            self.assertLess(removed, first(steps, pattern))
+        for name in ("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "AGENTS.local.md",
+                     "AGENTS.override.md", ".mcp.json", ".claude", ".codex", ".agents"):
             self.assertIn(name, steps[removed])
+
+    def test_configuration_removal_cleans_root_and_nested_files(self):
+        steps = review_steps()
+        removed = first(steps, r"-type l -print0")
+        script = textwrap.dedent(steps[removed].split("run: |\n", 1)[1])
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "checkout"
+            root.mkdir()
+            for directory in (root, root / "nested"):
+                directory.mkdir(exist_ok=True)
+                for name in ("AGENTS.md", "AGENTS.local.md", "AGENTS.override.md",
+                             "CLAUDE.md", "CLAUDE.local.md", ".mcp.json"):
+                    (directory / name).write_text("untrusted instructions")
+                for name in (".claude", ".codex", ".agents"):
+                    (directory / name).mkdir()
+                    (directory / name / "config").write_text("untrusted configuration")
+                (directory / "keep.txt").write_text("reviewed source")
+            (root / ".git").mkdir()
+            (root / ".git" / "AGENTS.override.md").write_text("git metadata")
+            outside = Path(temp) / "outside"
+            outside.write_text("outside the checkout")
+            (root / "link").symlink_to(outside)
+            subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], cwd=root, check=True)
+            self.assertEqual(sorted(p.relative_to(root).as_posix() for p in root.rglob("*")),
+                             [".git", ".git/AGENTS.override.md", "keep.txt", "nested", "nested/keep.txt"])
+            self.assertEqual(outside.read_text(), "outside the checkout")
+
+    def test_codex_uses_trusted_scripts_and_exclusive_credential(self):
+        steps = review_steps()
+        model = first(steps, r"name: Review with Codex in isolation")
+        teardown = first(steps, r"name: Confirm Codex teardown")
+        upload = first(steps, r"uses: actions/upload-artifact")
+        self.assertLess(model, teardown)
+        self.assertLess(teardown, upload)
+        self.assertIn("$RUNNER_TEMP/trusted/.github/pr-review/codex.py", steps[model])
+        self.assertIn("needs.prepare.outputs.engine == 'codex'", steps[model])
+        self.assertIn("secrets.CODEX_REVIEW_AUTH_JSON", steps[model])
+        self.assertNotIn("github.token", steps[model])
+        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", steps[model])
+        claude = steps[first(steps, r"anthropics/claude-code-action")]
+        self.assertIn("needs.prepare.outputs.engine == 'claude'", claude)
+        self.assertNotIn("CODEX_REVIEW_AUTH_JSON", claude)
 
 
 if __name__ == "__main__":

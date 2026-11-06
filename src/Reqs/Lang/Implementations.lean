@@ -87,14 +87,20 @@ private theorem two_monoids_agree :
 private theorem dispatch_representation_agrees (items : lang.ModuleItems)
     (p i named taken : Int) (error : Bool) :
     let m : lang.ModuleModel := ⟨Fren.Seq.ofList (linkedList items)⟩
-    lang.dispatch_error_rule? m p i named error =
-      lang.dispatch_error_rule_from? p i named error (lang.linked_item_at items) ∧
-    lang.dispatch_taken_rule? m p i named taken error =
-      lang.dispatch_taken_rule_from? p i named taken error (lang.linked_item_at items) := by
+    lang.dispatch_permitted? m p i named taken error =
+      lang.dispatch_permitted_from? p i named taken error (lang.linked_item_at items) := by
   dsimp only
   have hget : (fun k => lang.item_of ⟨Fren.Seq.ofList (linkedList items)⟩ k) = lang.linked_item_at items := by
     funext k
     exact lookup_agrees items k
-  simp [lang.dispatch_error_rule?, lang.dispatch_taken_rule?, hget]
+  simp [lang.dispatch_permitted?, hget]
+
+-- The examples use the same complete contract as dispatch on TWO_MONOIDS.
+private theorem two_monoid_dispatch_agrees (p taken : Int) (error : Bool) :
+    lang.dispatch_permitted? lang.TWO_MONOIDS p 0 (-1) taken error =
+      lang.two_monoid_dispatch? p taken error := by
+  have h := dispatch_representation_agrees lang.TWO_MONOID_ITEMS p 0 (-1) taken error
+  rw [two_monoids_agree] at h
+  simpa [lang.two_monoid_dispatch?, lang.TWO_MONOID_ITEMS] using h
 
 end Reqs.Lang.Implementations

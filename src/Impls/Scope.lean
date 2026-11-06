@@ -2,7 +2,7 @@
 import FrenCore.Names
 import FrenCore.Patterns
 import Impls.Check
-import Impls.Lang
+import Impls.Lang.Patterns
 import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang

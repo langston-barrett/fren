@@ -16,6 +16,7 @@ import Impls.Eval
 import Impls.Fmt
 import Impls.Generated
 import Impls.Global
+import Impls.GroundClosure
 import Impls.GroundMatching
 import Impls.Guards
 import Impls.HigherOrder
@@ -39,6 +40,7 @@ import Impls.Semantics
 import Impls.SubsetTypes
 import Impls.Testing
 import Impls.Theories
+import Impls.TheoryDump
 import Impls.Trace
 import Impls.TypeFacts
 import Impls.View
@@ -56,6 +58,7 @@ tested lang::induction_hypotheses: "test/ui/checks/induction.fren"
 tested lang::induction_verdict: "test/ui/checks/induction.fren"
 tested lang::induction_function: "test/ui/checks/induction_unfolding_forms.fren"
 tested lang::unfoldings: "test/ui/checks/induction.fren", "test/ui/checks/induction_unfolding_forms.fren"
+tested lang::recursive_depth: "src/FrenTest/RecursiveFactLookup.lean"
 tested lang::trait_expectation: "test/ui/lang/traits.fren"
 tested view::inconclusive_reported: "src/FrenTest/InconclusiveReported.lean", "test/ui/lang/traits.fren", "test/ui/lang/traits_frontends.fren"
 tested refinement::positional_refinement: "test/ui/lang/refines.fren", "src/FrenTest/RefinesTests.lean"
@@ -65,6 +68,10 @@ tested refinement::refinement_result_domain: "test/ui/lang/refines_pattern.fren"
 tested refinement::refinement_singleton_domain: "test/ui/checks/refines_tested.fren"
 
 -- Concrete feature regressions and exhaustive finite backend checks.
+tested check::decidable_unknown: "src/FrenTest/InconclusiveReported.lean"
+tested check::unknown_reason: "src/FrenTest/InconclusiveReported.lean"
+tested check::output_query_core: "src/FrenTest/InconclusiveReported.lean",
+  "src/FrenTest/OutputQueryCore.lean", "test/ui/checks/output_query_core.fren"
 tested check::branch_forcing: "src/FrenTest/BranchForcing.lean"
 tested check::branch_member_polarity: "src/FrenTest/BranchForcing.lean"
 tested check::branch_query_count: "src/FrenTest/BranchForcing.lean"
@@ -146,9 +153,21 @@ tested lang::ground_join_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_listed_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_sentence_lists_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_rule_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_prepared_listed_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_prepared_rule_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_preparation_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_instance_list_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_instances_step: "src/FrenTest/GroundMatching.lean"
+
+-- Ranked construction and activation, including independent fixpoint proofs.
+tested lang::ground_assignment_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_candidate_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_pool_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_universe_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_applications_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_enabled_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_activation_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_close_step: "src/FrenTest/GroundClosure.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under
@@ -187,10 +206,11 @@ trusted check::combined: "no front end combines the verdicts of several methods 
 tested check::runs_premises: "test/ui/checks/evidence_premises.fren", "test/ui/checks/evidence_missing_premise.fren", "test/ui/checks/evidence_refinement.fren", "test/ui/checks/evidence_contracts.fren", "src/FrenTest/EvidencePremises.lean", "src/FrenTest/EvidenceLib.lean", "src/FrenTest/EvidenceClient.lean"
 
 tested eval::outputs_seen: "src/FrenTest/OutputsSeen.lean"
--- The search of the evaluator's realizability goal (`FrenCli.Confirm`,
--- `Fm.exOutputs`) is not a function of the sets that the Req takes, so the
--- ui test checks it through the `fren` command.
-tested eval::outputs_confirm: "test/ui/checks/realizable_subset_outputs.fren"
+-- The evaluator's realizability search is not a function of the sets that
+-- the Req takes. UI tests exercise the actual output goals in both front
+-- ends, including finite carriers whose false goals stay unconfirmed.
+tested eval::outputs_goal: "test/ui/checks/realizable_recursive_bool_outputs.fren"
+tested eval::outputs_confirm: "test/ui/checks/realizable_subset_outputs.fren", "test/ui/checks/realizable_recursive_bool_outputs.fren"
 
 tested check::general_branch_explanation: "src/FrenTest/BranchForcing.lean"
 tested check::retry_alternatives_general: "src/FrenTest/BranchForcing.lean"

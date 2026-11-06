@@ -651,6 +651,8 @@ structure ClaimInfo where
   deriving Inhabited
 
 inductive Entry where
+  /-- A qualified trait law, including laws of traits without expectations. -/
+  | theoryLaw (path : Name)
   | item (i : ItemRef)
   | enumInfo (e : EnumInfo)
   | recordInfo (r : RecordInfo)
@@ -693,6 +695,8 @@ inductive Entry where
 structure State where
   /-- Names, modules and visibility, shared with the standalone binary. -/
   table : Core.Table := {}
+  /-- Law names retained independently of the expectations that use them. -/
+  theoryLaws : Array Name := #[]
   refs : NameMap Syntax := {}
   enums : NameMap EnumInfo := {}
   records : NameMap RecordInfo := {}
@@ -744,6 +748,7 @@ structure State where
   deriving Inhabited
 
 def State.add (s : State) : Entry → State
+  | .theoryLaw p => { s with theoryLaws := s.theoryLaws.push p }
   | .item i => { s with table := s.table.addItem i.item, refs := s.refs.insert i.item.path i.ref }
   | .enumInfo e =>
     { s with table := s.table.addEnum { path := e.path, variants := e.variants }, enums := s.enums.insert e.path e }

@@ -381,10 +381,11 @@ definition, and there is no `p.«#solver»`.
 
 A [structural recursion](Lang/Recursion.md)'s `p.«#solver»` is `p`
 itself, at the placeholders. The solver never unfolds it: it reads only
-its [one-step equations](Lang/Recursion.md#solver-encoding), from its body
-with its `match`es as `if`s and the defined functions that it applies
-unfolded. So Lean's structural recursion runs once, over `p`'s body,
-which applies those functions, rather than also over that unfolded body,
+its [equations within the query's unfolding
+bound](Lang/Recursion.md#solver-encoding), from its body with its `match`es
+as `if`s and the defined functions that it applies unfolded. So Lean's
+structural recursion runs once, over `p`'s body, which applies those
+functions, rather than also over that unfolded body,
 whose size is the sum of theirs in each arm. A [generic
 one](Lang/Recursion.md#generic-recursion)'s `p.«#solver»` takes each type
 parameter's type and its `Inhabited` instance first, and `p` takes every
@@ -618,14 +619,21 @@ need one are not computable. The checks and implementations read the
 propositions, which need no `Decidable` instance.
 
 A procedure *uses* the abstract types and uninterpreted functions that its
-variables' types, its constraints and its calls' arguments mention, those that its
-calls' procedures and the defined functions it applies use, and the
-parameter and result types of the functions it uses. Before its variables, every definition of the procedure takes one
-explicit parameter for each abstract type and function it uses, in the
-order of their declarations: `(T : Type)` for an abstract type `T`, and for
-a function, a Lean function from its parameter types to its result type,
-where each abstract type is the parameter for it. A variable of an
-abstract type has the parameter for it as its Lean type. For example, with
+variables' types, including their implicit invariants, its constraints
+and its calls' arguments mention, those that its calls' procedures and the
+defined functions it applies use, and the parameter and result types of
+the functions it uses. Before its variables, every definition of the
+procedure takes one explicit parameter for each abstract type and function
+it uses, in the order of their declarations: `(T : Type)` for an abstract
+type `T`, and for a function, a Lean function from its parameter types to
+its result type, where each abstract type is the parameter for it. A
+variable of an abstract type has the parameter for it as its Lean type.
+Applications pass every used placeholder in that same order, including
+instance-implicit `Inhabited` parameters. Generated Lean syntax therefore
+uses `@` even when the source function has no type parameters: a
+nongeneric helper can use an instance through a generic call in its body.
+Lean must not insert an instance in addition to the argument already
+supplied. For example:
 
 ```
 type Name

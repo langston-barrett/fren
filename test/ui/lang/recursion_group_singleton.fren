@@ -1,0 +1,37 @@
+-- Existing self-recursion uses the singleton structural-group judgment.
+-- fren-covers: lang::structural_group, lang::structural_recursion
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.assertions_on_constants "allow"
+
+mod recursion_group_singleton
+
+pub enum T { End, Pair(T, T) }
+
+-- The first, middle and last parameter may be the decreasing one.
+pub fn first(a: T, b: T, c: T): Int := match a {
+    T::End => 0,
+    T::Pair(l, _) => 1 + first(l, b, c),
+}
+
+pub fn middle(a: T, b: T, c: T): (r: Int) {
+    out r := match b {
+        T::End => 0,
+        T::Pair(_, T::Pair(l, _)) => 1 + middle(c, l, a),
+        T::Pair(l, _) => 1 + middle(a, l, c),
+    }
+}
+
+pub fn last(a: T, b: T, c: T): Int := match c {
+    T::End => 0,
+    T::Pair(l, _) => 1 + last(c, a, l),
+}
+
+-- The closed applications have one assignment; enumeration evaluates
+-- their recursive bodies.
+set_option fren.evidence "enumerated" in
+expect values() {
+    expect at_first: first(T::Pair(T::End, T::End), T::End, T::End) = 1
+    expect at_middle: middle(T::End, T::Pair(T::End, T::End), T::End) = 1
+    expect at_last: last(T::End, T::End, T::Pair(T::End, T::End)) = 1
+}

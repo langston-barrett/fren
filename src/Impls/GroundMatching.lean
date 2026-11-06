@@ -16,8 +16,14 @@ interp lang::GroundDefinitions := List (TheoryTerm × TheoryTerm)
 interp lang::GroundResult := Option Substitution
 interp lang::ground_type_present? := fun (ctx : Context) t => (ctx.typeOf t).isSome
 interp lang::ground_type := fun (ctx : Context) t => (ctx.typeOf t).getD default
-interp lang::ground_image_present? := fun (s : Substitution) n => (s.lookup n).isSome
-interp lang::ground_image := fun (s : Substitution) n => (s.lookup n).getD default
+interp lang::ground_image_substitution := fun (s : Substitution) n => s.lookup n
+interp lang::ground_image_present? := fun (s : Substitution) n => (s.lookup n).isSome by
+  intro s n
+  rfl
+interp lang::ground_image := fun (s : Substitution) n => (s.lookup n).getD default by
+  intro s n
+  rfl
+
 interp lang::ground_extend := fun (s : Substitution) n t => s ++ [(n, t)]
 interp lang::ground_parameter_present? := fun (vs : List (Name × Ty)) n => (vs.lookup n).isSome
 interp lang::ground_parameter := fun (vs : List (Name × Ty)) n => (vs.lookup n).getD default
@@ -317,42 +323,88 @@ impl ground_rule_step: lang::ground_rule_step for (ctx : Context) (s : TheorySen
 interp lang::ground_context_definitions := Context.definitions
 interp lang::ground_normalize_terms := fun ds (ts : List TheoryTerm) => ts.map (Fren.Core.GroundMatching.normalize ds)
 interp lang::ground_normalize_sentence := fun ds s => (({ sentence := s } : Rule).normalize ds).sentence
-interp lang::ground_prepare_context := Context.normalizeListed
-
-impl ground_preparation_step: lang::ground_preparation_step for (ctx : Context)
-    (ds : List (TheoryTerm × TheoryTerm)) (sentence : TheorySentence) (ts : List TheoryTerm)
-    (ty : Ty) (t : TheoryTerm) {
-  ctx := ctx, defs := ds, sentence := sentence, terms := ts, ty := ty, term := t,
+impl ground_preparation_step: lang::ground_preparation_step for
+    (ds : List (TheoryTerm × TheoryTerm)) (sentence : TheorySentence) (ts : List TheoryTerm) {
+  defs := ds, sentence := sentence, terms := ts,
   normalized_terms := ts.map (Fren.Core.GroundMatching.normalize ds),
   normalized_sentence := (({ sentence } : Rule).normalize ds).sentence,
-  normalized_context := ctx.normalizeListed ds,
-  prepared_order := (ctx.normalizeListed ds).items,
-  prepared_definitions := (ctx.normalizeListed ds).definitions,
-  prepared_type_present? := ((ctx.normalizeListed ds).typeOf t).isSome,
-  prepared_type := ((ctx.normalizeListed ds).typeOf t).getD default,
-  prepared_listed? := ((ctx.normalizeListed ds).listed ty).isSome,
-  prepared_values := ((ctx.normalizeListed ds).listed ty).getD [],
 } by
-  intro ctx ds sentence ts ty t _
-  cases ts <;> cases hl : ctx.listed ty <;>
-    simp [fren_spec, Rule.normalize, Context.normalizeListed, hl, List.headD]
+  intro ds sentence ts _
+  cases ts <;> simp [fren_spec, Rule.normalize, List.headD]
+
+interp lang::ground_prepared_extension := fun ctx ds ts n ty s =>
+  Fren.Core.GroundMatching.listedExtensions (ctx.normalizeListed ds) ts n ty s
+interp lang::ground_prepared_many := fun ctx ds ts n ty ss =>
+  ss.flatMap (Fren.Core.GroundMatching.listedExtensions (ctx.normalizeListed ds) ts n ty)
+interp lang::ground_prepared_complete := fun ctx ds ts vs ss =>
+  Fren.Core.GroundMatching.completeListed (ctx.normalizeListed ds) ts vs ss
+
+impl ground_prepared_listed_step: lang::ground_prepared_listed_step for (ctx : Context)
+    (ds : List (TheoryTerm × TheoryTerm)) (ts : List TheoryTerm) (n : Name) (ty : Ty)
+    (s : Substitution) (ss : List Substitution) (vs : List (Name × Ty)) {
+  ctx := ctx, defs := ds, terms := ts, name := n, ty := ty, images := s,
+  substitutions := ss, variables := vs,
+  extended := Fren.Core.GroundMatching.listedExtensions (ctx.normalizeListed ds) ts n ty s,
+  many := ss.flatMap (Fren.Core.GroundMatching.listedExtensions (ctx.normalizeListed ds) ts n ty),
+  completed := Fren.Core.GroundMatching.completeListed (ctx.normalizeListed ds) ts vs ss,
+} by
+  intro ctx ds ts n ty s ss vs _
+  refine ⟨?_, ?_, ?_⟩
+  · cases hl : ctx.listed ty <;> cases hi : (s.lookup n).isSome <;>
+      cases hm : ts.any (Fren.Core.GroundMatching.mentions n) <;>
+      simp [fren_spec, Fren.Core.GroundMatching.listedExtensions, Context.normalizeListed,
+        Fren.Core.GroundMatching.typedExtensions, hl, hi, hm]
+  · cases ss <;> simp [fren_spec, List.headD]
+  · cases vs with
+    | nil => rfl
+    | cons v vs => rcases v with ⟨n, ty⟩; simp [fren_spec, Fren.Core.GroundMatching.completeListed, List.headD]
+
+interp lang::ground_prepared_matches := fun ctx ds sentence apps calls =>
+  Fren.Core.GroundMatching.matchPrepared ctx ds { sentence } { applications := apps, calls }
+
+theorem instantiable_normalizeListed (ctx : Context) (ds : List (TheoryTerm × TheoryTerm)) (r : Rule) :
+    r.instantiable (ctx.normalizeListed ds) = r.instantiable ctx := by
+  have hl : ∀ ty, ((ctx.normalizeListed ds).listed ty).isSome = (ctx.listed ty).isSome := by
+    intro ty
+    cases h : ctx.listed ty <;> simp [Context.normalizeListed, h]
+  have hi : (ctx.normalizeListed ds).items = ctx.items := rfl
+  simp only [Rule.instantiable, Fren.Core.GroundMatching.binding, hl, hi]
+
+impl ground_prepared_rule_step: lang::ground_prepared_rule_step for (ctx : Context)
+    (ds : List (TheoryTerm × TheoryTerm)) (s : TheorySentence) (apps calls : List TheoryTerm) {
+  ctx := ctx, defs := ds, sentence := s, query_apps := apps, query_calls := calls,
+  substitutions := Fren.Core.GroundMatching.matchPrepared ctx ds { sentence := s } { applications := apps, calls },
+} by
+  intro ctx ds s apps calls _
+  let r : Rule := { sentence := s }
+  have hi : (ctx.normalizeListed ds).items = ctx.items := rfl
+  have hb := instantiable_normalizeListed ctx ds r
+  have hj : ∀ (vs : List (Name × Ty)) (ps ts : List TheoryTerm) (ss : List Substitution),
+      Fren.Core.GroundMatching.join (ctx.normalizeListed ds) vs ps ts ss =
+      Fren.Core.GroundMatching.join ctx vs ps ts ss := by
+    intro vs ps ts ss
+    induction ps generalizing ss with
+    | nil => rfl
+    | cons p ps ih => simp only [Fren.Core.GroundMatching.join, ih] <;> rfl
+  simp only [fren_spec, Fren.Core.GroundMatching.matchPrepared, Fren.Core.GroundMatching.matchNormalized]
+  rw [hb]
+  simp only [hj, hi]
+  cases hs : ({ sentence := s } : Rule).subject ctx.items <;>
+    simp [Rule.instantiable, Rule.terms, r]
 
 interp lang::GroundSentences := List TheorySentence
 interp lang::ground_no_sentences := fun (_ : TheorySentence) => ([] : List TheorySentence)
 interp lang::ground_add_sentence := fun sentence sentences => sentence :: sentences
 
-interp lang::ground_image_substitution := fun (s : Substitution) n => s.lookup n
 interp lang::ground_instances_for := fun sentence ss =>
   Fren.Core.GroundMatching.instantiateMatches sentence ss
 
 impl ground_instance_list_step: lang::ground_instance_list_step for (sentence : TheorySentence)
-    (ss : List Substitution) (n : Name) {
-  sentence := sentence, substitutions := ss, name := n,
-  head_image_present? := ((ss.headD []).lookup n).isSome,
-  head_image_value := ((ss.headD []).lookup n).getD default,
+    (ss : List Substitution) {
+  sentence := sentence, substitutions := ss,
   instances := Fren.Core.GroundMatching.instantiateMatches sentence ss,
 } by
-  intro sentence ss n _
+  intro sentence ss _
   let sub := fun n => (ss.headD []).lookup n
   let result := sentence.instantiate sub
   refine ⟨sub, sentence, result.isSome, result.getD sentence, ?_⟩
@@ -366,8 +418,6 @@ impl ground_instance_list_step: lang::ground_instance_list_step for (sentence : 
       simp [fren_spec, sub, result, Fren.Core.GroundMatching.instantiateMatches,
         TheorySentence.instantiate, h, List.headD]
 
-interp lang::ground_normalized_matches := fun ctx sentence apps calls =>
-  Fren.Core.GroundMatching.matchNormalized ctx { sentence } { applications := apps, calls }
 interp lang::ground_query_matches := fun ctx sentence apps calls =>
   Fren.Core.GroundMatching.matchApplications ctx { sentence } { applications := apps, calls }
 interp lang::ground_instances := fun ctx sentence apps calls =>
@@ -380,7 +430,12 @@ impl ground_instances_step: lang::ground_instances_step for (ctx : Context) (sen
   instances := Fren.Core.GroundMatching.instances ctx { sentence } { applications := apps, calls },
 } by
   intro ctx sentence apps calls _
-  simp [fren_spec, Fren.Core.GroundMatching.matchApplications,
-    Fren.Core.GroundMatching.instances, List.flatMap_map]
+  let ds := Fren.Core.GroundMatching.definitions ctx.definitions
+  let normalized := (({ sentence } : Rule).normalize ds).sentence
+  refine ⟨ds, ds, sentence, apps, apps.map (Fren.Core.GroundMatching.normalize ds), normalized,
+    ds, sentence, calls, calls.map (Fren.Core.GroundMatching.normalize ds), normalized, ?_⟩
+  cases apps <;> cases calls <;>
+    simp [fren_spec, Fren.Core.GroundMatching.matchApplications, Fren.Core.GroundMatching.prepareQuery,
+    Fren.Core.GroundMatching.instances, Rule.normalize, List.flatMap_map, ds, normalized]
 
 end Fren.Impls.GroundMatching

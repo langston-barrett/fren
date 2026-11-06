@@ -1,6 +1,5 @@
 -- keep-sorted start
 import FrenCli.Smt
-import FrenCore.Text.Correctness
 -- keep-sorted end
 
 /-! A test of `Core.occursIn`, the search for text in a query's formulas

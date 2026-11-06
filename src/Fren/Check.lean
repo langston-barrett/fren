@@ -787,7 +787,8 @@ def decideAll (ps : Array (Option (Expr × Expr))) : MetaM (Array (Option Bool))
   let decideOf (p : Expr) : MetaM Expr := return mkApp2 (mkConst ``Decidable.decide) p (← Enumerate.decidableOf p)
   let optBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)
   let decision (applied p : Expr) : MetaM Expr := do
-    if (Enumerate.hasIndex p || Enumerate.hasIndex applied) &&
+    let indexed := #[applied, p].filter Enumerate.hasIndex
+    if !indexed.isEmpty &&
         ((← Enumerate.hasQuantifier p) || (← Enumerate.hasQuantifier applied)) then
       -- Evaluate guarded domains as enumeration does. An empty domain
       -- decides its quantifier even when the body remains unknown; an
@@ -801,8 +802,7 @@ def decideAll (ps : Array (Option (Expr × Expr))) : MetaM (Array (Option Bool))
       return ← mkAppM ``cond #[← mkAppM ``Option.isSome #[strict], v,
         ← mkAppOptM ``Option.none #[mkConst ``Bool]]
     let v ← mkAppOptM ``Option.some #[mkConst ``Bool, ← decideOf p]
-    let known ← #[applied, p].filterMapM fun e => do
-      if Enumerate.hasIndex e then some <$> Enumerate.knownOf decideOf e else pure none
+    let known ← indexed.mapM (Enumerate.knownOf decideOf)
     if known.isEmpty then return v
     mkAppM ``cond #[known.foldl (mkApp2 (mkConst ``and)) (mkConst ``Bool.true), v,
       ← mkAppOptM ``Option.none #[mkConst ``Bool]]
@@ -1087,14 +1087,16 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
   for f in hyps.map (·.2) |>.push goal do
     work := work ++ (← scan recs f #[] 0 #[])
   let mut out := #[]
-  let mut seen : Array (Expr × Array Expr × Nat) := #[]
+  let mut seen : Std.HashMap (Expr × Array Expr) Nat := {}
   let mut done := 0
   while done < work.size do
     let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, depth)
-    if seen.contains key || ancestors.contains app then continue
-    seen := seen.push key
+    let key := (app, gs)
+    if ancestors.contains app || !Core.recursiveDepthImproves seen[key]? depth then continue
+    -- Keep only the shallowest processed depth. Equal and deeper visits
+    -- repeat its facts, while a later shallower visit can unfold further.
+    seen := seen.insert key depth
     let .const c _ := app.getAppFn | continue
     let some d := recs.get? c | continue
     let ancestors := ancestors.push app
@@ -1222,10 +1224,27 @@ def Core.Backend.ownHeartbeats (b : Core.Backend MetaM Expr Expr) : Core.Backend
     query := fun hyps goal wantModel => withCurrHeartbeats (b.query hyps goal wantModel)
     modelBool? := b.modelBool?.map fun f model formula => withCurrHeartbeats (f model formula)
     existsOutputs := fun body => withCurrHeartbeats (b.existsOutputs body)
+    outputApplications? := b.outputApplications?.map fun extract body => withCurrHeartbeats (extract body)
     pin := fun n val => withCurrHeartbeats (b.pin n val)
     pinVariant := fun n val => withCurrHeartbeats (b.pinVariant n val)
     render := fun n val => withCurrHeartbeats (b.render n val)
     confirm? := b.confirm?.map fun f hyps goal model => withCurrHeartbeats (f hyps goal model) }
+
+/-- The variable names in each opaque application of a formula already
+unfolded as the solver sees it. -/
+private partial def outputApplications (isOpaque : Expr → Bool) (vars : Array (Name × Expr)) (e : Expr) : List (List String) :=
+  match e with
+  | .app .. =>
+    let args := e.getAppArgs
+    let own := if isOpaque e.getAppFn then
+        [(vars.filterMap fun (n, x) =>
+          if args.any (·.containsFVar x.fvarId!) then some (Core.nameText n) else none).toList]
+      else []
+    own ++ args.toList.flatMap (outputApplications isOpaque vars)
+  | .lam _ t b _ | .forallE _ t b _ => outputApplications isOpaque vars t ++ outputApplications isOpaque vars b
+  | .letE _ t v b _ => outputApplications isOpaque vars t ++ outputApplications isOpaque vars v ++ outputApplications isOpaque vars b
+  | .mdata _ b | .proj _ _ b => outputApplications isOpaque vars b
+  | _ => []
 
 /-- The lean-smt backend, for a procedure whose variables are the free variables
 `fvs`, and whose variables other than its parameters have second copies `primes`
@@ -1494,7 +1513,14 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
           let (us, g) := unfolded?.getD (hyps.map (·.2), goal)
           let vals ← confirmRecursiveModel c fvs primes hyps goal model
           let own := us.mapIdx fun i u => (applies u, vals.bind (·[i]?))
-          let goalF := (applies g, (vals.bind (·[us.size]?)).map (!·))
+          let truth := (vals.bind (·[us.size]?)).map (!·)
+          -- Finite output types can make the existential decidable here,
+          -- but absence of a witness does not confirm an output goal
+          -- (`eval::outputs_goal`), as in the CLI's output search.
+          let truth := match goal with
+            | .mdata md _ => if md.getBool `fren.outputsGoal then Core.outputGoalTruth truth else truth
+            | _ => truth
+          let goalF := (applies g, truth)
           if Core.counterexampleReported own goalF false then pure o
           else do
             -- A formula without recursion that the model contradicts is
@@ -1536,12 +1562,23 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     falseF := mkConst ``False
     notF := mkNot
     conj := fun ps => mkAndN ps.toList
-    existsOutputs := fun body =>
+    outputApplications? := some fun body => do
+      let st ← getState
+      let recursive := st.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
+        if d.recursive then d.solver?.elim acc acc.insert else acc
+      let isOpaque (e : Expr) := e.isFVar || (e.constName?.any recursive.contains)
+      let vars := c.vars.zip fvs |>.map fun (v, x) => (v.name, x)
+      let fs ← (outFacts.push body).toList.mapM unfoldDefined
+      return fs.flatMap (outputApplications isOpaque vars)
+    existsOutputs := fun body => do
       -- The procedure's own outputs, not their second copies.
       -- Defined outputs are substituted, never searched for.
       -- The outputs' `Nat`s are at least 0, with the requirements.
-      ((c.vars.zip fvs).filter fun (v, _) => v.role == .output && v.defn?.isNone).foldrM (init := mkAndN (outFacts.toList ++ [body]))
+      let goal ← ((c.vars.zip fvs).filter fun (v, _) => v.role == .output && v.defn?.isNone).foldrM (init := mkAndN (outFacts.toList ++ [body]))
         fun (_, x) b => do mkAppM ``Exists #[← mkLambdaFVars #[x] b]
+      -- Preserve the generated goal's role for model confirmation without
+      -- changing the treatment of explicit existential quantifiers.
+      return mkMData (MData.empty.setBool `fren.outputsGoal true) goal
     pin := fun n val => do
       let some (v, fv) := varOf? n | return none
       let val := fromModel v.type val

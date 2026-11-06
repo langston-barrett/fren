@@ -1,6 +1,6 @@
 -- keep-sorted start
 import FrenCore.Theories
-import Impls.Lang
+import Impls.Lang.Types
 import Reqs.Lang
 -- keep-sorted end
 

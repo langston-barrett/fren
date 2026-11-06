@@ -353,6 +353,8 @@ structure NamedPredicate where
   deriving Inhabited, BEq
 
 structure CProp where
+  /-- The written clause, before named predicates expand into checking leaves. -/
+  sourceName? : Option Name := none
   file? : Option Nat := none
   sourceRef : Bool := true
   kind : PropKind
@@ -815,6 +817,8 @@ structure State where
   constInts : NameMap Int := {}
   /-- The abstract types, in order. -/
   sorts : Array Name := #[]
+  /-- Qualified law names retained for the structural theory view. -/
+  theoryLaws : Array Name := #[]
   /-- The laws of the trait being elaborated so far, each with its closed
   formula, whether it is in the decidable core, the applications in it
   that bring facts, whether it sets `fmf-bound`, and whether `undecidable`
@@ -1345,7 +1349,7 @@ def noteRecUse (span : Span) (f : Name) (ps : Array Name) (u : Fren.Core.RecUse)
   if (← get).recUses.any (·.1 == span) then return
   modify fun s => { s with recUses := s.recUses.push (span, u) }
   let uses := (← get).recUses
-  if let .notStructural _ i := Fren.Core.recursion ps.size (uses.toList.map (·.2)) then
+  if let .notStructural _ i := Fren.Core.selfRecursion ps.size (uses.toList.map (·.2)) then
     -- A function always has a parameter; without one, the message names the function.
     err span (Fren.Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr))
 

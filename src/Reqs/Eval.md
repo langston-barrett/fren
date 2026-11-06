@@ -786,8 +786,19 @@ searches for them, and the goal is `true` where it finds outputs that are
 of their declared types, subset types included, and meet the guarantees in
 the model; otherwise it is unknown, since a search that finds none decides
 nothing. So an output that the guarantees allow but its type does not
-refutes nothing (`test/ui/checks/realizable_subset_outputs.fren`).
-`eval::outputs_confirm` computes the goal so, over the values that an
+refutes nothing (`test/ui/checks/realizable_subset_outputs.fren`). This
+policy also applies where the output carrier is finite and an evaluator
+can decide the existential as false. `eval::outputs_goal` computes which
+evaluated truths are known for confirmation:
+
+```fren
+pub proc outputs_goal(known?, value?): (det goal_known?, det goal_true?) {
+    out goal_known? := known? and value?
+    out goal_true? := known? and value?
+}
+```
+
+`eval::outputs_confirm` computes the goal over the values that an
 output may take, and confirms the model with it:
 
 ```fren
@@ -801,7 +812,8 @@ pub proc outputs_confirm(
     meeting: Set<OutputValue>,   -- those values, or others, that meet the guarantees in the model
     tried: Set<OutputValue>,     -- the values that the evaluator's search tries
 ): (det goal_true?, det result: Confirmation) {
-    out goal_true? := tried inter declared inter meeting != {}
+    call g := outputs_goal(true, tried inter declared inter meeting != {})
+    out goal_true? := g.goal_true?
     call c := confirm(hyp_false?, goal_true?, hyps_known? and goal_true?)
     out result := c.result
 

@@ -47,6 +47,8 @@ jobs:
       run: bash .github/pr-review/test_sandbox.sh
     - name: Test codex-agent's sandbox
       run: bash .github/codex-agent/test_sandbox.sh
+    - name: Test Codex review's tools and sandbox
+      run: bash .github/pr-review/test_codex_sandbox.sh
     - uses: langston-barrett/gha/.github/actions/install-linters@d0cdf249a9684185d96083c87d078679cd373b28
     - name: Install keep-sorted
       run: | # zizmor: ignore[github-env]

@@ -7,8 +7,9 @@ import FrenCore.Theories
 # Typed ground matching
 
 Input extraction supplies resolved typed syntax, declaration order and finite
-listed values. The core chooses anchors and substitutions. Candidate
-construction, closure and claim integration remain follow-ups of #758.
+listed values. The core chooses anchors and substitutions. GroundClosure
+constructs and activates the finite universe. Claim integration remains
+a follow-up of #758.
 -/
 
 namespace Fren.Core.GroundMatching
@@ -199,7 +200,7 @@ def completeListed (ctx : Context) (terms : List TheoryTerm) :
   | [], ss => ss
   | (n, ty) :: vs, ss => completeListed ctx terms vs (ss.flatMap (listedExtensions ctx terms n ty))
 
-/-- Raw normalized matching, shared with the future closure engine. -/
+/-- Structural matching of normalized sentence and query terms. -/
 def matchNormalized (ctx : Context) (r : Rule) (q : Query) : List Substitution :=
   if !r.instantiable ctx || !(r.subject ctx.items).all (uses (q.applications ++ q.calls)) then [] else
     let ss := join ctx r.sentence.variables (r.anchors ctx.items) q.applications [[]]
@@ -211,17 +212,25 @@ terms, preserving the declaration order and resolved term types. -/
 def Context.normalizeListed (ctx : Context) (defs : List (TheoryTerm × TheoryTerm)) : Context :=
   { ctx with listed := fun ty => (ctx.listed ty).map (List.map (normalize defs)) }
 
+/-- Prepared matching uses the normalized listed table, with the original
+item order and type lookup. The requirements expose this table pointwise. -/
+def matchPrepared (ctx : Context) (defs : List (TheoryTerm × TheoryTerm))
+    (r : Rule) (q : Query) : List Substitution :=
+  matchNormalized (ctx.normalizeListed defs) r q
+
+/-- Normalize and extract the two matching channels in one shared place. -/
+def prepareQuery (ctx : Context) (ds : List (TheoryTerm × TheoryTerm)) (q : Query) : Query :=
+  let norm := normalize ds
+  let calls := q.calls.map norm
+  { applications := q.applications.flatMap (fun t => applications ctx.items (norm t)) ++
+      callApplications ctx.items calls
+    calls }
+
 /-- Join all anchors and calls through one substitution and two channels.
 This structural matcher is also usable independently of closure. -/
 def matchApplications (ctx : Context) (r : Rule) (q : Query) : List Substitution :=
   let ds := definitions ctx.definitions
-  let norm := normalize ds
-  let ctx := ctx.normalizeListed ds
-  let calls := q.calls.map norm
-  matchNormalized ctx (r.normalize ds) {
-    applications := q.applications.flatMap (fun t => applications ctx.items (norm t)) ++
-      callApplications ctx.items calls,
-    calls }
+  matchPrepared ctx ds (r.normalize ds) (prepareQuery ctx ds q)
 
 /-- Apply each simultaneous substitution through the shared sentence core. -/
 def instantiateMatches (sentence : TheorySentence) (ss : List Substitution) : List TheorySentence :=
