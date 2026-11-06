@@ -339,7 +339,7 @@ def refinementSpends (budget : Nat) : Bool := Id.run do
 
 -- A resource failure after a mutation is located using the changed
 -- source, not the original offsets, and identifies the generated mutant.
-#eval show IO Unit from do
+def mutantReadFailure : IO Unit := do
   let original := "pub fn projection(n: Int): Int := n\n".toList.toArray
   let mutant : Mutate.Mutant := { (default : Mutate.Mutant) with
     file := 0, span := { start := 0, stop := 0 }, after := "-- first new line\n-- second new line\n",
@@ -391,5 +391,15 @@ def refinementSharing : Bool := Id.run do
   return claim.smt.length < 10000 && claim.smt.contains "#refines1#local.hidden_0"
 
 #guard refinementSharing
+
+
+/-- Runtime checks exercise obligation comparison and mutant diagnostics in
+the compiled test driver, where coverage can observe them. -/
+def runtimeChecks : IO (Array String) := do
+  let a : Ex := .obligation (.all #[.atLeast0]) leaf
+  let b : Ex := .obligation (.all #[]) leaf
+  let failures := if a.same a && !a.same b then #[] else #["obligation comparison"]
+  mutantReadFailure
+  return failures
 
 end FrenTest.Expansion
