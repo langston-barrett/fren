@@ -7,8 +7,6 @@
 (morphism generic (source "library::id") (target "library::id<Int>") (types ("library::id::T" "Int")) (items ("library::id" "library::id<Int>")))
 (morphism inclusion (source "library::Box") (target "client") (types ) (items ("library::Box" "library::Box") ("library::Box::value" "library::Box::value") ("library::Box::{}" "library::Box::{}")))
 (morphism inclusion (source "library::Number") (target "client") (types ) (items ("library::Number" "library::Number")))
-(morphism inclusion (source "library::Sized::Self") (target "library::Sized") (types ) (items ("library::Sized::Self" "library::Sized::Self")))
-(morphism inclusion (source "library::Sized::size") (target "library::Sized") (types ) (items ("library::Sized::size" "library::Sized::size")))
 (morphism inclusion (source "library::echo") (target "client") (types ) (items ("library::echo" "library::echo")))
 (morphism inclusion (source "library::id") (target "client") (types ) (items ("library::id" "library::id")))
 (morphism inclusion (source "library::inc") (target "client") (types ) (items ("library::inc" "library::inc")))

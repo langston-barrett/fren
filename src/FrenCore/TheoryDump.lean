@@ -241,6 +241,8 @@ def theoryDiagram (input : TheoryDumpInput) : TheoryDiagram := Id.run do
   let mut out : TheoryDiagram := { theories := nodes.filter (!inPrelude ·.name) }
   for u in input.uses do
     if inPrelude u.scope then continue
+    -- A scope's own declarations are not import inclusions.
+    if !u.glob && u.target.getPrefix == u.scope then continue
     unless theorySourceName u.scope && theorySourceName u.target do continue
     let signature : Option TheorySignature := (nodes.find? (·.name == u.target)).map (·.theory.signature)
     let names := match signature with
