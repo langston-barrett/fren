@@ -2212,6 +2212,20 @@ branch can read, until it is moved to an environment that only `main`
 can use. Run by hand (`gh workflow run pr-review -f pr=N`), it posts only
 on the pull request that its `post` input names.
 
+The `codex-agent` workflow works small follow-up issues, selected by an
+`agent/<model>-<effort>` label or a manual run on `main`. It opens an
+`agent/*` pull request and answers at most three blocking reviews or
+failed `pre-merge` runs. The coordinator handles conflicts with `main`,
+the small findings of a clean review, and remaining work after that
+limit; the usual checks and review still gate every merge. Codex runs in
+an unprivileged container, isolated from the runner's processes and
+credentials. Its own sign-in is readable in the container, whose network
+access lets programs started by Codex send it elsewhere. Use a dedicated
+API key with an enforced spending limit. A fresh runner validates the
+patch and publishes it after neutralizing metadata from the model. The
+workflow's boundaries, authentication lifecycle and first-run checks are
+described in `.github/codex-agent/README.md`.
+
 `scripts/local-review` gives an author a pre-push check of its branch, by
 OpenAI's Codex CLI, before CI's review (AGENTS.md says when). It composes
 the brief with `compose.py` and `brief.md` as `origin/main` (or `--base
