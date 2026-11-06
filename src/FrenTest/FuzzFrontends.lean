@@ -79,6 +79,11 @@ function's body never reads, and the formulas whose value confirmation
 knows where an index is out of range; and it checks them with both front
 ends misreading models (`Fren.Core.misreadSet`), so that what one knows
 and the other does not is a message that differs.
+`--decidable` generates procedures in the decidable core of strings,
+sets, relations and sequences (`Wide.genDecidable`), in its own random
+stream so that every older mode's seeds are unchanged, then appends
+implicit output invariants to check the rule for generated queries
+(`Wide.outputInvariantCore`).
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -2983,6 +2988,172 @@ def enumerationObligations (relations : Bool := false) : R String := do
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts avoidKnown).1
 
+/-- A random procedure in the decidable core of strings. -/
+def stringCore : R String := do
+  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\n"
+  let lits := #["\"\"", "\"a\"", "\"ab\"", "\"b\"", "\"F0\"", "\"x?\""]
+  let pats := #["r\"[a-z]*\"", "r\"a+b?\"", "r\".*[A-Z].*\"", "r\"[^_]*\"", "r\"(ab|ba){1,2}\"", "r\"F0[1-7][0-9]\""]
+  for k in [0:1] do
+    let mut atoms : Array String := #[]
+    for _ in [0:3] do
+      let seed ← below 2147483648
+      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+      let v := pick #["s", "t"] 1
+      let l := pick lits 2
+      let i := toString ((seed / 13) % 4)
+      atoms := atoms.push <| pick #[
+        s!"{v}.starts_with?({l})", s!"{v}.ends_with?({l})", s!"{v}.contains?({l})",
+        s!"{v}.matches?({pick pats 3})", s!"{v}.len <= {i}", s!"{v}.len + 1 >= {i}", s!"{v} = {l}", "s = t",
+        "s != t", s!"s.len + t.len = {i}", s!"({v} ++ {l}).len > {i}", s!"{v}.at({i}) = {l}",
+        s!"{v}.slice(0, {i}) != {l}", s!"{v} < {l}"] 5
+    out := out ++ s!"proc c{k}(s: String, t: String): (p?) \{\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      expect e: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- A random procedure in the decidable core of sets:
+Boolean algebra with cardinality. -/
+def setCore : R String := do
+  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
+  let sets := #["s", "t", "(s union t)", "(s inter t)", "(s minus t)", "{1, 2}", "(t minus t)"]
+  for k in [0:1] do
+    let mut atoms : Array String := #[]
+    for _ in [0:3] do
+      let seed ← below 2147483648
+      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+      let a := pick sets 1
+      let b := pick sets 2
+      let i := toString ((seed / 13) % 4)
+      atoms := atoms.push <| pick #[
+        s!"x in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"{a} != {b}", s!"{a}.card <= {i}",
+        s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
+        "s = {}"] 5
+    out := out ++ s!"proc c{k}(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- Relations over finite types, which are in the decidable core: the
+relational operators, with the set operators, but not `card`, which the core
+does not combine with them. -/
+def relationCore : R String := do
+  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
+  let rels := #["r", "q", "(r union q)", "(r inter q)", "(r minus q)", "(r join q)", "r.inverse", "r.closure",
+    "{(E::A, E::B), (E::B, E::C)}", "(q join r.closure)"]
+  let sets := #["s", "r.domain", "r.range", "r.image(s)", "q.image({E::A})", "{E::B}", "r.closure.image(s)"]
+  for k in [0:1] do
+    let mut atoms : Array String := #[]
+    for _ in [0:3] do
+      let seed ← below 2147483648
+      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+      let a := pick rels 1
+      let b := pick rels 2
+      let u := pick sets 3
+      atoms := atoms.push <| pick #[
+        s!"(x, y) in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"x in {u}", s!"{u} subset s", s!"{u} != {b}.domain",
+        s!"(x, x) in {a}", "r = {}", s!"{a} != \{}"] 5
+    out := out ++ s!"proc c{k}(r: Rel<E, E>, q: Rel<E, E>, s: Set<E>, x: E, y: E): (p?) \{\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- Sequences in the decidable core: indexing, `len`, `update`, equality,
+and operations with a literal operand. -/
+def sequenceCore : R String := do
+  let mut out := "set_option fren.lint.unused_variables \"allow\"\n\n"
+  let seqs := #["q", "r", "[1, 2]", "q.update(0, x)", "r.update(i, 2)", "[x]", "[0, x, 1]"]
+  for k in [0:1] do
+    let mut atoms : Array String := #[]
+    for _ in [0:3] do
+      let seed ← below 2147483648
+      let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+      let a := pick seqs 1
+      let b := pick seqs 2
+      let j := toString ((seed / 13) % 3)
+      atoms := atoms.push <| pick #[
+        s!"{a} = {b}", s!"{a} != {b}", s!"{a}.len <= {j}", s!"x in [1, {j}]", s!"q.starts_with?([{j}])",
+        s!"q.ends_with?([x, {j}])", s!"(q.len > {j} and q[{j}] = x)", s!"(0 <= i and i < r.len and r[i] > {j})",
+        s!"{a}.len + {b}.len >= {j}"] 5
+    out := out ++ s!"proc c{k}(q: Seq<Int>, r: Seq<Int>, x: Int, i: Int): (p?) \{\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- Procedures whose output invariants apply an opaque recursion under
+realizability's quantifier, or whose outputs are replaced by definitions.
+Drawn after the older core generators so their existing specs stay
+unchanged up to this addition. -/
+def outputInvariantCore : R String := do
+  let carriers := #[
+    ("Int", "@", "0", false), ("Nat", "@", "0", false),
+    ("Bool", "(if @ then 1 else 0)", "false", false),
+    ("Mode", "(if @ = Mode::A then 0 else 1)", "Mode::A", false),
+    ("Carrier", "@.value", "Carrier { value := 0 }", false),
+    ("WrappedInt", "@.0", "WrappedInt(0)", false),
+    ("Payload", "(match @ { Payload::A(k) => k, Payload::B => 0 })", "Payload::B", false),
+    ("Atom", "0", "token(true)", false),
+    ("String", "@.len", "\"\"", true),
+    ("Set<Int>", "@.card", "{}", true),
+    ("Rel<Int, Int>", "@.card", "{}", true),
+    ("Seq<Int>", "@.len", "[]", true),
+    ("L", "(match @ { L::Nil => 0, L::Cons(k, _) => k })", "L::Nil", true)]
+  let (ty, value, witness, unbounded) ← pick carriers
+  let name := if ty == "Bool" then "n?" else "n"
+  let alias := if ty == "Bool" then "v?" else "v"
+  let field := if ty == "Bool" then "value?" else "value"
+  let bound := (← below 3) + 1
+  let mut out := "mod output_invariants\n\nset_option fren.lint.unused_variables \"allow\"\n\n" ++
+    "pub enum Mode { A, B }\npub struct Carrier { value: Int }\npub struct WrappedInt(Int)\n" ++
+    "pub type Atom\npub fn token(Bool): Atom\n" ++
+    "pub enum Payload { A(Int), B }\npub enum L { Nil, Cons(Int, L) }\n" ++
+    "pub fn total(l: L): (r: Int) {\n" ++
+    "    out r := match l { L::Nil => 0, L::Cons(n, rest) => n.abs + total(rest) }\n" ++
+    "    ensure nonnegative: r >= 0\n    ensure empty: when l = L::Nil, r = 0\n}\n" ++
+    "pub fn generic_total<T>(a: T, l: L): (r: Int) {\n" ++
+    "    out r := match l { L::Nil => 0, L::Cons(n, rest) => n.abs + generic_total(a, rest) }\n" ++
+    "    ensure nonnegative: r >= 0\n    ensure empty: when l = L::Nil, r = 0\n}\n" ++
+    "pub fn fixed<T>(unused: T): L := L::Nil\n"
+  let appAt (name : String) := if ty == "Atom" then s!"generic_total({name}, L::Cons(0, L::Nil))"
+    else s!"total(L::Cons({value.replace "@" name}, L::Nil))"
+  let direct := appAt name
+  out := out ++ s!"pub fn observe<T>(unused: T, {name}: {ty}): Int := {appAt alias} where {alias} := {name}\n"
+  let app ← pick #[direct, s!"observe(true, {name})", s!"(let {alias} := {name} in {appAt alias})",
+    s!"total(fixed({name}))"]
+  let comparison ← pick #[s!"{app} >= {bound}", s!"{bound} <= {app}", s!"{app} > {bound - 1}",
+    s!"{app} = {bound}", s!"{app} != -1"]
+  out := out ++ s!"pub type Refined = {name}: {ty} where invariant: ({comparison}) or {name} = {witness}\n" ++
+    "pub type Alias := Refined\n"
+  -- Abstract types can be procedure variables, never fields or payloads.
+  if ty != "Atom" then
+    out := out ++ s!"pub struct Box \{ {field}: Alias }\npub struct Wrapped(Alias)\n" ++
+      "pub enum Choice { V(Alias) }\npub struct Outer { inner: Box }\n"
+  let shapes := if ty == "Atom" then #[("Refined", "y"), ("Alias", "y")] else
+    #[ ("Refined", "y"), ("Alias", "y"), ("Box", s!"y.{field}"),
+       ("Wrapped", "y.0"), ("Choice", "(match y { Choice::V(v) => v })"), ("Outer", s!"y.inner.{field}") ]
+  let (result, read) ← pick shapes
+  let output := if ty == "Bool" && (result == "Refined" || result == "Alias") then "y?" else "y"
+  let read := if ty == "Bool" then
+      if read == "y" then output else read.replace "Choice::V(v) => v" "Choice::V(v?) => v?"
+    else read
+  -- Unbounded outputs, including through data, must be defined (F0313,
+  -- `lang::variable_type`); the solver never quantifies over them.
+  if unbounded || (← chance 30) then
+    let input := if output == "y?" then "x?" else "x"
+    out := out ++ s!"proc generated({input}: {result}): ({output}: {result}) \{ out {output} := {input} }\n"
+  else
+    let input := if ty == "Bool" then "x?" else "x"
+    let op ← pick (if ty == "Int" || ty == "Nat" then #["=", "!=", ">=", ">", "<=", "<"] else #["=", "!="])
+    out := out ++ s!"proc generated({input}: {ty}): ({output}: {result}) \{ ensure g: {read} {op} {input} }\n"
+  return out
+
+/-- Random procedures in each theory's decidable core, followed by output
+invariant cases. A mode of its own keeps every older mode's seed
+unchanged. -/
+def genDecidable : R String := do
+  let out := "mod strings\n\n" ++ (← stringCore) ++ "mod sets\n\n" ++ (← setCore) ++
+    "mod relations\n\n" ++ (← relationCore) ++ "mod sequences\n\n" ++ (← sequenceCore)
+  return out ++ (← outputInvariantCore)
+
 end Wide
 
 /-! ### Running the front ends -/
@@ -2996,7 +3167,8 @@ structure Ran where
   comparison : FrenTest.Frontends.Comparison
   /-- Both reports, as comments. -/
   reports : String
-  /-- The binary's error codes. -/
+  /-- The binary's error codes, or headlines for code-less errors, without
+  the stopped trailer (`errorKeys`). -/
   errors : Array String
   /-- The binary's diagnostics. -/
   cli : Array Diagnostic
@@ -3007,6 +3179,34 @@ structure Ran where
   obligations? : Option (String × String) := none
   /-- Both structural theories dumps, compared independently of diagnostics. -/
   theories? : Option (String × String) := none
+
+/-- Error codes and code-less error headlines, without the trailer that
+summarizes the static errors that stopped checking. Internal errors are
+kept, including those without a location. -/
+def errorKeys (diags : Array Diagnostic) : Array String :=
+  diags.filterMap fun d =>
+    if d.severity == "error" && !FrenTest.Frontends.isStoppedTrailer d then
+      some (d.code?.getD (headOf d)) else none
+
+section
+private def stopped : Diagnostic :=
+  { line := 0, severity := "error", text := Fren.Core.couldNotHeadline }
+private def recursionError : Diagnostic :=
+  { line := 4, severity := "error", text := "recursive call does not decrease", code? := some "F0447" }
+private def internalError : Diagnostic :=
+  { line := 0, severity := "error", text := "internal error: the solver did not decide the realizability check" }
+
+-- A structural-recursion error's stopped trailer is not another error.
+#guard errorKeys #[recursionError, stopped] == #["F0447"]
+-- Code-less internal errors remain visible, with or without static errors
+-- and whether or not they have a location.
+#guard errorKeys #[internalError] == #[internalError.text]
+#guard errorKeys #[recursionError, internalError, stopped] == #["F0447", internalError.text]
+#guard errorKeys #[{ internalError with line := 7 }] == #[internalError.text]
+-- Failed comparisons count; warnings do not.
+#guard errorKeys #[{ recursionError with code? := some "F0603" },
+  { internalError with severity := "warning" }] == #["F0603"]
+end
 
 /-- `out` without its obligations dump, and the dump, if it has one
 (`Fren.Core.dumpStart`). -/
@@ -3050,7 +3250,7 @@ def runFrontends (env : Environment) (path : System.FilePath) (text : String) (m
     String.join (ds.toList.map fun d => s!"--   {d.line}:{d.col + 1}: {d.severity}{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}\n")
       ++ s!"--   summary: {s.getD "(none)"}\n"
   return { comparison, reports := s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
-           errors := cli.filterMap fun d => if d.severity == "error" then d.code? else none,
+           errors := errorKeys cli,
            cli, hosted, obligations?, theories? }
 
 unsafe def loadFren : IO Environment := do
@@ -3122,6 +3322,8 @@ structure Mode where
   /-- Specs of induction-candidate types, argument forms and comparisons
   (`Wide.inductionCandidates`). -/
   inductionCandidates : Bool := false
+  /-- Procedures in the decidable core of strings, sets, relations and sequences. -/
+  decidable : Bool := false
   /-- Specs of call-input obligations with two named parts, predicate leaves
   with inherited evidence and whole-predicate check locations
   (`Wide.enumerationObligations`). -/
@@ -3153,7 +3355,8 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
   else if m.inductionCandidates then Id.run (Wide.inductionCandidates.run' (inductionRngOf seed))
   else if m.unfoldings then Id.run (Wide.unfoldings.run' (unfoldingRngOf seed))
   else
-    Id.run ((if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
+    Id.run ((if m.decidable then Wide.genDecidable
+      else if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
       else if m.scrutinees then Wide.duplicateScrutineeGroup
       else if m.factScopes then Wide.factScopes else if m.confirm then Wide.genConfirmed
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
@@ -3164,7 +3367,7 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
 `--induction-forms`, `--keywords` and `--recursion-positions`. The empty
-prefix of `--scrutinees`, `--fact-scopes`, `--induction-candidates`,
+prefix of `--scrutinees`, `--fact-scopes`, `--induction-candidates`, `--decidable`,
 `--enumeration-obligations`, `--unfoldings` and `--datatype-elements`
 makes any static error a group error: these generators, like appended
 groups, promise to add none.
@@ -3172,7 +3375,7 @@ groups, promise to add none.
 prefix, so its additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if m.scrutinees || m.factScopes || m.inductionCandidates || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
+  if m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
@@ -3183,6 +3386,7 @@ def Mode.args (m : Mode) : Array String :=
     (if m.keywords then #["--keywords"] else #[]) ++
     (if m.factScopes then #["--fact-scopes"] else #[]) ++
     (if m.inductionCandidates then #["--induction-candidates"] else #[]) ++
+    (if m.decidable then #["--decidable"] else #[]) ++
     (if m.enumerationObligations then #["--enumeration-obligations"] else #[]) ++
     (if m.enumerationRelations then #["--enumeration-relations"] else #[]) ++
     (if m.unfoldings then #["--unfoldings"] else #[]) ++
@@ -3194,12 +3398,13 @@ def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--datatype-elements", "--recursion-positions"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--decidable", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--datatype-elements", "--recursion-positions"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
            keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
            inductionCandidates := args.contains "--induction-candidates"
+           decidable := args.contains "--decidable"
            enumerationObligations := args.contains "--enumeration-obligations"
            enumerationRelations := args.contains "--enumeration-relations"
            unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements"
@@ -3215,6 +3420,7 @@ def Mode.lean (m : Mode) : String :=
     (if m.keywords then ["keywords := true"] else []) ++
     (if m.factScopes then ["factScopes := true"] else []) ++
     (if m.inductionCandidates then ["inductionCandidates := true"] else []) ++
+    (if m.decidable then ["decidable := true"] else []) ++
     (if m.enumerationObligations then ["enumerationObligations := true"] else []) ++
     (if m.enumerationRelations then ["enumerationRelations := true"] else []) ++
     (if m.unfoldings then ["unfoldings := true"] else []) ++
@@ -3862,7 +4068,9 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
     ({ inductionForms := true }, 0, 20), ({ factScopes := true }, 0, 20),
-    ({ inductionCandidates := true }, 0, 20),
+    ({ inductionCandidates := true }, 0, 20), ({ decidable := true }, 0, 5),
+    ({ decidable := true }, 8182108, 1), ({ decidable := true }, 8182118, 1),
+    ({ decidable := true }, 8187312, 1),
     ({ enumerationObligations := true }, 0, 20), ({ enumerationObligations := true }, 438, 1),
     ({ enumerationObligations := true }, 555, 1), ({ enumerationRelations := true }, 0, 20),
     ({ unfoldings := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
@@ -4039,6 +4247,12 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
     for k in vanished do
       failures := failures.push s!"seed {s}{flags mode}: the front ends no longer differ by `{k.difference}` (#{k.issue}); \
         remove it from `knownDifferences`, or, if a change to the generator removed it, leave every seed's spec as it was"
+    if mode.decidable then
+      -- CLI internal errors have no code; expected failed checks do.
+      -- A hosted-only error is already an unlisted front-end difference.
+      for d in ran.cli do
+        if d.severity == "error" && d.code?.isNone then
+          failures := failures.push s!"seed {s}{flags mode}: {d.text}\n  reproduce it with {again}"
     if ({ mode with avoidKnown := false } : Mode) == { recursionPositions := true } then
       let rejects := (Id.run (FuzzRecursion.genCase.run' (rngOf s))).rejects
       let errors := ran.errors.toList.eraseDups
@@ -4463,10 +4677,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--recursion-positions] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--recursion-positions] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4486,13 +4700,14 @@ unsafe def main (args : List String) : IO UInt32 := do
                        inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
                        keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
                        inductionCandidates := args.contains "--induction-candidates"
+                       decidable := args.contains "--decidable"
                        enumerationObligations := args.contains "--enumeration-obligations"
                        enumerationRelations := args.contains "--enumeration-relations"
                        unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements"
                        recursionPositions := args.contains "--recursion-positions" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
     && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
-    && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--datatype-elements" && a != "--recursion-positions")
+    && a != "--decidable" && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--datatype-elements" && a != "--recursion-positions")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

@@ -135,6 +135,7 @@ def isCheckHeadline (h : String) : Bool :=
   h.startsWith "could not decide whether "
   -- A model that confirmation refuted, in place of the check's result.
   || h.startsWith "internal error: the solver's model for "
+  || h.startsWith "internal error: the solver did not decide "
   || (rest "the assumptions of ").any (·.startsWith " are unsatisfiable: ")
   || r == " is not realizable"
   || (rest "an index of ").any (· == " may be out of range")
@@ -210,6 +211,8 @@ def checkKindOf? (d : Diagnostic) : Option String :=
   let h := headOf d
   let has (t : String) := (h.splitOn t).length > 1
   if let some r := h.dropPrefix? "internal error: the solver's model for the " then
+    (r.toString.splitOn " check of ").head?
+  else if let some r := h.dropPrefix? "internal error: the solver did not decide the " then
     (r.toString.splitOn " check of ").head?
   else if h.startsWith "could not decide whether " then none
   else if h.endsWith " may be out of range" then some "definedness"

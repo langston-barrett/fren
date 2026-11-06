@@ -31,6 +31,15 @@ def differs (text : String) (cli hosted : Report) : Bool := !(compare text cli h
 
 def agrees (text : String) (cli hosted : Report) : Bool := (compare text cli hosted).1.isEmpty
 
+-- An internal error for an undecided core query is a check diagnostic:
+-- the CLI exits with 1, rather than 2 for a static error of the spec.
+private def undecidedCore : Diagnostic :=
+  err 1 "internal error: the solver did not decide the expectation check of `e` in the decidable core"
+
+#guard agrees "expect e: true\n"
+  { diags := #[undecidedCore], summary? := "0 passed, 0 failed, 1 inconclusive, 0 redundant", exit? := some 1 }
+  { diags := #[undecidedCore], summary? := "0 passed, 0 failed, 1 inconclusive, 0 redundant" }
+
 /-! ## Lean rejects what the binary accepts -/
 
 -- #97 in a constant, an item without checks.

@@ -70,7 +70,7 @@ jobs:
     # a shard that starts from this `.lake` compiles only what its pull
     # request changes (`Reqs/dev/Testing#continuous-integration`).
     - id: driver
-      run: lake build fren_test
+      run: lake build --wfail fren_test
     # As soon as it is built, for the pull requests that start from it. Lake
     # saves no output of a module that failed, so a failed build's `.lake`
     # would serve as well, but a pull request that restores it would
@@ -361,7 +361,7 @@ jobs:
     - uses: ./.github/actions/lake
       with:
         sha: ${{ github.sha }}
-    - run: lake build fren_test
+    - run: lake build --wfail fren_test
     # A panic aborts the part, as in `lake test`'s jobs (`spawnJob`): it
     # would otherwise only print, and the check would go on with a default.
     - env:

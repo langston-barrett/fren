@@ -773,10 +773,12 @@ def loadReading (p : Paint) (paths : Array String) (lints : Array (Fren.Core.Lin
   return some (files, st, do (← reading).getDM (sequential files st))
 
 /-- Prints the messages of result `r` of `c`, at the positions of the items
-they are about; returns them. -/
+they are about; returns them and those that are errors. The latter also
+fail the run when the check's verdict itself is inconclusive. -/
 def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (r : Fren.Core.CheckResult)
-    (vias : Array (Span × Lean.Name) := #[]) : IO (Array Msg) := do
+    (vias : Array (Span × Lean.Name) := #[]) : IO (Array Msg × Array Msg) := do
   let mut shown := #[]
+  let mut errors := #[]
   for m in Fren.Core.messages (c.vars.any fun v => v.role == .output && !v.isPub) { r with global := c.global } c.decidable do
     let prop? := m.item?.bind fun n => c.props.find? (·.name == n)
     let index? := m.atIndex?.bind fun k => m.item?.bind fun n => (c.indexes.filter (·.1 == n))[k]?.map (·.2.2.1)
@@ -810,7 +812,7 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
           }
         else msg
       else if let some label := r.subsetTy?.bind (·.dropPrefix? "@invariant:") then
-        if m.severity == .error then
+        if r.verdict == .fail && m.severity == .error then
           { msg with
             code? := some "F0661"
             headline := s!"invariant `{label}` does not hold"
@@ -823,7 +825,8 @@ def printResult (p : Paint) (files : Array (String × Array Char)) (c : CComp) (
     let file := prop?.bind fun prop => if prop.sourceRef || m.atRange?.isSome then prop.file? else none
     printDiag p files { file := file.getD c.file, span, severity := m.severity, msg }
     shown := shown.push msg
-  return shown
+    if m.severity == .error then errors := errors.push msg
+  return (shown, errors)
 
 /-- Tests `c`, the evaluator's `ec`, on `n` random behaviours from `seed`
 (`Reqs/Eval#fren-quickcheck`). -/
@@ -862,7 +865,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
     -- Inconclusive results are reported below, once for the procedure; a
     -- cover goal's pass shows its witness.
     if r.verdict == .fail || (r.kind == .cover && r.verdict == .pass) then
-      shown := shown ++ (← printResult args.paint files c r vias)
+      shown := shown ++ (← printResult args.paint files c r vias).1
   let warn (msg : Msg) : IO Unit := printDiag args.paint files { file := c.file, span := c.span, severity := .warning, msg }
   -- Realizability refuted by an input whose outputs the search all saw
   -- (`eval::test_verdict`), which its failure reports.
@@ -1341,7 +1344,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       printDiag args.paint files { file := c.file, span, msg }
       internal := internal.push msg
     for r in results do
-      shown := shown ++ (← printResult args.paint files c r st.vias)
+      let (msgs, errors) ← printResult args.paint files c r st.vias
+      shown := shown ++ msgs
+      internal := internal ++ errors
     -- Each of its results, with the caveats of the method that ran it.
     let mut item : Array (Fren.Core.CheckResult × List Fren.Core.Caveat) :=
       results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
@@ -1364,7 +1369,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
       enumErrors := enumErrors + 1
     | some (.ok e) =>
       for r in e.results do
-        shown := shown ++ (← printResult args.paint files c r st.vias)
+        let (msgs, errors) ← printResult args.paint files c r st.vias
+        shown := shown ++ msgs
+        internal := internal ++ errors
       item := item ++ e.results.map fun r => (r, Fren.Core.ownCaveatsOf r false)
       methods := methods ++ e.results.map fun _ => .enumerated
       if let some msg := e.boundedMsg? (subjectOf c global) c.tested then
@@ -1433,12 +1440,9 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   if shown.any (·.code?.isSome) then
     IO.eprintln ""
     printExplainHint shown
-  -- A result whose model Fren's semantics contradicts stays inconclusive,
-  -- and its internal error, printed with it, is an error of the run, as a
-  -- refuted model's is (`applyRefutations`, `Reqs/Models#reporting`).
-  let refutedModels := all.filter (·.detail matches .refuted ..)
+  -- Internal errors printed with an inconclusive check, including a
+  -- refuted model or an undecided core query, fail the run too.
   let errors := (internal.map fun _ => Fren.Core.Severity.error) ++ Array.replicate enumErrors .error
-    ++ refutedModels.map fun _ => Fren.Core.Severity.error
   return exitCode true (Fren.Core.worst (all.filterMap (·.severity?) ++ st.diags.map (·.severity) ++ errors))
 
 /-- Runs `fren quickcheck` (`Reqs/Eval#fren-quickcheck`), printing

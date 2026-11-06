@@ -12,7 +12,7 @@ open Fren.Lang
 
 The decisions in `FrenCore.Check` implement the comps of `check`: for every
 answer the solver can give, the verdict and what is reported are as
-required. Each obligation is proved by `decide`.
+required. The obligations cover every input of each shared decision.
 -/
 
 namespace Fren.Impls
@@ -57,6 +57,50 @@ def toVerdict : Verdict → check.Verdict
   | .pass => .Pass
   | .fail => .Fail
   | .inconclusive => .Inconclusive
+
+def toUnknownReason : Fren.Core.UnknownReason → check.UnknownReason
+  | .solver => .Solver
+  | .unsettledPremise => .UnsettledPremise
+  | .recursiveModel => .RecursiveModel
+  | .elements => .Elements
+  | .refutedModel => .RefutedModel
+
+impl unknown_reason: check::unknown_reason for (r : String) {
+  reason := r,
+  source := toUnknownReason (Fren.Core.unknownReason r),
+} by
+  intro r _
+  have limit : Fren.Core.elementLimitReason 0 =
+      "its quantifiers over sequences' elements would have more than 256 instances" := by decide
+  by_cases premise : r = "another postcondition used by simultaneous induction did not pass" <;>
+    by_cases recursive : Fren.Str.startsWith r "recursive contracts: " = true <;>
+    by_cases elements : r = "its quantifiers over sequences' elements would have more than 256 instances" <;>
+    by_cases unconfirmed : r = Fren.Core.elementUnconfirmedReason <;>
+    by_cases refuted : r = Fren.Core.refutedModelReason <;>
+    simp_all [fren_spec, Fren.Core.unknownReason, Fren.Core.Detail.modelRefuted,
+      Fren.Core.elementReasonNotes?, Fren.Core.elementUnconfirmedReason,
+      Fren.Core.refutedModelReason, toUnknownReason, Fren.Str.lit]
+
+impl decidable_unknown: check::decidable_unknown for (c o e : Bool) (s : Fren.Core.UnknownReason) (r : String) {
+  procedure_core? := c,
+  output_core? := o,
+  enumerated? := e,
+  source := toUnknownReason s,
+  reason := r,
+  internal_error? := Fren.Core.decidableUnknown c s r o e,
+} by
+  intro c o e s r _
+  have solver (a : Fren.Core.UnknownReason) : (a == .solver) = true ↔ a = .solver := by
+    cases a <;> decide
+  cases s <;> simp [fren_spec, Fren.Core.decidableUnknown, toUnknownReason, Fren.Str.lit, and_assoc, solver]
+
+impl output_query_core: check::output_query_core for (outs : List String) (apps : List (List String)) {
+  outputs := Fren.Seq.ofList outs,
+  applications := Fren.Seq.ofList (apps.map Fren.Seq.ofList),
+  in_core? := Fren.Core.outputQueryInCore outs apps,
+} by
+  intro outs apps _
+  simp [fren_spec, Fren.Core.outputQueryInCore, List.all_eq_true, Fren.Seq.mem_iff]
 
 instance : Fren.Finite CheckKind :=
   ⟨[.realizable, .inst, .«expect», .cover, .vacuity, .redundancy, .determinism, .definedness, .completeness,

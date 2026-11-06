@@ -1,0 +1,9 @@
+-- An internal error at a subset obligation keeps its diagnostic, rather
+-- than becoming F0661 (which would claim that the invariant is false).
+-- Both front ends run this with FREN_MISREAD_MODELS set.
+type Zero = n: Int where zero: n = 0
+
+proc caught(a: Int): (r: Zero) {
+    require pinned: a = 1
+    out r := a  --~ error: internal error: the solver's model for the definedness check of `caught::r` makes its hypothesis `pinned` false in Fren's semantics
+}
