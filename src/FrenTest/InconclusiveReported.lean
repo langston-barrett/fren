@@ -6,7 +6,7 @@ import FrenCore.Check
 `Fren.Core.messages`, which both front ends report, gives an inconclusive
 result of every kind, about a constraint or about the whole item, in a
 procedure or a global expectation, a warning for each cause of its being
-undecided, but for a model that Fren's semantics refutes or a core query
+undecided, but for a detail carrying a refuted model or a core query
 that gives up without reaching a limit, which has the internal error
 instead, and no warning. -/
 -- fren-covers: view::inconclusive_reported
@@ -20,8 +20,13 @@ private def causes : Array (String × Detail × Bool) := #[
   ("empty reason", .unknown "", true),
   ("timeout", .unknown "TIMEOUT", false),
   ("resource limit", .unknown "RESOURCEOUT", false),
+  ("memory limit", .unknown "MEMOUT", false),
+  ("interrupted", .unknown "INTERRUPTED", false),
   ("binary timeout", .unknown "the solver returned unknown (TIMEOUT)", false),
   ("binary resource limit", .unknown "the solver returned unknown (RESOURCEOUT)", false),
+  ("binary memory limit", .unknown "the solver returned unknown (MEMOUT)", false),
+  ("binary interrupted", .unknown "the solver returned unknown (INTERRUPTED)", false),
+  ("confirmation refuted model", .unknown refutedModelReason, false),
   ("quantifier", .undecidedQuantifier 3, false),
   ("out of range", .outOfRange, false),
   ("induction", .unknown "another postcondition used by simultaneous induction did not pass", false),
@@ -65,11 +70,12 @@ private def unknownBackend (reason : String) : Backend Id Bool Unit where
   samePrimed _ := true
   subst _ := id
 
--- fren-covers: check::decidable_unknown
+-- fren-covers: check::decidable_unknown, check::unknown_reason
 #eval show IO Unit from do
   let c : Comp Bool := { path := `query, vars := #[], assumes := #[], reqs := #[], expects := #[], triggers := #[] }
-  for reason in ["INCOMPLETE", "", "TIMEOUT", "RESOURCEOUT",
-      "the solver returned unknown (TIMEOUT)", "the solver returned unknown (RESOURCEOUT)"] do
+  for reason in ["INCOMPLETE", "", "TIMEOUT", "RESOURCEOUT", "MEMOUT", "INTERRUPTED", refutedModelReason,
+      "the solver returned unknown (TIMEOUT)", "the solver returned unknown (RESOURCEOUT)",
+      "the solver returned unknown (MEMOUT)", "the solver returned unknown (INTERRUPTED)"] do
     let r := checkExpect (unknownBackend reason) c (`claim, true)
     let ms := messages false r
     let error := reason == "INCOMPLETE" || reason.isEmpty
@@ -115,7 +121,7 @@ private def unknownBackend (reason : String) : Backend Id Bool Unit where
     let empty := checkRealizableUniversal { outputEmpty with outputApplications? := none } c
     unless (match empty.detail with | .unknown w => w.isEmpty | _ => false) && (messages false empty).all (·.severity == .error) do
       throw <| IO.userError "an empty output-query reason was replaced by the assumptions query's timeout"
-    for reason in [recursiveReason #[`total], elementUnconfirmedReason,
+    for reason in [recursiveReason #[`total], elementUnconfirmedReason, refutedModelReason,
         "another postcondition used by simultaneous induction did not pass"] do
       let synthetic := { bk with
         query := fun _ _ model => pure (.unknown (if model then "INCOMPLETE" else reason))

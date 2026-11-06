@@ -1,8 +1,8 @@
 -- Induction on a global expectation's parameter: where a claim's check is
 -- Inconclusive, the contract of a function generated from it, by Hoare's
 -- rule, on each candidate in order (`Reqs/Lang/Recursion#induction`).
--- fren-covers: lang::induction_candidate, lang::induction_hypotheses, lang::induction_verdict
---@ summary: 37 passed, 1 failed, 6 inconclusive, 0 redundant
+-- fren-covers: lang::induction_candidate, lang::induction_hypotheses, lang::induction_verdict, lang::unfoldings
+--@ summary: 41 passed, 1 failed, 7 inconclusive, 0 redundant
 pub enum L { Nil, Cons(Int, L) }
 
 pub fn len(l: L): Int := match l {
@@ -37,13 +37,34 @@ expect nil_suffix(a: L, b: L) {
     expect same: len(append(a, b)) = len(a)
 }
 
--- Needs `append(L::Nil, b) = b` where `a` is `L::Cons(h, L::Nil)`: one
--- step of `append` at the child, which applications that the equations
--- bring do not have yet.
+-- Needs `append(L::Nil, b) = b` where `a` is `L::Cons(h, L::Nil)`: the
+-- equation of `append` at the child, at depth 1, which only an induction's
+-- check unfolds (`Reqs/Lang/Recursion#unfolding-in-an-induction`).
 expect long(a: L, b: L) {
     assume nonempty: a != L::Nil
-    expect longer: len(append(a, b)) > len(b)   --~ warning: could not decide whether `long::longer` holds
+    expect longer: len(append(a, b)) > len(b)
 }
+
+-- Its `L::Nil` case needs the equations of `len` down to depth 2, at the
+-- tail of the tail of `append(a, ...)`: within the bound of 3 steps. The
+-- last tail is `L::Nil`, which `a` is too, so `len` there is `len(a)`.
+expect three_more(a: L) {
+    expect adds_three: len(append(a, L::Cons(1, L::Cons(2, L::Cons(3, L::Nil))))) = len(a) + 3
+}
+
+-- Its `L::Nil` case needs the equation of `len` at depth 3: beyond the
+-- bound, so it stays Inconclusive, and nothing says that the bound was
+-- reached.
+expect four_more(a: L) {
+    expect adds_four: len(
+        append(a, L::Cons(1, L::Cons(2, L::Cons(3, L::Cons(4, L::Nil)))))
+    ) = len(a) + 4  --~^^ warning: could not decide whether `four_more::adds_four` holds
+}
+
+-- No parameter, so no induction: the equation of `len` at depth 1, which
+-- it needs, is not unfolded outside an induction's check.
+set_option fren.lint.assertions_on_constants "allow" in
+expect const_len: len(append(L::Nil, L::Cons(1, L::Nil))) = 1   --~ warning: could not decide whether `const_len` holds
 
 -- Needs `adds` at `rev(t)`: earlier claims are not hypotheses yet.
 expect len_rev(a: L) {

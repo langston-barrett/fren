@@ -16,10 +16,11 @@ fren.lint.undecidable "allow" in` before an item.
 Every query that Fren asks about a procedure or global expectation without
 an opt-out or an opaque application to a quantified output is in a
 fragment with a known decision procedure. That the fragment is decidable
-does not mean that the solver decides every query in it within its time
-or resource limit: see [In practice](#in-practice).
-An `Unknown` answer without reaching either limit is an internal error,
-reported with the check, rather than an ordinary inconclusive result
+does not mean that the solver decides every query in it within its time,
+resource or memory limit, or after an interruption: see
+[In practice](#in-practice). An `Unknown` answer without reaching a limit
+or being interrupted is an internal error, reported with the check,
+rather than an ordinary inconclusive result
 ([`check::decidable_unknown`](../Check.md#verdicts)). An `Inconclusive`
 verdict from reaching a limit keeps its [message](../View.md#check-results).
 With recursive functions, it may instead mean that evaluation did not
@@ -271,21 +272,23 @@ does, for the rules above.
 Applications of [structural recursions](Recursion.md) are opaque,
 with ground postconditions and one step of defining equations at each
 application. Applications introduced by that step receive postconditions
-only. This is finite and adds no quantifiers, even for constant arguments,
-so recursion never raises `undecidable`. Completeness is modulo this
-opacity: facts requiring more of a recursive body than its one-step
-equations and contract are not promised. Strengthen its contract to prove
-such facts. Models that evaluation does not confirm are Inconclusive
-(`F0450`).
+only, but in the check of an [induction](Recursion.md#unfolding-in-an-induction),
+which unfolds up to three steps. This is finite and adds no quantifiers,
+even for constant arguments, so recursion never raises `undecidable`.
+Completeness is modulo this opacity: facts requiring more of a recursive
+body than the equations its query unfolds and its contract are not
+promised. Strengthen its contract to prove such facts. Models that
+evaluation does not confirm are Inconclusive (`F0450`).
 
 ## In practice
 
 Fren checks with cvc5 and does not add decision procedures of its own, so
 what the core promises is what cvc5 does with it. Where cvc5 does not
-decide a query in the core before its time or resource limit, the check
-is `Inconclusive`. If it gives up without reaching either limit, Fren
-reports an internal error with the check: the query was promised decidable,
-so this is a bug in Fren or the solver, not a fault in the spec.
+decide a query in the core before a time, resource or memory limit, or
+after an interruption, the check is `Inconclusive`. If it gives up
+without reaching a limit or being interrupted, Fren reports an internal
+error with the check: the query was promised decidable, so this is a bug
+in Fren or the solver, not a fault in the spec.
 
 The solver decides these reliably and quickly:
 

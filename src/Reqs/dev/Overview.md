@@ -19,9 +19,14 @@ The lint chapters have wrappers under `src/Reqs/Lint/`, imported by
 dependencies by lint group. To add a subchapter to an existing directory
 group, add one `#fren_md "Style/New.md"` before the final `#fren_check` in
 that group's wrapper, here `src/Reqs/Lint/Style.lean`. The binary tests and
-mutation corpus follow those wrappers, so their chapter list needs no separate
-entry. A larger chapter can instead have its own wrapper alongside its
-Markdown, importing its prerequisites, and an import in `Reqs.Lint`.
+mutation corpus follow those wrappers, so their chapter list needs no
+separate entry. A larger chapter can instead have its own wrapper alongside
+its Markdown, importing its prerequisites, and an import in `Reqs.Lint`.
+A wrapper under an existing group directory is covered by that group's
+`.andSubmodules` glob and Markdown directory input. A new top-level wrapper,
+such as `Reqs.Lint.Foo`, also needs its own `lean_lib` and `input_file` in
+`lakefile.lean`; otherwise it falls back to the root `Reqs` library, whose
+inputs include every spec.
 
 - [Architecture](Architecture.md): design principles and libraries
 - [Testing](Testing.md): the kinds of tests and where they live

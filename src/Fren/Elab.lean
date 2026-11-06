@@ -5716,13 +5716,6 @@ def boolOperand (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   checkTermType a x .bool (Core.opNote op .bool)
   return ← propositionTerm x
 
-/-- The nonempty `xs` joined by `op`, as a balanced tree, so that a
-quantifier's expansion is as deep as the logarithm of its instances, which
-the solver's preprocessing recurses through. -/
-partial def balanced (op : Expr → Expr → Expr) (xs : Array Expr) : Expr :=
-  if xs.size ≤ 1 then xs[0]!
-  else op (balanced op (xs.extract 0 (xs.size / 2))) (balanced op (xs.extract (xs.size / 2)))
-
 /-- Whether the quantifier `e` is a `forall`, rather than an `exists`. -/
 def isForall (e : Syntax) : Bool :=
   let kw := if e[0].isAtom then e[0] else e[0][0]

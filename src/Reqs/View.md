@@ -152,12 +152,13 @@ A passing result is silent, except that a passing cover goal shows its
 witness (see below). A failing result is an error, except that a
 redundant constraint is a warning. An inconclusive result is a warning,
 with two exceptions. An unknown solver answer in the decidable core
-without reaching a time or resource limit has an internal error in place
-of its warning ([`check::decidable_unknown`](Check.md#verdicts)).
+without reaching a time, resource or memory limit, or being interrupted,
+has an internal error in place of its warning
+([`check::decidable_unknown`](Check.md#verdicts)).
 Fren's semantics may contradict the solver's model of
-a counterexample or a witness that the result would show. The result is
-then still inconclusive, and the summary counts it so. But the only
-diagnostic printed for it is the internal error of [Reading
+a counterexample or a witness that the result's detail would show. The
+result is then still inconclusive, and the summary counts it so. But the
+only diagnostic printed for it is the internal error of [Reading
 models](Models.md#reporting), an error, in place of its warning. The
 `fren` command's [confirmation of its other
 models](Eval.md#confirming-models), which Lean does not do, keeps the
@@ -520,11 +521,15 @@ expectation of a trait under the laws is, has a warning among its
 messages, whatever made it undecided, but for two causes. A query in the
 decidable core that gives up without reaching a limit has an internal
 error instead (`check::decidable_unknown`). A result whose
-solver model Fren's semantics refutes has instead the internal error that
-reports the refuted model (see [Check results](#check-results)), and no
-warning. Neither the kind nor the place changes the messages' severity,
-so the Req is over the cause alone; `src/FrenTest/InconclusiveReported.lean`
-runs `Fren.Core.messages` over every kind, place and cause:
+detail carries a model Fren's semantics refutes has instead the internal
+error that reports the refuted model (see [Check results](#check-results)),
+and no warning. When the CLI's confirmation has already printed that error and
+records only the synthetic reason "the solver's model was refuted", the
+shared report retains its ordinary warning; it never reports that the
+solver gave an `Unknown` answer. Neither the kind nor the place changes
+the messages' severity, so the Req is over the cause alone;
+`src/FrenTest/InconclusiveReported.lean` runs `Fren.Core.messages` over every
+kind, place and cause:
 
 ```fren
 -- Why a check is undecided.

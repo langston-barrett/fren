@@ -54,6 +54,8 @@ tested lang::global_successor: "test/ui/lang/global_preconditions.fren"
 tested lang::induction_candidate: "test/ui/checks/induction.fren"
 tested lang::induction_hypotheses: "test/ui/checks/induction.fren"
 tested lang::induction_verdict: "test/ui/checks/induction.fren"
+tested lang::induction_function: "test/ui/checks/induction_unfolding_forms.fren"
+tested lang::unfoldings: "test/ui/checks/induction.fren", "test/ui/checks/induction_unfolding_forms.fren"
 tested lang::trait_expectation: "test/ui/lang/traits.fren"
 tested view::inconclusive_reported: "src/FrenTest/InconclusiveReported.lean", "test/ui/lang/traits.fren", "test/ui/lang/traits_frontends.fren"
 tested refinement::positional_refinement: "test/ui/lang/refines.fren", "src/FrenTest/RefinesTests.lean"
@@ -64,6 +66,7 @@ tested refinement::refinement_singleton_domain: "test/ui/checks/refines_tested.f
 
 -- Concrete feature regressions and exhaustive finite backend checks.
 tested check::decidable_unknown: "src/FrenTest/InconclusiveReported.lean"
+tested check::unknown_reason: "src/FrenTest/InconclusiveReported.lean"
 tested check::output_query_core: "src/FrenTest/InconclusiveReported.lean",
   "src/FrenTest/OutputQueryCore.lean", "test/ui/checks/output_query_core.fren"
 tested check::branch_forcing: "src/FrenTest/BranchForcing.lean"
@@ -133,7 +136,7 @@ tested lang::theory_translation: "src/FrenTest/Theories.lean"
 tested lang::theory_instance: "src/FrenTest/Theories.lean"
 
 -- Structural matching equations are proved for every input; these tests
--- exercise their composition before front-end integration in unit 10.
+-- exercise their composition before front-end integration under #758.
 tested lang::ground_match_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_parameter_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_extension_step: "src/FrenTest/GroundMatching.lean"
@@ -146,6 +149,9 @@ tested lang::ground_join_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_listed_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_sentence_lists_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_rule_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_preparation_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_instance_list_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_instances_step: "src/FrenTest/GroundMatching.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under
@@ -184,10 +190,11 @@ trusted check::combined: "no front end combines the verdicts of several methods 
 tested check::runs_premises: "test/ui/checks/evidence_premises.fren", "test/ui/checks/evidence_missing_premise.fren", "test/ui/checks/evidence_refinement.fren", "test/ui/checks/evidence_contracts.fren", "src/FrenTest/EvidencePremises.lean", "src/FrenTest/EvidenceLib.lean", "src/FrenTest/EvidenceClient.lean"
 
 tested eval::outputs_seen: "src/FrenTest/OutputsSeen.lean"
--- The search of the evaluator's realizability goal (`FrenCli.Confirm`,
--- `Fm.exOutputs`) is not a function of the sets that the Req takes, so the
--- ui test checks it through the `fren` command.
-tested eval::outputs_confirm: "test/ui/checks/realizable_subset_outputs.fren"
+-- The evaluator's realizability search is not a function of the sets that
+-- the Req takes. UI tests exercise the actual output goals in both front
+-- ends, including finite carriers whose false goals stay unconfirmed.
+tested eval::outputs_goal: "test/ui/checks/realizable_recursive_bool_outputs.fren"
+tested eval::outputs_confirm: "test/ui/checks/realizable_subset_outputs.fren", "test/ui/checks/realizable_recursive_bool_outputs.fren"
 
 tested check::general_branch_explanation: "src/FrenTest/BranchForcing.lean"
 tested check::retry_alternatives_general: "src/FrenTest/BranchForcing.lean"

@@ -150,18 +150,26 @@ use self::Verdict::{Fail, Inconclusive, Pass}
 
 For an `Unknown` solver answer, `check::decidable_unknown` enforces the
 [decidable core's promise](Lang/Decidability.md#what-is-promised): if all
-constraints of the query are in the core and it reached neither its time
-nor its resource limit, report an internal error with the check, in place
-of the ordinary inconclusive warning. This is a bug in Fren or the solver.
+constraints of the query are in the core and it reached no time, resource
+or memory limit and was not interrupted, report an internal error with the
+check, in place of the ordinary inconclusive warning. This is a bug in
+Fren or the solver.
 The reason is the solver answer's reason, not a fact computed by a front
 end: lean-smt gives the limit's name, and the standalone backend wraps it
-as below. Other reasons, including an empty one, are not limits.
+as below. `check::unknown_reason` distinguishes a solver's reason from
+the reasons that Fren synthesizes after a query. Other solver reasons,
+including an empty one, are not limits.
 
 This rule is about queries that return `Unknown`, not enumeration, a model
 that recursive evaluation does not confirm, an expansion over sequence
 elements, or a pass made inconclusive by an unsettled premise. A limit
 keeps the ordinary inconclusive result, and its dependents keep the `F0664`
 note ([Evidence](Evidence.md)).
+
+`decidable_unknown` receives the source computed by `unknown_reason`, the
+procedure's core classification, the output query's classification and
+whether enumeration supplied the result. It computes their conjunction;
+a refuted model is never an undecided solver answer, even in the core.
 
 The procedure's syntax alone is insufficient for realizability: an
 output's subset invariant can apply an opaque function to its value,
@@ -192,16 +200,43 @@ pub proc output_query_core(outputs: Seq<String>, applications: Seq<Seq<String>>)
 ```
 
 ```fren
-pub proc decidable_unknown(in_core?, reason: String): (det internal_error?) {
-    ensure rule: internal_error? iff (in_core? and not (
-        reason is "TIMEOUT" | "RESOURCEOUT" |
-        "the solver returned unknown (TIMEOUT)" | "the solver returned unknown (RESOURCEOUT)"
+pub enum UnknownReason { Solver, UnsettledPremise, RecursiveModel, Elements, RefutedModel }
+
+pub proc unknown_reason(reason: String): (det source: UnknownReason) {
+    ensure rule: source = (if reason = "another postcondition used by simultaneous induction did not pass"
+        then UnknownReason::UnsettledPremise
+        else if reason.starts_with?("recursive contracts: ") then UnknownReason::RecursiveModel
+        else if reason is "its quantifiers over sequences' elements would have more than 256 instances" |
+        "the solver's model does not satisfy the quantifiers over sequences' elements, and none does with the same lengths"
+        then UnknownReason::Elements
+        else if reason = "the solver's model was refuted" then UnknownReason::RefutedModel
+        else UnknownReason::Solver)
+
+    expect refuted: when reason = "the solver's model was refuted", source != UnknownReason::Solver
+}
+
+pub proc decidable_unknown(
+    procedure_core?,
+    output_core?,
+    enumerated?,
+    source: UnknownReason,
+    reason: String,
+): (det internal_error?) {
+    ensure rule: internal_error? iff (procedure_core? and output_core? and not enumerated?
+        and source = UnknownReason::Solver and not (
+        reason is "TIMEOUT" | "RESOURCEOUT" | "MEMOUT" | "INTERRUPTED" |
+        "the solver returned unknown (TIMEOUT)" | "the solver returned unknown (RESOURCEOUT)" |
+        "the solver returned unknown (MEMOUT)" | "the solver returned unknown (INTERRUPTED)"
         ))
 
     expect timeout: when reason = "TIMEOUT", not internal_error?
     expect resource_limit: when reason = "RESOURCEOUT", not internal_error?
-    expect incomplete: when in_core? and reason = "INCOMPLETE", internal_error?
-    expect opted_out: when not in_core?, not internal_error?
+    expect memory_limit: when reason = "MEMOUT", not internal_error?
+    expect interrupted: when reason = "INTERRUPTED", not internal_error?
+    expect incomplete: when procedure_core? and output_core? and not enumerated?
+        and source = UnknownReason::Solver and reason = "INCOMPLETE", internal_error?
+    expect opted_out: when not procedure_core?, not internal_error?
+    expect synthetic: when source != UnknownReason::Solver, not internal_error?
 }
 ```
 

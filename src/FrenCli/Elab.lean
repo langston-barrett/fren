@@ -69,7 +69,9 @@ def varPTy (ty? : Option (Array Ident)) (name : Ident) : M Fren.Core.PTy := do
   if let (some segs, true, false) := (ty?, !Fren.Core.generatedName name.name && Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
     let span ← annotationSpan (segs[0]!.span.to segs.back!.span)
     lintFix .redundantBoolType span (Fren.Core.redundantBoolTypeMsg n)
-  return pt.getD (.plain .bool)
+  let result := pt.getD (.plain .bool)
+  noteResolved "type" name.span fun _ => result.ty.showQualified
+  return result
 
 def varTy (ty? : Option (Array Ident)) (name : Ident) : M Ty := return (← varPTy ty? name).ty
 
@@ -158,6 +160,7 @@ with `scope`, into the procedure of that path. -/
 def declareUse (segs : Array Ident) (glob : Bool) (loc : UseLoc) (scope : Option Name := none) : M Unit := do
   let st ← get
   let u ← liftResolve segs (st.table.declareUse st.module (segNames segs) glob (scope.getD st.module))
+  noteResolved "name" loc.path fun _ => resolvedPath u.target
   let record : Fren.Core.UseRecord := {
     module := u.scope, target := u.target, glob := u.glob
     unusedLevel := st.levels.get .unusedImports, globLevel := st.levels.get .globImports }
@@ -1305,6 +1308,7 @@ def elabEnum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (A
         err tspan (Fren.Core.typeParamPlaceMsg .anonymous place (Fren.Core.ownWritten path params) !params.isEmpty)
       let pt ← if own then pure (.plain (Ty.enum path (params.toList.zipIdx.map fun (p, k) => .param k p)))
         else elabPTy segs
+      noteResolved "type" tspan fun _ => pt.ty.showQualified
       let t := pt.ty
       pts := pts.push (pt, tspan)
       let abstract := t.abstractWithin?
@@ -1959,17 +1963,27 @@ partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Id
     -- Only the lints of the invariant's own source are reported, as for
     -- any expression, whether or not it has a static error: not those of
     -- the binder, which the pattern shorthand does not write.
-    let ownLints (st : State) : State := { st with
+    -- The predicate's generated name borrows the invariant label's span;
+    -- its result type is not a type declared at that label.
+    -- The shorthand's unwritten binder borrows the base type's span,
+    -- which is a written type, rather than a local value expression.
+    let generatedAnnotation (a : ResolvedAnnotation) : Bool :=
+      a.file == generatedBefore.file &&
+        ((a.kind == "type" && a.span == predicate.span) ||
+          (Fren.Core.generatedName binder.name && a.span == binder.span &&
+            (a.kind == "local" || a.kind == "expr")))
+    let ownSource (st : State) : State := { st with
       lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
       lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
-      natReports := generatedBefore.natReports }
+      natReports := generatedBefore.natReports
+      resolved? := st.resolved?.map (·.filter (!generatedAnnotation ·)) }
     try
       elabItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
     catch failure =>
       if failure.diags.any (·.msg.code? == some "F0201") then
         err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Fren.Core.invariantScopeLabel binder.name) }
-      throw { failure with state := ownLints failure.state }
-    modify fun st => { ownLints st with inSubset := priorSubset }
+      throw { failure with state := ownSource failure.state }
+    modify fun st => { ownSource st with inSubset := priorSubset }
     -- Its full-definedness check is guarded by earlier invariants below,
     -- rather than checked unconditionally as an ordinary function body.
     modify fun st => { st with bodies := st.bodies.extract 0 before }

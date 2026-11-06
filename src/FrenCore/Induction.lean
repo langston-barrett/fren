@@ -101,20 +101,6 @@ def inductionCases (shapes : Lean.Name → Option DataShape) (params : Array Ty)
   | some parts => parts.map fun ps => (ps, inductionHypotheses flat i (ps.toList.map (·.flat)))
   | none => #[]
 
-/-- Why the `fren` command makes a check inconclusive where evaluation
-refutes the solver's model of it, an internal error that it reports beside
-the check (`eval::confirmed_verdict`). -/
-def refutedModelReason : String := "the solver's model was refuted"
-
-/-- Whether the detail `d` of an inconclusive check says that the solver's
-model contradicts Fren's semantics, an internal error that the check
-reports (`model::report`): its check's translation is in doubt, so no
-induction overrides it (`lang::induction_verdict`). -/
-def Detail.modelRefuted : Detail → Bool
-  | .refuted .. => true
-  | .unknown w => w == refutedModelReason
-  | _ => false
-
 /-- What a global expectation's check reports, where its own check gives
 `direct`, the solver's model of it contradicts Fren's semantics if
 `refuted` (`Detail.modelRefuted`), and the inductions tried give
@@ -138,6 +124,20 @@ checked only for the expectation, and no message offers it as a similar
 name (`similar`). -/
 def inductionFnName (n claim x : String) (position : Nat) : String :=
   s!"#induction#{n}#{String.map (fun c => if c == '.' then '#' else c) claim}#{x}#{position}?"
+
+/-- Whether the function at `path` is one generated for induction
+(`inductionFnName`): its name's last segment starts with `#induction#`,
+which no source can write. Both front ends read from the path of the
+function whose contract a check is of whether its queries unfold as an
+induction's do (`unfoldings`, `lang::unfoldings`). -/
+def isInductionFn : Lean.Name → Bool
+  | .str _ s => s.startsWith "#induction#"
+  | _ => false
+
+#guard isInductionFn (.str `m (inductionFnName "e" "c" "a" 0))
+#guard !isInductionFn `m.f
+#guard isInductionFn (instanceName (.str `m (inductionFnName "e" "c" "a" 0)) #[.int, .bool])
+#guard !isInductionFn (instanceName `m.f #[.int, .bool])
 
 /-- The segments of the path that names the variant `v` of the enumeration
 `e` within the module `module`: from `self` where `e` is the module's,

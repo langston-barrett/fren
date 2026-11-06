@@ -3,6 +3,7 @@ import FrenCore.Diagnostic
 import FrenCore.Names
 import FrenCore.Recursion
 import FrenCore.SeqElems
+import FrenCore.Str
 import FrenCore.SubsetTypes
 import FrenCore.Table
 import FrenCore.Text
@@ -100,6 +101,13 @@ def iteKnown (cond : Option Bool) (yes no same : Bool) : Bool :=
   | some false => no
   | none => yes && no && same
 
+/-- The truth of realizability's output goal during model confirmation
+(`eval::outputs_goal`): finding legal outputs can refute the model, but
+not finding any leaves the goal unknown, even over a finite carrier. -/
+def outputGoalTruth : Option Bool → Option Bool
+  | some true => some true
+  | _ => none
+
 /-- Set by `fren_fuzz_frontends --confirm`, which runs both front ends in
 its own process, so that they misread models as `FREN_MISREAD_MODELS`
 makes them (`misreadModels`). -/
@@ -158,6 +166,31 @@ inductive Detail where
 /-- Shared reason for a recursive model that real evaluation does not confirm. -/
 def recursiveReason (names : Array Name) : String :=
   "recursive contracts: " ++ ", ".intercalate ((names.toList.eraseDups.mergeSort (fun a b => showPath a < showPath b)).map fun n => s!"`{showPath n}`")
+
+/-- Why the CLI makes a check inconclusive when evaluation refutes its
+solver model; the refutation has its own internal error report. -/
+def refutedModelReason : String := "the solver's model was refuted"
+
+/-- A refuted model must not be overridden by induction or confused with
+an unknown solver answer (`model::report`). -/
+def Detail.modelRefuted : Detail → Bool
+  | .refuted .. => true
+  | .unknown w => w == refutedModelReason
+  | _ => false
+
+/-- The origin of an inconclusive reason (`check::unknown_reason`). -/
+inductive UnknownReason where
+  | solver | unsettledPremise | recursiveModel | elements | refutedModel
+  deriving BEq, DecidableEq, Repr
+
+/-- Separate solver answers from the reasons Fren synthesizes after a
+query, shared by reporting and realizability's query precedence. -/
+def unknownReason (reason : String) : UnknownReason :=
+  if reason == "another postcondition used by simultaneous induction did not pass" then .unsettledPremise
+  else if Fren.Str.startsWith reason "recursive contracts: " then .recursiveModel
+  else if (elementReasonNotes? reason).isSome then .elements
+  else if (Detail.unknown reason).modelRefuted then .refutedModel
+  else .solver
 
 /-- A variant of an enumeration: its constructor, as Fren writes it in a
 value (`E::C`), and how many values its payload has. -/
@@ -1001,13 +1034,17 @@ def Comp.substBranchGroups (c : Comp F) : Array (BranchGroup F) :=
   c.branchGroups.map (·.map (c.subst b .realizable))
 
 /-- An unknown solver answer in the decidable core is a bug unless the
-query reached its time or resource limit (`check::decidable_unknown`).
+query reached a time, resource or memory limit, or was interrupted
+(`check::decidable_unknown`).
 The two spellings of each limit are the reasons that lean-smt and the
 standalone backend give, respectively. This is only for solver answers,
 not enumeration, model confirmation or an unsettled premise. -/
-def decidableUnknown (inCore : Bool) (reason : String) : Bool :=
-  inCore && !(reason == "TIMEOUT" || reason == "RESOURCEOUT" ||
-    reason == "the solver returned unknown (TIMEOUT)" || reason == "the solver returned unknown (RESOURCEOUT)")
+def decidableUnknown (procedureCore : Bool) (source : UnknownReason) (reason : String)
+    (outputCore : Bool := true) (enumerated : Bool := false) : Bool :=
+  procedureCore && outputCore && !enumerated && source == .solver &&
+    !(reason == "TIMEOUT" || reason == "RESOURCEOUT" || reason == "MEMOUT" || reason == "INTERRUPTED" ||
+      reason == "the solver returned unknown (TIMEOUT)" || reason == "the solver returned unknown (RESOURCEOUT)" ||
+      reason == "the solver returned unknown (MEMOUT)" || reason == "the solver returned unknown (INTERRUPTED)")
 
 /-- Whether realizability's generated quantifier is in the core
 (`check::output_query_core`). Output type invariants can apply opaque
@@ -1058,9 +1095,7 @@ def checkRealizableUniversal (c : Comp F) (examples : Option Nat := some 1) (int
     -- limit or a non-core output query. Preserve the chosen query's
     -- reason even when it is empty.
     let assumptionBug := assumeQ.answer == .unknown &&
-      assumeQ.reason != "another postcondition used by simultaneous induction did not pass" &&
-      !assumeQ.reason.startsWith "recursive contracts: " && (elementReasonNotes? assumeQ.reason).isNone &&
-      decidableUnknown true assumeQ.reason
+      decidableUnknown true (unknownReason assumeQ.reason) assumeQ.reason
     let useOutput := cexQ.answer == .unknown && !assumptionBug
     let applications ← match useOutput, b.outputApplications? with
       | true, some extract => extract body
@@ -2228,26 +2263,32 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
       #[one "F0608" s!"could not decide whether {what}: an index out of range may decide it" (some "undecided")
         #["note: enumeration reads every index out of range as `[][0]`, one of the values it may have",
           "help: guard the index, or have the solver check it"]]
-    | .unknown w => if w == "another postcondition used by simultaneous induction did not pass" then
+    | .unknown w => match unknownReason w with
+      | .unsettledPremise =>
         #[one "F0608" s!"could not decide whether {what}" (some "depends on an unproved postcondition")
           #["note: simultaneous induction used all of the function's postconditions",
             "note: another postcondition failed or was inconclusive, so this check cannot be reported as passed",
             "help: establish the other postconditions before relying on this one"]]
-      else if w.startsWith "recursive contracts: " then
+      | .recursiveModel =>
         #[one "F0450" s!"could not decide whether {what}" (some "contracts may be too weak")
           #[s!"note: this check fails under the contracts of {((w.drop 21).toString)}",
             "note: evaluation of the recursive definitions does not confirm the counterexample: it refutes it, or cannot evaluate it",
             "help: strengthen those functions' contracts"]]
-      else if let some (code, notes) := elementReasonNotes? w then
+      | .elements =>
+        let (code, notes) := (elementReasonNotes? w).getD ("F0608", advice)
         #[one code s!"could not decide whether {what}{why}" (some "undecided") notes]
-      else if r.bounded?.isNone && decidableUnknown (decidable && r.outputQueryInCore) w then
-        #[{ severity := .error, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?
-            msg := { code? := none
-                     headline := s!"internal error: the solver did not decide the {kindName r.kind} check of {subject} in the decidable core"
-                     label? := some "decidable query was not decided"
-                     notes := #[s!"note: the solver's reason was: {w}",
-                       "note: no time or resource limit was reached; this is a bug in Fren or the solver"] } }]
-      else #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
+      | .refutedModel =>
+        #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided")
+          #["note: the solver's model was refuted; see the internal error reported for that model"]]
+      | .solver =>
+        if decidableUnknown decidable .solver w r.outputQueryInCore r.bounded?.isSome then
+          #[{ severity := .error, item? := r.prop?, atIndex? := r.index?, atSite? := r.site?
+              msg := { code? := none
+                       headline := s!"internal error: the solver did not decide the {kindName r.kind} check of {subject} in the decidable core"
+                       label? := some "decidable query was not decided"
+                       notes := #[s!"note: the solver's reason was: {w}",
+                         "note: no time or resource limit was reached; this is a bug in Fren or the solver"] } }]
+        else #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
     | _ => #[one "F0608" s!"could not decide whether {what}{why}" (some "undecided") advice]
   | .fail, .vacuousAssumptions core =>
     if let some (f, _) := r.target? then

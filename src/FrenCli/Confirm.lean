@@ -363,9 +363,7 @@ partial def Fm.eval (sp : Spec) (sy : Symbols) (I : Interp) (env : Env) (tys : N
     let p : Problem := { vars := outs, atoms, ints := intsOf atoms ++ (env.fold (init := #[]) fun acc _ v =>
       match v with | .int i => acc ++ #[i - 1, i, i + 1] | _ => acc), strs := (stringsOf atoms).run' ⟨1⟩ }
     let w : World := { seed := 0, sizes := sizesOf env }
-    match (p.solve sp w I env 20000).run' ⟨1⟩ with
-    | some _ => some true
-    | none => none
+    Fren.Core.outputGoalTruth (some ((p.solve sp w I env 20000).run' ⟨1⟩).isSome)
 
 /-! ## The paired backend -/
 
