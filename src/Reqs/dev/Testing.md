@@ -628,7 +628,7 @@ pub mod testing
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
   `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings` and
   `--datatype-elements`
-  (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  (`corpus` in `src/FrenTest/FuzzFrontends/Corpus.lean`), are checked
   with both front ends and compared as above. The `--decidable` corpus also
   rejects every error without a diagnostic code from `fren check`, even
   when both front ends agree. The `frontendFuzz` jobs contain at
