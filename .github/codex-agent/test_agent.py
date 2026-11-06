@@ -1,5 +1,6 @@
 """Regression checks for the prompt, artifact and publishing boundaries."""
 from contextlib import contextmanager, redirect_stderr
+from itertools import product
 import copy
 import base64
 import importlib.util
@@ -157,7 +158,8 @@ class PatchTests(unittest.TestCase):
 
     def test_no_change_posts_explanation_with_last_message_fallback(self):
         self.patch.write_bytes(b"")
-        (self.root / "last.md").write_text("The issue needs a design decision.\n" + "x" * 2000)
+        message = "The issue needs a design decision.\n" + "x" * 2000
+        (self.root / "last.md").write_text(message)
         env = {"REPO": REPO, "MODE": "issue", "PR": "", "BRANCH": "agent/10-luna-low",
                "BASE": self.base, "ROUND": "0", "ISSUE": "10", "MODEL": "gpt-6-luna",
                "EFFORT": "low", "ARTIFACT": str(self.root)}
@@ -165,7 +167,7 @@ class PatchTests(unittest.TestCase):
             publish.main()
         self.assertIn("The issue needs a design decision.", post.call_args.args[1])
         explanation = post.call_args.args[1].split("made no change:\n\n")[1]
-        self.assertEqual(len(explanation), 1500)
+        self.assertEqual(explanation, message)
 
     def test_no_change_fix_posts_comment_before_body_or_last_message(self):
         self.patch.write_bytes(b"")
@@ -274,12 +276,14 @@ class PatchTests(unittest.TestCase):
         self.patch.write_bytes(b"")
         info = pr()
         info["head"]["sha"] = self.base
-        for mode, name in (("issue", "pr-body.md"), ("issue", "last.md"),
-                           ("fix", "comment.md"), ("fix", "pr-body.md"), ("fix", "last.md")):
-            with self.subTest(mode=mode, name=name):
+        cases = (("issue", "pr-body.md"), ("issue", "last.md"),
+                 ("fix", "comment.md"), ("fix", "pr-body.md"), ("fix", "last.md"))
+        for (mode, name), size in product(cases, (2000, 40000)):
+            with self.subTest(mode=mode, name=name, size=size):
                 for file in ("pr-body.md", "comment.md", "last.md"):
                     (self.root / file).unlink(missing_ok=True)
-                (self.root / name).write_text(MENTIONS + "\n" + CONTROLS)
+                tail = "é" * size + "\nThe final reason must survive."
+                (self.root / name).write_text(MENTIONS + "\n" + CONTROLS + "\n" + tail)
                 env = {"REPO": REPO, "MODE": mode, "PR": "123" if mode == "fix" else "",
                        "BRANCH": "agent/10-luna-low", "BASE": self.base, "ROUND": "1",
                        "ISSUE": "10", "MODEL": "gpt-6-luna", "EFFORT": "low",
@@ -291,6 +295,11 @@ class PatchTests(unittest.TestCase):
                 body = json.loads(post.call_args.kwargs["input"])["body"]
                 self.assertIn("made no change:", body)
                 assert_inert(self, body)
+                self.assertLessEqual(len(body.encode("utf-8")), publish.BODY_BYTES)
+                if size == 2000:
+                    self.assertTrue(body.endswith(tail))
+                else:
+                    self.assertTrue(body.endswith("[Response truncated by codex-agent.]"))
                 self.assertTrue(post.call_args.kwargs["capture_output"])
 
     def test_rejected_patch_path_is_inert_when_posted(self):

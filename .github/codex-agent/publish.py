@@ -98,7 +98,7 @@ def main():
               f"codex-agent ({env['MODEL']}, {env['EFFORT']} effort)")
     if patch.stat().st_size == 0:
         fallback = text("pr-body.md", text("last.md", "No explanation supplied."))
-        explanation = text("comment.md", fallback, 1500) if pr else fallback[:1500]
+        explanation = text("comment.md", fallback) if pr else fallback
         comment(subject, prefix + " made no change:\n\n" + explanation)
         return
     try:
