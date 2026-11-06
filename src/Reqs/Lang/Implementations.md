@@ -4125,3 +4125,52 @@ pub proc ground_close_step(
 #fren_check ground_activation_step
 #fren_check ground_close_step
 ```
+
+## Executable sentence projection
+
+r[module.sentence.projection] lang::{bridge_reference_step, bridge_unique_step}
+
+The executable bridge for #758 keeps sentence parameters, free query locals
+and local quantifier indices in separate namespaces. A resolved reference to
+one of the sentence's parameters is a parameter reference; another resolved
+local is a query reference. Quantifier indices are independent of both.
+Backend adapters retain concrete heads and their implicit arguments beside
+resolved signatures, and retain literal types before solver sort erasure.
+The bridge checks explicit argument types, preserves domain, calls and claims,
+and rejects an unknown or ambiguous interpretation. It does not infer identity
+from an expression's printed text. These are projection operations; they do
+not change the sentence's role or decide which sentences a check may use.
+
+```fren
+pub fn bridge_has_parameter?(TheoryVariables, TheoryName)
+pub fn bridge_reference(TheoryVariables, TheoryName): TheoryTerm
+pub fn bridge_parameter_term(TheoryName): TheoryTerm
+pub fn bridge_query_term(TheoryName): TheoryTerm
+
+pub proc bridge_reference_step(variables: TheoryVariables, name: TheoryName): (
+    det parameter?,
+    det term: TheoryTerm,
+) {
+    ensure parameter_rule: parameter? iff not theory_variables_empty?(variables) and (
+        theory_variable_name(variables) = name
+        or bridge_has_parameter?(theory_variables_rest(variables), name)
+        )
+    ensure term_rule: term = if parameter? then bridge_parameter_term(name) else bridge_query_term(name)
+}
+
+pub type BridgeChoice
+pub type BridgeChoices
+pub fn bridge_choices_empty?(BridgeChoices)
+pub fn bridge_choices_rest(BridgeChoices): BridgeChoices
+pub fn bridge_choices_first(BridgeChoices): BridgeChoice
+pub fn bridge_no_choice(BridgeChoices): BridgeChoice
+
+pub proc bridge_unique_step(choices: BridgeChoices): (det accepted?, det value: BridgeChoice) {
+    out accepted? :=
+        not bridge_choices_empty?(choices) and bridge_choices_empty?(bridge_choices_rest(choices))
+    ensure value_rule: value = if accepted? then bridge_choices_first(choices) else bridge_no_choice(choices)
+}
+
+#fren_check bridge_reference_step
+#fren_check bridge_unique_step
+```

@@ -37,6 +37,7 @@ import Impls.Repeats
 import Impls.Rewrites
 import Impls.Scope
 import Impls.Semantics
+import Impls.SentenceBridge
 import Impls.SubsetTypes
 import Impls.Testing
 import Impls.Theories
@@ -137,7 +138,9 @@ tested lang::theory_ground_term: "src/FrenTest/Theories.lean"
 tested lang::theory_variable_images: "src/FrenTest/Theories.lean"
 tested lang::theory_term_list: "src/FrenTest/Theories.lean"
 tested lang::theory_translation: "src/FrenTest/Theories.lean"
-tested lang::theory_instance: "src/FrenTest/Theories.lean"
+tested lang::theory_instance: "src/FrenTest/Theories.lean", "src/FrenTest/SentenceBridge.lean"
+tested lang::bridge_reference_step: "src/FrenTest/SentenceBridge.lean"
+tested lang::bridge_unique_step: "src/FrenTest/SentenceBridge.lean"
 
 -- Structural matching equations are proved for every input; these tests
 -- exercise their composition before front-end integration under #758.
@@ -167,7 +170,7 @@ tested lang::ground_universe_step: "src/FrenTest/GroundClosure.lean"
 tested lang::ground_applications_step: "src/FrenTest/GroundClosure.lean"
 tested lang::ground_enabled_step: "src/FrenTest/GroundClosure.lean"
 tested lang::ground_activation_step: "src/FrenTest/GroundClosure.lean"
-tested lang::ground_close_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_close_step: "src/FrenTest/GroundClosure.lean", "src/FrenTest/SentenceBridge.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under
