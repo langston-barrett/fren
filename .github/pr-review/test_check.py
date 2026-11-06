@@ -3,6 +3,9 @@
 import base64
 import hashlib
 import random
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -62,6 +65,8 @@ class Problem(unittest.TestCase):
     def test_token(self):
         self.assertIsNotNone(problem(f"{OK}\n\nsk-ant-oat01-abcdefghijkl", HEAD, "full"))
         self.assertIsNotNone(problem(f"{OK}\n\nghs_" + "a" * 36, HEAD, "full"))
+        for token in ("sk-proj-" + "x" * 40, "eyJ" + "a" * 24 + "." + "b" * 24 + "." + "c" * 24):
+            self.assertIsNotNone(problem(OK + PROBED + token, HEAD, "full"))
 
     def test_remote_loading(self):
         for text in ("![x](https://example.com/p.png?d=1)", "![x](/relative.png)", "![x][ref]",
@@ -114,6 +119,23 @@ class Leaks(unittest.TestCase):
 
 
 class Comment(unittest.TestCase):
+    def test_posted_code_is_preserved_without_echoing_runner_commands(self):
+        text = OK + PROBED + "\n`x :: xs`, `Std::` and `##[`\n::warning::model text\n##[error]model text"
+        body, ok = comment(text,
+                           HEAD, "full", "URL", set())
+        self.assertTrue(ok)
+        self.assertEqual(body, text + "\n")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "review.md").write_text(text)
+            (root / "names").write_text("")
+            result = subprocess.run([sys.executable, "-I", str(Path(__file__).with_name("check.py")),
+                                     str(root / "review.md"), HEAD, "full", "URL", str(root / "names"),
+                                     str(root / "comment.md")], text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual((root / "comment.md").read_text(), text + "\n")
+
     def posted(self, case):
         text = f"{OK}\n\n{case}{PROBED}"
         body, ok = comment(text, HEAD, "full", "URL", set())

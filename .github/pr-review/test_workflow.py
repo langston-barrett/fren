@@ -43,8 +43,24 @@ class ReviewJob(unittest.TestCase):
         model = first(steps, r"anthropics/claude-code-action")
         self.assertLess(head, removed)
         self.assertLess(removed, model)
-        for name in ("CLAUDE.md", "AGENTS.md", ".mcp.json", ".claude"):
+        for name in ("CLAUDE.md", "AGENTS.md", ".mcp.json", ".claude", ".codex", ".agents"):
             self.assertIn(name, steps[removed])
+
+    def test_codex_uses_trusted_scripts_and_exclusive_credential(self):
+        steps = review_steps()
+        model = first(steps, r"name: Review with Codex in isolation")
+        teardown = first(steps, r"name: Confirm Codex teardown")
+        upload = first(steps, r"uses: actions/upload-artifact")
+        self.assertLess(model, teardown)
+        self.assertLess(teardown, upload)
+        self.assertIn("$RUNNER_TEMP/trusted/.github/pr-review/codex.py", steps[model])
+        self.assertIn("needs.prepare.outputs.engine == 'codex'", steps[model])
+        self.assertIn("secrets.CODEX_REVIEW_AUTH_JSON", steps[model])
+        self.assertNotIn("github.token", steps[model])
+        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", steps[model])
+        claude = steps[first(steps, r"anthropics/claude-code-action")]
+        self.assertIn("needs.prepare.outputs.engine == 'claude'", claude)
+        self.assertNotIn("CODEX_REVIEW_AUTH_JSON", claude)
 
 
 if __name__ == "__main__":

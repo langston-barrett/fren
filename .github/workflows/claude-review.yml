@@ -1,5 +1,5 @@
 name: pr-review
-# Claude's review of a pull request's head, by the review rules of
+# A model's review of a pull request's head, by the review rules of
 # AGENTS.md, once `pre-merge` has passed on it: a full review, or a light
 # check ("fixes only" or "rebase only") when the last comment that names
 # the head asks for one (.github/pr-review/kind.py); a light check that
@@ -13,8 +13,8 @@ name: pr-review
 # that each change answers a listed finding and changes only prose as
 # AGENTS.md defines it, and that nothing else changed.
 #
-# Threat model. A workflow_run runs in `main`'s context, with the Claude
-# token, while the pull request's author controls its files, its
+# Threat model. A workflow_run runs in `main`'s context, with a model
+# credential, while the pull request's author controls its files, its
 # description and its comments. Pull requests from forks are never
 # reviewed, so that author can push to this repository. The only code of
 # the pull request that runs is the binaries that `pre-merge` built, in a
@@ -31,18 +31,28 @@ name: pr-review
 #   a probe can affect nothing but its own output, which the step captures
 #   and passes on as text (probe.sh). `lint` runs test_sandbox.sh, which
 #   checks each of these with a hostile stand-in for `fren`.
-# - `review` holds the Claude token, and runs nothing of the pull request.
+# - `review` holds only the selected model credential as a secret, and
+#   runs nothing of the pull request.
 #   It checks out the workflow's own scripts, then the head, which nothing
-#   executes, removes its AGENTS.md, CLAUDE.md, .claude, .mcp.json and
-#   symbolic links, and runs the model with Read, Grep and Glob allowed
-#   only in the checkout, and Write only for `review.md`: no shell, no
-#   network tool. A review that holds a copy of a token, plain or encoded,
-#   is withheld.
+#   executes, removes its AGENTS.md, CLAUDE.md, .claude, .codex, .agents,
+#   .mcp.json and symbolic links, and runs the model with Read, Grep and
+#   Glob allowed only in the checkout, and Write only for `review.md`:
+#   no shell, no network tool. A review that holds a copy of a token,
+#   plain or encoded, is withheld. For Codex, the pinned CLI runs in a
+#   private container, with the checkout mounted read-only, no runner
+#   environment or socket,
+#   and only a trusted stdio MCP providing those same four tools. Its
+#   trusted catalog disables shell and patch tools; configuration disables
+#   web, apps, plugins and delegation. The container is destroyed before
+#   collecting regular output files and checking both original and refreshed
+#   credentials. Raw logs, auth and sessions are never uploaded. Refreshes
+#   are not persisted: a static renewal warning asks the owner to replace
+#   CODEX_REVIEW_AUTH_JSON. There is no token with Secrets write permission.
 # - `post` runs the workflow's own check.py on the review, and posts it.
 #
-# The Claude token is a repository secret, so anyone who can push a branch
-# can read it with a workflow of their own, without this one, until it is
-# moved to an environment that only `main` can use (on #551). So the
+# Each model credential is a repository secret, so anyone who can push a
+# branch can read it with a workflow of their own, without this one, until
+# it is moved to an environment that only `main` can use (on #551). So the
 # defenses here are less against the pull request's author than against
 # text that the author did not write but carried in: an issue's text, a
 # dependency, an outsider's comment.
@@ -105,6 +115,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
+      engine: ${{ steps.engine.outputs.engine }}
       head: ${{ steps.prepare.outputs.head }}
       kind: ${{ steps.prepare.outputs.kind }}
       pr: ${{ steps.prepare.outputs.pr }}
@@ -114,6 +125,11 @@ jobs:
       with:
         persist-credentials: false
         fetch-depth: 0
+    - id: engine
+      name: Select the review engine (empty means Claude)
+      run: python3 -I .github/pr-review/engine.py
+      env:
+        PR_REVIEW_ENGINE: ${{ vars.PR_REVIEW_ENGINE }}
     - id: prepare
       run: bash .github/pr-review/prepare.sh
       env:
@@ -177,7 +193,9 @@ jobs:
       with:
         persist-credentials: false
         path: .trusted
-        sparse-checkout: .github/pr-review
+        sparse-checkout: |
+          .github/pr-review
+          .github/codex-agent
     - name: Keep the workflow's own scripts outside the workspace
       run: mv .trusted "$RUNNER_TEMP/trusted"
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -191,7 +209,8 @@ jobs:
         find . -path ./.git -prune -o \( -name CLAUDE.md -o -name CLAUDE.local.md -o -name AGENTS.md \
           -o -name AGENTS.local.md -o -name .mcp.json \) -print0 \
           | xargs -0 rm -f
-        find . -path ./.git -prune -o -type d -name .claude -print0 | xargs -0 rm -rf
+        find . -path ./.git -prune -o -type d \( -name .claude -o -name .codex -o -name .agents \) \
+          -print0 | xargs -0 rm -rf
         find . -path ./.git -prune -o -type l -print0 | xargs -0 rm -f
         rm -rf .review review.md
     - id: brief
@@ -211,7 +230,8 @@ jobs:
         PROBES: ${{ needs.probe.outputs.probes || 'The probe job did not run.' }}
         REPO: ${{ github.repository }}
         RUN: ${{ github.run_id }}
-    - uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1
+    - if: ${{ needs.prepare.outputs.engine == 'claude' }}
+      uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1
       with:
         claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         # The job's own token, which can only read, rather than the app's.
@@ -234,20 +254,39 @@ jobs:
           --model ${{ (needs.prepare.outputs.kind == 'fixes' || needs.prepare.outputs.kind == 'rebase') && 'claude-sonnet-5' || 'claude-opus-5-5' }}
           --allowedTools "Read(./**),Grep(./**),Glob(./**),Write(./review.md),Edit(./review.md)"
           --disallowedTools "Agent,Task,Bash,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Read(//proc/**),Read(//sys/**),Read(//dev/**),Read(//etc/**),Read(//tmp/**),Read(//var/**),Read(//run/**),Read(//root/**),Read(//opt/**),Read(//usr/**),Read(//snap/**),Read(//mnt/**),Read(//home/runner/.*/**),Read(//home/runner/work/_temp/**),Read(//home/runner/work/_actions/**),Read(//home/runner/work/_tool/**),Read(//home/runner/runners/**),Read(//home/runner/actions-runner/**)"
+    - if: ${{ needs.prepare.outputs.engine == 'codex' }}
+      name: Build the pinned Codex tool image (no credentials)
+      run: docker build --tag codex-review:local "$RUNNER_TEMP/trusted/.github/codex-agent"
+    - if: ${{ needs.prepare.outputs.engine == 'codex' }}
+      name: Review with Codex in isolation
+      run: python3 -I "$RUNNER_TEMP/trusted/.github/pr-review/codex.py"
+      env:
+        CODEX_CONTAINER: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
+        CODEX_REVIEW_AUTH_JSON: ${{ secrets.CODEX_REVIEW_AUTH_JSON }}
+        KIND: ${{ needs.prepare.outputs.kind }}
+    - if: ${{ always() && needs.prepare.outputs.engine == 'codex' }}
+      name: Confirm Codex teardown before uploading anything
+      run: python3 -I "$RUNNER_TEMP/trusted/.github/codex-agent/teardown.py"
+      env:
+        CODEX_CONTAINER: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
     - if: ${{ always() }}
       name: Keep the review, unless it holds a copy of a token
       run: |
-        mkdir "$RUNNER_TEMP/review"
-        if [ -f review.md ] && [ ! -L review.md ]; then
+        mkdir -p "$RUNNER_TEMP/review"
+        if [ "$ENGINE" = claude ] && [ -f review.md ] && [ ! -L review.md ]; then
           cp review.md "$RUNNER_TEMP/review/review.md"
           if ! python3 -I "$RUNNER_TEMP/trusted/.github/pr-review/check.py" leaks \
               "$RUNNER_TEMP/review/review.md" OAUTH TOKEN; then
             echo "(withheld: the review held a copy of a token)" > "$RUNNER_TEMP/review/review.md"
           fi
         fi
+        if [ -f "$RUNNER_TEMP/review/renewal-required.txt" ]; then
+          cat "$RUNNER_TEMP/review/renewal-required.txt" >> "$GITHUB_STEP_SUMMARY"
+        fi
         { hostname; echo "$RUNNER_NAME"; } > "$RUNNER_TEMP/review/names.txt"
       env:
-        OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        ENGINE: ${{ needs.prepare.outputs.engine }}
+        OAUTH: ${{ needs.prepare.outputs.engine == 'claude' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
         TOKEN: ${{ github.token }}
     - if: ${{ always() }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
