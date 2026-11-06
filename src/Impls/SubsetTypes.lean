@@ -107,10 +107,11 @@ impl pattern_count: lang::pattern_count for (ivs : List (Option Int × Option In
     | some l1, some h1, some l2, some h2 =>
       by_cases c1 : l1 ≤ h1 <;> by_cases c2 : l2 ≤ h2 <;> by_cases c3 : h2 + 1 < l1 <;> by_cases c4 : h1 + 1 < l2 <;>
         by_cases c5 : l1 ≤ l2 <;>
+        by_cases c6 : l1 ≤ h2 + 1 <;> by_cases c7 : l2 ≤ h1 + 1 <;>
         simp [fren_spec, Fren.Seq.ext_iff, Fren.Seq.nth, toAlt, toBound, lang.width, lang.bounded?, lang.bound_value,
           Fren.Core.intervalsFinite, Fren.Core.intervalsCount?, Fren.Core.mergeIntervals,
-          List.mergeSort, List.MergeSort.Internal.splitInTwo, List.splitAt_eq, List.merge,
-          Fren.Core.totalWidth, c1, c2, c3, c4, c5] <;>
+          List.mergeSort, List.MergeSort.Internal.splitInTwo, List.splitAt_eq,
+          Fren.Core.totalWidth, c1, c2, c3, c4, c5, c6, c7] <;>
         omega
     | none, _, _, _ | some _, none, _, _ | some _, some _, none, _ | some _, some _, some _, none =>
       simp [fren_spec, Fren.Seq.ext_iff, Fren.Seq.nth, toAlt, toBound, lang.bounded?, Fren.Core.intervalsFinite,
