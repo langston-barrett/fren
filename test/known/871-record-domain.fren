@@ -1,0 +1,30 @@
+-- Known front-end difference: https://github.com/langston-barrett/fren/issues/871
+-- The pinned lean-smt can omit a distinct record payload from its sort
+-- domain while reading the model, before confirmation. The standalone
+-- command gives a counterexample; the hosted front end can instead give
+-- an inconclusive model-reading warning. Run through both front ends,
+-- with and without FREN_MISREAD_MODELS. This also reproduces before #847.
+-- Kept outside ui/ and the error-free confirmation corpus until #871 is
+-- fixed, so its failure cannot mask the appended groups' checks.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.chainable_comparison "allow"
+
+struct SortBox<T> { value: T }
+fn identity<T>(x: T): T := x
+fn same<T>(x: T, y: T): Int := if x = y then 1 else 0
+
+fn at_record_distinct<T>(x: SortBox<T>, y: SortBox<T>, a: Int): (r: Int) {
+    require pinned: x != y and a = -1
+    out r := a
+    ensure positive: at_record_distinct(x, y, a) > 0
+}
+
+fn at_record_choices<T>(x: SortBox<T>, y: SortBox<T>, a: Int, b: Int): (r: Int) {
+    let z: SortBox<T> := identity(x)
+    require pinned: a = -1 and (same(identity(x), y) < 1 and (if z = identity(y) then a else b) >= 1)
+    out r := a
+    ensure positive: at_record_choices(x, y, a, b) > 0 and (if z = identity(y) then a else b) >= 1
+}

@@ -1,0 +1,33 @@
+-- The redundancy query for `members` can take q = [], whose outer
+-- universal is true without deciding its unbounded inner quantifier.
+-- Both front ends must confirm that witness, also beside a recursion
+-- without type parameters. The other queries can remain incomplete.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.undecidable "allow"
+
+type Name
+enum IntList { Nil, Cons(Int, IntList) }
+
+fn int_len(l: IntList): Int := match l {
+    IntList::Nil => 0,
+    IntList::Cons(_, rest) => 1 + int_len(rest),
+}
+
+proc nested_all(n: Name, l: IntList, q: Seq<Name>, a: Int): (r: Int) {  --~ warning: could not decide whether `nested_all` is realizable
+    require members: q = [n]
+    require pinned: int_len(l) = 0 and (forall (x: Name), when x in q, forall (y: Name), y = x)  --~ warning: could not decide whether `nested_all::pinned` is redundant
+    out r := a
+    expect e: a > 0  --~ warning: could not decide whether `nested_all::e` holds
+}
+
+proc nested_or(n: Name, l: IntList, q: Seq<Name>, a: Int): (r: Int) {  --~ warning: could not decide whether `nested_or` is realizable
+    require members: q = [n]
+    require pinned: int_len(l) = 0 and ((forall (x: Name), when x in q, forall (y: Name), y = x) or a = -1)  --~ warning: could not decide whether `nested_or::pinned` is redundant
+    out r := a
+    expect e: a > 0  --~ warning: could not decide whether `nested_or::e` holds
+}
+
+--@ exit: 3

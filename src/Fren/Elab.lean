@@ -675,6 +675,7 @@ def appliedFns (cx : ExprCtx) (e : Syntax) : TermElabM (Array Name) := do
 /-- The Lean type `t` as the Fren type it stands for (`coreTy?`), given the
 model `s`. -/
 partial def coreTyOf (s : State) (t : Expr) (params : Array Name := #[]) : Option Core.Ty :=
+  let t := t.consumeMData
   let go (t : Expr) := coreTyOf s t params
   if t.isProp || t.isConstOf ``Bool then some .bool
   else if t.isConstOf ``Int then some .int
@@ -6093,7 +6094,15 @@ def quantTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
         omitted.foldrM (init := q) fun (_, ty, _) q => mkAppM ``Fren.unusedQuantifier #[ty, q]
       let free := if inCore then free else free.filter fun (fv, _, _) => x.containsFVar fv.fvarId!
       if free.isEmpty then return ← keepOmitted x
-      let marked := marked free.size
+      let domains := free.map fun (fv, ty, pt) =>
+        match fvs.idxOf? fv with
+        | some k =>
+          match domainOf all names body k (ty.isConstOf ``Nat) with
+          | .members _ => true
+          | .range .. | .fromZero .. => Core.countedBetween pt.ty
+          | .unbounded => false
+        | none => false
+      let marked := fun q => marked free.size (markQuantifierDomains domains.toList q)
       let cons ← free.filterMapM fun (fv, ty, pt) => return (← factPred? ty pt).map (·.beta #[fv])
       if forall? then
         return ← keepOmitted (marked (← mkForallFVars (free.map (·.1)) (cons.foldr mkArrow' x)))

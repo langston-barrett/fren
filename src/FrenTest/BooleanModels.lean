@@ -73,3 +73,40 @@ elab "#check_boolean_model" : command => do
 #check_boolean_model
 
 -- fren-covers: lang::block_evaluation, lang::block_values, lang::exactly_one_reach, lang::named_identity
+
+-- A domain annotation protects only its own binder. An unbounded
+-- quantifier nested inside it still has no value in Fren's evaluation.
+open Lean Elab Command Meta Term in
+elab "#check_quantifier_model" : command => do
+  liftTermElabM do
+    let fin ← instantiateMVars (← elabType (← `(Fin 1)))
+    for (stx, expected) in #[((← `(∀ x : Fin 1, x = x)), some true),
+        ((← `(∀ x : Fin 1, ∃ y : Fin 1, y = x)), none),
+        ((← `(∀ x : Fin 1, ∀ y : Fin 1, y = x)), none),
+        ((← `(∀ x : Fin 1, True → ∀ y : Fin 1, y = x)), none),
+        ((← `(∀ x : Fin 1, x ∈ Fren.Seq.ofList ([] : List (Fin 1)) → ∃ y : Fin 1, y = x)), some true),
+        ((← `(∃ x : Fin 1, x ∈ Fren.Seq.ofList ([] : List (Fin 1)) ∧ ∀ y : Fin 1, y = x)), some false)] do
+      let p ← instantiateMVars (← elabTerm stx none)
+      let p := Fren.markQuantifierDomains [true] p
+      let prepared ← Fren.unknownQuantifiers #[fin] p
+      let prepared := (← Fren.Enumerate.readIndexes prepared (unspecified := true)).1
+      let values ← Fren.decideAll #[some (prepared, prepared)]
+      unless values == #[expected] do
+        throwError "a bounded binder changed a nested quantifier: expected {repr expected}, got {repr values}; {prepared}"
+
+#check_quantifier_model
+
+-- Substitution must rebuild a compound condition's whole decision, not
+-- just its inferred type. The false conjunct still decides the formula.
+open Lean Elab Command Meta Term in
+elab "#check_quantifier_decision" : command => do
+  liftTermElabM do
+    let p ← instantiateMVars (← elabTerm
+      (← `(False ∧ ((if Fren.unusedQuantifier Int True ∧ True then (1 : Int) else 0) = 1))) none)
+    let p ← Fren.unknownQuantifiers #[] p
+    check p
+    let p := (← Fren.Enumerate.readIndexes p (unspecified := true)).1
+    unless (← Fren.decideAll #[some (p, p)]) == #[some false] do
+      throwError "an unused binder's compound decision hid a known false conjunct"
+
+#check_quantifier_decision

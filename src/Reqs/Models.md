@@ -984,16 +984,38 @@ injected misread. A missing variable stays unknown in that evaluation
 too; giving it an arbitrary inhabitant could confirm a model whose
 hypotheses cannot be evaluated.
 
-A quantifier over an abstract type or a type parameter, directly or
-within an unfolded definition, is unknown. Lean would decide it over
+An unbounded quantifier over an abstract type or a type parameter,
+directly or within an unfolded definition, is unknown. Lean would decide it over
 the model's finite values alone. This applies even where the body does
 not read the bound name; the generated formula keeps that binder's type
 for confirmation. The same applies to an unused binder over any unlisted
 type. The surrounding formula still follows the known-value rules: an
-unknown quantifier conjoined with a false operand is false. Unfolding a
-function keeps its arguments strict, so
+unknown quantifier conjoined with a false operand is false. A bound name
+with an [evaluation domain](Lang/Quantifiers.md#guards), such as the
+members of a sequence or set, ranges over that domain instead. A
+comparison gives a finite interval only for integers and newtypes over
+them, by the same shared range rule as enumeration. The
+hosted front end retains each binder's domain from the shared guard
+rules, including through sort substitution and unfolding. It shares
+guarded, three-valued evaluation with enumeration: an empty domain
+decides its quantifier even when the body is unknown. These rules also
+apply beside a structural recursion without type parameters: a
+known operand can decide a formula whose other operand is unknown.
+Unfolding a function keeps its arguments strict, so
 an unknown argument still makes the application unknown even when its
 body does not read that argument.
+
+The pinned lean-smt can omit values returned inside nested datatype
+payloads from a sort's finite domain ([#871](https://github.com/langston-barrett/fren/issues/871)).
+This reconstruction failure also occurs on main before hosted sort
+confirmation: it happens while reading the solver's values, before
+confirmation evaluates a formula. The hosted front end can then report
+an inconclusive model-reading warning where the standalone command
+reports a counterexample. Independent record inputs remain a tracked
+coverage limitation until that dependency bug is fixed; the confirmation
+corpus currently equates them. `test/known/871-record-domain.fren` retains
+the distinct-record reproduction separately, with and without injected
+model misreads.
 
 The formulas that the Lean-hosted front end does not evaluate are
 `Undefined` to it:
@@ -1003,8 +1025,6 @@ The formulas that the Lean-hosted front end does not evaluate are
   `match` arm's, may change;
 - those that read an index within a definition that is not unfolded, a
   structural recursion's;
-- those that still apply a structural recursion's solver form after
-  specialization and also read an index or a variable that has no value;
 - those whose value a quantifier over a sort hidden within a structural
   recursion may change;
 - those that Lean cannot compile.
@@ -1026,11 +1046,14 @@ or a type parameter, gives them to a function, including a higher-order
 one, decides an `if` by them, finds them within relations' pairs, sets,
 sequences, generic fields and payloads, applies a generic structural
 recursion, or has a free variable, a defined variable or a call's output
-that the model leaves out. It also checks that quantifiers over a sort,
-directly or within a definition, stay unknown instead of ranging over just
-the model's values, while a false conjunct still decides the surrounding
-formula. The recursive cases also check that a free value stays unknown
-before reporting. `test/ui/misread/misread_type_parameter.fren` checks
+that the model leaves out. It also checks that unbounded quantifiers over
+a sort, directly or within a definition, stay unknown instead of ranging
+over just the model's values, while a false conjunct still decides the
+surrounding formula. Bounded quantifiers over sequences and sets, including several
+bound names, evaluate their domains instead. The recursive cases also
+check that a free value stays unknown before reporting and that an
+unbounded sort quantifier stays unknown beside a recursion without type
+parameters. `test/ui/misread/misread_type_parameter.fren` checks
 that both show a misread model on the solver's word where the formula that
 would contradict it applies a function to a value of a type parameter that
 the model leaves free, which is unknown, and both catch it at `Int`.

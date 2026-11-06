@@ -190,6 +190,9 @@ fn at_payload<T>(o: Wrapped<T>, a: Int): (r: Int) {
     ensure positive: at_payload(o, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_payload::positive` makes its hypothesis `at_payload.pinned` false in Fren's semantics
 }
 
+-- Equal records exercise confirmation after successful reconstruction.
+-- Distinct record payloads hit the pre-existing backend failure #871;
+-- test/known/871-record-domain.fren retains that separate reproduction.
 fn at_record<T>(x: SortBox<T>, y: SortBox<T>, a: Int): (r: Int) {
     require pinned: x = y and a = -1 and same(x, y) = 1
     out r := a
@@ -230,8 +233,7 @@ fn rec_has?<T>(l: SortList<T>, x: T) := match l {
 -- Specialization compiles generic recursion at the model's sort. The
 -- recursive confirmation first reads the model correctly: `x` is free,
 -- so `ignore(x)` is unknown and the model cannot be confirmed. It must
--- not substitute an arbitrary inhabitant for `x`. This is the probe
--- from review finding 2.
+-- not substitute an arbitrary inhabitant for `x`.
 fn at_rec<T>(x: T, q: SortList<T>, a: Int): (r: Int) {
     require pinned: a = -1 and rec_len(q) = 2 and ignore(x) = 0
     out r := a
@@ -253,6 +255,102 @@ proc abstract_higher(x: Name, y: Name, a: Int) {
     require eq: x = y
     require pinned: a = -1 and higher_apply(higher_label, x) = 0
     expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `abstract_higher::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- A recursion without type parameters keeps its compiled definition.
+-- A neighbouring quantifier still ranges over the whole abstract type,
+-- so recursive confirmation cannot decide it over the finite model.
+enum IntList { Nil, Cons(Int, IntList) }
+
+fn int_len(l: IntList): Int := match l {
+    IntList::Nil => 0,
+    IntList::Cons(_, rest) => 1 + int_len(rest),
+}
+
+fn rec_quantified(n: Name, l: IntList, a: Int): (r: Int) {
+    require pinned: int_len(l) = 0 and (exists (x: Name), x = n)
+    out r := a
+    ensure positive: rec_quantified(n, l, a) > 0  --~ warning: does not confirm the counterexample: it refutes it, or cannot evaluate it
+}
+
+-- A known operand beside an unknown quantifier can still confirm the
+-- original model. Reporting then catches the shifted integer value.
+fn rec_quantified_known(n: Name, l: IntList, a: Int): (r: Int) {
+    require integer: a = -1
+    require pinned: int_len(l) = 0 and ((exists (x: Name), x = n) or a = -1)
+    out r := a
+    ensure positive: rec_quantified_known(n, l, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `rec_quantified_known::positive` makes its hypothesis `rec_quantified_known.integer` false in Fren's semantics
+}
+
+fn rec_nested_quantified(n: Name, l: IntList, q: Seq<Name>, a: Int): (r: Int) {
+    require members: q = [n]
+    require pinned: int_len(l) = 0 and (forall (x: Name), when x in q, exists (y: Name), y = x)
+    out r := a
+    ensure positive: rec_nested_quantified(n, l, q, a) > 0  --~ warning: does not confirm the counterexample: it refutes it, or cannot evaluate it
+}
+
+-- The fallback must compile the prepared expression too: unfolding
+-- this generic helper replaces its classical decision at the model's
+-- concrete element type, beside the recursion's compiled definition.
+fn bounded_value<T>(q: Seq<T>, a: Int): Int := if (forall (x: T), when x in q, a = -1) then 1 else 0
+
+fn rec_bounded(n: Name, l: IntList, q: Seq<Name>, a: Int): (r: Int) {
+    require members: q = [n]
+    require pinned: int_len(l) = 0 and bounded_value(q, a) = 1
+    out r := a
+    ensure positive: rec_bounded(n, l, q, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `rec_bounded::positive` makes its hypothesis `rec_bounded.pinned` false in Fren's semantics
+}
+
+-- A domain in a quantifier's guard ranges over those values, even when
+-- their type is abstract. The shifted integer makes its body false.
+proc bounded_seq(n: Name, q: Seq<Name>, a: Int) {
+    require members: q = [n]
+    require pinned: forall (x: Name), when x in q, x = n and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `bounded_seq::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc bounded_set(n: Name, s: Set<Name>, a: Int) {
+    require members: s = {n}
+    require pinned: exists (x: Name), x in s and x = n and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `bounded_set::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc bounded_pair(n: Name, q: Seq<Name>, a: Int) {
+    require members: q = [n]
+    require pinned: forall (x y: Name), when x in q and y in q, x = y and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `bounded_pair::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- The model has a value outside the domain, so ranging over all model
+-- values without retaining the membership guard would refute it.
+proc bounded_seq_outside(n: Name, m: Name, q: Seq<Name>, a: Int) {
+    require members: q = [n] and n != m
+    require pinned: forall (x: Name), when x in q, x = n and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `bounded_seq_outside::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc bounded_set_outside(n: Name, m: Name, s: Set<Name>, a: Int) {
+    require members: s = {n} and n != m
+    require pinned: forall (x: Name), when x in s, x = n and a = -1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `bounded_set_outside::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- An empty domain makes the universal true even when its body is false.
+proc bounded_empty(n: Name, m: Name, q: Seq<Name>, a: Int) {
+    require different: n != m
+    require pinned: q = [] and a = -1 and (forall (x: Name), when x in q, a = 1)
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `bounded_empty::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+-- Making the retained binder computable must not let its old decision
+-- decide a substituted unknown condition. The integer conjunct is false.
+fn unused_value(a: Int): Int := if (forall (u: Int), a = -1) then 1 else 0
+fn unused_local(a: Int): Int := let b? := (forall (u: Int), a = -1) in if b? then 1 else 0
+fn unused_compound(a: Int): Int := if ((forall (u: Int), a = -1) and a < 0) then 1 else 0
+
+proc unused_decisions(a: Int) {
+    require pinned: a = -1 and unused_value(a) = 1 and unused_local(a) = 1 and unused_compound(a) = 1
+    expect e: a > 0  --~ error: internal error: the solver's model for the expectation check of `unused_decisions::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 --@ exit: 1

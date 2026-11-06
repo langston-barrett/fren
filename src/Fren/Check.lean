@@ -2,6 +2,7 @@
 import Fren.Known
 import Fren.Lint
 import Fren.Model
+import Fren.PartialEval
 import Fren.SeqElems
 import Fren.SmtTranslate
 import Fren.SolverSorts
@@ -642,9 +643,10 @@ def atSorts (sortTys : Array (FVarId × Expr)) (e : Expr) : MetaM Expr := do
   return e.replaceFVars from_ to
 
 /-- Whether `x` may retain an unused unbounded binder, or quantify over a
-type that mentions one of `tys`, the types that `atSorts` gives the sorts:
-Lean would decide it over the model's values of the sort alone, which
-Fren's semantics does not. The caller also checks that `x` is a
+type that mentions one of `tys`, the types that `atSorts` gives the sorts,
+without an evaluation domain retained on its binder type: Lean would
+decide it over the model's values of the sort alone, which Fren's
+semantics does not. The caller also checks that `x` is a
 proposition, since a function type is also a `forallE`
 (`Reqs/Models#how-the-front-ends-evaluate`). -/
 def quantifiesOver (tys : Array Expr) (x : Expr) : Bool :=
@@ -653,8 +655,9 @@ def quantifiesOver (tys : Array Expr) (x : Expr) : Bool :=
   match x with
   -- Not an implication, whose body never reads its hypothesis's proof.
   | .forallE _ t b _ =>
-    (b.hasLooseBVar 0 || tys.any (fun ty => t.consumeMData == ty.consumeMData)) && mentions t
-  | _ => x.isAppOfArity ``Exists 2 && mentions x.appFn!.appArg!
+    !hasQuantifierDomain t &&
+      (b.hasLooseBVar 0 || tys.any (fun ty => t.consumeMData == ty.consumeMData)) && mentions t
+  | _ => x.isAppOfArity ``Exists 2 && !hasQuantifierDomain x.appFn!.appArg! && mentions x.appFn!.appArg!
 
 -- Source annotations do not turn a vacuous quantifier into an implication.
 #guard quantifiesOver #[.mdata {} (mkConst ``Nat)]
@@ -663,10 +666,11 @@ def quantifiesOver (tys : Array Expr) (x : Expr) : Bool :=
 #guard quantifiesOver #[mkConst ``Nat]
   (mkApp2 (mkConst ``Fren.unusedQuantifier) (mkConst ``Nat) (mkConst ``True))
 
-/-- A quantifier over a model's sort is unknown, rather than decided over
-its finite stand-in. Encode just that operand as an unspecified Boolean,
-so the known-value rules may still decide the surrounding formula. -/
-def unknownQuantifiers (tys : Array Expr) (e : Expr) : MetaM Expr := do
+/-- An unbounded quantifier over a model's sort is unknown, rather than
+decided over its finite stand-in. Encode just that operand as an
+unspecified Boolean, so the known-value rules may still decide the
+surrounding formula. -/
+partial def unknownQuantifiers (tys : Array Expr) (e : Expr) : MetaM Expr := do
   if (e.find? (quantifiesOver tys)).isNone then return e
   let bool := mkConst ``Bool
   let empty ← mkAppOptM ``EmptyCollection.emptyCollection #[some (mkApp (mkConst ``Fren.Seq [0]) bool), none]
@@ -675,7 +679,33 @@ def unknownQuantifiers (tys : Array Expr) (e : Expr) : MetaM Expr := do
   Meta.transform e (pre := fun x => do
     -- A function type is also a `forallE`, but is not a proposition.
     if quantifiesOver tys x && (← isProp x) then return .done prop
+    -- Meta.transform groups adjacent universal binders. Visit them one
+    -- at a time so a bounded binder cannot hide an unbounded inner one,
+    -- including after a guard's nondependent implication.
+    if let .forallE n t b bi := x then
+      if ← isProp x then
+        let t ← if ← isProp t then unknownQuantifiers tys t else pure t
+        return ← withLocalDecl n bi t fun fv => do
+          let b ← unknownQuantifiers tys (b.instantiate1 fv)
+          return .done (← mkForallFVars #[fv] b)
     return .continue)
+    (post := fun x => do
+      -- Replacing a proposition also changes the decision its caller
+      -- needs. A computable unused-binder instance still decides the old
+      -- body; refresh it for the unknown proposition instead.
+      let args := x.getAppArgs
+      let positions := if x.isAppOfArity ``Decidable.decide 2 then some (0, 1)
+        else if x.isAppOfArity ``ite 5 || x.isAppOfArity ``dite 5 then some (1, 2) else none
+      if let some (p, d) := positions then
+        let p := args[p]!
+        if (p.find? (· == prop)).isSome then
+          -- Inferring an instance's type does not check its arguments:
+          -- a nested And/Or instance can retain a stale child decision.
+          let expected := mkApp (mkConst ``Decidable) p
+          let decision? ← try synthInstance? expected catch _ => pure none
+          let decision := decision?.getD (mkApp (mkConst ``Classical.propDecidable) p)
+          return .done (mkAppN x.getAppFn (args.set! d decision))
+      return .continue)
 
 /-- `e` at the values `values` (`modelValues`), as confirmation evaluates
 it (`Reqs/Models#confirmation`): each variable without a value read as
@@ -690,13 +720,14 @@ structural recursion at its instance, as enumeration has them
 (`computableDecisions`, `specializeRecursions`), each with each index, an
 unspecified value too, read as `Enum.nthOr`, which `decideAll` leaves
 unknown out of range (`Enumerate.knownOf`), as the `fren` command's
-evaluator does. A quantifier over a sort is an unknown operand
+evaluator does. An unbounded quantifier over a sort is an unknown operand
 (`unknownQuantifiers`); none if one remains hidden within a recursion, or
 if a `partialOp` remains within a definition that is not unfolded; one that
 still applies a structural recursion's solver form after specialization,
-which is not compiled, is `e` itself, and none if it has a `partialOp`
-at all, an unknown variable too. Specialized recursions take the general
-path, whose known-value rules can decide a formula beside an unknown. -/
+which is not compiled, keeps its strict application after preparation,
+with direct unknowns read by the same known-value rules; none if a
+`partialOp` remains hidden in its definitions. Specialized recursions
+take the general path. -/
 def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option (Expr × Expr)) := do
   let sortTys ← sortTypes values
   let mut standIns := #[]
@@ -734,12 +765,16 @@ def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option (E
   if needsStrict && (← readsWhere (quantifiesOver standIns) unfolded (propositions := true)) then return none
   let recursive := (← getState).defined.foldl (init := #[]) fun acc _ d =>
     if d.recursive then acc ++ d.solver?.toArray else acc
-  if (unfolded.find? fun x => x.constName?.any recursive.contains).isSome then
-    if ← readsWhere partialOp applied then return none
-    return some (e, e)
   if (unfolded.find? fun x => partialOp x && !x.isAppOf ``Fren.Seq.nth).isSome then return none
-  if ← readsWhere partialOp unfolded (within := true) then return none
   let read (e : Expr) : MetaM Expr := return (← Enumerate.readIndexes e (unspecified := true)).1
+  if (unfolded.find? fun x => x.constName?.any recursive.contains).isSome then
+    -- Compile the recursion's original definition, retaining its prepared
+    -- neighbours. Direct unknowns use the known-value rules; a partial
+    -- operation hidden within a recursive definition is still skipped.
+    if ← readsWhere partialOp applied (within := true) then return none
+    let applied ← read applied
+    return some (applied, applied)
+  if ← readsWhere partialOp unfolded (within := true) then return none
   return some (← read applied, ← read unfolded)
 
 /-- The truth of each proposition of `ps` that has one, as `atModel` gives
@@ -752,6 +787,19 @@ def decideAll (ps : Array (Option (Expr × Expr))) : MetaM (Array (Option Bool))
   let decideOf (p : Expr) : MetaM Expr := return mkApp2 (mkConst ``Decidable.decide) p (← Enumerate.decidableOf p)
   let optBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)
   let decision (applied p : Expr) : MetaM Expr := do
+    if (Enumerate.hasIndex p || Enumerate.hasIndex applied) &&
+        ((← Enumerate.hasQuantifier p) || (← Enumerate.hasQuantifier applied)) then
+      -- Evaluate guarded domains as enumeration does. An empty domain
+      -- decides its quantifier even when the body remains unknown; an
+      -- unbounded domain gives confirmation no finite representatives.
+      let domain : Enumerate.PartialEnv :=
+        { values := fun _ => pure (#[], false), base := `Fren._confirm_domain
+          known? := some (Enumerate.knownOf decideOf) }
+      let v ← Enumerate.partialDecide domain p
+      if applied == p then return v
+      let strict ← Enumerate.partialDecide domain applied
+      return ← mkAppM ``cond #[← mkAppM ``Option.isSome #[strict], v,
+        ← mkAppOptM ``Option.none #[mkConst ``Bool]]
     let v ← mkAppOptM ``Option.some #[mkConst ``Bool, ← decideOf p]
     let known ← #[applied, p].filterMapM fun e => do
       if Enumerate.hasIndex e then some <$> Enumerate.knownOf decideOf e else pure none

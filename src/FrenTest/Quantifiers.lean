@@ -50,3 +50,22 @@ fun x all_other? some_pair? nested? =>
 -/
 #guard_msgs in
 #print quant.c.ensure.nested
+
+-- An erased, unused binder keeps the body's computable decision and its
+-- simplification rule, including in a conditional and a Boolean local.
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.undecidable "allow"
+
+pub fn unused_if(a: Int): Int := if (forall (u: Int), a = -1) then 1 else 0
+set_option fren.lint.redundant_bool_type "allow" in
+pub fn unused_bool(a: Int): Int := let b?: Bool := (forall (u: Int), a = -1) in if b? then 1 else 0
+
+#guard_msgs in
+#eval show IO Unit from do
+  unless quant.unused_if (-1) == 1 && quant.unused_if 0 == 0 do
+    throw (IO.userError "an unused quantifier's if did not compile or compute")
+  unless quant.unused_bool (-1) == 1 && quant.unused_bool 0 == 0 do
+    throw (IO.userError "an unused quantifier's Boolean local did not compile or compute")
+
+example (a : Int) : Fren.unusedQuantifier Int (a = -1) ↔ a = -1 := by
+  simp [fren_spec]

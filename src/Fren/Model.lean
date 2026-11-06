@@ -1235,6 +1235,38 @@ solver because every type is inhabited, retained for model confirmation:
 Fren's evaluator still leaves that unbounded quantifier unknown. -/
 @[inline] def unusedQuantifier (_α : Type) (p : Prop) : Prop := p
 
+@[simp, fren_spec] theorem unusedQuantifier_eq (α : Type) (p : Prop) : unusedQuantifier α p = p := rfl
+
+/-- The retained binder does not change the body's computable decision. -/
+instance unusedQuantifier.decidable (α : Type) (p : Prop) [h : Decidable p] :
+    Decidable (unusedQuantifier α p) := h
+
+/-- The key on a quantifier's binder type when its guard gives that name
+an evaluation domain (`Core.boundDomain`). Unlike an element-quantifier
+mark, it does not request expansion in a solver query. -/
+def quantifierDomainKey : Name := `fren.quantifierDomain
+
+/-- Whether a binder's type retains its guard's evaluation domain. -/
+def hasQuantifierDomain : Expr → Bool
+  | .mdata d t => d.contains quantifierDomainKey || hasQuantifierDomain t
+  | _ => false
+
+/-- Retain the evaluation domain of each of `q`'s initial binders on its
+type, through sort substitution and unfolding, for model confirmation.
+The front end computes `domains` with the shared guard-domain decision;
+metadata changes neither the proposition nor the solver's formula. -/
+def markQuantifierDomains (domains : List Bool) (q : Expr) : Expr :=
+  let mark (bounded : Bool) (t : Expr) :=
+    if bounded then .mdata (KVMap.empty.insert quantifierDomainKey (.ofBool true)) t else t
+  match domains, q with
+  | bounded :: rest, .forallE n t b bi =>
+    .forallE n (mark bounded t) (markQuantifierDomains rest b) bi
+  | bounded :: rest, .app (.app c t) (.lam n u b bi) =>
+    if c.isConstOf ``Exists then
+      mkApp2 c (mark bounded t) (.lam n (mark bounded u) (markQuantifierDomains rest b) bi)
+    else q
+  | _, _ => q
+
 /-- `e` with the definitions that `p` holds of unfolded, as
 `Meta.deltaExpand` unfolds them, where a defined function with a solver
 form (`DefinedInfo.solver?`) is unfolded to that form instead of its

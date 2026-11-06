@@ -2088,9 +2088,11 @@ A newtype cannot itself contain a sort (`Reqs/Lang/Generics`), so it
 occurs beside one in a relation's pair. Each legal shape is used
 directly, through a definition, in comparisons and as an argument to
 a function, including a higher-order one. Quantifiers and structural
-recursions also read the sort through generic definitions. No static error is deliberate here: it
-would stop the older checks too. Record inputs are equated while the
-pinned lean-smt cannot reliably reconstruct distinct nested values. -/
+recursions also read the sort through generic definitions. No static
+error is deliberate here: it would stop the older checks too. Record
+inputs are equated for the pre-existing reconstruction difference #871:
+https://github.com/langston-barrett/fren/issues/871. Its independent-record
+reproduction is tracked there, outside this error-free appended group. -/
 def confirmedSorts : R String := do
   let op : R String := pick #["=", "!=", "<", "<=", ">", ">="]
   -- General sequence comparisons and alternating quantifiers can be
@@ -2133,7 +2135,7 @@ def confirmedSorts : R String := do
     let head := if generic then s!"pub fn {name}<T>" else s!"pub proc {name}"
     let call := if generic then "" else "    call c := cf_shape_copy(y)\n"
     -- Keep the draws and record shapes, but defer independent record
-    -- values: lean-smt can omit their payloads from its sort domain.
+    -- values: lean-smt can omit their payloads from its sort domain (#871).
     let record := generic && (ty.splitOn "CfBox<").length > 1
     let alias := if record then "    require same_record: x = y\n" else ""
     let called ← comparison "z" "c.v"
@@ -2400,12 +2402,62 @@ def genConfirmedBase : R String := do
   out := out ++ s!"\npub fn cfg<T>(x: T, y: T, p: Seq<T>, a: Int, b: Int): (r: Int) \{\n{generics}    out r := a\n}\n"
   return out
 
-/-- The original confirmation spec followed by the non-flat sort group.
+/-- Quantifiers with evaluation domains, unused binders in compiled
+conditionals and Boolean locals, and unbounded sort quantifiers beside
+a recursion without type parameters. Drawn after all existing
+confirmation groups, so earlier seeds keep their complete prefix. -/
+def confirmedDomains : R String := do
+  if ← chance 20 then
+    let quantifier ← pick #["forall", "exists"]
+    let ty ← pick #["Int", "T"]
+    let q := s!"{quantifier} (unused: {ty}), a = -1"
+    let condition ← pick #[q, s!"({q}) and a < 0", s!"({q}) or a = -1"]
+    let body ← pick #[s!"if ({condition}) then 1 else 0", s!"let b? := ({condition}) in if b? then 1 else 0"]
+    let generic := ty == "T"
+    let header := if generic then "pub fn cf_unused<T>(x: T, a: Int): Int := " else "pub fn cf_unused(a: Int): Int := "
+    let parameters := if generic then "x: CfN, a: Int" else "a: Int"
+    let arguments := if generic then "x, a" else "a"
+    return "\n" ++ header ++ body ++ s!"\npub proc cf_unused_check({parameters}) \{\n" ++
+      s!"    require pinned: a = -1 and cf_unused({arguments}) = 1\n    expect e: a > 0\n}\n"
+  let declarations := "\npub enum CfIntList { Nil, Cons(Int, CfIntList) }\n" ++
+    "pub fn cf_int_len(l: CfIntList): Int := match l { CfIntList::Nil => 0, CfIntList::Cons(_, r) => 1 + cf_int_len(r) }\n" ++
+    "pub fn cf_witness?<A>(x: A) := exists (y: A), y = x\n"
+  let generic ← chance 50
+  let t := if generic then "T" else "CfN"
+  let name := if generic then "cf_domain_generic" else "cf_domain_abstract"
+  let head := if generic then s!"pub fn {name}<T>" else s!"pub proc {name}"
+  if ← chance 40 then
+    let q ← pick #[s!"(exists (y: {t}), y = x)", s!"(forall (y: {t}), y = x)", "cf_witness?(x)",
+      s!"(forall (y: {t}), when y in q, exists (z: {t}), z = y)",
+      s!"(forall (y: {t}), when y in q, forall (z: {t}), z = y)"]
+    let body ← pick #[q, s!"({q} or a = -1)", s!"(a = -1 or {q})"]
+    let integer := if ← chance 50 then "    require integer: a = -1\n" else ""
+    let post := if generic then s!"    ensure e: {name}(x, l, q, a) > 0\n" else "    expect e: a > 0\n"
+    return declarations ++ s!"{head}(x: {t}, l: CfIntList, q: Seq<{t}>, a: Int): (r: Int) \{\n" ++
+      s!"    require members: q = [x]\n{integer}    require pinned: cf_int_len(l) = 0 and {body}\n    out r := a\n{post}}\n"
+  let seq ← chance 50
+  let collection := if seq then "Seq" else "Set"
+  let members := if seq then "[x]" else "{x}"
+  let all ← chance 50
+  let binder ← pick #["y", "y z"]
+  let equality := if binder == "y" then "y = x" else "y = z"
+  let guard := if binder == "y" then "y in q" else "y in q and z in q"
+  let q (ty : String) := if all then s!"forall ({binder}: {ty}), when {guard}, {equality} and a = -1"
+    else s!"exists ({binder}: {ty}), {guard} and {equality} and a = -1"
+  let helper := s!"pub fn cf_bounded?<A>(x: A, q: {collection}<A>, a: Int) := {q "A"}\n"
+  let quantified ← pick #[q t, "cf_bounded?(x, q, a)"]
+  let post := if generic then s!"    ensure e: {name}(x, q, a) > 0\n" else "    expect e: a > 0\n"
+  return declarations ++ helper ++ s!"{head}(x: {t}, q: {collection}<{t}>, a: Int): (r: Int) \{\n" ++
+    s!"    require members: q = {members}\n    require pinned: {quantified}\n    out r := a\n{post}}\n"
+
+/-- The original confirmation spec followed by the non-flat sort and
+quantifier-domain groups.
 `Mode.cuts` keeps the prefix so that the corpus rejects a static error
 in the appended group even if both front ends report it alike. -/
 def genConfirmed : R String := do
   let base ← genConfirmedBase
-  return base ++ (← confirmedSorts)
+  let sorts ← confirmedSorts
+  return base ++ sorts ++ (← confirmedDomains)
 
 /-- `[]` and `{}` as methods' arguments, which take their element types
 from their receivers (`Reqs/Lang/Expressions`): in one procedure, over
