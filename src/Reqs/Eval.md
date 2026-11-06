@@ -249,6 +249,14 @@ expressions and visiting their pattern-substitution sites share a separate
 allowance of `MAX_EXPANSION_NODES` visits per source item. Each prospective
 pattern substitution's result is checked against the same bound separately;
 reusing a scrutinee does not inspect its already checked sites again.
+Searching for site questions spends that same inspection allowance,
+including a search performed before measuring a substitution result.
+Each visit is reserved before entering an expression or following a
+captured replacement; an exhausted search stops preparation with the
+expansion-limit diagnostic. It never means that no questions exist.
+Later question generation also bounds each such search by
+`MAX_EXPANSION_NODES` visits. Only a completed negative answer may skip
+question generation; an exhausted later search conservatively keeps it.
 Nested matches with no site questions do not spend visits on pattern
 substitution. Nesting applications of a structural recursion counts their
 arguments without repeatedly expanding the function's body.
@@ -268,10 +276,10 @@ a kill rate for a run that could not read every selected mutant.
 The bound gives more than five times the 1,587,728 copying visits used by
 the largest item in Fren's own requirements when it was chosen. With
 result inspection and shared recursive calls, the 83 own-spec files use
-at most 86,296 copying visits and 286,868 inspection visits per item.
-Each allowance therefore leaves more than 29 times the measured need,
-giving room for growth while stopping the expansion that exhausted a
-6 GiB run.
+at most 86,296 copying visits and 322,233 inspection visits per item,
+including site searches. Each allowance leaves more than 26 times the
+measured need, giving room for growth while stopping the expansion that
+exhausted a 6 GiB run.
 The hosted checker does not prepare this independent evaluator reading;
 its acceptance can therefore differ at this limit, as
 [`cli::accepts` and `cli::agreement`](Cli.md#agreement-with-lean) specify.
@@ -286,18 +294,46 @@ evaluation and used twice by a function body: two expression nodes plus
 three occurrences of its argument. `eval::reading_size` requires a
 reading to fit the inspection allowance, independently of how much was
 copied to construct it.
+`Site` marks a question in the model. `eval::reading_query` binds the
+actual search: a completed answer is sound, nonempty work spends visits,
+and enough allowance for the whole tree always suffices. Its work-list
+implementation reserves a visit before testing a node or entering its
+children; the search does not first traverse a replacement to decide
+whether to measure it. The requirement does not prescribe a search order
+or the exact cost of finding a question before the allowance runs out.
 
 ```fren
 pub const MAX_EXPANSION_NODES: Int := 8388608
 
 pub proc expansion_budget(): (det initial: Nat) { ensure bound: initial = MAX_EXPANSION_NODES }
 
-pub enum CopyTree { Leaf, Branch(CopyTree, CopyTree), Application(CopyTree) }
+pub enum CopyTree { Leaf, Site, Branch(CopyTree, CopyTree), Application(CopyTree) }
 
 pub fn copy_visits(tree: CopyTree): Nat := match tree {
     CopyTree::Leaf => 1,
+    CopyTree::Site => 1,
     CopyTree::Branch(left, right) => 1 + copy_visits(left) + copy_visits(right),
     CopyTree::Application(argument) => 2 + 3 * copy_visits(argument),
+}
+
+pub fn copy_has_site?(tree: CopyTree) := match tree {
+    CopyTree::Leaf => false,
+    CopyTree::Site => true,
+    CopyTree::Branch(left, right) => copy_has_site?(left) or copy_has_site?(right),
+    CopyTree::Application(argument) => copy_has_site?(argument),
+}
+
+pub enum SiteQuery { Exhausted, Absent, Present }
+
+pub proc reading_query(tree: CopyTree, remaining: Nat): (status: SiteQuery, after: Nat) {
+    require allowance: remaining <= MAX_EXPANSION_NODES
+    ensure present: when status = SiteQuery::Present, copy_has_site?(tree)
+    ensure absent: when status = SiteQuery::Absent, not copy_has_site?(tree)
+    ensure exhausted: when status = SiteQuery::Exhausted, after = 0
+    ensure spent: unless status = SiteQuery::Exhausted, after < remaining
+    ensure enough: when copy_visits(tree) <= remaining, status != SiteQuery::Exhausted
+    expect unspent: after <= remaining
+    expect bounded: remaining - after <= MAX_EXPANSION_NODES
 }
 
 pub proc expansion_count(tree: CopyTree, remaining: Nat): (det fits?, det after: Nat) {

@@ -484,8 +484,10 @@ pub mod testing
   binders, and refinement locals. After the established function cases,
   it appends consumers in procedure constraints, call bindings, global
   claims, local-definition chains, nested matches and generic structural
-  recursion consumers, from a separate seed. Ordinary cases must have no
-  standalone error and no front-end difference. Resource-limit probes run
+  recursion consumers, from a separate seed. It then adds high-fan-out
+  nested matches over integers, Booleans and sequence payloads, from another
+  independent seed. Ordinary cases must have no standalone error and no
+  front-end difference. Resource-limit probes run
   separately: both front ends check the nested-function probe; the large
   refinement, constraint and local-chain probes check the standalone
   resource diagnostic, while smaller consumer forms compare both front

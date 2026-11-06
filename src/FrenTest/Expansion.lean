@@ -27,6 +27,12 @@ def children : Nat → List Nat
 -- A cyclic input must stop without trying to finish counting it.
 #guard expansionBudget (fun (n : Nat) => [n]) 100 [0] == none
 
+-- Query exhaustion is not a negative answer, and cyclic work is bounded.
+#guard Fren.Core.readingQuery (fun (_ : Nat) => true) (fun _ => []) 0 [0] == none
+#guard Fren.Core.readingQuery (fun (_ : Nat) => true) (fun _ => []) 1 [0] == some (true, 0)
+#guard Fren.Core.readingQuery (fun (_ : Nat) => false) (fun _ => []) 1 [0] == some (false, 0)
+#guard Fren.Core.readingQuery (fun (_ : Nat) => false) (fun n => [n]) 100 [0] == none
+
 /-- The remaining budget after reserving a copy, without changing it. -/
 def leftAfter (n : Nat) (e : Ex) : Option Nat :=
   ((copying e id).run { expansionLeft := n }).toOption.map (·.2.expansionLeft)
@@ -98,6 +104,23 @@ run_cmd do
 -- constructor, including the roots that introduce questions themselves.
 #guard constructorCases.all fun (_, e, _) =>
   (ReadingNode.expr #[] [] false e).hasSites == !(e.siteGoalsCore id).isEmpty
+
+-- The presence query uses only the shared decisions, without allocating
+-- formulas or row pairs. Compare combinations against their full reader.
+#guard Id.run do
+  for n in [0:4] do
+    for mask in [0:2 ^ n] do
+      let guards := (Array.range n).map fun i => if mask / 2 ^ i % 2 == 0 then none else some leaf
+      for unspecified in [none, some `missing] do
+        for pairs in ([none, some #[]] ++ if n >= 2 then [some #[(0, 1)]] else []) do
+          let arms := guards.map fun guard => (Pat.wild, guard, leaf)
+          let e := Ex.match leaf arms 0 (Array.replicate n 0) unspecified pairs
+          unless (ReadingNode.expr #[] [] false e).hasSites == !(e.siteGoalsCore id).isEmpty do return false
+      for wild in [false, true] do
+        let rows := guards.map fun guard => (0, guard, leaf)
+        let e := Ex.table 0 (rows ++ if wild then #[(0, none, leaf)] else #[]) none
+        unless (ReadingNode.expr #[] [] false e).hasSites == !(e.siteGoalsCore id).isEmpty do return false
+  return true
 
 #guard constructorCases.all fun (_, e, n) =>
   let renamed := e.renameBound (fun name => .str name "renamed")
@@ -205,6 +228,41 @@ def constraintLimit (depth allowance : Nat) : Bool := Id.run do
 
 #guard !constraintLimit 1 128
 #guard constraintLimit 8 128
+
+/-- A small source tree whose captured scrutinees denote `width ^ depth`
+leaves. The index occurs after the last scrutinee in search order. -/
+def fanoutMatches (width depth : Nat) : Ex := Id.run do
+  let binder (i : Nat) := Lean.Name.num `fanout i
+  let sum (value : Ex) := (List.range (width - 1)).foldl (fun acc _ => Ex.bin .add acc value) value
+  let mut body := Ex.index (.var `q) (.bound (binder (depth - 1))) 42 `unspecified
+  for i in (List.range depth).reverse do
+    let input := if i == 0 then Ex.var `n else .bound (binder (i - 1))
+    body := .match (sum input) #[(.bind (binder i), none, body)] 0 #[] none none
+  return body
+
+/-- The raw tree and each substituted result fit the old checks; only
+the repeated site-presence searches exhaust this allowance. -/
+def fanoutQueryLimit (width depth allowance : Nat) : Bool :=
+  match (inspectExpressions #[] #[fanoutMatches width depth]).run { readingLeft := allowance } with
+  | .error (.expansionLimit _) => true
+  | _ => false
+
+#guard fanoutQueryLimit 10 3 1000
+
+-- A bounded later query must not turn exhaustion into an empty answer.
+#guard (ReadingNode.expr #[] [] false leaf).hasSites 0
+
+-- Captured replacements retain their scope. An intervening quantifier
+-- shadows a pattern binder even when that binder's value has an index.
+#guard
+  let captured := ReadingNode.expr #[] [] false (.index (.var `q) leaf 42 `unspecified)
+  let body := Ex.quant 0 0 true #[`x] #[none] #[Fren.Core.PTy.plain .int] (.bound `x)
+  !(ReadingNode.expr #[] [(`x, captured)] false body).hasSites
+
+-- Presence queries do not construct the quadratic pair goals of a table.
+#guard
+  let row := (0, some (Ex.lit (.bool true)), leaf)
+  (ReadingNode.expr #[] [] false (.table 0 (Array.replicate 1000 row) none)).querySites 1 == some (true, 0)
 
 -- Local substitutions performed later by `inlineEarly` are inspected
 -- transitively before assumptions are handed to testing.

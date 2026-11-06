@@ -51,7 +51,7 @@ def baseSource (seed : Nat) : String := Id.run do
 
 /-- Append consumers after the established stream. Its declarations and
 draws stay unchanged; these depths come from a separate seed. -/
-def source (seed : Nat) : String := Id.run do
+def consumersSource (seed : Nat) : String := Id.run do
   let original := baseSource seed
   let depth := 1 + Id.run ((FrenCli.Eval.below 5).run' (FrenTest.FuzzFrontends.rngOf (seed + 0x72656164)))
   let mut body := "n"
@@ -101,6 +101,32 @@ def source (seed : Nat) : String := Id.run do
     | 14 => "Tree" | _ => "Int"
   more := more ++ s!"pub fn copying_recursive(xs: CopyingList<{element}>): CopyingList<{element}> := {recursive}\n"
   return original ++ more
+
+/-- High-fan-out captures follow the established source and its draws.
+Small ordinary cases compare both front ends; the large inspection probe
+is separate so a deliberate resource error cannot hide their checks. -/
+def source (seed : Nat) : String := Id.run do
+  let original := consumersSource seed
+  -- Keep comparisons within hosted elaboration's heartbeat allowance.
+  -- The large resource regression exercises the inspector directly.
+  let width := 3 + Id.run ((FrenCli.Eval.below 3).run' (FrenTest.FuzzFrontends.rngOf (seed + 0x73697465)))
+  let kind := seed % 3
+  let ty := if kind == 1 then "Bool" else if kind == 2 then "Seq<Int>" else "Int"
+  let input := if kind == 1 then "n?" else "n"
+  let binder (i : Nat) := s!"fanout_bound_{i}{if kind == 1 then "?" else ""}"
+  let last := binder 2
+  let mut body := if kind == 1 then s!"if q.len > 1 then q[if {last} then 0 else 1] else 0"
+    else if kind == 2 then s!"if 0 < {last}.len <= q.len then q[{last}.len - 1] else 0"
+    else s!"if 0 <= {last} < q.len then q[{last}] else 0"
+  let op := if kind == 1 then " or " else if kind == 2 then " ++ " else " + "
+  for i in (List.range 3).reverse do
+    let value := if i == 0 then input else binder (i - 1)
+    let sum := "(" ++ op.intercalate (List.replicate width value) ++ ")"
+    let scrutinee := if kind == 2 then s!"CopyingFanout::Wrapped({sum})" else sum
+    let pattern := if kind == 2 then s!"CopyingFanout::Wrapped({binder i})" else binder i
+    body := s!"match {scrutinee} \{ {pattern} => {body} }"
+  let declaration := if kind == 2 then "pub enum CopyingFanout { Wrapped(Seq<Int>) }\n" else ""
+  return original ++ s!"\n{declaration}pub fn copying_fanout(q: Seq<Int>, {input}: {ty}): Int := {body}\n"
 
 /-- Exercise real reports, including the explicit resource-limit
 exception. An internal error, a wrong exit or a hosted static error stays

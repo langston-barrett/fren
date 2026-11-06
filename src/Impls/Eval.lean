@@ -41,11 +41,13 @@ and the copying traversal is checked separately, per constructor, in
 `FrenTest.Expansion`; this model is not a proof of that correspondence. -/
 def copyTreeChildren : eval.CopyTree → List eval.CopyTree
   | .Leaf => []
+  | .Site => []
   | .Branch left right => [left, right]
   | .Application argument => [argument, .Branch argument argument]
 
 def copyTreeNodes : eval.CopyTree → Nat
   | .Leaf => 1
+  | .Site => 1
   | .Branch left right => 1 + copyTreeNodes left + copyTreeNodes right
   | .Application argument => 2 + 3 * copyTreeNodes argument
 
@@ -56,6 +58,55 @@ theorem copyTree_rule (tree : eval.CopyTree) :
 theorem copyTree_visits (tree : eval.CopyTree) :
     (copyTreeNodes tree : Int) = eval.copy_visits tree := by
   induction tree <;> simp_all [copyTreeNodes, eval.copy_visits, Int.natCast_add, Int.natCast_mul]
+
+def copyTreeSite : eval.CopyTree → Bool
+  | .Site => true
+  | _ => false
+
+def copyTreeHasSite : eval.CopyTree → Bool
+  | .Leaf => false
+  | .Site => true
+  | .Branch left right => copyTreeHasSite left || copyTreeHasSite right
+  | .Application argument => copyTreeHasSite argument
+
+theorem copyTree_site (tree : eval.CopyTree) :
+    copyTreeHasSite tree = (copyTreeSite tree || (copyTreeChildren tree).any copyTreeHasSite) := by
+  cases tree <;> simp [copyTreeHasSite, copyTreeSite, copyTreeChildren]
+
+theorem copyTree_hasSite (tree : eval.CopyTree) :
+    copyTreeHasSite tree = eval.copy_has_site? tree := by
+  induction tree <;> simp_all [copyTreeHasSite, eval.copy_has_site?]
+
+def queryStatus : Option (Bool × Nat) → eval.SiteQuery
+  | none => .Exhausted
+  | some (false, _) => .Absent
+  | some (true, _) => .Present
+
+impl reading_query: eval::reading_query for (tree : eval.CopyTree) (remaining : Nat) {
+  tree := tree,
+  remaining := remaining,
+  status := queryStatus (Fren.Core.readingQuery copyTreeSite copyTreeChildren remaining [tree]),
+  after := ((Fren.Core.readingQuery copyTreeSite copyTreeChildren remaining [tree]).map (·.2)).getD 0,
+} by
+  intro tree remaining allowance
+  simp only [fren_spec] at allowance
+  have spec := Fren.Core.readingQuery_spec copyTreeSite copyTreeChildren copyTreeNodes copyTreeHasSite
+    copyTree_rule copyTree_site remaining [tree]
+  have visits := copyTree_visits tree
+  have sites := copyTree_hasSite tree
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero,
+    List.any_cons, List.any_nil, Bool.or_false] at spec
+  cases result : Fren.Core.readingQuery copyTreeSite copyTreeChildren remaining [tree] with
+  | none =>
+    simp only [result] at spec
+    simp [queryStatus, fren_spec]
+    omega
+  | some answer =>
+    rcases answer with ⟨found, left⟩
+    simp only [result] at spec
+    rcases spec with ⟨found_eq, _, left_lt⟩
+    have spent := left_lt (by simp)
+    cases found <;> simp_all [queryStatus, fren_spec] <;> omega
 
 impl expansion_count: eval::expansion_count for (tree : eval.CopyTree) (remaining : Nat) {
   tree := tree,

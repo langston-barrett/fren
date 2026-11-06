@@ -2586,8 +2586,8 @@ structure LState where
   /-- Nodes left for eager expansion in the current source item. Kept
   across temporary changes of the lexical state. -/
   expansionLeft : Nat := Fren.Core.maxExpansionNodes
-  /-- Occurrences left for the results of substitution and the complete
-  reading, following local definitions and pattern-bound scrutinees. -/
+  /-- Visits left for substitution results, the complete reading and site
+  searches, following local definitions and pattern-bound scrutinees. -/
   readingLeft : Nat := Fren.Core.maxExpansionNodes
 
 /-- The source item whose independent evaluator reading failed. -/
@@ -3054,32 +3054,51 @@ def ReadingNode.children : ReadingNode → List ReadingNode
         ++ [.expr defs (bound.filter fun (n, _) => !names.contains n) sites body]
     | _ => e.copyChildren.map here
 
-/-- Whether the source can give a site question, before materializing any
-pattern substitution. Bindings keep their lexical scope. The common
-split/table rules decide whether a match or table itself has questions. -/
-partial def ReadingNode.hasSites : ReadingNode → Bool
+/-- Whether this node itself introduces a question. Use the shared
+completeness and reachability decisions without constructing formulas or
+enumerating all table pairs merely to test whether any question exists. -/
+def ReadingNode.isSite : ReadingNode → Bool
+  | .expr _ _ _ e => match e with
+    | .index .. => true
+    | .pre _ _ goals _ => !goals.isEmpty
+    | .match _ arms _ _ unspecified pairs =>
+      unspecified.isSome || pairs.any (!·.isEmpty) ||
+        arms.any (fun (_, guard, _) => Fren.Core.reachabilityAsked guard.isSome false)
+    | .table _ rows _ =>
+      Fren.Core.completenessAsked ((rows.back?.map (·.2.1.isNone)).getD false) ||
+        rows.any (fun (_, condition, _) => Fren.Core.reachabilityAsked condition.isSome false)
+    | _ => false
+
+/-- The expressions whose questions `siteGoals` enters. Captured
+replacements retain their scope, but every step through one is metered. -/
+def ReadingNode.siteChildren : ReadingNode → List ReadingNode
   | .expr defs bound _ e =>
     let here (e : Ex) := ReadingNode.expr defs bound false e
-    let rest := fun _ => (here e).children.any ReadingNode.hasSites
     match e with
-    | .index .. => true
-    | .const .. => false
-    | .strict _ body | .memo _ body | .lifted _ body | .dispatch _ body => (here body).hasSites
-    | .pre _ _ goals body => !goals.isEmpty || (here body).hasSites
+    | .const .. => []
+    | .strict _ body | .memo _ body | .lifted _ body | .dispatch _ body | .pre _ _ _ body => [here body]
     | .quant _ _ _ names _ _ body =>
-      (ReadingNode.expr defs (bound.filter fun (name, _) => !names.contains name) false body).hasSites
-    | .match _ arms _ _ unspecified pairs =>
-      let guarded := arms.map (·.2.1.isSome)
-      let own := Fren.Core.splitGoals (if pairs.isSome then .tableMatch else .match)
-        (fun _ => ()) (fun _ _ => ()) (fun _ => ()) ()
-        (Array.replicate arms.size (some ())) guarded unspecified.isSome
-      !own.isEmpty || pairs.any (!·.isEmpty) || rest ()
-    | .table _ rows _ =>
-      let conditions := rows.filterMap fun (_, condition, _) => condition.map fun _ => ()
-      let own := Fren.Core.tableGoals (fun _ => ()) (fun _ _ => ()) (fun _ => ()) ()
-        conditions (conditions.map fun _ => none) ((rows.back?.map (·.2.1.isNone)).getD false)
-      !own.isEmpty || rest ()
-    | _ => rest ()
+      [.expr defs (bound.filter fun (name, _) => !names.contains name) false body]
+    | _ => (here e).children
+
+/-- A site query cannot traverse replacements without reserving visits.
+Exhaustion is distinct from a completed negative answer. -/
+def ReadingNode.querySites (node : ReadingNode) (remaining : Nat) : Option (Bool × Nat) :=
+  Fren.Core.readingQuery ReadingNode.isSite ReadingNode.siteChildren remaining [node]
+
+/-- Later question generation uses the same bounded query. If given an
+unchecked expression that exhausts it, keep reading its questions rather
+than treating an incomplete search as an empty answer. -/
+def ReadingNode.hasSites (node : ReadingNode) (limit := Fren.Core.maxExpansionNodes) : Bool :=
+  (node.querySites limit).map (·.1) |>.getD true
+
+/-- Preparation charges all site queries to the item's inspection
+allowance, including queries that precede a substitution reservation. -/
+def inspectSites (node : ReadingNode) : L Bool := do
+  let some (found, left) := node.querySites (← get).readingLeft
+    | throwThe ReadError (.expansionLimit none)
+  modify fun s => { s with readingLeft := left }
+  return found
 
 /-- Check each prospective arm substitution of `siteGoals` separately.
 Its source walk stops at a reused scrutinee: its nested substitutions were
@@ -3094,10 +3113,10 @@ def inspectPatternResults (work : List ReadingNode) (limit : Nat := Fren.Core.ma
     let children := node.children
     if let .expr _ _ true (.match ..) := node then
       for arm in children.tail do
-        if (arm.withSites false).hasSites then
+        if ← inspectSites (arm.withSites false) then
           unless (Fren.Core.readingBudget ReadingNode.children limit [arm.withSites false]).isSome do
             throwThe ReadError (.expansionLimit none)
-    pending := (children.filter fun child => (child.withSites false).hasSites) ++ rest
+    pending := (← children.filterM fun child => inspectSites (child.withSites false)) ++ rest
 
 /-- Every stored expression, including constraints and bindings, must fit
 after following definitions. Also check the results of the later
@@ -3105,7 +3124,7 @@ after following definitions. Also check the results of the later
 def inspectExpressions (defs : Array (Name × Ex)) (expressions : Array Ex) : L Unit := do
   let work := expressions.toList.map (ReadingNode.expr defs [] false)
   inspectReading ReadingNode.children work
-  inspectPatternResults ((work.filter (·.hasSites)).map (·.withSites true))
+  inspectPatternResults ((← work.filterM inspectSites).map (·.withSites true))
 
 def inspectComp (c : Comp) : L Unit :=
   inspectExpressions c.defs <|
