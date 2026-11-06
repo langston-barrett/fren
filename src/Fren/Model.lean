@@ -31,6 +31,13 @@ open Lean
 
 namespace Fren
 
+/-- The nonempty `xs` joined by `op` as a balanced tree. Quantifier
+expansions and recursive facts' guard paths then have connective depth
+logarithmic in their number, for the solver's recursive preprocessing. -/
+partial def balanced (op : Expr → Expr → Expr) (xs : Array Expr) : Expr :=
+  if xs.size ≤ 1 then xs[0]!
+  else op (balanced op (xs.extract 0 (xs.size / 2))) (balanced op (xs.extract (xs.size / 2)))
+
 register_option fren.enumeration.size : Nat := {
   defValue := 3
   descr := "the size bound of enumeration: the checks set to `\"enumerated\"` enumerate every behaviour whose values have at most this size"
@@ -394,7 +401,8 @@ structure DefinedInfo where
   recursive : Bool := false
   /-- For a structural recursion, its body as the solver reads it: a
   closed lambda over its parameters, with its `match`es as `if`s and its
-  applications of itself of `solver?`, used only for one-step ground equations. -/
+  applications of itself of `solver?`, used only for ground equations
+  within the query's unfolding bound (`lang::recursive_facts`). -/
   recBody? : Option Expr := none
   decreasing? : Option Nat := none
   fact? : Option Expr := none

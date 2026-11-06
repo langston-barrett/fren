@@ -112,6 +112,17 @@ partial def exprLintChain (cx : ExprCtx) (e : Expr) (parent? : Option Expr) (src
     return
 
 partial def elabExpr (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
+  let result ← elabExprCore cx e
+  noteResolved "expr" e.span fun _ => result.2.showQualified
+  if e matches .app .. then
+    let st ← get
+    if st.resolved?.isSome then
+      if let some args := st.callTargs[(st.file, e.span.start)]? then
+        noteResolved "arguments" e.span fun _ => s!"<{", ".intercalate (args.toList.map (·.showQualified))}>"
+  return result
+
+/-- `elabExpr` before recording its surface type. -/
+partial def elabExprCore (cx : ExprCtx) (e : Expr) : M (String × Ty) := do
   let original := cx
   let concatOk := cx.concatOk
   let expected? := cx.expected?
@@ -888,6 +899,7 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
     let span := segs[0]!.span
     -- A binder or variable, then any fields read from it.
     let base? ← if let some b := cx.binder? n.getRoot then do
+        noteResolved "local" span fun _ => n.toString
         if let some sc := b.scrutinee then
           if b.isDef then
             -- A name stands for its definition: its indexes are guarded
@@ -907,6 +919,7 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
         let ks := (List.range n.components.length).reverse.map (· + 1)
         match ks.findSome? fun k => (cx.vars.find? (·.name == (n.components.take k).foldl (· ++ ·) .anonymous)).map (·, k) with
         | some (v, k) =>
+          noteResolved "local" span fun _ => n.toString
           for u in if cx.unmentioned then #[] else defDeps cx.vars v do
             let earlier := (cx.insts.findIdx? (· == u.name.getRoot)).any (· < cx.current)
             let ok := Fren.Core.checkMention cx.place u.role earlier u.name
@@ -997,6 +1010,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
     err fnSpan (Fren.Core.varNotAFunctionMsg (identName segs[0]!.name))
   if segs.size == 1 && cx.selfFn == some (Name.mkSimple segs[0]!.name) then
     let f := (← get).module ++ Name.mkSimple segs[0]!.name
+    noteResolved "name" fnSpan fun _ => resolvedPath f
     let some (ps, ft, sym) := cx.selfRec? | err fnSpan (Fren.Core.recursiveMsg f)
     -- An application of itself, which must be structural recursion
     -- (`lang::structural_recursion`), typed as a function parameter's.
@@ -1023,6 +1037,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
   -- A function parameter (`Reqs/Lang/HigherOrder#function-parameters`).
   if segs.size == 1 then
     if let some (ft, sym) := cx.fnParam? (identName segs[0]!.name) then
+      noteResolved "local" fnSpan fun _ => segs[0]!.name
       let f := identName segs[0]!.name
       unless args.size == ft.params.size do err span (Fren.Core.arityMsg f ft.params.size args.size)
       let mut smts := #[]
@@ -1063,6 +1078,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
   let resolved ← match own? with
     | some (f, _, _) => pure (.item { kind := .fnItem, path := f, isPub := true, owner := module })
     | none => resolveWritten segs cx.shadowing cx.noteIndexes
+  noteResolved "name" fnSpan fun _ => resolvedPath resolved.path
   let path ← match resolved with
     | .item { kind := .fnItem, path, .. } =>
       if let some h := (← get).hofs.find? path then
@@ -1429,6 +1445,7 @@ partial def elabRecordExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) 
   let mut vals := #[]
   for (f, _) in fs do
     let some (fi, e?) := fields.find? (Name.mkSimple ·.1.name == f) | internal span s!"no field `{f}`"
+    noteResolved "name" fi.span fun _ => resolvedPath (path ++ f)
     if let (some e, true) := (e?, cx.noteIndexes) then lintRedundant fi e true
     vals := vals.push (e?.getD (.path fi.span #[fi]))
   let note (k : Nat) (t : Ty) := s!"note: `{fs[k]!.1}` of `{showPath path}` has type `{t.show}`"
@@ -1515,6 +1532,7 @@ partial def elabUpdateExpr (cx : ExprCtx) (span : Span) (base : Expr) (fields : 
   for (f, t) in fs, k in [0:fs.size] do
     let some (fi, e?) := fields.find? (Name.mkSimple ·.1.name == f)
       | smts := smts.push s!"({fieldSym path f} {r})"; continue
+    noteResolved "name" fi.span fun _ => resolvedPath (path ++ f)
     let e := e?.getD (.path fi.span #[fi])
     let (x, te) ← elabExpr { cx with expected? := Fren.Core.ExprSite.recordField.expected (some t) none } e
     liftMsg e.span (Fren.Core.checkType t te (some s!"note: `{f}` of `{showPath path}` has type `{t.show}`"))

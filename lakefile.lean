@@ -716,8 +716,11 @@ lean_lib FrenCli where
 
 -- `lake test`: ui tests through both front ends, and snapshot tests for the
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
+-- The resolved-dump job also runs `fren` itself, so a build of just the
+-- driver must build that executable too, refreshing a cached older binary.
 lean_exe fren_test where
   root := `FrenTestMain
+  needs := #[`@/fren]
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs

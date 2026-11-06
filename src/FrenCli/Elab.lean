@@ -69,7 +69,9 @@ def varPTy (ty? : Option (Array Ident)) (name : Ident) : M Fren.Core.PTy := do
   if let (some segs, true, false) := (ty?, !Fren.Core.generatedName name.name && Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
     let span ← annotationSpan (segs[0]!.span.to segs.back!.span)
     lintFix .redundantBoolType span (Fren.Core.redundantBoolTypeMsg n)
-  return pt.getD (.plain .bool)
+  let result := pt.getD (.plain .bool)
+  noteResolved "type" name.span fun _ => result.ty.showQualified
+  return result
 
 def varTy (ty? : Option (Array Ident)) (name : Ident) : M Ty := return (← varPTy ty? name).ty
 
@@ -158,6 +160,7 @@ with `scope`, into the procedure of that path. -/
 def declareUse (segs : Array Ident) (glob : Bool) (loc : UseLoc) (scope : Option Name := none) : M Unit := do
   let st ← get
   let u ← liftResolve segs (st.table.declareUse st.module (segNames segs) glob (scope.getD st.module))
+  noteResolved "name" loc.path fun _ => resolvedPath u.target
   let record : Fren.Core.UseRecord := {
     module := u.scope, target := u.target, glob := u.glob
     unusedLevel := st.levels.get .unusedImports, globLevel := st.levels.get .globImports }
@@ -1315,6 +1318,7 @@ def elabEnum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (A
         err tspan (Fren.Core.typeParamPlaceMsg .anonymous place (Fren.Core.ownWritten path params) !params.isEmpty)
       let pt ← if own then pure (.plain (Ty.enum path (params.toList.zipIdx.map fun (p, k) => .param k p)))
         else elabPTy segs
+      noteResolved "type" tspan fun _ => pt.ty.showQualified
       let t := pt.ty
       pts := pts.push (pt, tspan)
       let abstract := t.abstractWithin?

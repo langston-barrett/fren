@@ -1,0 +1,6 @@
+--@ args: check --dump=resolved
+-- A failed check still prints its resolved surface and keeps its exit code.
+proc bad(x: Int): (det y: Int) {
+    out y := x
+    expect wrong: y != x
+}

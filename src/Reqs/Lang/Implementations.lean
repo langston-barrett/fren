@@ -80,4 +80,21 @@ private theorem representation_agrees (items : lang.ModuleItems) (n u : lang.Mod
   have hlen : ((linkedList items).length : Int) = lang.linked_item_count items := length_agrees items
   simp [lang.sentence_of?, lang.rests_case?, lang.caveat_source?, lang.rests_on_caveat?, hget, hlen]
 
+-- The concrete linked fixture denotes exactly the public sequence fixture.
+private theorem two_monoids_agree :
+    (⟨Fren.Seq.ofList (linkedList lang.TWO_MONOID_ITEMS)⟩ : lang.ModuleModel) = lang.TWO_MONOIDS := rfl
+
+private theorem dispatch_representation_agrees (items : lang.ModuleItems)
+    (p i named taken : Int) (error : Bool) :
+    let m : lang.ModuleModel := ⟨Fren.Seq.ofList (linkedList items)⟩
+    lang.dispatch_error_rule? m p i named error =
+      lang.dispatch_error_rule_from? p i named error (lang.linked_item_at items) ∧
+    lang.dispatch_taken_rule? m p i named taken error =
+      lang.dispatch_taken_rule_from? p i named taken error (lang.linked_item_at items) := by
+  dsimp only
+  have hget : (fun k => lang.item_of ⟨Fren.Seq.ofList (linkedList items)⟩ k) = lang.linked_item_at items := by
+    funext k
+    exact lookup_agrees items k
+  simp [lang.dispatch_error_rule?, lang.dispatch_taken_rule?, hget]
+
 end Reqs.Lang.Implementations

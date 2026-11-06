@@ -12,6 +12,7 @@ import FrenTest.MutateDecisions
 import FrenTest.OutOfFuel
 import FrenTest.Quote
 import FrenTest.ReadingBeside
+import FrenTest.Resolved
 import FrenTest.SmallValues
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
@@ -4364,8 +4365,12 @@ quantifier, a generic function and its instance, records,
 enumerations and checks by testing and enumeration, recursive functions
 and abstract types and functions of one name in two modules, beside a
 variable of that name, and generic datatypes with collection payloads and
-fields, whose tuple sorts both front ends create. The newtype snapshot also pins their erasure to the
-underlying sort, with no constructor or selector left in the dump. -/
+fields. For these datatypes, the comparison checks that the extra
+tuple-sort initialization declarations leave the canonical query
+unchanged; it does not check which tuple sorts either front end creates.
+The ui tests check their creation by exercising the solver. The newtype
+snapshot also pins the newtypes' erasure to the underlying sort, with no
+constructor or selector left in the dump. -/
 def obligationsAgreementSpecs : List String :=
   ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
    "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren",
@@ -4465,7 +4470,7 @@ def jobs : IO (Array (List String)) := do
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["readingBeside"], ["expansionFuzz", "60"]]
+    ++ #[["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4529,6 +4534,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     let some n := count.toNat? | throw (IO.userError "invalid copying corpus count")
     let some start := start.toNat? | throw (IO.userError "invalid copying corpus start")
     FrenTest.ExpansionFuzz.run n start
+  | ["resolvedDump"] => FrenTest.Resolved.check
   | ["enumeration"] => enumerationAgrees
   -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
   | "methodsAgree" :: part => methodsAgree part

@@ -711,8 +711,36 @@ implementations of the interface that are in scope at the check's place:
 ```fren
 -- Whether the implementation at `x` implements the interface at `i` and is
 -- in scope at `p`.
+pub fn candidate_from?(get: fn(Int) -> ModuleItem, p: Int, i: Int, x: Int) :=
+    implementation_in_scope_from?(get, p, x) and implemented_from(get, x) = i
+
 pub fn candidate?(m: ModuleModel, p: Int, i: Int, x: Int) :=
-    implementation_in_scope?(m, p, x) and implemented(m, x) = i
+    candidate_from?(|place| item_of(m, place), p, i, x)
+
+-- The two clauses of dispatch, shared with its fixed-module examples.
+set_option fren.lint.undecidable "allow" in
+pub fn dispatch_error_rule_from?(get: fn(Int) -> ModuleItem, p: Int, i: Int, named: Int, error?) :=
+    error? iff (if named != -1 then not candidate_from?(get, p, i, named)
+        else (exists (x: Int), 0 <= x < p and candidate_from?(get, p, i, x)
+        and (exists (y: Int), x < y < p and candidate_from?(get, p, i, y))))
+
+pub fn dispatch_error_rule?(m: ModuleModel, p: Int, i: Int, named: Int, error?) :=
+    dispatch_error_rule_from?(|place| item_of(m, place), p, i, named, error?)
+
+set_option fren.lint.undecidable "allow" in
+pub fn dispatch_taken_rule_from?(
+    get: fn(Int) -> ModuleItem,
+    p: Int,
+    i: Int,
+    named: Int,
+    taken: Int,
+    error?
+) :=
+    if error? then taken = -1 else if named != -1 then taken = named
+    else candidate_from?(get, p, i, taken) or (taken = -1 and not (exists (x: Int), 0 <= x < p and candidate_from?(get, p, i, x)))
+
+pub fn dispatch_taken_rule?(m: ModuleModel, p: Int, i: Int, named: Int, taken: Int, error?) :=
+    dispatch_taken_rule_from?(|place| item_of(m, place), p, i, named, taken, error?)
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "solver" in
@@ -722,11 +750,8 @@ pub proc dispatch(
     i: Int,          -- the interface whose method the check applies
     named: Int,      -- the implementation that the check names, or -1
 ): (det taken: Int, det error?) {
-    ensure error_rule: error? iff (if named != -1 then not candidate?(m, p, i, named)
-        else (exists (x: Int), 0 <= x < p and candidate?(m, p, i, x)
-        and (exists (y: Int), x < y < p and candidate?(m, p, i, y))))
-    ensure taken_rule: if error? then taken = -1 else if named != -1 then taken = named
-        else candidate?(m, p, i, taken) or (taken = -1 and not (exists (x: Int), 0 <= x < p and candidate?(m, p, i, x)))
+    ensure error_rule: dispatch_error_rule?(m, p, i, named, error?)
+    ensure taken_rule: dispatch_taken_rule?(m, p, i, named, taken, error?)
 
     expect later_never_taken: when taken != -1, taken < p
     expect taken_implements: when taken != -1, candidate?(m, p, i, taken)
@@ -739,11 +764,37 @@ pub const TWO_MONOIDS: ModuleModel := ModuleModel {
     items := [MONOID, SUM, SUM, MODULE_LEMMA],
 }
 
+-- The same module as TWO_MONOIDS, in the executable linked view, to
+-- avoid a loop in cvc5's sequence solver on the concrete sequence.
+-- Implementations.lean proves that the two views and dispatch's clauses
+-- agree. These examples quantify every permitted output directly.
+pub const TWO_MONOID_ITEMS: ModuleItems := ModuleItems::Cons(
+    MONOID,
+    ModuleItems::Cons(
+        SUM,
+        ModuleItems::Cons(SUM, ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil))
+    )
+)
+
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
-expect dispatch_ambiguous() {
-    call r := dispatch(TWO_MONOIDS, 3, 0, -1)
-    expect several: r.error?
+expect dispatch_ambiguous(taken: Int, error?) {
+    assume permitted: dispatch_error_rule_from?(
+        |place| linked_item_at(TWO_MONOID_ITEMS, place),
+        3,
+        0,
+        -1,
+        error?
+    )
+        and dispatch_taken_rule_from?(
+            |place| linked_item_at(TWO_MONOID_ITEMS, place),
+            3,
+            0,
+            -1,
+            taken,
+            error?
+        )
+    expect several: error?
 }
 
 set_option fren.lint.undecidable "allow" in
@@ -756,9 +807,23 @@ expect dispatch_named() {
 -- A check at 2 has only `sum` in scope.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
-expect dispatch_earlier() {
-    call r := dispatch(TWO_MONOIDS, 2, 0, -1)
-    expect only_earlier: r.taken = 1 and not r.error?
+expect dispatch_earlier(taken: Int, error?) {
+    assume permitted: dispatch_error_rule_from?(
+        |place| linked_item_at(TWO_MONOID_ITEMS, place),
+        2,
+        0,
+        -1,
+        error?
+    )
+        and dispatch_taken_rule_from?(
+            |place| linked_item_at(TWO_MONOID_ITEMS, place),
+            2,
+            0,
+            -1,
+            taken,
+            error?
+        )
+    expect only_earlier: taken = 1 and not error?
 }
 ```
 
