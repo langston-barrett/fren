@@ -4146,6 +4146,14 @@ Given well-typed native bindings faithful to those signatures, successful
 reconstruction must be well-typed in the bindings' declaration environment
 and local context. In particular, an existential uses the universe of its
 native domain's sort; it does not assume that every domain is in `Prop`.
+Changing an SMT identifier between its simple and quoted spellings must
+preserve projection, including which occurrences are parameters, query locals
+or bound indices, and which binder or simultaneous `let` binding shadows a
+name. This equality applies to identifiers throughout terms and sorts.
+A multi-variable quantifier is a nesting of quantifiers; a later binding
+shadows earlier occurrences of the same identifier, regardless of quoting.
+Quoted identifiers remain distinct from literal and reserved tokens: `|1|`
+is not the numeral `1`, and `|forall|` is not the quantifier keyword.
 
 ```fren
 pub fn bridge_has_parameter?(TheoryVariables, TheoryName)

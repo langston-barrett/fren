@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.SeqElems
+import FrenCli.SmtSymbols
 import FrenCore.SentenceBridge
 -- keep-sorted end
 
@@ -16,46 +17,55 @@ open SeqElems (SExpr)
 
 abbrev Adapter := Bindings SExpr
 
-/-- The environment contains lexical binders and already extracted aliases.
+/-- Decode binding names without changing their order or scope. -/
+private def bindings (xs : Array SExpr) : Option (List (String × SExpr)) :=
+  xs.toList.mapM fun binding => do
+    let .list #[.atom n, value] := binding | none
+    return (← SmtSymbols.symbol? n, value)
+
+/-- The environment contains decoded identifier names of lexical binders
+and already extracted aliases; literal and reserved tokens cannot name them.
 In particular, SMT `let` right-hand sides all see the outer environment. -/
 partial def extract (b : Adapter) (e : SExpr) (env : List (String × Input) := []) : Option Input := do
   if let .atom a := e then
-    if let some (_, i) := env.find? (·.1 == a) then return i
-  let refs := (b.parameters.filter (·.2.2 == e)).map (Input.reference ∘ (·.1)) ++
-    (b.locals.filter (·.2.2 == e)).map (Input.query ∘ (·.1))
+    if let some n := SmtSymbols.symbol? a then
+      if let some (_, i) := env.find? (·.1 == n) then return i
+  let refs := (b.parameters.filter (SmtSymbols.sameTerm ·.2.2 e)).map (Input.reference ∘ (·.1)) ++
+    (b.locals.filter (SmtSymbols.sameTerm ·.2.2 e)).map (Input.query ∘ (·.1))
   if !refs.isEmpty then return ← unique? refs
-  let values := b.values.filter (·.2 == e)
+  let values := b.values.filter (SmtSymbols.sameTerm ·.2 e)
   if !values.isEmpty then return .values (values.map (·.1))
   match e with
-  | .list #[.atom "let", .list bindings, body] =>
-    let aliases ← bindings.toList.mapM fun binding => do
-      let .list #[.atom n, value] := binding | none
+  | .list #[.atom "let", .list bs, body] =>
+    let bs ← bindings bs
+    guard ((bs.map (·.1)).eraseDups.length == bs.length)
+    let aliases ← bs.mapM fun (n, value) => do
       return (n, ← extract b value env)
     extract b body (aliases ++ env)
-  | .list #[.atom q, .list bindings, body] =>
+  | .list #[.atom q, .list bs, body] =>
     if q == "forall" || q == "exists" then
-      readBinders q bindings.toList body env
+      readBinders q (← bindings bs) body env
     else readApplication e env
   | _ => readApplication e env
 where
-  readBinders (q : String) (bindings : List SExpr) (body : SExpr) (env : List (String × Input)) :
+  readBinders (q : String) (bs : List (String × SExpr)) (body : SExpr) (env : List (String × Input)) :
       Option Input := do
-    match bindings with
+    match bs with
     | [] => extract b body env
-    | binding :: rest =>
-      let .list #[.atom n, sort] := binding | none
-      let (ty, _) ← unique? (b.types.filter (·.2 == sort))
+    | (n, sort) :: rest =>
+      let (ty, _) ← unique? (b.types.filter (SmtSymbols.sameTerm ·.2 sort))
       let env := (n, Input.bound 0) :: env.map fun (n, i) => (n, i.lift 1)
       let body ← readBinders q rest body env
       return if q == "forall" then .all ty body else .ex ty body
   readApplication (e : SExpr) (env : List (String × Input)) : Option Input := do
-    let constants := b.heads.filter fun (h, native) => h.arguments.isEmpty && native == e
+    let constants := b.heads.filter fun (h, native) => h.arguments.isEmpty && SmtSymbols.sameTerm native e
     if !constants.isEmpty then return .overloaded (constants.map (·.1)) []
     let (native, args) := match e with
       | .list xs => (xs[0]?.getD e, xs.toList.drop 1)
       | _ => (e, [])
-    if native == .atom "=>" then return .apply implication (← args.mapM fun a => extract b a env)
-    let hs := b.heads.filter fun (h, term) => term == native && h.arguments.length == args.length
+    if SmtSymbols.sameTerm native (.atom "=>") then
+      return .apply implication (← args.mapM fun a => extract b a env)
+    let hs := b.heads.filter fun (h, term) => SmtSymbols.sameTerm term native && h.arguments.length == args.length
     return .overloaded (hs.map (·.1)) (← args.mapM fun a => extract b a env)
 
 def project (b : Adapter) (parameters : List (Lean.Name × Ty)) (e : SExpr) : Option TheoryTerm := do
@@ -66,9 +76,10 @@ def project (b : Adapter) (parameters : List (Lean.Name × Ty)) (e : SExpr) : Op
 free query locals and symbol heads. The generated binder cannot capture one. -/
 private def fresh (b : Adapter) (bound : List String) : String := Id.run do
   let terms := b.heads.map (·.2) ++ b.locals.map (·.2.2) ++ b.parameters.map (·.2.2) ++ b.values.map (·.2)
-  let used := terms.flatMap fun t => (t.freeAtoms).toList
+  let used := terms.flatMap SmtSymbols.symbols
   let mut n := 0
-  while used.contains s!"fren.bridge.{n}" || bound.contains s!"fren.bridge.{n}" do n := n + 1
+  while used.contains s!"fren.bridge.{n}" || bound.any (SmtSymbols.sameSymbol · s!"fren.bridge.{n}") do
+    n := n + 1
   return s!"fren.bridge.{n}"
 
 partial def build (b : Adapter) (bound : List String := []) : Input → Option SExpr

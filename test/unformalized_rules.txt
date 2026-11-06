@@ -265,7 +265,7 @@ module.instance.hypothesis -- partly formalized: `lang::theory_instance` preserv
 module.instance.quantifiers -- partly formalized: `lang::theory_instance` preserves inner quantifiers and parameters without images; decidability and linting remain stage 3's, with today's forms keeping `traits.law.undecidable`
 module.closure -- partly formalized: `lang::ground_activation_step` and `lang::ground_close_step` saturate the constructed universe; completeness under `GroundMatching.instances` at the final query is tested in `FrenTest.GroundClosure`, not stated by a Req or proved
 module.closure.finite -- partly formalized: `lang::ground_pool_step` and `lang::ground_universe_step` construct a finite ranked universe; its completeness under structural matching is tested in `FrenTest.GroundClosure`, not stated by a Req or proved
-module.sentence.projection -- partly formalized: the Reqs state reference classification and singleton selection; argument typing, bound indices, head/literal identity, formula preservation and native reconstruction's well-formedness are tested, not proved
+module.sentence.projection -- partly formalized: the Reqs state reference classification and singleton selection; argument typing, bound indices, head/literal identity, SMT identifier quoting, formula preservation and native reconstruction's well-formedness are tested, not proved
 module.no-patterns -- an absence: no syntax states instances, and no setting changes them
 implementation.report.vacuity -- the meaning of checks under axioms that cannot hold together
 implementation.report.lemma-verdict -- what a pass rests on, which Evidence formalizes; the sentences are those that `lang::module_rests_on` gives

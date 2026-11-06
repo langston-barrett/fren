@@ -175,6 +175,62 @@ private def implicationProjected := Fren.SentenceBridge.project lean [] implicat
 #guard (implicationProjected.bind (Fren.SentenceBridge.rebuild lean []) |>.bind
   (Fren.SentenceBridge.project lean [])) == implicationProjected
 
+-- Quoting changes an identifier's spelling, not its binding. Expected
+-- indices are explicit here: a round trip could preserve the same wrong tree.
+private def equal (a b : TheoryTerm) : TheoryTerm := .app (.app eqn.term a) b
+private def intOne := Value.term ⟨.int, "1"⟩
+#guard FrenCli.SentenceBridge.project smt []
+  (parse "(forall ((|fren.bridge.0| Int)) (= fren.bridge.0 1))") ==
+  some (.all .int (equal (.bound 0) intOne))
+#guard FrenCli.SentenceBridge.project smt [(`x, .int)]
+  (parse "(forall ((x |Int|)) (|=| |x| 1))") ==
+  some (.all .int (equal (.bound 0) intOne))
+#guard FrenCli.SentenceBridge.project smt []
+  (parse "(forall ((|x| Int)) (exists ((x Int)) (= x |x|)))") ==
+  some (.all .int (.ex .int (equal (.bound 0) (.bound 0))))
+#guard FrenCli.SentenceBridge.project smt []
+  (parse "(forall ((|x| Int)) (let ((v x)) (exists ((x Int)) (= |v| |x|))))") ==
+  some (.all .int (.ex .int (equal (.bound 1) (.bound 0))))
+#guard FrenCli.SentenceBridge.project smt []
+  (parse "(forall ((|x| Int)) (let ((x 1) (v |x|)) (= |v| x)))") ==
+  some (.all .int (equal (.bound 0) intOne))
+#guard FrenCli.SentenceBridge.project smt []
+  (parse "(let ((|fren.bridge.0| 1)) (= fren.bridge.0 1))") == some (equal intOne intOne)
+#guard FrenCli.SentenceBridge.project smt []
+  (parse "(forall ((|1| Int)) (= |1| 1))") == some (.all .int (equal (.bound 0) intOne))
+#guard FrenCli.SentenceBridge.project smt [(`x, .int)] (parse "x") == some (.variable `x)
+#guard FrenCli.SentenceBridge.project smt [] (parse "|fren.bridge.0|") == some (.query `a)
+#guard FrenCli.SentenceBridge.project smt [] (parse "|true|") == some (Value.term ⟨.bool, "true"⟩)
+#guard FrenCli.SentenceBridge.project smt [] (parse "(|=>| |true| true)") ==
+  some (.app (.app implication.term (Value.term ⟨.bool, "true"⟩)) (Value.term ⟨.bool, "true"⟩))
+#guard (FrenCli.SentenceBridge.project smt [] (parse "(let ((x 1) (|x| 1)) true)")).isNone
+#guard FrenCli.SentenceBridge.project smt [] (parse "(forall ((x Int) (|x| Int)) (= x 1))") ==
+  some (.all .int (.all .int (equal (.bound 0) intOne)))
+#guard (FrenCli.SentenceBridge.project smt [] (parse "(|forall| ((x Int)) true)")).isNone
+
+private def namedConstant : Head := ⟨.constant `M.c, [], [], .int⟩
+private def quotedNames := { smt with
+  heads := [(fn, parse "|f|"), (namedConstant, parse "|constant|")]
+  locals := [(`reserved, .int, parse "|forall|"), (`keyword, .int, parse "|:named|"),
+    (`stringName, .string, parse "|\"x\"|")]
+  values := (⟨.string, "x"⟩, parse "\"x\"") :: smt.values }
+#guard FrenCli.SentenceBridge.project quotedNames [] (parse "constant") == some namedConstant.term
+#guard FrenCli.SentenceBridge.project quotedNames [] (parse "(f |forall|)") ==
+  some (.app fn.term (.query `reserved))
+#guard FrenCli.SentenceBridge.project quotedNames [] (parse "|:named|") == some (.query `keyword)
+#guard (FrenCli.SentenceBridge.project quotedNames [] (parse ":named")).isNone
+#guard (FrenCli.SentenceBridge.project quotedNames [] (parse "forall")).isNone
+#guard FrenCli.SentenceBridge.project quotedNames [] (parse "|\"x\"|") == some (.query `stringName)
+#guard FrenCli.SentenceBridge.project quotedNames [] (parse "\"x\"") == some (Value.term ⟨.string, "x"⟩)
+
+#guard ["_", "!", "as", "forall", "exists", "let", "lambda", "match", "par", "set-logic", "NUMERAL",
+    "1", "1.0", "#x0f", "#b1", "\"x\"", ":named"].all fun s =>
+  !FrenCli.SmtSymbols.sameTerm (.atom s) (.atom ("|" ++ s ++ "|"))
+#guard FrenCli.SmtSymbols.sameSymbol "name" "|name|"
+#guard FrenCli.SmtSymbols.symbol? "||" == some ""
+#guard !FrenCli.SmtSymbols.sameTerm (parse "(as x Int)") (parse "(|as| x Int)")
+#guard !FrenCli.SmtSymbols.sameTerm (parse "(f x)") (parse "(f x y)")
+
 -- A backend-only prefix may contain type and instance arguments, but must
 -- not hide a sentence parameter inside the symbol's identity.
 #guard (Fren.SentenceBridge.project
@@ -215,6 +271,9 @@ private def constructorSmt := { smt with heads := (noneHead, noneSmt) :: smt.hea
 #guard FrenCli.SentenceBridge.project constructorSmt [] noneSmt == some noneHead.term
 #guard Fren.SentenceBridge.rebuild constructorLean [] noneHead.term == some noneLean
 #guard FrenCli.SentenceBridge.rebuild constructorSmt [] noneHead.term == some noneSmt
+#guard FrenCli.SentenceBridge.project constructorSmt [] (parse "(as Option.none (|Option| |Int|))") ==
+  some noneHead.term
+#guard (FrenCli.SentenceBridge.project constructorSmt [] (parse "(|as| Option.none (Option Int))")).isNone
 
 private def stringValue : Value := ⟨.string, "a\"|x|"⟩
 private def stringLean := mkStrLit stringValue.text
@@ -329,10 +388,41 @@ run_meta do
     if (Kernel.check (← getEnv) (← getLCtx) bad).isOk then
       throwError "kernel accepted an incorrect universe argument"
 
+/-- Mixed identifier spellings exercise binding independently of a round trip.
+The expected trees spell out which binder each occurrence denotes. -/
+private def lexicalCase (seed : Nat) : SExpr × TheoryTerm := Id.run do
+  let spell (name : String) (bit : Nat) :=
+    if seed / 2 ^ bit % 2 == 0 then name else "|" ++ name ++ "|"
+  let sort := spell "Int" 0
+  let op := spell "=" 1
+  let x := spell "x" 2
+  let useX := spell "x" 3
+  let v := spell "v" 4
+  let useV := spell "v" 5
+  match seed % 5 with
+  | 0 =>
+    let decl := spell "fren.bridge.0" 2
+    let use := spell "fren.bridge.0" 3
+    return (parse s!"(forall (({decl} {sort})) ({op} {use} 1))",
+      .all .int (equal (.bound 0) intOne))
+  | 1 =>
+    return (parse s!"(forall (({x} {sort})) (exists (({v} {sort})) ({op} {useX} {useV})))",
+      .all .int (.ex .int (equal (.bound 1) (.bound 0))))
+  | 2 =>
+    return (parse s!"(forall (({x} {sort})) (let (({v} {useX})) (exists (({useX} {sort})) ({op} {useV} {x}))))",
+      .all .int (.ex .int (equal (.bound 1) (.bound 0))))
+  | 3 =>
+    return (parse s!"(forall (({x} {sort})) (let (({useX} 1) ({v} {x})) ({op} {useV} {x})))",
+      .all .int (equal (.bound 0) intOne))
+  | _ =>
+    return (parse s!"(let (({x} 1)) (let (({useX} {x})) ({op} {useX} 1)))",
+      equal intOne intOne)
+
 /-- A bounded generator for the new bridge, independent of the existing
 front-end corpus. It varies types, generic instances and application depth;
 both concrete representations must project and rebuild the same term, and
-the kernel must accept the native types, inputs and reconstructed results. -/
+the kernel must accept the native types, inputs and reconstructed results.
+Each seed also varies quoting and lexical binding against an expected tree. -/
 unsafe def check (seed : Nat := 758100) (count : Nat := 100) : IO (Array String) := do
   enableInitializersExecution
   initSearchPath (← findSysroot)
@@ -340,6 +430,9 @@ unsafe def check (seed : Nat := 758100) (count : Nat := 100) : IO (Array String)
   let mut failures := #[]
   for i in [:count] do
     let k := seed + i * 37
+    let (lexical, expected) := lexicalCase k
+    unless FrenCli.SentenceBridge.project smt [] lexical == some expected do
+      failures := failures.push s!"sentence bridge seed {k}: quoted binding differs from expected indices"
     let (ty, nativeTy, sort) := typeCases[k % typeCases.size]!
     let h : Head := ⟨.item `generic.id, [ty], [ty], ty⟩
     let nativeHead := mkApp (mkConst ``ident) nativeTy
