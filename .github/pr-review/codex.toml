@@ -1,0 +1,46 @@
+# Security policy for the pinned CLI; test_codex_cli.py checks its real tools.
+# Model metadata can override feature switches, notably multi_agent_version.
+# The trusted catalog also disables shell/patch tools and delegation.
+model = "gpt-6.1-sol"
+model_catalog_json = "/trusted/pr-review/codex-models.json"
+cli_auth_credentials_store = "file"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+project_doc_max_bytes = 0
+
+[tools]
+experimental_request_user_input = { enabled = false }
+
+[features]
+shell_tool = false
+shell_snapshot = false
+apps = false
+plugins = false
+multi_agent = false
+multi_agent_v2 = false
+view_image = false
+image_generation = false
+browser_use = false
+computer_use = false
+hooks = false
+memories = false
+skill_search = false
+skill_mcp_dependency_install = false
+code_mode = false
+code_mode_only = false
+code_mode_host = false
+goals = false
+default_mode_request_user_input = false
+
+[tools.update_plan]
+enabled = false
+
+[mcp_servers.review]
+command = "python3"
+args = ["-I", "-B", "/trusted/pr-review/read_tools.py"]
+required = true
+enabled_tools = ["Read", "Grep", "Glob", "Write"]
+# Preapprove only this allowlisted, trusted server; headless runs cannot
+# answer approval prompts. Its sole write is the fixed review.md output.
+default_tools_approval_mode = "approve"
