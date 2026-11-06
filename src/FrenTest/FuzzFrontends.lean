@@ -1043,7 +1043,7 @@ a function into `Nat` at its bound name, an arm of a `match` that binds a
 payload, a `where` clause, a table, a function into `Nat` or into a subset
 type, without a contract, a generic function with a contract over the
 first of the chain, and a recursive defined function with a
-postcondition, whose one-step equations a query reflects from a fact
+postcondition, whose defining equations a query reflects from a fact
 (`lang::recursion_formulas`); its results `Int` or `Nat`, sometimes under
 a precondition. An expectation and a cover goal over the last then hold or
 fail by the facts of all of them, as do the rows of a table over the last
@@ -1259,11 +1259,11 @@ base case needs the equations at a depth that grows with a constant's size,
 of 1 to 4 elements or levels, so that both sides of the bound are reached;
 with another parameter now and then, in either order; and a claim with no
 parameter, which no induction checks, and whose constant arguments need
-the equations at depth 1. Appended forms use generic lists, assumptions
+the equations at depth 1. Other forms use generic lists, assumptions
 and Boolean blocks, and a binary recursion whose deeper equations bring
 another function's contract. Each claim holds, so no result depends on a
-model. Its generator is split off the seed, and appended forms draw last,
-so the other modes and every existing spec's prefix stay unchanged. -/
+model. Its generator is split off the seed, so the other modes stay
+unchanged. -/
 def unfoldings : R String := do
   let mut out := "mod uunfold\n\n" ++
     "pub enum UL { Nil, Cons(Int, UL) }\n" ++
@@ -1293,7 +1293,6 @@ def unfoldings : R String := do
     i := i + 1
   if ← chance 40 then
     out := out ++ s!"\nset_option fren.lint.assertions_on_constants \"allow\" in\nexpect uconst: ulen(uapp(UL::Nil, UL::Cons({← below 10}, UL::Nil))) = 1\n"
-  -- Draw only after the original generator, preserving every old prefix.
   out := out ++ "\npub enum UG<T> { Nil, Cons(T, UG<T>) }\n" ++
     "pub fn uglen<T>(l: UG<T>): Int := match l { UG::Nil => 0, UG::Cons(_, r) => 1 + uglen(r) }\n" ++
     "pub fn ugapp<T>(a: UG<T>, b: UG<T>): UG<T> := match a {\n" ++
