@@ -1961,12 +1961,14 @@ def test_cpu_monitor():
 
 def test_monitor_group_completion():
     # fren-covers: testing::heavy_group_gone
-    for subreaper, readings, expected_pids in (
-            (False, [{"pid": 143}, {"pid": 144}], "143, 144"),
-            (True, [{"pid": 143}, {"pid": 144}], "143, 144"),
-            (True, None, "unavailable"), (False, [], "none sampled")):
+    for subreaper, readings, expected_pids, returncode, status in (
+            (False, [{"pid": 143}, {"pid": 144}], "143, 144", 7, 7),
+            (True, [{"pid": 143}, {"pid": 144}], "143, 144", 7, 7),
+            (True, None, "unavailable", 7, 7), (False, [], "none sampled", 7, 7),
+            (True, [{"pid": 143}, {"pid": 144}], "143, 144", -9, 137),
+            (False, [{"pid": 143}, {"pid": 144}], "143, 144", -15, 143)):
         record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
-        child = SimpleNamespace(pid=42, returncode=7)
+        child = SimpleNamespace(pid=42, returncode=returncode)
         clock = [0]
         def sleep(seconds):
             assert seconds == 1
@@ -1992,7 +1994,7 @@ def test_monitor_group_completion():
              mock.patch.object(heavy.time, "sleep", side_effect=sleep), \
              mock.patch.object(heavy.signal, "signal"), \
              mock.patch.object(heavy, "kill_group", side_effect=AssertionError("normal completion signaled")):
-            assert heavy.monitor_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0, subreaper) == 7
+            assert heavy.monitor_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0, subreaper) == status
             # Keep accounting/holding the slot while the original group lives;
             # identify the actual procfs view and throttle diagnostics to 30 s.
             assert probe.call_args_list == [mock.call(42, 0)] * 33
@@ -2000,7 +2002,7 @@ def test_monitor_group_completion():
             assert record["peak_rss_kb"] == 10
         lines = stderr.getvalue().splitlines()
         assert len(lines) == 2, lines
-        assert all("leader exited with 7" in line and "holding slot" in line
+        assert all(f"leader exited with {status}" in line and "holding slot" in line
                    and "42 (namespace-local PGID)" in line
                    and f"remaining procfs-view PIDs: {expected_pids}" in line for line in lines), lines
 
