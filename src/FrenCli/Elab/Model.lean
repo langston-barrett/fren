@@ -1076,6 +1076,9 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   /-- Some construct of the current item is outside the decidable core,
   whatever the level of `undecidable` (`view::inconclusive_advice`). -/
   outsideCore : Bool := false
+  /-- Functions and constants whose bodies, values or contracts are outside
+  the core, including through their dependencies (`lang::inherited_core`). -/
+  outsideCoreItems : Std.HashSet Name := {}
   /-- Whether the current procedure, or a call of it, applies a relational
   operator; with `card`, it is outside the decidable core. -/
   relationalUsed : Bool := false
