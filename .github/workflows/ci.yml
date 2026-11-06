@@ -3,7 +3,7 @@ name: lean ci
 # sample of the mutants of Fren's own requirements, their checks in Lean,
 # compared with the binary's, the coverage, and the book, with the test
 # driver that shard 0 uploads as `fren_test-SHA` (`book.yml`). It
-# saves `main`'s `.lake`, from which each pull request's `pre-merge`
+# saves `main`'s `.lake`, from which each pull request's `pre-approval`
 # workflow starts (`Reqs/dev/Testing#continuous-integration`).
 on:
   push:
@@ -90,7 +90,7 @@ jobs:
         path: .lake
         key: ${{ steps.lake.outputs.key }}
     # No output that the build wrote names the checkout's directory, as in
-    # `pre-merge` (`Reqs/dev/Testing#shared-builds`). Like the mutation
+    # `pre-approval` (`Reqs/dev/Testing#shared-builds`). Like the mutation
     # sample below, it runs even if only the test driver failed to build.
     - if: ${{ !cancelled() && steps.build.outcome == 'success' }}
       run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
@@ -251,208 +251,14 @@ jobs:
     uses: ./.github/workflows/book.yml
     with:
       artifact: fren_test-${{ github.sha }}
-  # Fren's own requirements checked in Lean, which `lake build` only
-  # elaborates: built with their checks (`-Kcheck_reqs`), where a failing or
-  # inconclusive check fails `--wfail`, and Lean's messages compared with
-  # the binary's (`Reqs/dev/Testing#own-requirements`). It saves no `.lake`:
-  # pull requests start from the build job's, without the checks.
-  own-spec-agreement:
-    if: ${{ !inputs.fuzz-only }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    concurrency:
-      group: ${{ github.workflow }}-own-spec-agreement-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        persist-credentials: false
-    - uses: ./.github/actions/lake
-      with:
-        sha: ${{ github.sha }}
-    - run: lake -R -Kcheck_reqs=1 build --wfail Reqs
-    - run: lake -R -Kcheck_reqs=1 build fren_test
-    # With an empty query cache, so that the binary asks the solver too.
-    - run: |
-        set -euo pipefail
-        out=$(lake env .lake/build/bin/fren_test --job ownSpecAgreement)
-        echo "$out"
-        test "$out" = "[]"
-      env:
-        FREN_QUERY_CACHE: ""
-  # The front-end fuzzer on seeds that no run used before, from the run's
-  # number, with `--avoid-known` (`Reqs/dev/Testing#continuous-integration`).
-  # Each difference is classified by its kind (`signature`). A kind is
-  # known if `knownDifferences` lists it for `--avoid-known`, or
-  # `knownKinds` lists it, each with the issue that tracks it, under the
-  # conditions that the entry states (after a static error, or alongside
-  # another kind). What fails the job is exactly this: a spec with a
-  # difference of a kind that is not known, a crash, or a timeout. A spec
-  # whose differences are all of known kinds, or only in inconclusive
-  # results, does not fail it. The job's summary lists every failure with
-  # its kinds, and every known kind found, with its issue and seeds; the
-  # specs are uploaded as the artifact `fuzz-frontends-RUN`, those of known
-  # kinds as `known-fe-seedN.fren`. A new kind is fixed, or recorded on its
-  # issue and listed in `knownKinds`; CI posts to no issue. `lake test`
-  # checks the fixed corpus on every pull request.
-  fuzz-frontends:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    concurrency:
-      group: ${{ github.workflow }}-fuzz-frontends-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        persist-credentials: false
-    - uses: ./.github/actions/lake
-      with:
-        sha: ${{ github.sha }}
-    - run: lake build fren_fuzz_frontends
-    # Four fuzzers at once, one to a logical CPU, two of each generator,
-    # each on 150 seeds of the run's 1000, far from the corpus's (a run by
-    # hand may ask for more, which reach into later runs' seeds). Each exits
-    # nonzero on a failure, as above.
-    - name: Fuzz the front ends
-      env:
-        RUN: ${{ github.run_number }}
-        COUNT: ${{ inputs.fuzz-count || 150 }}
-      run: |
-        set -euo pipefail
-        base=$((1000000 + RUN * 1000))
-        fuzz() { lake env .lake/build/bin/fren_fuzz_frontends --avoid-known --out fuzz "$@"; }
-        fuzz --count "$COUNT" --seed "$base" & a=$!
-        fuzz --count "$COUNT" --seed "$((base + COUNT))" & b=$!
-        fuzz --guards --count "$COUNT" --seed "$((base + 2 * COUNT))" & c=$!
-        fuzz --guards --count "$COUNT" --seed "$((base + 3 * COUNT))" & d=$!
-        code=0
-        for pid in "$a" "$b" "$c" "$d"; do wait "$pid" || code=1; done
-        exit "$code"
-    - name: Report the findings
-      if: ${{ !cancelled() && hashFiles('fuzz/results-*.jsonl') != '' }}
-      env:
-        RUN: ${{ github.run_number }}
-      run: |
-        set -euo pipefail
-        {
-          echo "### Front-end fuzzer"
-          echo
-          echo "The specs are in the artifact \`fuzz-frontends-$RUN\`."
-          echo
-          lake env .lake/build/bin/fren_fuzz_frontends --report fuzz
-        } >> "$GITHUB_STEP_SUMMARY"
-    - if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-      with:
-        name: fuzz-frontends-${{ github.run_number }}
-        path: fuzz
-        if-no-files-found: ignore
-        retention-days: 30
-  # Every check of Fren's own requirements, the ui tests and the front-end
-  # fuzzer's corpus, under the solver, enumeration and random testing, each
-  # set by `fren check --evidence`; it fails where two methods' verdicts on
-  # a check contradict each other (`check::methods_agree`,
-  # `Reqs/Methods#agreement-of-methods`).
-  methods-agree:
-    if: ${{ !inputs.fuzz-only }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    concurrency:
-      group: ${{ github.workflow }}-methods-agree-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        persist-credentials: false
-    - uses: ./.github/actions/lake
-      with:
-        sha: ${{ github.sha }}
-    - run: lake build --wfail fren_test
-    # A panic aborts the part, as in `lake test`'s jobs (`spawnJob`): it
-    # would otherwise only print, and the check would go on with a default.
-    - env:
-        LEAN_ABORT_ON_PANIC: "1"
-      run: |
-        set -euo pipefail
-        part() {
-          local name="${*// /-}"
-          local status=0
-          lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out" || status=$?
-          # A part that crashes prints no summary, so say how it ended: by
-          # its exit status, or the signal that killed it.
-          if [ "$status" -ne 0 ]; then
-            local how="exit status $status"
-            local sig
-            if [ "$status" -gt 128 ] && sig=$(kill -l $((status - 128)) 2>/dev/null); then how="$how, signal SIG$sig"; fi
-            echo "::error::methodsAgree $* ended with $how"
-            return 1
-          fi
-        }
-        # One part at a time: measured locally, on macOS, `own` (two
-        # procedures at once) took 9.4 GB and `ui` (one per core, 14
-        # there) 8.8 GB.
-        code=0
-        part own || code=1
-        part ui 0 1 || code=1
-        part fuzz || code=1
-        for f in "$RUNNER_TEMP"/methods-*.out; do
-          cat "$f"
-          test "$(tail -n 1 "$f")" = "[]" || code=1
-        done
-        exit "$code"
-  # Every declaration of Fren's code is run by `lake test`, or listed in
-  # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
-  coverage:
-    if: ${{ !inputs.fuzz-only }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    concurrency:
-      group: ${{ github.workflow }}-coverage-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        persist-credentials: false
-    - uses: ./.github/actions/lake
-      with:
-        sha: ${{ github.sha }}
-    # Lean's toolchain has clang but not its profiling runtime: LLVM's, of
-    # the same major version, and its `llvm-cov`.
-    - name: Install the profiling runtime and llvm-cov
-      run: |
-        set -euo pipefail
-        version=$("$(dirname "$(elan which lean)")/clang" --version | sed -n 's/^clang version \([0-9]*\).*/\1/p')
-        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o llvm.asc
-        # The key of apt.llvm.org, by its fingerprint, and no other: `gpg
-        # --dearmor` trusts every key in the file. Each primary key's `pub`
-        # record is followed by its `fpr`; a subkey's follows its `sub`.
-        test "$(gpg --show-keys --with-colons llvm.asc \
-            | awk -F: '$1 == "pub" { primary = 1 } $1 == "fpr" && primary { print $10; primary = 0 }')" \
-          = 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421
-        sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg llvm.asc
-        printf 'deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-%s main\n' "$version" \
-          | sudo tee /etc/apt/sources.list.d/llvm.list
-        sudo apt-get update
-        sudo apt-get install -y "libclang-rt-$version-dev" "llvm-$version"
-        runtime=$(find "/usr/lib/llvm-$version" -name 'libclang_rt.profile*.a' | grep -E 'x86_64|linux/libclang_rt.profile.a' | head -n 1)
-        printf 'COVERAGE_RUNTIME=%s\nLLVM_COV=%s\n' "$runtime" "/usr/lib/llvm-$version/bin/llvm-cov" >> "$GITHUB_ENV"
-    - name: Build with coverage
-      # The `.olean` files of every executable's root, which `fren_coverage`
-      # reads to follow each one's compiled code, too.
-      run: lake -R -Kcoverage="$COVERAGE_RUNTIME" build fren fren_test fren_coverage FrenFuzz FrenFuzzFrontends
-    - name: Run the tests
-      run: lake -Kcoverage="$COVERAGE_RUNTIME" test
-    - name: Check coverage tool failures
-      run: |
-        set -euo pipefail
-        for gcov in false true; do
-          status=0
-          lake exe fren_coverage "$gcov" > "$RUNNER_TEMP/coverage-$gcov.log" 2>&1 || status=$?
-          if [ "$status" -ne 2 ]; then
-            cat "$RUNNER_TEMP/coverage-$gcov.log"
-            echo "fren_coverage $gcov: expected exit 2, got $status"
-            exit 1
-          fi
-        done
-    - name: Report what the tests did not run
-      run: lake exe fren_coverage "$LLVM_COV" gcov
+  # The same slow jobs also gate reviewed PR heads (pre-merge.yml).
+  slow:
+    uses: ./.github/workflows/slow-checks.yml
+    with:
+      ref: ${{ github.sha }}
+      cache-sha: ${{ github.sha }}
+      concurrency-key: ${{ github.ref }}
+      own-spec-agreement: ${{ !inputs.fuzz-only }}
+      methods-agree: ${{ !inputs.fuzz-only }}
+      coverage: ${{ !inputs.fuzz-only }}
+      fuzz-count: ${{ inputs.fuzz-count || 150 }}

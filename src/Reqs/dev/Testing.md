@@ -238,9 +238,9 @@ pub mod testing
   conflicting source evidence settings under each forced method. The ui
   tests `checks/enumerated*.fren` and `checks/evidence_obligations.fren`
   cover enumeration in both front ends.
-- **Methods agree** (`methodsAgree`, on `main`): Fren's own requirements,
-  the same ui/example corpus as `enumeration`, and every seed of the
-  front-end fuzzer's fixed corpus run with argument overrides for the
+- **Methods agree** (`methodsAgree`, on `main` and relevant reviewed PRs):
+  Fren's own requirements, the same ui/example corpus as `enumeration`,
+  and every seed of the front-end fuzzer's fixed corpus run with argument overrides for the
   solver, enumeration and random testing. Every record's method is
   validated as above, including records left to the solver, before each
   method's own records are selected. The union of those check identities
@@ -1950,8 +1950,8 @@ trace, as before; one taken from the cache reports none. So a local `lake
 build --wfail` passes over a warning that only another worktree's build of
 the same module reported, and `ownSpecAgreement`, which reads Lean's
 messages from the traces, reports a module taken from the cache as one
-whose checks it cannot tell ran. `pre-merge` stays the gate: each of CI's
-machines starts with an empty cache.
+whose checks it cannot tell ran. CI stays the gate: each of its machines
+starts with an empty cache.
 
 The cache only grows. Each build adds the outputs of every step that it
 runs, several hundred MB to some 1 GB for a head that changes `Fren` or
@@ -2005,7 +2005,7 @@ in it, and the other file by the kept name otherwise
 `scripts/relocatable.py` checks that no `.olean` or `.ilean` file, and no
 file of C code or object code under `.lake/build/ir`, that a build wrote
 names the worktree's directory, which it would if anything else kept an
-absolute path. The build jobs of `pre-merge` and `lean ci` run it
+absolute path. The build jobs of `pre-approval` and `lean ci` run it
 after `lake build --wfail`, over the outputs written after the build began:
 the others are `main`'s, checked by the build that wrote them, or stale
 files of modules that the build no longer has. It checks Fren's own
@@ -2039,7 +2039,7 @@ checks them: `lake test`'s `ownSpec` job runs `fren check` over
 `ownSpecFiles`, which must list every spec that a `#fren_md` of
 `src/Reqs` reads. It runs the same checks at the same evidence as
 `#fren_check` would, and also those set to random testing, which Lean
-does not run. It runs in shard 0 of `pre-merge`, so it is the gate of
+does not run. It runs in shard 0 of `pre-approval`, so it is the gate of
 every pull request.
 
 On `main`, the `lean ci` workflow's `own-spec-agreement` job checks them
@@ -2059,20 +2059,28 @@ check` differently, so the comparison leaves out every message that the
 binary gives about such an item: a check of it that Lean failed to report
 would go unnoticed there, though the binary's result still gates. Lean reports a check once for each
 `#fren_check` of its file that runs it, so each of its messages counts
-once. It fails if a module was built without its checks. A pull request does not
-run it, so a difference between the front ends that a pull request
-causes in Fren's own requirements fails `main`'s next run, not the pull
-request's.
+once. It fails if a module was built without its checks. Relevant pull
+requests run it after a clean review, so a difference they cause in
+Fren's own requirements fails their `pre-merge` gate before merging.
 
 ## Continuous integration
 
-On a pull request, the `pre-merge` workflow checks the head merged into
+After `pre-approval` passes, `pr-review` reviews the current head. A clean
+review starts `pre-merge`, which checks the head merged into `main` with
+the slow jobs relevant to its diff: own-spec agreement, agreement of the
+checking methods, coverage and front-end fuzzing. The filters and their
+inputs are documented in `.github/pre-merge/gate.py`. Its aggregate check
+on the head passes when every selected job passes, including when none is
+selected. These jobs share `slow-checks.yml` with `lean ci`, which keeps
+running all four on `main`.
+
+On a pull request, the `pre-approval` workflow checks the head merged into
 `main`, starting from the `.lake` that `main`'s last build left: two
 machines run `lake build --wfail`, and others run `lake test --
 --skip-own-mutants --shard K/N`, each first building the test driver with
 `lake build --wfail fren_test`. A warning in the driver or in a module
-only it imports fails `pre-merge` too. One build machine builds Fren's own
-requirements and their `impl`s (`lake build --wfail Reqs Impls`), the
+only it imports fails `pre-approval` too. One build machine builds Fren's
+own requirements and their `impl`s (`lake build --wfail Reqs Impls`), the
 other the rest of the default targets: the code, the tests, the examples
 and the binaries, among them the C code that the first needs none of.
 Before the lint chapters were split, the build's critical path ran from
@@ -2100,7 +2108,7 @@ compares the front ends' messages about them ([Own
 requirements](#own-requirements)), measures the coverage, and saves the
 `.lake` for pull requests. Each job of a `lean ci` run waits for the same
 job of the run before it, not for the whole run, so that the build job
-saves the `.lake` as soon as it has built. A `pre-merge` run that starts
+saves the `.lake` as soon as it has built. A `pre-approval` run that starts
 before the `.lake` of its `main` is saved starts from an older one, and
 each of its machines rebuilds what `main` changed since. Over the runs of
 2026-11-01 and 2026-11-02, almost half did; had each build job waited only
@@ -2132,7 +2140,7 @@ evicted. A pull request whose base's `.lake` was deleted restores the
 newest, and Lake rebuilds what differs.
 
 Before the lint chapters were split, the requirements' chain was the
-critical path of most `pre-merge` runs that rebuilt it, and the runners
+critical path of most `pre-approval` runs that rebuilt it, and the runners
 slowed it: they had four logical CPUs, two cores of two threads each.
 On 2026-11-03, on a runner, elaborating
 `Reqs/Lint.lean` alone took 82 and 83 s, with one other module elaborated
@@ -2142,8 +2150,8 @@ build, beside the rest of `Reqs` and `Impls`, it took 121 to 152 s.
 The `lean ci` workflow also compares the methods on every check that
 each can run (`methodsAgree`, [Agreement of
 methods](../Methods.md#agreement-of-methods)), and runs the front-end
-fuzzer on seeds that no run used before, from the run's number, with
-`--avoid-known`, of both generators. What fails that job is exactly a
+fuzzer on seeds that no run used before, from the run's ID and attempt,
+with `--avoid-known`, of both generators. What fails that job is exactly a
 spec with a difference of a kind that is not known, a crash, or a
 timeout; a spec whose differences are all of known kinds
 (`knownDifferences` for `--avoid-known`, and `knownKinds`), or only in
@@ -2164,21 +2172,22 @@ both. The book is built by the `book` job, with no Lean: it runs the
 stripped test driver that its run's shard 0 built and uploaded as
 `fren_test-SHA`, to write the page of the rules ([Writing the
 reference](Style.md#rules-and-requirements)). On a pull request it is a job
-of `pre-merge`, shown as `book / book`; on `main`, a job of `lean ci`,
+of `pre-approval`, shown as `book / book`; on `main`, a job of `lean ci`,
 shown as `book / book` in that run, after its shards. Where shard 0 was
 cancelled or failed before it uploaded the driver, `book` builds nothing
-and passes, with a notice. The `pre-merge` workflow's last job, also named
-`pre-merge`, passes only if its build and every shard passed and, on a
-pull request, the book was built and passed (`scripts/pre_merge_verdict.py`,
+and passes, with a notice. The `pre-approval` workflow's last job, also named
+`pre-approval`, passes only if its build and every shard passed and, on a
+pull request, the book was built and passed (`scripts/pre_approval_verdict.py`,
 which `lint` tests on every combination of its jobs' results): it is the
 status that reviewers and the coordinator rely on.
 
-Where each check runs, and why. The rule is the speed of development as a
-whole: a check that is cheap gates every pull request, and one that is
-expensive runs on `main` only, where a failure is fixed by a small pull
-request of its own rather than slowing every pull request down.
+Where each check runs, and why. `pre-approval` builds and tests every
+pull request before review. After a clean review, `pre-merge` runs the
+four slow jobs relevant to its diff, as described above. The table compares
+the first gate with `main`; the slow jobs also gate relevant reviewed
+pull requests. Mutation sampling stays on `main`.
 
-| Check | `pre-merge` | `lean ci` | Why |
+| Check | `pre-approval` | `lean ci` | Why |
 |---|---|---|---|
 | `lake build --wfail`: the code, the regression tests, the `impl`s' proofs, the examples, and Fren's own requirements elaborated | yes, on two machines | yes | it is the build |
 | `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
@@ -2186,10 +2195,11 @@ request of its own rather than slowing every pull request down.
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
 | Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the language and lint chapters were split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
 | `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
-| The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-merge`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
-| A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
+| The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-approval`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
+| A sample of `fren mutate` over Fren's own requirements | no | yes | it needs its own mutant builds, and what it finds is filed or fixed after |
+| The front-end fuzzer on fresh seeds and the coverage | no | yes, and in `pre-merge` for relevant diffs | each needs a build or seeds of its own, so it runs after review |
 
-On a pull request, `pre-merge` also uploads stripped copies of the
+On a pull request, `pre-approval` also uploads stripped copies of the
 binaries that it built and tested, so that a reviewer can probe the head
 without building it: `fren`, once the build of all but the requirements
 has passed, as the artifact
@@ -2215,7 +2225,7 @@ head into `main`'s commit, as `MERGE_PARENTS` names them, rebuilds the same
 tree. A zip artifact may lose the executable bit, which `chmod` restores:
 
 ```sh
-gh run list --workflow pre-merge --branch BRANCH --json headSha,databaseId
+gh run list --workflow pre-approval --branch BRANCH --json headSha,databaseId
 gh run download RUN -n fren-SHA -D /tmp/fren-SHA
 chmod +x /tmp/fren-SHA/fren
 git fetch origin "$(cat /tmp/fren-SHA/MERGE_SHA)"
@@ -2241,7 +2251,7 @@ those of `Fren` and its dependencies came to some 340 MB, 96 MB
 compressed, on macOS.
 
 The `pr-review` workflow reviews each pull request's head with Claude once
-`pre-merge` has passed on it, by AGENTS.md's review rules: a full review,
+`pre-approval` has passed on it, by AGENTS.md's review rules: a full review,
 or a light check when the last comment that names the head starts with
 "fixes only" or "rebase only" (`.github/pr-review/kind.py`), and none for
 an update from `main` of a reviewed head, or for a head whose last naming
@@ -2286,7 +2296,7 @@ on the pull request that its `post` input names.
 The `codex-agent` workflow works small follow-up issues, selected by an
 `agent/<model>-<effort>` label or a manual run on `main`. It opens an
 `agent/*` pull request and answers at most three blocking reviews or
-failed `pre-merge` runs. The coordinator handles conflicts with `main`,
+failed `pre-approval` runs. The coordinator handles conflicts with `main`,
 the small findings of a clean review, and remaining work after that
 limit; the usual checks and review still gate every merge. Codex runs in
 an unprivileged container, isolated from the runner's processes and
@@ -2312,8 +2322,9 @@ It prints the result, whose first line starts "Pre-push check of", never
 `--dry-run` prints the prompt and runs no model, and `python3 -I -B
 scripts/local_review_test.py` tests the script with a stand-in for Codex.
 
-A pull request merges once `pre-merge` and `lint` pass on its head. Its
-branch need not be up to date with `main`: `pre-merge` tests the head
+A pull request merges once `pre-approval`, `pre-merge` and `lint` pass on
+its reviewed head. Its branch need not be up to date with `main`:
+`pre-approval` and `pre-merge` each test the head
 merged into `main` as `main` was when the run started. So two pull
 requests that each pass on their own, and merge cleanly, can still break
 `main` together. `main`'s own CI is the last check, and when it fails,
@@ -2347,7 +2358,7 @@ another branch, or from before a change to the checker, is as good as a
 fresh one, as long as every change that alters how `fren check` runs a
 script or reads its answer bumped `queryCacheVersion`. A change that
 should have bumped it and did not is answered from stale entries, by a
-local `lake test` as by `pre-merge`, and only `main`'s cold run below
+local `lake test` as by `pre-approval`, and only `main`'s cold run below
 finds it. To check such a change, or to rule the cache out of a puzzling
 result, run with the cache off, `FREN_QUERY_CACHE= lake test`, or delete
 `.lake/query-cache`.
@@ -2366,7 +2377,7 @@ is exactly the answers of that run: entries that no query asks any more
 are dropped, so the cache does not grow. A run that found a contradiction
 leaves a mark next to its cache and does not save it, so that `main` stays
 red, comparing with the last good cache, until the key is fixed. Shard 0
-of `pre-merge` restores the last saved cache and never saves one. With
+of `pre-approval` restores the last saved cache and never saves one. With
 most queries answered from it, Fren's own requirements took some 35% less
 CPU in the `fren` command, measured locally: the rest is building the
 queries and testing.
@@ -2665,20 +2676,22 @@ declaration, or prose, shares goes unreported.
 per line. One that is never meant to run, such as code that runs only when
 the evaluator refutes the solver, says why after ` -- `. `fren_coverage`
 fails on a counted declaration that does not run and is not listed: code
-that no test runs fails on `main`, in the push that adds it. A listed one
+that no test runs fails the coverage job, before merge on a relevant PR
+and on `main` as well. A listed one
 that runs or is no longer counted only weakens the list, and gets a
 warning, on GitHub Actions an annotation of the run too, that names the
 line to remove; `fren_coverage --write` rewrites the list as the run found
 it, keeping the reasons. The aim is a list of reasons alone. CI runs it on
-`main`, with Lean CI, and not in `pre-merge`: the instrumented build and
-the whole `lake test` on one machine take 20 to 35 minutes, about twice
-`pre-merge`'s 12 to 15, so a pull request that adds code no test runs
-fails `main` right after it merges, and a small pull request lists or
-tests it. The job's summary gives the counts, the failures, the stale
-lines and the dead code.
+`main`, with Lean CI, and after a clean review in `pre-merge` whenever the
+diff can change coverage, including any Lean source or test list. The
+instrumented build and the whole `lake test` on one machine take 20 to 35
+minutes, about twice `pre-approval`'s 12 to 15, so they wait for review. A
+pull request adds tests or lists why a declaration does not run before it
+merges. The job's summary gives the counts, the failures, the stale lines
+and the dead code.
 
 Before pushing, an author checks the definitions that the branch adds,
-in two steps, with `main`'s job as the backstop:
+in two steps, with `pre-merge` and `main`'s job as the backstops:
 
 1. `python3 scripts/coverage_new.py` (`fren_coverage --static --new
    origin/main`) lists each counted definition that the working tree adds

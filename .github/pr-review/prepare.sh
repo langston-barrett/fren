@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The `prepare` job of pr-review, which holds no secret and runs nothing
 # that the pull request controls. In a checkout of the workflow's own
-# commit, it finds the pull request and the passing `pre-merge` run of its
+# commit, it finds the pull request and the passing `pre-approval` run of its
 # head, fetches the head's commits as objects (it checks none of them
 # out), decides the kind of review (kind.py), and writes into
 # $RUNNER_TEMP/context the texts that the reviewer reads: the brief
@@ -15,7 +15,7 @@
 # the workflow's own checkout.
 #
 # Reads EVENT (the workflow's event), PR_INPUT (the pull request of a run
-# by hand), RUN_ID, RUN_SHA, RUN_BRANCH and RUN_PULL (the `pre-merge` run
+# by hand), RUN_ID, RUN_SHA, RUN_BRANCH and RUN_PULL (the `pre-approval` run
 # of a workflow_run, its head, its branch and its pull request), REPO and
 # GH_TOKEN.
 set -euo pipefail
@@ -45,7 +45,7 @@ if [ "$EVENT" = workflow_run ]; then
 else
   pr=$PR_INPUT
 fi
-[ -n "$pr" ] || skip "the pre-merge run $RUN_ID is of no pull request"
+[ -n "$pr" ] || skip "the pre-approval run $RUN_ID is of no pull request"
 gh pr view "$pr" --repo "$REPO" \
   --json number,state,isDraft,isCrossRepository,author,headRefOid,headRefName,title,body,comments \
   > "$RUNNER_TEMP/pr.json"
@@ -61,16 +61,16 @@ if [ "$EVENT" = workflow_run ]; then
   [ "$(jq -r .state "$RUNNER_TEMP/pr.json")" = OPEN ] || skip "#$pr is not open"
   [ "$(jq -r .isDraft "$RUNNER_TEMP/pr.json")" = false ] || skip "#$pr is a draft"
   [ "$(jq -r .author.is_bot "$RUNNER_TEMP/pr.json")" = false ] || skip "#$pr is a bot's"
-  # A newer head has its own run of `pre-merge`, and its own review.
+  # A newer head has its own run of `pre-approval`, and its own review.
   [ "$head" = "$RUN_SHA" ] || skip "#$pr's head $head is newer than $RUN_SHA"
   run=$RUN_ID
 else
-  run=$(gh run list --repo "$REPO" --workflow pre-merge --branch "$branch" \
+  run=$(gh run list --repo "$REPO" --workflow pre-approval --branch "$branch" \
     --event pull_request --limit 100 --json headSha,databaseId,conclusion \
     | jq -r --arg head "$head" \
       '[.[] | select(.headSha == $head and .conclusion == "success")][0].databaseId // empty')
   if [ -z "$run" ]; then
-    echo "::error::No run of pre-merge passed on $head, the head of #$pr."
+    echo "::error::No run of pre-approval passed on $head, the head of #$pr."
     exit 1
   fi
 fi

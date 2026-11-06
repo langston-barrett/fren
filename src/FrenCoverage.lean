@@ -40,8 +40,8 @@ it is never meant to run. The run fails on a counted declaration that does
 not run, is reached, and is not listed (`FrenTest.Coverage.fails`). A
 listed one that runs, that nothing reaches, or that is no longer counted
 only weakens the list, so it gets a warning, which names the line to
-remove: `pre-merge` does not measure coverage, so a pull request that
-makes a test run a listed declaration merges with its line still listed.
+remove. Coverage reports those as warnings, so a pull request that makes a
+test run a listed declaration can merge with its line still listed.
 Dead code, which nothing refers to, not even a proof, is reported to be
 deleted (`deadOf`).
 

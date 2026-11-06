@@ -1,0 +1,196 @@
+name: slow checks
+# Shared by main's lean ci and the reviewed-head gate. No caller secrets
+# are inherited, no cache is saved, and PR code gets only a read-only token.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact commit to test (the PR head merged into main)
+        required: true
+        type: string
+      cache-sha:
+        description: Main commit whose build to restore
+        required: true
+        type: string
+      concurrency-key:
+        required: true
+        type: string
+      own-spec-agreement:
+        type: boolean
+        default: true
+      methods-agree:
+        type: boolean
+        default: true
+      coverage:
+        type: boolean
+        default: true
+      fuzz-frontends:
+        type: boolean
+        default: true
+      fuzz-count:
+        type: number
+        default: 150
+
+permissions:
+  contents: read
+
+env:
+  LEAN_STACK_SIZE_KB: "8388608"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Fren's own requirements checked in Lean and compared with the binary.
+  own-spec-agreement:
+    if: ${{ inputs.own-spec-agreement }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-own-spec-agreement-${{ inputs.concurrency-key }}
+      cancel-in-progress: false
+    steps:
+    # Main's trusted checkout restores its cache. No lakefile, dependency
+    # or toolchain selected by the PR runs on the host.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ inputs.cache-sha }}
+        dependencies: "false"
+        toolchain: "false"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ inputs.ref }}
+        path: source
+    # Keep the cache's original restore path/version, then seed the worker.
+    - run: |
+        mkdir -p .lake
+        rm -rf source/.lake
+        mv .lake source/.lake
+        # Checkout's post action keeps the old path, so it cannot read
+        # git configuration/hooks that the worker might change.
+        mv source "$RUNNER_TEMP/slow-work"
+    - name: Run the shared job in isolation
+      run: python3 -I .github/pre-merge/worker.py own-spec-agreement
+      env:
+        SLOW_COUNT: ${{ inputs.fuzz-count }}
+  # Own, ui/example and fuzz corpus checks compared under all three methods.
+  methods-agree:
+    if: ${{ inputs.methods-agree }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    concurrency:
+      group: ${{ github.workflow }}-methods-agree-${{ inputs.concurrency-key }}
+      cancel-in-progress: false
+    steps:
+    # Main's trusted checkout restores its cache. No lakefile, dependency
+    # or toolchain selected by the PR runs on the host.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ inputs.cache-sha }}
+        dependencies: "false"
+        toolchain: "false"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ inputs.ref }}
+        path: source
+    # Keep the cache's original restore path/version, then seed the worker.
+    - run: |
+        mkdir -p .lake
+        rm -rf source/.lake
+        mv .lake source/.lake
+        # Checkout's post action keeps the old path, so it cannot read
+        # git configuration/hooks that the worker might change.
+        mv source "$RUNNER_TEMP/slow-work"
+    - name: Run the shared job in isolation
+      run: python3 -I .github/pre-merge/worker.py methods-agree
+      env:
+        SLOW_COUNT: ${{ inputs.fuzz-count }}
+  # Instrumented builds, all lake tests, and the coverage exclusions.
+  coverage:
+    if: ${{ inputs.coverage }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    concurrency:
+      group: ${{ github.workflow }}-coverage-${{ inputs.concurrency-key }}
+      cancel-in-progress: false
+    steps:
+    # Main's trusted checkout restores its cache. No lakefile, dependency
+    # or toolchain selected by the PR runs on the host.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ inputs.cache-sha }}
+        dependencies: "false"
+        toolchain: "false"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ inputs.ref }}
+        path: source
+    # Keep the cache's original restore path/version, then seed the worker.
+    - run: |
+        mkdir -p .lake
+        rm -rf source/.lake
+        mv .lake source/.lake
+        # Checkout's post action keeps the old path, so it cannot read
+        # git configuration/hooks that the worker might change.
+        mv source "$RUNNER_TEMP/slow-work"
+    - name: Run the shared job in isolation
+      run: python3 -I .github/pre-merge/worker.py coverage
+      env:
+        SLOW_COUNT: ${{ inputs.fuzz-count }}
+  # Both front ends on fresh default and guard-generator seeds.
+  fuzz-frontends:
+    if: ${{ inputs.fuzz-frontends }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    concurrency:
+      group: ${{ github.workflow }}-fuzz-frontends-${{ inputs.concurrency-key }}
+      cancel-in-progress: false
+    steps:
+    # Main's trusted checkout restores its cache. No lakefile, dependency
+    # or toolchain selected by the PR runs on the host.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ inputs.cache-sha }}
+        dependencies: "false"
+        toolchain: "false"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ inputs.ref }}
+        path: source
+    # Keep the cache's original restore path/version, then seed the worker.
+    - run: |
+        mkdir -p .lake
+        rm -rf source/.lake
+        mv .lake source/.lake
+        # Checkout's post action keeps the old path, so it cannot read
+        # git configuration/hooks that the worker might change.
+        mv source "$RUNNER_TEMP/slow-work"
+    - name: Run the shared job in isolation
+      run: python3 -I .github/pre-merge/worker.py fuzz-frontends
+      env:
+        SLOW_COUNT: ${{ inputs.fuzz-count }}
+    - if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: fuzz-frontends-${{ github.run_id }}
+        path: ${{ runner.temp }}/fuzz
+        if-no-files-found: ignore
+        retention-days: 30
+        overwrite: true

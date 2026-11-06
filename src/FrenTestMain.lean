@@ -1900,9 +1900,9 @@ from `fren check` over `ownSpecFiles`, compared spec by spec as the
 front-end fuzzer compares them (`FrenTest.Frontends.comparison`), without
 the summaries, which Lean gives for each `#fren_check`, and without what
 only the binary runs (`ownSpecReports`): its messages in an item that Lean
-notes it leaves checks of to `fren check`, all of them. Run on `main` only,
-by the `lean ci` workflow: `lake build` does not check `Reqs`, and `lake
-test`'s `ownSpec` job checks them with the binary. -/
+notes it leaves checks of to `fren check`, all of them. Run on `main` and
+relevant reviewed PRs (`slow-checks.yml`): `lake build` does not check
+`Reqs`, and `lake test`'s `ownSpec` job checks them with the binary. -/
 def ownSpecAgreement : IO (Array String) := do
   let (hosted, problems) ← hostedOwnSpec
   unless problems.isEmpty do return problems
@@ -2925,19 +2925,19 @@ library needs; only modules whose library needs the tests make `tested`
 claims, and the files those claims and the converse scan (`fren.testGlobs`)
 name are among its actual `needs`; unreadable dependency declarations fail;
 and only the tests whose library needs the files that they read,
-`FrenTestFiles`, read files with `#fren_md`; and `pre-merge`'s build
+`FrenTestFiles`, read files with `#fren_md`; and `pre-approval`'s build
 jobs together build exactly the default targets. -/
 def checkLibraries (lakefile : String) : IO (Array String) := do
   let mut failures := #[]
   -- `lake build --wfail` runs on two machines, each building some of the
   -- default targets, so that a new one would otherwise go unbuilt.
-  let built := ((matrixTargets (← IO.FS.readFile ".github/workflows/pre-merge.yml")).qsort (· < ·)).toList.eraseDups.toArray
+  let built := ((matrixTargets (← IO.FS.readFile ".github/workflows/pre-approval.yml")).qsort (· < ·)).toList.eraseDups.toArray
   match defaultTargets lakefile with
   | .error e => failures := failures.push e
   | .ok ts =>
     let want := ts.qsort (· < ·)
     if want != built then
-      failures := failures.push s!".github/workflows/pre-merge.yml: its build jobs build {built.toList}, but the default targets of `lakefile.lean` are {want.toList}"
+      failures := failures.push s!".github/workflows/pre-approval.yml: its build jobs build {built.toList}, but the default targets of `lakefile.lean` are {want.toList}"
   for (root, copies) in rootCopies do
     let ofRoot (ms : Array String) := (ms.filter (·.startsWith s!"{root}.")).qsort (· < ·)
     let want := ofRoot (← importsOf root)
@@ -3672,7 +3672,7 @@ floors. Exact known entries excuse only their recorded differences.
 Model confirmation checks every counterexample and witness that the solver
 reports (`Reqs/Models`); this checks the other direction, a pass that rests
 on the solver's `unsat` alone, which a wrong encoding can make of a false
-claim. On `main` only (`methods-agree` in `ci.yml`). -/
+claim. On `main` and relevant reviewed PRs (`slow-checks.yml`). -/
 
 /-- The methods that `methodsAgree` compares, each with the value of
 `fren check --evidence` that sets it. -/
@@ -4481,7 +4481,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
   -- Spawned by `sharedSpec` only: what it marks is never freed.
   | "persistentRun" :: args => persistentRun args
-  -- Not among `jobs`: on `main` only, after a build of `Reqs` with its
+  -- Not among `jobs`: after a separate build of `Reqs` with its
   -- checks (`ownSpecAgreement`).
   | ["ownSpecAgreement"] => ownSpecAgreement
   | ["queryCache"] => queryCache
@@ -4509,7 +4509,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["resolvedDump"] => FrenTest.Resolved.check bless
   | ["theoriesDump"] => do FrenTest.TheoryDump.check (← FrenTest.FuzzFrontends.loadFren)
   | ["enumeration"] => enumerationAgrees
-  -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
+  -- Not among `jobs`: the separate `methods-agree` CI job.
   | "methodsAgree" :: part => methodsAgree part
   | ["smtAgreement"] => do
     enableInitializersExecution

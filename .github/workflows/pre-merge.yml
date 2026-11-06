@@ -1,210 +1,114 @@
 name: pre-merge
-# Each pull request's head, merged into `main` as GitHub merges it, built
-# with `--wfail` and tested, but for the slowest tests, the mutants of
-# Fren's own requirements, which the `lean ci` workflow checks on `main`
-# (`Reqs/dev/Testing#continuous-integration`). Each job starts from the
-# `.lake` of `main`'s last build, so that it rebuilds only what the pull
-# request changes. On a pull request, its `book` job builds the book with
-# the test driver of shard 0 (`book.yml`). Its last job, `pre-merge`, passes
-# only if the build and every shard did, and, on a pull request, the book
-# was built and passed (`scripts/pre_merge_verdict.py`, which `lint` tests):
-# it is the status to rely on, and the one `main`'s ruleset requires.
-#
-# On a pull request, it also uploads stripped copies of the binaries it
-# built, `fren` from the build of all but the requirements and `fren_test`
-# from shard 0, as the artifacts `fren-SHA` and `fren_test-SHA`, where SHA
-# is the pull request's head, kept for 3 days: Linux binaries of the head
-# merged into `main`, each with the merge commit in `MERGE_SHA` and its
-# parents, `main`'s commit and the head, in `MERGE_PARENTS`, with which a
-# reviewer can probe the head without building it
-# (`Reqs/dev/Testing#continuous-integration`).
-#
-# It runs on each push to a pull request, on GitHub's merge of the head
-# into `main` as it is then. It also keeps a `merge_group` trigger, for a
-# merge queue, which this repository doesn't use. Either way, the
-# checkout's `HEAD^1` is the commit it merges into. There is no manual
-# trigger: run by hand, it would check out a branch alone, whose `HEAD^1`
-# is the branch's own parent, and its status would say nothing about the
-# branch merged into `main`.
+# Third stage: pre-approval -> pr-review -> pre-merge. The checked,
+# posted-review attestation is from the trusted post job, not PR code.
+# workflow_run uses main's workflow/scripts. Preparation only reads PR
+# objects; the reusable test jobs have no secrets or write permissions.
 on:
-  pull_request:
-  merge_group:
+  # zizmor: ignore[dangerous-triggers] no secrets reach PR code; only the
+  # separate trusted reporting jobs can write a status on the head.
+  workflow_run:
+    workflows: [pr-review]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      review-run:
+        description: Completed main-context pr-review run that posted the clean verdict
+        required: false
+        type: string
+        default: ""
+      pr:
+        description: PR with a local or inherited review (coordinator confirms the skip first)
+        required: false
+        type: number
+        default: 0
 
-permissions:
-  contents: read
+permissions: {}
 
-# Stopgap until #834 bounds enumeration and evaluation recursion. Lean runs
-# native executables on threads whose explicit stacks ignore `ulimit -s`.
-# Reserve 8 GiB per stack; physical memory is committed only as used.
-env:
-  LEAN_STACK_SIZE_KB: "8388608"
-
+# Serialize reruns of a review; different heads have separate statuses.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id || inputs.review-run || inputs.pr }}
+  cancel-in-progress: false
 
 jobs:
-  # `lake build --wfail` of every default target, on two machines: Fren's
-  # own requirements and their `impl`s, the build's critical path, on one,
-  # and the rest on the other, so that the first shares its four logical
-  # CPUs with nothing else (`Reqs/dev/Testing#continuous-integration`).
-  # Both build the modules that both need. `lake test`'s `libraries` job
-  # checks that the two together are `lakefile.lean`'s default targets.
-  build:
-    name: lake build --wfail (${{ matrix.part }})
+  prepare:
+    if: ${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-        - part: requirements
-          targets: Reqs Impls
-        - part: the rest
-          targets: FrenCore Fren FrenTest FrenTestFiles Examples fren fren_fuzz
-    steps:
-    # The parent of the merge commit, too: it is `main`'s commit, or, in
-    # the merge queue, the commit of the pull request ahead in the queue,
-    # whose `.lake` was never saved, so that the cache falls back to the
-    # latest one saved on `main`.
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        persist-credentials: false
-        fetch-depth: 2
-    - id: base
-      run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
-    - uses: ./.github/actions/lake
-      with:
-        sha: ${{ steps.base.outputs.sha }}
-    # The matrix's `targets`: on one machine, Fren's own requirements (only
-    # elaborated: shard 0 checks them with the binary) and the links from
-    # Fren's code to them; on the other, the library, the regression tests,
-    # the examples and the binaries. Warnings, including inconclusive
-    # checks and untraced requirements, fail it.
-    - run: |
-        read -ra targets <<< "$TARGETS"
-        touch "$RUNNER_TEMP/build-start"
-        lake build --wfail "${targets[@]}"
-      env:
-        TARGETS: ${{ matrix.targets }}
-    # No output that the build wrote names the checkout's directory, so that
-    # another worktree can take it from Lake's artifact cache; the outputs
-    # that it did not write are `main`'s, checked by the build that wrote
-    # them (`Reqs/dev/Testing#shared-builds`).
-    - run: python3 scripts/relocatable.py --since "$RUNNER_TEMP/build-start"
-    # Only once the build has passed: until then, the `.lake` may still hold
-    # the `fren` of `main` that it was restored with. A stripped copy, with
-    # the merge commit it was built from, which a probe must check out; the
-    # copy checks an example, so that stripping cannot break it unnoticed.
-    - if: ${{ github.event_name == 'pull_request' && matrix.part == 'the rest' }}
-      run: |
-        mkdir "$RUNNER_TEMP/artifact"
-        cp .lake/build/bin/fren "$RUNNER_TEMP/artifact/fren"
-        # Lake's artifact cache links its outputs read-only, so the copy is
-        # too (`Reqs/dev/Testing#shared-builds`).
-        chmod u+w "$RUNNER_TEMP/artifact/fren"
-        strip "$RUNNER_TEMP/artifact/fren"
-        git rev-parse HEAD > "$RUNNER_TEMP/artifact/MERGE_SHA"
-        git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"
-        ls -l .lake/build/bin/fren "$RUNNER_TEMP/artifact"
-        "$RUNNER_TEMP/artifact/fren" check examples/arith.fren
-    - if: ${{ github.event_name == 'pull_request' && matrix.part == 'the rest' }}
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-      with:
-        name: fren-${{ github.event.pull_request.head.sha }}
-        path: ${{ runner.temp }}/artifact
-        if-no-files-found: error
-        retention-days: 3
-        overwrite: true
-  test:
-    name: lake test (shard ${{ matrix.shard }} of 4)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      head: ${{ steps.prepare.outputs.head }}
+      pr: ${{ steps.prepare.outputs.pr }}
+      merge: ${{ steps.prepare.outputs.merge }}
+      base: ${{ steps.prepare.outputs.base }}
+      relevant: ${{ steps.prepare.outputs.relevant }}
+      own-spec-agreement: ${{ steps.prepare.outputs.own-spec-agreement }}
+      methods-agree: ${{ steps.prepare.outputs.methods-agree }}
+      coverage: ${{ steps.prepare.outputs.coverage }}
+      fuzz-frontends: ${{ steps.prepare.outputs.fuzz-frontends }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-        fetch-depth: 2
-    - id: base
-      run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
-    - uses: ./.github/actions/lake
-      with:
-        sha: ${{ steps.base.outputs.sha }}
-    # Only the test driver, and what it imports, not `Reqs`: the tests run
-    # the binary's code in the driver's process, and import `Fren`. Shard 0
-    # checks Fren's own requirements with the binary, the slowest job, and
-    # the others the rest (`Reqs/dev/Testing`). Warnings in the driver or
-    # its imports fail the shard too: the default build omits the driver.
-    - run: lake build --wfail fren_test
-    # Before the tests run, so that a reviewer can probe a head whose tests
-    # fail. A stripped copy, with the merge commit, as for `fren`. Stripping
-    # keeps the dynamic symbols, through which the interpreter finds the
-    # compiled code; a ui job of the copy, which loads `Fren`, checks that.
-    - if: ${{ github.event_name == 'pull_request' && matrix.shard == 0 }}
-      run: |
-        mkdir "$RUNNER_TEMP/artifact"
-        cp .lake/build/bin/fren_test "$RUNNER_TEMP/artifact/fren_test"
-        # Lake's artifact cache links its outputs read-only, so the copy is
-        # too (`Reqs/dev/Testing#shared-builds`).
-        chmod u+w "$RUNNER_TEMP/artifact/fren_test"
-        strip "$RUNNER_TEMP/artifact/fren_test"
-        git rev-parse HEAD > "$RUNNER_TEMP/artifact/MERGE_SHA"
-        git rev-parse HEAD^1 HEAD^2 > "$RUNNER_TEMP/artifact/MERGE_PARENTS"
-        ls -l .lake/build/bin/fren_test "$RUNNER_TEMP/artifact"
-        out=$(lake env "$RUNNER_TEMP/artifact/fren_test" --job ui test/ui/syntax/eqeq.fren)
-        echo "$out"
-        test "$out" = "[]"
-    - if: ${{ github.event_name == 'pull_request' && matrix.shard == 0 }}
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-      with:
-        name: fren_test-${{ github.event.pull_request.head.sha }}
-        path: ${{ runner.temp }}/artifact
-        if-no-files-found: error
-        retention-days: 3
-        overwrite: true
-    # The solver's answers that `main`'s last run of shard 0 kept, from
-    # which `fren check` answers the queries of Fren's own requirements
-    # that it asked (`Reqs/dev/Testing#query-cache`). Restored, never saved:
-    # what a pull request adds is dropped with its machine.
-    - if: ${{ matrix.shard == 0 }}
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ runner.temp }}/query-cache
-        key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ steps.base.outputs.sha }}
-        restore-keys: |
-          query-cache-${{ runner.os }}-${{ runner.arch }}-
-    - run: lake test -- --skip-own-mutants --timings --shard "$SHARD/4"
+        fetch-depth: 0
+    - id: prepare
+      run: python3 -I .github/pre-merge/gate.py prepare
       env:
-        SHARD: ${{ matrix.shard }}
-        FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
-  # The book, with the page of the rules that shard 0's test driver writes
-  # (`book.yml`), on a pull request only, which has that artifact. It shows
-  # on the pull request as `book / book`. Where shard 0 uploaded no driver,
-  # it builds nothing and passes, and the shard's failure fails `pre-merge`.
-  book:
-    needs: test
-    if: ${{ github.event_name == 'pull_request' && !cancelled() }}
-    uses: ./.github/workflows/book.yml
-    with:
-      artifact: fren_test-${{ github.event.pull_request.head.sha }}
-  pre-merge:
-    needs: [build, test, book]
-    if: ${{ !cancelled() }}
+        GH_TOKEN: ${{ github.token }}
+        REVIEW_RUN: ${{ github.event.workflow_run.id || inputs.review-run }}
+        PR_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || '' }}
+  pending:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.head != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      checks: write
+    outputs:
+      check: ${{ steps.pending.outputs.check }}
+    steps:
+    - id: pending
+      name: Mark the head pending before tests start
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD: ${{ needs.prepare.outputs.head }}
+        URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        check=$(gh api "repos/$REPO/check-runs" -f name=pre-merge -f head_sha="$HEAD" \
+          -f status=in_progress -f details_url="$URL" --jq .id)
+        echo "check=$check" >> "$GITHUB_OUTPUT"
+  slow:
+    needs: [prepare, pending]
+    if: ${{ needs.prepare.outputs.relevant == 'true' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/slow-checks.yml
+    with:
+      ref: ${{ needs.prepare.outputs.merge }}
+      cache-sha: ${{ needs.prepare.outputs.base }}
+      concurrency-key: ${{ needs.prepare.outputs.head }}
+      own-spec-agreement: ${{ needs.prepare.outputs.own-spec-agreement == 'true' }}
+      methods-agree: ${{ needs.prepare.outputs.methods-agree == 'true' }}
+      coverage: ${{ needs.prepare.outputs.coverage == 'true' }}
+      fuzz-frontends: ${{ needs.prepare.outputs.fuzz-frontends == 'true' }}
+  report:
+    needs: [prepare, pending, slow]
+    if: ${{ always() && needs.prepare.outputs.head != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: write
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-    # The verdict, which `lint` tests on every combination of the results.
-    - run: python3 -I -B scripts/pre_merge_verdict.py
+        sparse-checkout: .github/pre-merge
+    - run: python3 -I .github/pre-merge/gate.py finish
       env:
-        BUILD: ${{ needs.build.result }}
-        TEST: ${{ needs.test.result }}
-        EVENT: ${{ github.event_name }}
-        BOOK: ${{ needs.book.result }}
-        BUILT: ${{ needs.book.outputs.built }}
+        GH_TOKEN: ${{ github.token }}
+        NEEDS: ${{ toJSON(needs) }}
+        CHECK_RUN_ID: ${{ needs.pending.outputs.check }}

@@ -29,7 +29,7 @@ FULL = "This is a full review of the head."
 LIGHT = """This is a light check, not a full review: the "{what}" check that the
 process above describes. The pull request's previous head, `{previous}`,
 has a review, quoted below, and the comment quoted below it says that
-the new head `{head}` changes it only by {change}. `pre-merge` passed on
+the new head `{head}` changes it only by {change}. `pre-approval` passed on
 the new head: the workflow runs only then.
 
 {how}

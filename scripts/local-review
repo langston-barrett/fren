@@ -87,8 +87,8 @@ brief below holds, as written, except here:
 - The sandbox is read-only, so you cannot write `review.md`. Give the review,
   exactly as the brief says to write it, as your final message, and nothing
   else in that message.
-- No `pre-merge` run has run on this head, and no probe has run:
-  `.review/probes.md` says so. Where the brief says that `pre-merge` passed,
+- No `pre-approval` run has run on this head, and no probe has run:
+  `.review/probes.md` says so. Where the brief says that `pre-approval` passed,
   nothing is known yet of the build or the tests. Judge the code by reading
   it, and say in a finding what a build, a test or a probe would show.
 - {pr}
@@ -101,7 +101,7 @@ HAS_PR = """\
 The pull request is #{number}, and its title and description are quoted
   at the end."""
 
-PROBES = "No probe ran: this is a local review, before a push, and before `pre-merge`.\n"
+PROBES = "No probe ran: this is a local review, before a push, and before `pre-approval`.\n"
 
 
 def fail(message):

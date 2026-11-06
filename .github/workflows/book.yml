@@ -4,7 +4,7 @@ name: book
 # fails if the build does. It publishes nothing. The page of the rules and
 # their requirements is written by the test driver that the calling workflow
 # built in the same run and uploaded as the artifact `artifact`
-# (`scripts/rules_report.py`), so that this job builds no Lean: `pre-merge`
+# (`scripts/rules_report.py`), so that this job builds no Lean: `pre-approval`
 # calls it on each pull request, and `lean ci` on each push to `main`.
 #
 # Where the caller's run has no such artifact, because the job that uploads

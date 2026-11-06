@@ -710,8 +710,8 @@ class FixTests(unittest.TestCase):
             self.assertIsNone(fixparams.reviewed_pr(REPO, "20"))
         download.assert_not_called()
 
-    def test_failed_pre_merge_resolves_only_current_head(self):
-        self.env.update(RUN_NAME="pre-merge", RUN_BRANCH="agent/10-luna-low", RUN_SHA=SHA)
+    def test_failed_pre_approval_resolves_only_current_head(self):
+        self.env.update(RUN_NAME="pre-approval", RUN_BRANCH="agent/10-luna-low", RUN_SHA=SHA)
 
         def api(path, **kwargs):
             if "/actions/runs/20/jobs?" in path:
@@ -744,11 +744,11 @@ class FixTests(unittest.TestCase):
             prompt.assert_not_called()
 
     def test_timeouts_and_cancellations_do_not_start_a_fix_round(self):
-        self.env.update(RUN_NAME="pre-merge", RUN_BRANCH="agent/10-luna-low", RUN_SHA=SHA)
+        self.env.update(RUN_NAME="pre-approval", RUN_BRANCH="agent/10-luna-low", RUN_SHA=SHA)
         for conclusion in ("timed_out", "cancelled", "success", "skipped", None):
             with self.subTest(conclusion=conclusion):
                 jobs = {"jobs": [{"name": "lake test (shard 0 of 4)", "conclusion": conclusion},
-                                 {"name": "pre-merge", "conclusion": "failure"}]}
+                                 {"name": "pre-approval", "conclusion": "failure"}]}
                 with patch.dict(os.environ, self.env), \
                         patch.object(fixparams, "api", side_effect=[[self.info], [], jobs]), \
                         patch.object(subprocess, "check_output") as log, \

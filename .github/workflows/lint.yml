@@ -1,9 +1,9 @@
 name: lint
 # `lun run --check`, and the tests of the scripts, on `main` and on each
-# pull request: its `lint` status gates merges, like `pre-merge`'s. Two
+# pull request: its `lint` status gates merges, like `pre-approval`'s. Two
 # pull requests that each pass can still fail together, for example two
 # imports added out of order to one sorted block, and `main`'s own run is
-# what catches that. It keeps a `merge_group` trigger, as `pre-merge` does,
+# what catches that. It keeps a `merge_group` trigger, as `pre-approval` does,
 # for a merge queue, which this repository doesn't use.
 on:
   push:
@@ -35,6 +35,7 @@ jobs:
         python3 -I -B scripts/heavy_test.py
         python3 -I -B scripts/lake_cache.py test
         python3 -I -B scripts/rules_report.py test
+        python3 -I -B -m unittest discover -s .github/pre-merge
         python3 -I -B -m unittest discover -s .github/codex-agent
         # pr-review's, with the CommonMark parser that test_frame.py needs.
         python3 -m venv "$RUNNER_TEMP/venv"
@@ -47,6 +48,8 @@ jobs:
       run: bash .github/pr-review/test_sandbox.sh
     - name: Test codex-agent's sandbox
       run: bash .github/codex-agent/test_sandbox.sh
+    - name: Test the slow workers' sandbox
+      run: bash .github/pre-merge/test_sandbox.sh
     - name: Test Codex review's tools and sandbox
       run: bash .github/pr-review/test_codex_sandbox.sh
     - uses: langston-barrett/gha/.github/actions/install-linters@d0cdf249a9684185d96083c87d078679cd373b28
@@ -69,9 +72,9 @@ jobs:
           https://github.com/google/keep-sorted/releases/download/v0.10.0/keep-sorted_linux_amd64
         echo "079710c01619cc3dc11c9ddce18ac8db8d86701e7d12f9c5b62b8c4c4a664cca  ${install_dir}/keep-sorted" | sha256sum --check
         chmod +x "${install_dir}/keep-sorted"
-    # The verdict of `pre-merge`, on every combination of its jobs' results.
-    - name: Test pre-merge's verdict
-      run: python3 -I -B scripts/pre_merge_verdict.py test
+    # The verdict of `pre-approval`, on every combination of its jobs' results.
+    - name: Test pre-approval's verdict
+      run: python3 -I -B scripts/pre_approval_verdict.py test
     - uses: langston-barrett/lun/.github/actions/lun@aff233f8a5cf4c72a8332941af8d6e56719aba78
       with:
         run-flags: "--check"

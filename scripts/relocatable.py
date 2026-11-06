@@ -4,7 +4,7 @@
     python3 scripts/relocatable.py --since FILE
 
 Run it after `lake build --wfail`, with FILE a file touched just before
-the build began, as the build jobs of `pre-merge` and `lean ci` do
+the build began, as the build jobs of `pre-approval` and `lean ci` do
 (`Reqs/dev/Testing#shared-builds`). It reads each `.olean` and `.ilean`
 file under `.lake/build/lib/lean`, and each file under `.lake/build/ir`
 (C code and objects), that the build wrote, those modified after FILE,

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""The verdict of the `pre-merge` workflow, its last job of the same name
+"""The verdict of the `pre-approval` workflow, its last job of the same name
 (`Reqs/dev/Testing#continuous-integration`).
 
-    python3 scripts/pre_merge_verdict.py
-    python3 scripts/pre_merge_verdict.py test
+    python3 scripts/pre_approval_verdict.py
+    python3 scripts/pre_approval_verdict.py test
 
 It reads the results of the workflow's jobs from the environment: `BUILD`,
 `TEST` and `BOOK`, each `success`, `failure`, `cancelled` or `skipped`;
@@ -42,7 +42,7 @@ def reasons(env):
 def main():
     why = reasons(os.environ)
     for r in why:
-        print(f"pre-merge fails: {r}")
+        print(f"pre-approval fails: {r}")
     sys.exit(1 if why else 0)
 
 
@@ -88,7 +88,7 @@ def test():
         print(f, file=sys.stderr)
     if failures:
         sys.exit(1)
-    print("pre_merge_verdict: all passed")
+    print("pre_approval_verdict: all passed")
 
 
 if __name__ == "__main__":

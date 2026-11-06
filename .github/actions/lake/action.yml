@@ -8,6 +8,12 @@ inputs:
       The commit of `main` whose `.lake` to restore. If none was saved for
       it, the latest one saved is restored, and Lake rebuilds what differs.
     required: true
+  dependencies:
+    description: Build dependencies here (false for isolated workers)
+    default: "true"
+  toolchain:
+    description: Install Lean here (false for isolated workers)
+    default: "true"
 outputs:
   cache-hit:
     description: Whether the `.lake` of `sha` itself was restored.
@@ -32,6 +38,7 @@ runs:
         lake-${{ runner.os }}-${{ runner.arch }}-
   # Only to install elan and the toolchain: the steps that follow build.
   - uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6 # v1.6.2
+    if: ${{ inputs.toolchain == 'true' }}
     with:
       auto-config: "false"
       build: "false"
@@ -43,5 +50,6 @@ runs:
   # warns that it couldn't fetch a release, and `--wfail` would count that
   # warning as a failure of Fren's build.
   - name: Build the dependencies
+    if: ${{ inputs.dependencies == 'true' }}
     shell: bash
     run: lake build +Smt +cvc5

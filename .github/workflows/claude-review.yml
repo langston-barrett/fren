@@ -1,6 +1,6 @@
 name: pr-review
 # A model's review of a pull request's head, by the review rules of
-# AGENTS.md, once `pre-merge` has passed on it: a full review, or a light
+# AGENTS.md, once `pre-approval` has passed on it: a full review, or a light
 # check ("fixes only" or "rebase only") when the last comment that names
 # the head asks for one (.github/pr-review/kind.py); a light check that
 # finds more changed than the request lists asks for a full review instead
@@ -17,7 +17,7 @@ name: pr-review
 # credential, while the pull request's author controls its files, its
 # description and its comments. Pull requests from forks are never
 # reviewed, so that author can push to this repository. The only code of
-# the pull request that runs is the binaries that `pre-merge` built, in a
+# the pull request that runs is the binaries that `pre-approval` built, in a
 # job that holds no secret:
 #
 # - `prepare` holds no secret. In a checkout of the workflow's own commit,
@@ -25,7 +25,7 @@ name: pr-review
 #   them out, and writes the texts that the reviewer reads.
 # - `probe` holds no secret and a read-only token. It runs `fren check` on
 #   the specs that the pull request changes, with the `fren` that
-#   `pre-merge` built, in a container (.github/pr-review/sandbox.sh): as
+#   `pre-approval` built, in a container (.github/pr-review/sandbox.sh): as
 #   `nobody`, with no network, a read-only root and read-only mounts, no
 #   capabilities, no variable of the runner and no docker socket, so that
 #   a probe can affect nothing but its own output, which the step captures
@@ -73,10 +73,10 @@ name: pr-review
 # (`gh workflow run pr-review --ref BRANCH -f pr=N`), with `post` empty, so
 # that the review goes only to the run's summary.
 on:
-  # zizmor: ignore[dangerous-triggers] only the binaries that pre-merge
+  # zizmor: ignore[dangerous-triggers] only the binaries that pre-approval
   # built run, in a job with no secret; see the threat model above.
   workflow_run:
-    workflows: [pre-merge]
+    workflows: [pre-approval]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -100,7 +100,7 @@ permissions: {}
 
 jobs:
   prepare:
-    # Only after `pre-merge` passed on a pull request of this repository:
+    # Only after `pre-approval` passed on a pull request of this repository:
     # secrets aren't available to pull requests from forks, and the merge
     # queue's runs are of no pull request's head. prepare.sh skips forks
     # by hand too.
@@ -312,7 +312,9 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-        sparse-checkout: .github/pr-review
+        sparse-checkout: |
+          .github/pr-review
+          .github/pre-merge
     - id: check
       name: Check the review
       run: |
@@ -340,6 +342,24 @@ jobs:
         POST: ${{ inputs.post }}
         PR: ${{ needs.prepare.outputs.pr }}
         REPO: ${{ github.repository }}
+    # This attestation is produced only here, after a checked review was
+    # posted. workflow_run can start the slow gate even though a comment
+    # posted with GITHUB_TOKEN does not trigger issue_comment workflows.
+    - id: posted
+      if: ${{ steps.check.outputs.status == '0' && (github.event_name == 'workflow_run' || inputs.post != '') }}
+      run: python3 -I .github/pre-merge/gate.py record
+      env:
+        HEAD: ${{ needs.prepare.outputs.head }}
+        POST: ${{ inputs.post }}
+        PR: ${{ needs.prepare.outputs.pr }}
+    - if: ${{ steps.posted.outputs.clean == 'true' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: posted-review
+        overwrite: true
+        path: ${{ runner.temp }}/posted-review
+        if-no-files-found: error
+        retention-days: 30
     # A review that failed its check fails the run, after the note is posted.
     - run: exit "$STATUS"
       env:

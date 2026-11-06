@@ -18,7 +18,7 @@ on:
   # qualify; prepare checks the reviewed head and bot comment against the
   # completed run's review artifact, and publish runs no PR code.
   workflow_run:
-    workflows: [pre-merge, pr-review]
+    workflows: [pre-approval, pr-review]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -50,7 +50,7 @@ jobs:
        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)) ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
-       ((github.event.workflow_run.name == 'pre-merge' &&
+       ((github.event.workflow_run.name == 'pre-approval' &&
          github.event.workflow_run.conclusion == 'failure' &&
          startsWith(github.event.workflow_run.head_branch, 'agent/')) ||
         (github.event.workflow_run.name == 'pr-review' &&

@@ -58,6 +58,6 @@ renders each rule's links, the rest of its identifier's line, small, and
 leaves the identifier alone on its line for mdbook-spec, which reads only
 `r[...]`; `python3 scripts/rules_report.py test` tests this.
 
-The `book` job builds the book on every pull request, in `pre-merge`, and
+The `book` job builds the book on every pull request, in `pre-approval`, and
 on `main`, in `lean ci`, and publishes nothing. It builds no Lean: it runs
 the test driver that its run's `lake test` built, which shard 0 uploads.

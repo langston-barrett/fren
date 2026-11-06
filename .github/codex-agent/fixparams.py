@@ -1,4 +1,4 @@
-"""Resolve a completed review or failing pre-merge to a current agent head."""
+"""Resolve a completed review or failing pre-approval to a current agent head."""
 import io
 import importlib.util
 import os
@@ -140,7 +140,7 @@ def main():
         log = subprocess.check_output([
             "gh", "run", "view", run_id, "-R", repo, "--log-failed"], text=True)
         lines = [line for line in log.splitlines() if re.search(r"error:|FAIL|crashed|warning:", line)]
-        what = "Your current head's pre-merge failed. Fix the cause. Failing log lines:\n\n" + "\n".join(lines[:80])
+        what = "Your current head's pre-approval failed. Fix the cause. Failing log lines:\n\n" + "\n".join(lines[:80])
     # A push records the round even when posting its response failed.
     commits = api(f"repos/{repo}/pulls/{pr}/commits", pages=True)
     done = rounds_done(thread, commits, pr)

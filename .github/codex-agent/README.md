@@ -7,10 +7,10 @@ COLLABORATOR qualify; a label setter must also have write access.
 Automated review findings must match the completed `pr-review` run's
 validated artifact and the current PR head. It opens an `agent/*` PR and
 answers at most three blocking reviews or failed
-`pre-merge` runs. The coordinator handles conflicts with `main`, small
+`pre-approval` runs. The coordinator handles conflicts with `main`, small
 findings on a clean review, and any remaining work after the round limit.
 These PRs still require the normal CI checks and review before merging.
-Only failed build or test jobs start a `pre-merge` fix round. Timeouts and
+Only failed build or test jobs start a `pre-approval` fix round. Timeouts and
 cancellations alone leave the head unchanged for the coordinator to rerun.
 If the agent job fails, the publisher posts a fixed notice without reading
 its output. A missing patch also gets a rejection comment.
