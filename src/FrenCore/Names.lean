@@ -1915,6 +1915,11 @@ def noMethodsMsg (m : String) (ty : String) : Msg :=
   { code? := some "F0322", headline := s!"`{ty}` has no methods, so it has no method `{m}`", label? := some "no methods"
     notes := #["note: only `Int`s, `String`s, sets, relations, sequences and the values of a type declared `ordered` have methods"] }
 
+/-- An item's core classification after using a dependency whose body,
+value or contract participates in its queries (`lang::inherited_core`).
+The dependency's classification already includes its own dependencies. -/
+def inheritCore (item dependency : Bool) : Bool := item && dependency
+
 /-- Whether a construct is in the decidable core (`lang::in_core`); one
 whose operands are all constants (`ground`) has a fixed value, except a
 quantifier's binder, which is never in it. -/

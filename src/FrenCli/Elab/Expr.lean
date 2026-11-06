@@ -944,6 +944,7 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
             let rootSeg : Ident := { name := text, span := { span with stop := span.start + text.length } }
             let .item { kind := .constItem, path, .. } ← resolve #[rootSeg] cx.shadowing | pure none
             let some c := (← get).consts.find? path | internal span s!"unknown constant `{path}`"
+            unless cx.unmentioned do noteItemCore path
             pure (some (c, n.components.drop 1))
           | _ => pure none
     if let some (base, fields) := base? then
@@ -996,6 +997,7 @@ partial def elabPathExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (pare
     return (ctorSym en.path en.variants[idx]!, .enum en.path [])
   | .item { kind := .constItem, path, .. } =>
     let some c := (← get).consts.find? path | internal e.span s!"unknown constant `{path}`"
+    unless cx.unmentioned do noteItemCore path
     -- Its value's quantifiers are part of the queries
     -- (`Reqs/Lang/Quantifiers#guards`).
     if (← get).guardedItems.contains path then modify fun s => { s with guardedUsed := true }
@@ -1081,6 +1083,7 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
   noteResolved "name" fnSpan fun _ => resolvedPath resolved.path
   let path ← match resolved with
     | .item { kind := .fnItem, path, .. } =>
+      unless cx.unmentioned do noteItemCore path
       if let some h := (← get).hofs.find? path then
         return ← elabHigherOrderApp cx expected? span fnSpan path h args
       pure path

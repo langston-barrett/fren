@@ -323,8 +323,9 @@ pub mod testing
   again. Only a difference in a query's script, which changes its key, is
   solved anew. Run alone (`--job sharedSpec`), the tests' path is a run at
   `--jobs 1` with a copy of the cache of its own, so it does not answer
-  from the shared path's answers either; and the ui tests' runs keep no
-  answers. A case whose outputs differ only where queries reached their
+  from the shared path's answers either. It runs after the ui tests, whose
+  runs keep no answers, so their in-process reference runs do not overlap.
+  A case whose outputs differ only where queries reached their
   time limit runs again once, and is skipped if it still differs so. Each
   differing decided diagnostic must match one timeout of the other run,
   at most once, by its full file, line and column and its check question:
