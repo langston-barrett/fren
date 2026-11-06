@@ -516,8 +516,11 @@ The error for a name that is neither a lint nor a group, in a `set_option`
 or in a flag, suggests the name of a lint or a group when one is close:
 the closest, at most a third of the name's length away in edit distance,
 or else one of at least three characters that the name starts with, or
-that starts with the name. Of several such names, it is the first by name,
-so that `manual` suggests `manual_abs`, and `match` suggests `match_arm_if_else`.
+that starts with the name. The suggestion is the first by name among
+equally close candidates, as `similarStr` defines in
+`src/FrenCore/Names.lean`. For example, `manual_ns` is
+one edit from both `manual_abs` and `manual_nat`, so it suggests `manual_abs`,
+and `match` is a prefix of `match_arm_if_else`.
 
 A lint that was renamed is unknown by its old name, and the `fren` command's
 error names the new one: `case_split_reqs` is now `case_split_guarantees`,

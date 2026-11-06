@@ -1,29 +1,29 @@
-error[F0707]: unknown lint `manual`
- --> test/cli/lints/settings/f0707_close_names.fren:5:12
+error[F0707]: unknown lint `manual_ns`
+ --> test/cli/lints/settings/f0707_close_names.fren:4:12
   |
-5 | set_option fren.lint.manual "allow"
-  |            ^^^^^^^^^^^^^^^^ no such lint
+4 | set_option fren.lint.manual_ns "allow"
+  |            ^^^^^^^^^^^^^^^^^^^ no such lint
   |
   = note: the lints are {Lint.all}
   = note: the groups of lints are `complexity`, `decidability`, `nonstandard_style`, `pedantic`, `restriction`, `style`, `suspicious`, `unused`
 help: a lint with a similar name exists: `manual_abs`
   |
-5 - set_option fren.lint.manual "allow"
-5 + set_option fren.lint.manual_abs "allow"
+4 - set_option fren.lint.manual_ns "allow"
+4 + set_option fren.lint.manual_abs "allow"
   |
 
 error[F0707]: unknown lint `match`
- --> test/cli/lints/settings/f0707_close_names.fren:6:12
+ --> test/cli/lints/settings/f0707_close_names.fren:5:12
   |
-6 | set_option fren.lint.match "allow"
+5 | set_option fren.lint.match "allow"
   |            ^^^^^^^^^^^^^^^ no such lint
   |
   = note: the lints are {Lint.all}
   = note: the groups of lints are `complexity`, `decidability`, `nonstandard_style`, `pedantic`, `restriction`, `style`, `suspicious`, `unused`
 help: a lint with a similar name exists: `match_arm_if_else`
   |
-6 - set_option fren.lint.match "allow"
-6 + set_option fren.lint.match_arm_if_else "allow"
+5 - set_option fren.lint.match "allow"
+5 + set_option fren.lint.match_arm_if_else "allow"
   |
 
 error: could not check due to previous errors
