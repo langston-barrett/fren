@@ -32,8 +32,8 @@ with the run's URL and no text of the review, and does not start with the
 verdict's prefix, so that it counts as no review; the script then fails.
 The resulting comment is checked again for loading content before
 replacing `<`; it loads nothing from outside github.com, and no `@` in
-it mentions anyone. Runner command markers are made inert too, since
-the comment is also printed into the job's log.
+it mentions anyone. The comment is written to its output file and is not
+printed into the job's log, where its text could be a runner command.
 
 The second form is the `review` job's, which holds the secrets, run before
 the review leaves it: it fails if the review holds any of the values of
@@ -179,9 +179,6 @@ def comment(text, head, kind, run_url, names, hashes=frozenset()):
     else:
         body, ok = f"The `pr-review` workflow did not review {head}: {reason}. Its run is {run_url}.\n", False
     body = unmention(body)
-    # The body is also printed into a runner log. Model text must not be
-    # interpreted as a GitHub Actions command, including legacy commands.
-    body = re.sub(r":(?=:)", ":\u200b", body).replace("##[", "#\u200b#[")
     if loading(html.unescape(html.unescape(body))):
         body, ok = f"The `pr-review` workflow did not review {head}: see its run's log.\n", False
     # Replace every literal opener last, including in code and failure
@@ -241,7 +238,6 @@ def main():
     body, ok = comment(text, head, kind, run_url, names, hashed_names())
     with open(out, "w") as f:
         f.write(body)
-    print(body)
     sys.exit(0 if ok else 1)
 
 

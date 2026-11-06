@@ -62,18 +62,27 @@ despite a disabled feature. The catalog explicitly clears it. A small
 trusted stdio MCP supplies only Read, literal Grep, Glob and Write to
 `review.md`; its resource helpers expose no content. Reads reject links,
 nonregular files, private configuration and paths outside the checkout.
-Read returns bounded byte pages with `next_offset`; Grep and Glob give
-continuation offsets if the result is too large. Follow those offsets
-to inspect an entire diff or every match. The checkout's instructions,
-links, `.codex`, `.agents` and `.claude` are removed before either model
+Read returns byte pages with `next_offset`. Grep can restrict its search
+to a relative file or directory with `path`. Grep and Glob return match
+fragments: pass `next_offset` and `next_column` back as `offset` and
+`column` until `next_offset` is null. This includes fragments of a single
+oversized match or path. Follow those cursors to inspect an entire diff
+or every match. Each escaped JSON page, including its MCP text envelope,
+is at most 3,000 bytes, leaving room for the CLI's wrappers below the
+catalog's unchanged 10,000-token truncation limit. Static RPC replies and
+errors are bounded too. The checkout's instructions, links, `.codex`,
+`.agents` and `.claude` are removed before either model
 runs. The common brief contains the workflow commit's review rules.
 
 `lint` runs the Python suites and `test_codex_sandbox.sh`. The latter
 builds the production image, runs its real pinned CLI against an offline
 fake Responses server, and rejects any unexpected advertised tool. The
 fixture also tries unsupported execution, patch, web and delegation
-calls. A hostile stand-in checks the actual container boundaries,
-read-only checkout, writable private auth, stdin and child teardown,
+calls. Its dense evidence exceeds 10,000 tokens in all; it checks every
+page against the next model-visible tool output and reconstructs the
+complete reads, matches and paths. A hostile stand-in checks the actual
+container boundaries, read-only checkout, writable private auth, stdin
+and child teardown,
 including cancellation. Unit tests cover engine selection, effort,
 path restrictions, continuation, original/refreshed credential filtering
 and Codex final-message publication through the common verdict checker.

@@ -3,6 +3,9 @@
 import base64
 import hashlib
 import random
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -116,12 +119,22 @@ class Leaks(unittest.TestCase):
 
 
 class Comment(unittest.TestCase):
-    def test_runner_commands_are_inert(self):
-        body, ok = comment(OK + PROBED + "\n::warning::model text\n##[error]model text",
+    def test_posted_code_is_preserved_without_echoing_runner_commands(self):
+        text = OK + PROBED + "\n`x :: xs`, `Std::` and `##[`\n::warning::model text\n##[error]model text"
+        body, ok = comment(text,
                            HEAD, "full", "URL", set())
         self.assertTrue(ok)
-        self.assertNotIn("::", body)
-        self.assertNotIn("##[", body)
+        self.assertEqual(body, text + "\n")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "review.md").write_text(text)
+            (root / "names").write_text("")
+            result = subprocess.run([sys.executable, "-I", str(Path(__file__).with_name("check.py")),
+                                     str(root / "review.md"), HEAD, "full", "URL", str(root / "names"),
+                                     str(root / "comment.md")], text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual((root / "comment.md").read_text(), text + "\n")
 
     def posted(self, case):
         text = f"{OK}\n\n{case}{PROBED}"

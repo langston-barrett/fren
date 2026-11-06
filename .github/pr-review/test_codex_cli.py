@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -22,16 +23,30 @@ HEAD = "b" * 40
 REVIEW = f"Review of {HEAD}: no blocking issues\n\nProbes: read the fixture checkout."
 
 
+def mcp_text(value):
+    if isinstance(value, list):
+        value = "".join(block["text"] for block in value)
+    if isinstance(value, str):
+        # The pinned CLI prefixes MCP text with its own timing envelope.
+        return re.sub(r"\AWall time: [0-9.]+ seconds\nOutput:", "", value, count=1)
+    return "".join(block["text"] for block in value["content"])
+
+
 @unittest.skipUnless(shutil.which("codex"), "the container test installs the pinned CLI")
 class CodexTools(unittest.TestCase):
     def test_advertised_tools(self):
         for kind in ("full", "fixes", "rebase"):
             with self.subTest(kind=kind):
-                self.check_tools(effort(kind))
+                self.check_tools(effort(kind), dense=kind == "full")
 
-    def check_tools(self, reasoning):
+    def check_tools(self, reasoning, dense=False):
         self.assertEqual(subprocess.check_output(["codex", "--version"], text=True).strip(), "codex-cli 0.166.0")
         requests = []
+        probes, errors = [], []
+        plans = [("Read", {"path": "evidence/rows.txt"}),
+                 ("Grep", {"pattern": "needle", "path": "evidence"}),
+                 ("Glob", {"pattern": "evidence/*"})] if dense else []
+        state = {"plan": 0, "last": None, "arguments": None}
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):
@@ -52,8 +67,34 @@ class CodexTools(unittest.TestCase):
                               "namespace": "mcp__review", "arguments": json.dumps({
                                   "path": "review.md", "content": REVIEW})}]
                 else:
-                    items = [{"id": "msg_1", "type": "message", "role": "assistant",
-                              "content": [{"type": "output_text", "text": REVIEW}]}]
+                    if state["last"]:
+                        previous = next(item for item in requests[-1]["input"]
+                                        if item["type"] == "function_call_output"
+                                        and item["call_id"] == state["last"])
+                        try:
+                            page = json.loads(mcp_text(previous["output"]))
+                            if page["next_offset"] is None:
+                                state["plan"] += 1
+                                state["arguments"] = None
+                            else:
+                                state["arguments"]["offset"] = page["next_offset"]
+                                if "next_column" in page:
+                                    state["arguments"]["column"] = page["next_column"]
+                        except (ValueError, KeyError, TypeError) as error:
+                            errors.append(type(error).__name__ + ": page was not intact JSON")
+                            state["plan"] = len(plans)
+                    if state["plan"] < len(plans):
+                        name, arguments = plans[state["plan"]]
+                        if state["arguments"] is None:
+                            state["arguments"] = dict(arguments)
+                        call_id = f"probe_{len(probes)}"
+                        probes.append((call_id, name, dict(state["arguments"])))
+                        state["last"] = call_id
+                        items = [{"type": "function_call", "call_id": call_id, "name": name,
+                                  "namespace": "mcp__review", "arguments": json.dumps(state["arguments"])}]
+                    else:
+                        items = [{"id": "msg_1", "type": "message", "role": "assistant",
+                                  "content": [{"type": "output_text", "text": REVIEW}]}]
                 events = [
                     ("response.created", {"response": {"id": "resp_1"}}),
                     *[("response.output_item.done", {"output_index": i, "item": item})
@@ -79,13 +120,34 @@ class CodexTools(unittest.TestCase):
                 work.mkdir()
                 output.mkdir()
                 (work / "fixture.txt").write_text("fixture checkout source\n")
+                # At least 20,000 separated short tokens, plus JSON escapes
+                # and Unicode; the old single Grep response lost its middle.
+                rows = [f"needle {i:04d} a b c d e f g h i j k l m n o p q r s t 一🙂 \"\\\x01"
+                        for i in range(1000)]
+                evidence = work / "evidence"
+                evidence.mkdir()
+                source = "\n".join(rows) + "\n"
+                (evidence / "rows.txt").write_text(source)
+                long = evidence
+                for _ in range(20):
+                    long /= "🙂" * 40
+                long.mkdir(parents=True)
+                long_source = "一" * 1000 + "needle" + "🙂" * 1000
+                (long / "x").write_text(long_source)
+                long_path = (long / "x").relative_to(work).as_posix()
                 # Only the test server's roots change. Production policy stays
                 # fixed to /work and /agent, with the same tool implementation.
                 shim = root / "mcp-fixture.py"
                 shim.write_text("import sys\nfrom pathlib import Path\n"
                                 f"sys.path.insert(0, {str(HERE)!r})\nimport read_tools\n"
                                 f"read_tools.ROOT = Path({str(work)!r})\n"
-                                f"read_tools.OUTPUT = Path({str(output)!r})\nread_tools.main()\n")
+                                f"read_tools.OUTPUT = Path({str(output)!r})\n"
+                                "original = read_tools.respond\n"
+                                "def logged(request):\n result = original(request)\n"
+                                " if request.get('method') == 'tools/call':\n"
+                                f"  with open({str(output / 'calls.jsonl')!r}, 'a') as log:\n"
+                                "   log.write(__import__('json').dumps(result) + '\\n')\n"
+                                " return result\nread_tools.respond = logged\nread_tools.main()\n")
                 config = (HERE / "codex.toml").read_text().replace("/trusted/pr-review", str(HERE))
                 config = config.replace(json.dumps(str(HERE / "read_tools.py")), json.dumps(str(shim)))
                 (auth / "config.toml").write_text(config)
@@ -109,15 +171,45 @@ class CodexTools(unittest.TestCase):
                 self.assertEqual((output / "last.md").read_text().strip(), REVIEW)
                 _, valid = comment((output / "review.md").read_text(), HEAD, "full", "URL", set())
                 self.assertTrue(valid)
+                self.assertFalse(errors, errors)
+                returned = [json.loads(line) for line in (output / "calls.jsonl").read_text().splitlines()]
+                outputs = {}
+                for request in requests[1:]:
+                    for item in request["input"]:
+                        if item["type"] == "function_call_output":
+                            outputs.setdefault(item["call_id"], item["output"])
+                            # Include the actual CLI function-call envelope,
+                            # escaped JSON, Unicode and all continuation data.
+                            self.assertLess(len(json.dumps(item).encode()), 8000)
+                ids = ["read", "write"] + [call_id for call_id, _, _ in probes]
+                self.assertEqual(len(returned), len(ids))
+                for call_id, expected in zip(ids, returned):
+                    self.assertEqual(mcp_text(outputs[call_id]), mcp_text(expected), call_id)
+                if dense:
+                    read, matches, paths = "", {}, {}
+                    for call_id, name, _ in probes:
+                        page = json.loads(mcp_text(outputs[call_id]))
+                        if name == "Read":
+                            read += page["text"]
+                        else:
+                            collected = matches if name == "Grep" else paths
+                            for chunk in page["matches"]:
+                                prior = collected.setdefault(chunk["offset"], "")
+                                self.assertEqual(chunk["column"], len(prior))
+                                collected[chunk["offset"]] += chunk["text"]
+                    self.assertEqual(read, source)
+                    self.assertEqual([matches[i] for i in sorted(matches)],
+                                     [f"evidence/rows.txt:{i + 1}: {row}" for i, row in enumerate(rows)]
+                                     + [long_path + ":1: " + long_source])
+                    self.assertEqual([paths[i] for i in sorted(paths)], ["evidence/rows.txt", long_path])
         finally:
             server.shutdown()
             server.server_close()
             thread.join()
         self.assertTrue(requests)
-        self.assertEqual(len(requests), 4)
-        outputs = {item["call_id"]: item["output"] for request in requests[1:] for item in request["input"]
-                   if item["type"] == "function_call_output"}
-        self.assertEqual(set(outputs), {"call_0", "call_1", "call_2", "call_3", "read", "write"})
+        self.assertEqual(len(requests), 4 + len(probes))
+        self.assertEqual(set(outputs), {"call_0", "call_1", "call_2", "call_3", "read", "write"}
+                         | {call_id for call_id, _, _ in probes})
         for key in ("call_0", "call_1", "call_2", "call_3"):
             self.assertRegex(str(outputs[key]), "[Uu]n(recognized|supported)|[Uu]nknown")
         self.assertIn("fixture checkout source", str(outputs["read"]))

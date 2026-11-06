@@ -5,6 +5,8 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -45,18 +47,52 @@ class Tools(unittest.TestCase):
         patch.object(read_tools, "ROOT", self.work).start()
         patch.object(read_tools, "OUTPUT", self.output).start()
 
+    def results(self, name, args):
+        found, cursor = {}, (0, 0)
+        for _ in range(1000):
+            reply = read_tools.respond({"method": "tools/call", "params": {
+                "name": name, "arguments": dict(args, offset=cursor[0], column=cursor[1])}})
+            self.assertNotIn("isError", reply)
+            self.assertLessEqual(len(json.dumps(reply).encode()), read_tools.PAGE_BYTES)
+            page = json.loads(reply["content"][0]["text"])
+            for chunk in page["matches"]:
+                prior = found.setdefault(chunk["offset"], "")
+                self.assertEqual(chunk["column"], len(prior))
+                found[chunk["offset"]] += chunk["text"]
+            if page["next_offset"] is None:
+                return [found[i] for i in sorted(found)]
+            following = page["next_offset"], page["next_column"]
+            self.assertGreater(following, cursor)
+            cursor = following
+        self.fail("search continuation did not finish")
+
+    def read_all(self, path):
+        offset, found = 0, ""
+        for _ in range(1000):
+            reply = read_tools.respond({"method": "tools/call", "params": {
+                "name": "Read", "arguments": {"path": path, "offset": offset}}})
+            self.assertNotIn("isError", reply)
+            self.assertLessEqual(len(json.dumps(reply).encode()), read_tools.PAGE_BYTES)
+            page = json.loads(reply["content"][0]["text"])
+            found += page["text"]
+            if page["next_offset"] is None:
+                return found
+            self.assertGreater(page["next_offset"], offset)
+            offset = page["next_offset"]
+        self.fail("read continuation did not finish")
+
     def test_four_tools(self):
         (self.work / "x.lean").write_text("first\nneedle\nlast\n")
         page = json.loads(read_tools.call("Read", {"path": "x.lean", "offset": 6, "limit": 6}))
         self.assertEqual(page, {"offset": 6, "next_offset": 12, "text": "needle"})
-        self.assertEqual(read_tools.call("Grep", {"pattern": "needle"}), "x.lean:2: needle")
-        self.assertEqual(read_tools.call("Grep", {"pattern": "(a+)+$"}), "")
-        self.assertEqual(read_tools.call("Glob", {"pattern": "*.lean"}), "x.lean")
+        self.assertEqual(self.results("Grep", {"pattern": "needle"}), ["x.lean:2: needle"])
+        self.assertEqual(self.results("Grep", {"pattern": "(a+)+$"}), [])
+        self.assertEqual(self.results("Glob", {"pattern": "*.lean"}), ["x.lean"])
         read_tools.call("Write", {"path": "review.md", "content": REVIEW})
         self.assertEqual((self.output / "review.md").read_text(), REVIEW)
         self.assertEqual(json.loads(read_tools.call("Read", {"path": "review.md"}))["text"], REVIEW)
-        self.assertIn("review.md", read_tools.call("Glob", {"pattern": "*"}))
-        self.assertIn("review.md:1:", read_tools.call("Grep", {"pattern": HEAD}))
+        self.assertIn("review.md", self.results("Glob", {"pattern": "*"}))
+        self.assertIn("review.md:1:", "".join(self.results("Grep", {"pattern": HEAD})))
 
     def test_denied_paths_methods_and_tools(self):
         (self.root / "secret").write_text(INITIAL)
@@ -78,7 +114,7 @@ class Tools(unittest.TestCase):
         for method in ("resources/read", "shell/execute", "unknown"):
             with self.assertRaises(ValueError):
                 read_tools.respond({"method": method, "params": {"uri": "/auth/auth.json"}})
-        self.assertEqual(read_tools.call("Glob", {"pattern": "*"}), "")
+        self.assertEqual(self.results("Glob", {"pattern": "*"}), [])
         for path in ("../review.md", "/auth/auth.json", "other", ".git/config"):
             with self.assertRaises(ValueError):
                 read_tools.call("Write", {"path": path, "content": "x"})
@@ -89,30 +125,79 @@ class Tools(unittest.TestCase):
 
     def test_output_bounds(self):
         (self.work / "large").write_text("x" * 3_000_000 + "needle\n")
-        self.assertLessEqual(len(read_tools.call("Read", {"path": "large"})), read_tools.LIMIT)
+        reply = read_tools.respond({"method": "tools/call", "params": {
+            "name": "Read", "arguments": {"path": "large"}}})
+        self.assertLessEqual(len(json.dumps(reply).encode()), read_tools.PAGE_BYTES)
         self.assertIn("needle", read_tools.call("Read", {"path": "large", "offset": 3_000_000}))
-        self.assertIn("needle", read_tools.call("Grep", {"pattern": "needle"}))
-        source = "a" * (read_tools.LIMIT // 8 - 1) + "≤X"
-        (self.work / "unicode").write_text(source)
-        first = json.loads(read_tools.call("Read", {"path": "unicode"}))
-        second = json.loads(read_tools.call("Read", {"path": "unicode", "offset": first["next_offset"]}))
-        self.assertEqual(first["text"] + second["text"], source)
+        self.assertIn("needle", "".join(self.results("Grep", {"pattern": "needle"})))
+        for source in ("a" * (read_tools.PAGE_BYTES - 1) + "≤X",
+                       " x y z 0 1 2 [] {} \"\\\n" * 1000,
+                       "一🙂≤\x00\x01\"\\" * 1000):
+            (self.work / "unicode").write_text(source)
+            self.assertEqual(self.read_all("unicode"), source)
         with self.assertRaises(ValueError):
             read_tools.call("Write", {"path": "review.md", "content": "x" * 2_000_001})
 
     def test_search_and_glob_continuation(self):
-        for i in range(6):
+        for i in range(100):
             (self.work / f"x{i}").write_text("needle\n")
-        with patch.object(read_tools, "LIMIT", 45):
-            first = read_tools.call("Grep", {"pattern": "needle"})
-            self.assertIn("continue with offset=3", first)
-            second = read_tools.call("Grep", {"pattern": "needle", "offset": 3})
-            self.assertIn("x5:1: needle", second)
-            self.assertNotIn("x0:", second)
-        with patch.object(read_tools, "LIMIT", 10):
-            first = read_tools.call("Glob", {"pattern": "*"})
-            self.assertIn("continue with offset=3", first)
-            self.assertIn("x5", read_tools.call("Glob", {"pattern": "*", "offset": 3}))
+        self.assertEqual(self.results("Grep", {"pattern": "needle"}),
+                         [f"x{i}:1: needle" for i in sorted(range(100), key=lambda i: f"x{i}")])
+        self.assertEqual(self.results("Glob", {"pattern": "*"}), sorted(f"x{i}" for i in range(100)))
+
+    def test_long_unicode_match_and_path_fragments(self):
+        path = self.work
+        for _ in range(20):
+            path /= "🙂" * 40
+        path.mkdir(parents=True)
+        source = "一" * 1000 + "needle" + "🙂" * 1000
+        (path / "x").write_text(source)
+        relative = (path / "x").relative_to(self.work).as_posix()
+        first = json.loads(read_tools.call("Glob", {"pattern": "*"}))
+        self.assertEqual(first["next_offset"], 0)
+        self.assertGreater(first["next_column"], 0)
+        self.assertEqual(self.results("Glob", {"pattern": "*"}), [relative])
+        self.assertEqual(self.results("Grep", {"pattern": "needle"}), [relative + ":1: " + source])
+
+    def test_grep_path_scope(self):
+        (self.work / ".review").mkdir()
+        (self.work / ".review/diff.patch").write_text("needle diff")
+        (self.work / "src").mkdir()
+        (self.work / "src/code").write_text("needle code")
+        (self.work / "src-other").write_text("needle outside")
+        self.assertEqual(self.results("Grep", {"pattern": "needle", "path": ".review/diff.patch"}),
+                         [".review/diff.patch:1: needle diff"])
+        self.assertEqual(self.results("Grep", {"pattern": "needle", "path": "src"}),
+                         ["src/code:1: needle code"])
+        for path in ("../src", "/auth", ".git", "src\\code"):
+            self.assertTrue(read_tools.respond({"method": "tools/call", "params": {
+                "name": "Grep", "arguments": {"pattern": "needle", "path": path}}})["isError"])
+
+    def test_bad_names_and_nonobject_arguments_do_not_break_search(self):
+        (self.work / "bad\\name").write_text("needle ignored")
+        with open(os.fsencode(self.work) + b"/bad-\xff", "w") as stream:
+            stream.write("needle ignored")
+        (self.work / "safe").write_text("needle found")
+        for args in (None, [], 1, "text"):
+            self.assertTrue(read_tools.respond({"method": "tools/call", "params": {
+                "name": "Read", "arguments": args}})["isError"])
+        self.assertEqual(self.results("Grep", {"pattern": "needle"}), ["safe:1: needle found"])
+        requests = [{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "Read", "arguments": []}}, {"jsonrpc": "2.0", "id": 2, "method": "ping"}]
+        result = subprocess.run([sys.executable, "-I", "-B", str(Path(read_tools.__file__))],
+                                input="\n".join(map(json.dumps, requests)) + "\n",
+                                text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        replies = list(map(json.loads, result.stdout.splitlines()))
+        self.assertTrue(replies[0]["result"]["isError"])
+        self.assertEqual(replies[1]["result"], {})
+
+    def test_static_replies_and_errors_fit_envelopes(self):
+        for method in ("initialize", "tools/list", "resources/list", "resources/templates/list", "ping"):
+            reply = {"jsonrpc": "2.0", "id": 123, "result": read_tools.respond({"method": method})}
+            self.assertLessEqual(len(json.dumps(reply).encode()), read_tools.RPC_BYTES)
+        denied = read_tools.respond({"method": "tools/call", "params": {"name": "unknown"}})
+        self.assertLessEqual(len(json.dumps(denied).encode()), read_tools.PAGE_BYTES)
 
 
 class Collection(unittest.TestCase):

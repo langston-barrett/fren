@@ -15,7 +15,11 @@ import sys
 
 ROOT = Path("/work")
 OUTPUT = Path("/agent")
-LIMIT = 200_000
+# Count the escaped JSON tool result, not source characters. Even another
+# JSON encoding by the CLI has ample room under its 10,000-token limit:
+# byte-level tokenization cannot use more tokens than serialized bytes.
+PAGE_BYTES = 3000
+RPC_BYTES = 6000
 REQUEST_LIMIT = 2_000_000
 PRIVATE = {".git", ".codex", ".agents", ".claude"}
 
@@ -61,50 +65,122 @@ def files():
             if name not in PRIVATE and path.is_file() and not path.is_symlink():
                 if path == ROOT / "review.md" and has_review:
                     continue
-                yield path.relative_to(ROOT).as_posix()
+                relative = path.relative_to(ROOT).as_posix()
+                try:
+                    relative.encode("utf-8")
+                    parts(relative)
+                except (ValueError, UnicodeError):
+                    continue
+                yield relative
     if has_review:
         yield "review.md"
 
 
+def tool_result(text):
+    return {"content": [{"type": "text", "text": text}]}
+
+
+def fits_page(value):
+    # Read and search pages are JSON text inside the MCP text envelope.
+    # Cursor/EOF metadata can grow after the last fragment was admitted.
+    return len(json.dumps(tool_result(json.dumps(value))).encode()) <= PAGE_BYTES - 128
+
+
+def integer(args, name, default=0):
+    value = max(0, int(args.get(name, default)))
+    if value > 2**63 - 1:
+        raise ValueError("offset too large")
+    return value
+
+
+def longest_prefix(text, page):
+    low, high = 0, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if fits_page(page(text[:middle])):
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
+
+def search_results(name, pattern, scope):
+    for path in files():
+        if scope and path != scope and not path.startswith(scope + "/"):
+            continue
+        if name == "Glob":
+            if fnmatch.fnmatchcase(path, pattern):
+                yield path
+        else:
+            try:
+                yield from matches(path, pattern)
+            except (OSError, ValueError):
+                continue
+
+
+def search_page(results, offset, column):
+    chunks = []
+    for index, text in enumerate(results):
+        if index < offset:
+            continue
+        start = column if index == offset else 0
+        if start > len(text):
+            raise ValueError("column outside result")
+
+        def page(fragment):
+            stop = start + len(fragment)
+            return {"matches": chunks + [{"offset": index, "column": start, "text": fragment}],
+                    "next_offset": index + 1 if stop == len(text) else index,
+                    "next_column": 0 if stop == len(text) else stop}
+
+        count = longest_prefix(text[start:], page)
+        if count == 0 and start < len(text):
+            if not chunks:
+                raise ValueError("page budget too small")
+            return json.dumps({"matches": chunks, "next_offset": index, "next_column": start})
+        fragment = text[start:start + count]
+        current = page(fragment)
+        chunks = current["matches"]
+        if start + count < len(text):
+            return json.dumps(current)
+        # Reserve room for the end-of-results marker as well as a cursor.
+        if not fits_page({"matches": chunks, "next_offset": None, "next_column": 0}):
+            return json.dumps(current)
+    return json.dumps({"matches": chunks, "next_offset": None, "next_column": 0})
+
+
 def call(name, args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
     if name == "Read":
-        start = max(0, int(args.get("offset", 0)))
-        # JSON escaping can expand each byte up to six characters.
-        count = min(LIMIT // 8, max(1, int(args.get("limit", LIMIT // 8))))
+        start = integer(args, "offset")
+        count = min(PAGE_BYTES, max(1, integer(args, "limit", PAGE_BYTES)))
         with opened(args["path"]) as stream:
             stream.seek(start)
             data = stream.read(count)
             more = bool(stream.read(1))
-        # Default-sized pages end between UTF-8 characters when the source
-        # is valid UTF-8. Explicit arbitrary byte offsets still work.
-        if more:
-            try:
-                data.decode("utf-8")
-            except UnicodeDecodeError as error:
-                if error.reason == "unexpected end of data" and error.start:
-                    data = data[:error.start]
-        return json.dumps({"offset": start, "next_offset": start + len(data) if more else None,
-                           "text": data.decode("utf-8", "replace")}, ensure_ascii=False)
+        # Match character prefixes to byte offsets, so UTF-8 continuation
+        # never skips the bytes of a character split at a page boundary.
+        text = data.decode("utf-8", "surrogateescape")
+        if more and text and 0xDC80 <= ord(text[-1]) <= 0xDCFF:
+            text = text.rstrip("".join(chr(i) for i in range(0xDC80, 0xDD00))) or text
+
+        def page(fragment):
+            stop = start + len(fragment.encode("utf-8", "surrogateescape"))
+            return {"offset": start, "next_offset": stop if more or stop < start + len(data) else None,
+                    "text": fragment.encode("utf-8", "surrogateescape").decode("utf-8", "replace")}
+
+        count = longest_prefix(text, page)
+        if count == 0 and text:
+            raise ValueError("page budget too small")
+        return json.dumps(page(text[:count]))
     if name in ("Grep", "Glob"):
         pattern = args["pattern"]
         if not isinstance(pattern, str) or len(pattern) > 1000:
             raise ValueError("invalid pattern")
-        result, size, matched = [], 0, 0
-        offset = max(0, int(args.get("offset", 0)))
-        for path in files():
-            if name == "Glob":
-                lines = [path] if fnmatch.fnmatchcase(path, pattern) else []
-            else:
-                lines = matches(path, pattern)
-            for line in lines:
-                matched += 1
-                if matched <= offset:
-                    continue
-                if size + len(line) + 1 > LIMIT:
-                    return "\n".join(result) + f"\n[continue with offset={matched - 1}]"
-                result.append(line)
-                size += len(line) + 1
-        return "\n".join(result)
+        scope = "/".join(parts(args["path"])) if "path" in args else ""
+        return search_page(search_results(name, pattern, scope), integer(args, "offset"),
+                           integer(args, "column"))
     if name == "Write":
         if args["path"] not in ("review.md", "./review.md"):
             raise ValueError("only review.md is writable")
@@ -152,10 +228,13 @@ STRING = {"type": "string"}
 TOOLS = [
     tool("Read", "Read a checkout file. offset/limit are bytes; follow next_offset until null for the full file.",
          {"path": STRING, "offset": {"type": "integer"}, "limit": {"type": "integer"}}, ["path"]),
-    tool("Grep", "Find literal text with file/line locations. offset skips matches for continuation; no regex.",
-         {"pattern": STRING, "offset": {"type": "integer"}}, ["pattern"]),
-    tool("Glob", "List checkout paths matching a glob; * can match directories.",
-         {"pattern": STRING, "offset": {"type": "integer"}}, ["pattern"]),
+    tool("Grep", "Find literal text with file/line locations; path restricts to a relative file/directory. "
+         "Follow next_offset/next_column as offset/column; matches may be split. No regex.",
+         {"pattern": STRING, "path": STRING, "offset": {"type": "integer"},
+          "column": {"type": "integer"}}, ["pattern"]),
+    tool("Glob", "List checkout paths matching a glob; * can match directories. "
+         "Follow next_offset/next_column as offset/column; long paths may be split.",
+         {"pattern": STRING, "offset": {"type": "integer"}, "column": {"type": "integer"}}, ["pattern"]),
     tool("Write", "Replace review.md with the complete review. No other path is writable.",
          {"path": STRING, "content": STRING}, ["path", "content"]),
 ]
@@ -177,9 +256,14 @@ def respond(request):
     if method == "tools/call":
         try:
             params = request["params"]
+            if not isinstance(params, dict):
+                raise ValueError("params must be an object")
             text = call(params["name"], params.get("arguments", {}))
-            return {"content": [{"type": "text", "text": text}]}
-        except (OSError, ValueError, KeyError, TypeError):
+            result = tool_result(text)
+            if len(json.dumps(result).encode()) > PAGE_BYTES:
+                raise ValueError("tool result too large")
+            return result
+        except (OSError, ValueError, KeyError, TypeError, OverflowError):
             return {"isError": True, "content": [{"type": "text", "text": "Tool request denied"}]}
     raise ValueError("unknown method")
 
@@ -196,7 +280,12 @@ def main():
             reply["result"] = respond(request)
         except ValueError:
             reply["error"] = {"code": -32601, "message": "Method not allowed"}
-        print(json.dumps(reply), flush=True)
+        encoded = json.dumps(reply)
+        if len(encoded.encode()) > RPC_BYTES:
+            # Includes discovery/errors, which contain no checkout text.
+            encoded = json.dumps({"jsonrpc": "2.0", "id": None,
+                                  "error": {"code": -32600, "message": "Request denied"}})
+        print(encoded, flush=True)
 
 
 if __name__ == "__main__":
