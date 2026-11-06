@@ -343,7 +343,7 @@ def reconstructElement (t : cvc5.Term) : Smt.ReconstructM Expr := do
     let some α := seqOf ty | return none
     -- A model's sequence value is a constant whatever its length, with its
     -- elements as its value rather than its children (`Reqs/Models#reading`).
-    let elems ← t.getSequenceValue!.mapM Smt.Reconstruct.reconstructTerm
+    let elems ← t.getSequenceValue!.mapM reconstructElement
     return Lean.mkApp2 (mkConst ``Fren.Seq.ofList [Level.zero]) α (← mkListLit α elems.toList)
   | .SEQ_UNIT =>
     let ty ← Smt.Reconstruct.reconstructSort t.getSort!

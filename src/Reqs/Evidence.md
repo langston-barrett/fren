@@ -44,14 +44,14 @@ application of an uninterpreted function with a
 [contract](Lang/Items.md#contracts) can hold only where the contract is
 realizable, and those about an application of a [recursive
 function](Lang/Recursion.md#solver-encoding), its postconditions as ground
-facts beside one step of its equations, only where its postconditions
-hold, which their checks by induction show. And a variable, parameter,
-existential output or uninterpreted application whose type is a [subset
-type](Lang/SubsetTypes.md) brings the type's invariants as assumptions,
-which can hold only where the type is inhabited, which its inhabitation
-check (`F0660`) shows. The checks of a function's own clauses have its
-preconditions among their hypotheses, which only the function's own
-contract realizability (`F0632`) shows can hold. So:
+facts beside the steps of its equations that the query unfolds, only where
+its postconditions hold, which their checks by induction show. And a
+variable, parameter, existential output or uninterpreted application whose
+type is a [subset type](Lang/SubsetTypes.md) brings the type's invariants as
+assumptions, which can hold only where the type is inhabited, which its
+inhabitation check (`F0660`) shows. The checks of a function's own clauses
+have its preconditions among their hypotheses, which only the function's
+own contract realizability (`F0632`) shows can hold. So:
 
 - a check's evidence is the weakest of its own method's and of every check
   that it *rests on*: the checks whose passes it takes as premises, and
@@ -72,7 +72,7 @@ pub proc lookup(x: Int): (y: Int) {
 }
 
 pub proc caller(x: Int): (z: Int) {
-    assume a: x = 1234567
+    require a: x = 1234567
     call c := lookup(x)
     ensure q: z = c.y + 1
     expect wrong: z = 5
@@ -938,6 +938,21 @@ pub proc fact_applications(
 }
 ```
 
+Closure is scoped to each query, not to its whole item or file. An
+application's facts are added only if the query's hypotheses or goal, or a
+fact already reached from them, mentions that application. Occurrence in
+another expectation or cover goal does not count. Changing the facts of
+applications outside this closure leaves the query's facts, contract
+premises and verdict unchanged. Occurrence only through a reached fact
+does count: dropping `a(s)`'s fact above would change both verdicts.
+
+`FrenTest.AppFacts.closeApps_congr` proves equality of the ordered closure
+returned by `Fren.Core.closeApps` with a pure `inside`, in `Id`, as the
+CLI's builder calls it. The `appFactsWith` guards in that module check the
+query entry point's result. `test/ui/checks/fact_scope.fren` checks both
+front ends' verdicts, including the transitive case and a witness whose
+query mentions no such function.
+
 `check::check_applies` states which functions' contracts a check rests
 on: those whose applications in its queries bring a postcondition as a
 fact (`Fren.Core.appFactsWith`, which both front ends' query builders call,
@@ -994,6 +1009,191 @@ reported as a pass while another is unproved. That relation is cyclic, so
 it stays apart from `check::pass_evidence`, whose premises are earlier
 checks: from outside the function, its postcondition checks are one
 premise, settled where all of them pass.
+
+### Matching terms and finite closure
+
+The ground matching planned for modules (#758) needs a definition of
+term identity before either front end extracts its terms. The following
+model separates resolved references to definitions from application heads.
+An atom carries its type and resolved identity; an application carries
+its resolved function and type arguments in its symbol. Argument lists
+have any length. Other syntax can be represented by applications of
+distinct symbols. Source positions and the spelling of aliases are not
+part of these identities.
+
+r[matching.normalization] check::matching_normalization, lang::ground_normalization
+Two ground terms match exactly when their normalized syntax is equal.
+Normalization replaces references to `let`, `where`, `out :=` and constant
+definitions, transitively, in the scope of each definition. It preserves
+application heads, argument order, literals and free variables. It neither
+unfolds functions nor evaluates operators, and does not use equations
+from the query. Definitions are ordered and nonrecursive, as
+[Local definitions](Lang/Let.md) states. A definition that shadows another
+sees the earlier definition in its own value. References not in the
+definition environment stay references.
+
+```fren
+pub enum MatchingTerm {
+    Atom(String),
+    Reference(String),
+    Application(String, MatchingTerm),
+    Nil,
+    Cons(MatchingTerm, MatchingTerm),
+}
+
+-- Newest first. Each value is written in the scope of the tail.
+pub enum MatchingDefinitions {
+    Nil,
+    Cons(String, MatchingTerm, MatchingDefinitions),
+}
+
+pub fn definition_value(ds: MatchingDefinitions, n: String): MatchingTerm := match ds {
+    MatchingDefinitions::Nil => MatchingTerm::Reference(n),
+    MatchingDefinitions::Cons(k, v, rest) => if k = n then v else definition_value(rest, n),
+}
+
+pub fn normalize_term(ds: MatchingDefinitions, t: MatchingTerm): MatchingTerm := match t {
+    MatchingTerm::Atom(s) => MatchingTerm::Atom(s),
+    MatchingTerm::Reference(n) => definition_value(ds, n),
+    MatchingTerm::Application(f, args) => MatchingTerm::Application(f, normalize_term(ds, args)),
+    MatchingTerm::Nil => MatchingTerm::Nil,
+    MatchingTerm::Cons(a, b) => MatchingTerm::Cons(normalize_term(ds, a), normalize_term(ds, b)),
+}
+
+pub fn normalize_definitions(ds: MatchingDefinitions): MatchingDefinitions := match ds {
+    MatchingDefinitions::Nil => MatchingDefinitions::Nil,
+    MatchingDefinitions::Cons(n, v, rest) => MatchingDefinitions::Cons(
+        n,
+        normalize_term(normalize_definitions(rest), v),
+        normalize_definitions(rest)
+    ),
+}
+
+set_option fren.evidence "random" in
+pub proc matching_normalization(ds: MatchingDefinitions, a: MatchingTerm, b: MatchingTerm): (
+    det left: MatchingTerm,
+    det right: MatchingTerm,
+    det same?,
+) {
+    out left := normalize_term(normalize_definitions(ds), a)
+    out right := normalize_term(normalize_definitions(ds), b)
+    ensure equality: same? iff left = right
+
+    expect reflexive: when a = b, same?
+    expect symmetric: same? iff right = left
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "random" in
+expect matching_aliases() {
+    let value: MatchingTerm := MatchingTerm::Atom("Int:1")
+    let ds: MatchingDefinitions := MatchingDefinitions::Cons(
+        "out",
+        MatchingTerm::Reference("where"),
+        MatchingDefinitions::Cons(
+            "where",
+            MatchingTerm::Reference("let"),
+            MatchingDefinitions::Cons(
+                "let",
+                MatchingTerm::Reference("CONST"),
+                MatchingDefinitions::Cons("CONST", value, MatchingDefinitions::Nil)
+            )
+        )
+    )
+    call r := matching_normalization(ds, MatchingTerm::Reference("out"), value)
+    expect expanded: r.same?
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "random" in
+expect matching_opaque() {
+    let value: MatchingTerm := MatchingTerm::Atom("Int:1")
+    let ds: MatchingDefinitions := MatchingDefinitions::Cons("f", value, MatchingDefinitions::Nil)
+    call r := matching_normalization(ds, MatchingTerm::Application("f", MatchingTerm::Nil), value)
+    expect no_unfolding: not r.same?
+}
+
+set_option fren.lint.constant_output "allow" in
+set_option fren.evidence "random" in
+expect matching_shadow() {
+    let value: MatchingTerm := MatchingTerm::Atom("Int:1")
+    let ds: MatchingDefinitions := MatchingDefinitions::Cons(
+        "x",
+        MatchingTerm::Reference("x"),
+        MatchingDefinitions::Cons("x", value, MatchingDefinitions::Nil)
+    )
+    call r := matching_normalization(ds, MatchingTerm::Reference("x"), value)
+    expect own_scope: r.same?
+}
+```
+
+`Fren.Core.Matching` retains this small reference model and supplies the
+generic normalization, definition scoping and equality used by
+`Fren.Core.GroundMatching` over the shared theory syntax
+(`lang::ground_normalization`). Their lookup also serves the obligations
+normalizer's substitution of an atom. Both syntax models remain: this
+one states the independent normalization examples; the theory syntax
+preserves binders, types and resolved identities for instantiation.
+Front-end extraction and query integration remain follow-ups of #758;
+no current query uses the new engine to add instances.
+
+r[matching.closure.finite] check::finite_application_closure
+For a finite graph of candidate ground applications, closure returns
+exactly the reachable fixpoint. Every reached application brings its
+facts. It reports the number of vertices plus one as `rounds`, alongside
+a successful closure. The universe is computed from the query's
+applications and the endpoints of the graph. This holds even for cycles
+and repeated edges.
+
+The graph is the finite universe presented to this closure model. The
+module matching engine (#758) must construct that universe from the
+query and the ranked sentences, including closed terms and values of
+listed types; this requirement does not justify enumerating an unbounded
+stream of instances before building the graph.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub fn application_vertices(written: Set<Int>, inside: Rel<Int, Int>): Set<Int> :=
+    written union inside.domain union inside.range
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc finite_application_closure(
+    written: Set<Int>,       -- normalized ground application identities
+    inside: Rel<Int, Int>,   -- candidate applications in their facts
+): (det rounds: Int, det ended?, det brought: Set<Int>) {
+    out rounds := application_vertices(written, inside).card + 1
+    out brought := written union inside.closure.image(written)
+
+    ensure terminates: ended?
+    ensure seeds: written subset brought
+    ensure fixpoint: inside.image(brought) subset brought
+    ensure bounded: brought subset application_vertices(written, inside)
+    ensure reached: brought subset written union inside.closure.image(written)
+
+    expect empty: when written = {}, brought = {}
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+expect finite_cycle() {
+    call r := finite_application_closure({0}, {(0, 1), (1, 2), (2, 0)})
+    expect ended: r.ended?
+    expect bound: r.rounds = 4
+    expect exact: r.brought = {0, 1, 2}
+}
+```
+
+This Req binds to `Fren.Core.Matching.closure`. That entry point calls
+`Fren.Core.closeApps` with the candidate graph's vertex count plus one
+rounds; `closeApps_terminates` proves that this call returns for every
+finite graph. Both front ends use the same traversal through
+`appFactsWith`, but choose bounds that count functions. Neither front end
+calls `Matching.closure` or uses its vertex bound. Their termination
+argument still depends on the order of contracts described with
+`fact_applications` above. The Req checks the returned set and the reported
+`rounds`; the iteration count and uniqueness of visits are properties of
+the traversal that this Req does not state.
 
 ### The laws of a trait
 
@@ -1121,10 +1321,10 @@ pub proc reported_pass(
     caveats: Set<Caveat>,        -- its caveats, as `check::pass_evidence` gives them
     settled?,                    -- it rests on no check that is not settled
 ): (det shown: Verdict, det by_testing?, det by_bound?, det weakened?, det unsettled?) {
-    assume own_within: own subset caveats
+    require own_within: own subset caveats
     -- A witness check's pass has no caveat, however it was found, and it
     -- rests on nothing.
-    assume witness_plain: when not proof?(kind), own = {} and caveats = {}
+    require witness_plain: when not proof?(kind), own = {} and caveats = {}
 
     ensure verdict_rule: shown = (if verdict = Verdict::Pass and not settled? then Verdict::Inconclusive else verdict)
     ensure testing: by_testing? iff (shown = Verdict::Pass and Caveat::Random in caveats)
@@ -1237,7 +1437,7 @@ pub proc hosted_runs(
     k: Int,                      -- the position of a check
 ): (det reported?) {
     -- Its premises are earlier checks, as both front ends order them.
-    assume in_order: earlier?(premises, k)
+    require in_order: earlier?(premises, k)
 
     -- Lean runs no check set to random testing, and stands for each that
     -- the item has as a premise with a pass whose own caveat is `Random`;

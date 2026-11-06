@@ -258,7 +258,7 @@ pub proc closure_obligation(
     det evaluated?,
     det holds?,                      -- the obligation, as it is checked there
 ) {
-    assume same: frames.len = conditions.len and frames.len <= 3
+    require same: frames.len = conditions.len and frames.len <= 3
     out evaluated? := (frames.len <= 0 or guard_holds?(frames[0], conditions[0]))
         and (frames.len <= 1 or guard_holds?(frames[1], conditions[1]))
         and (frames.len <= 2 or guard_holds?(frames[2], conditions[2]))
@@ -389,19 +389,19 @@ pub proc closure_capture(
     j: Int,                  -- where `x` is last among `params`, if it is a parameter
 ): (det mention: Id) {
     -- One capture symbol for each name captured, each its own.
-    assume named: symbols.len = captured.len
+    require named: symbols.len = captured.len
         and (forall (a b: Int), when 0 <= a < symbols.len and 0 <= b < symbols.len and a != b, symbols[a] != symbols[b])
     -- The capture symbols are new: no other binder has one.
-    assume fresh: forall (s: Id), when s in symbols,
+    require fresh: forall (s: Id), when s in symbols,
         not s in values and not s in around and not s in params and not s in inner
     -- A free name is captured, a parameter or bound within the body.
-    assume free: x in captured or x in params or x in inner
-    assume first: when x in captured, 0 <= k < captured.len and captured[k] = x
+    require free: x in captured or x in params or x in inner
+    require first: when x in captured, 0 <= k < captured.len and captured[k] = x
         and (forall (a: Int), when 0 <= a < k, captured[a] != x)
-    assume last: when x in params, 0 <= j < params.len and params[j] = x
+    require last: when x in params, 0 <= j < params.len and params[j] = x
         and (forall (a: Int), when j < a < params.len, params[a] != x)
     -- The parameters and the names captured are told apart.
-    assume apart: not (x in captured and x in params)
+    require apart: not (x in captured and x in params)
 
     -- What the mention is renamed to (`Core.captureRename`).
     out mention := if x in inner or x in params then x else symbols[k]
@@ -517,7 +517,7 @@ user declaration rather than a reserved implementation namespace.
 
 ```fren
 pub proc match_namespace(user_type: Id): (det distinct?) {
-    assume source_identifier: user_type.matches?("[A-Za-z_][A-Za-z0-9_']*")
+    require source_identifier: user_type.matches?("[A-Za-z_][A-Za-z0-9_']*")
     out distinct? := user_type != "#match_arguments"
 
     expect no_capture: distinct?
@@ -540,9 +540,9 @@ arity errors, cross-column duplicate binders, correlated coverage holes,
 and recursive calls through payloads from each column. Generated Lean
 matches must bind the same values and retain structural recursive descent.
 
-This chapter comes after the last `#fren_check` of the chapters that share
-its Lean file, so it names its own procedures, which the Lean-hosted front
-end then checks, as the `fren` command checks every procedure:
+This chapter names its own procedures, which the Lean-hosted front end then
+checks, as the `fren` command checks every procedure, since a `#fren_check`
+without a path would check every earlier chapter again:
 
 ```fren
 #fren_check function_type_place

@@ -69,7 +69,9 @@ def varPTy (ty? : Option (Array Ident)) (name : Ident) : M Fren.Core.PTy := do
   if let (some segs, true, false) := (ty?, !Fren.Core.generatedName name.name && Fren.Core.redundantBoolType n (t.map (· == .bool)), pt.any (fun t => t.pat?.isSome || !t.invariants.isEmpty)) then
     let span ← annotationSpan (segs[0]!.span.to segs.back!.span)
     lintFix .redundantBoolType span (Fren.Core.redundantBoolTypeMsg n)
-  return pt.getD (.plain .bool)
+  let result := pt.getD (.plain .bool)
+  noteResolved "type" name.span fun _ => result.ty.showQualified
+  return result
 
 def varTy (ty? : Option (Array Ident)) (name : Ident) : M Ty := return (← varPTy ty? name).ty
 
@@ -158,6 +160,7 @@ with `scope`, into the procedure of that path. -/
 def declareUse (segs : Array Ident) (glob : Bool) (loc : UseLoc) (scope : Option Name := none) : M Unit := do
   let st ← get
   let u ← liftResolve segs (st.table.declareUse st.module (segNames segs) glob (scope.getD st.module))
+  noteResolved "name" loc.path fun _ => resolvedPath u.target
   let record : Fren.Core.UseRecord := {
     module := u.scope, target := u.target, glob := u.glob
     unusedLevel := st.levels.get .unusedImports, globLevel := st.levels.get .globImports }
@@ -278,7 +281,7 @@ def testedOf (all : Fren.Core.Evidence) (members : Array Member) : M (Fren.Core.
 written at `spans`, are `members`, and whose `{` ends at `openStop`
 (`lint::arbitrary_source_item_ordering`). An evidence setting is part of
 the member after it. -/
-def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Nat) : M Unit := do
+def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Nat) (global := false) : M Unit := do
   let mut kinds := #[]
   let mut ranges : Array Fren.Core.Range := #[]
   let mut names := #[]
@@ -307,7 +310,7 @@ def lintMemberOrder (members : Array Member) (spans : Array Span) (openStop : Na
     names := names.push (name?.map fun x => Name.mkSimple (declaredIdent x).1.name)
     mentioned := mentioned.push ms
   let some i := Fren.Core.firstOutOfOrder? kinds | return
-  let msg := Fren.Core.memberOrderMsg kinds[i]! kinds[i - 1]!
+  let msg := Fren.Core.memberOrderMsg kinds[i]! kinds[i - 1]! global
   let mentions := mentioned.map (·.filterMap fun n => names.findIdx? (· == some n))
   let at_ : Span := { start := ranges[i]!.start, stop := ranges[i]!.stop }
   match Fren.Core.memberOrderFix? (← get).src openStop ranges kinds mentions with
@@ -454,9 +457,13 @@ def annotateBranches (cx : ExprCtx) (owner : Name) (e : Expr) : M Unit := do
 
 /-- Instantiate closed member templates at an application. SMT `let` uses
 simultaneous bindings, so caller variables cannot capture definition binders. -/
-partial def predicateClauses (cx : ExprCtx) (e : Expr) (splitConjunction : Bool := true) : M (Option (Name × Array NamedClause)) := do
+partial def predicateClauses (cx : ExprCtx) (e : Expr) (splitConjunction : Bool := true)
+    (leadingGuard : Bool := true) : M (Option (Name × Array NamedClause)) := do
   match e with
   | .when _ negative condition body =>
+    -- A guard inside a negation is not a predicate application at the
+    -- typed root. Keep its whole expression, as the hosted reader does.
+    if !leadingGuard then return none
     let saved ← get
     let context : Fren.Core.TestContext := if negative then .unlessCondition else .whenCondition
     let (condition, bound) ← withBound do
@@ -464,7 +471,7 @@ partial def predicateClauses (cx : ExprCtx) (e : Expr) (splitConjunction : Bool 
     set saved
     let guard := if negative then s!"(not {condition})" else condition
     let visible := if negative then #[] else bound
-    let some (path, clauses) ← predicateClauses { cx with binders := cx.binders ++ visible } body splitConjunction | return none
+    let some (path, clauses) ← predicateClauses { cx with binders := cx.binders ++ visible } body splitConjunction leadingGuard | return none
     return some (path, clauses.map fun clause => { clause with
       formula := guarded #[guard] clause.formula
       branches := clause.branches.map fun group => { group with guard? := some (conj #[guard, group.guard?.getD "true"]) }
@@ -475,8 +482,21 @@ partial def predicateClauses (cx : ExprCtx) (e : Expr) (splitConjunction : Bool 
           evaluationGuard? := some (conj #[guard, member.evaluationGuard?.getD "true"]) } }
       indexes := clause.indexes.map fun (sp, f, t) => (sp, guarded #[guard] f, t)
       tables := clause.tables.map fun (sp, q, f) => (sp, q, guarded #[guard] f) })
+  | .«let» _ defs body isWhere =>
+    let saved ← get
+    let (bcx, binds) ← elabDefinitions { cx with noteIndexes := false } defs (!isWhere) (usedDefinitions defs body)
+    let clauses ← predicateClauses bcx body splitConjunction leadingGuard
+    set saved
+    return clauses.map fun (path, clauses) =>
+      let bind := wrapLets binds
+      (path, clauses.map fun clause => { clause with
+        formula := bind clause.formula
+        branches := clause.branches.map (·.map bind)
+        groups := clause.groups.map (·.map bind)
+        indexes := clause.indexes.map fun (sp, f, t) => (sp, bind f, t)
+        tables := clause.tables.map fun (sp, q, f) => (sp, q, bind f) })
   | .not _ body =>
-    let some (path, clauses) ← predicateClauses cx body false | return none
+    let some (path, clauses) ← predicateClauses cx body false false | return none
     if clauses.size != 1 || !clauses[0]!.name.isEmpty then return none
     return some (path, clauses.map fun clause => { clause with formula := s!"(not {clause.formula})", branches := #[], groups := clause.groups.map fun group => { group with wanted := !group.wanted } })
   | .app _ segs _ =>
@@ -573,12 +593,14 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
             let branches := clause.branches.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
             let groups := clause.groups.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
             modify fun s => { s with itemBranches := s.itemBranches ++ branches, itemMemberGroups := s.itemMemberGroups ++ groups }
+            let sourceRef := Fren.Core.predicateCheckAtMember clause.name (kind == .cover)
             expanded := expanded.push ({
               file? := some clause.file
-              sourceRef := kind != .cover
+              sourceRef
               kind := kind
               name := name
-              span := if kind == .cover then x.span else clause.span
+              evidenceOwner? := some xn
+              span := if sourceRef then clause.span else x.span
               smt := clause.formula
               trigger? := trig.map (·.1)
               triggerSpan? := trig.map (·.2)
@@ -616,8 +638,8 @@ partial def Expr.clauseWrittenStop (label : Span) (e : Expr) : Nat :=
   | _ => e.span.stop
 
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's
-constraints. -/
-def lintDuplicateConstraints (members writtenMembers : Array Member) : M Unit := do
+constraints, or a global expectation's if `global`. -/
+def lintDuplicateConstraints (members writtenMembers : Array Member) (global := false) : M Unit := do
   let src := (← get).src
   let writtenLabels := writtenMembers.filterMap fun | .prop _ name _ => some name.span | _ => none
   -- Cover goals are compared with each other, and constraints with each other.
@@ -626,7 +648,7 @@ def lintDuplicateConstraints (members writtenMembers : Array Member) : M Unit :=
     for (i, j) in Fren.Core.repeatedConstraints (constraints.map fun (_, _, e) => e.clauseWritten src) do
       let (k, x, e) := constraints[i]!
       let (k', x', _) := constraints[j]!
-      let msg := Fren.Core.duplicateConstraintMsg k' k x'.name
+      let msg := Fren.Core.duplicateConstraintMsg k' k x'.name global
       if (Fren.Core.duplicateConstraint k' k true).2 then
         if !writtenLabels.contains x.span then
           -- Only a written label gives a removable member range. Never
@@ -921,7 +943,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   let declared := named.map fun x => Name.mkSimple (declaredIdent x).1.name
   if let some k := (Fren.Core.repeatsAt declared)[0]? then
     err named[k]!.span (Fren.Core.dupMemberMsg declared[k]! global)
-  lintMemberOrder body spans openStop
+  lintMemberOrder body spans openStop global
   modify fun s => { s with inCompBody := true }
   -- Each variable, call, binding, definition and constraint reports its
   -- own first static error; after those of the variables, and of the
@@ -952,7 +974,7 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
         tables := tables ++ (← takeTables).map (fun (sp, q, g) => (p.name, Fren.Core.IndexPlace.prop, sp, q, g))
 
   lintManualNat (module ++ n) members
-  lintDuplicateConstraints members body
+  lintDuplicateConstraints members body global
   let lcx : ExprCtx := { vars, insts := instNames, place := .prop }
   lintOutputs lcx members vars
   lintTrivialCover lcx members
@@ -964,6 +986,9 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   lintCompUnused n members vars instNames global
   let path := module ++ n
   let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
+  let owners := props.map fun prop => (prop.name, prop.evidenceOwner?)
+  let tested := tested.expandProps owners
+  let enumerated := enumerated.expandProps owners
   let (relational, counts) ← checkCounts
   let c : CComp := { path, file := (← get).file, span := name.span, vars, props, insts, defs, indexes, tables, distributed := distributed ++ (← get).itemExcludeGroups ++ (props.filter (fun p => p.name.toString.contains '@')).map (·.name)
                      branchGroups := (← get).itemBranches
@@ -1140,8 +1165,11 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
     let entries ← if let some (predicate, templates) ← predicateClauses cx e then do
         let occurrence := occurrences.getD predicate 0 + 1
         occurrences := occurrences.insert predicate occurrence
-        pure <| templates.map fun entry => { entry with
-          name := if entry.name.isEmpty then x.name else x.name ++ "." ++ Fren.Core.showPath predicate ++ "@" ++ toString occurrence ++ "." ++ entry.name }
+        pure <| templates.map fun entry =>
+          let sourceRef := Fren.Core.predicateCheckAtMember entry.name false
+          ({ entry with
+            name := if entry.name.isEmpty then x.name else x.name ++ "." ++ Fren.Core.showPath predicate ++ "@" ++ toString occurrence ++ "." ++ entry.name
+            span := if sourceRef then entry.span else x.span }, sourceRef)
       else do
         let (nb, ng) := ((← get).itemBranches.size, (← get).itemMemberGroups.size)
         annotateBranches cx (n ++ cn) e
@@ -1149,8 +1177,8 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
         modify fun s => { s with
           itemBranches := s.itemBranches.extract 0 nb ++ (s.itemBranches.extract nb).map (·.map output)
           itemMemberGroups := s.itemMemberGroups.extract 0 ng ++ (s.itemMemberGroups.extract ng).map (·.map output) }
-        pure #[{ file := (← get).file, name := x.name, span := x.span, formula := smt : NamedClause }]
-    for entry in entries do
+        pure #[({ file := (← get).file, name := x.name, span := x.span, formula := smt : NamedClause }, false)]
+    for (entry, sourceRef) in entries do
       let cn := Name.mkSimple entry.name
       let owner := n ++ cn
       let sym := clauseSym path cn
@@ -1158,6 +1186,7 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
       if post then k := { k with posts := k.posts.push (cn, sym) } else k := { k with pres := k.pres.push (cn, sym) }
       props := props.push ({
         file? := some entry.file
+        sourceRef
         kind := if post then .ensure else .assume
         name := owner
         span := entry.span
@@ -1305,6 +1334,7 @@ def elabEnum (isPub : Bool) (name : Ident) (variants : Array (Ident × Option (A
         err tspan (Fren.Core.typeParamPlaceMsg .anonymous place (Fren.Core.ownWritten path params) !params.isEmpty)
       let pt ← if own then pure (.plain (Ty.enum path (params.toList.zipIdx.map fun (p, k) => .param k p)))
         else elabPTy segs
+      noteResolved "type" tspan fun _ => pt.ty.showQualified
       let t := pt.ty
       pts := pts.push (pt, tspan)
       let abstract := t.abstractWithin?
@@ -1833,6 +1863,9 @@ def elabConst (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr) : 
 -- build of `fren` and `fren_test`; it now takes a few seconds on each.
 mutual
 partial def elabItem (item : Item) : M Unit := do
+  -- An item read whole whose first error is a clause's keyword's, of
+  -- which nothing else is reported (`lang::item_error`).
+  if let .broken span msg := item then err span msg
   -- Paths resolve in the module, but in a procedure's or a function's
   -- block with `use`s, which sets its own scope.
   modify fun s => { s with scope := s.module }
@@ -1910,6 +1943,8 @@ partial def elabItem (item : Item) : M Unit := do
     lintDeclared .global (Name.mkSimple shown.name) shown.span
     lintLines .global (Name.mkSimple shown.name) shown.span close
     elabInductions name header members ((← get).applied.size > applied)
+  -- Never reached: a broken item's error is thrown above, before its lints.
+  | .broken .. => pure ()
   | .law name params body => do
     -- Only a trait's members are laws, which the parser reads only there.
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
@@ -1954,17 +1989,27 @@ partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Id
     -- Only the lints of the invariant's own source are reported, as for
     -- any expression, whether or not it has a static error: not those of
     -- the binder, which the pattern shorthand does not write.
-    let ownLints (st : State) : State := { st with
+    -- The predicate's generated name borrows the invariant label's span;
+    -- its result type is not a type declared at that label.
+    -- The shorthand's unwritten binder borrows the base type's span,
+    -- which is a written type, rather than a local value expression.
+    let generatedAnnotation (a : ResolvedAnnotation) : Bool :=
+      a.file == generatedBefore.file &&
+        ((a.kind == "type" && a.span == predicate.span) ||
+          (Fren.Core.generatedName binder.name && a.span == binder.span &&
+            (a.kind == "local" || a.kind == "expr")))
+    let ownSource (st : State) : State := { st with
       lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
       lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
-      natReports := generatedBefore.natReports }
+      natReports := generatedBefore.natReports
+      resolved? := st.resolved?.map (·.filter (!generatedAnnotation ·)) }
     try
       elabItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
     catch failure =>
       if failure.diags.any (·.msg.code? == some "F0201") then
         err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Fren.Core.invariantScopeLabel binder.name) }
-      throw { failure with state := ownLints failure.state }
-    modify fun st => { ownLints st with inSubset := priorSubset }
+      throw { failure with state := ownSource failure.state }
+    modify fun st => { ownSource st with inSubset := priorSubset }
     -- Its full-definedness check is guarded by earlier invariants below,
     -- rather than checked unconditionally as an ordinary function body.
     modify fun st => { st with bodies := st.bodies.extract 0 before }
@@ -2002,7 +2047,7 @@ partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Id
 the global expectation `name`, just elaborated, whose header and block are
 `header` and `body`, where its block applies an uninterpreted function if
 `abstract` (`Reqs/Lang/Recursion#induction`): one for each of its claims
-and each candidate, in order (`Fren.Core.inductionCandidate`). Each is an
+and each candidate, in order (`Fren.Core.inductionCandidates`). Each is an
 item of the module that nothing reports, whose body is kept in
 `State.inductionBodies` rather than checked as a function's. -/
 partial def elabInductions (name : Ident) (header body : Array Member) (abstract : Bool) : M Unit := do
@@ -2018,10 +2063,8 @@ partial def elabInductions (name : Ident) (header body : Array Member) (abstract
   let vars := params.filterMap fun (x, _) => c.vars.find? (·.name == Name.mkSimple (declaredIdent x).1.name)
   unless vars.size == params.size do return
   let tys := vars.map (·.ty)
-  let constrained := vars.any (·.ptype.restricted)
-  let candidates := (List.range params.size).filter fun i =>
-    Fren.Core.inductionCandidate kinds.toList abstract constrained (Fren.Core.directlyRecursive st.shapeOf tys[i]!)
-      (st.inductionArgs.contains vars[i]!.name)
+  let candidates := Fren.Core.inductionCandidates st.shapeOf kinds.toList abstract
+    (vars.map fun v => (v.name, v.ptype)) st.inductionArgs
   if candidates.isEmpty then return
   let assumptions := members.filterMap fun
     | .prop .assume _ e => some e
@@ -2048,23 +2091,20 @@ where
     let ident (s : String) : Ident := { name := s, span := sp }
     let fname := Fren.Core.inductionFnName shown.name claim.name (declaredIdent params[i]!.1).1.name name.span.start
     let fn := ident fname
-    let n := params.size
-    let named (k : Nat) := Expr.path sp #[ident (declaredIdent params[k]!.1).1.name]
-    -- Each variant, with its payload bound, and the function applied to
-    -- the case's variables as `inductionHypotheses` gives them.
-    let cases := Fren.Core.inductionCases st.shapeOf tys i
-    let arms := (cases.zip d.ctors).map fun ((payload, hyps), (v, _)) =>
-      let binder (k : Nat) := ident (Fren.Core.inductionBinder k (payload[k]! matches .bool))
-      let arg (k : Nat) := if k < n then named k else Expr.path sp #[binder (k - n)]
-      let pattern := Pattern.variant sp ((Fren.Core.variantSegments st.module ep v).toArray.map ident)
-        (if payload.isEmpty then none else some ((List.range payload.size).toArray.map fun k => Pattern.variant sp #[binder k] none))
-      let apps := hyps.toArray.map fun h => Expr.app sp #[fn] (h.toArray.map arg)
-      let value := if apps.isEmpty then Expr.bool sp true else apps.extract 1 apps.size |>.foldl (Expr.bin sp "and") apps[0]!
-      (pattern, none, value)
-    let fnBody := Expr.match sp (named i) arms false
-    let held := if assumptions.isEmpty then e
-      else Expr.when sp false (assumptions.extract 1 assumptions.size |>.foldl (Expr.bin sp "and") assumptions[0]!) e
-    let post := Expr.bin sp "and" (.app sp #[fn] ((List.range n).toArray.map named)) held
+    let builder : Fren.Core.InductionSyntax Expr := {
+      truth := .bool sp true
+      app := fun f xs => .app sp #[ident f] (xs.toArray.map fun x => .path sp #[ident x])
+      conjoin := .bin sp "and"
+      guard := .when sp false
+      matchOn := fun x arms =>
+        let arms := arms.map fun arm =>
+          let pattern := Pattern.variant sp (arm.variant.toArray.map ident)
+            (if arm.binders.isEmpty then none
+             else some (arm.binders.map fun x => Pattern.variant sp #[ident x] none))
+          (pattern, none, arm.value)
+        .match sp (.path sp #[ident x]) arms false }
+    let (fnBody, post) := Fren.Core.buildInduction builder st.shapeOf st.module ep (d.ctors.map (·.1))
+      (params.map fun p => (declaredIdent p.1).1.name) tys fname i assumptions e
     let item := Item.function true fn #[] (params.map fun (x, ty) => (#[x], ty)) (some #[ident "Bool"]) (some fnBody)
       #[(true, ident "claim", post)] sp {}
     let before ← get
@@ -2186,7 +2226,8 @@ partial def elabTrait (isPub : Bool) (name : Ident) (members : Array Item) : M U
     | .use .. | .useGroup .. => (.other "`use`s", false, false, false, none)
     | .trait .. => (.other "traits", false, false, false, none)
     | .claim .. => (.other "claims", false, false, false, none)
-    | .check .. | .lintSetting .. => (.other "commands", false, false, false, none)
+    -- Never a member: a keyword error of a member breaks the trait.
+    | .check .. | .lintSetting .. | .broken .. => (.other "commands", false, false, false, none)
   let spanOf : Item → Span
     | .function _ f .. | .law f .. | .global f .. | .globalBlock f .. | .comp _ f .. | .enum _ f .. | .record _ f ..
     | .newtype _ f .. | .abstractType _ f | .typeAlias _ f _ | .subsetType _ f .. | .const _ f .. | .trait _ f .. => f.span

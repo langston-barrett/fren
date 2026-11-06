@@ -1,0 +1,17 @@
+error[F0417]: global expectations have no `require` members
+ --> test/cli/syntax/f0417_global_require.fren:6:5
+  |
+6 |     require small: x < 10
+  |     ^^^^^^^ write `assume`
+  |
+  = note: `require` starts a procedure's or a function's precondition; a global expectation's assumptions are `assume`s
+help: write `assume`
+  |
+6 -     require small: x < 10
+6 +     assume small: x < 10
+  |
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0417`.
+exit=2

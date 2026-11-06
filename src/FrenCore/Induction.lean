@@ -24,17 +24,33 @@ its parameters (`lang::induction_candidate`): assumptions, claims and
 scenarios, but no call, `let`, `use` or `refines`. -/
 def inductionMember (m : BlockMember) : Bool := m == .assume || m == .expect || m == .cover
 
-/-- Whether induction is tried on a parameter of a global expectation
-(`lang::induction_candidate`): its block has only the members of
-`inductionMember`, `members`, applies no uninterpreted function, and no
-parameter's type is a subset type, nor has one as a type argument or an
-element type (`constrained`, `PTy.restricted`, as `lang::subset_widening`'s
-`restricted?` reads it), though a payload of its enumeration may;
-and the parameter's type is a directly recursive enumeration, and it is
-the argument at the decreasing parameter of an application of a
-structural recursion in the block. -/
-def inductionCandidate (members : List BlockMember) (abstract constrained recursive decreasing : Bool) : Bool :=
-  members.all inductionMember && !abstract && !constrained && recursive && decreasing
+/-- Whether a payload of one of the variants, whose payloads' types are
+`parts`, has the type `t` (`lang::directly_recursive`). -/
+def payloadOfType {T : Type} [BEq T] (parts : List (List T)) (t : T) : Bool := parts.any (·.contains t)
+
+/-- Whether the parameter `x` of type `t` is an induction candidate
+(`lang::induction_candidate`), from the block's members and applications,
+the restrictions of all its parameters, and the variants' payload types.
+The payloads are instantiated at `t`'s type arguments (`enumParts`). -/
+def inductionCandidate {T N : Type} [BEq T] [BEq N] (members : List BlockMember) (abstract : Bool)
+    (restrictions : List Bool) (t : T) (payloads : List (List T)) (x : N) (arguments : List N) : Bool :=
+  members.all inductionMember && !abstract && !restrictions.contains true &&
+    payloadOfType payloads t && arguments.contains x
+
+/-- Whether a written name is a local variable available for induction,
+without a binder shadowing it (`lang::induction_argument`). -/
+def inductionArgument {N : Type} [BEq N] (variables : List N) (bound : N → Bool) (x : N) : Bool :=
+  variables.contains x && !bound x
+
+/-- The local variable at a structural recursion's decreasing argument,
+if it is written as a variable's name and is not shadowed by a binder.
+Front ends extract paths from their syntax; this function decides which
+of them to collect for `inductionCandidates`. -/
+def inductionArgument? (decreasing : Option Nat) (arguments : Array (Option Lean.Name))
+    (variables : Array Lean.Name) (bound : Lean.Name → Bool) : Option Lean.Name := do
+  let i ← decreasing
+  let x ← (← arguments[i]?)
+  if inductionArgument variables.toList bound x then some x else none
 
 /-- The positions of `payloads` whose type is `t`, after the `n` parameters,
 as the case's variables number them. -/
@@ -60,18 +76,19 @@ def enumParts (shapes : Lean.Name → Option DataShape) (t : Ty) : Option (Array
   if d.isRecord || d.isNewtype then none
   return d.parts.map (·.map (·.ty.subst args.toArray))
 
-/-- Whether a payload of one of the variants, whose payloads' types are
-`parts`, has the type `t` (`lang::directly_recursive`). -/
-def payloadOfType {T : Type} [BEq T] (parts : List (List T)) (t : T) : Bool := parts.any (·.contains t)
-
-/-- Whether `t` is an enumeration with a payload of type `t` itself, by
-`shapes`: induction on a value of it has children
-(`lang::induction_candidate`). Its variants' payloads' types, at `t`'s type
-arguments (`enumParts`), are compared with `t` by `payloadOfType`. -/
-def directlyRecursive (shapes : Lean.Name → Option DataShape) (t : Ty) : Bool :=
-  match enumParts shapes t with
-  | some parts => payloadOfType (parts.toList.map fun ps => ps.toList.map (·.flat)) t.flat
-  | none => false
+/-- The candidates, in parameter order (`lang::induction_candidate`).
+Both front ends extract variable paths, declared parameter types and enum
+shapes, and supply the local variables collected by `inductionArgument?`.
+This function instantiates payload types at each parameter's type arguments
+and decides restrictions, payload membership and decreasing-argument
+membership through `inductionCandidate`. -/
+def inductionCandidates (shapes : Lean.Name → Option DataShape) (members : List BlockMember) (abstract : Bool)
+    (params : Array (Lean.Name × PTy)) (arguments : Array Lean.Name) : List Nat :=
+  let restrictions := params.toList.map (·.2.restricted)
+  (List.range params.size).filter fun i =>
+    let (x, t) := params[i]!
+    let payloads := ((enumParts shapes t.ty).getD #[]).toList.map fun ps => ps.toList.map (·.flat)
+    inductionCandidate members abstract restrictions t.ty.flat payloads x arguments.toList
 
 /-- The cases of induction on the parameter at `i`, of the parameters'
 types `params`, by `shapes`: for each variant of its enumeration, in
@@ -122,6 +139,20 @@ name (`similar`). -/
 def inductionFnName (n claim x : String) (position : Nat) : String :=
   s!"#induction#{n}#{String.map (fun c => if c == '.' then '#' else c) claim}#{x}#{position}?"
 
+/-- Whether the function at `path` is one generated for induction
+(`inductionFnName`): its name's last segment starts with `#induction#`,
+which no source can write. Both front ends read from the path of the
+function whose contract a check is of whether its queries unfold as an
+induction's do (`unfoldings`, `lang::unfoldings`). -/
+def isInductionFn : Lean.Name → Bool
+  | .str _ s => s.startsWith "#induction#"
+  | _ => false
+
+#guard isInductionFn (.str `m (inductionFnName "e" "c" "a" 0))
+#guard !isInductionFn `m.f
+#guard isInductionFn (instanceName (.str `m (inductionFnName "e" "c" "a" 0)) #[.int, .bool])
+#guard !isInductionFn (instanceName `m.f #[.int, .bool])
+
 /-- The segments of the path that names the variant `v` of the enumeration
 `e` within the module `module`: from `self` where `e` is the module's,
 and otherwise from the root, which a pattern's path cannot be written from
@@ -134,5 +165,47 @@ def variantSegments (module e v : Lean.Name) : List String :=
 `Bool`: a generated name, which shadows nothing (`shorthandBinder`). -/
 def inductionBinder (k : Nat) (bool : Bool) : String :=
   s!"#{k}" ++ (if bool then "?" else "")
+
+/-- An arm of the generated induction function, before a front end turns
+its variant path and binders into a pattern in its own syntax. -/
+structure InductionArm (E : Type) where
+  variant : List String
+  binders : Array String
+  value : E
+
+/-- The syntax operations needed by the shared induction builder. These
+only represent syntax: which applications, arms and hypotheses to build
+is decided by `buildInduction`. -/
+structure InductionSyntax (E : Type) where
+  truth : E
+  app : String → List String → E
+  conjoin : E → E → E
+  guard : E → E → E
+  matchOn : String → Array (InductionArm E) → E
+
+/-- The generated function's body and postcondition
+(`Reqs/Lang/Recursion#induction`), constructed for both front ends from
+their syntax operations, parameter types, enum shapes, assumptions and
+claim. Every arm binds all payloads and conjoins precisely
+`inductionHypotheses`'s applications, with `true` at a leaf. The
+postcondition conjoins the function's own application with the claim under
+all assumptions.
+`binder` allows the hosted front end to parse temporary names before
+renaming them to the unwriteable generated binders. -/
+def buildInduction {E : Type} (builder : InductionSyntax E) (shapes : Lean.Name → Option DataShape)
+    (module enum : Lean.Name) (variants : Array Lean.Name) (params : Array String) (types : Array Ty)
+    (fn : String) (i : Nat) (assumptions : Array E) (claim : E)
+    (binder : Nat → Bool → String := inductionBinder) : E × E := Id.run do
+  let conjoin (es : Array E) := match es[0]? with
+    | none => builder.truth
+    | some e => es.extract 1 es.size |>.foldl builder.conjoin e
+  let cases := inductionCases shapes types i
+  let arms := (cases.zip variants).map fun ((payload, hyps), v) =>
+    let binders := payload.mapIdx fun k t => binder k (t matches .bool)
+    let arg (k : Nat) := if k < params.size then params[k]! else binders[k - params.size]!
+    { variant := variantSegments module enum v, binders,
+      value := conjoin (hyps.toArray.map fun h => builder.app fn (h.map arg)) : InductionArm E }
+  let held := if assumptions.isEmpty then claim else builder.guard (conjoin assumptions) claim
+  return (builder.matchOn params[i]! arms, builder.conjoin (builder.app fn params.toList) held)
 
 end Fren.Core

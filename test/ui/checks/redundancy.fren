@@ -4,8 +4,8 @@
 set_option fren.lint.chainable_comparison "allow"
 
 proc thermostat(temp: Int, target: Int): (heat?, cool?) {
-    assume sane: target >= 5 and target <= 30
-    assume warm: target >= 0             --~ warning: `thermostat::warm` is redundant: it follows from `sane`
+    require sane: target >= 5 and target <= 30
+    require warm: target >= 0             --~ warning: `thermostat::warm` is redundant: it follows from `sane`
     --~^ warning: `target` is never negative
 
     ensure heats: heat? iff temp < target - 2
@@ -16,7 +16,7 @@ proc thermostat(temp: Int, target: Int): (heat?, cool?) {
 
 -- A vacuous guarantee is reported once, by the vacuity check.
 proc vacuous(x: Int): (y: Int) {
-    assume pos: x > 0
+    require pos: x > 0
 
     ensure y_def: y = x
     ensure never: when x < 0, y = x         --~ error: `vacuous::never` is vacuous: its condition can never hold, given `pos`

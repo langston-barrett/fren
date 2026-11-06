@@ -80,11 +80,11 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"97e7501
 -- second or so less in each of the slowest modules of `Reqs`. With
 -- `Fren.Elab` at `-O0` (below), it is still no faster: `Reqs` then waits
 -- for the C code of every module of `Fren` and of `FrenCore`, and for their
--- shared libraries, for 1–3 s less CPU in each of `Reqs.Lang`, `Reqs.Lint`
--- and `Reqs.Check`. (Precompiling needs the libraries layered by imports,
--- with the modules that `Fren.Elab` imports in a library of their own, and
--- `roots := #[]` on each library with no root module, so that Lake loads
--- it with `--load-dynlib` rather than as a plugin.)
+-- shared libraries, for 1–3 s less CPU in `Reqs.Lang` before its chapter
+-- split, and in `Reqs.Lint` and `Reqs.Check`. (Precompiling needs the
+-- libraries layered by imports, with the modules that `Fren.Elab` imports
+-- in a library of their own, and `roots := #[]` on each library with no root
+-- module, so that Lake loads it with `--load-dynlib` rather than as a plugin.)
 @[default_target] lean_lib FrenCore where
   globs := #[.andSubmodules `FrenCore]
   moreLeancArgs := coverageArgs
@@ -153,34 +153,426 @@ lean_lib ReqsChapters where
   needs := #[`@/reqs_chapters_md]
   moreLeanArgs := reqsArgs
 
--- The specs in `src/Reqs` itself, not in its subdirectories.
+-- The shared chapters in `src/Reqs` itself, excluding the separately built
+-- ModuleReports chapter and the language chapters in its subdirectory.
 input_dir reqs_chapters_md where
   path := "src/Reqs"
   text := true
-  filter := .ofFn fun p => p.extension == some "md" && (p.parent.bind (·.fileName)) == some "Reqs"
+  filter := .ofFn fun p => p.extension == some "md" && (p.parent.bind (·.fileName)) == some "Reqs" && p.fileName != some "ModuleReports.md"
 
-lean_lib ReqsLang where
-  globs := #[`Reqs.Calls, `Reqs.Lang, `Reqs.Modules, `Reqs.Refine]
-  needs := #[`@/reqs_lang_md]
+lean_lib ReqsModuleReports where
+  globs := #[`Reqs.ModuleReports]
+  needs := #[`@/reqs_module_reports_md]
   moreLeanArgs := reqsArgs
 
-input_dir reqs_lang_md where
-  path := "src/Reqs/Lang"
+input_file reqs_module_reports_md where
+  path := "src/Reqs/ModuleReports.md"
   text := true
-  filter := .extension #["md"]
 
+-- The language chapters share Fren's `lang` module, but each Lean module
+-- needs only its own Markdown file. Neither this umbrella nor Base reads
+-- Markdown; giving them a directory dependency would serialize the chapters
+-- again on every edit.
+lean_lib ReqsLang where
+  globs := #[`Reqs.Lang, `Reqs.Lang.Base]
+  moreLeanArgs := reqsArgs
+
+lean_lib ReqsLangOverview where
+  globs := #[`Reqs.Lang.Overview]
+  needs := #[`@/reqs_lang_overview_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_overview_md where
+  path := "src/Reqs/Lang/Overview.md"
+  text := true
+
+lean_lib ReqsLangLexical where
+  globs := #[`Reqs.Lang.Lexical]
+  needs := #[`@/reqs_lang_lexical_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_lexical_md where
+  path := "src/Reqs/Lang/Lexical.md"
+  text := true
+
+lean_lib ReqsLangTypes where
+  globs := #[`Reqs.Lang.Types]
+  needs := #[`@/reqs_lang_types_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_types_md where
+  path := "src/Reqs/Lang/Types.md"
+  text := true
+
+lean_lib ReqsLangSubsetTypes where
+  globs := #[`Reqs.Lang.SubsetTypes]
+  needs := #[`@/reqs_lang_subset_types_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_subset_types_md where
+  path := "src/Reqs/Lang/SubsetTypes.md"
+  text := true
+
+lean_lib ReqsLangBooleanBlocks where
+  globs := #[`Reqs.Lang.BooleanBlocks]
+  needs := #[`@/reqs_lang_boolean_blocks_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_boolean_blocks_md where
+  path := "src/Reqs/Lang/BooleanBlocks.md"
+  text := true
+
+lean_lib ReqsLangItems where
+  globs := #[`Reqs.Lang.Items]
+  needs := #[`@/reqs_lang_items_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_items_md where
+  path := "src/Reqs/Lang/Items.md"
+  text := true
+
+lean_lib ReqsLangGenerics where
+  globs := #[`Reqs.Lang.Generics]
+  needs := #[`@/reqs_lang_generics_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_generics_md where
+  path := "src/Reqs/Lang/Generics.md"
+  text := true
+
+lean_lib ReqsLangGenericFunctions where
+  globs := #[`Reqs.Lang.GenericFunctions]
+  needs := #[`@/reqs_lang_generic_functions_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_generic_functions_md where
+  path := "src/Reqs/Lang/GenericFunctions.md"
+  text := true
+
+lean_lib ReqsLangTraits where
+  globs := #[`Reqs.Lang.Traits]
+  needs := #[`@/reqs_lang_traits_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_traits_md where
+  path := "src/Reqs/Lang/Traits.md"
+  text := true
+
+lean_lib ReqsLangPrelude where
+  globs := #[`Reqs.Lang.Prelude]
+  needs := #[`@/reqs_lang_prelude_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_prelude_md where
+  path := "src/Reqs/Lang/Prelude.md"
+  text := true
+
+lean_lib ReqsLangScope where
+  globs := #[`Reqs.Lang.Scope]
+  needs := #[`@/reqs_lang_scope_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_scope_md where
+  path := "src/Reqs/Lang/Scope.md"
+  text := true
+
+lean_lib ReqsLangProcedures where
+  globs := #[`Reqs.Lang.Procedures]
+  needs := #[`@/reqs_lang_procedures_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_procedures_md where
+  path := "src/Reqs/Lang/Procedures.md"
+  text := true
+
+lean_lib ReqsLangGlobal where
+  globs := #[`Reqs.Lang.Global]
+  needs := #[`@/reqs_lang_global_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_global_md where
+  path := "src/Reqs/Lang/Global.md"
+  text := true
+
+lean_lib ReqsLangDecidability where
+  globs := #[`Reqs.Lang.Decidability]
+  needs := #[`@/reqs_lang_decidability_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_decidability_md where
+  path := "src/Reqs/Lang/Decidability.md"
+  text := true
+
+lean_lib ReqsLangPatterns where
+  globs := #[`Reqs.Lang.Patterns]
+  needs := #[`@/reqs_lang_patterns_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_patterns_md where
+  path := "src/Reqs/Lang/Patterns.md"
+  text := true
+
+lean_lib ReqsLangLet where
+  globs := #[`Reqs.Lang.Let]
+  needs := #[`@/reqs_lang_let_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_let_md where
+  path := "src/Reqs/Lang/Let.md"
+  text := true
+
+lean_lib ReqsLangQuantifiers where
+  globs := #[`Reqs.Lang.Quantifiers]
+  needs := #[`@/reqs_lang_quantifiers_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_quantifiers_md where
+  path := "src/Reqs/Lang/Quantifiers.md"
+  text := true
+
+lean_lib ReqsLangElementQuantifiers where
+  globs := #[`Reqs.Lang.ElementQuantifiers]
+  needs := #[`@/reqs_lang_element_quantifiers_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_element_quantifiers_md where
+  path := "src/Reqs/Lang/ElementQuantifiers.md"
+  text := true
+
+lean_lib ReqsLangSemantics where
+  globs := #[`Reqs.Lang.Semantics]
+  needs := #[`@/reqs_lang_semantics_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_semantics_md where
+  path := "src/Reqs/Lang/Semantics.md"
+  text := true
+
+lean_lib ReqsLangEvaluationRules where
+  globs := #[`Reqs.Lang.EvaluationRules]
+  needs := #[`@/reqs_lang_evaluation_rules_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_evaluation_rules_md where
+  path := "src/Reqs/Lang/EvaluationRules.md"
+  text := true
+
+lean_lib ReqsLangExpressions where
+  globs := #[`Reqs.Lang.Expressions]
+  needs := #[`@/reqs_lang_expressions_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_expressions_md where
+  path := "src/Reqs/Lang/Expressions.md"
+  text := true
+
+lean_lib ReqsLangHigherOrder where
+  globs := #[`Reqs.Lang.HigherOrder]
+  needs := #[`@/reqs_lang_higher_order_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_higher_order_md where
+  path := "src/Reqs/Lang/HigherOrder.md"
+  text := true
+
+lean_lib ReqsLangRecursion where
+  globs := #[`Reqs.Lang.Recursion]
+  needs := #[`@/reqs_lang_recursion_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_recursion_md where
+  path := "src/Reqs/Lang/Recursion.md"
+  text := true
+
+lean_lib ReqsLangScopeLaws where
+  globs := #[`Reqs.Lang.ScopeLaws]
+  needs := #[`@/reqs_lang_scope_laws_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_scope_laws_md where
+  path := "src/Reqs/Lang/ScopeLaws.md"
+  text := true
+
+lean_lib ReqsLangModulesAndInterfaces where
+  globs := #[`Reqs.Lang.ModulesAndInterfaces]
+  needs := #[`@/reqs_lang_modules_and_interfaces_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_modules_and_interfaces_md where
+  path := "src/Reqs/Lang/ModulesAndInterfaces.md"
+  text := true
+
+lean_lib ReqsLangImplementations where
+  globs := #[`Reqs.Lang.Implementations]
+  needs := #[`@/reqs_lang_implementations_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lang_implementations_md where
+  path := "src/Reqs/Lang/Implementations.md"
+  text := true
+
+lean_lib ReqsCalls where
+  globs := #[`Reqs.Calls]
+  needs := #[`@/reqs_calls_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_calls_md where
+  path := "src/Reqs/Lang/Calls.md"
+  text := true
+
+lean_lib ReqsModules where
+  globs := #[`Reqs.Modules]
+  needs := #[`@/reqs_modules_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_modules_md where
+  path := "src/Reqs/Lang/Modules.md"
+  text := true
+
+lean_lib ReqsRefine where
+  globs := #[`Reqs.Refine]
+  needs := #[`@/reqs_refine_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_refine_md where
+  path := "src/Reqs/Lang/Refinement.md"
+  text := true
+
+-- Each lint group has its own Markdown dependency. The umbrella reads
+-- no Markdown; subchapters in a group elaborate in parallel where their
+-- imports allow it. A new chapter can be read with one #fren_md in its
+-- group's wrapper; the binary tests follow the wrappers too. A new
+-- top-level wrapper needs its own library and Markdown input below.
 lean_lib ReqsLint where
   globs := #[`Reqs.Lint]
-  needs := #[`@/reqs_lint_md, `@/reqs_lint_chapter_md]
   moreLeanArgs := reqsArgs
 
-input_dir reqs_lint_md where
-  path := "src/Reqs/Lint"
+lean_lib ReqsLintBase where
+  globs := #[`Reqs.Lint.Base]
+  needs := #[`@/reqs_lint_base_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_base_md where
+  path := "src/Reqs/Lint.md"
+  text := true
+
+lean_lib ReqsLintMeaning where
+  globs := #[`Reqs.Lint.Meaning]
+  needs := #[`@/reqs_lint_meaning_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_meaning_md where
+  path := "src/Reqs/Lint/Meaning.md"
+  text := true
+
+lean_lib ReqsLintUnused where
+  globs := #[`Reqs.Lint.Unused]
+  needs := #[`@/reqs_lint_unused_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_unused_md where
+  path := "src/Reqs/Lint/Unused.md"
+  text := true
+
+lean_lib ReqsLintNonstandardStyle where
+  globs := #[`Reqs.Lint.NonstandardStyle]
+  needs := #[`@/reqs_lint_nonstandard_style_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_nonstandard_style_md where
+  path := "src/Reqs/Lint/NonstandardStyle.md"
+  text := true
+
+lean_lib ReqsLintStyle where
+  globs := #[.andSubmodules `Reqs.Lint.Style]
+  needs := #[`@/reqs_lint_style_md, `@/reqs_lint_style_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_style_md where
+  path := "src/Reqs/Lint/Style.md"
+  text := true
+
+input_dir reqs_lint_style_chapters_md where
+  path := "src/Reqs/Lint/Style"
   text := true
   filter := .extension #["md"]
 
-input_file reqs_lint_chapter_md where
-  path := "src/Reqs/Lint.md"
+lean_lib ReqsLintComplexity where
+  globs := #[.andSubmodules `Reqs.Lint.Complexity]
+  needs := #[`@/reqs_lint_complexity_md, `@/reqs_lint_complexity_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_complexity_md where
+  path := "src/Reqs/Lint/Complexity.md"
+  text := true
+
+input_dir reqs_lint_complexity_chapters_md where
+  path := "src/Reqs/Lint/Complexity"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintSuspicious where
+  globs := #[.andSubmodules `Reqs.Lint.Suspicious]
+  needs := #[`@/reqs_lint_suspicious_md, `@/reqs_lint_suspicious_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_suspicious_md where
+  path := "src/Reqs/Lint/Suspicious.md"
+  text := true
+
+input_dir reqs_lint_suspicious_chapters_md where
+  path := "src/Reqs/Lint/Suspicious"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintPedantic where
+  globs := #[.andSubmodules `Reqs.Lint.Pedantic]
+  needs := #[`@/reqs_lint_pedantic_md, `@/reqs_lint_pedantic_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_pedantic_md where
+  path := "src/Reqs/Lint/Pedantic.md"
+  text := true
+
+input_dir reqs_lint_pedantic_chapters_md where
+  path := "src/Reqs/Lint/Pedantic"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintRestriction where
+  globs := #[`Reqs.Lint.Restriction]
+  needs := #[`@/reqs_lint_restriction_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_restriction_md where
+  path := "src/Reqs/Lint/Restriction.md"
+  text := true
+
+lean_lib ReqsLintDecidability where
+  globs := #[`Reqs.Lint.Decidability]
+  needs := #[`@/reqs_lint_decidability_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_decidability_md where
+  path := "src/Reqs/Lint/Decidability.md"
+  text := true
+
+lean_lib ReqsLintPrinting where
+  globs := #[`Reqs.Lint.Printing]
+  needs := #[`@/reqs_lint_printing_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_printing_md where
+  path := "src/Reqs/Lint/Printing.md"
+  text := true
+
+lean_lib ReqsLintRewrites where
+  globs := #[`Reqs.Lint.Rewrites]
+  needs := #[`@/reqs_lint_rewrites_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_rewrites_md where
+  path := "src/Reqs/Lint/Rewrites.md"
   text := true
 
 lean_lib ReqsDev where
@@ -202,12 +594,19 @@ input_dir reqs_dev_md where
 -- `Impls` builds, imports them, so they are built in `ImplsTested`, the last
 -- library that has them (see the top of this file). A module that makes one
 -- elsewhere fails `lake test`'s `libraries` job, which also checks that
--- `testReaders` in `src/FrenTestMain.lean` lists these three.
+-- `testReaders` in `src/FrenTestMain.lean` lists these three. The files
+-- named by their `tested` claims and the converse scan (`fren.testGlobs`)
+-- must be among their library's actual `needs`; an unreadable dependency
+-- declaration fails the job.
 @[default_target] lean_lib Impls
 
 lean_lib ImplsTested where
   globs := #[`Impls.Evidence, `Impls.Lint, `Impls.Trace]
-  needs := #[`@/tests, `@/test_lean, `@/test_files_lean, `@/test_main]
+  needs := #[`@/tests, `@/test_lean, `@/test_files_lean, `@/test_main, `@/heavy_test_py]
+
+input_file heavy_test_py where
+  path := "scripts/heavy_test.py"
+  text := true
 
 input_dir tests where
   path := "test"
@@ -300,7 +699,7 @@ target mimalloc_lazy_commit.o pkg : FilePath := do
 -- so the library is its modules.
 --
 -- Unlike `Fren.Elab`, `FrenCli.Elab` and its support modules keep `-O3`.
--- Before the module split, clang took some 40 s on its C code (on a Mac),
+-- Before the module split, clang took some 40 s on its C code (locally),
 -- spread over its functions since no function elaborates every kind of
 -- item (`FrenCli.elabItem`). At `-O0` (3 s), the binary elaborated 40–50%
 -- slower, and `lake test`, whose mutation jobs elaborate Fren's own

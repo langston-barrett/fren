@@ -1,0 +1,20 @@
+-- `require` and `assume` are contextual keywords: they start a clause
+-- only where a member starts, and are names anywhere else, here of
+-- parameters, a `let` and a function's result.
+proc p(require: Int, assume: Int): (y: Int) {
+    require low: require > assume
+    let sum: Int := require + assume
+    ensure r: y = sum
+}
+
+pub fn f(require: Int): (assume: Int) {
+    require low: require > 0
+    out assume := require + 1
+    ensure up: assume > require
+}
+
+expect g(require: Int, assume: Int) {
+    assume order: require > assume
+    call c := p(require, assume)
+    expect e: c.y = require + assume
+}

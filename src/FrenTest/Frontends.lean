@@ -321,7 +321,9 @@ def comparison (text : String) (cli hosted : Report) (misread := false) : Compar
     let l := (lines[a + k]?.getD "").trimAscii.toString
     l.isEmpty || l.startsWith "--"
   -- A parse error stops the binary; Lean recovers at the next command.
-  if let some p := cliDiags.find? (·.code?.any (·.startsWith "F01")) then
+  -- Not `F0169`, which both front ends report once the item is read, for
+  -- that item alone (`lang::item_error`), so that what follows it is compared.
+  if let some p := cliDiags.find? (·.code?.any fun c => c.startsWith "F01" && c != "F0169") then
     -- Only a parse error of Lean's can stand for it: an item is one Lean
     -- command, so any other error of Lean's in the item means that Lean
     -- parsed the line that the binary rejects. Lean places a parse error
@@ -405,6 +407,17 @@ def comparison (text : String) (cli hosted : Report) (misread := false) : Compar
     out := out.push d
     if explained then timed := timed.push d
   return { found := out, timed, undecided := cliDiags.any isUndecided || hosted.diags.any isUndecided }
+
+-- `F0169` is no parse error: both front ends report it once the item is
+-- read, for that item alone, so a message of a later item that only one
+-- front end reports is a difference.
+private def assumeSpec : String :=
+  "proc p(x: Int): (y: Int) {\n    assume a: x > 0\n    ensure r: y = 0\n}\n\nproc q(): (z: Int) { ensure s: z = w }\n"
+private def assumeError : Diagnostic :=
+  { line := 2, col := 4, severity := "error", text := Fren.Core.assumeRenamedMsg.headline, code? := some "F0169" }
+#guard (comparison assumeSpec { diags := #[assumeError] } { diags := #[{ assumeError with code? := none }] }).found.isEmpty
+#guard !(comparison assumeSpec { diags := #[assumeError] }
+  { diags := #[{ assumeError with code? := none }, { line := 6, col := 35, severity := "error", text := "cannot find `w` in this scope" }] }).found.isEmpty
 
 /-- How the front ends' reports on `text` differ: each difference as a
 line, and whether the solvers' time limits can explain all of them. -/

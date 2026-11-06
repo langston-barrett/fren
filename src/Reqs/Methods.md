@@ -202,7 +202,7 @@ pub proc combined(
     use self::Verdict::{Fail, Inconclusive, Pass}
     -- A single method's report is its own: chosen alone, random testing's
     -- pass of a check of the first row stands, with the caveat `Random` (#446).
-    assume combination: exists (a: ProofMethod) (b: ProofMethod), a != b and a in selected and b in selected
+    require combination: exists (a: ProofMethod) (b: ProofMethod), a != b and a in selected and b in selected
 
     call by_proof := proved(solver)
     call by_witness := satisfiable(solver)
@@ -404,7 +404,7 @@ pub proc method_run(
         Selected,
         SubsetType,
     }
-    assume obligation_definedness: when obligation?, kind = Kind::Definedness
+    require obligation_definedness: when obligation?, kind = Kind::Definedness
 
     ensure reason_rule: reason = match method {
         ProofMethod::Solver => Selected,

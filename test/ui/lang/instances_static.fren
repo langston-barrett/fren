@@ -24,7 +24,7 @@ proc later(y?) { call a := sub(b.z, y?) call b := sub(1, y?) }
 proc itself(y?) { call a := sub(a.z, y?) }         --~ error: call `a` is not declared before these arguments
 proc private_var(y?): (o: Int) { call a := sub(1, y?) ensure r: o = a.hidden }
 --~^ error: `a.hidden` is private to call `a`
-proc assumes_inst(y?) { call a := sub(1, y?) assume bad: a.z = 0 }
+proc assumes_inst(y?) { call a := sub(1, y?) require bad: a.z = 0 }
 --~^ error: assumptions may only mention parameters, but `a.z` belongs to call `a`
 proc no_field(y?): (o: Int) { call a := sub(1, y?) ensure r: o = a.nope }
 --~^ error: call `a` has no parameter or result named `nope`

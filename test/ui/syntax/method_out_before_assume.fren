@@ -1,0 +1,10 @@
+-- A trait method's block's errors in source order, in both front ends
+-- (`lang::block_errors`): an `out` of a name other than the result's
+-- before an `assume`.
+trait Sized {
+    fn size(s: Self, n: Int): (r: Int) {
+        out q := n  --~ error: `q` is not the function's result
+        assume a: n > 0
+    }
+}
+--@ exit: 2

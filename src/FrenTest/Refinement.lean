@@ -12,7 +12,7 @@ pub proc precise(x: Int): (y: Int) {
 }
 
 pub proc rough(x: Int): (y: Int) {
-    assume small: x < 100
+    require small: x < 100
     ensure above: y > x
 }
 
@@ -57,13 +57,13 @@ pub proc helper(v: Int): (w: Int) {
 }
 
 pub proc first(q: Seq<Int>): (y: Int) {
-    assume nonempty: q != []
+    require nonempty: q != []
     call h := helper(q[0])
     ensure r: y = h.w
 }
 
 pub proc exact(q: Seq<Int>): (y: Int) {
-    assume nonempty: q != []
+    require nonempty: q != []
     ensure r: y = q[0]
 }
 

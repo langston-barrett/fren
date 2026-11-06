@@ -4,12 +4,12 @@
 proc precise(x: Int): (y: Int) { ensure r: y = x + 1 }
 
 proc rough(x: Int): (y: Int) {
-    assume small: x < 100
+    require small: x < 100
     ensure above: y > x
 }
 
 proc picky(x: Int): (y: Int) {
-    assume positive: x > 0
+    require positive: x > 0
     ensure r: y = x + 1
 }
 

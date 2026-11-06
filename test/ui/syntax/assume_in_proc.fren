@@ -1,0 +1,7 @@
+-- A procedure's precondition is written `require`, not `assume`
+-- (`F0169`); the error's fix writes `require`.
+proc halve(x: Int): (y: Int) {
+    assume even: x mod 2 = 0  --~ error: a precondition is written `require`, not `assume`
+    ensure r: 2 * y = x
+}
+--@ exit: 2

@@ -11,21 +11,86 @@ namespace Fren.Impls
 
 open Fren.Core (BlockMember Verdict inductionMember inductionCandidate inductionHypotheses inductionVerdict payloadsOf)
 
+/-- The last string segment of the function's path; empty for an absent
+function, empty path or numeric last segment. This extracts syntax,
+leaving the prefix decision to `lang::induction_function`. -/
+def inductionSegment : Option Lean.Name → String
+  | some (.str _ s) => s
+  | _ => ""
+
+theorem induction_prefix (s : String) :
+    Fren.Str.startsWith s "#induction#" = s.startsWith "#induction#" := by
+  apply Bool.eq_iff_iff.mpr
+  simp [Fren.Str.startsWith_iff]
+
+-- The requirement reads the last segment of the real path.
+impl induction_function: lang::induction_function for (path : Lean.Name) {
+  last_segment := inductionSegment (some path),
+  «induction?» := Fren.Core.isInductionFn path,
+} by
+  intro path _
+  cases path <;>
+    simp [fren_spec, inductionSegment, lang.«induction_function?», Fren.Str.lit,
+      Fren.Core.isInductionFn, induction_prefix]
+
+-- Every generated name is recognized, for all expectation names, claims,
+-- parameters and source positions.
+impl generated_induction_function: lang::induction_function for (n claim x : String) (position : Nat) {
+  last_segment := Fren.Core.inductionFnName n claim x position,
+  «induction?» := true,
+} by
+  intro n claim x position _
+  have string_text (s : String) : toString s = s := rfl
+  simp [fren_spec, lang.«induction_function?», Fren.Str.startsWith, Fren.Str.lit,
+    Fren.Core.inductionFnName, String.toList_append, string_text]
+
+-- Both front ends compose these helpers on the optional function path.
+-- The requirement computes the prefix test itself from its last segment.
+impl unfoldings: lang::unfoldings for (path : Option Lean.Name) {
+  last_segment := inductionSegment path,
+  steps := Fren.Core.unfoldings (path.any Fren.Core.isInductionFn),
+} by
+  intro path _
+  rcases path with _ | path
+  · decide
+  · cases path with
+    | anonymous => decide
+    | num _ _ =>
+      simp [fren_spec, inductionSegment, lang.«induction_function?», Fren.Str.startsWith,
+        Fren.Str.lit, Fren.Core.isInductionFn, Fren.Core.unfoldings]
+    | str _ s =>
+      cases h : s.startsWith "#induction#" <;>
+        simp [fren_spec, inductionSegment, lang.«induction_function?», Fren.Str.lit,
+          Fren.Core.isInductionFn, induction_prefix, Fren.Core.unfoldings, Fren.Core.inductionUnfoldings, h]
+
 theorem inductionMember_iff (m : BlockMember) :
     inductionMember m = true ↔ toBlockMember m = .Assume ∨ toBlockMember m = .Expect ∨ toBlockMember m = .Cover := by
   cases m <;> decide
 
--- Both front ends decide which parameters induction is tried on with
--- `inductionCandidate`, of the kinds of the block's members.
-impl induction_candidate: lang::induction_candidate for (ms : List BlockMember) (a c r d : Bool) {
+impl induction_argument: lang::induction_argument for (variables bound : List Int) (x : Int) {
+  argument := x,
+  variables := Fren.FinSet.ofList variables,
+  bound := Fren.FinSet.ofList bound,
+  «collect?» := Fren.Core.inductionArgument variables (bound.contains ·) x,
+} by
+  intro variables bound x
+  simp [fren_spec, Fren.Core.inductionArgument, Fren.FinSet.mem_ofList]
+
+-- `inductionCandidates` calls this rule on the declared parameter types,
+-- instantiated variant payloads and collected decreasing arguments. No
+-- front end decides the aggregate restriction or parameter membership.
+impl induction_candidate: lang::induction_candidate for (ms : List BlockMember) (a : Bool)
+    (rs : List Bool) (t : Int) (ps : List (List Int)) (x : Int) (args : List Int) {
   members := Fren.FinSet.ofList (ms.map toBlockMember),
   «abstract?» := a,
-  «constrained?» := c,
-  «recursive?» := r,
-  «decreasing?» := d,
-  «candidate?» := inductionCandidate ms a c r d,
+  restrictions := Fren.FinSet.ofList rs,
+  ty := t,
+  payloads := Fren.FinSet.ofList (ps.map Fren.FinSet.ofList),
+  parameter := x,
+  arguments := Fren.FinSet.ofList args,
+  «candidate?» := inductionCandidate ms a rs t ps x args,
 } by
-  intro ms a c r d
+  intro ms a rs t ps x args
   have members : ms.all inductionMember = true ↔
       Fren.FinSet.ofList (ms.map toBlockMember) ⊆ ({.Assume, .Expect, .Cover} : Fren.FinSet lang.BlockMember) := by
     simp only [List.all_eq_true, Fren.FinSet.subset_def, Fren.FinSet.mem_ofList, List.mem_map, Fren.FinSet.mem_insert,
@@ -35,12 +100,16 @@ impl induction_candidate: lang::induction_candidate for (ms : List BlockMember) 
       exact (inductionMember_iff m).mp (h m hm)
     · intro h m hm
       exact (inductionMember_iff m).mpr (h _ ⟨m, hm, rfl⟩)
-  simp only [fren_spec, inductionCandidate, Bool.and_eq_true, Bool.not_eq_true', members]
-  cases a <;> cases c <;> cases r <;> cases d <;> simp
+  simp [fren_spec, inductionCandidate, Fren.Core.payloadOfType, members, List.any_eq_true, Fren.FinSet.mem_ofList]
+  intro _ _ _ _
+  constructor
+  · rintro ⟨p, hp, ht⟩
+    exact ⟨Fren.FinSet.ofList p, ⟨p, hp, rfl⟩, by simpa only [Fren.FinSet.mem_ofList] using ht⟩
+  · rintro ⟨_, ⟨p, hp, rfl⟩, ht⟩
+    exact ⟨p, hp, by simpa only [Fren.FinSet.mem_ofList] using ht⟩
 
--- Both front ends decide whether a parameter's type has a payload of its
--- own type with `directlyRecursive`, which compares the payloads' types at
--- the type's arguments with `payloadOfType`.
+-- Bind `payloadOfType`, which `inductionCandidate` calls to compare
+-- payload types instantiated at the parameter's type arguments.
 impl directly_recursive: lang::directly_recursive for (ps : List (List Nat)) (t : Nat) {
   ty := t,
   payloads := Fren.Seq.ofList (ps.map fun p => Fren.Seq.ofList (p.map Int.ofNat)),

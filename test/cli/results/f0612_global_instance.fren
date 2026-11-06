@@ -10,6 +10,6 @@ expect g(a_x: Int) {
     expect g: when 7 * a.x = 123459, a.big?
 }
 
-pub proc guarded(y: Int) { assume narrow: when 7 * y = 123459, y > 0 }
+pub proc guarded(y: Int) { require narrow: when 7 * y = 123459, y > 0 }
 
 pub proc user(z: Int) { call u := guarded(z) }

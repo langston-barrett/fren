@@ -16,6 +16,7 @@ import Impls.Eval
 import Impls.Fmt
 import Impls.Generated
 import Impls.Global
+import Impls.GroundMatching
 import Impls.Guards
 import Impls.HigherOrder
 import Impls.Impl
@@ -37,6 +38,7 @@ import Impls.Scope
 import Impls.Semantics
 import Impls.SubsetTypes
 import Impls.Testing
+import Impls.Theories
 import Impls.Trace
 import Impls.TypeFacts
 import Impls.View
@@ -52,6 +54,8 @@ tested lang::global_successor: "test/ui/lang/global_preconditions.fren"
 tested lang::induction_candidate: "test/ui/checks/induction.fren"
 tested lang::induction_hypotheses: "test/ui/checks/induction.fren"
 tested lang::induction_verdict: "test/ui/checks/induction.fren"
+tested lang::induction_function: "test/ui/checks/induction_unfolding_forms.fren"
+tested lang::unfoldings: "test/ui/checks/induction.fren", "test/ui/checks/induction_unfolding_forms.fren"
 tested lang::trait_expectation: "test/ui/lang/traits.fren"
 tested view::inconclusive_reported: "src/FrenTest/InconclusiveReported.lean", "test/ui/lang/traits.fren", "test/ui/lang/traits_frontends.fren"
 tested refinement::positional_refinement: "test/ui/lang/refines.fren", "src/FrenTest/RefinesTests.lean"
@@ -67,9 +71,11 @@ tested check::branch_query_count: "src/FrenTest/BranchForcing.lean"
 tested check::branch_query_families: "src/FrenTest/BranchForcing.lean"
 tested check::conditional_branch_core: "src/FrenTest/BranchForcing.lean"
 tested check::disjunction_core: "src/FrenTest/BranchForcing.lean"
+tested check::fact_applications: "test/ui/checks/fact_scope.fren", "test/cli/args/dump_smt_fact_scope.fren", "src/FrenTest/AppFacts.lean"
+tested check::predicate_check_site: "test/ui/checks/predicate_check_locations.fren"
 tested lang::block_evaluation: "src/FrenTest/BooleanSubsets.lean", "src/FrenTest/BooleanModels.lean"
 tested lang::block_result: "test/cli/results/boolean_block_members.fren"
-tested lang::block_values: "src/FrenTest/BooleanModels.lean", "test/cli/results/boolean_block_members.fren"
+tested lang::block_values: "src/FrenTest/BooleanModels.lean", "test/cli/results/boolean_block_members.fren", "test/ui/checks/enumeration_predicate_guards.fren"
 tested lang::boolean_block: "src/FrenTest/BooleanSubsets.lean"
 tested lang::clause_leaf_path: "src/FrenTest/NamedPredicateExpansion.lean"
 tested lang::clause_partition: "src/FrenTest/NamedPredicateExpansion.lean", "src/FrenTest/CoverMembers.lean"
@@ -82,7 +88,7 @@ tested lang::exactly_one_result: "src/FrenTest/BooleanSubsets.lean", "test/cli/r
 tested lang::fixed_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/FrenTest/SubsetObligations.lean"
 tested lang::named_conjunction: "src/FrenTest/NamedPredicateExpansion.lean", "test/cli/results/boolean_block_members.fren"
 tested lang::named_identity: "src/FrenTest/NamedPredicateExpansion.lean", "src/FrenTest/BooleanModels.lean"
-tested lang::named_node: "src/FrenTest/NamedPredicateExpansion.lean", "test/cli/results/boolean_block_members.fren"
+tested lang::named_node: "src/FrenTest/NamedPredicateExpansion.lean", "test/cli/results/boolean_block_members.fren", "test/ui/checks/enumeration_predicate_guards.fren"
 tested lang::query_purpose: "src/FrenTest/SubsetInhabitation.lean"
 tested lang::set_card_expansion: "test/ui/lang/set_card.fren"
 tested lang::refinement_subset_domain: "src/FrenTest/SubsetObligations.lean"
@@ -92,7 +98,7 @@ tested lang::subset_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/F
 tested lang::subset_inheritance: "test/cli/types/subset_inheritance.fren", "src/FrenTest/NestedSubsetEnumeration.lean"
 tested lang::subset_labels: "test/cli/types/f0372_subset_labels.fren", "src/FrenTest/EmptySubset.lean"
 tested lang::subset_membership: "src/FrenTest/BooleanSubsets.lean", "src/FrenTest/NestedSubsetEnumeration.lean"
-tested lang::subset_obligations: "src/FrenTest/SubsetObligations.lean", "src/FrenTest/NestedSubsetEnumeration.lean"
+tested lang::subset_obligations: "src/FrenTest/SubsetObligations.lean", "src/FrenTest/NestedSubsetEnumeration.lean", "src/FrenTest/EnumerationObligations.lean"
 tested lang::varying_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/FrenTest/SubsetObligations.lean"
 tested lang::recursive_post_result: "test/ui/checks/recursive_subsets.fren"
 tested lint::duplicate_scrutinee: "test/ui/lints/duplicate_scrutinee.fren"
@@ -114,6 +120,51 @@ tested model::fill_rule: "src/FrenTest/ModelDefaults.lean"
 -- so there is no code to bind `lang::named` to; its expectations are
 -- checked by the solver.
 trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
+
+-- The eight theory-core requirements below have `impl`s proved for every
+-- input in `Impls/Theories.lean`; these tests are regression cross-checks.
+-- Front ends adopt the structural core in later units of #761.
+tested lang::theory_signature: "src/FrenTest/Theories.lean"
+tested lang::theory_term_translation: "src/FrenTest/Theories.lean"
+tested lang::theory_term_substitution: "src/FrenTest/Theories.lean"
+tested lang::theory_ground_term: "src/FrenTest/Theories.lean"
+tested lang::theory_variable_images: "src/FrenTest/Theories.lean"
+tested lang::theory_term_list: "src/FrenTest/Theories.lean"
+tested lang::theory_translation: "src/FrenTest/Theories.lean"
+tested lang::theory_instance: "src/FrenTest/Theories.lean"
+
+-- Structural matching equations are proved for every input; these tests
+-- exercise their composition before front-end integration under #758.
+tested lang::ground_match_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_parameter_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_extension_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_normalization: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_shape_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_subject_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_selection_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_variables_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_join_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_listed_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_sentence_lists_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_rule_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_preparation_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_instance_list_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_instances_step: "src/FrenTest/GroundMatching.lean"
+
+-- Implementations, dispatch and what each check rests on
+-- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under
+-- them (`Reqs/ModuleReports`), are a design that no front end implements
+-- yet (#669, stage 3), so there is no code to bind them to.
+trusted lang::module_sentence: "the design of implementations (#669, stage 3); no front end reads a module as this model yet, and its examples are checked by testing"
+trusted lang::module_rests_on: "the design of what each check rests on (#669, stage 3); the solver proves its cases ranked and the enumeration of small modules checks them acyclic"
+trusted lang::dispatch: "the design of dispatch (#669, stage 3); no front end dispatches to implementations yet, and its expectations are checked by the solver"
+trusted lang::sentence_instantiation: "the design of instantiation (#669, stage 3); no front end instantiates these items yet, and its examples are checked by testing"
+trusted lang::ensure_clause: "the design of contracts as sentences (#669, stage 3); nothing reads an ensure clause as a sentence yet, and its expectations are checked by testing"
+trusted lang::sentence_use: "the design of instantiation (#669, stage 3); no front end chooses what a check uses yet, and its examples are checked by testing"
+trusted expansion::premise_verdicts: "the design of premise verdicts under instantiation (#669, stage 3); the solver checks that expansion only settles checks, from each check's own query inputs"
+trusted expansion::today_verdict: "the design of the verdicts of today's forms under instantiation (#669, stage 3); the solver checks strict expansion of it over every model and kind"
+trusted lang::arm_decided: "the design of induction by unfolding (#669, stage 4); nothing implements unfolding yet, and its expectations are checked by testing"
+trusted lang::caveat_premise: "the design of what a check reports of the axioms it rests on (#669, stage 3); the solver checks it against today's reports of modules of today's forms"
 
 -- Modules as theories, and the items that state claims
 -- (`Reqs/Lang/ModulesAndInterfaces`), are a design that no front end

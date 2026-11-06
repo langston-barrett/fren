@@ -6,10 +6,13 @@ import FrenTest.Frontends
 import FrenTest.FuzzFrontends
 import FrenTest.Jobs
 import FrenTest.Messages
+import FrenTest.MutateDecisions
 import FrenTest.OutOfFuel
 import FrenTest.Quote
 import FrenTest.ReadingBeside
+import FrenTest.Resolved
 import FrenTest.SmallValues
+import FrenTest.SolverPairing
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
 import Lean.Elab.Frontend
@@ -455,7 +458,7 @@ def reqItemsOf (file md : String) : Except String (Array ReqItem) := do
         out := out.push { path := "::".intercalate (current.push n.name).toList, file, line := lineOf n.span.start, clauses }
     return out
 
-#guard ((reqItemsOf "f" "```fren\npub mod a::b\n\nproc p(x?): (y?) {\n    assume a: x?\n    ensure c: y? = x?\n    expect d: y?\n}\n```\n").toOption.getD #[]).map
+#guard ((reqItemsOf "f" "```fren\npub mod a::b\n\nproc p(x?): (y?) {\n    require a: x?\n    ensure c: y? = x?\n    expect d: y?\n}\n```\n").toOption.getD #[]).map
     (fun i => (i.path, i.line, i.clauses)) == #[("a::b::p", 4, #["c", "d"])]
 
 /-- The path of the requirement that is named as the rule `id` is: its
@@ -1057,10 +1060,34 @@ def errorCodes : IO (Array String) := do
         failures := failures.push s!"{c.code}: a fixed example still fails:\n{good}\n{out}"
   return failures
 
+/-- The lint wrappers in import order, with each shared dependency read
+once. Follow only lint imports: the other requirements retain their order
+in `ownSpecFiles`. A chapter added with one `#fren_md` is also an input to
+the binary checks, mutation and shared-path tests. -/
+partial def lintSpecFilesFrom (entry : FilePath) (seen : Array FilePath) : IO (Array FilePath × Array String) := do
+  if seen.contains entry then return (seen, #[])
+  let mut seen := seen.push entry
+  let mut files := #[]
+  let source ← IO.FS.readFile entry
+  let header ← Lean.parseImports' source entry.toString
+  for imported in header.imports do
+    let name := imported.module.toString
+    unless name.startsWith "Reqs.Lint." do continue
+    let path : FilePath := "src" / (name.replace "." "/" ++ ".lean")
+    let (visited, chapters) ← lintSpecFilesFrom path seen
+    seen := visited
+    files := files ++ chapters
+  for line in source.splitOn "\n" do
+    if let [_, rest] := line.splitOn "#fren_md \"" then
+      if let some name := (rest.splitOn "\"").head? then
+        files := files.push (Fren.relativeTo "." (entry.parent.getD "" / name))
+  return (seen, files)
+
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
-def ownSpecFiles : Array String :=
-  #[
+def ownSpecFiles : IO (Array String) := do
+  let lint ← lintSpecFilesFrom "src/Reqs/Lint.lean" #[]
+  return #[
     "Lang/Overview",
     "Lang/Lexical",
     "Lang/Types",
@@ -1086,53 +1113,17 @@ def ownSpecFiles : Array String :=
     "Lang/Recursion",
     "Lang/ScopeLaws",
     "Lang/ModulesAndInterfaces",
+    "Lang/Implementations",
     "Lang/Modules",
     "Lang/Calls",
     "Check",
     "Methods",
     "Models",
     "Evidence",
+    "ModuleReports",
     "View",
     "Cli",
     "Lint",
-    "Lint/Meaning",
-    "Lint/Unused",
-    "Lint/NonstandardStyle",
-    "Lint/Style",
-    "Lint/Style/Comparisons",
-    "Lint/Style/PatternTests",
-    "Lint/Style/PatternTestFixes",
-    "Lint/Style/Naturals",
-    "Lint/Style/Records",
-    "Lint/Style/Matches",
-    "Lint/Style/Let",
-    "Lint/Style/Closures",
-    "Lint/Complexity",
-    "Lint/Complexity/Comparisons",
-    "Lint/Complexity/Operators",
-    "Lint/Complexity/Methods",
-    "Lint/Complexity/Matches",
-    "Lint/Complexity/Patterns",
-    "Lint/Complexity/Integers",
-    "Lint/Complexity/Updates",
-    "Lint/Suspicious",
-    "Lint/Suspicious/Expressions",
-    "Lint/Suspicious/Methods",
-    "Lint/Suspicious/Literals",
-    "Lint/Suspicious/Comparisons",
-    "Lint/Suspicious/Integers",
-    "Lint/Pedantic",
-    "Lint/Pedantic/Matches",
-    "Lint/Pedantic/Records",
-    "Lint/Pedantic/Text",
-    "Lint/Pedantic/Comparisons",
-    "Lint/Pedantic/Conditionals",
-    "Lint/Pedantic/Booleans",
-    "Lint/Pedantic/Procedures",
-    "Lint/Restriction",
-    "Lint/Decidability",
-    "Lint/Printing",
-    "Lint/Rewrites",
     "Eval",
     "Lang/Refinement",
     "Mutate",
@@ -1142,17 +1133,17 @@ def ownSpecFiles : Array String :=
     "Trace",
     "Markdown",
     "dev/Testing",
-  ].map fun r => s!"src/Reqs/{r}.md"
+  ].flatMap fun r => if r == "Lint" then lint.2 else #[s!"src/Reqs/{r}.md"]
 
 /-- The Markdown specs that the Lean front end reads, by the `#fren_md`
 commands of `src/Reqs`, each as a path from the repository's root. -/
 def hostedSpecFiles : IO (Array String) := do
   let mut files := #[]
-  for entry in ← System.FilePath.readDir "src/Reqs" do
-    if entry.path.extension != some "lean" then continue
-    for line in (← IO.FS.readFile entry.path).splitOn "\n" do
+  for entry in ← sortedFiles "src/Reqs" "lean" do
+    for line in (← IO.FS.readFile entry).splitOn "\n" do
       if let [_, rest] := line.splitOn "#fren_md \"" then
-        if let some name := (rest.splitOn "\"").head? then files := files.push s!"src/Reqs/{name}"
+        if let some name := (rest.splitOn "\"").head? then
+          files := files.push (Fren.relativeTo "." (entry.parent.getD "" / name))
   return files
 
 /-- The lines of the `fren` blocks of the Markdown text `md`. -/
@@ -1188,31 +1179,61 @@ def afterLastCheck (ls : Array String) : Array String :=
 #guard afterLastCheck #["proc p() {}", "#fren_check"] == #[]
 #guard afterLastCheck #["proc p() {}", "#fren_check p", "pub proc q() {}", "expect e: true"] == #["p", "q", "e"]
 
+/-- The items left unchecked in a Lean module's expanded source chunks,
+each with its source path. A check covers only earlier declarations. -/
+def uncheckedHostedItems (chunks : Array (String × Array String)) : Array (String × String) := Id.run do
+  let mut failures := #[]
+  let checks := chunks.map fun (_, ls) => ls.filter (·.trimAscii.toString.startsWith "#fren_check")
+  for (path, ls) in chunks, k in [0:chunks.size] do
+    let pending := afterLastCheck ls
+    if pending.isEmpty then continue
+    let later := (checks.extract (k + 1) checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
+    let named := (checks.extract k checks.size).flatten.filterMap fun l =>
+      (l.trimAscii.toString.dropPrefix? "#fren_check ").map (·.toString.trimAscii.toString)
+    for i in pending do
+      unless later || named.contains i do
+        failures := failures.push (path, i)
+  return failures
+
+#guard uncheckedHostedItems #[("chapter.md", #["pub proc p() {}"]), ("wrapper.lean", #["#fren_check"])] == #[]
+#guard uncheckedHostedItems #[("chapter.md", #["pub proc p() {}", "#fren_check"])] == #[]
+#guard uncheckedHostedItems #[("wrapper.lean", #["#fren_check"]), ("chapter.md", #["pub proc p() {}"])] ==
+  #[("chapter.md", "p")]
+#guard uncheckedHostedItems #[("chapter.md", #["pub proc p() {}"]), ("wrapper.lean", #["#fren_check q"])] ==
+  #[("chapter.md", "p")]
+
 /-- The problems of Lean's checks of `src/Reqs`: each procedure or global
-expectation that a chapter declares, which a Lean file reads by
-`#fren_md`, is checked by a `#fren_check` without a path after it in its
-chapter or in a later chapter of that file, or by a `#fren_check` of it in
-its chapter. A `#fren_check` checks what is declared before it in its file
-(`Reqs/Lean#commands`), so an item after a file's last one is not checked in
-Lean at all: the hosted counterpart of `ownSpecFiles`. -/
+expectation in a chapter is checked in its Lean module. Expand each
+`#fren_md` in place, so a check in a Lean wrapper counts just as one in
+Markdown does. A check in an imported module does not count for items
+declared in the importing module. -/
 def hostedChecks : IO (Array String) := do
   let mut failures := #[]
-  for entry in ← System.FilePath.readDir "src/Reqs" do
-    if entry.path.extension != some "lean" then continue
-    let chapters := (← IO.FS.readFile entry.path).splitOn "\n" |>.filterMap fun line =>
-      match line.splitOn "#fren_md \"" with
-      | [_, rest] => (rest.splitOn "\"").head?
-      | _ => none
-    let texts ← chapters.toArray.mapM fun (c : String) => IO.FS.readFile (("src" : FilePath) / "Reqs" / c)
-    let checks := texts.map chapterChecks
-    for c in chapters.toArray, t in texts, k in [0:texts.size] do
-      let pending := afterLastCheck (frenBlockLines t)
-      if pending.isEmpty then continue
-      let later := (checks.extract (k + 1) checks.size).any (·.any (·.trimAscii.toString == "#fren_check"))
-      let named := checks[k]!.filterMap fun l => (l.trimAscii.toString.dropPrefix? "#fren_check ").map (·.toString.trimAscii.toString)
-      for i in pending do
-        unless later || named.contains i do
-          failures := failures.push s!"src/Reqs/{c}: `{i}` is checked by no `#fren_check` in Lean, as it comes after its file's last `#fren_check` in a `fren` block: name it, as `#fren_check {i}`"
+  for entry in ← sortedFiles "src/Reqs" "lean" do
+    let mut chunks : Array (String × Array String) := #[]
+    for line in (← IO.FS.readFile entry).splitOn "\n" do
+      if let [_, rest] := line.splitOn "#fren_md \"" then
+        if let some name := (rest.splitOn "\"").head? then
+          let path := entry.parent.getD "" / name
+          chunks := chunks.push (Fren.relativeTo "." path, frenBlockLines (← IO.FS.readFile path))
+      else
+        chunks := chunks.push (entry.toString, #[line])
+    for (path, i) in uncheckedHostedItems chunks do
+      failures := failures.push s!"{path}: `{i}` is checked by no `#fren_check` in Lean, as it comes after its file's last `#fren_check`: name it, as `#fren_check {i}`"
+  return failures
+
+/-- Every lint chapter is reached once through the umbrella, and no
+wrapper or Markdown chapter is omitted from the binary's input list. -/
+def lintChapters : IO (Array String) := do
+  let (_, files) ← lintSpecFilesFrom "src/Reqs/Lint.lean" #[]
+  let hosted := (← hostedSpecFiles).filter fun p =>
+    p == "src/Reqs/Lint.md" || p.startsWith "src/Reqs/Lint/"
+  let disk := #["src/Reqs/Lint.md"] ++ (← sortedFiles "src/Reqs/Lint" "md").map (·.toString)
+  let mut failures := #[]
+  if files.toList.eraseDups.length != files.size then
+    failures := failures.push "lint chapters: a Markdown chapter is read more than once"
+  unless files.qsort (· < ·) == hosted.qsort (· < ·) && files.qsort (· < ·) == disk.qsort (· < ·) do
+    failures := failures.push s!"lint chapters: umbrella {files.toList}, wrappers {hosted.toList} and Markdown {disk.toList} differ"
   return failures
 
 /-- `QueryCache`'s answers in memory: a script asked again gets the answer
@@ -1631,7 +1652,7 @@ def sharedOwnStart (root : FilePath) (cache? : Option String) (ref : IO (String 
     IO (Task (Except IO.Error Agreement)) := do
   let dir := root / "own"
   copyTree (cache?.getD "/nonexistent") dir
-  IO.asTask (sharedAgrees (["check", "--query-cache", dir.toString] ++ ownSpecFiles.toList) ref) .dedicated
+  IO.asTask (sharedAgrees (["check", "--query-cache", dir.toString] ++ (← ownSpecFiles).toList) ref) .dedicated
 
 /-- The `fren` binary's path through `check` and `quickcheck`, where the
 spec and what else the threads read is read once, marked persistent and
@@ -1658,7 +1679,7 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
       | some own => pure (pure own)
       | none => do
         copyTree (cache.getD "/nonexistent") (root / "ref")
-        pure (runFren (["check", "--jobs", "1", "--query-cache", (root / "ref").toString] ++ ownSpecFiles.toList))
+        pure (runFren (["check", "--jobs", "1", "--query-cache", (root / "ref").toString] ++ (← ownSpecFiles).toList))
     -- The tests' path runs once, whichever run of the binary's path it is
     -- compared with.
     let refTask ← IO.asTask ref .dedicated
@@ -1676,7 +1697,7 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
       let (refOut, refCode) ← refOnce
       let dir := root / "again"
       copyTree ((if own?.isSome then cache else some (root / "ref").toString).getD "/nonexistent") dir
-      sharedAgrees (["check", "--query-cache", dir.toString] ++ ownSpecFiles.toList) (pure (refOut, refCode))
+      sharedAgrees (["check", "--query-cache", dir.toString] ++ (← ownSpecFiles).toList) (pure (refOut, refCode))
     let (f, s) ← sharedCase (← IO.ofExcept own.get) again
     failures := failures ++ f
     skips := skips ++ s
@@ -1690,10 +1711,11 @@ chapter that the Lean front end does; Lean checks every chapter too
 (`hostedChecks`); and the binary's shared path agrees with the tests'
 (`sharedSpec`), with this job's query cache, once it is filled. -/
 def ownSpec : IO (Array String) := do
-  let missing := (← hostedSpecFiles).filter (!ownSpecFiles.contains ·)
+  let files ← ownSpecFiles
+  let missing := (← hostedSpecFiles).filter (!files.contains ·)
   let (queryCache?, verifyQueryCache?) ← ownSpecCaches
   let (out, code) ← IO.FS.withIsolatedStreams
-    (FrenCli.check { files := ownSpecFiles, queryCache?, verifyQueryCache? })
+    (FrenCli.check { files, queryCache?, verifyQueryCache? })
   -- A contradiction leaves a mark next to the cache, so that CI does not
   -- save it (`Reqs/dev/Testing#query-cache`).
   if let some dir := queryCache? then
@@ -1723,9 +1745,10 @@ or `src/Reqs/M.lean:L:C: warning: text`, about a Markdown spec that the
 module reads: the spec, as a path from the repository's root, and the
 message, at its position in the spec (`Fren.elabMd` places it at the
 `#fren_md` and starts its text with `NAME.md:LINE:COL: `, the column from
-0). A message about the Lean file's own item, or Lean's summary of a
+0). Resolve relative spec labels from the Lean module's directory, `dir`.
+A message about the Lean file's own item, or Lean's summary of a
 `#fren_check` (`fren: …`), is none. -/
-def ownSpecMessage? (level : String) (message : String) : Option (String × Diagnostic) := do
+def ownSpecMessage? (level : String) (message : String) (dir : FilePath := "src/Reqs") : Option (String × Diagnostic) := do
   let severity ← match level with
     | "info" => some "info"
     | "warning" => some "warning"
@@ -1746,13 +1769,15 @@ def ownSpecMessage? (level : String) (message : String) : Option (String × Diag
       guard (name.endsWith ".md")
       let text := ": ".intercalate text
       guard (!text.startsWith "fren: ")
-      return (s!"src/Reqs/{name}", { line := ← line.toNat?, col := ← col.toNat?, severity, text })
+      return (Fren.relativeTo "." (dir / name), { line := ← line.toNat?, col := ← col.toNat?, severity, text })
     | _ => none
   | _ => none
 
 #guard (ownSpecMessage? "info" "src/Reqs/Lang.lean:33:0: Lang/Types.md:1041:10: cover goal `t` is met\n\nwitness: x = 1").map
   (fun (f, d) => (f, d.line, d.col, d.severity, d.text)) ==
   some ("src/Reqs/Lang/Types.md", 1041, 10, "info", "cover goal `t` is met\n\nwitness: x = 1")
+#guard (ownSpecMessage? "info" "src/Reqs/Lang/Types.lean:5:0: Types.md:1041:10: cover goal `t` is met" "src/Reqs/Lang").map
+  (fun (f, d) => (f, d.line, d.col)) == some ("src/Reqs/Lang/Types.md", 1041, 10)
 #guard (ownSpecMessage? "warning" "src/Reqs/Check.lean:15:0: warning: Check.md:3:4: could not decide").map
   (fun (f, d) => (f, d.line, d.severity)) == some ("src/Reqs/Check.md", 3, "warning")
 #guard (ownSpecMessage? "info" "src/Reqs/Fmt.lean:9:0: Fmt.md:461:0: fren: 100 passed, 0 failed").isNone
@@ -1794,10 +1819,10 @@ unless `-Kcheck_reqs` is set. -/
 def hostedOwnSpec : IO (Array (String × Diagnostic) × Array String) := do
   let mut msgs := #[]
   let mut problems := #[]
-  let modules := (← System.FilePath.readDir "src/Reqs").filter (·.path.extension == some "lean")
-  for entry in modules.qsort (·.fileName < ·.fileName) do
-    let some stem := entry.path.fileStem | continue
-    let trace : FilePath := ".lake" / "build" / "lib" / "lean" / "Reqs" / s!"{stem}.trace"
+  for entry in ← sortedFiles "src/Reqs" "lean" do
+    let relative := (entry.toString.dropPrefix "src/").toString
+    let stem := ((entry.withExtension "").toString.dropPrefix "src/Reqs/").toString.replace "/" "."
+    let trace : FilePath := ((".lake" : FilePath) / "build" / "lib" / "lean" / relative).withExtension "trace"
     let text ← match ← (IO.FS.readFile trace).toBaseIO with
       | .ok t => pure t
       | .error _ =>
@@ -1805,7 +1830,7 @@ def hostedOwnSpec : IO (Array (String × Diagnostic) × Array String) := do
         continue
     let entries := traceEntries text
     if let some p := traceProblem trace.toString stem entries then problems := problems.push p
-    msgs := msgs ++ entries.filterMap fun (level, message) => ownSpecMessage? level message
+    msgs := msgs ++ entries.filterMap fun (level, message) => ownSpecMessage? level message (entry.parent.getD "")
   return (msgs, problems)
 
 /-- Lean's note that it leaves checks to `fren check`: those set to random
@@ -1863,9 +1888,10 @@ def ownSpecAgreement : IO (Array String) := do
   let (hosted, problems) ← hostedOwnSpec
   unless problems.isEmpty do return problems
   let (queryCache?, _) ← ownSpecCaches
-  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := ownSpecFiles, queryCache? })
+  let files ← ownSpecFiles
+  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files, queryCache? })
   let mut failures := if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"]
-  for f in ownSpecFiles do
+  for f in files do
     let text := Fren.Core.unwrapMarkdown (← IO.FS.readFile f)
     let (cli, lean) := ownSpecReports text (cliDiagnostics f out).1
       (hosted.filterMap fun (g, d) => if g == f then some d else none)
@@ -1873,7 +1899,7 @@ def ownSpecAgreement : IO (Array String) := do
       failures := failures.push s!"{f}: {d}"
   -- Lean's messages about a spec that the binary does not check.
   for (g, d) in hosted do
-    unless ownSpecFiles.contains g do
+    unless files.contains g do
       failures := failures.push s!"{g}:{d.line}: Lean reports about a spec that `ownSpecFiles` lacks: {FrenTest.Frontends.headOf d}"
   return failures
 
@@ -2247,7 +2273,7 @@ def stringCorpus (n : Nat) : String := Id.run do
         "s != t", s!"s.len + t.len = {i}", s!"({v} ++ {l}).len > {i}", s!"{v}.at({i}) = {l}",
         s!"{v}.slice(0, {i}) != {l}", s!"{v} < {l}"] 5
     out := out ++ s!"proc c{k}(s: String, t: String): (p?) \{\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect e: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -2270,7 +2296,7 @@ def setCorpus (n : Nat) : String := Id.run do
         s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
         "s = {}"] 5
     out := out ++ s!"proc c{k}(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -2295,7 +2321,7 @@ def relationCorpus (n : Nat) : String := Id.run do
         s!"(x, y) in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"x in {u}", s!"{u} subset s", s!"{u} != {b}.domain",
         s!"(x, x) in {a}", "r = {}", s!"{a} != \{}"] 5
     out := out ++ s!"proc c{k}(r: Rel<E, E>, q: Rel<E, E>, s: Set<E>, x: E, y: E): (p?) \{\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -2318,7 +2344,7 @@ def sequenceCorpus (n : Nat) : String := Id.run do
         s!"q.ends_with?([x, {j}])", s!"(q.len > {j} and q[{j}] = x)", s!"(0 <= i and i < r.len and r[i] > {j})",
         s!"{a}.len + {b}.len >= {j}"] 5
     out := out ++ s!"proc c{k}(q: Seq<Int>, r: Seq<Int>, x: Int, i: Int): (p?) \{\n    \
-      assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+      require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r1: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
       expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -2657,16 +2683,7 @@ would notice if those drifted. -/
 /-- Modules that import a root module's modules rather than the root, which
 would wait for its own build too: each must import exactly the root's. -/
 def rootCopies : List (String × List String) :=
-  [("Fren", ["Reqs.Check", "Reqs.Calls", "Reqs.Lang", "Reqs.Modules"])]
-
-/-- The libraries of Reqs that need only some of its specs, as module and
-the specs, relative to `src/Reqs`, that it may read. -/
-def specsRead : List (List String × (String → Bool)) :=
-  [(["Reqs.Check", "Reqs.Cli", "Reqs.Eval", "Reqs.Fmt", "Reqs.Generated", "Reqs.Impl", "Reqs.Mutate", "Reqs.Trace", "Reqs.View"],
-      fun p => !p.contains '/'),
-    (["Reqs.Calls", "Reqs.Lang", "Reqs.Modules", "Reqs.Refine"], (·.startsWith "Lang/")),
-    (["Reqs.Lint"], fun p => p == "Lint.md" || p.startsWith "Lint/"),
-    (["Reqs.Testing"], (·.startsWith "dev/"))]
+  [("Fren", ["Reqs.Check", "Reqs.Calls", "Reqs.Lang.Base", "Reqs.Modules"])]
 
 /-- The modules of Impls whose library needs the tests, `ImplsTested` in
 `lakefile.lean` (`libraryModules`). -/
@@ -2690,10 +2707,10 @@ def sourceOf (m : String) : System.FilePath := "src" / ((m.replace "." "/") ++ "
 /-- The declarations of kind `kind` in `lakefile.lean` (`lean_lib`,
 `input_dir`, `input_file`), each as its name and its text: its line and
 the indented lines after it. -/
-def lakeDecls (kind : String) : IO (Array (String × String)) := do
+def lakeDecls (lakefile kind : String) : Array (String × String) := Id.run do
   let mut out := #[]
   let mut cur : Option (String × String) := none
-  for line in (← IO.FS.readFile "lakefile.lean").splitOn "\n" do
+  for line in lakefile.splitOn "\n" do
     if line.startsWith " " then
       cur := cur.map fun (n, t) => (n, t ++ "\n" ++ line)
       continue
@@ -2707,11 +2724,15 @@ def lakeDecls (kind : String) : IO (Array (String × String)) := do
 each trimmed. -/
 def lakeArray (decl field : String) : Option (List String) := do
   let after ← (decl.splitOn s!"{field} := #[")[1]?
-  return ((after.splitOn "]").headD "").splitOn "," |>.map (·.trimAscii.toString) |>.filter (!·.isEmpty)
+  let before ← (after.splitOn "]").head?
+  unless after.contains ']' do none
+  return before.splitOn "," |>.map (·.trimAscii.toString) |>.filter (!·.isEmpty)
 
 /-- The string of the field `field := "…"` of the declaration text `decl`. -/
 def lakeString (decl field : String) : Option String := do
-  (← (decl.splitOn s!"{field} := \"")[1]?).splitOn "\"" |>.head?
+  let after ← (decl.splitOn s!"{field} := \"")[1]?
+  unless after.contains '"' do none
+  return (after.splitOn "\"").headD ""
 
 /-- A glob of a `lean_lib`, as the module, and whether it selects the
 module itself and its submodules. -/
@@ -2755,28 +2776,46 @@ def libraryModules (lib decl : String) : IO (Except String (Array (String × Str
 file `p`, a path from the repository's root, by its `needs`: an
 `input_file` of `p`, or an `input_dir` that holds `p` and whose filter
 takes it. -/
-def lakeNeeds (decl : String) : IO (Except String (String → Bool)) := do
-  let files ← lakeDecls "input_file"
-  let dirs ← lakeDecls "input_dir"
+def lakeNeeds (lakefile decl : String) : Except String (String → Bool) := do
+  let files := lakeDecls lakefile "input_file"
+  let dirs := lakeDecls lakefile "input_dir"
+  let entries ← match lakeArray decl "needs" with
+    | some ns => pure ns
+    | none =>
+      if (decl.splitOn "\n").any (·.trimAscii.toString.startsWith "needs") then
+        throw "lakefile.lean: `lake test`'s `libraries` job cannot read `needs`"
+      else pure []
   let mut needed : Array (String → Bool) := #[]
-  for n in (lakeArray decl "needs").getD [] do
-    let name := (n.dropPrefix "`@/").toString
-    let cannot := s!"lakefile.lean: `lake test`'s `libraries` job cannot read the input `{name}`"
+  for n in entries do
+    let cannot := s!"lakefile.lean: `lake test`'s `libraries` job cannot read the input `{n}`"
+    let some name := n.dropPrefix? "`@/" | throw cannot
+    let name := name.toString
     if let some (_, d) := files.find? (·.1 == name) then
-      let some path := lakeString d "path" | return .error cannot
-      needed := needed.push (· == path)
+      let some path := lakeString d "path" | throw cannot
+      needed := needed.push (· == normalPath path)
     else if let some (_, d) := dirs.find? (·.1 == name) then
-      let some path := lakeString d "path" | return .error cannot
+      let some path := lakeString d "path" | throw cannot
+      let path := normalPath path
       let filter := (((d.splitOn "filter := ")[1]?.bind (·.splitOn "\n" |>.head?)).getD "").trimAscii.toString
       let inDir (p : String) := p.startsWith (path ++ "/")
       if filter == ".star" then needed := needed.push inDir
+      else if filter == ".ofFn fun p => p.extension == some \"md\" && (p.parent.bind (·.fileName)) == some \"Reqs\" && p.fileName != some \"ModuleReports.md\"" then
+        -- The one custom filter in this lakefile. Accept its exact spelling,
+        -- rather than treating an arbitrary function as all Markdown files.
+        needed := needed.push fun p => inDir p && (System.FilePath.mk p).extension == some "md" &&
+          ((System.FilePath.mk p).parent.bind (·.fileName)) == some "Reqs" && (System.FilePath.mk p).fileName != some "ModuleReports.md"
       else if let some exts := filter.dropPrefix? ".extension #[" then
-        let exts := ((exts.toString.splitOn "]").headD "").splitOn "," |>.map fun e =>
-          ((e.trimAscii.toString.dropPrefix "\"").dropSuffix "\"").toString
-        needed := needed.push fun p => inDir p && exts.any (some · == (System.FilePath.mk p).extension)
-      else return .error cannot
-    else return .error cannot
-  return .ok fun p => needed.any (· p)
+        let some exts := exts.toString.dropSuffix? "]" | throw cannot
+        let mut extensions := #[]
+        for e in exts.toString.splitOn "," do
+          let some e := e.trimAscii.toString.dropPrefix? "\"" | throw cannot
+          let some e := e.toString.dropSuffix? "\"" | throw cannot
+          if e.toString.contains '\"' then throw cannot
+          extensions := extensions.push e.toString
+        needed := needed.push fun p => inDir p && extensions.any (some · == (System.FilePath.mk p).extension)
+      else throw cannot
+    else throw cannot
+  return fun p => needed.any (· (normalPath p))
 
 /-- The modules that `m` imports. -/
 def importsOf (m : String) : IO (Array String) := do
@@ -2791,6 +2830,20 @@ def specsOf (src : String) : Array String :=
 
 #guard specsOf "#fren_md \"a.md\"\n#guard_msgs in #fren_md \"b.md\"\n  #fren_md \"c/d.md\"\n" == #["a.md", "b.md", "c/d.md"]
 #guard specsOf "-- `#fren_md` with no file\n" == #[]
+
+/-- The paths in `tested` commands, including indented continuations. -/
+def testedFilesOf (src : String) : Array String := Id.run do
+  let mut inClaim := false
+  let mut files := #[]
+  for line in src.splitOn "\n" do
+    unless line.startsWith " " do inClaim := line.startsWith "tested "
+    if inClaim then
+      let quoted := (line.splitOn "\"").toArray
+      for i in [0:quoted.size] do
+        if i % 2 == 1 then files := files.push quoted[i]!
+  return files
+
+#guard testedFilesOf "tested m::p: \"test/a.fren\",\n  \"src/FrenTest/B.lean\"\n-- \"ignored\"\n" == #["test/a.fren", "src/FrenTest/B.lean"]
 
 /-- The default targets of the lakefile `lakefile`: the names of its
 `lean_lib`s and `lean_exe`s marked `@[default_target]`, the attribute on
@@ -2836,15 +2889,17 @@ def matrixTargets (workflow : String) : Array String := Id.run do
 /-- Each copy of a root's imports is the root's; no module is in the globs
 of two libraries; each module of Reqs reads only the specs that its
 library needs; only modules whose library needs the tests make `tested`
-claims; and only the tests whose library needs the files that they read,
+claims, and the files those claims and the converse scan (`fren.testGlobs`)
+name are among its actual `needs`; unreadable dependency declarations fail;
+and only the tests whose library needs the files that they read,
 `FrenTestFiles`, read files with `#fren_md`; and `pre-merge`'s build
 jobs together build exactly the default targets. -/
-def libraries : IO (Array String) := do
+def checkLibraries (lakefile : String) : IO (Array String) := do
   let mut failures := #[]
   -- `lake build --wfail` runs on two machines, each building some of the
   -- default targets, so that a new one would otherwise go unbuilt.
   let built := ((matrixTargets (← IO.FS.readFile ".github/workflows/pre-merge.yml")).qsort (· < ·)).toList.eraseDups.toArray
-  match defaultTargets (← IO.FS.readFile "lakefile.lean") with
+  match defaultTargets lakefile with
   | .error e => failures := failures.push e
   | .ok ts =>
     let want := ts.qsort (· < ·)
@@ -2863,7 +2918,7 @@ def libraries : IO (Array String) := do
   -- the globs of two libraries is built with either's `needs`, by which
   -- library the build reaches it through first, and editing a file that
   -- the other needs may not rebuild it.
-  let libs ← lakeDecls "lean_lib"
+  let libs := lakeDecls lakefile "lean_lib"
   let mut owners : Array (String × String) := #[]
   let mut modulesOf : Array (String × Array String) := #[]
   for (lib, decl) in libs do
@@ -2876,11 +2931,37 @@ def libraries : IO (Array String) := do
           failures := failures.push s!"lakefile.lean: `{m}` is in the globs of both `{other}` and `{lib}`, which build it with their own `needs`"
         else owners := owners.push (m, lib)
   let modulesOfLib (lib : String) : Array String := ((modulesOf.find? (·.1 == lib)).map (·.2)).getD #[]
-  for (mods, ok) in specsRead do
-    for m in mods do
-      for spec in specsOf (← IO.FS.readFile (sourceOf m)) do
-        unless ok spec do
-          failures := failures.push s!"{sourceOf m}: reads `{spec}`, which its library in `lakefile.lean` does not need"
+  -- Imported modules use the last library whose globs or roots hold
+  -- them, even when an earlier library explicitly globs the module.
+  let owner (m : String) : Option (String × String) :=
+    libs.reverse.find? fun (lib, decl) =>
+      owners.contains (m, lib) ||
+        ((lakeArray decl "roots").getD [s!"`{lib}"]).any fun r =>
+          let root := (r.dropPrefix "`").toString
+          m == root || m.startsWith (root ++ ".")
+  let checkReads (m : String) (reads : Array String) : Array String := Id.run do
+    let some (lib, decl) := owner m
+      | return #[s!"{sourceOf m}: no owning library in `lakefile.lean`"]
+    match lakeNeeds lakefile decl with
+    | .error e => return #[e]
+    | .ok needed =>
+      return reads.filterMap (fun p =>
+        if needed p then none else some s!"{sourceOf m}: reads `{p}`, which `{lib}` in `lakefile.lean` does not need")
+  for f in (← System.FilePath.walkDir "src/Reqs").push "src/Reqs.lean" do
+    if f.extension != some "lean" then continue
+    let m := ((f.withExtension "").toString.dropPrefix "src/").toString.replace "/" "."
+    let reads := (specsOf (← IO.FS.readFile f)).map fun (spec : String) =>
+      normalPath ((f.parent.getD "" / spec).toString)
+    failures := failures ++ checkReads m reads
+  -- Check the files actually named by claims and the converse scan.
+  -- Membership alone says nothing about their freshness.
+  for f in testReaders do
+    let src ← IO.FS.readFile f
+    let mut reads := testedFilesOf src
+    for rest in (src.splitOn "set_option fren.testGlobs \"").drop 1 do
+      reads := reads ++ (← Fren.Core.expandGlobs (((rest.splitOn "\"").headD "").splitOn " ").toArray)
+    let m := (((System.FilePath.mk f).withExtension "").toString.dropPrefix "src/").toString.replace "/" "."
+    failures := failures ++ checkReads m reads
   let tested := modulesOfLib "ImplsTested"
   unless tested.qsort (· < ·) == testReaders.toArray.qsort (· < ·) do
     failures := failures.push s!"lakefile.lean: `ImplsTested` holds {tested}, but `testReaders` in src/FrenTestMain.lean is {testReaders}"
@@ -2897,7 +2978,7 @@ def libraries : IO (Array String) := do
       failures := failures.push s!"{f}: reads `{file}`, but its library in `lakefile.lean` is not `FrenTestFiles`, which needs the files that tests read"
   -- The files that `FrenTestFiles` reads, and those that they read with
   -- their own `#fren_md`, relative to themselves, must be ones that it needs.
-  match ← lakeNeeds (((libs.find? (·.1 == "FrenTestFiles")).map (·.2)).getD "") with
+  match lakeNeeds lakefile (((libs.find? (·.1 == "FrenTestFiles")).map (·.2)).getD "") with
   | .error e => failures := failures.push e
   | .ok needed =>
     let mut todo := readers
@@ -2914,6 +2995,66 @@ def libraries : IO (Array String) := do
           todo := todo.push path
   return failures
 
+/-- The live lakefile and fixtures that remove a dependency without
+changing module membership. Each removal must fail the same check. -/
+def libraries : IO (Array String) := do
+  let lakefile ← IO.FS.readFile "lakefile.lean"
+  let mut failures ← checkLibraries lakefile
+  for (lib, decl) in lakeDecls lakefile "lean_lib" do
+    unless (lib.startsWith "Reqs" && lib != "Reqs") || lib == "ImplsTested" do continue
+    let entries := (lakeArray decl "needs").getD []
+    for entry in entries do
+      let without := decl.replace s!"needs := #[{", ".intercalate entries}]"
+        s!"needs := #[{", ".intercalate (entries.filter (· != entry))}]"
+      let got ← checkLibraries (lakefile.replace decl without)
+      unless got.any (fun e => (e.splitOn s!"`{lib}`").length > 1) do
+        failures := failures.push s!"libraries regression: removing {entry} from {lib} was accepted"
+  -- Markdown and Models used to be omitted from the hard-coded readers.
+  -- Give their library individual files, then omit each one in turn.
+  let some (_, chapters) := (lakeDecls lakefile "lean_lib").find? (·.1 == "ReqsChapters")
+    | return failures.push "libraries regression: no ReqsChapters fixture"
+  match lakeNeeds lakefile chapters with
+  | .error e => failures := failures.push e
+  | .ok needed =>
+    unless needed "src/Reqs/Models.md" && !needed "src/Reqs/ModuleReports.md" &&
+        !needed "src/Reqs/Lang/Implementations.md" do
+      failures := failures.push "libraries regression: ReqsChapters must need Models, but not the separately built ModuleReports or language chapters"
+  let specs ← sortedFiles "src/Reqs" "md"
+  let specs := specs.filter (·.parent == some (System.FilePath.mk "src/Reqs"))
+  for omitted in #["Markdown", "Models"] do
+    let kept := specs.filter (·.fileStem != some omitted)
+    let entries := kept.mapIdx fun i _ => s!"`@/fixture_{i}"
+    let inputs := kept.mapIdx fun i f => s!"input_file fixture_{i} where\n  path := \"{f}\"\n"
+    let fixture := lakefile.replace chapters (chapters.replace "`@/reqs_chapters_md" (", ".intercalate entries.toList)) ++
+      "\n" ++ "\n".intercalate inputs.toList
+    let got ← checkLibraries fixture
+    unless got.any (fun e => (e.splitOn s!"src/Reqs/{omitted}.lean:").length > 1) do
+      failures := failures.push s!"libraries regression: missing {omitted}.md was accepted"
+  -- A later root takes precedence over an earlier explicit glob.
+  -- With all specs it passes; with only Types it must reject Models.
+  let lateRoot (input : String) := lakefile ++
+    s!"\nlean_lib LateReqs where\n  roots := #[`Reqs]\n  globs := #[]\n  needs := #[`@/{input}]\n"
+  let got ← checkLibraries (lateRoot "reqs_md")
+  unless got.isEmpty do
+    failures := failures.push s!"libraries regression: later root with every needed spec failed: {got}"
+  let got ← checkLibraries (lateRoot "reqs_lang_types_md")
+  unless got.contains "src/Reqs/Models.lean: reads `src/Reqs/Models.md`, which `LateReqs` in `lakefile.lean` does not need" do
+    failures := failures.push "libraries regression: later root did not override the Models glob"
+  -- Unsupported declarations must fail closed, including a changed custom filter.
+  for (before, after) in #[
+      ("needs := #[`@/reqs_lang_types_md]", "needs := reqsNeeds"),
+      ("`@/reqs_lang_types_md", "`@/missing_input"),
+      ("filter := .extension #[\"md\"]", "filter := unknownFilter"),
+      ("filter := .ofFn fun p =>", "filter := .ofFn fun q =>")] do
+    let fixture := lakefile.replace before after
+    if fixture == lakefile then
+      failures := failures.push s!"libraries regression: unreadable-declaration fixture `{before}` did not apply"
+      continue
+    let got ← checkLibraries fixture
+    unless got.any (fun e => (e.splitOn "`libraries` job cannot read").length > 1) do
+      failures := failures.push s!"libraries regression: unreadable declaration `{after}` did not report cannot read: {got}"
+  return failures
+
 /-! ## Mutants
 
 The properties of `fren mutate`'s mutants (`Reqs/dev/Testing`), over the
@@ -2928,7 +3069,7 @@ def mutationCorpus : IO (Array (Array String)) := do
   let snaps := (← sortedFiles ("test" / "cli") "fren").filter fun f =>
     let n := f.fileName.getD ""
     n.startsWith "mutate_" || n.startsWith "f0613" || n.startsWith "f0614"
-  return #[ownSpecFiles] ++ (snaps ++ (← decisionExamples)).map fun f => #[f.toString]
+  return #[← ownSpecFiles] ++ (snaps ++ (← decisionExamples)).map fun f => #[f.toString]
 
 /-- The files of a group, read as `fren` reads them. -/
 def readGroup (paths : Array String) : IO (Array (String × Array Char)) :=
@@ -3218,15 +3359,24 @@ def outcomeName : FrenCli.Mutate.Outcome → String
   | .equivalent => "is equivalent"
   | .unviable => "is unviable"
 
-/-- The decisions of `fren mutate` about the mutants of `files`, or of
+/-- The decisions of `fren mutate` about the independently generated `all`
+mutants of `files`, or of
 those named by `ids`, or `sample?` of them, or the shard `shard?`, in
-order; checking every component of every mutant if `exhaustive`. -/
-def decisionsOf (files : Array String) (ids : Array String := #[]) (sample? : Option Nat := none)
+order; checking every component of every mutant if `exhaustive`. Fails
+on command errors or any difference in the selected ID multiset. -/
+def decisionsOf (files : Array String) (all : Array FrenCli.Mutate.Mutant)
+    (ids : Array String := #[]) (sample? : Option Nat := none)
     (shard? : Option (Nat × Nat) := none) (exhaustive := false) : IO (Array FrenCli.Decision) := do
   let decisions ← IO.mkRef #[]
-  let _ ← IO.FS.withIsolatedStreams
+  let run ← FrenTest.MutateDecisions.capture decisions
     (FrenCli.mutate { command := .mutate, files, mutantIds := ids, sample?, shard? } (some { exhaustive, decisions }))
-  decisions.get
+  -- `all` is generated independently of this run, never read from its
+  -- decisions (including for samples, individual shards and derivatives).
+  let selected := FrenCli.Mutate.select all none ids sample? 0 (shard? := shard?)
+  let problems := FrenTest.MutateDecisions.problems (selected.map (·.id)) run
+  unless problems.isEmpty do
+    throw (IO.userError s!"{files.toList} (sample {sample?}, shard {shard?}, exhaustive {exhaustive}):\n{String.intercalate "\n" problems.toList}")
+  return run.decisions
 
 /-- The results of `fren check` of `files`, by the key of their item and
 their own (`FrenCli.Mutate.keyed`), and its exit code. -/
@@ -3268,6 +3418,11 @@ def withText (name : String) (chars : Array Char) (f : String → IO α) : IO α
     f path.toString
 
 /-- What `fren mutate` decides about the mutants of the example `path`:
+- **complete ledger:** every run (full, sample, each shard, each
+  expectation-deleted derivative and the exhaustive sample) decides exactly
+  the ID multiset selected from its independently generated mutants, reports
+  no error diagnostic, and exits with 3 exactly when a mutant survives,
+  otherwise 0;
 - **adequate:** the example passes `fren check`, and every mutant is killed
   but those listed as equivalent, each of which survives or is shown
   equivalent;
@@ -3297,7 +3452,7 @@ def decisions (path : String) : IO (Array String) := do
   let (before, code) ← checkResultsOf #[path]
   if code != 0 then failures := failures.push s!"{path}: `fren check` exits with {code}, not 0"
   -- Adequacy.
-  let decided ← decisionsOf #[path]
+  let decided ← decisionsOf #[path] all
   -- Whether the solver shows a listed mutant equivalent within its time
   -- limit, which is in wall-clock time, can depend on the machine's load,
   -- so a listed mutant may either survive or be equivalent.
@@ -3309,28 +3464,27 @@ def decisions (path : String) : IO (Array String) := do
     | .unviable, true => failures := failures.push s!"{path}: {d.id} is unviable"
   for id in listed do
     unless decided.any (·.id == id) do failures := failures.push s!"{path}: {id} is listed, but is no mutant"
-  -- Whether a mutant that is not killed is shown equivalent depends on
-  -- the solver's time limit, as above.
-  let kind (o : FrenCli.Mutate.Outcome) := if o == .equivalent then .survived else o
   -- A sample, in which each mutant runs after fewer others, with fewer
   -- answers kept (`Reqs/Cli#solver-queries`), decides each as the whole
   -- run does.
-  for d in ← decisionsOf #[path] (sample? := some (all.size / 2)) do
-    let some d₀ := decided.find? (·.id == d.id) | continue
-    if kind d.outcome != kind d₀.outcome || d.killers != d₀.killers then
+  for d in ← decisionsOf #[path] all (sample? := some (all.size / 2)) do
+    let some d₀ := decided.find? (·.id == d.id) | throw (IO.userError s!"{path}: {d.id} has no baseline decision")
+    if !FrenCli.Mutate.sameDecision d.outcome d₀.outcome || d.killers != d₀.killers then
       failures := failures.push s!"{path}: {d.id} {outcomeName d₀.outcome}, killed by {d₀.killers.toList}, but in a sample \
         {outcomeName d.outcome}, killed by {d.killers.toList}"
   -- So do the shards, which together hold each mutant once.
-  let shards ← (List.range decisionShards).toArray.flatMapM fun k => decisionsOf #[path] (shard? := some (k, decisionShards))
-  if (shards.map (·.id)).qsort (· < ·) != (decided.map (·.id)).qsort (· < ·) then
+  let shards ← (List.range decisionShards).toArray.flatMapM fun k => decisionsOf #[path] all (shard? := some (k, decisionShards))
+  if (shards.map (·.id)).qsort (· < ·) != (all.map (·.id)).qsort (· < ·) then
     failures := failures.push s!"{path}: the {decisionShards} shards do not hold each mutant once"
   for d in shards do
-    let some d₀ := decided.find? (·.id == d.id) | continue
-    if kind d.outcome != kind d₀.outcome || d.killers != d₀.killers then
+    let some d₀ := decided.find? (·.id == d.id) | throw (IO.userError s!"{path}: {d.id} has no baseline decision")
+    if !FrenCli.Mutate.sameDecision d.outcome d₀.outcome || d.killers != d₀.killers then
       failures := failures.push s!"{path}: {d.id} {outcomeName d₀.outcome}, killed by {d₀.killers.toList}, but in its shard \
         {outcomeName d.outcome}, killed by {d.killers.toList}"
   -- Every expectation and cover goal is needed.
-  let killed := decided.map (·.outcome == .killed)
+  let killed ← all.mapM fun m => do
+    let some d := decided.find? (·.id == m.id) | throw (IO.userError s!"{path}: {m.id} has no baseline decision")
+    pure (d.outcome == .killed)
   for (what, sp) in expectationsOf chars do
     let chars' := chars.extract 0 sp.start ++ chars.extract sp.stop chars.size
     let failure? ← withText name chars' fun path' => do
@@ -3339,10 +3493,15 @@ def decisions (path : String) : IO (Array String) := do
       -- read the file's path.
       if all'.size != all.size || (all.zip all').any fun (m, m') => m.item != m'.item || m.change != m'.change then
         return some s!"{path}: without `{what}`, the mutants are not the same"
-      let decided' ← decisionsOf #[path']
+      let decided' ← decisionsOf #[path'] all'
       -- A mutant that the deleted check killed now means something else
       -- than the spec, so it survives: it is not shown equivalent.
-      let outcomes := (killed.zip (decided'.map (·.outcome))).filter (·.1) |>.map (·.2)
+      -- Compare by generated mutant order, never by a possibly reordered
+      -- decision stream, and only after validating its full ID multiset.
+      let outcomes' ← all'.mapM fun m => do
+        let some d := decided'.find? (·.id == m.id) | throw (IO.userError s!"{path'}: {m.id} is not decided")
+        pure d.outcome
+      let outcomes := (killed.zip outcomes').filter (·.1) |>.map (·.2)
       if outcomes.contains .survived then return none
       if outcomes.contains .equivalent then
         return some s!"{path}: without `{what}`, a mutant that was killed is shown equivalent to the spec"
@@ -3350,11 +3509,11 @@ def decisions (path : String) : IO (Array String) := do
     failures := failures ++ failure?.toArray
   -- Selection and verdicts, on a sample.
   let sample := FrenCli.Mutate.select all none #[] (some decisionSample) 0
-  let full ← decisionsOf #[path] (sample.map (·.id)) (exhaustive := true)
+  let full ← decisionsOf #[path] all (sample.map (·.id)) (exhaustive := true)
   for m in sample do
     let some d := full.find? (·.id == m.id) | failures := failures.push s!"{path}: {m.id} is not decided"
-    let some d₀ := decided.find? (·.id == m.id) | continue
-    if kind d.outcome != kind d₀.outcome then
+    let some d₀ := decided.find? (·.id == m.id) | throw (IO.userError s!"{path}: {m.id} has no baseline decision")
+    if !FrenCli.Mutate.sameDecision d.outcome d₀.outcome then
       failures := failures.push
         s!"{path}: {m.id} {outcomeName d₀.outcome}, but {outcomeName d.outcome} when every component is checked"
     for (item, k) in d₀.killers do
@@ -3448,7 +3607,7 @@ def backjumpingOf (paths : Array String) : IO (Array String × Nat) := do
 
 /-- `backjumpingOf` Fren's own requirements, or each ui test. -/
 def backjumping (corpus : String) : IO (Array String) := do
-  let groups : Array (Array String) ← if corpus == "reqs" then pure #[ownSpecFiles] else
+  let groups : Array (Array String) ← if corpus == "reqs" then pure #[← ownSpecFiles] else
     do pure ((← uiFiles).map fun f => #[f.toString])
   let mut failures := #[]
   let mut problems := 0
@@ -3621,8 +3780,7 @@ def enumerationMayOmit (item : String) (r : Fren.Core.CheckResult) (run : Method
 /-- Known method differences, by file and exact check/diagnostic key, with
 an issue or semantic reason. Each excuses only the difference it names;
 unexpected differences fail. Both jobs fail on an applicable entry that
-no longer occurs (`staleExceptions`). The #813 entries go when its fixes
-land: they permit the existing defects, not new ones. -/
+no longer occurs (`staleExceptions`). -/
 def methodExceptions : Array (String × String × String) := #[
   -- A caller assumes a recursive function's result type, as its
   -- postconditions, whether or not its body meets it; the pass rests on the
@@ -3638,128 +3796,18 @@ def methodExceptions : Array (String × String × String) := #[
     "bounded call to heater; check::redundancy_asked"),
   ("test/ui/lang/constants.fren",
     "missing enumeration|comp other.user|Fren.Core.CheckKind.redundancy|(some r)|none|none|none|none|-|none",
-    "bounded call to band; check::redundancy_asked"),
-  -- Existing internal errors and wrong-method records, scoped to the
-  -- requested method (and actual method or full diagnostic header). #813
-  ("test/ui/checks/recursive_subsets.fren",
-    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/checks/recursive_subsets.fren",
-    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.equation»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/checks/recursive_subsets.fren",
-    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/checks/recursive_subsets.fren",
-    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.equation»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/lang/generics_subset_types.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `generics_subset_types::giver`", "#813"),
-  ("test/ui/lints/labeled_constraints.fren",
-    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «left.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/lints/labeled_constraints.fren",
-    "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «right.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/lints/labeled_constraints.fren",
-    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «left.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
-  ("test/ui/lints/labeled_constraints.fren",
-    "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp predicates|Fren.Core.CheckKind.expect|(some «right.nonnegative?@1.bound»)|none|none|none|none|-|none", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::watch`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::observed`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::first_walk`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::prompt`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::green_between_walks`", "#813"),
-  ("examples/stoplight.fren",
-    "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `stoplight::refines_cycle`", "#813")] ++ (#[
-  -- The 74 absent counterparts caused by the seven internal errors:
-  -- every identity is explicit and becomes stale independently. #813
-  ("test/ui/lang/generics_subset_types.fren", #[
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, x.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, d.0))|none|none|none|-|(some @invariant:generics_subset_types::Digit::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, p.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, p.1))|none|none|none|-|(some @invariant:generics_subset_types::Pos::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, t.0))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, t.1))|none|none|none|-|(some @invariant:generics_subset_types::Byte::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.inst|(some h)|(some (generics_subset_types.holder, s.0))|none|none|none|-|(some @invariant:generics_subset_types::Present::invariant)",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some ok)|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some bad)|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some pair)|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some marked)|none|none|none|none|-|none",
-    "comp generics_subset_types.giver|Fren.Core.CheckKind.determinism|(some some)|none|none|none|none|-|none"]),
-  ("examples/stoplight.fren", #[
-    "comp stoplight.watch|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.watch|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.watch|Fren.Core.CheckKind.redundancy|(some counts)|none|none|none|none|-|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.determinism|(some next)|none|none|none|none|-|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.disjointness|(some counts)|none|none|(some 0)|(some (0, 1))|Fren.Core.TableGoal.disjointness (Fren.Core.Split.table) 0 1|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 1)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 0|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 2)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 1|none",
-    "comp stoplight.watch|Fren.Core.CheckKind.reachability|(some counts)|none|none|(some 3)|none|Fren.Core.TableGoal.reachability (Fren.Core.Split.table) 2|none",
-    "comp stoplight.observed|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.observed|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.observed|Fren.Core.CheckKind.determinism|(some next)|none|none|none|none|-|none",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s1)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s2)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s3)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s4)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s5)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s6)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s7)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.inst|(some s8)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.expect|(some not_yet)|none|none|none|none|-|none",
-    "comp stoplight.first_walk|Fren.Core.CheckKind.cover|(some walks)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.prompt|Fren.Core.CheckKind.inst|(some s)|(some (stoplight.step, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some bounded)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some press_waits)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.expect|(some tick_nears)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.vacuity|(some press_waits)|none|none|none|none|-|none",
-    "comp stoplight.prompt|Fren.Core.CheckKind.vacuity|(some tick_nears)|none|none|none|none|-|none",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.inst|(some w)|(some (stoplight.watch, now.0))|none|none|none|-|(some @invariant:stoplight::Watched::green)",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.inst|(some w)|(some (stoplight.watch, now.1))|none|none|none|-|(some @invariant:stoplight::Watched::yellow)",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.expect|(some enough_green)|none|none|none|none|-|none",
-    "comp stoplight.green_between_walks|Fren.Core.CheckKind.vacuity|(some enough_green)|none|none|none|none|-|none",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.0))|none|none|none|-|(some @invariant:stoplight::Lights::safe)",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.1))|none|none|none|-|(some @invariant:stoplight::Lights::walk_on_red)",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.inst|(some o)|(some (stoplight.observed, now.2))|none|none|none|-|(some @invariant:stoplight::Lights::timed)",
-    "comp stoplight.refines_cycle|Fren.Core.CheckKind.expect|(some refines_1)|none|none|none|none|-|none"])] : Array (String × Array String)).flatMap fun (file, keys) =>
-  keys.map fun key => (file, s!"missing enumeration|{key}", "#813")
+    "bounded call to band; check::redundancy_asked")]
 
 /-- Excuses only exact known adapter defects, recording each hit so that
 an entry that stops occurring fails as stale. New errors or records in
 the same file still fail. -/
-def knownMethodFailures (name : String) (problems : Array (String × String)) :
+def knownMethodFailures (name : String) (problems : Array (String × String))
+    (exceptions : Array (String × String × String) := methodExceptions) :
     Array String × Array (String × String) := Id.run do
   let mut failures := #[]
   let mut hit := #[]
   for (key, message) in problems do
-    let why? := (methodExceptions.find? fun (f, k, _) => f == name && k == key).map (·.2.2)
+    let why? := (exceptions.find? fun (f, k, _) => f == name && k == key).map (·.2.2)
     if why?.isSome then hit := hit.push (name, key)
     else failures := failures.push message
   return (failures, hit)
@@ -3769,8 +3817,9 @@ Diagnostic and wrong-method keys include the requested method; enumeration
 alone does not mark a random-only entry stale. Missing-check identities
 are relevant to both jobs, which both compare solver/enumeration records. -/
 def staleExceptions (ran : Array String) (hit : Array (String × String))
-    (methods : Array Fren.Core.ProofMethod := #[.solver, .enumerated, .random]) : Array String :=
-  methodExceptions.filterMap fun (f, k, why) =>
+    (methods : Array Fren.Core.ProofMethod := #[.solver, .enumerated, .random])
+    (exceptions : Array (String × String × String) := methodExceptions) : Array String :=
+  exceptions.filterMap fun (f, k, why) =>
     let methodScoped := k.startsWith "diagnostic|" || k.startsWith "recorded method|"
     let applicable := !methodScoped || methods.any fun m =>
       k.startsWith s!"diagnostic|{repr m}|" || k.startsWith s!"recorded method|{repr m}|"
@@ -3781,7 +3830,8 @@ def staleExceptions (ran : Array String) (hit : Array (String × String))
 /-- Compares the union of check identities, allowing omissions only where
 `enumerationMayOmit` says why. Returns failures, the number compared and
 the known differences hit. -/
-def compareEnumeration (name : String) (solver enumerated : MethodRun) :
+def compareEnumeration (name : String) (solver enumerated : MethodRun)
+    (exceptions : Array (String × String × String) := methodExceptions) :
     Array String × Nat × Array (String × String) := Id.run do
   let mut failures := #[]
   let mut compared := 0
@@ -3795,7 +3845,7 @@ def compareEnumeration (name : String) (solver enumerated : MethodRun) :
     let some r := es.get? key | do
       unless enumerationMayOmit item s enumerated do
         let missing := s!"missing enumeration|{key}"
-        if methodExceptions.any fun (f, k, _) => f == name && k == missing then
+        if exceptions.any fun (f, k, _) => f == name && k == missing then
           hit := hit.push (name, missing)
         else failures := failures.push s!"{name}: `{key}`: missing from enumeration"
       continue
@@ -3804,7 +3854,7 @@ def compareEnumeration (name : String) (solver enumerated : MethodRun) :
       unless r.verdict == s.verdict do
         failures := failures.push s!"{name}: `{key}`: the solver-only check changed under enumeration"
     else if Fren.Core.methodsContradict r.kind s.verdict r.verdict r.bounded?.isSome .inconclusive then
-      if methodExceptions.any fun (g, k, _) => g == name && k == key then
+      if exceptions.any fun (g, k, _) => g == name && k == key then
         hit := hit.push (name, key)
         continue
       let bounded := if r.bounded?.isSome then " up to the bound" else ""
@@ -3876,38 +3926,90 @@ def methodAgreementChecks : IO (Array String) := do
           && !(methodRunFailures m { run with diags := run.diags.push ("error", none, "internal error: injected") }).isEmpty do
         fs := fs.push s!"agreement adapter: {value}'s trait rejection is not classified precisely\n{run.output}"
     return fs)
+  let registry : Array (String × String × String) := #[
+    ("test/ui/lang/generics_subset_types.fren",
+      "diagnostic|Fren.Core.ProofMethod.enumerated|error|none|internal error: the evaluator does not know the meaning of a formula of `generics_subset_types::giver`", "regression fixture"),
+    ("test/ui/lang/generics_subset_types.fren",
+      "missing enumeration|comp generics_subset_types.giver|Fren.Core.CheckKind.realizable|none|none|none|none|none|-|none", "regression fixture"),
+    ("test/ui/checks/recursive_subsets.fren",
+      "recorded method|Fren.Core.ProofMethod.enumerated|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "regression fixture"),
+    ("test/ui/checks/recursive_subsets.fren",
+      "recorded method|Fren.Core.ProofMethod.random|Fren.Core.ProofMethod.solver|comp recursive_subset|Fren.Core.CheckKind.expect|(some «properties.valid?@1.domain»)|none|none|none|none|-|none", "regression fixture")]
   let knownFile := "test/ui/lang/generics_subset_types.fren"
   let knownError : MethodRun := {
     code := 1
     diags := #[("error", none, "internal error: the evaluator does not know the meaning of a formula of `generics_subset_types::giver`")] }
-  let (known, hits) := knownMethodFailures knownFile (methodRunFailures .enumerated knownError)
+  let (known, hits) := knownMethodFailures knownFile (methodRunFailures .enumerated knownError) (exceptions := registry)
   unless known.isEmpty && hits.size == 1
-      && !(knownMethodFailures knownFile (methodRunFailures .random knownError)).1.isEmpty
-      && !(knownMethodFailures knownFile (methodRunFailures .enumerated internal)).1.isEmpty do
+      && !(knownMethodFailures knownFile (methodRunFailures .random knownError) (exceptions := registry)).1.isEmpty
+      && !(knownMethodFailures knownFile (methodRunFailures .enumerated internal) (exceptions := registry)).1.isEmpty do
     failures := failures.push "agreement registry: an exact known error is not distinguished from a new error or method"
   let given : Fren.Core.CheckResult := { kind := .realizable, comp := `generics_subset_types.giver, prop? := none, verdict := .pass }
   let givenRun : MethodRun := { records := #[("comp generics_subset_types.giver", given, .solver)] }
-  let (knownMissing, _, missingHits) := compareEnumeration knownFile givenRun {}
+  let (knownMissing, _, missingHits) := compareEnumeration knownFile givenRun {} (exceptions := registry)
   let extra := { givenRun with
     records := givenRun.records.push ("comp generics_subset_types.giver", { given with kind := .expect, prop? := some `new_check }, .solver) }
   unless knownMissing.isEmpty && missingHits.size == 1
-      && (compareEnumeration knownFile extra {}).1.size == 1 do
+      && (compareEnumeration knownFile extra {} (exceptions := registry)).1.size == 1 do
     failures := failures.push "agreement registry: a known missing counterpart hides a new identity"
   let recordFile := "test/ui/checks/recursive_subsets.fren"
   let recordResult := { r with comp := `recursive_subset, prop? := some (Name.mkSimple "properties.valid?@1.domain") }
   let wrong : MethodRun := { records := #[("comp recursive_subset", recordResult, .solver)] }
-  unless (knownMethodFailures recordFile (methodRunFailures .enumerated wrong)).1.isEmpty
-      && (knownMethodFailures recordFile (methodRunFailures .random wrong)).1.isEmpty
+  unless (knownMethodFailures recordFile (methodRunFailures .enumerated wrong) (exceptions := registry)).1.isEmpty
+      && (knownMethodFailures recordFile (methodRunFailures .random wrong) (exceptions := registry)).1.isEmpty
       && !(knownMethodFailures recordFile (methodRunFailures .enumerated
-        { wrong with records := #[("comp recursive_subset", recordResult, .lean)] })).1.isEmpty do
+        { wrong with records := #[("comp recursive_subset", recordResult, .lean)] }) (exceptions := registry)).1.isEmpty do
     failures := failures.push "agreement registry: a known wrong-method record hides a new actual method"
-  let recordHits := methodExceptions.filterMap fun (f, key, _) => if f == recordFile then some (f, key) else none
+  let recordHits := registry.filterMap fun (f, key, _) => if f == recordFile then some (f, key) else none
   let enumHits := recordHits.filter fun (_, key) => !key.startsWith s!"recorded method|{repr Fren.Core.ProofMethod.random}|"
-  unless (staleExceptions #[recordFile] recordHits).isEmpty
-      && !(staleExceptions #[recordFile] recordHits.pop).isEmpty
-      && (staleExceptions #[recordFile] enumHits (methods := #[.solver, .enumerated])).isEmpty
-      && !(staleExceptions #[recordFile] enumHits).isEmpty do
+  unless (staleExceptions #[recordFile] recordHits (exceptions := registry)).isEmpty
+      && !(staleExceptions #[recordFile] recordHits.pop (exceptions := registry)).isEmpty
+      && (staleExceptions #[recordFile] enumHits (methods := #[.solver, .enumerated]) (exceptions := registry)).isEmpty
+      && !(staleExceptions #[recordFile] enumHits (exceptions := registry)).isEmpty do
     failures := failures.push "agreement registry: disappeared entries are not stale under exactly the methods run"
+  -- Each call obligation must be evaluated separately: replacing every
+  -- part by whole-type membership would make both low and high fail.
+  let obligations := "type Limits = n: Int where low: n >= 0 and high: n <= 1\n" ++
+    "struct Pair<A, B> { first: A, second: B }\n" ++
+    "enum Choice<T> { Empty, One(T), Two(T, T) }\n" ++
+    "proc accept(x: Limits) {}\nproc accept_pair(x: Pair<Limits, Limits>) {}\n" ++
+    "proc accept_choice(x: Choice<Limits>) {}\n" ++
+    "proc below() { call c := accept(-1) }\nproc above() { call c := accept(2) }\n" ++
+    "proc pair() { call c := accept_pair(Pair { first := -1, second := 2 }) }\n" ++
+    "proc empty() { call c := accept_choice(Choice::Empty) }\n" ++
+    "proc one() { call c := accept_choice(Choice::One(2)) }\n" ++
+    "proc two() { call c := accept_choice(Choice::Two(-1, 2)) }\n" ++
+    "fn named?(n: Int) := and { low: n >= 0, high: n <= 1 }\n" ++
+    "proc expanded(n: Int) { expect check: named?(n) }\n" ++
+    "proc bound(n: Int) { expect check: let saved := n in named?(saved) }\n"
+  failures := failures ++ (← withText "obligations.fren" obligations.toList.toArray fun p => do
+    let mut fs := #[]
+    let solver ← methodResults #[p] "solver"
+    let enumerated ← methodResults #[p] "enumerated"
+    let random ← methodResults #[p] "random"
+    for (method, run) in #[(Fren.Core.ProofMethod.solver, solver), (.enumerated, enumerated), (.random, random)] do
+      fs := fs ++ (methodRunFailures method run).map (fun (_, message) => s!"obligation regression: {message}\n{run.output}")
+      for (comp, expected) in #[(`below, #[false, true]), (`above, #[true, false]), (`pair, #[false, true, true, false]),
+          (`empty, #[true, true, true, true, true, true]), (`one, #[true, false, true, true, true, true]),
+          (`two, #[true, true, false, true, true, false])] do
+        let checks := run.records.filter fun (_, r, _) => r.comp == comp && r.kind == .inst
+        unless checks.size == expected.size do
+          fs := fs.push s!"obligation regression: {repr method} lost call obligations of {comp}\n{run.output}"
+        for (_, r, _) in checks do
+          let some (_, target) := r.target? | fs := fs.push "obligation regression: missing call target"; continue
+          let .num _ k := target | fs := fs.push "obligation regression: missing obligation index"; continue
+          -- A reached part passes testing with Random evidence
+          -- (`eval::test_verdict`), including an inactive variant's part.
+          unless expected[k]?.any (fun pass => r.verdict == if pass then .pass else .fail) do
+            fs := fs.push s!"obligation regression: {repr method} gave the wrong verdict to {comp}/{target}\n{run.output}"
+    fs := fs ++ (compareEnumeration "obligation regression" solver enumerated).1
+    for (method, value) in comparedMethods.toList.drop 1 do
+      let run ← methodResults #[p] value
+      for comp in #[`expanded, `bound] do
+        let leaves := run.records.filter fun (_, r, _) => r.comp == comp && r.kind == .expect
+        unless leaves.size == 2 && leaves.all (fun (_, _, actual) => actual == method) do
+          fs := fs.push s!"evidence regression: generated predicate leaves of {comp} lost {value}\n{run.output}"
+    return fs)
   let text := "set_option fren.evidence \"enumerated\" in\nproc e(x?) { expect no: x? }\n\n" ++
     "set_option fren.evidence \"random\" in\nproc r(x?) { expect yes: x? or not x? }\n"
   failures := failures ++ (← withText "overrides.fren" text.toList.toArray fun p => do
@@ -3926,6 +4028,7 @@ def methodAgreementChecks : IO (Array String) := do
 including the obligations and function checks that stay the solver's. -/
 def enumerationAgrees : IO (Array String) := do
   let mut failures ← methodAgreementChecks
+  failures := failures ++ (← FrenTest.SolverPairing.check)
   let mut compared := 0
   let mut hit : Array (String × String) := #[]
   let corpus ← enumerationCorpus
@@ -3946,9 +4049,6 @@ def enumerationAgrees : IO (Array String) := do
     failures := failures ++ fs
     compared := compared + n
     hit := hit ++ hs
-  for (file, key) in hit do
-    if methodExceptions.any fun (f, k, why) => f == file && k == key && why == "#813" then
-      IO.println s!"enumeration: known #813: {file}: {key}"
   failures := failures ++ staleExceptions (corpus.map (·.toString)) hit (methods := #[.solver, .enumerated])
   return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
 
@@ -4077,7 +4177,7 @@ def methodsAgree (part : List String) : IO (Array String) := do
   if all || part == ["own"] then
     -- Two at a time: the solver, asked the checks that the requirements set
     -- to other methods, took 9.4 GB at two, and 13.8 GB at four, on macOS.
-    failures := failures ++ (← methodsAgreeOn "src/Reqs" ownSpecFiles counts (jobs? := some 2))
+    failures := failures ++ (← methodsAgreeOn "src/Reqs" (← ownSpecFiles) counts (jobs? := some 2))
   let (k, n) := match part with
     | ["ui", k, n] => (k.toNat?.getD 0, n.toNat?.getD 1)
     | _ => (0, 1)
@@ -4093,9 +4193,6 @@ def methodsAgree (part : List String) : IO (Array String) := do
         failures := failures ++ (← withText "spec.fren" (mode.spec s).toList.toArray fun p =>
           methodsAgreeOn name #[p] counts)
   let c ← counts.get
-  for (file, key) in c.hit do
-    if methodExceptions.any fun (f, k, why) => f == file && k == key && why == "#813" then
-      IO.println s!"methodsAgree: known #813: {file}: {key}"
   failures := failures ++ staleExceptions c.ran c.hit
   let byMethod := (List.range comparedMethods.size).map fun i =>
     s!"{comparedMethods[i]!.2} decided {c.decided[i]!}, inconclusive {c.inconclusive[i]!}, not run {c.notRun[i]!}"
@@ -4202,19 +4299,49 @@ def smtAgreement (env : Environment) : IO (Array String) := do
 /-- The specs whose obligations dumps both front ends must print alike
 (`Reqs/Cli#obligations`): a recursive function with a contract, a
 quantifier, a generic function and its instance, records,
-enumerations and checks by testing and enumeration, and recursive functions
+enumerations and checks by testing and enumeration, recursive functions
 and abstract types and functions of one name in two modules, beside a
-variable of that name. -/
+variable of that name, and generic datatypes with collection payloads and
+fields. For these datatypes, the comparison checks that the extra
+tuple-sort initialization declarations leave the canonical query
+unchanged; it does not check which tuple sorts either front end creates.
+The ui tests check their creation by exercising the solver. The newtype
+snapshot also pins the newtypes' erasure to the underlying sort, with no
+constructor or selector left in the dump. -/
 def obligationsAgreementSpecs : List String :=
   ["test/cli/args/dump_obligations_recursive.fren", "test/cli/args/dump_obligations_quantifier.fren",
    "test/cli/args/dump_obligations_generic.fren", "test/cli/args/dump_obligations_evidence.fren",
-   "test/cli/args/dump_obligations_modules.fren"]
+   "test/cli/args/dump_obligations_modules.fren", "test/cli/args/dump_obligations_newtypes.fren",
+   "test/ui/lang/datatype_elements_solver.fren"]
+
+/-- Canonicalization cases that generated queries need not produce:
+capture avoidance, pattern and recursive binders, merged quantifiers,
+and an unavailable query's error script. Run these as compiled code too,
+alongside `FrenTest.Obligations`'s build-time guards. -/
+def canonicalRegressions : Array String := Id.run do
+  let mut failures := #[]
+  let goal (s : String) := (Fren.Core.canonical s false).goal
+  unless goal "(define-fun f ((y Int)) Bool (forall ((x Int)) (> x y))) (assert (not (f x)))" ==
+      "(forall ((x#s0 Int)) (> x#s0 x))" do
+    failures := failures.push "canonical: unfolding captured a free argument"
+  unless goal "(define-fun d () Int x) (assert (not (= 0 (match l ((nil 0) ((cons x r) (+ x d)))))))" ==
+      "(= 0 (match l ((nil 0) ((cons x#s0 r) (+ x#s0 x)))))" do
+    failures := failures.push "canonical: unfolding captured a free name in a match case"
+  unless (Fren.Core.canonical "(define-fun y () Int 7) (define-fun-rec g ((y Int)) Int (g y)) \
+      (assert (not (> (g 2) 0)))" false).signature == #["(define-fun-rec g ((y Int)) Int (g y))"] do
+    failures := failures.push "canonical: unfolding replaced a recursive function's parameter"
+  unless goal "(assert (not (forall ((x Int)) (forall ((y Int)) (> x y)))))" ==
+      "(forall ((x Int) (y Int)) (> x y))" do
+    failures := failures.push "canonical: distinct nested quantifiers were not merged"
+  unless Fren.Core.errorScript "no query: \"early\"" == "(error \"no query: \"\"early\"\"\")" do
+    failures := failures.push "canonical: error script did not quote its message"
+  return failures
 
 /-- That the `fren` command's obligations dump (`--dump=obligations`) of each
 of `obligationsAgreementSpecs` is the Lean-hosted front end's, but for
 their metadata (`Fren.Core.withoutMetadata`). -/
 def obligationsAgreement (env : Environment) : IO (Array String) := do
-  let mut failures := #[]
+  let mut failures := canonicalRegressions
   for path in obligationsAgreementSpecs do
     let (out, _) ← runFren ["check", "--dump=obligations", path]
     let src ← IO.FS.readFile path
@@ -4275,12 +4402,12 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["readingBeside"]]
+    ++ #[["readingBeside"], ["resolvedDump"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4332,10 +4459,12 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["formatting"] => formatting
   | ["fixing"] => fixing
   | ["libraries"] => libraries
+  | ["lintChapters"] => lintChapters
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
-  | ["readingBeside"] => FrenTest.ReadingBeside.agree ownSpecFiles
+  | ["readingBeside"] => do FrenTest.ReadingBeside.agree (← ownSpecFiles)
+  | ["resolvedDump"] => FrenTest.Resolved.check bless
   | ["enumeration"] => enumerationAgrees
   -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
   | "methodsAgree" :: part => methodsAgree part
@@ -4433,6 +4562,10 @@ def runJobs (bless timed : Bool) (jobs : Array (List String)) : IO (Array String
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
 
 unsafe def main (args : List String) : IO UInt32 := do
+  -- A fresh CLI process for `resolvedDump`, preserving its separate streams
+  -- and exit code without requiring a separately built `fren` executable.
+  if let "--job" :: "resolvedRun" :: args := args then
+    return ← FrenCli.run args (persist := true)
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
   if args == ["--rules-report"] then
     IO.print (← rulesReport)

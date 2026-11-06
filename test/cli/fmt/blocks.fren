@@ -80,7 +80,7 @@ pub proc e(m: Mode): (on?) { ensure r: on? iff m = Mode::Heat  set_option fren.e
 
 pub proc f(n: Int): (y: Int) { ensure r: y = match n { 0 => 1, _ => 0 } }
 
-pub fn g(x: Int): (r: Int) { assume p: x > 0  out r := x + 1 }
+pub fn g(x: Int): (r: Int) { require p: x > 0  out r := x + 1 }
 
 expect h(m: Mode) { expect a: m is Mode::Heat | Mode::Cool }
 

@@ -8,12 +8,12 @@ set_option fren.lint.unused_assumption "allow"
 set_option fren.lint.same_branches "allow"
 
 proc indexed(q: Seq<Int>) {
-    assume pinned: q.len = 3 and q[0] = 5
+    require pinned: q.len = 3 and q[0] = 5
     expect e: q.len = 2  --~ error: internal error: the solver's model for the expectation check of `indexed::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 proc divided(a: Int) {
-    assume pinned: a mod 2 = 1 and a div 2 = 3
+    require pinned: a mod 2 = 1 and a div 2 = 3
     expect e: a > 7  --~ error: internal error: the solver's model for the expectation check of `divided::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
@@ -21,7 +21,7 @@ proc divided(a: Int) {
 fn first(q: Seq<Int>): Int := if q = [] then 0 else q[0]
 
 proc in_function(q: Seq<Int>) {
-    assume pinned: q.len = 1 and first(q) = 5
+    require pinned: q.len = 1 and first(q) = 5
     expect e: q.len = 2  --~ error: internal error: the solver's model for the expectation check of `in_function::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
@@ -29,7 +29,7 @@ proc in_function(q: Seq<Int>) {
 -- definition gives it `false`: `pinned` is undecided, and the model,
 -- without integers, is shown.
 proc out_of_range(q: Seq<Bool>) {
-    assume pinned: q = [true] and q[1]  --~ error: an index of `out_of_range::pinned` may be out of range
+    require pinned: q = [true] and q[1]  --~ error: an index of `out_of_range::pinned` may be out of range
     expect e: q.len = 2  --~ error: expectation `out_of_range::e` does not hold
 }
 
@@ -37,7 +37,7 @@ proc out_of_range(q: Seq<Bool>) {
 const N: Int := 2
 
 proc by_constant(a: Int) {
-    assume pinned: a mod N = 1 and a div -2 = -3
+    require pinned: a mod N = 1 and a div -2 = -3
     expect e: a > 7  --~ error: internal error: the solver's model for the expectation check of `by_constant::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
@@ -47,7 +47,7 @@ proc by_constant(a: Int) {
 fn ignore_b?(a: Int) := false
 
 proc strict(q: Seq<Int>) {
-    assume pinned: q.len = 1 and (q[0] = 5 or ignore_b?(q[1]))  --~ error: an index of `strict::pinned` may be out of range
+    require pinned: q.len = 1 and (q[0] = 5 or ignore_b?(q[1]))  --~ error: an index of `strict::pinned` may be out of range
     expect e: q.len = 2  --~ error: expectation `strict::e` does not hold
 }
 
@@ -57,20 +57,20 @@ proc strict(q: Seq<Int>) {
 -- undefined (`Reqs/Models#known-values`). Its definedness check's model is
 -- refuted too: at the misread `a`, the `or` does not evaluate `q[5]`.
 proc card(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (a = 1 or at_most_one?(true, true, q[5] = 0))  --~ error: internal error: the solver's model for the definedness check of `card::pinned` makes the check's claim true in Fren's semantics
+    require pinned: q = [] and (a = 1 or at_most_one?(true, true, q[5] = 0))  --~ error: internal error: the solver's model for the definedness check of `card::pinned` makes the check's claim true in Fren's semantics
     expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `card::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 -- An `if` whose condition is unknown: with equal branches, it has their
 -- value, so the misread `a` makes `pinned` false...
 proc same_branches(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (if q[5] = 0 then a = 1 else a = 1)  --~ error: an index of `same_branches::pinned` may be out of range
+    require pinned: q = [] and (if q[5] = 0 then a = 1 else a = 1)  --~ error: an index of `same_branches::pinned` may be out of range
     expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `same_branches::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 -- ...and with unequal ones, it has none, and the model is shown.
 proc other_branches(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (if q[5] = 0 then a = 1 else a = 2)  --~ error: an index of `other_branches::pinned` may be out of range
+    require pinned: q = [] and (if q[5] = 0 then a = 1 else a = 2)  --~ error: an index of `other_branches::pinned` may be out of range
     expect e: a = 3  --~ error: expectation `other_branches::e` does not hold
 }
 
@@ -78,7 +78,7 @@ proc other_branches(q: Seq<Int>, a: Int) {
 -- one whose scrutinee or condition is unknown has its arms' or rows' value
 -- where they are equal...
 proc match_same(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (match q[5] {  --~ error: an index of `match_same::pinned` may be out of range
+    require pinned: q = [] and (match q[5] {  --~ error: an index of `match_same::pinned` may be out of range
         0 => a = 1,
         _ => a = 1,
     })
@@ -86,7 +86,7 @@ proc match_same(q: Seq<Int>, a: Int) {
 }
 
 proc table_same(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and table {
+    require pinned: q = [] and table {
         q[5] = 0 => a = 1,  --~ error: an index of `table_same::pinned` may be out of range
         _ => a = 1,
     }
@@ -95,7 +95,7 @@ proc table_same(q: Seq<Int>, a: Int) {
 
 -- ...and none where they differ, so the model is shown.
 proc match_other(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (match q[5] {  --~ error: an index of `match_other::pinned` may be out of range
+    require pinned: q = [] and (match q[5] {  --~ error: an index of `match_other::pinned` may be out of range
         0 => a = 1,
         _ => a = 2,
     })
@@ -103,7 +103,7 @@ proc match_other(q: Seq<Int>, a: Int) {
 }
 
 proc table_other(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and table {
+    require pinned: q = [] and table {
         q[5] = 0 => a = 1,  --~ error: an index of `table_other::pinned` may be out of range
         _ => a = 2,
     }
@@ -114,14 +114,14 @@ proc table_other(q: Seq<Int>, a: Int) {
 -- make it `false`, whatever `q[5]` is. Its definedness check's model is
 -- refuted too: at the misread `a`, the `or` does not evaluate `q[5]`.
 proc spelled(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (a = 1 or (if q[5] = 0 then 1 else 0) + 2 <= 1)  --~ error: internal error: the solver's model for the definedness check of `spelled::pinned` makes the check's claim true in Fren's semantics
+    require pinned: q = [] and (a = 1 or (if q[5] = 0 then 1 else 0) + 2 <= 1)  --~ error: internal error: the solver's model for the definedness check of `spelled::pinned` makes the check's claim true in Fren's semantics
     expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `spelled::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 -- A negated literal, `-0` too, is the integer it is, in both front ends
 -- (`model::integer_of`), and `1 >= sum` is `sum <= 1`.
 proc spelled_neg(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (a = 1 or 1 >= (if q[5] = 0 then 1 else 0) + -0 + 2)  --~ error: internal error: the solver's model for the definedness check of `spelled_neg::pinned` makes the check's claim true in Fren's semantics
+    require pinned: q = [] and (a = 1 or 1 >= (if q[5] = 0 then 1 else 0) + -0 + 2)  --~ error: internal error: the solver's model for the definedness check of `spelled_neg::pinned` makes the check's claim true in Fren's semantics
     --~^ warning: this negation can be the other operator
     expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `spelled_neg::e` makes its hypothesis `pinned` false in Fren's semantics
 }
@@ -132,7 +132,7 @@ proc spelled_neg(q: Seq<Int>, a: Int) {
 fn ind(n: Int): Int := if n = 0 then 1 else 0
 
 proc via_fn(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (a = 1 or ind(q[5]) + 2 <= 1)  --~ error: internal error: the solver's model for the definedness check of `via_fn::pinned` makes the check's claim true in Fren's semantics
+    require pinned: q = [] and (a = 1 or ind(q[5]) + 2 <= 1)  --~ error: internal error: the solver's model for the definedness check of `via_fn::pinned` makes the check's claim true in Fren's semantics
     expect e: a = 3  --~ error: expectation `via_fn::e` does not hold
 }
 
@@ -140,13 +140,13 @@ proc via_fn(q: Seq<Int>, a: Int) {
 const ONE: Int := 1
 
 proc via_const(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (a = 1 or (if q[5] = 0 then 1 else 0) + 2 <= ONE)  --~ error: internal error: the solver's model for the definedness check of `via_const::pinned` makes the check's claim true in Fren's semantics
+    require pinned: q = [] and (a = 1 or (if q[5] = 0 then 1 else 0) + 2 <= ONE)  --~ error: internal error: the solver's model for the definedness check of `via_const::pinned` makes the check's claim true in Fren's semantics
     expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `via_const::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
 -- A binder of an unknown scrutinee is unknown, and `a = 1` decides the `and`.
 proc reads_binder(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (match q[5] {  --~ error: an index of `reads_binder::pinned` may be out of range
+    require pinned: q = [] and (match q[5] {  --~ error: an index of `reads_binder::pinned` may be out of range
         --~^ error: an index of `reads_binder::pinned` may be out of range
         n => n > 0 and a = 1,
     })
@@ -155,7 +155,7 @@ proc reads_binder(q: Seq<Int>, a: Int) {
 
 -- A table whose last row is `true` is its `if`s, which have the rows' value.
 proc table_true(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and table {
+    require pinned: q = [] and table {
         q[5] = 0 => a = 1,  --~ error: an index of `table_true::pinned` may be out of range
         true => a = 1,
     }
@@ -168,7 +168,7 @@ proc table_true(q: Seq<Int>, a: Int) {
 enum One { A(Int) }
 
 proc one_variant(q: Seq<One>, a: Int) {
-    assume pinned: q = [] and (match q[5] {  --~ error: an index of `one_variant::pinned` may be out of range
+    require pinned: q = [] and (match q[5] {  --~ error: an index of `one_variant::pinned` may be out of range
         --~^ warning: this `match` has one arm, which binds nothing
         One::A(_) => a = 1,
     })
@@ -178,7 +178,7 @@ proc one_variant(q: Seq<One>, a: Int) {
 enum E { P(Int), Q }
 
 proc enum_alts(q: Seq<E>, a: Int) {
-    assume pinned: q = [] and (match q[5] {  --~ error: an index of `enum_alts::pinned` may be out of range
+    require pinned: q = [] and (match q[5] {  --~ error: an index of `enum_alts::pinned` may be out of range
         --~^ warning: this `match` has one arm, which binds nothing
         E::P(_) | E::Q => a = 1,
     })
@@ -191,14 +191,14 @@ fn pick?(s: Seq<E>, a: Int) := match s[5] {
 }
 
 proc in_body(q: Seq<E>, a: Int) {
-    assume pinned: q = [] and pick?(q, a)
+    require pinned: q = [] and pick?(q, a)
     expect e: a = 3  --~ error: expectation `in_body::e` does not hold
 }
 
 -- A `let` binds lazily: a definition that the body never reads is not
 -- evaluated, so an index out of range in it changes nothing.
 proc unread_let(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (let z := q[5] in a = 1)
+    require pinned: q = [] and (let z := q[5] in a = 1)
     expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `unread_let::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
@@ -207,7 +207,7 @@ proc unread_let(q: Seq<Int>, a: Int) {
 -- (`model::arm_test_of`). So the last arm `_, _` is taken wherever the
 -- first is not, whatever `q[5]` is...
 proc vec_wild(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (match q[5], a {  --~ error: an index of `vec_wild::pinned` may be out of range
+    require pinned: q = [] and (match q[5], a {  --~ error: an index of `vec_wild::pinned` may be out of range
         0, _ => a = 1,
         _, _ => a = 1,
     })
@@ -216,7 +216,7 @@ proc vec_wild(q: Seq<Int>, a: Int) {
 
 -- ...`a = 0` decides the first arm, whatever `q[5]` is...
 proc vec_known(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (match a, q[5] {  --~ error: an index of `vec_known::pinned` may be out of range
+    require pinned: q = [] and (match a, q[5] {  --~ error: an index of `vec_known::pinned` may be out of range
         0, _ => true,
         _, _ => false,
     })
@@ -226,7 +226,7 @@ proc vec_known(q: Seq<Int>, a: Int) {
 -- ...and the last arm of a complete `match` is unknown only where a
 -- scrutinee that its patterns test is.
 proc vec_last(q: Seq<Int>, a: Int, c?) {
-    assume pinned: q = [] and not c? and (match c?, q[5] {  --~ error: an index of `vec_last::pinned` may be out of range
+    require pinned: q = [] and not c? and (match c?, q[5] {  --~ error: an index of `vec_last::pinned` may be out of range
         true, _ => a = 1,
         false, _ => a = 1,
     })
@@ -238,7 +238,7 @@ proc vec_last(q: Seq<Int>, a: Int, c?) {
 -- `a = 3` refutes: each read's definedness check is refuted too
 -- (`Ex.siteGoals`, `Pat.parts`).
 proc bind_body(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (match a, q[5] {  --~ error: an index of `bind_body::pinned` may be out of range
+    require pinned: q = [] and (match a, q[5] {  --~ error: an index of `bind_body::pinned` may be out of range
         --~^ error: internal error: the solver's model for the definedness check of `bind_body::pinned` makes the check's claim true in Fren's semantics
         0, n => n > 1,
         _, _ => a > 1,
@@ -247,7 +247,7 @@ proc bind_body(q: Seq<Int>, a: Int) {
 }
 
 proc bind_guard(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (match a, q[5] {  --~ error: an index of `bind_guard::pinned` may be out of range
+    require pinned: q = [] and (match a, q[5] {  --~ error: an index of `bind_guard::pinned` may be out of range
         --~^ error: internal error: the solver's model for the definedness check of `bind_guard::pinned` makes the check's claim true in Fren's semantics
         0, n if n > 1 => true,
         _, _ => a > 1,
@@ -256,7 +256,7 @@ proc bind_guard(q: Seq<Int>, a: Int) {
 }
 
 proc bind_both(q: Seq<Int>, a: Int) {
-    assume pinned: q = [] and (match a, q[5] {  --~ error: an index of `bind_both::pinned` may be out of range
+    require pinned: q = [] and (match a, q[5] {  --~ error: an index of `bind_both::pinned` may be out of range
         --~^ error: internal error: the solver's model for the definedness check of `bind_both::pinned` makes the check's claim true in Fren's semantics
         --~^^ error: internal error: the solver's model for the definedness check of `bind_both::pinned` makes the check's claim true in Fren's semantics
         0, n if n > 1 => n < 9,

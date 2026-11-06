@@ -18,8 +18,9 @@ quantified, as a procedure's inputs are: they may have any type, unbounded
 ones included, and each is shown in a counterexample. Its block has the
 members that a claim needs, and no others:
 
-- `assume n: e` restricts the parameters, as a procedure's assumption
-  does;
+- `assume n: e` restricts the parameters, as a procedure's assumption,
+  written `require n: e`, does (see [The keyword of an
+  assumption](Procedures.md#the-keyword-of-an-assumption));
 - `call w := p(...)` relates the procedure `p`, whose variables it reads
   as `w.x`, as a procedure's call does;
 - `expect n: e` is a claim, and `cover n: e` a scenario that must be
@@ -29,7 +30,7 @@ members that a claim needs, and no others:
   block, as in a procedure.
 
 A global expectation constrains nothing, so it has no results, and no
-`exists` or `ensure` member, nor an `out` member, which defines a result;
+`exists`, `require` or `ensure` member, nor an `out` member, which defines a result;
 and nothing is determined by it, so no member is `det`. Each of these is
 an error (`F0417`). It is an item, named like a procedure, but it is not
 one: nothing can call it, and a call of it is an error, as a call of any
@@ -53,7 +54,7 @@ procedure's `out` that names no result (`F0444`). Its rule is
 [`proc_without_outputs`](../Lint/Pedantic/Procedures.md) reads too:
 
 ```fren
-pub enum BlockMember { Result, Exists, Let, Define, Assume, Ensure, Expect, Cover, Call, Refines, Use }
+pub enum BlockMember { Result, Exists, Let, Define, Assume, Require, Ensure, Expect, Cover, Call, Refines, Use }
 
 -- What is reported for a member: nothing, or the error `F0417`.
 pub enum MemberReport { NoReport, F0417 }
@@ -74,13 +75,13 @@ pub proc block_member(
     member: BlockMember,
     det?,                -- written with `det`
 ): (det accepted?, det report: MemberReport) {
-    use self::BlockMember::{Cover, Define, Ensure, Exists, Expect, Result}
+    use self::BlockMember::{Cover, Define, Ensure, Exists, Expect, Require, Result}
 
     ensure rule: accepted? iff block_accepts?(member, det?)
     ensure reported: report = (if accepted? then MemberReport::NoReport else MemberReport::F0417)
 
     expect claims: when member in {Expect, Cover} and not det?, accepted?
-    expect constrains_nothing: when member in {Result, Exists, Define, Ensure}, not accepted?
+    expect constrains_nothing: when member in {Result, Exists, Define, Require, Ensure}, not accepted?
     expect determines_nothing: when det?, not accepted?
     expect out_rejected: when member = Define, report = MemberReport::F0417
 }

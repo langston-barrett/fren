@@ -485,7 +485,7 @@ proc equal_rows(a: Int, q: Seq<Int>) {  --~ info: 3 checks of `equal_rows` hold 
 set_option fren.evidence "enumerated" in
 proc true_row(a: Int, q: Seq<Int>) {  --~ info: 5 checks of `true_row` hold for every behaviour up to size 3
     --~^ info: the definedness checks of `true_row` are not run by enumeration
-    assume p: table {  --~ warning: every row of this table has a value written the same
+    require p: table {  --~ warning: every row of this table has a value written the same
         q[2] = 0 => a > 1,
         true => a > 1,  --~ error: rows 1 and 2 of a table in `true_row::p` may both hold
     }

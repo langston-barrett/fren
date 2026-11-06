@@ -168,7 +168,7 @@ pub proc comparison_chain(
     n_descending: Nat,      -- operators `>` and `>=`
     n_other: Nat,           -- operators `=`, `!=`, `in`, `subset` and `is`
 ): (det accepted?) {
-    assume compares: n_ascending + n_descending + n_other >= 1
+    require compares: n_ascending + n_descending + n_other >= 1
 
     ensure rule: accepted? iff (n_ascending + n_descending + n_other = 1
         or (n_other = 0 and (n_ascending = 0 or n_descending = 0)))
@@ -271,7 +271,7 @@ pub proc mentions(
         Variable,
     }
 
-    assume leaves: when form is Literal | BoundName | Constant | Variable(_), sub_mentioned = {}
+    require leaves: when form is Literal | BoundName | Constant | Variable(_), sub_mentioned = {}
 
     out mentioned := mentioned_by(form, sub_mentioned)
     out mentions? := mentioned != {}    -- it mentions a variable or an uninterpreted function
@@ -644,7 +644,7 @@ pub proc application(
     args: Seq<Ty>,       -- the arguments' types
     k: Int,              -- any position, for `typed`
 ): (det accepted?) {
-    assume some_param: params != []
+    require some_param: params != []
 
     ensure rule: accepted? iff args = params
 
@@ -709,8 +709,8 @@ pub proc cardinality(
 ): (det value?) {
     use self::Cardinality::{AtMost, Exactly}
 
-    assume some_argument: n_args >= 1
-    assume counted: n_true <= n_args
+    require some_argument: n_args >= 1
+    require counted: n_true <= n_args
 
     ensure rule: value? iff match op {
         Exactly => n_true = 1,
@@ -757,7 +757,7 @@ pub proc cardinality_args(
     n_args: Nat,             -- how many arguments it has
     n_bool: Nat,             -- how many of them are `Bool`s
 ): (det accepted?) {
-    assume counted: n_bool <= n_args
+    require counted: n_bool <= n_args
 
     ensure rule: accepted? iff (n_args >= 1 and n_bool = n_args)
 
@@ -876,7 +876,7 @@ pub proc record_update(
     given: Set<FieldName>,           -- the names the update gives
     n_repeated: Nat,                 -- names given more than once, counting each repeat
 ): (det accepted?) {
-    assume some_given: given != {}
+    require some_given: given != {}
 
     ensure rule: accepted? iff (record? and given subset fields and n_repeated = 0)
 
@@ -1006,8 +1006,8 @@ pub proc newtype_operator(
     use self::ValueType::{IntTy, NatTy, RecordTy, StringTy}
 
     -- A newtype is a record, and only a newtype has an underlying type.
-    assume records: when newtype?(underlying), kind(underlying) = RecordTy
-    assume base: unless newtype?(underlying), unders.image({underlying}) = {}
+    require records: when newtype?(underlying), kind(underlying) = RecordTy
+    require base: unless newtype?(underlying), unders.image({underlying}) = {}
 
     ensure rule: accepted? iff match op {
         Equality => true,
@@ -1269,7 +1269,7 @@ pub proc guarded_match(
 ) {
     use self::ArmAt::{GuardFails, NoMatch, Taken}
 
-    assume aligned: bodies.len = arms.len
+    require aligned: bodies.len = arms.len
     out first := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
 
     ensure valued: when first >= 0, value = bodies[first]
@@ -1420,7 +1420,7 @@ pub proc test_scope(
     det visible?,            -- the name is in scope there
     det binds?,              -- the test may bind names
 ) {
-    assume within: test_at < operands
+    require within: test_at < operands
 
     ensure later: when site is Site::Operand(k), visible? iff test_at < k < operands
     ensure body: when site = Site::Body, visible? iff context is TestContext::WhenCondition | TestContext::IfCondition
@@ -1747,7 +1747,7 @@ pub proc table_match(
 ) {
     use self::ArmAt::Taken
 
-    assume aligned: values.len = arms.len
+    require aligned: values.len = arms.len
     out one := arms.index_of([Taken], 0)  -- the arm that holds, `-1` if none does
     out disjoint? := arms.index_of([Taken], one + 1) = -1  -- no two arms hold
 
@@ -1780,7 +1780,7 @@ pub proc table_eval(
 ) {
     use self::ArmAt::Taken
 
-    assume aligned: values.len = arms.len
+    require aligned: values.len = arms.len
     out first := arms.index_of([Taken], 0)  -- the first arm that holds, `-1` if none does
 
     ensure first_held: when first >= 0, value = values[first]
@@ -2226,7 +2226,7 @@ pub proc method_type(method: Method, receiver: ValueType, ordered?): (
     }
     use self::ValueType::{BoolTy, EnumTy, IntTy, NatTy, RecordTy, RelTy, SeqTy, SetTy, StringTy}
 
-    assume ordered_kinds: when ordered?, receiver in {StringTy, EnumTy, RecordTy}
+    require ordered_kinds: when ordered?, receiver in {StringTy, EnumTy, RecordTy}
 
     ensure receivers: accepted? iff match method {
         Card => receiver in {SetTy, RelTy},
@@ -2360,7 +2360,7 @@ pub proc order_plan(
     planned?,                         -- `t` has a plan
     plan: Plan,
 ) {
-    assume aligned: field_types.len = fields.len
+    require aligned: field_types.len = fields.len
 
     ensure only_ordered: when planned?, ordered_in?(kind(t), type_name(t), ordered_items)
     ensure kind_of_plan: when planned?, plan = plan_of(kind(t), newtype?(t))
@@ -2465,11 +2465,11 @@ pub proc operator_type(
     }
 
     -- There is one `Bool` type, one `Int` type and one `Nat` type.
-    assume primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
+    require primitive_unique: when kind(a) = kind(b) and kind(a) in {BoolTy, IntTy, NatTy, StringTy}, a = b
     -- A newtype is a record.
-    assume newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
-    assume records: when newtype?(under(a)), kind(under(a)) = RecordTy
-    assume base: unless newtype?(under(a)), unders.image({under(a)}) = {}
+    require newtype_record: (when newtype?(a), kind(a) = RecordTy) and (when newtype?(b), kind(b) = RecordTy)
+    require records: when newtype?(under(a)), kind(under(a)) = RecordTy
+    require base: unless newtype?(under(a)), unders.image({under(a)}) = {}
 
     -- Whether `a` is ordered, and whether a newtype `a` has `+` or `-`.
     call order := ordered_type(a, false, ordered_items)

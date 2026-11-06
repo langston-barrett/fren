@@ -7,9 +7,9 @@ import FrenCore.Diagnostic
 
 A function may be written with a named result and a block of members, as a
 procedure is (`Reqs/Lang/Items#function-blocks`): `fn f(x: Int): (r: Int) {
-assume ...; let ...; out r := e; ensure ... }`. Both front ends lower it to
+require ...; let ...; out r := e; ensure ... }`. Both front ends lower it to
 a function with a body and a contract: its `out` member's expression is the
-body, its `assume`s and `ensure`s the contract, and its result and `let`s
+body, its `require`s and `ensure`s the contract, and its result and `let`s
 local definitions, `r := f(x)` and `y := e`, of each expression that
 mentions them.
 -/
@@ -40,7 +40,7 @@ inductive FnVerdict where
   deriving Inhabited, DecidableEq, Repr
 
 /-- Whether a function's block takes the member `m`, written `det` if
-`det` (`lang::fn_member`): `use`, `assume`, `let`, `out` and `ensure`,
+`det` (`lang::fn_member`): `use`, `require`, `let`, `out` and `ensure`,
 none of them `det`, since every value of a function is determined; not yet
 claims. -/
 def fnMemberVerdict (m : FnMember) (det : Bool) : FnVerdict :=
@@ -69,7 +69,7 @@ its kind, such as "`exists`". -/
 def fnMemberMsg (what : String) : Msg :=
   { code? := some "F0442", headline := s!"a function's block takes no {what}"
     label? := some "not a function's member"
-    notes := #["note: a function's value is determined by its arguments: its block takes `use`, `assume`, `let`, \
+    notes := #["note: a function's value is determined by its arguments: its block takes `use`, `require`, `let`, \
       `out` and `ensure`, and no `exists`, `call` or `det`"] }
 
 /-- An `expect` or a `cover` in a function's block (`F0443`): `kw` is its

@@ -1,7 +1,7 @@
 # The `fren` command
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=obligations|smt] [--timings] [--tests N]
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|obligations|smt] [--timings] [--tests N]
     [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
@@ -40,6 +40,7 @@ installation. It is built by `lake build fren`.
 | `--resource-limit N` | `check` and `mutate`: limit on the solver's work for each query, in cvc5's resource units (default 0, which means none); see [Limits](#limits) |
 | `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable procedure, a whole number or `all` (default 1) |
 | `--jobs N` | `check` and `quickcheck`: how many procedures to check or test at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
+| `--dump=resolved` | `check`: write the resolved, typed surface to standard output; see [Resolved surface](#resolved-surface) |
 | `--dump=obligations` | `check`: write what each check asks to standard output; see [Obligations](#obligations) |
 | `--dump=smt`, `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--timings` | `check`: report how long each procedure's checks took; see [Timings](#timings) |
@@ -126,7 +127,8 @@ Diagnostics, the summary of the checks, and the [timings](#timings) of
 output holds only what was asked for: the evidence report of `fren trace`,
 the evaluated behaviour of `fren eval`, the kill rates and the list of
 mutants of `fren mutate`, the diffs of `fren fmt --check` and `fren fix --check`, the [solver queries](#solver-queries) of `fren check --dump-smt` and the
-[obligations](#obligations) of `fren check --dump=obligations`, and the
+[obligations](#obligations) of `fren check --dump=obligations`, the
+[resolved surface](#resolved-surface) of `fren check --dump=resolved`, and the
 text of `--explain`, `--help` and `--version`.
 
 Each [diagnostic](View.md) is printed with a header
@@ -162,6 +164,51 @@ use view::Severity
 use view::Severity::{Error, Info, Silent, Warning}
 ```
 
+## Resolved surface
+
+With `--dump=resolved`, `fren check` writes the resolved, typed surface to
+standard output, before checking it. The dump retains generic declarations,
+module boundaries, calls and surface expressions, before generics and modules
+are expanded into verification formulas. Imported item names and enum variants
+have their resolved paths; declared types and value expressions have their
+types, including inferred types. Type parameters remain parameters, aliases
+retain their surface declarations, and newtypes retain their nominal types.
+The prelude's declarations, generated instances and hidden checks are omitted.
+Subset predicates' generated names are omitted too; their written binders
+and invariant expressions retain their annotations.
+A shorthand subset's unwritten binder does not turn its base type into a
+local reference or value expression.
+
+The dump represents the surface as each file's source text together with
+annotations over it. Each `(file "path" ...)` contains `(surface "text")`
+and annotations `(KIND START STOP "VALUE")`. `START` and `STOP` are half-open,
+zero-based character offsets into that surface, after a Markdown file's prose
+is blanked. `name` spans an item reference and gives its resolved path.
+`local` spans a local name and any fields read from it, giving that dotted
+path in its surface scope. At a declared name, `type` gives its declared type,
+or a function's result type; at a written type, it gives the resolved type.
+`expr` spans a value expression and gives its type. `arguments` spans a function
+application and gives its inferred type arguments, without expanding its
+generic definition. Paths and types from the prelude are qualified with
+`prelude::` to distinguish them from a user's
+items of the same name. Strings use JSON escaping. These annotations describe
+the source sites, rather than the formulas or symbols that instantiation and
+lowering generate.
+
+Files appear in command-line order, and annotations in increasing order of
+their start, then decreasing order of their stop, then by kind. Repeated
+elaboration of a site leaves one annotation per kind, with the last value;
+an enclosing expression records its type after its parts. The same input in
+one build produces the same dump, including with different `--jobs` settings.
+There is no parser or format stability promise.
+
+Static errors suppress the dump. Otherwise checking, diagnostics and exit
+status are as without the flag, including when a check fails. The flag is
+accepted only by `check`, can be repeated, and can be combined with the other
+dump flags: the resolved surface precedes their output. Diagnostics and the
+summary stay on standard error. The Lean-hosted front end has no resolved
+dump option.
+
 ## Solver queries
 
 With `--dump-smt`, or `--dump=smt`, `fren check` writes each query it gives the solver to
@@ -186,10 +233,11 @@ Fren name contains `#`. A second
 copy of a variable, as used by the [determinism](Check.md#determinism)
 check, is `|y#'|`. A script declares every variable of its
 procedure, but of the spec's abstract types, enumerations, records and
-functions only those that its query mentions, directly or through
-another declaration: the others cannot change its answer, and declaring
-them all is most of the work of a small query. A [newtype](Lang/Items.md#newtypes)
-is erased: it is declared as its underlying type, `Ms(e)` is written as
+functions only those that its query or model observations mention,
+directly or through another declaration: the others cannot change its
+answer, and declaring them all is most of the work of a small query. A
+[newtype](Lang/Items.md#newtypes) is erased: it is declared as its
+underlying type, `Ms(e)` is written as
 `e`, `x.0` as `x`, and its operators as its underlying type's. A `Nat` is declared as an `Int`, and what
 [natural numbers](Lang/Procedures.md#natural-numbers) bring is asserted
 before the query's hypotheses, followed by the comment `; nat`.
@@ -320,7 +368,7 @@ pub proc logic(
     use self::Logic::{All, HigherOrder, Quantified, QuantifierFree}
     use self::Theory::{Sequences, Sets, Strings}
 
-    assume relations_are_sets: when projection?, Sets in theories
+    require relations_are_sets: when projection?, Sets in theories
 
     ensure base: when theories = {},
         logic = (if kind = Realizability or quantified? then Quantified else QuantifierFree)
@@ -496,8 +544,8 @@ pub proc query_symbols(a: QuerySymbol, b: QuerySymbol): (
     det same?,                   -- `a` and `b` have one symbol
 ) {
     -- Each is of a name, which never contains `#`, and has its number in decimal.
-    assume names: not base(a).contains?("#") and not base(b).contains?("#")
-    assume numbers: decimal?(a) and decimal?(b)
+    require names: not base(a).contains?("#") and not base(b).contains?("#")
+    require numbers: decimal?(a) and decimal?(b)
 
     out symbol_a := text(a)
     out symbol_b := text(b)
@@ -577,7 +625,7 @@ pub proc goal_introduction(
     i: Int,                      -- a position among them
 ): (det introduced?) {           -- the head at `i` is introduced
     -- At most `Fren.Core.goalIntroductionLimit` heads; a goal with more, which no spec writes, keeps the rest.
-    assume within_limit: heads.len <= 1024
+    require within_limit: heads.len <= 1024
 
     ensure rule: introduced? iff introducible_through?(heads, i)
 }
@@ -929,7 +977,7 @@ pub proc query_cache(
 ): (det hit?) {
     use self::Answer::{Sat, Unknown}
 
-    assume kept: when found?, answer != Unknown
+    require kept: when found?, answer != Unknown
     ensure rule: hit? iff (found? and stored = asked and not (want_model? and answer = Sat))
 
     expect exact: when hit?, stored.script = asked.script and stored.solver = asked.solver
@@ -955,7 +1003,7 @@ pub proc query_entry(
 ): (det text?, det read: Option<Entry>) {
     use self::Answer::{SatWithModel, Unknown}
 
-    assume model_only_kept: when written.answer != SatWithModel, written.model = []
+    require model_only_kept: when written.answer != SatWithModel, written.model = []
     ensure kept: text? iff (written.answer != Unknown
         and (forall (b: Binding), when b in written.model, all_text?(b.name)))
     out read := if text? then Option::Some(written) else Option::None
@@ -974,7 +1022,7 @@ pub proc contradicts(
 ): (det contradiction?) {
     use self::Answer::{SatWithModel, Unknown, Unsat}
 
-    assume both_kept: fresh != Unknown and kept != Unknown
+    require both_kept: fresh != Unknown and kept != Unknown
     ensure rule: contradiction? iff ((fresh = Unsat) != (kept = Unsat)
         or (fresh = SatWithModel and kept = SatWithModel and not same_model?))
 

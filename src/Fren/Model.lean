@@ -31,6 +31,13 @@ open Lean
 
 namespace Fren
 
+/-- The nonempty `xs` joined by `op` as a balanced tree. Quantifier
+expansions and recursive facts' guard paths then have connective depth
+logarithmic in their number, for the solver's recursive preprocessing. -/
+partial def balanced (op : Expr → Expr → Expr) (xs : Array Expr) : Expr :=
+  if xs.size ≤ 1 then xs[0]!
+  else op (balanced op (xs.extract 0 (xs.size / 2))) (balanced op (xs.extract (xs.size / 2)))
+
 register_option fren.enumeration.size : Nat := {
   defValue := 3
   descr := "the size bound of enumeration: the checks set to `\"enumerated\"` enumerate every behaviour whose values have at most this size"
@@ -394,7 +401,8 @@ structure DefinedInfo where
   recursive : Bool := false
   /-- For a structural recursion, its body as the solver reads it: a
   closed lambda over its parameters, with its `match`es as `if`s and its
-  applications of itself of `solver?`, used only for one-step ground equations. -/
+  applications of itself of `solver?`, used only for ground equations
+  within the query's unfolding bound (`lang::recursive_facts`). -/
   recBody? : Option Expr := none
   decreasing? : Option Nat := none
   fact? : Option Expr := none
@@ -592,7 +600,7 @@ structure CompInfo where
   /-- For a global expectation, the functions generated for induction on
   its parameters, by its claims (`Reqs/Lang/Recursion#induction`): each
   claim's name, with the paths of its functions, one for each candidate,
-  in order, whose bodies are in `State.bodies`. -/
+  in order, which are in `State.inductionFns`. -/
   inductions : Array (Name × Array Name) := #[]
   /-- Internal checks generated for a declared subset alias. -/
   subset? : Option Name := none
@@ -676,6 +684,9 @@ inductive Entry where
   this evidence, which the checks of the items that call it rest on, in this
   module and in those that import it (`Reqs/Evidence`). -/
   | realizabilityEvidence (path : Name) (e : Core.ExternalPremise)
+  /-- The function at `path`, just elaborated, was generated for induction
+  (`State.inductionFns`). -/
+  | inductionFn (path : Name)
   deriving Inhabited
 
 /-- Everything declared so far, across all imported Lean files. -/
@@ -725,6 +736,11 @@ structure State where
   /-- The evidence of each procedure's realizability that a run of checks,
   in this module or one it imports, has reported (`Reqs/Evidence`). -/
   realizability : NameMap Core.ExternalPremise := {}
+  /-- The functions generated for induction (`CompInfo.inductions`), by
+  path, each as `defined`, `contracts` and `bodies` would have it: apart
+  from those, which every check reads, and added to them only for the
+  check of its own postcondition (`State.withInductionFn`). -/
+  inductionFns : NameMap (DefinedInfo × Option ContractInfo × CompInfo) := {}
   deriving Inhabited
 
 def State.add (s : State) : Entry → State
@@ -754,6 +770,21 @@ def State.add (s : State) : Entry → State
   | .claimInfo c =>
     if c.tested then { s with tested := s.tested.insert c.comp (s.tested.getD c.comp #[] ++ c.texts) }
     else { s with trusted := s.trusted.insert c.comp (s.trusted.getD c.comp #[] ++ c.texts) }
+  | .inductionFn p => match s.defined.get? p, s.bodies.get? p with
+    | some d, some b =>
+      { s with defined := s.defined.erase p, contracts := s.contracts.erase p, bodies := s.bodies.erase p
+               inductionFns := s.inductionFns.insert p (d, s.contracts.get? p, b) }
+    | _, _ => s
+
+/-- `s` with the function generated for induction at `p` among the defined
+functions, the contracts and the bodies, as it was elaborated, for the check
+of its postcondition (`State.inductionFns`). -/
+def State.withInductionFn (s : State) (p : Name) : State :=
+  match s.inductionFns.get? p with
+  | some (d, k?, b) =>
+    { s with defined := s.defined.insert p d, bodies := s.bodies.insert p b
+             contracts := match k? with | some k => s.contracts.insert p k | none => s.contracts }
+  | none => s
 
 /-- The type parameters of the generic function at `path`, defined or not. -/
 def State.typeParamsOf (s : State) (path : Name) : Array Name :=
@@ -816,6 +847,12 @@ def State.shapeOf (s : State) (path : Name) : Option Core.DataShape :=
 definedness goal: `p`, marked with the type, as written, so that the check
 reports it (`Reqs/Check#subset-types`). -/
 def typeObligation (_ty : String) (p : Prop) : Prop := p
+
+/-- A relation's type constraint, kept as a unit while enumerating
+its actual pairs. The solver and proofs see the unchanged proposition. -/
+def relationObligation (p : Prop) : Prop := p
+
+@[simp, fren_spec] theorem relationObligation_eq (p : Prop) : relationObligation p = p := rfl
 
 /-- A distributed predicate leaf's obligation cannot assume that leaf. -/
 def leafObligation (p : Prop) : Prop := p

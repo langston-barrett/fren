@@ -1,7 +1,7 @@
 -- Instances: what they contribute to checks, and the `instance` check.
 
 proc counter(n: Int): (next: Int) {
-    assume nonneg: n >= 0
+    require nonneg: n >= 0
     exists scratch: Int
 
     ensure inc: next = n + 1
@@ -10,7 +10,7 @@ proc counter(n: Int): (next: Int) {
 
 -- `b`'s assumption follows from `a`'s guarantees.
 proc twice(n: Int): (m: Int) {
-    assume nonneg: n >= 0  --~ warning: `n` is never negative
+    require nonneg: n >= 0  --~ warning: `n` is never negative
 
     call a := counter(n)
     call b := counter(a.next)
@@ -38,7 +38,7 @@ proc hopes(): (x: Int) {   --~ error: no outputs satisfy `lucky`
 }
 
 proc observes(n: Int) {
-    assume nonneg: n >= 0  --~ warning: `n` is never negative
+    require nonneg: n >= 0  --~ warning: `n` is never negative
 
     call c := counter(n)
 

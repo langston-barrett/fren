@@ -31,7 +31,7 @@ error: `run_checks_test::wrong` is not realizable
 note: for the input
           x = 0
       no outputs satisfy `r` and `s`
-help: weaken one of them, or add an `assume` that rules this input out
+help: weaken one of them, or add a `require` that rules this input out
 ---
 info: fren: 0 passed, 1 failed, 0 inconclusive, 0 redundant
 -/

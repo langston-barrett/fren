@@ -37,7 +37,7 @@ note: for the input
           attempt = 4
           retry_after = Seconds(31)
       no outputs satisfy `transient`, `honor_server` and `latency_budget`
-help: weaken one of them, or add an `assume` that rules this input out
+help: weaken one of them, or add a `require` that rules this input out
 ---
 info: fren: 6 passed, 1 failed, 0 inconclusive, 0 redundant
 -/
@@ -55,7 +55,7 @@ note: for the input
           attempt = 4
           retry_after = Seconds(31)
       no outputs satisfy `transient`, `honor_server` and `latency_budget`
-help: weaken one of them, or add an `assume` that rules this input out
+help: weaken one of them, or add a `require` that rules this input out
 ---
 info: fren: 6 passed, 1 failed, 0 inconclusive, 0 redundant
 -/

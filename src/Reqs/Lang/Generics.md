@@ -67,6 +67,8 @@ opens a newtype's types or a function's parameters, not type parameters.
 `lang::type_bracket` states what the bracket after the name does:
 
 ```fren
+pub mod lang
+
 -- The punctuator right after a type's name, or after a generic
 -- declaration's name.
 pub enum Bracket { Angle, Paren, Other }
@@ -129,8 +131,9 @@ pub proc ordered_generic(
 ## Type parameters
 
 A type parameter is a type only within its declaration, as the type of a
-payload or field, or as an argument of an instance there, as in
-`Cons(T, List<T>)` or `Some(Pair<A, B>)`. The names of the type
+payload or field, as an argument of an instance there, or as an element
+type of a set, sequence or relation, as in `Cons(T, List<T>)`,
+`Some(Pair<A, B>)` or `Many(Set<T>)`. The names of the type
 parameters of a declaration are [distinct](Items.md#distinct-names). A type parameter cannot have the name of a built-in type, such
 as `Int` or `Set`, or of an item that a path of one segment names where
 the declaration is, so that within the declaration, a name always means
@@ -140,14 +143,21 @@ right: a generic type's parametric datatype declares its parameters with
 would capture the sort `Int`, so that a payload of type `Int` would mean
 the parameter instead.
 
-For now, a generic type's type parameter is not an element type, as in
-`Set<T>`, `Seq<T>` or `Rel<T, Int>`, and a generic enumeration's payload
-of its own type gives it its own parameters, in order, as `List<T>` does
-within `List<T>`, rather than other arguments, as in `enum Nested<T> {
-Leaf(T), Node(Nested<Pair<T, T>>) }` (`F0387`). Each of these needs more
-of the solver or of Lean than an enumeration's parameters being types. A
-[generic function's](GenericFunctions.md#type-parameters) type parameter
-may be an element type (`lang::element_parameter`).
+A type parameter may be an element type at any depth within a payload or
+field: `Set<T>`, `Seq<Set<T>>`, `Rel<T, Seq<U>>` and
+`Option<Seq<T>>` are accepted. At an instance, the type arguments are
+substituted inside these types just as inside any other payload or field
+(`lang::instantiation`). Both front ends use the same check,
+`lang::element_parameter`, for a datatype's and a function's parameters.
+This does not make the declaration's own type an accepted element type:
+a recursive payload within a collection remains subject to the rules of
+[fields and payloads](Items.md#fields-and-payloads).
+
+A generic enumeration's payload of its own type still gives it its own
+parameters, in order, as `List<T>` does within `List<T>`, rather than
+other arguments, as in `enum Nested<T> { Leaf(T),
+Node(Nested<Pair<T, T>>) }` (`F0387`). A recursive occurrence within
+another instance, as in `Option<List<T>>`, is also refused for now.
 `lang::type_parameter_place` states where a type parameter is accepted,
 from where it is written:
 
@@ -164,9 +174,9 @@ pub enum ParamPlace { Whole, Argument, OwnParameter, OwnOther, Element }
 pub proc type_parameter_place(place: ParamPlace): (det accepted?) {
     use self::ParamPlace::{Argument, Element, OwnOther, OwnParameter, Whole}
 
-    ensure rule: accepted? iff place is Whole | Argument | OwnParameter
+    ensure rule: accepted? iff place is Whole | Argument | OwnParameter | Element
 
-    expect not_elements: when place = Element, not accepted?
+    expect elements: when place = Element, accepted?
     expect recursion_uniform: when place = OwnOther, not accepted?
 }
 ```
@@ -397,7 +407,7 @@ pub proc instantiation(
         (if param_index(ty) < arguments.len then arguments[param_index(ty)] else ty)
         else with_parts(ty, instantiated)
 
-    assume each_part: instantiated.len = parts(ty).len
+    require each_part: instantiated.len = parts(ty).len
 }
 ```
 
@@ -506,7 +516,7 @@ pub proc type_argument_inference(
     out known? := expected? or (giver >= 0 and matched?)
     out argument := if expected? then expected_arg else widened(matched)
 
-    assume as_many: synthesizes.len = declared.len
+    require as_many: synthesizes.len = declared.len
 
     expect from_expected: when expected?, known? and argument = expected_arg
     expect no_giver: when not expected? and giver < 0, not known?
@@ -667,8 +677,8 @@ pub proc construction_order(
         ++ (if params >= 3 then [expected? or Gives(P2) in values] else [])
     out unknown? := false in given
 
-    assume few: values.len <= 3 and params <= 3
-    assume own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
+    require few: values.len <= 3 and params <= 3
+    require own_parameters: forall (a: Arg), when Gives(a) in values or Waits(a) in values, within?(a, params)
 
     expect each_once: order.len = values.len
     expect expected_in_order: when expected? and values.len = 3, order = [0, 1, 2] and not unknown?
@@ -793,7 +803,7 @@ pub proc instance_values(
     out pair_finite? := a >= 0 and b >= 0
     out list := -1
 
-    assume counts: a >= -1 and b >= -1
+    require counts: a >= -1 and b >= -1
 
     expect option_finite: option >= 0 iff a >= 0
     expect option_bool: when a = 2, option = 3
@@ -807,10 +817,12 @@ its declaration for each: each front end gives the solver one SMT-LIB 2.6
 *parametric datatype* for it, as in
 `(declare-datatypes ((|List| 1)) ((par (|T|) ((List~Nil) (List~Cons (|List::Cons::0| |T|) (|List::Cons::1| (|List| |T|)))))))`,
 and each instance is a sort application, as `(|List| Int)`. Both front
-ends give the same declarations, up to the names of their symbols, which
-each front end writes its own way: one parametric datatype for each
-generic type, with the same constructors and selectors, and the same sort
-applications, so that they cannot differ in what the solver decides. The Lean-hosted front end declares a generic type as a
+ends use the same parametric datatype declarations, up to the names of
+their symbols, which each front end writes its own way: one declaration
+for each generic type, with the same constructors and selectors, and
+instances written as sort applications. They may also introduce sort
+aliases or unconstrained collection constants, which assert nothing about
+the spec's values. The Lean-hosted front end declares a generic type as a
 Lean inductive type with a parameter of type `Type` for each type
 parameter (see [Generated Lean](../Generated.md#generic-types)), which
 lean-smt gives the solver as a parametric datatype.
@@ -855,3 +867,13 @@ pub proc smt_encoding(
         "(declare-datatypes ((|List| 1)) ((par (|T|) ((List~Nil) (List~Cons (|List::Cons::0| |T|) (|List::Cons::1| (|List| |T|)))))))\n"
 }
 ```
+
+The concrete tuple sorts of an instance's sets and relations are created
+explicitly, through all of its payloads and fields, including fields the
+query never reads and collections nested within another instance. This
+applies to instances in function signatures and quantified types as well
+as procedure variables. A parametric declaration alone does not create
+these concrete tuple sorts. The CLI introduces sort aliases after their
+dependencies. The Lean-hosted front end supplies unconstrained set and
+relation locals so that lean-smt creates their tuple sorts. These extra
+declarations add no assertion about the spec's values.

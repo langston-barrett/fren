@@ -11,7 +11,7 @@ fn apply(f: fn(Int) -> Int, x: Int): Int := f(x)
 fn twice(f: fn(Int) -> Int, x: Int): Int := f(f(x))
 fn never(f: fn(Int) -> Int, x: Int): Int := x  --~ warning: unused parameter `f`
 fn pos(n: Int): (r: Int) {
-    assume p: n > 0
+    require p: n > 0
     out r := n
 }
 

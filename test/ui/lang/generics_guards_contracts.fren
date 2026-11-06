@@ -17,7 +17,7 @@ fn unwrap_or(o: Option<Int>, fallback: Int): (r: Int) {
 
 -- Defined only on a `Some`.
 fn get(o: Option<Int>): (r: Int) {
-    assume present: o != Option::None
+    require present: o != Option::None
     out r := match o { Option::Some(n) => n, Option::None => 0 }
 }
 

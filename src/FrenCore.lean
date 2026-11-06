@@ -9,6 +9,7 @@ import FrenCore.Evidence
 import FrenCore.FnBlocks
 import FrenCore.Generics
 import FrenCore.Goals
+import FrenCore.GroundMatching
 import FrenCore.Induction
 import FrenCore.Lexical
 import FrenCore.Lint
@@ -30,6 +31,7 @@ import FrenCore.SubsetTypes
 import FrenCore.Symbols
 import FrenCore.Syntax
 import FrenCore.Table
+import FrenCore.Theories
 import FrenCore.Trace
 import FrenCore.Traits
 import FrenCore.Ty

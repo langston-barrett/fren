@@ -46,8 +46,16 @@ proc records_not(t: T, u: T): (o1: T, o2: T) {
     ensure r2: o2 = { t with a := u.a }
 }
 
+-- The same on an instance of a generic record.
+struct G<V> { a: V, b: Int, c: Int }
+
+proc generic_records(g: G<Bool>, n: Int, b?): (o1: G<Bool>, o2: G<Bool>) {
+    ensure n1: o1 = { g with a := b?, b := n, c := n }         --~ warning: this update gives every field of `G`
+    ensure m1: o2 = G { a := g.a, b := n + 1, c := g.c }       --~ warning: write `{ g with b := n + 1 }`
+}
+
 proc covers(x: Int): (y: Int, z?) {
-    assume positive: x > 0
+    require positive: x > 0
 
     ensure r: y = x + 1
     ensure s: z? iff y > 5

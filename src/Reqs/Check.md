@@ -549,9 +549,9 @@ pub proc forcing(
     det variant_forced?,          -- `S` forces the output to a variant under the premises
     det variant_found?,           -- Fren finds that `S` forces it to `model`'s variant
 ) {
-    assume modelled: model in values
-    assume decided: pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
-    assume variant_decided:
+    require modelled: model in values
+    require decided: pin_q = (if (forall (v: Choice), when v in values, v = model) then Unsat else Sat)
+    require variant_decided:
         variant_q = (if (forall (v: Choice), when v in values, variant_of(v) = variant_of(model)) then Unsat else Sat)
 
     ensure meaning: forced? iff (forall (a b: Choice), when a in values and b in values, a = b)
@@ -722,11 +722,11 @@ pub proc clash_notes(
     -- What the queries find of the guarantees of the core: one value and
     -- one variant, at most, for each output, and nothing of the empty rest
     -- of a core of one.
-    assume of_core: forall (f: VariantForcing), when f in alone_variants or f in rest_variants, f.guarantee in core
-    assume one_value: single_valued?(alone) and single_valued?(rest)
-    assume one_variant: variants_of?(alone, alone_variants) and variants_of?(rest, rest_variants)
-    assume empty_rest: forall (f: VariantForcing), when f in rest_variants, core != {f.guarantee}
-    assume earlier_clashes: forall (h: Guarantee),
+    require of_core: forall (f: VariantForcing), when f in alone_variants or f in rest_variants, f.guarantee in core
+    require one_value: single_valued?(alone) and single_valued?(rest)
+    require one_variant: variants_of?(alone, alone_variants) and variants_of?(rest, rest_variants)
+    require empty_rest: forall (f: VariantForcing), when f in rest_variants, core != {f.guarantee}
+    require earlier_clashes: forall (h: Guarantee),
         h in earlier iff (h in core and h < g
         and (exists (o: Output), clashes?(alone, alone_variants, rest, rest_variants, h, o)))
     -- The note gives what `g` forces of `output` as a whole value, not a
@@ -758,6 +758,23 @@ pub proc clash_notes(
 }
 ```
 
+
+### Predicate check locations
+
+The default diagnostic site for an independent predicate member is that
+member's definition. A predicate kept as a whole check uses the written
+check's label, including below leading `when`, `unless`, `let` and `where`
+wrappers. Cover goals keep the whole predicate. An empty member path
+denotes a whole predicate; a nonempty path denotes a split member.
+`check::predicate_check_site` decides which source is used:
+
+```fren
+pub proc predicate_check_site(member_path: String, cover?): (at_member?) {
+    ensure source: at_member? iff (member_path != "" and not cover?)
+    expect whole: when member_path = "", not at_member?
+    expect cover_goal: when cover?, not at_member?
+}
+```
 
 ### Conditional branch cores
 
@@ -836,9 +853,9 @@ pub proc general_branch_explanation(
     context_q: Outcome,
     exclusion_q: Outcome,
 ): (det consistent?, det excluded?, det reported?, det locally_excluded?) {
-    assume context_sound: when context_q != Unknown,
+    require context_sound: when context_q != Unknown,
         (context_q = Sat iff base inter others != {})
-    assume exclusion_sound: when exclusion_q != Unknown,
+    require exclusion_sound: when exclusion_q != Unknown,
         (exclusion_q = Unsat iff base inter others inter alternative = {})
     out reported? := context_q = Sat and exclusion_q = Unsat
     out consistent? := base inter others != {}
@@ -861,7 +878,7 @@ pub proc retry_alternatives_general(worlds: Set<DiagnosticWorld>): (
     det false_possible?,
     det bad_input?,
 ) {
-    assume all_worlds: forall (w: DiagnosticWorld), w in worlds
+    require all_worlds: forall (w: DiagnosticWorld), w in worlds
     out true_possible? := exists (w: DiagnosticWorld), w in worlds and w.retry? and w.eligible?
         and (when w.retry?, w.within_budget?)
     out false_possible? :=
@@ -1416,7 +1433,7 @@ pub proc disjoint_question(
     use self::ArmAt::Taken
     use self::Indexes::Defined
 
-    assume pair: 0 <= i < j < arms.len and defined.len = arms.len
+    require pair: 0 <= i < j < arms.len and defined.len = arms.len
 
     ensure rule: goal? iff not (defined[i] = Defined and defined[j] = Defined and arms[i] = Taken and arms[j] = Taken)
 
@@ -1550,7 +1567,7 @@ pub proc split_questions(
 ) {
     use self::ArmAt::Taken
 
-    assume an_arm: 0 <= j < arms.len
+    require an_arm: 0 <= j < arms.len
     out first := arms.index_of([Taken], 0)  -- the position of the arm taken, `-1` if none is
 
     ensure reach: reach_goal? iff first != j
@@ -1896,6 +1913,24 @@ or result, that of its checks, which takes precedence:
 | a global expectation | all of its checks, as before a procedure |
 | a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the arguments of the abstract procedure's calls |
 
+A check generated from a named predicate clause inherits the evidence of
+its written constraint, including a member's override, for every evidence
+value. A leaf is selected by its own name or by its written owner's name.
+`check::expanded_evidence` computes that selection:
+
+```fren
+pub type EvidenceSubject
+
+pub proc expanded_evidence(
+    selected: Set<EvidenceSubject>,
+    leaf: EvidenceSubject,
+    owner: EvidenceSubject,
+    has_owner?,
+): (det included?) {
+    ensure selection: included? iff leaf in selected or (has_owner? and owner in selected)
+}
+```
+
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
 evidence of every later procedure, global expectation and
 [refinement](Lang/Refinement.md) in the file, and
@@ -2067,7 +2102,7 @@ pub proc by_evidence(
 ): (det method: Method) {
     use self::Kind::{Definedness, Redundancy, Vacuity}
     use self::Method::{Enumeration, EnumerationThenTesting, Skipped, Solver, Testing}
-    assume obligation_definedness: when obligation?, kind = Definedness
+    require obligation_definedness: when obligation?, kind = Definedness
 
     ensure rule: method = table {
         obligation? => Solver,
@@ -2199,8 +2234,8 @@ pub proc value_size(
     largest: Nat,        -- the largest size of its payload's, fields', characters', elements' or members' values, 0 if it has none
 ): (det size: Nat) {
     use self::Sized::{AbstractValue, Character, Collection, Integer, Natural, Pair, Record, WithPayload}
-    assume natural: when kind in {Natural, AbstractValue, Collection}, value >= 0
-    assume code_point: when kind = Character, 0 <= value < 1114112
+    require natural: when kind in {Natural, AbstractValue, Collection}, value >= 0
+    require code_point: when kind = Character, 0 <= value < 1114112
 
     ensure rule: size = match kind {
         Integer => value.abs,

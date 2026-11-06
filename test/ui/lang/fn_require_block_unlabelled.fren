@@ -1,0 +1,13 @@
+-- A function's precondition written without a label, as a Boolean block,
+-- is a precondition of each of its leaves in both front ends: an
+-- application that may not meet one is reported (F0629), with the leaf's
+-- name.
+pub fn f(x: Int): (r: Int) {
+    require and { p: x > 0 }
+    out r := x + 1
+}
+
+proc q(): (y: Int) {
+    ensure e: y = f(0)  --~ error: the precondition `p` of `f` may not hold at this application in `q::e`
+}
+--@ exit: 1

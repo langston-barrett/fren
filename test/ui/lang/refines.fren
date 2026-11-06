@@ -31,7 +31,7 @@ expect definition_is_claimed(x: Int) {
 
 -- The specification's domain is not silently introduced as a hypothesis.
 proc positive_spec(x: Int): (answer: Int) {
-    assume positive: x > 0
+    require positive: x > 0
     ensure positive_result: answer > 0
     ensure relation: answer != x
 }

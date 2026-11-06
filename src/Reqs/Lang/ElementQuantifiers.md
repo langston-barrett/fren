@@ -14,9 +14,9 @@ q, P` holds if `P` holds of every element of `q`, and in Lean it is `∀ x, x �
 q → P`. What sets it apart is that both front ends expand it, at each
 query, into instances at finitely many positions of `q`, so that the
 query stays quantifier-free, as [rule 1](Decidability.md#what-is-promised)
-promises. There is no syntax of its own: the user's decision on #234 is
-that Fren has no quantifier constructs for collections, so this is the
-guarded `forall` of #259, recognized.
+promises. There is no syntax of its own: Fren has no quantifier
+constructs for collections (#234), so this is the guarded `forall`
+of #259, recognized.
 
 ## Why it is decidable
 
@@ -221,7 +221,7 @@ pub proc index_set(
 ): (
     det index_set?,                -- `terms` is the index set of the others
 ) {
-    assume neighbours: before.len = positions.len and after.len = positions.len
+    require neighbours: before.len = positions.len and after.len = positions.len
 
     ensure rule: index_set? iff (terms != [] and terms[0] = zero
         and (forall (t: IndexTerm), when t in lasts, t in terms)
@@ -276,7 +276,7 @@ pub proc element_projection(
 ): (
     det projection?,            -- `projected` and `updated` are made so
 ) {
-    assume zero: 0 in ix
+    require zero: 0 in ix
 
     ensure rule: projection? iff (projected.len = q.len
         and (forall (t: Int), when t in ix and 0 <= t < q.len, projected[t] = q[t])

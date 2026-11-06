@@ -16,14 +16,14 @@ set_option fren.lint.dead_code "allow"
 fn ignore<U>(x: U): Int := 0
 
 fn at_parameter<T>(x: T, a: Int): (r: Int) {
-    assume pinned: ignore(x) = a + 1
+    require pinned: ignore(x) = a + 1
     out r := a
     ensure positive: at_parameter(x, a) > 0  --~ error: the postcondition `positive` of `at_parameter` does not hold
 }
 
 -- At `Int`, both front ends catch it.
 fn at_int(x: Int, a: Int): (r: Int) {
-    assume pinned: ignore(x) = a + 1
+    require pinned: ignore(x) = a + 1
     out r := a
     ensure positive: at_int(x, a) > 0  --~ error: internal error: the solver's model for the postcondition check of `at_int::positive` makes its hypothesis `at_int.pinned` false in Fren's semantics
 }

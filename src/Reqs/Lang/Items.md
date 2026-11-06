@@ -26,9 +26,9 @@ pub proc declared_before(
     k_used: Nat,                 -- the position of `used` in `items`
     k_user: Nat,                 -- the position of `user`
 ): (det accepted?) {
-    assume positions: k_used < items.len and items[k_used] = used
+    require positions: k_used < items.len and items[k_used] = used
         and k_user < items.len and items[k_user] = user
-    assume distinct: when used = user, k_used = k_user
+    require distinct: when used = user, k_used = k_user
 
     ensure rule: accepted? iff (used = user or k_used < k_user)
 
@@ -214,9 +214,9 @@ pub proc newtype(
     underlying: DeclaredTy,                          -- its underlying type
     constituents: Rel<DeclaredTy, DeclaredTy>,       -- (t, u): t has a field, payload or element of type u
 ): (det accepted?, det unbounded?) {
-    assume record: declared_kind(ty) = ValueType::RecordTy
-    assume one_constituent: constituents.image({ty}) = {underlying}
-    assume not_recursive: not (ty, ty) in constituents.closure
+    require record: declared_kind(ty) = ValueType::RecordTy
+    require one_constituent: constituents.image({ty}) = {underlying}
+    require not_recursive: not (ty, ty) in constituents.closure
     call facts := type_facts(ty, constituents)
 
     ensure rule: accepted? iff (n_fields = 1 and field_accepted?)
@@ -294,8 +294,8 @@ pub proc ordered_declaration(
 ) {
     use self::Declaration::Enumeration
 
-    assume enumerations_without_fields: when declaration = Enumeration, fields = []
-    assume structs_without_payloads: when declaration != Enumeration, n_payloads = 0
+    require enumerations_without_fields: when declaration = Enumeration, fields = []
+    require structs_without_payloads: when declaration != Enumeration, n_payloads = 0
 
     ensure in_range: -1 <= first_unordered < fields.len
     ensure reported: when k = first_unordered and k != -1,
@@ -347,7 +347,7 @@ pub proc distinct_names(
     count: Int,                    -- how many names the list declares
     names: Set<DeclaredName>,      -- the names it declares
 ): (det accepted?) {
-    assume counted: names.card <= count
+    require counted: names.card <= count
 
     ensure rule: accepted? iff names.card = count
 
@@ -404,10 +404,10 @@ pub proc field_type(
     own_in_set?,         -- the item being declared is a set's element type within the type
     payload?,            -- a variant's payload, rather than a record's field
 ): (det accepted?) {
-    assume own_enum: when own? and payload?, kind = ValueType::EnumTy
-    assume own_record: when own? and not payload?, kind = ValueType::RecordTy
-    assume abstract_kind: when kind = ValueType::AbstractTy, abstract_within?
-    assume in_set: when own_in_set?, kind = ValueType::SetTy and not own?
+    require own_enum: when own? and payload?, kind = ValueType::EnumTy
+    require own_record: when own? and not payload?, kind = ValueType::RecordTy
+    require abstract_kind: when kind = ValueType::AbstractTy, abstract_within?
+    require in_set: when own_in_set?, kind = ValueType::SetTy and not own?
 
     ensure rule: accepted? iff (not abstract_within? and not own_in_set? and (payload? or not own?))
 
@@ -480,8 +480,8 @@ pub proc well_founded(
     variants: Set<VariantName>,
     payloads: Rel<VariantName, DeclaredTy>,          -- (v, u): a payload of the variant `v` has the type `u`
 ): (det accepted?) {
-    assume some_variant: variants != {}
-    assume among: payloads.domain subset variants
+    require some_variant: variants != {}
+    require among: payloads.domain subset variants
 
     ensure rule: accepted? iff (exists (v: VariantName), v in variants
         and (forall (u: DeclaredTy), when u in payloads.image({v}), not ty in built_from(u, constituents)))
@@ -578,11 +578,11 @@ type Pos = n: Nat where invariant: n is 1..
 
 pub proc function_params(
     defined?,            -- written with `:= e`
-    contract?,           -- it has a contract: an `assume` or an `ensure` clause
+    contract?,           -- it has a contract: a `require` or an `ensure` clause
     n_params: Pos,
     n_named: Nat,        -- named parameters, after implicit match arguments are expanded
 ): (det accepted?) {
-    assume counts: n_named <= n_params
+    require counts: n_named <= n_params
 
     ensure rule: accepted? iff n_named = (if defined? or contract? then n_params else 0)
 
@@ -668,14 +668,14 @@ function of its own at each instance.
 
 ### Contracts
 
-A function's *contract* is the `assume` and `ensure` members of its
-[block](#function-blocks): `assume n: e` declares the *precondition* `n`,
+A function's *contract* is the `require` and `ensure` members of its
+[block](#function-blocks): `require n: e` declares the *precondition* `n`,
 and `ensure n: e` the *postcondition* `n`, each a `Bool` expression `e`,
 optionally followed by a [`where` clause](Let.md):
 
 ```text
 fn at(q: Seq<Int>, i: Int): (r: Int) {
-    assume in_range: 0 <= i < q.len
+    require in_range: 0 <= i < q.len
     out r := q[i]
 }
 
@@ -812,7 +812,7 @@ a `Bool` result. Its members are, in this order, as a procedure's are:
 - `use a::b`, which imports into the function alone, as a procedure's
   `use` does into the procedure (see [Modules](Modules.md)), so that its
   signature and its block may mention what it brings in;
-- `assume n: e`, a precondition;
+- `require n: e`, a precondition;
 - `let y := e`, or `let y: T := e`, a local definition;
 - `out r := e`, which defines the result: `e` is the function's body, and
   makes it defined, and a function without one is uninterpreted;
@@ -879,7 +879,7 @@ pub proc fn_definitions(
     mentioned: Set<DefName>,            -- the names that the expression mentions
     given: Set<DefName>,                -- the definitions that the expression is given
 ): (det right?) {
-    assume definitions_mention: mentions.domain subset defs
+    require definitions_mention: mentions.domain subset defs
 
     ensure rule: right? iff (forall (d: DefName), d in given iff (d in defs
         and (d in mentioned or (exists (m: DefName), m in mentioned and (m, d) in mentions.closure))))

@@ -16,7 +16,7 @@ import FrenCoreCodes
 # Running `fren`
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=obligations|smt] [--timings] [--tests N]
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|obligations|smt] [--timings] [--tests N]
     [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
@@ -49,8 +49,9 @@ applies the edits that the elaborator finds for lints (`State.fixes`).
 
 Standard output holds only what was asked for: `trace`'s evidence report,
 `mutate`'s kill rates, the solver queries of `check --dump-smt`, as SMT-LIB separated by
-`(reset)`, so that the whole stream can be replayed, and the obligations of
-`check --dump=obligations` (`Fren.Core.dump`).
+`(reset)`, so that the whole stream can be replayed, the obligations of
+`check --dump=obligations` (`Fren.Core.dump`), and the resolved, typed
+surface of `check --dump=resolved` (`dumpResolved`).
 -/
 
 namespace FrenCli
@@ -58,7 +59,7 @@ namespace FrenCli
 open Fren.Core (Msg Paint)
 
 def usage : String :=
-  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=obligations|smt] [--timings] [--tests N]\n              \
+  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|obligations|smt] [--timings] [--tests N]\n              \
   [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
@@ -74,7 +75,8 @@ def usage : String :=
   inconclusive, some constraint redundant or some lint warned.\n\
   `--dump=smt` (or `--dump-smt`) writes each solver query to stdout, as\n\
   SMT-LIB, and `--dump=obligations` what each check asks; diagnostics go\n\
-  to stderr. `--tests N` and `--seed N` are as for `quickcheck`, for\n\
+  to stderr. `--dump=resolved` writes the resolved, typed surface.\n\
+  `--tests N` and `--seed N` are as for `quickcheck`, for\n\
   checks set to testing.\n\
   `--evidence METHOD` sets every check that `set_option fren.evidence`\n\
   could set to METHOD, in place of the spec's own settings: `solver`,\n\
@@ -184,6 +186,8 @@ structure Args where
   jobs? : Option Nat := none
   /-- `check --dump-smt`, or `--dump=smt` (`Reqs/Cli#solver-queries`). -/
   dumpSmt : Bool := false
+  /-- `check --dump=resolved` (`Reqs/Cli#resolved-surface`). -/
+  dumpResolved : Bool := false
   /-- `check --dump=obligations` (`Reqs/Cli#obligations`). -/
   dumpObligations : Bool := false
   /-- `check --timings` (`Reqs/Cli#timings`). -/
@@ -245,7 +249,7 @@ structure Args where
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--dump=obligations", "--dump=smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--dump=resolved", "--dump=obligations", "--dump=smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard", "--solver-stats"]
 
@@ -379,6 +383,9 @@ where
     | opt@"--dump-smt" :: rest, a | opt@"--dump=smt" :: rest, a =>
       if a.command == .check then go rest { a with dumpSmt := true }
       else only opt "check"
+    | "--dump=resolved" :: rest, a =>
+      if a.command == .check then go rest { a with dumpResolved := true }
+      else only "--dump=resolved" "check"
     | "--dump=obligations" :: rest, a =>
       if a.command == .check then go rest { a with dumpObligations := true }
       else only "--dump=obligations" "check"
@@ -512,11 +519,13 @@ def parseText (chars : Array Char) : Parsed :=
     | .ok (items, starts) => .ok (toks, items, starts, literalLints chars toks comments)
 
 /-- The items of a parsed file, or the headline of its lexer's or else its
-parser's error: what the evaluator reads of it (`readItems`), by
-`parsedItems_parseText`. -/
+parser's error, or that of its first broken item (`Parser.firstBroken?`):
+what the evaluator reads of it (`readItems`), by `parsedItems_parseText`. -/
 def parsedItems : Parsed → Except String (Array Item)
   | .error (_, msg) => throw msg.headline
-  | .ok (_, items, _) => pure items
+  | .ok (_, items, _) => match Parser.firstBroken? items with
+    | some e => throw e.msg.headline
+    | none => pure items
 
 /-- The evaluator's reading of a file's items (`readItems`, which
 `specStateOf` lowers) is that of the elaborator's parse of it, so that it
@@ -525,9 +534,16 @@ theorem parsedItems_parseText (chars : Array Char) : parsedItems (parseText char
   unfold parseText readItems lex parse parseItems
   rcases h : lexWithComments chars with e | ⟨toks, comments⟩
   · rfl
-  · rcases h' : StateT.run Parser.file { toks, src := chars } with e | ⟨items, s⟩ <;>
-      simp only [StateT.run', h', Functor.map, Except.map] <;>
-      simp only [StateT.run] at h' <;> simp only [h'] <;> rfl
+  · rcases h' : StateT.run Parser.file { toks, src := chars } with e | ⟨items, s⟩
+    · simp only [StateT.run', h', Functor.map, Except.map]
+      simp only [StateT.run] at h'
+      simp only [h']
+      rfl
+    · simp only [StateT.run', h', Functor.map, Except.map]
+      simp only [StateT.run] at h'
+      simp only [h']
+      -- A file that parses: both stop at its first broken item.
+      rcases hb : Parser.firstBroken? items with _ | e <;> simp only [parsedItems, hb, Bind.bind, Except.bind] <;> rfl
 
 /-- `elabText st file chars`, where `p` is `parseText chars`: the same
 cases, after the same lexing and parsing, so that a file parsed once can
@@ -546,10 +562,12 @@ theorem elabParsed_parseText (st : State) (file : Nat) (chars : Array Char) :
   · rfl
   · rcases h' : parseItems toks chars with e | ⟨items, starts⟩ <;> simp only [h']
 
-/-- The state before any file, with the lint levels `lints`. -/
+/-- The state before any file, with the lint levels `lints`. `resolved`
+enables surface annotations after the prelude has been elaborated. -/
 def initialState (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (evidence? : Option Fren.Core.Evidence := none) : State :=
-  ({ cliLevels := Fren.Core.Levels.ofFlags lints, evidenceOverride? := evidence? } : State).withPrelude
+    (evidence? : Option Fren.Core.Evidence := none) (resolved := false) : State :=
+  let st := ({ cliLevels := Fren.Core.Levels.ofFlags lints, evidenceOverride? := evidence? } : State).withPrelude
+  { st with resolved? := if resolved then some #[] else none }
 
 /-- The text of the file at `path`, whose contents are `src`, as the
 elaborator reads it, and the problems of a Markdown spec's fences, each at
@@ -572,14 +590,15 @@ def withProblems (st : State) (file : Nat) (problems : Array (Nat × Msg)) : Sta
 state before each file and after the last, before the claims are checked,
 from which `fren mutate` elaborates its mutants (`mutantsWith`). `fren fix`
 fixes the lints `fixing` in the files that `ignored` does not match.
-`evidence?` is that of `fren check --evidence`. -/
+`evidence?` is that of `fren check --evidence`; `resolved` collects the
+annotations of `--dump=resolved`. -/
 def elaborateSourcesBefore (paths srcs : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
     (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false)
-    (evidence? : Option Fren.Core.Evidence := none) :
+    (evidence? : Option Fren.Core.Evidence := none) (resolved := false) :
     IO (Array (String × Array Char) × Array State × State) := do
   let mut files := #[]
   let mut states := #[]
-  let mut st := initialState lints evidence?
+  let mut st := initialState lints evidence? resolved
   for path in paths, src in srcs do
     let (chars, problems) := sourceOf path src
     states := states.push st
@@ -633,7 +652,7 @@ elaborated, which stops the command (`printLoaded`): the elaborator may
 have accepted the files after it only in part, and lowering assumes that
 it accepted them, so they are not lowered. -/
 def elaborateReading (paths srcs : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (evidence? : Option Fren.Core.Evidence := none) :
+    (evidence? : Option Fren.Core.Evidence := none) (resolved := false) :
     IO (Array (String × Array Char) × State × IO (Option (Except String Eval.Spec))) := do
   let parses : Array (IO.Promise (Array Char × Array (Nat × Msg) × Parsed)) ← paths.mapM fun _ => IO.Promise.new
   let parsing ← IO.asTask (prio := .dedicated) do
@@ -651,7 +670,7 @@ def elaborateReading (paths srcs : Array String) (lints : Array (Fren.Core.LintT
       st? := do Eval.lowerFrom (← st?) #[← parsedItems parsed] callTargs
     reading.resolve (some ((·.spec.keepCompiledRecs) <$> st?))
   let mut files := #[]
-  let mut st := initialState lints evidence?
+  let mut st := initialState lints evidence? resolved
   let mut stopped := false
   for path in paths, p in parses, q in toLower do
     let (chars, problems, parsed) := p.result!.get
@@ -671,13 +690,13 @@ def elaborateReading (paths srcs : Array String) (lints : Array (Fren.Core.LintT
 the lints `fixing` in the files that `ignored` does not match. -/
 def elaborateBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
     (fixing : Array Fren.Core.Lint := #[]) (ignored : String → Bool := fun _ => false)
-    (evidence? : Option Fren.Core.Evidence := none) :
+    (evidence? : Option Fren.Core.Evidence := none) (resolved := false) :
     IO (Option (Array (String × Array Char) × Array State × State)) := do
   let mut srcs := #[]
   for path in paths do
     let some src ← readSpec p path | return none
     srcs := srcs.push src
-  return some (← elaborateSourcesBefore paths srcs lints fixing ignored evidence?)
+  return some (← elaborateSourcesBefore paths srcs lints fixing ignored evidence? resolved)
 
 /-- Reads and elaborates the files; `none` if one cannot be read. `fren fix`
 fixes the lints `fixing` in the files that `ignored` does not match. -/
@@ -709,36 +728,37 @@ def printLoaded (p : Paint) (files : Array (String × Array Char)) (st : State) 
 /-- Reads and elaborates the files, printing any static errors, with the
 states of `elaborateSourcesBefore`. -/
 def loadBefore (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (evidence? : Option Fren.Core.Evidence := none) :
+    (evidence? : Option Fren.Core.Evidence := none) (resolved := false) :
     IO (Option (Array (String × Array Char) × Array State × State)) := do
-  let some (files, states, st) ← elaborateBefore p paths lints (evidence? := evidence?) | return none
+  let some (files, states, st) ← elaborateBefore p paths lints (evidence? := evidence?) (resolved := resolved) | return none
   unless ← printLoaded p files st do return none
   return some (files, states, st)
 
 /-- Reads and elaborates the files, printing any static errors, with the
 evidence of `fren check --evidence`, `evidence?`. -/
 def load (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (evidence? : Option Fren.Core.Evidence := none) :
+    (evidence? : Option Fren.Core.Evidence := none) (resolved := false) :
     IO (Option (Array (String × Array Char) × State)) := do
-  return (← loadBefore p paths lints evidence?).map fun (files, _, st) => (files, st)
+  return (← loadBefore p paths lints evidence? resolved).map fun (files, _, st) => (files, st)
 
 /-- `load`, with the evaluator's reading of the spec, `specOf files
 st.callTargs`, as an action that gives it. With more than one job
 (`jobs`), the reading is made beside the elaboration (`elaborateReading`),
 and the action waits for it; with one, everything runs in this thread, and
-the action reads the spec itself. -/
+the action reads the spec itself. `resolved` collects surface annotations
+in either path. -/
 def loadReading (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
-    (evidence? : Option Fren.Core.Evidence) (jobs : Nat) :
+    (evidence? : Option Fren.Core.Evidence) (jobs : Nat) (resolved := false) :
     IO (Option (Array (String × Array Char) × State × IO (Except String Eval.Spec))) := do
   let sequential (files : Array (String × Array Char)) (st : State) : IO (Except String Eval.Spec) :=
     IO.lazyPure fun _ => specOf files st.callTargs
   if jobs ≤ 1 then
-    return (← load p paths lints evidence?).map fun (files, st) => (files, st, sequential files st)
+    return (← load p paths lints evidence? resolved).map fun (files, st) => (files, st, sequential files st)
   let mut srcs := #[]
   for path in paths do
     let some src ← readSpec p path | return none
     srcs := srcs.push src
-  let (files, st, reading) ← elaborateReading paths srcs lints evidence?
+  let (files, st, reading) ← elaborateReading paths srcs lints evidence? resolved
   unless ← printLoaded p files st do return none
   -- Without a reading, a file had an error when it was elaborated, which
   -- stops the command, and this is not reached.
@@ -953,10 +973,13 @@ partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Sym
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
     | .ok sp => match sp.counterpart? c global body with
-      | some ec =>
-        let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
-        let (core, ks) := { core with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
-        pure (← Fren.Core.checkCompLawful (fun k => confirming sp sy ec k log (bk k) (recursiveIn prelude sv.recursiveSyms)) core ks examples (interprets ·.1) (some take), none)
+      | some ec => match pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start)) with
+        | .ok core =>
+          let (core, ks) := { core with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
+          pure (← Fren.Core.checkCompLawful (fun k => confirming sp sy ec k log (bk k) (recursiveIn prelude sv.recursiveSyms)) core ks examples (interprets ·.1) (some take), none)
+        | .error msg =>
+          let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
+          pure (← Fren.Core.checkCompLawful bk core ks examples interprets (some take), some msg)
       | none =>
         let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
         pure (← Fren.Core.checkCompLawful bk core ks examples interprets (some take),
@@ -1154,8 +1177,10 @@ agreement of methods (`check::methods_agree`). -/
 def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.CheckResult × Fren.Core.ProofMethod))) := none) :
     IO UInt32 := do
   let jobs := args.jobs?.getD (← jobsDefault)
-  let some (files, st, reading) ← loadReading args.paint args.files args.lints args.evidence? jobs
+  let some (files, st, reading) ← loadReading args.paint args.files args.lints args.evidence? jobs args.dumpResolved
     | return exitCode false none
+  if let some annotations := st.resolved? then
+    IO.print (FrenCli.dumpResolved files annotations)
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)
@@ -2027,6 +2052,12 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       inconclusive := inconclusive || Mutate.inconclusive rs rs'
     return (killers, inconclusive)
   let mut tallies : Std.HashMap Lean.Name Mutate.Tally := {}
+  -- This ledger belongs to the command, including when there is no test
+  -- probe. Every decision goes through the same recorder.
+  let decisions ← IO.mkRef (#[] : Array String)
+  let record (d : Decision) : IO Unit := do
+    decisions.modify (·.push d.id)
+    if let some probe := probe? then probe.decisions.modify (·.push d)
   for m in selected do
     let chars' := m.apply files[m.file]!.2
     let parsed' := parseText chars'
@@ -2042,7 +2073,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       if let some e := errors.find? (·.lint?.isNone) then
         report (Msg.internal s!"the mutant `{m.id}` has a static error: {e.msg.headline}") .error
       tally := tally.add .unviable
-      if let some probe := probe? then probe.decisions.modify (·.push { id := m.id, outcome := .unviable, killers := #[] })
+      record { id := m.id, outcome := .unviable, killers := #[] }
     else
       let spec'? := mutantSpec parsed prefixes m parsed' st'.callTargs
       if let .error e := spec'? then
@@ -2063,7 +2094,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       let equivalent? ← if killed then pure (some false) else Mutate.equivalent st prelude st' Mutate.equivalenceTimeout cache
       let outcome := Mutate.outcome true killed (equivalent? == some true)
       tally := tally.add outcome
-      if let some probe := probe? then probe.decisions.modify (·.push { id := m.id, outcome, killers := killers₁ ++ killers₂ })
+      record { id := m.id, outcome, killers := killers₁ ++ killers₂ }
       if outcome == .survived then report (Mutate.survivedMsg m equivalent?.isNone (inconclusive₁ || inconclusive₂))
       if args.checker == .both && Mutate.missed bySolver byTesting then
         tally := { tally with missed := tally.missed + 1 }
@@ -2074,6 +2105,11 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       printAt p path chars severity msg { start := m.span.start, stop := m.span.stop }
       shown.modify (·.push msg)
       sevs.modify (·.push severity)
+  if let some id := Mutate.decisionError? (selected.map (·.id)) (← decisions.get) then
+    let msg := Msg.internal s!"the decisions for mutant `{id}` do not match selection"
+    IO.eprint (Fren.Core.renderPlain .error msg p)
+    shown.modify (·.push msg)
+    sevs.modify (·.push .error)
   -- Each check once, though both ways of checking ran it.
   let notPassing := ((← solved.get).toArray ++ (← tested.get).toArray).foldl (init := ({} : Std.HashSet String)) fun acc (k, rs) =>
     (Mutate.keyed rs).foldl (init := acc) fun acc (rk, r) =>

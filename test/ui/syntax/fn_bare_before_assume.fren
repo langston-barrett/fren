@@ -1,0 +1,9 @@
+-- A function's block's errors in source order, in both front ends
+-- (`lang::block_errors`, `lang::clause_errors`): a clause without a label
+-- that is not a Boolean block, under a `where`, before an `assume`.
+fn f(x: Int): (r: Int) {
+    require x > k where k := 0  --~ error: expected a named clause or a Boolean block
+    assume a: x > 0
+    out r := x
+}
+--@ exit: 2

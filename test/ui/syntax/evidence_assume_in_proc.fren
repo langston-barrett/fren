@@ -1,0 +1,8 @@
+-- After an evidence setting, a procedure's precondition is still written
+-- `require`, not `assume` (`F0169`), reported at the keyword.
+proc p(x: Int): (y: Int) {
+    set_option fren.evidence "random" in
+    assume a: x > 0  --~ error: a precondition is written `require`, not `assume`
+    ensure r: y = x
+}
+--@ exit: 2

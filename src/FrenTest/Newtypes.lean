@@ -86,7 +86,7 @@ pub struct Slot { start: Ms, tags: Set<Ms> }
 proc shown(t: Ms, s: Slot): (det next: Ms) {
     out next := t + Ms(1)
 
-    assume pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
+    require pinned: t = Ms(3) and s = Slot { start := Ms(2), tags := {Ms(9), Ms(10)} }
 
     expect small: next < Ms(4)
 }

@@ -148,16 +148,17 @@ grammar accepts it:
   left operand;
 - `table` as a name: it is a reserved word, which Lean reads as a name
   where an expression starts, as it reads `when`. -/
-partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
+partial def checkParsed (stx : Syntax) (global := false) : CommandElabM Unit := do
+  let global := global || stx.isOfKind ``Lang.globalBlockCmd
   if stx.isOfKind ``Lang.refinesMember then
-    stx.getArgs[:6].toArray.forM checkParsed
+    stx.getArgs[:6].toArray.forM (checkParsed · global)
     return
   let reserved (p : Syntax) : CommandElabM Unit := do
     let id := (pathSegs p)[0]!
     if id.getId.getRoot == Name.mkSimple "table" then throwErrorAt id Core.tableNameMsg
   match stx with
   | `(fren_expr| $a == $_) | `(fren_expr| $a && $_) | `(fren_expr| $a || $_) | `(fren_expr| $a | $_) =>
-    checkParsed a
+    checkParsed a global
     throwErrorAt stx[1] (Core.foreignOpMsg stx[1].getAtomVal.trimAscii.toString).text
   | `(fren_expr| $p:fren_path) =>
     reserved p
@@ -165,7 +166,7 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
   | `(fren_expr| $p:fren_path($args,*)) =>
     reserved p
     unless (pathSegs p).size == 1 do discard (segNames (pathSegs p))
-    args.getElems.forM checkParsed
+    args.getElems.forM (checkParsed · global)
   | _ =>
     if stx.isIdent then discard (segName stx)
     else if stx.isOfKind ``Lang.fren_path then discard (segNames (pathSegs stx))
@@ -175,20 +176,20 @@ partial def checkParsed (stx : Syntax) : CommandElabM Unit := do
     else if stx.isOfKind ``Lang.evidenceMember then
       unless stx[1].getId == `fren.evidence do
         throwErrorAt stx[1] (Core.memberOptionMsg stx[1].getId.toString).text
-      checkParsed stx[4]
+      checkParsed stx[4] global
     else if stx.isOfKind ``Lang.fren_proc_param then
       -- A parameter's modifier or definition, as the `fren` command's
       -- parser reports it.
       unless stx[0].isNone do throwErrorAt stx[0] (Core.paramModifierMsg ((stx[0].reprint.getD "").trimAscii.toString)).text
-      checkParsed stx[1]
-      checkParsed stx[2]
-      unless stx[3].isNone do throwErrorAt stx[3][0] Core.inputDefinitionMsg.text
+      checkParsed stx[1] global
+      checkParsed stx[2] global
+      unless stx[3].isNone do throwErrorAt stx[3][0] (Core.inputDefinitionMsg global).text
     else if stx.isOfKind ``Lang.fren_row && !stx[0].isNone then
       -- A row that starts with `|` (`F0166`).
       throwErrorAt stx[0] Core.rowBarMsg.text
     else if stx.isOfKind ``Lang.fieldExpr || stx.isOfKind ``Lang.methodExpr then
-      stx.getArgs.forM fun a => unless a.isIdent do checkParsed a
-    else stx.getArgs.forM checkParsed
+      stx.getArgs.forM fun a => unless a.isIdent do checkParsed a global
+    else stx.getArgs.forM (checkParsed · global)
 
 /-- Records `unnecessary_trailing_comma` on the commas of the command `stx`
 that end a list on the line of its `}` or `]`
@@ -338,8 +339,8 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   -- `fnParamType` elaborates (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   -- `Set<T>`: `"Set" "<" T ">"`; `Rel<A, B>`: `"Rel" "<" A "," B ">"`.
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
-  -- generic type's type parameter (`lang::element_parameter`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), and
+  -- may be a type parameter (`lang::element_parameter`).
   let elem (e : Syntax) : m Expr := do
     let t ← elabType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
@@ -2742,8 +2743,8 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
   -- (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   let text := Core.typeText (exactText ty)
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
-  -- generic type's type parameter (`lang::element_parameter`), and whose
+  -- An element type, which is never a `Nat` (`lang::nat_place`), may be a
+  -- type parameter (`lang::element_parameter`), and its
   -- constraint, if any, quantifies over the elements, outside the
   -- decidable core (`lang::subset_place`).
   let elem (e : Syntax) : TermElabM (Expr × Core.PTy) := do
@@ -2844,8 +2845,9 @@ partial def patTerm (ty : Core.Ty) (p : Core.Pat) (x : Term) : TermElabM Term :=
 
 /-- The constraint `c` of the term `x` (`Core.Cons`), as the `fren`
 command's `consSmt` says, where `depth` numbers the bound variables of the
-quantifiers around it. -/
-partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM Term := do
+quantifiers around it. `natAsInt` is true at the root of a Nat-valued
+uninterpreted function's facts, where the solver represents it by Int. -/
+partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) (natAsInt : Bool := false) : TermElabM Term := do
   let st ← getState
   match c with
   | .predicate i =>
@@ -2853,10 +2855,10 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
     -- A Nat result is represented by Int in uninterpreted-function facts.
     -- Its nonnegativity is a separate base fact; evaluate the invariant
     -- on the corresponding Nat value while retaining that base fact.
-    let x ← if (f.ptys.1[0]?).any (·.ty == .nat) then do
-      let value ← elabTerm x none
-      let type ← whnf (← inferType value)
-      if type.isConstOf ``Int then `(Int.toNat $x) else pure x
+    -- Do not elaborate `x` here: a collection's binder is syntax whose
+    -- quantifier has not been elaborated yet. Projections and collection
+    -- members already have their declared Lean types.
+    let x ← if natAsInt && (f.ptys.1[0]?).any (·.ty == .nat) then `(Int.toNat $x)
       else pure x
     `($(mkCIdent f.decl) $(f.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $x)
   | .pat ty p => patTerm ty p x
@@ -2883,16 +2885,16 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
   | .pairs _ _ ca cb =>
     let (u, v) := (mkIdent (Name.mkSimple s!"fren_a{depth}"), mkIdent (Name.mkSimple s!"fren_b{depth}"))
     let parts := (← ca.toArray.mapM (consTerm · u (depth + 1))) ++ (← cb.toArray.mapM (consTerm · v (depth + 1)))
-    `(∀ $u:ident $v:ident, ($u, $v) ∈ $x → $((← conjTerm parts).getD (← `(True))))
+    `(Fren.relationObligation (∀ $u:ident $v:ident, ($u, $v) ∈ $x → $((← conjTerm parts).getD (← `(True)))))
   | .all cs =>
-    let ts ← cs.mapM (consTerm · x depth)
+    let ts ← cs.mapM (consTerm · x depth natAsInt)
     return (← conjTerm ts).getD (← `(True))
 
 /-- The constraint `c` of a value of the Lean type `ty`, as a predicate:
 `fun x => c x`. -/
 def predOf (ty : Expr) (c : Core.Cons) : TermElabM Expr :=
   withLocalDeclD `fren_x ty fun x => do
-    let p ← elabProp (← consTerm c (mkIdent `fren_x))
+    let p ← elabProp (← consTerm c (mkIdent `fren_x) (natAsInt := ty.isConstOf ``Int))
     mkLambdaFVars #[x] p
 
 /-- The constraint `c` of a value of the Lean type `ty`, which mentions the
@@ -4070,7 +4072,7 @@ def lintManualUpdate (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : Expr
     let t? ← try some <$> typeOf (← toTerm { cx with noteIndexes := false } recv) catch _ => pure none
     modifyLocal fun _ => saved
     let some t := t? | continue
-    unless (t.constName?.bind (← getState).recordOfDecl?).any (·.path == path) do continue
+    unless ((← getState).recordOf? t).any (·.path == path) do continue
     let w := Core.writtenForm (exactText recv)
     match copies.findIdx? (·.1 == w) with
     | some k => copies := copies.modify k fun (w, r, ks) => (w, r, ks.push i)
@@ -4091,7 +4093,8 @@ def lintUpdate (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   let saved ← getLocal
   let t? ← try some <$> typeOf (← toTerm { cx with noteIndexes := false } e[1]) catch _ => pure none
   modifyLocal fun _ => saved
-  let some info := t?.bind (·.constName?) |>.bind (← getState).recordOfDecl? | return
+  -- The record of an instance too, as `Box<Int>`, by its head (`State.recordOf?`).
+  let some info := t?.bind (← getState).recordOf? | return
   let given := e[3].getSepArgs
   if Core.needlessUpdate info.fields.size given.size then
     recordLint .needlessUpdate e (Core.needlessUpdateMsg (Core.showPath info.path) (exactText e[1]))
@@ -5599,13 +5602,13 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
   -- A variable, written as its name, that is the argument at the
   -- decreasing parameter of a structural recursion
   -- (`lang::induction_candidate`).
-  if let some i := ((← getState).defined.get? path).bind (·.decreasing?) then
-    if let some a := args.getElems[i]? then
-      let a := unparen a
-      let a := if a.getNumArgs == 1 then a[0] else a
-      if a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 && (cx.binder? (pathSegs a)[0]!.getId).isNone then
-        let x := (pathSegs a)[0]!.getId
-        if cx.vars.any (·.name == x) then modifyLocal fun l => { l with inductionArgs := l.inductionArgs.push x }
+  let writtenArgs := args.getElems.map fun a =>
+    let a := unparen a
+    let a := if a.getNumArgs == 1 then a[0] else a
+    if a.isOfKind ``Lang.fren_path && (pathSegs a).size == 1 then some (pathSegs a)[0]!.getId else none
+  if let some x := Core.inductionArgument? (((← getState).defined.get? path).bind (·.decreasing?))
+      writtenArgs (cx.vars.map (·.name)) (fun x => (cx.binder? x).isSome) then
+    modifyLocal fun l => { l with inductionArgs := l.inductionArgs.push x }
   if let some d := ((← getState).defined.get? path).filter (!·.hoParams.isEmpty) then
     return ← hoAppTerm toTerm cx e p path d args.getElems expected?
   if let some d := (← getState).defined.get? path then
@@ -5713,13 +5716,6 @@ def boolOperand (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   let x ← toTerm cx a
   checkTermType a x .bool (Core.opNote op .bool)
   return ← propositionTerm x
-
-/-- The nonempty `xs` joined by `op`, as a balanced tree, so that a
-quantifier's expansion is as deep as the logarithm of its instances, which
-the solver's preprocessing recurses through. -/
-partial def balanced (op : Expr → Expr → Expr) (xs : Array Expr) : Expr :=
-  if xs.size ≤ 1 then xs[0]!
-  else op (balanced op (xs.extract 0 (xs.size / 2))) (balanced op (xs.extract (xs.size / 2)))
 
 /-- Whether the quantifier `e` is a `forall`, rather than an `exists`. -/
 def isForall (e : Syntax) : Bool :=
@@ -6436,12 +6432,29 @@ def constraint? (m : Syntax) : Option (PropKind × Syntax × Syntax) :=
   -- A member that failed to parse may lack its last parts.
   if m.getNumArgs < 4 || m.getNumArgs > 5 || !m[0].isAtom then none else
   let kind? := match m[0].getAtomVal.trimAscii.toString with
-    | "assume" => some PropKind.assume
+    | "assume" | "require" => some PropKind.assume
     | "ensure" => some .ensure
     | "expect" => some .expect
     | "cover" => some .cover
     | _ => none
   kind?.map (·, m[1], withWhere m[3] m[4])
+
+/-- The member `m` of a procedure's or a function's block, read as the
+elaborator reads it: a precondition, `require n: e`, as the
+`assumeMember` that it means (`Reqs/Lang/Procedures#members`), under any
+evidence setting. Its keyword keeps the position of `require`. -/
+partial def requireAsAssume (m : Syntax) : Syntax :=
+  if m.isOfKind ``Lang.evidenceMember then m.setArg 4 (requireAsAssume m[4])
+  else if m.isOfKind ``Lang.requireMember then
+    mkNode ``Lang.assumeMember (#[mkAtomFrom m[0] "assume "] ++ m.getArgs.extract 1 m.getNumArgs)
+  else if m.isOfKind ``Lang.bareRequireMember then
+    mkNode ``Lang.bareAssumeMember (#[mkAtomFrom m[0] "assume "] ++ m.getArgs.extract 1 m.getNumArgs)
+  else m
+
+/-- The command `stx` with each member of its block, its argument `i`,
+read by `requireAsAssume`. -/
+def requiresAsAssumes (stx : Syntax) (i : Nat) : Syntax :=
+  stx.setArg i (mkNullNode (stx[i].getArgs.map requireAsAssume))
 
 /-- A defined output's definition, with its `where` clause. -/
 def definition? (m : Syntax) : Option Syntax :=
@@ -7045,17 +7058,17 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
     if let .forallE _ condition tail _ := body then
       if !tail.hasLooseBVars && (← isProp condition) then return ← contains tail
     return false
-  let rec expand (body : Expr) (written : Syntax) (owner : Name) (guards : Array Expr) :
+  let rec expand (body : Expr) (written : Syntax) (owner : Name) (guards : Array Expr) (label : Syntax) :
       StateT (Std.TreeMap Name Nat Name.quickCmp) TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes) := do
     let body := body.consumeMData
     if let .forallE _ condition tail _ := body then
       if !tail.hasLooseBVars && (← isProp condition) then
-        return ← expand tail (if isBooleanGuard (unparen written) then (unparen written)[3] else written) owner (guards.push condition)
+        return ← expand tail (if isBooleanGuard (unparen written) then (unparen written)[3] else written) owner (guards.push condition) label
     if prop.kind != .cover && body.isAppOfArity ``And 2 && (← contains body) then
       let leftSource := if isBinOp (unparen written) "and" then (unparen written)[0] else written
       let rightSource := if isBinOp (unparen written) "and" then (unparen written)[2] else written
-      let left ← expand body.getAppArgs[0]! leftSource (Name.mkSimple (owner.toString (escape := false) ++ ".1")) guards
-      let right ← expand body.getAppArgs[1]! rightSource (Name.mkSimple (owner.toString (escape := false) ++ ".2")) guards
+      let left ← expand body.getAppArgs[0]! leftSource (Name.mkSimple (owner.toString (escape := false) ++ ".1")) guards leftSource
+      let right ← expand body.getAppArgs[1]! rightSource (Name.mkSimple (owner.toString (escape := false) ++ ".2")) guards rightSource
       return (left.1 ++ right.1, left.2.1 ++ right.2.1, left.2.2 ++ right.2.2)
     if let some (info, arguments, wanted) := predicateCallPolarity? state body then
       if prop.kind != .cover && wanted && !info.namedMembers.isEmpty then
@@ -7100,12 +7113,15 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
                 pure (some (← liftM (mkLambdaFVars fvs (mkAndN conditions))))) }
           let observations ← member.memberGroups.mapM fun group => do
             return { group with owner := name, members := ← group.members.mapM (fun m => liftM (mapMember m)) }
-          let child := { prop with name, ref := member.ref, body := ← mkLambdaFVars fvs instantiated, decl
-                                   trigger? := trigger, triggerRef? := (if trigger.isSome then some member.ref else none)
+          let memberPath := if member.name.isAnonymous then "" else member.name.toString (escape := false)
+          let sourceRef := Core.predicateCheckAtMember memberPath (prop.kind == .cover)
+          let ref := if sourceRef then member.ref else label
+          let child := { prop with name, ref, body := ← mkLambdaFVars fvs instantiated, decl
+                                   trigger? := trigger, triggerRef? := (if trigger.isSome then some ref else none)
                                    branchGroups := branches, memberGroups := observations
-                                   evidenceOwner? := some prop.name, source? := info.source?, sourceRef := true }
+                                   evidenceOwner? := some prop.name, source? := info.source?, sourceRef }
           if ← contains (predicateInstance info arguments member.body) then
-            let nested ← expand (predicateInstance info arguments member.body) member.ref name guards
+            let nested ← expand (predicateInstance info arguments member.body) member.ref name guards ref
             props := props ++ nested.1
             declarations := declarations ++ nested.2.1
             sites := sites ++ nested.2.2
@@ -7140,12 +7156,14 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
         let body := wrap guards body
         let decl := prop.decl ++ owner
         return (#[{ prop with
-          name := owner, ref := written, body := ← mkLambdaFVars fvs body, decl
+          name := owner, ref := if Core.predicateCheckAtMember "" (prop.kind == .cover) then written else label,
+          body := ← mkLambdaFVars fvs body, decl
           branchGroups := branches, memberGroups := observations, source? := info.source?
           evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
     let body := wrap guards body
     let decl := prop.decl ++ owner
-    return (#[{ prop with name := owner, ref := written, body := ← mkLambdaFVars fvs body, decl,
+    let ref := if Core.predicateCheckAtMember "" (prop.kind == .cover) then written else label
+    return (#[{ prop with name := owner, ref, body := ← mkLambdaFVars fvs body, decl,
                            evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
   let body ← zetaReduce (prop.body.beta fvs)
   if let some (info, arguments, wanted) := predicateCallPolarity? state body then
@@ -7166,9 +7184,10 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
         return { g with
           owner := prop.name, wanted := (if wanted then g.wanted else !g.wanted)
           members := ← g.members.mapM mapMember }
-      return (#[{ prop with branchGroups := branches, memberGroups := observations, source? := info.source? }], #[], #[])
+      let ref := if Core.predicateCheckAtMember "" (prop.kind == .cover) then source else prop.ref
+      return (#[{ prop with ref, branchGroups := branches, memberGroups := observations, source? := info.source? }], #[], #[])
   if !(← contains body) then return (#[prop], #[], #[])
-  return (← (expand body source prop.name #[]).run {}).1
+  return (← (expand body source prop.name #[] prop.ref).run {}).1
 
 /-- A clause `e` of the contract of the function at `path`, whose
 parameters are `vars` and whose function parameters `fnVars`, and of whose
@@ -7718,19 +7737,237 @@ def withNeeded (defs : Array (String × Syntax)) (e w? : Syntax) : Syntax × Syn
   let args := needed.foldl (init := #[]) fun acc i => (if acc.isEmpty then acc else acc.push (mkAtom ",")).push defs[i]!.2
   (withWhere e w?, mkNullNode #[(mkNode ``Lang.fren_where #[mkAtom "where", mkNullNode args] : Syntax)])
 
+/-- Whether `e` is a Boolean block, under any leading `when`, `unless` or
+`let`, as a clause without a label must be (`lang::clause_errors`). -/
+partial def booleanBlockRoot (e : Syntax) : Bool :=
+  if isBooleanGuard e || e.isOfKind ``Lang.letExpr then booleanBlockRoot e[3]
+  else (unparen e).isOfKind ``Lang.booleanBlockExpr
+
+open Lang in
+/-- The clause member `m` as `Core.clauseKeywordError?` and
+`Core.clauseSyntaxError?` read it: its keyword,
+and how it is written, with a label or without one, and whether its
+expression, with its `where` clause, is a Boolean block. -/
+def clauseOf? (m : Syntax) : Option (Core.ClauseWord × Core.ClauseForm) :=
+  let bare? : Option Core.ClauseWord :=
+    if m.isOfKind ``Lang.bareAssumeMember then some .assume
+    else if m.isOfKind ``Lang.bareRequireMember then some .require
+    else if m.isOfKind ``Lang.bareEnsureMember then some .ensure
+    else if m.isOfKind ``Lang.bareExpectMember then some .expect
+    else none
+  let labelled? : Option Core.ClauseWord :=
+    if m.isOfKind ``Lang.assumeMember then some .assume
+    else if m.isOfKind ``Lang.requireMember then some .require
+    else if m.isOfKind ``Lang.ensureMember then some .ensure
+    else if m.isOfKind ``Lang.expectMember then some .expect
+    else if m.isOfKind ``Lang.coverMember then some .cover
+    else none
+  match bare?, labelled? with
+  | some w, _ => some (w, { labelled := false, blockRoot := booleanBlockRoot (withWhere m[1] m[2]) })
+  | none, some w => some (w, { labelled := true, blockRoot := booleanBlockRoot (withWhere m[3] m[4]) })
+  | none, none => none
+
+open Lang in
+/-- The member `m` of a function's block, if the block does not take it
+(`F0442`, `F0443`): where it is reported, at its first token, or a
+`use`'s or an evidence setting's whole, as the `fren` command reports it,
+and the message. -/
+def fnMemberError? (m : Syntax) : Option (Syntax × Core.Msg) :=
+  let kind? : Option (Core.FnMember × Bool × String × Syntax) :=
+    if m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember then some (.use, false, "use", m)
+    else if m.isOfKind ``Lang.evidenceMember then some (.evidence, false, "set_option", mkNullNode #[m[0], m[3]])
+    else if m.isOfKind ``Lang.callMember then some (.call, false, "call", m[0])
+    else if m.isOfKind ``Lang.existsMember then some (.exists, !m[0].isNone, "exists", if m[0].isNone then m[1] else m[0])
+    else if m.isOfKind ``Lang.letMember then some (.let, !m[0].isNone, "let", if m[0].isNone then m[1] else m[0])
+    else match clauseOf? m with
+      | some (.expect, _) => some (.claim, false, "expect", m[0])
+      | some (.cover, _) => some (.claim, false, "cover", m[0])
+      | _ => none
+  kind?.bind fun (k, det, kw, ref) => (Core.fnMemberMsg? k det kw).map (ref, ·)
+
+/-- The error that `x` throws first, if any, as an action that throws it
+again. -/
+def caughtError (x : CommandElabM Unit) : CommandElabM (Option (CommandElabM Unit)) := do
+  try x; return none catch e => return some (throw e)
+
+open Lang in
+/-- The part of a block's errors (`Core.firstPartError?`) of an evidence
+setting before a member, `set_option NAME "VALUE" in`: an option other
+than `fren.evidence` (`checkParsed`), and, if `rejected?`, the error that
+the block does not take it. -/
+def settingErrors (w : Syntax) (rejected? : Option (CommandElabM Unit)) :
+    List (Core.BlockCheck × CommandElabM Unit) :=
+  (if w[1].getId == `fren.evidence then [] else
+    [(.syntax, throwErrorAt w[1] (Core.memberOptionMsg w[1].getId.toString).text)])
+  ++ (rejected?.map (.rejected, ·)).toList
+
+/-- The error of how the clause member `m` is written, if it is `read`
+with no error of its own syntax (`Core.clauseSyntaxError?`,
+`lang::clause_errors`), of a member that the source writes, not one that
+an item generates, reported at the keyword: a clause without a label that
+is not a Boolean block. -/
+def clauseSyntaxAt (m : Syntax) (read : Bool) : List (Core.BlockCheck × CommandElabM Unit) :=
+  match clauseOf? m, m[0].getHeadInfo with
+  | some (w, form), .original .. =>
+    ((Core.clauseSyntaxError? w (if read then some form else none)).map fun msg => (.syntax, throwErrorAt m[0] msg.text)).toList
+  | _, _ => []
+
+/-- The member `m`, under any evidence settings before it. -/
+partial def underEvidence (m : Syntax) : Syntax :=
+  if m.isOfKind ``Lang.evidenceMember then underEvidence m[4] else m
+
+/-- The command `c`, under any of Lean's `set_option ... in` before it. -/
+partial def underSettings (c : Syntax) : Syntax :=
+  if c.isOfKind ``Lean.Parser.Command.in then underSettings c[2] else c
+
+open Lang in
+/-- The clauses of the item `stx`, as `Core.ItemShape` (`lang::item_error`)
+reads its structure, each that the source writes with its keyword, where
+its error is reported: the members of a procedure's, a function's or a
+global expectation's block, and every member of a trait, of every kind,
+those that the trait does not take included, each under any `set_option
+... in`. -/
+partial def itemShape (stx : Syntax) : Core.ItemShape Syntax :=
+  let stx := underSettings stx
+  if stx.isOfKind ``Lang.procCmd then blockShape stx[8].getArgs false
+  else if stx.isOfKind ``Lang.fnBlockCmd then blockShape stx[12].getArgs false
+  else if stx.isOfKind ``Lang.globalBlockCmd then blockShape stx[7].getArgs true
+  else if stx.isOfKind ``Lang.traitCmd then
+    .members (stx[4].getArgs.toList.map fun m => if m.isOfKind ``Lang.lawMember then .done else itemShape m[0])
+  else .done
+where
+  blockShape (members : Array Syntax) (global : Bool) : Core.ItemShape Syntax :=
+    .ofList (members.toList.filterMap fun m0 =>
+      let m := underEvidence m0
+      match clauseOf? m, m[0].getHeadInfo with
+      | some (w, _), .original .. => some (w, global, m[0])
+      | _, _ => none)
+
+/-- Reports the first static error of the item `stx`, whose first error of
+its syntax, if any, is `parse?` (`Core.itemError?`, `lang::item_error`):
+that one, else the first error of a clause's keyword in its shape
+(`itemShape`), at the keyword. -/
+def reportItem (parse? : Option (CommandElabM Unit)) (stx : Syntax) : CommandElabM Unit := do
+  if let some r := Core.itemError? parse? (itemShape stx) (fun msg ref => throwErrorAt ref msg.text) then r
+
+/-- The static errors of the syntax of the function's block `stx` that the
+`fren` command's parser reports, the first of them by
+`Core.firstBlockError?` (`lang::block_errors`). Its parts, in source order: its name
+and parameters; its first result, with a modifier that it does not take,
+`det` or an evidence setting (`F0442`), before its own syntax; a second
+result (`F0445`); and each member, an evidence setting before it as a part
+of its own (`F0442`), with its own syntax, how it is written
+(`clauseSyntaxAt`: a clause without a label that is not a Boolean block),
+and whether the block takes it (`F0442`, `F0443`, an `out` of another
+name, `F0444`, or of the result again, `refines`). -/
+def fnBlockErrors (stx : Syntax) : CommandElabM (Option (CommandElabM Unit)) := do
+  let mut parts : List (List (Core.BlockCheck × CommandElabM Unit)) := []
+  let header ← caughtError (for i in [0:9] do checkParsed stx[i])
+  parts := parts ++ [(header.map (.syntax, ·)).toList]
+  let results := stx[9].getSepArgs
+  let r := results[0]!
+  let mut first : List (Core.BlockCheck × CommandElabM Unit) := []
+  unless r[0].isNone do
+    first := first ++ [(.modifier, throwErrorAt r[0][0][0] (Core.fnMemberMsg? .evidence false "set_option").get!.text)]
+  unless r[1].isNone do
+    first := first ++ [(.modifier, throwErrorAt r[1] (Core.fnMemberMsg? .define true "det").get!.text)]
+  if let some e ← caughtError (checkParsed r) then first := first ++ [(.syntax, e)]
+  parts := parts ++ [first]
+  if let some r2 := results[1]? then
+    parts := parts ++ [[(.rejected, throwErrorAt (r2.getHead?.getD r2) Core.fnResultsMsg.text)]]
+  let rest ← caughtError (for i in [10:12] do checkParsed stx[i])
+  parts := parts ++ [(rest.map (.syntax, ·)).toList]
+  let rn := Core.nameText (declaredIdent r[2]).1.getId
+  let mut defined := false
+  for m0 in stx[12].getArgs do
+    let mut m := m0
+    while m.isOfKind ``Lang.evidenceMember do
+      let rejected? := (fnMemberError? m).map fun (ref, msg) => throwErrorAt ref msg.text
+      parts := parts ++ [settingErrors m rejected?]
+      m := m[4]
+    let own ← caughtError (checkParsed m)
+    let rejected? : Option (CommandElabM Unit) :=
+      if m.isOfKind ``Lang.refinesMember then
+        some (throwErrorAt m "`refines` is accepted only in global expectation blocks")
+      else if m.isOfKind ``Lang.defineMember then
+        let x := Core.nameText m[1].getId
+        if x != rn then some (throwErrorAt (mkNullNode #[m[0], m[1]]) (Core.fnOutMsg x rn).text)
+        else if defined then some (throwErrorAt m[1] (Core.resultDefinedTwiceMsg x).text)
+        else none
+      else (fnMemberError? (requireAsAssume m)).map fun (ref, msg) => throwErrorAt ref msg.text
+    if m.isOfKind ``Lang.defineMember && Core.nameText m[1].getId == rn then defined := true
+    parts := parts ++ [(own.map (.syntax, ·)).toList ++ clauseSyntaxAt m own.isNone ++ (rejected?.map (.rejected, ·)).toList]
+  let tail ← caughtError (for i in [13:stx.getNumArgs] do checkParsed stx[i])
+  parts := parts ++ [(tail.map (.syntax, ·)).toList]
+  return Core.firstBlockError? parts
+
+/-- The function's block `stx`'s first static error, if any
+(`fnBlockErrors`, `reportItem`). -/
+def checkFnBlockParsed (stx : Syntax) : CommandElabM Unit := do reportItem (← fnBlockErrors stx) stx
+
+open Lang in
+/-- One source clause's independent conjunction leaves, preserving lexical
+and leading guard wrappers. Disjunction/negation/equivalence remain one
+clause; generated paths are logical names, not user binder declarations. -/
+partial def clauseLeaves (owner : Name) (source : Syntax) : CommandElabM (Array (Syntax × Syntax)) := do
+  let e := unparen source
+  if isBooleanGuard e then
+    return (← clauseLeaves owner e[3]).map fun (name, body) => (name, e.setArg 3 body)
+  if e.isOfKind ``Lang.letExpr then
+    return (← clauseLeaves owner e[3]).map fun (name, body) => (name, e.setArg 3 body)
+  if let some ("and", members) := booleanBlockView e then
+    let labels := members.filterMap (·.1)
+    if let some k := (Core.repeatsAt (labels.map (·.getId)))[0]? then
+      throwErrorAt labels[k]! "a Boolean block repeats label `{labels[k]!.getId}`"
+    let mut leaves := #[]
+    for (label, body) in members, i in [0:members.size] do
+      if let some label := label then
+        discard (segName label)
+        liftMsg label (Core.checkNoBang label.getId)
+      let segment := label.map (·.getId.toString) |>.getD (toString (i + 1))
+      let name := Name.mkSimple (if owner.isAnonymous then segment else owner.toString ++ "." ++ segment)
+      let child ← clauseLeaves name body
+      leaves := leaves ++ child.map fun (ref, value) =>
+        (if ref.getId == name then (mkIdentFrom (label.getD body) name).raw else ref, value)
+    return leaves
+  let owner := if owner.isAnonymous then Name.mkSimple "1" else owner
+  return #[(mkIdentFrom source owner, source)]
+
+partial def conjunctionClause (e : Syntax) : Bool :=
+  if isBooleanGuard e || e.isOfKind ``Lang.letExpr then conjunctionClause e[3]
+  else (booleanBlockView e).any (·.1 == "and")
+
+/-- Normalize the optional outer label and conjunction-clause sugar
+before evidence settings and duplicate-member checks are collected. -/
+def splitBooleanMember (member : Syntax) : CommandElabM (Option (Array Syntax)) := do
+  let bare := member.isOfKind ``Lang.bareAssumeMember || member.isOfKind ``Lang.bareEnsureMember || member.isOfKind ``Lang.bareExpectMember
+  let parsed := constraint? member
+  if !bare && parsed.isNone then return none
+  let (kind, owner, expression) := if bare then
+      let kind := if member.isOfKind ``Lang.bareAssumeMember then PropKind.assume
+                  else if member.isOfKind ``Lang.bareEnsureMember then .ensure else .expect
+      (kind, Name.anonymous, withWhere member[1] member[2])
+    else let (kind, name, expression) := parsed.get!; (kind, name.getId, expression)
+  if bare && !booleanBlockRoot expression then
+    throwErrorAt member[0] (Core.bareClauseMsg member[0].getAtomVal.trimAscii.toString).text
+  if kind == .cover || (!bare && !conjunctionClause expression) then return some #[member]
+  let leaves ← clauseLeaves owner expression
+  return some (leaves.map fun (name, body) =>
+    let syntaxKind := match kind with | .assume => ``Lang.assumeMember | .ensure => ``Lang.ensureMember
+                                      | .expect => ``Lang.expectMember | .cover => ``Lang.coverMember
+    mkNode syntaxKind #[member[0], name, mkAtom ":", body, mkNullNode])
+
 /-- A function written with its result and a block
 (`Reqs/Lang/Items#function-blocks`), as the `fren` command reads it: the
 function whose body is its `out` member's expression and whose contract is
-its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
+its `require`s and `ensure`s, each with the result, `r := f(x)`, and the
 `let`s that it needs as a `where` clause (`F0442`–`F0445`, `F0165`). -/
 @[command_elab Lang.fnBlockCmd] def elabFnBlock : CommandElab := recordingErrors fun stx => do
   checkLexemes stx
-  checkParsed stx
+  checkFnBlockParsed stx
+  let stx := requiresAsAssumes stx 12
   let results := stx[9].getSepArgs
   let r := results[0]!
-  unless r[0].isNone do throwErrorAt r[0][0][0] (Core.fnMemberMsg? .evidence false "set_option").get!.text
-  unless r[1].isNone do throwErrorAt r[1] (Core.fnMemberMsg? .define true "det").get!.text
-  if let some r2 := results[1]? then throwErrorAt (r2.getHead?.getD r2) Core.fnResultsMsg.text
   let rx := (declaredIdent r[2]).1
   let rn := Core.nameText rx.getId
   let mut lets : Array (String × Syntax) := #[]
@@ -7742,21 +7979,6 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
     while inner.isOfKind ``Lang.evidenceMember do inner := inner[4]
     if inner.isOfKind ``Lang.refinesMember then
       throwErrorAt inner "`refines` is accepted only in global expectation blocks"
-    -- Each member that a function's block does not take (`F0442`,
-    -- `F0443`), at its first token, or a `use`'s or an evidence
-    -- setting's whole, as the `fren` command reports it.
-    let kind? : Option (Core.FnMember × Bool × String × Syntax) :=
-      if m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember then some (.use, false, "use", m)
-      else if m.isOfKind ``Lang.evidenceMember then some (.evidence, false, "set_option", mkNullNode #[m[0], m[3]])
-      else if m.isOfKind ``Lang.callMember then some (.call, false, "call", m[0])
-      else if m.isOfKind ``Lang.existsMember then some (.exists, !m[0].isNone, "exists", if m[0].isNone then m[1] else m[0])
-      else if m.isOfKind ``Lang.letMember then some (.let, !m[0].isNone, "let", if m[0].isNone then m[1] else m[0])
-      else match constraint? m with
-        | some (.expect, _, _) => some (.claim, false, "expect", m[0])
-        | some (.cover, _, _) => some (.claim, false, "cover", m[0])
-        | _ => none
-    if let some (k, det, kw, ref) := kind? then
-      if let some msg := Core.fnMemberMsg? k det kw then throwErrorAt ref msg.text
     if m.isOfKind ``Lang.useMember || m.isOfKind ``Lang.useGroupMember then uses := uses.push m
     else if m.isOfKind ``Lang.letMember then
       let x := (declaredIdent m[2]).1
@@ -7767,6 +7989,10 @@ its `assume`s and `ensure`s, each with the result, `r := f(x)`, and the
       if out?.isSome then throwErrorAt m[1] (Core.resultDefinedTwiceMsg x).text
       out? := some (mkNullNode #[m[2], m[3], m[4]])
     else if (constraint? m).isSome then clauses := clauses.push m
+    -- A clause without a label, a Boolean block, as its leaves, as a
+    -- procedure's is (`splitBooleanMember`).
+    else if (clauseOf? m).any (!·.2.labelled) then
+      if let some split ← splitBooleanMember m then clauses := clauses ++ split
   -- Expand implicit parameters before forming the result's self-call in
   -- postconditions; that call must use the same fresh parameters.
   let (parameters, expandedOut) ← match out? with
@@ -8129,11 +8355,12 @@ def memberMentions (m : Syntax) : Array Name :=
 
 /-- Records `arbitrary_source_item_ordering` on the procedure `stx`, whose
 members, with their evidence settings, are `raw`, and `members` without
-them (`lint::arbitrary_source_item_ordering`). -/
-def lintMemberOrder (stx open_ : Syntax) (raw members : Array Syntax) : CommandElabM Unit := do
+them (`lint::arbitrary_source_item_ordering`); `global` if it is a global
+expectation's. -/
+def lintMemberOrder (stx open_ : Syntax) (raw members : Array Syntax) (global := false) : CommandElabM Unit := do
   let some kinds := members.mapM memberKind? | return
   let some i := Core.firstOutOfOrder? kinds | return
-  let msg := Core.memberOrderMsg kinds[i]! kinds[i - 1]!
+  let msg := Core.memberOrderMsg kinds[i]! kinds[i - 1]! global
   let some sub := stx.getSubstring? false false | return
   let off (p : Option String.Pos.Raw) := (String.Pos.Raw.extract sub.str sub.startPos (p.getD sub.startPos)).length
   let src := (String.Pos.Raw.extract sub.str sub.startPos sub.stopPos).toList.toArray
@@ -8446,8 +8673,8 @@ def elabRefinesMembers (scope : Name) (members : Array Syntax) (vars : Array Var
   return (out, defs, indexes)
 
 /-- `duplicate_constraint` (`lint::duplicate_constraint`), of a procedure's
-constraints. -/
-def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
+constraints, or a global expectation's if `global`. -/
+def lintDuplicateConstraints (members : Array Syntax) (global := false) : TermElabM Unit := do
   let constraints := members.filterMap fun m => match m with
     | `(fren_member| assume $x:ident : $e) => some (Core.ConstraintKind.assume, x.raw, e.raw)
     | `(fren_member| ensure $x:ident : $e) => some (.ensure, x.raw, e.raw)
@@ -8459,7 +8686,7 @@ def lintDuplicateConstraints (members : Array Syntax) : TermElabM Unit := do
     for (i, j) in Core.repeatedConstraints (group.map fun (_, _, e) => srcText (unparen e)) do
       let (k, x, _) := group[i]!
       let (k', x', _) := group[j]!
-      let msg := Core.duplicateConstraintMsg k' k x'.getId.toString
+      let msg := Core.duplicateConstraintMsg k' k x'.getId.toString global
       let fixable := (Core.duplicateConstraint k' k true).2 && (← getLocal).inMarkdown
       recordLint .duplicateConstraint x (if fixable then msg.note Core.fixHelp else msg)
 
@@ -8571,7 +8798,7 @@ generated definitions added: the constraints, the calls, the
 placeholders used, the definitions' values over the variables, the
 indexes, and whether all were elaborated. -/
 def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pending : Array PendingInst)
-    (declBase : Name) (varsOk : Bool) (varNames : NameSet) :
+    (declBase : Name) (varsOk : Bool) (varNames : NameSet) (global := false) :
     TermElabM (Array PropInfo × Array InstInfo × Array Name × Array (Name × Expr) × CompIndexes × Bool) := do
   let instNames := pending.map (·.name)
   let decls := vars.map fun v => (v.name, fun _ => pure v.type)
@@ -8586,7 +8813,7 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
     let defs := defs ++ refineDefs
     let indexes := indexes ++ refineIndexes
     let good := varsOk && defsOk && propsOk
-    lintDuplicateConstraints members
+    lintDuplicateConstraints members global
     let lcx : ExprCtx := { modName := scope, vars, insts := instNames, place := .prop }
     lintOutputs lcx members vars
     lintTrivialCover lcx members
@@ -8696,7 +8923,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   unless ok do return (false, #[])
   if global then lintUnrelatedCalls nameStx path.getString! members
   -- Bindings; assumptions, requirements and expectations
-  let (props, insts, uses, values, indexes, ok) ← elabCompBody scope members vars pending declBase ok names
+  let (props, insts, uses, values, indexes, ok) ← elabCompBody scope members vars pending declBase ok names global
   lintManualNat path members
   if ok then lintCompUnused scope path members vars instNames global
   let mut generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `ensures]
@@ -8705,11 +8932,9 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
   if ok then
     let (relational, counts) ← checkCounts
-    let expandEvidence (evidence : Core.Tested) : Core.Tested :=
-      { evidence with props := evidence.props ++ props.filterMap fun prop =>
-          if prop.evidenceOwner?.any evidence.props.contains && !evidence.props.contains prop.name then some prop.name else none }
-    let tested := expandEvidence tested
-    let enumerated := expandEvidence enumerated
+    let owners := props.map fun prop => (prop.name, prop.evidenceOwner?)
+    let tested := tested.expandProps owners
+    let enumerated := enumerated.expandProps owners
     let info : CompInfo := { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
                              decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
                              relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed
@@ -8727,69 +8952,60 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
 /-- The results of the procedure `stx`: `fren_result`s. -/
 def procResults (stx : Syntax) : Array Syntax := if stx[6].isNone then #[] else stx[6][2].getSepArgs
 
-/-- Reports an `out` member of the procedure `stx` whose name is not one of
-its results (`F0444`), as the `fren` command's parser does. -/
-def checkProcMembers (stx : Syntax) : CommandElabM Unit := do
+/-- The static errors of the syntax of the procedure `stx` that the `fren`
+command's parser reports, the first of them by `Core.firstBlockError?`
+(`lang::block_errors`). Its parts, in source order: its signature; and each
+member, an evidence setting before it as a part of its own, with its own
+syntax, how it is written (`clauseSyntaxAt`: a clause without a label that
+is not a Boolean block), and an `out` whose name is not one of its results
+(`F0444`). -/
+def procBlockErrors (stx : Syntax) : CommandElabM (Option (CommandElabM Unit)) := do
+  let mut parts : List (List (Core.BlockCheck × CommandElabM Unit)) := []
+  let header ← caughtError (for i in [0:8] do checkParsed stx[i])
+  parts := parts ++ [(header.map (.syntax, ·)).toList]
   let results := (procResults stx).map fun r => (declaredIdent r[2]).1.getId
   for m0 in stx[8].getArgs do
-    let (m, _) ← unwrapEvidence m0
-    if m.isOfKind ``Lang.defineMember && !results.contains m[1].getId then
-      throwErrorAt (mkNullNode #[m[0], m[1]]) (Core.procOutMsg (Core.nameText m[1].getId)).text
+    let mut m := m0
+    while m.isOfKind ``Lang.evidenceMember do
+      parts := parts ++ [settingErrors m none]
+      m := m[4]
+    let own ← caughtError (checkParsed m)
+    let rejected? : Option (CommandElabM Unit) :=
+      if m.isOfKind ``Lang.defineMember && !results.contains m[1].getId then
+        some (throwErrorAt (mkNullNode #[m[0], m[1]]) (Core.procOutMsg (Core.nameText m[1].getId)).text)
+      else none
+    parts := parts ++ [(own.map (.syntax, ·)).toList ++ clauseSyntaxAt m own.isNone ++ (rejected?.map (.rejected, ·)).toList]
+  let tail ← caughtError (for i in [9:stx.getNumArgs] do checkParsed stx[i])
+  parts := parts ++ [(tail.map (.syntax, ·)).toList]
+  return Core.firstBlockError? parts
 
-open Lang in
-/-- One source clause's independent conjunction leaves, preserving lexical
-and leading guard wrappers. Disjunction/negation/equivalence remain one
-clause; generated paths are logical names, not user binder declarations. -/
-partial def clauseLeaves (owner : Name) (source : Syntax) : CommandElabM (Array (Syntax × Syntax)) := do
-  let e := unparen source
-  if isBooleanGuard e then
-    return (← clauseLeaves owner e[3]).map fun (name, body) => (name, e.setArg 3 body)
-  if e.isOfKind ``Lang.letExpr then
-    return (← clauseLeaves owner e[3]).map fun (name, body) => (name, e.setArg 3 body)
-  if let some ("and", members) := booleanBlockView e then
-    let labels := members.filterMap (·.1)
-    if let some k := (Core.repeatsAt (labels.map (·.getId)))[0]? then
-      throwErrorAt labels[k]! "a Boolean block repeats label `{labels[k]!.getId}`"
-    let mut leaves := #[]
-    for (label, body) in members, i in [0:members.size] do
-      if let some label := label then
-        discard (segName label)
-        liftMsg label (Core.checkNoBang label.getId)
-      let segment := label.map (·.getId.toString) |>.getD (toString (i + 1))
-      let name := Name.mkSimple (if owner.isAnonymous then segment else owner.toString ++ "." ++ segment)
-      let child ← clauseLeaves name body
-      leaves := leaves ++ child.map fun (ref, value) =>
-        (if ref.getId == name then (mkIdentFrom (label.getD body) name).raw else ref, value)
-    return leaves
-  let owner := if owner.isAnonymous then Name.mkSimple "1" else owner
-  return #[(mkIdentFrom source owner, source)]
+/-- The procedure `stx`'s first static error, if any (`procBlockErrors`,
+`reportItem`). -/
+def checkProcMembers (stx : Syntax) : CommandElabM Unit := do reportItem (← procBlockErrors stx) stx
 
-partial def booleanBlockRoot (e : Syntax) : Bool :=
-  if isBooleanGuard e || e.isOfKind ``Lang.letExpr then booleanBlockRoot e[3]
-  else (unparen e).isOfKind ``Lang.booleanBlockExpr
+/-- The static errors of the syntax of the global expectation `stx`, the
+first of them by `Core.firstBlockError?` (`lang::block_errors`). Its parts:
+its signature, then each member, an evidence setting before it as a part
+of its own, with its own syntax and how it is written (`clauseSyntaxAt`: a
+clause without a label that is not a Boolean block). -/
+def globalBlockErrors (stx : Syntax) : CommandElabM (Option (CommandElabM Unit)) := do
+  let mut parts : List (List (Core.BlockCheck × CommandElabM Unit)) := []
+  let header ← caughtError (for i in [0:7] do checkParsed stx[i] (global := true))
+  parts := parts ++ [(header.map (.syntax, ·)).toList]
+  for m0 in stx[7].getArgs do
+    let mut m := m0
+    while m.isOfKind ``Lang.evidenceMember do
+      parts := parts ++ [settingErrors m none]
+      m := m[4]
+    let own ← caughtError (checkParsed m (global := true))
+    parts := parts ++ [(own.map (.syntax, ·)).toList ++ clauseSyntaxAt m own.isNone]
+  let tail ← caughtError (for i in [8:stx.getNumArgs] do checkParsed stx[i] (global := true))
+  parts := parts ++ [(tail.map (.syntax, ·)).toList]
+  return Core.firstBlockError? parts
 
-partial def conjunctionClause (e : Syntax) : Bool :=
-  if isBooleanGuard e || e.isOfKind ``Lang.letExpr then conjunctionClause e[3]
-  else (booleanBlockView e).any (·.1 == "and")
-
-/-- Normalize the optional outer label and conjunction-clause sugar
-before evidence settings and duplicate-member checks are collected. -/
-def splitBooleanMember (member : Syntax) : CommandElabM (Option (Array Syntax)) := do
-  let bare := member.isOfKind ``Lang.bareAssumeMember || member.isOfKind ``Lang.bareEnsureMember || member.isOfKind ``Lang.bareExpectMember
-  let parsed := constraint? member
-  if !bare && parsed.isNone then return none
-  let (kind, owner, expression) := if bare then
-      let kind := if member.isOfKind ``Lang.bareAssumeMember then PropKind.assume
-                  else if member.isOfKind ``Lang.bareEnsureMember then .ensure else .expect
-      (kind, Name.anonymous, withWhere member[1] member[2])
-    else let (kind, name, expression) := parsed.get!; (kind, name.getId, expression)
-  if bare && !booleanBlockRoot expression then throwErrorAt expression "expected a named clause or a Boolean block"
-  if kind == .cover || (!bare && !conjunctionClause expression) then return some #[member]
-  let leaves ← clauseLeaves owner expression
-  return some (leaves.map fun (name, body) =>
-    let syntaxKind := match kind with | .assume => ``Lang.assumeMember | .ensure => ``Lang.ensureMember
-                                      | .expect => ``Lang.expectMember | .cover => ``Lang.coverMember
-    mkNode syntaxKind #[member[0], name, mkAtom ":", body, mkNullNode])
+/-- The global expectation `stx`'s first static error, if any
+(`globalBlockErrors`, `reportItem`). -/
+def checkGlobalBlockParsed (stx : Syntax) : CommandElabM Unit := do reportItem (← globalBlockErrors stx) stx
 
 /-- The members of the procedure `stx` as a component's, as the `fren`
 command reads them: its parameters as inputs, its results as public
@@ -8841,6 +9057,9 @@ def blockMembers (stx : Syntax) : CommandElabM (Array (Syntax × Core.BlockMembe
       else if m.isOfKind ``Lang.letMember then some (.let, !m[0].isNone)
       else if m.isOfKind ``Lang.defineMember then some (.define, false)
       else if m.isOfKind ``Lang.assumeMember || m.isOfKind ``Lang.bareAssumeMember then some (.assume, false)
+      -- Reported before, with a message of its own (`checkGlobalBlockParsed`),
+      -- but named, so that it is no member of unknown kind.
+      else if m.isOfKind ``Lang.requireMember || m.isOfKind ``Lang.bareRequireMember then some (.require, false)
       else if m.isOfKind ``Lang.ensureMember || m.isOfKind ``Lang.bareEnsureMember then some (.ensure, false)
       else if m.isOfKind ``Lang.expectMember || m.isOfKind ``Lang.bareExpectMember then some (.expect, false)
       else if m.isOfKind ``Lang.coverMember then some (.cover, false)
@@ -8859,8 +9078,8 @@ def blockMembers (stx : Syntax) : CommandElabM (Array (Syntax × Core.BlockMembe
   let errorsBefore := (← get).messages.toList.filter (·.severity == .error) |>.length
   let checksBefore := (← getLocal).checkErrors
   checkLexemes stx
-  checkParsed stx
   checkProcMembers stx
+  let stx := requiresAsAssumes stx 8
   lintItem stx
   lintTrailingCommas stx
   let modName := (← getLocal).currentModule
@@ -8947,9 +9166,10 @@ open Lang in
 the global expectation at `path`, just elaborated, as a procedure `stx`,
 whose members, as a component's, are `members`
 (`Reqs/Lang/Recursion#induction`): one for each of its claims and each
-candidate, in order (`Core.inductionCandidate`). Each is an item of the
+candidate, in order (`Core.inductionCandidates`). Each is an item of the
 module that nothing reports, whose body is not checked as a function's,
-but only for the expectation. -/
+but only for the expectation, and which is kept apart from the defined
+functions (`State.inductionFns`). -/
 def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : CommandElabM Unit := do
   let st ← getState
   let some c := st.globals.get? path | return
@@ -8960,25 +9180,28 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
   let vars := names.filterMap fun x => c.vars.find? (·.name == x)
   unless vars.size == params.size do return
   let tys := vars.map (·.ptype.ty)
-  let constrained := vars.any (·.ptype.restricted)
-  let candidates := (List.range params.size).filter fun i =>
-    Core.inductionCandidate kinds.toList l.inductionAbstract constrained (Core.directlyRecursive st.shapeOf tys[i]!)
-      (l.inductionArgs.contains names[i]!)
+  let candidates := Core.inductionCandidates st.shapeOf kinds.toList l.inductionAbstract
+    (vars.map fun v => (v.name, v.ptype)) l.inductionArgs
   if candidates.isEmpty then return
   let assumptions := members.filterMap fun m => match constraint? m with
     | some (.assume, _, e) => some e
     | _ => none
   let position := (charRange (← getFileMap).source stx[2]).start
   let ref := stx[2]
+  let savedModule := l.currentModule
   -- Placeholders for the parts that are spliced in after parsing, under a
-  -- prefix that no name of the expectation starts with, so that renaming
-  -- them changes nothing that the expectation writes.
-  let written := identNames stx
+  -- prefix that no name in the expectation or the generated patterns
+  -- starts with: renaming must not rewrite a variant or an enum's name
+  -- hidden by an alias in the expectation's signature.
+  let patternNames := candidates.toArray.flatMap fun i => match tys[i]! with
+    | .enum ep _ => ((st.enums.get? ep).map fun info => info.variants.flatMap fun v =>
+        (Core.variantSegments savedModule ep v).toArray).getD #[]
+    | _ => #[]
+  let written := identNames stx ++ patternNames
   let mut fresh := "fren_induction_"
   while written.any (·.startsWith fresh) do fresh := fresh ++ "_"
   let stem := fresh
   let ph (s : String) : String := stem ++ s
-  let savedModule := l.currentModule
   let mut inductions := #[]
   for m in members do
     let some (.expect, claim, e) := constraint? m | continue
@@ -8989,23 +9212,25 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
       let n := params.size
       let fname := Core.inductionFnName (Core.nameText (declaredIdent stx[2]).1.getId) (Core.nameText claim.getId)
         (Core.nameText names[i]!) position
-      let named (k : Nat) := Core.nameText names[k]!
-      -- Each variant, with its payload bound, and the function applied to
-      -- the case's variables as `inductionHypotheses` gives them.
       let cases := Core.inductionCases st.shapeOf tys i
-      let variant (v : Name) := "::".intercalate (Core.variantSegments savedModule ep v)
-      let arms := (cases.zip info.variants).map fun ((payload, hyps), v) =>
-        let binder (k : Nat) := ph s!"p{k}" ++ (if payload[k]! matches .bool then "?" else "")
-        let arg (k : Nat) := if k < n then named k else binder (k - n)
-        let pattern := variant v ++ (if payload.isEmpty then ""
-          else "(" ++ ", ".intercalate ((List.range payload.size).map binder) ++ ")")
-        let apps := hyps.map fun h => s!"{ph "f?"}({", ".intercalate (h.map arg)})"
-        s!"{pattern} => {if apps.isEmpty then "true" else " and ".intercalate apps}"
+      let builder : Core.InductionSyntax String := {
+        truth := "true"
+        app := fun f xs => s!"{f}({", ".intercalate xs})"
+        conjoin := fun a b => s!"({a}) and ({b})"
+        guard := fun a b => s!"when {a}, {b}"
+        matchOn := fun x arms =>
+          let arms := arms.map fun arm =>
+            let pattern := "::".intercalate arm.variant ++ (if arm.binders.isEmpty then ""
+              else "(" ++ ", ".intercalate arm.binders.toList ++ ")")
+            s!"{pattern} => {arm.value}"
+          s!"match {x} \{ {", ".intercalate arms.toList} }" }
+      let (bodyText, postText) := Core.buildInduction builder st.shapeOf savedModule ep info.variants
+        (names.map Core.nameText) tys (ph "f?") i
+        (assumptions.mapIdx fun k _ => ph s!"a{k}") (ph "c")
+        (fun k b => ph s!"p{k}" ++ (if b then "?" else ""))
       let signature := params.mapIdx fun k p =>
         Core.nameText p[1].getId ++ (if p[2].isNone then "" else s!": {ph s!"t{k}"}")
-      let text := s!"pub fn {ph "f?"}({", ".intercalate signature.toList}): Bool := match {named i} \{ {", ".intercalate arms.toList} }"
-      let held := if assumptions.isEmpty then ph "c" else s!"when {" and ".intercalate ((List.range assumptions.size).map fun k => ph s!"a{k}")}, {ph "c"}"
-      let postText := s!"{ph "f?"}({", ".intercalate (names.map Core.nameText).toList}) and ({held})"
+      let text := s!"pub fn {ph "f?"}({", ".intercalate signature.toList}): Bool := {bodyText}"
       let some cmd ← try some <$> parseAt `command text ref catch _ => pure none | continue
       let some post ← try some <$> parseAt `fren_expr postText ref catch _ => pure none | continue
       -- Every placeholder of the parsed text is renamed before any of the
@@ -9041,6 +9266,7 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
       modifyLocal fun l => { l with
         lintReports := savedLocal.lintReports, natReports := savedLocal.natReports, bodies := savedLocal.bodies
         currentItem := savedLocal.currentItem }
+      record (.inductionFn fpath)
       fns := fns.push fpath
     inductions := inductions.push (claim.getId, fns)
   record (.globalInfo path { c with inductions })
@@ -9051,7 +9277,7 @@ does not accept (`F0417`), and recorded as a global expectation, which
 nothing calls. -/
 @[command_elab Lang.globalBlockCmd] def elabGlobalBlock : CommandElab := recordingErrors fun stx0 => do
   checkLexemes stx0
-  checkParsed stx0
+  checkGlobalBlockParsed stx0
   -- Aligned as a procedure's, after a `pub` that it does not have.
   -- Its `out` members are reported as members that it does not accept
   -- (`F0417`, `blockMemberError?`), not as a procedure's (`F0444`).
@@ -9090,7 +9316,7 @@ nothing calls. -/
     throwErrorAt named[k]! (Core.dupMemberMsg declared[k]! (global := true)).text
   let raw := stx[8].getArgs
   let body ← raw.mapM fun m => return (← unwrapEvidence m).1
-  lintMemberOrder stx stx[7] raw body
+  lintMemberOrder stx stx[7] raw body (global := true)
   let (ok, generated) ← liftTermElabM <|
     elabCompMembers scope path modName declBase false nameStx members tested enumerated enumSize (global := true)
   lintDeclared .global n nameStx
@@ -9483,10 +9709,6 @@ def elabLaw (path : Name) (m : Syntax) : CommandElabM (Name × Expr × Bool × B
   finally modifyScope fun sc => { sc with opts }
 
 
-/-- The command `c`, under any of Lean's `set_option ... in` before it. -/
-partial def underSettings (c : Syntax) : Syntax :=
-  if c.isOfKind ``Lean.Parser.Command.in then underSettings c[2] else c
-
 /-- Runs `k` in the scope of the trait at `path`, declared in the module
 `modName`, as its members are. -/
 def inTraitScope (path modName : Name) (k : CommandElabM α) : CommandElabM α := do
@@ -9505,10 +9727,21 @@ errors. -/
   -- but not those of Lean's `set_option ... in` before a member.
   let members := stx[4].getArgs
   -- A law's, without its settings, as a command's without Lean's.
+  -- A method's, a procedure's or an expectation's block in the order of
+  -- the `fren` command's parser (`lang::block_errors`), and the first error
+  -- of a clause's keyword only once the whole trait is read, from its shape,
+  -- as the `fren` command reads it as one item (`reportItem`,
+  -- `lang::item_error`).
   for x in #[stx[2]] ++ members.map fun m =>
       if m.isOfKind ``Lang.lawMember then mkNullNode (m.getArgs.extract 1 m.getNumArgs) else underSettings m[0] do
     checkLexemes x
-    checkParsed x
+    let parse? ←
+      if x.isOfKind ``Lang.fnBlockCmd then fnBlockErrors x
+      else if x.isOfKind ``Lang.globalBlockCmd then globalBlockErrors x
+      else if x.isOfKind ``Lang.procCmd then procBlockErrors x
+      else caughtError (checkParsed x)
+    if let some e := parse? then e
+  reportItem none stx
   lintItem stx[2]
   lintTrailingCommas stx
   let modName := (← getLocal).currentModule

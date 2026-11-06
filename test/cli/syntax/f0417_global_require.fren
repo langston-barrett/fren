@@ -1,0 +1,9 @@
+-- A global expectation's block does not accept `require` (F0417): its
+-- assumptions are written `assume`.
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
+
+expect even(x: Int) {
+    require small: x < 10
+    call d := double(x)
+    expect e: d.y mod 2 = 0
+}

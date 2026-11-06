@@ -9,27 +9,49 @@ that parallel jobs don't pile up.
 
 Slots are `flock`ed files in ~/.cache/heavy/ (`slot0`, `slot1`, ...), so a
 crashed or killed holder releases its slot, and every copy of this script on
-a machine shares them. Each slot file names the job that holds it.
+a machine shares them. Each owner publishes its own memory report; numeric
+PIDs are local diagnostics, never identities for another owner to signal.
 
 Slots: at most `HEAVY_SLOTS` jobs run at once, else the number in
 ~/.cache/heavy/slots, else 2.
 
-Memory: all heavy jobs together may use at most `HEAVY_MEM_GB` gigabytes of
-resident memory, else the number in ~/.cache/heavy/mem_gb, else 80% of the
+Memory: the combined resident-memory target is `HEAVY_MEM_GB` gigabytes,
+else the number in ~/.cache/heavy/mem_gb, else 80% of the
 machine's physical memory. A job's memory is that of its whole process
 group, summed about every second. A job waits to start while the running
-ones use more than 60% of the cap. When they use more than the cap, the most
-recently started job is killed (TERM, then KILL) and heavy exits with 137,
-saying so. The files are re-read on every use, so changing one takes effect
-for running jobs too. An unset, empty, invalid, infinite or non-positive
-setting falls through to the next, with a warning unless it is unset.
+ones use more than 60% of the cap. Legacy holders coexist with new ones:
+verified visible RSS counts directly, and all unobserved legacy holders
+together reserve half the cap. A verified stale monitor still reserves a full
+cap. When measured memory exceeds the cap, the compatible owner with the
+greatest admission sequence terminates its own group (TERM, then KILL) and
+exits with 137; estimates never trigger eviction. Every owner also enforces
+its own cap. Registry waits have a short deadline: on timeout admission
+waits and monitors enforce their own cap until shared accounting resumes.
+Failure to identify, measure or publish memory otherwise stops the command
+with exit 125. Linux requires `NSpid` in
+procfs status; systems without it fail identification with exit 125.
+Legacy estimates are not bounds on invisible memory, so mixed-version
+accounting is a sampled target, not a hard combined limit. The files are
+re-read on every use, so changing one takes effect for running jobs too.
+An unset, empty, invalid, infinite or non-positive setting falls through to
+the next, with a warning unless it is unset.
 
 Load (opt-in): `HEAVY_MAX_LOAD`, else ~/.cache/heavy/max_load, else off.
 Wait for the 1-minute load to be below this value, for at most 10 minutes;
 slots and memory still apply. `HEAVY_MAX_LOAD=off` overrides the file.
 
 Every completed job appends a JSON line to ~/.cache/heavy/log.jsonl
-(`HEAVY_LOG` overrides the path). Logging never fails a job. `--stats`
+(`HEAVY_LOG` overrides the path), including the job's user/system CPU
+seconds and CPU seconds per run second. On Linux, orphaned workers in its
+process group are adopted and waited for too. Machine CPU busy fractions
+come from /proc/stat intervals at start, about every 30 seconds and end;
+busy excludes idle and iowait. Unavailable readings give null summaries.
+One-second samples also record CPU by executable name, live concurrency,
+runnable pressure against online logical CPUs, and machine context-switch
+rates. Process status switch counts complement wait4's final involuntary
+switch total. A historical per-kind memory prediction is frozen beside
+actual peak RSS; it does not yet change admission's live-RSS rule.
+Logging never fails a job. `--stats`
 compares completions in the last HOURS (default 24), by admission policy
 and job kind. `--alternate` switches the file setting between VALUE and
 absent every MINUTES, logging each flip for the policy exposure times.
@@ -49,8 +71,12 @@ fuzzers and mutation runs. Builds and `lake test` stay online, since
 Lake fetches packages and elan fetches toolchains.
 
 `python3 scripts/heavy_test.py` tests parsing, settings, load admission
-and telemetry with scratch state and tiny jobs.
+and lease accounting, namespace translation and local termination with
+scratch state and tiny jobs.
 """
+import contextlib
+import ctypes
+import heapq
 import fcntl
 import json
 import math
@@ -64,6 +90,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 STATE = os.path.expanduser("~/.cache/heavy")
 DEFAULT_SLOTS = 2
@@ -71,6 +98,11 @@ DEFAULT_MEM_FRACTION = 0.8
 START_FRACTION = 0.6
 LOAD_GRACE_SECONDS = 600
 LOAD_SAMPLE_SECONDS = 30
+PREDICTION_JOBS = 20
+PREDICTION_SECONDS = 7 * 86400
+REPORT_STALE_SECONDS = 10
+REGISTRY_WAIT_SECONDS = 0.2
+REGISTRY_RETRY_SECONDS = 0.01
 USAGE = ("usage: heavy [--offline] [--] <command> [args...] | heavy --stats [hours] | "
          "heavy --alternate <minutes> <value>")
 
@@ -223,6 +255,302 @@ def sample_load(record, load_reader, now, last=None):
     if load is not None:
         record["load_samples"].append(load)
     return now
+
+
+def process_stat(text):
+    """Identity, group and self CPU ticks; comm may contain spaces or ')'."""
+    left, right = text.index("("), text.rindex(")")
+    fields = text[right + 1:].split()  # Begins at field 3 (state).
+    pid, ppid, pgrp, user, system, start, rss = (int(v) for v in
+                                              (text[:left], fields[1], fields[2], fields[11],
+                                               fields[12], fields[19], fields[21]))
+    if pid <= 0 or min(ppid, pgrp, user, system, start, rss) < 0:
+        raise ValueError("invalid process counters")
+    return {"pid": pid, "ppid": ppid, "comm": text[left + 1:right], "state": fields[0],
+            "pgrp": pgrp, "ticks": user + system, "start": start, "rss_pages": rss}
+
+
+def cpu_ticks(path="/proc/stat"):
+    """Aggregate CPU counters: user, nice, system, idle, iowait, irq,
+    softirq and steal. Guest times are already included in user/nice."""
+    try:
+        with open(path) as f:
+            fields = f.readline().split()
+        if not fields or fields[0] != "cpu" or len(fields) < 5:
+            return None
+        ticks = tuple(int(v) for v in fields[1:9])
+        if any(v < 0 for v in ticks):
+            return None
+        return ticks + (0,) * (8 - len(ticks))
+    except (OSError, ValueError):
+        return None
+
+
+def cpu_interval(before, after):
+    """Busy/total ticks between adjacent readings, or None without a
+    usable interval. A reset (including a decreasing iowait) rebaselines."""
+    if before is None or after is None:
+        return None
+    delta = [end - start for start, end in zip(before, after)]
+    total = sum(delta)
+    if any(v < 0 for v in delta) or total <= 0:
+        return None
+    return {"busy_ticks": total - delta[3] - delta[4], "total_ticks": total}
+
+
+def sample_cpu(record, now, last=None, final=False, reader=None):
+    if last is not None and not final and now - last[0] < LOAD_SAMPLE_SECONDS:
+        return last
+    ticks = (reader or cpu_ticks)()
+    if last is not None:
+        interval = cpu_interval(last[1], ticks)
+        if interval is not None:
+            record["cpu_busy_samples"].append(interval)
+    return now, ticks
+
+
+def cpu_summary(record):
+    # Reaping folds each result under a short signal mask. Retain only its
+    # aggregate, even when a long job waits for many thousands of workers.
+    usage = record.pop("_cpu_usage", (0, 0, 0, 0))
+    record["cpu_user_seconds"] += usage[0]
+    record["cpu_system_seconds"] += usage[1]
+    record["involuntary_context_switches"] = record.get("involuntary_context_switches", 0) + usage[3]
+    record["peak_rss_kb"] = max(record["peak_rss_kb"], usage[2])
+    samples = record["cpu_busy_samples"]
+    busy = sum(s["busy_ticks"] for s in samples)
+    total = sum(s["total_ticks"] for s in samples)
+    record.update(cpu_busy_mean=busy / total if total else None,
+                  cpu_busy_max=max((s["busy_ticks"] / s["total_ticks"] for s in samples),
+                                   default=None))
+    record["cpu_seconds"] = record["cpu_user_seconds"] + record["cpu_system_seconds"]
+    seconds = record["run_seconds"]
+    record["cpu_parallelism"] = record["cpu_seconds"] / seconds if seconds > 0 else None
+
+
+def machine_counters(path="/proc/stat"):
+    """Independent runnable-task, logical-CPU and context-switch readings."""
+    try:
+        with open(path) as f:
+            lines = [line.split() for line in f]
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    cores = len({p[0] for p in lines if len(p) >= 5 and re.fullmatch(r"cpu\d+", p[0])
+                 and all(v.isdigit() for v in p[1:5])})
+    if cores:
+        out["cpu_cores"] = cores
+    for parts in lines:
+        if len(parts) == 2 and parts[0] in ("ctxt", "procs_running"):
+            try:
+                value = int(parts[1])
+                if value >= 0:
+                    out[parts[0]] = value
+            except ValueError:
+                pass
+    return out
+
+
+class MachineSampler:
+    def __init__(self):
+        self.running_count = self.running_sum = self.oversubscribed = 0
+        self.running_max = self.ratio_max = None
+        self.ratio_sum = 0.0
+        self.rate_count = self.switches = 0
+        self.seconds = 0.0
+        self.rate_max = None
+        self.last = None
+
+    def sample(self, now, reading):
+        cores, running, ctxt = (reading.get(k) for k in ("cpu_cores", "procs_running", "ctxt"))
+        if cores is not None and cores > 0 and running is not None:
+            ratio = running / cores
+            self.running_count += 1
+            self.running_sum += running
+            self.ratio_sum += ratio
+            self.running_max = max(self.running_max or 0, running)
+            self.ratio_max = max(self.ratio_max or 0, ratio)
+            self.oversubscribed += running > cores
+        if self.last is not None and ctxt is not None:
+            before, previous = self.last
+            if previous is not None and now > before and ctxt >= previous:
+                seconds, switches = now - before, ctxt - previous
+                self.rate_count += 1
+                self.seconds += seconds
+                self.switches += switches
+                self.rate_max = max(self.rate_max or 0, switches / seconds)
+        self.last = now, ctxt
+
+    def finish(self, record):
+        count = self.running_count
+        record.update(
+            procs_running_sample_count=count,
+            procs_running_mean=self.running_sum / count if count else None,
+            procs_running_max=self.running_max,
+            runnable_per_core_mean=self.ratio_sum / count if count else None,
+            runnable_per_core_max=self.ratio_max,
+            oversubscribed_fraction=self.oversubscribed / count if count else None,
+            ctxt_rate_sample_count=self.rate_count,
+            ctxt_observed_seconds=self.seconds, ctxt_switches=self.switches,
+            ctxt_per_second_mean=self.switches / self.seconds if self.seconds else None,
+            ctxt_per_second_max=self.rate_max)
+
+
+def process_switches(text):
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0] == "nonvoluntary_ctxt_switches:":
+            value = int(fields[1])
+            return value if value >= 0 else None
+    return None
+
+
+def group_processes(pgid, proc="/proc", live=None):
+    """Linux process-group snapshots, or None when procfs is unavailable.
+    Read self utime/stime only: child times would count workers twice."""
+    try:
+        entries = os.listdir(proc)
+    except OSError:
+        return None
+    found = []
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        path = os.path.join(proc, entry)
+        try:
+            with open(os.path.join(path, "stat")) as f:
+                row = process_stat(f.read())
+            if row["pid"] != int(entry):
+                continue
+            if live is not None:
+                live.add((row["pid"], row["start"]))
+            if row["pgrp"] != pgid:
+                continue
+            try:
+                row["name"] = os.path.basename(os.readlink(os.path.join(path, "exe")))
+                row["name"] = row["name"].removesuffix(" (deleted)")
+            except OSError:
+                row["name"] = None  # Zombies have no exe link; retain a cached name below.
+            try:
+                with open(os.path.join(path, "status")) as f:
+                    row["switches"] = process_switches(f.read())
+            except (OSError, ValueError):
+                row["switches"] = None
+            with open(os.path.join(path, "stat")) as f:
+                check = process_stat(f.read())
+            if (check["pid"], check["start"], check["pgrp"]) == (row["pid"], row["start"], pgid):
+                found.append(row)
+        except (OSError, ValueError, IndexError):
+            continue  # Processes can disappear or become unreadable during a scan.
+    return found
+
+
+class ProcessSampler:
+    def __init__(self, started, ticks_per_second):
+        self.started = started
+        self.hz = ticks_per_second if ticks_per_second and ticks_per_second > 0 else None
+        self.previous = {}
+        self.names = {}
+        self.samples = 0
+        self.switches = 0
+        self.switch_samples = 0
+
+    def sample(self, now, boot_now, rows, live=None):
+        if rows is None or not self.hz:
+            # Do not bridge an unreadable scan when estimating per-process cores.
+            for state in self.previous.values():
+                state["gap"] = True
+            return
+        self.samples += 1
+        counts = {}
+        current = {}
+        for row in rows:
+            identity = row["pid"], row["start"]
+            before = self.previous.get(identity)
+            name = row["name"] or (before["name"] if before and row["comm"] == before["comm"]
+                                    else row["comm"])
+            data = self.names.setdefault(name, {"core_seconds": 0.0, "observed_core_seconds": 0.0,
+                                               "observed_process_seconds": 0.0,
+                                               "peak_cores_per_process": None, "peak_process_count": 0,
+                                               "processes_seen": 0})
+            seen_names = before["seen_names"] if before else set()
+            if name not in seen_names:
+                seen_names.add(name)
+                data["processes_seen"] += 1
+            if row["state"] not in ("Z", "X"):
+                counts[name] = counts.get(name, 0) + 1
+            ticks = row["ticks"] - (before["ticks"] if before else 0)
+            # Newly observed group members were born after the job started.
+            # Their lifetime CPU is known, though their birth time is tick-rounded.
+            if before:
+                elapsed = now - before["at"]
+            elif boot_now is not None:
+                elapsed = min(now - self.started, max(0, boot_now - row["start"] / self.hz))
+            else:
+                elapsed = 0
+            if ticks >= 0:
+                seconds = ticks / self.hz
+                data["core_seconds"] += seconds
+                if elapsed > 0 and not (before and before["gap"]):
+                    data["observed_core_seconds"] += seconds
+                    data["observed_process_seconds"] += elapsed
+                    peak = data["peak_cores_per_process"]
+                    data["peak_cores_per_process"] = max(peak or 0, seconds / elapsed)
+            switches = row["switches"]
+            previous_switches = before["switches"] if before else None
+            if switches is not None:
+                self.switch_samples += 1
+                if previous_switches is not None:
+                    self.switches += max(0, switches - previous_switches)
+                else:
+                    self.switches += switches
+            current[identity] = {**row, "name": name, "at": now, "gap": False,
+                                 "seen_names": seen_names,
+                                 "switches": switches if switches is not None else previous_switches}
+        # A live worker can leave and rejoin the group. Keep its baseline
+        # across that gap without adding CPU or counting the lifetime again.
+        if live is not None:
+            for identity, before in self.previous.items():
+                if identity in live and identity not in current:
+                    current[identity] = dict(before, gap=True)
+        # Completed lifetimes' contributions remain only in per-name totals.
+        self.previous = current
+        for name, count in counts.items():
+            self.names[name]["peak_process_count"] = max(self.names[name]["peak_process_count"], count)
+
+    def finish(self, record):
+        for data in self.names.values():
+            seconds = data["observed_process_seconds"]
+            data["mean_cores_per_process"] = data["observed_core_seconds"] / seconds if seconds else None
+        record.update(process_cpu=self.names if self.samples else None,
+                      process_samples=self.samples,
+                      nonvoluntary_ctxt_switches=self.switches if self.switch_samples else None)
+
+
+def predict_peak_rss(kind, state=STATE, environ=None, now=None):
+    """Max actual peak of the latest 20 matching jobs in seven days.
+    Freeze before execution; absent history is unknown, never zero."""
+    environ = os.environ if environ is None else environ
+    now = time.time() if now is None else now
+    recent = []
+    try:
+        with open(environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl"), "rb") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                    ended, peak = row["ended_at"], row["peak_rss_kb"]
+                    if (row.get("event", "job") == "job" and row["job_kind"] == kind
+                            and type(ended) in (int, float) and math.isfinite(ended)
+                            and now - PREDICTION_SECONDS <= ended <= now
+                            and type(peak) is int and peak > 0):
+                        heapq.heappush(recent, (ended, peak))
+                        if len(recent) > PREDICTION_JOBS:
+                            heapq.heappop(recent)
+                except (ValueError, TypeError, KeyError, OverflowError):
+                    continue
+    except (OSError, ValueError):
+        pass
+    return max((p for _, p in recent), default=None), len(recent)
 
 
 def append_log(record, state=STATE, environ=None):
@@ -550,9 +878,27 @@ def offline_command(command, system=None, check=None):
     raise RuntimeError(f"heavy: --offline is not supported on {system}")
 
 
-def group_rss_kb():
-    """Resident memory, in KB, of every process group on the machine."""
-    out = subprocess.run(["ps", "-A", "-o", "pgid=,rss="], capture_output=True, text=True).stdout
+def group_rss_kb(proc="/proc", system=None):
+    """Resident memory of groups visible through this caller's procfs/ps view.
+    These IDs must never be looked up on another namespace's behalf."""
+    if (system or platform.system()) == "Linux":
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        rss = {}
+        for pid in os.listdir(proc):
+            if not pid.isdigit():
+                continue
+            try:
+                with open(os.path.join(proc, pid, "stat")) as f:
+                    row = process_stat(f.read())
+                kb = row["rss_pages"] * page_size // 1024
+                rss[row["pgrp"]] = rss.get(row["pgrp"], 0) + kb
+            except (OSError, ValueError, IndexError):
+                continue
+        return rss
+    result = subprocess.run(["ps", "-A", "-o", "pgid=,rss="], capture_output=True, text=True)
+    if result.returncode:
+        raise OSError("ps could not measure process-group memory")
+    out = result.stdout
     rss = {}
     for line in out.splitlines():
         parts = line.split()
@@ -561,104 +907,645 @@ def group_rss_kb():
     return rss
 
 
-def jobs(state=STATE):
-    """(start time, process group) of every running heavy job, from the slot files."""
-    found = []
-    for name in os.listdir(state):
-        if not name.startswith("slot") or name == "slots":
-            continue
+def pid_namespace():
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except OSError:
+        return None
+
+
+def visible_group(child_pid, proc="/proc", system=None):
+    """Translate our own child's local PID into the procfs view's PGID.
+    With an ancestor's /proc mount, NSpid locates the child among our own
+    children. Linux requires NSpid in the caller's status and, for ancestor
+    procfs, in candidate status files. Never resolve another slot's numeric
+    PID this way."""
+    if (system or platform.system()) != "Linux":
+        return child_pid
+    with open(os.path.join(proc, "self", "stat")) as f:
+        parent = process_stat(f.read())["pid"]
+    with open(os.path.join(proc, "self", "status")) as f:
+        fields = next(line.split()[1:] for line in f if line.startswith("NSpid:"))
+    depth = len(fields) - 1
+    if depth < 0 or int(fields[-1]) != os.getpid():
+        raise ValueError("cannot identify this process in the procfs PID namespace")
+    # A single NSpid entry identifies our own procfs view without needing
+    # permission to read root's /proc/1/ns/pid on an ordinary host.
+    if depth == 0 and parent == os.getpid():
+        candidates = [str(child_pid)]
+        depth = None
+    else:
+        candidates = [p for p in os.listdir(proc) if p.isdigit()]
+    for pid in candidates:
         try:
-            with open(os.path.join(state, name)) as f:
-                fields = f.readline().split()
-            found.append((float(fields[1]), int(fields[0])))
-        except (OSError, ValueError, IndexError):
-            pass
+            with open(os.path.join(proc, pid, "stat")) as f:
+                row = process_stat(f.read())
+            if row["ppid"] != parent or row["pgrp"] != row["pid"]:
+                continue
+            if depth is not None:
+                with open(os.path.join(proc, pid, "status")) as f:
+                    ids = next(line.split()[1:] for line in f if line.startswith("NSpid:"))
+                if len(ids) <= depth or int(ids[depth]) != child_pid:
+                    continue
+            return row["pgrp"]
+        except (OSError, ValueError, IndexError, StopIteration):
+            continue
+    raise ValueError("cannot identify the command's process group in procfs")
+
+
+class RegistryBusy(TimeoutError):
+    """Shared accounting is temporarily unavailable; keep local enforcement."""
+
+
+@contextlib.contextmanager
+def registry(state):
+    # Acquisition, publication and release share this short-lived lock.
+    # A stopped holder must not stall other monitors or admission checks.
+    # Never wait for a slot while holding it, and never replace a slot inode.
+    fd = os.open(os.path.join(state, "registry.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    previous = None
+    deadline = time.monotonic() + REGISTRY_WAIT_SECONDS
+    try:
+        while True:
+            # Mask before acquiring: handlers may spend seconds killing a group.
+            previous = signal.pthread_sigmask(signal.SIG_BLOCK,
+                (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+                previous = None
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RegistryBusy("registry lock deadline expired")
+                time.sleep(min(REGISTRY_RETRY_SECONDS, remaining))
+        yield
+    finally:
+        # Release before unmasking, including when the critical section fails.
+        try:
+            os.close(fd)
+        finally:
+            if previous is not None:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
+def atomic_state(path, value):
+    with tempfile.NamedTemporaryFile(mode="w", dir=os.path.dirname(path), delete=False) as f:
+        temporary = f.name
+        try:
+            json.dump(value, f, allow_nan=False)
+            f.close()
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+
+def read_report(path):
+    try:
+        with open(path) as f:
+            row = json.load(f)
+        monitor = row.get("monitor")
+        valid_monitor = monitor is None or (isinstance(monitor, dict)
+            and type(monitor.get("pid")) is int and monitor["pid"] > 0
+            and type(monitor.get("start")) is int and monitor["start"] >= 0
+            and isinstance(monitor.get("namespace"), str))
+        if (row["version"] == 3 and isinstance(row["job_id"], str)
+                and re.fullmatch(r"[0-9a-f]{32}", row["job_id"])
+                and type(row["order"]) is int and row["order"] > 0
+                and type(row["rss_kb"]) is int and row["rss_kb"] >= 0
+                and type(row["updated_monotonic"]) in (int, float) and math.isfinite(row["updated_monotonic"])
+                and valid_monitor):
+            return row
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError):
+        pass
+    return None
+
+
+def report_current(report, status_job, observed, now):
+    """A slot token must agree, and a visible kernel owner must agree too.
+    With no visible owner, only a fresh report can vouch for its monitor."""
+    if report["job_id"] != status_job:
+        return False
+    if observed is not None:
+        return observed == report.get("monitor")
+    return 0 <= now - report["updated_monotonic"] <= REPORT_STALE_SECONDS
+
+
+def report_path(state, slot):
+    return os.path.join(state, f".{slot}.json")
+
+
+def slot_job_id(text):
+    match = re.search(r"\[heavy-job=([0-9a-f]{32})\]\s*$", text)
+    return match[1] if match else None
+
+
+def monitor_identity(pid="self", proc="/proc"):
+    """An identity read through a kernel-reported PID, never a slot's PID."""
+    with open(os.path.join(proc, str(pid), "stat")) as f:
+        try:
+            row = process_stat(f.read())
+        except IndexError as e:
+            raise ValueError("incomplete process identity") from e
+    with open(os.path.join(proc, str(pid), "status")) as f:
+        ids = next((line.split()[1:] for line in f if line.startswith("NSpid:")), None)
+    if not ids or int(ids[-1]) <= 0:
+        raise ValueError("cannot identify the monitor's PID namespace")
+    return {"pid": int(ids[-1]), "start": row["start"],
+            "namespace": os.readlink(os.path.join(proc, str(pid), "ns", "pid"))}
+
+
+def write_status(f, text):
+    job = getattr(f, "heavy_job", None)
+    suffix = f" [heavy-job={job['job_id']}]" if job else ""
+    f.seek(0)
+    f.truncate()
+    f.write(text + suffix + "\n")
+    f.flush()
+
+
+def claim_slot(f, slot, state, record):
+    """Register a new lock owner atomically with taking the slot lock.
+    The caller holds registry; False leaves no lease or metadata behind."""
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    try:
+        sequence_path = os.path.join(state, "sequence.json")
+        try:
+            with open(sequence_path) as seq:
+                sequence = json.load(seq)
+            if type(sequence) is not int or sequence < 0:
+                sequence = 0
+        except (OSError, ValueError):
+            sequence = 0
+        for name in os.listdir(state):
+            if re.fullmatch(r"\.slot\d+\.json", name):
+                previous = read_report(os.path.join(state, name))
+                if previous:
+                    sequence = max(sequence, previous["order"])
+        job = {"version": 3, "job_id": uuid.uuid4().hex, "order": sequence + 1,
+               "pid_namespace": pid_namespace(), "started_at": record["enqueued_at"],
+               "monitor": monitor_identity() if platform.system() == "Linux" else None,
+               "rss_kb": 0, "updated_monotonic": time.monotonic()}
+        atomic_state(sequence_path, job["order"])
+        atomic_state(report_path(state, slot), job)
+        f.heavy_job = job
+        f.heavy_slot = slot
+        write_status(f, f"0 {record['enqueued_at']}")
+        return True
+    except BaseException:
+        f.close()
+        raise
+
+
+def publish_memory(f, rss, state):
+    job = getattr(f, "heavy_job", None)
+    if job is None:
+        return  # A direct test of the monitor has no shared slot.
+    with registry(state):
+        pending = getattr(f, "heavy_status", None)
+        if pending is not None:
+            write_status(f, pending)
+            f.heavy_status = None
+        job.update(rss_kb=rss, updated_monotonic=time.monotonic())
+        atomic_state(report_path(state, f.heavy_slot), job)
+
+
+def release_slot(f, state):
+    try:
+        with registry(state):
+            try:
+                slot = getattr(f, "heavy_slot", None)
+                if slot is not None:
+                    try:
+                        os.unlink(report_path(state, slot))
+                    except FileNotFoundError:
+                        pass
+                f.seek(0)
+                f.truncate()
+            finally:
+                # Release before registry unlock, even if cleanup fails.
+                f.close()
+    except OSError:
+        pass  # An unlocked stale report is ignored; closing the lease is sufficient.
+    finally:
+        f.close()
+
+
+def flock_owners(proc="/proc"):
+    """Kernel-reported flock holders, with IDs in this procfs view.
+    Never resolve a numeric PID from a legacy slot's diagnostic text.
+    Devices here must match stat's devices; otherwise verification falls back."""
+    found = {}
+    with open(os.path.join(proc, "locks")) as f:
+        for line in f:
+            fields = line.split()
+            if len(fields) != 8 or fields[1:4] != ["FLOCK", "ADVISORY", "WRITE"]:
+                continue  # Includes blocked requests marked with '->'.
+            try:
+                major, minor, inode = fields[5].split(":")
+                pid = int(fields[4])
+                if pid > 0 and fields[6:] == ["0", "EOF"]:
+                    found[(int(major, 16), int(minor, 16), int(inode))] = pid
+            except ValueError:
+                continue
     return found
 
 
-def kill_group(pgid, reap):
-    for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 0)):
+def legacy_readings(leases, proc="/proc", system=None):
+    """Validate report owners and measure visible legacy child groups.
+    Lock ownership and parentage come from the kernel, in one procfs view.
+    Missing/filtered data leaves the reading unknown, never zero by default.
+    Do this scan outside registry: it must not delay other owners' checks."""
+    if not leases:
+        return
+    release = re.match(r"(\d+)\.(\d+)", platform.release())
+    linux = ((system or platform.system()) == "Linux" and release is not None
+             and tuple(map(int, release.groups())) >= (4, 9))
+    before = {}
+    try:
+        if linux:
+            before = flock_owners(proc)
+    except (OSError, ValueError):
+        pass
+    for lease in leases:
+        if lease.get("legacy"):
+            continue
+        owner = before.get(lease["lock_key"])
+        current = None
+        if owner is not None:
+            try:
+                current = monitor_identity(owner, proc)
+            except (OSError, ValueError, IndexError, StopIteration):
+                pass
+        if not report_current(lease, lease["status_job"], current, time.monotonic()):
+            # Includes a legacy holder that has not overwritten inherited
+            # status yet. An unobservable stale owner gets an estimate too.
+            lease.update(job_id=None, order=None, rss_kb=None, fresh=False,
+                         legacy=True, legacy_rss_kb=None)
+    leases = [row for row in leases if row.get("legacy")]
+    if not linux or not any(row["lock_key"] in before for row in leases):
+        return
+    try:
+        processes, groups = {}, {}
+        page_kb = os.sysconf("SC_PAGE_SIZE") // 1024
+        for pid in os.listdir(proc):
+            if not pid.isdigit():
+                continue
+            try:
+                with open(os.path.join(proc, pid, "stat")) as f:
+                    row = process_stat(f.read())
+                processes[row["pid"]] = row
+                groups[row["pgrp"]] = groups.get(row["pgrp"], 0) + row["rss_pages"] * page_kb
+            except (OSError, ValueError, IndexError):
+                continue
+        after = flock_owners(proc)
+        for lease in leases:
+            owner = before.get(lease["lock_key"])
+            if owner not in processes or after.get(lease["lock_key"]) != owner:
+                continue
+            try:
+                with open(os.path.join(proc, str(owner), "stat")) as f:
+                    current = process_stat(f.read())
+            except (OSError, ValueError, IndexError):
+                continue
+            if current["start"] != processes[owner]["start"]:
+                continue
+            children = {r["pgrp"] for r in processes.values()
+                        if r["ppid"] == owner and r["pgrp"] == r["pid"]}
+            if children:
+                lease["legacy_rss_kb"] = sum(groups[g] for g in children)
+    except (OSError, ValueError, IndexError):
+        pass  # An estimate, not a missing procfs entry, decides admission.
+
+
+def jobs(state=STATE):
+    """Live leases and owner-measured memory, independent of PID visibility.
+    Verified stale owners retain last RSS; unverified stale status is legacy.
+    Unlocked reports are ignored even after numeric PID reuse."""
+    found = []
+    with registry(state):
+        for name in os.listdir(state):
+            if not re.fullmatch(r"slot\d+", name):
+                continue
+            try:
+                with open(os.path.join(state, name)) as f:
+                    try:
+                        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        identity = slot_job_id(f.read())
+                        row = read_report(report_path(state, name)) if identity else None
+                        if row is None:
+                            row = {"job_id": None, "order": None, "rss_kb": None, "fresh": False,
+                                   "legacy": True, "legacy_rss_kb": None}
+                        else:
+                            row.update(status_job=identity, legacy=False, legacy_rss_kb=None)
+                            row["fresh"] = 0 <= time.monotonic() - row["updated_monotonic"] <= REPORT_STALE_SECONDS
+                        st = os.fstat(f.fileno())
+                        row["lock_key"] = (os.major(st.st_dev), os.minor(st.st_dev), st.st_ino)
+                        found.append(dict(row, slot=name))
+            except FileNotFoundError:
+                continue
+    legacy_readings(found)
+    return found
+
+
+def memory_victim(running, cap):
+    """Only measurements count toward eviction. Select a compatible owner;
+    legacy reservations never cause eviction and legacy holders are not targets."""
+    eligible = [j for j in running if j["job_id"] is not None
+                and j["order"] is not None and j["order"] > 0
+                and j["rss_kb"] is not None and j["rss_kb"] >= 0]
+    total = sum(j["rss_kb"] for j in eligible) + sum(max(0, j.get("legacy_rss_kb") or 0) for j in running)
+    return total, max(eligible, key=lambda j: j["order"])["job_id"] if total > cap and eligible else None
+
+
+def group_gone(pgid, reap, subreaper=False):
+    """Even subreaping can leave group members parented outside the group.
+    Exhausting wait4 is not evidence that the local process group is gone."""
+    if not reap():
+        return False
+    if os.getpid() == 1:
+        # Peek at exited children without consuming their usage. A worker
+        # can be adopted after reap() exhausted the group waits; route it
+        # back through wait4 rather than losing its CPU/RSS to waitpid.
+        while True:
+            try:
+                exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                if exited is None:
+                    break
+                if subreaper and os.getpgid(exited.si_pid) == pgid:
+                    if not reap():
+                        return False
+                else:
+                    # An exited child's group cannot change before reaping.
+                    os.waitpid(exited.si_pid, os.WNOHANG)
+            except ChildProcessError:
+                break
+            except ProcessLookupError:
+                continue  # A reentrant termination handler collected it.
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        pass  # Existence without permission is still existence.
+    return False
+
+
+def kill_group(pgid, reap, subreaper=False):
+    for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
+        # A reaped leader is not an empty group while workers remain.
+        # Probe that local group until it disappears, including escalation.
+        # Block reentrant signal handlers around the completion check/signal.
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
         try:
+            if group_gone(pgid, reap, subreaper):
+                return
             os.killpg(pgid, sig)
         except (ProcessLookupError, PermissionError):
             return
-        deadline = time.time() + wait
-        while time.time() < deadline:
-            reap()
-            try:
-                os.killpg(pgid, 0)
-            except (ProcessLookupError, PermissionError):
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            if group_gone(pgid, reap, subreaper):
                 return
             time.sleep(0.2)
+
+
+@contextlib.contextmanager
+def child_subreaper():
+    """On Linux, adopt orphaned descendants so wait4 can account for them.
+    Elsewhere wait4 accounts for the child and its waited-for descendants.
+    Restore the setting for callers that invoke main more than once."""
+    enabled = False
+    previous = ctypes.c_int()
+    if platform.system() == "Linux":
+        try:
+            prctl = ctypes.CDLL(None).prctl
+            # PR_GET_CHILD_SUBREAPER / PR_SET_CHILD_SUBREAPER (linux/prctl.h).
+            enabled = (prctl(37, ctypes.byref(previous), 0, 0, 0) == 0
+                       and prctl(36, 1, 0, 0, 0) == 0)
+        except (OSError, AttributeError):
+            pass
+    try:
+        yield enabled
+    finally:
+        if enabled:
+            prctl(36, previous.value, 0, 0, 0)
 
 
 def reap_child(child, record, flags=os.WNOHANG):
     """Keep the kernel RSS high-water mark too, including for subsecond jobs.
     The sampled process-group sum also accounts for parallel workers."""
-    if child.returncode is not None:
-        return
-    try:
-        pid, status, usage = os.wait4(child.pid, flags)
-    except ChildProcessError:
-        # Reaping may be interrupted by a signal handler that also reaps.
-        # The successful wait4 caller stores the status when it resumes.
-        return
-    if pid:
-        child.returncode = os.waitstatus_to_exitcode(status)
+    group = getattr(child, "heavy_subreaper", False)
+    while group or child.returncode is None:
+        try:
+            pid, status, usage = os.wait4(-child.pid if group else child.pid, flags)
+        except ChildProcessError:
+            # A signal handler may have reaped it; the successful caller
+            # stores its status and usage when it resumes.
+            return child.returncode is not None
+        if not pid:
+            return False
+        if pid == child.pid:
+            child.returncode = os.waitstatus_to_exitcode(status)
         kb = usage.ru_maxrss / 1024 if platform.system() == "Darwin" else usage.ru_maxrss
-        record["peak_rss_kb"] = max(record["peak_rss_kb"], int(kb))
+        # A handler can reap between wait4 and this fold. Mask only the
+        # bounded update, never a wait4 that might block during cleanup.
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
+        try:
+            before = record.get("_cpu_usage", (0, 0, 0, 0))
+            record["_cpu_usage"] = (before[0] + usage.ru_utime, before[1] + usage.ru_stime,
+                                     max(before[2], int(kb)), before[3] + usage.ru_nivcsw)
+            record["peak_rss_kb"] = max(record.get("peak_rss_kb", 0), int(kb))
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+    return True
 
 
 def run_command(f, command, shown, record, state, environ, load_reader):
+    with child_subreaper() as group:
+        return monitor_command(f, command, shown, record, state, environ, load_reader, group)
+
+
+def monitor_command(f, command, shown, record, state, environ, load_reader, group):
+    record.setdefault("cpu_busy_samples", [])
+    record["cpu_scope"] = "process_group" if group else "waited_tree"
     sampled = sample_load(record, load_reader, time.monotonic())
+    cpu_sampled = sample_cpu(record, time.monotonic())
+    machine = MachineSampler()
+    machine.sample(time.monotonic(), machine_counters())
+    try:
+        hz = os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError):
+        hz = None
+    processes = ProcessSampler(time.monotonic(), hz)
+    completed = False
+    group_reported = None
     try:
         child = subprocess.Popen(command, start_new_session=True)
     except OSError as e:
         print(f"heavy: cannot run `{shown}`: {e.strerror}", file=sys.stderr)
         return 127
-    f.seek(0)
-    f.truncate()
-    f.write(f"{child.pid} {record['started_at']} {os.getcwd()} {shown}\n")
-    f.flush()
+    child.heavy_subreaper = group
     reap = lambda: reap_child(child, record)
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, lambda s, _: kill_group(child.pid, reap))
-    while True:
-        reap()
-        if child.returncode is not None:
-            break
-        rss = group_rss_kb()
-        record["peak_rss_kb"] = max(record["peak_rss_kb"], rss.get(child.pid, 0))
-        sampled = sample_load(record, load_reader, time.monotonic(), sampled)
-        running = [(t, g) for t, g in jobs(state) if g in rss]
-        total, cap = sum(rss[g] for _, g in running), mem_cap_kb(environ, state)
-        if total > cap and running and max(running)[1] == child.pid:
-            print(f"heavy: killed `{shown}`: heavy jobs used "
-                  f"{total / 1048576:.1f} GB, over the {cap / 1048576:.1f} GB cap "
-                  f"(HEAVY_MEM_GB, {os.path.join(state, 'mem_gb')}); run it again when "
-                  "fewer jobs run", file=sys.stderr)
-            kill_group(child.pid, reap)
+    handlers = {}
+    try:
+        try:
+            proc_group = visible_group(child.pid)
+        except (OSError, ValueError, StopIteration) as e:
+            print(f"heavy: cannot identify the command's memory in this procfs view: {e}", file=sys.stderr)
+            kill_group(child.pid, reap, group)
             reap_child(child, record, 0)
-            return 137
-        time.sleep(1)
-    return child.returncode if child.returncode >= 0 else 128 - child.returncode
+            return 125
+        own = getattr(f, "heavy_job", None)
+        if own is not None:
+            own.update(started_at=record["started_at"], local_pgid=child.pid, proc_pgid=proc_group)
+        text = (f"{child.pid} {record['started_at']} {os.getcwd()} {shown} "
+                f"[local PID; namespace={pid_namespace()}]")
+        if own is not None:
+            # A write failure is handled below as a shared-accounting failure.
+            f.heavy_status = text  # Publish with the first RSS, under registry.
+        else:
+            try:
+                write_status(f, text)
+            except (OSError, ValueError) as e:
+                print(f"heavy: cannot publish the command's slot status: {e}", file=sys.stderr)
+                kill_group(child.pid, reap, group)
+                reap_child(child, record, 0)
+                return 125
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            handlers[sig] = signal.signal(sig, lambda s, _: kill_group(child.pid, reap, group))
+        while True:
+            now = time.monotonic()
+            try:
+                boot_now = time.clock_gettime(getattr(time, "CLOCK_BOOTTIME", time.CLOCK_MONOTONIC))
+            except OSError:
+                boot_now = None
+            live = set()
+            readings = group_processes(proc_group, live=live)
+            processes.sample(now, boot_now, readings, live)
+            completed = group_gone(child.pid, reap, group)
+            if completed or now - machine.last[0] >= 1:
+                machine.sample(time.monotonic(), machine_counters())
+            if completed:
+                break
+            if child.returncode is not None and (group_reported is None or now - group_reported >= 30):
+                pids = ("unavailable" if readings is None else
+                        ", ".join(str(row["pid"]) for row in readings) or "none sampled")
+                print(f"heavy: `{shown}` leader exited with {child.returncode}; "
+                      f"holding slot for process group {child.pid} (namespace-local PGID); "
+                      f"remaining procfs-view PIDs: {pids}", file=sys.stderr)
+                group_reported = now
+            try:
+                rss = group_rss_kb().get(proc_group, 0)
+                cap = mem_cap_kb(environ, state)
+                try:
+                    publish_memory(f, rss, state)
+                    total, victim = memory_victim(jobs(state), cap)
+                except RegistryBusy:
+                    # A stopped registry holder cannot suspend our own cap.
+                    total, victim = rss, None
+            except (OSError, ValueError) as e:
+                print(f"heavy: cannot maintain shared memory accounting: {e}", file=sys.stderr)
+                kill_group(child.pid, reap, group)
+                reap_child(child, record, 0)
+                return 125
+            record["peak_rss_kb"] = max(record["peak_rss_kb"], rss)
+            sampled = sample_load(record, load_reader, time.monotonic(), sampled)
+            cpu_sampled = sample_cpu(record, time.monotonic(), cpu_sampled)
+            if ((own is not None and victim == own["job_id"])
+                    or rss > cap):
+                reason = (f"its process group uses {rss / 1048576:.1f} GB" if rss > cap
+                          else f"heavy jobs last reported {total / 1048576:.1f} GB")
+                print(f"heavy: killed `{shown}`: {reason}, over the {cap / 1048576:.1f} GB cap "
+                      f"(HEAVY_MEM_GB, {os.path.join(state, 'mem_gb')}); run it again when "
+                      "fewer jobs run", file=sys.stderr)
+                kill_group(child.pid, reap, group)
+                reap_child(child, record, 0)
+                return 137
+            time.sleep(1)
+        return child.returncode if child.returncode >= 0 else 128 - child.returncode
+    finally:
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
 
+        sample_cpu(record, time.monotonic(), cpu_sampled, final=True)
+        if not completed:
+            machine.sample(time.monotonic(), machine_counters())
+        machine.finish(record)
+        processes.finish(record)
 
 def run(f, command, shown, kind, record, began, state, environ, load_reader):
     record.update(event="job", command=shown, job_kind=kind,
-                  worktree=os.getcwd(), peak_rss_kb=0, load_samples=[])
+                  worktree=os.getcwd(), peak_rss_kb=0, load_samples=[],
+                  cpu_user_seconds=0.0, cpu_system_seconds=0.0, cpu_busy_samples=[],
+                  cpu_scope="waited_tree", involuntary_context_switches=0,
+                  process_cpu=None, process_samples=0, nonvoluntary_ctxt_switches=None)
+    own = getattr(f, "heavy_job", {})
+    record.update(job_id=own.get("job_id"), admission_order=own.get("order"),
+                  pid_namespace=own.get("pid_namespace"),
+                  memory_accounting="slot_owner_reports_v3")
+    MachineSampler().finish(record)
+    prediction, history_jobs = predict_peak_rss(kind, state, environ, record["started_at"])
+    record.update(predicted_peak_rss_kb=prediction, prediction_jobs=history_jobs,
+                  prediction_method="max_last_20_same_kind_7d")
     code = run_command(f, command, shown, record, state, environ, load_reader)
     record.update(ended_at=time.time(), run_seconds=time.monotonic() - began, exit_status=code)
     loads = record["load_samples"]
     record.update(load_mean=sum(loads) / len(loads) if loads else None,
                   load_max=max(loads) if loads else None)
+    cpu_summary(record)
     append_log(record, state, environ)
     return code
 
 
-def heavy_rss_kb(state=STATE):
-    rss = group_rss_kb()
-    return sum(rss.get(g, 0) for _, g in jobs(state))
+def legacy_reservation(cap, observed=None):
+    """A verified reading, or the shared forecast for unobserved holders.
+    Charge that half-cap forecast once, not once per incompatible lease."""
+    return observed if observed is not None and observed >= 0 else max(1, (cap + 1) // 2)
+
+
+def heavy_rss_kb(state=STATE, cap=None, reservations=None):
+    """Compatible reports use their RSS (a full cap for verified stale owners).
+    Legacy leases use verified RSS plus one shared forecast for unknowns."""
+    try:
+        cap = mem_cap_kb(state=state) if cap is None else cap
+        running = jobs(state)
+        unobserved = [j for j in running if j.get("legacy")
+                      and (j.get("legacy_rss_kb") is None or j["legacy_rss_kb"] < 0)]
+        if reservations is not None:
+            for job in running:
+                if job.get("legacy"):
+                    observed = job.get("legacy_rss_kb")
+                    if observed is not None and observed >= 0:
+                        reservations.append(f"{job['slot']} (legacy RSS: {observed} KB)")
+                elif not job["fresh"]:
+                    reservations.append(f"{job['slot']} (stale or future-dated report)")
+            if unobserved:
+                names = ", ".join(sorted(j["slot"] for j in unobserved))
+                reservations.append(f"{names} (shared legacy forecast: {legacy_reservation(cap)} KB)")
+        measured = sum(max(0, j.get("legacy_rss_kb") or 0) if j.get("legacy")
+                       else j["rss_kb"] if j["fresh"] else cap for j in running)
+        return measured + (legacy_reservation(cap) if unobserved else 0)
+    except RegistryBusy:
+        raise  # Admission must name a registry wait, not a memory shortfall.
+    except OSError:
+        return math.inf
+
+
+def memory_wait_message(state, reservations, memory_blocked):
+    if memory_blocked and reservations:
+        slots = ", ".join(sorted(reservations))
+        return (f"heavy: waiting for memory: {slots}; resume stopped monitors or "
+                f"reduce running memory (see {state})")
+    return f"heavy: waiting for memory or load (see {state})"
 
 
 def main(argv, state=STATE, environ=None, load_reader=load_average):
@@ -717,26 +1604,47 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     except (OSError, ValueError, subprocess.CalledProcessError) as e:
         print(f"heavy: cannot tell the physical memory ({e}); set HEAVY_MEM_GB", file=sys.stderr)
         return 2
-    warned = False
+    warned = None
+    registry_message = f"heavy: waiting for registry lock (see {state})"
     while True:
         slots = slot_count(environ, state)
         limit = max_load(environ, state)
         record["wait_policy_changed"] |= (limit, slots) != initial
         # Start no job while the running ones already use most of the cap: a
         # job that starts now would likely be the one killed when they grow.
-        if not can_start(time.monotonic() - queued, heavy_rss_kb(state),
-                         mem_cap_kb(environ, state), limit, load_reader):
-            if not warned:
-                print(f"heavy: waiting for memory or load (see {state})",
-                      file=sys.stderr)
-                warned = True
+        cap = mem_cap_kb(environ, state)
+        reservations = []
+        try:
+            rss = heavy_rss_kb(state, cap, reservations)
+        except RegistryBusy:
+            if registry_message != warned:
+                print(registry_message, file=sys.stderr)
+                warned = registry_message
             time.sleep(5)
             continue
+        if not can_start(time.monotonic() - queued, rss,
+                         cap, limit, load_reader):
+            message = memory_wait_message(state, reservations, rss > START_FRACTION * cap)
+            if message != warned:
+                print(message, file=sys.stderr)
+                warned = message
+            time.sleep(5)
+            continue
+        wait_message = f"heavy: all {slots} slots busy, waiting (see {state})"
         for i in range(slots):
             f = open(os.path.join(state, f"slot{i}"), "a+")
             try:
-                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
+                with registry(state):
+                    claimed = claim_slot(f, f"slot{i}", state, record)
+            except RegistryBusy:
+                f.close()
+                wait_message = registry_message
+                break  # Admission waits; do not run without a registered lease.
+            except (OSError, ValueError) as e:
+                f.close()
+                print(f"heavy: cannot register the slot's memory accounting: {e}", file=sys.stderr)
+                return 125
+            if not claimed:
                 f.close()
                 continue
             waited = time.monotonic() - queued
@@ -746,14 +1654,21 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             limit = max_load(environ, state)
             record["wait_policy_changed"] |= (limit, slots) != initial
             if i >= slots:
-                f.close()
+                release_slot(f, state)
+                wait_message = f"heavy: slot count changed, retrying (see {state})"
                 break
-            if not can_start(waited, heavy_rss_kb(state),
-                             mem_cap_kb(environ, state), limit, load_reader):
-                f.close()
-                if not warned:
-                    print(f"heavy: waiting for memory or load (see {state})", file=sys.stderr)
-                    warned = True
+            cap = mem_cap_kb(environ, state)
+            reservations = []
+            try:
+                rss = heavy_rss_kb(state, cap, reservations)
+            except RegistryBusy:
+                release_slot(f, state)
+                wait_message = registry_message
+                break
+            if not can_start(waited, rss,
+                             cap, limit, load_reader):
+                release_slot(f, state)
+                wait_message = memory_wait_message(state, reservations, rss > START_FRACTION * cap)
                 break
             admitted = time.monotonic()
             record.update(started_at=time.time(), wait_seconds=admitted - queued,
@@ -763,12 +1678,10 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             try:
                 return run(f, command, shown, kind, record, admitted, state, environ, load_reader)
             finally:
-                f.seek(0)
-                f.truncate()
-                f.close()
-        if not warned:
-            print(f"heavy: all {slots} slots busy, waiting (see {state})", file=sys.stderr)
-            warned = True
+                release_slot(f, state)
+        if wait_message != warned:
+            print(wait_message, file=sys.stderr)
+            warned = wait_message
         time.sleep(2)
 
 

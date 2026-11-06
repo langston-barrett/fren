@@ -201,7 +201,7 @@ pub proc collapsible_match(
     x: Val,                  -- a value of the scrutinee
     o: Int,                  -- the value of a name outside the patterns
 ): (det fires?) {
-    assume size: 1 <= inner.len <= 4
+    require size: 1 <= inner.len <= 4
 
     -- the arm's body is a `match` on a binder of the arm's pattern
     det let on_binder? := first is Leaf::Binder(_, _)
@@ -483,7 +483,7 @@ pub proc match_overlapping_arm(
     later: Pat,              -- a range of a later arm
     v: Int,
 ): (det fires?) {
-    assume kinds: earlier is Pat::Lit(_) | Pat::Range(_, _) and later is Pat::Range(_, _)
+    require kinds: earlier is Pat::Lit(_) | Pat::Range(_, _) and later is Pat::Range(_, _)
 
     -- they have an integer in common
     det let meet? :=
@@ -704,8 +704,8 @@ pub proc match_arm_if_else(
     d: Body,                 -- the `else` branch that the arms share
     accepted?,               -- the static rules accept the arms after the fix
 ): (det fires?, det appended?) {
-    assume size: 1 <= arms.len <= 4
-    assume typed: one_type?(arms)
+    require size: 1 <= arms.len <= 4
+    require typed: one_type?(arms)
 
     ensure rule: fires? iff (fires_on?(arms, d) and accepted?)
     ensure appended: appended? iff appends?(arms, d)

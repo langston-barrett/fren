@@ -1115,6 +1115,7 @@ def readField (span : Span) (smt : String) (t : Ty) (f : Name) : M (String × Ty
   -- With the record's arguments for its type parameters (`lang::instantiation`).
   let fields : Array (Name × Ty) := ((← get).dataOf? p).map (·.instCtors args |>.getD 0 default |>.2) |>.getD #[]
   let some (_, ft) := fields.find? (·.1 == f) | err span (Fren.Core.noFieldMsg f t.show (fields.map (·.1)))
+  noteResolved "name" span fun _ => resolvedPath (p ++ f)
   return (s!"({fieldSym p f} {smt})", ft)
 
 /-- The types that the method `m` of the relation type `t` ranges over
@@ -2255,6 +2256,7 @@ partial def elabPTy (segs : Array Ident) : M Fren.Core.PTy := do
   if let some w := Fren.Core.fnTypeWithin (segs.toList.map (·.name)) then
     err (typeSpan segs) (Fren.Core.fnTypePlaceMsg .constant w)
   let t ← elabBasePTy segs
+  noteResolved "type" (typeSpan segs) fun _ => t.ty.showQualified
   let text := Fren.Core.typeText (← srcAt (← writtenTypeSpan segs))
   return { t with text }
 
@@ -2303,8 +2305,8 @@ partial def elabBasePTy (segs : Array Ident) : M Fren.Core.PTy := do
   if segs.size == 1 && segs[0]!.name == "String" then
     modify fun s => { s with usesStrings := true }
     return .plain .string
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
-  -- generic type's type parameter (`lang::element_parameter`), and whose
+  -- An element type, which is never a `Nat` (`lang::nat_place`), may be a
+  -- type parameter (`lang::element_parameter`), and its
   -- constraint, if any, quantifies over the elements, outside the
   -- decidable core (`lang::subset_place`).
   let elem (segs : Array Ident) : M Fren.Core.PTy := do

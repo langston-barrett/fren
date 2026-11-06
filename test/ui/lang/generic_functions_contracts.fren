@@ -8,7 +8,7 @@ mod generic_functions_contracts
 
 -- Defined only on a `Some`.
 fn get<T>(o: Option<T>, d: T): (r: T) {
-    assume present: o != Option::None
+    require present: o != Option::None
     out r := match o {
         Option::Some(x) => x,
         Option::None => d,
@@ -33,7 +33,7 @@ fn nothing<T>(n: Int): (result: Option<T>) {
 }
 
 proc guarded(x: Option<Int>): (det y: Int) {
-    assume some: x != Option::None
+    require some: x != Option::None
     out y := get(x, 0)
 
     expect payload: Option::Some(y) = x

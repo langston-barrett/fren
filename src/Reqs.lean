@@ -12,6 +12,7 @@ import Reqs.Lang
 import Reqs.Lint
 import Reqs.Markdown
 import Reqs.Models
+import Reqs.ModuleReports
 import Reqs.Modules
 import Reqs.Mutate
 import Reqs.Refine

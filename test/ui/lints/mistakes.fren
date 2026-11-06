@@ -4,7 +4,7 @@
 set_option fren.lint.undecidable "allow"
 
 proc repeats(a?, b?, x: Int): (p?, q?) {
-    assume pos: x > 0
+    require pos: x > 0
     ensure r1: p? iff a? or b?
     ensure r2: q? iff a? and b?
     expect e1: p? iff a? or b?

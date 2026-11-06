@@ -115,7 +115,7 @@ pub proc quantified_type(
     }
 
     -- A type of a former that has no constituents has none.
-    assume leaf: unless former(declared_kind(ty)).composite?, constituents.image({ty}) = {}
+    require leaf: unless former(declared_kind(ty)).composite?, constituents.image({ty}) = {}
     call facts := type_facts(ty, constituents)
 
     ensure rule: listed? iff (facts.finite? and not facts.unbounded?)
@@ -213,7 +213,7 @@ pub proc quantifier(
     all?,                    -- `forall`, rather than `exists`
     values: Set<Bool>,       -- the values of its instances
 ): (det holds?) {
-    assume some_instance: values != {}
+    require some_instance: values != {}
 
     ensure rule: holds? iff (if all? then not false in values else true in values)
 
@@ -297,7 +297,7 @@ pub const MAX_INSTANCES: Int := 256
 pub proc quantifier_size(
     n_instances: Int,        -- the combinations of the values of its bound names and those around it
 ): (det accepted?) {
-    assume some: n_instances >= 1
+    require some: n_instances >= 1
 
     ensure rule: accepted? iff n_instances <= MAX_INSTANCES
 
@@ -533,11 +533,11 @@ pub proc name_alone(
     types: Seq<Ty>,        -- its type, then each newtype's underlying type
     fields: Seq<String>,   -- the fields read from it, outermost last
 ): (det alone: Int) {
-    assume position: base >= -1
-    assume typed: types != []
-    assume wrapped: forall (i: Int), when 0 <= i < types.len - 1,
+    require position: base >= -1
+    require typed: types != []
+    require wrapped: forall (i: Int), when 0 <= i < types.len - 1,
         newtype?(types[i]) and under(types[i]) = types[i + 1]
-    assume erased: not newtype?(types[types.len - 1])
+    require erased: not newtype?(types[types.len - 1])
 
     ensure rule: alone = (if fields.len < types.len
         and (forall (i: Int), when 0 <= i < fields.len, fields[i] = "0") then base else -1)
@@ -586,10 +586,10 @@ pub proc nat_floor(
 ): (nat?) {
     use self::ValueType::{IntTy, NatTy}
 
-    assume typed: types != []
-    assume wrapped: forall (i: Int), when 0 <= i < types.len - 1,
+    require typed: types != []
+    require wrapped: forall (i: Int), when 0 <= i < types.len - 1,
         newtype?(types[i]) and under(types[i]) = types[i + 1]
-    assume erased: not newtype?(types[types.len - 1])
+    require erased: not newtype?(types[types.len - 1])
 
     out nat? := kind(types[types.len - 1]) = NatTy
 
@@ -704,10 +704,10 @@ pub proc range_domain(
 ): (ranged?) {
     use self::ValueType::{IntTy, NatTy, RecordTy, StringTy}
 
-    assume typed: types != []
-    assume wrapped: forall (i: Int), when 0 <= i < types.len - 1,
+    require typed: types != []
+    require wrapped: forall (i: Int), when 0 <= i < types.len - 1,
         newtype?(types[i]) and under(types[i]) = types[i + 1]
-    assume erased: not newtype?(types[types.len - 1])
+    require erased: not newtype?(types[types.len - 1])
 
     out ranged? := kind(types[types.len - 1]) in {IntTy, NatTy}
 

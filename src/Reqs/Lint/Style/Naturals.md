@@ -121,13 +121,13 @@ states what a `Nat` output brings instead:
 ```fren
 set_option fren.lint.manual_nat "allow" in
 pub proc manual_nat_input_written(n: Int, k: Int): (m: Int) {
-    assume counts: n >= 0 and k < n
+    require counts: n >= 0 and k < n
 
     ensure r: m = n - k
 }
 
 pub proc manual_nat_input_fixed(n: Nat, k: Int): (m: Int) {
-    assume counts: k < n
+    require counts: k < n
 
     ensure r: m = n - k
 }

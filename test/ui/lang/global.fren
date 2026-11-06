@@ -9,7 +9,7 @@ const LOW: Int := 0
 const HIGH: Int := 10
 
 proc band(temp: Int, target: Int): (too_cold?, too_hot?) {
-    assume sane: LOW <= target and target <= HIGH
+    require sane: LOW <= target and target <= HIGH
     exists secret: Int
     ensure cold: too_cold? iff temp < target - 2
     ensure hot: too_hot? iff temp > target + 2

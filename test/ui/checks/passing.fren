@@ -8,7 +8,7 @@ pub enum Mode { Off, Heat, Cool }
 use self::Mode::{Cool, Heat, Off}
 
 pub proc thermostat(temp: Int, target: Int): (mode: Mode, fan?) {
-    assume sane: -50 <= temp and temp <= 150 and 50 <= target and target <= 90
+    require sane: -50 <= temp and temp <= 150 and 50 <= target and target <= 90
 
     ensure heat: when temp < target - 2, mode = Heat
     ensure cool: when temp > target + 2, mode = Cool

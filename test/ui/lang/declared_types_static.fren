@@ -27,7 +27,7 @@ proc definition(b?): (d: Int) { out d := b? }
 --~^ error: `d` has type `Int`, so its definition must too
 proc constraint(x: Int) { ensure r: x + 1 }
 --~^ error: a constraint is a `Bool`
-proc assumption(x: Int) { assume a: x }
+proc assumption(x: Int) { require a: x }
 --~^ error: a constraint is a `Bool`
 proc expectation(x: Int) { expect e: x - 1 }
 --~^ error: a constraint is a `Bool`

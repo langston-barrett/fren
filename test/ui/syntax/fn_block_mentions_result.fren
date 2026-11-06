@@ -2,7 +2,7 @@
 -- value, nor through a `let` (`F0165`).
 -- fren-covers: lang::fn_definitions
 pub fn f(x: Int): (r: Int) {
-    assume a: d > 0   --~ error: `r` is the function's value, which this does not mention
+    require a: d > 0   --~ error: `r` is the function's value, which this does not mention
     let d := r - x
     out r := x + 1
 }

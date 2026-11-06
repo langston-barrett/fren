@@ -5,7 +5,7 @@ error[F0114]: a parameter cannot have a definition
   |               ^^ parameters are chosen by the environment
   |
   = note: only an output can be defined, as `let x: T := e`, or as a result, `out r := e`
-  = help: make it a `let`, or state what it equals in an `assume`
+  = help: make it a `let`, or state what it equals in a `require`
 
 error: could not check due to previous errors
 

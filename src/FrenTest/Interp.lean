@@ -79,7 +79,7 @@ fn arity(Key): Int
 
 set_option fren.lint.unused_assumption "allow" in
 proc ranked(k: Key): (ok?) {
-    assume nonneg: arity(k) >= 0
+    require nonneg: arity(k) >= 0
     ensure rule: ok?
 }
 
@@ -149,7 +149,7 @@ mod interp_typed_contract
 
 type CappedByte = n: Int where invariant: n is 0..=255
 fn capped(n: Int): (r: CappedByte) {
-    assume nonneg: n >= 0
+    require nonneg: n >= 0
     ensure within: r <= n
 }
 
@@ -175,3 +175,15 @@ interp capped := fun (n : Int) => if n < 0 then 0 else if n > 255 then 255 else 
 
 /-- info: 'Fren.Generated.interp_typed_contract.capped.ensures' depends on axioms: [interp_typed_contract.capped.ensures] -/
 #guard_msgs in #print axioms interp_typed_contract.capped.ensures
+
+-- Relation constraints also occur in interpretation contracts. Their
+-- enumeration marker must disappear under the usual proof simplification.
+mod interp_relation_result
+
+set_option fren.lint.undecidable "allow"
+type Positive = n: Int where positive: n > 0
+fn pairs(Int): Rel<Positive, Positive>
+
+interp pairs := fun (_ : Int) => Fren.FinSet.ofList [((1 : Int), (1 : Int))] by
+  intro _
+  simp [fren_spec]

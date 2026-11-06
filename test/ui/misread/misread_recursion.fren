@@ -15,9 +15,16 @@ pub fn size(t: Tree): Int := match t {
 }
 
 proc recursion(t: Tree) {
-    assume pinned: t = Tree::Node(Tree::Leaf, 2, Tree::Node(Tree::Leaf, 3, Tree::Leaf))
+    require pinned: t = Tree::Node(Tree::Leaf, 2, Tree::Node(Tree::Leaf, 3, Tree::Leaf))
     expect e: size(t) = 1  --~ error: internal error: the solver's model for the expectation check of `recursion::e` makes its hypothesis `pinned` false in Fren's semantics
 }
 
---@ summary: 2 passed, 0 failed, 1 inconclusive, 0 redundant
+-- The same refutation on a global expectation with an induction
+-- candidate must keep its internal error and Inconclusive verdict.
+expect induction_candidate(t: Tree) {
+    assume pinned: t = Tree::Node(Tree::Leaf, 2, Tree::Node(Tree::Leaf, 3, Tree::Leaf))
+    expect e: size(t) = 1  --~ error: internal error: the solver's model for the expectation check of `induction_candidate::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+--@ summary: 3 passed, 0 failed, 2 inconclusive, 0 redundant
 --@ exit: 1

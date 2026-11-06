@@ -22,8 +22,8 @@ pub proc test_local(
     test_at: Nat,                -- the test's position among them, from 0
     site: Site,                  -- where the name is mentioned
 ): (det entry: Local) {
-    assume within: test_at < operands
-    assume binder: declaration.kind = BindingKind::PatternBinder
+    require within: test_at < operands
+    require binder: declaration.kind = BindingKind::PatternBinder
 
     out entry := Local {
         declaration,
@@ -89,7 +89,7 @@ pub proc named(
     }
 
     -- A function, a module, a type and another item are never an expression alone.
-    assume value_kinds: not binding.kind in {Function, Builtin, Module, Enumeration, Item}
+    require value_kinds: not binding.kind in {Function, Builtin, Module, Enumeration, Item}
 
     out expr := named_expr(binding, definition)
 
@@ -118,9 +118,8 @@ expect constant_value(binding: Binding, definition: Expr<Id>, i: Interp, env: En
 }
 ```
 
-The Lean-hosted front end checks this chapter's procedures by name, since no
-`#fren_check` of its Lean file comes after it, and one without a path would
-check every earlier chapter again:
+The Lean-hosted front end checks this chapter's procedures by name, since a
+`#fren_check` without a path would check every earlier chapter again:
 
 ```fren
 #fren_check test_local

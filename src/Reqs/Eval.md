@@ -59,8 +59,21 @@ types](Lang/SubsetTypes.md#static-types-assumptions-and-obligations)): a
 value with a payload outside its type at any depth is no value of the
 enumeration, read or not. An uninterpreted function's
 values are of its result type. In `fren eval`, such a constraint is shown
-as `type x`, after the variable it is about. In the notation of
-[Procedures](Lang/Procedures.md#meaning), a behaviour is *admissible* if
+as `type x`, after the variable it is about.
+
+A call input's giving-site obligations are evaluated as separate named
+parts, with the field projections, variant guards and collection elements
+that lead to each invariant. Failing one part does not falsify another:
+for a type whose invariants are `low: n >= 0` and `high: n <= 1`, giving
+`2` fails `high` and satisfies `low`. Whole-type membership cannot replace
+either individual obligation. Each obligation keeps its own check record.
+Random testing, enumeration and model confirmation use the same parts;
+a part guarded by an inactive variant is true, even if another variant's
+part fails.
+A relation's obligation checks the pairs actually in that relation, even
+when either component's type has values beyond the enumeration bound.
+
+In the notation of [Procedures](Lang/Procedures.md#meaning), a behaviour is *admissible* if
 `A` and `I` hold in it, and it *meets* the procedure if `R` holds as well.
 `eval::status` gives the status of a behaviour:
 
@@ -361,7 +374,7 @@ pub proc backjumping(
     same?,                       -- it is the behaviour that backtracking finds
     steps: Nat,                  -- the candidates that the search tries
 ) {
-    assume one_outcome: not (by_backtracking? and exhausted?)
+    require one_outcome: not (by_backtracking? and exhausted?)
 
     ensure finds: when by_backtracking?, found? and same? and steps <= backtracking_steps
     ensure fails: when exhausted?, not found? and steps <= backtracking_steps
@@ -581,7 +594,7 @@ pub proc unreached(
     unknown: Nat,        -- those of these in which the trigger had no value
     decided: Nat,        -- those of them in which the trigger held and the check had a value: the tests that reached it
 ): (det why: Unreached) {
-    assume counted: decided + unknown <= triggered <= found
+    require counted: decided + unknown <= triggered <= found
 
     ensure reached: when decided > 0, why = Unreached::Reached
     ensure untested: when found = 0, why = Unreached::Untested
@@ -622,8 +635,8 @@ pub proc unreached_warning(
     untested?,               -- the procedure has `F0610`
     call_assumption?,        -- the check is a call assumption
 ): (det shown: UnreachedWarning) {
-    assume counted: decided + unknown <= triggered <= found
-    assume valued_counted: valued <= found
+    require counted: decided + unknown <= triggered <= found
+    require valued_counted: valued <= found
 
     call u := unreached(found, triggered, unknown, decided)
 
@@ -658,9 +671,9 @@ pub proc test_verdict(
     n_tests: Nat,        -- the tests that reached the check (`reaches`)
     exhausted?,          -- for realizability: the search saw every output of such an input
 ): (det verdict: Verdict) {
-    assume testable: not kind is Kind::Vacuity | Kind::Redundancy
+    require testable: not kind is Kind::Vacuity | Kind::Redundancy
     -- A cover goal is reached by its witnesses, which refute nothing.
-    assume witnesses: when kind = Kind::Cover, not refuted?
+    require witnesses: when kind = Kind::Cover, not refuted?
 
     ensure definite: when refuted? and (kind != Kind::Realizability or exhausted?), verdict = Fail
     ensure not_found: when refuted? and kind = Kind::Realizability and not exhausted?, verdict = Inconclusive

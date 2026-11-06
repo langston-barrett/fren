@@ -1,8 +1,8 @@
-error[F0104]: expected a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`, found identifier `ensur`
+error[F0104]: expected a member (`use`, `require`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`, found identifier `ensur`
  --> test/cli/syntax/f0104_keyword.fren:2:28
   |
 2 | proc c(x: Int): (y: Int) { ensur r: y = x }
-  |                            ^^^^^ expected a member (`use`, `assume`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`
+  |                            ^^^^^ expected a member (`use`, `require`, `exists`, `let`, `out`, `call`, `ensure`, `expect` or `cover`) or `}`
   |
 help: a keyword with a similar name exists: `ensure`
   |

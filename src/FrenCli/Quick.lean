@@ -109,7 +109,11 @@ def Spec.admitAtoms (sp : Spec) (c : Comp) (shapes : Name → Option Fren.Core.D
     binds := c.insts.map fun i => (bindingAtoms .anonymous i).map (·.compiled shapes)
     insts := c.insts.map fun i => (sp.instAtoms .anonymous i).map (·.compiled shapes)
     callAssumes := c.insts.map fun i =>
-      ((sp.comp? i.comp).map fun d => (d.ofKind .assume).map fun a => (a.name, d.inlineEarly a.e)).getD #[] }
+      ((sp.comp? i.comp).map fun d =>
+        -- Call checks name the separate giving-site parts, not the
+        -- whole-type facts used when searching the callee's behaviour.
+        let assumptions := d.inputObligations ++ (d.ofKind .assume).filter (·.typed?.isNone)
+        assumptions.map fun a => (a.name, d.inlineEarly a.e)).getD #[] }
 
 /-- Searches for an admissible input, then for each call in turn
 confirms its assumptions on its inputs and searches for its behaviour.
@@ -551,8 +555,10 @@ structure Evaluation where
 def Spec.evaluate (sp : Spec) (I : Interp) (c : Comp) (env : Env) : Evaluation := Id.run do
   let one (k : PropKind) := (c.ofKind k).map fun p =>
     (p, ({ label := p.name, pfx := .anonymous, e := p.e } : Atom).eval I env.look)
+  -- `c` is a procedure, never a global expectation: `fren eval` finds it
+  -- among `sp.comps` only.
   let kw : PropKind → String
-    | .assume => "assume" | .ensure => "ensure" | .expect => "expect" | .cover => "cover"
+    | .assume => Fren.Core.preconditionKeyword false | .ensure => "ensure" | .expect => "expect" | .cover => "cover"
   let as := one .assume
   let rs := one .ensure
   let es := one .expect

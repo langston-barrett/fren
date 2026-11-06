@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Diagnostic
+import FrenCore.Global
 import FrenCore.Prelude
 import FrenCore.Scope
 import FrenCore.Str
@@ -1023,12 +1024,14 @@ def outInAssumeMsg (n : Name) : Msg :=
     label? := some "an output"
     notes := #["note: assumptions constrain the environment, not the system", "help: if it constrains the outputs, make it an `ensure`"] }
 
-/-- A parameter with a definition: only outputs can be defined (`lang::modifiers`). -/
-def inputDefinitionMsg : Msg :=
+/-- A parameter with a definition: only outputs can be defined
+(`lang::modifiers`). `global` if it is a global expectation's, whose
+clauses about its parameters are its `assume`s. -/
+def inputDefinitionMsg (global : Bool := false) : Msg :=
   { code? := some "F0114", headline := "a parameter cannot have a definition"
     label? := some "parameters are chosen by the environment"
     notes := #["note: only an output can be defined, as `let x: T := e`, or as a result, `out r := e`",
-      "help: make it a `let`, or state what it equals in an `assume`"] }
+      s!"help: make it a `let`, or state what it equals in {aPrecondition global}"] }
 
 /-- A definition that mentions its own output, through the definitions
 `cycle`, each mentioning the next. -/

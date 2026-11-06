@@ -1,49 +1,45 @@
--- keep-sorted start
-import Fren.Literate
+-- The chapters share Fren's `lint` module. Keep their imports in manual
+-- order while Lean builds independent chapter groups in parallel.
+-- Preserve the language API that this umbrella has always imported.
 import Reqs.Cli
 import Reqs.Lang
 import Reqs.View
--- keep-sorted end
-open Fren.Lang
-
--- The requirements are in Lint.md and in the chapters under Lint/, one for
--- each group of lints, which share the module `lint`.
-#fren_md "Lint.md"
-#fren_md "Lint/Meaning.md"
-#fren_md "Lint/Unused.md"
-#fren_md "Lint/NonstandardStyle.md"
-#fren_md "Lint/Style.md"
-#fren_md "Lint/Style/Comparisons.md"
-#fren_md "Lint/Style/PatternTests.md"
-#fren_md "Lint/Style/PatternTestFixes.md"
-#fren_md "Lint/Style/Records.md"
-#fren_md "Lint/Style/Naturals.md"
-#fren_md "Lint/Style/Matches.md"
-#fren_md "Lint/Style/Let.md"
-#fren_md "Lint/Style/Closures.md"
-#fren_md "Lint/Complexity.md"
-#fren_md "Lint/Complexity/Comparisons.md"
-#fren_md "Lint/Complexity/Operators.md"
-#fren_md "Lint/Complexity/Methods.md"
-#fren_md "Lint/Complexity/Matches.md"
-#fren_md "Lint/Complexity/Updates.md"
-#fren_md "Lint/Complexity/Integers.md"
-#fren_md "Lint/Complexity/Patterns.md"
-#fren_md "Lint/Suspicious.md"
-#fren_md "Lint/Suspicious/Expressions.md"
-#fren_md "Lint/Suspicious/Methods.md"
-#fren_md "Lint/Suspicious/Literals.md"
-#fren_md "Lint/Suspicious/Comparisons.md"
-#fren_md "Lint/Suspicious/Integers.md"
-#fren_md "Lint/Pedantic.md"
-#fren_md "Lint/Pedantic/Matches.md"
-#fren_md "Lint/Pedantic/Records.md"
-#fren_md "Lint/Pedantic/Text.md"
-#fren_md "Lint/Pedantic/Comparisons.md"
-#fren_md "Lint/Pedantic/Conditionals.md"
-#fren_md "Lint/Pedantic/Booleans.md"
-#fren_md "Lint/Pedantic/Procedures.md"
-#fren_md "Lint/Restriction.md"
-#fren_md "Lint/Decidability.md"
-#fren_md "Lint/Printing.md"
-#fren_md "Lint/Rewrites.md"
+import Reqs.Lint.Base
+import Reqs.Lint.Meaning
+import Reqs.Lint.Unused
+import Reqs.Lint.NonstandardStyle
+import Reqs.Lint.Style
+import Reqs.Lint.Style.Comparisons
+import Reqs.Lint.Style.PatternTests
+import Reqs.Lint.Style.PatternTestFixes
+import Reqs.Lint.Style.Records
+import Reqs.Lint.Style.Naturals
+import Reqs.Lint.Style.Matches
+import Reqs.Lint.Style.Let
+import Reqs.Lint.Style.Closures
+import Reqs.Lint.Complexity
+import Reqs.Lint.Complexity.Comparisons
+import Reqs.Lint.Complexity.Operators
+import Reqs.Lint.Complexity.Methods
+import Reqs.Lint.Complexity.Matches
+import Reqs.Lint.Complexity.Updates
+import Reqs.Lint.Complexity.Integers
+import Reqs.Lint.Complexity.Patterns
+import Reqs.Lint.Suspicious
+import Reqs.Lint.Suspicious.Expressions
+import Reqs.Lint.Suspicious.Methods
+import Reqs.Lint.Suspicious.Literals
+import Reqs.Lint.Suspicious.Comparisons
+import Reqs.Lint.Suspicious.Integers
+import Reqs.Lint.Pedantic
+import Reqs.Lint.Pedantic.Matches
+import Reqs.Lint.Pedantic.Records
+import Reqs.Lint.Pedantic.Text
+import Reqs.Lint.Pedantic.Comparisons
+import Reqs.Lint.Pedantic.Conditionals
+import Reqs.Lint.Pedantic.Booleans
+import Reqs.Lint.Pedantic.Procedures
+import Reqs.Lint.Restriction
+import Reqs.Lint.Decidability
+import Reqs.Lint.Printing
+import Reqs.Lint.Rewrites

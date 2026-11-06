@@ -13,6 +13,6 @@ expect g(a_q: Seq<Int>) {
     expect g: a.q[7] > 0 or a.big?
 }
 
-pub proc guarded(q: Seq<Int>) { assume seventh: q[7] > 0 }
+pub proc guarded(q: Seq<Int>) { require seventh: q[7] > 0 }
 
 pub proc user(z: Seq<Int>) { call u := guarded(z) }

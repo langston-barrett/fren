@@ -2,8 +2,8 @@
 -- `fren fix` fixes the lints of `Nat`, `div`, `mod`, `abs`, `min` and
 -- `max`, with the operands parenthesized where they need it.
 pub proc c(n: Int, k: Int, j: Int, x: Int, y: Int): (m: Int, a: Int, b: Int, d: Int, e: Int) {
-    assume counts: k >= 0 and n >= 0 and x < y
-    assume order: j >= 0  -- why
+    require counts: k >= 0 and n >= 0 and x < y
+    require order: j >= 0  -- why
 
     ensure rm: m >= 0 and m <= n
     ensure ra: a = 2 * if x - y > 0 then x - y else -(x - y)

@@ -12,7 +12,7 @@ pub fn get(e: E): Int := match e {
 }
 
 proc c(p: P, e: E): (y: Int) {
-    assume pos: p.a > 0
+    require pos: p.a > 0
     ensure r: y = p.a + get(e)
     set_option fren.evidence "random" in
     expect big: p.b? or y > -100

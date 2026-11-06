@@ -1,0 +1,11 @@
+-- A global expectation's block's errors in source order, in both front
+-- ends (`lang::block_errors`, `lang::clause_errors`): a clause without a
+-- label that is not a Boolean block before a `require`.
+proc double(x: Int): (y: Int) { ensure r: y = 2 * x }
+
+expect even(x: Int) {
+    expect x > 0  --~ error: expected a named clause or a Boolean block
+    require small: x < 10
+    call d := double(x)
+}
+--@ exit: 2

@@ -519,7 +519,7 @@ pub proc manual_pattern_test_runs(
     run: Span,               -- a run of the operands
 ): (det reported?) {
     -- Each operand of the run that is read is an operand of the chain.
-    assume within: forall (i: Int), when run.first <= i <= run.last and reading_at(operands, conj?, i) != None,
+    require within: forall (i: Int), when run.first <= i <= run.last and reading_at(operands, conj?, i) != None,
         exists (j: Int), 0 <= j < chain.len and chain_operand?(chain[j], operands[i])
 
     ensure rule: reported? iff longest_run?(operands, conj?, run) and run_fires?(operands, conj?, chain, run)

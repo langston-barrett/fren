@@ -24,6 +24,12 @@ open Lean
 
 namespace Fren.Core
 
+/-- A split predicate member is reported at its definition. A whole
+predicate, including a cover goal, stays at its written check's label
+(`check::predicate_check_site`). Leading wrappers do not change the site. -/
+def predicateCheckAtMember (memberPath : String) (cover : Bool) : Bool :=
+  !cover && memberPath != ""
+
 inductive CheckKind where
   | realizable
   | inst
@@ -2243,7 +2249,7 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
       ++ clashNotes
     else
     -- Call variables (`w.x`) cannot be assumed about.
-    let help := if input.all (·.1.isAtomic) then #["help: weaken one of them, or add an `assume` that rules this input out"]
+    let help := if input.all (·.1.isAtomic) then #[s!"help: weaken one of them, or add {aPrecondition false} that rules this input out"]
       else #["help: weaken one of them",
         "note: call variables are part of the system: whatever the calls do, the procedure must cope"]
     #[one "F0601" s!"{subject} is not realizable" (some "not realizable")
@@ -2255,7 +2261,7 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
       #[one "F0661" m.headline m.label? m.notes]
     else
     if let (.inst, some (sub, a), some ty) := (r.kind, r.target?, r.subsetTy?) then
-      let m := instanceTypeMsg subject (showComp sub) (a.getPrefix.toString) ty (showAssignment vals)
+      let m := instanceTypeMsg subject (showComp sub) (a.getPrefix.toString) ty (showAssignment vals) r.global
       #[one "F0661" m.headline m.label? m.notes]
     else
     if r.kind == .definedness then
@@ -2299,7 +2305,7 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
         (some s!"may violate `{showComp f}::{p}`")
         #[s!"counterexample: {showAssignment vals}",
           "note: where a precondition fails, the application's value is unknown, or not what the function is for",
-          "help: guard the application, as in `p(x) and f(x) = y`, or assume what the precondition needs"]]
+          s!"help: guard the application, as in `p(x) and f(x) = y`, or add {aPrecondition r.global} that implies the precondition"]]
     else
     if let (.postcondition, some (f, p)) := (r.kind, r.target?) then
       #[one "F0630" s!"the postcondition `{p.toString (escape := false)}` of `{showComp f}` does not hold" (some "does not follow from the body")
@@ -2310,7 +2316,7 @@ def baseMessages (hasPrivateOuts : Bool) (r : CheckResult) (decidable : Bool := 
       #[one "F0604" s!"the assumption `{a}` of `{showComp sub}` may not hold for call {subject}"
         (some s!"may violate `{showComp sub}::{a}`")
         #[s!"counterexample: {showAssignment vals}",
-          "help: choose the call's arguments so that the assumption holds, or add an `assume` that guarantees it"]]
+          s!"help: choose the call's arguments so that the assumption holds, or add {aPrecondition r.global} that guarantees it"]]
     else
     #[one "F0603" s!"expectation {subject} does not hold"
       (some (if r.global then "does not follow from the assumptions and calls" else "does not follow from the guarantees"))

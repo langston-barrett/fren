@@ -6,12 +6,12 @@
 -- range kills the mutant. In `e`, the second `q[0]` is out of range on the
 -- spec, so dropping the guarded one kills nothing.
 proc c(q: Seq<Int>): (ok?) {
-    assume one: q.len >= 1
+    require one: q.len >= 1
     ensure r: ok? iff (q[0] = 1 and q[1] = 2)
 }
 
 proc d(q: Seq<Int>): (ok?) {
-    assume one: q.len >= 1
+    require one: q.len >= 1
     ensure r: ok? iff q[0] = 1
 }
 
