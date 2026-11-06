@@ -1,4 +1,4 @@
--- The appended --unfoldings forms: generic instances under assumptions
+-- Unfolding forms: generic instances under assumptions
 -- and in Boolean blocks, and a contract reached through deeper equations.
 --@ summary: 8 passed, 0 failed, 0 inconclusive, 0 redundant
 -- fren-covers: lang::induction_function, lang::unfoldings

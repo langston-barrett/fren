@@ -897,14 +897,16 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
   for f in hyps.map (·.2) |>.push goal do
     work := work ++ (← scan recs f #[] 0 #[])
   let mut out := #[]
-  let mut seen : Array (Expr × Array Expr × Nat) := #[]
+  let mut seen : Std.HashMap (Expr × Array Expr) Nat := {}
   let mut done := 0
   while done < work.size do
     let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, depth)
-    if seen.contains key || ancestors.contains app then continue
-    seen := seen.push key
+    let key := (app, gs)
+    if ancestors.contains app || !Core.recursiveDepthImproves seen[key]? depth then continue
+    -- Keep only the shallowest processed depth. Equal and deeper visits
+    -- repeat its facts, while a later shallower visit can unfold further.
+    seen := seen.insert key depth
     let .const c _ := app.getAppFn | continue
     let some d := recs.get? c | continue
     let ancestors := ancestors.push app

@@ -43,10 +43,9 @@ bodies of the functions declared before it. `lang::self_application` states
 which functions may apply themselves: whether a function is generic does
 not matter, since the structural rule does not look at the types of the
 payloads that the recursion decreases on (see [Generic
-recursion](#generic-recursion)). Both front ends call
-`Core.selfApplicable`, which is bound to it with an `impl`. A structural
-recursion is accepted, with the meaning, encodings and decidability below
-([Meaning](#meaning), [Solver encoding](#solver-encoding)); `F0448`, which
+recursion](#generic-recursion)). A structural recursion is accepted, with
+the meaning, encodings and decidability below ([Meaning](#meaning),
+[Solver encoding](#solver-encoding)); `F0448`, which
 reported it as not yet supported, is retired.
 
 ```fren
@@ -213,13 +212,12 @@ contract inherit the originating application’s depth, including through
 further contracts. An application brings its equation where its depth is
 less than the query's *unfoldings*, which `lang::unfoldings` states: 1,
 so that only the query's own applications bring one, but in an
-induction's check. A work queue visits each application, guards and
-depth once; a contract expansion also stops when it revisits an application
-on its ancestry path. Before scanning, the CLI expands the nonrecursive
-definitions and contract clauses that apply, directly or through others, a
-recursive or uninterpreted function, or a selector whose payload brings a
-fact, and leaves the rest to the solver as definitions: they hold no
-application to find, and expanding each where it is applied can make a
+induction's check. A contract expansion stops when it revisits an
+application on its ancestry path. Before scanning, the CLI expands the
+nonrecursive definitions and contract clauses that apply, directly or
+through others, a recursive or uninterpreted function, or a selector whose
+payload brings a fact, and leaves the rest to the solver as definitions:
+they hold no application to find, and expanding each where it is applied can make a
 query hundreds of times larger. Either way, a definition's [quantifiers
 over elements](ElementQuantifiers.md#expansion) are expanded where it is
 applied, as in a spec without recursion. This is the CLI’s finite
@@ -269,12 +267,23 @@ pub proc recursive_facts(
 }
 ```
 
-Both front ends decide whether a function's applications bring its result
-type's fact with `Fren.Core.recursiveResultFact`, from its declared result
-type alone, and which applications bring facts with
-`Fren.Core.recursiveFacts`: the result type's fact rides on the
-postconditions' gate, as `with_posts` states, so `result_type?` is the
-conjunction of the two.
+For the same application under the same guards, a shallower depth
+subsumes a deeper one: the contract facts stay the same, and it permits at
+least as much unfolding. A depth improves on an earlier one only when it
+is strictly smaller; without an earlier depth, its facts are not yet
+covered. `lang::recursive_depth` states this comparison.
+
+```fren
+pub proc recursive_depth(previous: Option<Int>, depth: Nat): (det improves?) {
+    ensure rule: improves? iff match previous {
+        Option::None => true,
+        Option::Some(earlier) => depth < earlier,
+    }
+}
+```
+
+The result type's fact rides on the postconditions' gate, as
+`with_posts` states, so `result_type?` is the conjunction of the two.
 
 The work queue finds an application once on each path to it: within the
 formulas of the query, and through the facts and equations that bring it.
@@ -659,8 +668,8 @@ unfoldings. `lang::induction_function` recognizes the function whose
 contract is checked by the `#induction#` prefix of its last path segment,
 which no source can write. An absent function, an empty path or a numeric
 last segment is represented by the empty string, which has no such
-prefix. The generated name (`inductionFnName`) always has this prefix,
-and a generic instance keeps it before its type arguments.
+prefix. The generated function's name always has this prefix, and a
+generic instance keeps it before its type arguments.
 
 ```fren
 pub fn induction_function?(last_segment: String) := last_segment.starts_with?("#induction#")
@@ -694,22 +703,17 @@ The deeper unfolding is sound:
   body ([Contracts](#contracts)), so its postcondition is never a
   hypothesis there.
 
-And the unfolding is finite: the depth bounds the equations, and each
-application, guards and depth is visited once. Without the bound it would
-not be: `len(x)` unfolds to an application at `x`'s tail, that to one at
-its tail's tail, and so on.
-
-The hosted front end groups reflected recursive facts in one balanced
-conjunction, and builds conjunctions and disjunctions of guard paths as
-balanced trees. Their connective depth grows logarithmically with the
-number of operands.
+And the unfolding is finite: the depth bounds the equations, and a
+revisit under the same guards adds facts only at a smaller depth.
+Without the bound it would not be: `len(x)` unfolds to an application at
+`x`'s tail, that to one at its tail's tail, and so on.
 
 Elsewhere, one step is the policy that every check's verdict rests on. An
 induction can only turn an Inconclusive claim into a pass
 (`lang::induction_verdict`), so its deeper unfolding changes no other
-verdict, nor the size of any query outside its attempts. Nothing reports
-that an attempt's unfolding reached its bound: as with a time limit, the
-claim keeps its own check's verdict and message.
+verdict and brings no extra equations outside its attempts. Nothing
+reports that an attempt's unfolding reached its bound: as with a time
+limit, the claim keeps its own check's verdict and message.
 
 Induction on a parameter does not yet unfold an application beyond three
 steps, nor only where the query decides the arm, nor take earlier claims
@@ -828,13 +832,10 @@ applications too, at which evaluation of the real definitions could
 confirm it, but none does yet. So of `fn first(l: L): (r: Int) { ensure e:
 r = total(L::Cons(1, L::Cons(2, L::Cons(3, l)))) }`, `cover low: first(l)
 < 6` is not met by a model that only the opaque `total` allows; but `cover
-big: one(l) > 100`, which `l = [200]` meets, is Inconclusive too. Both
-front ends take the formulas they reflect from
-`Fren.Core.recursionFormulas`, from the same three kinds, and decide with
-`Fren.Core.recursiveCounterexample`, where `applies_recursive?` is whether
-the query's own hypotheses or goal apply a recursive function, as the
-solver has them, and `facts_recursive?` whether a formula of
-`facts.image(brought)` does.
+big: one(l) > 100`, which `l = [200]` meets, is Inconclusive too. Here,
+`applies_recursive?` is whether the query's own hypotheses or goal apply
+a recursive function, as the solver has them, and `facts_recursive?`
+whether a formula of `facts.image(brought)` does.
 
 A model is not yet confirmed against the facts of the query's variables'
 types, though they are reflected. That is a known gap, not the rule meant:
@@ -862,8 +863,7 @@ evaluation has no formula of, applies one where the value checked against
 the subset type does, as `keep(p, rest)` above. So a model that evaluation
 refutes, or cannot evaluate, is never a failure where a formula applies a
 recursive function; `counterexample_confirmed_refines` confirms that this
-refines `recursive_counterexample`. Both front ends decide with
-`Fren.Core.counterexampleReported`.
+refines `recursive_counterexample`.
 
 ```fren
 set_option fren.lint.undecidable "allow" in
@@ -948,6 +948,7 @@ only uninterpreted functions to quantifier-free queries.
 #fren_check structural_recursion
 #fren_check recursive_match
 #fren_check recursive_facts
+#fren_check recursive_depth
 #fren_check merged_facts
 #fren_check recursive_post_result
 #fren_check induction_argument

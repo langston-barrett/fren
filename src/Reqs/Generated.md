@@ -381,10 +381,11 @@ definition, and there is no `p.«#solver»`.
 
 A [structural recursion](Lang/Recursion.md)'s `p.«#solver»` is `p`
 itself, at the placeholders. The solver never unfolds it: it reads only
-its [one-step equations](Lang/Recursion.md#solver-encoding), from its body
-with its `match`es as `if`s and the defined functions that it applies
-unfolded. So Lean's structural recursion runs once, over `p`'s body,
-which applies those functions, rather than also over that unfolded body,
+its [equations within the query's unfolding
+bound](Lang/Recursion.md#solver-encoding), from its body with its `match`es
+as `if`s and the defined functions that it applies unfolded. So Lean's
+structural recursion runs once, over `p`'s body, which applies those
+functions, rather than also over that unfolded body,
 whose size is the sum of theirs in each arm. A [generic
 one](Lang/Recursion.md#generic-recursion)'s `p.«#solver»` takes each type
 parameter's type and its `Inhabited` instance first, and `p` takes every

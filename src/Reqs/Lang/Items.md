@@ -775,7 +775,8 @@ checked under its preconditions.
 
 A recursive defined function is used opaquely in checks, with the same
 application obligations and postcondition facts as an uninterpreted
-function, plus the finite one-step equations of [Recursion](Recursion.md).
+function, plus its equations within the query's unfolding bound
+([Recursion](Recursion.md)).
 Its contract is checked by simultaneous Hoare induction against its body.
 
 A defined function's postconditions are claims about its body, which the
