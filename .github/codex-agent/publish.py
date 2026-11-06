@@ -1,7 +1,7 @@
 """Validate an untrusted patch on a fresh runner, then publish without running it.
 
 Only this job receives FREN_DEV_TOKEN. All publishing metadata comes from
-prepare's outputs, never from the runner on which Codex had full access.
+prepare's outputs, never from the container in which Codex worked.
 """
 import os
 from pathlib import Path, PurePosixPath
@@ -12,8 +12,18 @@ import sys
 # regardless of the working directory's Python files or PYTHONPATH.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import api, trusted
-from fixparams import LIMIT, MAX_ROUNDS, ROUND
+from common import LIMIT, MAX_ROUNDS, api, rounds_done, trusted
+
+BODY_BYTES = 60000
+
+
+def bounded(body, limit=BODY_BYTES):
+    """Leave room below GitHub's limit, even for multibyte characters."""
+    encoded = body.encode("utf-8")
+    if len(encoded) <= limit:
+        return body
+    notice = "\n\n[Response truncated by codex-agent.]"
+    return encoded[:limit - len(notice)].decode("utf-8", "ignore") + notice
 
 
 def git(*args, **kwargs):
@@ -52,7 +62,7 @@ def comment(number, body):
     import json
     subprocess.run(["gh", "api", f"repos/{os.environ['REPO']}/issues/{number}/comments",
                     "--method", "POST", "--input", "-"],
-                   input=json.dumps({"body": body}), text=True, check=True)
+                   input=json.dumps({"body": bounded(body)}), text=True, check=True)
 
 
 def main():
@@ -69,8 +79,8 @@ def main():
             if not any(trusted(c) and c["body"] == LIMIT for c in thread):
                 comment(pr, LIMIT)
             return
-        done = max((int(m.group(1)) for c in thread if trusted(c)
-                    if (m := ROUND.match(c["body"]))), default=0)
+        commits = api(f"repos/{repo}/pulls/{pr}/commits", pages=True)
+        done = rounds_done(thread, commits, pr)
         if round_number <= done or round_number > MAX_ROUNDS:
             return
     patch = Path(env["ARTIFACT"]) / "change.patch"
@@ -80,7 +90,8 @@ def main():
     prefix = (f"codex-agent fix round {round_number}" if pr else
               f"codex-agent ({env['MODEL']}, {env['EFFORT']} effort)")
     if patch.stat().st_size == 0:
-        explanation = text("pr-body.md", text("last.md", "No explanation supplied."), 1500)
+        fallback = text("pr-body.md", text("last.md", "No explanation supplied."))
+        explanation = text("comment.md", fallback, 1500) if pr else fallback[:1500]
         comment(subject, prefix + " made no change:\n\n" + explanation)
         return
     try:
@@ -98,6 +109,10 @@ def main():
         raise ValueError("applied patch changes .github")
     title = text("pr-title.txt", f"Fix #{env['ISSUE']}", 200).splitlines()[0]
     message = text("commit-msg.txt", title)
+    if pr:
+        # Appended after model text and parsed only at the message's end.
+        # This record is atomic with the push, unlike the later API POST.
+        message += f"\n\nCodex-Agent-PR: {pr}\nCodex-Agent-Round: {round_number}\n"
     git("config", "user.name", "fren-dev")
     git("config", "user.email", "352592472+fren-dev@users.noreply.github.com")
     git("-c", "commit.gpgsign=false", "commit", "--file=-", input=message, text=True)
@@ -111,16 +126,22 @@ def main():
     push_env = {**env, "GIT_CONFIG_COUNT": "1",
                 "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
                 "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {basic}"}
-    git("push", f"--force-with-lease=refs/heads/{branch}:{expected}",
-        f"https://github.com/{repo}.git", f"HEAD:refs/heads/{branch}", env=push_env)
+    try:
+        git("push", f"--force-with-lease=refs/heads/{branch}:{expected}",
+            f"https://github.com/{repo}.git", f"HEAD:refs/heads/{branch}", env=push_env)
+    except subprocess.CalledProcessError:
+        comment(subject, prefix + " could not confirm the push; check the branch and run artifact.")
+        raise
     if pr:
         head = git("rev-parse", "HEAD", capture_output=True, text=True).stdout.strip()
         comment(pr, prefix + f", {head}:\n\n" + text("comment.md", text("last.md")))
     else:
         import json
-        body = text("pr-body.md", text("last.md")) + (
+        suffix = (
             f"\n\nCloses #{env['ISSUE']}. Written by {env['MODEL']} at {env['EFFORT']} "
             "effort in the `codex-agent` workflow.\n")
+        body = bounded(text("pr-body.md", text("last.md")),
+                       BODY_BYTES - len(suffix.encode("utf-8"))) + suffix
         created = subprocess.check_output([
             "gh", "api", f"repos/{repo}/pulls", "--method", "POST", "--input", "-"],
             input=json.dumps({"head": branch, "base": "main", "title": title, "body": body}), text=True)

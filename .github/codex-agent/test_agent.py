@@ -1,6 +1,7 @@
 """Regression checks for the prompt, artifact and publishing boundaries."""
 from contextlib import contextmanager
 import copy
+import base64
 import importlib.util
 import io
 import os
@@ -18,6 +19,8 @@ import common
 import fixparams
 import params
 import publish
+import collect as collect_outputs
+import run as agent_run
 
 spec = importlib.util.spec_from_file_location("export_patch", HERE / "export.py")
 export_patch = importlib.util.module_from_spec(spec)
@@ -152,6 +155,21 @@ class PatchTests(unittest.TestCase):
         explanation = post.call_args.args[1].split("made no change:\n\n")[1]
         self.assertEqual(len(explanation), 1500)
 
+    def test_no_change_fix_posts_comment_before_body_or_last_message(self):
+        self.patch.write_bytes(b"")
+        (self.root / "comment.md").write_text("I disagree: the reported behavior is intended.")
+        (self.root / "pr-body.md").write_text("old description")
+        (self.root / "last.md").write_text("last response")
+        info = pr()
+        info["head"]["sha"] = self.base
+        env = {"REPO": REPO, "MODE": "fix", "PR": "123", "BRANCH": "agent/10-luna-low",
+               "BASE": self.base, "ROUND": "1", "ARTIFACT": str(self.root)}
+        with patch.dict(os.environ, env), patch.object(publish, "api", side_effect=[info, [], []]), \
+                patch.object(publish, "comment") as post:
+            publish.main()
+        self.assertIn("I disagree:", post.call_args.args[1])
+        self.assertNotIn("old description", post.call_args.args[1])
+
     def test_publisher_commits_without_running_patch_and_hides_push_credential(self):
         Path("hostile.py").write_text("raise RuntimeError('the patch must never run')\n")
         export_patch.export(self.base, self.patch)
@@ -189,8 +207,69 @@ class PatchTests(unittest.TestCase):
                 publish.main()
         run_git.assert_not_called()
 
+    def test_failed_response_after_push_keeps_a_durable_round(self):
+        Path("tracked").write_text("fixed\n")
+        export_patch.export(self.base, self.patch)
+        git("reset", "--hard", "--quiet", self.base)
+        (self.root / "comment.md").write_text("😀" * 70000)
+        info = pr()
+        info["head"]["sha"] = self.base
+        env = {"REPO": REPO, "MODE": "fix", "PR": "123", "BRANCH": "agent/10-luna-low",
+               "BASE": self.base, "ROUND": "2", "ISSUE": "10", "ARTIFACT": str(self.root),
+               "GH_TOKEN": "dummy-credential"}
+        real_git = publish.git
+
+        def run_git(*args, **kwargs):
+            if args[0] == "push":
+                return
+            return real_git(*args, **kwargs)
+
+        with patch.dict(os.environ, env), patch.object(publish, "api", side_effect=[info, [], []]), \
+                patch.object(publish, "git", side_effect=run_git), \
+                patch.object(publish, "comment", side_effect=RuntimeError("POST failed")):
+            with self.assertRaisesRegex(RuntimeError, "POST failed"):
+                publish.main()
+        message = git("log", "-1", "--format=%B").decode()
+        self.assertEqual(common.rounds_done([], [{"commit": {"message": message}}], "123"), 2)
+
+    def test_pr_body_is_bounded_and_keeps_closing_reference(self):
+        Path("tracked").write_text("fixed\n")
+        export_patch.export(self.base, self.patch)
+        git("reset", "--hard", "--quiet", self.base)
+        (self.root / "pr-body.md").write_text("😀" * 70000)
+        env = {"REPO": REPO, "MODE": "issue", "PR": "", "BRANCH": "agent/10-luna-low",
+               "BASE": self.base, "ROUND": "0", "ISSUE": "10", "MODEL": "gpt-6-luna",
+               "EFFORT": "low", "ARTIFACT": str(self.root), "GH_TOKEN": "dummy-credential"}
+        real_git = publish.git
+
+        def run_git(*args, **kwargs):
+            if args[0] == "push":
+                return
+            return real_git(*args, **kwargs)
+
+        with patch.dict(os.environ, env), patch.object(publish, "git", side_effect=run_git), \
+                patch.object(publish, "comment"), \
+                patch.object(subprocess, "check_output", return_value='{"html_url": "https://example.com/pr"}') as create:
+            publish.main()
+        import json
+        body = json.loads(create.call_args.kwargs["input"])["body"]
+        self.assertLessEqual(len(body.encode()), publish.BODY_BYTES)
+        self.assertIn("Closes #10.", body)
+        self.assertIn("truncated", body)
+
 
 class PromptTests(unittest.TestCase):
+    def test_existing_branch_skips_before_starting_codex(self):
+        env = {"REPO": REPO, "EVENT": "workflow_dispatch", "IN_ISSUE": "10",
+               "IN_MODEL": "luna", "IN_EFFORT": "low"}
+        issue = {"author_association": "OWNER", "state": "open"}
+        with patch.dict(os.environ, env), patch.object(params, "api", side_effect=[issue, []]), \
+                patch.object(params, "branch_exists", return_value=True), \
+                patch.object(params, "prompt") as prompt, patch.object(params, "output") as output:
+            params.main()
+        prompt.assert_not_called()
+        output.assert_called_once_with(mode="skip")
+
     def test_associations_are_filtered_fail_closed(self):
         items = [comment(assoc, assoc) for assoc in
                  ("OWNER", "MEMBER", "COLLABORATOR", "NONE", "CONTRIBUTOR", "FIRST_TIMER")]
@@ -226,6 +305,7 @@ class FixTests(unittest.TestCase):
         self.env = {"REPO": REPO, "RUN_ID": "20", "RUN_NAME": "pr-review",
                     "RUN_BRANCH": "main", "RUN_SHA": "b" * 40}
         self.generated = None
+        self.commits = []
 
     def run_fix(self):
         def api(path, **kwargs):
@@ -233,6 +313,8 @@ class FixTests(unittest.TestCase):
                 return self.thread
             if path.endswith("/pulls/123/comments"):
                 return [comment("trusted inline"), comment("outsider inline", "NONE")]
+            if path.endswith("/pulls/123/commits"):
+                return self.commits
             raise AssertionError(path)
         with patch.dict(os.environ, self.env), \
                 patch.object(fixparams, "reviewed_pr", return_value=self.info), \
@@ -268,6 +350,12 @@ class FixTests(unittest.TestCase):
         self.thread.append(comment(fixparams.LIMIT))
         result, _ = self.run_fix()
         self.assertEqual(result["mode"], "skip")
+
+    def test_cap_counts_pushed_round_when_its_response_failed(self):
+        self.commits = [{"commit": {"message": "Fix\n\nCodex-Agent-PR: 123\nCodex-Agent-Round: 3\n"}}]
+        result, prompt = self.run_fix()
+        self.assertEqual(result["mode"], "limit")
+        prompt.assert_not_called()
 
     def test_forged_round_does_not_consume_budget(self):
         self.thread.append(comment("codex-agent fix round 3, head: forgery", "NONE"))
@@ -350,6 +438,8 @@ class FixTests(unittest.TestCase):
                 return []
             if path.endswith("/pulls/123/comments"):
                 return []
+            if path.endswith("/pulls/123/commits"):
+                return []
             raise AssertionError(path)
 
         with patch.dict(os.environ, self.env), patch.object(fixparams, "api", side_effect=api), \
@@ -363,6 +453,92 @@ class FixTests(unittest.TestCase):
             fixparams.main()
             output.assert_called_with(mode="skip")
             prompt.assert_not_called()
+
+
+class ArtifactTests(unittest.TestCase):
+    def test_host_collector_waits_for_teardown_and_never_uploads_auth(self):
+        import json
+        from types import SimpleNamespace
+        token = "test-key-abcdefghijklmnopqrstuvwxyz-0123456789"
+        state = {"removed": False}
+        with tempfile.TemporaryDirectory() as temp, cwd(temp):
+            root = Path(temp)
+            (root / "work").mkdir()
+            (root / "agent").mkdir()
+            (root / "agent/prompt.md").write_text("prompt")
+            env = {"CODEX_AUTH_JSON": json.dumps({"OPENAI_API_KEY": token}),
+                   "RUNNER_TEMP": temp, "CODEX_CONTAINER": "codex-test",
+                   "MODEL": "gpt-6-luna", "EFFORT": "low", "BASE": SHA}
+
+            def sandbox(args, **kwargs):
+                self.assertNotIn("CODEX_AUTH_JSON", os.environ)
+                state["auth"] = Path(args[5])
+                self.assertEqual((state["auth"] / "auth.json").stat().st_mode & 0o777, 0o600)
+                (root / "agent/last.md").write_text(token)
+                (root / "agent/comment.md").write_text("safe result")
+                return SimpleNamespace(returncode=0)
+
+            def remove(_name):
+                state["removed"] = True
+
+            def collect(*args):
+                self.assertTrue(state["removed"])
+                return collect_outputs.collect(*args)
+
+            with patch.dict(os.environ, env), patch.object(agent_run.signal, "signal"), \
+                    patch.object(subprocess, "run", side_effect=sandbox), \
+                    patch.object(agent_run, "remove", side_effect=remove), \
+                    patch.object(agent_run, "collect", side_effect=collect):
+                self.assertEqual(agent_run.main(), 0)
+            self.assertFalse(state["auth"].exists())
+            self.assertFalse((root / "agent").exists())
+            safe = root / "codex-result"
+            self.assertFalse((safe / "last.md").exists())
+            self.assertFalse((safe / "auth.json").exists())
+            self.assertEqual((safe / "comment.md").read_text(), "safe result")
+
+    def test_secret_fields_plain_encoded_and_refreshed_are_withheld(self):
+        import json
+        original = "old-secret-0123456789-abcdefghijklmnopqrstuvwxyz"
+        refreshed = "new-secret-9876543210-abcdefghijklmnopqrstuvwxyz"
+        creds = collect_outputs.secrets(json.dumps({"tokens": {"access_token": original}}))
+        creds += collect_outputs.secrets(json.dumps({"tokens": {"refresh_token": refreshed}}))
+        with tempfile.TemporaryDirectory() as temp:
+            source, destination = Path(temp) / "source", Path(temp) / "safe"
+            source.mkdir()
+            (source / "last.md").write_text(original)
+            (source / "comment.md").write_text(base64.b64encode(refreshed.encode()).decode())
+            (source / "log.jsonl").write_text(original.encode().hex())
+            (source / "pr-body.md").write_text("Safe explanation")
+            (source / "change.patch").write_bytes(b"\0a safe binary patch")
+            withheld = collect_outputs.collect(source, destination, creds)
+            self.assertEqual(set(withheld), {"last.md", "comment.md", "log.jsonl"})
+            self.assertEqual((destination / "pr-body.md").read_text(), "Safe explanation")
+            self.assertEqual((destination / "change.patch").read_bytes(), b"\0a safe binary patch")
+            self.assertFalse((destination / "last.md").exists())
+
+    def test_symlink_fifo_and_symlink_parent_are_not_read(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source, destination = Path(temp) / "source", Path(temp) / "safe"
+            source.mkdir()
+            (source / "last.md").symlink_to("/etc/passwd")
+            os.mkfifo(source / "log.jsonl")
+            withheld = collect_outputs.collect(source, destination, [])
+            self.assertEqual(set(withheld), {"last.md", "log.jsonl"})
+            link = Path(temp) / "link"
+            link.symlink_to(source, target_is_directory=True)
+            with self.assertRaises(OSError):
+                collect_outputs.read_regular(link, "last.md")
+
+    def test_comment_api_caps_the_complete_prefix_and_body(self):
+        import json
+        body = "codex-agent fix round 2, sha:\n\n" + "😀" * 70000
+        with patch.dict(os.environ, {"REPO": REPO}), patch.object(subprocess, "run") as post:
+            publish.comment("123", body)
+        bounded = json.loads(post.call_args.kwargs["input"])["body"]
+        self.assertTrue(bounded.startswith("codex-agent fix round 2, sha:"))
+        self.assertLessEqual(len(bounded.encode()), publish.BODY_BYTES)
+        self.assertIn("truncated", bounded)
 
 
 if __name__ == "__main__":

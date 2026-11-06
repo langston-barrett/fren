@@ -1903,6 +1903,31 @@ branch can read, until it is moved to an environment that only `main`
 can use. Run by hand (`gh workflow run pr-review -f pr=N`), it posts only
 on the pull request that its `post` input names.
 
+The `codex-agent` workflow works small follow-up issues, selected by an
+`agent/<model>-<effort>` label or a manual run on `main`. It opens an
+`agent/*` pull request and answers at most three blocking reviews or
+failed `pre-merge` runs. The coordinator handles conflicts with `main`,
+the small findings of a clean review, and remaining work after that
+limit; the usual checks and review still gate every merge. Issue authors
+and human comments must have a trusted association; automated review text
+must match the completed trusted run's validated artifact. Codex runs as an
+unprivileged container user, with a private PID namespace, no runner
+variables or processes, Docker socket, capabilities or privilege
+escalation, and a read-only root and toolchain. Only its checkout, output
+and private sign-in directory are writable host mounts; its home and
+temporary files use private scratch space. Network access is available
+for inference and dependencies. The container and its children are
+destroyed before output collection, keeping the runner's runtime token
+outside the model's reach even in `main`'s cache scope. `lint` checks this
+with a hostile stand-in (`.github/codex-agent/test_sandbox.sh`). Known
+credential copies are withheld from artifacts. A fresh runner validates
+the full-base patch and publishes it without executing patched code.
+Fix commits record their PR and round in trailers, so a failed response
+POST does not lose a pushed round. See `.github/codex-agent/README.md` for
+the job boundaries and authentication renewal: unattended runs should use
+API-key auth, while the owner must replace a ChatGPT sign-in snapshot
+after token rotation or expiration.
+
 `scripts/local-review` gives an author a pre-push check of its branch, by
 OpenAI's Codex CLI, before CI's review (AGENTS.md says when). It composes
 the brief with `compose.py` and `brief.md` as `origin/main` (or `--base

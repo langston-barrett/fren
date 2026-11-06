@@ -2,7 +2,7 @@
 import os
 import subprocess
 
-from common import MODELS, EFFORTS, api, comments, output, prompt, trusted
+from common import MODELS, EFFORTS, api, branch_exists, comments, output, prompt, trusted
 
 
 def main():
@@ -21,8 +21,11 @@ def main():
     data = api(f"repos/{repo}/issues/{issue}")
     if not trusted(data) or "pull_request" in data or data["state"] != "open":
         return output(mode="skip")
-    thread = comments(api(f"repos/{repo}/issues/{issue}/comments", pages=True))
     branch = f"agent/{issue}-{name}-{effort}"
+    if branch_exists(repo, branch):
+        print(f"Nothing to do: {branch} already exists; leaving it to its PR/coordinator.")
+        return output(mode="skip")
+    thread = comments(api(f"repos/{repo}/issues/{issue}/comments", pages=True))
     base = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     prompt(issue, 0, f"## The issue: #{issue}, {data['title']}\n\n{data['body'] or ''}\n\n{thread}")
     output(mode="issue", issue=issue, pr="", branch=branch, base=base,

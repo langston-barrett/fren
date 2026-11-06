@@ -7,12 +7,9 @@ import re
 import subprocess
 import zipfile
 
-from common import MODELS, api, comments, output, prompt, trusted
+from common import MAX_ROUNDS, LIMIT, MODELS, api, comments, output, prompt, rounds_done, trusted
 
-MAX_ROUNDS = 3
-LIMIT = "codex-agent has answered 3 rounds; leaving this pull request to the coordinator."
 REVIEW = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues|blocking issues)(?:\s|$)")
-ROUND = re.compile(r"codex-agent fix round (\d+)(?:,| made no change:| rejected:)")
 
 
 def reviewed_pr(repo, run_id):
@@ -125,11 +122,9 @@ def main():
             "gh", "run", "view", run_id, "-R", repo, "--log-failed"], text=True)
         lines = [line for line in log.splitlines() if re.search(r"error:|FAIL|crashed|warning:", line)]
         what = "Your current head's pre-merge failed. Fix the cause. Failing log lines:\n\n" + "\n".join(lines[:80])
-    # Count only the publisher's trusted comments, never arbitrary users'
-    # imitations. The maximum round also survives a retried trigger.
-    rounds = [int(m.group(1)) for c in thread if trusted(c)
-              if (m := ROUND.match(c["body"]))]
-    done = max(rounds, default=0)
+    # A push records the round even when posting its response failed.
+    commits = api(f"repos/{repo}/pulls/{pr}/commits", pages=True)
+    done = rounds_done(thread, commits, pr)
     mode = "fix"
     if done >= MAX_ROUNDS:
         # A separate publisher posts this once, with no write token here.
