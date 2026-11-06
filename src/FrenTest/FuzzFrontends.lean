@@ -3167,7 +3167,8 @@ structure Ran where
   comparison : FrenTest.Frontends.Comparison
   /-- Both reports, as comments. -/
   reports : String
-  /-- The binary's error codes, or the headlines of errors without a code. -/
+  /-- The binary's error codes, or headlines for code-less errors, without
+  the stopped trailer (`errorKeys`). -/
   errors : Array String
   /-- The binary's diagnostics. -/
   cli : Array Diagnostic
@@ -3178,6 +3179,34 @@ structure Ran where
   obligations? : Option (String × String) := none
   /-- Both structural theories dumps, compared independently of diagnostics. -/
   theories? : Option (String × String) := none
+
+/-- Error codes and code-less error headlines, without the trailer that
+summarizes the static errors that stopped checking. Internal errors are
+kept, including those without a location. -/
+def errorKeys (diags : Array Diagnostic) : Array String :=
+  diags.filterMap fun d =>
+    if d.severity == "error" && !FrenTest.Frontends.isStoppedTrailer d then
+      some (d.code?.getD (headOf d)) else none
+
+section
+private def stopped : Diagnostic :=
+  { line := 0, severity := "error", text := Fren.Core.couldNotHeadline }
+private def recursionError : Diagnostic :=
+  { line := 4, severity := "error", text := "recursive call does not decrease", code? := some "F0447" }
+private def internalError : Diagnostic :=
+  { line := 0, severity := "error", text := "internal error: the solver did not decide the realizability check" }
+
+-- A structural-recursion error's stopped trailer is not another error.
+#guard errorKeys #[recursionError, stopped] == #["F0447"]
+-- Code-less internal errors remain visible, with or without static errors
+-- and whether or not they have a location.
+#guard errorKeys #[internalError] == #[internalError.text]
+#guard errorKeys #[recursionError, internalError, stopped] == #["F0447", internalError.text]
+#guard errorKeys #[{ internalError with line := 7 }] == #[internalError.text]
+-- Failed comparisons count; warnings do not.
+#guard errorKeys #[{ recursionError with code? := some "F0603" },
+  { internalError with severity := "warning" }] == #["F0603"]
+end
 
 /-- `out` without its obligations dump, and the dump, if it has one
 (`Fren.Core.dumpStart`). -/
@@ -3221,7 +3250,7 @@ def runFrontends (env : Environment) (path : System.FilePath) (text : String) (m
     String.join (ds.toList.map fun d => s!"--   {d.line}:{d.col + 1}: {d.severity}{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}\n")
       ++ s!"--   summary: {s.getD "(none)"}\n"
   return { comparison, reports := s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
-           errors := cli.filterMap fun d => if d.severity == "error" then some (d.code?.getD (headOf d)) else none,
+           errors := errorKeys cli,
            cli, hosted, obligations?, theories? }
 
 unsafe def loadFren : IO Environment := do
