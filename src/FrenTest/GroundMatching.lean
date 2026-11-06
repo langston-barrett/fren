@@ -6,6 +6,7 @@ import FrenCore.GroundMatching
 -- fren-covers: lang::ground_normalization, lang::ground_shape_step, lang::ground_subject_step
 -- fren-covers: lang::ground_selection_step, lang::ground_variables_step, lang::ground_join_step
 -- fren-covers: lang::ground_listed_step, lang::ground_sentence_lists_step, lang::ground_rule_step
+-- fren-covers: lang::ground_prepared_listed_step, lang::ground_prepared_rule_step
 -- fren-covers: lang::ground_preparation_step, lang::ground_instance_list_step, lang::ground_instances_step
 
 namespace FrenTest.GroundMatching
