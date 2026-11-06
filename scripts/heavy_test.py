@@ -815,28 +815,63 @@ def test_group_completion():
 
 
 def test_namespace_init_reaping():
-    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal, testing::heavy_init_reap
+    for subreaper in (False, True):
+        peek = SimpleNamespace(si_pid=7)
+        with mock.patch.object(heavy.os, "getpid", return_value=1), \
+             mock.patch.object(heavy.os, "waitid", side_effect=[peek, None]) as peek_wait, \
+             mock.patch.object(heavy.os, "getpgid", return_value=9), \
+             mock.patch.object(heavy.os, "waitpid", return_value=(7, 0)) as wait, \
+             mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()) as probe:
+            assert not heavy.group_gone(5, lambda: False, subreaper)
+            peek_wait.assert_not_called()  # Collect group usage before init cleanup.
+            assert heavy.group_gone(5, lambda: True, subreaper)
+            assert peek_wait.call_args_list == [mock.call(
+                os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)] * 2
+            wait.assert_called_once_with(7, os.WNOHANG)
+            probe.assert_called_once_with(5, 0)
+    # Adoption can race the successful group reap: preserve the new member's
+    # wait4 usage instead of consuming it through the init's waitpid path.
+    rss = 10 * 1024 if heavy.platform.system() == "Darwin" else 10
+    usage = SimpleNamespace(ru_utime=2.5, ru_stime=1.25, ru_maxrss=rss, ru_nivcsw=3)
+    child = SimpleNamespace(pid=5, returncode=7, heavy_subreaper=True)
+    record = {"peak_rss_kb": 0}
     with mock.patch.object(heavy.os, "getpid", return_value=1), \
-         mock.patch.object(heavy.os, "waitpid", side_effect=[(7, 0), (0, 0)]) as wait, \
-         mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()) as probe:
-        assert not heavy.group_gone(5, lambda: False)
-        wait.assert_not_called()  # The leader must first be collected by wait4.
-        assert heavy.group_gone(5, lambda: True)
-        assert wait.call_args_list == [mock.call(-1, os.WNOHANG)] * 2
-        probe.assert_called_once_with(5, 0)
-    with mock.patch.object(heavy.os, "getpid", return_value=1), \
-         mock.patch.object(heavy.os, "waitpid", side_effect=ChildProcessError()), \
+         mock.patch.object(heavy.os, "waitid", side_effect=[SimpleNamespace(si_pid=7), None]), \
+         mock.patch.object(heavy.os, "getpgid", return_value=5), \
+         mock.patch.object(heavy.os, "wait4", side_effect=[ChildProcessError(), (7, 0, usage), ChildProcessError()]) as wait4, \
+         mock.patch.object(heavy.os, "waitpid", side_effect=AssertionError("lost group usage")), \
          mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()):
-        assert heavy.group_gone(5, lambda: True)
+        assert heavy.group_gone(5, lambda: heavy.reap_child(child, record), True)
+        assert wait4.call_args_list == [mock.call(-5, os.WNOHANG)] * 3
+        assert record["_cpu_usage"] == (2.5, 1.25, 10, 3)
+        assert child.returncode == 7
+    # A live adopted child outside the group never turns init cleanup into
+    # a blocking wait or keeps the job's own group alive.
+    with mock.patch.object(heavy.os, "getpid", return_value=1), \
+         mock.patch.object(heavy.os, "waitid", return_value=None) as peek, \
+         mock.patch.object(heavy.os, "waitpid", side_effect=AssertionError("waited for live orphan")), \
+         mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()):
+        assert heavy.group_gone(5, lambda: True, True)
+        peek.assert_called_once_with(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    with mock.patch.object(heavy.os, "getpid", return_value=1), \
+         mock.patch.object(heavy.os, "waitid", side_effect=ChildProcessError()), \
+         mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()):
+        assert heavy.group_gone(5, lambda: True, True)
     with mock.patch.object(heavy.os, "getpid", return_value=2), \
-         mock.patch.object(heavy.os, "waitpid") as wait, \
+         mock.patch.object(heavy.os, "waitid") as wait, \
          mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()):
-        assert heavy.group_gone(5, lambda: True)
+        assert heavy.group_gone(5, lambda: True, True)
         wait.assert_not_called()
 
 
 def test_namespace_init_workers():
-    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal, testing::heavy_init_reap
+    for subreaper in (False, True):
+        namespace_init_workers(subreaper)
+
+
+def namespace_init_workers(subreaper):
     if heavy.platform.system() != "Linux":
         return
     prefix = ["unshare", "--user", "--map-root-user", "--pid", "--fork", "--kill-child=KILL", "--"]
@@ -852,28 +887,34 @@ def test_namespace_init_workers():
     with tempfile.TemporaryDirectory() as state:
         ready = os.path.join(state, "worker")
         reaped = os.path.join(state, "reaped")
-        worker = ("import pathlib,sys,time; memory=bytearray(48*1024*1024); "
-                  "pathlib.Path(sys.argv[1]).touch(); time.sleep(60)")
-        leader = ("import subprocess,sys,time; "
+        worker = ("import os,pathlib,sys,time; memory=bytearray(48*1024*1024); "
+                  "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)")
+        outside = os.path.join(state, "outside")
+        orphan = ("import os,pathlib,sys; pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))")
+        leader = ("import os,subprocess,sys,time; "
+                  f"outside_child=subprocess.Popen([sys.executable,'-c',{orphan!r},{outside!r}], start_new_session=True); "
+                  "os.waitid(os.P_PID,outside_child.pid,os.WEXITED|os.WNOWAIT); "
                   f"subprocess.Popen([sys.executable,'-c',{worker!r},{ready!r}]); time.sleep(60)")
         launcher = """
 import contextlib, os, pathlib, runpy, sys
 assert os.getpid() == 1
 h = runpy.run_path(sys.argv[1])
-h['main'].__globals__['child_subreaper'] = contextlib.contextmanager(lambda: iter([False]))
-waitpid = os.waitpid
-def record_reap(pid, flags):
-    result = waitpid(pid, flags)
-    if pid == -1 and result[0] > 0:
-        pathlib.Path(sys.argv[4]).write_text(str(result[0]))
+if sys.argv[5] == 'fallback':
+    h['main'].__globals__['child_subreaper'] = contextlib.contextmanager(lambda: iter([False]))
+waitpid, wait4 = os.waitpid, os.wait4
+def record_result(result):
+    if result[0] > 0:
+        with open(sys.argv[4], 'a') as f:
+            f.write(str(result[0]) + '\\n')
     return result
-os.waitpid = record_reap
+os.waitpid = lambda pid, flags: record_result(waitpid(pid, flags))
+os.wait4 = lambda pid, flags: record_result(wait4(pid, flags))
 sys.exit(h['main']([sys.executable, '-c', sys.argv[3]], state=sys.argv[2], load_reader=lambda: 0))
 """
         env = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="0.04", HEAVY_MAX_LOAD="off")
         env.pop("HEAVY_LOG", None)
         child = subprocess.Popen(prefix + [sys.executable, "-I", "-B", "-c", launcher,
-            os.path.join(HERE, "heavy"), state, leader, reaped], env=env,
+            os.path.join(HERE, "heavy"), state, leader, reaped, "default" if subreaper else "fallback"], env=env,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             deadline = heavy.time.monotonic() + 10
@@ -884,7 +925,18 @@ sys.exit(h['main']([sys.executable, '-c', sys.argv[3]], state=sys.argv[2], load_
             out, err = child.communicate(timeout=30)
             assert child.returncode == 137 and "heavy: killed" in err, (out, err)
             assert os.path.exists(reaped), "namespace init did not reap its adopted worker"
-            print("heavy: PID namespace init reaped orphan workers")
+            with open(outside) as f:
+                outside_pid = f.read()
+            with open(reaped) as f:
+                reaped_pids = f.read().splitlines()
+            assert outside_pid in reaped_pids, "namespace init left its outside-group orphan zombie"
+            with open(ready) as f:
+                worker_pid = f.read()
+            assert worker_pid in reaped_pids, "namespace init did not reap its same-group worker"
+            with open(os.path.join(state, "log.jsonl")) as f:
+                logged = [json.loads(line) for line in f]
+            assert logged[-1]["cpu_scope"] == ("process_group" if subreaper else "waited_tree")
+            print(f"heavy: PID namespace init reaped outside-group orphan (subreaper={subreaper})")
         finally:
             if child.poll() is None:
                 child.terminate()
@@ -995,7 +1047,7 @@ def test_status_failure_cleanup():
             if registered:
                 slot.heavy_job = {"job_id": "job"}
             stderr = io.StringIO()
-            with mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=42)), \
+            with mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=42, returncode=None)), \
                  mock.patch.object(heavy, "visible_group", return_value=42), \
                  mock.patch.object(heavy, "write_status", side_effect=OSError("disk full")), \
                  mock.patch.object(heavy, "group_rss_kb", return_value={42: 1}), \
@@ -1548,7 +1600,7 @@ def test_own_cap_with_other_victim():
                     {"job_id": "newer", "order": 2, "rss_kb": 1, "fresh": False}]
             record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
             stderr = io.StringIO()
-            with mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=42)), \
+            with mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=42, returncode=None)), \
                  mock.patch.object(heavy, "visible_group", return_value=42), \
                  mock.patch.object(heavy, "group_rss_kb", return_value={42: rss}), \
                  mock.patch.object(heavy, "publish_memory"), \
@@ -1909,33 +1961,48 @@ def test_cpu_monitor():
 
 def test_monitor_group_completion():
     # fren-covers: testing::heavy_group_gone
-    for subreaper in (False, True):
+    for subreaper, readings, expected_pids in (
+            (False, [{"pid": 143}, {"pid": 144}], "143, 144"),
+            (True, [{"pid": 143}, {"pid": 144}], "143, 144"),
+            (True, None, "unavailable"), (False, [], "none sampled")):
         record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
-        child = SimpleNamespace(pid=42, returncode=0)
+        child = SimpleNamespace(pid=42, returncode=7)
+        clock = [0]
+        def sleep(seconds):
+            assert seconds == 1
+            clock[0] += 1
+        stderr = io.StringIO()
         with tempfile.TemporaryDirectory() as state, \
              tempfile.TemporaryFile(mode="w+") as slot, \
+             contextlib.redirect_stderr(stderr), \
              mock.patch.object(heavy.subprocess, "Popen", return_value=child), \
              mock.patch.object(heavy, "reap_child", return_value=True), \
-             mock.patch.object(heavy, "visible_group", return_value=42), \
-             mock.patch.object(heavy, "group_processes", return_value=[]), \
-             mock.patch.object(heavy, "group_rss_kb", return_value={42: 10}), \
+             mock.patch.multiple(heavy, visible_group=mock.Mock(return_value=142),
+                                 group_processes=mock.Mock(return_value=readings),
+                                 machine_counters=mock.Mock(return_value={}),
+                                 cpu_ticks=mock.Mock(return_value=None)), \
+             mock.patch.object(heavy.ProcessSampler, "sample"), \
+             mock.patch.object(heavy, "group_rss_kb", return_value={142: 10}), \
              mock.patch.object(heavy, "jobs", return_value=[]), \
              mock.patch.object(heavy, "publish_memory") as publish, \
              mock.patch.object(heavy, "mem_cap_kb", return_value=100), \
-             mock.patch.object(heavy, "machine_counters", return_value={}), \
-             mock.patch.object(heavy, "cpu_ticks", return_value=None), \
              mock.patch.object(heavy.os, "getpid", return_value=2), \
-             mock.patch.object(heavy.os, "killpg", side_effect=[None, ProcessLookupError()]) as probe, \
-             mock.patch.object(heavy.time, "sleep") as sleep, \
+             mock.patch.object(heavy.os, "killpg", side_effect=[None] * 32 + [ProcessLookupError()]) as probe, \
+             mock.patch.object(heavy.time, "monotonic", side_effect=lambda: clock[0]), \
+             mock.patch.object(heavy.time, "sleep", side_effect=sleep), \
              mock.patch.object(heavy.signal, "signal"), \
              mock.patch.object(heavy, "kill_group", side_effect=AssertionError("normal completion signaled")):
-            assert heavy.monitor_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0, subreaper) == 0
-            # Even with the leader collected and group waits exhausted,
-            # monitor/account once more while the original group exists.
-            assert probe.call_args_list == [mock.call(42, 0)] * 2
-            publish.assert_called_once_with(slot, 10, state)
-            sleep.assert_called_once_with(1)
+            assert heavy.monitor_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0, subreaper) == 7
+            # Keep accounting/holding the slot while the original group lives;
+            # identify the actual procfs view and throttle diagnostics to 30 s.
+            assert probe.call_args_list == [mock.call(42, 0)] * 33
+            assert publish.call_args_list == [mock.call(slot, 10, state)] * 32
             assert record["peak_rss_kb"] == 10
+        lines = stderr.getvalue().splitlines()
+        assert len(lines) == 2, lines
+        assert all("leader exited with 7" in line and "holding slot" in line
+                   and "42 (namespace-local PGID)" in line
+                   and f"remaining procfs-view PIDs: {expected_pids}" in line for line in lines), lines
 
 
 def test_cpu_descendants():

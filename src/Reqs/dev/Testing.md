@@ -996,8 +996,11 @@ escalation continues while the group exists. SIGINT, SIGTERM and SIGHUP are
 blocked around the completion check and signal, and while the registry lock
 is held; handlers are restored after monitoring.
 When heavy is PID 1 of its namespace, it also reaps adopted orphan workers
-after collecting the leader's exit status and RSS. Dead workers must not
-keep the process group visible as zombies until both escalation waits expire.
+after collecting the leader's exit status and RSS, in both subreaper and
+fallback modes. It peeks at exited children without reaping them: a newly
+adopted member of the original group goes through the group usage collector,
+while an outside-group orphan is reaped without adding its usage. Dead workers
+must not keep the process group visible as zombies until both escalation waits expire.
 
 If `/proc` belongs to an ancestor PID namespace, the owner translates its
 own child through parentage and `NSpid` before measuring it in that procfs
@@ -1112,7 +1115,12 @@ while the command runs: it adopts and reaps orphaned workers in the
 command's process group too, even after the command exits or is killed.
 It holds the slot until the original process group disappears, retaining
 the command's exit status. A background daemon remaining in that group
-keeps heavy running and holding its slot. Long-lived services must leave
+keeps heavy running and holding its slot. Once the leader exits, heavy prints
+its exit status, the original namespace-local PGID and the remaining sampled
+procfs-view PIDs to stderr immediately and about every 30 seconds while waiting.
+Unavailable process readings are labelled unavailable; these diagnostic PIDs
+may belong to an ancestor procfs view and are never used for signaling.
+Long-lived services must leave
 that process group to fall outside the wait. An unreaped zombie can also
 keep the group visible until its parent reaps it. On other systems, or if
 Linux refuses the subreaper setting,
@@ -1682,6 +1690,26 @@ pub proc heavy_memory_victim(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat)
 -- These are outcomes of the local killpg(PGID, 0) probe. Permission denied
 -- still establishes existence. ECHILD alone misses non-adoptable workers.
 pub enum GroupProbe { Missing, Present, Denied }
+
+-- Peek at an exited child before selecting its wait, so adoption between
+-- group waits and init cleanup cannot discard the group's CPU usage.
+pub proc heavy_init_reap(
+    pid: Int,
+    pgid: Int,
+    exited_group: Option<Int>,
+    group_drained?,
+    subreaper?,
+): (det collect_group?, det reap_orphan?) {
+    let exited? := exited_group != Option::None
+    let same_group? := exited_group = Option::Some(pgid)
+    ensure group: collect_group? iff pid = 1 and group_drained? and exited? and same_group? and subreaper?
+    ensure orphan: reap_orphan? iff pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
+    expect distinct: not (collect_group? and reap_orphan?)
+    expect late_adoption: when pid = 1 and group_drained? and same_group? and subreaper?,
+        collect_group? and not reap_orphan?
+    expect outside_group: when pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
+    expect wait_first: unless group_drained?, not collect_group? and not reap_orphan?
+}
 
 pub proc heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe: GroupProbe): (
     det gone?,
