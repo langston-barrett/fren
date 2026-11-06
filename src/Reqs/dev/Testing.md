@@ -376,7 +376,7 @@ pub mod testing
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--spec-timeout SECONDS]`): generates random
+  [--unfoldings] [--spec-timeout SECONDS]`): generates random
   specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
@@ -451,7 +451,16 @@ pub mod testing
   assumptions and comparisons of recursive applications. Its generator is
   split off the seed, so its draws leave the other modes unchanged. Like
   `--scrutinees`, it has an empty cut: its corpus rejects generated static
-  errors, which would stop the spec's checks.
+  errors, which would stop the spec's checks. `--unfoldings` generates
+  global expectations over a list and a tree whose claims induction
+  proves only by [unfolding more than one
+  step](../Lang/Recursion.md#unfolding-in-an-induction), up to and past
+  the bound, and a claim with no parameter that needs more than one step
+  too. Appended forms cover generic list instances under assumptions and
+  in Boolean blocks, and a binary recursion whose deeper equations bring
+  another function's contract. They draw after the original forms, so each
+  existing spec stays as a prefix. Its generator is split off the seed,
+  and its cut is empty, as `--induction-candidates`'s is.
   A run with `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
@@ -570,7 +579,8 @@ pub mod testing
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
-  `--fact-scopes`, `--induction-candidates` and `--datatype-elements`
+  `--fact-scopes`, `--induction-candidates`, `--unfoldings` and
+  `--datatype-elements`
   (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
   with both front ends and compared as above, in `frontendFuzz` jobs of at
   most five specs each, including those listed outside the ranges. Each
@@ -1116,6 +1126,259 @@ flags and job names. Tests use scratch directories, including for logs.
 A missing bare command exits with 127 before waiting or taking a slot;
 it has no admission and produces no job record.
 
+Each job also records `cpu_user_seconds` and `cpu_system_seconds`, from
+`wait4`'s usage of the command and its descendants, summed once, and
+`cpu_seconds`, their sum. This measures the job's own work, excluding
+heavy's monitor and other jobs. On Linux, heavy becomes a child subreaper
+while the command runs: it adopts and reaps orphaned workers in the
+command's process group too, even after the command exits or is killed.
+It holds the slot until the original process group disappears, retaining
+the command's exit status. A background daemon remaining in that group
+keeps heavy running and holding its slot. Long-lived services must leave
+that process group to fall outside the wait. An unreaped zombie can also
+keep the group visible until its parent reaps it. On other systems, or if
+Linux refuses the subreaper setting,
+usage covers only the command and descendants that their parents waited
+for; orphaned workers' usage can be missed. Processes that leave the job's
+process group are outside this accounting guarantee. `cpu_scope` is
+`"process_group"` when subreaping is enabled, otherwise `"waited_tree"`.
+This names the wait4 selection, not complete descendant accounting.
+A group member can still be waited by a parent that has left the group,
+so heavy may never receive that member's usage. Exhausting group waits
+does not prove group absence: normal completion and termination both
+probe the original local process group, without waiting for other groups.
+`cpu_parallelism` is `cpu_seconds / run_seconds`, or `null` for a zero run
+duration. It is the average number of CPU cores used during the run, so it can exceed 1;
+it is not a fraction of the machine's capacity. A command that fails to
+launch has zero CPU seconds. Rechecking a reaped process never counts it
+again. Each wait result is folded into constant-size CPU, peak-RSS and
+switch totals. Termination signals are blocked only for this counter
+update, never around a blocking wait.
+
+On Linux, machine CPU counters are sampled from the aggregate `cpu` line
+of `/proc/stat` at execution start, about every 30 seconds, and at
+completion, including runs shorter than 30 seconds. A sample interval's
+total is the increase in user, nice, system, idle, iowait, irq, softirq and
+steal ticks. Busy ticks are total minus idle and iowait. Guest and
+guest-nice are already included in user and nice and are not added again.
+Missing trailing counters on older kernels are zero. `cpu_busy_samples`
+stores each valid interval as `busy_ticks` and `total_ticks`.
+`cpu_busy_mean` is the sum of busy ticks divided by the sum of total ticks,
+so short final intervals do not get the same weight as full intervals;
+`cpu_busy_max` is the largest interval's busy fraction. Both range from
+0 to 1 and describe the whole machine, including other agents. They are
+independent of the existing load samples: load counts runnable or waiting
+processes, includes unrelated work and lags CPU use.
+
+An unavailable or malformed counter reading, a decrease in any of the
+eight counters, or an interval with no elapsed ticks contributes no busy
+sample. Every reading replaces the previous baseline, so a reset or a
+missing reading does not bridge a gap. With no valid intervals, including
+on systems without `/proc/stat`, both busy summaries are `null`. Sampling
+failures never change a command's exit status.
+
+About every second, Linux jobs also sample their own process group through
+`/proc/PID/stat`, with a sample before reaping at completion. `process_cpu`
+groups the observed processes by executable basename, including `lean`,
+`lake`, `fren_test`, the fuzzers and solvers. Each name records `core_seconds`
+from self user/system ticks (never child ticks), `observed_process_seconds`,
+`observed_core_seconds` over usable rate windows, `mean_cores_per_process`
+and `peak_cores_per_process`, `peak_process_count` of live processes in a
+snapshot, and `processes_seen` (unique PID/start-time lifetimes per name).
+The mean divides observed core-seconds by observed process-seconds; the
+peak is the largest individual process interval's ratio. Without a usable
+rate window, these rates are `null`. Identity is PID plus start time, so PID reuse
+does not subtract one process's counters from another's. An executable
+change attributes the interval to its new name. A zombie retains its last
+known executable name when its `comm` is unchanged; otherwise the kernel's
+possibly shortened `comm` is used. Zombies contribute final counters but
+not concurrent live counts. Linux documents the [process stat fields](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html).
+
+After a successful scan, only lifetimes still visible in procfs retain
+counter baselines and the executable names they have used. A worker that
+leaves and rejoins the group retains its baseline while alive, so its
+earlier CPU and switch counters are not added again. Missing group
+observations do not provide a per-process rate window. Completed lifetimes
+contribute to per-name totals without retaining their process rows.
+
+These are sampled estimates: processes or final increments that disappear
+between scans can be missed. Missing scans do not inflate per-process rates
+by dividing their CPU by a shorter observed duration. `process_samples`
+counts successful scans; `process_cpu` is `null` without any. An empty
+object means scans worked but saw no members. Tick rounding and sampling
+delay affect short lifetimes. A sustained rate near one core per process
+is evidence for a one-core budget, but idle time or throttling can make a
+threaded process average less than one. The samples do not prove a process
+is single-threaded; compare observed windows and job times across budgets.
+
+At start, about every second, and completion, `/proc/stat` also supplies
+an instantaneous runnable-task count and the number of listed online
+logical CPUs. `procs_running_sample_count` counts valid readings;
+`procs_running_mean` and `procs_running_max` summarize counts;
+`runnable_per_core_mean` and `runnable_per_core_max` summarize their ratios
+to each reading's CPU count. `oversubscribed_fraction` is the fraction
+whose runnable count strictly exceeds the CPU count, including across CPU
+hotplug. These are machine-wide counts, including other agents and the
+observer, rather than the job's affinity or cgroup budget. Without usable
+readings, summaries are `null` rather than zero. Samples are aggregated
+as they arrive; individual one-second readings are neither retained in
+memory nor written to the log.
+
+`ctxt_rate_sample_count` counts valid machine-wide `ctxt` intervals.
+`ctxt_switches` and `ctxt_observed_seconds` accumulate their increases and
+monotonic durations. `ctxt_per_second_mean` divides these totals;
+`ctxt_per_second_max` is the largest interval rate. Missing readings,
+decreasing counters and nonpositive durations contribute no interval and
+rebaseline. With no valid intervals, rates are `null`. The accumulated
+summaries have constant size regardless of run duration. High busy
+fractions alone do not establish useful work: runnable pressure and
+switching help identify oversubscription, whose cache and memory costs
+are not measured by these counters.
+
+`nonvoluntary_ctxt_switches` sums the first observed counter and positive
+increments of each process's `/proc/PID/status` counter, retaining completed
+processes' contributions. Missing status reads retain the last known
+counter; missing all of them gives `null`. That status counter covers the
+process's main thread ([Linux task counters](https://github.com/torvalds/linux/blob/master/fs/proc/array.c)), and sampling can miss short-lived processes. The
+separate `involuntary_context_switches` sums `wait4`'s `ru_nivcsw` once per
+reaped child, including its waited-for descendants and threads, with the
+same orphan coverage as `cpu_scope` ([resource usage](https://man7.org/linux/man-pages/man2/getrusage.2.html)). It supplies the final job total, not
+just the sampled main-thread lower bound.
+
+Each job freezes `predicted_peak_rss_kb` before execution beside its eventual
+`peak_rss_kb`. The prediction is the maximum positive measured peak among
+the latest 20 completed jobs of the same `job_kind` in the preceding seven
+days, ordered by completion time and excluding future completions. Failed
+jobs' observed peaks count too, though a killed job's peak does not show
+how much memory it needed to finish. `prediction_jobs` records the number
+used, and `prediction_method` is `"max_last_20_same_kind_7d"`. With no usable
+history, the prediction is `null`, not zero. Malformed records are skipped;
+`HEAVY_LOG` selects the prediction's source as well as the destination.
+The current memory admission rule uses live RSS and lease reservations,
+without a per-kind estimate. This prediction is telemetry for assessing an admission model;
+it does not yet change that rule. Work amounts and build-cache states can
+vary within a kind, so historical peaks do not guarantee a future fit.
+
+The following requirements state CPU accumulation and interval accounting.
+Time quantities use a common integral unit; ratios are numerator and
+denominator pairs, since Fren has no fractional numeric type. The Python
+tests check their floating-point conversion, sampling, summaries, process
+accounting and log records. These are tested claims in `Impls.Trace`, not
+proofs of the Python code or of the kernel's accounting.
+
+```fren
+pub struct CpuUsage { user: Nat, system: Nat }
+pub struct CpuRatio { numerator: Int, denominator: Int }
+
+-- Add one wait4 result, which already includes descendants it waited for.
+pub proc heavy_cpu(accumulated: CpuUsage, reaped: CpuUsage, run: Nat): (
+    det usage: CpuUsage,
+    det total: Nat,
+    det parallelism: Option<CpuRatio>,
+) {
+    ensure user_sum: usage.user = accumulated.user + reaped.user
+    ensure system_sum: usage.system = accumulated.system + reaped.system
+    ensure cpu_sum: total = usage.user + usage.system
+    ensure ratio: parallelism = (if run = 0 then Option::None
+        else Option::Some(CpuRatio { numerator := total, denominator := run }))
+
+    cover parallel: total > run > 0
+}
+
+-- The first eight aggregate counters; guest counters are not separate time.
+pub struct CpuTicks {
+    user: Nat, nice: Nat, system: Nat, idle: Nat,
+    iowait: Nat, irq: Nat, softirq: Nat, steal: Nat,
+}
+
+pub fn cpu_total(c: CpuTicks): Int :=
+    c.user + c.nice + c.system + c.idle + c.iowait + c.irq + c.softirq + c.steal
+
+pub fn cpu_increases?(a: CpuTicks, b: CpuTicks) :=
+    a.user <= b.user and a.nice <= b.nice and a.system <= b.system
+    and a.idle <= b.idle and a.iowait <= b.iowait and a.irq <= b.irq
+    and a.softirq <= b.softirq and a.steal <= b.steal
+
+pub proc heavy_busy(before: Option<CpuTicks>, after: Option<CpuTicks>): (
+    det interval: Option<CpuRatio>,
+) {
+    ensure rule: match before, after {
+        Option::Some(a), Option::Some(b) =>
+            if cpu_increases?(a, b) and cpu_total(b) > cpu_total(a) then
+            interval = Option::Some(
+                CpuRatio {
+                    numerator :=
+                        cpu_total(b) - cpu_total(a) - (b.idle - a.idle) - (b.iowait - a.iowait),
+                    denominator := cpu_total(b) - cpu_total(a),
+                }
+            )
+            else interval = Option::None,
+        _, _ => interval = Option::None,
+    }
+
+    expect bounded: match interval {
+        Option::Some(r) => 0 <= r.numerator <= r.denominator and r.denominator > 0,
+        Option::None => true,
+    }
+    cover idle: interval = Option::Some(CpuRatio { numerator := 0, denominator := 1 })
+    cover busy: interval = Option::Some(CpuRatio { numerator := 1, denominator := 1 })
+}
+
+-- Counter and time units determine the rate's units; no invalid interval
+-- becomes a zero reading. Process CPU rates first convert ticks to time.
+pub proc heavy_counter_rate(before: Nat, after: Nat, elapsed: Nat): (det rate: Option<CpuRatio>) {
+    ensure rule: rate = (if after >= before and elapsed > 0 then
+        Option::Some(
+            CpuRatio {
+                numerator := after - before,
+                denominator := elapsed,
+            }
+        )
+        else Option::None)
+
+    expect nonnegative: match rate {
+        Option::Some(r) => r.numerator >= 0 and r.denominator > 0,
+        Option::None => true,
+    }
+}
+
+pub proc heavy_pressure(running: Nat, cores: Nat): (det ratio: CpuRatio, det oversubscribed?) {
+    require known_cores: cores > 0
+    ensure fraction: ratio = CpuRatio {
+        numerator := running,
+        denominator := cores,
+    }
+    ensure over: oversubscribed? iff running > cores
+
+    expect equal: when running = cores, not oversubscribed?
+}
+
+-- Fold the eligible historical peaks; filtering and selecting the latest
+-- observations, from the concrete log, are exercised by the Python tests.
+pub proc heavy_memory_prediction(previous: Option<Int>, observed: Option<Int>): (
+    det prediction: Option<Int>,
+) {
+    require previous_positive: match previous {
+        Option::Some(p) => p > 0,
+        Option::None => true,
+    }
+    require observed_positive: match observed {
+        Option::Some(o) => o > 0,
+        Option::None => true,
+    }
+    ensure rule: match previous, observed {
+        Option::None, _ => prediction = observed,
+        _, Option::None => prediction = previous,
+        Option::Some(p), Option::Some(o) => prediction = Option::Some(p.max(o)),
+    }
+
+    expect covers_observation: match observed, prediction {
+        Option::Some(o), Option::Some(p) => p >= o,
+        _, _ => true,
+    }
+}
+```
+
 The following requirements compute compatibility, admission and eviction
 from raw held-slot observations: a report, its status token, the observed
 monitor identity and any independently measured legacy RSS. `MemoryLeases`
@@ -1438,10 +1701,20 @@ pub proc heavy_memory_victim(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat)
     }
 }
 
-pub proc heavy_group_gone(leader_reaped?, group_exists?): (det gone?) {
-    ensure rule: gone? iff leader_reaped? and not group_exists?
-    expect worker: when group_exists?, not gone?
+-- These are outcomes of the local killpg(PGID, 0) probe. Permission denied
+-- still establishes existence. ECHILD alone misses non-adoptable workers.
+pub enum GroupProbe { Missing, Present, Denied }
+
+pub proc heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe: GroupProbe): (
+    det gone?,
+) {
+    ensure rule: gone? iff leader_reaped? and (not subreaper? or not group_wait_pending?)
+        and probe = GroupProbe::Missing
+    expect worker: when probe != GroupProbe::Missing, not gone?
     expect leader_running: unless leader_reaped?, not gone?
+    expect wait_pending: when subreaper? and group_wait_pending?, not gone?
+    cover nonchild_worker: subreaper? and leader_reaped? and not group_wait_pending?
+        and probe = GroupProbe::Present
 }
 
 pub proc heavy_owned_signal(
@@ -1452,11 +1725,13 @@ pub proc heavy_owned_signal(
     now: Int,
     ttl: Nat,
     requested?,
+    subreaper?,
     leader_reaped?,
-    group_exists?,
+    group_wait_pending?,
+    probe: GroupProbe,
 ): (det signal?) {
     call eviction := heavy_memory_victim(cap, leases, now, ttl)
-    call termination := heavy_group_gone(leader_reaped?, group_exists?)
+    call termination := heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe)
     let memory_requested? := match eviction.selected {
         Option::Some(owner) => owner.job = own or own_rss > cap,
         Option::None => own_rss > cap,
@@ -1464,12 +1739,12 @@ pub proc heavy_owned_signal(
     ensure rule: signal? iff (requested? or memory_requested?) and not termination.gone?
     expect own_cap: when own_rss > cap and not termination.gone?, signal?
     expect completed: when termination.gone?, not signal?
-    expect escalation: when requested? and group_exists?, signal?
+    expect escalation: when requested? and probe != GroupProbe::Missing, signal?
 }
 ```
 
-The log has no automatic size limit or rotation, and `--stats` reads it
-all, including the load samples of long jobs. Keep the raw log for the
+The log has no automatic size limit or rotation, and `--stats` and memory
+prediction read it all, including long jobs' load and busy samples. Keep the raw log for the
 trial. Archive it between trials while the controller and heavy jobs
 are stopped; preserve the flip records with their jobs so that exposure
 can still be measured. Automatic retention remains future work.

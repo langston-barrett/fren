@@ -1,16 +1,19 @@
 -- keep-sorted start
 import FrenCli.Smt
+import FrenCore.Text.Correctness
 -- keep-sorted end
 
 /-! A test of `Core.occursIn`, the search for text in a query's formulas
 that `SeqElems.hasMarker`, `Core.hasQuantifier`, `needsExpansion` and
 `Core.projectsRelation` now make. The first three asked whether `t`
 occurs in `s` as `(s.splitOn t).length > 1`, and the last as
-`s.contains t`. The legacy `splitOn` has no lemmas, and `occursIn`
-compares bytes where `String.contains_string_iff` states characters, so
-this checks each search against the old one, over random texts made of
-pieces of the searched-for texts, so that they hold partial matches,
-overlaps and repeats, and of characters of two, three and four bytes. -/
+`s.contains t`. `Core.occursIn_iff` proves that the byte search finds
+exactly the character infixes of a nonempty needle, and
+`Core.occursIn_eq_contains` connects it to `String.contains`. These tests
+also check the native byte comparison against the old searches, over
+random texts made of pieces of the searched-for texts, so that they hold
+partial matches, overlaps and repeats, and of characters of two, three
+and four bytes. -/
 
 namespace Fren.Test.TextSearch
 
