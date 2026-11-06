@@ -883,9 +883,19 @@ def elabRefinesMember (vars : Array CVar) (pending : Array PendingInst)
   unless internal.isEmpty do modify fun s => { s with quantified := true }
   for v in internal do
     substitutions := substitutions.push (v.name, quote s!"#refines{index}.{v.name}")
+  let mut locals : Array (String × String) := #[]
   for (name, value) in abstract.defs do
     unless results.any (·.name == name) do
-      substitutions := substitutions.push (name, replace substitutions value)
+      let fresh := quote s!"#refines{index}#local.{name}"
+      locals := locals.push (fresh, replace substitutions value)
+      substitutions := substitutions.push (name, fresh)
+  -- Separate fresh symbols prevent a caller's arguments from being
+  -- captured by an abstraction's local names. The `#local` separator also
+  -- keeps these symbols apart from its quantified call outputs, whose
+  -- prefix is `#refines{index}.`. Sequential lets share each
+  -- local value instead of expanding a chain once for every occurrence.
+  let withLocals (body : String) := locals.foldr (fun (name, value) body =>
+    s!"(let (({name} {value})) {body})") body
   let claims := (abstract.props.filter (·.kind == .ensure)).map (fun p => replace substitutions p.smt)
     ++ abstract.defs.filterMap (fun (n, value) => if results.any (·.name == n) then
       some s!"(= {replace substitutions (quote n.toString)} {replace substitutions value})" else none)
@@ -895,7 +905,7 @@ def elabRefinesMember (vars : Array CVar) (pending : Array PendingInst)
       ++ v.fact?.toArray.map (replace substitutions)
   let calls := internalFacts ++ abstract.insts.map fun i => replace substitutions (conj #[i.bindings, i.behaviour])
   let close (goal : String) :=
-    let goal := if calls.isEmpty then goal else s!"(=> {conj calls} {goal})"
+    let goal := withLocals (if calls.isEmpty then goal else s!"(=> {conj calls} {goal})")
     if internal.isEmpty then goal else
       s!"(forall ({" ".intercalate (internal.map fun v => s!"({quote s!"#refines{index}.{v.name}"} {v.ty.sort})").toList}) {goal})"
   let body := close (conj claims)
@@ -904,7 +914,7 @@ def elabRefinesMember (vars : Array CVar) (pending : Array PendingInst)
     if defined.contains n then some (sp, close (replace substitutions g), t) else none) }
   noteCounts abstract sp
   let closeApp (app : String) :=
-    let app := replace substitutions app
+    let app := withLocals (replace substitutions app)
     let bound := internal.filter fun v => (app.splitOn (quote s!"#refines{index}.{v.name}")).length > 1
     if bound.isEmpty then app else
       s!"(forall ({" ".intercalate (bound.map fun v => s!"({quote s!"#refines{index}.{v.name}"} {v.ty.sort})").toList}) {app})"

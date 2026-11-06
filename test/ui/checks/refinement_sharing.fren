@@ -1,0 +1,30 @@
+-- Definitions keep their lexical scope when the caller uses the same name.
+pub proc abstract_value(n: Int): (answer: Int) {
+    let hidden_0: Int := n + 1
+    let hidden_1: Int := hidden_0 + hidden_0
+    let hidden_2: Int := hidden_1 + hidden_1
+    ensure value: answer = hidden_2
+}
+
+pub proc concrete_value(hidden_0: Int): (answer: Int) { out answer := hidden_0 * 4 + 4 }
+
+expect shares(hidden_0: Int) {
+    call c := concrete_value(hidden_0)
+    refines c abstract_value(hidden_0)
+}
+
+-- Hidden definitions can also use universally quantified call outputs.
+pub proc auxiliary(n: Int): (hidden_0: Int) { out hidden_0 := n }
+
+pub proc calls_then_defines(n: Int): (answer: Int) {
+    call step := auxiliary(n)
+    let hidden_0: Int := step.hidden_0 + 1
+    ensure value: answer = hidden_0
+}
+
+pub proc plus_one(n: Int): (answer: Int) { out answer := n + 1 }
+
+expect separate_symbols(n: Int) {
+    call c := plus_one(n)
+    refines c calls_then_defines(n)
+}

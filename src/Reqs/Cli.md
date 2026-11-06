@@ -1421,16 +1421,27 @@ pub proc agrees_with_build(worst: Severity) {
 The `fren` command shares Fren's grammar, name resolution and checks with
 Lean. It accepts only Fren, including the `tested` and `trusted` claims of
 [Traceability](Trace.md): anything that needs Lean, such as `impl`, is a
-static error rather than being ignored. `cli::accepts` states this:
+static error rather than being ignored. A standalone command also stops
+when preparing the evaluator's independent reading reaches its
+[expansion limit](Eval.md#expansion-limit). This is a resource failure,
+with a diagnostic at the item and exit code 2, rather than a static error.
+The hosted checker has no such preparation stage and may accept that
+spec. Imposing the same copying allowance there would require preparing
+a second, unused evaluator reading. The limit bounds the standalone
+reader's work without making the hosted checker do that work.
+`cli::accepts` states both the language rule and this exception:
 
 ```fren
 pub enum Construct { Fren, LeanCode }
+pub enum FrontEnd { Hosted, Standalone }
+pub enum Reading { Ready, ExpansionLimit }
 
 use self::Construct::Fren
 
 set_option fren.evidence "enumerated" in
-pub proc accepts(construct: Construct): (accepted?) {
-    ensure fren_only: accepted? iff construct = Fren
+pub proc accepts(construct: Construct, front_end: FrontEnd, reading: Reading): (accepted?) {
+    ensure rule: accepted? iff front_end = FrontEnd::Hosted
+        or (construct = Fren and reading = Reading::Ready)
 }
 ```
 
@@ -1445,14 +1456,20 @@ names, which are a [minimal](Check.md#minimal-sets) set that conflicts on
 the input it reports: each front end's are minimal for its own input, and
 for the same input they are the same. Its notes of [forced
 outputs](#forced-outputs) are at those guarantees, so they may differ
-with them. `cli::agreement` states this:
+with them. When the standalone evaluator's reading exceeds its expansion
+limit, its commands report that resource failure instead of check
+results; Lean's results and summary then have no standalone counterparts.
+The front-end comparison still compares static errors and lints and
+requires exit code 2, a located expansion-limit diagnostic and no check
+results or summary from the standalone command. It does not treat any
+other failure or unexplained exit as this exception. `cli::agreement`
+states when the common verdict is required:
 
 ```fren
-pub enum FrontEnd { Hosted, Standalone }
-
 set_option fren.evidence "enumerated" in
-pub proc agreement(hosted: Verdict): (standalone: Verdict) {
-    ensure same_verdict: standalone = hosted
+pub proc agreement(hosted: Verdict, reading: Reading): (checked?, standalone: Verdict) {
+    ensure checked: checked? iff reading = Reading::Ready
+    ensure same_verdict: when checked?, standalone = hosted
 }
 
 #fren_check

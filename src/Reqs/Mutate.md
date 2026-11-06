@@ -202,7 +202,9 @@ A mutant that has a static error, from a lint set to `deny` or `forbid`, is
 *unviable*: it is not checked, and is left out of the kill rate. Any other
 static error in a mutant is an internal error, since mutants are made so
 as to have none; such a mutant is counted as unviable too. An evaluator
-that cannot read a mutant is an internal error as well.
+that cannot read a mutant is an internal error as well, except for the
+[expansion limit](Eval.md#expansion-limit): that resource failure names
+the mutant and stops the whole run with code 2 and no mutation summary.
 
 ### Equivalent mutants
 
