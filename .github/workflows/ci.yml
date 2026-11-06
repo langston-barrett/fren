@@ -261,4 +261,5 @@ jobs:
       own-spec-agreement: ${{ !inputs.fuzz-only }}
       methods-agree: ${{ !inputs.fuzz-only }}
       coverage: ${{ !inputs.fuzz-only }}
-      fuzz-count: ${{ inputs.fuzz-count || 150 }}
+      # Dispatch can supply a number as a string; workflow_call checks its type.
+      fuzz-count: ${{ fromJSON(format('{0}', inputs.fuzz-count || 150)) }}
