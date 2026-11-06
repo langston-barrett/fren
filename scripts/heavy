@@ -18,11 +18,13 @@ Slots: at most `HEAVY_SLOTS` jobs run at once, else the number in
 Memory: the combined resident-memory target is `HEAVY_MEM_GB` gigabytes,
 else the number in ~/.cache/heavy/mem_gb, else 80% of the
 machine's physical memory. A job's memory is that of its whole process
-group, summed about every second. A job waits to start while the running
-ones use more than 60% of the cap. Legacy holders coexist with new ones:
-verified visible RSS counts directly, and all unobserved legacy holders
-together reserve half the cap. A verified stale monitor still reserves a full
-cap. When measured memory exceeds the cap, the compatible owner with the
+group, summed about every second. Admission reserves the larger of each
+running job's RSS and frozen per-kind peak forecast, plus the candidate's
+forecast, and waits until the sum fits. Unknown forecasts reserve a full
+cap; legacy and stale reports reserve at least a full cap. With nothing
+running, even an oversized forecast starts. Fitting waiters are ordered by
+HEAVY_PRIORITY (merge-blocking before exploratory), then enqueue time.
+When measured memory exceeds the cap, the compatible owner with the
 greatest admission sequence terminates its own group (TERM, then KILL) and
 exits with 137; estimates never trigger eviction. Every owner also enforces
 its own cap. Registry waits have a short deadline: on timeout admission
@@ -30,7 +32,7 @@ waits and monitors enforce their own cap until shared accounting resumes.
 Failure to identify, measure or publish memory otherwise stops the command
 with exit 125. Linux requires `NSpid` in
 procfs status; systems without it fail identification with exit 125.
-Legacy estimates are not bounds on invisible memory, so mixed-version
+Forecasts are not bounds on future or invisible memory, so mixed-version
 accounting is a sampled target, not a hard combined limit. The files are
 re-read on every use, so changing one takes effect for running jobs too.
 An unset, empty, invalid, infinite or non-positive setting falls through to
@@ -49,8 +51,8 @@ busy excludes idle and iowait. Unavailable readings give null summaries.
 One-second samples also record CPU by executable name, live concurrency,
 runnable pressure against online logical CPUs, and machine context-switch
 rates. Process status switch counts complement wait4's final involuntary
-switch total. A historical per-kind memory prediction is frozen beside
-actual peak RSS; it does not yet change admission's live-RSS rule.
+switch total. A historical per-kind memory prediction is frozen before
+waiting, published with the held slot and logged beside actual peak RSS.
 Logging never fails a job. `--stats`
 compares completions in the last HOURS (default 24), by admission policy
 and job kind. `--alternate` switches the file setting between VALUE and
@@ -95,7 +97,6 @@ import uuid
 STATE = os.path.expanduser("~/.cache/heavy")
 DEFAULT_SLOTS = 2
 DEFAULT_MEM_FRACTION = 0.8
-START_FRACTION = 0.6
 LOAD_GRACE_SECONDS = 600
 LOAD_SAMPLE_SECONDS = 30
 PREDICTION_JOBS = 20
@@ -236,9 +237,34 @@ def load_average():
         return None
 
 
-def can_start(waited, rss, cap, limit, load_reader=load_average):
+def forecast_reservation(prediction, cap):
+    """Unknown or invalid forecasts reserve the full cap, never zero."""
+    return prediction if type(prediction) is int and prediction > 0 else cap
+
+
+def forecast_memory(running, cap):
+    """Reserve each held slot's frozen forecast or current RSS, whichever is
+    larger. Missing, legacy and stale reports reserve at least a full cap."""
+    total = 0
+    for job in running:
+        forecast = forecast_reservation(job.get("predicted_peak_rss_kb"), cap)
+        if job.get("legacy"):
+            measured = max(cap, job.get("legacy_rss_kb") or 0)
+        else:
+            measured = job["rss_kb"] if job["fresh"] else cap
+        total += max(measured, forecast)
+    return total
+
+
+def memory_fits(running, prediction, cap):
+    # A forecast above the cap must still get a turn alone. The measured
+    # backstop continues to enforce the cap after it starts.
+    return not running or forecast_memory(running, cap) + forecast_reservation(prediction, cap) <= cap
+
+
+def can_start(waited, running, cap, limit, load_reader=load_average, prediction=None):
     """Admission besides the slot lock; a missing load reading fails open."""
-    if rss > START_FRACTION * cap:
+    if not memory_fits(running, prediction, cap):
         return False
     # Load decays slowly and includes unrelated work. Ten minutes bounds
     # that extra delay without ever bypassing the slot or memory limits.
@@ -246,6 +272,78 @@ def can_start(waited, rss, cap, limit, load_reader=load_average):
         return True
     load = load_reader()
     return load is None or load < limit
+
+
+@contextlib.contextmanager
+def waiting_job(state, record, prediction, environ, arrival=None):
+    """A held file lock makes a waiter live across namespaces and crashes."""
+    ticket = uuid.uuid4().hex
+    path = os.path.join(state, f".wait-{ticket}.json")
+    warned = False
+    while True:
+        try:
+            with registry(state):
+                f = open(path, "w+")
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    row = {"ticket": ticket, "arrival": record["enqueued_at"] if arrival is None else arrival,
+                           "priority": environ.get("HEAVY_PRIORITY", "exploratory"),
+                           "prediction": prediction, "policy_ready": True}
+                    json.dump(row, f)
+                    f.flush()
+                except BaseException:
+                    f.close()
+                    os.unlink(path)
+                    raise
+            break
+        except RegistryBusy:
+            if not warned:
+                print(f"heavy: waiting for registry lock (see {state})", file=sys.stderr)
+                warned = True
+            time.sleep(2)
+    try:
+        yield ticket
+    finally:
+        # Like slot metadata, an unlocked stale waiter is harmless. Avoid
+        # blocking cleanup if the registry is stopped.
+        f.close()
+
+
+def waiter_policy(state, ticket, ready):
+    """Publish a load/adapter denial under registry, preserving the lock inode.
+    Otherwise two queues could each wait for a different job to go first."""
+    with open(os.path.join(state, f".wait-{ticket}.json"), "r+") as f:
+        row = json.load(f)
+        if row["policy_ready"] != ready:
+            row["policy_ready"] = ready
+            f.seek(0)
+            f.truncate()
+            json.dump(row, f)
+            f.flush()
+
+
+def next_waiter(state, running, cap):
+    """First fitting waiter, by priority then arrival. Caller holds registry.
+    Unlocked tickets are stale and removed without consulting numeric PIDs."""
+    waiting = []
+    for name in os.listdir(state):
+        if not re.fullmatch(r"\.wait-[0-9a-f]{32}\.json", name):
+            continue
+        path = os.path.join(state, name)
+        with open(path) as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                row = json.load(f)
+                if row.get("policy_ready", True) and memory_fits(running, row["prediction"], cap):
+                    waiting.append(row)
+            else:
+                os.unlink(path)
+    if not waiting:
+        return None
+    return min(waiting, key=lambda row: (
+        0 if row["priority"] == "merge-blocking" else 1,
+        row["arrival"], row["ticket"]))["ticket"]
 
 
 def sample_load(record, load_reader, now, last=None):
@@ -1090,7 +1188,8 @@ def claim_slot(f, slot, state, record):
         job = {"version": 3, "job_id": uuid.uuid4().hex, "order": sequence + 1,
                "pid_namespace": pid_namespace(), "started_at": record["enqueued_at"],
                "monitor": monitor_identity() if platform.system() == "Linux" else None,
-               "rss_kb": 0, "updated_monotonic": time.monotonic()}
+               "rss_kb": 0, "updated_monotonic": time.monotonic(),
+               "predicted_peak_rss_kb": record.get("predicted_peak_rss_kb")}
         atomic_state(sequence_path, job["order"])
         atomic_state(report_path(state, slot), job)
         f.heavy_job = job
@@ -1223,12 +1322,12 @@ def legacy_readings(leases, proc="/proc", system=None):
         pass  # An estimate, not a missing procfs entry, decides admission.
 
 
-def jobs(state=STATE):
+def jobs(state=STATE, registry_held=False):
     """Live leases and owner-measured memory, independent of PID visibility.
     Verified stale owners retain last RSS; unverified stale status is legacy.
     Unlocked reports are ignored even after numeric PID reuse."""
     found = []
-    with registry(state):
+    with contextlib.nullcontext() if registry_held else registry(state):
         for name in os.listdir(state):
             if not re.fullmatch(r"slot\d+", name):
                 continue
@@ -1495,9 +1594,6 @@ def run(f, command, shown, kind, record, began, state, environ, load_reader):
                   pid_namespace=own.get("pid_namespace"),
                   memory_accounting="slot_owner_reports_v3")
     MachineSampler().finish(record)
-    prediction, history_jobs = predict_peak_rss(kind, state, environ, record["started_at"])
-    record.update(predicted_peak_rss_kb=prediction, prediction_jobs=history_jobs,
-                  prediction_method="max_last_20_same_kind_7d")
     code = run_command(f, command, shown, record, state, environ, load_reader)
     record.update(ended_at=time.time(), run_seconds=time.monotonic() - began, exit_status=code)
     loads = record["load_samples"]
@@ -1542,8 +1638,8 @@ def heavy_rss_kb(state=STATE, cap=None, reservations=None):
         return math.inf
 
 
-def memory_wait_message(state, reservations, memory_blocked):
-    if memory_blocked and reservations:
+def memory_wait_message(state, reservations, running, prediction, cap):
+    if not memory_fits(running, prediction, cap) and reservations:
         slots = ", ".join(sorted(reservations))
         return (f"heavy: waiting for memory: {slots}; resume stopped monitors or "
                 f"reduce running memory (see {state})")
@@ -1590,7 +1686,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     initial = (max_load(environ, state), slot_count(environ, state))
     record = {"enqueued_at": enqueued, "enqueued_max_load": "off" if initial[0] is None else initial[0],
               "enqueued_slots": initial[1], "wait_policy_changed": False}
-    kind = job_kind(command)
+    kind = environ.get("FREN_JOB_KIND") or job_kind(command)
     shown = shlex.join(command)
     if offline:
         try:
@@ -1606,85 +1702,94 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     except (OSError, ValueError, subprocess.CalledProcessError) as e:
         print(f"heavy: cannot tell the physical memory ({e}); set HEAVY_MEM_GB", file=sys.stderr)
         return 2
+    prediction, history_jobs = predict_peak_rss(kind, state, environ, enqueued)
+    record.update(predicted_peak_rss_kb=forecast_reservation(prediction, mem_cap_kb(environ, state)),
+                  prediction_jobs=history_jobs, prediction_method="max_last_20_same_kind_7d",
+                  prediction_default=prediction is None,
+                  priority=environ.get("HEAVY_PRIORITY", "exploratory"))
+    # The same frozen value is used while queued, in the held-slot report
+    # and in the completion log. A changing cap does not rewrite it.
+    try:
+        with waiting_job(state, record, record["predicted_peak_rss_kb"], environ, arrival=queued) as ticket:
+            return wait_for_slot(command, shown, kind, record, queued, initial,
+                                 ticket, state, environ, load_reader)
+    except (OSError, ValueError) as e:
+        print(f"heavy: cannot register memory admission: {e}", file=sys.stderr)
+        return 125
+
+
+def wait_for_slot(command, shown, kind, record, queued, initial, ticket, state, environ, load_reader):
     warned = None
+    prediction = record["predicted_peak_rss_kb"]
     registry_message = f"heavy: waiting for registry lock (see {state})"
     while True:
-        slots = slot_count(environ, state)
-        limit = max_load(environ, state)
-        record["wait_policy_changed"] |= (limit, slots) != initial
-        # Start no job while the running ones already use most of the cap: a
-        # job that starts now would likely be the one killed when they grow.
-        cap = mem_cap_kb(environ, state)
-        reservations = []
+        wait_message = f"heavy: waiting for memory, priority or slots (see {state})"
+        admitted_slot = None
+        delay = 2
         try:
-            rss = heavy_rss_kb(state, cap, reservations)
+            with registry(state):
+                slots = slot_count(environ, state)
+                limit = max_load(environ, state)
+                cap = mem_cap_kb(environ, state)
+                record["wait_policy_changed"] |= (limit, slots) != initial
+                running = jobs(state, registry_held=True)
+                waited = time.monotonic() - queued
+                allowed = can_start(waited, running, cap, limit, load_reader, prediction)
+                # Memory fit is recomputed for every waiter by next_waiter.
+                # Only an additional policy denial makes a ticket ineligible.
+                waiter_policy(state, ticket, allowed or not memory_fits(running, prediction, cap))
+                if not allowed:
+                    delay = 5
+                    reservations = []
+                    for job in running:
+                        reason = ("legacy forecast" if job.get("legacy") else
+                                  "stale or future-dated report" if not job["fresh"] else
+                                  "RSS or frozen forecast")
+                        reservations.append(f"{job['slot']} ({reason})")
+                    wait_message = memory_wait_message(state, reservations, running, prediction, cap)
+                elif next_waiter(state, running, cap) == ticket:
+                    # Settings files can change without taking registry.
+                    # Retry if a load sample or queue scan crossed a change.
+                    if (slots, limit, cap) != (slot_count(environ, state), max_load(environ, state),
+                                               mem_cap_kb(environ, state)):
+                        continue
+                    wait_message = f"heavy: all {slots} slots busy, waiting (see {state})"
+                    for i in range(slots):
+                        f = open(os.path.join(state, f"slot{i}"), "a+")
+                        try:
+                            claimed = claim_slot(f, f"slot{i}", state, record)
+                        except BaseException:
+                            f.close()
+                            raise
+                        if claimed:
+                            admitted_slot = f
+                            break
+                        f.close()
+                    if admitted_slot is not None:
+                        admitted = time.monotonic()
+                        record.update(started_at=time.time(), wait_seconds=admitted - queued,
+                                      max_load="off" if limit is None else limit, slots=slots)
+                        # Remove before unlocking: a registered owner is no
+                        # longer a waiter, even if it has not launched yet.
+                        os.unlink(os.path.join(state, f".wait-{ticket}.json"))
         except RegistryBusy:
-            if registry_message != warned:
-                print(registry_message, file=sys.stderr)
-                warned = registry_message
-            time.sleep(5)
-            continue
-        if not can_start(time.monotonic() - queued, rss,
-                         cap, limit, load_reader):
-            message = memory_wait_message(state, reservations, rss > START_FRACTION * cap)
-            if message != warned:
-                print(message, file=sys.stderr)
-                warned = message
-            time.sleep(5)
-            continue
-        wait_message = f"heavy: all {slots} slots busy, waiting (see {state})"
-        for i in range(slots):
-            f = open(os.path.join(state, f"slot{i}"), "a+")
-            try:
-                with registry(state):
-                    claimed = claim_slot(f, f"slot{i}", state, record)
-            except RegistryBusy:
-                f.close()
-                wait_message = registry_message
-                break  # Admission waits; do not run without a registered lease.
-            except (OSError, ValueError) as e:
-                f.close()
-                print(f"heavy: cannot register the slot's memory accounting: {e}", file=sys.stderr)
-                return 125
-            if not claimed:
-                f.close()
-                continue
-            waited = time.monotonic() - queued
-            # A flip or slot change may have happened while acquiring the
-            # lock. Recheck admission and log the settings actually used.
-            slots = slot_count(environ, state)
-            limit = max_load(environ, state)
-            record["wait_policy_changed"] |= (limit, slots) != initial
-            if i >= slots:
-                release_slot(f, state)
-                wait_message = f"heavy: slot count changed, retrying (see {state})"
-                break
-            cap = mem_cap_kb(environ, state)
-            reservations = []
-            try:
-                rss = heavy_rss_kb(state, cap, reservations)
-            except RegistryBusy:
-                release_slot(f, state)
-                wait_message = registry_message
-                break
-            if not can_start(waited, rss,
-                             cap, limit, load_reader):
-                release_slot(f, state)
-                wait_message = memory_wait_message(state, reservations, rss > START_FRACTION * cap)
-                break
-            admitted = time.monotonic()
-            record.update(started_at=time.time(), wait_seconds=admitted - queued,
-                          max_load="off" if limit is None else limit, slots=slots)
+            wait_message = registry_message
+            delay = 5
+        except BaseException:
+            if admitted_slot is not None:
+                release_slot(admitted_slot, state)
+            raise
+        if admitted_slot is not None:
             if waited > 1:
-                print(f"heavy: got slot {i} after {waited:.0f}s", file=sys.stderr)
+                print(f"heavy: got {admitted_slot.heavy_slot} after {waited:.0f}s", file=sys.stderr)
             try:
-                return run(f, command, shown, kind, record, admitted, state, environ, load_reader)
+                return run(admitted_slot, command, shown, kind, record, admitted, state, environ, load_reader)
             finally:
-                release_slot(f, state)
+                release_slot(admitted_slot, state)
         if wait_message != warned:
             print(wait_message, file=sys.stderr)
             warned = wait_message
-        time.sleep(2)
+        time.sleep(delay)
 
 
 if __name__ == "__main__":

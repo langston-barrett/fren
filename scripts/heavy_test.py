@@ -13,6 +13,7 @@ import io
 import json
 import math
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -79,94 +80,55 @@ def test_missing_command():
         assert not os.path.exists(os.path.join(state, "log.jsonl"))
 
 
-def test_recheck_wait_message():
-    class Waiting(Exception):
-        pass
-
+def test_atomic_admission():
+    # Settings and admission are read under the same lock as slot claiming.
+    # No compatible owner can slip between the forecast check and publication.
     with tempfile.TemporaryDirectory() as state:
-        loads = iter([0, 9])  # Initially admitted; load rises before the locked recheck.
-        stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr), \
-             mock.patch.object(heavy, "heavy_rss_kb", return_value=0), \
-             mock.patch.object(heavy.time, "sleep", side_effect=Waiting):
-            assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
-                          {"HEAVY_SLOTS": "1", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "8"},
-                          lambda: next(loads)), Waiting)
-        assert "waiting for memory or load" in stderr.getvalue()
-        assert "slots busy" not in stderr.getvalue()
-        assert not os.path.exists(os.path.join(state, "log.jsonl"))
-        with open(os.path.join(state, "slot0")) as slot:
-            heavy.fcntl.flock(slot, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
-
-    # A slot-count change during acquisition is a retry, not slot exhaustion.
-    with tempfile.TemporaryDirectory() as state, open(os.path.join(state, "slot0"), "a+") as held:
-        heavy.fcntl.flock(held, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
-        stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr), \
-             mock.patch.object(heavy, "slot_count", side_effect=[2, 2, 1]), \
-             mock.patch.object(heavy, "heavy_rss_kb", return_value=0), \
-             mock.patch.object(heavy.time, "sleep", side_effect=Waiting), \
-             mock.patch.object(heavy, "run", side_effect=AssertionError("admitted")):
-            assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
-                {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}), Waiting)
-        assert stderr.getvalue() == f"heavy: slot count changed, retrying (see {state})\n"
+        original = heavy.claim_slot
+        def claim(f, slot, state, record):
+            with open(os.path.join(state, "registry.lock")) as lock:
+                assert raises(lambda: heavy.fcntl.flock(lock, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB),
+                              BlockingIOError)
+            assert record["predicted_peak_rss_kb"] == GB
+            return original(f, slot, state, record)
+        def run(f, command, shown, kind, record, *args):
+            assert f.heavy_job["predicted_peak_rss_kb"] == record["predicted_peak_rss_kb"]
+            assert record["prediction_default"] and record["prediction_jobs"] == 0
+            assert not any(name.startswith(".wait-") for name in os.listdir(state))
+            return 0
+        with mock.patch.object(heavy, "claim_slot", side_effect=claim), \
+             mock.patch.object(heavy, "run", side_effect=run):
+            assert heavy.main([sys.executable, "-c", "pass"], state,
+                              {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}) == 0
 
 
 def test_reservation_wait_message():
-    # fren-covers: testing::heavy_wait_message
+    # fren-covers: testing::heavy_wait_message, testing::heavy_admission
     class Waiting(Exception):
         pass
 
-    environ = {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}
-    for recheck in (False, True):
-        cases = [([{"slot": "slot1", "rss_kb": 1, "fresh": False}], "stale or future-dated report"),
-                 ([{"slot": "slot1", "rss_kb": None, "fresh": False,
-                    "legacy": True, "legacy_rss_kb": 2 * GB}], f"legacy RSS: {2 * GB} KB"),
-                 ([{"slot": "slot1", "rss_kb": None, "fresh": False, "legacy": True},
-                   {"slot": "slot2", "rss_kb": GB // 5, "fresh": True}],
-                  f"shared legacy forecast: {GB // 2} KB")]
-        for rows, reason in cases:
-            with tempfile.TemporaryDirectory() as state:
-                readings = [[], rows] if recheck else [rows]
-                stderr = io.StringIO()
-                with contextlib.redirect_stderr(stderr), \
-                     mock.patch.object(heavy, "jobs", side_effect=readings), \
-                     mock.patch.object(heavy.time, "sleep", side_effect=Waiting), \
-                     mock.patch.object(heavy, "run", side_effect=AssertionError("admitted")):
-                    assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
-                                                     environ, lambda: 0), Waiting)
-                assert f"slot1 ({reason})" in stderr.getvalue()
-                assert "resume stopped monitors or reduce running memory" in stderr.getvalue()
-                assert "slots busy" not in stderr.getvalue()
-
-        # A forecast below the memory threshold must not name memory as the
-        # cause when load alone blocks, at either admission check.
+    cases = [([{"slot": "slot1", "rss_kb": 1, "fresh": False}], "stale or future-dated report"),
+             ([{"slot": "slot1", "rss_kb": None, "fresh": False,
+                "legacy": True, "legacy_rss_kb": 2 * GB}], "legacy forecast"),
+             ([{"slot": "slot1", "rss_kb": None, "fresh": False, "legacy": True}], "legacy forecast"),
+             ([{"slot": "slot1", "rss_kb": 1, "fresh": True,
+                "predicted_peak_rss_kb": GB}], "RSS or frozen forecast")]
+    for rows, reason in cases:
         with tempfile.TemporaryDirectory() as state:
-            rows = [{"slot": "slot1", "rss_kb": None, "fresh": False, "legacy": True}]
-            readings = [[], rows] if recheck else [rows]
-            loads = iter([0, 100] if recheck else [100])
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr), \
-                 mock.patch.object(heavy, "jobs", side_effect=readings), \
+                 mock.patch.object(heavy, "jobs", return_value=rows), \
                  mock.patch.object(heavy.time, "sleep", side_effect=Waiting), \
                  mock.patch.object(heavy, "run", side_effect=AssertionError("admitted")):
                 assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
-                    dict(environ, HEAVY_MAX_LOAD="1"), lambda: next(loads)), Waiting)
-            assert stderr.getvalue() == f"heavy: waiting for memory or load (see {state})\n"
+                    {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}), Waiting)
+            assert f"slot1 ({reason})" in stderr.getvalue()
+            assert "resume stopped monitors or reduce running memory" in stderr.getvalue()
+            assert "slots busy" not in stderr.getvalue()
 
-    # A prior generic load warning must not hide a later reservation warning.
-    with tempfile.TemporaryDirectory() as state:
-        stderr = io.StringIO()
-        rows = [{"slot": "slot0", "rss_kb": None, "fresh": False,
-                 "legacy": True, "legacy_rss_kb": 2 * GB}]
-        with contextlib.redirect_stderr(stderr), \
-             mock.patch.object(heavy, "jobs", side_effect=[[], rows]), \
-             mock.patch.object(heavy.time, "sleep", side_effect=[None, Waiting]), \
-             mock.patch.object(heavy, "run", side_effect=AssertionError("admitted")):
-            assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
-                          dict(environ, HEAVY_MAX_LOAD="1"), lambda: 100), Waiting)
-        assert "waiting for memory or load" in stderr.getvalue()
-        assert f"slot0 (legacy RSS: {2 * GB} KB)" in stderr.getvalue()
+    # Load alone must not be described as a memory reservation problem.
+    assert heavy.memory_wait_message("state", ["slot0"], [], GB, GB) == \
+        "heavy: waiting for memory or load (see state)"
 
 
 def test_registry_wait_messages():
@@ -174,24 +136,243 @@ def test_registry_wait_messages():
     class Waiting(Exception):
         pass
 
-    for stage in ("read", "claim", "recheck"):
+    for stage in ("register", "read", "claim"):
         with tempfile.TemporaryDirectory() as state, contextlib.ExitStack() as stack:
             stderr = io.StringIO()
             stack.enter_context(contextlib.redirect_stderr(stderr))
             stack.enter_context(mock.patch.object(heavy.time, "sleep", side_effect=Waiting))
             run = stack.enter_context(mock.patch.object(heavy, "run"))
-            readings = [heavy.RegistryBusy()] if stage == "read" else [0, heavy.RegistryBusy()]
-            if stage == "claim":
+            if stage == "register":
                 stack.enter_context(mock.patch.object(heavy, "registry", side_effect=heavy.RegistryBusy))
-                readings = [0]
-            stack.enter_context(mock.patch.object(heavy, "heavy_rss_kb", side_effect=readings))
+            elif stage == "read":
+                stack.enter_context(mock.patch.object(heavy, "jobs", side_effect=heavy.RegistryBusy))
+            else:
+                stack.enter_context(mock.patch.object(heavy, "claim_slot", side_effect=heavy.RegistryBusy))
             assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
                 {"HEAVY_SLOTS": "1", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}), Waiting)
             run.assert_not_called()
             assert stderr.getvalue() == f"heavy: waiting for registry lock (see {state})\n"
-            if stage != "read":
-                with open(os.path.join(state, "slot0"), "a+") as slot:
-                    heavy.fcntl.flock(slot, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+
+
+def test_forecast_admission():
+    # fren-covers: testing::heavy_admission
+    fit = heavy.memory_fits
+    row = {"rss_kb": 10, "fresh": True, "predicted_peak_rss_kb": 60}
+    assert fit([row], 40, 100)  # Equality fits, even above the old 60% rule.
+    assert not fit([row], 41, 100)  # Live RSS alone would have admitted it.
+    assert fit([dict(row, rss_kb=70)], 30, 100)
+    assert not fit([dict(row, rss_kb=70)], 31, 100)
+    assert fit([row, dict(row, predicted_peak_rss_kb=20)], 20, 100)
+    assert not fit([row, dict(row, predicted_peak_rss_kb=20)], 21, 100)
+    assert fit([], 101, 100) and fit([], None, 100)
+    # An unknown candidate and unknown/old running reports reserve a cap.
+    for unknown in (None, 0, -1, True, 1.5, "1"):
+        assert heavy.forecast_reservation(unknown, 100) == 100
+        assert not fit([row], unknown, 100)
+        assert not fit([dict(row, predicted_peak_rss_kb=unknown)], 1, 100)
+    # Even verified zero RSS is still a running owner, not the alone case.
+    assert not fit([dict(row, rss_kb=0)], 101, 100)
+    assert not fit([dict(row, fresh=False)], 1, 100)
+    assert heavy.forecast_memory([dict(row, fresh=False, predicted_peak_rss_kb=200)], 100) == 200
+    assert not fit([dict(row, legacy=True, legacy_rss_kb=0)], 1, 100)
+    assert heavy.forecast_memory([dict(row, legacy=True, legacy_rss_kb=120)], 100) == 120
+    # Forecasts never become evidence for eviction.
+    running = [dict(row, job_id="old", order=1), dict(row, job_id="new", order=2)]
+    assert heavy.forecast_memory(running, 100) == 120
+    assert heavy.memory_victim(running, 100) == (20, None)
+
+
+def test_waiter_order():
+    # fren-covers: testing::heavy_admission
+    with tempfile.TemporaryDirectory() as state, contextlib.ExitStack() as stack:
+        def wait(arrival, prediction, priority="exploratory"):
+            return stack.enter_context(heavy.waiting_job(state, {"enqueued_at": arrival},
+                prediction, {"HEAVY_PRIORITY": priority}))
+        large = wait(0, 101, "merge-blocking")
+        older = wait(1, 30)
+        newer = wait(2, 20)
+        priority = wait(3, 40, "merge-blocking")
+        running = [{"rss_kb": 10, "fresh": True, "predicted_peak_rss_kb": 60}]
+        with heavy.registry(state):
+            assert heavy.next_waiter(state, running, 100) == priority
+            assert heavy.next_waiter(state, running, 90) == older
+            assert heavy.next_waiter(state, running, 80) == newer
+            assert heavy.next_waiter(state, running, 79) is None
+            assert heavy.next_waiter(state, [], 100) == large
+    # Closed/crashed tickets cannot hold up new jobs, even if metadata remains.
+    with tempfile.TemporaryDirectory() as state:
+        with heavy.waiting_job(state, {"enqueued_at": 0}, 1, {}) as stale:
+            pass
+        with heavy.waiting_job(state, {"enqueued_at": 1}, 1, {}) as live:
+            with heavy.registry(state):
+                assert heavy.next_waiter(state, [], 100) == live
+                assert not os.path.exists(os.path.join(state, f".wait-{stale}.json"))
+
+
+    # Wall-clock corrections must not reverse the actual arrival order.
+    with tempfile.TemporaryDirectory() as state:
+        with heavy.waiting_job(state, {"enqueued_at": 100}, 1, {}, arrival=1) as first, \
+             heavy.waiting_job(state, {"enqueued_at": 0}, 1, {}, arrival=2):
+            with heavy.registry(state):
+                assert heavy.next_waiter(state, [], 100) == first
+
+
+def test_adapter_denial():
+    # fren-covers: testing::heavy_admission
+    class Waiting(Exception):
+        pass
+    with tempfile.TemporaryDirectory() as state:
+        # Model the installed fd adapter denying the older, higher-priority
+        # job. The native queue must not then deny the adapter's chosen job.
+        with heavy.waiting_job(state, {"enqueued_at": 0}, 1,
+                               {"HEAVY_PRIORITY": "merge-blocking"}) as older:
+            with mock.patch.object(heavy, "waiting_job", return_value=contextlib.nullcontext(older)), \
+                 mock.patch.object(heavy, "can_start", return_value=False), \
+                 mock.patch.object(heavy.time, "sleep", side_effect=Waiting), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
+                    {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}), Waiting)
+            with mock.patch.object(heavy, "run", return_value=0):
+                assert heavy.main([sys.executable, "-c", "pass"], state,
+                    {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}) == 0
+            with heavy.registry(state):
+                heavy.waiter_policy(state, older, True)
+                assert heavy.next_waiter(state, [], GB) == older
+
+
+def test_coordinator_kind():
+    # fren-covers: testing::heavy_admission, testing::heavy_memory_prediction
+    with tempfile.TemporaryDirectory() as state:
+        heavy.append_log({"event": "job", "job_kind": "coordinator build",
+                          "ended_at": heavy.time.time() - 1, "peak_rss_kb": 777}, state, {})
+        def run(f, command, shown, kind, record, *args):
+            assert kind == "coordinator build" and record["predicted_peak_rss_kb"] == 777
+            assert record["prediction_jobs"] == 1 and not record["prediction_default"]
+            return 0
+        with mock.patch.object(heavy, "run", side_effect=run):
+            assert heavy.main([sys.executable, "-c", "pass"], state,
+                {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off", "FREN_JOB_KIND": "coordinator build"}) == 0
+
+
+def test_frozen_admission():
+    # fren-covers: testing::heavy_admission, testing::heavy_memory_prediction
+    with tempfile.TemporaryDirectory() as state:
+        command = [sys.executable, "-c", "pass"]
+        peak = GB // 3
+        heavy.append_log({"event": "job", "job_kind": heavy.job_kind(command),
+                          "ended_at": heavy.time.time() - 1, "peak_rss_kb": peak}, state, {})
+        predict = heavy.predict_peak_rss
+        def freeze(*args):
+            prediction = predict(*args)
+            # New evidence arriving after enqueue must not rewrite the ticket,
+            # slot reservation or completion record of this waiting job.
+            heavy.append_log({"event": "job", "job_kind": heavy.job_kind(command),
+                              "ended_at": heavy.time.time(), "peak_rss_kb": 2 * GB}, state, {})
+            return prediction
+        def run(f, command, shown, kind, record, *args):
+            assert record["predicted_peak_rss_kb"] == peak and not record["prediction_default"]
+            assert f.heavy_job["predicted_peak_rss_kb"] == peak
+            assert heavy.forecast_memory(heavy.jobs(state), GB) == peak
+            heavy.publish_memory(f, 2 * peak, state)
+            assert heavy.forecast_memory(heavy.jobs(state), GB) == 2 * peak
+            assert heavy.memory_fits(heavy.jobs(state), GB - 2 * peak, GB)
+            assert not heavy.memory_fits(heavy.jobs(state), GB - 2 * peak + 1, GB)
+            stale = dict(f.heavy_job, updated_monotonic=heavy.time.monotonic() - 20)
+            with heavy.registry(state):
+                heavy.atomic_state(heavy.report_path(state, f.heavy_slot), stale)
+            assert not heavy.memory_fits(heavy.jobs(state), 1, GB)
+            return 0
+        with mock.patch.object(heavy, "predict_peak_rss", side_effect=freeze), \
+             mock.patch.object(heavy, "run", side_effect=run):
+            assert heavy.main(command, state, {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}) == 0
+        # Released slot reports never count, even when leftover metadata remains.
+        assert heavy.memory_fits(heavy.jobs(state), 2 * GB, GB)
+
+
+def test_forecast_slot_limit():
+    # fren-covers: testing::heavy_admission
+    class Waiting(Exception):
+        pass
+    with tempfile.TemporaryDirectory() as state, contextlib.ExitStack() as stack:
+        for i in range(2):
+            f = open(os.path.join(state, f"slot{i}"), "a+")
+            stack.callback(heavy.release_slot, f, state)
+            with heavy.registry(state):
+                assert heavy.claim_slot(f, f"slot{i}", state,
+                    {"enqueued_at": 0, "predicted_peak_rss_kb": 1})
+        stderr = io.StringIO()
+        with mock.patch.object(heavy, "predict_peak_rss", return_value=(1, 1)), \
+             mock.patch.object(heavy.time, "sleep", side_effect=Waiting), \
+             mock.patch.object(heavy, "run", side_effect=AssertionError("admitted")), \
+             contextlib.redirect_stderr(stderr):
+            assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
+                {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}), Waiting)
+        assert stderr.getvalue() == f"heavy: all 2 slots busy, waiting (see {state})\n"
+
+
+def test_forecast_queue_integration():
+    # fren-covers: testing::heavy_admission
+    with tempfile.TemporaryDirectory() as state:
+        ready = [os.path.join(state, f"ready{i}") for i in range(2)]
+        stop = [os.path.join(state, f"stop{i}") for i in range(2)]
+        worker = ("import pathlib,sys,time; pathlib.Path(sys.argv[1]).touch(); "
+                  "exec('while not pathlib.Path(sys.argv[2]).exists(): time.sleep(0.02)')")
+        launcher = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
+                    "sys.exit(h['main']([sys.executable,'-c',sys.argv[3],*sys.argv[4:]], "
+                    "state=sys.argv[2],load_reader=lambda:0))")
+        heavy.append_log({"event": "job", "job_kind": heavy.job_kind(
+            [sys.executable, "-c", worker, ready[0], stop[0]]),
+            "ended_at": heavy.time.time() - 1, "peak_rss_kb": 60 * 1024}, state, {})
+        env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.1", HEAVY_MAX_LOAD="off")
+        env.pop("HEAVY_LOG", None)
+        env.pop("FREN_JOB_KIND", None)
+        children = []
+        def await_condition(condition):
+            deadline = heavy.time.monotonic() + 15
+            while not condition():
+                assert all(p.poll() is None for p in children)
+                assert heavy.time.monotonic() < deadline, "forecast queue made no progress"
+                heavy.time.sleep(0.02)
+        try:
+            for i in range(2):
+                children.append(subprocess.Popen([sys.executable, "-I", "-B", "-c", launcher,
+                    os.path.join(HERE, "heavy"), state, worker, ready[i], stop[i]],
+                    env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+                if i == 0:
+                    await_condition(lambda: os.path.exists(ready[0]))
+            await_condition(lambda: any(n.startswith(".wait-") for n in os.listdir(state)))
+            assert select.select([children[1].stderr], [], [], 15)[0], "waiter did not check admission"
+            assert "waiting for memory" in children[1].stderr.readline()
+            assert not os.path.exists(ready[1])
+            # Two forecasts cannot overlap, even though their current RSS fits.
+            reports = heavy.jobs(state)
+            assert len(reports) == 1 and reports[0]["predicted_peak_rss_kb"] == 60 * 1024
+            assert reports[0]["rss_kb"] < 0.06 * GB
+            with open(stop[0], "w") as f:
+                f.write("stop")
+            out, err = children[0].communicate(timeout=15)
+            assert children[0].returncode == 0, (out, err)
+            # The first child may now exit; only the second must stay live.
+            deadline = heavy.time.monotonic() + 15
+            while not os.path.exists(ready[1]):
+                assert children[1].poll() is None
+                assert heavy.time.monotonic() < deadline
+                heavy.time.sleep(0.02)
+            with open(stop[1], "w") as f:
+                f.write("stop")
+            out, err = children[1].communicate(timeout=15)
+            assert children[1].returncode == 0, (out, err)
+            with open(os.path.join(state, "log.jsonl")) as f:
+                completed = [r for line in f if "started_at" in (r := json.loads(line))]
+            assert len(completed) == 2 and completed[1]["started_at"] >= completed[0]["ended_at"]
+        finally:
+            for path in stop:
+                with open(path, "w") as f:
+                    f.write("stop")
+            for child in children:
+                if child.poll() is None:
+                    child.terminate()
+                child.communicate(timeout=15)
 
 
 def test_physical_memory():
@@ -307,7 +488,9 @@ def test_load_admission():
     def unreadable():
         raise AssertionError("read load with the policy off, or after its grace period")
 
-    admit = heavy.can_start
+    row = {"rss_kb": 60, "fresh": True, "predicted_peak_rss_kb": 50}
+    admit = lambda waited, rss, cap, limit, reader: heavy.can_start(
+        waited, [dict(row, rss_kb=rss)], cap, limit, reader, 40)
     assert admit(0, 60, 100, None, unreadable)
     assert admit(0, 60, 100, 8, lambda: 7.99)
     assert not admit(0, 60, 100, 8, lambda: 8)
@@ -323,6 +506,7 @@ def tiny_job(state, command, overrides=None, timeout=30):
             "sys.exit(h['main'](sys.argv[3:], state=sys.argv[2], load_reader=lambda: 0.5))")
     environ = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="1", HEAVY_MAX_LOAD="off")
     environ.pop("HEAVY_LOG", None)
+    environ.pop("FREN_JOB_KIND", None)
     environ.update(overrides or {})
     return subprocess.run([sys.executable, "-I", "-B", "-c", code,
                            os.path.join(HERE, "heavy"), state] + command,
@@ -570,12 +754,11 @@ def test_legacy_reservations():
         for cap in range(5, 101):
             share = heavy.legacy_reservation(cap)
             assert 0 < share and 5 * share <= 3 * cap
-            assert heavy.can_start(0, share, cap, None)
             for observed in (None, -1, 0, 1, cap, 2 * cap):
                 charged = heavy.legacy_reservation(cap, observed)
                 assert charged == (observed if observed is not None and observed >= 0 else share)
                 if observed is not None and 5 * observed > 3 * cap:
-                    assert not heavy.can_start(0, charged, cap, None)
+                    assert 5 * charged > 3 * cap
             for count in range(1, 9):
                 rows = [{"slot": f"slot{i}", "legacy": True, "legacy_rss_kb": None,
                          "rss_kb": None, "fresh": False} for i in range(count)]
@@ -586,9 +769,9 @@ def test_legacy_reservations():
         known = dict(unknown, slot="slot1", legacy_rss_kb=10)
         with mock.patch.object(heavy, "jobs", return_value=[unknown, known]):
             assert heavy.heavy_rss_kb(state, 100) == 60
-            assert heavy.can_start(0, heavy.heavy_rss_kb(state, 100), 100, None)
+            assert 5 * heavy.heavy_rss_kb(state, 100) <= 3 * 100
         with mock.patch.object(heavy, "jobs", return_value=[unknown, dict(known, legacy_rss_kb=11)]):
-            assert not heavy.can_start(0, heavy.heavy_rss_kb(state, 100), 100, None)
+            assert 5 * heavy.heavy_rss_kb(state, 100) > 3 * 100
     assert heavy.legacy_reservation(100, 0) == 0  # Verified zero differs from unknown.
     assert heavy.legacy_reservation(0) == 1
 
@@ -722,7 +905,8 @@ def test_legacy_report_reuse():
 
 def test_legacy_coexistence():
     # fren-covers: testing::heavy_legacy_lease, testing::heavy_lease
-    # Unknown legacy memory remains charged, but a free slot can admit new work.
+    # Protocol diagnostics retain the legacy shared estimate, while forecast
+    # admission conservatively waits for unknown legacy holders to drain.
     for slots in (2, 4):
         with tempfile.TemporaryDirectory() as state, contextlib.ExitStack() as stack:
             for index in range(slots - 1):
@@ -732,12 +916,10 @@ def test_legacy_coexistence():
                 legacy.flush()
             cap = int(0.5 * GB)
             assert heavy.heavy_rss_kb(state, cap) == cap // 2
-            result = tiny_job(state, [sys.executable, "-c", "pass"],
-                              {"HEAVY_SLOTS": str(slots), "HEAVY_MEM_GB": "0.5"}, timeout=10)
-            assert result.returncode == 0, result.stderr
+            assert not heavy.memory_fits(heavy.jobs(state), 1, cap)
             rows = heavy.jobs(state)
             assert len(rows) == slots - 1 and all(row["legacy"] for row in rows)
-            # The memory forecast alone cannot admit a job with no free slot.
+            # Filling the remaining slot must still leave admission blocked.
             occupied = stack.enter_context(open(os.path.join(state, f"slot{slots - 1}"), "w+"))
             heavy.fcntl.flock(occupied, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
             class Waiting(Exception):
@@ -749,8 +931,9 @@ def test_legacy_coexistence():
                 assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
                     {"HEAVY_SLOTS": str(slots), "HEAVY_MEM_GB": "0.5", "HEAVY_MAX_LOAD": "off"}), Waiting)
                 run.assert_not_called()
-                sleep.assert_called_once_with(2)
-            assert stderr.getvalue() == f"heavy: all {slots} slots busy, waiting (see {state})\n"
+                sleep.assert_called_once_with(5)
+            assert "waiting for memory" in stderr.getvalue()
+            assert "legacy forecast" in stderr.getvalue()
     if heavy.platform.system() != "Linux":
         return
     with tempfile.TemporaryDirectory() as state:
@@ -780,9 +963,8 @@ with open(os.path.join(sys.argv[1], 'slot0'), 'w+') as slot:
                 assert row["legacy_rss_kb"] >= 4 * 1024
             cap = int(0.5 * GB)
             assert 5 * heavy.heavy_rss_kb(state, cap) <= 3 * cap
-            result = tiny_job(state, [sys.executable, "-c", "pass"],
-                              {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "0.5"}, timeout=10)
-            assert result.returncode == 0 and legacy.poll() is None, result.stderr
+            assert not heavy.memory_fits(heavy.jobs(state), 1, cap)
+            assert legacy.poll() is None
         finally:
             with open(stop, "w") as f:
                 f.write("stop")
@@ -913,6 +1095,7 @@ sys.exit(h['main']([sys.executable, '-c', sys.argv[3]], state=sys.argv[2], load_
 """
         env = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="0.04", HEAVY_MAX_LOAD="off")
         env.pop("HEAVY_LOG", None)
+        env.pop("FREN_JOB_KIND", None)
         child = subprocess.Popen(prefix + [sys.executable, "-I", "-B", "-c", launcher,
             os.path.join(HERE, "heavy"), state, leader, reaped, "default" if subreaper else "fallback"], env=env,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -979,6 +1162,7 @@ def test_fallback_escalation():
                     "sys.exit(h['main'](sys.argv[3:],state=sys.argv[2],load_reader=lambda:0))")
         env = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="0.04", HEAVY_MAX_LOAD="off")
         env.pop("HEAVY_LOG", None)
+        env.pop("FREN_JOB_KIND", None)
         child = subprocess.Popen([sys.executable, "-I", "-B", "-c", launcher,
                                   os.path.join(HERE, "heavy"), state, sys.executable, "-c", leader],
                                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -1090,8 +1274,12 @@ def test_pid_namespace_jobs():
             launcher = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
                         "sys.exit(h['main']([sys.executable,'-c',sys.argv[3],*sys.argv[4:]], "
                         "state=sys.argv[2],load_reader=lambda:0))")
+            heavy.append_log({"event": "job", "job_kind": heavy.job_kind(
+                [sys.executable, "-c", worker, ready[0], stop, "32"]),
+                "ended_at": heavy.time.time() - 1, "peak_rss_kb": 1024}, state, {})
             env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.1", HEAVY_MAX_LOAD="off")
             env.pop("HEAVY_LOG", None)
+            env.pop("FREN_JOB_KIND", None)
             children = []
             def launch(index, size):
                 p = subprocess.Popen(prefix + [sys.executable, "-I", "-B", "-c", launcher,
@@ -1681,6 +1869,7 @@ with h['registry'](sys.argv[2]):
 """
         env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.01", HEAVY_MAX_LOAD="off")
         env.pop("HEAVY_LOG", None)
+        env.pop("FREN_JOB_KIND", None)
         monitor = subprocess.Popen([sys.executable, "-I", "-B", "-c", launcher,
             os.path.join(HERE, "heavy"), state, ready, go], env=env,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -1767,8 +1956,12 @@ def test_stopped_owner():
         launcher = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
                     "sys.exit(h['main']([sys.executable,'-c',sys.argv[3],*sys.argv[4:]], "
                     "state=sys.argv[2],load_reader=lambda:0))")
+        heavy.append_log({"event": "job", "job_kind": heavy.job_kind(
+            [sys.executable, "-c", worker, ready[0], stop]),
+            "ended_at": heavy.time.time() - 1, "peak_rss_kb": 1024}, state, {})
         env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.5", HEAVY_MAX_LOAD="off")
         env.pop("HEAVY_LOG", None)
+        env.pop("FREN_JOB_KIND", None)
         children = []
         try:
             for index in range(2):
@@ -2392,7 +2585,7 @@ def test_memory_prediction():
         assert heavy.predict_peak_rss("lake build", state, {"HEAVY_LOG": override}, now) == (777, 1)
         # Freeze the prediction before execution, then keep it beside the
         # actual peak rather than recomputing with the new observation.
-        record = {"started_at": now}
+        record = {"started_at": now, "predicted_peak_rss_kb": 777, "prediction_jobs": 1}
         def execute(*args):
             record["peak_rss_kb"] = 999
             return 0
@@ -2509,8 +2702,9 @@ def main():
              test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
              test_child_subreaper, test_process_readings,
              test_process_sampling, test_machine_pressure, test_memory_prediction, test_process_integration,
-             test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
-             test_registry_wait_messages,
+             test_parse_args, test_missing_command, test_atomic_admission, test_reservation_wait_message,
+             test_registry_wait_messages, test_forecast_admission, test_waiter_order, test_frozen_admission, test_forecast_slot_limit,
+             test_forecast_queue_integration, test_adapter_denial, test_coordinator_kind,
              test_physical_memory,
              test_overrides, test_offline_command, test_load_admission, test_job_log,
              test_admission_snapshot, test_job_kinds, test_policy_flip_while_waiting,

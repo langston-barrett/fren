@@ -1017,9 +1017,11 @@ a file takes effect without a restart:
   else 2.
 - **Memory:** `HEAVY_MEM_GB` gigabytes, else the number in
   `~/.cache/heavy/mem_gb`, else 80% of the machine's physical memory,
-  summed over each job's process group. A job waits to start while the
-  running ones use more than 60% of the cap; when they use more than
-  the cap, heavy kills the newest compatible owner and exits with 137.
+  summed over each job's process group. A waiting job needs its frozen
+  forecast plus each running job's larger RSS or frozen forecast to fit
+  within the cap. With nothing running it may start even if its forecast
+  exceeds the cap. When measured memory exceeds the cap, heavy kills the
+  newest compatible owner and exits with 137.
 - **Load (off by default):** `HEAVY_MAX_LOAD`, else the number in
   `~/.cache/heavy/max_load`. A waiting job also needs the 1-minute load
   to be below this value. After 10 minutes waiting it may start whatever
@@ -1101,31 +1103,47 @@ Linux's monotonic clock excludes suspended time, so resume does not age
 all reports by the suspension's duration. Reports use a common clock;
 time namespaces with different monotonic offsets are outside this protocol.
 
-Admission and eviction have different totals. Admission counts a fresh
-compatible report's RSS. A verified current owner with stale or future-dated
-data reserves one full cap. A legacy holder with verified visible RSS
-contributes that reading. All unobserved legacy holders together reserve
-`ceil(cap / 2)`, at least 1 KB, once for the entire set. This shared forecast
-leaves admission room even when several legacy holders occupy the other
-slots. It is not a claim that an unknown holder uses zero. Charging a full
-cap for every unknown holder made coexistence impossible even when a slot
-and substantial memory were free.
-With a free slot, new work may start when the sum of these charges is at
-most 60% of the cap and the load rule allows it. Legacy holders therefore
-do not require a coordinated drain before a new version can admit work.
-A memory wait names reserving slots with their stale-report charges,
-verified legacy RSS or shared legacy forecast.
-Those details appear only when the memory threshold blocks admission;
-a load-only wait does not recommend freeing memory. A registry deadline
-reports a registry wait, including races at slot acquisition and recheck.
+Admission and eviction have different totals. Admission reserves the larger
+of each running job's current RSS and frozen forecast, then adds the waiting
+job's forecast. It admits only when that sum is at most the cap, except that
+an otherwise empty machine admits a job even if its forecast exceeds the
+cap. This exception does not waive the measured-memory backstop. An unknown
+forecast reserves a full cap. A stale or future-dated compatible report and
+each legacy holder reserve at least a full cap, or their forecast or verified
+RSS if larger. A held slot with zero RSS is still running for the alone rule.
+Missing or malformed forecasts also use the full-cap default.
+
+Among waiting jobs whose forecasts fit, `HEAVY_PRIORITY=merge-blocking`
+precedes `exploratory` (the default); within a class, monotonic enqueue time
+decides.
+An unrecognized label uses the default class. A waiter denied by the load
+rule or an installed priority adapter publishes that denial, so it cannot
+hold up the queue's other eligible jobs. Memory fit is recomputed at each
+selection. Waiters hold locks on unique
+`.wait-<id>.json` files, so crashes and PID namespaces cannot leave a live
+queue entry behind. Unlocked entries are removed on the next queue scan.
+The memory check, waiter choice, slot acquisition and forecast publication
+hold the same registry lock: another compatible admission cannot slip
+between them. Slots and the load rule still apply. This orders admission;
+it does not allocate cores or CPU time. Older versions retain their own
+admission rules, so mixed versions cannot guarantee this order or reservation.
+
+A memory wait names slots with their stale, legacy or frozen reservations.
+Those details appear only when memory blocks admission; a load-only wait
+does not recommend freeing memory. A registry deadline reports a registry
+wait, including while registering a waiter. The older protocol's diagnostic
+charge helpers (`heavy_lease`, `heavy_legacy_lease` and `admission_total`)
+retain their shared half-cap legacy estimate for compatibility tests; the
+forecast admission requirement below uses a full cap for each unknown owner.
 
 On Linux 4.9 and later, legacy measurements discover the current flock
 holder by device and inode in
 [`/proc/locks`](https://man7.org/linux/man-pages/man5/proc_locks.5.html),
 then sum its direct child process groups in that same procfs view. The scan
-rechecks the lock owner and its process start counter. It runs outside the
-registry lock. Filtered, inaccessible or changed ownership leaves the
-reading unknown and uses the forecast. A numeric PID in a legacy slot is
+rechecks the lock owner and its process start counter. Monitor scans run
+outside the registry lock; admission scans hold it through slot acquisition.
+Filtered, inaccessible or changed ownership leaves the reading unknown and
+uses the forecast. A numeric PID in a legacy slot is
 never resolved, so an unrelated process with that number cannot inflate it.
 Older kernels and other systems use the fixed forecast.
 Kernel verification also requires the slot's `stat` device and inode to
@@ -1134,7 +1152,7 @@ identifiers differ, including btrfs subvolumes and some stacked filesystems,
 the owner cannot be matched. Compatible reports then use the freshness
 fallback, an unverified stale report becomes legacy after ten seconds, and
 legacy RSS remains unobserved. In that case the lookup cannot verify stopped
-owners or measure legacy holders; accounting uses freshness and the shared
+owners or measure legacy holders; admission uses freshness and the full-cap
 forecast instead. The current implementation does not translate filesystem
 device identifiers.
 
@@ -1147,7 +1165,7 @@ Running monitors also enforce their own cap. Old versions keep their own
 admission and eviction rules, so global newest-first ordering applies only
 among compatible owners.
 
-Legacy forecasts can underestimate invisible memory. Mixed-version
+Forecasts can underestimate future or invisible memory. Mixed-version
 accounting cannot guarantee a hard combined memory limit; a shared kernel
 limit is needed for that. A stale reading can also underestimate current
 use. This policy keeps visible measurements and forecasts separate while
@@ -1182,7 +1200,10 @@ later flips cannot reassign the job. It also records `enqueued_max_load`,
 while waiting. Enqueue settings never decide the job's accounting label. Its
 job kind is computed from the full command before shortening it, removing
 paths, seeds and numbers while retaining executable and script basenames,
-flags and job names. Tests use scratch directories, including for logs.
+flags and job names. `FREN_JOB_KIND`, when supplied by the coordinator,
+overrides that kind for both forecasting and logging, so the admission
+lookup uses the same key as the coordinator's completion records.
+Tests use scratch directories, including for logs.
 A missing bare command exits with 127 before waiting or taking a slot;
 it has no admission and produces no job record.
 
@@ -1310,18 +1331,20 @@ reaped child, including its waited-for descendants and threads, with the
 same orphan coverage as `cpu_scope` ([resource usage](https://man7.org/linux/man-pages/man2/getrusage.2.html)). It supplies the final job total, not
 just the sampled main-thread lower bound.
 
-Each job freezes `predicted_peak_rss_kb` before execution beside its eventual
+Each job freezes `predicted_peak_rss_kb` before waiting beside its eventual
 `peak_rss_kb`. The prediction is the maximum positive measured peak among
 the latest 20 completed jobs of the same `job_kind` in the preceding seven
 days, ordered by completion time and excluding future completions. Failed
 jobs' observed peaks count too, though a killed job's peak does not show
 how much memory it needed to finish. `prediction_jobs` records the number
 used, and `prediction_method` is `"max_last_20_same_kind_7d"`. With no usable
-history, the prediction is `null`, not zero. Malformed records are skipped;
+history, the frozen prediction is the current cap and `prediction_default`
+is true; otherwise it is false. Malformed records are skipped;
 `HEAVY_LOG` selects the prediction's source as well as the destination.
-The current memory admission rule uses live RSS and lease reservations,
-without a per-kind estimate. This prediction is telemetry for assessing an admission model;
-it does not yet change that rule. Work amounts and build-cache states can
+History is shared across worktrees of the same kind, so a lightly rebuilt
+worktree cannot narrow the history used elsewhere. The frozen value is
+published in the slot report and used throughout waiting and execution;
+a cap change does not rewrite it. Work amounts and build-cache states can
 vary within a kind, so historical peaks do not guarantee a future fit.
 
 The following requirements state CPU accumulation and interval accounting.
@@ -1444,16 +1467,18 @@ pub proc heavy_memory_prediction(previous: Option<Int>, observed: Option<Int>): 
 }
 ```
 
-The following requirements compute compatibility, admission and eviction
-from raw held-slot observations: a report, its status token, the observed
-monitor identity and any independently measured legacy RSS. `MemoryLeases`
+The following requirements compute compatibility, protocol charges,
+forecast admission and eviction from raw held-slot observations: a report,
+its status token, the observed monitor identity and any independently
+measured legacy RSS. `MemoryLeases`
 does not classify its entries in advance. `heavy_lease` calls
 `heavy_report_owner`; the recursive accounting functions use the same
 `report_owner?` definition, so victim selection and owned signaling also
-decide compatibility. A legacy job can admit new work only when a slot is
-free and the memory rule holds. Time values use one integral unit of the
-shared monotonic clock. Python tests check the concrete lock, clock, procfs and
-signal operations through `tested` claims in `Impls.Trace`; these tests run
+decide compatibility. `heavy_admission` also reads the frozen forecast beside
+each raw lease and computes its reservation, rather than accepting a
+precomputed total or an empty-machine flag. New work needs a free slot and
+the forecast rule. Time values use one integral unit of the shared monotonic
+clock. Python tests check the concrete lock, clock, procfs and signal operations through `tested` claims in `Impls.Trace`; these tests run
 in the `lint` workflow, not in `lake test`. `heavy_registry` models the retry
 and signal-deferral decisions, including refusal to retry after the deadline.
 These are per-attempt rules: the supplied deadline does not model its
@@ -1482,16 +1507,6 @@ pub proc heavy_registry(available?, now: Int, deadline: Int, held?, requested?):
     expect bounded: when now >= deadline, not retry?
     expect stopped: unless available?, not acquired? and (retry? or timed_out?)
     expect masked: when held? and requested?, deferred?
-}
-
-pub proc heavy_wait_message(rss: Nat, cap: Nat, reservations: Seq<String>, registry_busy?): (
-    det memory_details?,
-    det registry_message?,
-) {
-    ensure memory: memory_details? iff not registry_busy? and 5 * rss > 3 * cap and reservations != []
-    ensure registry: registry_message? iff registry_busy?
-    expect load_only: when 5 * rss <= 3 * cap, not memory_details?
-    expect registry_priority: when registry_busy?, registry_message? and not memory_details?
 }
 
 pub struct MemoryOwner { job: String, sequence: Int }
@@ -1683,6 +1698,83 @@ pub fn unknown_legacy?(leases: MemoryLeases, now: Int, ttl: Nat) := match leases
 pub fn admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): Int :=
     observed_admission(cap, leases, now, ttl)
     + (if unknown_legacy?(leases, now, ttl) then legacy_reservation(cap, Option::None) else 0)
+
+-- Frozen forecasts are separate from live RSS and never affect eviction.
+pub enum ForecastLeases {
+    Nil,
+    Cons(MemoryLease, Option<Int>, ForecastLeases),
+}
+
+pub fn memory_forecast(prediction: Option<Int>, cap: Nat): Int := match prediction {
+    Option::Some(p) => if p > 0 then p else cap,
+    Option::None => cap,
+}
+
+pub fn forecast_charge(
+    cap: Nat,
+    lease: MemoryLease,
+    prediction: Option<Int>,
+    now: Int,
+    ttl: Nat
+): Int := memory_forecast(prediction, cap).max(
+    if report_owner?(lease.report, lease.status_job, lease.observed, now, ttl)
+        then admission_memory(cap, lease.report, now, ttl)
+        else legacy_memory(lease.legacy_rss).max(cap)
+)
+
+pub fn forecast_total(cap: Nat, leases: ForecastLeases, now: Int, ttl: Nat): (reserved: Int) {
+    out reserved := match leases {
+        ForecastLeases::Nil => 0,
+        ForecastLeases::Cons(lease, prediction, rest) =>
+            forecast_charge(cap, lease, prediction, now, ttl) + forecast_total(cap, rest, now, ttl),
+    }
+    ensure nonnegative: reserved >= 0
+    ensure empty: when leases = ForecastLeases::Nil, reserved = 0
+    ensure head: match leases {
+        ForecastLeases::Cons(lease, prediction, _) =>
+            reserved >= forecast_charge(cap, lease, prediction, now, ttl),
+        _ => true,
+    }
+    ensure single: match leases {
+        ForecastLeases::Cons(lease, prediction, ForecastLeases::Nil) =>
+            reserved = forecast_charge(cap, lease, prediction, now, ttl),
+        _ => true,
+    }
+}
+
+pub proc heavy_admission(
+    cap: Nat,
+    free?,
+    candidate: Option<Int>,
+    leases: ForecastLeases,
+    now: Int,
+    ttl: Nat,
+): (det reserved: Int, det prediction: Int, det fits?) {
+    out reserved := forecast_total(cap, leases, now, ttl)
+    out prediction := memory_forecast(candidate, cap)
+    ensure rule: fits? iff free? and (leases = ForecastLeases::Nil or reserved + prediction <= cap)
+    expect alone: when free? and leases = ForecastLeases::Nil, fits?
+    expect occupied: when free? and cap > 0 and candidate = Option::None
+        and leases = ForecastLeases::Cons(UNKNOWN_LEASE, Option::None, ForecastLeases::Nil), not fits?
+    expect no_slot: unless free?, not fits?
+    expect unknown: when candidate = Option::None, prediction = cap
+}
+
+pub proc heavy_wait_message(
+    cap: Nat,
+    candidate: Option<Int>,
+    leases: ForecastLeases,
+    now: Int,
+    ttl: Nat,
+    reservations: Seq<String>,
+    registry_busy?,
+): (det memory_details?, det registry_message?) {
+    call admission := heavy_admission(cap, true, candidate, leases, now, ttl)
+    ensure memory: memory_details? iff not registry_busy? and not admission.fits? and reservations != []
+    ensure registry: registry_message? iff registry_busy?
+    expect load_only: when admission.fits?, not memory_details?
+    expect registry_priority: when registry_busy?, registry_message? and not memory_details?
+}
 
 pub fn eviction_total(leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
     out rss := match leases {
