@@ -67,6 +67,11 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"97e7501
 -- each module is built one way, no module is in the globs of two libraries,
 -- which `lake test`'s `libraries` job checks.
 
+-- Standalone scheduler kernels: only Lean core/Std, independent of Fren.
+lean_lib Heavy where
+  globs := #[.submodules `Heavy]
+  roots := #[]
+
 -- Shared by the Lean library and the binary; depends only on Lean core, and
 -- on the parser of the binary, with which `FrenCore.Lint` reads the Fren
 -- quotations of its fixes when it is built (`FrenCli.Quote`). All of its
