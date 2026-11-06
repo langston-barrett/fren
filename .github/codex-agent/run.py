@@ -109,15 +109,24 @@ def main():
             # Remove it again before reading any untrusted output, including
             # cancellation, then the workflow's always step does so too.
             remove(os.environ["CODEX_CONTAINER"])
+            auth_known = True
             try:
-                current = read_regular(auth, "auth.json").decode()
-                credentials += secrets(current)
-            except (OSError, ValueError):
-                pass
-            if status:
+                current = secrets(read_regular(auth, "auth.json").decode())
+                if not any(current):
+                    raise ValueError("no nonempty credential values")
+                credentials += current
+            except (OSError, ValueError, RecursionError):
+                # Unknown rotated credentials cannot be safely scanned or
+                # redacted, even if the sandbox reported success.
+                status = 1
+                auth_known = False
+                print("Final Codex credentials could not be verified; "
+                      "all output and diagnostics withheld.", file=sys.stderr)
+            if status and auth_known:
                 failure_summary(output, credentials, status)
             safe = Path(os.environ["RUNNER_TEMP"]) / "codex-result"
-            collect(output, safe, credentials)
+            if auth_known:
+                collect(output, safe, credentials)
             # Model processes are gone; neither auth nor raw outputs are
             # uploaded or restored in another job.
             shutil.rmtree(output)

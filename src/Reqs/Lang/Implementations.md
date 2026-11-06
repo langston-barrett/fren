@@ -1164,6 +1164,7 @@ pub const GET_PUT_APPLICATIONS: Applications := Applications::Cons(
     )
 )
 
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect get_put_instantiation() {
     call r := sentence_instantiation(GET_PUT_VARIABLES, GET_PUT_APPLICATIONS)
@@ -1185,6 +1186,7 @@ pub const NESTED_APPLICATIONS: Applications := Applications::Cons(
     )
 )
 
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect nested_anchor() {
     call r := sentence_instantiation(ONE_VARIABLE, NESTED_APPLICATIONS)
@@ -1198,6 +1200,7 @@ pub const TWO_VARIABLES: SentenceVariables := SentenceVariables::Cons(
     SentenceVariables::Cons(quantified(false), SentenceVariables::Nil)
 )
 
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect unbound_variable() {
     call r := sentence_instantiation(
@@ -1214,6 +1217,7 @@ expect unbound_variable() {
 }
 
 -- `law flagged(s: Self, b?): when b?, obs(s) >= 0`, with `obs` at 1.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect listed_variable() {
     call r := sentence_instantiation(
@@ -1228,6 +1232,7 @@ expect listed_variable() {
 
 -- `law bounded(s: Self, n: Int): when n > 0, h(s) >= 0`, with `h` at 1:
 -- `n` is in no application.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect outside_variable() {
     call r := sentence_instantiation(
@@ -1406,6 +1411,7 @@ pub fn made(keyword: SentenceKind, place: SentencePlace): Sentences := Sentences
 )
 
 -- A check that applies `exists?` uses it, and reaches `mkdir`.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect made_used() {
     call r := sentence_use(4, made(SentenceKind::Assume, SentencePlace::Module), {2})
@@ -1414,6 +1420,7 @@ expect made_used() {
 }
 
 -- One that applies only `mkdir` does not.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect made_unused() {
     call r := sentence_use(4, made(SentenceKind::Assume, SentencePlace::Module), {1})
@@ -1422,12 +1429,14 @@ expect made_unused() {
 
 -- An axiom is used by the check of an item declared before it: an
 -- `assume` item, and a law, as by an expectation written before it.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect axioms_anywhere() {
     call assumed := sentence_use(2, made(SentenceKind::Assume, SentencePlace::Module), {2})
     expect used_before: assumed.used = {3}
 }
 
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect laws_anywhere() {
     call law_used := sentence_use(2, made(SentenceKind::Law, SentencePlace::Interface), {2})
@@ -1451,6 +1460,7 @@ pub const UNBOUND_LAW: Sentence := Sentence {
     ),
 }
 
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect unbound_law_quantified() {
     call r := sentence_use(4, Sentences::Cons(UNBOUND_LAW, Sentences::Nil), {})
@@ -1468,6 +1478,7 @@ pub const GET_PUT_LAW: Sentence := Sentence {
     applications := GET_PUT_APPLICATIONS,
 }
 
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect get_put_kept() {
     call r := sentence_use(4, Sentences::Cons(GET_PUT_LAW, Sentences::Nil), {2})
@@ -1477,6 +1488,7 @@ expect get_put_kept() {
 
 -- `assume one(x: T, y: T): x = y`, about the abstract type `T` at 1 alone,
 -- at 2: every later check uses it.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect no_subject_used() {
     call r := sentence_use(
@@ -1496,6 +1508,7 @@ expect no_subject_used() {
     expect used: r.used = {2}
 }
 
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect lemmas_ranked() {
     call lemma := sentence_use(2, made(SentenceKind::Lemma, SentencePlace::Module), {2})
@@ -1504,6 +1517,7 @@ expect lemmas_ranked() {
 
 -- An `ensure` clause of a defined function at 3, which is a theorem: the
 -- function's own check does not use it, and a later check does.
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect defined_contract_not_own() {
     call own := sentence_use(
@@ -1514,6 +1528,7 @@ expect defined_contract_not_own() {
     expect not_own: own.used = {}
 }
 
+set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
 expect defined_contract_later() {
     call later := sentence_use(

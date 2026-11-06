@@ -4,6 +4,7 @@
 # FrenTest.ImplPath rejects unexpected, duplicate and stale observations.
 # Model/runtime bridges and dynamic quotation gaps: #846, item 3.
 # A new connection removes its old entry; there is no bless mode.
+# Sentence/query bridge paths await the lemma-item integration in #758 (PR #899).
 
 # Outputs represented by binders, literals, spec values, or output-free laws.
 unbound: Fren.Impls.Enumeration.contract_blocker right?
@@ -323,6 +324,10 @@ bypassed: Fren.Impls.Matching.matching_normalization same? Fren.Core.Matching.sa
 bypassed: Fren.Impls.PassEvidence.finite_application_closure brought Fren.Core.Matching.closure
 bypassed: Fren.Impls.PassEvidence.finite_application_closure ended? Fren.Core.Matching.closure
 bypassed: Fren.Impls.PassEvidence.finite_application_closure rounds Fren.Core.Matching.closure
+bypassed: Fren.Impls.SentenceBridge.bridge_reference_step parameter? Fren.Core.SentenceBridge.hasParameter
+bypassed: Fren.Impls.SentenceBridge.bridge_reference_step term Fren.Core.SentenceBridge.reference
+bypassed: Fren.Impls.SentenceBridge.bridge_unique_step accepted? Fren.Core.SentenceBridge.unique?
+bypassed: Fren.Impls.SentenceBridge.bridge_unique_step value Fren.Core.SentenceBridge.unique?
 bypassed: Fren.Impls.SubsetTypes.pattern_member member? Fren.Core.intervalsHold
 bypassed: Fren.Impls.SubsetTypes.pattern_member witness Fren.Core.intervalIndex?
 bypassed: Fren.Impls.Theories.theory_ground_term ground? Fren.Core.TheoryTerm.ground

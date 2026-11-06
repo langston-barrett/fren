@@ -833,7 +833,7 @@ class ArtifactTests(unittest.TestCase):
 
             def sandbox(args, **kwargs):
                 (Path(args[5]) / "auth.json").write_text(
-                    json.dumps({"tokens": {"refresh_token": refreshed}}))
+                    json.dumps({"tokens": {"access_token": "", "refresh_token": refreshed}}))
                 kwargs["stderr"].write(f"Error: {old} {refreshed}\n".encode())
                 return subprocess.CompletedProcess(args, 1)
 
@@ -856,6 +856,66 @@ class ArtifactTests(unittest.TestCase):
             self.assertIn("stderr: Error:", output.getvalue())
             self.assertFalse(collect_outputs.checker.leaks(output.getvalue(), [old, refreshed]))
             self.assertFalse((root / "agent").exists())
+
+    def test_unverifiable_refreshed_auth_withholds_every_output_and_diagnostic(self):
+        import json
+        old = "original-secret-0123456789-abcdefghijklmnopqrstuvwxyz"
+        refreshed = "renewed-value-Q7mR2vT9xK4pN6wH3jL8sB5dF0cA1uE"
+        self.assertFalse(collect_outputs.checker.leaks(refreshed, [old]))
+        for damage in ("deleted", "directory", "malformed", "non_utf8", "empty",
+                       "empty_key", "empty_tokens", "deep"):
+            for status in (0, 1):
+                with self.subTest(damage=damage, status=status), \
+                        tempfile.TemporaryDirectory() as temp, cwd(temp):
+                    root = Path(temp)
+                    (root / "agent").mkdir()
+                    (root / "agent/prompt.md").write_text("prompt")
+                    env = {"CODEX_AUTH_JSON": json.dumps({"OPENAI_API_KEY": old}),
+                           "RUNNER_TEMP": temp, "CODEX_CONTAINER": "codex-test",
+                           "MODEL": "gpt-6-luna", "EFFORT": "low", "BASE": SHA}
+                    removed = []
+
+                    def sandbox(args, **kwargs):
+                        auth = Path(args[5]) / "auth.json"
+                        auth.write_text(json.dumps({"OPENAI_API_KEY": refreshed}))
+                        for name in collect_outputs.FILES:
+                            (root / "agent" / name).write_text(f"Error: {refreshed}\n")
+                        if damage in ("deleted", "directory"):
+                            auth.unlink()
+                            if damage == "directory":
+                                auth.mkdir()
+                        elif damage == "malformed":
+                            auth.write_text("{broken")
+                        elif damage == "non_utf8":
+                            auth.write_bytes(b"\xff")
+                        elif damage == "empty":
+                            auth.write_text("{}")
+                        elif damage == "empty_key":
+                            auth.write_text(json.dumps({"OPENAI_API_KEY": ""}))
+                        elif damage == "empty_tokens":
+                            auth.write_text(json.dumps({"tokens": {
+                                "access_token": "", "refresh_token": "", "id_token": ""}}))
+                        else:
+                            auth.write_text("[" * 2000 + "0" + "]" * 2000)
+                        return subprocess.CompletedProcess(args, status)
+
+                    output = io.StringIO()
+                    with patch.dict(os.environ, env), \
+                            patch.object(agent_run.signal, "signal"), \
+                            patch.object(subprocess, "run", side_effect=sandbox), \
+                            patch.object(agent_run, "remove", side_effect=removed.append), \
+                            patch.object(agent_run, "failure_summary") as summary, \
+                            patch.object(agent_run, "collect") as collect, \
+                            redirect_stderr(output), redirect_stdout(output):
+                        self.assertEqual(agent_run.main(), 1)
+                    self.assertEqual(removed, ["codex-test"])
+                    summary.assert_not_called()
+                    collect.assert_not_called()
+                    self.assertFalse((root / "codex-result").exists())
+                    self.assertFalse((root / "agent").exists())
+                    self.assertEqual(output.getvalue(),
+                                     "Final Codex credentials could not be verified; "
+                                     "all output and diagnostics withheld.\n")
 
     def test_failure_summary_redacts_tokens_and_neutralizes_controls(self):
         token = "known-secret-0123456789-abcdefghijklmnopqrstuvwxyz"
