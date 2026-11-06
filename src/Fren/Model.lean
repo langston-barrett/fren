@@ -1404,7 +1404,11 @@ def recordingErrors (k : CommandElab) : CommandElab := fun stx => do
   if stx.hasMissing then return
   modifyLocal fun l => { l with types := {} }
   let checks := (← getLocal).checkErrors
-  try k stx
+  try
+    -- `#fren_md` drops the info trees of its commands. Keep the outer root
+    -- required by Lean's frontend, but skip the trees built by `k`.
+    if (← getLocal).inMarkdown then withEnableInfoTree false (k stx)
+    else k stx
   catch ex =>
     match ex with
     | .internal id _ => if id == unsupportedSyntaxExceptionId || id == interruptExceptionId then throw ex
