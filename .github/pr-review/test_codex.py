@@ -1,7 +1,9 @@
 """Policy, MCP path boundaries and Codex output publication checks."""
 import base64
 import contextlib
+import fnmatch
 import io
+from itertools import product
 import json
 import os
 from pathlib import Path
@@ -144,6 +146,43 @@ class Tools(unittest.TestCase):
         self.assertEqual(self.results("Grep", {"pattern": "needle"}),
                          [f"x{i}:1: needle" for i in sorted(range(100), key=lambda i: f"x{i}")])
         self.assertEqual(self.results("Glob", {"pattern": "*"}), sorted(f"x{i}" for i in range(100)))
+
+    def test_recursive_globs_include_files_at_the_directory_root(self):
+        paths = ["x.py", "src/a/b.py", "src/Reqs/Style.md", "src/Reqs/Lang/Types.md"]
+        for name in paths:
+            path = self.work / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture")
+        for pattern, expected in (
+                ("**/*.py", paths[:2]),
+                ("src/Reqs/**/*.md", paths[2:]),
+                ("src/**/Reqs/**/Style.md", [paths[2]]),
+                ("src/**/**/Style.md", [paths[2]]),
+                ("**/src/**/b.py", [paths[1]]),
+                ("src/**/missing/*.md", []),
+                ("src/*.py", [paths[1]])):
+            with self.subTest(pattern=pattern):
+                self.assertCountEqual(self.results("Glob", {"pattern": pattern}), expected)
+
+    def test_recursive_globs_preserve_classes_and_handle_repeated_segments(self):
+        self.assertTrue(read_tools.glob_matches("*/x.py", "[/**/]/**/x.py"))
+        self.assertFalse(read_tools.glob_matches("a/x.py", "[/**/]/**/x.py"))
+        self.assertTrue(read_tools.glob_matches("x.py", "**/" * 1200 + "x.py"))
+        self.assertFalse(read_tools.glob_matches("x.py", "**/" * 1200 + "absent.py"))
+
+    def test_recursive_globs_agree_with_optional_directory_expansion(self):
+        paths = ["/".join(dirs + (leaf,)) for size in range(4)
+                 for dirs in product(("a", "b"), repeat=size) for leaf in ("x.py", "y.py")]
+        for dirs in product(("a", "*", "**"), repeat=3):
+            variants = [""]
+            for directory in dirs:
+                kept = [prefix + directory + "/" for prefix in variants]
+                variants = variants + kept if directory == "**" else kept
+            for leaf in ("x.py", "*.py"):
+                pattern = "/".join(dirs + (leaf,))
+                for path in paths:
+                    expected = any(fnmatch.fnmatchcase(path, prefix + leaf) for prefix in variants)
+                    self.assertEqual(read_tools.glob_matches(path, pattern), expected, (path, pattern))
 
     def test_long_unicode_match_and_path_fragments(self):
         path = self.work

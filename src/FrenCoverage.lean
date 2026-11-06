@@ -446,6 +446,14 @@ def summarize (md : String) : IO Unit := do
   let h ← IO.FS.Handle.mk path .append
   h.putStr md
 
+/-- Data in a workflow annotation: escape percent before CR and LF, so
+an existing escape stays literal and the annotation stays on one line. -/
+def escapeAnnotation (text : String) : String :=
+  ((text.replace "%" "%25").replace "\r" "%0D").replace "\n" "%0A"
+
+#guard escapeAnnotation "plain text" == "plain text"
+#guard escapeAnnotation "%0A\r\n::warning::next" == "%250A%0D%0A::warning::next"
+
 /-- The options of `fren_coverage`, and the command that reads counters
 with its arguments. -/
 structure Options where
@@ -586,7 +594,7 @@ unsafe def main (args : List String) : IO UInt32 := do
     for d in dead do
       let msg := s!"{d}: nothing refers to it, not even a proof: delete it"
       IO.eprintln s!"DEAD {msg}"
-      if annotate then IO.println s!"::warning title=fren_coverage dead code::{msg}"
+      if annotate then IO.println s!"::warning title=fren_coverage dead code::{escapeAnnotation msg}"
   if o.static then
     IO.println s!"fren_coverage: {unreached.size} of {decls.size} declarations reached by no compiled entry point, {(unreached.filter isListed).size} of them listed"
     for d in unreached do
@@ -631,14 +639,14 @@ unsafe def main (args : List String) : IO UInt32 := do
   for d in ranUnreached do
     let msg := s!"{d}: ran, although no compiled entry point reaches it: a call that `FrenCoverage.reached` does not see"
     IO.eprintln s!"WARN {msg}"
-    if annotate then IO.println s!"::warning title=fren_coverage::{msg}"
+    if annotate then IO.println s!"::warning title=fren_coverage::{escapeAnnotation msg}"
   -- On GitHub Actions, also as an annotation of the run.
   let lines := (current.splitOn "\n").map (·.trimAscii.toString)
   for (d, why) in stale do
     let line := (lines.find? fun l => (parseList l).any (·.1 == d)).getD d
     let msg := s!"{d}: {why}: remove the line `{line}` from test/coverage.txt"
     IO.eprintln s!"WARN {msg}"
-    if annotate then IO.println s!"::warning title=fren_coverage::{msg}"
+    if annotate then IO.println s!"::warning title=fren_coverage::{escapeAnnotation msg}"
   deadReport
   for f in failures do IO.eprintln s!"FAIL {f}"
   let bullets (xs : Array String) := String.join (xs.toList.map (s!"- `{·}`\n"))

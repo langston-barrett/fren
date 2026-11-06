@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Elab.Model
+import FrenCore.SetCard
 -- keep-sorted end
 
 /-!
@@ -950,6 +951,29 @@ partial def orderingSmt (o : Fren.Core.OrderPlan) (op : String) (x y : String) :
 def mismatch (e : Expr) (expected found : Ty) (why : Option String := none) : M α :=
   err e.span (Fren.Core.typeMismatchMsg expected found why)
 
+/-- Count every listed element instead of using cvc5's native finite-sort
+cardinality, which may fail or return a refuted model (#820). -/
+def setCardSmt (recv : String) (t : Ty) : M String := do
+  let s ← get
+  let some n := Fren.Core.setCardExpansion (Fren.Core.setCardCount s.valueCount t)
+    | return s!"(set.card {recv})"
+  let values? := match t with
+    | .set a => (s.values Fren.Core.maxInstances a).map (·.map (s!"(tuple {·})"))
+    | .rel a b => do
+      let xs ← s.values Fren.Core.maxInstances a
+      let ys ← s.values Fren.Core.maxInstances b
+      some (xs.flatMap fun x => ys.map fun y => s!"(tuple {x} {y})")
+    | _ => none
+  let vs ← match Fren.Core.checkedSetCardValues n values? with
+    | .ok vs => pure vs
+    | .error msg => internal default msg
+  -- No Fren variable has `@`. Nested bindings are scoped to their sum.
+  let name := quote "card@receiver"
+  let body ← Fren.Core.sumSetMembersM vs "0"
+    (fun v => pure s!"(ite (set.member {v} {name}) 1 0)")
+    (fun a b => pure s!"(+ {a} {b})")
+  return s!"(let (({name} {recv})) {body})"
+
 /-- Calls the method `m` of the value `recv` of type `t`, with the
 arguments `args`, each with its type and span (`lang::method_type`). -/
 def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array (String × Ty × Span)) :
@@ -968,7 +992,7 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
       | err span (Fren.Core.unknownMethodMsg m t.show false false true)
     unless args.size == method.arity do err span (Fren.Core.arityMsg (Name.mkSimple m) method.arity args.size)
     return ← match method with
-      | .card => pure (s!"(set.card {recv})", .int)
+      | .card => do pure (← setCardSmt recv t, .int)
       | .inverse => pure (s!"(rel.transpose {recv})", .rel b a)
       -- A join with every value of the other type, if it is finite; else a
       -- projection, which needs higher-order logic.
@@ -988,7 +1012,7 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
   if let .set _ := t then
     unless m == "card" do err span (Fren.Core.unknownSetMethodMsg m t.show)
     unless args.isEmpty do err span (Fren.Core.arityMsg (Name.mkSimple m) 0 args.size)
-    return (s!"(set.card {recv})", .int)
+    return (← setCardSmt recv t, .int)
   if let .seq elem := t then
     let some method := (Fren.Core.Method.ofName? m).filter (·.accepts false false false true)
       | err span (Fren.Core.unknownMethodMsg m t.show false false false true)

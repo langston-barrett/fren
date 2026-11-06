@@ -133,12 +133,13 @@ def main():
     issue, name, effort = re.fullmatch(r"agent/(\d+)-(luna|terra)-(low|medium|high)", branch).groups()
     if mode == "fix":
         inline = comments(api(f"repos/{repo}/pulls/{pr}/comments", pages=True))
+        reviews = comments(api(f"repos/{repo}/pulls/{pr}/reviews", pages=True))
         body = (info["body"] or "") if trusted(info) else "(description omitted: untrusted author)"
         prompt(issue, done + 1,
                f"## This round\n\nYou wrote PR #{pr} ({branch}), checked out with your earlier work. "
                "Write what changed for each finding and your checks to ../agent/comment.md, "
                "and the commit message to ../agent/commit-msg.txt.\n\n" + what +
-               f"\n\n## Trusted PR discussion\n\n{comments(thread)}\n\n{inline}"
+               f"\n\n## Trusted PR discussion\n\n{comments(thread)}\n\n{inline}\n\n{reviews}"
                f"\n\n## PR description\n\n{body}")
     output(mode=mode, issue=issue, pr=pr, branch=branch, base=head,
            model=MODELS[name], effort=effort, round=done + 1)

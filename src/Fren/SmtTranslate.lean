@@ -1,7 +1,10 @@
 -- keep-sorted start
+import Fren.Elab
 import Fren.FinSet
+import Fren.Model
 import Fren.Seq
 import FrenCore.Regex
+import FrenCore.SetCard
 import FrenCore.Str
 import Smt
 -- keep-sorted end
@@ -232,7 +235,25 @@ set of 1-tuples (`Reqs/Cli`). -/
   | Insert.insert _ γ _ x s =>
     unless isSet γ do return none
     return mkApp2 (symbolT "set.insert") (← tuple x) (← tr s)
-  | Fren.FinSet.card _ _ s => return appT (symbolT "set.card") (← tr s)
+  | Fren.FinSet.card α _ s =>
+    let st ← Fren.getState
+    let count := do
+      let t ← coreTyOf st (mkApp (mkConst ``Fren.FinSet [Level.zero]) α)
+      Core.setCardCount (·.valueCount (dataSig st)) t
+    let some n := Core.setCardExpansion count
+      | return appT (symbolT "set.card") (← tr s)
+    let vs ← match Core.checkedSetCardValues n (← valuesOf? α Core.maxInstances) with
+      | .ok vs => pure vs
+      | .error msg => throwError "internal error: {msg}"
+    -- No Fren variable has `@`. Nested bindings are scoped to their sum.
+    let name := "card@receiver"
+    let recv ← tr s
+    let body ← Core.sumSetMembersM vs (literalT "0")
+      (fun v => do
+        let member := mkApp2 (symbolT "set.member") (← tuple v) (symbolT name)
+        return mkApp3 (symbolT "ite") member (literalT "1") (literalT "0"))
+      (fun a b => pure (mkApp2 (symbolT "+") a b))
+    return letT name recv body
   | Fren.FinSet.join _ _ _ _ r q => return mkApp2 (symbolT "rel.join") (← tr r) (← tr q)
   | Fren.FinSet.inverse _ _ r => return appT (symbolT "rel.transpose") (← tr r)
   | Fren.FinSet.closure _ _ r => return appT (symbolT "rel.tclosure") (← tr r)

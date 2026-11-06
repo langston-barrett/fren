@@ -55,11 +55,10 @@ def validate_patch(patch):
     return paths
 
 
-def text(name, fallback="", limit=None):
+def text(name, fallback=""):
     path = Path(os.environ["ARTIFACT"]) / name
     value = path.read_text(errors="replace").strip() if path.is_file() and not path.is_symlink() else ""
-    value = value or fallback
-    return value[:limit] if limit else value
+    return value or fallback
 
 
 def comment(number, body):
