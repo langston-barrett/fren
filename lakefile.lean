@@ -441,7 +441,8 @@ input_file reqs_refine_md where
 -- Each lint group has its own Markdown dependency. The umbrella reads
 -- no Markdown; subchapters in a group elaborate in parallel where their
 -- imports allow it. A new chapter can be read with one #fren_md in its
--- group's wrapper; the binary tests follow the wrappers too.
+-- group's wrapper; the binary tests follow the wrappers too. A new
+-- top-level wrapper needs its own library and Markdown input below.
 lean_lib ReqsLint where
   globs := #[`Reqs.Lint]
   moreLeanArgs := reqsArgs

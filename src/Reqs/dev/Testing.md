@@ -1701,10 +1701,15 @@ machines run `lake build --wfail`, and others run `lake test --
 build machine builds Fren's own requirements and their `impl`s (`lake
 build --wfail Reqs Impls`), the other the rest of the default targets:
 the code, the tests, the examples and the binaries, among them the C code
-that the first needs none of. The build's critical path runs from
+that the first needs none of. Before the lint chapters were split, the
+build's critical path ran from
 `Fren.Elab` through the chapter modules from `Reqs.Lang.Base` to
 `Reqs.Lang.ScopeLaws`, then `Reqs.Lang`, `Reqs.Lint` and `Impls.Lint`.
-Before the chapters were split,
+The path now goes through lint wrappers before `Reqs.Lint` and `Impls.Lint`.
+In two local cold `Reqs` builds with two scheduler threads,
+`Reqs.Lang.EvaluationRules` still dominated the path, and
+`Reqs.Lint.Rewrites` was the slowest lint wrapper, at 25 and 29 s.
+Before the language chapters were split,
 on one machine the chain's modules shared the runner's four logical CPUs
 with the rest: where everything was rebuilt, the build's steps took some
 2,400 CPU seconds, so that the chain's ran at about half speed. On
@@ -1752,12 +1757,13 @@ which keeps the small caches, the query cache and mdbook's, from being
 evicted. A pull request whose base's `.lake` was deleted restores the
 newest, and Lake rebuilds what differs.
 
-The requirements' chain is the critical path of most `pre-merge` runs
-that rebuild it, and the runners slow it: they have four logical CPUs, two
-cores of two threads each. On 2026-11-03, on a runner, elaborating
+Before the lint chapters were split, the requirements' chain was the
+critical path of most `pre-merge` runs that rebuilt it, and the runners
+slowed it: they had four logical CPUs, two cores of two threads each.
+On 2026-11-03, on a runner, elaborating
 `Reqs/Lint.lean` alone took 82 and 83 s, with one other module elaborated
 beside it 90 and 95 s, and with three others 112 and 123 s, while in the
-build, beside the rest of `Reqs` and `Impls`, it takes 121 to 152 s.
+build, beside the rest of `Reqs` and `Impls`, it took 121 to 152 s.
 
 The `lean ci` workflow also compares the methods on every check that
 each can run (`methodsAgree`, [Agreement of
@@ -1804,7 +1810,7 @@ request of its own rather than slowing every pull request down.
 | `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
-| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the chapter split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
+| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the language and lint chapters were split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
 | `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
 | The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-merge`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
