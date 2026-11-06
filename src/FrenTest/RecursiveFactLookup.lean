@@ -28,3 +28,68 @@ run_cmd do
       let facts ← Fren.recursiveQueryFacts #[] goal
       Lean.Core.checkMaxHeartbeatsCore "recursive fact lookup" `maxHeartbeats (50 * 1000)
       unless facts.isEmpty do throwError "a query without recursive symbols gained recursive facts"
+
+-- The same application may be discovered in another function's body at a
+-- deeper depth. Its contract should not be expanded a second time there.
+pub fn size(t: Tree): Int := match t {
+    Tree::Leaf => 0,
+    Tree::Node(a, b) => 1 + size(a) + size(b),
+}
+
+pub fn with_size(t: Tree): Int := size(t) + match t {
+    Tree::Leaf => 0,
+    Tree::Node(a, b) => with_size(a) + with_size(b),
+}
+
+pub fn bridge0(t: Tree): (r: Int) {
+    out r := match t {
+        Tree::Leaf => 0,
+        Tree::Node(a, b) => 1 + bridge0(a) + bridge0(b),
+    }
+    ensure agrees: r = size(t)
+}
+
+pub fn bridge1(t: Tree): (r: Int) {
+    out r := match t {
+        Tree::Leaf => 0,
+        Tree::Node(a, b) => 1 + bridge1(a) + bridge1(b),
+    }
+    ensure agrees: r = bridge0(t)
+}
+
+pub fn bridge2(t: Tree): (r: Int) {
+    out r := match t {
+        Tree::Leaf => 0,
+        Tree::Node(a, b) => 1 + bridge2(a) + bridge2(b),
+    }
+    ensure agrees: r = bridge1(t)
+}
+
+-- Count actual visits through the existing contract-evidence hook. The
+-- bridge's contract chain reaches size(t) after with_size's body does:
+-- a later shallower discovery must still be processed.
+-- fren-covers: lang::recursive_depth
+run_cmd do
+  Lean.Elab.Command.liftTermElabM do
+    let st ← Fren.getState
+    let solver (p : Name) : MetaM Name := do
+      let some d := st.defined.get? p | throwError "missing definition {p}"
+      let some n := d.solver? | throwError "missing solver symbol {p}"
+      return n
+    let size ← solver `recursive_fact_lookup.size
+    let other ← solver `recursive_fact_lookup.with_size
+    let bridge ← solver `recursive_fact_lookup.bridge2
+    let treeTy := (← getConstInfo size).type.bindingDomain!
+    withLocalDeclD `t treeTy fun t => do
+      let sizeApp := mkApp (mkConst size) t
+      for (left, expected) in #[(size, 1), (bridge, 2)] do
+        let visits ← IO.mkRef 0
+        let goal ← mkEq (mkApp2 (mkConst ``Int.add)
+          (mkApp (mkConst left) t) (mkApp (mkConst other) t)) (mkIntLit 0)
+        let _ ← Fren.recursiveQueryFacts #[] goal
+          (allowPosts := fun _ app gs => do
+            if app == sizeApp && gs.isEmpty then visits.modify (· + 1)
+            return true)
+          (unfoldings := 3)
+        unless (← visits.get) == expected do
+          throwError "size(t) visited {(← visits.get)} times, expected {expected}"

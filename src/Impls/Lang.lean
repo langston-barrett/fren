@@ -10,6 +10,7 @@ import FrenCore.Traits
 import FrenCore.Ty
 import FrenCore.Typing
 import Impls.Check
+import Impls.Recursion
 import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang
@@ -3573,6 +3574,19 @@ impl recursive_facts: lang::recursive_facts for (depth unfoldings : Nat) (bound 
   intro depth unfoldings bound constrained _
   cases bound <;> cases constrained <;> by_cases h : depth < unfoldings <;>
     simp [fren_spec, Fren.Core.recursiveFacts, Fren.Core.recursiveResultFact, h]
+
+-- The shared depth comparison reads the previous depth itself, not a
+-- precomputed decision about whether the application needs another visit.
+impl recursive_depth: lang::recursive_depth for (previous : Option Nat) (depth : Nat) {
+  previous := previous.map Int.ofNat,
+  depth := depth,
+  «improves?» := Fren.Core.recursiveDepthImproves previous depth,
+} by
+  intro previous depth _
+  cases previous with
+  | none => simp [fren_spec, Fren.Core.recursiveDepthImproves]
+  | some earlier =>
+    simp [fren_spec, Fren.Core.recursiveDepthImproves]
 
 impl recursive_post_result: lang::recursive_post_result for (r : lang.RecPost) (failed : Bool) {
   result := r,

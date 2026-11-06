@@ -41,6 +41,7 @@ tested testing::heavy_lease: "scripts/heavy_test.py"
 tested testing::heavy_legacy_lease: "scripts/heavy_test.py"
 tested testing::heavy_report_owner: "scripts/heavy_test.py"
 tested testing::heavy_memory_victim: "scripts/heavy_test.py"
+tested testing::heavy_init_reap: "scripts/heavy_test.py"
 tested testing::heavy_group_gone: "scripts/heavy_test.py"
 tested testing::heavy_owned_signal: "scripts/heavy_test.py"
 -- The sorts and declarations that the `fren` command gives the solver are
@@ -71,7 +72,11 @@ tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_pa
   "test/cli/types/f0338_element.fren", "test/ui/lang/let_types.fren"
 tested lang::modifiers: "test/cli/syntax/f0110_pub_param.fren", "test/cli/syntax/f0110_det_param.fren", "test/cli/syntax/f0113_det_assume.fren", "test/cli/syntax/f0113_pub_inst.fren"
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
-tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren"
+tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren",
+  "test/ui/lang/recursion_group_singleton.fren", "test/ui/lang/recursion_group_singleton_static.fren"
+tested lang::structural_group: "src/FrenTest/MutualRecursion.lean",
+  "test/ui/lang/recursion_group_singleton.fren", "test/ui/lang/recursion_group_singleton_static.fren"
+tested lang::structural_group_search: "src/FrenTest/MutualRecursion.lean"
 tested lang::constant: "test/ui/lang/constants_recursive.fren"
 tested lang::recursive_facts: "test/ui/checks/recursion_hoare.fren",
   "test/ui/checks/recursion_reflection.fren", "test/ui/checks/recursion_reflected_contracts.fren",

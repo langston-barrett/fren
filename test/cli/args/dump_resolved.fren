@@ -40,3 +40,7 @@ proc round_trip(x: Int, flag?): (det y: Int) {
     expect bound: forall (z: Choice), z = A or z = B
     expect definitions: let value := id(y) in value = y
 }
+
+pub type Pos = x: Int where positive: x > 0
+
+pub type Digit = Int is 0..=9
