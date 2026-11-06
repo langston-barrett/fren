@@ -34,8 +34,9 @@ name: pr-review
 # - `review` holds only the selected model credential as a secret, and
 #   runs nothing of the pull request.
 #   It checks out the workflow's own scripts, then the head, which nothing
-#   executes, removes its AGENTS.md, CLAUDE.md, .claude, .codex, .agents,
-#   .mcp.json and symbolic links, and runs the model with Read, Grep and
+#   executes, removes its AGENTS.md, AGENTS.local.md, AGENTS.override.md,
+#   CLAUDE.md, CLAUDE.local.md, .mcp.json, .claude, .codex, .agents and
+#   symbolic links, and runs the model with Read, Grep and
 #   Glob allowed only in the checkout, and Write only for `review.md`:
 #   no shell, no network tool. A review that holds a copy of a token,
 #   plain or encoded, is withheld. For Codex, the pinned CLI runs in a
@@ -207,7 +208,7 @@ jobs:
         # The brief has the workflow commit's AGENTS.md, and diff.patch shows
         # any change to it, so no copy of the checkout's is loaded as memory.
         find . -path ./.git -prune -o \( -name CLAUDE.md -o -name CLAUDE.local.md -o -name AGENTS.md \
-          -o -name AGENTS.local.md -o -name .mcp.json \) -print0 \
+          -o -name AGENTS.local.md -o -name AGENTS.override.md -o -name .mcp.json \) -print0 \
           | xargs -0 rm -f
         find . -path ./.git -prune -o -type d \( -name .claude -o -name .codex -o -name .agents \) \
           -print0 | xargs -0 rm -rf
@@ -265,7 +266,9 @@ jobs:
         CODEX_REVIEW_AUTH_JSON: ${{ secrets.CODEX_REVIEW_AUTH_JSON }}
         KIND: ${{ needs.prepare.outputs.kind }}
     - if: ${{ always() && needs.prepare.outputs.engine == 'codex' }}
-      name: Confirm Codex teardown before uploading anything
+      # The always() upload below relies on codex.py collecting model output
+      # only after confirmed teardown, rather than on this extra cleanup step.
+      name: Confirm Codex teardown
       run: python3 -I "$RUNNER_TEMP/trusted/.github/codex-agent/teardown.py"
       env:
         CODEX_CONTAINER: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
