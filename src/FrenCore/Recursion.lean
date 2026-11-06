@@ -11,7 +11,7 @@ structural recursion over a recursive enumeration: one parameter, the
 *decreasing* one, is the same at every recursive application, and there its
 argument is a binder that a `match` arm bound from a payload of that
 parameter, directly or nested. Both front ends read the body into a list of
-uses, and decide by `recursion`.
+uses, and decide by `selfRecursion`, the singleton case of `recursionGroup`.
 -/
 
 namespace Fren.Core
@@ -48,6 +48,62 @@ structure RecUse where
   args : List RecArg := []
   deriving DecidableEq, Repr, Inhabited
 
+/-- A proposed decreasing parameter of a group member. Signed positions
+keep malformed extracted inputs subject to the same bounds checks as the
+requirements (`lang::structural_group`). -/
+structure GroupParameter where
+  count : Int
+  decreasing : Int
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The origin of a group application's argument, relative to the caller. -/
+inductive GroupArg where
+  | payload (parameter : Int)
+  | other
+  deriving DecidableEq, Repr, Inhabited
+
+/-- A use within a recursion group; member indices follow declaration order. -/
+structure GroupUse where
+  caller : Int
+  callee : Int
+  form : RecForm
+  args : List GroupArg
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Whether this use passes a descendant of the caller's selected parameter
+to the callee's selected parameter. Bounds are checked before indexing. -/
+def groupCallDecreases (members : List GroupParameter) (u : GroupUse) : Bool :=
+  if 0 ≤ u.caller ∧ u.caller < members.length ∧ 0 ≤ u.callee ∧ u.callee < members.length then
+    let caller := members[u.caller.toNat]!
+    let callee := members[u.callee.toNat]!
+    u.form == .applied && decide (0 ≤ callee.decreasing ∧ callee.decreasing < u.args.length) &&
+      u.args[callee.decreasing.toNat]! == .payload caller.decreasing
+  else false
+
+/-- Checks a candidate's positions and every call, including self calls
+and calls of members that otherwise have no uses (`lang::structural_group`). -/
+def structuralGroup (members : List GroupParameter) (uses : List GroupUse) : Bool :=
+  members.all (fun m => decide (0 ≤ m.decreasing ∧ m.decreasing < m.count)) &&
+    uses.all (groupCallDecreases members)
+
+/-- The finite product of parameter positions, in lexicographic order. -/
+def groupCandidates : List Int → List (List GroupParameter)
+  | [] => [[]]
+  | n :: ns => (List.range n.toNat).flatMap fun (i : Nat) =>
+      (groupCandidates ns).map ({ count := n, decreasing := (i : Int) } :: ·)
+
+/-- Infers one decreasing position per member, consistently across all edges.
+No candidate is available for a member with zero (or negative) parameters. -/
+def recursionGroup (params : List Int) (uses : List GroupUse) : Option (List GroupParameter) :=
+  (groupCandidates params).find? (structuralGroup · uses)
+
+/-- Reads the provenance relevant to a singleton group. An argument at
+position `i` is compared with parameter `i`; other positions cannot decide
+a self call's descent. The front ends retain `RecUse` for diagnostics. -/
+def RecUse.inGroup (u : RecUse) : GroupUse :=
+  { caller := 0, callee := 0, form := u.form,
+    args := u.args.mapIdx fun i a => if a == .payload then .payload i else .other }
+
 /-- Whether the use `u` is an application whose argument at position `i` is
 a payload of the parameter there. -/
 def RecUse.decreasesAt (u : RecUse) (i : Nat) : Bool :=
@@ -72,11 +128,11 @@ def firstFailure (uses : List RecUse) (i : Nat) : Option Nat := uses.findIdx? (!
 /-- What the uses `uses` of a function of `n` parameters are
 (`lang::structural_recursion`): the decreasing parameter is the first
 position at which every use decreases. -/
-def recursion (n : Nat) (uses : List RecUse) : Recursion :=
+def selfRecursion (n : Nat) (uses : List RecUse) : Recursion :=
   if uses.isEmpty then .notRecursive
-  else match (List.range n).find? (firstFailure uses · |>.isNone) with
-    | some i => .structural i
-    | none =>
+  else match recursionGroup [n] (uses.map RecUse.inGroup) with
+    | some [m] => .structural m.decreasing.toNat
+    | _ =>
       let fs := (List.range n).map fun i => (firstFailure uses i).getD 0
       let k := fs.foldl max 0
       .notStructural k (fs.idxOf k)
