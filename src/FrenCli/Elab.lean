@@ -579,6 +579,7 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
             expanded := expanded.push ({
               file? := some clause.file
               sourceRef := kind != .cover
+              sourceName? := some xn
               kind := kind
               name := name
               span := if kind == .cover then x.span else clause.span
@@ -1100,7 +1101,9 @@ def elabLaw (name : Ident) (params : Array (Ident × Option (Array Ident))) (bod
   lintDeclared .law n name.span
   discard checkCounts
   let denied := undecidableDenied ((← get).lintReports.extract reportsBefore)
-  modify fun s => { s with traitLaws := s.traitLaws.push (n, smt, !s.outsideCore, s.natApps, s.guardedUsed, denied) }
+  modify fun s => { s with
+    traitLaws := s.traitLaws.push (n, smt, !s.outsideCore, s.natApps, s.guardedUsed, denied)
+    theoryLaws := s.theoryLaws.push (s.module ++ n) }
 
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
 whose parameters are `vars`, and records the contract, and each clause's

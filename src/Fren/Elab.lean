@@ -9781,7 +9781,9 @@ errors. -/
       let out ← inTraitScope path modName do
         try some <$> elabLaw path m
         catch ex => logException ex; pure none
-      if let some (n, e, inCore, denied, fmfBound) := out then laws := laws.push (n, e, { inCore, denied, fmfBound })
+      if let some (n, e, inCore, denied, fmfBound) := out then
+        laws := laws.push (n, e, { inCore, denied, fmfBound })
+        record (.theoryLaw (path ++ n))
     | _ =>
       let some f := f? | continue
       let ep := path ++ (declaredIdent f).1.getId
