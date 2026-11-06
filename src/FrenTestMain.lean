@@ -6,6 +6,7 @@ import FrenTest.Expansion
 import FrenTest.ExpansionFuzz
 import FrenTest.Frontends
 import FrenTest.FuzzFrontends
+import FrenTest.ImplPath
 import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.MutateDecisions
@@ -18,6 +19,7 @@ import FrenTest.SolverPairing
 import FrenTest.TheoryDump
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
+import Impls
 import Lean.Elab.Frontend
 -- keep-sorted end
 
@@ -4438,7 +4440,7 @@ def jobs : IO (Array (List String)) := do
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"]]
+    ++ #[["implPaths"], ["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4494,6 +4496,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
+  | ["implPaths"] => FrenTest.ImplPath.check
   | ["readingBeside"] => do FrenTest.ReadingBeside.agree (← ownSpecFiles)
   | ["expansionFuzz", count] => do
     let some n := count.toNat? | throw (IO.userError "invalid copying corpus count")
