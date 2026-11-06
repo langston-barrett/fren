@@ -31,9 +31,9 @@ Only regular output files enter the artifact, after the workflow's trusted
 `pr-review/check.py` leak detector checks each against the original
 token/key/secret/password values, auth identifiers, other opaque values
 and any refreshed values still present. If the final authentication file
-cannot be read or parsed, or yields no credential values, all output and
-diagnostics are withheld and the run fails. It scans values, not common
-field names from the JSON structure.
+cannot be read or parsed, or yields no nonempty credential values, all
+output and diagnostics are withheld and the run fails. It scans values,
+not common field names from the JSON structure.
 Files containing known credential copies, plain or encoded, are withheld.
 No authentication file is uploaded. A separate fresh runner validates the
 patch and publishes it with `FREN_DEV_TOKEN`, without executing patched

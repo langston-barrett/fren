@@ -112,8 +112,8 @@ def main():
             auth_known = True
             try:
                 current = secrets(read_regular(auth, "auth.json").decode())
-                if not current:
-                    raise ValueError("no credential values")
+                if not any(current):
+                    raise ValueError("no nonempty credential values")
                 credentials += current
             except (OSError, ValueError, RecursionError):
                 # Unknown rotated credentials cannot be safely scanned or

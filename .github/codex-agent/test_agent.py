@@ -833,7 +833,7 @@ class ArtifactTests(unittest.TestCase):
 
             def sandbox(args, **kwargs):
                 (Path(args[5]) / "auth.json").write_text(
-                    json.dumps({"tokens": {"refresh_token": refreshed}}))
+                    json.dumps({"tokens": {"access_token": "", "refresh_token": refreshed}}))
                 kwargs["stderr"].write(f"Error: {old} {refreshed}\n".encode())
                 return subprocess.CompletedProcess(args, 1)
 
@@ -862,7 +862,8 @@ class ArtifactTests(unittest.TestCase):
         old = "original-secret-0123456789-abcdefghijklmnopqrstuvwxyz"
         refreshed = "renewed-value-Q7mR2vT9xK4pN6wH3jL8sB5dF0cA1uE"
         self.assertFalse(collect_outputs.checker.leaks(refreshed, [old]))
-        for damage in ("deleted", "directory", "malformed", "non_utf8", "empty", "deep"):
+        for damage in ("deleted", "directory", "malformed", "non_utf8", "empty",
+                       "empty_key", "empty_tokens", "deep"):
             for status in (0, 1):
                 with self.subTest(damage=damage, status=status), \
                         tempfile.TemporaryDirectory() as temp, cwd(temp):
@@ -889,6 +890,11 @@ class ArtifactTests(unittest.TestCase):
                             auth.write_bytes(b"\xff")
                         elif damage == "empty":
                             auth.write_text("{}")
+                        elif damage == "empty_key":
+                            auth.write_text(json.dumps({"OPENAI_API_KEY": ""}))
+                        elif damage == "empty_tokens":
+                            auth.write_text(json.dumps({"tokens": {
+                                "access_token": "", "refresh_token": "", "id_token": ""}}))
                         else:
                             auth.write_text("[" * 2000 + "0" + "]" * 2000)
                         return subprocess.CompletedProcess(args, status)
