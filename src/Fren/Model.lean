@@ -6,6 +6,7 @@ import FrenCore.Check.Component
 import FrenCore.Closures
 import FrenCore.Enumeration
 import FrenCore.Evidence
+import FrenCore.Generics
 import FrenCore.Lint
 import FrenCore.Names
 import FrenCore.Recursion
@@ -458,12 +459,43 @@ def DefinedInfo.solverTypeArgs (d : DefinedInfo) : Array Nat :=
   if !d.recursive || d.typeParams.isEmpty then #[] else
     (typeParamPlaceholders d.path d.typeParams).filterMap d.uses.idxOf?
 
+/-- Realize a generic function's type references in Lean syntax. The
+target slots hold either expressions or syntax, including the dictionary
+arguments that Lean fills by instance synthesis. -/
+def typeInstanceImages [Inhabited α] (path : Name) (tps : Array Name) (targs : Array α)
+    (names : Array Name) : Std.HashMap Name α :=
+  Id.run do
+    let placeholders := typeParamPlaceholders path tps
+    -- Lean types and their dictionaries stay Lean expressions. Target
+    -- sorts name slots in `targs`, so no Lean term is inspected by the core.
+    let args := tps.mapIdx fun k _ => Core.Ty.abstract (.num .anonymous k)
+    let encode (n : Name) : Core.TheoryTerm :=
+      match placeholders.idxOf? n with
+      | none => .item n
+      | some k =>
+        let ty := Core.TheoryTerm.sort (.param (k / 2) tps[k / 2]!)
+        if k % 2 == 0 then ty else .app (.literal "Inhabited") ty
+    let sentence : Core.TheorySentence := {
+      role := .theorem, variables := [], domain := .literal "true",
+      calls := [], claims := names.toList.map encode }
+    let translated := (Core.genericTranslation args {} sentence).claims.toArray
+    let mut images : Std.HashMap Name α := {}
+    for n in names, t in translated do
+      match t with
+      | .sort (.abstract (.num .anonymous k)) => images := images.insert n targs[2 * k]!
+      | .app (.literal "Inhabited") (.sort (.abstract (.num .anonymous k))) =>
+        images := images.insert n targs[2 * k + 1]!
+      | _ => pure ()
+    return images
+
 /-- `e`, of the generic function at `path` with the type parameters `tps`,
 at the instance whose type arguments and `Inhabited` instances are
-`targs`, in the order of `typeParamPlaceholders`: each placeholder of a
-type parameter, or of its instance, replaced. -/
+`targs`, in the order of `typeParamPlaceholders`: the shared morphism
+translates each placeholder, including beneath binders. -/
 def atInstance (path : Name) (tps : Array Name) (targs : Array Expr) (e : Expr) : Expr :=
-  replaceUses (typeParamPlaceholders path tps) targs e
+  if tps.isEmpty then e else
+    let images := typeInstanceImages path tps targs (e.foldConsts #[] fun n ns => ns.push n)
+    e.replace fun | .const n _ => images[n]? | _ => none
 
 /-- The clause `k`, of the generic function at `path` with the type
 parameters `tps`, at the instance `targs` (`atInstance`), at the arguments

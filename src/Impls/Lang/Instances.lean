@@ -17,7 +17,7 @@ impl call_instance: lang::call_instance for (result : Fren.Core.Ty) (args : List
   result_type := Fren.Core.callType result args.toArray,
 } by
   intro result args _
-  simp [fren_spec, Fren.Core.callType]
+  simp [fren_spec, Fren.Core.callType, Fren.Core.genericMorphism]
 
 /-- At type arguments none of which is a `Nat`, as inferred ones are
 widened, an instance's result type is a `Nat` exactly when the declared
@@ -60,10 +60,10 @@ impl uninterpreted_instance: lang::uninterpreted_instance
   have hargs : ∀ a ∈ firstArr na as, a ≠ .nat := by
     obtain ⟨_ | _ | _ | _ | na, hna⟩ := na <;> first | omega | skip
     all_goals simp_all [firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
-  refine ⟨⟨?_, by simp [Fren.Core.instanceSig, firstArr]⟩, ?_⟩
+  refine ⟨⟨?_, by simp [Fren.Core.instanceSig, Fren.Core.genericMorphism, firstArr]⟩, ?_⟩
   · obtain ⟨_ | _ | _ | _ | d, hd⟩ := d <;> first | omega | skip
-    all_goals simp [Fren.Core.instanceSig, firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
-  · simp only [hfact, Fren.Core.instanceSig, Fren.Core.instanceNat, subst_nat_iff _ hargs, beq_iff_eq]
+    all_goals simp [Fren.Core.instanceSig, Fren.Core.genericMorphism, firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
+  · simp only [hfact, Fren.Core.instanceSig, Fren.Core.genericMorphism, Fren.Core.instanceNat, subst_nat_iff _ hargs, beq_iff_eq]
     simp
 
 -- For every application with at most three type arguments, within an
@@ -78,7 +78,7 @@ impl applied_instance: lang::applied_instance for (d : Fin 4) (ts : Fin 3 → Fr
   intro d ts outer _
   simp only [fren_spec, Fren.Seq.ext_iff]
   obtain ⟨_ | _ | _ | _ | d, hd⟩ := d <;> first | omega | skip
-  all_goals simp [Fren.Core.instantiatedArgs, firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
+  all_goals simp [Fren.Core.instantiatedArgs, Fren.Core.genericMorphism, firstArr, firstTys, List.ofFn_succ, Fren.Seq.nth_of_lt]
 
 /-- An application of a generic function within itself, at its own type
 parameters, applies the same instance: a generic structural recursion
@@ -88,7 +88,7 @@ theorem instantiatedArgs_own (outer : Array Fren.Core.Ty) (ns : Array Lean.Name)
   apply Array.ext
   · simp [Fren.Core.instantiatedArgs, h]
   · intro i h1 h2
-    simp [Fren.Core.instantiatedArgs, Fren.Core.Ty.subst]
+    simp [Fren.Core.instantiatedArgs, Fren.Core.genericMorphism, Fren.Core.Ty.subst]
     simp_all
 
 -- For every generic function and whether it has a function parameter: the

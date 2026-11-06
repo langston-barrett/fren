@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Reqs.Lang.GenericFunctions
 import Reqs.Lang.ModulesAndInterfaces
 import Reqs.Lang.Types
 -- keep-sorted end

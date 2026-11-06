@@ -3532,9 +3532,10 @@ partial def bodilessInstance (path : Name) (targs : Array Fren.Core.Ty) : L (Opt
   if targs == own then return none
   let inst := Name.str path.getPrefix (path.getString! ++ Fren.Core.instanceText targs)
   if ((← get).spec.instanceArgs.find? inst).isSome then return some inst
-  let vargs := targs.toList.map VTy.ofCore
+  let sp := (← get).spec
+  let (ps, r) := Fren.Core.instanceSig (declared.map (·.core sp)) (result.core sp) targs
   modify fun s => { s with
-    spec.funs := s.spec.funs.insert inst (declared.map (·.subst vargs), result.subst vargs)
+    spec.funs := s.spec.funs.insert inst (ps.map VTy.ofCore, VTy.ofCore r)
     spec.instanceOf := s.spec.instanceOf.insert inst path
     spec.instanceArgs := s.spec.instanceArgs.insert inst targs }
   let item ← fnItemAt path (some targs)

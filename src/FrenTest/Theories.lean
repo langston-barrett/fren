@@ -3,10 +3,11 @@ import FrenCore.Generics
 import FrenCore.Theories
 -- keep-sorted end
 
-/-! Regressions for the shared theory core. No front end uses it yet. -/
+/-! Regressions for the shared theory core and generic function morphisms. -/
 -- fren-covers: lang::theory_signature, lang::theory_translation, lang::theory_instance
 -- fren-covers: lang::theory_term_translation, lang::theory_term_substitution, lang::theory_ground_term
 -- fren-covers: lang::theory_variable_images, lang::theory_term_list
+-- fren-covers: lang::generic_type_image, lang::generic_translation
 
 open Fren.Core
 
@@ -44,6 +45,15 @@ private def morphism : TheoryMorphism := {
   .all .int (.ex (.set .int) (.app (.app (.variable `outside) (.bound 1)) (.bound 0))),
   .app (.app (.item `g) (.sort (.seq .int))) (.literal "0")]
 #guard sentence.translate {} == sentence
+
+-- A function instance translates every reference together, including
+-- nested sorts, inner quantifiers, unspecified values and recursive calls.
+-- A second map for item types cannot override the inferred type arguments.
+#guard genericTranslation #[.int] { morphism with type := fun _ => .bool } sentence == sentence.translate morphism
+#guard (genericMorphism #[.param 1 `U, .bool]).type (.param 0 `T) == .param 1 `U
+#guard (genericMorphism #[.int]).type (.param 2 `V) == .param 2 `V
+#guard (genericMorphism #[.int]).type (.record `R [.seq (.param 0 `T), .set (.param 0 `T)]) ==
+  .record `R [.seq .int, .set .int]
 #guard (TheoryTerm.query `f).translate morphism == .query `f
 #guard (TheoryTerm.variable `f).translate morphism == .variable `f
 #guard (TheoryTerm.literal "f").translate morphism == .literal "f"

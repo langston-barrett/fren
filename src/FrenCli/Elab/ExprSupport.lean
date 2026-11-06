@@ -1352,10 +1352,8 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
   if (← get).fnTypeParams.any (·.1 == path) then
     modify fun s => { s with pendingInsts := s.pendingInsts.push args }
     return sym
-  let inst (t : Ty) : Ty := (t.asParams path g.params).subst args
+  let inst (t : Ty) : Ty := Fren.Core.instanceType path g.params (args.map some) t
   let mut repl : Std.HashMap String String := {}
-  for p in g.params, k in [0:g.params.size] do
-    repl := repl.insert (itemSym (Fren.Core.typeParamPath path k p)) args[k]!.sort
   -- Its applications of itself, at its own type parameters, apply this
   -- instance, in a structural recursion too (`lang::applied_instance`).
   repl := repl.insert (itemSym path) (instSym path (Fren.Core.appliedInstance path g.params args own))
@@ -1363,8 +1361,9 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
   for (callee, cargs) in g.calls do
     if callee == path then continue
     repl := repl.insert (instSym callee cargs) (← instantiate callee (Fren.Core.appliedInstance path g.params args cargs))
+  let translate := genericText path g.params args repl
   let clauses := g.clauses.map fun (csym, cvars, cbody) =>
-    (clauseInstSym path args csym, cvars.map fun (x, t) => (x, inst t), replaceSymbols cbody repl)
+    (clauseInstSym path args csym, cvars.map fun (x, t) => (x, inst t), translate cbody)
   if !g.defined then
     -- An unknown function of its own, with the instance's sorts, whose
     -- applications bring its contract's postconditions and its result
@@ -1389,7 +1388,7 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
         let ptype := instP v.ptype
         let st ← get
         return { v with ty := inst v.ty, ptype, fact? := (ptype.cons st.shapeOf).map (consSmt st.dataOf? · (quote v.name.toString)) }
-      let rs (t : String) := replaceSymbols t repl
+      let rs (t : String) := translate t
       let ic : CComp := { b with
         vars, generic := false, fn? := some (Fren.Core.instanceName path args), finiteModel := args.any (·.hasTypeParam)
         props := b.props.map fun p => { p with smt := rs p.smt, trigger? := p.trigger?.map rs }
@@ -1400,7 +1399,7 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
       modify fun s => { s with instContracts := s.instContracts.insert path (((s.instContracts.find? path).getD #[]).push (args, ic)) }
     return sym
   if let some template := (← get).namedPredicates.find? path then
-    let map (f : String) := replaceSymbols f repl
+    let map (f : String) := translate f
     let transform (c : NamedClause) := { c with
       formula := map c.formula
       branches := c.branches.map (·.map map)
@@ -1413,7 +1412,7 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
   let vars := g.vars.map fun (x, t) => (x, inst t)
   modify fun s => { s with
     instSyms := s.instSyms.insert name sym
-    defs := s.defs.push (name, vars, g.result.subst args, replaceSymbols g.body repl)
+    defs := s.defs.push (name, vars, Fren.Core.callType g.result args, translate g.body)
     clauseDefs := s.clauseDefs ++ clauses }
   -- An instance of a structural recursion is one too, at the instance: its
   -- applications are opaque, with its contract's postconditions at the
@@ -1426,7 +1425,7 @@ partial def instantiate (path : Name) (args : Array Ty) : M String := do
     modify fun s => { s with
       recursiveDefs := s.recursiveDefs.insert name
       contracts := s.contracts.insert name { k with pres := atInst k.pres, posts := atInst k.posts }
-      recInstances := s.recInstances.insert name (path, domain.map (replaceSymbols · repl)) }
+      recInstances := s.recInstances.insert name (path, domain.map translate) }
     -- Its result type's constraint, at the instance, where its declared
     -- result type has one, as the Lean front end decides from the declared
     -- type: a result that is a type parameter brings none, whatever its
@@ -1456,15 +1455,12 @@ applies is at the instance that the arguments give, which the function
 being declared applies too (`State.genericCalls`). -/
 partial def hofText (path : Name) (h : HigherOrderFn) (targs : Array Ty) (text : String) : M String := do
   if h.typeParams.isEmpty then return text
-  let inst (t : Ty) : Ty := (t.asParams path h.typeParams).subst targs
   let mut repl : Std.HashMap String String := {}
-  for p in h.typeParams, k in [0:h.typeParams.size] do
-    repl := repl.insert (itemSym (Fren.Core.typeParamPath path k p)) targs[k]!.sort
   for (callee, cargs) in h.calls do
-    let cargs' := cargs.map inst
+    let cargs' := Fren.Core.appliedInstance path h.typeParams targs cargs
     repl := repl.insert (instSym callee cargs) (← instantiate callee cargs')
     modify fun s => { s with genericCalls := s.genericCalls.push (callee, cargs') }
-  return replaceSymbols text repl
+  return genericText path h.typeParams targs repl text
 
 /-- Records the questions about the application at `span` of the function
 at `path` to the SMT-LIB arguments `args`, if the function has
