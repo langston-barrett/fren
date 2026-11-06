@@ -1,0 +1,12 @@
+-- Genuine Lean interpretations and implementations remain opaque references.
+--@ only: hosted
+set_option fren.dump "theories"
+
+fn identity?(Bool)
+
+interp identity? := fun x => x
+
+proc same(x?): (y?) { ensure equal: y? = x? }
+
+impl same_impl: same for (b : Bool) { x? := b, y? := b }
+--~$ info: ; theories

@@ -13,6 +13,7 @@ import FrenTest.ReadingBeside
 import FrenTest.Resolved
 import FrenTest.SmallValues
 import FrenTest.SolverPairing
+import FrenTest.TheoryDump
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
 import Lean.Elab.Frontend
@@ -4407,7 +4408,7 @@ def jobs : IO (Array (List String)) := do
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["readingBeside"], ["resolvedDump"]]
+    ++ #[["readingBeside"], ["resolvedDump"], ["theoriesDump"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4465,6 +4466,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["laterFiles"] => laterFiles
   | ["readingBeside"] => do FrenTest.ReadingBeside.agree (← ownSpecFiles)
   | ["resolvedDump"] => FrenTest.Resolved.check bless
+  | ["theoriesDump"] => do FrenTest.TheoryDump.check (← FrenTest.FuzzFrontends.loadFren)
   | ["enumeration"] => enumerationAgrees
   -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
   | "methodsAgree" :: part => methodsAgree part

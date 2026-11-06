@@ -5315,7 +5315,7 @@ def noteRecUse (ref : Syntax) (f : Name) (ps : Array Name) (u : Core.RecUse) : T
   if range?.isSome && (← getLocal).recUses.any (·.1.getRange? == range?) then return
   modifyLocal fun l => { l with recUses := l.recUses.push (ref, u) }
   let uses := (← getLocal).recUses
-  if let .notStructural _ i := Core.recursion ps.size (uses.toList.map (·.2)) then
+  if let .notStructural _ i := Core.selfRecursion ps.size (uses.toList.map (·.2)) then
     -- A function always has a parameter; without one, the message names the function.
     throwErrorAt ref (Core.nonStructuralMsg f (ps[i]?.getD f) u.form (u.args[i]?.getD .expr)).text
 
@@ -7535,7 +7535,8 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
       modifyLocal fun l => { l with recUses := #[], recApps := #[], recMatches := #[] }
       let t ← toTerm cx body
       let uses := (← getLocal).recUses
-      let recursion := Core.recursion vars.size (uses.toList.map (·.2))
+      -- Existing self-recursion is a singleton structural group.
+      let recursion := Core.selfRecursion vars.size (uses.toList.map (·.2))
       let structural := recursion matches .structural _
       if structural then
         if let some m := (← getLocal).recMatches[0]? then throwErrorAt m (Core.recursiveMatchMsg path).text
@@ -9786,7 +9787,9 @@ errors. -/
       let out ← inTraitScope path modName do
         try some <$> elabLaw path m
         catch ex => logException ex; pure none
-      if let some (n, e, inCore, denied, fmfBound) := out then laws := laws.push (n, e, { inCore, denied, fmfBound })
+      if let some (n, e, inCore, denied, fmfBound) := out then
+        laws := laws.push (n, e, { inCore, denied, fmfBound })
+        record (.theoryLaw (path ++ n))
     | _ =>
       let some f := f? | continue
       let ep := path ++ (declaredIdent f).1.getId

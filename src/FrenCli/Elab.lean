@@ -597,6 +597,7 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
             expanded := expanded.push ({
               file? := some clause.file
               sourceRef
+              sourceName? := some xn
               kind := kind
               name := name
               evidenceOwner? := some xn
@@ -1122,7 +1123,9 @@ def elabLaw (name : Ident) (params : Array (Ident × Option (Array Ident))) (bod
   lintDeclared .law n name.span
   discard checkCounts
   let denied := undecidableDenied ((← get).lintReports.extract reportsBefore)
-  modify fun s => { s with traitLaws := s.traitLaws.push (n, smt, !s.outsideCore, s.natApps, s.guardedUsed, denied) }
+  modify fun s => { s with
+    traitLaws := s.traitLaws.push (n, smt, !s.outsideCore, s.natApps, s.guardedUsed, denied)
+    theoryLaws := s.theoryLaws.push (s.module ++ n) }
 
 /-- Elaborates the clauses of the contract of the function `n` at `path`,
 whose parameters are `vars`, and records the contract, and each clause's
@@ -1655,7 +1658,8 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
   modify fun s => { s with recUses := #[], recApps := #[], recMatches := #[] }
   let (smt, t) ← elabExpr cx body
   let uses := (← get).recUses
-  let recursion := Fren.Core.recursion vars.size (uses.toList.map (·.2))
+  -- Existing self-recursion is a singleton structural group.
+  let recursion := Fren.Core.selfRecursion vars.size (uses.toList.map (·.2))
   if let .structural i := recursion then
     if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
     modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path, recursiveDecreasing := s.recursiveDecreasing.insert path i }

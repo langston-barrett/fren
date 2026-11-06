@@ -3,6 +3,7 @@ import Fren
 import FrenCli.Run
 import FrenTest.Frontends
 import FrenTest.FuzzDatatypeElements
+import FrenTest.FuzzRecursion
 import FrenTest.Messages
 import FrenTest.SpecTimeout
 import Lean.Elab.Frontend
@@ -54,7 +55,9 @@ as known, not as a finding (`knownIssue?`). `lake test` checks a fixed
 corpus of seeds against `knownDifferences` (`corpusFailures`), and that
 what `genWide` appends adds no static error (`Wide.genWideCuts`); CI runs
 fresh seeds on `main`, and fails only on a difference of a kind that is
-not known, a crash or a timeout. `--report DIR` gives the results of the
+not known, a crash or a timeout. Structural theories are compared on every run, with differences written to
+`theories-seed*` as an early signal, separately from diagnostic failures.
+`--report DIR` gives the results of the
 runs in `DIR` as Markdown (`report`), for CI's job summary.
 `--guards` generates guarded quantifiers alone
 (`Wide.genGuards`), over every type that a guard may bound or not, with
@@ -3002,38 +3005,44 @@ structure Ran where
   /-- With `obligations`, both front ends' obligations dumps, the `fren`
   command's first (`Fren.Core.dump`). -/
   obligations? : Option (String × String) := none
+  /-- Both structural theories dumps, compared independently of diagnostics. -/
+  theories? : Option (String × String) := none
 
 /-- `out` without its obligations dump, and the dump, if it has one
 (`Fren.Core.dumpStart`). -/
-def splitDump (out : String) : String × Option String := Id.run do
+def splitDump (out : String) (start := Fren.Core.dumpStart) (stop := Fren.Core.dumpEnd) : String × Option String := Id.run do
   let lines := out.splitOn "\n"
-  let some i := lines.idxOf? Fren.Core.dumpStart | return (out, none)
-  let some j := (lines.drop i).idxOf? Fren.Core.dumpEnd | return (out, none)
+  let some i := lines.idxOf? start | return (out, none)
+  let some j := (lines.drop i).idxOf? stop | return (out, none)
   let dump := "\n".intercalate ((lines.drop i).take (j + 1))
   return ("\n".intercalate (lines.take i ++ lines.drop (i + j + 1)), some dump)
 
-/-- The `fren` command's diagnostics and summary on `text`, and its exit
-code, and with `obligations`, its obligations dump. -/
+/-- The `fren` command's diagnostics, summary, exit code and structural
+theories; with `obligations`, its obligations dump too. -/
 def runCli (path : System.FilePath) (text : String) (obligations := false) :
-    IO (Array Diagnostic × Option String × UInt32 × Option String) := do
+    IO (Array Diagnostic × Option String × UInt32 × Option String × Option String) := do
   IO.FS.writeFile path text
-  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := #[path.toString], dumpObligations := obligations })
+  let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.check { files := #[path.toString], dumpObligations := obligations, dumpTheories := true })
   let (out, dump?) := splitDump out
+  let (out, theories?) := splitDump out Fren.Core.theoriesStart Fren.Core.theoriesEnd
   let (cli, cliSum) := FrenTest.Ui.cliDiagnostics path.toString out (keepUnlocated := true)
-  return (cli, cliSum, code, dump?)
+  return (cli, cliSum, code, dump?, theories?)
 
 /-- Checks `text` with both front ends, both misreading models if
 `misread`, as `--confirm` has them (`Fren.Core.misreadSet`), or if
 `FREN_MISREAD_MODELS` is set; with `obligations`, with their obligations
-dumps, which are not among their diagnostics. -/
+dumps, which, like the structural theories, are not among their diagnostics. -/
 def runFrontends (env : Environment) (path : System.FilePath) (text : String) (misread := false) (obligations := false) :
     IO Ran := do
   Fren.Core.misreadSet.set misread
   let misread ← Fren.Core.misreadModels
-  let (cli, cliSum, code, cliDump?) ← runCli path text obligations
-  let opts : Options := if obligations then Fren.fren.dump.set {} "obligations" else {}
+  let (cli, cliSum, code, cliDump?, cliTheories?) ← runCli path text obligations
+  let opts := Fren.fren.dump.set {} (if obligations then "theories,obligations" else "theories")
   let (hosted, hostedSum) ← FrenTest.Ui.hostedDiagnostics env path.toString text opts
   let (dumps, hosted) := hosted.partition (·.text.startsWith Fren.Core.dumpStart)
+  let (theories, hosted) := hosted.partition (·.text.startsWith Fren.Core.theoriesStart)
+  let theories? := if cliTheories?.isSome || !theories.isEmpty then
+      some (cliTheories?.getD "", (theories[0]?.map (·.text)).getD "") else none
   let obligations? := if obligations then some (cliDump?.getD "", (dumps[0]?.map (·.text)).getD "") else none
   let comparison := FrenTest.Frontends.comparison text
     { diags := cli, summary? := cliSum, exit? := some code.toNat } { diags := hosted, summary? := hostedSum } misread
@@ -3042,7 +3051,7 @@ def runFrontends (env : Environment) (path : System.FilePath) (text : String) (m
       ++ s!"--   summary: {s.getD "(none)"}\n"
   return { comparison, reports := s!"-- fren (exit {code}):\n{render cli cliSum}-- Lean:\n{render hosted hostedSum}",
            errors := cli.filterMap fun d => if d.severity == "error" then d.code? else none,
-           cli, hosted, obligations? }
+           cli, hosted, obligations?, theories? }
 
 unsafe def loadFren : IO Environment := do
   enableInitializersExecution
@@ -3058,6 +3067,8 @@ unsafe def mainFiles (files : List String) (dir : String) : IO UInt32 := do
     let ran ← runFrontends env (dir / s!"current-files-{← IO.Process.getPID}.fren") (← IO.FS.readFile f)
     let (found, reports) := (ran.comparison.found, ran.reports)
     IO.println s!"{f}: {if found.isEmpty then "the front ends agree" else "the front ends differ"}"
+    if let some (a, b) := ran.theories? then
+      if a != b then IO.println s!"{f}: structural theories differ (early signal)"
     for x in found do IO.println s!"  {x}"
     unless found.isEmpty do bad := bad + 1; IO.println reports
   return if bad == 0 then 0 else 1
@@ -3122,6 +3133,8 @@ structure Mode where
   unfoldings : Bool := false
   /-- Collection payloads and fields of generic datatypes. -/
   datatypeElements : Bool := false
+  /-- Singleton structural-group clients, including isolated invalid uses. -/
+  recursionPositions : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
@@ -3145,19 +3158,21 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
       else if m.factScopes then Wide.factScopes else if m.confirm then Wide.genConfirmed
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
       else if m.datatypeElements then FuzzDatatypeElements.spec
+      else if m.recursionPositions then FuzzRecursion.gen
       else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
-`--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
-`--fact-scopes`, `--induction-candidates`, `--enumeration-obligations`,
-`--unfoldings` and `--datatype-elements` makes any static error a group
-error: these generators, like appended groups, promise to add none.
+`--induction-forms`, `--keywords` and `--recursion-positions`. The empty
+prefix of `--scrutinees`, `--fact-scopes`, `--induction-candidates`,
+`--enumeration-obligations`, `--unfoldings` and `--datatype-elements`
+makes any static error a group error: these generators, like appended
+groups, promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
 prefix, so its additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if m.scrutinees || m.factScopes || m.inductionCandidates || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.scrutinees || m.factScopes || m.inductionCandidates || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
@@ -3171,14 +3186,15 @@ def Mode.args (m : Mode) : Array String :=
     (if m.enumerationObligations then #["--enumeration-obligations"] else #[]) ++
     (if m.enumerationRelations then #["--enumeration-relations"] else #[]) ++
     (if m.unfoldings then #["--unfoldings"] else #[]) ++
-    (if m.datatypeElements then #["--datatype-elements"] else #[])
+    (if m.datatypeElements then #["--datatype-elements"] else #[]) ++
+    (if m.recursionPositions then #["--recursion-positions"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--datatype-elements"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--datatype-elements", "--recursion-positions"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
@@ -3186,7 +3202,8 @@ def Mode.ofArgs? (args : List String) : Option Mode :=
            inductionCandidates := args.contains "--induction-candidates"
            enumerationObligations := args.contains "--enumeration-obligations"
            enumerationRelations := args.contains "--enumeration-relations"
-           unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements" }
+           unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements"
+           recursionPositions := args.contains "--recursion-positions" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -3201,7 +3218,8 @@ def Mode.lean (m : Mode) : String :=
     (if m.enumerationObligations then ["enumerationObligations := true"] else []) ++
     (if m.enumerationRelations then ["enumerationRelations := true"] else []) ++
     (if m.unfoldings then ["unfoldings := true"] else []) ++
-    (if m.datatypeElements then ["datatypeElements := true"] else [])
+    (if m.datatypeElements then ["datatypeElements := true"] else []) ++
+    (if m.recursionPositions then ["recursionPositions := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3847,7 +3865,9 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ inductionCandidates := true }, 0, 20),
     ({ enumerationObligations := true }, 0, 20), ({ enumerationObligations := true }, 438, 1),
     ({ enumerationObligations := true }, 555, 1), ({ enumerationRelations := true }, 0, 20),
-    ({ unfoldings := true }, 0, 10), ({ datatypeElements := true }, 0, 20)]
+    ({ unfoldings := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
+    ({ recursionPositions := true }, 0, 20), ({ recursionPositions := true }, 934000, 1),
+    ({ recursionPositions := true }, 934051, 1)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -3999,7 +4019,9 @@ Each failure is a difference that `knownDifferences` does not list, or a
 listed one that no longer occurs (`unmatched`), leaving out those that
 the solvers' time limits explain; or a static error in a group that the
 generator appends after a cut (`appendedErrors`), which it must not
-append, whether or not the spec stops before it. -/
+append, whether or not the spec stops before it. The recursion-position
+mode also checks its promised verdict: valid cases can fail a comparison,
+and invalid ones must reach `F0447`, rather than an earlier static error. -/
 def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mode × Nat)) :
     IO (Array String) := do
   IO.FS.createDirAll dir
@@ -4017,6 +4039,12 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
     for k in vanished do
       failures := failures.push s!"seed {s}{flags mode}: the front ends no longer differ by `{k.difference}` (#{k.issue}); \
         remove it from `knownDifferences`, or, if a change to the generator removed it, leave every seed's spec as it was"
+    if ({ mode with avoidKnown := false } : Mode) == { recursionPositions := true } then
+      let rejects := (Id.run (FuzzRecursion.genCase.run' (rngOf s))).rejects
+      let errors := ran.errors.toList.eraseDups
+      if (rejects && errors != ["F0447"]) || (!rejects && errors.any (· != "F0603")) then
+        let expected := if rejects then "a structural-recursion error (F0447)" else "only failed comparisons (F0603), if any"
+        failures := failures.push s!"seed {s}{flags mode}: generator expected {expected}, got {errors}; reproduce with {again}"
     let cutLines := (mode.cuts s).map fun c => (c.splitOn "\n").length - 1
     for (start, d) in appendedErrors cutLines ran.cli do
       failures := failures.push s!"seed {s}{flags mode}: what the generator appends after line {start} adds a static \
@@ -4052,6 +4080,8 @@ structure Outcome where
   metadata (`Fren.Core.withoutMetadata`): reported, but not a failure
   (`obligationsDiffer`). -/
   obligations : Bool := false
+  /-- Structural differences are an early signal, independently of diagnostics. -/
+  theories : Bool := false
   /-- And whether they differ other than in the names of their constants
   (`obligationsDifferBeyondNames`). -/
   obligationsBeyondNames : Bool := false
@@ -4140,8 +4170,8 @@ def obligationsDifferBeyondNames (cli hosted : String) : Bool :=
 /-- Checks the specs of seeds `[seed, seed + count)` in this process,
 writing each one's outcome to the results file. With `compareDumps`
 (`--obligations`), it compares the front ends' obligations dumps too, from
-runs with the dump on, whose messages it then compares: off by default, so
-that a run compares the messages of what users run. -/
+runs with the dump on. Structural theories are always compared as an early
+signal; differences are written separately and do not replace diagnostics. -/
 unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) (compareDumps : Bool) : IO UInt32 := do
   let env ← loadFren
   let reporter ← IO.asTask (prio := .dedicated) (reportSolverTime run)
@@ -4167,6 +4197,11 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) (compareDumps : B
         (s!"-- fren_fuzz_frontends{flags mode} --obligations --seed {s}\n" ++ text)
       IO.FS.writeFile (run.dir / s!"obligations-seed{s}.cli") a
       IO.FS.writeFile (run.dir / s!"obligations-seed{s}.lean") b
+    let theories := ran.theories?.any fun (a, b) => a != b
+    if let (true, some (a, b)) := (theories, ran.theories?) then
+      IO.FS.writeFile (run.dir / s!"theories-seed{s}.fren") text
+      IO.FS.writeFile (run.dir / s!"theories-seed{s}.cli") a
+      IO.FS.writeFile (run.dir / s!"theories-seed{s}.lean") b
     let elapsed := (← IO.monoMsNow) - t0
     let timedOut := (← Fren.Core.solverTimeoutMs) - solver0
     if elapsed > slowMs then IO.eprintln s!"seed {s}: slow, {elapsed / 1000}s, {timedOut / 1000}s of it in queries that timed out"
@@ -4186,7 +4221,7 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) (compareDumps : B
       for f in found.extract 0 4 do IO.eprintln s!"  {f}"
     record run { seed := s, status, flags := flags mode, errors := errs.toList.eraseDups.toArray,
                  signatures := found.map signature, issues, ms := elapsed, solverTimeoutMs := timedOut, obligations,
-                 obligationsBeyondNames }
+                 obligationsBeyondNames, theories }
     -- Between specs, a crash is no spec's.
     IO.FS.writeFile run.progress ""
   IO.cancel reporter
@@ -4241,6 +4276,9 @@ def report (outcomes : Array Outcome) : String := Id.run do
   let mut out := s!"{outcomes.size} specs: {n "differ"} differ in a kind that is not known, {n "crash"} crashed and \
     {n "timeout"} took too long, which fail the job; {n "known"} differ only in known kinds, and \
     {n "inconclusive"} only in inconclusive results.\n"
+  let theories := outcomes.filter (·.theories)
+  unless theories.isEmpty do
+    out := out ++ s!"\n{theories.size} specs' structural theories differ (early signal; `theories-seed*`).\n"
   let dumps := outcomes.filter (·.obligations)
   unless dumps.isEmpty do
     out := out ++ s!"\n{dumps.size} specs' obligations dumps differ, {(dumps.filter (·.status == "ok")).size} of them \
@@ -4289,6 +4327,8 @@ private def kn : Outcome :=
 private def df : Outcome :=
   { seed := 5, status := "differ", flags := " --avoid-known", signatures := #["a|b", "k"], issues := #[0, 493] }
 -- A clean run reports only its counts.
+#guard (report #[{ seed := 1, status := "ok", theories := true }]).contains
+  "1 specs' structural theories differ (early signal; `theories-seed*`).".toSlice
 #guard report #[{ seed := 1, status := "ok" }] == "1 specs: 0 differ in a kind that is not known, 0 crashed and \
   0 took too long, which fail the job; 0 differ only in known kinds, and 0 only in inconclusive results.\n"
 -- Specs whose obligations dumps differ are counted, but fail nothing.
@@ -4409,6 +4449,7 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   let n (st : String) := (outcomes.filter (·.status == st)).size
   let codeList := ", ".intercalate ((codes.qsort (·.2.1 > ·.2.1)).toList.map fun (e, k, _) => s!"{e} ×{k}")
   IO.eprintln s!"specs with errors from `fren check`: {(outcomes.filter (!·.errors.isEmpty)).size} ({codeList})"
+  IO.eprintln s!"specs whose structural theories differ (early signal): {(outcomes.filter (·.theories)).size} (`theories-seed*` in {dir})"
   let dumps := outcomes.filter (·.obligations)
   if compareDumps then
     IO.eprintln s!"specs whose obligations dumps differ, which fails nothing: {dumps.size}, \
@@ -4422,10 +4463,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--recursion-positions] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4447,10 +4488,11 @@ unsafe def main (args : List String) : IO UInt32 := do
                        inductionCandidates := args.contains "--induction-candidates"
                        enumerationObligations := args.contains "--enumeration-obligations"
                        enumerationRelations := args.contains "--enumeration-relations"
-                       unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements" }
+                       unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements"
+                       recursionPositions := args.contains "--recursion-positions" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
     && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
-    && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--datatype-elements")
+    && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--datatype-elements" && a != "--recursion-positions")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0
