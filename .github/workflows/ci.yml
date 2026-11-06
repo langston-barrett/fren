@@ -25,6 +25,12 @@ on:
 permissions:
   contents: read
 
+# Stopgap until #834 bounds enumeration and evaluation recursion. Lean runs
+# native executables on threads whose explicit stacks ignore `ulimit -s`.
+# Reserve 8 GiB per stack; physical memory is committed only as used.
+env:
+  LEAN_STACK_SIZE_KB: "8388608"
+
 # Each job of a push to `main` waits for the same job of the run before it,
 # rather than cancelling it: of pushes in quick succession, none cancels a
 # running job and the latest saves a `.lake`, though GitHub cancels a job
@@ -70,7 +76,7 @@ jobs:
     # a shard that starts from this `.lake` compiles only what its pull
     # request changes (`Reqs/dev/Testing#continuous-integration`).
     - id: driver
-      run: lake build fren_test
+      run: lake build --wfail fren_test
     # As soon as it is built, for the pull requests that start from it. Lake
     # saves no output of a module that failed, so a failed build's `.lake`
     # would serve as well, but a pull request that restores it would
@@ -361,7 +367,7 @@ jobs:
     - uses: ./.github/actions/lake
       with:
         sha: ${{ github.sha }}
-    - run: lake build fren_test
+    - run: lake build --wfail fren_test
     # A panic aborts the part, as in `lake test`'s jobs (`spawnJob`): it
     # would otherwise only print, and the check would go on with a default.
     - env:
@@ -436,5 +442,17 @@ jobs:
       run: lake -R -Kcoverage="$COVERAGE_RUNTIME" build fren fren_test fren_coverage FrenFuzz FrenFuzzFrontends
     - name: Run the tests
       run: lake -Kcoverage="$COVERAGE_RUNTIME" test
+    - name: Check coverage tool failures
+      run: |
+        set -euo pipefail
+        for gcov in false true; do
+          status=0
+          lake exe fren_coverage "$gcov" > "$RUNNER_TEMP/coverage-$gcov.log" 2>&1 || status=$?
+          if [ "$status" -ne 2 ]; then
+            cat "$RUNNER_TEMP/coverage-$gcov.log"
+            echo "fren_coverage $gcov: expected exit 2, got $status"
+            exit 1
+          fi
+        done
     - name: Report what the tests did not run
       run: lake exe fren_coverage "$LLVM_COV" gcov

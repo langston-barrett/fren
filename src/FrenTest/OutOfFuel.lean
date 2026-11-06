@@ -9,12 +9,12 @@ so that testing leaves the check inconclusive, and it is counted apart, for
 the warning `F0617` (`eval::unreached`). At a tiny fuel, a check that full
 fuel evaluates has no value. Fuel is counted in steps of the semantics,
 applications of a structural recursion (`Reqs/Eval#fuel`), so, within the
-native depth budget, how deeply the expression around them is nested, and whether the recursion's body is
-compiled (`Spec.withCompiledRecs`), do not change which evaluations run
-out, nor do the quantifiers and `match`es around them; checking that a
-value is of a subset type spends one unit for each invariant. The
-fixtures `test/cli/results/f0617_*` show the same, end to end, for a part
-with no value, at each kind of check. -/
+native depth budget, how deeply the expression around them is nested, and
+whether the recursion's body is compiled (`Spec.withCompiledRecs`), do not
+change which evaluations run out, nor do the quantifiers and `match`es
+around them; checking that a value is of a subset type spends one unit for
+each invariant. The fixtures `test/cli/results/f0617_*` show the same, end
+to end, for a part with no value, at each kind of check. -/
 
 namespace Fren.Test.OutOfFuel
 

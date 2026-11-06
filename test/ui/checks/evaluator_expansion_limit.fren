@@ -1,0 +1,34 @@
+-- A function nests calls to an argument-doubling function.
+-- Substitution shares repeated arguments, but later copying traverses
+-- every occurrence, so a short nesting requires exponential work.
+
+pub fn twice(n: Int): Int := n + n
+
+pub fn projection(n: Int): Int :=  --~[cli] error: evaluator expansion limit exceeded
+    twice(
+        twice(
+            twice(
+                twice(
+                    twice(
+                        twice(
+                            twice(
+                                twice(
+                                    twice(
+                                        twice(
+                                            twice(
+                                                twice(twice(twice(twice(twice(twice(twice(n)))))))
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+
+pub proc p(n: Int): (det result: Int) { out result := n }
+
+--@ exit: 2

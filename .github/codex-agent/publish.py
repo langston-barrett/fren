@@ -55,11 +55,10 @@ def validate_patch(patch):
     return paths
 
 
-def text(name, fallback="", limit=None):
+def text(name, fallback=""):
     path = Path(os.environ["ARTIFACT"]) / name
     value = path.read_text(errors="replace").strip() if path.is_file() and not path.is_symlink() else ""
-    value = value or fallback
-    return value[:limit] if limit else value
+    return value or fallback
 
 
 def comment(number, body):
@@ -86,19 +85,24 @@ def main():
             if not any(trusted(c) and c["body"] == LIMIT for c in thread):
                 comment(pr, LIMIT)
             return
+    subject = pr or env["ISSUE"]
+    prefix = (f"codex-agent fix round {round_number}" if pr else
+              f"codex-agent ({env['MODEL']}, {env['EFFORT']} effort)")
+    if env.get("AGENT_RESULT") == "failure":
+        comment(subject, prefix + " failed before publication. See the workflow run for diagnostics. Nothing pushed.")
+        return
+    if pr:
         commits = api(f"repos/{repo}/pulls/{pr}/commits", pages=True)
         done = rounds_done(thread, commits, pr)
         if round_number <= done or round_number > MAX_ROUNDS:
             return
     patch = Path(env["ARTIFACT"]) / "change.patch"
     if not patch.is_file() or patch.is_symlink():
+        comment(subject, prefix + " rejected: missing patch artifact. Nothing pushed.")
         raise ValueError("missing patch artifact")
-    subject = pr or env["ISSUE"]
-    prefix = (f"codex-agent fix round {round_number}" if pr else
-              f"codex-agent ({env['MODEL']}, {env['EFFORT']} effort)")
     if patch.stat().st_size == 0:
         fallback = text("pr-body.md", text("last.md", "No explanation supplied."))
-        explanation = text("comment.md", fallback, 1500) if pr else fallback[:1500]
+        explanation = text("comment.md", fallback) if pr else fallback
         comment(subject, prefix + " made no change:\n\n" + explanation)
         return
     try:

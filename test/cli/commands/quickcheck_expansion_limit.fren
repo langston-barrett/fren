@@ -1,0 +1,1 @@
+--@ argv: quickcheck test/cli/commands/check_expansion_limit.fren

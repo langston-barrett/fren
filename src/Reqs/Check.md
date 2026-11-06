@@ -148,6 +148,101 @@ use self::Outcome::{Sat, Unknown, Unsat}
 use self::Verdict::{Fail, Inconclusive, Pass}
 ```
 
+For an `Unknown` solver answer, `check::decidable_unknown` enforces the
+[decidable core's promise](Lang/Decidability.md#what-is-promised): if all
+constraints of the query are in the core and it reached no time, resource
+or memory limit and was not interrupted, report an internal error with the
+check, in place of the ordinary inconclusive warning. This is a bug in
+Fren or the solver.
+The reason is the solver answer's reason, not a fact computed by a front
+end: lean-smt gives the limit's name, and the standalone backend wraps it
+as below. `check::unknown_reason` distinguishes a solver's reason from
+the reasons that Fren synthesizes after a query. Other solver reasons,
+including an empty one, are not limits.
+
+This rule is about queries that return `Unknown`, not enumeration, a model
+that recursive evaluation does not confirm, an expansion over sequence
+elements, or a pass made inconclusive by an unsettled premise. A limit
+keeps the ordinary inconclusive result, and its dependents keep the `F0664`
+note ([Evidence](Evidence.md)).
+
+`decidable_unknown` receives the source computed by `unknown_reason`, the
+procedure's core classification, the output query's classification and
+whether enumeration supplied the result. It computes their conjunction;
+a refuted model is never an undecided solver answer, even in the core.
+
+The procedure's syntax alone is insufficient for realizability: an
+output's subset invariant can apply an opaque function to its value,
+although an explicit function argument cannot mention an output.
+`check::output_query_core` checks the generated output formula as well.
+`outputs` names the outputs still quantified after definitions are
+substituted; `applications` lists the variable names in the arguments of
+each opaque application in the guarantees and output type facts, with
+defined functions and aliases unfolded. Recursive functions are opaque
+here too. No application may depend on one of those outputs. This is a
+conservative boundary, including finite outputs; it changes no verdict
+or recursive equation. An undecided query beyond it keeps its warning
+and explains the generated quantifier, without claiming that the user
+allowed the `undecidable` lint.
+
+When both realizability queries are undecided, a non-limit solver
+`Unknown` in the assumptions query takes precedence: a limit or an opaque
+application in the output query must not hide its internal error.
+Otherwise use the output query's unknown answer, if any, and then the
+assumptions query's. Keep the selected query's reason even when it is empty.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc output_query_core(outputs: Seq<String>, applications: Seq<Seq<String>>): (det in_core?) {
+    ensure rule: in_core? iff (forall (args: Seq<String>), when args in applications,
+        forall (name: String), when name in args, not name in outputs)
+}
+```
+
+```fren
+pub enum UnknownReason { Solver, UnsettledPremise, RecursiveModel, Elements, RefutedModel, EvaluationLimit }
+
+pub proc unknown_reason(reason: String): (det source: UnknownReason) {
+    ensure rule: source = (if reason = "another postcondition used by simultaneous induction did not pass"
+        then UnknownReason::UnsettledPremise
+        else if reason.starts_with?("recursive contracts: ") then UnknownReason::RecursiveModel
+        else if reason is "its quantifiers over sequences' elements would have more than 256 instances" |
+        "the solver's model does not satisfy the quantifiers over sequences' elements, and none does with the same lengths"
+        then UnknownReason::Elements
+        else if reason = "the solver's model was refuted" then UnknownReason::RefutedModel
+        else if reason.starts_with?("evaluation reached its depth limit of ") then UnknownReason::EvaluationLimit
+        else UnknownReason::Solver)
+
+    expect refuted: when reason = "the solver's model was refuted", source != UnknownReason::Solver
+    expect evaluation_limit: when reason.starts_with?("evaluation reached its depth limit of "),
+        source != UnknownReason::Solver
+}
+
+pub proc decidable_unknown(
+    procedure_core?,
+    output_core?,
+    enumerated?,
+    source: UnknownReason,
+    reason: String,
+): (det internal_error?) {
+    ensure rule: internal_error? iff (procedure_core? and output_core? and not enumerated?
+        and source = UnknownReason::Solver and not (
+        reason is "TIMEOUT" | "RESOURCEOUT" | "MEMOUT" | "INTERRUPTED" |
+        "the solver returned unknown (TIMEOUT)" | "the solver returned unknown (RESOURCEOUT)" |
+        "the solver returned unknown (MEMOUT)" | "the solver returned unknown (INTERRUPTED)"
+        ))
+
+    expect timeout: when reason = "TIMEOUT", not internal_error?
+    expect resource_limit: when reason = "RESOURCEOUT", not internal_error?
+    expect memory_limit: when reason = "MEMOUT", not internal_error?
+    expect interrupted: when reason = "INTERRUPTED", not internal_error?
+    expect incomplete: when procedure_core? and output_core? and not enumerated?
+        and source = UnknownReason::Solver and reason = "INCOMPLETE", internal_error?
+    expect opted_out: when not procedure_core?, not internal_error?
+    expect synthetic: when source != UnknownReason::Solver, not internal_error?
+}
+```
+
 Every check but realizability reaches its verdict from one outcome, in
 one of two ways. A check that asks the solver to *prove* something passes
 when it is proved, and fails on a model, a counterexample; a check that
@@ -2030,10 +2125,10 @@ pub proc by_testing(
 ## Checking by enumeration
 
 The evaluator's [expression limits](Eval.md#fuel) also apply: a formula
-deeper than 256 levels or larger than 4194304 lowered nodes is refused with `F0645`.
-The combined expansion of its variable and function types has the same
-depth bound and a 262144-node bound, including constructors and finite integer domains (see
-[Evaluation limits](Eval.md#fuel)).
+deeper than 256 levels or larger than 4194304 lowered nodes is refused
+with `F0645`. The combined expansion of its variable and function types
+has the same depth bound and a 262144-node bound, including constructors
+and finite integer domains (see [Evaluation limits](Eval.md#fuel)).
 An evaluation that reaches its native depth budget remains unknown and
 makes the check inconclusive; it must not count as a false formula.
 
@@ -2624,10 +2719,11 @@ evaluator](Eval.md#quantifiers)) leaves its quantifier unknown, as it
 does in testing. Other than an index out of range, a quantifier or an
 [evaluation limit](Eval.md#fuel) can leave a formula unknown. Both front
 ends detect quantifiers with `mayBeUnknown` in `FrenCore.Enumeration`.
-The Lean-hosted front end can skip knownness checks when there are none;
-the `fren` command skips them for scalar formulas whose whole dependency
-forest fits its depth budget, or after checking each atom and defined
-output over all assignments of its bounded inputs. Random extras retain
+The Lean-hosted front end skips knownness checks only when each compiled
+callback returns an unconditional known value. The `fren` command skips
+them for scalar formulas whose whole dependency forest fits its depth
+budget, or after checking each atom and defined output over all assignments
+of its bounded inputs. Random extras retain
 knownness checks. Other formulas retain them because evaluation can reach
 its depth limit. An unknown formula must not become a false one or let a
 check pass because an assignment was silently discarded.

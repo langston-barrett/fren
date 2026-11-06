@@ -1,5 +1,6 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Evidence
+import FrenCore.Check.Selection
 import FrenCore.Evidence
 import FrenCore.SubsetTypes
 -- keep-sorted end
@@ -42,9 +43,127 @@ def boundedEvalDepth (requested : Nat) : Nat := min requested maxEvalDepth
 def withinEvalLimits (depth nodes : Nat) : Bool :=
   depth ≤ maxEvalDepth && nodes ≤ maxEvalNodes
 
+/-- An adapter supplies immediate semantic children, omitting representation
+wrappers. Core measures their structure and owns the bounded work list and
+admission decision. -/
+structure ExpressionLayer (α : Type) where
+  children : Array α := #[]
+  transparent : Bool := false
+  branching : Bool := false
+
+/-- Measure a lowered expression without descending on the native stack.
+`none` refuses it before compilation or evaluation. -/
+def expressionInfoM [Monad m] (layer : α → m (ExpressionLayer α)) (root : α) : m (Option (Nat × Bool)) :=
+  visit maxEvalNodes 1 [(root, 1)] 0 false
+where
+  visit : Nat → Nat → List (α × Nat) → Nat → Bool → m (Option (Nat × Bool))
+    | _, _, [], height, branching => pure (some (height, branching))
+    | 0, _, _ :: _, _, _ => pure none
+    | fuel + 1, pending, (e, depth) :: rest, height, branching => do
+      if !withinEvalLimits depth (maxEvalNodes - fuel) then return none
+      let node ← layer e
+      let pending := pending - 1 + node.children.size
+      if pending > fuel then return none
+      let next := if node.transparent then depth else depth + 1
+      visit fuel pending (node.children.foldr (fun child todo => (child, next) :: todo) rest)
+        (max height depth) (branching || node.branching)
+
+def expressionDepthM [Monad m] (layer : α → m (ExpressionLayer α)) (root : α) : m (Option Nat) := do
+  return (← expressionInfoM layer root).map (·.1)
+
+/-- Take one expression/body step; unlike semantic fuel this budget is
+never restored by a recursive call. -/
+def atDepth {α : Type} (depth : Nat) (run : Nat → Option α) : Option α :=
+  match boundedEvalDepth depth with
+  | 0 => none
+  | remaining + 1 => run remaining
+
+/-- A nonrecursive subtree may use native evaluation after Core has
+measured it. Keep its value lazy so an exhausted caller does no work. -/
+def atExpressionDepth {α : Type} (required depth : Nat) (run : Unit → Option α) : Option α :=
+  if required ≤ boundedEvalDepth depth then run () else none
+
+/-- A family of bounded recursive functions. Each depth closes over only
+smaller depths, computed once; building it never executes a function body. -/
+def depthFamily {α : Type} (zero : α) (step : Nat → (Nat → α) → α) : Nat → α :=
+  let table := (List.range maxEvalDepth).foldl (init := #[zero]) fun table n =>
+    table.push (step (n + 1) (fun depth => table.getD depth zero))
+  fun depth => table.getD (boundedEvalDepth depth) zero
+
 /-- Whether an expanded type fits its allocation budget. -/
 def withinTypeLimits (depth nodes : Nat) : Bool :=
   depth ≤ maxEvalDepth && nodes ≤ maxTypeNodes
+
+private def typeNode : StateT Nat Option Unit := do
+  let left ← get
+  if left == 0 then failure else set (left - 1)
+
+private def checkPattern (depth : Nat) (p : Pat) : StateT Nat Option Unit := do
+  let depth + 1 := depth | failure
+  typeNode
+  let children := match p with
+    | .ctor _ fields | .or fields => fields
+    | _ => #[]
+  if children.size > (← get) then failure
+  for child in children do checkPattern depth child
+
+private def checkType (depth : Nat) (t : Ty) : StateT Nat Option Unit := do
+  let depth + 1 := depth | failure
+  typeNode
+  let children := match t with
+    | .newtype _ under => [under]
+    | _ => t.parts
+  if children.length > (← get) then failure
+  for child in children do checkType depth child
+
+private def checkDeclaredType (depth : Nat) (t : PTy) : StateT Nat Option Unit := do
+  let depth + 1 := depth | failure
+  typeNode
+  checkType (depth + 1) t.ty
+  if let some pattern := t.pat? then checkPattern (depth + 1) pattern
+  if t.elems.size > (← get) then failure
+  for child in t.elems do checkDeclaredType depth child
+
+/-- Read immediate declared parts without `PTy.plain` recursively building
+missing metadata before the resource check. -/
+private def typeParts (t : PTy) : StateT Nat Option (Array PTy) := do
+  let parts := t.ty.parts
+  if parts.length > (← get) then failure
+  return if t.elems.size == parts.length then t.elems else parts.toArray.map fun ty => { ty }
+
+private def substituteType (args : Array PTy) (depth : Nat) (t : PTy) : StateT Nat Option PTy := do
+  let depth + 1 := depth | failure
+  typeNode
+  checkType (depth + 1) t.ty
+  if let .param k _ := t.ty then
+    if let some arg := args[k]? then
+      checkDeclaredType (depth + 1) arg
+      return arg
+    return t
+  let children ← (← typeParts t).mapM (substituteType args depth)
+  return { t with ty := t.ty.withParts (children.toList.map (·.ty)), elems := children }
+
+/-- Instantiate fields with a shared work budget. Neither implicit declared
+parts, raw types nor substituted arguments are traversed without a depth
+guard; the remaining work is returned to the expansion's admission pass. -/
+def instantiateWithin (d : DataShape) (t : PTy) (depth : Nat := maxEvalDepth)
+    (work : Nat := maxTypeNodes) : Option (DataShape × Nat) :=
+  let depth := min depth maxEvalDepth
+  let work := min work maxTypeNodes
+  (do
+    -- Even unused arguments occur in the native encoder/decoder's type.
+    checkDeclaredType depth t
+    let args ← typeParts t
+    if d.parts.size > (← get) then failure
+    typeNode
+    let parts ← d.parts.mapM fun (fields : Array PTy) => do
+      if fields.size > (← get) then failure
+      typeNode
+      if args.isEmpty then
+        for field in fields do checkDeclaredType depth field
+        return fields
+      fields.mapM (substituteType args depth)
+    return { d with parts }).run work
 
 /-! ## Values and shapes -/
 
@@ -89,18 +208,40 @@ partial def EVal.toPVal? : EVal → Option PVal
   | .abs _ | .str _ | .set _ | .seq _ | .pair .. => none
   | .ctor idx args => do return .ctor idx (← args.mapM EVal.toPVal?).toArray
 
-/-- Whether a declared constraint needs semantic evaluation beyond Shape's
-literal-pattern filters. Function-result tables with such constraints require
-an additional world filter; frontends must not silently use unconstrained tables. -/
-partial def needsSemanticFilter (shapeOf : Name → Option DataShape) (t : PTy) (seen : List Name := []) : Bool :=
-  let own := !t.invariants.isEmpty && (t.invariants.size != 1 || t.pat?.isNone)
-  let nested := t.elems.any (needsSemanticFilter shapeOf · seen)
-  let fields := match t.ty with
+/-- Bounded inspection of a declared type's invariants. Only shape filters
+may discharge a named invariant through its matching literal pattern. -/
+private def needsInvariantEvaluation (literalPatterns : Bool) (shapeOf : Name → Option DataShape) (t : PTy) (seen : List Name := []) : Bool :=
+  ((visit maxEvalDepth t seen).run' maxTypeNodes).getD true
+where
+  visit (depth : Nat) (t : PTy) (seen : List Name) : StateT Nat Option Bool := do
+    let depth + 1 := depth | failure
+    typeNode
+    if !t.invariants.isEmpty && (!literalPatterns || t.invariants.size != 1 || t.pat?.isNone) then return true
+    if t.elems.size > (← get) then failure
+    let parts ← typeParts t
+    if ← parts.anyM (visit depth · seen) then return true
+    if t.elems.size != parts.size && (← t.elems.anyM (visit depth · seen)) then return true
+    match t.ty with
     | .record path _ | .enum path _ | .newtype path _ =>
-      !seen.contains path && ((shapeOf path).any fun shape => (shape.inst t.parts).parts.any
-        (·.any (needsSemanticFilter shapeOf · (path :: seen))))
-    | _ => false
-  own || nested || fields
+      if seen.contains path then return false
+      let some shape := shapeOf path | return false
+      let some (shape, left) := instantiateWithin shape t (depth + 1) (← get) | failure
+      set left
+      shape.parts.anyM fun fields => do
+        if fields.size > (← get) then failure
+        fields.anyM (visit depth · (path :: seen))
+    | _ => return false
+  termination_by depth
+
+/-- Whether a function result needs a semantic filter beyond literal patterns.
+Traversal and generic substitution share a bounded work allowance. -/
+def needsSemanticFilter (shapeOf : Name → Option DataShape) (t : PTy) (seen : List Name := []) : Bool :=
+  needsInvariantEvaluation true shapeOf t seen
+
+/-- A bounded counterpart of `PTy.invariantFree` for compilation. Exhaustion
+cannot certify that membership is independent of the interpretation. -/
+def invariantFreeWithin (shapeOf : Name → Option DataShape) (t : PTy) : Bool :=
+  !needsInvariantEvaluation false shapeOf t
 
 mutual
 /-- A type, unfolded for a size bound: a finite tree, whose recursive
@@ -339,12 +480,25 @@ where
       match entry with
       | none => visit fuel (pending - 1) rest
       | some (n, t) =>
+        let checked : Option (Unit × Nat) := (do
+          if let some pattern := t.pat? then checkPattern (maxEvalDepth - depth + 1) pattern).run fuel
+        if checked.isNone then false else
+        let fuel := min ((checked.map (·.2)).getD 0) fuel
         let count := if t.ty == .int || t.ty == .nat then
           (t.pat?.bind fun p => p.intCount? (if t.ty == .nat then some 0 else none)).getD 1
           else 1
         let extra := count - 1
         if extra > fuel then false else
         let fuel := fuel - extra
+        let prepared : Option (Nat × Option DataShape) := match t.ty with
+          | .enum path _ | .record path _ | .newtype path _ => match shapes path with
+            | some d => (instantiateWithin d t (maxEvalDepth - depth + 1) fuel).map
+                fun pair => (pair.2, some pair.1)
+            | none => some (fuel, none)
+          | _ => some (fuel, none)
+        if prepared.isNone then false else
+        let fuel := min ((prepared.map (·.1)).getD 0) fuel
+        let inst? := prepared.bind (·.2)
         let elem (i : Nat) (ty : Ty) := t.elems[i]?.getD { ty }
         -- Shape's constructor and field lists are recursively traversed.
         -- Charge their full lengths before descending into any member.
@@ -354,14 +508,13 @@ where
           | .seq e | .set e => (1, fun todo => (some (n, elem 0 e), depth + 1) :: todo)
           | .rel a b => (2, fun todo =>
               (some (n, elem 0 a), depth + 2) :: (some (n, elem 1 b), depth + 2) :: todo)
-          | .enum path _ | .record path _ | .newtype path _ =>
-            match shapes path with
+          | .enum _ _ | .record _ _ | .newtype _ _ =>
+            match inst? with
             | none => (0, id)
             | some d =>
               let width := if d.isRecord || d.isNewtype then (d.parts[0]?.getD #[]).size + 1
                 else d.parts.size + max 2 (d.parts.foldl (fun m ts => max m ts.size) 0 + 1)
               if !withinTypeLimits (depth + width) 0 then (maxTypeNodes + 1, id) else
-              let d := d.inst t.parts
               if d.isRecord || d.isNewtype then
                 let fields := d.parts[0]?.getD #[]
                 (fields.size + 1, fun todo =>
@@ -385,7 +538,7 @@ newtypes, instances of generic types, subset types and abstract types.
 recursive enumeration is unfolded `n` deep. -/
 private partial def shapeOfUnchecked (shapes : Name → Option DataShape) (n : Nat) (t : PTy) : Except String Shape := do
   let keep (p : Pat) : EVal → Bool := matchesEVal p
-  let elem (i : Nat) (e : Ty) : Except String Shape := shapeOfUnchecked shapes n (t.elems[i]?.getD (PTy.plain e))
+  let elem (i : Nat) (e : Ty) : Except String Shape := shapeOfUnchecked shapes n (t.elems[i]?.getD { ty := e })
   let base : Shape ← match t.ty with
     | .bool => pure .bool
     | .int | .nat =>
@@ -394,15 +547,12 @@ private partial def shapeOfUnchecked (shapes : Name → Option DataShape) (n : N
       | none => pure (if nat then .nat else .int)
       | some p =>
         -- A finite integer subset type: all of its integers, of size 0.
-        match p.intCount? (if nat then some 0 else none) with
+        match p.intIntervals? (if nat then some 0 else none) with
         | none => pure (if nat then .nat else .int)
         | some _ =>
-          match Pat.intValues? p with
-          | some vs => return .ints (vs.toList.filter fun i => !nat || 0 ≤ i)
-          -- A `Nat` pattern bounded only above, as `Nat is ..=5`.
-          | none =>
-            let top := (p.bounds.foldl max 0).toNat
-            return .ints (((List.range (top + 1)).map fun (k : Nat) => (k : Int)).filter fun i => p.matchesVal (.int i))
+          let some vs := p.intValuesWithin? maxTypeNodes (if nat then some 0 else none)
+            | throw typeLimitMarker
+          return .ints vs.toList
     | .string => pure .string
     | .seq e => pure (.seq (← elem 0 e))
     | .set e => pure (.set (← elem 0 e))
@@ -410,7 +560,7 @@ private partial def shapeOfUnchecked (shapes : Name → Option DataShape) (n : N
     | .abstract _ => pure .abstract
     | .enum p _ | .record p _ | .newtype p _ =>
       let some d := shapes p | throw (notEnumerable t)
-      let d := d.inst t.parts
+      let some (d, _) := instantiateWithin d t | throw typeLimitMarker
       let parts (m : Nat) (ts : Array PTy) : Except String Shapes :=
         ts.toList.foldrM (init := .nil) fun pt acc => return .cons (← shapeOfUnchecked shapes m pt) acc
       if d.isRecord || d.isNewtype then

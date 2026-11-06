@@ -6,6 +6,7 @@ import Fren.Model
 import Fren.SeqElems
 import Fren.SimpSet
 import Fren.Syntax
+import FrenCore.Check.Contracts
 import FrenCore.Checking
 import FrenCore.Closures
 import FrenCore.FnBlocks
@@ -928,36 +929,36 @@ def ctorApp (c : Name) (targs : Array Expr) (args : Array Term) (ref : Syntax :=
   if targs.isEmpty then return ← `($f $args*)
   `(@$f $(targs.map typeSyntax)* $args*)
 
-/-- Every value of a finite type, as terms, if there are at most `cap` of
-them: a relation's `domain` and `range` are its image under them, which
-the solver decides without a projection (`Reqs/Cli`). -/
-partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array Term)) := do
-  if ty.isConstOf ``Bool then return some #[← `(true), ← `(false)]
+/-- Every value of a finite type, as closed expressions, if there are at
+most `cap` of them. Shared by relation projections, quantifier instances
+and set cardinality translation; pairs use their Cartesian product. -/
+partial def valuesOf? (ty : Expr) (cap : Nat := 64) : MetaM (Option (Array Expr)) := do
+  if ty.isConstOf ``Bool then
+    return if cap < 2 then none else some #[Lean.mkConst ``Bool.true, Lean.mkConst ``Bool.false]
   let s ← getState
-  -- An instance's, with its arguments for the type parameters
-  -- (`lang::instantiation`), given to each constructor explicitly.
   let targs := ty.getAppArgs
   let ctors : Array (Name × Array Expr) ←
-    if let some e := s.enumOf? ty then
+    if ty.isAppOfArity ``Prod 2 then pure #[(``Prod.mk, targs)]
+    else if let some e := s.enumOf? ty then
       if (exprFacts s ty).unbounded then return none
       let ps := e.payloadsAt targs
       pure (e.variants.mapIdx fun i _ => (e.ctor i, ps[i]?.getD #[]))
     else if let some r := s.recordOf? ty then
       if (exprFacts s ty).unbounded then return none
       pure #[(r.ctor, (r.fieldsAt targs).map (·.2))]
-    -- A newtype's values are its underlying type's, as the `fren` command
-    -- has them.
     else if let some n := ty.constName?.bind s.newtypeOfDecl? then
       pure #[(n.ctor, #[n.under])]
     else return none
   let mut out := #[]
   for (c, ts) in ctors do
-    let mut combos : Array (Array Term) := #[#[]]
+    let mut combos : Array (Array Expr) := #[#[]]
     for t in ts do
       let some vs ← valuesOf? t cap | return none
+      if combos.size * vs.size > cap then return none
       combos := combos.flatMap fun pre => vs.map pre.push
-      if combos.size > cap then return none
-    for args in combos do out := out.push (← ctorApp c targs args)
+    let info ← getConstInfo c
+    let ctor := Lean.mkConst c (info.levelParams.map fun _ => Level.zero)
+    out := out ++ combos.map fun args => mkAppN ctor (targs ++ args)
     if out.size > cap then return none
   return some out
 
@@ -1062,7 +1063,7 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
     -- The image of the inverse under every value of `other`, if it is finite.
     let project (inv : Term) (other : Expr) (dflt : Term) : TermElabM Term := do
       let some vs ← valuesOf? other | return dflt
-      `(Fren.FinSet.image $inv ($(← finSetLit vs) : Fren.FinSet $(typeSyntax other)))
+      `(Fren.FinSet.image $inv ($(← finSetLit (← vs.mapM exprToSyntax)) : Fren.FinSet $(typeSyntax other)))
     match method with
       | .card => return (← `(Fren.FinSet.card $t), Lean.mkConst ``Int)
       | .inverse => return (← `(Fren.FinSet.inverse $t), rel b a)
@@ -1469,9 +1470,9 @@ def chainBinders (cx : ExprCtx) (c : Syntax) : TermElabM (List String) := do
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
-partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.MentionShape) := #[]) : TermElabM Core.MentionShape := do
-  let parts (k : Core.MentionKind) (es : Array Syntax) : TermElabM Core.MentionShape :=
-    return .node k (← es.toList.mapM (shapeOf cx · bs))
+private partial def shapeOfM (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.MentionShape) := #[]) : StateT (NameMap Core.MentionShape) TermElabM Core.MentionShape := do
+  let parts (k : Core.MentionKind) (es : Array Syntax) : StateT (NameMap Core.MentionShape) TermElabM Core.MentionShape :=
+    return .node k (← es.toList.mapM (shapeOfM cx · bs))
   if let some (recv, _) := methodApp? cx e then
     return ← parts .method (#[(← pathExpr e recv)[0]] ++ e[2].getSepArgs)
   -- A cardinality operator has a fixed meaning, as an operator does.
@@ -1490,28 +1491,28 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     parts .compound (#[e[1]] ++ (← e[3].getSepArgs.mapM fun b =>
       if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1]))
   else if isMatchLike e || e.isOfKind ``Lang.lambdaMatchExpr then
-    let shapes ← (matchScrutinees e).mapM (shapeOf cx · bs)
+    let shapes ← (matchScrutinees e).mapM (shapeOfM cx · bs)
     let arms ← (matchSourceArms e).toList.flatMapM fun arm => do
       let mut new := #[]
       for p in matchPatterns e arm, j in [0:(matchPatterns e arm).size] do
         new := new ++ (← topBinders cx p).map fun b => ((declaredIdent b).1.getId,
           Core.MentionShape.node .binder (shapes[j]?.toList))
-      ((if arm[1].isNone then [] else [arm[1][1]]) ++ [arm[3]]).mapM (shapeOf cx · (bs ++ new))
+      ((if arm[1].isNone then [] else [arm[1][1]]) ++ [arm[3]]).mapM (shapeOfM cx · (bs ++ new))
     return .node .compound (shapes.toList ++ arms)
   else if e.isOfKind ``Lang.isExpr then parts .compound #[e[0]]
   else if e.isOfKind ``Lang.letExpr then
     -- Each name stands for its definition, which sees the earlier names.
     let bs ← e[1].getSepArgs.foldlM (init := bs) fun bs d => do
-      return bs.push ((declaredIdent d[0]).1.getId, .node .definition [← shapeOf cx d[3] bs])
-    return .node .compound [← shapeOf cx e[3] bs]
+      return bs.push ((declaredIdent d[0]).1.getId, .node .definition [(← shapeOfM cx d[3] bs).summary])
+    return .node .compound [← shapeOfM cx e[3] bs]
   else if e.isOfKind ``Lang.quantExpr then
     let new := quantNames e |>.map fun n => (n, Core.MentionShape.leaf .bound)
-    return .node .compound [← shapeOf cx e[3] (bs ++ new)]
+    return .node .compound [← shapeOfM cx e[3] (bs ++ new)]
   -- A closure's parameter varies, as a variable does
   -- (`Reqs/Lang/HigherOrder#arguments`).
   else if e.isOfKind ``Lang.closureExpr then
     let new := closureNames e |>.map fun n => (n, Core.MentionShape.leaf (.variable (n.toString (escape := false))))
-    return .node .compound [← shapeOf cx e[3] (bs ++ new)]
+    return .node .compound [← shapeOfM cx e[3] (bs ++ new)]
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
     if segs.size != 1 then return .leaf .constant
@@ -1519,20 +1520,30 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
     if let some b := cx.binder? n.getRoot then
       let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable (n.toString (escape := false)) else .bound)
-      return .node .binder [← shapeOf (cx.at b) sc]
+      return .node .binder [← shapeOfM (cx.at b) sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
-      return .node .definition [← shapeOf { cx with binders := #[] } d]
+      if let some cached := (← get).find? n.getRoot then return cached
+      let summary := (← shapeOfM { cx with binders := #[] } d).summary
+      let shaped := Core.MentionShape.node .definition [summary]
+      modify fun cache => cache.insert n.getRoot shaped
+      return shaped
     return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable (n.toString (escape := false)) else .constant)
   else if e.isAtom || e.isIdent then return .leaf .literal
   -- The names that the pattern tests of a condition, or of the left
   -- operand of `and`, bind, in what sees them (`lang::test_scope`).
   else if let some (c, d, others) := testScoped? e then
     let new ← (chainTests c).flatMapM fun (sc, p) => do
-      let s ← shapeOf cx sc bs
+      let s ← shapeOfM cx sc bs
       return (← topBinders cx p).map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
-    return .node .compound ([← shapeOf cx c bs, ← shapeOf cx d (bs ++ new)] ++ (← others.toList.mapM (shapeOf cx · bs)))
+    return .node .compound ([← shapeOfM cx c bs, ← shapeOfM cx d (bs ++ new)] ++ (← others.toList.mapM (shapeOfM cx · bs)))
   else parts .compound e.getArgs
+
+/-- Each definition's support is computed once in this lexical context.
+`Core.MentionShape.summary` preserves its mentions while keeping repeated
+local references compact, as in the standalone front end. -/
+def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.MentionShape) := #[]) : TermElabM Core.MentionShape :=
+  (shapeOfM cx e bs).run' {}
 
 /-- Whether `e` mentions a variable or an uninterpreted function
 (`lang::mentions`). -/
@@ -2648,7 +2659,8 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
       return (.bool b, #[], some (← if b then `(($x : Prop)) else `(¬($x : Prop))))
     | .binder =>
       if inOr && !test then throwErrorAt p (Core.orBinderMsg (declaredIdent segs[0]!).1.getId).text
-      return (.wild true, #[{ ident := segs[0]!, type := ty, term := x }], none)
+      let term ← if cx.leanMatch then pure x else `(Fren.evalBinding $x)
+      return (.wild true, #[{ ident := segs[0]!, type := ty, term }], none)
     | .variant => pure ()
   let r ← resolveWritten cx.modName segs cx.shadowing cx.noteIndexes
   let some info := (← getState).enumOf? ty
@@ -2860,7 +2872,7 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) (natAsInt : B
     -- members already have their declared Lean types.
     let x ← if natAsInt && (f.ptys.1[0]?).any (·.ty == .nat) then `(Int.toNat $x)
       else pure x
-    `($(mkCIdent f.decl) $(f.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $x)
+    `(@$(mkCIdent f.decl) $(f.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $x)
   | .pat ty p => patTerm ty p x
   | .atLeast0 => `(0 ≤ $x)
   | .fields path _ cs =>
@@ -3569,6 +3581,8 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       throwErrorAt arm (Core.arityMsg `match scrutinees.size (matchPatterns e arm).size "pattern").text
   let terms ← scrutinees.mapM (toTerm { cx with emptyOk := Core.ExprSite.scrutinee.checked false false, natOk := false })
   let types ← terms.mapM typeOf
+  let terms ← if cx.leanMatch then pure terms else
+    terms.mapM fun term => `(Fren.evalScrutinee $(quote scrutinees.size) $term)
   let ptypes := types.map (patTyOf (← getState))
   for scr in scrutinees, pty in ptypes, ty in types do
     if pty == .other then throwErrorAt scr (Core.scrutineeMsg (← typeName ty)).text
@@ -3692,7 +3706,8 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       modifyLocal fun l => { l with indexes := l.indexes.extract 0 k ++ idx, tables := l.tables.extract 0 kt ++ tbl }
       pure (some c, Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) (inGuard.map (·.2)))
     defined := defined.push d?
-    let own := t?.toArray ++ g?.toArray
+    let markedGuard ← g?.mapM fun guard => `(Fren.evalGuard $guard)
+    let own := t?.toArray ++ markedGuard.toArray
     taken := taken.push (Core.allOf? (fun a b => Unhygienic.run `($a ∧ $b)) own)
     let others := (arms.eraseIdx! bodies.size).map (·[3])
     let emptyOk := Core.ExprSite.armBody.checked cx.emptyOk (← anySynthesizes cx others)
@@ -3725,6 +3740,12 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       if (← getLocal).recUses.size > usesBefore then
         modifyLocal fun l => { l with recMatches := l.recMatches.push arms[k]![0] }
   let widened ← widenMixed bodies
+  -- Freeze mixed Boolean/proposition arms before identity wrappers infer
+  -- their result type, retaining the proposition form used by proofs.
+  let hasPropositions ← widened.anyM fun body => return (← typeOf body).isProp
+  let widened ← if hasPropositions then widened.mapM fun body => do
+      if (← typeOf body).isConstOf ``Bool then `(($body : Bool) = true) else pure body
+    else pure widened
   if lean then
     if let some m ← leanMatchTerm toTerm cx e s ty pty pats armInfo (if many then some (types, terms, sigs) else none) then return m
   -- The first arm that is taken. Where the arms without guards are
@@ -3742,9 +3763,10 @@ def matchTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
   let mut out ← if complete then pure last else `(Fren.Seq.nth (∅ : Fren.Seq _) 0)
   for i in (List.range (if complete then bodies.size - 1 else bodies.size)).reverse do
     out ← match taken[i]! with
-      | some t => `(if $t then $(widened[i]!) else $out)
+      | some t => `(Fren.evalCase (if Fren.evalTest $t then $(widened[i]!) else $out))
       | none => pure widened[i]!
-  return out
+  out ← terms.foldrM (fun term body => `(Fren.evalKeep $term $body)) out
+  `(Fren.evalMatch $out)
 
 open Lang in
 /-- Translates `e is P`, which is `match e { P => true, _ => false }`, into
@@ -4525,7 +4547,8 @@ def setLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
         throwErrorAt elems[k]! (Core.membersMsg false mt0 mt t0.show).text
     xs := xs.push x
   checkNewtypeMembers cx false elems xs
-  `(($(← finSetLit xs) : Fren.FinSet _))
+  xs ← xs.mapM fun value => `(Fren.evalElement $value)
+  `(Fren.evalCollection ($(← finSetLit xs) : Fren.FinSet _))
 
 /-- `x in s`, `s subset t`, `s union t`, `s inter t` and `s minus t`. -/
 def setOpTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term := withRef e do
@@ -4735,7 +4758,7 @@ def notePreconditions (cx : ExprCtx) (ref : Syntax) (path : Name) (args : Array 
   unless cx.noteIndexes do return
   let some k := (← getState).contracts.get? path | return
   let pres ← k.pres.mapM fun pre => do
-    let some (tps, targs) := inst? | return (pre.name, ← `($(mkCIdent pre.decl) $(pre.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*))
+    let some (tps, targs) := inst? | return (pre.name, ← `(@$(mkCIdent pre.decl) $(pre.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*))
     return (pre.name, ← `(@$(mkCIdent pre.decl) $(← usesTerms pre.uses path tps targs)* $args*))
   let guarded (g : Term) : Term := cx.guards.foldr (fun c acc => Unhygienic.run `($c → $acc)) g
   for (q, goal) in Core.preconditionQuestions guarded path pres do
@@ -5015,9 +5038,10 @@ def seqLitTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   -- After its elements, as in the `fren` command.
   checkCore cx e .seqArray true true elems
   checkNewtypeMembers cx true elems xs
+  xs ← xs.mapM fun value => `(Fren.evalElement $value)
   let mut t ← `(Fren.Seq.unit $(xs.back!))
   for x in xs.pop.reverse do t ← `(Fren.Seq.unit $x ++ $t)
-  return t
+  `(Fren.evalCollection $t)
 
 /-- `q[i]`, indexing a sequence. -/
 def indexTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e : Syntax) : TermElabM Term :=
@@ -5485,14 +5509,14 @@ def hoAppTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (e
       let some c := c? | continue
       for (ref, q?, pred) in c.obligations do
         let g ← if generic then `(@$(mkCIdent decl) $(← usesTerms uses path d.typeParams targs)* $inOrder* $pred)
-          else `($(mkCIdent decl) $(uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder* $pred)
+          else `(@$(mkCIdent decl) $(uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder* $pred)
         modifyLocal fun l => { l with vias := l.vias.push (ref.getPos?, path) }
         match q? with
         | some q => modifyLocal fun l => { l with tables := l.tables.push (ref, q, g) }
         | none => modifyLocal fun l => { l with indexes := l.indexes.push (ref, g) }
   if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
   if generic then return ← `(@$(mkCIdentFrom p d.decl) $(← usesTerms d.uses path d.typeParams targs)* $inOrder*)
-  `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder*)
+  `(@$(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $inOrder*)
 
 open Lang in
 /-- `p(args)`: a method, a variant with a payload, or a function applied.
@@ -5650,7 +5674,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
     -- Its body's quantifiers are part of the queries
     -- (`Reqs/Lang/Quantifiers#guards`).
     if d.guarded then modifyLocal fun l => { l with guardedUsed := true }
-    return ← `($(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
+    return ← `(@$(mkCIdentFrom p d.decl) $(d.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $args*)
   if cx.inClosure then throwErrorAt p (Core.closureUninterpretedMsg path).text
   if cx.selfFn.isSome then throwErrorAt p (Core.appliesUninterpretedMsg path).text
   modifyLocal fun l => { l with inductionAbstract := true }
@@ -5726,7 +5750,7 @@ def isForall (e : Syntax) : Bool :=
 (`lang::quantified_type`), counted without listing them. An unbounded
 enumeration or record is recursive or has a part that a quantifier does
 not range over, so it is not looked into, and the recursion ends. -/
-def valueCount? (ty : Expr) : TermElabM (Option Nat) := do
+def valueCount? (ty : Expr) : MetaM (Option Nat) := do
   -- As the `fren` command counts them, by an instance's arguments too
   -- (`lang::instance_values`).
   let s ← getState
@@ -5768,7 +5792,7 @@ def binderValues (ty : Expr) (pt : Core.PTy) : TermElabM (Option (Nat × Array T
   unless (factsOf st pt).listed do return none
   if (pt.cons st.shapeOf).isNone then
     let some n ← valueCount? ty | return none
-    return some (n, (← valuesOf? ty Core.maxInstances).getD #[])
+    return some (n, ← ((← valuesOf? ty Core.maxInstances).getD #[]).mapM exprToSyntax)
   let some n := pt.count? st.shapeOf | return none
   if n > Core.maxInstances then return some (n, #[])
   let vs := (pt.values st.shapeOf Core.maxInstances).getD #[]
@@ -6530,6 +6554,7 @@ def compileGenerated (name : Name) (type value : Expr) : TermElabM Unit := keepi
 placeholders `uses` (`Reqs/Generated#procedures`), compiled unless
 `compile` is false (`compileGenerated`). -/
 def addUsesDef (uses : Array Name) (name : Name) (value : Expr) (compile := true) : TermElabM Unit := do
+  let value ← eraseEvaluation value
   let type ← inferType value
   let (type, value) ← withUses uses fun xs => do
     return (← mkForallFVars xs (replaceUses uses xs type), ← mkLambdaFVars xs (replaceUses uses xs value))
@@ -6602,6 +6627,7 @@ a recursion that applies large functions in each arm, as `lint::fix_all`
 does, is large, and Lean's structural recursion over it costs as much. -/
 def addRecursiveDefs (ref : Syntax) (uses : Array Name) (decl : Name) (recLean : Expr) (typeParams : Array Name := #[]) :
     TermElabM Expr := do
+  let recLean ← eraseEvaluation recLean
   let type := recLean.bindingDomain!
   let solver := solverName decl
   let tmp := leanDeclName decl
@@ -6651,7 +6677,7 @@ def recordBody (path : Name) (ref : Syntax) (decl : Name) (vars : Array Var)
     (tables : Array (Name × Core.IndexPlace × Syntax × Option Core.TableGoal × Expr)) (props : Array PropInfo := #[])
     (fn? : Option Name := none) : TermElabM Unit := do
   if tables.isEmpty && !props.any (·.kind == .ensure) then return
-  let uses ← usesOf (tables.map (·.2.2.2.2) ++ props.map (·.body))
+  let uses ← usesOf (vars.filterMap (·.fact?) ++ tables.map (·.2.2.2.2) ++ props.map (·.body))
   let info : CompInfo := { path := path.getPrefix, vars, props, ref, decl, uses, fn?
                            decidable := !(← getLocal).outsideCore, guarded := (← getLocal).guardedUsed
                            indexes := tables }
@@ -7396,10 +7422,23 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
     return (n, place, r, q, ← if place == .body then pure g else withValue g)
   return (vars.push v, props', sites')
 
+/-- Command elaboration passes its state's recursion limit to Core and
+Term elaboration; changing the scope's option alone does not raise it.
+Leave room for representation wrappers until Core admits the source tree. -/
+def withEvaluationHeadroom (action : CommandElabM α) : CommandElabM α := do
+  let before ← MonadRecDepth.getMaxRecDepth
+  let raised := max before (16 * Core.Enumeration.maxEvalDepth)
+  try
+    modify fun state => { state with maxRecDepth := raised }
+    withScope (fun scope => { scope with opts := maxRecDepth.set scope.opts raised }) action
+  finally
+    modify fun state => { state with maxRecDepth := before }
+
 /-- Elaborates the function `stx`, a `fnCmd`, as written or as a function
 written with a block lowers to (`elabFnBlock`): `orig` is the command as
 written, whose lexemes, layout and lines are checked. -/
-def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandElabM Unit := do
+def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandElabM Unit :=
+    withEvaluationHeadroom do
   checkLexemes orig
   checkParsed orig
   lintItem orig
@@ -7628,7 +7667,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     let recBody? ← if recLeanLam?.isNone then pure none else do
       let st ← getState
       let ds := st.defined.foldl (init := ({} : NameSet)) fun acc _ d => acc.insert d.decl
-      some <$> Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined st lam ds.contains))
+      some <$> Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined st lam ds.contains (keepLastArm := true) (keepEvaluation := true)))
     let recValue ← IO.mkRef (none : Option Expr)
     let solver? ← match recLeanLam?, leanLam? with
       | some recLean, _ =>
@@ -7673,6 +7712,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
                            guarded := (← getLocal).guardedUsed, typeParams := tps
                            declared := if hoParams.isEmpty then declared else hoParams.map (·.ty), result := resultTy, hoParams
                            oblDecls, solver?, namedMembers, namedBranchGroups, namedMemberGroups, source?, recursive := recLeanLam?.isSome, recBody?, recValue? := ← recValue.get, decreasing? := recIdx?
+                           evalBody? := if recLeanLam?.isSome then none else some lam
                            fact? := ← if recIdx?.isSome then (← resultFact? result rp).mapM instantiateMVars else pure none })
     let (_, props, sites) ← if contract then elabContract scope path n decl true vars clauses fnVars (paramRefs.map (·.1)) else pure (vars, #[], #[])
     let selfSites ← withLocalDeclsD (vars.map fun v => (v.name, fun _ => pure v.type)) fun fvs => do
@@ -8819,7 +8859,9 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
     lintOutputs lcx members vars
     lintTrivialCover lcx members
     lintCaseSplitGuarantees lcx members vars
-    let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ defs.map (·.2))
+    -- A subset's invariant is erased from its Lean type, but still brings
+    -- the placeholders used by the generated assumptions and guarantees.
+    let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ vars.filterMap (·.fact?) ++ defs.map (·.2))
     if good then addCompDefs vars declBase fvs uses props values defs
     let closed ← values.mapM fun (d, v) => return (d, ← mkLambdaFVars fvs v)
     return (props, insts, uses, closed, indexes, good)
@@ -8910,7 +8952,10 @@ they were, and the generated declarations. -/
 def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx : Syntax)
     (members : Array Syntax) (tested : Core.Tested) (enumerated : Core.Tested := {}) (enumSize : Nat := 3)
     (global : Bool := false) :
-    TermElabM (Bool × Array Name) := do
+    TermElabM (Bool × Array Name) :=
+    -- Leave room for Lean's representation wrappers around an admitted
+    -- source expression, so Core's enumeration guard reports its own limit.
+    withOptions (fun opts => maxRecDepth.set opts (max (maxRecDepth.get opts) (16 * Core.Enumeration.maxEvalDepth))) do
   unless global do
     for m in members do
       if m.isOfKind ``Lang.refinesMember then
@@ -9502,9 +9547,10 @@ end
     unless Core.constantAccepted abstract !applies.isEmpty do
       throwErrorAt applies[0]! (Core.unknownConstantMsg abstract).text
     lintBools valueStx (← hidesIn { modName, vars := #[], insts := #[], place := .prop })
-    addDecl (.defnDecl { name := decl, levelParams := [], type, value, hints := .abbrev, safety := .safe })
+    let publicValue ← eraseEvaluation value
+    addDecl (.defnDecl { name := decl, levelParams := [], type, value := publicValue, hints := .abbrev, safety := .safe })
     setReducibleAttribute decl
-    compileGenerated decl type value
+    compileGenerated decl type publicValue
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
     let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } valueStx
       else pure none

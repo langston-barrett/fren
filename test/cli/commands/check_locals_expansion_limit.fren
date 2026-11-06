@@ -1,0 +1,30 @@
+-- Following local definitions must be bounded before testing.
+--@ args: check --jobs 2 --evidence random
+pub proc p(n: Int) {
+    let hidden_0: Int := n + n
+    let hidden_1: Int := hidden_0 + hidden_0
+    let hidden_2: Int := hidden_1 + hidden_1
+    let hidden_3: Int := hidden_2 + hidden_2
+    let hidden_4: Int := hidden_3 + hidden_3
+    let hidden_5: Int := hidden_4 + hidden_4
+    let hidden_6: Int := hidden_5 + hidden_5
+    let hidden_7: Int := hidden_6 + hidden_6
+    let hidden_8: Int := hidden_7 + hidden_7
+    let hidden_9: Int := hidden_8 + hidden_8
+    let hidden_10: Int := hidden_9 + hidden_9
+    let hidden_11: Int := hidden_10 + hidden_10
+    let hidden_12: Int := hidden_11 + hidden_11
+    let hidden_13: Int := hidden_12 + hidden_12
+    let hidden_14: Int := hidden_13 + hidden_13
+    let hidden_15: Int := hidden_14 + hidden_14
+    let hidden_16: Int := hidden_15 + hidden_15
+    let hidden_17: Int := hidden_16 + hidden_16
+    let hidden_18: Int := hidden_17 + hidden_17
+    let hidden_19: Int := hidden_18 + hidden_18
+    let hidden_20: Int := hidden_19 + hidden_19
+    let hidden_21: Int := hidden_20 + hidden_20
+    let hidden_22: Int := hidden_21 + hidden_21
+    let hidden_23: Int := hidden_22 + hidden_22
+    let hidden_24: Int := hidden_23 + hidden_23
+    require reads_last: hidden_24 >= n
+}

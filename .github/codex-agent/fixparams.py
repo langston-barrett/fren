@@ -12,6 +12,19 @@ from common import MAX_ROUNDS, LIMIT, MODELS, api, comments, output, prompt, rou
 REVIEW = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues|blocking issues)(?:\s|$)")
 
 
+def failed_build_or_test(repo, run_id):
+    """Ignore the aggregate verdict when a worker timed out or was cancelled."""
+    page = 1
+    while True:
+        jobs = api(f"repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100&page={page}")["jobs"]
+        if any(job["conclusion"] == "failure" and
+               job["name"].startswith(("lake build --wfail (", "lake test (")) for job in jobs):
+            return True
+        if len(jobs) < 100:
+            return False
+        page += 1
+
+
 def reviewed_pr(repo, run_id):
     # A pr-review workflow_run itself has head_branch=main and no PRs.
     # Its context artifact was uploaded by the trusted prepare job, which
@@ -106,8 +119,11 @@ def main():
                 continue
             if trusted(item):
                 reviews.append(item["body"])
-            elif review_bot(item) and generated and item["body"].strip() == generated.strip():
-                reviews.append(generated)
+            elif review_bot(item):
+                if generated and item["body"].strip() == generated.strip():
+                    reviews.append(generated)
+                else:
+                    print("bot review did not match its artifact")
         if not reviews:
             return output(mode="skip")
         review = reviews[-1]
@@ -118,6 +134,9 @@ def main():
                 "finding at every instance, and the small [non-blocking] findings. If you "
                 "disagree, explain why in your comment.\n\n" + review)
     else:
+        if not failed_build_or_test(repo, run_id):
+            print("no failed build or test job; leaving reruns to the coordinator")
+            return output(mode="skip")
         log = subprocess.check_output([
             "gh", "run", "view", run_id, "-R", repo, "--log-failed"], text=True)
         lines = [line for line in log.splitlines() if re.search(r"error:|FAIL|crashed|warning:", line)]
@@ -133,12 +152,13 @@ def main():
     issue, name, effort = re.fullmatch(r"agent/(\d+)-(luna|terra)-(low|medium|high)", branch).groups()
     if mode == "fix":
         inline = comments(api(f"repos/{repo}/pulls/{pr}/comments", pages=True))
+        reviews = comments(api(f"repos/{repo}/pulls/{pr}/reviews", pages=True))
         body = (info["body"] or "") if trusted(info) else "(description omitted: untrusted author)"
         prompt(issue, done + 1,
                f"## This round\n\nYou wrote PR #{pr} ({branch}), checked out with your earlier work. "
                "Write what changed for each finding and your checks to ../agent/comment.md, "
                "and the commit message to ../agent/commit-msg.txt.\n\n" + what +
-               f"\n\n## Trusted PR discussion\n\n{comments(thread)}\n\n{inline}"
+               f"\n\n## Trusted PR discussion\n\n{comments(thread)}\n\n{inline}\n\n{reviews}"
                f"\n\n## PR description\n\n{body}")
     output(mode=mode, issue=issue, pr=pr, branch=branch, base=head,
            model=MODELS[name], effort=effort, round=done + 1)

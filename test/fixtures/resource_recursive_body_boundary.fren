@@ -1,0 +1,15 @@
+set_option fren.evidence "enumerated"
+set_option fren.lint.nonminimal_bool "allow"
+set_option fren.lint.double_neg "allow"
+set_option fren.enumeration.size 4
+set_option fren.enumeration.size 1
+pub enum T { Z, S(T) }
+
+pub fn holds?(t: T): Bool := match t {
+    T::Z => true,
+    T::S(a) =>
+        not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not holds?(a),
+}
+
+proc p(t: T) { expect e: holds?(t) }
+proc d(t: T): (det y?) { out y? := holds?(t) }

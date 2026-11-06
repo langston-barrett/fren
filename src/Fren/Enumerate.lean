@@ -222,7 +222,7 @@ def Enum.iteLazy (c : Option Bool) (yes no : Unit → Option Bool) : Option Bool
   match c with
   | some true => yes ()
   | some false => no ()
-  | none => let a := yes (); if a == no () then a else none
+  | none => let a := yes (); if a.isSome && a == no () then a else none
 
 /-- The compiled functions of one procedure's enumeration, over the slots'
 values and an assignment (`Enumerate.enumerateOnly`). They come from one
@@ -250,6 +250,96 @@ opaque Enum.compileAll (e : Expr) : MetaM Enum.Compiled
 namespace Enumerate
 
 open Core.Enumeration
+
+/-- The declared arguments of a recursive call, excluding the placeholders
+and generic dictionaries that the two generated forms take differently. -/
+def evaluationInstance (d : DefinedInfo) (e : Expr) : RecInstance × Array Expr :=
+  let args := e.getAppArgs
+  let name := d.solver?.getD d.decl
+  if e.isAppOf d.decl then
+    ((name, d.solverTypeArgs.map (args[·]!)), args.extract d.uses.size)
+  else ((name, args.extract 0 d.solverTypeArgs.size), args.extract d.solverTypeArgs.size)
+
+/-- Immediate value arguments, excluding Lean's type, instance and proof
+arguments. These are representation details, not expression steps. -/
+def valueArgs (e : Expr) (recs : Array DefinedInfo := #[]) : MetaM (Array Nat) := do
+  let args := e.getAppArgs
+  if let some d := recs.find? (fun d => e.isAppOf d.decl || d.solver?.any e.isAppOf) then
+    let first := if e.isAppOf d.decl then d.uses.size else d.solverTypeArgs.size
+    return (Array.range args.size).filter (· ≥ first)
+  let info ← getFunInfoNArgs e.getAppFn args.size
+  return (Array.range args.size).filter fun i =>
+    match info.paramInfo[i]? with
+    | some p => p.binderInfo == .default && !p.isProp
+    | none => true
+
+/-- Find source operands without traversing a native helper recursively.
+A nested match or collection owns its own operands. -/
+def sourceOperands (names : Array Name) (root : Expr) : MetaM (Array Expr) :=
+  visit maxEvalNodes 1 [root] {} #[]
+where
+  visit : Nat → Nat → List Expr → Std.HashSet Expr → Array Expr → MetaM (Array Expr)
+    | _, _, [], _, found => pure found
+    | 0, _, _ :: _, _, _ => throwError "evaluation helper exceeds the expression work limit"
+    | fuel + 1, pending, e :: rest, seen, found => do
+      let e := e.consumeMData
+      if seen.contains e then return ← visit fuel (pending - 1) rest seen found
+      let seen := seen.insert e
+      if names.any e.isAppOf then return ← visit fuel (pending - 1) rest seen (found.push e)
+      if e.isAppOf ``Fren.evalMatch || e.isAppOf ``Fren.evalCollection then
+        return ← visit fuel (pending - 1) rest seen found
+      let children ← match e with
+        | .letE _ _ v b _ => pure #[b.instantiate1 v]
+        | .mdata _ b => pure #[b]
+        | .app .. => do return (← valueArgs e).map (e.getAppArgs[·]!)
+        | _ => pure #[]
+      let pending := pending - 1 + children.size
+      if pending > fuel then throwError "evaluation helper exceeds the expression work limit"
+      visit fuel pending (children.foldr (· :: ·) rest) seen found
+
+/-- The adapter exposes source expression boundaries. In particular native
+pattern tests, selectors and literal constructors do not spend extra depth. -/
+def expressionLayer (e : Expr) (recs : Array DefinedInfo := #[]) : MetaM (ExpressionLayer Expr) := do
+  let e := e.consumeMData
+  if e.isAppOf ``Enum.pickE || e.isAppOf ``Enum.pick || e.isAppOf ``Fren.Str.lit || e.isAppOf ``Fren.evalBinding then return {}
+  if e.isAppOf ``Fren.evalCollection then
+    return { children := ← sourceOperands #[``Fren.evalElement] e.appArg! }
+  if e.isAppOf ``Fren.evalTest then
+    return { children := ← sourceOperands #[``Fren.evalScrutinee, ``Fren.evalGuard] e.appArg!, transparent := true }
+  if e.isAppOf ``Fren.evalCase then
+    let body := e.appArg!.consumeMData
+    return { children := if body.isAppOfArity ``ite 5 then #[body.getArg! 1, body.getArg! 3, body.getArg! 4] else #[body], transparent := true, branching := true }
+  if e.isAppOf ``Fren.evalScrutinee then
+    return { children := #[e.appArg!], transparent := (e.getArg! 1).nat?.getD 1 ≤ 1 }
+  if e.isAppOf ``Fren.evalGuard || e.isAppOf ``Fren.evalElement || e.isAppOf ``Fren.lastArm then
+    return { children := #[e.appArg!], transparent := true }
+  if e.isAppOf ``Fren.evalKeep || e.isAppOf ``Fren.evalArgument then
+    return { children := #[e.getArg! 2, e.appArg!], transparent := true }
+  if e.isAppOf ``Fren.evalMatch then return { children := #[e.appArg!], branching := true }
+  -- Recursive calls expose their arguments; each body is admitted as a
+  -- separate root, as in the command-line lowering. Evaluation still
+  -- spends a call step before entering that body.
+  if e.isAppOfArity ``Decidable.decide 2 then
+    return { children := #[e.getArg! 0], transparent := true }
+  if e.isAppOfArity ``Eq 3 && e.getArg! 0 == mkConst ``Bool && e.getArg! 2 == mkConst ``Bool.true then
+    return { children := #[e.getArg! 1], transparent := true }
+  if e.isAppOfArity ``Fren.typeObligation 2 then
+    return { children := #[e.appArg!], transparent := true }
+  if e.isAppOfArity ``Int.ofNat 1 && e.appArg!.nat?.isNone then
+    return { children := #[e.appArg!], transparent := true }
+  if e.isAppOfArity ``ite 5 then return { children := #[e.getArg! 1, e.getArg! 3, e.getArg! 4], branching := true }
+  match e with
+  | .lam _ _ b _ => return { children := #[b], transparent := true }
+  | .forallE _ t b _ =>
+    return { children := if t.hasLooseBVars || !(← isProp t) then #[b] else #[t, b], branching := true }
+  | .letE _ _ v b _ => return { children := #[b.instantiate1 v], transparent := true }
+  | .proj _ _ b => return { children := #[b] }
+  | .app .. =>
+    if e.isAppOf ``OfNat.ofNat || e.isAppOf ``Int.ofNat || e.isAppOf ``Int.negSucc then return {}
+    if e.isAppOfArity ``Not 1 then return { children := #[e.appArg!] }
+    if e.isAppOf ``And || e.isAppOf ``Or || e.isAppOf ``Iff then return { children := e.getAppArgs, branching := true }
+    return { children := (← valueArgs e recs).map (e.getAppArgs[·]!) }
+  | _ => return {}
 
 /-- `base` with the first number after it that names no declaration. -/
 partial def freshDeclName (base : Name) (k : Nat := 1) : MetaM Name := do
@@ -615,6 +705,44 @@ structure PartialEnv where
   /-- The prefix of the definitions that hold large domains' values. -/
   base : Name
   known? : Option (Expr → MetaM Expr) := none
+  depth : Expr := mkNatLit maxEvalDepth
+  compileDepth : Nat := maxEvalDepth
+  compileWork? : Option (IO.Ref Nat) := none
+  recursiveNames : Array Name := #[]
+  recursiveInfos : Array DefinedInfo := #[]
+  scrutinees : Array (Expr × Expr) := #[]
+  recursiveCall? : Option (Expr → Expr → MetaM (Option Expr)) := none
+
+/-- Whether native evaluation would enter a structural recursion. -/
+def PartialEnv.hasRecursion (env : PartialEnv) (e : Expr) : Bool :=
+  (e.find? fun x => env.recursiveNames.any x.isConstOf).isSome
+
+/-- Bound generation of partial evaluator code as well as its execution.
+Substituted definitions can share a subtree along exponentially many paths. -/
+def PartialEnv.charge (env : PartialEnv) : MetaM Bool := do
+  if env.compileDepth == 0 then return false
+  let some work := env.compileWork? | return true
+  let left ← work.get
+  if left == 0 then return false
+  work.set (left - 1)
+  return true
+
+/-- Compile a budget step, with its remainder available to every child. -/
+def PartialEnv.step (env : PartialEnv) (body : PartialEnv → MetaM Expr) : MetaM Expr := do
+  withLocalDeclD `remaining (mkConst ``Nat) fun remaining => do
+    mkAppM ``Core.Enumeration.atDepth
+      #[env.depth, ← mkLambdaFVars #[remaining] (← body { env with depth := remaining, compileDepth := env.compileDepth - 1 })]
+
+/-- A recursion-free native subtree runs only after the shared traversal
+has admitted it for this caller's remaining depth. -/
+def PartialEnv.native (env : PartialEnv) (e value : Expr) : MetaM Expr := do
+  let some height ← expressionDepthM (expressionLayer · env.recursiveInfos) e
+    | return ← mkAppOptM ``Option.none #[some (← inferType value)]
+  if let some depth := env.depth.nat? then
+    if height ≤ boundedEvalDepth depth then return ← mkAppM ``Option.some #[value]
+  withLocalDeclD `_ (mkConst ``Unit) fun unit => do
+    mkAppM ``Core.Enumeration.atExpressionDepth
+      #[mkNatLit height, env.depth, ← mkLambdaFVars #[unit] (← mkAppM ``Option.some #[value])]
 
 /-- `v`, an `Option`, unknown where `env.known?` says that one of `parts`
 is not known. -/
@@ -709,6 +837,38 @@ unknown: by the strong Kleene connectives, and each quantifier over its
 guard's domain or, without one, over `domain` of its type, which gives
 its values up to the bound and whether they are all of its type's. -/
 partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
+  unless ← domain.charge do return ← mkAppOptM ``Option.none #[some (mkConst ``Bool)]
+  let p := p.consumeMData
+  if p.isAppOfArity ``Fren.typeObligation 2 then return ← partialDecide domain p.appArg!
+  if p.isAppOfArity ``Eq 3 && p.getArg! 0 == mkConst ``Bool && p.getArg! 2 == mkConst ``Bool.true then
+    return ← partialValue domain (p.getArg! 1)
+  if let .letE _ _ value body _ := p then return ← partialDecide domain (body.instantiate1 value)
+  if p.isAppOf ``Enum.definedValue || p.isAppOf ``Fren.evalCall then return ← domain.step fun child => partialDecide child p.appArg!
+  if p.isAppOf ``Fren.evalMatch then return ← domain.step fun child => partialMatch child p.appArg! true
+  if p.isAppOf ``Fren.evalCase then
+    if p.appArg!.isAppOfArity ``ite 5 then return ← partialDecideAt domain p.appArg!
+    return ← partialDecide domain p.appArg!
+  if p.isAppOf ``Fren.evalTest then
+    return ← partialFree domain (← sourceOperands #[``Fren.evalScrutinee, ``Fren.evalGuard] p.appArg!) p.appArg! fun value => do
+      mkAppM ``Option.some #[mkApp2 (mkConst ``Decidable.decide) value (← decidableOf value)]
+  if p.isAppOf ``Fren.evalGuard || p.isAppOf ``Fren.evalElement then return ← partialDecide domain p.appArg!
+  if p.isAppOf ``Fren.evalBinding then return ← domain.step fun child => do
+    partialFree child (← sourceOperands #[``Fren.evalScrutinee] p.appArg!) p.appArg! fun value => do
+      mkAppM ``Option.some #[mkApp2 (mkConst ``Decidable.decide) value (← decidableOf value)]
+  if p.isAppOf ``Fren.evalKeep then return ← partialDecide domain p.appArg!
+  if p.isAppOf ``Fren.evalArgument then
+    if domain.known?.isNone then return ← partialDecide domain p.appArg!
+    return ← partialFree domain #[p.getArg! 2] p fun _ => partialDecide domain p.appArg!
+  if p.isAppOf ``Fren.lastArm then
+    return ← partialFree domain #[p.getArg! 2] p fun _ => partialDecide domain p.appArg!
+  if p.isAppOf ``Fren.evalScrutinee then
+    return ← partialSource domain p
+  unless domain.hasRecursion p || (← hasQuantifier p) do
+    if domain.depth == mkNatLit maxEvalDepth || (← expressionInfoM (expressionLayer · domain.recursiveInfos) p).any (fun info => !info.2) then
+      return ← domain.wrap #[p] (← domain.native p (mkApp2 (mkConst ``Decidable.decide) p (← decidableOf p)))
+  domain.step fun child => partialDecideAt child p
+
+partial def partialDecideAt (domain : PartialEnv) (p : Expr) : MetaM Expr := do
   let p := p.consumeMData
   if p.isAppOfArity ``Fren.typeObligation 2 then return ← partialDecide domain p.appArg!
   -- A relation obligation quantifies over its actual pairs. Bounding its
@@ -745,7 +905,13 @@ partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
   if let .letE _ _ value body _ := p then return ← partialDecide domain (body.instantiate1 value)
   let thunk (value : Expr) := withLocalDeclD `_ (mkConst ``Unit) fun u => mkLambdaFVars #[u] value
   let combine (name : Name) (a b : Expr) := do
-    mkAppM name #[← partialDecide domain a, ← thunk (← partialDecide domain b)]
+    let value ← partialDecide domain a
+    if a == b then
+      if name == ``Enum.iffLazy then
+        let constant ← withLocalDeclD `_ (mkConst ``Bool) fun x => mkLambdaFVars #[x] (mkConst ``Bool.true)
+        return ← mkAppM ``Option.map #[constant, value]
+      return value
+    mkAppM name #[value, ← thunk (← partialDecide domain b)]
   let quantified (universal : Bool) (x ty body : Expr) : MetaM Expr := do
     let fn ← mkLambdaFVars #[x] (← partialDecide domain body)
     if let some guarded ← quantifyGuarded domain universal x body fn then return guarded
@@ -769,18 +935,48 @@ partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
       return ← withLocalDecl name bi ty fun x => quantified true x ty (body.instantiate1 x)
     -- A quantifier within an argument, as in `n = (if forall ... then 1
     -- else 2)`: the argument's value, if it is known.
-    if ← hasQuantifier p then
-      return ← liftArgs domain p fun q => do
-        domain.wrap #[q] (← mkAppM ``Option.some #[mkApp2 (mkConst ``Decidable.decide) q (← decidableOf q)])
-    domain.wrap #[p] (← mkAppM ``Option.some #[mkApp2 (mkConst ``Decidable.decide) p (← decidableOf p)])
+    liftArgs domain p fun q => do
+      if let some call := domain.recursiveCall? then
+        if let some value ← call q domain.depth then return value
+      domain.wrap #[q] (← mkAppM ``Option.some #[mkApp2 (mkConst ``Decidable.decide) q (← decidableOf q)])
 
 /-- The value of `e`, which is not a proposition, as an `Option`, `none`
 where it is unknown, as the `fren` command's evaluator has it: a
 conditional whose condition is unknown has the value that its branches
 share, and an application with an unknown argument has none. -/
 partial def partialValue (domain : PartialEnv) (e : Expr) : MetaM Expr := do
+  unless ← domain.charge do return ← mkAppOptM ``Option.none #[some (← inferType e)]
   let e := e.consumeMData
-  unless ← hasQuantifier e do return ← domain.wrap #[e] (← mkAppM ``Option.some #[e])
+  if e.isAppOfArity ``Decidable.decide 2 then return ← partialDecide domain e.getAppArgs[0]!
+  if let .letE _ _ value body _ := e then return ← partialValue domain (body.instantiate1 value)
+  if e.isAppOf ``Enum.definedValue || e.isAppOf ``Fren.evalCall then return ← domain.step fun child => partialValue child e.appArg!
+  if e.isAppOf ``Fren.evalMatch then return ← domain.step fun child => partialMatch child e.appArg! false
+  if e.isAppOf ``Fren.evalCase then
+    if e.appArg!.isAppOfArity ``ite 5 then return ← partialValueAt domain e.appArg!
+    return ← partialValue domain e.appArg!
+  if e.isAppOf ``Fren.evalCollection then return ← domain.step fun child => do
+    partialFree child (← sourceOperands #[``Fren.evalElement] e.appArg!) e.appArg! fun value => mkAppM ``Option.some #[value]
+  if e.isAppOf ``Fren.evalElement then return ← partialValue domain e.appArg!
+  if e.isAppOf ``Fren.evalBinding then return ← domain.step fun child => do
+    partialFree child (← sourceOperands #[``Fren.evalScrutinee] e.appArg!) e.appArg! fun value => mkAppM ``Option.some #[value]
+  if e.isAppOf ``Fren.evalKeep then return ← partialValue domain e.appArg!
+  if e.isAppOf ``Fren.evalArgument then
+    if domain.known?.isNone then return ← partialValue domain e.appArg!
+    return ← partialFree domain #[e.getArg! 2] e fun _ => partialValue domain e.appArg!
+  if e.isAppOf ``Fren.lastArm then
+    return ← partialFree domain #[e.getArg! 2] e fun _ => partialValue domain e.appArg!
+  if e.isAppOf ``Fren.evalScrutinee then return ← partialSource domain e
+  if e.isAppOfArity ``Int.ofNat 1 && e.appArg!.nat?.isNone then
+    return ← mkAppM ``Option.map #[mkConst ``Int.ofNat, ← partialValue domain e.appArg!]
+  unless domain.hasRecursion e || (← hasQuantifier e) do
+    if domain.depth == mkNatLit maxEvalDepth || (← expressionInfoM (expressionLayer · domain.recursiveInfos) e).any (fun info => !info.2) then
+      return ← domain.wrap #[e] (← domain.native e e)
+  domain.step fun child => partialValueAt child e
+
+partial def partialValueAt (domain : PartialEnv) (e : Expr) : MetaM Expr := do
+  let e := e.consumeMData
+  if e.isLambda then
+    return ← mkAppOptM ``Option.none #[some (← inferType e)]
   if e.isAppOfArity ``Decidable.decide 2 then return ← partialDecide domain e.getAppArgs[0]!
   if let .letE _ _ value body _ := e then return ← partialValue domain (body.instantiate1 value)
   let thunk (value : Expr) := withLocalDeclD `_ (mkConst ``Unit) fun u => mkLambdaFVars #[u] value
@@ -788,25 +984,115 @@ partial def partialValue (domain : PartialEnv) (e : Expr) : MetaM Expr := do
     let args := e.getAppArgs
     return ← mkAppM ``Enum.iteValue
       #[← partialDecide domain args[1]!, ← thunk (← partialValue domain args[3]!), ← thunk (← partialValue domain args[4]!)]
-  liftArgs domain e fun x => do domain.wrap #[x] (← mkAppM ``Option.some #[x])
+  liftArgs domain e fun x => do
+    if let some call := domain.recursiveCall? then
+      if let some value ← call x domain.depth then return value
+    domain.wrap #[x] (← mkAppM ``Option.some #[x])
 
 /-- `leaf` of the application `e`, an `Option`, with each of its arguments
-that has a quantifier evaluated first by `partialValue`: `none` if one is
-unknown. -/
+evaluated first by `partialValue`, with the remaining depth: `none` if
+one is unknown. -/
 partial def liftArgs (domain : PartialEnv) (e : Expr) (leaf : Expr → MetaM Expr) : MetaM Expr := do
-  let fn := e.getAppFn
-  let args := e.getAppArgs
-  if ← hasQuantifier fn then throwError "a quantifier in a function position cannot be enumerated: {e}"
-  let some i ← (List.range args.size).findM? (fun i => hasQuantifier args[i]!) | leaf e
-  let arg := args[i]!
-  let ty ← inferType arg
-  if (← isProp arg) || (← isProp ty) then throwError "a quantifier in a proposition's argument cannot be enumerated: {e}"
-  let value ← partialValue domain arg
-  withLocalDeclD `v ty fun x => do
-    let e' := mkAppN fn (args.set! i x)
-    unless ← isTypeCorrect e' do throwError "a quantifier in a dependent argument cannot be enumerated: {e}"
-    mkAppM ``Option.bind #[value, ← mkLambdaFVars #[x] (← liftArgs domain e' leaf)]
+  let rec go (indices : List Nat) (e : Expr) (known : Array (Expr × Expr)) : MetaM Expr := do
+    match indices with
+    | [] => leaf e
+    | i :: indices =>
+      let arg := e.getAppArgs[i]!
+      if let some (_, value) := known.find? (·.1 == arg) then
+        return ← go indices (mkAppN e.getAppFn (e.getAppArgs.set! i value)) known
+      let ty ← inferType arg
+      if (← isProp arg) || (← isProp ty) then throwError "a proposition's dependent argument cannot be enumerated: {e}"
+      let value ← partialValue domain arg
+      withLocalDeclD `v ty fun x => do
+        let e' := mkAppN e.getAppFn (e.getAppArgs.set! i x)
+        unless ← isTypeCorrect e' do throwError "a dependent argument cannot be enumerated: {e}"
+        mkAppM ``Option.bind #[value, ← mkLambdaFVars #[x] (← go indices e' (known.push (arg, x)))]
+  go (← valueArgs e domain.recursiveInfos).toList e #[]
+
+/-- A source scrutinee is evaluated at the match's budget. A multiple
+scrutinee match has the same extra vector step as the command-line IR. -/
+partial def partialSource (domain : PartialEnv) (marker : Expr) : MetaM Expr := do
+  let value := marker.appArg!
+  let run (domain : PartialEnv) : MetaM Expr := do
+    if ← isProp value then partialDecide domain value else partialValue domain value
+  if marker.isAppOf ``Fren.evalScrutinee && (marker.getArg! 1).nat?.getD 1 > 1 then
+    return ← domain.step run
+  run domain
+
+/-- Evaluate source operands, then run native matching or construction on
+known values. Native helpers do not consume source expression depth. -/
+partial def partialFree (domain : PartialEnv) (parts : Array Expr) (e : Expr)
+    (leaf : Expr → MetaM Expr) : MetaM Expr := do
+  let rec go (i : Nat) (e : Expr) : MetaM Expr := do
+    if h : i < parts.size then
+      let part := parts[i]
+      let cached := domain.scrutinees.foldl (init := none) fun found (source, value) =>
+        if source == part then some value else found
+      let value ← match cached with
+        | some value => pure value
+        | none =>
+          if part.isAppOf ``Fren.evalScrutinee then partialSource domain part else
+          let source := if part.isAppOf ``Fren.evalGuard || part.isAppOf ``Fren.evalElement then part.appArg! else part
+          if ← isProp source then partialDecide domain source else partialValue domain source
+      let prop ← isProp part
+      let ty ← if prop then pure (mkConst ``Bool) else inferType part
+      withLocalDeclD `operand ty fun x => do
+        let replacement ← if prop then mkEq x (mkConst ``Bool.true) else pure x
+        let next := e.replace fun original => if original.consumeMData == part then some replacement else none
+        mkAppM ``Option.bind #[value, ← mkLambdaFVars #[x] (← go (i + 1) next)]
+    else leaf e
+  go 0 e
+
+/-- Share a match's scrutinees even when unknown, before selecting cases.
+Bindings read these cached values rather than recomputing their selectors'
+source expression at another depth. -/
+partial def partialMatch (domain : PartialEnv) (body : Expr) (proposition : Bool) : MetaM Expr := do
+  let sources ← sourceOperands #[``Fren.evalScrutinee] body
+  let rec cache (i : Nat) (domain : PartialEnv) : MetaM Expr := do
+    if h : i < sources.size then
+      let source := sources[i]
+      let value ← partialSource domain source
+      withLetDecl `scrutinee (← inferType value) value fun cached => do
+        let body ← cache (i + 1) { domain with scrutinees := domain.scrutinees.push (source, cached) }
+        mkLetFVars #[cached] body
+    else if proposition then partialDecide domain body else partialValue domain body
+  cache 0 domain
+
 end
+
+/-- Compile the solver body's syntax rather than calling its unrestricted
+native recursion. Self calls read strictly smaller entries of Core's depth
+family; dependencies are earlier declarations and use the same remainder. -/
+partial def boundedRecursiveCall (domain : PartialEnv) (prepare : Expr → MetaM Expr)
+    (e remaining : Expr) (fuel : Nat := maxEvalDepth) : MetaM (Option Expr) := do
+  if fuel == 0 then
+    let ty ← if ← isProp e then pure (mkConst ``Bool) else inferType e
+    return some (← mkAppOptM ``Option.none #[some ty])
+  let some d := domain.recursiveInfos.find? fun d => e.isAppOf d.decl || d.solver?.any e.isAppOf
+    | return none
+  let (inst, args) := evaluationInstance d e
+  let some body := d.recBody? | throwError "a structural recursion has no body"
+  let body ← prepare (d.atRecInstance inst.2 body)
+  lambdaTelescope body fun params result => do
+    let resultTy ← if ← isProp result then pure (mkConst ``Bool) else inferType result
+    let zero ← mkLambdaFVars params (mkApp (mkConst ``Option.none [0]) resultTy)
+    if (← expressionDepthM (expressionLayer · domain.recursiveInfos) result).isNone then
+      return some (mkAppN zero args)
+    let fnTy ← inferType zero
+    let familyTy ← mkArrow (mkConst ``Nat) fnTy
+    let step ← withLocalDeclD `depth (mkConst ``Nat) fun depth =>
+      withLocalDeclD `previous familyTy fun previous => do
+        let call (e budget : Expr) : MetaM (Option Expr) := do
+          if e.isAppOf d.decl || d.solver?.any e.isAppOf then
+            let (other, args) := evaluationInstance d e
+            if RecInstance.same (d.decl, inst.2) (d.decl, other.2) then return some (mkAppN (mkApp previous budget) args)
+          boundedRecursiveCall domain prepare e budget (fuel - 1)
+        let child := { domain with depth, recursiveCall? := some call }
+        let value ← if ← isProp result then partialDecide child result else partialValue child result
+        let fn ← mkLambdaFVars params value
+        mkLambdaFVars #[depth, previous] fn
+    let family ← mkAppM ``Core.Enumeration.depthFamily #[zero, step]
+    return some (mkAppN (mkApp family remaining) args)
 
 
 instance : Inhabited (Array Nat → Option Bool) := ⟨fun _ => none⟩
@@ -829,8 +1115,10 @@ def subjectOf (c : CompInfo) : MetaM String := do
 and `ufs` of the abstract types and functions it uses, of which `fns` are
 the functions. -/
 def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) (fns : Array (Name × Expr × Nat × Bool))
-    (kinds : Array CheckKind) (t : Core.Tested) (testing : Bool) : MetaM (Except Core.Msg Enumerated) := do
+    (kinds : Array CheckKind) (t : Core.Tested) (testing : Bool) : MetaM (Except Core.Msg Enumerated) :=
+    withOptions (fun opts => maxRecDepth.set opts (max (maxRecDepth.get opts) (16 * maxEvalDepth))) do
   let st ← getState
+  let recInfos := st.defined.toArray.filterMap fun (_, d) => if d.recursive then some d else none
   let subject ← subjectOf c
   let n := c.enumSize
   let (core, ks) := full.only t kinds
@@ -849,16 +1137,23 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   -- mentions only earlier ones.
   let varFv (x : Name) : Option Expr := (c.vars.findIdx? (·.name == x)).map (fvs[·]!)
   let defined := full.defs.filterMap fun (d, _, e) => (varFv d).map (d, ·, e)
-  let substDefs (e : Expr) : Expr := defined.foldr (init := e) fun (_, fv, de) acc => acc.replaceFVar fv de
+  -- Variable definitions keep their lookup boundary; admit each lowered
+  -- root before substituting them into its callers.
+  for expression in atoms0 ++ defined.map (·.2.2) do
+    let expression ← computableDecisions (← unfoldDefined expression (keepRelationObligations := true))
+    if (← expressionDepthM (expressionLayer · recInfos) expression).isNone then
+      return .error (notEnumerableMsg subject s!"an expression exceeds the evaluator's limit of {maxEvalDepth} levels or {maxEvalNodes} nodes")
+  let substDefs (e : Expr) : MetaM Expr := defined.foldrM (init := e) fun (_, fv, de) acc => do
+    acc.replaceFVar fv <$> mkAppM ``Enum.definedValue #[de]
   -- Each index reads its element type's unspecified value out of range,
   -- and which atoms, a type's facts too, have one (`Atoms.readsIndex`).
-  let atoms ← atoms0.mapM fun a => do readIndexes (← specializeRecursions (← computableDecisions (← unfoldDefined (substDefs a) (keepRelationObligations := true))))
+  let atoms ← atoms0.mapM fun a => do readIndexes (← computableDecisions (← unfoldDefined (← substDefs a) (keepRelationObligations := true)))
   let atomIndexed := atoms.map (·.2)
   let atoms := atoms.map (·.1)
   -- And each defined output's definition, which `same` reads, and whose
   -- unspecified values and functions are enumerated as the atoms' are,
   -- as the `fren` command's are.
-  let defExprs ← defined.mapM fun (_, fv, _) => do readIndexes (← specializeRecursions (← computableDecisions (← unfoldDefined (substDefs fv) (keepRelationObligations := true))))
+  let defExprs ← defined.mapM fun (_, fv, _) => do readIndexes (← computableDecisions (← unfoldDefined (← substDefs fv) (keepRelationObligations := true)))
   let defIndexed := defExprs.map (·.2)
   let defExprs := defExprs.map (·.1)
   let scanned := atoms ++ defExprs
@@ -877,12 +1172,14 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     if scanned.any (·.containsFVar x.fvarId!) then (abstractOf u).map (·.path) else none
   if let some f := contractBlocker? applied fun f => ((st.contracts.get? f).map (·.posts.size)).getD 0 then
     return .error (notEnumerableMsg subject (contractNotEnumerable f))
+  -- Keep absent metadata shallow here. Core expands it under its type
+  -- budget; PTy.plain would recurse before admission.
   let mut used : Array (Name × Expr × Bool × FunVar) := #[]
   for (u, x, _, nat) in fns do
     if scanned.any (·.containsFVar x.fvarId!) then
       let some a := abstractOf u | continue
       used := used.push (a.path, x, nat,
-        { name := a.path, params := a.ptys.1.map (Core.PTy.plain ·.ty), result := a.ptys.2 })
+        { name := a.path, params := a.ptys.1.map (fun p => ({ ty := p.ty } : Core.PTy)), result := a.ptys.2 })
   if let some f := used.find? (fun f => needsSemanticFilter st.shapeOf f.2.2.2.result) then
     return .error (notEnumerableMsg subject
       s!"the result type of `{Core.showPath f.1}` has a named invariant that cannot be enumerated as an unconstrained function table")
@@ -904,6 +1201,8 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     if seen.contains d.decl then continue
     seen := seen.insert d.decl
     if let some b := d.recBody? then
+      if (← expressionDepthM (expressionLayer · recInfos) b).isNone then
+        return .error (notEnumerableMsg subject s!"an expression exceeds the evaluator's limit of {maxEvalDepth} levels or {maxEvalNodes} nodes")
       if (b.find? fun x => x.isAppOfArity ``Fren.Seq.nth 4 && !isUnspecified x).isSome then recIndexed := true
       work := work ++ recs.filter (mentions b ·)
   if recIndexed then
@@ -927,8 +1226,8 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       if acc.any (fun v => hiddenTy (v.getArg! 0) == hiddenTy (u.getArg! 0)) then acc else acc.push u) acc
   let ptyOfLean (t : Expr) : Option Core.PTy :=
     match absTys.find? (·.1 == t) with
-    | some (_, p) => some (Core.PTy.plain (.abstract p))
-    | none => (coreTyOf st t).map Core.PTy.plain
+    | some (_, p) => some { ty := .abstract p }
+    | none => (coreTyOf st t).map fun ty => ({ ty } : Core.PTy)
   let mut hidden : Array (Name × Core.PTy) := #[]
   for u in unspec, k in [0:unspec.size] do
     let some pt := ptyOfLean (u.getArg! 0)
@@ -936,7 +1235,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     hidden := hidden.push (.mkNum `«[][0]» k, pt)
   let vars := c.vars.map fun v =>
     ({ sig := { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
-       pty := if v.fact?.isSome then v.ptype else Core.PTy.plain v.ptype.ty
+       pty := if v.fact?.isSome then v.ptype else { ty := v.ptype.ty }
        defined := v.defn?.isSome } : SlotVar)
   let (space, values, shapes, fslots) ← match spaceOf st.shapeOf n vars hidden (used.map (·.2.2.2)) (if testing then testCount else 0) (hash c.path) with
     | .ok r => pure r
@@ -1017,7 +1316,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
         mkAppOptM ``Enum.pickE #[some t, some dec, some tables, some env, some (mkNatLit i)]
       | none, some table => return mkApp5 (mkConst ``Enum.pick) t table (← d) env (mkNatLit i)
       | none, none => d
-    let e := e.replaceFVars slotFvs picks
+    let e ← computableDecisions (e.replaceFVars slotFvs picks)
     -- Boolean definitions can carry elaboration-time classical decisions.
     -- Rebuild those decisions after substituting the finite interpretation,
     -- including decisions nested inside values compared by an outer atom.
@@ -1052,17 +1351,27 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       | .error why =>
         domainError.set (some (notEnumerableMsg subject (notEnumerableWhy none why)))
         return (#[], false)
-    let domain : PartialEnv := { values := domainValues, base := c.decl ++ `_enum_domain }
+    let compileWork ← IO.mkRef maxEvalNodes
+    let domain : PartialEnv := {
+      values := domainValues
+      base := c.decl ++ `_enum_domain
+      compileWork? := some compileWork }
     -- The same, with every index out of range unknown, as `knownOf` has
     -- it of what has no quantifier.
     let strictDomain : PartialEnv := { domain with known? := some (knownOf decideOf) }
+    let recNames := st.defined.toArray.flatMap fun (_, d) =>
+      if d.recursive then #[d.decl] ++ d.solver?.toArray else #[]
+    let resourceDomain (base : PartialEnv) (tables env : Expr) : PartialEnv :=
+      let base := { base with recursiveNames := recNames, recursiveInfos := recInfos }
+      { base with recursiveCall? := some (boundedRecursiveCall base fun body => do
+          overWith tables env none (← computableDecisions (replaceUses c.uses ufs body))) }
     -- An atom's truth, three-valued, over the slots' values and the
     -- assignment.
     let optionBool := mkApp (mkConst ``Option [0]) (mkConst ``Bool)
     let truthTy ← mkArrow tablesTy (← mkArrow arrNat optionBool)
     let evalFns ← atoms.mapM fun a => fn1 fun tables env => do
       let e ← overWith tables env none a
-      if ← hasQuantifier e then partialDecide domain e else mkAppM ``Option.some #[← decideOf e]
+      partialDecide (resourceDomain domain tables env) e
     if let some msg ← domainError.get then return .error msg
     -- Whether each atom, and each defined output, that has an index is
     -- unknown in an assignment with the indexes out of range unknown, but
@@ -1070,7 +1379,9 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     -- command evaluates it, through each instance.
     let knownFn (e : Expr) : MetaM Expr := fn1 fun tables env => do
       let x ← overWith tables env none e
-      unless ← hasQuantifier x do return ← overWith tables env none (← knownOf decideOf e)
+      unless (resourceDomain domain tables env).hasRecursion x || (← hasQuantifier x) do return ← overWith tables env none (← knownOf decideOf e)
+      let strictDomain := resourceDomain strictDomain tables env
+      let domain := resourceDomain domain tables env
       let (strict, normal) ← if ← isProp x then pure (← partialDecide strictDomain x, ← partialDecide domain x)
         else pure (← partialValue strictDomain x, ← partialValue domain x)
       return mkApp2 (mkConst ``or) (← mkAppM ``Option.isSome #[strict])
@@ -1085,15 +1396,20 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     -- where a quantifier leaves its value unknown in either.
     let sameFns ← defined.mapM fun (_, _, de) => withLocalDeclD `tables tablesTy fun tables =>
       withLocalDeclD `e₁ arrNat fun e₁ => withLocalDeclD `e₂ arrNat fun e₂ => do
-        let (de, _) ← readIndexes (← unfoldDefined de (keepRelationObligations := true))
+        let (de, _) ← readIndexes (← unfoldDefined (← mkAppM ``Enum.definedValue #[de]) (keepRelationObligations := true))
         let a ← overWith tables e₁ none de
         let b ← overWith tables e₂ none de
-        mkLambdaFVars #[tables, e₁, e₂] (← if !(← hasQuantifier a) then mkAppM ``Option.some #[← decideOf (← mkEq a b)]
-          else if ← isProp a then do
-            mkAppM ``Enum.iffLazy #[← partialDecide domain a,
-              ← withLocalDeclD `_ (mkConst ``Unit) fun u => do mkLambdaFVars #[u] (← partialDecide domain b)]
-          else mkAppM ``Enum.sameValue #[← partialValue domain a, ← partialValue domain b])
+        let da := resourceDomain domain tables e₁
+        let db := resourceDomain domain tables e₂
+        mkLambdaFVars #[tables, e₁, e₂] (← if ← isProp a then do
+            mkAppM ``Enum.iffLazy #[← partialDecide da a,
+              ← withLocalDeclD `_ (mkConst ``Unit) fun u => do mkLambdaFVars #[u] (← partialDecide db b)]
+          else mkAppM ``Enum.sameValue #[← partialValue da a, ← partialValue db b])
     if let some msg ← domainError.get then return .error msg
+    -- Only syntactically unconditional `some` callbacks certify totality;
+    -- a depth check, lookup or recursive call keeps the partial backend.
+    let total ← (evalFns ++ sameFns).allM fun fn =>
+      lambdaTelescope fn fun _ body => return body.isAppOf ``Option.some
     let sameTy ← mkArrow tablesTy (← mkArrow arrNat (← mkArrow arrNat optionBool))
     -- Compiled at once, with `batch` (`Enum.Compiled`).
     let batchFn ← withLocalDeclD `f (← mkArrow (mkConst ``Unit) arrNat) fun f =>
@@ -1116,8 +1432,10 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     -- `eval`, `known` and `truth?` from one evaluation (`Atoms.ofTruth`).
     let ats : Atoms := { Atoms.ofTruth atomSlots fun k env => evals[k]! env with
       defs := atomDefs
+      unknownReason := if quantified then undecidedQuantifierReason else
+        Core.evaluationDepthReason maxEvalDepth
       batch := compiled.batch
-      total := !quantified
+      total := total
       sameDefined := fun d e₁ e₂ => match defined.findIdx? (·.1 == d) with
         | some i => sames[i]! e₁ e₂ == some true
         | none => true

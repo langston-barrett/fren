@@ -1,5 +1,7 @@
 -- keep-sorted start
 import FrenCli.Elab.Model
+import FrenCore.Check.Contracts
+import FrenCore.SetCard
 -- keep-sorted end
 
 /-!
@@ -285,52 +287,56 @@ def appliedFns (cx : ExprCtx) (e : Expr) : M (Array Name) := do
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
-partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) := #[]) (e : Expr) : M Fren.Core.MentionShape := do
-  let parts (k : Fren.Core.MentionKind) (es : List Expr) : M Fren.Core.MentionShape :=
-    return .node k (← es.mapM (shapeOf cx bs))
+private partial def shapeOfM (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) := #[]) (e : Expr) : StateT (NameMap Fren.Core.MentionShape) M Fren.Core.MentionShape := do
+  let parts (k : Fren.Core.MentionKind) (es : List Expr) : StateT (NameMap Fren.Core.MentionShape) M Fren.Core.MentionShape :=
+    return .node k (← es.mapM (shapeOfM cx bs))
   -- The binders of the pattern tests of the chain of `and` `c`, each with
   -- the shape of its scrutinee.
-  let testBinderShapes (c : Expr) : M (Array (Name × Fren.Core.MentionShape)) :=
+  let testBinderShapes (c : Expr) : StateT (NameMap Fren.Core.MentionShape) M (Array (Name × Fren.Core.MentionShape)) :=
     (chainOperands "and" c).flatMapM fun
       | .is _ sc p => do
-        let s' ← shapeOf cx bs sc
+        let s' ← shapeOfM cx bs sc
         return (← patternBinders cx p).map fun x => (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder [s'])
       | _ => pure #[]
   match e with
-  | .block sp op members => shapeOf cx bs (Expr.lowerBlock sp op members)
+  | .block sp op members => shapeOfM cx bs (Expr.lowerBlock sp op members)
   | .path _ segs =>
     if segs.size != 1 then return .leaf .constant
     let n := identName segs[0]!.name
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
     if let some b := cx.binder? n.getRoot then
       let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable (n.toString (escape := false)) else .bound)
-      return .node .binder [← shapeOf (cx.at b) #[] sc]
+      return .node .binder [← shapeOfM (cx.at b) #[] sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
-      return .node .definition [← shapeOf { cx with binders := #[] } #[] d]
+      if let some cached := (← get).find? n.getRoot then return cached
+      let summary := (← shapeOfM { cx with binders := #[] } #[] d).summary
+      let shaped := Fren.Core.MentionShape.node .definition [summary]
+      modify fun cache => cache.insert n.getRoot shaped
+      return shaped
     return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable (n.toString (escape := false)) else .constant)
   -- The names that the pattern tests of a condition, or of the left
   -- operand of `and`, bind, in what sees them (`lang::test_scope`).
   | .when _ false c d | .bin _ "and" c d => do
     let new ← testBinderShapes c
-    return .node .compound [← shapeOf cx bs c, ← shapeOf cx (bs ++ new) d]
+    return .node .compound [← shapeOfM cx bs c, ← shapeOfM cx (bs ++ new) d]
   | .ite _ c a b => do
     let new ← testBinderShapes c
-    return .node .compound [← shapeOf cx bs c, ← shapeOf cx (bs ++ new) a, ← shapeOf cx bs b]
+    return .node .compound [← shapeOfM cx bs c, ← shapeOfM cx (bs ++ new) a, ← shapeOfM cx bs b]
   | .when _ _ c d | .bin _ _ c d | .pair _ c d | .index _ c d => parts .compound [c, d]
   | .not _ a | .neg _ a | .field _ a _ => parts .compound [a]
   | .method _ r _ args => parts .method (r :: args.toList)
   | .set _ es | .seq _ es | .chain _ es _ => parts .compound es.toList
   | .quant _ _ binders body =>
     let new := binders.flatMap (·.names) |>.map fun x => (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.leaf .bound)
-    return .node .compound [← shapeOf cx (bs ++ new) body]
+    return .node .compound [← shapeOfM cx (bs ++ new) body]
   -- A closure's parameter varies, as a variable does
   -- (`Reqs/Lang/HigherOrder#arguments`).
   | .closure _ ps body =>
     let new := ps.map fun (x, _) =>
       let n := (declaredIdent x).1.name
       (Name.mkSimple n, Fren.Core.MentionShape.leaf (.variable n))
-    return .node .compound [← shapeOf cx (bs ++ new) body]
+    return .node .compound [← shapeOfM cx (bs ++ new) body]
   | .app _ segs args =>
     -- A cardinality operator has a fixed meaning, as an operator does.
     let k : Fren.Core.MentionKind ← if isCardinality segs then pure .compound
@@ -340,29 +346,35 @@ partial def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) 
   | .record _ _ fs => parts .construction (fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
   | .update _ r fs => parts .compound (r :: fs.toList.map fun (f, e?) => e?.getD (.path f.span #[f]))
   | .match _ s arms _ =>
-    let s' ← shapeOf cx bs s
+    let s' ← shapeOfM cx bs s
     let arms ← arms.toList.flatMapM fun (p, g?, body) => do
       let new := (← patternBinders cx p).map fun x =>
         (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder [s'])
-      (g?.toList ++ [body]).mapM (shapeOf cx (bs ++ new))
+      (g?.toList ++ [body]).mapM (shapeOfM cx (bs ++ new))
     return .node .compound (s' :: arms)
   | .matches _ ss arms _ =>
-    let shapes ← ss.mapM (shapeOf cx bs)
+    let shapes ← ss.mapM (shapeOfM cx bs)
     let children ← arms.toList.flatMapM fun (ps, g, body) => do
       let mut new := #[]
       for p in ps, j in [0:ps.size] do
         new := new ++ (← patternBinders cx p).map fun x =>
           (Name.mkSimple (declaredIdent x).1.name, Fren.Core.MentionShape.node .binder (shapes[j]?.toList))
-      (g.toList ++ [body]).mapM (shapeOf cx (bs ++ new))
+      (g.toList ++ [body]).mapM (shapeOfM cx (bs ++ new))
     return .node .compound (shapes.toList ++ children)
   | .is _ s _ => parts .compound [s]
   | .«let» _ defs body _ =>
     -- Each name stands for its definition, which sees the earlier names.
     let bs ← defs.foldlM (init := bs) fun bs (x, _, d) => do
-      return bs.push (Name.mkSimple (declaredIdent x).1.name, .node .definition [← shapeOf cx bs d])
-    return .node .compound [← shapeOf cx bs body]
+      return bs.push (Name.mkSimple (declaredIdent x).1.name, .node .definition [(← shapeOfM cx bs d).summary])
+    return .node .compound [← shapeOfM cx bs body]
   | .table _ rows => parts .compound (tableParts rows).toList
   | .num .. | .bool .. | .str .. => return .leaf .literal
+
+/-- Definition summaries are local to this context, whose variables do
+not change while walking the expression. Pattern and quantifier binders
+are still looked up before the cached procedure definitions. -/
+def shapeOf (cx : ExprCtx) (bs : Array (Name × Fren.Core.MentionShape) := #[]) (e : Expr) : M Fren.Core.MentionShape :=
+  (shapeOfM cx bs e).run' {}
 
 /-- Whether `e` mentions a variable or an uninterpreted function
 (`lang::mentions`). -/
@@ -950,6 +962,29 @@ partial def orderingSmt (o : Fren.Core.OrderPlan) (op : String) (x y : String) :
 def mismatch (e : Expr) (expected found : Ty) (why : Option String := none) : M α :=
   err e.span (Fren.Core.typeMismatchMsg expected found why)
 
+/-- Count every listed element instead of using cvc5's native finite-sort
+cardinality, which may fail or return a refuted model (#820). -/
+def setCardSmt (recv : String) (t : Ty) : M String := do
+  let s ← get
+  let some n := Fren.Core.setCardExpansion (Fren.Core.setCardCount s.valueCount t)
+    | return s!"(set.card {recv})"
+  let values? := match t with
+    | .set a => (s.values Fren.Core.maxInstances a).map (·.map (s!"(tuple {·})"))
+    | .rel a b => do
+      let xs ← s.values Fren.Core.maxInstances a
+      let ys ← s.values Fren.Core.maxInstances b
+      some (xs.flatMap fun x => ys.map fun y => s!"(tuple {x} {y})")
+    | _ => none
+  let vs ← match Fren.Core.checkedSetCardValues n values? with
+    | .ok vs => pure vs
+    | .error msg => internal default msg
+  -- No Fren variable has `@`. Nested bindings are scoped to their sum.
+  let name := quote "card@receiver"
+  let body ← Fren.Core.sumSetMembersM vs "0"
+    (fun v => pure s!"(ite (set.member {v} {name}) 1 0)")
+    (fun a b => pure s!"(+ {a} {b})")
+  return s!"(let (({name} {recv})) {body})"
+
 /-- Calls the method `m` of the value `recv` of type `t`, with the
 arguments `args`, each with its type and span (`lang::method_type`). -/
 def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array (String × Ty × Span)) :
@@ -968,7 +1003,7 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
       | err span (Fren.Core.unknownMethodMsg m t.show false false true)
     unless args.size == method.arity do err span (Fren.Core.arityMsg (Name.mkSimple m) method.arity args.size)
     return ← match method with
-      | .card => pure (s!"(set.card {recv})", .int)
+      | .card => do pure (← setCardSmt recv t, .int)
       | .inverse => pure (s!"(rel.transpose {recv})", .rel b a)
       -- A join with every value of the other type, if it is finite; else a
       -- projection, which needs higher-order logic.
@@ -988,7 +1023,7 @@ def callMethod (span : Span) (recv : String) (t : Ty) (m : String) (args : Array
   if let .set _ := t then
     unless m == "card" do err span (Fren.Core.unknownSetMethodMsg m t.show)
     unless args.isEmpty do err span (Fren.Core.arityMsg (Name.mkSimple m) 0 args.size)
-    return (s!"(set.card {recv})", .int)
+    return (← setCardSmt recv t, .int)
   if let .seq elem := t then
     let some method := (Fren.Core.Method.ofName? m).filter (·.accepts false false false true)
       | err span (Fren.Core.unknownMethodMsg m t.show false false false true)

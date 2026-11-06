@@ -2,7 +2,7 @@
 import Fren.FinSet
 import Fren.LastArm
 import Fren.Seq
-import FrenCore.Check
+import FrenCore.Check.Component
 import FrenCore.Closures
 import FrenCore.Enumeration
 import FrenCore.Evidence
@@ -401,9 +401,14 @@ structure DefinedInfo where
   recursive : Bool := false
   /-- For a structural recursion, its body as the solver reads it: a
   closed lambda over its parameters, with its `match`es as `if`s and its
-  applications of itself of `solver?`, used only for ground equations
-  within the query's unfolding bound (`lang::recursive_facts`). -/
+  applications of itself of `solver?`. Evaluation boundaries are retained
+  for bounded enumeration; queries erase them before using ground
+  equations within their unfolding bound (`lang::recursive_facts`). -/
   recBody? : Option Expr := none
+  /-- The nonrecursive source body, before evaluation boundaries are erased
+  from its generated public definition. Closed over its own parameters;
+  placeholders remain constants until `deltaDefined` replaces them. -/
+  evalBody? : Option Expr := none
   decreasing? : Option Nat := none
   fact? : Option Expr := none
   /-- For a generic structural recursion, its Lean definition's value, over
@@ -848,6 +853,72 @@ the constraints of its values (`Core.DataShape`). -/
 def State.shapeOf (s : State) (path : Name) : Option Core.DataShape :=
   (s.enums.get? path).map (·.shape) <|> (s.records.get? path).map (·.shape) <|> (s.newtypes.get? path).map (·.shape)
 
+/-- Keep a defined output's lookup step after substitution; otherwise
+expansion would restore one unit of depth at each reference. -/
+abbrev Enum.definedValue {α : Sort u} (value : α) : α := value
+
+/-- Source evaluation boundaries retained only by bounded enumeration.
+The solver and proofs see the identity functions' unchanged values. -/
+abbrev evalMatch {α : Type} (value : α) : α := value
+abbrev evalCase {α : Type} (value : α) : α := value
+abbrev evalScrutinee {α : Type} (_arity : Nat) (value : α) : α := value
+abbrev evalBinding {α : Type} (value : α) : α := value
+abbrev evalTest (p : Prop) : Prop := p
+abbrev evalGuard (p : Prop) : Prop := p
+abbrev evalCollection {α : Type} (value : α) : α := value
+abbrev evalElement {α : Type} (value : α) : α := value
+abbrev evalCall {α : Type} (value : α) : α := value
+abbrev evalArgument {α β : Type} (_arg : β) (value : α) : α := value
+abbrev evalKeep {α β : Type} (_arg : β) (value : α) : α := value
+
+
+private def evaluationMarker (n : Name) : Bool :=
+  [``evalMatch, ``evalCase, ``evalScrutinee, ``evalBinding, ``evalTest,
+    ``evalGuard, ``evalCollection, ``evalElement, ``evalCall, ``evalArgument, ``evalKeep].contains n
+
+/-- Ignore evaluation boundaries while recognizing value equations and
+knownness. Bounded evaluation itself reads the marked expression. -/
+partial def unmarkEvaluation (e : Expr) : Expr :=
+  let e := e.consumeMData
+  if e.isApp && (e.getAppFn.constName?.any evaluationMarker || e.isAppOf ``Enum.definedValue) then
+    unmarkEvaluation e.appArg!
+  else e
+
+/-- Erase source evaluation boundaries from generated public definitions.
+The model retains their marked bodies for bounded enumeration. Generated
+obligation conjunctions can be much deeper than source expressions, so
+use an iterative traversal that reuses shared subexpressions. -/
+def eraseEvaluation (root : Expr) : CoreM Expr := do
+  let mut todo := [(root, false)]
+  -- Structural keys preserve binder names and metadata as well as meaning.
+  let mut rewritten : ExprStructMap Expr := {}
+  while !todo.isEmpty do
+    let (e, ready) := todo.head!
+    todo := todo.tail!
+    unless rewritten.contains e do
+      let marked := e.isApp &&
+        (e.getAppFn.constName?.any evaluationMarker || e.isAppOf ``Enum.definedValue)
+      if ready then
+        let get (child : Expr) := rewritten[(child : ExprStructEq)]!
+        let value := if marked then get e.appArg! else match e with
+          | .app f a => e.updateApp! (get f) (get a)
+          | .lam _ t b _ => e.updateLambdaE! (get t) (get b)
+          | .forallE _ t b _ => e.updateForallE! (get t) (get b)
+          | .letE _ t v b _ => e.updateLetE! (get t) (get v) (get b)
+          | .mdata _ b => e.updateMData! (get b)
+          | .proj _ _ b => e.updateProj! (get b)
+          | _ => e
+        rewritten := rewritten.insert e value
+      else
+        let children := if marked then [e.appArg!] else match e with
+          | .app f a => [f, a]
+          | .lam _ t b _ | .forallE _ t b _ => [t, b]
+          | .letE _ t v b _ => [t, v, b]
+          | .mdata _ b | .proj _ _ b => [b]
+          | _ => []
+        todo := children.foldr (fun child rest => (child, false) :: rest) ((e, true) :: todo)
+  return rewritten[(root : ExprStructEq)]!
+
 /-- The obligation of a value given where the type `ty` is declared, in a
 definedness goal: `p`, marked with the type, as written, so that the check
 reports it (`Reqs/Check#subset-types`). -/
@@ -1240,10 +1311,10 @@ def solverName (decl : Name) : Name := decl.str "#solver"
 form (`DefinedInfo.solver?`) is unfolded to that form instead of its
 declaration's body, so that the solver sees the same terms whatever form
 the declaration has. -/
-def deltaDefined (s : State) (e : Expr) (p : Name → Bool) (keepLastArm := false) : CoreM Expr := do
+def deltaDefined (s : State) (e : Expr) (p : Name → Bool) (keepLastArm := false) (keepEvaluation := false) : CoreM Expr := do
   -- The last arm of a complete `match` is its body, except to the reader of
   -- a model's values (`Fren.lastArm`).
-  let p := fun n => p n || (!keepLastArm && n == ``Fren.lastArm)
+  let p := fun n => p n || (!keepLastArm && n == ``Fren.lastArm) || (!keepEvaluation && evaluationMarker n)
   -- Each declaration with a solver form: that form, how many of the
   -- arguments, its placeholders', the form does not take, as a structural
   -- recursion's does not, and the positions among those of the ones it
@@ -1253,22 +1324,49 @@ def deltaDefined (s : State) (e : Expr) (p : Name → Bool) (keepLastArm := fals
     match d.solver? with
     | some n => acc.insert d.decl (n, if d.recursive then d.uses.size else 0, if d.recursive then d.solverTypeArgs else #[])
     | none => acc
-  if redirect.isEmpty then return ← Meta.deltaExpand e p
   let solvers := redirect.foldl (init := ({} : NameSet)) fun acc _ (n, _) => acc.insert n
   -- A structural recursion's solver form is not unfolded: the solver is
   -- given its recursive definition.
   let recursive := s.defined.foldl (init := ({} : NameSet)) fun acc _ d =>
-    if d.recursive then d.solver?.elim acc acc.insert else acc
+    if d.recursive then (d.solver?.elim acc acc.insert).insert d.decl else acc
   Core.transform e fun e => do
     let e := match e.getAppFn with
       | .const c ls => match redirect.get? c with
         | some (n, k, keep) =>
+          if keepEvaluation && recursive.contains c then e else
           let args := e.getAppArgs
           mkAppN (.const n ls) (keep.filterMap (args[·]?) ++ args.extract k)
         | none => e
       | _ => e
-    match ← Meta.delta? e fun n => (p n || solvers.contains n) && !recursive.contains n with
-    | some e' => return .visit e'
+    let marked? := if !keepEvaluation then none else
+      s.defined.toArray.findSome? fun (_, d) => do
+        let n ← e.getAppFn.constName?
+        guard ((d.decl == n || d.solver? == some n) && !d.recursive && (p n || solvers.contains n))
+        let body ← d.evalBody?
+        let args := e.getAppArgs
+        guard (args.size ≥ d.uses.size)
+        return (replaceUses d.uses (args.extract 0 d.uses.size) body).beta (args.extract d.uses.size)
+    let expanded? ← match marked? with
+      | some body => pure (some body)
+      | none => Meta.delta? e fun n => (p n || solvers.contains n) && !recursive.contains n
+    match expanded? with
+    | some e' =>
+      -- Preserve a defined call's step and its strict arguments, while
+      -- still exposing its body to the bounded evaluator.
+      if keepEvaluation then
+        if let some (_, d) := s.defined.toArray.find? (fun (_, d) => (d.decl == e.getAppFn.constName! || d.solver? == some e.getAppFn.constName!) && !d.recursive) then
+          let args := e.getAppArgs
+          let info ← getConstInfo e.getAppFn.constName!
+          let mut ty := info.type.instantiateLevelParams info.levelParams e.getAppFn.constLevels!
+          let mut values : Array (Expr × Expr) := #[]
+          for arg in args, i in [0:args.size] do
+            let .forallE _ argTy body _ := ty | break
+            if i ≥ d.uses.size then values := values.push (argTy, arg)
+            ty := body.instantiate1 arg
+          let body := values.foldr (init := e') fun (argTy, arg) body =>
+            mkAppN (mkConst ``evalArgument) #[ty, argTy, arg, body]
+          return .visit (mkApp2 (mkConst ``evalCall) ty body)
+      return .visit e'
     | none => return .continue e
 
 def getLocal : m LocalState := return localExt.getState (← getEnv)

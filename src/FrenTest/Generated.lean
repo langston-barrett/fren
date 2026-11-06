@@ -190,3 +190,42 @@ example (l : check.Level) :
 #guard_msgs in
 #fren_check
 
+-- Resource accounting stays in the source model. Public definitions keep
+-- ordinary match expressions, so tactics need no evaluation-marker lemmas.
+pub fn marker_free(b?): Int := match b? { true => 1, false => 0 }
+
+run_cmd Lean.Elab.Command.liftTermElabM do
+  let some d := (← Fren.getState).defined.get? `check.marker_free
+    | throwError "missing source model for marker_free"
+  let some marked := d.evalBody? | throwError "missing bounded-evaluation body"
+  unless (marked.find? (·.isAppOf ``Fren.evalMatch)).isSome do
+    throwError "source evaluation boundaries were lost"
+  let .defnInfo info ← Lean.getConstInfo d.decl | throwError "missing generated definition"
+  if (info.value.find? (·.isAppOf ``Fren.evalMatch)).isSome then
+    throwError "evaluation boundaries leaked into the public definition"
+
+example (b : Bool) : 0 ≤ check.marker_free b := by
+  cases b <;> decide
+
+-- Generated closure obligations may contain thousands of conjuncts.
+-- Erasing source markers must not recurse down that generated spine.
+run_cmd Lean.Elab.Command.liftTermElabM do
+  let truth := Lean.mkConst ``True
+  let deep := (List.range 20000).foldl (fun body _ => Lean.mkApp2 (Lean.mkConst ``And) truth body) truth
+  let marked := Lean.mkApp2 (Lean.mkConst ``Fren.evalMatch) (Lean.mkSort .zero) deep
+  unless (← Fren.eraseEvaluation marked) == deep do
+    throwError "erasing a deep generated obligation changed its value"
+
+-- Alpha-equivalent terms can carry different public binder annotations.
+-- The rewrite cache must preserve their complete syntax.
+run_cmd Lean.Elab.Command.liftTermElabM do
+  let bool := Lean.mkConst ``Bool
+  let fnTy := Lean.Expr.forallE `value bool bool .default
+  let left := Lean.Expr.lam `left bool (.bvar 0) .default
+  let right := Lean.Expr.mdata (Lean.KVMap.empty.insert `fren.publicAnnotation (.ofNat 7))
+    (.lam `right bool (.bvar 0) .implicit)
+  let ty := Lean.mkApp2 (Lean.mkConst ``Prod [0, 0]) fnTy fnTy
+  let pair := Lean.mkAppN (Lean.mkConst ``Prod.mk [0, 0]) #[fnTy, fnTy, left, right]
+  let marked := Lean.mkApp2 (Lean.mkConst ``Fren.evalMatch) ty pair
+  unless Lean.Expr.equal (← Fren.eraseEvaluation marked) pair do
+    throwError "marker erasure changed binder names or annotations"

@@ -2,6 +2,7 @@
 import FrenCli.Search
 import FrenCli.Smt
 import FrenCli.Verdicts
+import FrenCore.Check.ReportFormat
 -- keep-sorted end
 
 /-!
@@ -363,9 +364,7 @@ partial def Fm.eval (sp : Spec) (sy : Symbols) (I : Interp) (env : Env) (tys : N
     let p : Problem := { vars := outs, atoms, ints := intsOf atoms ++ (env.fold (init := #[]) fun acc _ v =>
       match v with | .int i => acc ++ #[i - 1, i, i + 1] | _ => acc), strs := (stringsOf atoms).run' ⟨1⟩ }
     let w : World := { seed := 0, sizes := sizesOf env }
-    match (p.solve sp w I env 20000).run' ⟨1⟩ with
-    | some _ => some true
-    | none => none
+    Fren.Core.outputGoalTruth (some ((p.solve sp w I env 20000).run' ⟨1⟩).isSome)
 
 /-! ## The paired backend -/
 
@@ -509,6 +508,7 @@ def confirming (sp : Spec) (sy : Symbols) (ec : Comp) (kind : Fren.Core.CheckKin
     -- `exists` (`CComp.natFacts`), so that an output that the guarantees
     -- allow but its subset type does not refutes nothing.
     existsOutputs := fun f => do return (← b.existsOutputs f.1, .exOutputs outs (.conj #[outputTypes, f.2]))
+    outputApplications? := b.outputApplications?.map fun extract f => extract f.1
     pin := fun n v => do return (← b.pin n v).map (·, .pin n v)
     pinVariant := fun n v => do return (← b.pinVariant n v).map fun (k, f) => (k, (f, .pinVariant n v))
     -- The values read, which the confirmation evaluates (`Reqs/Models#reading`).
@@ -722,12 +722,12 @@ def readItems (chars : Array Char) : Except String (Array Item) :=
 
 /-- The evaluator's reading of files that the elaborator accepted. -/
 def specStateOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    Except String LState := do
-  let items ← files.mapM fun (_, chars) => readItems chars
+    Except ReadError LState := do
+  let items ← ((files.mapM fun (_, chars) => readItems chars) : Except String (Array (Array Item))).mapError ReadError.invalid
   lowerAll items callTargs
 
 def specOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    Except String Spec := (·.spec.keepCompiledRecs) <$> specStateOf files callTargs
+    Except ReadError Spec := (·.spec.keepCompiledRecs) <$> specStateOf files callTargs
 
 /-- The evaluator's procedure for the elaborator's, matched by path, for a
 global expectation by its module and name, or for the body of a function

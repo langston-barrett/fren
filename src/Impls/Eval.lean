@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCli.Verdicts
 import FrenCore.Enumeration
+import FrenCore.Expansion
 import Impls.Check
 import Reqs.Eval
 -- keep-sorted end
@@ -9,10 +10,11 @@ open Fren.Lang
 /-!
 # The evaluator's decisions (`Reqs/Eval`)
 
-The decisions in `FrenCli.Verdicts` implement the comps of `eval`: for
-whatever the search and the evaluator found, the status, verdict, exit code
-or confirmation is as required. Each obligation is proved by `decide`, or,
-over a number of tests, by cases on whether there were any.
+The verdict decisions in `FrenCli.Verdicts` and shared confirmation policy
+in `FrenCore.Check` implement the comps of `eval`: for whatever the search
+and the evaluator found, the status, verdict, exit code or confirmation is
+as required. Each obligation is proved by `decide`, or, over a number of
+tests, by cases on whether there were any.
 -/
 
 namespace Fren.Impls
@@ -46,6 +48,124 @@ impl evaluation_depth: eval::evaluation_depth for (n : Nat) {
   intro n _
   simp [fren_spec, Fren.Core.Enumeration.boundedEvalDepth,
     Fren.Core.Enumeration.maxEvalDepth, Nat.min_def]
+
+impl expansion_budget: eval::expansion_budget {
+  initial := Fren.Core.maxExpansionNodes,
+} by decide
+
+impl expansion_step: eval::expansion_step for (remaining : Nat) {
+  remaining := remaining,
+  copy? := (Fren.Core.expansionStep remaining).isSome,
+  after := (Fren.Core.expansionStep remaining).getD 0,
+} by
+  intro remaining _
+  cases remaining <;> simp [fren_spec, Fren.Core.expansionStep] <;> omega
+
+/-- A small expression-tree model; shared children remain separate
+occurrences in the work list. The generic reservation theorem covers
+arbitrary child arities as well. Correspondence between `Ex.copyChildren`
+and the copying traversal is checked separately, per constructor, in
+`FrenTest.Expansion`; this model is not a proof of that correspondence. -/
+def copyTreeChildren : eval.CopyTree → List eval.CopyTree
+  | .Leaf => []
+  | .Site => []
+  | .Branch left right => [left, right]
+  | .Application argument => [argument, .Branch argument argument]
+
+def copyTreeNodes : eval.CopyTree → Nat
+  | .Leaf => 1
+  | .Site => 1
+  | .Branch left right => 1 + copyTreeNodes left + copyTreeNodes right
+  | .Application argument => 2 + 3 * copyTreeNodes argument
+
+theorem copyTree_rule (tree : eval.CopyTree) :
+    copyTreeNodes tree = 1 + ((copyTreeChildren tree).map copyTreeNodes).sum := by
+  cases tree <;> simp [copyTreeNodes, copyTreeChildren] <;> omega
+
+theorem copyTree_visits (tree : eval.CopyTree) :
+    (copyTreeNodes tree : Int) = eval.copy_visits tree := by
+  induction tree <;> simp_all [copyTreeNodes, eval.copy_visits, Int.natCast_add, Int.natCast_mul]
+
+def copyTreeSite : eval.CopyTree → Bool
+  | .Site => true
+  | _ => false
+
+def copyTreeHasSite : eval.CopyTree → Bool
+  | .Leaf => false
+  | .Site => true
+  | .Branch left right => copyTreeHasSite left || copyTreeHasSite right
+  | .Application argument => copyTreeHasSite argument
+
+theorem copyTree_site (tree : eval.CopyTree) :
+    copyTreeHasSite tree = (copyTreeSite tree || (copyTreeChildren tree).any copyTreeHasSite) := by
+  cases tree <;> simp [copyTreeHasSite, copyTreeSite, copyTreeChildren]
+
+theorem copyTree_hasSite (tree : eval.CopyTree) :
+    copyTreeHasSite tree = eval.copy_has_site? tree := by
+  induction tree <;> simp_all [copyTreeHasSite, eval.copy_has_site?]
+
+def queryStatus : Option (Bool × Nat) → eval.SiteQuery
+  | none => .Exhausted
+  | some (false, _) => .Absent
+  | some (true, _) => .Present
+
+impl reading_query: eval::reading_query for (tree : eval.CopyTree) (remaining : Nat) {
+  tree := tree,
+  remaining := remaining,
+  status := queryStatus (Fren.Core.readingQuery copyTreeSite copyTreeChildren remaining [tree]),
+  after := ((Fren.Core.readingQuery copyTreeSite copyTreeChildren remaining [tree]).map (·.2)).getD 0,
+} by
+  intro tree remaining allowance
+  simp only [fren_spec] at allowance
+  have spec := Fren.Core.readingQuery_spec copyTreeSite copyTreeChildren copyTreeNodes copyTreeHasSite
+    copyTree_rule copyTree_site remaining [tree]
+  have visits := copyTree_visits tree
+  have sites := copyTree_hasSite tree
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero,
+    List.any_cons, List.any_nil, Bool.or_false] at spec
+  cases result : Fren.Core.readingQuery copyTreeSite copyTreeChildren remaining [tree] with
+  | none =>
+    simp only [result] at spec
+    simp [queryStatus, fren_spec]
+    omega
+  | some answer =>
+    rcases answer with ⟨found, left⟩
+    simp only [result] at spec
+    rcases spec with ⟨found_eq, _, left_lt⟩
+    have spent := left_lt (by simp)
+    cases found <;> simp_all [queryStatus, fren_spec] <;> omega
+
+impl expansion_count: eval::expansion_count for (tree : eval.CopyTree) (remaining : Nat) {
+  tree := tree,
+  remaining := remaining,
+  fits? := (Fren.Core.expansionBudget copyTreeChildren remaining [tree]).isSome,
+  after := (Fren.Core.expansionBudget copyTreeChildren remaining [tree]).getD 0,
+} by
+  intro tree remaining _
+  have visits := copyTree_visits tree
+  rw [Fren.Core.expansionBudget_count copyTreeChildren copyTreeNodes copyTree_rule]
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero]
+  by_cases fits : copyTreeNodes tree ≤ remaining
+  · simp [fits, fren_spec]
+    omega
+  · simp [fits, fren_spec]
+    omega
+
+impl reading_size: eval::reading_size for (tree : eval.CopyTree) (remaining : Nat) {
+  tree := tree,
+  remaining := remaining,
+  fits? := (Fren.Core.readingBudget copyTreeChildren remaining [tree]).isSome,
+  after := (Fren.Core.readingBudget copyTreeChildren remaining [tree]).getD 0,
+} by
+  intro tree remaining allowance
+  simp only [fren_spec] at allowance
+  have visits := copyTree_visits tree
+  unfold Fren.Core.readingBudget
+  rw [Fren.Core.expansionBudget_count copyTreeChildren copyTreeNodes copyTree_rule]
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero]
+  by_cases fits : copyTreeNodes tree ≤ remaining
+  · simp [fits, fren_spec] <;> omega
+  · simp [fits, fren_spec] <;> omega
 
 def toStatus : Status → eval.Status
   | .Inadmissible => .Inadmissible
@@ -167,6 +287,17 @@ impl confirm_model: eval::confirm for (h g a : Bool) {
 } by
   intro h g a _
   cases h <;> cases g <;> cases a <;> decide
+
+impl outputs_goal: eval::outputs_goal for (truth : Option Bool) {
+  known? := truth.isSome,
+  value? := truth.getD false,
+  goal_known? := (Core.outputGoalTruth truth).isSome,
+  goal_true? := (Core.outputGoalTruth truth).getD false,
+} by
+  intro truth _
+  cases truth with
+  | none => decide
+  | some v => cases v <;> decide
 
 impl confirmed: eval::confirmed_verdict for (v : Verdict) (c : Confirmation) {
   solver := toVerdict v,

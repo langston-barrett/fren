@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Confirm
+import FrenCore.Check.Run
 import FrenCore.Enumeration
 -- keep-sorted end
 
@@ -86,65 +87,84 @@ def indexRead : Name := .str .anonymous "[]"
 recursive function's body, which enumeration does not enumerate. -/
 def recursiveIndexRead : Name := .str .anonymous "[] in a recursion"
 
-/- The functions that `e` applies, including type-membership dependencies. -/
-mutual
-/-- Include the bodies that type membership evaluates, with recursion cycles
-visited once. These hidden dependencies share the ordinary function slots. -/
-partial def Eval.Ex.appsIn (sp : Spec) (seenFns seenTypes : NameSet) (e : Ex) : Array Name :=
-  let nested := e.children.flatMap (Eval.Ex.appsIn sp seenFns seenTypes)
-  match e with
-  | .app f _ =>
-    match sp.defs.find? f with
-    | some (_, body, _) =>
-      if seenFns.contains f then nested else
-      let inner := body.appsIn sp (seenFns.insert f) seenTypes
-      -- An index within a recursion is the Lean-hosted front end's to
-      -- evaluate by Lean's own default, so neither front end enumerates it.
-      let inner := if sp.recDefs.contains f then inner.map fun n => if n == indexRead then recursiveIndexRead else n else inner
-      nested ++ inner
-    | none => #[f] ++ nested
-  | .typed t _ _ => nested ++ typeAppsIn sp seenFns seenTypes t
-  | .obligation c _ => nested ++ consAppsIn sp seenFns seenTypes c
-  | .quant _ _ _ _ _ tys _ => nested ++ tys.flatMap (typeAppsIn sp seenFns seenTypes)
-  | .table _ _ (some u) | .match _ _ _ _ (some u) _ => #[u] ++ nested
-  -- `[][0]` is the unspecified value itself, as a table's is.
-  | .index (.seqLit #[]) (.lit (.int 0)) _ u => #[u]
-  -- After its parts, as the hosted front end's `Enum.nthOr` reads it.
-  | .index _ _ _ u => nested ++ #[u, indexRead]
-  | _ => nested
+/-- Internal dependency-discovery refusals; neither can be a source name. -/
+def expressionResourceLimit : Name := .mkSimple "#expression-limit"
+def typeResourceLimit : Name := .mkSimple "#type-limit"
 
-/-- Dependencies of just the selected giving-site obligation. -/
-partial def consAppsIn (sp : Spec) (seenFns seenTypes : NameSet) : Fren.Core.Cons → Array Name
-  | .predicate i =>
-    if seenFns.contains i.predicate then #[] else
-    match sp.defs.find? i.predicate with
-    | some (_, body, _) => body.appsIn sp (seenFns.insert i.predicate) seenTypes
-    | none => #[i.predicate]
-  | .fields _ _ cs => cs.flatMap fun (_, c) => consAppsIn sp seenFns seenTypes c
-  | .newtype _ c | .elems _ _ c => consAppsIn sp seenFns seenTypes c
-  | .payloads _ _ cs => cs.flatMap fun (_, _, c) => consAppsIn sp seenFns seenTypes c
-  | .pairs _ _ a b => a.toArray.flatMap (consAppsIn sp seenFns seenTypes) ++ b.toArray.flatMap (consAppsIn sp seenFns seenTypes)
-  | .all cs => cs.flatMap (consAppsIn sp seenFns seenTypes)
-  | _ => #[]
+private inductive Dependency where
+  | expression (e : Ex) (recursive : Bool)
+  | type (t : Fren.Core.PTy) (recursive : Bool)
+  | constraint (c : Fren.Core.Cons) (recursive : Bool)
+  | function (name : Name) (recursive : Bool)
+  | name (name : Name)
 
-partial def typeAppsIn (sp : Spec) (seenFns seenTypes : NameSet) (t : Fren.Core.PTy) : Array Name :=
-  let own := t.invariants.flatMap fun i =>
-    if seenFns.contains i.predicate then #[] else
-    match sp.defs.find? i.predicate with
-    | some (_, body, _) => body.appsIn sp (seenFns.insert i.predicate) seenTypes
-    | none => #[i.predicate]
-  let nested := (t.parts ++ t.elems).flatMap (typeAppsIn sp seenFns seenTypes)
-  let path? := match t.ty with
-    | .record p _ | .enum p _ | .newtype p _ => some p
-    | _ => none
-  let fields := path?.map fun path =>
-    if seenTypes.contains path then #[] else
-    ((sp.shapes.find? path).map fun shape => (shape.inst t.parts).parts.flatten.flatMap
-      (typeAppsIn sp seenFns (seenTypes.insert path))).getD #[]
-  own ++ nested ++ fields.getD #[]
-end
-
-partial def Eval.Ex.appsOf (e : Ex) (sp : Spec) : Array Name := e.appsIn sp {} {}
+/-- Discover dependencies with a bounded work list. Function bodies are
+admitted as roots of their own; discovering a body is not evaluating it at
+the caller's remaining depth. No recursive type substitution precedes its
+admission, including the types of invariants and quantifiers. -/
+def Eval.Ex.appsOf (e : Ex) (sp : Spec) : Array Name :=
+  if !e.withinLimits then #[expressionResourceLimit] else
+  visit maxEvalNodes 1 [.expression e false] {} {} #[]
+where
+  visit : Nat → Nat → List Dependency → NameMap Bool → NameMap Bool → Array Name → Array Name
+    | _, _, [], _, _, found => found
+    | 0, _, _ :: _, _, _, _ => #[expressionResourceLimit]
+    | fuel + 1, pending, entry :: rest, functions, types, found => Id.run do
+      let mut functions := functions
+      let mut types := types
+      let mut found := found
+      let mut children : Array Dependency := #[]
+      match entry with
+      | .name name => if !found.contains name then found := found.push name
+      | .function name recursive =>
+        if (functions.find? name).any (fun seen => seen || !recursive) then
+          return visit fuel (pending - 1) rest functions types found
+        functions := functions.insert name recursive
+        match sp.defs.find? name with
+        | none => children := #[.name name]
+        | some (_, body, _) =>
+          if !body.withinLimits then return #[expressionResourceLimit]
+          children := #[.expression body (recursive || sp.recDefs.contains name)]
+      | .expression e recursive =>
+        children := e.children.map (.expression · recursive)
+        match e with
+        | .app name _ =>
+          if sp.defs.contains name then children := children.push (.function name recursive)
+          else children := #[.name name] ++ children
+        | .typed t _ _ => children := children.push (.type t recursive)
+        | .obligation c _ => children := children.push (.constraint c recursive)
+        | .quant _ _ _ _ _ ts _ => children := children ++ ts.map (.type · recursive)
+        | .table _ _ (some u) | .match _ _ _ _ (some u) _ => children := #[.name u] ++ children
+        | .index (.seqLit #[]) (.lit (.int 0)) _ u => children := #[.name u]
+        | .index _ _ _ u => children := children ++ #[.name u, .name (if recursive then recursiveIndexRead else indexRead)]
+        | _ => pure ()
+      | .constraint c recursive =>
+        let add := fun c => Dependency.constraint c recursive
+        children := match c with
+          | .predicate i => #[.function i.predicate recursive]
+          | .fields _ _ cs => cs.map fun (_, c) => add c
+          | .newtype _ c | .elems _ _ c => #[add c]
+          | .payloads _ _ cs => cs.map fun (_, _, c) => add c
+          | .pairs _ _ a b => (a.toArray ++ b.toArray).map add
+          | .all cs => cs.map add
+          | _ => #[]
+      | .type t recursive =>
+        if !typesWithinLimits sp.shapes.find? #[(0, t)] then return #[typeResourceLimit]
+        children := t.invariants.map fun i => .function i.predicate recursive
+        let parts := t.ty.parts.toArray.map fun ty => ({ ty } : Fren.Core.PTy)
+        children := children ++ (parts ++ t.elems).map (.type · recursive)
+        let path? := match t.ty with
+          | .record p _ | .enum p _ | .newtype p _ => some p
+          | _ => none
+        if let some path := path? then
+          unless (types.find? path).any (fun seen => seen || !recursive) do
+            types := types.insert path recursive
+            if let some shape := sp.shapes.find? path then
+              let some (shape, _) := instantiateWithin shape t | return #[typeResourceLimit]
+              children := children ++ shape.parts.flatten.map (.type · recursive)
+      let pending := pending - 1 + children.size
+      if pending > fuel then return #[expressionResourceLimit]
+      return visit fuel pending (children.foldr (· :: ·) rest) functions types found
 
 /-- Whether `u` names the unspecified value of a type (`unspecifiedFn`). -/
 def isUnspecified (u : Name) : Bool := isUnspecifiedName u
@@ -194,6 +214,10 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   -- No uninterpreted function whose contract has a postcondition
   -- (`contractBlocker?`, `check::contract_blocker`).
   let apps := all.flatMap (fun e => e.2.appsOf sp)
+  if apps.contains expressionResourceLimit then
+    throw (notEnumerableMsg subject s!"an expression exceeds the evaluator's limit of {maxEvalDepth} levels or {maxEvalNodes} nodes")
+  if apps.contains typeResourceLimit then
+    throw (notEnumerableMsg subject (notEnumerableWhy none typeLimitMarker))
   -- The uninterpreted functions, whose interpretations are enumerated, but
   -- not of one whose contract has a postcondition, which constrains them.
   let fnNames := apps.foldl (init := #[]) fun acc f =>
@@ -209,8 +233,8 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   if let some f := fnNames.find? (fun f => !(sp.funs.contains f)) then
     throw (notEnumerableMsg subject s!"the evaluator does not know the function `{Fren.Core.showPath f}` used by a type invariant")
   let funs : Array FunVar := fnNames.filterMap fun f => (sp.funs.find? f).map fun (ps, r) =>
-    { name := f, params := ps.map fun t => Fren.Core.PTy.plain (t.core sp)
-      result := (sp.results.find? f).getD (Fren.Core.PTy.plain (r.core sp)) }
+    { name := f, params := ps.map fun t => { ty := t.core sp }
+      result := (sp.results.find? f).getD { ty := r.core sp } }
   if let some f := funs.find? (fun f => needsSemanticFilter sp.shapes.find? f.result) then
     throw (notEnumerableMsg subject s!"the result type of `{Fren.Core.showPath f.name}` has a named invariant that cannot be enumerated as an unconstrained function table")
   -- A quantifier without a domain ranges over its type's values up to the
@@ -227,13 +251,13 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
   -- The hidden slots: each type whose unspecified value is read, in the
   -- order of the atoms.
   let hiddenNames := apps.foldl (init := #[]) fun acc u => if !isUnspecified u || acc.contains u then acc else acc.push u
-  let hidden := hiddenNames.filterMap fun u => (sp.funs.find? u).map fun (_, t) => (u, Fren.Core.PTy.plain (t.core sp))
+  let hidden := hiddenNames.filterMap fun u => (sp.funs.find? u).map fun (_, t) => (u, { ty := t.core sp })
   let defined := c.vars.filter (·.defn?.isSome) |>.map (·.name)
   let vars := c.vars.map fun v =>
     ({ sig := { name := v.name, role := v.role, isPub := v.isPub, isDet := v.isDet }
        -- A variable whose type brings no constraint ranges over its type
        -- without patterns (`Reqs/Check#enumerable-types`).
-       pty := if v.fact?.isSome then v.ptype else Fren.Core.PTy.plain v.ptype.ty
+       pty := if v.fact?.isSome then v.ptype else { ty := v.ptype.ty }
        defined := v.defn?.isSome } : SlotVar)
   let (space, values, shapes, fslots) ← match spaceOf sp.shapes.find? n vars hidden funs (if testing then testCount else 0) (hash c.path) with
     | .ok r => pure r
@@ -324,7 +348,7 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
       c.vars.all (fun v => v.ptype.ty == .bool || v.ptype.ty == .int) &&
       Ex.scalarTotal (all.map (·.2))
     unknownReason := if mayBeUnknown (all.map (·.2.hasQuantifier)) then undecidedQuantifierReason
-      else s!"evaluation reached its depth limit of {maxEvalDepth}"
+      else Fren.Core.evaluationDepthReason maxEvalDepth
     sameDefined := fun d e₁ e₂ => look e₁ fuel d == look e₂ fuel d
     sameKnown := fun d e₁ e₂ => (look e₁ fuel d).isSome && (look e₂ fuel d).isSome
     defSlots := fun d => (reads fuel d).foldl (fun a s => if a.contains s then a else a.push s) #[]

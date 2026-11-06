@@ -130,12 +130,12 @@ FrenCli.elaborate
 FrenCli.internal
 FrenCli.patSmt
 FrenCli.typeNames
-_private.FrenCli.Parse.0.FrenCli.atom
-_private.FrenCli.Parse.0.FrenCli.atomsOf
-_private.FrenCli.Parse.0.FrenCli.decodeAt
-_private.FrenCli.Parse.0.FrenCli.next
-_private.FrenCli.Parse.0.FrenCli.nextInt
-_private.FrenCli.Parse.0.FrenCli.nextNat
-_private.FrenCli.Parse.0.FrenCli.nextSegs
-_private.FrenCli.Parse.0.FrenCli.nextSpan
+_private.FrenCli.Parse.PatternSyntax.0.FrenCli.atom
+_private.FrenCli.Parse.PatternSyntax.0.FrenCli.atomsOf
+_private.FrenCli.Parse.PatternSyntax.0.FrenCli.decodeAt
+_private.FrenCli.Parse.PatternSyntax.0.FrenCli.next
+_private.FrenCli.Parse.PatternSyntax.0.FrenCli.nextInt
+_private.FrenCli.Parse.PatternSyntax.0.FrenCli.nextNat
+_private.FrenCli.Parse.PatternSyntax.0.FrenCli.nextSegs
+_private.FrenCli.Parse.PatternSyntax.0.FrenCli.nextSpan
 main -- the entry point of `fren`, which only calls `FrenCli.run`; the tests call `run` itself

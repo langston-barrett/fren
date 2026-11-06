@@ -1,6 +1,6 @@
 -- keep-sorted start
 import FrenCore.Closures
-import Impls.Lang
+import Impls.Lang.Expressions
 import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang

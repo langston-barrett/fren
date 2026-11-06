@@ -584,16 +584,38 @@ partial def Pat.ranges? : Pat → Option (List (Option Int × Option Int))
   | .or alts => do return (← alts.toList.mapM Pat.ranges?).flatten
   | _ => none
 
-/-- How many integers at least `low` the pattern `p` matches, if finitely
-many, counted from its bounds without listing them
+/-- The merged finite intervals matched by `p`, clipped below `low`
+before their width is counted or their values are constructed
 (`lang::pattern_finite`, `lang::pattern_count`). -/
-def Pat.intCount? (p : Pat) (low : Option Int := none) : Option Nat := do
+def Pat.intIntervals? (p : Pat) (low : Option Int := none) : Option (List (Int × Int)) := do
   let ivs := (← p.ranges?).map fun (lo, hi) =>
     match low, lo with
     | some l, some lo => (some (max lo l), hi)
     | some l, none => (some l, hi)
     | none, lo => (lo, hi)
-  intervalsCount? ivs
+  unless intervalsFinite ivs do failure
+  -- Sort once and merge at the head of a reversed accumulator. Inserting
+  -- every interval into a sorted list recursed through all preceding gaps.
+  let sorted := (ivs.filterMap fun
+    | (some lo, some hi) => if lo ≤ hi then some (lo, hi) else none
+    | _ => none).mergeSort (fun a b => a.1 ≤ b.1)
+  let merged := sorted.foldl (init := []) fun acc (lo, hi) =>
+    match acc with
+    | (l, h) :: rest => if lo ≤ h + 1 then (l, max h hi) :: rest else (lo, hi) :: acc
+    | [] => [(lo, hi)]
+  return merged.reverse
+
+/-- Count and construct an integer domain from the same merged, clipped
+intervals. Gaps and integers below `low` are never materialized. -/
+def Pat.intValuesWithin? (p : Pat) (cap : Nat) (low : Option Int := none) : Option (Array Int) := do
+  let ivs ← p.intIntervals? low
+  if totalWidth ivs > cap then none
+  return (ivs.flatMap fun (lo, hi) => (List.range (hi - lo + 1).toNat).map fun (k : Nat) => lo + (k : Int)).toArray
+
+/-- How many integers at least `low` the pattern matches, computed from
+the same intervals that bounded domain construction uses. -/
+def Pat.intCount? (p : Pat) (low : Option Int := none) : Option Nat :=
+  (p.intIntervals? low).map totalWidth
 
 /-- The bounds of the ranges and the integers of the pattern `p`. -/
 partial def Pat.bounds : Pat → Array Int
@@ -624,8 +646,8 @@ partial def PTy.values (shapes : Name → Option DataShape) (t : PTy) (cap : Nat
       -- Counted first, so that a wide range is never listed.
       let n ← t.pat?.bind (·.intCount? (if t.ty == .nat then some 0 else none))
       if n > cap then none
-      let vs ← t.pat?.bind Pat.intValues?
-      some ((if t.ty == .nat then vs.filter (0 ≤ ·) else vs).map .int)
+      let vs ← t.pat?.bind (·.intValuesWithin? cap (if t.ty == .nat then some 0 else none))
+      some (vs.map .int)
     | .enum p _ | .record p _ | .newtype p _ => do
       let d := (← shapes p).inst t.parts
       if d.recursive then none

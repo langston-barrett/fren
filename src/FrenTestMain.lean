@@ -3,6 +3,8 @@ import Fren
 import FrenCli.Eval
 import FrenCli.Run
 import FrenTest.EvalLimits
+import FrenTest.Expansion
+import FrenTest.ExpansionFuzz
 import FrenTest.Frontends
 import FrenTest.FuzzFrontends
 import FrenTest.Jobs
@@ -1103,10 +1105,10 @@ def ownSpecFiles : IO (Array String) := do
     "Lang/Scope",
     "Lang/Procedures",
     "Lang/Global",
-    "Lang/Decidability",
     "Lang/Patterns",
     "Lang/Let",
     "Lang/Quantifiers",
+    "Lang/Decidability",
     "Lang/ElementQuantifiers",
     "Lang/Semantics",
     "Lang/EvaluationRules",
@@ -1647,14 +1649,27 @@ def sharedCase (first : Agreement) (again : IO Agreement) : IO (Array String × 
       let head := ((msg.splitOn "\n").head?.getD msg).dropSuffix ":" |>.toString
       return (#[], #[s!"{head}, but only where queries reached their time limit, twice"])
 
+/-- Cache options for an isolated run, preserving whether caching is enabled. -/
+def sharedCacheOption (cache? : Option String) (dir : FilePath) : List String :=
+  if cache?.isSome then ["--query-cache", dir.toString] else []
+
+#guard sharedCacheOption none "copy" == []
+#guard sharedCacheOption (some "source") "copy" == ["--query-cache", "copy"]
+
+/-- Copy a configured cache for an isolated run; leave caching disabled when
+no cache is configured. -/
+def sharedCacheArgs (cache? : Option String) (dir : FilePath) : IO (List String) := do
+  if let some cache := cache? then copyTree cache dir
+  return sharedCacheOption cache? dir
+
 /-- Starts the run of Fren's own requirements on the binary's path for
 `sharedSpec`, in a task, with a copy of the query cache `cache?`, if any,
 in `root`, so that it shares no directory with another run. -/
 def sharedOwnStart (root : FilePath) (cache? : Option String) (ref : IO (String × UInt32)) :
     IO (Task (Except IO.Error Agreement)) := do
   let dir := root / "own"
-  copyTree (cache?.getD "/nonexistent") dir
-  IO.asTask (sharedAgrees (["check", "--query-cache", dir.toString] ++ (← ownSpecFiles).toList) ref) .dedicated
+  let cacheArgs ← sharedCacheArgs cache? dir
+  IO.asTask (sharedAgrees (["check"] ++ cacheArgs ++ (← ownSpecFiles).toList) ref) .dedicated
 
 /-- The `fren` binary's path through `check` and `quickcheck`, where the
 spec and what else the threads read is read once, marked persistent and
@@ -1680,8 +1695,8 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
     let ref : IO (String × UInt32) ← match own? with
       | some own => pure (pure own)
       | none => do
-        copyTree (cache.getD "/nonexistent") (root / "ref")
-        pure (runFren (["check", "--jobs", "1", "--query-cache", (root / "ref").toString] ++ (← ownSpecFiles).toList))
+        let cacheArgs ← sharedCacheArgs cache (root / "ref")
+        pure (runFren (["check", "--jobs", "1"] ++ cacheArgs ++ (← ownSpecFiles).toList))
     -- The tests' path runs once, whichever run of the binary's path it is
     -- compared with.
     let refTask ← IO.asTask ref .dedicated
@@ -1698,8 +1713,9 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
     let again : IO Agreement := do
       let (refOut, refCode) ← refOnce
       let dir := root / "again"
-      copyTree ((if own?.isSome then cache else some (root / "ref").toString).getD "/nonexistent") dir
-      sharedAgrees (["check", "--query-cache", dir.toString] ++ (← ownSpecFiles).toList) (pure (refOut, refCode))
+      let source := cache.map fun c => if own?.isSome then c else (root / "ref").toString
+      let cacheArgs ← sharedCacheArgs source dir
+      sharedAgrees (["check"] ++ cacheArgs ++ (← ownSpecFiles).toList) (pure (refOut, refCode))
     let (f, s) ← sharedCase (← IO.ofExcept own.get) again
     failures := failures ++ f
     skips := skips ++ s
@@ -2354,6 +2370,21 @@ def sequenceCorpus (n : Nat) : String := Id.run do
 def corpora : List (String × (Nat → String)) :=
   [("strings", stringCorpus), ("sets", setCorpus), ("relations", relationCorpus), ("sequences", sequenceCorpus)]
 
+/-- The fixed conformance corpus must execute checks, report no
+internal error, and leave no query undecided, including at a limit.
+Only evidence downgraded because its premise did not pass is allowed. -/
+def conformanceDecided (out : String) : Bool := Id.run do
+  let resting := (out.splitOn "warning[F0664]").length - 1
+  let some summary := (out.splitOn "\n").find? (·.startsWith "fren: ") | return false
+  let counts := ((summary.drop 6).toString.splitOn ", ").filterMap fun s => (s.splitOn " ").head?.bind String.toNat?
+  return counts.any (· > 0) && !out.contains "internal error:".toSlice &&
+    !out.contains "could not check".toSlice && summary.contains s!" {resting} inconclusive".toSlice
+
+#guard conformanceDecided "fren: 1 passed, 0 failed, 0 inconclusive, 0 redundant"
+#guard !conformanceDecided "fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant"
+#guard !conformanceDecided "internal error: bug\nfren: 1 passed, 0 failed, 0 inconclusive, 0 redundant"
+#guard !conformanceDecided "fren: 1 passed, 0 failed, 1 inconclusive, 0 redundant"
+
 /-- The solver decides every query of the corpus `name`: nothing is
 inconclusive but a pass that rests on a check that did not pass, such as
 an expectation of a procedure whose assumptions contradict each other
@@ -2363,8 +2394,7 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
   let file := s!".lake/corpus/{name}.fren"
   IO.FS.writeFile file (corpus 40)
   let (out, _) ← runFren ["check", file]
-  let resting := (out.splitOn "warning[F0664]").length - 1
-  if out.contains "could not check".toSlice || !out.contains s!" {resting} inconclusive".toSlice then
+  if !conformanceDecided out then
     return #[s!"the {name} corpus ({file}) is not decided:\n{out}"]
   return #[]
 
@@ -3697,7 +3727,7 @@ def methodResults (files : Array String) (value : String) (jobs? : Option Nat :=
   return { records := ← record.get, diags := (output.splitOn "\n").toArray.filterMap header?, output, code }
 
 /-- Limits leave diagnostics at the public checking and testing commands. -/
-def evalLimitChecks : IO (Array String) := do
+unsafe def evalLimitChecks : IO (Array String) := do
   let failures ← Fren.Test.EvalLimits.check
   let depth := (← IO.monoMsNow) % 1 + Fren.Core.Enumeration.maxEvalDepth + 1
   let text := "proc deep(x?) { expect e: " ++ String.join (List.replicate depth "not ") ++ "x? }\n"
@@ -3724,7 +3754,22 @@ def evalLimitChecks : IO (Array String) := do
     return if run.code == 3 && undecided `p .expect && undecided `d .determinism &&
         (run.output.splitOn "depth limit of 256").length > 1 then #[] else
       #[s!"evaluation exceeding its limits was treated as known:\n{run.output}"]
-  return failures ++ diagnostics ++ unknowns
+  let boundary ← methodResults #["test/fixtures/resource_recursive_boundary.fren"] "enumerated" (some 1)
+  let boundaryFailures := if boundary.code == 1 && boundary.records.any (fun (_, r, _) =>
+      r.comp == `p && r.kind == .expect && r.verdict == .fail) then #[] else
+    #[s!"a recursive value inside the depth limit was lost:\n{boundary.output}"]
+  let bodyBoundary ← methodResults #["test/fixtures/resource_recursive_body_boundary.fren"] "enumerated" (some 1)
+  let bodyBoundaryFailures := if bodyBoundary.code != 2 && !bodyBoundary.diags.any (fun (_, code, _) =>
+      code == some "F0645") then #[] else
+    #[s!"a recursive body at its own depth limit was refused:\n{bodyBoundary.output}"]
+  IO.FS.createDirAll ".lake/eval-limits"
+  let (pairedOutput, pairedCode) ← IO.FS.withIsolatedStreams
+    (FrenTest.FuzzFrontends.mainFiles ["test/fixtures/resource_expression_depth.fren",
+      "test/fixtures/resource_recursive_depth.fren", "test/fixtures/resource_recursive_shared.fren",
+      "test/fixtures/resource_recursive_boundary.fren", "test/fixtures/resource_recursive_body_boundary.fren",
+      "test/fixtures/resource_recursive_refusal.fren"] ".lake/eval-limits")
+  let paired := if pairedCode == 0 then #[] else #[s!"resource limits differ between front ends:\n{pairedOutput}"]
+  return failures ++ diagnostics ++ unknowns ++ boundaryFailures ++ bodyBoundaryFailures ++ paired
 
 /-- A diagnostic that documents why this method cannot run a procedure.
 A code from another method is never an expected limitation. -/
@@ -4439,7 +4484,7 @@ def jobs : IO (Array (List String)) := do
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["readingBeside"], ["resolvedDump"], ["theoriesDump"]]
+    ++ #[["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4497,6 +4542,13 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
   | ["readingBeside"] => do FrenTest.ReadingBeside.agree (← ownSpecFiles)
+  | ["expansionFuzz", count] => do
+    let some n := count.toNat? | throw (IO.userError "invalid copying corpus count")
+    FrenTest.ExpansionFuzz.run n
+  | ["expansionFuzz", count, start] => do
+    let some n := count.toNat? | throw (IO.userError "invalid copying corpus count")
+    let some start := start.toNat? | throw (IO.userError "invalid copying corpus start")
+    FrenTest.ExpansionFuzz.run n start
   | ["resolvedDump"] => FrenTest.Resolved.check bless
   | ["theoriesDump"] => do FrenTest.TheoryDump.check (← FrenTest.FuzzFrontends.loadFren)
   | "enumeration" :: files => enumerationAgrees files

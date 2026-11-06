@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Types
 import FrenCore.Generics
 import FrenCore.Global
 import FrenCore.SubsetTypes
@@ -100,20 +100,6 @@ def inductionCases (shapes : Lean.Name → Option DataShape) (params : Array Ty)
   match params[i]?.bind (enumParts shapes) with
   | some parts => parts.map fun ps => (ps, inductionHypotheses flat i (ps.toList.map (·.flat)))
   | none => #[]
-
-/-- Why the `fren` command makes a check inconclusive where evaluation
-refutes the solver's model of it, an internal error that it reports beside
-the check (`eval::confirmed_verdict`). -/
-def refutedModelReason : String := "the solver's model was refuted"
-
-/-- Whether the detail `d` of an inconclusive check says that the solver's
-model contradicts Fren's semantics, an internal error that the check
-reports (`model::report`): its check's translation is in doubt, so no
-induction overrides it (`lang::induction_verdict`). -/
-def Detail.modelRefuted : Detail → Bool
-  | .refuted .. => true
-  | .unknown w => w == refutedModelReason
-  | _ => false
 
 /-- What a global expectation's check reports, where its own check gives
 `direct`, the solver's model of it contradicts Fren's semantics if

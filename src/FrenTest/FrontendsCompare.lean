@@ -31,6 +31,15 @@ def differs (text : String) (cli hosted : Report) : Bool := !(compare text cli h
 
 def agrees (text : String) (cli hosted : Report) : Bool := (compare text cli hosted).1.isEmpty
 
+-- An internal error for an undecided core query is a check diagnostic:
+-- the CLI exits with 1, rather than 2 for a static error of the spec.
+private def undecidedCore : Diagnostic :=
+  err 1 "internal error: the solver did not decide the expectation check of `e` in the decidable core"
+
+#guard agrees "expect e: true\n"
+  { diags := #[undecidedCore], summary? := "0 passed, 0 failed, 1 inconclusive, 0 redundant", exit? := some 1 }
+  { diags := #[undecidedCore], summary? := "0 passed, 0 failed, 1 inconclusive, 0 redundant" }
+
 /-! ## Lean rejects what the binary accepts -/
 
 -- #97 in a constant, an item without checks.
@@ -327,5 +336,27 @@ def defRefuted : Diagnostic :=
 
 -- Without misread models, the messages are compared as they are.
 #guard !(compare misreadSpec { diags := #[refuted "a = 2"] } { diags := #[shown "a = 4"] }).1.isEmpty
+
+/-! ## The specified evaluator-reading exception -/
+
+def limitSource : String := "pub fn projection(n: Int): Int := n + n\n"
+def limitReport : Report := {
+  diags := #[err 1 (Fren.Core.expansionLimitHeadline ++ " while reading `projection`")]
+  exit? := some 2
+}
+
+#guard agrees limitSource limitReport { diags := #[], summary? := some none0 }
+-- Hosted check results have no counterpart when preparation stopped.
+#guard agrees limitSource limitReport
+  { diags := #[err 1 "expectation `p::q` does not hold"], summary? := some none0 }
+-- The exception cannot hide static errors, lints, arbitrary errors,
+-- missing locations, a wrong exit or results emitted after exhaustion.
+#guard differs limitSource limitReport { diags := #[err 1 "unknown identifier `n`"] }
+#guard differs limitSource limitReport { diags := #[warn 1 "unused variable `n`"] }
+#guard differs limitSource { limitReport with exit? := some 1 } { diags := #[] }
+#guard differs limitSource { limitReport with summary? := some none0 } { diags := #[] }
+#guard differs limitSource { limitReport with diags := #[{ limitReport.diags[0]! with line := 0 }] } { diags := #[] }
+#guard differs limitSource { diags := #[err 1 "internal error: the evaluator cannot read the spec"], exit? := some 2 } { diags := #[] }
+#guard differs limitSource { diags := #[], exit? := some 2 } { diags := #[] }
 
 end FrenTest.FrontendsCompare

@@ -1,6 +1,6 @@
 -- keep-sorted start
 import Fren.Model
-import FrenCore.Check
+import FrenCore.Check.Model
 import FrenCore.Enumeration
 import FrenCore.Names
 -- keep-sorted end
@@ -82,7 +82,7 @@ def hasIndex (e : Expr) : Bool := (e.find? (·.isAppOfArity ``Fren.Enum.nthOr 5)
 /-- `e` without the casts from `Nat` to `Int` around it, which the `fren`
 command, whose expressions are untyped, does not have. -/
 partial def uncast (e : Expr) : Expr :=
-  let e := e.consumeMData
+  let e := unmarkEvaluation e
   match e.getAppFn.constName?, e.getAppArgs with
   | some ``Nat.cast, #[_, _, x] | some ``NatCast.natCast, #[_, _, x] => uncast x
   | some ``Int.ofNat, #[x] => if (intValue? e).isSome then e else uncast x
@@ -105,7 +105,7 @@ the newtype's field of its constructor, `(Ms.mk x).0`, is `x`, and of an
 `if`, `(if c then a else b).0`, is `if c then a.0 else b.0`. The Lean-hosted
 front end writes a newtype's arithmetic and comparisons over these fields. -/
 partial def unwrapNewtypes (e : Expr) : MetaM Expr := do
-  let e := e.consumeMData
+  let e := unmarkEvaluation e
   let st ← getState
   let .const f _ := e.getAppFn | return ← e.withApp fun fn args => return mkAppN fn (← args.mapM unwrapNewtypes)
   let args := e.getAppArgs
@@ -163,7 +163,7 @@ arm of a complete `match` among them (`Fren.lastArm`). An index under a
 binder is not analysed, and is never known. `decide` gives each
 proposition's value. -/
 partial def knownOf (decideOf : Expr → MetaM Expr) (e : Expr) : MetaM Expr := do
-  let e := e.consumeMData
+  let e := unmarkEvaluation e
   let tt := mkConst ``Bool.true
   let ff := mkConst ``Bool.false
   if !hasIndex e then return tt
@@ -248,11 +248,26 @@ partial def knownOf (decideOf : Expr → MetaM Expr) (e : Expr) : MetaM Expr := 
       return ff
     generic
 
+/-- Decide a propositional conditional from its supplied branch decisions,
+without asking instance search to traverse either branch again. -/
+def decidableIf (condition yes no : Prop) (dc : Decidable condition)
+    (dy : Decidable yes) (dn : Decidable no) : Decidable (@ite Prop condition dc yes no) := by
+  letI := dc
+  letI := dy
+  letI := dn
+  infer_instance
+
 /-- A `Decidable` instance for the proposition `p`, built along its
 connectives, so that a quantifier over a listed type, which is expanded
 into as many conjuncts as it has instances, needs no search of the size
 of the whole; each other proposition's is synthesized. -/
 partial def decidableOf (p : Expr) : MetaM Expr := do
+  let p := unmarkEvaluation p
+  if p.isAppOf ``Fren.lastArm then return ← decidableOf p.appArg!
+  if p.isAppOfArity ``ite 5 && p.getArg! 0 == mkSort .zero then
+    let args := p.getAppArgs
+    return ← mkAppM ``decidableIf #[args[1]!, args[3]!, args[4]!, args[2]!,
+      ← decidableOf args[3]!, ← decidableOf args[4]!]
   match p.getAppFn.constName?, p.getAppArgs with
   | some ``And, #[a, b] => return mkApp4 (mkConst ``instDecidableAnd) a b (← decidableOf a) (← decidableOf b)
   | some ``Or, #[a, b] => return mkApp4 (mkConst ``instDecidableOr) a b (← decidableOf a) (← decidableOf b)

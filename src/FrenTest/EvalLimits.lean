@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCli.Enumerate
 import FrenTest.OutOfFuel
 -- keep-sorted end
 
@@ -17,8 +18,20 @@ def check : IO (Array String) := do
   let failures ← IO.mkRef (#[] : Array String)
   let check (ok : Bool) (message : String) : IO Unit := do
     unless ok do failures.modify (·.push message)
+  -- Charge queued nodes before constructing the next work-list segment.
+  -- Repeated wide children otherwise pile up beyond the node allowance
+  -- before the depth limit is reached.
+  let layers ← IO.mkRef 0
+  let wide ← expressionInfoM (fun (n : Nat) => do
+    layers.modify (· + 1)
+    return { children := Array.replicate 20000 (n + 1) }) 0
+  check (wide.isNone && (← layers.get) ≤ 211)
+    "expression admission queued more nodes than its remaining budget"
   let yes : Ex := .lit (.bool true)
   let no : Ex := .lit (.bool false)
+  let boundaryMatch : Ex := .match yes #[(.wild, none, nots (maxEvalDepth - 2) yes)] 0 #[] none none
+  check (boundaryMatch.withinLimits && (Ex.dispatch #[#[0]] boundaryMatch).withinLimits)
+    "constructor dispatch changed admission at the depth boundary"
   -- A selected unknown body used to be retried by the partial-case
   -- fallback, doubling the work at every level. Unknown scrutinees and
   -- guards must not restart nested evaluations either. Keep the leaf open
@@ -83,6 +96,63 @@ def check : IO (Array String) := do
   check ((shapeOf (fun _ => none) 1 nested).toOption.isNone) "type expansion exceeded its depth budget"
   let finite : Fren.Core.PTy := { ty := .int, pat? := some (.int (some 0) (some (Int.ofNat (maxTypeNodes + extra)))) }
   check ((shapeOf (fun _ => none) 1 finite).toOption.isNone) "a finite domain exceeded the allocation budget"
+  let far : Int := 1 <<< (80 + extra)
+  for (label, pattern, expected) in [
+      ("sparse natural", Fren.Core.Pat.or #[.int none (some 0), .int (some far) (some far)], #[0, far]),
+      ("negative prefix", .int (some (-far)) (some 0), #[0])] do
+    let t : Fren.Core.PTy := { ty := .nat, pat? := some pattern }
+    check (pattern.intValuesWithin? maxTypeNodes (some 0) == some expected)
+      s!"{label} did not construct exactly its admitted intervals"
+    check (Fren.Core.PTy.values (fun _ => none) t 2 == some (expected.map Fren.Core.PVal.int))
+      s!"{label} materialized a discarded prefix or gap"
+    match shapeOf (fun _ => none) 1 t with
+    | .ok (.ints values) => check (values.toArray == expected) s!"{label} changed the domain"
+    | _ => check false s!"{label} did not enumerate its tiny finite domain"
+  -- A shallow generic root used to call unbounded PTy.subst on this field
+  -- before checking its depth. Test both explicit and missing PTy metadata.
+  let raw := (List.range (2048 + extra)).foldl (fun t _ => Fren.Core.Ty.seq t) (.param 0 `A)
+  let generic : Fren.Core.PTy := { ty := .record `Generic [.bool], elems := #[{ ty := .bool }] }
+  let deepField := (List.range (2048 + extra)).foldl
+    (fun t _ => ({ ty := .seq t.ty, elems := #[t] } : Fren.Core.PTy)) { ty := .param 0 `A }
+  for field in [deepField, ({ ty := raw } : Fren.Core.PTy)] do
+    let data : Fren.Core.DataShape := { parts := #[#[field]], isRecord := true }
+    let shapes := fun _ => some data
+    check ((instantiateWithin data generic).isNone) "generic substitution escaped its budget"
+    check ((instantiateWithin data generic 1000000 1000000).isNone) "requested instantiation limits bypassed the cap"
+    let spec : Spec := { shapes := ({} : Lean.NameMap Fren.Core.DataShape).insert `Generic data }
+    check (((Ex.typed generic #[] yes).appsOf spec).contains FrenCli.typeResourceLimit)
+      "enumeration dependency discovery substituted an oversized generic"
+    check ((shapeOf shapes 1 generic).toOption.isNone) "generic fields escaped type admission"
+    check ((typeHoldsAt shapes evalDepth generic (.ctor `Generic 0 #[.seq #[]])).isNone)
+      "structural membership substituted an oversized field"
+    let I : Interp := { shapes }
+    check (((Ex.typed generic #[] (.ctor `Generic 0 #[.seqLit #[]])).eval I (fun _ => none)).isNone)
+      "invariant membership substituted an oversized field"
+    check ((!invariantFreeWithin shapes generic)) "compilation inspected an oversized generic before admission"
+    check ((((Ex.typed generic #[] (.ctor `Generic 0 #[.seqLit #[]])).compile shapes (some [])).eval I (fun _ => none)).isNone)
+      "compilation substituted an oversized generic before membership"
+  let unused : Fren.Core.DataShape := { parts := #[#[{ ty := .bool }]], isRecord := true }
+  let unusedArgument := (List.range (2048 + extra)).foldl (fun t _ => Fren.Core.Ty.seq t) .bool
+  let deepArgument : Fren.Core.PTy := { ty := .record `Generic [unusedArgument] }
+  check ((instantiateWithin unused deepArgument).isNone) "an unused generic argument escaped type admission"
+  check ((shapeOf (fun _ => some unused) 1 deepArgument).toOption.isNone)
+    "an encoder could receive an oversized unused generic argument"
+  -- The adapter must not recursively fill missing metadata before Core
+  -- sees even an unconstrained variable's raw declared type.
+  let slot : FrenCli.CVar :=
+    { name := `x, role := .input, isPub := false
+      ty := .bool, span := default, ptype := { ty := unusedArgument } }
+  let comp : FrenCli.CComp :=
+    { path := `deepVariable, file := 0, span := default
+      vars := #[slot], props := #[] }
+  let evalComp : Comp := { path := comp.path, vars := #[], constraints := #[], insts := #[] }
+  check ((FrenCli.enumerateComp {} evalComp comp #[] "deep variable").toOption.isNone)
+    "the command-line adapter expanded metadata before type admission"
+  let tiny : Fren.Core.DataShape := { parts := #[#[{ ty := .param 0 `A }]], isRecord := true }
+  check ((instantiateWithin tiny generic).isSome) "bounded substitution rejected an ordinary generic"
+  let separated := Fren.Core.Pat.or ((Array.range (8192 + extra)).map fun (k : Nat) =>
+    .int (some (2 * (k : Int))) (some (2 * (k : Int))))
+  check (separated.intCount? == some (8192 + extra)) "interval merging recursed through preceding gaps"
   let unbounded := { finite with pat? := some (.or #[.int (some 0) (some (1 <<< 80)), .wild false]) }
   check ((shapeOf (fun _ => none) 1 unbounded).isOk) "an unbounded pattern materialized an unused finite branch"
   for base in [0:8] do
@@ -98,6 +168,13 @@ def check : IO (Array String) := do
   let atLimit := nots (maxEvalDepth - 1 + extra) yes
   let beyond := nots (2048 + extra) yes
   check atLimit.withinLimits "an expression at the depth limit was rejected"
+  let coerced := nots (maxEvalDepth - 1 + extra) (.bin .eq yes yes)
+  check coerced.withinLimits "a Boolean coercion consumed an extra level"
+  let aliases := (List.range (2048 + extra)).foldl (fun body _ => Ex.bin .eq body yes) yes
+  check (aliases.eval {} (fun _ => none) == some (.bool true)) "Boolean coercions retained native frames"
+  check ((aliases.compile (fun _ => none) (some [])).eval {} (fun _ => none) == some (.bool true))
+    "compiling Boolean coercions retained native frames"
+  check ((coerced.eval {} (fun _ => none)).isSome) "a Boolean coercion lost its last depth"
   check (!beyond.withinLimits) "the expression depth limit was not enforced"
   check (Ex.scalarTotal #[atLimit]) "a scalar formula within the budget lost the total backend"
   check (!Ex.scalarTotal #[beyond]) "an oversized scalar formula bypassed knownness checks"
@@ -118,6 +195,15 @@ def check : IO (Array String) := do
   let recur : Ex := .app `down #[.lit (.int (10000 + extra))]
   check ((recur.eval (downInterp 0 false) (fun _ => none)).isNone)
     "recursive applications reset the depth budget"
+  -- The enumerator also evaluates raw recursive bodies: sharing must not
+  -- depend on compiling a body into memo instructions first.
+  for op in [Op.and, .or, .add] do
+    let zero := if op == .add then Ex.lit (.int 0) else yes
+    let call : Ex := .app `duplicate #[.bin .sub (.bound `n) (.lit (.int 1))]
+    let body : Ex := .ite (.bin .le (.bound `n) (.lit (.int 0))) zero (.bin op call call)
+    let I : Interp := { recDefs := fun _ => some (#[`n], body) }
+    let result := (Ex.app `duplicate #[.lit (.int (40 + extra))]).eval I (fun _ => none)
+    check result.isSome "a raw recursive body repeated identical calls"
   let memoBody : Ex := .memo #[.app `memoLoop #[]] (nots (96 + extra) (.shared 0))
   let I : Interp := { recDefs := fun _ => some (#[], memoBody) }
   check (((Ex.app `memoLoop #[]).eval I (fun _ => none)).isNone)

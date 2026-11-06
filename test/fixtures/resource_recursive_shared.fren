@@ -1,0 +1,11 @@
+set_option fren.evidence "enumerated"
+set_option fren.enumeration.size 40
+set_option fren.lint.nonminimal_bool "allow"
+pub enum T { Z, S(T) }
+
+pub fn holds?(t: T): Bool := match t {
+    T::Z => true,
+    T::S(a) => holds?(a) and holds?(a),
+}
+
+proc shared(t: T) { expect e: holds?(t) }

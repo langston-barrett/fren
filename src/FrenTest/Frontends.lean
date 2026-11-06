@@ -1,5 +1,6 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Testing
+import FrenCore.Expansion
 import FrenTest.Ui
 -- keep-sorted end
 
@@ -43,6 +44,9 @@ fuzzing"). `fren_fuzz_frontends` compares the front ends with it;
   (`cli::agrees_with_build`): 2 after a static error, else 1 when Lean
   reports an error, 3 when it reports a warning, and 0 otherwise; unless a
   check is tested.
+- A located evaluator-expansion limit is the explicit `cli::accepts` /
+  `cli::agreement` exception. It requires exit 2 and no standalone check
+  results or summary. Static diagnostics and lints are still compared.
 -/
 
 namespace FrenTest.Frontends
@@ -131,6 +135,7 @@ def isCheckHeadline (h : String) : Bool :=
   h.startsWith "could not decide whether "
   -- A model that confirmation refuted, in place of the check's result.
   || h.startsWith "internal error: the solver's model for "
+  || h.startsWith "internal error: the solver did not decide "
   || (rest "the assumptions of ").any (·.startsWith " are unsatisfiable: ")
   || r == " is not realizable"
   || (rest "an index of ").any (· == " may be out of range")
@@ -143,12 +148,23 @@ def isCheckHeadline (h : String) : Bool :=
   || (h.startsWith "rows " && (h.splitOn " of a table in `").length > 1 && h.endsWith "` may both hold")
   || (rest "the assumption ").any (·.startsWith " of `")
   || (rest "expectation ").any (· == " does not hold")
-  || (rest "cover goal ").any fun r => r == " is met" || r.startsWith " cannot be met: "
+  || (rest "cover goal ").any (fun r => r == " is met" || r.startsWith " cannot be met: ")
   || r.startsWith " is vacuous: its condition can never hold"
   || r.startsWith " is redundant: "
   || r.startsWith " is not determined by the inputs: for the input "
   || h.startsWith "testing found no " || h.startsWith "testing never reached `"
   || isConflictHead h
+
+-- These follow the cover-goal test: its lambda must not capture them.
+#guard isCheckHeadline "`p::g` is vacuous: its condition can never hold, given `a`, `r`"
+#guard isCheckHeadline "`p::a` is redundant: it follows from `b`"
+#guard isCheckHeadline "`p::x` is not determined by the inputs: for the input i = 0, it can be 1 or 2"
+#guard isCheckHeadline "testing found no counterexample up to size 2"
+#guard isCheckHeadline "testing never reached `p::g`"
+#guard isCheckHeadline "`a` forces `x` to be 1"
+#guard isCheckHeadline "cover goal `p::g` is met"
+#guard isCheckHeadline "cover goal `p::g` cannot be met: its condition is false"
+#guard !isCheckHeadline "expected `)`, found `:=`"
 
 /-- A check's result, rather than a static error or a lint: by its code
 where the front end shows one (the binary), else by its headline. The
@@ -207,6 +223,8 @@ def checkKindOf? (d : Diagnostic) : Option String :=
   let has (t : String) := (h.splitOn t).length > 1
   if let some r := h.dropPrefix? "internal error: the solver's model for the " then
     (r.toString.splitOn " check of ").head?
+  else if let some r := h.dropPrefix? "internal error: the solver did not decide the " then
+    (r.toString.splitOn " check of ").head?
   else if h.startsWith "could not decide whether " then none
   else if h.endsWith " may be out of range" then some "definedness"
   else if h.endsWith " may have no row that holds" || h.endsWith " may have no arm that is taken" then some "completeness"
@@ -263,6 +281,12 @@ def itemOf (text : String) : Array Nat := Id.run do
     out := out.push item
   return out
 
+/-- The resource diagnostic of `cli::accepts`, distinct from internal
+errors or an unexplained exit 2. Its location is validated separately. -/
+def isExpansionLimit (d : Diagnostic) : Bool :=
+  d.severity == "error" &&
+    (headOf d).startsWith (Fren.Core.expansionLimitHeadline ++ " while reading `")
+
 /-- Each front end's report on a spec. -/
 structure Report where
   diags : Array Diagnostic
@@ -293,6 +317,23 @@ def Comparison.decided (c : Comparison) : Array String := c.found.filter (!c.tim
 /-- How the front ends' reports on `text` differ: each difference as a
 line, and which of them the solvers' time limits can explain. -/
 def comparison (text : String) (cli hosted : Report) (misread := false) : Comparison := Id.run do
+  let limits := cli.diags.filter isExpansionLimit
+  let limited := !limits.isEmpty
+  let mut resourceErrors := #[]
+  if limited then
+    unless limits.size == 1 && limits.all (fun d => d.line > 0 && (headOf d).endsWith "`") do
+      resourceErrors := resourceErrors.push "expansion limit: expected one located diagnostic naming its item"
+    unless cli.exit? == some 2 do
+      resourceErrors := resourceErrors.push "expansion limit: fren must exit 2"
+    if cli.summary?.isSome || cli.diags.any isCheckResult then
+      resourceErrors := resourceErrors.push "expansion limit: fren reported check results or a summary"
+    if cli.diags.any (fun d => d.severity == "error" && !isExpansionLimit d) then
+      resourceErrors := resourceErrors.push "expansion limit: fren also reported an unrelated error"
+  -- The documented exception removes only the resource diagnostic and
+  -- hosted check results. Static errors and lints remain in the ordinary
+  -- comparison; an unexplained exit 2 never takes this path.
+  let cli := if limited then { cli with diags := cli.diags.filter (!isExpansionLimit ·), exit? := none } else cli
+  let hosted := if limited then { hosted with diags := hosted.diags.filter (!isCheckResult ·), summary? := none } else hosted
   let items := itemOf text
   let itemAt (n : Nat) := items[n]?.getD 0
   let render (who : String) (d : Diagnostic) :=
@@ -321,8 +362,8 @@ def comparison (text : String) (cli hosted : Report) (misread := false) : Compar
     -- parsed every line before that.
     if hosted.diags.any fun h => isLeanParseError h && h.line ≤ p.line && blankBetween h.line p.line
         && itemAt h.line == itemAt p.line then
-      return { found := stopped }
-    return { found := stopped.push (render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)") }
+      return { found := resourceErrors ++ stopped }
+    return { found := resourceErrors ++ stopped.push (render "fren" p ++ " (and Lean reports no parse error at or just before that line, in its item)") }
   -- Checks whose evidence is testing, which Lean does not run.
   let anyTested := text.contains "set_option fren.evidence \"random\""
   let onTested (d : Diagnostic) := (lines[d.line - 1]?.getD "").contains "set_option fren.evidence \"random\""
@@ -373,7 +414,7 @@ def comparison (text : String) (cli hosted : Report) (misread := false) : Compar
   let leanLines := hostedOnly.filter isLeanParseError |>.map (·.line)
   hostedOnly := hostedOnly.filter fun h => !(isLeanParseError h && cliErrorLines.contains h.line)
   cs := cs.filter fun c => !(staticErr c && leanLines.contains c.line)
-  let mut out := stopped ++ sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
+  let mut out := resourceErrors ++ stopped ++ sameInput ++ cs.map (render "fren") ++ hostedOnly.map (render "Lean")
   let mut timed := (cs.filter isUndecided).map (render "fren") ++ (hostedOnly.filter isUndecided).map (render "Lean")
   -- The summary, unless a check is tested.
   let sumDiffers := !anyTested && !otherModels && cli.summary? != hosted.summary?

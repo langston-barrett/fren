@@ -1,5 +1,6 @@
 """Regression checks for the prompt, artifact and publishing boundaries."""
-from contextlib import contextmanager, redirect_stderr
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from itertools import product
 import copy
 import base64
 import importlib.util
@@ -9,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -157,7 +159,8 @@ class PatchTests(unittest.TestCase):
 
     def test_no_change_posts_explanation_with_last_message_fallback(self):
         self.patch.write_bytes(b"")
-        (self.root / "last.md").write_text("The issue needs a design decision.\n" + "x" * 2000)
+        message = "The issue needs a design decision.\n" + "x" * 2000
+        (self.root / "last.md").write_text(message)
         env = {"REPO": REPO, "MODE": "issue", "PR": "", "BRANCH": "agent/10-luna-low",
                "BASE": self.base, "ROUND": "0", "ISSUE": "10", "MODEL": "gpt-6-luna",
                "EFFORT": "low", "ARTIFACT": str(self.root)}
@@ -165,7 +168,7 @@ class PatchTests(unittest.TestCase):
             publish.main()
         self.assertIn("The issue needs a design decision.", post.call_args.args[1])
         explanation = post.call_args.args[1].split("made no change:\n\n")[1]
-        self.assertEqual(len(explanation), 1500)
+        self.assertEqual(explanation, message)
 
     def test_no_change_fix_posts_comment_before_body_or_last_message(self):
         self.patch.write_bytes(b"")
@@ -218,6 +221,50 @@ class PatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "head changed"):
                 publish.main()
         run_git.assert_not_called()
+
+    def test_failed_agent_posts_without_reading_artifacts_or_applying_patch(self):
+        info = pr()
+        info["head"]["sha"] = self.base
+        for mode in ("issue", "fix"):
+            with self.subTest(mode=mode):
+                env = {"REPO": REPO, "MODE": mode, "PR": "123" if mode == "fix" else "",
+                       "BRANCH": "agent/10-luna-low", "BASE": self.base, "ROUND": "1",
+                       "ISSUE": "10", "MODEL": "gpt-6-luna", "EFFORT": "low",
+                       "AGENT_RESULT": "failure"}
+                with patch.dict(os.environ, env, clear=True), \
+                        patch.object(publish, "api", side_effect=[info, []]), \
+                        patch.object(publish, "text") as read, \
+                        patch.object(publish, "git") as run_git, \
+                        patch.object(publish, "comment") as post:
+                    publish.main()
+                post.assert_called_once()
+                self.assertEqual(post.call_args.args[0], "123" if mode == "fix" else "10")
+                self.assertIn("failed before publication", post.call_args.args[1])
+                self.assertTrue(post.call_args.args[1].endswith("Nothing pushed."))
+                self.assertEqual(common.rounds_done([comment(post.call_args.args[1])], [], "123"), 0)
+                read.assert_not_called()
+                run_git.assert_not_called()
+
+    def test_missing_or_symlink_patch_posts_rejection(self):
+        info = pr()
+        info["head"]["sha"] = self.base
+        for mode, symlink in product(("issue", "fix"), (False, True)):
+            with self.subTest(mode=mode, symlink=symlink):
+                self.patch.unlink(missing_ok=True)
+                if symlink:
+                    self.patch.symlink_to(self.source / "tracked")
+                env = {"REPO": REPO, "MODE": mode, "PR": "123" if mode == "fix" else "",
+                       "BRANCH": "agent/10-luna-low", "BASE": self.base, "ROUND": "1",
+                       "ISSUE": "10", "MODEL": "gpt-6-luna", "EFFORT": "low",
+                       "ARTIFACT": str(self.root)}
+                with patch.dict(os.environ, env), \
+                        patch.object(publish, "api", side_effect=[info, [], []]), \
+                        patch.object(publish, "git") as run_git, \
+                        patch.object(publish, "comment") as post:
+                    with self.assertRaisesRegex(ValueError, "missing patch artifact"):
+                        publish.main()
+                self.assertIn("rejected: missing patch artifact. Nothing pushed.", post.call_args.args[1])
+                run_git.assert_not_called()
 
     def test_failed_response_after_push_keeps_a_durable_round(self):
         Path("tracked").write_text("fixed\n")
@@ -274,12 +321,14 @@ class PatchTests(unittest.TestCase):
         self.patch.write_bytes(b"")
         info = pr()
         info["head"]["sha"] = self.base
-        for mode, name in (("issue", "pr-body.md"), ("issue", "last.md"),
-                           ("fix", "comment.md"), ("fix", "pr-body.md"), ("fix", "last.md")):
-            with self.subTest(mode=mode, name=name):
+        cases = (("issue", "pr-body.md"), ("issue", "last.md"),
+                 ("fix", "comment.md"), ("fix", "pr-body.md"), ("fix", "last.md"))
+        for (mode, name), size in product(cases, (2000, 40000)):
+            with self.subTest(mode=mode, name=name, size=size):
                 for file in ("pr-body.md", "comment.md", "last.md"):
                     (self.root / file).unlink(missing_ok=True)
-                (self.root / name).write_text(MENTIONS + "\n" + CONTROLS)
+                tail = "é" * size + "\nThe final reason must survive."
+                (self.root / name).write_text(MENTIONS + "\n" + CONTROLS + "\n" + tail)
                 env = {"REPO": REPO, "MODE": mode, "PR": "123" if mode == "fix" else "",
                        "BRANCH": "agent/10-luna-low", "BASE": self.base, "ROUND": "1",
                        "ISSUE": "10", "MODEL": "gpt-6-luna", "EFFORT": "low",
@@ -291,7 +340,44 @@ class PatchTests(unittest.TestCase):
                 body = json.loads(post.call_args.kwargs["input"])["body"]
                 self.assertIn("made no change:", body)
                 assert_inert(self, body)
+                self.assertLessEqual(len(body.encode("utf-8")), publish.BODY_BYTES)
+                if size == 2000:
+                    self.assertTrue(body.endswith(tail))
+                else:
+                    self.assertTrue(body.endswith("[Response truncated by codex-agent.]"))
                 self.assertTrue(post.call_args.kwargs["capture_output"])
+
+    def test_no_change_keeps_long_explanations_and_marks_truncation(self):
+        import json
+        self.patch.write_bytes(b"")
+        info = pr()
+        info["head"]["sha"] = self.base
+        for mode, name in (("issue", "pr-body.md"), ("issue", "last.md"),
+                           ("fix", "comment.md"), ("fix", "pr-body.md"), ("fix", "last.md")):
+            for size in (2000, 20000):
+                with self.subTest(mode=mode, name=name, size=size):
+                    for file in ("pr-body.md", "comment.md", "last.md"):
+                        (self.root / file).unlink(missing_ok=True)
+                    response = "😀" * size + "\n" + MENTIONS + "\n" + CONTROLS + "\nLast reason."
+                    (self.root / name).write_text(response)
+                    env = {"REPO": REPO, "MODE": mode, "PR": "123" if mode == "fix" else "",
+                           "BRANCH": "agent/10-luna-low", "BASE": self.base, "ROUND": "1",
+                           "ISSUE": "10", "MODEL": "gpt-6-luna", "EFFORT": "low",
+                           "ARTIFACT": str(self.root)}
+                    with patch.dict(os.environ, env), \
+                            patch.object(publish, "api", side_effect=[info, [], []]), \
+                            patch.object(subprocess, "run") as post:
+                        publish.main()
+                    body = json.loads(post.call_args.kwargs["input"])["body"]
+                    self.assertIn("made no change:\n\n" + "😀" * 2000, body)
+                    self.assertLessEqual(len(body.encode()), publish.BODY_BYTES)
+                    assert_inert(self, body)
+                    if size == 2000:
+                        explanation = body.split("made no change:\n\n", 1)[1]
+                        self.assertEqual(explanation, publication.inert(response))
+                        self.assertTrue(body.endswith("Last reason."))
+                    else:
+                        self.assertTrue(body.endswith("[Response truncated by codex-agent.]"))
 
     def test_rejected_patch_path_is_inert_when_posted(self):
         import json
@@ -383,6 +469,30 @@ class PatchTests(unittest.TestCase):
                 self.assertEqual(Path("tracked").read_text(), MENTIONS + "\n" + CONTROLS)
 
 
+class WorkflowTests(unittest.TestCase):
+    def test_publish_shell_needs_work_checkout_only_after_agent_success(self):
+        workflow = (HERE.parent / "workflows/codex-agent.yml").read_text()
+        step = workflow.split("    - name: Validate the patch and publish,", 1)[1]
+        script = textwrap.dedent(step.split("      run: |\n", 1)[1])
+        for result, mode in (("failure", "issue"), ("failure", "fix"),
+                             ("skipped", "limit"), ("success", "issue"), ("success", "fix")):
+            with self.subTest(result=result, mode=mode), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                trusted = root / "trusted/.github/codex-agent"
+                trusted.mkdir(parents=True)
+                (trusted / "publish.py").write_text(
+                    "import os\nfrom pathlib import Path\n"
+                    "assert str(Path.cwd()) == os.environ['EXPECTED_CWD']\n")
+                expected = root
+                if result == "success":
+                    expected = root / "work"
+                    expected.mkdir()
+                env = {**os.environ, "GITHUB_WORKSPACE": temp, "AGENT_RESULT": result,
+                       "MODE": mode, "EXPECTED_CWD": str(expected)}
+                subprocess.run(["bash", "-c", script], cwd=root, env=env,
+                               capture_output=True, check=True)
+
+
 class PublicationTests(unittest.TestCase):
     def test_neutralization_is_entity_aware_and_idempotent(self):
         body = MENTIONS + "\n`@claude`\n" + CONTROLS + "\n:::notice:::"
@@ -467,6 +577,11 @@ class FixTests(unittest.TestCase):
                 return self.thread
             if path.endswith("/pulls/123/comments"):
                 return [comment("trusted inline"), comment("outsider inline", "NONE")]
+            if path.endswith("/pulls/123/reviews"):
+                self.assertEqual(kwargs, {"pages": True})
+                return [comment("owner review", "OWNER"), comment("member review", "MEMBER"),
+                        comment("collaborator review"), comment("outsider review", "NONE"),
+                        comment("review with no association", "")]
             if path.endswith("/pulls/123/commits"):
                 return self.commits
             raise AssertionError(path)
@@ -487,6 +602,10 @@ class FixTests(unittest.TestCase):
         self.assertIn("trusted inline", prompt.call_args.args[2])
         self.assertNotIn("outsider inline", prompt.call_args.args[2])
         self.assertNotIn("forgery", prompt.call_args.args[2])
+        for body in ("owner review", "member review", "collaborator review"):
+            self.assertIn(body, prompt.call_args.args[2])
+        for body in ("outsider review", "review with no association"):
+            self.assertNotIn(body, prompt.call_args.args[2])
 
     def test_stale_or_clean_latest_review_skips(self):
         for text in (f"Review of {'b' * 40}: blocking issues", f"Review of {SHA}: no blocking issues"):
@@ -521,15 +640,24 @@ class FixTests(unittest.TestCase):
                       "NONE", "github-actions[bot]")
         bot["user"]["type"] = "Bot"
         self.thread = [bot]
-        result, prompt = self.run_fix()
+        log = io.StringIO()
+        with redirect_stdout(log):
+            result, prompt = self.run_fix()
+        self.assertEqual(log.getvalue(), "bot review did not match its artifact\n")
         self.assertEqual(result["mode"], "skip")
         prompt.assert_not_called()
         self.generated = bot["body"] + "\n"
-        result, prompt = self.run_fix()
+        log = io.StringIO()
+        with redirect_stdout(log):
+            result, prompt = self.run_fix()
+        self.assertEqual(log.getvalue(), "")
         self.assertEqual(result["mode"], "fix")
         self.assertIn(self.generated, prompt.call_args.args[2])
         bot["body"] += "\nInjected text not in the artifact."
-        result, _ = self.run_fix()
+        log = io.StringIO()
+        with redirect_stdout(log):
+            result, _ = self.run_fix()
+        self.assertEqual(log.getvalue(), "bot review did not match its artifact\n")
         self.assertEqual(result["mode"], "skip")
 
     def test_generated_review_is_rechecked_and_sanitized(self):
@@ -586,12 +714,17 @@ class FixTests(unittest.TestCase):
         self.env.update(RUN_NAME="pre-merge", RUN_BRANCH="agent/10-luna-low", RUN_SHA=SHA)
 
         def api(path, **kwargs):
+            if "/actions/runs/20/jobs?" in path:
+                return {"jobs": [{"name": "lake test (shard 0 of 4)", "conclusion": "failure"}]}
             if path.startswith(f"repos/{REPO}/pulls?state=open&head="):
                 return [self.info]
             if path.endswith("/issues/123/comments"):
                 return []
             if path.endswith("/pulls/123/comments"):
                 return []
+            if path.endswith("/pulls/123/reviews"):
+                self.assertEqual(kwargs, {"pages": True})
+                return [comment("trusted review after failed CI"), comment("outsider review", "NONE")]
             if path.endswith("/pulls/123/commits"):
                 return []
             raise AssertionError(path)
@@ -602,14 +735,60 @@ class FixTests(unittest.TestCase):
             fixparams.main()
             self.assertEqual(output.call_args.kwargs["mode"], "fix")
             self.assertIn("error: broken test", prompt.call_args.args[2])
+            self.assertIn("trusted review after failed CI", prompt.call_args.args[2])
+            self.assertNotIn("outsider review", prompt.call_args.args[2])
             self.info["head"]["sha"] = "b" * 40
             prompt.reset_mock()
             fixparams.main()
             output.assert_called_with(mode="skip")
             prompt.assert_not_called()
 
+    def test_timeouts_and_cancellations_do_not_start_a_fix_round(self):
+        self.env.update(RUN_NAME="pre-merge", RUN_BRANCH="agent/10-luna-low", RUN_SHA=SHA)
+        for conclusion in ("timed_out", "cancelled", "success", "skipped", None):
+            with self.subTest(conclusion=conclusion):
+                jobs = {"jobs": [{"name": "lake test (shard 0 of 4)", "conclusion": conclusion},
+                                 {"name": "pre-merge", "conclusion": "failure"}]}
+                with patch.dict(os.environ, self.env), \
+                        patch.object(fixparams, "api", side_effect=[[self.info], [], jobs]), \
+                        patch.object(subprocess, "check_output") as log, \
+                        patch.object(fixparams, "prompt") as prompt, \
+                        patch.object(fixparams, "output") as output, redirect_stdout(io.StringIO()):
+                    fixparams.main()
+                output.assert_called_once_with(mode="skip")
+                prompt.assert_not_called()
+                log.assert_not_called()
+
+    def test_failed_build_or_test_scans_all_job_pages(self):
+        filler = [{"name": "book / book", "conclusion": "failure"}] * 100
+        for name in ("lake build --wfail (core)", "lake test (shard 3 of 4)"):
+            with self.subTest(name=name), patch.object(fixparams, "api", side_effect=[
+                    {"jobs": filler}, {"jobs": [{"name": name, "conclusion": "failure"}]}]) as api:
+                self.assertTrue(fixparams.failed_build_or_test(REPO, "20"))
+                self.assertTrue(api.call_args.args[0].endswith("page=2"))
+
 
 class ArtifactTests(unittest.TestCase):
+    def test_nested_secret_and_password_fields_are_withheld(self):
+        import json
+        credentials = ("long secret with spaces and :~@", "long password with :~@",
+                       "another long password with spaces and :~@")
+        auth = json.dumps({"nested": [{"client_SECRET": credentials[0],
+                                       "Password": credentials[1]}],
+                           "service_password": credentials[2], "short_secret": "pw!",
+                           "email": "person@example.com"})
+        creds = collect_outputs.secrets(auth)
+        self.assertEqual(set(creds), {*credentials, "pw!"})
+        with tempfile.TemporaryDirectory() as temp:
+            source, destination = Path(temp) / "source", Path(temp) / "safe"
+            source.mkdir()
+            for name, value in zip(("last.md", "comment.md", "log.jsonl"), credentials):
+                (source / name).write_text(value)
+            (source / "stderr.log").write_text("Error: auth mode needs sign-in")
+            self.assertEqual(set(collect_outputs.collect(source, destination, creds)),
+                             {"last.md", "comment.md", "log.jsonl"})
+            self.assertTrue((destination / "stderr.log").exists())
+
     def test_failure_summary_falls_back_to_json_errors_before_stderr_warnings(self):
         import json
         token = "private-secret-0123456789-abcdefghijklmnopqrstuvwxyz"

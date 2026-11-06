@@ -237,30 +237,62 @@ condition or its scrutinee. Runtime regressions nest unknown bodies,
 scrutinees and guards in raw and compiled expressions to catch repeated
 work that value equations alone cannot distinguish.
 
+Identical scalar operands, including recursive calls with the same
+arguments, reuse one result at the same remaining depth, including in raw
+recursive bodies. A strict binary operation stops after an unknown first
+operand. Neither rule changes its value; they prevent repeated work after
+a resource limit leaves a value unknown.
+
 Shared expressions cache their results separately at each remaining depth,
 including unknown results. A read with less remaining depth cannot restore
 the creator's budget, and one with more cannot inherit a cached unknown
 caused only by a smaller budget. Repeated reads at the same depth reuse
 one evaluation, so nested sharing does not expand into repeated work.
 
-Before recursively compiling an expression for evaluation, Fren checks its
-lowered expression tree iteratively. The root has depth 1; at most 256
+Before recursively compiling an expression for evaluation, both front ends
+call Core to check the immediate semantic children of their lowered
+expression trees iteratively. The root has depth 1; at most 256
 levels and 4194304 nodes are accepted. An oversized expression compiles to an
 unknown value. Enumeration refuses an oversized formula with `F0645` and
-states both bounds before traversing it. Compilation and evaluation must
-reach these bounds before exhausting the native stack. `eval::expression_limit`
-states the compiler's admission rule, used at each node of its iterative
-check and bound to that code by an `impl`.
+states both bounds before traversing it. Pending children spend the
+remaining node allowance before they are queued, so the work list itself
+cannot grow beyond that allowance. Compilation and evaluation must reach
+these bounds before exhausting the native stack. `eval::expression_limit`
+states the numerical admission rule, bound to Core by an `impl`.
+The numbers alone do not specify either adapter's extraction or traversal;
+paired public-command regressions check the actual expression trees and
+recursive evaluations, including refusal just beyond the boundary.
+Recursive bodies are admitted as independent roots, matching calls that
+remain opaque in the lowered tree. Entering a body still spends a call
+step during evaluation; admission does not inline it again at each call.
 
 Enumeration applies the same depth bound and a tighter bound of 262144
 nodes before expanding the types of its variables and functions into
-shapes. All those roots share one node budget; constructor nodes and the values of a finite integer subset count
-toward it. Constructor and field lists spend their full length on depth
-before any member is expanded, including the surrounding shape's bookkeeping
-levels. The combined forest also spends its root count before expanding
-any root, bounding the number of slots the search descends through.
-Wide lists cannot evade the recursion bound. A type expansion beyond either bound is refused with `F0645`
-before its shapes or integer domain are allocated.
+shapes. All those roots share one node budget; constructor nodes and the
+values of a finite integer subset count toward it. Constructor and field
+lists spend their full length on depth before any member is expanded,
+including the surrounding shape's bookkeeping levels. The combined forest
+also spends its root count before expanding any root, bounding the number
+of slots the search descends through.
+Wide lists cannot evade the recursion bound. A type expansion beyond
+either bound is refused with `F0645` before its shapes or integer domain
+are allocated.
+
+Finite integer domains are counted and constructed from the same merged
+intervals, clipped at zero for naturals. Neither gaps between intervals nor
+discarded negative prefixes are materialized. Counting the final values
+alone does not bound the work of an implementation that first constructs
+a larger interval and filters it; regressions use gaps and negative
+prefixes of size `2^80` with only one or two admitted values.
+
+Generic field substitution is part of admission, not a precomputed input
+to it. Visiting raw types, filling implicit field metadata and substituting
+arguments all spend a shared work budget and check depth before descending.
+Structural membership and invariant evaluation use the same bounded
+instantiation. Regressions put a deeply nested field behind a shallow
+generic root, with and without explicit metadata, and run on a reduced
+native stack. The numerical rules below abstract from this construction
+work; these operational regressions check the actual bounded entry points.
 
 ```fren
 pub const MAX_EXPRESSION_DEPTH: Nat := 256
@@ -294,6 +326,141 @@ evaluator's requested depth. Runtime regressions exercise
 oversized raw and compiled expressions, recursive applications, invariants,
 nested values and multiple quantifier binders; disabling the guard must
 make them fail, rather than merely change a precomputed limit flag.
+
+## Expansion limit
+
+The standalone commands `fren check`, `fren quickcheck`, `fren eval` and
+`fren mutate` allow up to `MAX_EXPANSION_NODES` visits to expression nodes
+for copying while preparing one source item for evaluation. Each occurrence
+counts, including another occurrence of the same definition. The allowance
+starts again at the next item; inspecting a definition in another scope
+does not restore visits already spent. If the original spec exceeds the
+allowance, the whole command stops before running any check or test. It
+reports an expansion-limit error at the item's name and exits with code 2.
+The message suggests simplifying its definitions or splitting it. This is
+a limit on preparation for evaluation, separate from evaluation's fuel and
+the solver's limits.
+
+Each substitution result, and the expressions of the completed reading
+passed to evaluation and testing, must also fit the same bound by
+occurrence, even when substitution shares pointers instead of copying them.
+This includes procedure and global constraints, definitions, call arguments,
+contracts and recorded branch expressions. Each use of a local definition
+counts its definition again, transitively. A pattern
+binder's substitution result must also fit the bound: each mention counts
+its part of the scrutinee, with its original scope. A constant's closed
+body counts where later compilation enters it. Inspecting retained
+expressions and visiting their pattern-substitution sites share a separate
+allowance of `MAX_EXPANSION_NODES` visits per source item. Each prospective
+pattern substitution's result is checked against the same bound separately;
+reusing a scrutinee does not inspect its already checked sites again.
+Searching for site questions spends that same inspection allowance,
+including a search performed before measuring a substitution result.
+Each visit is reserved before entering an expression or following a
+captured replacement; an exhausted search stops preparation with the
+expansion-limit diagnostic. It never means that no questions exist.
+Later question generation also bounds each such search by
+`MAX_EXPANSION_NODES` visits. Only a completed negative answer may skip
+question generation; an exhausted later search conservatively keeps it.
+Nested matches with no site questions do not spend visits on pattern
+substitution. Nesting applications of a structural recursion counts their
+arguments without repeatedly expanding the function's body.
+Both per-item allowances and every result bound must suffice before the
+reading is made available. In particular, moving nested applications
+from a function body to a procedure's constraint cannot avoid the bound,
+and a chain of doubling local definitions cannot defer unbounded copying
+to testing's substitution of those definitions into assumptions.
+
+If only a generated mutant exceeds the allowance, `fren mutate` also
+stops the whole run with code 2, without a mutation summary or an outcome
+for that mutant. Its diagnostic names the mutant and points into the
+mutant's source, including any line shifts caused by the mutation.
+The original spec may be within the allowance; the stop avoids reporting
+a kill rate for a run that could not read every selected mutant.
+
+The bound gives more than five times the 1,587,728 copying visits used by
+the largest item in Fren's own requirements when it was chosen. With
+result inspection and shared recursive calls, the 83 own-spec files use
+at most 86,296 copying visits and 322,233 inspection visits per item,
+including site searches. Each allowance leaves more than 26 times the
+measured need, giving room for growth while stopping the expansion that
+exhausted a 6 GiB run.
+The hosted checker does not prepare this independent evaluator reading;
+its acceptance can therefore differ at this limit, as
+[`cli::accepts` and `cli::agreement`](Cli.md#agreement-with-lean) specify.
+
+`eval::expansion_count` models a traversal's expression tree: each leaf
+and branch is one visit, and two occurrences count twice even if they
+are the same subtree. A traversal succeeds exactly when those visits
+fit, including equality at the bound, and leaves the unused allowance.
+`eval::expansion_step` states how an individual visit spends it.
+`Application` represents a substituted argument retained once for strict
+evaluation and used twice by a function body: two expression nodes plus
+three occurrences of its argument. `eval::reading_size` requires a
+reading to fit the inspection allowance, independently of how much was
+copied to construct it.
+`Site` marks a question in the model. `eval::reading_query` binds the
+actual search: a completed answer is sound, nonempty work spends visits,
+and enough allowance for the whole tree always suffices. Its work-list
+implementation reserves a visit before testing a node or entering its
+children; the search does not first traverse a replacement to decide
+whether to measure it. The requirement does not prescribe a search order
+or the exact cost of finding a question before the allowance runs out.
+
+```fren
+pub const MAX_EXPANSION_NODES: Int := 8388608
+
+pub proc expansion_budget(): (det initial: Nat) { ensure bound: initial = MAX_EXPANSION_NODES }
+
+pub enum CopyTree { Leaf, Site, Branch(CopyTree, CopyTree), Application(CopyTree) }
+
+pub fn copy_visits(tree: CopyTree): Nat := match tree {
+    CopyTree::Leaf => 1,
+    CopyTree::Site => 1,
+    CopyTree::Branch(left, right) => 1 + copy_visits(left) + copy_visits(right),
+    CopyTree::Application(argument) => 2 + 3 * copy_visits(argument),
+}
+
+pub fn copy_has_site?(tree: CopyTree) := match tree {
+    CopyTree::Leaf => false,
+    CopyTree::Site => true,
+    CopyTree::Branch(left, right) => copy_has_site?(left) or copy_has_site?(right),
+    CopyTree::Application(argument) => copy_has_site?(argument),
+}
+
+pub enum SiteQuery { Exhausted, Absent, Present }
+
+pub proc reading_query(tree: CopyTree, remaining: Nat): (status: SiteQuery, after: Nat) {
+    require allowance: remaining <= MAX_EXPANSION_NODES
+    ensure present: when status = SiteQuery::Present, copy_has_site?(tree)
+    ensure absent: when status = SiteQuery::Absent, not copy_has_site?(tree)
+    ensure exhausted: when status = SiteQuery::Exhausted, after = 0
+    ensure spent: unless status = SiteQuery::Exhausted, after < remaining
+    ensure enough: when copy_visits(tree) <= remaining, status != SiteQuery::Exhausted
+    expect unspent: after <= remaining
+    expect bounded: remaining - after <= MAX_EXPANSION_NODES
+}
+
+pub proc expansion_count(tree: CopyTree, remaining: Nat): (det fits?, det after: Nat) {
+    ensure fits: fits? iff copy_visits(tree) <= remaining
+    ensure spent: when fits?, after + copy_visits(tree) = remaining
+    ensure exhausted: unless fits?, after = 0
+}
+
+pub proc reading_size(tree: CopyTree, remaining: Nat): (det fits?, det after: Nat) {
+    require allowance: remaining <= MAX_EXPANSION_NODES
+    ensure fits: fits? iff copy_visits(tree) <= remaining
+    expect bounded: when fits?, copy_visits(tree) <= MAX_EXPANSION_NODES
+    ensure spent: when fits?, after + copy_visits(tree) = remaining
+    ensure exhausted: unless fits?, after = 0
+}
+
+pub proc expansion_step(remaining: Nat): (det copy?, det after: Nat) {
+    ensure allowed: copy? iff remaining > 0
+    ensure spent: when copy?, after + 1 = remaining
+    ensure exhausted: unless copy?, after = 0
+}
+```
 
 ## Searching for behaviours
 
@@ -859,8 +1026,19 @@ searches for them, and the goal is `true` where it finds outputs that are
 of their declared types, subset types included, and meet the guarantees in
 the model; otherwise it is unknown, since a search that finds none decides
 nothing. So an output that the guarantees allow but its type does not
-refutes nothing (`test/ui/checks/realizable_subset_outputs.fren`).
-`eval::outputs_confirm` computes the goal so, over the values that an
+refutes nothing (`test/ui/checks/realizable_subset_outputs.fren`). This
+policy also applies where the output carrier is finite and an evaluator
+can decide the existential as false. `eval::outputs_goal` computes which
+evaluated truths are known for confirmation:
+
+```fren
+pub proc outputs_goal(known?, value?): (det goal_known?, det goal_true?) {
+    out goal_known? := known? and value?
+    out goal_true? := known? and value?
+}
+```
+
+`eval::outputs_confirm` computes the goal over the values that an
 output may take, and confirms the model with it:
 
 ```fren
@@ -874,7 +1052,8 @@ pub proc outputs_confirm(
     meeting: Set<OutputValue>,   -- those values, or others, that meet the guarantees in the model
     tried: Set<OutputValue>,     -- the values that the evaluator's search tries
 ): (det goal_true?, det result: Confirmation) {
-    out goal_true? := tried inter declared inter meeting != {}
+    call g := outputs_goal(true, tried inter declared inter meeting != {})
+    out goal_true? := g.goal_true?
     call c := confirm(hyp_false?, goal_true?, hyps_known? and goal_true?)
     out result := c.result
 
