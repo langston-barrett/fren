@@ -2,7 +2,7 @@
 import Fren.Seq
 import FrenCli.Guard
 import FrenCli.Parse
-import FrenCore.Check
+import FrenCore.Check.Model
 import FrenCore.Enumeration
 import FrenCore.Expansion
 import FrenCore.Names

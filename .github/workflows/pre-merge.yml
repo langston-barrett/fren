@@ -33,6 +33,12 @@ on:
 permissions:
   contents: read
 
+# Stopgap until #834 bounds enumeration and evaluation recursion. Lean runs
+# native executables on threads whose explicit stacks ignore `ulimit -s`.
+# Reserve 8 GiB per stack; physical memory is committed only as used.
+env:
+  LEAN_STACK_SIZE_KB: "8388608"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true

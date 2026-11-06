@@ -1,5 +1,7 @@
 -- keep-sorted start
 import FrenCli.Smt
+import FrenCore.Check.Realizability
+import FrenCore.Check.Reporting
 -- keep-sorted end
 
 /-! The standalone extractor unfolds defined functions before the shared

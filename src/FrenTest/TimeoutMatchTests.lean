@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Check.Reporting
 import FrenTest.TimeoutMatch
 -- keep-sorted end
 

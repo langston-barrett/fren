@@ -1,5 +1,6 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.ReportFormat
+import FrenCore.Check.Sites
 import FrenCore.Definitions
 import FrenCore.Evidence
 -- keep-sorted end
