@@ -1,0 +1,50 @@
+-- The appended --unfoldings forms: generic instances under assumptions
+-- and in Boolean blocks, and a contract reached through deeper equations.
+--@ summary: 8 passed, 0 failed, 0 inconclusive, 0 redundant
+-- fren-covers: lang::induction_function, lang::unfoldings
+pub enum G<T> { Nil, Cons(T, G<T>) }
+
+pub fn glen<T>(l: G<T>): Int := match l {
+    G::Nil => 0,
+    G::Cons(_, r) => 1 + glen(r),
+}
+
+pub fn gapp<T>(a: G<T>, b: G<T>): G<T> := match a {
+    G::Nil => b,
+    G::Cons(h, t) => G::Cons(h, gapp(t, b)),
+}
+
+expect generic_assumption(a: G<Bool>, b: G<Bool>) {
+    assume three: b = G::Cons(true, G::Cons(false, G::Cons(true, G::Nil)))
+    expect length: glen(gapp(a, b)) = glen(a) + 3
+}
+
+expect generic_block(a: G<Int>) {
+    expect c: and {
+        length: glen(gapp(a, G::Cons(1, G::Cons(2, G::Cons(3, G::Nil))))) = glen(a) + 3,
+        identity: gapp(a, G::Nil) = a,
+    }
+}
+
+pub enum Tree { Leaf(Bool), Node(Tree, Int, Tree) }
+
+pub fn weight(t: Tree): (n: Int) {
+    out n := match t {
+        Tree::Leaf(_) => 1,
+        Tree::Node(l, _, r) => weight(l) + weight(r),
+    }
+    ensure positive: n >= 1
+}
+
+pub fn branch(t: Tree): Int := match t {
+    Tree::Leaf(b?) => weight(Tree::Leaf(b?)),
+    Tree::Node(l, _, r) => branch(l) + branch(r),
+}
+
+-- The two leaves' applications are at depth 2. Their equations introduce
+-- weight's applications at depth 3, where their contracts bring facts.
+expect binary_contract(t: Tree) {
+    expect c: branch(
+        Tree::Node(Tree::Node(Tree::Leaf(true), 0, Tree::Leaf(false)), 0, t)
+    ) >= branch(t) + 2
+}
