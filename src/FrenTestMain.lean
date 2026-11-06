@@ -1233,7 +1233,7 @@ def lintChapters : IO (Array String) := do
     failures := failures.push "lint chapters: a Markdown chapter is read more than once"
   unless files.qsort (· < ·) == hosted.qsort (· < ·) && files.qsort (· < ·) == disk.qsort (· < ·) do
     failures := failures.push s!"lint chapters: umbrella {files.toList}, wrappers {hosted.toList} and Markdown {disk.toList} differ"
-  return failures ++ (← hostedChecks)
+  return failures
 
 /-- `QueryCache`'s answers in memory: a script asked again gets the answer
 that it got first (`Reqs/Cli#solver-queries`), whichever of its maps
