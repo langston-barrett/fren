@@ -18,8 +18,8 @@ import cvc5
 # The cvc5 backend
 
 Runs the shared check algorithms (`FrenCore.Check`) with cvc5, linked into the
-binary. Formulas are SMT-LIB text over the procedure's variables; each query is a
-fresh solver, and a query asked again is answered from a cache
+binary. Formulas are SMT-LIB text over the procedure's variables; each query
+uses a fresh solver, while repeated queries are answered from a cache
 (`QueryCache`).
 -/
 
