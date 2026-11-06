@@ -11,10 +11,15 @@ namespace FrenTest.Resolved
 #guard (FrenCli.parseArgs {} ["trace", "--dump=resolved", "spec.fren"]).toOption.isNone
 #guard (FrenCli.parseArgs {} ["check", "--dump=resolve", "spec.fren"]).toOption.isNone
 
-/-- Exercises the binary's separate streams, both loading paths, repeated
+/-- Runs the CLI in a fresh copy of this driver, with its separate streams
+and exit code, through the hidden `resolvedRun` job. -/
+def run (args : Array String) : IO IO.Process.Output := do
+  IO.Process.output { cmd := (← IO.appPath).toString, args := #["--job", "resolvedRun"] ++ args }
+
+/-- Exercises the CLI's separate streams, both loading paths, repeated
 flags, and successful, statically invalid and failed specs. Dumping must
 leave diagnostics and exit status unchanged. -/
-def check : IO (Array String) := do
+def check (bless : Bool) : IO (Array String) := do
   let mut failures := #[]
   -- Induction creates hidden functions whose synthetic syntax shares the
   -- claim's spans. It must not overwrite the claim's surface annotations.
@@ -27,10 +32,32 @@ def check : IO (Array String) := do
   for a in st.resolved?.getD #[] do
     if st.inductionBodies.toArray.any fun (p, _) => a.value.contains (FrenCli.resolvedPath p).toSlice then
       failures := failures.push "resolved dump: a hidden induction function leaked into the surface"
+  -- A subset predicate reuses the invariant label as its generated name's
+  -- span. Its result type must not turn that label into a typed declaration.
+  let src := "pub type Pos = x: Int where positive: x > 0\n"
+  let st := FrenCli.elabText (FrenCli.initialState #[] none true) 0 src.toList.toArray
+  let label := (src.splitOn "positive")[0]!.length
+  if st.diags.any (·.severity == .error) then
+    failures := failures.push "resolved dump: the subset regression did not elaborate"
+  if (st.resolved?.getD #[]).any fun a => a.kind == "type" && a.span.start == label then
+    failures := failures.push "resolved dump: a hidden subset predicate typed the invariant label"
+  unless (st.resolved?.getD #[]).any fun a => a.kind == "expr" && a.value == "Bool" do
+    failures := failures.push "resolved dump: the subset invariant lost its expression annotation"
+  let src := "pub type Digit = Int is 0..=9\n"
+  let st := FrenCli.elabText (FrenCli.initialState #[] none true) 0 src.toList.toArray
+  let base := (src.splitOn "Int")[0]!.length
+  if st.diags.any (·.severity == .error) then
+    failures := failures.push "resolved dump: the shorthand regression did not elaborate"
+  for a in st.resolved?.getD #[] do
+    if (a.kind == "local" && Fren.Core.generatedName a.value) ||
+        (a.kind == "expr" && a.span.start == base) then
+      failures := failures.push "resolved dump: the shorthand's unwritten binder leaked into the surface"
+  unless (st.resolved?.getD #[]).any fun a => a.kind == "type" && a.span.start == base && a.value == "Int" do
+    failures := failures.push "resolved dump: the shorthand lost its written base type"
   for path in #["test/cli/args/dump_resolved.fren", "test/cli/args/dump_resolved_error.fren",
-      "test/cli/args/dump_resolved_failed.fren", "test/ui/lang/resolved_surface.fren"] do
-    let run (flags : Array String) := IO.Process.output {
-      cmd := ".lake/build/bin/fren", args := #["check", "--color=never"] ++ flags ++ #[path] }
+      "test/cli/args/dump_resolved_failed.fren", "test/ui/lang/resolved_surface.fren",
+      "test/cli/args/dump_resolved_markdown.md"] do
+    let run (flags : Array String) := run (#["check", "--color=never"] ++ flags ++ #[path])
     let plain ← run #["--jobs", "1"]
     let one ← run #["--jobs", "1", "--dump=resolved"]
     let many ← run #["--jobs", "4", "--dump=resolved", "--dump=resolved"]
@@ -51,6 +78,12 @@ def check : IO (Array String) := do
         failures := failures.push s!"{path}: the successful fixture failed:\n{one.stderr}"
       unless plain.stdout.isEmpty do
         failures := failures.push s!"{path}: ordinary checking printed to stdout"
+    if path.endsWith ".md" then
+      let expected := (System.FilePath.mk path).withExtension "expected"
+      if bless then IO.FS.writeFile expected one.stdout
+      else
+        unless one.stdout == (← IO.FS.readFile expected) do
+          failures := failures.push s!"{path}: blanked Markdown surface or offsets differ from the snapshot"
   -- The annotations of an imported generic are captured at its declaration,
   -- rather than at one of the concrete instances used by a later file.
   let dir : System.FilePath := ".lake/resolved-test"
@@ -59,20 +92,18 @@ def check : IO (Array String) := do
   let client := dir / "client.fren"
   IO.FS.writeFile lib "pub mod dump_library\npub fn id<T>(x: T): T := x\n"
   IO.FS.writeFile client "mod dump_client\nuse dump_library::id\nproc c(x: Int): (det y: Int) { out y := id(x) }\n"
-  let run (jobs : String) := IO.Process.output {
-    cmd := ".lake/build/bin/fren", args := #["check", "--color=never", "--dump=resolved", "--jobs", jobs,
-      lib.toString, client.toString] }
-  let one ← run "1"
-  let many ← run "4"
+  let runFiles (jobs : String) := run #["check", "--color=never", "--dump=resolved", "--jobs", jobs,
+      lib.toString, client.toString]
+  let one ← runFiles "1"
+  let many ← runFiles "4"
   unless one.exitCode == 0 && many.exitCode == 0 && one.stdout == many.stdout do
     failures := failures.push "resolved dump: multi-file loading failed or differs by job count"
   unless (one.stdout.splitOn "(file ").length == 3 &&
       one.stdout.contains "\"dump_library::id\"".toSlice && one.stdout.contains "\"T\"".toSlice &&
       one.stdout.contains "\"<Int>\"".toSlice do
     failures := failures.push "resolved dump: missing files, imported path or generic parameter"
-  let combined ← IO.Process.output {
-    cmd := ".lake/build/bin/fren", args := #["check", "--color=never", "--dump=resolved", "--dump=obligations",
-      "--dump=smt", lib.toString, client.toString] }
+  let combined ← run #["check", "--color=never", "--dump=resolved", "--dump=obligations",
+      "--dump=smt", lib.toString, client.toString]
   unless combined.exitCode == one.exitCode && combined.stdout.startsWith one.stdout &&
       combined.stdout.contains "; obligations\n".toSlice && combined.stdout.contains "(check-sat)".toSlice do
     failures := failures.push "resolved dump: combining dumps loses output or changes exit status"

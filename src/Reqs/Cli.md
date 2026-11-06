@@ -174,16 +174,23 @@ have their resolved paths; declared types and value expressions have their
 types, including inferred types. Type parameters remain parameters, aliases
 retain their surface declarations, and newtypes retain their nominal types.
 The prelude's declarations, generated instances and hidden checks are omitted.
+Subset predicates' generated names are omitted too; their written binders
+and invariant expressions retain their annotations.
+A shorthand subset's unwritten binder does not turn its base type into a
+local reference or value expression.
 
 The dump represents the surface as each file's source text together with
 annotations over it. Each `(file "path" ...)` contains `(surface "text")`
 and annotations `(KIND START STOP "VALUE")`. `START` and `STOP` are half-open,
 zero-based character offsets into that surface, after a Markdown file's prose
-is blanked. `name` gives an item's resolved path, `local` identifies a local
-value name in its surface scope, `type` gives a declared type, and `expr` gives
-a value expression's type. `arguments` gives a function application's inferred
-type arguments, without expanding its generic definition. Paths and types from
-the prelude are qualified with `prelude::` to distinguish them from a user's
+is blanked. `name` spans an item reference and gives its resolved path.
+`local` spans a local name and any fields read from it, giving that dotted
+path in its surface scope. At a declared name, `type` gives its declared type,
+or a function's result type; at a written type, it gives the resolved type.
+`expr` spans a value expression and gives its type. `arguments` spans a function
+application and gives its inferred type arguments, without expanding its
+generic definition. Paths and types from the prelude are qualified with
+`prelude::` to distinguish them from a user's
 items of the same name. Strings use JSON escaping. These annotations describe
 the source sites, rather than the formulas or symbols that instantiation and
 lowering generate.

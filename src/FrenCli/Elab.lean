@@ -1963,17 +1963,27 @@ partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Id
     -- Only the lints of the invariant's own source are reported, as for
     -- any expression, whether or not it has a static error: not those of
     -- the binder, which the pattern shorthand does not write.
-    let ownLints (st : State) : State := { st with
+    -- The predicate's generated name borrows the invariant label's span;
+    -- its result type is not a type declared at that label.
+    -- The shorthand's unwritten binder borrows the base type's span,
+    -- which is a written type, rather than a local value expression.
+    let generatedAnnotation (a : ResolvedAnnotation) : Bool :=
+      a.file == generatedBefore.file &&
+        ((a.kind == "type" && a.span == predicate.span) ||
+          (Fren.Core.generatedName binder.name && a.span == binder.span &&
+            (a.kind == "local" || a.kind == "expr")))
+    let ownSource (st : State) : State := { st with
       lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
       lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
-      natReports := generatedBefore.natReports }
+      natReports := generatedBefore.natReports
+      resolved? := st.resolved?.map (·.filter (!generatedAnnotation ·)) }
     try
       elabItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
     catch failure =>
       if failure.diags.any (·.msg.code? == some "F0201") then
         err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Fren.Core.invariantScopeLabel binder.name) }
-      throw { failure with state := ownLints failure.state }
-    modify fun st => { ownLints st with inSubset := priorSubset }
+      throw { failure with state := ownSource failure.state }
+    modify fun st => { ownSource st with inSubset := priorSubset }
     -- Its full-definedness check is guarded by earlier invariants below,
     -- rather than checked unconditionally as an ordinary function body.
     modify fun st => { st with bodies := st.bodies.extract 0 before }

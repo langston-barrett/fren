@@ -4525,7 +4525,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
   | ["readingBeside"] => do FrenTest.ReadingBeside.agree (← ownSpecFiles)
-  | ["resolvedDump"] => FrenTest.Resolved.check
+  | ["resolvedDump"] => FrenTest.Resolved.check bless
   | ["enumeration"] => enumerationAgrees
   -- Not among `jobs`: on `main` only (`methods-agree` in `ci.yml`).
   | "methodsAgree" :: part => methodsAgree part
@@ -4623,6 +4623,10 @@ def runJobs (bless timed : Bool) (jobs : Array (List String)) : IO (Array String
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
 
 unsafe def main (args : List String) : IO UInt32 := do
+  -- A fresh CLI process for `resolvedDump`, preserving its separate streams
+  -- and exit code without requiring a separately built `fren` executable.
+  if let "--job" :: "resolvedRun" :: args := args then
+    return ← FrenCli.run args (persist := true)
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
   if args == ["--rules-report"] then
     IO.print (← rulesReport)
