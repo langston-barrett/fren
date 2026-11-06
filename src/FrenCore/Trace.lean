@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Evidence
 import FrenCore.Names
 import Lean.Data.NameMap
 -- keep-sorted end

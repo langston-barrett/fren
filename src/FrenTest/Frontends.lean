@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Testing
 import FrenCore.Expansion
 import FrenTest.Ui
 -- keep-sorted end

@@ -1,4 +1,5 @@
-import FrenCore.Check
+import FrenCore.Check.Realizability
+import FrenCore.Check.Sites
 
 namespace FrenTest.SubsetInhabitation
 open Lean Fren.Core
