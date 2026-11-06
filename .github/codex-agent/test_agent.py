@@ -157,7 +157,8 @@ class PatchTests(unittest.TestCase):
 
     def test_no_change_posts_explanation_with_last_message_fallback(self):
         self.patch.write_bytes(b"")
-        (self.root / "last.md").write_text("The issue needs a design decision.\n" + "x" * 2000)
+        response = "The issue needs a design decision.\n" + "x" * 2000
+        (self.root / "last.md").write_text(response)
         env = {"REPO": REPO, "MODE": "issue", "PR": "", "BRANCH": "agent/10-luna-low",
                "BASE": self.base, "ROUND": "0", "ISSUE": "10", "MODEL": "gpt-6-luna",
                "EFFORT": "low", "ARTIFACT": str(self.root)}
@@ -165,7 +166,7 @@ class PatchTests(unittest.TestCase):
             publish.main()
         self.assertIn("The issue needs a design decision.", post.call_args.args[1])
         explanation = post.call_args.args[1].split("made no change:\n\n")[1]
-        self.assertEqual(len(explanation), 1500)
+        self.assertEqual(explanation, response)
 
     def test_no_change_fix_posts_comment_before_body_or_last_message(self):
         self.patch.write_bytes(b"")
@@ -292,6 +293,38 @@ class PatchTests(unittest.TestCase):
                 self.assertIn("made no change:", body)
                 assert_inert(self, body)
                 self.assertTrue(post.call_args.kwargs["capture_output"])
+
+    def test_no_change_keeps_long_explanations_and_marks_truncation(self):
+        import json
+        self.patch.write_bytes(b"")
+        info = pr()
+        info["head"]["sha"] = self.base
+        for mode, name in (("issue", "pr-body.md"), ("issue", "last.md"),
+                           ("fix", "comment.md"), ("fix", "pr-body.md"), ("fix", "last.md")):
+            for size in (2000, 20000):
+                with self.subTest(mode=mode, name=name, size=size):
+                    for file in ("pr-body.md", "comment.md", "last.md"):
+                        (self.root / file).unlink(missing_ok=True)
+                    response = "😀" * size + "\n" + MENTIONS + "\n" + CONTROLS + "\nLast reason."
+                    (self.root / name).write_text(response)
+                    env = {"REPO": REPO, "MODE": mode, "PR": "123" if mode == "fix" else "",
+                           "BRANCH": "agent/10-luna-low", "BASE": self.base, "ROUND": "1",
+                           "ISSUE": "10", "MODEL": "gpt-6-luna", "EFFORT": "low",
+                           "ARTIFACT": str(self.root)}
+                    with patch.dict(os.environ, env), \
+                            patch.object(publish, "api", side_effect=[info, [], []]), \
+                            patch.object(subprocess, "run") as post:
+                        publish.main()
+                    body = json.loads(post.call_args.kwargs["input"])["body"]
+                    self.assertIn("made no change:\n\n" + "😀" * 2000, body)
+                    self.assertLessEqual(len(body.encode()), publish.BODY_BYTES)
+                    assert_inert(self, body)
+                    if size == 2000:
+                        explanation = body.split("made no change:\n\n", 1)[1]
+                        self.assertEqual(explanation, publication.inert(response))
+                        self.assertTrue(body.endswith("Last reason."))
+                    else:
+                        self.assertTrue(body.endswith("[Response truncated by codex-agent.]"))
 
     def test_rejected_patch_path_is_inert_when_posted(self):
         import json
@@ -467,6 +500,11 @@ class FixTests(unittest.TestCase):
                 return self.thread
             if path.endswith("/pulls/123/comments"):
                 return [comment("trusted inline"), comment("outsider inline", "NONE")]
+            if path.endswith("/pulls/123/reviews"):
+                self.assertEqual(kwargs, {"pages": True})
+                return [comment("owner review", "OWNER"), comment("member review", "MEMBER"),
+                        comment("collaborator review"), comment("outsider review", "NONE"),
+                        comment("review with no association", "")]
             if path.endswith("/pulls/123/commits"):
                 return self.commits
             raise AssertionError(path)
@@ -487,6 +525,10 @@ class FixTests(unittest.TestCase):
         self.assertIn("trusted inline", prompt.call_args.args[2])
         self.assertNotIn("outsider inline", prompt.call_args.args[2])
         self.assertNotIn("forgery", prompt.call_args.args[2])
+        for body in ("owner review", "member review", "collaborator review"):
+            self.assertIn(body, prompt.call_args.args[2])
+        for body in ("outsider review", "review with no association"):
+            self.assertNotIn(body, prompt.call_args.args[2])
 
     def test_stale_or_clean_latest_review_skips(self):
         for text in (f"Review of {'b' * 40}: blocking issues", f"Review of {SHA}: no blocking issues"):
@@ -592,6 +634,9 @@ class FixTests(unittest.TestCase):
                 return []
             if path.endswith("/pulls/123/comments"):
                 return []
+            if path.endswith("/pulls/123/reviews"):
+                self.assertEqual(kwargs, {"pages": True})
+                return [comment("trusted review after failed CI"), comment("outsider review", "NONE")]
             if path.endswith("/pulls/123/commits"):
                 return []
             raise AssertionError(path)
@@ -602,6 +647,8 @@ class FixTests(unittest.TestCase):
             fixparams.main()
             self.assertEqual(output.call_args.kwargs["mode"], "fix")
             self.assertIn("error: broken test", prompt.call_args.args[2])
+            self.assertIn("trusted review after failed CI", prompt.call_args.args[2])
+            self.assertNotIn("outsider review", prompt.call_args.args[2])
             self.info["head"]["sha"] = "b" * 40
             prompt.reset_mock()
             fixparams.main()
