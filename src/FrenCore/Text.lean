@@ -9,7 +9,8 @@ searches through slices, with the pattern machinery's overhead at each
 position: each took several per cent of a `fren check` with a warm query
 cache. `FrenCore.Text.Correctness` proves `occursIn`'s character-level
 meaning. `FrenTest.TextSearch` checks the native comparison against
-`splitOn` and `String.contains`.
+`splitOn`, and `projectsRelation` against `String.contains` for the
+needle `"rel.project"`.
 -/
 
 namespace Fren.Core
@@ -22,9 +23,10 @@ def occursFrom (s t : String) (m n i : Nat) (hm : m = t.utf8ByteSize) (hn : n = 
     (s.getUTF8Byte ⟨i⟩ (by simp [String.Pos.Raw.lt_iff]; omega) == t.getUTF8Byte 0 (by simp [String.Pos.Raw.lt_iff]; omega)
       -- Core Lean's native `memcmp` of the two strings' bytes: an internal
       -- API, this module's one, which a toolchain bump may rename or
-      -- change. `FrenCore.Text.Correctness` proves the search using its
-      -- Lean specification; `FrenTest.TextSearch` checks the native code
-      -- against the old `splitOn` and `String.contains` searches.
+      -- change. `FrenCore.Text.Correctness` proves the search from
+      -- `memcmpStr`'s Lean specification. `FrenTest.TextSearch` checks the
+      -- native code against `splitOn`, and `projectsRelation` against
+      -- `String.contains` for the needle `"rel.project"`.
       && String.Slice.Pattern.Internal.memcmpStr s t ⟨i⟩ 0 ⟨m⟩
         (by simp [String.Pos.Raw.le_iff, String.Pos.Raw.offsetBy]; omega)
         (by simp [String.Pos.Raw.le_iff, String.Pos.Raw.offsetBy]; omega))
