@@ -364,6 +364,8 @@ structure CProp where
   /-- For a refinement claim (`refines`): its abstraction, the procedure
   whose realizability its checks rest on (`Reqs/Evidence`). -/
   abstraction? : Option Name := none
+  /-- The written constraint whose evidence applies to this generated leaf. -/
+  evidenceOwner? : Option Name := none
   deriving Inhabited
 
 /-- A call, with formulas over the calling procedure's variables. -/

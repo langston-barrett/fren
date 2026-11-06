@@ -98,15 +98,12 @@ impl ground_match_step: lang::ground_match_step for (ctx : Context) (vs : List (
   | ex ty b => cases t <;> simp [fren_spec, termKind, Fren.Core.GroundMatching.matchTerm]
   | _ => simp [fren_spec, termKind, Fren.Core.GroundMatching.matchTerm]
 
-def lookup (ds : List (TheoryTerm × TheoryTerm)) (t : TheoryTerm) : TheoryTerm :=
-  ((ds.find? (·.1 == t)).map (·.2)).getD t
-
 interp lang::ground_definitions_empty? := fun (ds : List (TheoryTerm × TheoryTerm)) => ds.isEmpty
 interp lang::ground_definition_name := fun (ds : List (TheoryTerm × TheoryTerm)) => (ds.headD default).1
 interp lang::ground_definition_value := fun (ds : List (TheoryTerm × TheoryTerm)) => (ds.headD default).2
 interp lang::ground_definitions_rest := fun (ds : List (TheoryTerm × TheoryTerm)) => ds.tail
 interp lang::ground_add_definition := fun n v (ds : List (TheoryTerm × TheoryTerm)) => (n, v) :: ds
-interp lang::ground_lookup := lookup
+interp lang::ground_lookup := fun (ds : List (TheoryTerm × TheoryTerm)) t => definitionValue ds.toArray t t
 interp lang::ground_normalize := Fren.Core.GroundMatching.normalize
 interp lang::ground_normalize_definitions := Fren.Core.GroundMatching.definitions
 
@@ -114,21 +111,21 @@ impl ground_normalization: lang::ground_normalization for (ds : List (TheoryTerm
   defs := ds,
   term := t,
   other := other,
-  lookup_value := lookup ds t,
+  lookup_value := definitionValue ds.toArray t t,
   normalized := Fren.Core.GroundMatching.normalize ds t,
   normalized_definitions := Fren.Core.GroundMatching.definitions ds,
   same? := Fren.Core.GroundMatching.same ds t other,
 } by
   intro ds t other _
-  have hl : lookup ds t = if ds.isEmpty then t else
-      if (ds.headD default).1 == t then (ds.headD default).2 else lookup ds.tail t := by
+  have hl : definitionValue ds.toArray t t = if ds.isEmpty then t else
+      if (ds.headD default).1 == t then (ds.headD default).2 else definitionValue ds.tail.toArray t t := by
     cases ds with
     | nil => rfl
     | cons d ds =>
       by_cases h : d.1 = t
-      · simp [lookup, List.find?, List.headD, h]
+      · simp [definitionValue, List.find?, List.headD, h]
       · have hb : (d.1 == t) = false := beq_eq_false_iff_ne.mpr h
-        simp [lookup, List.find?, List.headD, hb]
+        simp [definitionValue, List.find?, List.headD, hb]
   have hd : Fren.Core.GroundMatching.definitions ds = if ds.isEmpty then ds else
       ((ds.headD default).1, Fren.Core.GroundMatching.normalize (Fren.Core.GroundMatching.definitions ds.tail) (ds.headD default).2) :: Fren.Core.GroundMatching.definitions ds.tail := by
     cases ds <;> rfl
@@ -136,10 +133,10 @@ impl ground_normalization: lang::ground_normalization for (ds : List (TheoryTerm
   refine ⟨?_, ?_, ?_, ?_⟩
   · simpa only [beq_iff_eq] using hl
   · cases t with
-    | app f a => cases f <;> simp [termKind, Fren.Core.GroundMatching.normalize]
-    | _ => simp [termKind, Fren.Core.GroundMatching.normalize, lookup]
+    | app f a => cases f <;> simp [termKind, Matching.normalize, DefinitionSyntax.expand, TheoryTerm.expandDefinitions]
+    | _ => simp [termKind, Matching.normalize, DefinitionSyntax.expand, TheoryTerm.expandDefinitions, definitionValue]
   · exact hd
-  · simp [Fren.Core.GroundMatching.same]
+  · simp [Fren.Core.Matching.same]
 
 interp lang::GroundOrder := List Name
 interp lang::GroundSubject := Option Name
@@ -316,5 +313,74 @@ impl ground_rule_step: lang::ground_rule_step for (ctx : Context) (s : TheorySen
   refine ⟨rfl, rfl, rfl, Iff.rfl, ?_⟩
   cases hs : ({ sentence := s } : Rule).subject ctx.items <;>
     simp [Rule.terms, Fren.Core.GroundMatching.matchNormalized, hs]
+
+interp lang::ground_context_definitions := Context.definitions
+interp lang::ground_normalize_terms := fun ds (ts : List TheoryTerm) => ts.map (Fren.Core.GroundMatching.normalize ds)
+interp lang::ground_normalize_sentence := fun ds s => (({ sentence := s } : Rule).normalize ds).sentence
+interp lang::ground_prepare_context := Context.normalizeListed
+
+impl ground_preparation_step: lang::ground_preparation_step for (ctx : Context)
+    (ds : List (TheoryTerm × TheoryTerm)) (sentence : TheorySentence) (ts : List TheoryTerm)
+    (ty : Ty) (t : TheoryTerm) {
+  ctx := ctx, defs := ds, sentence := sentence, terms := ts, ty := ty, term := t,
+  normalized_terms := ts.map (Fren.Core.GroundMatching.normalize ds),
+  normalized_sentence := (({ sentence } : Rule).normalize ds).sentence,
+  normalized_context := ctx.normalizeListed ds,
+  prepared_order := (ctx.normalizeListed ds).items,
+  prepared_definitions := (ctx.normalizeListed ds).definitions,
+  prepared_type_present? := ((ctx.normalizeListed ds).typeOf t).isSome,
+  prepared_type := ((ctx.normalizeListed ds).typeOf t).getD default,
+  prepared_listed? := ((ctx.normalizeListed ds).listed ty).isSome,
+  prepared_values := ((ctx.normalizeListed ds).listed ty).getD [],
+} by
+  intro ctx ds sentence ts ty t _
+  cases ts <;> cases hl : ctx.listed ty <;>
+    simp [fren_spec, Rule.normalize, Context.normalizeListed, hl, List.headD]
+
+interp lang::GroundSentences := List TheorySentence
+interp lang::ground_no_sentences := fun (_ : TheorySentence) => ([] : List TheorySentence)
+interp lang::ground_add_sentence := fun sentence sentences => sentence :: sentences
+
+interp lang::ground_image_substitution := fun (s : Substitution) n => s.lookup n
+interp lang::ground_instances_for := fun sentence ss =>
+  Fren.Core.GroundMatching.instantiateMatches sentence ss
+
+impl ground_instance_list_step: lang::ground_instance_list_step for (sentence : TheorySentence)
+    (ss : List Substitution) (n : Name) {
+  sentence := sentence, substitutions := ss, name := n,
+  head_image_present? := ((ss.headD []).lookup n).isSome,
+  head_image_value := ((ss.headD []).lookup n).getD default,
+  instances := Fren.Core.GroundMatching.instantiateMatches sentence ss,
+} by
+  intro sentence ss n _
+  let sub := fun n => (ss.headD []).lookup n
+  let result := sentence.instantiate sub
+  refine ⟨sub, sentence, result.isSome, result.getD sentence, ?_⟩
+  cases ss with
+  | nil =>
+    simp [fren_spec, sub, result, Fren.Core.GroundMatching.instantiateMatches,
+      TheorySentence.instantiate, theoryGroundImages]
+    rfl
+  | cons image rest =>
+    cases h : theoryGroundImages sentence.variables (fun n => image.lookup n) <;>
+      simp [fren_spec, sub, result, Fren.Core.GroundMatching.instantiateMatches,
+        TheorySentence.instantiate, h, List.headD]
+
+interp lang::ground_normalized_matches := fun ctx sentence apps calls =>
+  Fren.Core.GroundMatching.matchNormalized ctx { sentence } { applications := apps, calls }
+interp lang::ground_query_matches := fun ctx sentence apps calls =>
+  Fren.Core.GroundMatching.matchApplications ctx { sentence } { applications := apps, calls }
+interp lang::ground_instances := fun ctx sentence apps calls =>
+  Fren.Core.GroundMatching.instances ctx { sentence } { applications := apps, calls }
+
+impl ground_instances_step: lang::ground_instances_step for (ctx : Context) (sentence : TheorySentence)
+    (apps calls : List TheoryTerm) {
+  ctx := ctx, sentence := sentence, query_apps := apps, query_calls := calls,
+  substitutions := Fren.Core.GroundMatching.matchApplications ctx { sentence } { applications := apps, calls },
+  instances := Fren.Core.GroundMatching.instances ctx { sentence } { applications := apps, calls },
+} by
+  intro ctx sentence apps calls _
+  simp [fren_spec, Fren.Core.GroundMatching.matchApplications,
+    Fren.Core.GroundMatching.instances, List.flatMap_map]
 
 end Fren.Impls.GroundMatching

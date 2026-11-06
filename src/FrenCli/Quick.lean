@@ -109,7 +109,11 @@ def Spec.admitAtoms (sp : Spec) (c : Comp) (shapes : Name → Option Fren.Core.D
     binds := c.insts.map fun i => (bindingAtoms .anonymous i).map (·.compiled shapes)
     insts := c.insts.map fun i => (sp.instAtoms .anonymous i).map (·.compiled shapes)
     callAssumes := c.insts.map fun i =>
-      ((sp.comp? i.comp).map fun d => (d.ofKind .assume).map fun a => (a.name, d.inlineEarly a.e)).getD #[] }
+      ((sp.comp? i.comp).map fun d =>
+        -- Call checks name the separate giving-site parts, not the
+        -- whole-type facts used when searching the callee's behaviour.
+        let assumptions := d.inputObligations ++ (d.ofKind .assume).filter (·.typed?.isNone)
+        assumptions.map fun a => (a.name, d.inlineEarly a.e)).getD #[] }
 
 /-- Searches for an admissible input, then for each call in turn
 confirms its assumptions on its inputs and searches for its behaviour.

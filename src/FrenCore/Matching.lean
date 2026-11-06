@@ -25,15 +25,21 @@ inductive Term where
   | cons (head tail : Term)
   deriving Inhabited, DecidableEq, Repr
 
-/-- Expand references using already normalized definitions. -/
-def normalize (defs : List (String × Term)) : Term → Term
-  | .ref n => definitionValue defs.toArray n (.ref n)
-  | .app f args => .app f (normalize defs args)
-  | .cons a b => .cons (normalize defs a) (normalize defs b)
+/-- Traverse the small reference model; application symbols stay opaque. -/
+def Term.expandDefinitions (lookup : String → Term → Term) : Term → Term
+  | .ref n => lookup n (.ref n)
+  | .app f args => .app f (args.expandDefinitions lookup)
+  | .cons a b => .cons (a.expandDefinitions lookup) (b.expandDefinitions lookup)
   | t => t
 
+instance : DefinitionSyntax String Term := ⟨Term.expandDefinitions⟩
+
+/-- Expand references using already normalized definitions. -/
+def normalize {K T : Type} [BEq K] [DefinitionSyntax K T] (defs : List (K × T)) : T → T :=
+  DefinitionSyntax.expand (definitionValue defs.toArray)
+
 /-- Normalize each definition in its own scope, before it can be shadowed. -/
-def definitions : List (String × Term) → List (String × Term)
+def definitions {K T : Type} [BEq K] [DefinitionSyntax K T] : List (K × T) → List (K × T)
   | [] => []
   | (n, v) :: rest =>
     let ds := definitions rest
@@ -41,7 +47,8 @@ def definitions : List (String × Term) → List (String × Term)
 
 /-- Syntactic equality after expanding definitions; no evaluation or
 function unfolding participates. -/
-def same (defs : List (String × Term)) (a b : Term) : Bool :=
+def same {K T : Type} [BEq K] [BEq T] [DefinitionSyntax K T]
+    (defs : List (K × T)) (a b : T) : Bool :=
   let ds := definitions defs
   normalize ds a == normalize ds b
 

@@ -1269,16 +1269,25 @@ def group_gone(pgid, reap, subreaper=False):
     Exhausting wait4 is not evidence that the local process group is gone."""
     if not reap():
         return False
-    if not subreaper and os.getpid() == 1:
-        # Namespace init adopts orphaned workers. Reap them only after wait4
-        # has collected the leader's status and RSS, then probe the group.
+    if os.getpid() == 1:
+        # Peek at exited children without consuming their usage. A worker
+        # can be adopted after reap() exhausted the group waits; route it
+        # back through wait4 rather than losing its CPU/RSS to waitpid.
         while True:
             try:
-                pid, _ = os.waitpid(-1, os.WNOHANG)
+                exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                if exited is None:
+                    break
+                if subreaper and os.getpgid(exited.si_pid) == pgid:
+                    if not reap():
+                        return False
+                else:
+                    # An exited child's group cannot change before reaping.
+                    os.waitpid(exited.si_pid, os.WNOHANG)
             except ChildProcessError:
                 break
-            if pid == 0:
-                break
+            except ProcessLookupError:
+                continue  # A reentrant termination handler collected it.
     try:
         os.killpg(pgid, 0)
     except ProcessLookupError:
@@ -1378,6 +1387,7 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
         hz = None
     processes = ProcessSampler(time.monotonic(), hz)
     completed = False
+    group_reported = None
     try:
         child = subprocess.Popen(command, start_new_session=True)
     except OSError as e:
@@ -1426,6 +1436,13 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
                 machine.sample(time.monotonic(), machine_counters())
             if completed:
                 break
+            if child.returncode is not None and (group_reported is None or now - group_reported >= 30):
+                pids = ("unavailable" if readings is None else
+                        ", ".join(str(row["pid"]) for row in readings) or "none sampled")
+                print(f"heavy: `{shown}` leader exited with {child.returncode}; "
+                      f"holding slot for process group {child.pid} (namespace-local PGID); "
+                      f"remaining procfs-view PIDs: {pids}", file=sys.stderr)
+                group_reported = now
             try:
                 rss = group_rss_kb().get(proc_group, 0)
                 cap = mem_cap_kb(environ, state)

@@ -41,6 +41,7 @@ tested testing::heavy_lease: "scripts/heavy_test.py"
 tested testing::heavy_legacy_lease: "scripts/heavy_test.py"
 tested testing::heavy_report_owner: "scripts/heavy_test.py"
 tested testing::heavy_memory_victim: "scripts/heavy_test.py"
+tested testing::heavy_init_reap: "scripts/heavy_test.py"
 tested testing::heavy_group_gone: "scripts/heavy_test.py"
 tested testing::heavy_owned_signal: "scripts/heavy_test.py"
 -- The sorts and declarations that the `fren` command gives the solver are
