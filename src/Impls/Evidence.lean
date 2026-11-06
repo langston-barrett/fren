@@ -19,6 +19,7 @@ import Impls.Global
 import Impls.GroundClosure
 import Impls.GroundMatching
 import Impls.Guards
+import Impls.Heavy
 import Impls.HigherOrder
 import Impls.Impl
 import Impls.Induction

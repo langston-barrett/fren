@@ -5,6 +5,11 @@
 # Model/runtime bridges and dynamic quotation gaps: #846, item 3.
 # A new connection removes its old entry; there is no bless mode.
 
+# Standalone heavy kernel (#859): outside the audited Fren CLI/hosted
+# runtimes. Python remains the active scheduler in migration step 1.
+unbound: Fren.Impls.Heavy.memory_prediction jobs
+unbound: Fren.Impls.Heavy.memory_prediction prediction
+
 # Outputs represented by binders, literals, spec values, or output-free laws.
 unbound: Fren.Impls.Enumeration.contract_blocker right?
 unbound: Fren.Impls.Enumeration.shape_bound size
