@@ -20,6 +20,31 @@ namespace Fren.Impls
 open Fren.Core (Answer Verdict CheckKind realizableVerdict expectVerdict vacuityVerdict coverVerdict
   determinismVerdict redundancyAsked kindsFor reachabilityAsked completenessAsked reachUses)
 
+interp check::EvidenceSubject := Lean.Name
+
+impl predicate_check_site: check::predicate_check_site for (memberPath : String) (cover : Bool) {
+  member_path := memberPath,
+  cover? := cover,
+  at_member? := Fren.Core.predicateCheckAtMember memberPath cover,
+} by
+  intro memberPath cover _
+  cases cover <;> simp [fren_spec, Fren.Core.predicateCheckAtMember]
+
+-- The spec cannot yet take `owner: Option<EvidenceSubject>`: Fren rejects
+-- an abstract type in a payload, including a generic `Option` payload.
+-- Keep the option split into its value and presence flag in the binding;
+-- the value is ignored when absent. The implementation already takes an
+-- `Option Name`, ready for the direct binding when the language permits it.
+impl expanded_evidence: check::expanded_evidence for (ns : Array Lean.Name) (n : Lean.Name) (owner : Option Lean.Name) {
+  selected := Fren.FinSet.ofArray ns,
+  leaf := n,
+  owner := owner.getD .anonymous,
+  has_owner? := owner.isSome,
+  included? := Fren.Core.evidenceSelected ns n owner,
+} by
+  intro ns n owner _
+  cases owner <;> simp [fren_spec, Fren.Core.evidenceSelected, Fren.FinSet.mem_ofArray]
+
 instance : Fren.Finite Answer := ⟨[.sat, .unsat, .unknown], by intro x; cases x <;> simp⟩
 instance : Fren.Finite Verdict := ⟨[.pass, .fail, .inconclusive], by intro x; cases x <;> simp⟩
 

@@ -24,8 +24,10 @@ caches even when the job has `permissions: {}`. `lint` tests the boundary
 and teardown with `test_sandbox.sh` and a hostile stand-in for Codex.
 
 Only regular output files enter the artifact, after the workflow's trusted
-`pr-review/check.py` leak detector checks each against the original auth
-JSON, its token/key fields and any refreshed token fields still present.
+`pr-review/check.py` leak detector checks each against the original
+token/key values, auth identifiers, other opaque values and any refreshed
+values still present. It scans values, not common field names from the
+JSON structure.
 Files containing known credential copies, plain or encoded, are withheld.
 No authentication file is uploaded. A separate fresh runner validates the
 patch and publishes it with `FREN_DEV_TOKEN`, without executing patched
@@ -36,8 +38,11 @@ trailers supplied by the model and neutralizes mentions, runner commands
 and commit check directives in comments, pull request titles and
 descriptions, and commit messages. This keeps model text from starting an
 assistant under the publishing account or suppressing required checks.
-Git and API responses are captured; runner logs report failure types
-rather than exception details that could echo paths or credentials.
+Git and API responses are captured; runner logs report exception types.
+After container teardown, a failed sandbox also reports up to three
+stderr error lines, bounded and redacted for known credentials and opaque
+token-like strings, even when its raw logs are withheld. If stderr has no
+error line, it falls back to Codex's structured JSON error events.
 Mentions are broken with zero-width spaces, including entity forms and
 code. API bodies are bounded below GitHub's limit after neutralization,
 including multibyte text.

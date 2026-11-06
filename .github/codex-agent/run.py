@@ -1,16 +1,76 @@
 """Stage the sign-in privately, run the container, then collect safe output."""
+import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 
-from collect import collect, read_regular, secrets
-from publication import report
+from collect import checker, collect, read_regular, secrets
+from publication import inert, report
 from teardown import remove
 
 HERE = Path(__file__).resolve().parent
+
+
+def failure_summary(output, credentials, status):
+    """Report a few error lines only after teardown, without credentials."""
+    print(f"codex-agent sandbox exited {status}", file=sys.stderr)
+    try:
+        text = read_regular(output, "stderr.log", 16384).decode("utf-8", "replace")
+    except (OSError, ValueError):
+        print("stderr unavailable (not a readable regular file)", file=sys.stderr)
+        text = ""
+    # Drop terminal controls before making runner commands inert. Long
+    # opaque strings include unknown/refreshed tokens, JWTs and API keys.
+    def lines_of(value):
+        value = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]|[^\x20-\x7e\n]", "", value)
+        return [line.strip() for line in value.splitlines() if line.strip()]
+
+    lines = lines_of(text)
+    errors = [line for line in lines if re.search(
+        r"error|fatal|failed|traceback|caused by|denied|invalid", line, re.IGNORECASE)]
+    source = "stderr"
+    if not errors:
+        # With --json, some configuration/provider failures appear only
+        # as stdout events. Never render arbitrary tool/model events.
+        try:
+            log = read_regular(output, "log.jsonl", 16384).decode("utf-8", "replace")
+        except (OSError, ValueError):
+            log = ""
+        for line in log.splitlines():
+            try:
+                event = json.loads(line)
+            except (ValueError, RecursionError):
+                continue
+            if not isinstance(event, dict):
+                continue
+            message = event.get("message") if event.get("type") == "error" else None
+            if event.get("type") == "turn.failed" and isinstance(event.get("error"), dict):
+                message = event["error"].get("message")
+            if isinstance(message, str):
+                errors.extend(lines_of(message))
+        if errors:
+            source = "codex"
+    for line in list(dict.fromkeys(errors or lines))[:3]:
+        for credential in credentials:
+            if credential:
+                line = line.replace(credential, "[redacted]")
+        line = re.sub(r"(?i)\b(?:bearer\s+|(?:token|api[_-]?key)\s*[:=]\s*)\S+",
+                      "[redacted]", line)
+        line = re.sub(r"\b(?:sk-[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9]+|github_pat_\w+)",
+                      "[redacted]", line)
+        line = re.sub(r"[A-Za-z0-9_+/=.-]{24,}", "[redacted]", line)
+        # Keep the detector's encoded/fragment matching as a final guard,
+        # before truncation could split a known credential into a prefix.
+        if checker.leaks(line, credentials):
+            line = "[redacted credential-bearing line]"
+        print(source + ": " + inert(line[:400]), file=sys.stderr)
+    if not errors and not lines:
+        print("no readable stderr or Codex error events", file=sys.stderr)
 
 
 def main():
@@ -52,6 +112,8 @@ def main():
                 credentials += secrets(current)
             except (OSError, ValueError):
                 pass
+            if status:
+                failure_summary(output, credentials, status)
             safe = Path(os.environ["RUNNER_TEMP"]) / "codex-result"
             collect(output, safe, credentials)
             # Model processes are gone; neither auth nor raw outputs are
