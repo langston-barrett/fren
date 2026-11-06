@@ -376,8 +376,8 @@ pub mod testing
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--unfoldings] [--spec-timeout SECONDS]`): generates random
-  specs and checks each with both front ends, the `fren` command's pipeline
+  [--unfoldings] [--datatype-elements] [--spec-timeout SECONDS]`): generates
+  random specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
   same errors, warnings and notes at the same lines and columns, the
@@ -444,11 +444,11 @@ pub mod testing
   proves only by [unfolding more than one
   step](../Lang/Recursion.md#unfolding-in-an-induction), up to and past
   the bound, and a claim with no parameter that needs more than one step
-  too. Appended forms cover generic list instances under assumptions and
-  in Boolean blocks, and a binary recursion whose deeper equations bring
-  another function's contract. They draw after the original forms, so each
-  existing spec stays as a prefix. Its generator is split off the seed,
-  and its cut is empty, as `--induction-candidates`'s is.
+  too. It also covers generic list instances under assumptions and in
+  Boolean blocks, and a binary recursion whose deeper equations bring
+  another function's contract. Its generator is split off the seed, so the
+  other modes stay unchanged. Its cut is empty, as
+  `--induction-candidates`'s is.
   A run with `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
