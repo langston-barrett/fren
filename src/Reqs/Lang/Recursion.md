@@ -128,6 +128,84 @@ in the same order. Each use is read once, at its place: an expression that
 is elaborated again, such as a `match`'s scrutinee where a closure refers
 to an arm's binder, is not another use.
 
+## Structural groups
+
+The termination judgment generalizes to a group of functions. A candidate
+chooses one decreasing parameter for each member; different members may
+choose different positions. Every application within the group must pass a
+payload of the caller's chosen parameter to the callee's chosen parameter.
+Every edge must decrease, including an edge from a member to itself. A
+call in a closure, or a member passed as a function argument, fails the
+judgment. Other arguments are unrestricted.
+
+This is the termination model for mutual recursion, not yet surface syntax
+for declaring a group. Both front ends use its singleton case for existing
+self-recursion. Forward scope, simultaneous contract checking and Lean
+`mutual` definitions remain to be implemented before groups can be written.
+The judgment concerns structural descent only; it neither accepts recursion
+on an arbitrary measure nor adds mutually recursive datatypes.
+
+The inputs record each member's parameter count and a proposed decreasing
+position, and each use's caller, callee, form and argument origins. A
+`Payload(i)` argument is a binder bound from a payload of the caller's
+parameter at position `i`, by the same rules as above; other arguments are
+`Other`. The judgment computes whether every use decreases, rather than
+taking that fact as an input. Invalid member indices, parameter positions
+and missing selected arguments fail the judgment, even if an out-of-range
+sequence index happens to have the required default value.
+
+```fren
+pub struct GroupParameter { count: Int, decreasing: Int }
+pub enum GroupArg { Payload(Int), Other }
+pub struct GroupUse { caller: Int, callee: Int, form: RecForm, args: Seq<GroupArg> }
+
+pub fn group_call_decreases?(members: Seq<GroupParameter>, u: GroupUse) :=
+    u.form = RecForm::Applied
+    and 0 <= u.caller < members.len and 0 <= u.callee < members.len
+    and 0 <= members[u.callee].decreasing < u.args.len
+    and u.args[members[u.callee].decreasing] = GroupArg::Payload(members[u.caller].decreasing)
+
+set_option fren.lint.undecidable "allow" in
+pub fn group_structural?(members: Seq<GroupParameter>, uses: Seq<GroupUse>) :=
+    (forall (i: Int), when 0 <= i < members.len,
+        0 <= members[i].decreasing < members[i].count)
+    and (forall (k: Int), when 0 <= k < uses.len, group_call_decreases?(members, uses[k]))
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc structural_group(members: Seq<GroupParameter>, uses: Seq<GroupUse>): (det accepted?) {
+    ensure rule: accepted? iff group_structural?(members, uses)
+
+    expect empty: when members = [] and uses = [], accepted?
+    expect unused_invalid: when (exists (i: Int), 0 <= i < members.len
+        and not (0 <= members[i].decreasing < members[i].count)), not accepted?
+}
+
+set_option fren.lint.undecidable "allow" in
+pub fn group_counts_match?(counts: Seq<Int>, members: Seq<GroupParameter>) :=
+    counts.len = members.len and (forall (i: Int), when 0 <= i < counts.len, members[i].count = counts[i])
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "solver" in
+pub proc structural_group_search(counts: Seq<Int>, uses: Seq<GroupUse>): (det found?) {
+    ensure rule: found? iff (exists (members: Seq<GroupParameter>),
+        group_counts_match?(counts, members) and group_structural?(members, uses))
+}
+```
+
+`Core.structuralGroup` is bound to `lang::structural_group` with an `impl`
+over arbitrary finite lists of members and uses. Its search decision is
+bound to `lang::structural_group_search`: a choice must exist, rather than
+merely pass when the caller supplies one. `Core.recursionGroup`
+searches the finite product of the members' parameter positions in
+lexicographic order and returns the first accepted candidate, or none if
+there is none. Each member therefore keeps one position across every call
+to and from it. A member with no parameters has no candidate. An empty
+group has the empty candidate. Existing self-recursion with no uses remains
+nonrecursive; otherwise its singleton adapter chooses exactly the first
+parameter at which every self-application decreases, preserving the
+structural-recursion rule and its diagnostics.
+
 ## Meaning
 
 A structural recursion denotes the least fixed point of its equations,
@@ -861,6 +939,8 @@ functions to quantifier-free queries.
 ```fren
 #fren_check self_application
 #fren_check structural_recursion
+#fren_check structural_group
+#fren_check structural_group_search
 #fren_check recursive_match
 #fren_check recursive_facts
 #fren_check merged_facts

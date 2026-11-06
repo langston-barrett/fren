@@ -3,6 +3,7 @@ import Fren
 import FrenCli.Run
 import FrenTest.Frontends
 import FrenTest.FuzzDatatypeElements
+import FrenTest.FuzzRecursion
 import FrenTest.Messages
 import FrenTest.SpecTimeout
 import Lean.Elab.Frontend
@@ -2844,6 +2845,8 @@ structure Mode where
   inductionCandidates : Bool := false
   /-- Collection payloads and fields of generic datatypes. -/
   datatypeElements : Bool := false
+  /-- Singleton structural-group clients, including isolated invalid uses. -/
+  recursionPositions : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
@@ -2864,16 +2867,18 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
       else if m.factScopes then Wide.factScopes else if m.confirm then Wide.genConfirmed
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
       else if m.datatypeElements then FuzzDatatypeElements.spec
+      else if m.recursionPositions then FuzzRecursion.gen
       else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
-`--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
-`--fact-scopes`, `--induction-candidates` and `--datatype-elements` makes
+`--induction-forms`, `--keywords` and `--recursion-positions`. The empty
+prefix of `--scrutinees`, `--fact-scopes`, `--induction-candidates` and
+`--datatype-elements` makes
 any static error a group error: these generators, like appended groups,
 promise to add none. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.scrutinees || m.factScopes || m.inductionCandidates || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords then #[] else
+  if m.scrutinees || m.factScopes || m.inductionCandidates || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
@@ -2884,20 +2889,22 @@ def Mode.args (m : Mode) : Array String :=
     (if m.keywords then #["--keywords"] else #[]) ++
     (if m.factScopes then #["--fact-scopes"] else #[]) ++
     (if m.inductionCandidates then #["--induction-candidates"] else #[]) ++
-    (if m.datatypeElements then #["--datatype-elements"] else #[])
+    (if m.datatypeElements then #["--datatype-elements"] else #[]) ++
+    (if m.recursionPositions then #["--recursion-positions"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates", "--datatype-elements"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--datatype-elements", "--recursion-positions"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
            keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
            inductionCandidates := args.contains "--induction-candidates"
-           datatypeElements := args.contains "--datatype-elements" }
+           datatypeElements := args.contains "--datatype-elements"
+           recursionPositions := args.contains "--recursion-positions" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -2909,7 +2916,8 @@ def Mode.lean (m : Mode) : String :=
     (if m.keywords then ["keywords := true"] else []) ++
     (if m.factScopes then ["factScopes := true"] else []) ++
     (if m.inductionCandidates then ["inductionCandidates := true"] else []) ++
-    (if m.datatypeElements then ["datatypeElements := true"] else [])
+    (if m.datatypeElements then ["datatypeElements := true"] else []) ++
+    (if m.recursionPositions then ["recursionPositions := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 /-- `s` with each number written right after `pre`, and followed by
@@ -3552,7 +3560,9 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
     ({ inductionForms := true }, 0, 20), ({ factScopes := true }, 0, 20),
-    ({ inductionCandidates := true }, 0, 20), ({ datatypeElements := true }, 0, 20)]
+    ({ inductionCandidates := true }, 0, 20), ({ datatypeElements := true }, 0, 20),
+    ({ recursionPositions := true }, 0, 20), ({ recursionPositions := true }, 934000, 1),
+    ({ recursionPositions := true }, 934051, 1)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -3704,7 +3714,9 @@ Each failure is a difference that `knownDifferences` does not list, or a
 listed one that no longer occurs (`unmatched`), leaving out those that
 the solvers' time limits explain; or a static error in a group that the
 generator appends after a cut (`appendedErrors`), which it must not
-append, whether or not the spec stops before it. -/
+append, whether or not the spec stops before it. The recursion-position
+mode also checks its promised verdict: valid cases can fail a comparison,
+and invalid ones must reach `F0447`, rather than an earlier static error. -/
 def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mode × Nat)) :
     IO (Array String) := do
   IO.FS.createDirAll dir
@@ -3722,6 +3734,12 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
     for k in vanished do
       failures := failures.push s!"seed {s}{flags mode}: the front ends no longer differ by `{k.difference}` (#{k.issue}); \
         remove it from `knownDifferences`, or, if a change to the generator removed it, leave every seed's spec as it was"
+    if ({ mode with avoidKnown := false } : Mode) == { recursionPositions := true } then
+      let rejects := (Id.run (FuzzRecursion.genCase.run' (rngOf s))).rejects
+      let errors := ran.errors.toList.eraseDups
+      if (rejects && errors != ["F0447"]) || (!rejects && errors.any (· != "F0603")) then
+        let expected := if rejects then "a structural-recursion error (F0447)" else "only failed comparisons (F0603), if any"
+        failures := failures.push s!"seed {s}{flags mode}: generator expected {expected}, got {errors}; reproduce with {again}"
     let cutLines := (mode.cuts s).map fun c => (c.splitOn "\n").length - 1
     for (start, d) in appendedErrors cutLines ran.cli do
       failures := failures.push s!"seed {s}{flags mode}: what the generator appends after line {start} adds a static \
@@ -4124,10 +4142,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--datatype-elements] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--datatype-elements] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--datatype-elements] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--datatype-elements] [--recursion-positions] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4147,10 +4165,11 @@ unsafe def main (args : List String) : IO UInt32 := do
                        inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
                        keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
                        inductionCandidates := args.contains "--induction-candidates"
-                       datatypeElements := args.contains "--datatype-elements" }
+                       datatypeElements := args.contains "--datatype-elements"
+                       recursionPositions := args.contains "--recursion-positions" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
     && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
-    && a != "--datatype-elements")
+    && a != "--datatype-elements" && a != "--recursion-positions")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0
