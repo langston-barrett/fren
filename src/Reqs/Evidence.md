@@ -1127,10 +1127,15 @@ expect matching_shadow() {
 }
 ```
 
-`Fren.Core.Matching` implements this term model. Its lookup decision also
-serves the shared obligations normalizer's substitution of an atom. The
-front ends' extraction of matching terms belongs to #758; no current
-query uses the new matching model to add instances.
+`Fren.Core.Matching` retains this small reference model and supplies the
+generic normalization, definition scoping and equality used by
+`Fren.Core.GroundMatching` over the shared theory syntax
+(`lang::ground_normalization`). Their lookup also serves the obligations
+normalizer's substitution of an atom. Both syntax models remain: this
+one states the independent normalization examples; the theory syntax
+preserves binders, types and resolved identities for instantiation.
+Front-end extraction and query integration remain follow-ups of #758;
+no current query uses the new engine to add instances.
 
 r[matching.closure.finite] check::finite_application_closure
 For a finite graph of candidate ground applications, closure returns

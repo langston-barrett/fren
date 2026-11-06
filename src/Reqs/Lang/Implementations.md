@@ -899,7 +899,7 @@ An *instance* of a sentence is the sentence with a ground term in place of
 each of its quantified variables that has one. It holds wherever the
 sentence does.
 
-r[module.instance.matching] lang::{ground_match_step, ground_normalization, ground_join_step, ground_rule_step}
+r[module.instance.matching] lang::{ground_match_step, ground_normalization, ground_join_step, ground_rule_step, ground_preparation_step, ground_instance_list_step, ground_instances_step}
 Fren takes the instances at which all the matched applications of the
 sentence are terms of the query at once: each anchor an application of the
 query, and each call a call of the query, with the same arguments once the
@@ -2579,8 +2579,8 @@ without images take their values after matching; unused variables and
 outside-only unlisted variables retain their quantifiers. The recursive
 calls below are the same operation at immediate subterms or list tails.
 `Fren.Core.GroundMatching` implements these equations. Neither front end
-uses the engine yet; ranked candidate construction and application closure
-follow in unit 9b, and claim item integration in unit 10.
+uses the engine yet; ranked candidate construction, application closure
+and claim item integration remain follow-ups of #758.
 
 ```fren
 pub type GroundContext
@@ -3188,6 +3188,141 @@ pub proc ground_rule_step(
         )
 }
 
+pub fn ground_context_definitions(GroundContext): GroundDefinitions
+pub fn ground_normalize_terms(GroundDefinitions, TheoryTerms): TheoryTerms
+pub fn ground_normalize_sentence(GroundDefinitions, TheorySentence): TheorySentence
+pub fn ground_prepare_context(GroundContext, GroundDefinitions): GroundContext
+
+-- Field outputs observe the prepared context at every type and term.
+pub proc ground_preparation_step(
+    ctx: GroundContext,
+    defs: GroundDefinitions,
+    sentence: TheorySentence,
+    terms: TheoryTerms,
+    ty: Ty,
+    term: TheoryTerm,
+): (
+    det normalized_terms: TheoryTerms,
+    det normalized_sentence: TheorySentence,
+    det normalized_context: GroundContext,
+    det prepared_order: GroundOrder,
+    det prepared_definitions: GroundDefinitions,
+    det prepared_type_present?,
+    det prepared_type: Ty,
+    det prepared_listed?,
+    det prepared_values: TheoryTerms,
+) {
+    ensure terms_rule: normalized_terms = if theory_terms_empty?(terms) then terms else
+        theory_add_term(
+            ground_normalize(defs, theory_first_term(terms)),
+            ground_normalize_terms(defs, theory_terms_rest(terms))
+        )
+    ensure sentence_rule: normalized_sentence = theory_sentence(
+        theory_sentence_role(sentence),
+        theory_sentence_variables(sentence),
+        ground_normalize(defs, theory_sentence_domain(sentence)),
+        ground_normalize_terms(defs, theory_sentence_calls(sentence)),
+        ground_normalize_terms(defs, theory_sentence_claims(sentence))
+    )
+    ensure context_rule: normalized_context = ground_prepare_context(ctx, defs)
+    ensure order_rule: prepared_order = ground_order(ctx)
+    ensure definitions_rule: prepared_definitions = ground_context_definitions(ctx)
+    ensure types_present_rule: prepared_type_present? iff ground_type_present?(ctx, term)
+    ensure types_rule: prepared_type = ground_type(ctx, term)
+    ensure listed_present_rule: prepared_listed? iff ground_listed?(ctx, ty)
+    ensure listed_values_rule: prepared_values =
+        ground_normalize_terms(defs, ground_listed_values(ctx, ty))
+}
+
+-- The list retains the sentence returned by the shared instantiation core.
+pub type GroundSentences
+pub fn ground_no_sentences(TheorySentence): GroundSentences
+pub fn ground_add_sentence(TheorySentence, GroundSentences): GroundSentences
+
+pub fn ground_image_substitution(GroundImages): TheorySubstitution
+pub fn ground_instances_for(TheorySentence, GroundMatches): GroundSentences
+
+pub proc ground_instance_list_step(
+    sentence: TheorySentence,
+    substitutions: GroundMatches,
+    name: TheoryName,
+): (det head_image_present?, det head_image_value: TheoryTerm, det instances: GroundSentences) {
+    call first := theory_instance(
+        ground_image_substitution(ground_matches_first(substitutions)),
+        sentence,
+    )
+    ensure image_presence: head_image_present? iff ground_image_present?(ground_matches_first(substitutions), name)
+    ensure image_value: head_image_value = ground_image(ground_matches_first(substitutions), name)
+    ensure instances_rule: instances = if ground_matches_empty?(substitutions) then ground_no_sentences(sentence)
+        else if first.accepted? then ground_add_sentence(
+            first.instance_sentence,
+            ground_instances_for(sentence, ground_matches_rest(substitutions))
+        )
+        else ground_instances_for(sentence, ground_matches_rest(substitutions))
+}
+
+pub fn ground_normalized_matches(
+    GroundContext,
+    TheorySentence,
+    TheoryTerms,
+    TheoryTerms
+): GroundMatches
+
+pub fn ground_query_matches(GroundContext, TheorySentence, TheoryTerms, TheoryTerms): GroundMatches
+
+pub fn ground_instances(GroundContext, TheorySentence, TheoryTerms, TheoryTerms): GroundSentences
+
+pub proc ground_instances_step(
+    ctx: GroundContext,
+    sentence: TheorySentence,
+    query_apps: TheoryTerms,
+    query_calls: TheoryTerms,
+): (det substitutions: GroundMatches, det instances: GroundSentences) {
+    ensure matching_rule: substitutions = ground_normalized_matches(
+        ground_prepare_context(
+            ctx,
+            ground_normalize_definitions(ground_context_definitions(ctx))
+        ),
+        ground_normalize_sentence(
+            ground_normalize_definitions(ground_context_definitions(ctx)),
+            sentence
+        ),
+        ground_append(
+            ground_apps_list(
+                ground_prepare_context(
+                    ctx,
+                    ground_normalize_definitions(ground_context_definitions(ctx))
+                ),
+                ground_normalize_terms(
+                    ground_normalize_definitions(ground_context_definitions(ctx)),
+                    query_apps
+                )
+            ),
+            ground_call_apps(
+                ground_prepare_context(
+                    ctx,
+                    ground_normalize_definitions(ground_context_definitions(ctx))
+                ),
+                ground_normalize_terms(
+                    ground_normalize_definitions(ground_context_definitions(ctx)),
+                    query_calls
+                )
+            )
+        ),
+        ground_normalize_terms(
+            ground_normalize_definitions(ground_context_definitions(ctx)),
+            query_calls
+        )
+    )
+    ensure instances_rule: instances = ground_instances_for(
+        ground_normalize_sentence(
+            ground_normalize_definitions(ground_context_definitions(ctx)),
+            sentence
+        ),
+        ground_query_matches(ctx, sentence, query_apps, query_calls)
+    )
+}
+
 #fren_check ground_match_step
 #fren_check ground_parameter_step
 #fren_check ground_extension_step
@@ -3200,4 +3335,7 @@ pub proc ground_rule_step(
 #fren_check ground_listed_step
 #fren_check ground_sentence_lists_step
 #fren_check ground_rule_step
+#fren_check ground_preparation_step
+#fren_check ground_instance_list_step
+#fren_check ground_instances_step
 ```

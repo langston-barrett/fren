@@ -1018,8 +1018,11 @@ escalation continues while the group exists. SIGINT, SIGTERM and SIGHUP are
 blocked around the completion check and signal, and while the registry lock
 is held; handlers are restored after monitoring.
 When heavy is PID 1 of its namespace, it also reaps adopted orphan workers
-after collecting the leader's exit status and RSS. Dead workers must not
-keep the process group visible as zombies until both escalation waits expire.
+after collecting the leader's exit status and RSS, in both subreaper and
+fallback modes. It peeks at exited children without reaping them: a newly
+adopted member of the original group goes through the group usage collector,
+while an outside-group orphan is reaped without adding its usage. Dead workers
+must not keep the process group visible as zombies until both escalation waits expire.
 
 If `/proc` belongs to an ancestor PID namespace, the owner translates its
 own child through parentage and `NSpid` before measuring it in that procfs
@@ -1134,7 +1137,12 @@ while the command runs: it adopts and reaps orphaned workers in the
 command's process group too, even after the command exits or is killed.
 It holds the slot until the original process group disappears, retaining
 the command's exit status. A background daemon remaining in that group
-keeps heavy running and holding its slot. Long-lived services must leave
+keeps heavy running and holding its slot. Once the leader exits, heavy prints
+its exit status, the original namespace-local PGID and the remaining sampled
+procfs-view PIDs to stderr immediately and about every 30 seconds while waiting.
+Unavailable process readings are labelled unavailable; these diagnostic PIDs
+may belong to an ancestor procfs view and are never used for signaling.
+Long-lived services must leave
 that process group to fall outside the wait. An unreaped zombie can also
 keep the group visible until its parent reaps it. On other systems, or if
 Linux refuses the subreaper setting,
@@ -1705,6 +1713,26 @@ pub proc heavy_memory_victim(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat)
 -- still establishes existence. ECHILD alone misses non-adoptable workers.
 pub enum GroupProbe { Missing, Present, Denied }
 
+-- Peek at an exited child before selecting its wait, so adoption between
+-- group waits and init cleanup cannot discard the group's CPU usage.
+pub proc heavy_init_reap(
+    pid: Int,
+    pgid: Int,
+    exited_group: Option<Int>,
+    group_drained?,
+    subreaper?,
+): (det collect_group?, det reap_orphan?) {
+    let exited? := exited_group != Option::None
+    let same_group? := exited_group = Option::Some(pgid)
+    ensure group: collect_group? iff pid = 1 and group_drained? and exited? and same_group? and subreaper?
+    ensure orphan: reap_orphan? iff pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
+    expect distinct: not (collect_group? and reap_orphan?)
+    expect late_adoption: when pid = 1 and group_drained? and same_group? and subreaper?,
+        collect_group? and not reap_orphan?
+    expect outside_group: when pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
+    expect wait_first: unless group_drained?, not collect_group? and not reap_orphan?
+}
+
 pub proc heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe: GroupProbe): (
     det gone?,
 ) {
@@ -1988,10 +2016,15 @@ machines run `lake build --wfail`, and others run `lake test --
 build machine builds Fren's own requirements and their `impl`s (`lake
 build --wfail Reqs Impls`), the other the rest of the default targets:
 the code, the tests, the examples and the binaries, among them the C code
-that the first needs none of. The build's critical path runs from
+that the first needs none of. Before the lint chapters were split, the
+build's critical path ran from
 `Fren.Elab` through the chapter modules from `Reqs.Lang.Base` to
 `Reqs.Lang.ScopeLaws`, then `Reqs.Lang`, `Reqs.Lint` and `Impls.Lint`.
-Before the chapters were split,
+The path now goes through lint wrappers before `Reqs.Lint` and `Impls.Lint`.
+In two local cold `Reqs` builds with two scheduler threads,
+`Reqs.Lang.EvaluationRules` still dominated the path, and
+`Reqs.Lint.Rewrites` was the slowest lint wrapper, at 25 and 29 s.
+Before the language chapters were split,
 on one machine the chain's modules shared the runner's four logical CPUs
 with the rest: where everything was rebuilt, the build's steps took some
 2,400 CPU seconds, so that the chain's ran at about half speed. On
@@ -2039,12 +2072,13 @@ which keeps the small caches, the query cache and mdbook's, from being
 evicted. A pull request whose base's `.lake` was deleted restores the
 newest, and Lake rebuilds what differs.
 
-The requirements' chain is the critical path of most `pre-merge` runs
-that rebuild it, and the runners slow it: they have four logical CPUs, two
-cores of two threads each. On 2026-11-03, on a runner, elaborating
+Before the lint chapters were split, the requirements' chain was the
+critical path of most `pre-merge` runs that rebuilt it, and the runners
+slowed it: they had four logical CPUs, two cores of two threads each.
+On 2026-11-03, on a runner, elaborating
 `Reqs/Lint.lean` alone took 82 and 83 s, with one other module elaborated
 beside it 90 and 95 s, and with three others 112 and 123 s, while in the
-build, beside the rest of `Reqs` and `Impls`, it takes 121 to 152 s.
+build, beside the rest of `Reqs` and `Impls`, it took 121 to 152 s.
 
 The `lean ci` workflow also compares the methods on every check that
 each can run (`methodsAgree`, [Agreement of
@@ -2091,7 +2125,7 @@ request of its own rather than slowing every pull request down.
 | `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
-| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the chapter split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
+| Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the language and lint chapters were split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
 | `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
 | The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-merge`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
@@ -2189,6 +2223,20 @@ The Claude token is a repository secret, which anyone who can push a
 branch can read, until it is moved to an environment that only `main`
 can use. Run by hand (`gh workflow run pr-review -f pr=N`), it posts only
 on the pull request that its `post` input names.
+
+The `codex-agent` workflow works small follow-up issues, selected by an
+`agent/<model>-<effort>` label or a manual run on `main`. It opens an
+`agent/*` pull request and answers at most three blocking reviews or
+failed `pre-merge` runs. The coordinator handles conflicts with `main`,
+the small findings of a clean review, and remaining work after that
+limit; the usual checks and review still gate every merge. Codex runs in
+an unprivileged container, isolated from the runner's processes and
+credentials. Its own sign-in is readable in the container, whose network
+access lets programs started by Codex send it elsewhere. Use a dedicated
+API key with an enforced spending limit. A fresh runner validates the
+patch and publishes it after neutralizing metadata from the model. The
+workflow's boundaries, authentication lifecycle and first-run checks are
+described in `.github/codex-agent/README.md`.
 
 `scripts/local-review` gives an author a pre-push check of its branch, by
 OpenAI's Codex CLI, before CI's review (AGENTS.md says when). It composes

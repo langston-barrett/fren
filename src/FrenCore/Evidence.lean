@@ -153,6 +153,18 @@ def Tested.ofSettings (all : Bool) (constraints : Array Name)
   { realizable := all, redundancy := all, props := (if all then constraints else #[]) ++ pick expects
     insts := pick insts, dets := pick dets }
 
+/-- Whether a constraint or its written owner has this evidence
+(`check::expanded_evidence`). -/
+def evidenceSelected (selected : Array Name) (name : Name) (owner? : Option Name) : Bool :=
+  selected.contains name || owner?.any selected.contains
+
+/-- Carry a written constraint's evidence to the checks generated from it
+(`check::expanded_evidence`). Each leaf names its written owner; names
+are kept explicit, since a generated name need not be a child `Name`. -/
+def Tested.expandProps (t : Tested) (owners : Array (Name × Option Name)) : Tested :=
+  { t with props := t.props ++ owners.filterMap fun (name, owner?) =>
+      if evidenceSelected t.props name owner? && !t.props.contains name then some name else none }
+
 /-- Whether the check `r` is one of `t`'s. -/
 def Tested.covers (t : Tested) (r : CheckResult) : Bool :=
   match r.kind, r.prop? with
