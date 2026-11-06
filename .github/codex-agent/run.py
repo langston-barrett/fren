@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 
 from collect import collect, read_regular, secrets
+from publication import report
 from teardown import remove
 
 HERE = Path(__file__).resolve().parent
@@ -60,4 +61,8 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception as error:
+        report(error)
+        raise SystemExit(1) from None

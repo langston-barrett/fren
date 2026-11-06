@@ -13,12 +13,14 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import LIMIT, MAX_ROUNDS, api, rounds_done, trusted
+from publication import commit_message, inert, report
 
 BODY_BYTES = 60000
 
 
 def bounded(body, limit=BODY_BYTES):
-    """Leave room below GitHub's limit, even for multibyte characters."""
+    """Make metadata inert, then bound its final UTF-8 size."""
+    body = inert(body)
     encoded = body.encode("utf-8")
     if len(encoded) <= limit:
         return body
@@ -29,6 +31,10 @@ def bounded(body, limit=BODY_BYTES):
 def git(*args, **kwargs):
     # No hook or fsmonitor may run, including at commit time. The checkout
     # and its git config are fresh; only git apply reads the agent's patch.
+    # Subjects and filenames can contain runner commands, including the
+    # legacy syntax recognized anywhere in a line. Never stream Git output
+    # into the credentialed job's log. Callers only consume captured data.
+    kwargs.setdefault("capture_output", True)
     return subprocess.run(["git", "-c", "core.hooksPath=/dev/null",
                            "-c", "core.fsmonitor=false", *args], check=True, **kwargs)
 
@@ -62,7 +68,8 @@ def comment(number, body):
     import json
     subprocess.run(["gh", "api", f"repos/{os.environ['REPO']}/issues/{number}/comments",
                     "--method", "POST", "--input", "-"],
-                   input=json.dumps({"body": bounded(body)}), text=True, check=True)
+                   input=json.dumps({"body": bounded(body)}), text=True,
+                   capture_output=True, check=True)
 
 
 def main():
@@ -107,8 +114,8 @@ def main():
                 capture_output=True).stdout.split(b"\0")
     if any(p == b".github" or p.startswith(b".github/") for p in names):
         raise ValueError("applied patch changes .github")
-    title = text("pr-title.txt", f"Fix #{env['ISSUE']}", 200).splitlines()[0]
-    message = text("commit-msg.txt", title)
+    title = inert(text("pr-title.txt", f"Fix #{env['ISSUE']}")).splitlines()[0][:200]
+    message = commit_message(text("commit-msg.txt", title)) or title
     if pr:
         # Appended after model text and parsed only at the message's end.
         # This record is atomic with the push, unlike the later API POST.
@@ -144,9 +151,14 @@ def main():
                        BODY_BYTES - len(suffix.encode("utf-8"))) + suffix
         created = subprocess.check_output([
             "gh", "api", f"repos/{repo}/pulls", "--method", "POST", "--input", "-"],
-            input=json.dumps({"head": branch, "base": "main", "title": title, "body": body}), text=True)
+            input=json.dumps({"head": branch, "base": "main", "title": title, "body": body}),
+            stderr=subprocess.PIPE, text=True)
         comment(subject, prefix + " opened " + json.loads(created)["html_url"] + ".")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        report(error)
+        raise SystemExit(1) from None

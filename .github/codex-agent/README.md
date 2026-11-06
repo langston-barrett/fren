@@ -30,14 +30,25 @@ Files containing known credential copies, plain or encoded, are withheld.
 No authentication file is uploaded. A separate fresh runner validates the
 patch and publishes it with `FREN_DEV_TOKEN`, without executing patched
 code. Workers and publishers have separate branch concurrency groups.
-Fix commits end with publisher-generated PR/round trailers, so a failed
-response POST does not lose a pushed round. API bodies are bounded below
-GitHub's limit, including multibyte text.
+Fix commits end with the publisher's pull request and round trailers, so
+a failed comment does not lose a pushed round. The publisher strips round
+trailers supplied by the model and neutralizes mentions, runner commands
+and commit check directives in comments, pull request titles and
+descriptions, and commit messages. This keeps model text from starting an
+assistant under the publishing account or suppressing required checks.
+Git and API responses are captured; runner logs report failure types
+rather than exception details that could echo paths or credentials.
+Mentions are broken with zero-width spaces, including entity forms and
+code. API bodies are bounded below GitHub's limit after neutralization,
+including multibyte text.
 
 ## Authentication lifecycle
 
-Provision `CODEX_AUTH_JSON` with a dedicated CI credential. API-key
-authentication is the recommended choice for unattended runs. The value
+Codex and every program it runs can read `/auth/auth.json` and use the
+network to send that sign-in elsewhere. The artifact leak detector does
+not restrict network traffic. Provision `CODEX_AUTH_JSON` with a dedicated
+API key in a project with an [enforced spending limit][spend-limits].
+This limits exposure and supports unattended authentication. The value
 is the file that `codex login --with-api-key` creates; replace the GitHub
 secret when that API key is rotated or revoked. This workflow does not
 update repository secrets or persist authentication in an artifact/cache.
@@ -50,3 +61,22 @@ sign-in. Do not share that renewable session with other clients or assume
 that copying one snapshot provides continuing unattended authentication.
 See the [official authentication guidance](https://learn.chatgpt.com/docs/auth)
 for automatic refresh, credential storage and API-key automation advice.
+
+## First run after merge
+
+The coordinator dispatches the workflow on one small, trusted follow-up
+issue immediately after merge, for example:
+
+```sh
+gh workflow run codex-agent --ref main -f issue=N -f model=luna -f effort=low
+```
+
+Check that the production image starts Codex through its installed Node.js,
+that sign-in succeeds, and that `lake build --wfail` succeeds inside the
+container without writes to the read-only elan directory. Inspect the
+build log to confirm that moving the restored `.lake` to `/work` rebuilds
+only changed modules and dependencies. Confirm the generated pull request
+or no-change comment, its checks and review, and any subsequent fix-round
+response. Record any failure on the area's tracking queue for correction.
+
+[spend-limits]: https://developers.openai.com/api/docs/guides/spend-limits

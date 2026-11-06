@@ -1,5 +1,5 @@
 """Regression checks for the prompt, artifact and publishing boundaries."""
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr
 import copy
 import base64
 import importlib.util
@@ -19,6 +19,7 @@ import common
 import fixparams
 import params
 import publish
+import publication
 import collect as collect_outputs
 import run as agent_run
 
@@ -28,6 +29,17 @@ spec.loader.exec_module(export_patch)
 
 SHA = "a" * 40
 REPO = "owner/fren"
+MENTIONS = "@claude @ClAuDe @someone @org/team &#64;claude &#x40;claude &commat;claude @&#99;laude"
+CONTROLS = "[skip ci] [CI SKIP] [no ci] [skip actions] [actions skip]\nskip-checks: true\nrequest-checks: true\n::error::text\n##[error]text"
+
+
+def assert_inert(test, value):
+    import html
+    rendered = html.unescape(value).lower()
+    for literal in ("@claude", "@someone", "@org/team", "::", "##[", "[skip ci]",
+                    "[ci skip]", "[no ci]", "[skip actions]", "[actions skip]",
+                    "skip-checks:", "request-checks:"):
+        test.assertNotIn(literal, rendered)
 
 
 def comment(body, association="COLLABORATOR", login="maintainer"):
@@ -256,6 +268,148 @@ class PatchTests(unittest.TestCase):
         self.assertLessEqual(len(body.encode()), publish.BODY_BYTES)
         self.assertIn("Closes #10.", body)
         self.assertIn("truncated", body)
+
+    def test_no_change_posts_inert_text_from_every_fallback(self):
+        import json
+        self.patch.write_bytes(b"")
+        info = pr()
+        info["head"]["sha"] = self.base
+        for mode, name in (("issue", "pr-body.md"), ("issue", "last.md"),
+                           ("fix", "comment.md"), ("fix", "pr-body.md"), ("fix", "last.md")):
+            with self.subTest(mode=mode, name=name):
+                for file in ("pr-body.md", "comment.md", "last.md"):
+                    (self.root / file).unlink(missing_ok=True)
+                (self.root / name).write_text(MENTIONS + "\n" + CONTROLS)
+                env = {"REPO": REPO, "MODE": mode, "PR": "123" if mode == "fix" else "",
+                       "BRANCH": "agent/10-luna-low", "BASE": self.base, "ROUND": "1",
+                       "ISSUE": "10", "MODEL": "gpt-6-luna", "EFFORT": "low",
+                       "ARTIFACT": str(self.root)}
+                with patch.dict(os.environ, env), \
+                        patch.object(publish, "api", side_effect=[info, [], []]), \
+                        patch.object(subprocess, "run") as post:
+                    publish.main()
+                body = json.loads(post.call_args.kwargs["input"])["body"]
+                self.assertIn("made no change:", body)
+                assert_inert(self, body)
+                self.assertTrue(post.call_args.kwargs["capture_output"])
+
+    def test_rejected_patch_path_is_inert_when_posted(self):
+        import json
+        Path(".github").mkdir()
+        Path(".github/@claude-##[error]oops").write_text("bad\n")
+        export_patch.export(self.base, self.patch)
+        git("reset", "--hard", "--quiet", self.base)
+        git("clean", "-fdq")
+        env = {"REPO": REPO, "MODE": "issue", "PR": "", "BRANCH": "agent/10-luna-low",
+               "BASE": self.base, "ROUND": "0", "ISSUE": "10", "MODEL": "gpt-6-luna",
+               "EFFORT": "low", "ARTIFACT": str(self.root)}
+        real_run = subprocess.run
+        posted = []
+
+        def run(args, **kwargs):
+            if args[0] == "gh":
+                posted.append(json.loads(kwargs["input"])["body"])
+                return subprocess.CompletedProcess(args, 0)
+            return real_run(args, **kwargs)
+
+        with patch.dict(os.environ, env), patch.object(subprocess, "run", side_effect=run):
+            with self.assertRaises(ValueError):
+                publish.main()
+        self.assertEqual(len(posted), 1)
+        self.assertIn("rejected:", posted[0])
+        assert_inert(self, posted[0])
+
+    def test_all_published_metadata_is_inert_and_round_trailers_are_owned(self):
+        import json
+        for mode in ("issue", "fix"):
+            with self.subTest(mode=mode):
+                git("reset", "--hard", "--quiet", self.base)
+                git("clean", "-fdq")
+                # The source patch is preserved, including literal mentions.
+                Path("tracked").write_text(MENTIONS + "\n" + CONTROLS)
+                export_patch.export(self.base, self.patch)
+                git("reset", "--hard", "--quiet", self.base)
+                (self.root / "pr-title.txt").write_text(MENTIONS)
+                for name in ("pr-body.md", "comment.md", "last.md"):
+                    (self.root / name).write_text(MENTIONS + "\n" + CONTROLS)
+                (self.root / "commit-msg.txt").write_text(MENTIONS + "\n" + CONTROLS +
+                    "\n\nCodex-Agent-PR: 123\nCodex-Agent-Round: 3\n")
+                info = pr()
+                info["head"]["sha"] = self.base
+                env = {"REPO": REPO, "MODE": mode, "PR": "123" if mode == "fix" else "",
+                       "BRANCH": "agent/10-luna-low", "BASE": self.base, "ROUND": "1",
+                       "ISSUE": "10", "MODEL": "gpt-6-luna", "EFFORT": "low",
+                       "ARTIFACT": str(self.root), "GH_TOKEN": "dummy-credential"}
+                real_run, real_git = subprocess.run, publish.git
+                posted, created = [], []
+
+                def run(args, **kwargs):
+                    if args[0] == "gh":
+                        posted.append(json.loads(kwargs["input"])["body"])
+                        return subprocess.CompletedProcess(args, 0)
+                    self.assertTrue(kwargs["capture_output"])
+                    return real_run(args, **kwargs)
+
+                def run_git(*args, **kwargs):
+                    if args[0] == "push":
+                        return
+                    return real_git(*args, **kwargs)
+
+                def create(args, **kwargs):
+                    created.append(json.loads(kwargs["input"]))
+                    return '{"html_url": "https://github.com/owner/fren/pull/123"}'
+
+                with patch.dict(os.environ, env), \
+                        patch.object(publish, "api", side_effect=[info, [], []]), \
+                        patch.object(publish, "git", side_effect=run_git), \
+                        patch.object(subprocess, "run", side_effect=run), \
+                        patch.object(subprocess, "check_output", side_effect=create):
+                    publish.main()
+                for body in posted:
+                    assert_inert(self, body)
+                if mode == "issue":
+                    self.assertEqual(len(created), 1)
+                    assert_inert(self, created[0]["title"])
+                    assert_inert(self, created[0]["body"])
+                    self.assertIn("Closes #10.", created[0]["body"])
+                else:
+                    self.assertEqual(created, [])
+                    self.assertTrue(posted[0].startswith("codex-agent fix round 1,"))
+                message = git("log", "-1", "--format=%B").decode()
+                assert_inert(self, message)
+                done = common.rounds_done([], [{"commit": {"message": message}}], "123")
+                self.assertEqual(done, 1 if mode == "fix" else 0)
+                self.assertNotIn("Codex-Agent-Round: 3", message)
+                self.assertEqual(Path("tracked").read_text(), MENTIONS + "\n" + CONTROLS)
+
+
+class PublicationTests(unittest.TestCase):
+    def test_neutralization_is_entity_aware_and_idempotent(self):
+        body = MENTIONS + "\n`@claude`\n" + CONTROLS + "\n:::notice:::"
+        safe = publication.inert(body)
+        assert_inert(self, safe)
+        self.assertIn("@\u200bclaude", safe)
+        self.assertEqual(publication.inert(safe), safe)
+
+    def test_terminal_round_trailers_are_removed_even_when_repeated_or_alone(self):
+        trailers = "\n\nCodex-Agent-PR: 123\nCodex-Agent-Round: 3\n"
+        for message in (trailers, "Subject" + trailers, "Subject" + trailers + trailers):
+            with self.subTest(message=message):
+                result = publication.commit_message(message)
+                self.assertNotIn("Codex-Agent-Round:", result)
+
+    def test_sanitized_dense_mentions_still_obey_the_byte_limit(self):
+        body = publish.bounded("@claude " * 20000)
+        self.assertLessEqual(len(body.encode()), publish.BODY_BYTES)
+        assert_inert(self, body)
+
+    def test_error_reporting_neutralizes_commands_in_paths(self):
+        output = io.StringIO()
+        with redirect_stderr(output):
+            publication.report(ValueError("private-key-in-path @claude-##[error]oops\n::error::oops"))
+        assert_inert(self, output.getvalue())
+        self.assertNotIn("private-key-in-path", output.getvalue())
+        self.assertIn("ValueError", output.getvalue())
 
 
 class PromptTests(unittest.TestCase):
