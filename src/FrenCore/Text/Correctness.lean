@@ -4,7 +4,7 @@ import Init.Data.String.Lemmas.Pattern.Find.String
 import Init.Data.String.Lemmas.Pattern.Memcmp
 -- keep-sorted end
 
-/-! Correctness of the byte search, for every nonempty UTF-8 needle.
+/-! Correctness of the byte search, including its empty-needle case.
 The native comparison is also checked by FrenTest.TextSearch. -/
 
 namespace Fren.Core
@@ -93,6 +93,10 @@ private theorem byteInfix_iff (s t : String) (ht : t ≠ "") :
     have ht := ByteArray.extract_append_eq_left (a := t.toByteArray)
       (b := (String.ofList b).toByteArray) rfl
     simpa only [Nat.add_zero, String.size_toByteArray] using he.trans ht
+
+/-- An empty needle is never found, as with `String.splitOn`. -/
+theorem occursIn_empty (s : String) : occursIn "" s = false := by
+  simp [occursIn, occursFrom]
 
 /-- For every nonempty needle, the optimized byte search finds exactly
 its character infixes, including overlapping and multibyte matches. -/

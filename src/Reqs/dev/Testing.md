@@ -1972,13 +1972,15 @@ request's.
 On a pull request, the `pre-merge` workflow checks the head merged into
 `main`, starting from the `.lake` that `main`'s last build left: two
 machines run `lake build --wfail`, and others run `lake test --
---skip-own-mutants --shard K/N`, each building only the test driver. One
-build machine builds Fren's own requirements and their `impl`s (`lake
-build --wfail Reqs Impls`), the other the rest of the default targets:
-the code, the tests, the examples and the binaries, among them the C code
-that the first needs none of. The build's critical path runs from
-`Fren.Elab` through the chapter modules from `Reqs.Lang.Base` to
-`Reqs.Lang.ScopeLaws`, then `Reqs.Lang`, `Reqs.Lint` and `Impls.Lint`.
+--skip-own-mutants --shard K/N`, each first building the test driver with
+`lake build --wfail fren_test`. A warning in the driver or in a module
+only it imports fails `pre-merge` too. One build machine builds Fren's own
+requirements and their `impl`s (`lake build --wfail Reqs Impls`), the
+other the rest of the default targets: the code, the tests, the examples
+and the binaries, among them the C code that the first needs none of.
+The build's critical path runs from `Fren.Elab` through the chapter
+modules from `Reqs.Lang.Base` to `Reqs.Lang.ScopeLaws`, then `Reqs.Lang`,
+`Reqs.Lint` and `Impls.Lint`.
 Before the chapters were split,
 on one machine the chain's modules shared the runner's four logical CPUs
 with the rest: where everything was rebuilt, the build's steps took some
@@ -1991,8 +1993,9 @@ the test shards. Both build what both import, from `FrenCore` to `Fren`, and
 `lake test`'s `libraries` job checks that the two lists of targets
 together are `lakefile.lean`'s default targets. On
 `main`, the `lean ci` workflow runs `lake build --wfail` and the whole
-`lake test`, samples mutants of Fren's own requirements, checks them in
-Lean and compares the front ends' messages about them ([Own
+`lake test`, first building the driver with `--wfail` in each shard. It
+samples mutants of Fren's own requirements, checks them in Lean and
+compares the front ends' messages about them ([Own
 requirements](#own-requirements)), measures the coverage, and saves the
 `.lake` for pull requests. Each job of a `lean ci` run waits for the same
 job of the run before it, not for the whole run, so that the build job
