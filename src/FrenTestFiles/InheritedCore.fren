@@ -1,0 +1,53 @@
+pub mod inherited_core_test
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.constant_output "allow"
+set_option fren.lint.eq_op "allow"
+
+set_option fren.lint.undecidable "allow" in
+pub fn bounded?(n: Int) := forall (i: Int), when 0 <= i < n, i >= 0
+
+pub fn wrapped?(n: Int) := bounded?(n)
+pub fn generic?<T>(t: T, n: Int) := wrapped?(n)
+pub fn apply?(f: fn(Int) -> Bool, n: Int) := f(n)
+pub fn higher?(n: Int) := apply?(wrapped?, n)
+pub const FLAG: Bool := bounded?(3)
+pub struct Box { flag? }
+pub const BOX: Box := Box { flag? := bounded?(3) }
+
+pub proc defined(n: Int): (y?) { ensure value: y? iff generic?(n, n) }
+
+set_option fren.lint.undecidable "allow" in
+pub proc calling(n: Int): (y?) {
+    call r := defined(n)
+    ensure value: y? iff r.y?
+}
+
+pub proc higher(n: Int): (y?) { ensure value: y? iff higher?(n) }
+pub proc constants(): (y?) { ensure value: y? iff FLAG and BOX.flag? }
+pub proc field(): (y?) { ensure value: y? iff BOX.flag? }
+
+pub fn nat(Int): Nat
+
+set_option fren.lint.undecidable "allow" in
+pub fn first(n: Int): (r: Int) { ensure bound: forall (i: Int), when 0 <= i < n, r >= nat(i) }
+
+pub fn second(n: Int): (r: Int) { ensure bound: r = first(n) }
+pub fn third<T>(t: T, n: Int): (r: Int) { ensure bound: r = second(n) }
+
+pub proc contracts(n: Int) {
+    expect bound: third(n, n) >= 0
+    cover low: third(n, n) < 0
+}
+
+expect global(n: Int) { expect bound: third(n, n) >= 0 }
+
+-- An unused expression-let definition has no effect on the query's core.
+pub proc unused(n: Int): (y: Int) { ensure value: y = (let ignored? := wrapped?(n) in n) }
+
+-- Allowing the lint alone is not an opt-out, nor is a previous item.
+set_option fren.lint.undecidable "allow" in
+pub fn core(n: Int): Int := n + 1
+
+pub fn uninterpreted(Int): Int
+pub proc plain(n: Int): (y: Int) { ensure value: y = core(n) }

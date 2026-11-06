@@ -1625,6 +1625,11 @@ partial def mentionsOutputOf (cx : ExprCtx) (ns : Array Name) : TermElabM Bool :
 /-- `mentionsOutputOf` of the names that `e` mentions. -/
 def mentionsOutput (cx : ExprCtx) (e : Syntax) : TermElabM Bool := mentionsOutputOf cx (pathMentions e)
 
+/-- Inherit a function or constant's opt-out (`lang::inherited_core`). -/
+def noteItemCore (path : Name) : TermElabM Unit := do
+  let dependency := !(← getState).outsideCoreItems.contains path
+  modifyLocal fun l => { l with outsideCore := !(Core.inheritCore (!l.outsideCore) dependency) }
+
 /-- Reports `undecidable` if construct `c`, with `operands` other than of
 `=` and `!=`, is outside the decidable core (`lang::in_core`). -/
 def checkCore (cx : ExprCtx) (ref : Syntax) (c : Core.Construct) (constantArgs comparable : Bool)
@@ -5192,6 +5197,7 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
             let .item { kind := .constItem, path, .. } ← resolvePath cx.modName #[mkIdentFrom id root] cx.shadowing
               | pure none
             let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
+            unless cx.unmentioned do noteItemCore path
             let t ← `(($(← exprToSyntax c.value) : $(← exprToSyntax c.type)))
             pure (some ((t, c.type), n.components.drop 1))
           | _ => pure none
@@ -5226,6 +5232,7 @@ def pathTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (pa
     return mkCIdentFrom e (info.ctor idx)
   | .item { kind := .constItem, path, .. } =>
     let some c := (← getState).consts.get? path | throwError "internal error: unknown constant `{path}`"
+    unless cx.unmentioned do noteItemCore path
     -- Its value's quantifiers are part of the queries
     -- (`Reqs/Lang/Quantifiers#guards`).
     if c.guarded then modifyLocal fun l => { l with guardedUsed := true }
@@ -5611,6 +5618,7 @@ def appTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (par
       return t
     return ← `($(mkCIdentFrom p (info.ctor idx)) $args*)
   let .item { kind := .fnItem, path, .. } := r | throwErrorAt p (Core.notAFunctionMsg r).text
+  unless cx.unmentioned do noteItemCore path
   -- A variable, written as its name, that is the argument at the
   -- decreasing parameter of a structural recursion
   -- (`lang::induction_candidate`).
@@ -7423,6 +7431,7 @@ def elabContract (modName path n decl : Name) (defined : Bool) (vars : Array Var
 written with a block lowers to (`elabFnBlock`): `orig` is the command as
 written, whose lexemes, layout and lines are checked. -/
 def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandElabM Unit := do
+  modifyLocal fun l => { l with outsideCore := false, guardedUsed := false }
   checkLexemes orig
   checkParsed orig
   lintItem orig
@@ -7504,6 +7513,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     if contract then
       lintDeclared .function n nameStx
       lintLines .function n nameStx orig
+    record (.itemCore path (!(← getLocal).outsideCore))
     record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
     -- A trait's method is never dead (`lint::dead_item`).
     unless isPub do recordItem (if (← getLocal).inTrait then .method else .function) path nameStx
@@ -7711,6 +7721,7 @@ def elabFunctionCore (stx orig : Syntax) (uses : Array Syntax := #[]) : CommandE
     recordBody path nameStx decl vars (tables.map (fun (r, q, g) => (n, .body, r, q, g)) ++ sites ++ selfSites) props path
   lintDeclared .function n nameStx
   lintLines .function n nameStx orig
+  record (.itemCore path (!(← getLocal).outsideCore))
   record (.item { item := { kind := .fnItem, path, isPub, owner := modName }, ref := nameStx })
   unless isPub do recordItem (if (← getLocal).inTrait then .method else .function) path nameStx (defined := true)
   modifyLocal fun l => { l with fnTypeParams := none }
@@ -9533,6 +9544,7 @@ end
     record (.item { item := { kind := .constItem, path, isPub, owner := modName }, ref := nameStx })
     let int? ← if type.isConstOf ``Int || type.isConstOf ``Nat then intConstValue? { modName, vars := #[], insts := #[], place := .prop } valueStx
       else pure none
+    record (.itemCore path (!(← getLocal).outsideCore))
     record (.constInfo { path, decl, type, value, int?, guarded := (← getLocal).guardedUsed })
     recordBody path nameStx decl #[] (tables.map fun (r, q, g) => (n, .body, r, q, g))
     unless isPub do recordItem .constant path nameStx

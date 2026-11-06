@@ -17,6 +17,11 @@ namespace FrenCli
 
 open Fren.Core (Ty Table Resolved Role Place showPath Msg Severity Lint LintLevel Levels LevelInEffect Named)
 
+/-- Inherit a function or constant's opt-out: its body, value or contract
+is part of this item's queries (`lang::inherited_core`). -/
+def noteItemCore (path : Name) : M Unit :=
+  modify fun s => { s with outsideCore := !(Fren.Core.inheritCore (!s.outsideCore) (!s.outsideCoreItems.contains path)) }
+
 /-! ## Expressions -/
 
 structure ExprCtx where

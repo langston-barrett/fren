@@ -91,7 +91,8 @@ is a message that differs.
 sets, relations and sequences (`Wide.genDecidable`), in its own random
 stream so that every older mode's seeds are unchanged, then appends
 implicit output invariants to check the rule for generated queries
-(`Wide.outputInvariantCore`).
+(`Wide.outputInvariantCore`), and opt-outs inherited through helpers and
+contracts (`Wide.inheritedCore`).
 -/
 
 open Lean FrenCli FrenCli.Eval
@@ -3447,13 +3448,54 @@ def outputInvariantCore : R String := do
     out := out ++ s!"proc generated({input}: {ty}): ({output}: {result}) \{ ensure g: {read} {op} {input} }\n"
   return out
 
+/-- Opt-outs inherited through bodies, values and chains of contracts.
+The suffix draws after the original decidable corpus, preserving every
+existing spec's prefix. Types, nesting, definitions and comparisons vary;
+only the source quantifiers need an opt-out. -/
+def inheritedCore : R String := do
+  let bound := (← below 4) + 1
+  let (ty, left, right) ← pick #[
+    ("Int", "n", "n + 1"), ("Bool", "true", "false"),
+    ("String", "\"a\"", "\"b\""), ("Set<Int>", "{n}", "{}"),
+    ("Seq<Int>", "[n]", "[]"), ("Rel<Int, Int>", "{(n, n)}", "{}"),
+    ("Option<Int>", "Option::Some(n)", "Option::None")]
+  let suffix := if ty == "Bool" then "?" else ""
+  let mut out := "\nmod core_dependencies\n\n" ++
+    "set_option fren.lint.undecidable \"allow\" in\n" ++
+    s!"pub fn all?(n: Int) := forall (i: Int), when 0 <= i < n, i >= {bound}\n" ++
+    "pub fn wrapped?(n: Int) := all?(n)\n" ++
+    "pub fn generic<T>(x: T, y: T, n: Int): T := if wrapped?(n) then x else y\n" ++
+    "pub fn apply?(f: fn(Int) -> Bool, n: Int) := f(n)\n" ++
+    "pub const FLAG: Bool := all?(3)\n"
+  let body ← pick #[s!"if all?(n) then {left} else {right}",
+    s!"generic({left}, {right}, n)",
+    s!"if apply?(wrapped?, n) then {left} else {right}",
+    s!"if FLAG then {left} else {right}"]
+  out := out ++ s!"pub fn chosen{suffix}(n: Int): {ty} := {body}\n"
+  let mut value := s!"chosen{suffix}(n)"
+  for _ in [0:← below 3] do
+    value := s!"generic({value}, {right}, n)"
+  let compare ← pick #["=", "!="]
+  let y := if ty == "Bool" then "y?" else "y"
+  out := out ++ s!"pub proc body(n: Int): ({y}: {ty}) \{\n    out {y} := {value}\n    expect same: {y} {compare} {left}\n}\n"
+  let result ← pick #["Int", "Nat"]
+  out := out ++ "pub fn index(Int): Nat\n" ++
+    "set_option fren.lint.undecidable \"allow\" in\n" ++
+    s!"pub fn first(n: Int): (r: {result}) \{\n    ensure bound: forall (i: Int), when 0 <= i < n, r >= index(i)\n}\n" ++
+    s!"pub fn second(n: Int): (r: {result}) \{ ensure value: r = first(n) }\n" ++
+    s!"pub fn third<T>(x: T, n: Int): (r: {result}) \{ ensure value: r = second(n) }\n" ++
+    s!"expect contract(n: Int) \{ expect bound: third(n, n) >= {bound} }\n" ++
+    s!"pub proc cover_contract(n: Int) \{ cover low: third(n, n) < {bound} }\n"
+  return out
+
 /-- Random procedures in each theory's decidable core, followed by output
-invariant cases. A mode of its own keeps every older mode's seed
-unchanged. -/
+invariant and inherited-core cases. A mode of its own keeps every older
+mode's seed unchanged. -/
 def genDecidable : R String := do
   let out := "mod strings\n\n" ++ (← stringCore) ++ "mod sets\n\n" ++ (← setCore) ++
     "mod relations\n\n" ++ (← relationCore) ++ "mod sequences\n\n" ++ (← sequenceCore)
-  return out ++ (← outputInvariantCore)
+  let out := out ++ (← outputInvariantCore)
+  return out ++ (← inheritedCore)
 
 end Wide
 
