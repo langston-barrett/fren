@@ -1,0 +1,369 @@
+# Structural implementation-path inventory.
+# Bootstrapped on main 8910ef325b518b29b3878b77ced44a90b5715821.
+# These are observations, not certified connections or assertions of behavior bugs.
+# FrenTest.ImplPath rejects unexpected, duplicate and stale observations.
+# Model/runtime bridges and dynamic quotation gaps: #846, item 3.
+# A new connection removes its old entry; there is no bless mode.
+
+# Standalone heavy kernel (#859): outside the audited Fren CLI/hosted
+# runtimes. Python remains the active scheduler in migration step 1.
+unbound: Fren.Impls.Heavy.memory_prediction jobs
+unbound: Fren.Impls.Heavy.memory_prediction prediction
+
+# Outputs represented by binders, literals, spec values, or output-free laws.
+unbound: Fren.Impls.Enumeration.contract_blocker right?
+unbound: Fren.Impls.Enumeration.shape_bound size
+unbound: Fren.Impls.Enumeration.shape_bound value?
+unbound: Fren.Impls.Enumeration.smallest_first ordered?
+unbound: Fren.Impls.Generated.prelude_variant ty
+unbound: Fren.Impls.GroundClosure.ground_applications_step name_present?
+unbound: Fren.Impls.GroundClosure.ground_applications_step term_present?
+unbound: Fren.Impls.GroundClosure.ground_universe_step reversed_ranks
+unbound: Fren.Impls.GroundClosure.ground_universe_step subjects
+unbound: Fren.Impls.GroundMatching.ground_extension_step present?
+unbound: Fren.Impls.GroundMatching.ground_extension_step result
+unbound: Fren.Impls.GroundMatching.ground_parameter_step present?
+unbound: Fren.Impls.GroundMatching.ground_parameter_step result
+unbound: Fren.Impls.Guards.match_arm_if_else_keeps_meaning <no public output>
+unbound: Fren.Impls.PassEvidence.fact_applications closed?
+unbound: Fren.Impls.PatternTests.manual_pattern_test_fix <no public output>
+unbound: Fren.Impls.PatternTests.manual_pattern_test_reads <no public output>
+unbound: Fren.Impls.PatternTests.manual_pattern_test_refines <no public output>
+unbound: Fren.Impls.Testing.coverage_verdict fails?
+unbound: Fren.Impls.Testing.coverage_verdict stale?
+unbound: Fren.Impls.Testing.fuzz_overdue overdue?
+unbound: Fren.Impls.Testing.job_shard k
+unbound: Fren.Impls.Testing.job_shard runs?
+unbound: Fren.Impls.Testing.ui_check passes?
+unbound: Fren.Impls.Theories.theory_variable_images translated
+unbound: Fren.Impls.block_errors from_earlier?
+unbound: Fren.Impls.branches_sharing_code moved_mentioned
+unbound: Fren.Impls.branches_sharing_code op
+unbound: Fren.Impls.branches_sharing_code same_op?
+unbound: Fren.Impls.branches_sharing_code shared_left?
+unbound: Fren.Impls.branches_sharing_code shared_right?
+unbound: Fren.Impls.canonical_sentences ascending?
+unbound: Fren.Impls.canonical_sentences kept?
+unbound: Fren.Impls.canonical_sentences only?
+unbound: Fren.Impls.duplicate_constraint same?
+unbound: Fren.Impls.element_meaning holds?
+unbound: Fren.Impls.element_projection projection?
+unbound: Fren.Impls.element_witness all?
+unbound: Fren.Impls.element_witness failing
+unbound: Fren.Impls.forcing forced?
+unbound: Fren.Impls.forcing variant_forced?
+unbound: Fren.Impls.generated_induction_function induction?
+unbound: Fren.Impls.guard holds?
+unbound: Fren.Impls.guarded_match first
+unbound: Fren.Impls.index_set index_set?
+unbound: Fren.Impls.induction_hypotheses generated?
+unbound: Fren.Impls.lexicographic decider
+unbound: Fren.Impls.manual_at_most_one_defined <no public output>
+unbound: Fren.Impls.merged_facts merged?
+unbound: Fren.Impls.ordering_fix_statement selected?
+unbound: Fren.Impls.pattern_name bool_word?
+unbound: Fren.Impls.split_questions first
+unbound: Fren.Impls.table_eval first
+unbound: Fren.Impls.table_match one
+unbound: Fren.Impls.wildcards shaped?
+unbound: Fren.Impls.written_scopes <no public output>
+unbound: RewriteProof.usual_primitives product
+unbound: RewriteProof.usual_primitives quotient
+unbound: RewriteProof.usual_primitives remainder
+unbound: closed <no public output>
+unbound: coincidence <no public output>
+unbound: collapsible_when_keeps_meaning <no public output>
+unbound: double_neg_keeps_meaning <no public output>
+unbound: eq_op_said_agrees <no public output>
+unbound: erasing_op_said_agrees <no public output>
+unbound: fix_all_laws <no public output>
+unbound: fix_at_agrees <no public output>
+unbound: fix_at_fixed <no public output>
+unbound: identity_op_keeps_meaning <no public output>
+unbound: int_plus_one_keeps_meaning <no public output>
+unbound: irrefutable_is_said_agrees <no public output>
+unbound: manual_abs_diff_keeps_meaning <no public output>
+unbound: manual_abs_keeps_meaning <no public output>
+unbound: manual_rem_euclid_keeps_meaning <no public output>
+unbound: match_bool_keeps_meaning <no public output>
+unbound: match_bool_wildcard <no public output>
+unbound: modulo_one_said_agrees <no public output>
+unbound: neg_multiply_keeps_meaning <no public output>
+unbound: overly_complex_bool_expr fires?
+unbound: overly_complex_bool_expr kept
+unbound: overly_complex_bool_expr kind
+unbound: overly_complex_keeps_meaning <no public output>
+unbound: renamed_apart <no public output>
+unbound: same_branches_keeps_meaning <no public output>
+unbound: single_match_else_equality <no public output>
+unbound: single_match_else_keeps_meaning <no public output>
+unbound: trivial_guard_keeps_meaning <no public output>
+unbound: trivial_match_keeps_meaning <no public output>
+unbound: unless_not_keeps_meaning <no public output>
+
+# CLI result dependency only, including intentionally CLI-specific features.
+cli only: Fren.Impls.Enumeration.cardinality_truth truth Fren.Core.Cardinality.holds?
+cli only: Fren.Impls.Enumeration.partial_and truth Fren.Core.Enumeration.andTruth
+cli only: Fren.Impls.Enumeration.partial_not truth Fren.Core.Enumeration.notTruth
+cli only: Fren.Impls.apart apart? FrenCli.Fmt.apart
+cli only: Fren.Impls.arm_test_of_tests test Fren.Core.armTest
+cli only: Fren.Impls.backjump_at resumes? FrenCli.Eval.resumesAt
+cli only: Fren.Impls.blank_lines kept FrenCli.Fmt.blankLines
+cli only: Fren.Impls.break_before before FrenCli.Fmt.breakBefore
+cli only: Fren.Impls.call_instance result_type Fren.Core.callType
+cli only: Fren.Impls.cardinality value? Fren.Core.Cardinality.holds
+cli only: Fren.Impls.closure_capture mention Fren.Core.captureRename
+cli only: Fren.Impls.color colored? FrenCli.useColor
+cli only: Fren.Impls.comment_column column FrenCli.Fmt.commentColumn
+cli only: Fren.Impls.comment_piece piece FrenCli.Fmt.commentPiece
+cli only: Fren.Impls.confirm_model result FrenCli.Eval.confirmation
+cli only: Fren.Impls.confirmed verdict FrenCli.Eval.confirmedVerdict
+cli only: Fren.Impls.conflict_of member? FrenCli.Eval.conflictOf
+cli only: Fren.Impls.continued continued? FrenCli.Fmt.continuedLine
+cli only: Fren.Impls.contradicts contradiction? FrenCli.contradicts
+cli only: Fren.Impls.equivalence_parts both FrenCli.Mutate.both
+cli only: Fren.Impls.eval_exit_code code FrenCli.Eval.evalExit
+cli only: Fren.Impls.evidence_in_effect enumerated? Fren.Core.evidenceInEffect
+cli only: Fren.Impls.evidence_in_effect random? Fren.Core.evidenceInEffect
+cli only: Fren.Impls.exit code FrenCli.Fmt.exitCode
+cli only: Fren.Impls.exit_code code FrenCli.exitCode
+cli only: Fren.Impls.exit_status_code code FrenCli.exitCode
+cli only: Fren.Impls.expansion_budget initial Fren.Core.maxExpansionNodes
+cli only: Fren.Impls.expansion_count after Fren.Core.expansionBudget
+cli only: Fren.Impls.expansion_count fits? Fren.Core.expansionBudget
+cli only: Fren.Impls.expansion_step after Fren.Core.expansionStep
+cli only: Fren.Impls.expansion_step copy? Fren.Core.expansionStep
+cli only: Fren.Impls.file diff? FrenCli.Fmt.fileAction
+cli only: Fren.Impls.file written? FrenCli.Fmt.fileAction
+cli only: Fren.Impls.goal_constant_name chosen? Fren.Core.goalCandidate
+cli only: Fren.Impls.goal_constant_name chosen? Fren.Core.goalConstantName
+cli only: Fren.Impls.goal_constant_name kept? Fren.Core.goalConstantName
+cli only: Fren.Impls.group_layout braces? FrenCli.Fmt.groupLayout
+cli only: Fren.Impls.group_layout vertical? FrenCli.Fmt.groupLayout
+cli only: Fren.Impls.in_block alone? FrenCli.Fmt.useAlone
+cli only: Fren.Impls.in_block sorted? FrenCli.Fmt.inBlock
+cli only: Fren.Impls.indent columns FrenCli.Fmt.indent
+cli only: Fren.Impls.item_lines first FrenCli.Fmt.itemLines
+cli only: Fren.Impls.item_lines last FrenCli.Fmt.itemLines
+cli only: Fren.Impls.kept_answer kept? FrenCli.CachedAnswer.stored
+cli only: Fren.Impls.kill_rate rate FrenCli.Mutate.Tally.rate?
+cli only: Fren.Impls.kill_rate rated? FrenCli.Mutate.Tally.rate?
+cli only: Fren.Impls.known_application_of known? Fren.Core.appliedKnown
+cli only: Fren.Impls.known_if_of known? Fren.Core.iteKnown
+cli only: Fren.Impls.lexicographic result Fren.Core.lexCompare
+cli only: Fren.Impls.line_break break? FrenCli.Fmt.lineBreak
+cli only: Fren.Impls.lint_fix_exit code Fren.Core.fixExit
+cli only: Fren.Impls.lint_fix_selected fixed? Fren.Core.fixSelected
+cli only: Fren.Impls.lint_import_fix fix Fren.Core.importFix
+cli only: Fren.Impls.list_layout vertical? FrenCli.Fmt.listLayout
+cli only: Fren.Impls.literal_type result Fren.Core.literalTy
+cli only: Fren.Impls.logic logic Fren.Core.logic
+cli only: Fren.Impls.mutant_count equivalent_after FrenCli.Mutate.Tally.add
+cli only: Fren.Impls.mutant_count killed_after FrenCli.Mutate.Tally.add
+cli only: Fren.Impls.mutant_count survived_after FrenCli.Mutate.Tally.add
+cli only: Fren.Impls.mutant_count unviable_after FrenCli.Mutate.Tally.add
+cli only: Fren.Impls.mutant_kill kills? FrenCli.Mutate.killsCheck
+cli only: Fren.Impls.mutant_ledger valid? FrenCli.Mutate.decisionError?
+cli only: Fren.Impls.mutant_missed missed? FrenCli.Mutate.missed
+cli only: Fren.Impls.mutant_outcome outcome FrenCli.Mutate.outcome
+cli only: Fren.Impls.mutant_sample taken? FrenCli.Mutate.takes
+cli only: Fren.Impls.mutant_selection selected? FrenCli.Mutate.chosen
+cli only: Fren.Impls.mutant_shard taken? FrenCli.Mutate.inShard
+cli only: Fren.Impls.mutate_exit code FrenCli.Mutate.exitCode
+cli only: Fren.Impls.no_effect_replace replaced? Fren.Str.replace
+cli only: Fren.Impls.no_effect_replace replaced_all? Fren.Str.replaceAll
+cli only: Fren.Impls.one_line vertical? FrenCli.Fmt.vertical
+cli only: Fren.Impls.own_line own_line? FrenCli.Fmt.ownLine
+cli only: Fren.Impls.patch_touches touched? FrenCli.Mutate.touchesLine
+cli only: Fren.Impls.punctuator accepted? FrenCli.punctuators
+cli only: Fren.Impls.query_cache_hit hit? FrenCli.cacheHit
+cli only: Fren.Impls.query_entry read FrenCli.encodeEntry?
+cli only: Fren.Impls.query_entry read FrenCli.decodeEntry?
+cli only: Fren.Impls.query_entry read FrenCli.CachedAnswer.of
+cli only: Fren.Impls.query_entry read FrenCli.namePartsOf
+cli only: Fren.Impls.query_entry text? FrenCli.encodeEntry?
+cli only: Fren.Impls.query_key kept? FrenCli.CacheKey.ofObservations?
+cli only: Fren.Impls.query_key key FrenCli.CacheKey.ofObservations?
+cli only: Fren.Impls.query_key key FrenCli.CacheKey.of
+cli only: Fren.Impls.query_key spelled? FrenCli.CacheKey.ofObservations?
+cli only: Fren.Impls.query_logic asked? Fren.Core.queryAsked
+cli only: Fren.Impls.query_logic internal? Fren.Core.queryAsked
+cli only: Fren.Impls.reaches_check counted? FrenCli.Eval.counted
+cli only: Fren.Impls.reaches_check reached? FrenCli.Eval.reached
+cli only: Fren.Impls.reaches_check trigger_unknown? FrenCli.Eval.triggerUnknown
+cli only: Fren.Impls.reading_query after Fren.Core.readingQuery
+cli only: Fren.Impls.reading_query status Fren.Core.readingQuery
+cli only: Fren.Impls.reading_size after Fren.Core.readingBudget
+cli only: Fren.Impls.reading_size fits? Fren.Core.readingBudget
+cli only: Fren.Impls.reserved_word reserved? FrenCli.reserved
+cli only: Fren.Impls.right_side next_line? FrenCli.Fmt.rightSide
+cli only: Fren.Impls.run code FrenCli.exitCode
+cli only: Fren.Impls.run_of run Fren.Core.runOf
+cli only: Fren.Impls.separators output FrenCli.Fmt.placeSeparators
+cli only: Fren.Impls.set_card_expansion expanded? Fren.Core.setCardExpansion
+cli only: Fren.Impls.skip_unchanged run? FrenCli.Mutate.rechecks
+cli only: Fren.Impls.space space? FrenCli.Fmt.space
+cli only: Fren.Impls.standalone_reading_acceptance accepted? FrenCli.Eval.ReadError.stopsCommand
+cli only: Fren.Impls.status_of status FrenCli.Eval.statusOf
+cli only: Fren.Impls.substitution_scope rename? FrenCli.SeqElems.substitutionScope
+cli only: Fren.Impls.substitution_scope replace? FrenCli.SeqElems.substitutionScope
+cli only: Fren.Impls.table_match disjoint? Fren.Seq.indexOf
+cli only: Fren.Impls.test_verdict_of verdict FrenCli.Eval.testVerdict
+cli only: Fren.Impls.trace_exit code Fren.Core.traceExitCode
+cli only: Fren.Impls.trailing_comma comma? FrenCli.Fmt.trailingComma
+cli only: Fren.Impls.type_bracket reading Fren.Core.afterName
+cli only: Fren.Impls.unreached_of why FrenCli.Eval.unreachedOf
+cli only: Fren.Impls.unreached_warning_of shown FrenCli.Eval.unreachedWarning
+cli only: Fren.Impls.wide_list wide? FrenCli.Fmt.listWide
+cli only: Fren.Impls.wide_within inner? FrenCli.Fmt.wideWithin
+cli only: Fren.Impls.worst_of worst Fren.Core.worst
+
+# Hosted result dependency only, including Lean implementation commands.
+hosted only: Fren.Impls.Generated.definition_form form Fren.definitionForm
+hosted only: Fren.Impls.Generated.lean_name name Fren.leanName
+hosted only: Fren.Impls.Generated.match_form form Fren.matchForm
+hosted only: Fren.Impls.PassEvidence.hosted_runs reported? Fren.Core.hostedReported
+hosted only: Fren.Impls.Testing.portable_name name Fren.portableName
+hosted only: Fren.Impls.block_errors reported Fren.Core.firstBlockError?
+hosted only: Fren.Impls.checked checked? Fren.Core.ExprSite.checked
+hosted only: Fren.Impls.interpretation accepted? Fren.interpAccepted
+hosted only: Fren.Impls.interpretation_contract proof Fren.contractProofOf
+hosted only: Fren.Impls.interpreted accepted? Fren.interpretedAccepted
+hosted only: Fren.Impls.lint_outside_options level Fren.Core.outsideLevel
+hosted only: Fren.Impls.mapping accepted? Fren.mappingAccepted
+hosted only: Fren.Impls.newtype unbounded? Fren.Core.newtypeUnbounded
+hosted only: Fren.Impls.obligation axiom? Fren.implVerdict
+hosted only: Fren.Impls.obligation names_failures? Fren.implVerdict
+hosted only: Fren.Impls.obligation verdict Fren.implVerdict
+hosted only: Fren.Impls.statement added? Fren.implAdded
+hosted only: Fren.Impls.summary level Fren.Core.summarySeverity
+hosted only: Fren.Impls.vacuity evidence? Fren.implEvidence
+hosted only: Fren.Impls.vacuity vacuous? Fren.implVacuous
+
+# No static result dependency: model helpers, proof views, or unbridged runtime paths.
+bypassed: Fren.Impls.Enumeration.enumerated_index value Fren.Enum.nthOr
+bypassed: Fren.Impls.Enumeration.fair_order first_level Fren.Core.Enumeration.Space.levelOf
+bypassed: Fren.Impls.Enumeration.fair_order second_level Fren.Core.Enumeration.Space.levelOf
+bypassed: Fren.Impls.Enumeration.method_of method Fren.Core.Enumeration.methodOf
+bypassed: Fren.Impls.Enumeration.methods_contradict contradiction? Fren.Core.methodsContradict
+bypassed: Fren.Impls.Enumeration.quantified_truth truth Fren.Core.Enumeration.quantifiedTruth
+bypassed: Fren.Impls.GroundClosure.ground_activation_step ready Fren.Core.GroundClosure.enabled
+bypassed: Fren.Impls.GroundClosure.ground_activation_step remaining Fren.Core.GroundClosure.enabled
+bypassed: Fren.Impls.GroundClosure.ground_activation_step result Fren.Core.GroundClosure.enabled
+bypassed: Fren.Impls.GroundClosure.ground_activation_step result Fren.Core.FiniteActivation.run
+bypassed: Fren.Impls.GroundClosure.ground_applications_step applications Fren.Core.GroundClosure.queryTerms
+bypassed: Fren.Impls.GroundClosure.ground_applications_step heads Fren.Core.GroundMatching.headName
+bypassed: Fren.Impls.GroundClosure.ground_applications_step subjects Fren.Core.GroundClosure.subjectNames
+bypassed: Fren.Impls.GroundClosure.ground_assignment_step all_assignments Fren.Core.GroundClosure.assignments
+bypassed: Fren.Impls.GroundClosure.ground_assignment_step assigned Fren.Core.GroundClosure.assignFrom
+bypassed: Fren.Impls.GroundClosure.ground_assignment_step extended Fren.Core.GroundClosure.assignOne
+bypassed: Fren.Impls.GroundClosure.ground_assignment_step typed Fren.Core.GroundMatching.typedExtensions
+bypassed: Fren.Impls.GroundClosure.ground_candidate_step candidates Fren.Core.GroundClosure.candidates
+bypassed: Fren.Impls.GroundClosure.ground_candidate_step collected Fren.Core.GroundClosure.fromAssignments
+bypassed: Fren.Impls.GroundClosure.ground_candidate_step result Fren.Core.GroundClosure.makeCandidate
+bypassed: Fren.Impls.GroundClosure.ground_close_step applications Fren.Core.GroundClosure.close
+bypassed: Fren.Impls.GroundClosure.ground_close_step instances Fren.Core.GroundClosure.close
+bypassed: Fren.Impls.GroundClosure.ground_enabled_step enabled? Fren.Core.GroundClosure.enabled
+bypassed: Fren.Impls.GroundClosure.ground_pool_step all_apps Fren.Core.GroundClosure.Candidate.allApplications
+bypassed: Fren.Impls.GroundClosure.ground_pool_step all_ground? Fren.Core.TheoryTerm.ground
+bypassed: Fren.Impls.GroundClosure.ground_pool_step apps Fren.Core.GroundClosure.Candidate.applications
+bypassed: Fren.Impls.GroundClosure.ground_pool_step closed_terms Fren.Core.GroundMatching.Rule.terms
+bypassed: Fren.Impls.GroundClosure.ground_pool_step ground_terms Fren.Core.TheoryTerm.ground
+bypassed: Fren.Impls.GroundClosure.ground_pool_step listed_rules Fren.Core.GroundMatching.Context.normalizeListed
+bypassed: Fren.Impls.GroundClosure.ground_pool_step listed_variables Fren.Core.GroundMatching.Context.normalizeListed
+bypassed: Fren.Impls.GroundClosure.ground_pool_step many Fren.Core.GroundClosure.subterms
+bypassed: Fren.Impls.GroundClosure.ground_pool_step normalized Fren.Core.GroundMatching.Rule.normalize
+bypassed: Fren.Impls.GroundClosure.ground_pool_step seeds Fren.Core.GroundClosure.seedPool
+bypassed: Fren.Impls.GroundClosure.ground_pool_step subterms Fren.Core.GroundClosure.subterms
+bypassed: Fren.Impls.GroundClosure.ground_universe_step at_rank Fren.Core.GroundClosure.atRank
+bypassed: Fren.Impls.GroundClosure.ground_universe_step built Fren.Core.GroundClosure.ranks
+bypassed: Fren.Impls.GroundClosure.ground_universe_step universe_candidates Fren.Core.GroundClosure.candidateUniverse
+bypassed: Fren.Impls.GroundMatching.ground_instance_list_step instances Fren.Core.GroundMatching.instantiateMatches
+bypassed: Fren.Impls.GroundMatching.ground_instances_step instances Fren.Core.GroundMatching.instances
+bypassed: Fren.Impls.GroundMatching.ground_instances_step substitutions Fren.Core.GroundMatching.matchApplications
+bypassed: Fren.Impls.GroundMatching.ground_join_step joined Fren.Core.GroundMatching.join
+bypassed: Fren.Impls.GroundMatching.ground_join_step many Fren.Core.GroundMatching.matchTargets
+bypassed: Fren.Impls.GroundMatching.ground_join_step target_matches Fren.Core.GroundMatching.matchTargets
+bypassed: Fren.Impls.GroundMatching.ground_listed_step completed Fren.Core.GroundMatching.completeListed
+bypassed: Fren.Impls.GroundMatching.ground_listed_step extended Fren.Core.GroundMatching.listedExtensions
+bypassed: Fren.Impls.GroundMatching.ground_listed_step many Fren.Core.GroundMatching.listedExtensions
+bypassed: Fren.Impls.GroundMatching.ground_listed_step typed Fren.Core.GroundMatching.typedExtensions
+bypassed: Fren.Impls.GroundMatching.ground_match_step result Fren.Core.GroundMatching.matchTerm
+bypassed: Fren.Impls.GroundMatching.ground_normalization normalized Fren.Core.GroundMatching.normalize
+bypassed: Fren.Impls.GroundMatching.ground_normalization normalized_definitions Fren.Core.GroundMatching.definitions
+bypassed: Fren.Impls.GroundMatching.ground_normalization same? Fren.Core.GroundMatching.same
+bypassed: Fren.Impls.GroundMatching.ground_preparation_step normalized_sentence Fren.Core.GroundMatching.Rule.normalize
+bypassed: Fren.Impls.GroundMatching.ground_preparation_step normalized_terms Fren.Core.GroundMatching.normalize
+bypassed: Fren.Impls.GroundMatching.ground_prepared_listed_step completed Fren.Core.GroundMatching.completeListed
+bypassed: Fren.Impls.GroundMatching.ground_prepared_listed_step extended Fren.Core.GroundMatching.listedExtensions
+bypassed: Fren.Impls.GroundMatching.ground_prepared_listed_step many Fren.Core.GroundMatching.listedExtensions
+bypassed: Fren.Impls.GroundMatching.ground_prepared_rule_step substitutions Fren.Core.GroundMatching.matchPrepared
+bypassed: Fren.Impls.GroundMatching.ground_rule_step anchors Fren.Core.GroundMatching.Rule.anchors
+bypassed: Fren.Impls.GroundMatching.ground_rule_step apps Fren.Core.GroundMatching.Rule.applications
+bypassed: Fren.Impls.GroundMatching.ground_rule_step binding? Fren.Core.GroundMatching.Rule.instantiable
+bypassed: Fren.Impls.GroundMatching.ground_rule_step subject Fren.Core.GroundMatching.Rule.subject
+bypassed: Fren.Impls.GroundMatching.ground_rule_step substitutions Fren.Core.GroundMatching.matchNormalized
+bypassed: Fren.Impls.GroundMatching.ground_selection_step anchors Fren.Core.GroundMatching.anchors
+bypassed: Fren.Impls.GroundMatching.ground_selection_step compound_argument? Fren.Core.GroundMatching.compoundArg
+bypassed: Fren.Impls.GroundMatching.ground_selection_step compounds Fren.Core.GroundMatching.compoundApps
+bypassed: Fren.Impls.GroundMatching.ground_selection_step mentioned? Fren.Core.GroundMatching.mentions
+bypassed: Fren.Impls.GroundMatching.ground_selection_step subject_apps Fren.Core.GroundMatching.subjectApps
+bypassed: Fren.Impls.GroundMatching.ground_sentence_lists_step apps Fren.Core.GroundMatching.applications
+bypassed: Fren.Impls.GroundMatching.ground_sentence_lists_step calls Fren.Core.GroundMatching.callApplications
+bypassed: Fren.Impls.GroundMatching.ground_sentence_lists_step outer_apps Fren.Core.GroundMatching.outer
+bypassed: Fren.Impls.GroundMatching.ground_shape_step apps Fren.Core.GroundMatching.applications
+bypassed: Fren.Impls.GroundMatching.ground_shape_step args Fren.Core.GroundMatching.spine
+bypassed: Fren.Impls.GroundMatching.ground_shape_step argument_apps Fren.Core.GroundMatching.argumentApps
+bypassed: Fren.Impls.GroundMatching.ground_shape_step compound? Fren.Core.GroundMatching.compoundArg
+bypassed: Fren.Impls.GroundMatching.ground_shape_step head Fren.Core.GroundMatching.spine
+bypassed: Fren.Impls.GroundMatching.ground_shape_step mentions? Fren.Core.GroundMatching.mentions
+bypassed: Fren.Impls.GroundMatching.ground_shape_step outer? Fren.Core.GroundMatching.outer
+bypassed: Fren.Impls.GroundMatching.ground_subject_step subject Fren.Core.GroundMatching.lastSubject
+bypassed: Fren.Impls.GroundMatching.ground_subject_step subject_used? Fren.Core.GroundMatching.uses
+bypassed: Fren.Impls.GroundMatching.ground_variables_step binding? Fren.Core.GroundMatching.binding
+bypassed: Fren.Impls.GroundMatching.ground_variables_step mentions? Fren.Core.GroundMatching.mentions
+bypassed: Fren.Impls.Matching.matching_normalization left Fren.Core.Matching.normalize
+bypassed: Fren.Impls.Matching.matching_normalization right Fren.Core.Matching.normalize
+bypassed: Fren.Impls.Matching.matching_normalization same? Fren.Core.Matching.same
+bypassed: Fren.Impls.PassEvidence.finite_application_closure brought Fren.Core.Matching.closure
+bypassed: Fren.Impls.PassEvidence.finite_application_closure ended? Fren.Core.Matching.closure
+bypassed: Fren.Impls.PassEvidence.finite_application_closure rounds Fren.Core.Matching.closure
+bypassed: Fren.Impls.SubsetTypes.pattern_member member? Fren.Core.intervalsHold
+bypassed: Fren.Impls.SubsetTypes.pattern_member witness Fren.Core.intervalIndex?
+bypassed: Fren.Impls.Theories.theory_ground_term ground? Fren.Core.TheoryTerm.ground
+bypassed: Fren.Impls.Theories.theory_instance accepted? Fren.Core.TheorySentence.instantiate
+bypassed: Fren.Impls.Theories.theory_instance instance_sentence Fren.Core.TheorySentence.instantiate
+bypassed: Fren.Impls.Theories.theory_term_list substituted Fren.Core.TheoryTerm.substitute
+bypassed: Fren.Impls.Theories.theory_term_list translated Fren.Core.TheoryTerm.translate
+bypassed: Fren.Impls.Theories.theory_term_substitution substituted Fren.Core.TheoryTerm.substitute
+bypassed: Fren.Impls.Theories.theory_term_translation translated Fren.Core.TheoryTerm.translate
+bypassed: Fren.Impls.Theories.theory_translation translated Fren.Core.TheorySentence.translate
+bypassed: Fren.Impls.Theories.theory_variable_images accepted? Fren.Core.theoryGroundImages
+bypassed: Fren.Impls.Theories.theory_variable_images remaining Fren.Core.theoryRemainingVariables
+bypassed: Fren.Impls.application accepted? Fren.Core.applicationAccepted
+bypassed: Fren.Impls.closure_obligation holds? Fren.Core.siteHolds
+bypassed: Fren.Impls.element_witness instances? Fren.Seq.nth
+bypassed: Fren.Impls.generic_function accepted? Fren.Core.genericFunctionAccepted
+bypassed: Fren.Impls.generic_signature accepted? Fren.Core.genericFunctionAccepted
+bypassed: Fren.Impls.guarded_match value Fren.Core.firstCase
+bypassed: Fren.Impls.index_after_use fires? Fren.Core.indexAfterUse
+bypassed: Fren.Impls.interpretation_at recorded? Fren.contractRecorded
+bypassed: Fren.Impls.interpretation_contract error? Fren.contractRecorded
+bypassed: Fren.Impls.interpretation_contract recorded? Fren.contractRecorded
+bypassed: Fren.Impls.lint_effective after_cli Fren.Core.effectiveLevel
+bypassed: Fren.Impls.lint_effective error? Fren.Core.effectiveLevel
+bypassed: Fren.Impls.lint_effective level Fren.Core.effectiveLevel
+bypassed: Fren.Impls.mutant_same_decision same? FrenCli.Mutate.sameDecision
+bypassed: Fren.Impls.ordering output FrenCli.Fmt.keptOrder
+bypassed: Fren.Impls.ordering_fix_statement quantified? Fren.Lang.decForall
+bypassed: Fren.Impls.pattern_finite finite? Fren.Core.patternFinite
+bypassed: Fren.Impls.quantifier_binder accepted? Fren.Core.quantifierBinder
+bypassed: Fren.Impls.query_symbols same? Fren.Core.QuerySymbol.text
+bypassed: Fren.Impls.query_symbols symbol_a Fren.Core.QuerySymbol.text
+bypassed: Fren.Impls.query_symbols symbol_b Fren.Core.QuerySymbol.text
+bypassed: Fren.Impls.range_pattern matches? Fren.Core.rangeMatches
+bypassed: Fren.Impls.subset_place decidable? Fren.Core.subsetPlaceDecidable
+bypassed: Fren.Impls.subset_widening accepted? Fren.Core.subsetWidening
+bypassed: Fren.Impls.subset_widening obliged? Fren.Core.subsetWidening
+bypassed: Fren.Impls.table_eval value Fren.Core.firstCase
+bypassed: Fren.Impls.table_match value Fren.Core.firstCase
