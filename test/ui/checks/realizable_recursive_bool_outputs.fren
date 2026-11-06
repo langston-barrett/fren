@@ -1,0 +1,44 @@
+-- A finite output carrier does not confirm a recursive model merely
+-- because evaluation can prove that no legal output exists.
+-- fren-covers: eval::outputs_goal, eval::outputs_confirm
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.assertions_on_constants "allow"
+
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn total(l: L): (r: Int) {
+    out r := match l {
+        L::Nil => 0,
+        L::Cons(n, rest) => n.abs + total(rest),
+    }
+    ensure nonnegative: r >= 0
+    ensure empty: when l = L::Nil, r = 0
+}
+
+pub type Refined = n?: Bool where invariant:
+    2 <= total(L::Cons((if n? then 1 else 0), L::Nil)) or not n?
+
+pub type Alias := Refined
+pub struct Box { value?: Alias }
+pub enum Choice { V(Alias) }
+
+proc direct(x?): (y?: Refined) {  --~ warning: could not decide whether `direct` is realizable
+    ensure different: y? != x?
+}
+
+proc nested(x?): (y: Box) {  --~ warning: could not decide whether `nested` is realizable
+    ensure different: y.value? != x?
+}
+
+proc payload(x?): (y: Choice) {  --~ warning: could not decide whether `payload` is realizable
+    ensure different: match y {
+        Choice::V(v?) => v? != x?,
+    }
+}
+
+-- An explicit existential is an ordinary goal: its false value can
+-- confirm the counterexample to an expectation.
+proc explicit_goal() {
+    expect impossible: exists (n?: Bool),   --~ error: expectation `explicit_goal::impossible` does not hold
+        2 <= total(L::Cons((if n? then 1 else 0), L::Nil))
+}

@@ -116,11 +116,6 @@ pub mod testing
 - **Fren's own requirements** (`lake test`, `ownSpec`): checked by the
   `fren` command; `lake build` only elaborates them, and Lean checks them
   on `main` (see [Own requirements](#own-requirements)).
-- **Conformance corpus** (`lake test`): random procedures whose
-  constraints are all in the [decidable core](../Lang/Decidability.md),
-  one corpus each for strings, sets, relations and sequences, from a fixed
-  seed, must be checked with no inconclusive result: the core promises
-  that the solver decides them.
 - **Formatting** (`lake test`): every `.fren` and Markdown spec in the
   repository must be formatted, as `fren fmt --check` says, except those
   listed as `--ignore` globs in `fmtIgnore` in `src/FrenTestMain.lean`:
@@ -372,12 +367,20 @@ pub mod testing
   compared, since without them brute force is not exact. A procedure
   with too many behaviours to enumerate is skipped, and counted in the
   summary.
+- **Decidable-core conformance** (`conformance strings`, `conformance sets`,
+  `conformance relations`, `conformance sequences` jobs of `fren_test`):
+  checks 40 procedures per theory from fixed seeds. Reaching a limit fails
+  these jobs; only a pass downgraded because its premise did not pass
+  (`F0664`) may be inconclusive. Internal errors and empty coverage fail
+  the job. The differential fuzzer below
+  supplements these fixed corpora with fresh seeds through both front ends.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--unfoldings] [--datatype-elements] [--spec-timeout SECONDS]`): generates
-  random specs and checks each with both front ends, the `fren` command's pipeline
+  [--decidable] [--unfoldings] [--datatype-elements]
+  [--spec-timeout SECONDS]`): generates random specs and checks each with
+  both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
   same errors, warnings and notes at the same lines and columns, the
@@ -439,7 +442,29 @@ pub mod testing
   assumptions and comparisons of recursive applications. Its generator is
   split off the seed, so its draws leave the other modes unchanged. Like
   `--scrutinees`, it has an empty cut: its corpus rejects generated static
-  errors, which would stop the spec's checks. `--unfoldings` generates
+  errors, which would stop the spec's checks.
+  `--decidable` generates random procedures
+  in the decidable core of strings, sets, relations and sequences, with no
+  opt-outs. Its own mode leaves all older seeds' specs unchanged, and a few
+  of its seeds are in the corpus, which rejects internal errors even when
+  both front ends agree. A solver's unknown answer without a time, resource
+  or memory limit or an interruption is an internal error
+  (`check::decidable_unknown`). After those procedures it appends an
+  output-invariant case
+  (`Wide.outputInvariantCore`): an opaque recursion in an invariant, through
+  a generic definition, `let` or a helper's `where` clause, over integers,
+  naturals, Booleans, enumerations, records, newtypes and abstract types,
+  directly or through an alias; concrete carriers also nest in data. A
+  generic recursion covers an abstract carrier. Defined outputs also cover
+  strings, sets, relations, sequences and recursive enumerations. These
+  unbounded types, including aliases and data containing them, require
+  defined outputs (`F0313`, `lang::variable_type`), so realizability never
+  quantifies over their values.
+  Definitions that ignore parameters check that only the arguments left
+  after unfolding count. These exercise the rule for generated queries
+  (`check::output_query_core`) without changing any older random draw or
+  adding a static error.
+  `--unfoldings` generates
   global expectations over a list and a tree whose claims induction
   proves only by [unfolding more than one
   step](../Lang/Recursion.md#unfolding-in-an-induction), up to and past
@@ -567,10 +592,12 @@ pub mod testing
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
-  `--fact-scopes`, `--induction-candidates`, `--unfoldings` and
+  `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings` and
   `--datatype-elements`
   (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
-  with both front ends and compared as above, in `frontendFuzz` jobs of at
+  with both front ends and compared as above. The `--decidable` corpus also
+  rejects every error without a diagnostic code from `fren check`, even
+  when both front ends agree. The `frontendFuzz` jobs contain at
   most five specs each, including those listed outside the ranges. Each
   job imports `Fren` once; small batches spread the work over the shards
   and keep a large batch from outlasting their other jobs. The flattened

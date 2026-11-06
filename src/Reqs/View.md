@@ -151,10 +151,14 @@ Each check yields one result for each thing it checks:
 A passing result is silent, except that a passing cover goal shows its
 witness (see below). A failing result is an error, except that a
 redundant constraint is a warning. An inconclusive result is a warning,
-with one exception. Fren's semantics may contradict the solver's model of
-a counterexample or a witness that the result would show. The result is
-then still inconclusive, and the summary counts it so. But the only
-diagnostic printed for it is the internal error of [Reading
+with two exceptions. An unknown solver answer in the decidable core
+without reaching a time, resource or memory limit, or being interrupted,
+has an internal error in place of its warning
+([`check::decidable_unknown`](Check.md#verdicts)).
+Fren's semantics may contradict the solver's model of
+a counterexample or a witness that the result's detail would show. The
+result is then still inconclusive, and the summary counts it so. But the
+only diagnostic printed for it is the internal error of [Reading
 models](Models.md#reporting), an error, in place of its warning. The
 `fren` command's [confirmation of its other
 models](Eval.md#confirming-models), which Lean does not do, keeps the
@@ -432,12 +436,18 @@ pub proc report_shows(kind: Kind, verdict: Verdict, shown: Shown): (det allowed?
 ```
 
 An inconclusive result is reported at the position of the corresponding
-failure, saying what could not be decided and why. What it advises
-depends on whether the procedure is in the [decidable
-core](Lang/Decidability.md): if it is, the solver ran out of time, so the
-advice is to raise the time limit; if some construct of it opted out of
-the core, the solver may have given up, so the advice names that.
-`view::inconclusive_advice` states this:
+failure, saying what could not be decided and why. If the solver gives no
+answer and an implicit output invariant puts its query outside the core
+(`check::output_query_core`), the warning names the opaque application to
+a quantified output. It advises defining the output or changing its
+type's invariant, without claiming a lint opt-out.
+
+Ordinary warnings for other undecided solver queries depend on whether
+the procedure is in the [decidable core](Lang/Decidability.md): if it is,
+the solver reached a time or resource limit, so the advice is to raise the
+limit; if some construct of it opted out of the core, the solver may have
+given up, so the advice names that. `view::inconclusive_advice` states this
+advice:
 
 ```fren
 pub enum Advice { RaiseTimeout, NamesConstructs }
@@ -508,12 +518,18 @@ pub proc severity(kind: Kind, verdict: Verdict): (det level: Severity) {
 inconclusive result in silence: an undecided result of a check, whatever
 its kind, about a constraint or about the whole item, as the vacuity of an
 expectation of a trait under the laws is, has a warning among its
-messages, whatever made it undecided, but for one cause. A result whose
-solver model Fren's semantics refutes has instead the internal error that
-reports the refuted model (see [Check results](#check-results)), and no
-warning. Neither the kind nor the place changes the messages' severity,
-so the Req is over the cause alone; `src/FrenTest/InconclusiveReported.lean`
-runs `Fren.Core.messages` over every kind, place and cause:
+messages, whatever made it undecided, but for two causes. A query in the
+decidable core that gives up without reaching a limit has an internal
+error instead (`check::decidable_unknown`). A result whose
+detail carries a model Fren's semantics refutes has instead the internal
+error that reports the refuted model (see [Check results](#check-results)),
+and no warning. When the CLI's confirmation has already printed that error and
+records only the synthetic reason "the solver's model was refuted", the
+shared report retains its ordinary warning; it never reports that the
+solver gave an `Unknown` answer. Neither the kind nor the place changes
+the messages' severity, so the Req is over the cause alone;
+`src/FrenTest/InconclusiveReported.lean` runs `Fren.Core.messages` over every
+kind, place and cause:
 
 ```fren
 -- Why a check is undecided.
@@ -524,14 +540,15 @@ pub enum Undecided {
     Induction,               -- another postcondition of a simultaneous induction did not pass
     RecursiveContracts,      -- a counterexample that only recursive functions' contracts allow
     Elements,                -- an expansion over sequences' elements too large, or refuted
+    DecidableUnknown,        -- a core query gave up without reaching a limit
     Refuted,                 -- a model that Fren's semantics refutes
 }
 
-use self::Undecided::Refuted
+use self::Undecided::{DecidableUnknown, Refuted}
 
 pub proc inconclusive_reported(why: Undecided): (det warned?, det errored?) {
-    ensure warned_rule: warned? iff why != Refuted
-    ensure errored_rule: errored? iff why = Refuted
+    ensure warned_rule: warned? iff not why is Refuted | DecidableUnknown
+    ensure errored_rule: errored? iff why is Refuted | DecidableUnknown
 
     expect reported: warned? or errored?
 }

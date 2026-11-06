@@ -70,8 +70,9 @@ oversized match or path. Follow those cursors to inspect an entire diff
 or every match. Each escaped JSON page, including its MCP text envelope,
 is at most 3,000 bytes, leaving room for the CLI's wrappers below the
 catalog's unchanged 10,000-token truncation limit. Static RPC replies and
-errors are bounded too. The checkout's instructions, links, `.codex`,
-`.agents` and `.claude` are removed before either model
+errors are bounded too. The checkout's `AGENTS.md`, `AGENTS.local.md`,
+`AGENTS.override.md`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude`,
+`.codex`, `.agents` and symbolic links are removed before either model
 runs. The common brief contains the workflow commit's review rules.
 
 `lint` runs the Python suites and `test_codex_sandbox.sh`. The latter

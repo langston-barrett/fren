@@ -2353,6 +2353,21 @@ def sequenceCorpus (n : Nat) : String := Id.run do
 def corpora : List (String × (Nat → String)) :=
   [("strings", stringCorpus), ("sets", setCorpus), ("relations", relationCorpus), ("sequences", sequenceCorpus)]
 
+/-- The fixed conformance corpus must execute checks, report no
+internal error, and leave no query undecided, including at a limit.
+Only evidence downgraded because its premise did not pass is allowed. -/
+def conformanceDecided (out : String) : Bool := Id.run do
+  let resting := (out.splitOn "warning[F0664]").length - 1
+  let some summary := (out.splitOn "\n").find? (·.startsWith "fren: ") | return false
+  let counts := ((summary.drop 6).toString.splitOn ", ").filterMap fun s => (s.splitOn " ").head?.bind String.toNat?
+  return counts.any (· > 0) && !out.contains "internal error:".toSlice &&
+    !out.contains "could not check".toSlice && summary.contains s!" {resting} inconclusive".toSlice
+
+#guard conformanceDecided "fren: 1 passed, 0 failed, 0 inconclusive, 0 redundant"
+#guard !conformanceDecided "fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant"
+#guard !conformanceDecided "internal error: bug\nfren: 1 passed, 0 failed, 0 inconclusive, 0 redundant"
+#guard !conformanceDecided "fren: 1 passed, 0 failed, 1 inconclusive, 0 redundant"
+
 /-- The solver decides every query of the corpus `name`: nothing is
 inconclusive but a pass that rests on a check that did not pass, such as
 an expectation of a procedure whose assumptions contradict each other
@@ -2362,8 +2377,7 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
   let file := s!".lake/corpus/{name}.fren"
   IO.FS.writeFile file (corpus 40)
   let (out, _) ← runFren ["check", file]
-  let resting := (out.splitOn "warning[F0664]").length - 1
-  if out.contains "could not check".toSlice || !out.contains s!" {resting} inconclusive".toSlice then
+  if !conformanceDecided out then
     return #[s!"the {name} corpus ({file}) is not decided:\n{out}"]
   return #[]
 

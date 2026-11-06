@@ -1,0 +1,55 @@
+-- Implicit subset invariants can put opaque applications under the output
+-- quantifier. Inspect their unfolded arguments, including through data and
+-- generic definitions, rather than treating a solver give-up as a core bug.
+-- fren-covers: check::output_query_core
+set_option fren.lint.unused_variables "allow"
+
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn total(l: L): (r: Int) {
+    out r := match l {
+        L::Nil => 0,
+        L::Cons(n, rest) => n.abs + total(rest),
+    }
+    ensure nonnegative: r >= 0
+    ensure empty: when l = L::Nil, r = 0
+}
+
+pub fn observe<T>(unused: T, n: Int): Int := total(L::Cons(v, L::Nil)) where v := n
+
+pub type Big = n: Int where invariant: observe(true, n) >= 5 or n = 5
+pub type Alias := Big
+pub struct Box { value: Alias }
+pub struct Outer { inner: Box }
+
+pub proc nested(x: Int): (y: Outer) {  --~ warning: could not decide whether `nested` is realizable
+    ensure bound: y.inner.value >= x
+}
+
+-- A defined output has no quantifier. Its invariant and recursive facts
+-- are about an input instead, so the generated query stays in the core.
+proc defined(x: Big): (y: Big) { out y := x }
+
+-- An ordinary linear invariant adds no opaque application either.
+type Positive = n: Int where invariant: n > 0
+
+proc linear(x: Int): (y: Positive) { ensure bound: y > x }
+
+-- A nongeneric invariant helper can capture an Inhabited parameter through
+-- a generic call. Its generated applications must pass that parameter once.
+mod abstract_calls
+
+pub type Atom
+
+pub fn token(Bool): Atom
+
+pub enum L { Nil, Cons(L) }
+
+pub fn depth<T>(a: T, l: L): Int := match l {
+    L::Nil => 0,
+    L::Cons(rest) => depth(a, rest),
+}
+
+pub type Selected = n: Atom where invariant: depth(n, L::Nil) >= 0 or n = token(true)
+
+proc copy(x: Selected): (det y: Selected) { out y := x }
