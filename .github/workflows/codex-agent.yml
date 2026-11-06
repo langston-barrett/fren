@@ -174,7 +174,7 @@ jobs:
 
   publish:
     needs: [prepare, agent]
-    if: ${{ !cancelled() && (needs.agent.result == 'success' || needs.prepare.outputs.mode == 'limit') }}
+    if: ${{ !cancelled() && (needs.agent.result == 'success' || needs.agent.result == 'failure' || needs.prepare.outputs.mode == 'limit') }}
     concurrency:
       group: codex-agent-publish-${{ needs.prepare.outputs.branch }}
       cancel-in-progress: false
@@ -191,21 +191,21 @@ jobs:
         sparse-checkout: |
           .github/codex-agent
           .github/pr-review
-    - if: ${{ needs.prepare.outputs.mode != 'limit' }}
+    - if: ${{ needs.agent.result == 'success' }}
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
         ref: ${{ needs.prepare.outputs.base }}
         path: work
-    - if: ${{ needs.prepare.outputs.mode != 'limit' }}
+    - if: ${{ needs.agent.result == 'success' }}
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
       with:
         name: codex-result
         path: ${{ runner.temp }}/agent
-    - name: Validate the patch and publish, or post the round limit
+    - name: Validate the patch and publish, or post a failure or round limit
       # Only trusted scripts execute here, never an action, hook, config
       # or program supplied by Codex. The working directory is set in the
-      # shell so that the limit notification needs no PR checkout.
+      # shell so that failure and limit notices need no PR checkout.
       env:
         GH_TOKEN: ${{ secrets.FREN_DEV_TOKEN }}
         REPO: ${{ github.repository }}
@@ -217,11 +217,12 @@ jobs:
         MODEL: ${{ needs.prepare.outputs.model }}
         EFFORT: ${{ needs.prepare.outputs.effort }}
         ROUND: ${{ needs.prepare.outputs.round }}
+        AGENT_RESULT: ${{ needs.agent.result }}
         ARTIFACT: ${{ runner.temp }}/agent
       run: |
         set -euo pipefail
         script="$GITHUB_WORKSPACE/trusted/.github/codex-agent/publish.py"
-        if [ "$MODE" != limit ]; then
+        if [ "$AGENT_RESULT" = success ]; then
           cd work
         fi
         python3 -I "$script"
