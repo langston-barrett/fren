@@ -1,0 +1,10 @@
+-- The hosted structural view is logged as a single message.
+--@ only: hosted
+set_option fren.dump "theories"
+
+proc c(n: Int): (m: Int) {
+    require a: n > 0
+    ensure r: m = n + 1
+}
+--~$ info: ; theories
+--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant

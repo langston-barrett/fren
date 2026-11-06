@@ -40,6 +40,7 @@ import Impls.Semantics
 import Impls.SubsetTypes
 import Impls.Testing
 import Impls.Theories
+import Impls.TheoryDump
 import Impls.Trace
 import Impls.TypeFacts
 import Impls.View

@@ -1,0 +1,3 @@
+--@ args: check --dump=theories
+-- A static error suppresses the structural dump.
+proc c(x: Missing): (y: Int) { ensure same: y = x }
