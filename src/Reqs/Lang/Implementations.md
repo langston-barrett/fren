@@ -1803,6 +1803,53 @@ pub proc theory_instance(s: TheorySubstitution, sentence: TheorySentence): (
 }
 ```
 
+## Generic function instances
+
+A generic function's type arguments give a morphism: every type in its
+signature, body and contract is instantiated with the same arguments.
+References to functions and clauses have the images resolved at those
+arguments. The images are simultaneous, so an image is not translated
+again. The front ends encode their type and item references as theory
+terms; their other syntax stays literal. Translation then uses the same
+operation as any other theory morphism. Ground value arguments use
+`theory_instance` separately; a type argument is not a sentence variable.
+
+```fren
+pub fn generic_morphism(Seq<Ty>, TheoryMorphism): TheoryMorphism
+
+pub proc generic_type_image(arguments: Seq<Ty>, items: TheoryMorphism, ty: Ty, name: TheoryName): (
+    det image: Ty,
+    det item_image: TheoryName,
+) {
+    out image := instantiated(ty, arguments)
+    out item_image := theory_item_image(items, name)
+}
+
+pub proc generic_translation(arguments: Seq<Ty>, items: TheoryMorphism, sentence: TheorySentence): (
+    det instance_sentence: TheorySentence,
+) {
+    out instance_sentence := theory_sentence(
+        theory_sentence_role(sentence),
+        translate_variables(
+            generic_morphism(arguments, items),
+            theory_sentence_variables(sentence)
+        ),
+        translate_term(
+            generic_morphism(arguments, items),
+            theory_sentence_domain(sentence)
+        ),
+        translate_terms(
+            generic_morphism(arguments, items),
+            theory_sentence_calls(sentence)
+        ),
+        translate_terms(
+            generic_morphism(arguments, items),
+            theory_sentence_claims(sentence)
+        )
+    )
+}
+```
+
 ## Induction by unfolding
 
 [Structural recursion](Recursion.md#induction) proves a claim of a global
@@ -2520,6 +2567,8 @@ The Lean-hosted front end checks this chapter's items by name, since a
 #fren_check theory_term_list
 #fren_check theory_translation
 #fren_check theory_instance
+#fren_check generic_type_image
+#fren_check generic_translation
 #fren_check module_sentence
 #fren_check module_rests_on
 #fren_check rests_on_ranked

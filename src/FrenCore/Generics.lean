@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenCore.Checking
 import FrenCore.Quantifier
+import FrenCore.Theories
 import FrenCore.Typing
 import Std.Data.HashMap.Lemmas
 -- keep-sorted end
@@ -478,6 +479,19 @@ def typeParamNameMsg (p : Name) (what : String) : Msg :=
 
 /-! ## Generic functions (`Reqs/Lang/GenericFunctions`) -/
 
+/-- A generic function's type arguments, with the resolved images of the
+items that it references (`lang::generic_type_image`). The item's type map
+is ignored: every type uses these arguments. Images are simultaneous. -/
+def genericMorphism (args : Array Ty) (items : TheoryMorphism := {}) : TheoryMorphism :=
+  { type := (·.subst args), item := items.item }
+
+/-- Translate a generic function's signature, body or contract through the
+shared theory core (`lang::generic_translation`). Front ends encode type
+parameters by index and extract resolved item images; neither rewrites
+the encoded references itself. -/
+def genericTranslation (args : Array Ty) (items : TheoryMorphism) (s : TheorySentence) : TheorySentence :=
+  s.translate (genericMorphism args items)
+
 mutual
 /-- `t`, with the type parameter at `typeParamPath fn k n` for each abstract
 type that is one of the type parameters `params` of the generic function at
@@ -506,7 +520,7 @@ end
 parameters `params`, sees it: each type parameter an abstract type of its
 own (`Reqs/Lang/GenericFunctions#type-parameters`). -/
 def Ty.asAbstract (fn : Name) (params : Array Name) (t : Ty) : Ty :=
-  t.subst (params.mapIdx fun k n => .abstract (typeParamPath fn k n))
+  (genericMorphism (params.mapIdx fun k n => .abstract (typeParamPath fn k n))).type t
 
 /-- Whether a function may have `params` type parameters
 (`lang::generic_function`): if it has any, each is mentioned by its
@@ -548,14 +562,15 @@ parameters `params`, writes it, at the instance with the type arguments
 `targs` (`lang::instantiation`): each type parameter with an argument is it,
 and one without stays the abstract type that it is within the function. -/
 def instanceType (fn : Name) (params : Array Name) (targs : Array (Option Ty)) (t : Ty) : Ty :=
-  (t.asParams fn params).subst (targs.mapIdx fun k a? => a?.getD (.abstract (typeParamPath fn k params[k]!)))
+  (genericMorphism (targs.mapIdx fun k a? => a?.getD (.abstract (typeParamPath fn k params[k]!)))).type
+    (t.asParams fn params)
 
 /-- The type arguments `inner`, each instantiated with `outer`
 (`lang::instantiation`): those of the instance that an application applies,
 within an instance whose type arguments are `outer`, where `inner` are the
 application's own, over the instance's function's type parameters, as
 `Ty.param` (`lang::applied_instance`). -/
-def instantiatedArgs (outer inner : Array Ty) : Array Ty := inner.map (·.subst outer)
+def instantiatedArgs (outer inner : Array Ty) : Array Ty := inner.map (genericMorphism outer).type
 
 /-- The type arguments of the instance that an application within the
 generic function at `fn`, with the type parameters `params`, applies at the
@@ -598,7 +613,7 @@ def callShape (n : Nat) (declared : Array Ty) (result : Ty) (shapes : Array Type
 
 /-- The type of an application of a generic function whose declared result
 type is `result`, with the type arguments `args` (`lang::call_instance`). -/
-def callType (result : Ty) (args : Array Ty) : Ty := result.subst args
+def callType (result : Ty) (args : Array Ty) : Ty := (genericMorphism args).type result
 
 /-- The parameters' and result's types of the instance of a generic
 function whose parameters and result have the declared types `declared`
@@ -607,7 +622,7 @@ each declared type instantiated with them. Of a generic function without a
 body, it is the signature of the unknown function that the solver sees for
 that instance. -/
 def instanceSig (declared : Array Ty) (result : Ty) (args : Array Ty) : Array Ty × Ty :=
-  (declared.map (·.subst args), result.subst args)
+  (declared.map (genericMorphism args).type, (genericMorphism args).type result)
 
 /-- A type as it is written, but with each generic function's type
 parameter by its whole path, so that two functions' are told apart: the key

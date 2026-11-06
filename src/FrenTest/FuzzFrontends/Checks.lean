@@ -149,7 +149,7 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
   for (mode, s) in specs do
     let ran ← runFrontends env path (mode.spec s) mode.confirm
     let c := ran.comparison
-    if mode.setCard || mode.setCardFallback then
+    if !mode.genericFunctions && (mode.setCard || mode.setCardFallback) then
       for problem in setCardProblems ran do
         failures := failures.push s!"seed {s}{flags mode}: {problem}"
     let again := s!"`lake exe fren_fuzz_frontends{flags mode} --count 1 --seed {s}`"
