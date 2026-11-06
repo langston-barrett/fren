@@ -1076,10 +1076,11 @@ blocked around the completion check and signal, and while the registry lock
 is held; handlers are restored after monitoring.
 When heavy is PID 1 of its namespace, it also reaps adopted orphan workers
 after collecting the leader's exit status and RSS, in both subreaper and
-fallback modes. It peeks at exited children without reaping them: a newly
-adopted member of the original group goes through the group usage collector,
-while an outside-group orphan is reaped without adding its usage. Dead workers
-must not keep the process group visible as zombies until both escalation waits expire.
+fallback modes. It peeks at exited children without reaping them. In subreaper
+mode, a newly adopted member of the original group goes through the group usage
+collector; in fallback mode, it is reaped without adding its usage, like an
+outside-group orphan in either mode. Dead workers must not keep the process
+group visible as zombies until both escalation waits expire.
 
 If `/proc` belongs to an ancestor PID namespace, the owner translates its
 own child through parentage and `NSpid` before measuring it in that procfs
