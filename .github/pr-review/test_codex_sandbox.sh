@@ -2,10 +2,18 @@
 # Real container boundaries and pinned-CLI tools; no live login/inference.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
+# An override must be built from the current codex-agent Dockerfile.
 image=${CODEX_REVIEW_TEST_IMAGE:-codex-review-test:local}
 if [ -z "${CODEX_REVIEW_TEST_IMAGE:-}" ]; then
   docker build --tag "$image" "$here/../codex-agent"
 fi
+# Verify the cached install and checksum rejection with no registry access.
+# Use a separate test container as root to read npm's build cache.
+# Its scratch mount must allow execution of the reinstalled binary.
+docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --user 0 --tmpfs /tmp:rw,exec,nosuid,nodev,size=1g --env FREN_CODEX_IMAGE_TEST=1 \
+  --volume "$(dirname "$here"):/trusted:ro" \
+  "$image" python3 -I -B -m unittest discover -s /trusted/codex-agent -p test_image.py
 docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
   --tmpfs /tmp:rw,nosuid,nodev,size=256m --volume "$(dirname "$here"):/trusted:ro" \
   "$image" python3 -I -B -m unittest discover -s /trusted/pr-review -p test_codex_cli.py
