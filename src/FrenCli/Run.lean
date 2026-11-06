@@ -981,10 +981,13 @@ partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Sym
   -- The checks set to testing are not asked of the solver (`check::by_testing`).
   let (raw, missing?) ← match spec? with
     | .ok sp => match sp.counterpart? c global body with
-      | some ec =>
-        let core := pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start))
-        let (core, ks) := { core with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
-        pure (← Fren.Core.checkCompLawful (fun k => confirming sp sy ec k log (bk k) (recursiveIn prelude sv.recursiveSyms)) core ks examples (interprets ·.1) (some take), none)
+      | some ec => match pairCore sp ec (toCore c) (c.indexes.map (·.2.2.1.start)) (c.tables.map (·.2.2.1.start)) with
+        | .ok core =>
+          let (core, ks) := { core with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
+          pure (← Fren.Core.checkCompLawful (fun k => confirming sp sy ec k log (bk k) (recursiveIn prelude sv.recursiveSyms)) core ks examples (interprets ·.1) (some take), none)
+        | .error msg =>
+          let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
+          pure (← Fren.Core.checkCompLawful bk core ks examples interprets (some take), some msg)
       | none =>
         let (core, ks) := { toCore c with typesInterpreted }.untested (c.tested.union c.enumerated) kinds
         pure (← Fren.Core.checkCompLawful bk core ks examples interprets (some take),

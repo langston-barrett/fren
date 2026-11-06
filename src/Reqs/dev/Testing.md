@@ -376,8 +376,8 @@ pub mod testing
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--unfoldings] [--spec-timeout SECONDS]`): generates random
-  specs and checks each with both front ends, the `fren` command's pipeline
+  [--unfoldings] [--datatype-elements] [--spec-timeout SECONDS]`): generates
+  random specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
   same errors, warnings and notes at the same lines and columns, the
@@ -444,11 +444,11 @@ pub mod testing
   proves only by [unfolding more than one
   step](../Lang/Recursion.md#unfolding-in-an-induction), up to and past
   the bound, and a claim with no parameter that needs more than one step
-  too. Appended forms cover generic list instances under assumptions and
-  in Boolean blocks, and a binary recursion whose deeper equations bring
-  another function's contract. They draw after the original forms, so each
-  existing spec stays as a prefix. Its generator is split off the seed,
-  and its cut is empty, as `--induction-candidates`'s is.
+  too. It also covers generic list instances under assumptions and in
+  Boolean blocks, and a binary recursion whose deeper equations bring
+  another function's contract. Its generator is split off the seed, so the
+  other modes stay unchanged. Its cut is empty, as
+  `--induction-candidates`'s is.
   A run with `--obligations` also compares the front ends' [obligations
   dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
@@ -2211,6 +2211,20 @@ The Claude token is a repository secret, which anyone who can push a
 branch can read, until it is moved to an environment that only `main`
 can use. Run by hand (`gh workflow run pr-review -f pr=N`), it posts only
 on the pull request that its `post` input names.
+
+The `codex-agent` workflow works small follow-up issues, selected by an
+`agent/<model>-<effort>` label or a manual run on `main`. It opens an
+`agent/*` pull request and answers at most three blocking reviews or
+failed `pre-merge` runs. The coordinator handles conflicts with `main`,
+the small findings of a clean review, and remaining work after that
+limit; the usual checks and review still gate every merge. Codex runs in
+an unprivileged container, isolated from the runner's processes and
+credentials. Its own sign-in is readable in the container, whose network
+access lets programs started by Codex send it elsewhere. Use a dedicated
+API key with an enforced spending limit. A fresh runner validates the
+patch and publishes it after neutralizing metadata from the model. The
+workflow's boundaries, authentication lifecycle and first-run checks are
+described in `.github/codex-agent/README.md`.
 
 `scripts/local-review` gives an author a pre-push check of its branch, by
 OpenAI's Codex CLI, before CI's review (AGENTS.md says when). It composes

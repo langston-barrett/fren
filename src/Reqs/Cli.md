@@ -303,10 +303,11 @@ Fren name contains `#`. A second
 copy of a variable, as used by the [determinism](Check.md#determinism)
 check, is `|y#'|`. A script declares every variable of its
 procedure, but of the spec's abstract types, enumerations, records and
-functions only those that its query mentions, directly or through
-another declaration: the others cannot change its answer, and declaring
-them all is most of the work of a small query. A [newtype](Lang/Items.md#newtypes)
-is erased: it is declared as its underlying type, `Ms(e)` is written as
+functions only those that its query or model observations mention,
+directly or through another declaration: the others cannot change its
+answer, and declaring them all is most of the work of a small query. A
+[newtype](Lang/Items.md#newtypes) is erased: it is declared as its
+underlying type, `Ms(e)` is written as
 `e`, `x.0` as `x`, and its operators as its underlying type's. A `Nat` is declared as an `Int`, and what
 [natural numbers](Lang/Procedures.md#natural-numbers) bring is asserted
 before the query's hypotheses, followed by the comment `; nat`.
