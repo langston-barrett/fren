@@ -7,6 +7,7 @@ import FrenCli.MutateRun
 import FrenCli.Quick
 import FrenCli.Same
 import FrenCli.Smt
+import FrenCli.TheoryDump
 import FrenCore.Literate
 import FrenCore.Obligations
 import FrenCoreCodes
@@ -16,7 +17,7 @@ import FrenCoreCodes
 # Running `fren`
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|obligations|smt] [--timings] [--tests N]
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|theories|obligations|smt] [--timings] [--tests N]
     [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
@@ -50,8 +51,9 @@ applies the edits that the elaborator finds for lints (`State.fixes`).
 Standard output holds only what was asked for: `trace`'s evidence report,
 `mutate`'s kill rates, the solver queries of `check --dump-smt`, as SMT-LIB separated by
 `(reset)`, so that the whole stream can be replayed, the obligations of
-`check --dump=obligations` (`Fren.Core.dump`), and the resolved, typed
-surface of `check --dump=resolved` (`dumpResolved`).
+`check --dump=obligations` (`Fren.Core.dump`), the resolved, typed
+surface of `check --dump=resolved` (`dumpResolved`), and the structural theories
+of `check --dump=theories` (`Fren.Core.dumpTheories`).
 -/
 
 namespace FrenCli
@@ -59,7 +61,7 @@ namespace FrenCli
 open Fren.Core (Msg Paint)
 
 def usage : String :=
-  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|obligations|smt] [--timings] [--tests N]\n              \
+  "usage: fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|theories|obligations|smt] [--timings] [--tests N]\n              \
   [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren trace [--tests GLOB]... [--require LEVEL] [LINT OPTIONS] [--color WHEN] FILE...\n       \
   fren fmt [--check] [--ignore GLOB]... [--color WHEN] FILE...\n       \
@@ -76,6 +78,7 @@ def usage : String :=
   `--dump=smt` (or `--dump-smt`) writes each solver query to stdout, as\n\
   SMT-LIB, and `--dump=obligations` what each check asks; diagnostics go\n\
   to stderr. `--dump=resolved` writes the resolved, typed surface.\n\
+  `--dump=theories` writes the theory structure, with opaque terms.\n\
   `--tests N` and `--seed N` are as for `quickcheck`, for\n\
   checks set to testing.\n\
   `--evidence METHOD` sets every check that `set_option fren.evidence`\n\
@@ -188,6 +191,8 @@ structure Args where
   dumpSmt : Bool := false
   /-- `check --dump=resolved` (`Reqs/Cli#resolved-surface`). -/
   dumpResolved : Bool := false
+  /-- `check --dump=theories` (`Reqs/Cli#theories`). -/
+  dumpTheories : Bool := false
   /-- `check --dump=obligations` (`Reqs/Cli#obligations`). -/
   dumpObligations : Bool := false
   /-- `check --timings` (`Reqs/Cli#timings`). -/
@@ -249,7 +254,7 @@ structure Args where
 def commands : Array String := #["check", "eval", "fix", "fmt", "mutate", "quickcheck", "trace"]
 
 def options : Array String :=
-  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--dump=resolved", "--dump=obligations", "--dump=smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
+  #["--timeout", "--resource-limit", "--examples", "--jobs", "--dump-smt", "--dump=resolved", "--dump=theories", "--dump=obligations", "--dump=smt", "--timings", "--query-cache", "--verify-query-cache", "--evidence", "--check", "--ignore", "--tests", "--require", "--color", "--explain", "--help", "--version", "-A", "-W", "-D", "-F",
     "--allow", "--warn", "--deny", "--forbid", "--only", "--skip", "--fmt", "--proc", "--set", "--seed", "--tests",
     "--by", "--mutant", "--sample", "--list", "--diff", "--shard", "--solver-stats"]
 
@@ -386,6 +391,9 @@ where
     | "--dump=resolved" :: rest, a =>
       if a.command == .check then go rest { a with dumpResolved := true }
       else only "--dump=resolved" "check"
+    | "--dump=theories" :: rest, a =>
+      if a.command == .check then go rest { a with dumpTheories := true }
+      else only "--dump=theories" "check"
     | "--dump=obligations" :: rest, a =>
       if a.command == .check then go rest { a with dumpObligations := true }
       else only "--dump=obligations" "check"
@@ -1181,6 +1189,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     | return exitCode false none
   if let some annotations := st.resolved? then
     IO.print (FrenCli.dumpResolved files annotations)
+  if args.dumpTheories then IO.print (Fren.Core.dumpTheories (FrenCli.theoryDiagram st))
   let mut all := #[]
   -- Warnings from lints, already printed.
   let mut shown := st.diags.map (·.msg)

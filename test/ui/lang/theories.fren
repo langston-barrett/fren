@@ -1,0 +1,33 @@
+-- The structural theory dump shares this view with the Lean front end.
+-- The theoriesDump job compares both diagrams independently of diagnostics.
+set_option fren.lint.undecidable "allow"
+
+pub mod theories
+
+pub struct Pair<A, B> { first: A, second: B }
+
+pub fn first<A, B>(p: Pair<A, B>): A := p.first
+
+pub fn id<T>(x: T): T := x
+
+-- Both value and function parameters contribute datatype instances.
+pub fn holds?<T>(x: Pair<T, T>, p: fn(Pair<T, T>) -> Bool) := p(x)
+
+pub fn choose(x: Int): (r: Int) { ensure reflexive: r = x }
+
+pub proc echo(x: Int): (det y: Int) { out y := id(x) }
+
+pub fn bounded?(x: Int) := and { positive: x > 0, small: x < 10 }
+
+pub trait Sized {
+    fn size(Self): Int
+
+    law nonnegative(s: Self): size(s) >= 0
+}
+
+proc c(x: Int): (det y: Int) {
+    require valid: bounded?(x)
+    call inner := echo(x)
+    out y := first(Pair { first := inner.y, second := true })
+    expect same: y = x
+}
