@@ -25,7 +25,7 @@ theorems are not inferred. A missing path is an audit gap, not by itself a
 behavior bug.
 -/
 
-open Lean Compiler.LCNF
+open Lean Meta Compiler.LCNF
 
 namespace FrenTest.ImplPath
 
@@ -198,34 +198,38 @@ def showPath (env : Environment) (path : Array Name) : String := Id.run do
     | none => text := text ++ s!" -> {after}"
   return text
 
-/-- Functions explicitly applied in a mapped term. Adapters in `Impls`
-and generated spec functions do not count as production bindings. Unfold
-adapters once along each path, so direct argument discards do not count.
-Stop at the first production function on each expression branch. Structure
-projections, recursors, matchers and instance dictionaries are representation
-machinery, not the producer of a mapped result. -/
-partial def targets (env : Environment) (e : Expr) (unfolded : NameSet := {}) : NameSet := Id.run do
+/-- Functions explicitly applied in a mapped runtime term. Erased proofs,
+types and type formers are excluded at every step, including after adapter
+unfolding. Adapters in `Impls` and generated spec functions do not count as
+production bindings. Unfold adapters once along each path, so direct
+argument discards do not count. Stop at the first production function on
+each expression branch. Structure projections, recursors, matchers and
+instance dictionaries are representation machinery, not the producer of a
+mapped result. -/
+partial def targets (env : Environment) (e : Expr) (unfolded : NameSet := {}) : MetaM NameSet := do
+  if (← isProof e) || (← isTypeFormer e) then return {}
   match e with
   | .app .. | .const .. =>
     let reduced := e.headBeta
-    if reduced != e then return targets env reduced unfolded
+    if reduced != e then return ← targets env reduced unfolded
     let fn := e.getAppFn
-    if let .const n _ := fn then
+    if let .const n us := fn then
       if production n && !adapter n && !env.isProjectionFn n && !isAuxRecursor env n &&
           !Meta.isMatcherCore env n && !Meta.isInstanceCore env n then
         if let some ci := env.find? n then
-          if !(ci.type.getForallBody.isSort) then
-            if ci matches .defnInfo _ | .opaqueInfo _ then return ({} : NameSet).insert n
+          if ci matches .defnInfo _ | .opaqueInfo _ then return ({} : NameSet).insert n
       let user := (privateToUserName? n).getD n
       if (`Fren.Impls).isPrefixOf user && !unfolded.contains n then
-        if let some value := (env.find? n).bind (·.value?) then
-          return targets env (value.beta e.getAppArgs) (unfolded.insert n)
-    let mut out : NameSet := if fn.isConst then {} else targets env fn unfolded
-    for arg in e.getAppArgs do out := out ++ targets env arg unfolded
+        if let some ci := env.find? n then
+          if ci.value?.isSome then
+            let value ← Core.instantiateValueLevelParams ci us
+            return ← targets env (value.beta e.getAppArgs) (unfolded.insert n)
+    let mut out ← if fn.isConst then pure {} else targets env fn unfolded
+    for arg in e.getAppArgs do out := out ++ (← targets env arg unfolded)
     return out
-  | .lam _ _ b _ => return targets env b unfolded
-  | .letE _ _ v b _ => return targets env (b.instantiate1 v) unfolded
-  | .proj _ _ b | .mdata _ b => return targets env b unfolded
+  | .lam .. => lambdaTelescope e fun _ body => targets env body unfolded
+  | .letE _ _ v b _ => targets env (b.instantiate1 v) unfolded
+  | .proj _ _ b | .mdata _ b => targets env b unfolded
   | _ => return {}
 
 structure Binding where
@@ -239,27 +243,32 @@ structure Binding where
 source text. `assumes` receives the mapped public outputs as well as the
 inputs, with private variables defaulted (`Fren.mkObligation`). Use the
 last matching top-level domain: an impl's own proof binders may mention the
-same `assumes` function. -/
-def bindings (env : Environment) : Except String (Array Binding) := do
+same `assumes` function. Open the binders so erasure checks can infer the
+types of dependent mapped terms in their local context. -/
+def bindings (env : Environment) : MetaM (Array Binding) := do
   let s := Fren.frenExt.getState env
   let mut out := #[]
   for (comp, impls) in s.impls.toArray do
-    let some c := s.comps.get? comp | throw s!"missing component {comp}"
+    let some c := s.comps.get? comp | throwError "missing component {comp}"
     for impl in impls do
-      let some ci := env.find? impl | throw s!"missing impl {impl}"
-      let mut type := ci.type
-      let mut mapping? := none
-      while let .forallE _ domain body _ := type do
-        if domain.isAppOfArity (c.decl ++ `assumes) (c.uses.size + c.vars.size) then
-          mapping? := some domain
-        type := body
-      let some app := mapping? | throw s!"{impl}: cannot recover output mappings"
-      let args := app.getAppArgs.extract c.uses.size (c.uses.size + c.vars.size)
-      if !c.vars.any (fun v => v.role == .output && v.isPub) then
-        out := out.push { impl, comp, output := .anonymous, functions := #[] }
-      for v in c.vars, arg in args do
-        if v.role == .output && v.isPub then
-          out := out.push { impl, comp, output := v.name, functions := (targets env arg).toArray.qsort Name.quickLt }
+      let some ci := env.find? impl | throwError "missing impl {impl}"
+      let rows ← forallTelescope ci.type fun xs _ => do
+        let mut mapping? := none
+        for x in xs do
+          let domain ← inferType x
+          if domain.isAppOfArity (c.decl ++ `assumes) (c.uses.size + c.vars.size) then
+            mapping? := some domain
+        let some app := mapping? | throwError "{impl}: cannot recover output mappings"
+        let args := app.getAppArgs.extract c.uses.size (c.uses.size + c.vars.size)
+        let mut rows : Array Binding := #[]
+        if !c.vars.any (fun v => v.role == .output && v.isPub) then
+          rows := rows.push { impl, comp, output := .anonymous, functions := #[] }
+        for v in c.vars, arg in args do
+          if v.role == .output && v.isPub then
+            let functions := (← targets env arg).toArray.qsort Name.quickLt
+            rows := rows.push { impl, comp, output := v.name, functions }
+        return rows
+      out := out ++ rows
   return out.qsort fun a b => s!"{a.impl} {a.output}" < s!"{b.impl} {b.output}"
 
 /-- Stable keys for existing gaps. A new disconnected mapping fails even
@@ -277,8 +286,10 @@ unsafe def check : IO (Array String) := do
   enableInitializersExecution
   initSearchPath (← findSysroot)
   let env ← importModules #[{ module := `Impls }, { module := `FrenCli.Main }] {} (loadExts := true)
-  let bs ← IO.ofExcept ((bindings env).mapError IO.userError)
-  let decls ← (sourceDeclarations (declarations env)).toIO'
+  let (bs, decls) ← (do
+    let bs ← MetaM.run' (bindings env)
+    let decls ← sourceDeclarations (declarations env)
+    pure (bs, decls) : CoreM _).toIO'
     { fileName := "implPaths", fileMap := FileMap.ofString ""
       options := maxRecDepth.set (maxHeartbeats.set {} 0) 8192 } { env }
   let g := graph env decls

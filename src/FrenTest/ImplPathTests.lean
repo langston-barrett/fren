@@ -47,13 +47,28 @@ def fast (b : Bool) : Bool := bound b
 
 def replaced (b : Bool) : Bool := fast b
 
+structure ProofBox where
+  value : Bool
+  witness : bound false = true
+
+structure Phantom (p : Bool → Prop) where
+  value : Bool
+
+def predicateFrom (b : Bool) : Bool → Prop := fun x => b = x
+
 end Fren.Core.ImplPathFixture
 
 namespace Fren.Impls.ImplPathFixture
 
+universe u
+
 def discard (_ : Bool) : Bool := true
 
 def project (b : Fren.Core.ImplPathFixture.Box) : Bool := b.value
+
+def unwrapSubtype {p : Bool → Prop} (x : Subtype p) : Bool := x.val
+
+def identityValue {α : Type u} (x : α) : α := x
 
 def readTag : Fren.Core.ImplPathFixture.Tag → Bool
   | .yes => true
@@ -115,6 +130,59 @@ impl matched: rule for (b : Bool) {
   intro b _
   cases b <;> decide
 
+-- Erased predicates, type formers and proof fields must not supply a
+-- producer for a literal runtime output, even through an unfolded adapter.
+impl erased_subtype: rule {
+  b? := false,
+  accepted? := (⟨true, rfl⟩ : { b : Bool // Fren.Core.ImplPathFixture.bound false = b }).val,
+}
+
+impl erased_adapter: rule {
+  b? := false,
+  accepted? := Fren.Impls.ImplPathFixture.unwrapSubtype
+    (⟨true, rfl⟩ : { b : Bool // Fren.Core.ImplPathFixture.bound false = b }),
+}
+
+impl erased_proof: rule {
+  b? := false,
+  accepted? := ({ value := true, witness := Eq.refl (Fren.Core.ImplPathFixture.bound false) } :
+    Fren.Core.ImplPathFixture.ProofBox).value,
+}
+
+impl erased_type_former: rule {
+  b? := false,
+  accepted? := (⟨true⟩ : Fren.Core.ImplPathFixture.Phantom
+    (Fren.Core.ImplPathFixture.predicateFrom (Fren.Core.ImplPathFixture.bound false))).value,
+}
+
+impl erased_polymorphic_adapter: rule {
+  b? := false,
+  accepted? := (Fren.Impls.ImplPathFixture.identityValue
+    (⟨true, rfl⟩ : { b : Bool // Fren.Core.ImplPathFixture.bound false = b })).val,
+}
+
+impl dependent_runtime: rule for (b : Bool) {
+  b? := b,
+  accepted? := (⟨Fren.Core.ImplPathFixture.bound b, rfl⟩ :
+    { value : Bool // Fren.Core.ImplPathFixture.bound b = value }).val,
+} by
+  intro b _
+  cases b <;> decide
+
+impl polymorphic_runtime: rule for (b : Bool) {
+  b? := b,
+  accepted? := Fren.Impls.ImplPathFixture.identityValue (Fren.Core.ImplPathFixture.bound b),
+} by
+  intro b _
+  cases b <;> decide
+
+impl lambda_runtime: rule for (b : Bool) {
+  b? := b,
+  accepted? := [b].all fun x => Fren.Core.ImplPathFixture.bound x,
+} by
+  intro b _
+  cases b <;> decide
+
 open Lean FrenTest.ImplPath
 
 run_elab do
@@ -133,9 +201,7 @@ run_elab do
       throwError "implPaths: accepted discarded or proof-only dependency from {n}"
   unless (paths g #[`Fren.Core.ImplPathFixture.replaced]).contains `Fren.Core.ImplPathFixture.slow do
     throwError "implPaths: ignored a proved compiler replacement"
-  let bs ← match bindings env with
-    | .ok bs => pure bs
-    | .error e => throwError "{e}"
+  let bs ← bindings env
   let some actual := bs.find? (·.impl == `FrenTest.ImplPathTests.actual)
     | throwError "implPaths: did not extract the actual impl"
   unless actual.output == `accepted? && actual.functions == #[target] do
@@ -158,5 +224,18 @@ run_elab do
       | throwError "implPaths: missing mapping {bindingName}"
     unless b.functions == #[functionName] do
       throwError "implPaths: treated representation machinery as the producer in {bindingName}"
+  for bindingName in #[`FrenTest.ImplPathTests.erased_subtype, `FrenTest.ImplPathTests.erased_adapter,
+      `FrenTest.ImplPathTests.erased_proof, `FrenTest.ImplPathTests.erased_type_former,
+      `FrenTest.ImplPathTests.erased_polymorphic_adapter] do
+    let some b := bs.find? (·.impl == bindingName)
+      | throwError "implPaths: missing erased-argument mapping {bindingName}"
+    unless b.functions.isEmpty do
+      throwError "implPaths: counted an erased argument in {bindingName}: {b.functions}"
+  for bindingName in #[`FrenTest.ImplPathTests.dependent_runtime,
+      `FrenTest.ImplPathTests.polymorphic_runtime, `FrenTest.ImplPathTests.lambda_runtime] do
+    let some b := bs.find? (·.impl == bindingName)
+      | throwError "implPaths: missing runtime mapping {bindingName}"
+    unless b.functions == #[target] do
+      throwError "implPaths: erased a runtime producer in {bindingName}"
 
 end FrenTest.ImplPathTests
