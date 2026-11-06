@@ -1,0 +1,38 @@
+{
+  "models": [
+    {
+      "slug": "gpt-6.1-sol",
+      "display_name": "GPT-6.1-Sol",
+      "description": "Read-only pull request reviewer",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        {
+          "effort": "medium",
+          "description": "Light checks"
+        },
+        {
+          "effort": "high",
+          "description": "Full reviews"
+        }
+      ],
+      "shell_type": "disabled",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 1,
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "apply_patch_tool_type": null,
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "context_window": 272000,
+      "experimental_supported_tools": [],
+      "tool_mode": "direct",
+      "base_instructions": "You are a pull request reviewer. Follow the supplied review brief. Read, Grep and Glob inspect the checkout; Write can only write review.md. Do not delegate or execute code.",
+      "use_responses_lite": true,
+      "node_repl_disabled": true,
+      "multi_agent_version": null
+    }
+  ]
+}
