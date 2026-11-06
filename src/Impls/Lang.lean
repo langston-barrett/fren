@@ -1538,18 +1538,17 @@ impl in_core: lang::in_core for (c : Fren.Core.Construct) (a m i g f r l : Bool)
   intro c a m i g f r l _
   cases c <;> simp [fren_spec, toConstruct, Fren.Core.inCore]
 
--- Each entry stands for one distinct value in the complete universe;
--- the lowering choice depends on the list's length, not on its entries.
-impl set_card_expansion: lang::set_card_expansion for (vs : Option (Array Int)) {
-  values := vs.map (fun xs => Fren.Seq.ofList xs.toList),
-  expanded? := (Fren.Core.setCardExpansion vs).isSome,
+-- The count is the shared type counter's result, before either reader
+-- constructs its terms. A relation's count is the product of its sides.
+impl set_card_expansion: lang::set_card_expansion for (c : Option Nat) {
+  count := c.map Int.ofNat,
+  expanded? := (Fren.Core.setCardExpansion c).isSome,
 } by
-  intro vs _
-  cases vs with
+  intro c _
+  cases c with
   | none => simp [fren_spec, Fren.Core.setCardExpansion]
-  | some xs =>
-    simp [fren_spec, Fren.Core.setCardExpansion, Option.filter, Fren.Core.maxInstances,
-      Fren.Seq.len, Fren.Seq.ofList, Fren.Seq.toList] <;> omega
+  | some n =>
+    simp [fren_spec, Fren.Core.setCardExpansion, Option.filter, Fren.Core.maxInstances] <;> omega
 
 /-! ## Lexical structure -/
 

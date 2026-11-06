@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Generics
 import FrenCore.Quantifier
 -- keep-sorted end
 
@@ -9,10 +10,25 @@ the same bound as a finite quantifier (`lang::set_card_expansion`). -/
 
 namespace Fren.Core
 
-/-- The complete list of elements to count, if it fits the expansion
-bound; `none` retains native set cardinality. -/
-def setCardExpansion (values? : Option (Array α)) : Option (Array α) :=
-  values?.filter fun vs => vs.size ≤ maxInstances
+/-- The complete element count of a set or relation, using the same type
+count as quantifiers (`lang::instance_values`). A relation counts pairs. -/
+def setCardCount (count : Ty → Option Nat) : Ty → Option Nat
+  | .set a => count a
+  | .rel a b => do return (← count a) * (← count b)
+  | _ => none
+
+/-- Expand exactly the listed universes within the quantifier bound
+(`lang::set_card_expansion`), before either reader builds its terms. -/
+def setCardExpansion (count : Option Nat) : Option Nat :=
+  count.filter (· ≤ maxInstances)
+
+/-- A reader must build the complete Core count. A missing or short list
+is an internal error, never a reason to fall back to native cardinality. -/
+def checkedSetCardValues (expected : Nat) (values? : Option (Array α)) : Except String (Array α) :=
+  match values? with
+  | some vs => if vs.size == expected then .ok vs else
+      .error s!"set cardinality expected {expected} values, but built {vs.size}"
+  | none => .error s!"set cardinality expected {expected} values, but could not build them"
 
 /-- Sum the indicators of membership in the listed universe. The front
 ends supply only their representation's constructors. -/

@@ -177,8 +177,9 @@ arithmetic*: membership, `union`, `inter`, `minus`, `subset`, `=`, `!=`,
 literals, and `card` in linear arithmetic. It is decidable, and cvc5's
 solver for sets with cardinality is a decision procedure for it.
 
-For a set whose element type can be listed in at most 256 values, Fren
-lowers `card` to the sum of `if v in s then 1 else 0` over that complete
+For a set whose element type has a listed count of at most
+[`MAX_INSTANCES`](Quantifiers.md#number-of-instances) values, Fren lowers
+`card` to the sum of `if v in s then 1 else 0` over that complete
 list. For a relation it lists the pairs, subject to the same bound. This
 avoids a failure of cvc5's native cardinality solver on finite element
 sorts (#820): it can exhaust the sort while constructing a model, or
@@ -186,10 +187,15 @@ return a model that Fren's confirmation refutes. The classification of
 these operations is unchanged; types that cannot be listed within the
 bound retain native cardinality.
 
-`lang::set_card_expansion` states the lowering choice. `values` is the
-complete list of the element type's values, represented by their syntax
-indices, or `None` when the type cannot be listed. The choice reads the
-list itself, including its length.
+`lang::set_card_expansion` states the lowering choice over the count
+from `lang::instance_values` for a type listed by `lang::quantified_type`,
+or `None` for an unlisted type. A relation uses the product of its element
+counts. Both readers decide from this count before constructing the
+values, and report an internal error if the number constructed differs
+from it. The enumeration contains every value exactly once: for any set
+`s`, the sum of its membership indicators over that universe equals
+`s.card`.
+The general identity is proved in `FrenTest.SetCard.sum_members_card`.
 
 | Construct | In the core when |
 |---|---|
@@ -206,6 +212,13 @@ core. A relation's sort is infinite when either of its element types is.
 
 > **Note:** An abstract type may have a single value, so whether its sets
 > should count as infinite here is open (#437).
+>
+> Native cardinality also has a known implementation limitation (#820):
+> over a finite element type beyond `MAX_INSTANCES`, cvc5 may return a
+> model that confirmation refutes. The decidability classification above
+> is unchanged, but that fallback does not always deliver a decision.
+> Restricting the core to finite cardinalities that can be expanded is
+> a separate boundary change.
 
 ## Relations
 
@@ -322,11 +335,20 @@ decided from the syntax, without the solver:
 ```fren
 pub mod lang
 
-pub proc set_card_expansion(values: Option<Seq<Int>>): (det expanded?) {
-    ensure rule: expanded? iff match values {
-        Option::Some(vs) => vs.len <= 256,
+pub proc set_card_expansion(count: Option<Int>): (det expanded?) {
+    require nonnegative: match count {
+        Option::Some(n) => n >= 0,
+        Option::None => true,
+    }
+
+    ensure rule: expanded? iff match count {
+        Option::Some(n) => n <= MAX_INSTANCES,
         Option::None => false,
     }
+
+    expect at_limit: when count = Option::Some(MAX_INSTANCES), expanded?
+    expect beyond_limit: when count = Option::Some(MAX_INSTANCES + 1), not expanded?
+    expect unlisted: when count = Option::None, not expanded?
 }
 
 -- `StringCompare` is `=`, `!=` and the orderings on strings; `StringAtom`

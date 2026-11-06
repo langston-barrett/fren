@@ -955,18 +955,24 @@ def mismatch (e : Expr) (expected found : Ty) (why : Option String := none) : M 
 cardinality, which may fail or return a refuted model (#820). -/
 def setCardSmt (recv : String) (t : Ty) : M String := do
   let s ← get
+  let some n := Fren.Core.setCardExpansion (Fren.Core.setCardCount s.valueCount t)
+    | return s!"(set.card {recv})"
   let values? := match t with
     | .set a => (s.values Fren.Core.maxInstances a).map (·.map (s!"(tuple {·})"))
     | .rel a b => do
       let xs ← s.values Fren.Core.maxInstances a
       let ys ← s.values Fren.Core.maxInstances b
-      if xs.size * ys.size > Fren.Core.maxInstances then none else
-        some (xs.flatMap fun x => ys.map fun y => s!"(tuple {x} {y})")
+      some (xs.flatMap fun x => ys.map fun y => s!"(tuple {x} {y})")
     | _ => none
-  let some vs := Fren.Core.setCardExpansion values? | return s!"(set.card {recv})"
-  Fren.Core.sumSetMembersM vs "0"
-    (fun v => pure s!"(ite (set.member {v} {recv}) 1 0)")
+  let vs ← match Fren.Core.checkedSetCardValues n values? with
+    | .ok vs => pure vs
+    | .error msg => internal default msg
+  -- No Fren variable has `@`. Nested bindings are scoped to their sum.
+  let name := quote "card@receiver"
+  let body ← Fren.Core.sumSetMembersM vs "0"
+    (fun v => pure s!"(ite (set.member {v} {name}) 1 0)")
     (fun a b => pure s!"(+ {a} {b})")
+  return s!"(let (({name} {recv})) {body})"
 
 /-- Calls the method `m` of the value `recv` of type `t`, with the
 arguments `args`, each with its type and span (`lang::method_type`). -/

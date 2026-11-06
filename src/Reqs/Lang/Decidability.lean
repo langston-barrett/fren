@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Reqs.Lang.Overview
+import Reqs.Lang.Quantifiers
 -- keep-sorted end
 open Fren.Lang
 

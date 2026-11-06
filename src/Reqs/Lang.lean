@@ -1,6 +1,6 @@
 -- The chapters share the Fren module `lang`; Lean builds their independent
 -- requirements in parallel, while this import preserves the complete API.
--- Keep the manual's order for the shared environment extension.
+-- Keep dependency order for the shared environment extension.
 import Reqs.Lang.Overview
 import Reqs.Lang.Lexical
 import Reqs.Lang.Types
@@ -14,10 +14,10 @@ import Reqs.Lang.Prelude
 import Reqs.Lang.Scope
 import Reqs.Lang.Procedures
 import Reqs.Lang.Global
-import Reqs.Lang.Decidability
 import Reqs.Lang.Patterns
 import Reqs.Lang.Let
 import Reqs.Lang.Quantifiers
+import Reqs.Lang.Decidability
 import Reqs.Lang.ElementQuantifiers
 import Reqs.Lang.Semantics
 import Reqs.Lang.EvaluationRules

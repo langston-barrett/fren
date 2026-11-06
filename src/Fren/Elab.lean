@@ -928,36 +928,36 @@ def ctorApp (c : Name) (targs : Array Expr) (args : Array Term) (ref : Syntax :=
   if targs.isEmpty then return ← `($f $args*)
   `(@$f $(targs.map typeSyntax)* $args*)
 
-/-- Every value of a finite type, as terms, if there are at most `cap` of
-them: a relation's `domain` and `range` are its image under them, which
-the solver decides without a projection (`Reqs/Cli`). -/
-partial def valuesOf? (ty : Expr) (cap : Nat := 64) : TermElabM (Option (Array Term)) := do
-  if ty.isConstOf ``Bool then return some #[← `(true), ← `(false)]
+/-- Every value of a finite type, as closed expressions, if there are at
+most `cap` of them. Shared by relation projections, quantifier instances
+and set cardinality translation; pairs use their Cartesian product. -/
+partial def valuesOf? (ty : Expr) (cap : Nat := 64) : MetaM (Option (Array Expr)) := do
+  if ty.isConstOf ``Bool then
+    return if cap < 2 then none else some #[Lean.mkConst ``Bool.true, Lean.mkConst ``Bool.false]
   let s ← getState
-  -- An instance's, with its arguments for the type parameters
-  -- (`lang::instantiation`), given to each constructor explicitly.
   let targs := ty.getAppArgs
   let ctors : Array (Name × Array Expr) ←
-    if let some e := s.enumOf? ty then
+    if ty.isAppOfArity ``Prod 2 then pure #[(``Prod.mk, targs)]
+    else if let some e := s.enumOf? ty then
       if (exprFacts s ty).unbounded then return none
       let ps := e.payloadsAt targs
       pure (e.variants.mapIdx fun i _ => (e.ctor i, ps[i]?.getD #[]))
     else if let some r := s.recordOf? ty then
       if (exprFacts s ty).unbounded then return none
       pure #[(r.ctor, (r.fieldsAt targs).map (·.2))]
-    -- A newtype's values are its underlying type's, as the `fren` command
-    -- has them.
     else if let some n := ty.constName?.bind s.newtypeOfDecl? then
       pure #[(n.ctor, #[n.under])]
     else return none
   let mut out := #[]
   for (c, ts) in ctors do
-    let mut combos : Array (Array Term) := #[#[]]
+    let mut combos : Array (Array Expr) := #[#[]]
     for t in ts do
       let some vs ← valuesOf? t cap | return none
+      if combos.size * vs.size > cap then return none
       combos := combos.flatMap fun pre => vs.map pre.push
-      if combos.size > cap then return none
-    for args in combos do out := out.push (← ctorApp c targs args)
+    let info ← getConstInfo c
+    let ctor := Lean.mkConst c (info.levelParams.map fun _ => Level.zero)
+    out := out ++ combos.map fun args => mkAppN ctor (targs ++ args)
     if out.size > cap then return none
   return some out
 
@@ -1062,7 +1062,7 @@ def callMethod (ref : Syntax) (t : Term) (ty : Expr) (m : String) (args : Array 
     -- The image of the inverse under every value of `other`, if it is finite.
     let project (inv : Term) (other : Expr) (dflt : Term) : TermElabM Term := do
       let some vs ← valuesOf? other | return dflt
-      `(Fren.FinSet.image $inv ($(← finSetLit vs) : Fren.FinSet $(typeSyntax other)))
+      `(Fren.FinSet.image $inv ($(← finSetLit (← vs.mapM exprToSyntax)) : Fren.FinSet $(typeSyntax other)))
     match method with
       | .card => return (← `(Fren.FinSet.card $t), Lean.mkConst ``Int)
       | .inverse => return (← `(Fren.FinSet.inverse $t), rel b a)
@@ -5726,7 +5726,7 @@ def isForall (e : Syntax) : Bool :=
 (`lang::quantified_type`), counted without listing them. An unbounded
 enumeration or record is recursive or has a part that a quantifier does
 not range over, so it is not looked into, and the recursion ends. -/
-def valueCount? (ty : Expr) : TermElabM (Option Nat) := do
+def valueCount? (ty : Expr) : MetaM (Option Nat) := do
   -- As the `fren` command counts them, by an instance's arguments too
   -- (`lang::instance_values`).
   let s ← getState
@@ -5768,7 +5768,7 @@ def binderValues (ty : Expr) (pt : Core.PTy) : TermElabM (Option (Nat × Array T
   unless (factsOf st pt).listed do return none
   if (pt.cons st.shapeOf).isNone then
     let some n ← valueCount? ty | return none
-    return some (n, (← valuesOf? ty Core.maxInstances).getD #[])
+    return some (n, ← ((← valuesOf? ty Core.maxInstances).getD #[]).mapM exprToSyntax)
   let some n := pt.count? st.shapeOf | return none
   if n > Core.maxInstances then return some (n, #[])
   let vs := (pt.values st.shapeOf Core.maxInstances).getD #[]
