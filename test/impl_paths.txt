@@ -241,7 +241,7 @@ bypassed: Fren.Impls.Enumeration.fair_order first_level Fren.Core.Enumeration.Sp
 bypassed: Fren.Impls.Enumeration.fair_order second_level Fren.Core.Enumeration.Space.levelOf
 bypassed: Fren.Impls.Enumeration.method_of method Fren.Core.Enumeration.methodOf
 bypassed: Fren.Impls.Enumeration.methods_contradict contradiction? Fren.Core.methodsContradict
-bypassed: Fren.Impls.Enumeration.quantified_truth truth Fren.Core.Enumeration.quantifiedTruth
+cli only: Fren.Impls.Enumeration.quantified_truth truth Fren.Core.Enumeration.quantifiedTruth
 bypassed: Fren.Impls.GroundClosure.ground_activation_step ready Fren.Core.GroundClosure.enabled
 bypassed: Fren.Impls.GroundClosure.ground_activation_step remaining Fren.Core.GroundClosure.enabled
 bypassed: Fren.Impls.GroundClosure.ground_activation_step result Fren.Core.GroundClosure.enabled

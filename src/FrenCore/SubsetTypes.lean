@@ -565,7 +565,17 @@ def mergeInterval (acc : List (Int × Int)) : Option Int × Option Int → List 
 
 /-- The bounded ranges of `ivs`, merged into intervals in increasing order
 that neither overlap nor touch. -/
-def mergeIntervals (ivs : List (Option Int × Option Int)) : List (Int × Int) := ivs.foldl mergeInterval []
+def mergeIntervals (ivs : List (Option Int × Option Int)) : List (Int × Int) :=
+  -- Sort once and merge at the head of a reversed accumulator. Inserting
+  -- every interval into a sorted list recursed through all preceding gaps.
+  let sorted := (ivs.filterMap fun
+    | (some lo, some hi) => if lo ≤ hi then some (lo, hi) else none
+    | _ => none).mergeSort (fun a b => a.1 ≤ b.1)
+  let merged := sorted.foldl (init := []) fun acc (lo, hi) =>
+    match acc with
+    | (l, h) :: rest => if lo ≤ h + 1 then (l, max h hi) :: rest else (lo, hi) :: acc
+    | [] => [(lo, hi)]
+  merged.reverse
 
 /-- How many integers the intervals `ivs` have together, if they do not
 overlap. -/
@@ -584,26 +594,22 @@ partial def Pat.ranges? : Pat → Option (List (Option Int × Option Int))
   | .or alts => do return (← alts.toList.mapM Pat.ranges?).flatten
   | _ => none
 
-/-- The merged finite intervals matched by `p`, clipped below `low`
-before their width is counted or their values are constructed
-(`lang::pattern_finite`, `lang::pattern_count`). -/
-def Pat.intIntervals? (p : Pat) (low : Option Int := none) : Option (List (Int × Int)) := do
-  let ivs := (← p.ranges?).map fun (lo, hi) =>
+/-- The ranges matched by `p`, clipped below `low` before counting or
+constructing their values. -/
+def Pat.clippedRanges? (p : Pat) (low : Option Int) : Option (List (Option Int × Option Int)) := do
+  return (← p.ranges?).map fun (lo, hi) =>
     match low, lo with
     | some l, some lo => (some (max lo l), hi)
     | some l, none => (some l, hi)
     | none, lo => (lo, hi)
+
+/-- The merged finite intervals matched by `p`, clipped below `low`
+before their width is counted or their values are constructed
+(`lang::pattern_finite`, `lang::pattern_count`). -/
+def Pat.intIntervals? (p : Pat) (low : Option Int := none) : Option (List (Int × Int)) := do
+  let ivs ← p.clippedRanges? low
   unless intervalsFinite ivs do failure
-  -- Sort once and merge at the head of a reversed accumulator. Inserting
-  -- every interval into a sorted list recursed through all preceding gaps.
-  let sorted := (ivs.filterMap fun
-    | (some lo, some hi) => if lo ≤ hi then some (lo, hi) else none
-    | _ => none).mergeSort (fun a b => a.1 ≤ b.1)
-  let merged := sorted.foldl (init := []) fun acc (lo, hi) =>
-    match acc with
-    | (l, h) :: rest => if lo ≤ h + 1 then (l, max h hi) :: rest else (lo, hi) :: acc
-    | [] => [(lo, hi)]
-  return merged.reverse
+  return mergeIntervals ivs
 
 /-- Count and construct an integer domain from the same merged, clipped
 intervals. Gaps and integers below `low` are never materialized. -/
@@ -614,8 +620,8 @@ def Pat.intValuesWithin? (p : Pat) (cap : Nat) (low : Option Int := none) : Opti
 
 /-- How many integers at least `low` the pattern matches, computed from
 the same intervals that bounded domain construction uses. -/
-def Pat.intCount? (p : Pat) (low : Option Int := none) : Option Nat :=
-  (p.intIntervals? low).map totalWidth
+def Pat.intCount? (p : Pat) (low : Option Int := none) : Option Nat := do
+  intervalsCount? (← p.clippedRanges? low)
 
 /-- The bounds of the ranges and the integers of the pattern `p`. -/
 partial def Pat.bounds : Pat → Array Int
