@@ -24,6 +24,12 @@ open Lean
 
 namespace Fren.Core
 
+/-- A split predicate member is reported at its definition. A whole
+predicate, including a cover goal, stays at its written check's label
+(`check::predicate_check_site`). Leading wrappers do not change the site. -/
+def predicateCheckAtMember (memberPath : String) (cover : Bool) : Bool :=
+  !cover && memberPath != ""
+
 inductive CheckKind where
   | realizable
   | inst
