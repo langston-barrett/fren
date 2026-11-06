@@ -4,6 +4,7 @@ import Fren.Elab
 import Fren.Enumerate
 import Fren.Prelude
 import Fren.RecursiveProof
+import Fren.TheoryDump
 -- keep-sorted end
 
 /-!
@@ -31,7 +32,8 @@ end Lang
 register_option fren.dump : String := {
   defValue := ""
   descr := "with \"obligations\", `#fren_check` logs what each check asks, as `fren check --dump=obligations` prints it \
-    (`Reqs/Cli#obligations`)"
+    (`Reqs/Cli#obligations`); with \"theories\", it logs the structural theories \
+    (`Reqs/Cli#theories`). Separate modes with a comma to log both"
 }
 
 register_option fren.runChecks : Bool := {
@@ -425,12 +427,16 @@ where
   -- What each check asks, with `fren.dump` set to `"obligations"`, of the
   -- items that this run reports (`Core.dump`).
   let dump := fren.dump.get (← getOptions)
-  let dumping := dump == "obligations"
+  let modes := dump.splitOn ","
+  let known := modes.all fun m => m == "obligations" || m == "theories"
+  let dumping := known && modes.contains "obligations"
+  if known && modes.contains "theories" then
+    logInfo (Core.dumpTheories (theoryDiagram s))
   -- An unknown value, which `fren check` rejects as an unknown option
   -- before it checks anything, is a warning here, and the checks run
   -- without a dump (`Reqs/Cli#obligations`).
-  unless dump.isEmpty || dumping do
-    logWarning m!"`fren.dump` is `\"{dump}\"`, which is not a dump that `#fren_check` prints: only `\"obligations\"` is; checking without a dump"
+  unless dump.isEmpty || known do
+    logWarning m!"`fren.dump` is `\"{dump}\"`, which is not a dump that `#fren_check` prints: use `\"theories\"`, `\"obligations\"` or `\"theories,obligations\"`; checking without a dump"
   let obligations ← items.mapIdxM fun k _ => if dumping && k ≥ silent then some <$> IO.mkRef #[] else pure none
   let tasks ← checkItems items sites cancel obligations
   -- The evidence of the contracts of the functions among them first, though

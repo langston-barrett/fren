@@ -171,7 +171,7 @@ jobs:
     - uses: ./.github/actions/lake
       with:
         sha: ${{ github.sha }}
-    - run: lake build fren_test
+    - run: lake build --wfail fren_test
     # The test driver, stripped, from which `book` writes the page of the
     # rules (`book.yml`).
     - if: ${{ matrix.shard == 0 }}
