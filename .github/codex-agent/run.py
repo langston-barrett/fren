@@ -16,9 +16,9 @@ from teardown import remove
 HERE = Path(__file__).resolve().parent
 
 
-def failure_summary(output, credentials, status):
+def failure_summary(output, credentials, status, label="codex-agent"):
     """Report a few error lines only after teardown, without credentials."""
-    print(f"codex-agent sandbox exited {status}", file=sys.stderr)
+    print(f"{label} sandbox exited {status}", file=sys.stderr)
     try:
         text = read_regular(output, "stderr.log", 16384).decode("utf-8", "replace")
     except (OSError, ValueError):
