@@ -1845,8 +1845,10 @@ pub enum GroupProbe { Missing, Present, Denied }
 
 -- Peek at an exited child before selecting its wait, so adoption between
 -- group waits and init cleanup cannot discard the group's CPU usage.
+-- own_pid is heavy's PID; pgid is the child group and exited_group is
+-- the exited child's group, if a child is ready to reap.
 pub proc heavy_init_reap(
-    pid: Int,
+    own_pid: Int,
     pgid: Int,
     exited_group: Option<Int>,
     group_drained?,
@@ -1854,12 +1856,12 @@ pub proc heavy_init_reap(
 ): (det collect_group?, det reap_orphan?) {
     let exited? := exited_group != Option::None
     let same_group? := exited_group = Option::Some(pgid)
-    ensure group: collect_group? iff pid = 1 and group_drained? and exited? and same_group? and subreaper?
-    ensure orphan: reap_orphan? iff pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
+    ensure group: collect_group? iff own_pid = 1 and group_drained? and exited? and same_group? and subreaper?
+    ensure orphan: reap_orphan? iff own_pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
     expect distinct: not (collect_group? and reap_orphan?)
-    expect late_adoption: when pid = 1 and group_drained? and same_group? and subreaper?,
+    expect late_adoption: when own_pid = 1 and group_drained? and same_group? and subreaper?,
         collect_group? and not reap_orphan?
-    expect outside_group: when pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
+    expect outside_group: when own_pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
     expect wait_first: unless group_drained?, not collect_group? and not reap_orphan?
 }
 
