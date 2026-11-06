@@ -1648,14 +1648,27 @@ def sharedCase (first : Agreement) (again : IO Agreement) : IO (Array String × 
       let head := ((msg.splitOn "\n").head?.getD msg).dropSuffix ":" |>.toString
       return (#[], #[s!"{head}, but only where queries reached their time limit, twice"])
 
+/-- Cache options for an isolated run, preserving whether caching is enabled. -/
+def sharedCacheOption (cache? : Option String) (dir : FilePath) : List String :=
+  if cache?.isSome then ["--query-cache", dir.toString] else []
+
+#guard sharedCacheOption none "copy" == []
+#guard sharedCacheOption (some "source") "copy" == ["--query-cache", "copy"]
+
+/-- Copy a configured cache for an isolated run; leave caching disabled when
+no cache is configured. -/
+def sharedCacheArgs (cache? : Option String) (dir : FilePath) : IO (List String) := do
+  if let some cache := cache? then copyTree cache dir
+  return sharedCacheOption cache? dir
+
 /-- Starts the run of Fren's own requirements on the binary's path for
 `sharedSpec`, in a task, with a copy of the query cache `cache?`, if any,
 in `root`, so that it shares no directory with another run. -/
 def sharedOwnStart (root : FilePath) (cache? : Option String) (ref : IO (String × UInt32)) :
     IO (Task (Except IO.Error Agreement)) := do
   let dir := root / "own"
-  copyTree (cache?.getD "/nonexistent") dir
-  IO.asTask (sharedAgrees (["check", "--query-cache", dir.toString] ++ (← ownSpecFiles).toList) ref) .dedicated
+  let cacheArgs ← sharedCacheArgs cache? dir
+  IO.asTask (sharedAgrees (["check"] ++ cacheArgs ++ (← ownSpecFiles).toList) ref) .dedicated
 
 /-- The `fren` binary's path through `check` and `quickcheck`, where the
 spec and what else the threads read is read once, marked persistent and
@@ -1681,8 +1694,8 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
     let ref : IO (String × UInt32) ← match own? with
       | some own => pure (pure own)
       | none => do
-        copyTree (cache.getD "/nonexistent") (root / "ref")
-        pure (runFren (["check", "--jobs", "1", "--query-cache", (root / "ref").toString] ++ (← ownSpecFiles).toList))
+        let cacheArgs ← sharedCacheArgs cache (root / "ref")
+        pure (runFren (["check", "--jobs", "1"] ++ cacheArgs ++ (← ownSpecFiles).toList))
     -- The tests' path runs once, whichever run of the binary's path it is
     -- compared with.
     let refTask ← IO.asTask ref .dedicated
@@ -1699,8 +1712,9 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
     let again : IO Agreement := do
       let (refOut, refCode) ← refOnce
       let dir := root / "again"
-      copyTree ((if own?.isSome then cache else some (root / "ref").toString).getD "/nonexistent") dir
-      sharedAgrees (["check", "--query-cache", dir.toString] ++ (← ownSpecFiles).toList) (pure (refOut, refCode))
+      let source := cache.map fun c => if own?.isSome then c else (root / "ref").toString
+      let cacheArgs ← sharedCacheArgs source dir
+      sharedAgrees (["check"] ++ cacheArgs ++ (← ownSpecFiles).toList) (pure (refOut, refCode))
     let (f, s) ← sharedCase (← IO.ofExcept own.get) again
     failures := failures ++ f
     skips := skips ++ s

@@ -5,6 +5,8 @@ import Fren.Enumerate
 import Fren.Prelude
 import Fren.RecursiveProof
 import Fren.TheoryDump
+import FrenCore.Check.Reporting
+import FrenCore.Check.Testing
 -- keep-sorted end
 
 /-!

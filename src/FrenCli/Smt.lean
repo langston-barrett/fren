@@ -5,7 +5,9 @@ import FrenCli.QueryStore
 import FrenCli.SeqElems
 import FrenCli.SolverSorts
 import FrenCli.SolverStats
-import FrenCore.Check
+import FrenCore.Check.Contracts
+import FrenCore.Check.Evidence
+import FrenCore.Check.Solver
 import FrenCore.Goals
 import FrenCore.SolverTime
 import FrenCore.Symbols

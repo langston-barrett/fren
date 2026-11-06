@@ -25,6 +25,12 @@ on:
 permissions:
   contents: read
 
+# Stopgap until #834 bounds enumeration and evaluation recursion. Lean runs
+# native executables on threads whose explicit stacks ignore `ulimit -s`.
+# Reserve 8 GiB per stack; physical memory is committed only as used.
+env:
+  LEAN_STACK_SIZE_KB: "8388608"
+
 # Each job of a push to `main` waits for the same job of the run before it,
 # rather than cancelling it: of pushes in quick succession, none cancels a
 # running job and the latest saves a `.lake`, though GitHub cancels a job

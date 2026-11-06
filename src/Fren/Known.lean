@@ -1,6 +1,6 @@
 -- keep-sorted start
 import Fren.Model
-import FrenCore.Check
+import FrenCore.Check.Model
 import FrenCore.Enumeration
 import FrenCore.Names
 -- keep-sorted end

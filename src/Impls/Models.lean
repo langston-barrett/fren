@@ -1,5 +1,6 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Backend
+import FrenCore.Check.Model
 import Impls.Check
 import Reqs.Models
 -- keep-sorted end

@@ -1,5 +1,6 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Evidence
+import FrenCore.Check.Selection
 import FrenCore.Evidence
 import FrenCore.SubsetTypes
 -- keep-sorted end

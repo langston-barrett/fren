@@ -1,4 +1,7 @@
 -- keep-sorted start
+import FrenCore.Check.Properties
+import FrenCore.Check.Realizability
+import FrenCore.Check.Reporting
 import FrenCore.Enumeration
 -- keep-sorted end
 

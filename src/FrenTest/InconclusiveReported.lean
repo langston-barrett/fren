@@ -1,5 +1,7 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Assertions
+import FrenCore.Check.Realizability
+import FrenCore.Check.Reporting
 -- keep-sorted end
 
 /-! Every inconclusive result is reported (`view::inconclusive_reported`):
