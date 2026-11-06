@@ -1686,7 +1686,7 @@ the query cache of `ownSpec`, if any, taken once `ownSpec`'s own run,
 `own?`, the tests' path, has filled it, so that its queries are answered
 from it rather than solved under load. Run alone, the tests' path is a run
 at `--jobs 1` with a copy of its own, at once with the binary's path. The
-ui tests (`sharedSpecUi`) run meanwhile, each against a run at `--jobs 1`.
+ui tests (`sharedSpecUi`) run first, each against a run at `--jobs 1`.
 A case that differs only because queries reached their time limit
 (`onlyTimedOut`) runs again once, Fren's own requirements then with a
 fresh copy of the cache that the tests' path filled, and is skipped if it
@@ -1695,6 +1695,13 @@ which `spawnJob` shows. -/
 def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none) : IO (Array String) := do
   let root : FilePath := ".lake" / "shared-spec-test" / s!"{← IO.monoNanosNow}"
   try
+    let mut failures := #[]
+    let mut skips := #[]
+    for args in sharedSpecUi do
+      let ui := runFren (args.head! :: "--jobs" :: "1" :: args.tail)
+      let (f, s) ← sharedCase (← sharedAgrees args ui) (sharedAgrees args ui)
+      failures := failures ++ f
+      skips := skips ++ s
     let ref : IO (String × UInt32) ← match own? with
       | some own => pure (pure own)
       | none => do
@@ -1705,13 +1712,6 @@ def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none
     let refTask ← IO.asTask ref .dedicated
     let refOnce : IO (String × UInt32) := IO.ofExcept refTask.get
     let own ← sharedOwnStart root cache refOnce
-    let mut failures := #[]
-    let mut skips := #[]
-    for args in sharedSpecUi do
-      let ui := runFren (args.head! :: "--jobs" :: "1" :: args.tail)
-      let (f, s) ← sharedCase (← sharedAgrees args ui) (sharedAgrees args ui)
-      failures := failures ++ f
-      skips := skips ++ s
     -- Again with the cache that the tests' path filled.
     let again : IO Agreement := do
       let (refOut, refCode) ← refOnce

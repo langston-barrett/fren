@@ -30,8 +30,10 @@ and teardown with `test_sandbox.sh` and a hostile stand-in for Codex.
 Only regular output files enter the artifact, after the workflow's trusted
 `pr-review/check.py` leak detector checks each against the original
 token/key/secret/password values, auth identifiers, other opaque values
-and any refreshed values still present. It scans values, not common field
-names from the JSON structure.
+and any refreshed values still present. If the final authentication file
+cannot be read or parsed, or yields no nonempty credential values, all
+output and diagnostics are withheld and the run fails. It scans values,
+not common field names from the JSON structure.
 Files containing known credential copies, plain or encoded, are withheld.
 No authentication file is uploaded. A separate fresh runner validates the
 patch and publishes it with `FREN_DEV_TOKEN`, without executing patched
@@ -43,16 +45,26 @@ and commit check directives in comments, pull request titles and
 descriptions, and commit messages. This keeps model text from starting an
 assistant under the publishing account or suppressing required checks.
 Git and API responses are captured; runner logs report exception types.
-After container teardown, a failed sandbox also reports up to three
-distinct nonblank lines, even when its raw logs are withheld. It prefers
-stderr error lines, then Codex's structured JSON error events, then stderr
-lines of any kind. Every line is bounded, redacted for known credentials
-and opaque token-like strings, and made inert before printing.
+After container teardown, when final credentials are verified, a failed
+sandbox also reports up to three distinct nonblank lines, even when its
+raw logs are withheld. It prefers stderr error lines, then Codex's
+structured JSON error events, then stderr lines of any kind. Every line is
+bounded, redacted for known credentials and opaque token-like strings,
+and made inert before printing.
 Mentions are broken with zero-width spaces, including entity forms and
 code. API bodies are bounded below GitHub's limit after neutralization,
 including multibyte text.
 
 ## Authentication lifecycle
+
+The current threat model trusts the only accounts that can push, the owner
+and `fren-dev`, and the issues we write. Under that model we accept that
+code the agent runs can read its model credential, and that any branch
+workflow can reach repository secrets. If that trust changes, keep model
+authentication outside executed code behind an inference proxy or a
+separate execution boundary, and move secrets to protected environments
+restricted to trusted default-branch runs, keeping the publishing token
+out of contributor-controlled workflows.
 
 Codex and every program it runs can read `/auth/auth.json` and use the
 network to send that sign-in elsewhere. The artifact leak detector does
