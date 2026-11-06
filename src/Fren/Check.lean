@@ -5,7 +5,12 @@ import Fren.Model
 import Fren.SeqElems
 import Fren.SmtTranslate
 import Fren.SolverSorts
-import FrenCore.Check
+import FrenCore.Check.Contracts
+import FrenCore.Check.Model
+import FrenCore.Check.ReportFormat
+import FrenCore.Check.Run
+import FrenCore.Check.Selection
+import FrenCore.Check.Solver
 import FrenCore.Goals
 import FrenCore.Induction
 import FrenCore.Obligations

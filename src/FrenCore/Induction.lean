@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Types
 import FrenCore.Generics
 import FrenCore.Global
 import FrenCore.SubsetTypes

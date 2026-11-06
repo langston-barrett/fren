@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Exit
+import FrenCore.Check.Types
 -- keep-sorted end
 
 /-!

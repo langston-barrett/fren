@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Backend
 -- keep-sorted end
 
 /-!
