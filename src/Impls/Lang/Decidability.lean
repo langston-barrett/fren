@@ -38,6 +38,14 @@ impl in_core: lang::in_core for (c : Fren.Core.Construct) (a m i g f r l : Bool)
   intro c a m i g f r l _
   cases c <;> simp [fren_spec, toConstruct, Fren.Core.inCore]
 
+impl inherited_core: lang::inherited_core for (item dependency : Bool) {
+  item_core? := item,
+  dependency_core? := dependency,
+  combined_core? := Fren.Core.inheritCore item dependency,
+} by
+  intro item dependency _
+  cases item <;> cases dependency <;> simp [fren_spec, Fren.Core.inheritCore]
+
 -- The count is the shared type counter's result, before either reader
 -- constructs its terms. A relation's count is the product of its sides.
 impl set_card_expansion: lang::set_card_expansion for (c : Option Nat) {

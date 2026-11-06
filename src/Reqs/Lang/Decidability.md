@@ -28,6 +28,31 @@ confirm a model allowed by their contracts (`F0450`); strengthen those
 contracts rather than raising the time limit. In a procedure that opts out, it may also mean
 that the solver gave up, and the message says that instead.
 
+The classification follows dependencies as well as the constructs written
+in an item. A defined function's body, a constant's value and an
+uninterpreted function's contract participate in the queries of their
+users. An opt-out in any of them therefore travels through applications,
+including chains of contracts, generic instances and higher-order
+applications. `lang::inherited_core` combines the item's classification
+so far with that of each dependency, which already includes its own
+dependencies. The original construct reports the lint; a function or
+constant use inherits its classification without reporting another lint.
+Procedure calls report their use of an outside-core procedure, so their
+callers opt out too ([Calls](Calls.md)).
+Allowing the lint on an item with no outside-core construct does not itself
+opt it out.
+
+```fren
+pub mod lang
+
+pub proc inherited_core(item_core?, dependency_core?): (det combined_core?) {
+    ensure rule: combined_core? iff item_core? and dependency_core?
+
+    expect dependency: unless dependency_core?, not combined_core?
+    expect preserve: when dependency_core?, combined_core? iff item_core?
+}
+```
+
 The rest of the language is decidable by three rules:
 
 1. Every check but realizability asks a quantifier-free question.

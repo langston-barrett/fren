@@ -658,6 +658,8 @@ structure ClaimInfo where
 inductive Entry where
   /-- A qualified trait law, including laws of traits without expectations. -/
   | theoryLaw (path : Name)
+  /-- A function or constant's classification, including its dependencies. -/
+  | itemCore (path : Name) (inCore : Bool)
   | item (i : ItemRef)
   | enumInfo (e : EnumInfo)
   | recordInfo (r : RecordInfo)
@@ -708,6 +710,8 @@ structure State where
   newtypes : NameMap NewtypeInfo := {}
   comps : NameMap CompInfo := {}
   consts : NameMap ConstInfo := {}
+  /-- Functions and constants outside the core (`lang::inherited_core`). -/
+  outsideCoreItems : NameSet := {}
   /-- Abstract types and functions, by path. -/
   abstracts : NameMap AbstractInfo := {}
   /-- Each placeholder's position in declaration order. -/
@@ -754,6 +758,7 @@ structure State where
 
 def State.add (s : State) : Entry → State
   | .theoryLaw p => { s with theoryLaws := s.theoryLaws.push p }
+  | .itemCore p core => { s with outsideCoreItems := if core then s.outsideCoreItems.erase p else s.outsideCoreItems.insert p }
   | .item i => { s with table := s.table.addItem i.item, refs := s.refs.insert i.item.path i.ref }
   | .enumInfo e =>
     { s with table := s.table.addEnum { path := e.path, variants := e.variants }, enums := s.enums.insert e.path e }

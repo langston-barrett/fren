@@ -625,6 +625,7 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
 def elabFunction (isPub : Bool) (name : Ident) (typeParams : Array Ident) (params : Array (Array Ident × Option (Array Ident)))
     (result : Option (Array Ident)) (body : Option Expr) (clauses : Array (Bool × Ident × Expr)) (last : Span)
     (block : FnBlockInfo) : M Unit := do
+  modify fun s => { s with outsideCore := false, guardedUsed := false }
   modify fun s => { s with contractIndexes := #[], itemBranches := #[], itemMemberGroups := #[] }
   let clauses := splitContractClauses clauses
   -- A precondition or body of its block that mentions the result
@@ -710,7 +711,9 @@ def elabFunction (isPub : Bool) (name : Ident) (typeParams : Array Ident) (param
         { what := if s.inTrait then .method else .function, path, level := s.levels.get .deadCode
           singleCall? := body.map fun _ => s.levels.get .singleCallFn }
       { s with items := s.items.push (r, name.span) }
-  modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
+  modify fun s => { s with
+    outsideCoreItems := if s.outsideCore then s.outsideCoreItems.insert path else s.outsideCoreItems.erase path
+    table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
 
 /-- Elaborates a constant (`Reqs/Lang/Items#constants`). -/
 def elabConst (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr) : M Unit := do
@@ -748,6 +751,7 @@ def elabConst (isPub : Bool) (name : Ident) (ty : Array Ident) (value : Expr) : 
   modify fun s => { s with
     table := s.table.addItem { kind := .constItem, path, isPub, owner := s.module }
     consts := s.consts.insert path (smt, t)
+    outsideCoreItems := if s.outsideCore then s.outsideCoreItems.insert path else s.outsideCoreItems.erase path
     guardedItems := if s.guardedUsed then s.guardedItems.insert path else s.guardedItems
     constInts := match int? with | some v => s.constInts.insert path v | none => s.constInts }
 
