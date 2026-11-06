@@ -1,0 +1,2 @@
+--@ argv: trace --dump=theories test/cli/args/dump_theories_trace.fren
+-- Structural dumps belong to check alone.
