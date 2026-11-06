@@ -457,9 +457,13 @@ def annotateBranches (cx : ExprCtx) (owner : Name) (e : Expr) : M Unit := do
 
 /-- Instantiate closed member templates at an application. SMT `let` uses
 simultaneous bindings, so caller variables cannot capture definition binders. -/
-partial def predicateClauses (cx : ExprCtx) (e : Expr) (splitConjunction : Bool := true) : M (Option (Name × Array NamedClause)) := do
+partial def predicateClauses (cx : ExprCtx) (e : Expr) (splitConjunction : Bool := true)
+    (leadingGuard : Bool := true) : M (Option (Name × Array NamedClause)) := do
   match e with
   | .when _ negative condition body =>
+    -- A guard inside a negation is not a predicate application at the
+    -- typed root. Keep its whole expression, as the hosted reader does.
+    if !leadingGuard then return none
     let saved ← get
     let context : Fren.Core.TestContext := if negative then .unlessCondition else .whenCondition
     let (condition, bound) ← withBound do
@@ -467,7 +471,7 @@ partial def predicateClauses (cx : ExprCtx) (e : Expr) (splitConjunction : Bool 
     set saved
     let guard := if negative then s!"(not {condition})" else condition
     let visible := if negative then #[] else bound
-    let some (path, clauses) ← predicateClauses { cx with binders := cx.binders ++ visible } body splitConjunction | return none
+    let some (path, clauses) ← predicateClauses { cx with binders := cx.binders ++ visible } body splitConjunction leadingGuard | return none
     return some (path, clauses.map fun clause => { clause with
       formula := guarded #[guard] clause.formula
       branches := clause.branches.map fun group => { group with guard? := some (conj #[guard, group.guard?.getD "true"]) }
@@ -478,8 +482,21 @@ partial def predicateClauses (cx : ExprCtx) (e : Expr) (splitConjunction : Bool 
           evaluationGuard? := some (conj #[guard, member.evaluationGuard?.getD "true"]) } }
       indexes := clause.indexes.map fun (sp, f, t) => (sp, guarded #[guard] f, t)
       tables := clause.tables.map fun (sp, q, f) => (sp, q, guarded #[guard] f) })
+  | .«let» _ defs body isWhere =>
+    let saved ← get
+    let (bcx, binds) ← elabDefinitions { cx with noteIndexes := false } defs (!isWhere) (usedDefinitions defs body)
+    let clauses ← predicateClauses bcx body splitConjunction leadingGuard
+    set saved
+    return clauses.map fun (path, clauses) =>
+      let bind := wrapLets binds
+      (path, clauses.map fun clause => { clause with
+        formula := bind clause.formula
+        branches := clause.branches.map (·.map bind)
+        groups := clause.groups.map (·.map bind)
+        indexes := clause.indexes.map fun (sp, f, t) => (sp, bind f, t)
+        tables := clause.tables.map fun (sp, q, f) => (sp, q, bind f) })
   | .not _ body =>
-    let some (path, clauses) ← predicateClauses cx body false | return none
+    let some (path, clauses) ← predicateClauses cx body false false | return none
     if clauses.size != 1 || !clauses[0]!.name.isEmpty then return none
     return some (path, clauses.map fun clause => { clause with formula := s!"(not {clause.formula})", branches := #[], groups := clause.groups.map fun group => { group with wanted := !group.wanted } })
   | .app _ segs _ =>
@@ -576,12 +593,14 @@ def elabCompConstraints (members : Array Member) (vars : Array CVar) (instNames 
             let branches := clause.branches.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
             let groups := clause.groups.map fun group => { group with owner := name, members := group.members.map fun member => { member with name := memberName member.name } }
             modify fun s => { s with itemBranches := s.itemBranches ++ branches, itemMemberGroups := s.itemMemberGroups ++ groups }
+            let sourceRef := Fren.Core.predicateCheckAtMember clause.name (kind == .cover)
             expanded := expanded.push ({
               file? := some clause.file
-              sourceRef := kind != .cover
+              sourceRef
               kind := kind
               name := name
-              span := if kind == .cover then x.span else clause.span
+              evidenceOwner? := some xn
+              span := if sourceRef then clause.span else x.span
               smt := clause.formula
               trigger? := trig.map (·.1)
               triggerSpan? := trig.map (·.2)
@@ -967,6 +986,9 @@ def elabComp (isPub : Bool) (name : Ident) (header body : Array Member) (spans :
   lintCompUnused n members vars instNames global
   let path := module ++ n
   let (tested, enumerated) ← testedOf (← evidenceOfEffect) members
+  let owners := props.map fun prop => (prop.name, prop.evidenceOwner?)
+  let tested := tested.expandProps owners
+  let enumerated := enumerated.expandProps owners
   let (relational, counts) ← checkCounts
   let c : CComp := { path, file := (← get).file, span := name.span, vars, props, insts, defs, indexes, tables, distributed := distributed ++ (← get).itemExcludeGroups ++ (props.filter (fun p => p.name.toString.contains '@')).map (·.name)
                      branchGroups := (← get).itemBranches
@@ -1143,8 +1165,11 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
     let entries ← if let some (predicate, templates) ← predicateClauses cx e then do
         let occurrence := occurrences.getD predicate 0 + 1
         occurrences := occurrences.insert predicate occurrence
-        pure <| templates.map fun entry => { entry with
-          name := if entry.name.isEmpty then x.name else x.name ++ "." ++ Fren.Core.showPath predicate ++ "@" ++ toString occurrence ++ "." ++ entry.name }
+        pure <| templates.map fun entry =>
+          let sourceRef := Fren.Core.predicateCheckAtMember entry.name false
+          ({ entry with
+            name := if entry.name.isEmpty then x.name else x.name ++ "." ++ Fren.Core.showPath predicate ++ "@" ++ toString occurrence ++ "." ++ entry.name
+            span := if sourceRef then entry.span else x.span }, sourceRef)
       else do
         let (nb, ng) := ((← get).itemBranches.size, (← get).itemMemberGroups.size)
         annotateBranches cx (n ++ cn) e
@@ -1152,8 +1177,8 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
         modify fun s => { s with
           itemBranches := s.itemBranches.extract 0 nb ++ (s.itemBranches.extract nb).map (·.map output)
           itemMemberGroups := s.itemMemberGroups.extract 0 ng ++ (s.itemMemberGroups.extract ng).map (·.map output) }
-        pure #[{ file := (← get).file, name := x.name, span := x.span, formula := smt : NamedClause }]
-    for entry in entries do
+        pure #[({ file := (← get).file, name := x.name, span := x.span, formula := smt : NamedClause }, false)]
+    for (entry, sourceRef) in entries do
       let cn := Name.mkSimple entry.name
       let owner := n ++ cn
       let sym := clauseSym path cn
@@ -1161,6 +1186,7 @@ def elabContract (path n : Name) (defined : Bool) (vars : Array CVar) (clauses :
       if post then k := { k with posts := k.posts.push (cn, sym) } else k := { k with pres := k.pres.push (cn, sym) }
       props := props.push ({
         file? := some entry.file
+        sourceRef
         kind := if post then .ensure else .assume
         name := owner
         span := entry.span
@@ -1963,17 +1989,27 @@ partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Id
     -- Only the lints of the invariant's own source are reported, as for
     -- any expression, whether or not it has a static error: not those of
     -- the binder, which the pattern shorthand does not write.
-    let ownLints (st : State) : State := { st with
+    -- The predicate's generated name borrows the invariant label's span;
+    -- its result type is not a type declared at that label.
+    -- The shorthand's unwritten binder borrows the base type's span,
+    -- which is a written type, rather than a local value expression.
+    let generatedAnnotation (a : ResolvedAnnotation) : Bool :=
+      a.file == generatedBefore.file &&
+        ((a.kind == "type" && a.span == predicate.span) ||
+          (Fren.Core.generatedName binder.name && a.span == binder.span &&
+            (a.kind == "local" || a.kind == "expr")))
+    let ownSource (st : State) : State := { st with
       lintReports := generatedBefore.lintReports ++ (st.lintReports.extract generatedBefore.lintReports.size st.lintReports.size).filter (fun report => report.ref.start >= expression.span.start && report.ref.stop <= expression.span.stop)
       lintFixes := generatedBefore.lintFixes ++ (st.lintFixes.extract generatedBefore.lintFixes.size st.lintFixes.size).filter (fun fix => fix.span.start >= expression.span.start && fix.span.stop <= expression.span.stop)
-      natReports := generatedBefore.natReports }
+      natReports := generatedBefore.natReports
+      resolved? := st.resolved?.map (·.filter (!generatedAnnotation ·)) }
     try
       elabItem (.function true predicate #[] #[(#[binder], some base)] none (some expression) #[] expression.span {})
     catch failure =>
       if failure.diags.any (·.msg.code? == some "F0201") then
         err expression.span { code? := some "F0373", headline := "an invariant may mention only its binder, constants and functions", label? := some (Fren.Core.invariantScopeLabel binder.name) }
-      throw { failure with state := ownLints failure.state }
-    modify fun st => { ownLints st with inSubset := priorSubset }
+      throw { failure with state := ownSource failure.state }
+    modify fun st => { ownSource st with inSubset := priorSubset }
     -- Its full-definedness check is guarded by earlier invariants below,
     -- rather than checked unconditionally as an ordinary function body.
     modify fun st => { st with bodies := st.bodies.extract 0 before }

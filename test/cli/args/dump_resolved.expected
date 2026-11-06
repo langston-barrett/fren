@@ -1,6 +1,6 @@
 ; resolved
 (file "test/cli/args/dump_resolved.fren"
-  (surface "--@ args: check --dump=resolved\n-- The surface retains generic declarations, nominal newtypes, aliases,\n-- modules and calls; its annotations resolve imports and infer types.\nset_option fren.lint.glob_imports \"allow\"\nset_option fren.lint.manual_pattern_test \"allow\"\nset_option fren.lint.assertions_on_constants \"allow\"\n\npub mod library\n\npub struct Box<T> { value: T }\n\npub struct Number(Int)\n\npub type Alias := Number\n\npub fn keep(x: Alias): Alias := x\n\npub fn id<T>(x: T): T := x\n\npub fn opt<T>(x: T): Option<T> := Option::Some(x)\n\npub fn unwrap<T>(x: Box<T>): T := x.value\n\npub enum Choice { A, B }\n\npub proc echo(x: Int): (det y: Int) { out y := id(x) }\n\nmod client\n\nuse library::{Box, Choice, Number, echo, id, keep, opt, unwrap}\nuse library::Choice::*\n\nproc round_trip(x: Int, flag?): (det y: Int) {\n    call inner := echo(x)\n    out y := unwrap(Box { value := id(inner.y) })\n    expect unchanged: y = x\n    expect nominal: keep(Number(x)) = Number(x)\n    expect option: opt(y) = Option::Some(y)\n    expect variants: (if flag? then A else B) != (if flag? then B else A)\n    expect bound: forall (z: Choice), z = A or z = B\n    expect definitions: let value := id(y) in value = y\n}\n")
+  (surface "--@ args: check --dump=resolved\n-- The surface retains generic declarations, nominal newtypes, aliases,\n-- modules and calls; its annotations resolve imports and infer types.\nset_option fren.lint.glob_imports \"allow\"\nset_option fren.lint.manual_pattern_test \"allow\"\nset_option fren.lint.assertions_on_constants \"allow\"\n\npub mod library\n\npub struct Box<T> { value: T }\n\npub struct Number(Int)\n\npub type Alias := Number\n\npub fn keep(x: Alias): Alias := x\n\npub fn id<T>(x: T): T := x\n\npub fn opt<T>(x: T): Option<T> := Option::Some(x)\n\npub fn unwrap<T>(x: Box<T>): T := x.value\n\npub enum Choice { A, B }\n\npub proc echo(x: Int): (det y: Int) { out y := id(x) }\n\nmod client\n\nuse library::{Box, Choice, Number, echo, id, keep, opt, unwrap}\nuse library::Choice::*\n\nproc round_trip(x: Int, flag?): (det y: Int) {\n    call inner := echo(x)\n    out y := unwrap(Box { value := id(inner.y) })\n    expect unchanged: y = x\n    expect nominal: keep(Number(x)) = Number(x)\n    expect option: opt(y) = Option::Some(y)\n    expect variants: (if flag? then A else B) != (if flag? then B else A)\n    expect bound: forall (z: Choice), z = A or z = B\n    expect definitions: let value := id(y) in value = y\n}\n\npub type Pos = x: Int where positive: x > 0\n\npub type Digit = Int is 0..=9\n")
   (type 357 362 "T")
   (type 364 365 "T")
   (type 387 390 "Int")
@@ -142,7 +142,15 @@
   (local 1174 1179 "value")
   (expr 1182 1183 "Int")
   (local 1182 1183 "y")
+  (type 1202 1203 "Int")
+  (type 1205 1208 "Int")
+  (expr 1225 1230 "Bool")
+  (expr 1225 1226 "Int")
+  (local 1225 1226 "x")
+  (expr 1229 1230 "Int")
+  (type 1249 1252 "Int")
+  (expr 1253 1261 "Bool")
 )
 ; end of resolved
-fren: 10 passed, 0 failed, 0 inconclusive, 0 redundant
+fren: 12 passed, 0 failed, 0 inconclusive, 0 redundant
 exit=0
