@@ -62,6 +62,8 @@ class Problem(unittest.TestCase):
     def test_token(self):
         self.assertIsNotNone(problem(f"{OK}\n\nsk-ant-oat01-abcdefghijkl", HEAD, "full"))
         self.assertIsNotNone(problem(f"{OK}\n\nghs_" + "a" * 36, HEAD, "full"))
+        for token in ("sk-proj-" + "x" * 40, "eyJ" + "a" * 24 + "." + "b" * 24 + "." + "c" * 24):
+            self.assertIsNotNone(problem(OK + PROBED + token, HEAD, "full"))
 
     def test_remote_loading(self):
         for text in ("![x](https://example.com/p.png?d=1)", "![x](/relative.png)", "![x][ref]",
@@ -114,6 +116,13 @@ class Leaks(unittest.TestCase):
 
 
 class Comment(unittest.TestCase):
+    def test_runner_commands_are_inert(self):
+        body, ok = comment(OK + PROBED + "\n::warning::model text\n##[error]model text",
+                           HEAD, "full", "URL", set())
+        self.assertTrue(ok)
+        self.assertNotIn("::", body)
+        self.assertNotIn("##[", body)
+
     def posted(self, case):
         text = f"{OK}\n\n{case}{PROBED}"
         body, ok = comment(text, HEAD, "full", "URL", set())
