@@ -518,7 +518,7 @@ the closest, at most a third of the name's length away in edit distance,
 or else one of at least three characters that the name starts with, or
 that starts with the name. The suggestion is the first by name among
 equally close candidates, as `similarStr` defines in
-[`FrenCore/Names.lean`](../FrenCore/Names.lean). For example, `manual_ns` is
+`src/FrenCore/Names.lean`. For example, `manual_ns` is
 one edit from both `manual_abs` and `manual_nat`, so it suggests `manual_abs`,
 and `match` is a prefix of `match_arm_if_else`.
 
