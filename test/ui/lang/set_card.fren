@@ -36,7 +36,7 @@ proc aggregates(s: Set<G<R>>, t: Set<N>, u: Set<Eight>) {
 }
 
 proc at_limit(u: Set<Eight>) {
-    assume full: forall (x: Eight), x in u
+    require full: forall (x: Eight), x in u
 
     expect count: u.card = 256
 }

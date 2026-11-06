@@ -2986,7 +2986,8 @@ def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts a
 
 /-- The set procedure from #818's decidable-core mode, with its original
 random draws (three for strings before the three for sets), so that #820's
-seed numbers reproduce exactly without depending on that unmerged PR. -/
+seed numbers reproduce the same checks without depending on that unmerged
+PR. Preconditions use the current `require` spelling. -/
 def setCardCore : R String := do
   for _ in [0:3] do discard (below 2147483648)
   let mut out := "mod sets\n\nset_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
@@ -3003,7 +3004,7 @@ def setCardCore : R String := do
       s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
       "s = {}"] 5
   out := out ++ s!"proc c0(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
-    assume a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+    require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
     expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
   return out
 
@@ -3034,7 +3035,7 @@ def setCardForms : R String := do
     s!"    expect defined: count({recv}) = n\n\n" ++
     s!"    expect singleton: when s = \{{value}}, s.card = 1\n\n" ++
     s!"    expect comparison: ({claim}) iff (n {op} {bound})\n}\n\n" ++
-    s!"proc full(s: Set<{ty}>) \{\n    assume all: forall ({binder}: {ty}), {binder} in s\n\n    expect count: s.card = {count}\n}\n\n" ++
+    s!"proc full(s: Set<{ty}>) \{\n    require all: forall ({binder}: {ty}), {binder} in s\n\n    expect count: s.card = {count}\n}\n\n" ++
     s!"proc pairs(r: Rel<{ty}, {other}>): (n: Int) \{\n    out n := r.card\n\n    expect bound: 0 <= n <= {count * otherCount}\n\n" ++
     s!"    expect singleton: when r = \{({value}, {otherValue})}, n = 1\n}\n"
   return decls ++ body
@@ -3183,7 +3184,7 @@ structure Mode where
   unfoldings : Bool := false
   /-- Collection payloads and fields of generic datatypes. -/
   datatypeElements : Bool := false
-  /-- Finite set cardinalities and #820's exact set seeds. -/
+  /-- Finite set cardinalities and #820's regression seeds. -/
   setCard : Bool := false
   deriving BEq
 
@@ -3215,8 +3216,8 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
 `--induction-forms` and `--keywords`. The empty prefix of `--scrutinees`,
 `--fact-scopes`, `--induction-candidates`, `--enumeration-obligations`,
-`--unfoldings`, `--datatype-elements` and `--set-card` makes any static error a group
-error: these generators, like appended groups, promise to add none.
+`--unfoldings`, `--datatype-elements` and `--set-card` makes any static
+error a group error: these generators, like appended groups, promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
 prefix, so its additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
