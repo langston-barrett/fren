@@ -1144,8 +1144,9 @@ def reportReadFailure (paint : Paint) (files : Array (String × Array Char)) (er
     let msg : Msg := {
       code? := none,
       headline := s!"{Fren.Core.expansionLimitHeadline} while reading `{Fren.Core.showPath site.path}`",
-      label? := some s!"more than {Fren.Core.maxExpansionNodes} copying visits",
-      notes := notes ++ #[s!"note: the evaluator allows {Fren.Core.maxExpansionNodes} copying visits per source item",
+      label? := some s!"more than {Fren.Core.maxExpansionNodes} expansion visits",
+      notes := notes ++ #[s!"note: copying and measuring retained expressions each allow {Fren.Core.maxExpansionNodes} visits per source item",
+        s!"note: each pattern substitution has a size limit of {Fren.Core.maxExpansionNodes} expression occurrences",
         "help: simplify this item's definitions or split it into smaller items"] }
     printDiag paint files { file := site.file, span := site.span, msg }
     return exitCode false none

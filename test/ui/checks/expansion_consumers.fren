@@ -1,0 +1,29 @@
+-- Applications also occur in constraints, call bindings, and global claims.
+set_option fren.lint.undecidable "allow"
+
+pub fn twice(n: Int): Int := n + n
+
+pub proc constrained(n: Int): (det result: Int) { ensure equation: result = twice(twice(n)) }
+
+pub proc binds(n: Int): (det result: Int) {
+    call c := constrained(twice(n))
+    out result := c.result
+    expect equation: result = 8 * n
+}
+
+pub proc local_definitions(n: Int): (det result: Int) {
+    let first_value: Int := n + n
+    let second_value: Int := first_value + first_value
+    let third_value: Int := second_value + second_value
+    require nonnegative: third_value >= 0
+    out result := third_value
+    expect equation: result = 8 * n
+}
+
+expect all_inputs: forall (n: Int), twice(twice(n)) = 4 * n  --~ warning: this expectation mentions no variable
+
+pub fn from_matches(q: Seq<Int>, n: Int): Int := match (n + n) {
+    outer => match (outer + outer) {
+        inner => if 0 <= inner < q.len then q[inner] else 0,
+    },
+}

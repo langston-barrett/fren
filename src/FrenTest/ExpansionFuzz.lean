@@ -22,7 +22,7 @@ def refinement (depth seed : Nat) : String := Id.run do
 
 /-- Duplicated arguments of several types, generic and higher-order
 applications, nested binders, matches, fields, and refinement locals. -/
-def source (seed : Nat) : String := Id.run do
+def baseSource (seed : Nat) : String := Id.run do
   if seed % 17 == 8 then return refinement (1 + seed % 4) seed
   let depth := 1 + (seed / 17) % 5
   let (decls, ty, leaf, apply, extra) : String × String × String × (String → String) × String := match seed % 17 with
@@ -49,6 +49,59 @@ def source (seed : Nat) : String := Id.run do
   let name := if ty == "Bool" then "result?" else "result"
   return s!"-- independent copying seed {seed}\nset_option fren.lint.undecidable \"allow\"\n{decls}pub fn {name}({parameter}: {ty}{extra}): {ty} := {body}\n"
 
+/-- Append consumers after the established stream. Its declarations and
+draws stay unchanged; these depths come from a separate seed. -/
+def source (seed : Nat) : String := Id.run do
+  let original := baseSource seed
+  let depth := 1 + Id.run ((FrenCli.Eval.below 5).run' (FrenTest.FuzzFrontends.rngOf (seed + 0x72656164)))
+  let mut body := "n"
+  for _ in [0:depth] do body := s!"copying_twice({body})"
+  let mut more := "\nset_option fren.lint.undecidable \"allow\"\npub fn copying_twice(value: Int): Int := value + value\n"
+  more := more ++ s!"pub proc copying_constraint(n: Int): (answer: Int) \{ ensure equation: answer = {body} }\n"
+  more := more ++ "pub proc copying_sink(value: Int): (answer: Int) { out answer := value }\n"
+  more := more ++ s!"pub proc copying_binding(n: Int): (answer: Int) \{ call c := copying_sink({body})\n out answer := c.answer }\n"
+  more := more ++ s!"expect copying_global: forall (n: Int), {body} = {body}\n"
+  more := more ++ "pub proc copying_locals(n: Int) {\n"
+  let mut last := "n"
+  for i in [0:depth + 1] do
+    let next := s!"local_{i}"
+    more := more ++ s!"let {next}: Int := {last} + {last}\n"
+    last := next
+  more := more ++ s!"require reads_locals: {last} = {last}\n}\n"
+  if seed % 17 != 8 then
+    let ty := match seed % 17 with
+      | 1 => "Bool" | 2 => "Seq<Int>" | 3 => "Set<Int>" | 4 => "Pair" | 5 => "Choice"
+      | 9 => "String" | 10 => "Nat" | 11 => "Rel<Int, Bool>" | 12 => "Amount"
+      | 13 => "Token" | 14 => "Tree" | 15 => "Positive" | _ => "Int"
+    let boolean := ty == "Bool"
+    let input := if boolean then "n?" else "n"
+    let output := if boolean then "answer?" else "answer"
+    let functionName := if boolean then "result?" else "result"
+    let flag := if seed % 17 == 6 || seed % 17 == 13 then ", flag?" else ""
+    more := more ++ s!"pub proc copying_typed({input}: {ty}{flag}): (det {output}: {ty}) \{ out {output} := {functionName}({input}{flag})\n ensure equation: {output} = {functionName}({input}{flag}) }\n"
+  let binder (i : Nat) := s!"copying_bound_{i}"
+  let lastBinder := binder (depth - 1)
+  let mut pureMatch := lastBinder
+  let mut indexedMatch := s!"if 0 <= {lastBinder} < q.len then q[{lastBinder}] else 0"
+  for i in (List.range depth).reverse do
+    let input := if i == 0 then "n" else binder (i - 1)
+    pureMatch := s!"match ({input} + {input}) \{ {binder i} => {pureMatch} }"
+    indexedMatch := s!"match ({input} + {input}) \{ {binder i} => {indexedMatch} }"
+  more := more ++ s!"pub fn copying_matches(n: Int): Int := {pureMatch}\n"
+  more := more ++ s!"pub fn copying_match_index(q: Seq<Int>, n: Int): Int := {indexedMatch}\n"
+  more := more ++ "pub enum CopyingList<T> { Nil, Cons(T, CopyingList<T>) }\n"
+  more := more ++ "pub fn copying_clone<T>(xs: CopyingList<T>): CopyingList<T> := match xs { CopyingList::Nil => CopyingList::Nil, CopyingList::Cons(x, tail) => CopyingList::Cons(x, copying_clone(tail)) }\n"
+  let mut recursive := "xs"
+  for _ in [0:depth] do recursive := s!"copying_clone({recursive})"
+  -- Nat, abstract types and subset types cannot be payload arguments of
+  -- a recursive enumeration. Their ordinary typed consumers remain above.
+  let element := match seed % 17 with
+    | 1 => "Bool" | 2 => "Seq<Int>" | 3 => "Set<Int>" | 4 => "Pair" | 5 => "Choice"
+    | 9 => "String" | 11 => "Rel<Int, Bool>" | 12 => "Amount"
+    | 14 => "Tree" | _ => "Int"
+  more := more ++ s!"pub fn copying_recursive(xs: CopyingList<{element}>): CopyingList<{element}> := {recursive}\n"
+  return original ++ more
+
 /-- Exercise real reports, including the explicit resource-limit
 exception. An internal error, a wrong exit or a hosted static error stays
 blocking under the comparison harness. -/
@@ -71,11 +124,17 @@ unsafe def run (count : Nat) (start := 0) : IO (Array String) := do
     unless ran.cli.any FrenTest.Frontends.isExpansionLimit do
       failures := failures.push s!"copying limit {name}: no resource diagnostic\n{ran.reports}"
   -- The large refinement is a reader-resource probe. Its smaller forms
-  -- above compare both front ends; constructing the hosted proof of the
-  -- huge form is itself expensive and is not needed to check this limit.
+  -- above compare both front ends. Hosted `hasConcat` still follows these
+  -- locals repeatedly and starts fresh mention analyses. That separate
+  -- front-end cost is not bounded by the evaluator's reading allowance.
   let (cli, summary, code, _) ← FrenTest.FuzzFrontends.runCli (dir / "refinement.fren") (refinement 25 0)
   unless code == 2 && summary.isNone && cli.any FrenTest.Frontends.isExpansionLimit do
     failures := failures.push s!"copying refinement limit: exit {code}, summary {summary}, diagnostics {repr cli}"
+  for file in ["check_constraint_expansion_limit", "check_locals_expansion_limit"] do
+    let (cli, summary, code, _) ← FrenTest.FuzzFrontends.runCli (dir / s!"{file}.fren")
+      (← IO.FS.readFile s!"test/cli/commands/{file}.fren")
+    unless code == 2 && summary.isNone && cli.any FrenTest.Frontends.isExpansionLimit do
+      failures := failures.push s!"copying {file}: exit {code}, summary {summary}, diagnostics {repr cli}"
   return failures
 
 end FrenTest.ExpansionFuzz

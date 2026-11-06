@@ -2510,6 +2510,9 @@ structure LState where
   /-- Nodes left for eager expansion in the current source item. Kept
   across temporary changes of the lexical state. -/
   expansionLeft : Nat := Fren.Core.maxExpansionNodes
+  /-- Occurrences left for the results of substitution and the complete
+  reading, following local definitions and pattern-bound scrutinees. -/
+  readingLeft : Nat := Fren.Core.maxExpansionNodes
 
 /-- The source item whose independent evaluator reading failed. -/
 structure ReadSite where
@@ -2536,7 +2539,7 @@ def ReadError.isLimit : ReadError → Bool
 /-- The standalone command cannot continue without a usable reading.
 The hosted front end's exception is specified by `cli::accepts`. -/
 def ReadError.stopsCommand (error : ReadError) : Bool :=
-  !Fren.Core.readerAccepted false false error.isLimit
+  !Fren.Core.readerAccepted error.isLimit
 
 def ReadError.at (site : ReadSite) : ReadError → ReadError
   | .expansionLimit none => .expansionLimit (some site)
@@ -2684,12 +2687,29 @@ def Ex.copyChildren : Ex → List Ex
   | .strict args e => args.toList ++ [e]
   | e => e.children.toList
 
+/-- Compilation enters closed constant bodies even though copying shares
+them. Include them when inspecting the size of a produced expression. -/
+def Ex.readChildren : Ex → List Ex
+  | .const _ body => [body]
+  | e => e.copyChildren
+
+/-- Reserve occurrences without materializing a shared tree. A second
+allowance bounds results as well as the copying work that produced them. -/
+def inspectReading (children : α → List α) (work : List α) : L Unit := do
+  let some left := Fren.Core.readingBudget children (← get).readingLeft work
+    | throwThe ReadError (.expansionLimit none)
+  modify fun s => { s with readingLeft := left }
+
 /-- Reserve the work before a pure traversal can allocate its copy. -/
 def copying (e : Ex) (f : Ex → Ex) : L Ex := do
   let some left := Fren.Core.expansionBudget Ex.copyChildren (← get).expansionLeft [e]
     | throwThe ReadError (.expansionLimit none)
   modify fun s => { s with expansionLeft := left }
-  return f e
+  let result := f e
+  -- Substitution can multiply occurrences while retaining shared pointers.
+  -- The input reservation bounds allocation; this walk bounds its result.
+  inspectReading Ex.readChildren [result]
+  return result
 
 /-- `e` with each binder, and each mention of one, renamed by `f`. -/
 partial def Ex.renameBound (f : Name → Name) : Ex → Ex
@@ -2911,6 +2931,111 @@ partial def Pat.parts (p : Pat) (e : Ex) : List (Name × Ex) :=
   | .ctor _ ps, e => (ps.zipIdx).toList.flatMap fun (q, i) => q.parts (.field e i)
   | _, _ => []
 
+/-- A virtual node of a reading after local and pattern substitution.
+Replacements retain their lexical environment; the walk follows pointers
+without constructing the fully expanded tree. -/
+inductive ReadingNode where
+  | expr (defs : Array (Name × Ex)) (bound : List (Name × ReadingNode)) (sites : Bool) (e : Ex)
+
+def ReadingNode.withSites (sites : Bool) : ReadingNode → ReadingNode
+  | .expr defs bound _ e => .expr defs bound sites e
+
+def ReadingNode.children : ReadingNode → List ReadingNode
+  | .expr defs bound sites e =>
+    let here (e : Ex) := ReadingNode.expr defs bound sites e
+    let copied (e : Ex) := ReadingNode.expr defs bound false e
+    match e with
+    -- A definition or scrutinee's sites are checked in its original
+    -- lexical environment. Reusing it need not check those sites again.
+    | .var n => if sites then [] else
+      ((defs.find? (·.1 == n)).map fun (_, value) => .expr defs [] false value).toList
+    | .bound n => if sites then [] else
+      ((bound.lookup n).map (·.withSites false)).toList
+    -- Compilation enters a constant's closed body, although renaming and
+    -- substitution share it. Count that later work at each use too.
+    | .const _ body => if sites then [] else [.expr #[] [] false body]
+    -- `siteGoals` does not enter retained strict arguments, precondition
+    -- goals or compiled let values. Copying and compilation still do;
+    -- count those trees without inventing nested pattern substitutions.
+    | .strict args body => (if sites then [] else args.toList.map copied) ++ [here body]
+    | .pre _ _ goals body => (if sites then [] else goals.toList.map (copied ·.2)) ++ [here body]
+    | .memo values body => (if sites then [] else values.toList.map copied) ++ [here body]
+    | .lifted values body => (if sites then [] else values.toList.flatMap (·.toList.map copied)) ++ [here body]
+    | .match scrutinee arms .. =>
+      here scrutinee :: arms.toList.flatMap fun (pattern, guard, body) =>
+        let inside := if sites then
+          (pattern.parts scrutinee).map (fun (name, value) => (name, here value)) ++ bound
+        else bound.filter fun (name, _) => !pattern.binders.contains name
+        (guard.toList ++ [body]).map (ReadingNode.expr defs inside sites)
+    | .quant _ _ _ names domains _ body =>
+      (if sites then [] else (domains.toList.zipIdx).flatMap fun (domain, i) =>
+        domain.toList.map (ReadingNode.expr defs (bound.filter fun (n, _) => !(names.extract 0 i).contains n) false))
+        ++ [.expr defs (bound.filter fun (n, _) => !names.contains n) sites body]
+    | _ => e.copyChildren.map here
+
+/-- Whether the source can give a site question, before materializing any
+pattern substitution. Bindings keep their lexical scope. The common
+split/table rules decide whether a match or table itself has questions. -/
+partial def ReadingNode.hasSites : ReadingNode → Bool
+  | .expr defs bound _ e =>
+    let here (e : Ex) := ReadingNode.expr defs bound false e
+    let rest := fun _ => (here e).children.any ReadingNode.hasSites
+    match e with
+    | .index .. => true
+    | .const .. => false
+    | .strict _ body | .memo _ body | .lifted _ body | .dispatch _ body => (here body).hasSites
+    | .pre _ _ goals body => !goals.isEmpty || (here body).hasSites
+    | .quant _ _ _ names _ _ body =>
+      (ReadingNode.expr defs (bound.filter fun (name, _) => !names.contains name) false body).hasSites
+    | .match _ arms _ _ unspecified pairs =>
+      let guarded := arms.map (·.2.1.isSome)
+      let own := Fren.Core.splitGoals (if pairs.isSome then .tableMatch else .match)
+        (fun _ => ()) (fun _ _ => ()) (fun _ => ()) ()
+        (Array.replicate arms.size (some ())) guarded unspecified.isSome
+      !own.isEmpty || pairs.any (!·.isEmpty) || rest ()
+    | .table _ rows _ =>
+      let conditions := rows.filterMap fun (_, condition, _) => condition.map fun _ => ()
+      let own := Fren.Core.tableGoals (fun _ => ()) (fun _ _ => ()) (fun _ => ()) ()
+        conditions (conditions.map fun _ => none) ((rows.back?.map (·.2.1.isNone)).getD false)
+      !own.isEmpty || rest ()
+    | _ => rest ()
+
+/-- Check each prospective arm substitution of `siteGoals` separately.
+Its source walk stops at a reused scrutinee: its nested substitutions were
+already checked in their original scope. The raw result follows captured
+bindings, but does not invent substitutions inside its nested matches. -/
+def inspectPatternResults (work : List ReadingNode) (limit : Nat := Fren.Core.maxExpansionNodes) : L Unit := do
+  let mut pending := work
+  while let node :: rest := pending do
+    let some left := Fren.Core.expansionStep (← get).readingLeft
+      | throwThe ReadError (.expansionLimit none)
+    modify fun s => { s with readingLeft := left }
+    let children := node.children
+    if let .expr _ _ true (.match ..) := node then
+      for arm in children.tail do
+        if (arm.withSites false).hasSites then
+          unless (Fren.Core.readingBudget ReadingNode.children limit [arm.withSites false]).isSome do
+            throwThe ReadError (.expansionLimit none)
+    pending := (children.filter fun child => (child.withSites false).hasSites) ++ rest
+
+/-- Every stored expression, including constraints and bindings, must fit
+after following definitions. Also check the results of the later
+`inlineEarly` and `siteGoals` substitutions before those can copy them. -/
+def inspectExpressions (defs : Array (Name × Ex)) (expressions : Array Ex) : L Unit := do
+  let work := expressions.toList.map (ReadingNode.expr defs [] false)
+  inspectReading ReadingNode.children work
+  inspectPatternResults ((work.filter (·.hasSites)).map (·.withSites true))
+
+def inspectComp (c : Comp) : L Unit :=
+  inspectExpressions c.defs <|
+    c.constraints.map (·.e) ++ c.typeConstraints.map (·.e) ++ c.defs.map (·.2)
+      ++ c.insts.flatMap (fun i => i.bindings.map (·.2)) ++ c.body?.toArray.map (·.2)
+      ++ c.branchGroups.flatMap (fun g => g.guard?.toArray ++ g.members.flatMap fun m =>
+        #[m.formula] ++ m.valueFormula?.toArray ++ m.evaluationGuard?.toArray)
+      ++ c.memberGroups.flatMap (fun g => g.members.flatMap fun m =>
+        #[m.formula] ++ m.valueFormula?.toArray ++ m.evaluationGuard?.toArray)
+
+mutual
 /-- The indexes, tables and `match`es in `e`, as the questions that the
 checks ask of them, each with its position, the question about a table's
 rows or a `match`'s arms (`none` for an index's definedness), and its
@@ -2926,6 +3051,9 @@ around `e`. An arm's guard and body are read with each binder as its part
 of the scrutinee (`Pat.parts`), so that each read of a binder of an index
 has the definedness goal that the elaborator records for it there. -/
 partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Option Fren.Core.TableGoal × Ex) :=
+  if (ReadingNode.expr #[] [] false e).hasSites then e.siteGoalsCore wrap else #[]
+
+partial def Ex.siteGoalsCore (e : Ex) (wrap : Ex → Ex) : Array (Nat × Option Fren.Core.TableGoal × Ex) :=
   let go (e : Ex) (w : Ex → Ex := wrap) := e.siteGoals w
   match e with
   | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => #[]
@@ -2964,8 +3092,11 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
     -- (`Pat.parts`).
     let inArms := (List.range arms.size).toArray.flatMap fun j =>
       let σ := arms[j]!.1.parts s
-      (match arms[j]!.2.1 with | some c => go (c.subst σ) (fun g => wrap (inGuard j g)) | none => #[]) ++
-        go (arms[j]!.2.2.subst σ) (fun g => wrap (inBody j g))
+      let bound := σ.map fun (name, value) => (name, ReadingNode.expr #[] [] false value)
+      let read (body : Ex) (w : Ex → Ex) :=
+        if (ReadingNode.expr #[] bound false body).hasSites then go (body.subst σ) w else #[]
+      (match arms[j]!.2.1 with | some c => read c (fun g => wrap (inGuard j g)) | none => #[]) ++
+        read arms[j]!.2.2 (fun g => wrap (inBody j g))
     -- Where each arm is taken, if no earlier one is: its pattern matches and
     -- its guard holds; `none` for `_` or a binder without a guard.
     let taken := arms.map fun (p, g?, _) => match p, g? with
@@ -3023,6 +3154,7 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
         | .disjointness _ _ j => starts[j]!
         | .reachability _ j => rows[j]!.1
         | _ => pos), some g, wrap f)
+end
 
 /-- The indexes in `e`, each with its position and its definedness: that
 its position is in range wherever the conditions before it hold
@@ -3584,6 +3716,14 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
         if (← get).lowering == some path then
           modify fun s => { s with selfApplied := true }
           return (← withPres (.app path args), r)
+        -- Structural recursions already have an evaluator body. Keep the
+        -- call, rather than copying one unfolding into each nested call.
+        if (← get).spec.recDefs.contains path then
+          let mut target := path
+          if ((← get).spec.defGenerics.find? path).isSome then
+            let targs ← elaboratedArgs path span
+            target := (← recursiveInstance path targs).getD path
+          return (← withPres (.app target args), r)
         return (← withPres (.strict args (← copying body (·.subst (ps.zip args).toList))), r)
       -- A generic function without a body, at its instance
       -- (`bodilessInstance`), a function of its own, with the instance's
@@ -3894,7 +4034,7 @@ partial def lowerPredicateClauses (cx : Cx) (expression : Expr) (splitConjunctio
       let some definition := saved.spec.defs.find? helper | continue
       let instantiate (body : Ex) (asGuard : Bool := false) (main : Bool := false) : L Ex := do
         let body := if asGuard then Ex.not body else body
-        set { saved with expansionLeft := (← get).expansionLeft, spec.defs := saved.spec.defs.insert path (definition.1, body, definition.2.2) }
+        set { saved with expansionLeft := (← get).expansionLeft, readingLeft := (← get).readingLeft, spec.defs := saved.spec.defs.insert path (definition.1, body, definition.2.2) }
         let value := (← lowerExpr cx ((if main then wrapValue else wrap) expression)).1
         return if asGuard then .not value else value
       let value ← instantiate definition.2.1 false true
@@ -3911,7 +4051,7 @@ partial def lowerPredicateClauses (cx : Cx) (expression : Expr) (splitConjunctio
           pure { member with formula, evaluationGuard? := some guard }
         pure { group with members, wanted := if negated then !group.wanted else group.wanted }
       clauses := clauses.push (name, value, branches, groups)
-    set { saved with expansionLeft := (← get).expansionLeft }
+    set { saved with expansionLeft := (← get).expansionLeft, readingLeft := (← get).readingLeft }
     return some (path, clauses)
   | _ => return none
 
@@ -4122,6 +4262,7 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
       let claim := if internal.isEmpty then claim else Ex.quant file 0 true orderedNames doms tys claim
       constraints := constraints.push { kind := .expect, name := Name.mkSimple s!"refines_{refinesIndex}", e := claim }
   let c : Comp := { path, vars, constraints, insts, defs, typeConstraints, branchGroups, memberGroups }
+  inspectComp c
   modify fun s => { s with
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
     scope := s.module
@@ -4132,6 +4273,7 @@ inputs `vars`, as a procedure for the checks of its tables and of the
 applications in it and in the function's contract (`Spec.bodies`). Each is
 recorded, since an application's question is the elaborator's alone. -/
 def noteBody (n : Name) (vars : Array Var) (e : Ex) (constraints : Array Constraint := #[]) : L Unit := do
+  inspectExpressions #[] (#[e] ++ constraints.map (·.e))
   modify fun s => { s with
     spec.bodies := s.spec.bodies.push { path := s.module, vars, constraints, insts := #[], body? := some (n, e) } }
 
@@ -4162,6 +4304,7 @@ def lowerContract (path n : Name) (defined : Bool) (ps : Array (Name × VTy)) (v
       else do
         pure #[(Name.mkSimple x.name, (← lowerExpr cx e).1, (← lowerExpr { vars, fnParams } e).1)]
     for (cn, bound, actual) in entries do
+      inspectExpressions #[] #[bound, actual]
       if post then posts := posts.push bound else pres := pres.push (cn, bound)
       if defined || !post then
         constraints := constraints.push { kind := (if post then .ensure else .assume), name := n ++ cn, e := actual }
@@ -4197,6 +4340,7 @@ def lowerGlobal (name : Ident) (binders : Array Binder) (body : Expr) : L Unit :
   let n := itemName name
   let body := if values.isEmpty then body else .quant body.span true values body
   let e := (← lowerExpr { vars := st.spec.flatVars shell } body).1
+  inspectExpressions #[] #[e]
   modify fun s => { s with
     table := s.table.addItem { kind := .expectItem, path := s.module ++ n, isPub := false, owner := s.module }
     spec.globals := s.spec.globals.push { shell with constraints := #[{ kind := .expect, name := n, e }] } }
@@ -4424,20 +4568,17 @@ partial def lowerItem : Item → L Unit
               nestedNumber := nestedNumber + 1
               let name := (if label.name.isEmpty then "" else label.name ++ ".") ++ nestedPrefix ++ (if child.isEmpty then "" else "." ++ child)
               let rename (n : Name) := if !child.isEmpty then n else Name.mkSimple (nestedPrefix ++ "." ++ n.toString)
+              let renameMember (member : Fren.Core.BranchMember Ex) : L (Fren.Core.BranchMember Ex) := do
+                let formula ← renameForRead member.formula (path ++ ·)
+                let valueFormula? ← member.valueFormula?.mapM (renameForRead · (path ++ ·))
+                let evaluationGuard? ← member.evaluationGuard?.mapM (renameForRead · (path ++ ·))
+                return { member with name := rename member.name, formula, valueFormula?, evaluationGuard? }
               let mappedBranches ← childBranches.mapM fun group => do
-                let members ← group.members.mapM fun member => do
-                  let formula ← renameForRead member.formula (path ++ ·)
-                  let valueFormula? ← member.valueFormula?.mapM (renameForRead · (path ++ ·))
-                  let evaluationGuard? ← member.evaluationGuard?.mapM (renameForRead · (path ++ ·))
-                  pure { member with name := rename member.name, formula, valueFormula?, evaluationGuard? }
+                let members ← group.members.mapM renameMember
                 let guard? ← group.guard?.mapM (renameForRead · (path ++ ·))
                 pure { group with members, guard? }
               let mappedGroups ← childGroups.mapM fun group => do
-                let members ← group.members.mapM fun member => do
-                  let formula ← renameForRead member.formula (path ++ ·)
-                  let valueFormula? ← member.valueFormula?.mapM (renameForRead · (path ++ ·))
-                  let evaluationGuard? ← member.evaluationGuard?.mapM (renameForRead · (path ++ ·))
-                  pure { member with name := rename member.name, formula, valueFormula?, evaluationGuard? }
+                let members ← group.members.mapM renameMember
                 pure { group with members }
               let value ← renameForRead value (path ++ ·)
               modify fun s => { s with
@@ -4451,7 +4592,10 @@ partial def lowerItem : Item → L Unit
       -- Over the parameters as inputs, for the checks of its tables, and
       -- its contract's, once it can be applied.
       let vars := ps.map fun (x, t) => ({ name := x, ty := t, role := .input, isPub := true } : Var)
-      let e := (← lowerExpr { vars, fnParams } body).1
+      -- Reuse the reading, with free parameters as procedure variables.
+      -- Reading the syntax again would unfold recursive calls an extra
+      -- time now that the function's definition has been registered.
+      let e ← copying b (·.subst (ps.toList.map fun (name, _) => (path ++ name, .var name)))
       let cs ← lowerContract path (itemName name) true ps vars clauses fnParams
       noteBody (itemName name) vars e cs
     modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module }
@@ -4545,7 +4689,7 @@ def lowerFrom (st : LState) (files : Array (Array Item)) (callTargs : Std.HashMa
     st := { st with module := .anonymous, scope := .anonymous }
     for item in items do
       -- Paths resolve in the module, but in a block with `use`s.
-      st := (← ((lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes }).mapError
+      st := (← ((lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes, readingLeft := Fren.Core.maxExpansionNodes }).mapError
         (·.at (readSite st.file st.module item))).2
     st := { st with file := st.file + 1 }
   return st
@@ -4562,7 +4706,7 @@ def preludeState : Except ReadError LState := do
   let mut st : LState := { module := Fren.Core.preludeModule, scope := Fren.Core.preludeModule }
   for item in items do
     -- Paths resolve in the module, but in a block with `use`s.
-    st := (← ((lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes }).mapError
+    st := (← ((lowerItem item).run { st with scope := st.module, expansionLeft := Fren.Core.maxExpansionNodes, readingLeft := Fren.Core.maxExpansionNodes }).mapError
       (·.at (readSite st.file st.module item))).2
   return { st with module := .anonymous, scope := .anonymous }
 
@@ -4628,8 +4772,11 @@ def parseValue (st : LState) (module : Name) (ty : VTy) (text : String) : Except
     | .ok r => pure r
     | .error e => throw e.msg.headline
   unless ps.toks[ps.pos]?.any (·.tok == .eof) do throw s!"`{text}` is not a value"
-  let (((ex, t), nat), _) ← ((do return (← lowerExpr {} e, ← natTyped e)).run
-    { st with module, expansionLeft := Fren.Core.maxExpansionNodes }).mapError toString
+  let (((ex, t), nat), _) ← ((do
+    let value ← lowerExpr {} e
+    inspectExpressions #[] #[value.1]
+    return (value, ← natTyped e)).run
+    { st with module, expansionLeft := Fren.Core.maxExpansionNodes, readingLeft := Fren.Core.maxExpansionNodes }).mapError toString
   -- Typed as at a binding of the type (`lang::widening`): a `Nat` is read
   -- as an `Int`, and a literal as a `Nat`.
   let t := if nat && ty == .nat then .nat else if t == .nat && ty == .int then .int else t

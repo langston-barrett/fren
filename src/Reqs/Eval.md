@@ -213,14 +213,37 @@ evaluation crashes rather than leave a value unknown. Neither is tested.
 
 The standalone commands `fren check`, `fren quickcheck`, `fren eval` and
 `fren mutate` allow up to `MAX_EXPANSION_NODES` visits to expression nodes
-while preparing one source item for evaluation. Each occurrence counts,
-including another occurrence of the same definition. The allowance starts
-again at the next item; inspecting a definition in another scope does not
-restore visits already spent. Going past it reports an expansion-limit
-error at the item's name and exits with code 2, before running the checks or
-tests that need that reading. The message suggests simplifying its definitions
-or splitting it. This is a limit on preparation for evaluation, separate
-from evaluation's fuel and the solver's limits.
+for copying while preparing one source item for evaluation. Each occurrence
+counts, including another occurrence of the same definition. The allowance
+starts again at the next item; inspecting a definition in another scope
+does not restore visits already spent. If the original spec exceeds the
+allowance, the whole command stops before running any check or test. It
+reports an expansion-limit error at the item's name and exits with code 2.
+The message suggests simplifying its definitions or splitting it. This is
+a limit on preparation for evaluation, separate from evaluation's fuel and
+the solver's limits.
+
+Each substitution result, and the expressions of the completed reading
+passed to evaluation and testing, must also fit the same bound by
+occurrence, even when substitution shares pointers instead of copying them.
+This includes procedure and global constraints, definitions, call arguments,
+contracts and recorded branch expressions. Each use of a local definition
+counts its definition again, transitively. A pattern
+binder's substitution result must also fit the bound: each mention counts
+its part of the scrutinee, with its original scope. A constant's closed
+body counts where later compilation enters it. Inspecting retained
+expressions and visiting their pattern-substitution sites share a separate
+allowance of `MAX_EXPANSION_NODES` visits per source item. Each prospective
+pattern substitution's result is checked against the same bound separately;
+reusing a scrutinee does not inspect its already checked sites again.
+Nested matches with no site questions do not spend visits on pattern
+substitution. Nesting applications of a structural recursion counts their
+arguments without repeatedly expanding the function's body.
+Both per-item allowances and every result bound must suffice before the
+reading is made available. In particular, moving nested applications
+from a function body to a procedure's constraint cannot avoid the bound,
+and a chain of doubling local definitions cannot defer unbounded copying
+to testing's substitution of those definitions into assumptions.
 
 If only a generated mutant exceeds the allowance, `fren mutate` also
 stops the whole run with code 2, without a mutation summary or an outcome
@@ -229,9 +252,13 @@ mutant's source, including any line shifts caused by the mutation.
 The original spec may be within the allowance; the stop avoids reporting
 a kill rate for a run that could not read every selected mutant.
 
-The bound gives more than five times the 1,587,728 visits used by the
-largest item in Fren's own requirements when it was chosen. It leaves
-room for growth while stopping the expansion that exhausted a 6 GiB run.
+The bound gives more than five times the 1,587,728 copying visits used by
+the largest item in Fren's own requirements when it was chosen. With
+result inspection and shared recursive calls, the 83 own-spec files use
+at most 86,296 copying visits and 286,868 inspection visits per item.
+Each allowance therefore leaves more than 29 times the measured need,
+giving room for growth while stopping the expansion that exhausted a
+6 GiB run.
 The hosted checker does not prepare this independent evaluator reading;
 its acceptance can therefore differ at this limit, as
 [`cli::accepts` and `cli::agreement`](Cli.md#agreement-with-lean) specify.
@@ -241,21 +268,35 @@ and branch is one visit, and two occurrences count twice even if they
 are the same subtree. A traversal succeeds exactly when those visits
 fit, including equality at the bound, and leaves the unused allowance.
 `eval::expansion_step` states how an individual visit spends it.
+`Application` represents a substituted argument retained once for strict
+evaluation and used twice by a function body: two expression nodes plus
+three occurrences of its argument. `eval::reading_size` requires a
+reading to fit the inspection allowance, independently of how much was
+copied to construct it.
 
 ```fren
 pub const MAX_EXPANSION_NODES: Int := 8388608
 
 pub proc expansion_budget(): (det initial: Nat) { ensure bound: initial = MAX_EXPANSION_NODES }
 
-pub enum CopyTree { Leaf, Branch(CopyTree, CopyTree) }
+pub enum CopyTree { Leaf, Branch(CopyTree, CopyTree), Application(CopyTree) }
 
 pub fn copy_visits(tree: CopyTree): Nat := match tree {
     CopyTree::Leaf => 1,
     CopyTree::Branch(left, right) => 1 + copy_visits(left) + copy_visits(right),
+    CopyTree::Application(argument) => 2 + 3 * copy_visits(argument),
 }
 
 pub proc expansion_count(tree: CopyTree, remaining: Nat): (det fits?, det after: Nat) {
     ensure fits: fits? iff copy_visits(tree) <= remaining
+    ensure spent: when fits?, after + copy_visits(tree) = remaining
+    ensure exhausted: unless fits?, after = 0
+}
+
+pub proc reading_size(tree: CopyTree, remaining: Nat): (det fits?, det after: Nat) {
+    require allowance: remaining <= MAX_EXPANSION_NODES
+    ensure fits: fits? iff copy_visits(tree) <= remaining
+    expect bounded: when fits?, copy_visits(tree) <= MAX_EXPANSION_NODES
     ensure spent: when fits?, after + copy_visits(tree) = remaining
     ensure exhausted: unless fits?, after = 0
 }

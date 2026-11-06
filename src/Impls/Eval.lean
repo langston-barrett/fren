@@ -41,10 +41,12 @@ and the copying traversal is checked separately, per constructor, in
 def copyTreeChildren : eval.CopyTree → List eval.CopyTree
   | .Leaf => []
   | .Branch left right => [left, right]
+  | .Application argument => [argument, .Branch argument argument]
 
 def copyTreeNodes : eval.CopyTree → Nat
   | .Leaf => 1
   | .Branch left right => 1 + copyTreeNodes left + copyTreeNodes right
+  | .Application argument => 2 + 3 * copyTreeNodes argument
 
 theorem copyTree_rule (tree : eval.CopyTree) :
     copyTreeNodes tree = 1 + ((copyTreeChildren tree).map copyTreeNodes).sum := by
@@ -52,7 +54,7 @@ theorem copyTree_rule (tree : eval.CopyTree) :
 
 theorem copyTree_visits (tree : eval.CopyTree) :
     (copyTreeNodes tree : Int) = eval.copy_visits tree := by
-  induction tree <;> simp_all [copyTreeNodes, eval.copy_visits, Int.natCast_add]
+  induction tree <;> simp_all [copyTreeNodes, eval.copy_visits, Int.natCast_add, Int.natCast_mul]
 
 impl expansion_count: eval::expansion_count for (tree : eval.CopyTree) (remaining : Nat) {
   tree := tree,
@@ -69,6 +71,22 @@ impl expansion_count: eval::expansion_count for (tree : eval.CopyTree) (remainin
     omega
   · simp [fits, fren_spec]
     omega
+
+impl reading_size: eval::reading_size for (tree : eval.CopyTree) (remaining : Nat) {
+  tree := tree,
+  remaining := remaining,
+  fits? := (Fren.Core.readingBudget copyTreeChildren remaining [tree]).isSome,
+  after := (Fren.Core.readingBudget copyTreeChildren remaining [tree]).getD 0,
+} by
+  intro tree remaining allowance
+  simp only [fren_spec] at allowance
+  have visits := copyTree_visits tree
+  unfold Fren.Core.readingBudget
+  rw [Fren.Core.expansionBudget_count copyTreeChildren copyTreeNodes copyTree_rule]
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero]
+  by_cases fits : copyTreeNodes tree ≤ remaining
+  · simp [fits, fren_spec] <;> omega
+  · simp [fits, fren_spec] <;> omega
 
 def toStatus : Status → eval.Status
   | .Inadmissible => .Inadmissible

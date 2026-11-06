@@ -2,9 +2,10 @@ error: evaluator expansion limit exceeded while reading `projection`
  --> test/cli/commands/check_expansion_limit.fren:8:8
   |
 8 | pub fn projection(n: Int): Int := twice(
-  |        ^^^^^^^^^^ more than 8388608 copying visits
+  |        ^^^^^^^^^^ more than 8388608 expansion visits
   |
-  = note: the evaluator allows 8388608 copying visits per source item
+  = note: copying and measuring retained expressions each allow 8388608 visits per source item
+  = note: each pattern substitution has a size limit of 8388608 expression occurrences
   = help: simplify this item's definitions or split it into smaller items
 
 exit=2

@@ -28,6 +28,12 @@ def expansionBudget (children : α → List α) : Nat → List α → Option Nat
 termination_by n => n
 decreasing_by simp_all [expansionStep]
 
+/-- Check the occurrences handed to later traversals, separately from
+the work spent making copies. In particular, a substitution may share a
+large argument without copying it (`eval::reading_size`). -/
+def readingBudget (children : α → List α) (remaining : Nat) (work : List α) : Option Nat :=
+  expansionBudget children remaining work
+
 /-- The reservation counts occurrences, rather than distinct nodes.
 For any finite tree measure satisfying the node equation, it succeeds
 exactly when the entire work list fits and returns the unspent budget.
@@ -57,17 +63,15 @@ theorem expansionBudget_count (children : α → List α) (nodes : α → Nat)
       simp only [List.map_append, List.sum_append, List.map_cons, List.sum_cons]
       split <;> split <;> simp_all <;> omega
 
-/-- Language acceptance and evaluator readiness are separate. The hosted
-front end does not construct the standalone evaluator's reading
-(`cli::accepts`); it therefore has no evaluator-copying rejection. -/
-def readerAccepted (hosted needsLean overLimit : Bool) : Bool :=
-  hosted || (!needsLean && !overLimit)
+/-- The standalone reading's resource decision (`cli::accepts`), after
+language acceptance. Hosted and Lean-code acceptance are decided elsewhere. -/
+def readerAccepted (overLimit : Bool) : Bool := !overLimit
 
 /-- The common headline used by command diagnostics and their comparisons. -/
 def expansionLimitHeadline : String := "evaluator expansion limit exceeded"
 
 /-- A resource limit, rather than a failure of the evaluator's reading. -/
 def expansionLimitMsg : String :=
-  s!"{expansionLimitHeadline} ({maxExpansionNodes} copied expression nodes per source item); simplify the defined functions or split the item"
+  s!"{expansionLimitHeadline} ({maxExpansionNodes} visits per source item for copying or measuring retained expressions; {maxExpansionNodes} occurrences per pattern substitution); simplify the defined functions or split the item"
 
 end Fren.Core

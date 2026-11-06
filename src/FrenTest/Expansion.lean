@@ -65,7 +65,7 @@ def constructorCases : Array (String × Ex × Nat) := Id.run do
     ("ctor", .ctor `T 0 #[b 0, b 1], 2),
     ("field", .field (b 0) 0, 1),
     ("update", .update (b 0) #[(0, b 1), (1, b 2)], 3),
-    ("match", .match (b 0) #[(.wild, some (b 1), b 2), (.wild, none, b 3)] 0 #[] none none, 4),
+    ("match", .match (b 0) #[(.wild, some (b 1), b 2), (.wild, none, b 3)] 0 #[1, 2] none none, 4),
     ("method", .method .len (b 0) #[b 1, b 2], 3),
     ("matches", .matches (b 0) "" .none, 1),
     ("setLit", .setLit #[b 0, b 1], 2),
@@ -93,6 +93,11 @@ run_cmd do
 #guard constructorCases.all fun (_, e, n) =>
   leftAfter n e == none && leftAfter (n + 1) e == some 0 && leftAfter (n + 2) e == some 1
 
+-- Skipping an empty answer agrees with the question generator on every
+-- constructor, including the roots that introduce questions themselves.
+#guard constructorCases.all fun (_, e, _) =>
+  (ReadingNode.expr #[] [] false e).hasSites == !(e.siteGoalsCore id).isEmpty
+
 #guard constructorCases.all fun (_, e, n) =>
   let renamed := e.renameBound (fun name => .str name "renamed")
   let children := renamed.copyChildren
@@ -118,8 +123,8 @@ def closureSubstitution (n : Nat) : Option Nat :=
 continues from the state of a previous file. -/
 def resets : Bool := Id.run do
   let .ok items := readItems "fn identity(n: Int): Int := n\n".toList.toArray | return false
-  let .ok st := lowerFrom { expansionLeft := 0 } #[items] {} | return false
-  return st.expansionLeft < Fren.Core.maxExpansionNodes
+  let .ok st := lowerFrom { expansionLeft := 0, readingLeft := 0 } #[items] {} | return false
+  return st.expansionLeft < Fren.Core.maxExpansionNodes && st.readingLeft < Fren.Core.maxExpansionNodes
 
 #guard resets
 
@@ -128,7 +133,7 @@ spent all of its budget. A function application needs copying work. -/
 def valueResets : Bool := Id.run do
   let .ok items := readItems "pub fn identity(n: Int): Int := n\n".toList.toArray | return false
   let .ok st := lowerAll #[items] {} | return false
-  match parseValue { st with expansionLeft := 0 } .anonymous .int "identity(7)" with
+  match parseValue { st with expansionLeft := 0, readingLeft := 0 } .anonymous .int "identity(7)" with
   | .ok (.int 7) => true
   | _ => false
 
@@ -140,11 +145,97 @@ def predicateSpends : Bool := Id.run do
   let .ok items := readItems "pub fn both?(x?) := and { first: x?, second: x? }\n".toList.toArray | return false
   let .ok st := lowerAll #[items] {} | return false
   let expression := Expr.app default #[{ name := "both?", span := default }] #[.bool default true]
-  let .ok (_, after) := (lowerPredicateClauses {} expression).run { st with expansionLeft := 1000 }
+  let .ok (_, after) := (lowerPredicateClauses {} expression).run { st with expansionLeft := 1000, readingLeft := 1000 }
     | return false
-  return after.expansionLeft < 1000
+  return after.expansionLeft < 1000 && after.readingLeft < 1000
 
 #guard predicateSpends
+
+/-- A substitution can be cheap to construct but expensive to traverse:
+the result must spend the inspection allowance as well. -/
+def sharedResultSpends : Bool := Id.run do
+  let mut argument := leaf
+  for _ in [0:8] do argument := .strict #[argument] (.bin .add argument argument)
+  match (copying (.bound `parameter) (·.subst [(`parameter, argument)])).run
+      { expansionLeft := 100, readingLeft := 64 } with
+  | .error (.expansionLimit _) => true
+  | _ => false
+
+#guard sharedResultSpends
+
+-- Generic and contract copies can retain large closed bodies. Their
+-- output inspection includes the bodies that later compilation enters.
+#guard
+  match (copying (.const `closed (.bin .add leaf leaf)) id).run
+      { expansionLeft := 1, readingLeft := 3 } with
+  | .error (.expansionLimit _) => true
+  | _ => false
+
+def constraintSource (depth : Nat) : String := Id.run do
+  let mut body := "n"
+  for _ in [0:depth] do body := s!"twice({body})"
+  return s!"pub fn twice(n: Int): Int := n + n\npub proc p(n: Int): (det r: Int) \{ ensure result: r = {body} }\n"
+
+/-- Test the real procedure path with a small allowance. Only the callee
+body is copied, so the old input-only reservations admitted this DAG. -/
+def constraintLimit (depth allowance : Nat) : Bool := Id.run do
+  let .ok items := readItems (constraintSource depth).toList.toArray | return false
+  let .ok st := lowerAll #[#[items[0]!]] {} | return false
+  match (lowerItem items[1]!).run { st with expansionLeft := allowance, readingLeft := allowance } with
+  | .error (.expansionLimit _) => true
+  | _ => false
+
+#guard !constraintLimit 1 128
+#guard constraintLimit 8 128
+
+-- Local substitutions performed later by `inlineEarly` are inspected
+-- transitively before assumptions are handed to testing.
+#eval show IO Unit from do
+  let source := "pub proc p(n: Int) {\nlet first_value: Int := n + n\nlet middle_value: Int := first_value + first_value\nlet last_value: Int := middle_value + middle_value\nrequire reads_value: last_value = last_value\n}\n"
+  let items ← match readItems source.toList.toArray with
+    | .ok items => pure items
+    | .error message => throw (IO.userError s!"local inspection fixture must parse: {message}")
+  let .ok st := preludeState | throw (IO.userError "prelude must read")
+  match (lowerItem items[0]!).run { st with expansionLeft := 1000, readingLeft := 32 } with
+  | .error (.expansionLimit _) => pure ()
+  | .error error => throw (IO.userError s!"local inspection failed for another reason: {error}")
+  | .ok (_, after) => throw (IO.userError s!"local inspection did not stop: {after.readingLeft} visits remain")
+
+-- The same inspection follows pattern binders and a constant's closed
+-- body, which later site substitutions and compilation traverse.
+#guard
+  let expanded := Ex.bin .add leaf leaf
+  let body := Ex.index (.seqLit #[.bound `p, .bound `p]) (.bound `p) 1 `unspecified
+  let node := ReadingNode.expr #[] [] true (.match expanded #[(.bind `p, none, body)] 0 #[] none none)
+  match (inspectPatternResults [node] 8).run {} with
+  | .error (.expansionLimit _) => true
+  | _ => false
+
+-- A binder can bring an index from its scrutinee into an otherwise plain
+-- arm. Both reads keep their questions at the original index's position.
+#guard
+  let scrutinee := Ex.index (.seqLit #[leaf]) (.lit (.int 0)) 42 `unspecified
+  let expression := Ex.match scrutinee #[(.bind `p, none, .bound `p)] 43 #[44] none none
+  (expression.indexGoals.filter (·.1 == 42)).size == 2
+#guard
+  (Fren.Core.readingBudget ReadingNode.children 2 [.expr #[] [] false (.const `closed (.bin .add leaf leaf))]).isNone
+
+-- Retained arguments are copied and compiled, but `siteGoals` does not
+-- visit them and does not substitute their nested pattern binders.
+#guard
+  let expanded := Ex.bin .add leaf leaf
+  let argument := Ex.match expanded #[(.bind `p, none, .pair (.bound `p) (.bound `p))] 0 #[] none none
+  Fren.Core.readingBudget ReadingNode.children 9 [.expr #[] [] false (.strict #[argument] leaf)] == some 0 &&
+    Fren.Core.readingBudget ReadingNode.children 2 [.expr #[] [] true (.strict #[argument] leaf)] == some 0
+
+-- This linear-size tree used to revisit exponentially many occurrences
+-- even though it has no site questions. Its empty answer needs no copies.
+#eval show IO Unit from do
+  let mut body := leaf
+  for _ in [0:25] do
+    body := .match (.bin .add leaf leaf) #[(.bind `x, none, body)] 0 #[] none none
+  unless body.siteGoals.isEmpty do
+    throw (IO.userError "question-free nested matches must have no site goals")
 
 /-- Hidden locals can duplicate earlier locals, as nested function calls
 can duplicate arguments. The entire substitution shares one allowance. -/

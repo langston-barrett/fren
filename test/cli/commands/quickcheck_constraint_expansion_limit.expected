@@ -1,0 +1,11 @@
+error: evaluator expansion limit exceeded while reading `p`
+ --> test/cli/commands/check_constraint_expansion_limit.fren:5:10
+  |
+5 | pub proc p(n: Int): (det r: Int) {
+  |          ^ more than 8388608 expansion visits
+  |
+  = note: copying and measuring retained expressions each allow 8388608 visits per source item
+  = note: each pattern substitution has a size limit of 8388608 expression occurrences
+  = help: simplify this item's definitions or split it into smaller items
+
+exit=2

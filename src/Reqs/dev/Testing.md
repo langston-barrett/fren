@@ -447,11 +447,15 @@ pub mod testing
   checks the first `COUNT` seeds of an independent stream of copying
   constructs (`FrenTest.ExpansionFuzz`): nested defined-function calls,
   generic and higher-order applications, collection and compound types,
-  binders, and refinement locals. Ordinary cases must have no standalone
-  error and no front-end difference. Resource-limit probes run separately:
-  both front ends check the nested-function probe; the large refinement
-  probe checks the standalone resource diagnostic, while smaller
-  refinements compare both front ends. Workers check at most 25 seeds.
+  binders, and refinement locals. After the established function cases,
+  it appends consumers in procedure constraints, call bindings, global
+  claims, local-definition chains, nested matches and generic structural
+  recursion consumers, from a separate seed. Ordinary cases must have no
+  standalone error and no front-end difference. Resource-limit probes run
+  separately: both front ends check the nested-function probe; the large
+  refinement, constraint and local-chain probes check the standalone
+  resource diagnostic, while smaller consumer forms compare both front
+  ends. Workers check at most 25 seeds.
   This driver stops at the first failing worker, with its exit status;
   unlike the ordinary fuzzer, it has no per-spec timeout or crash record.
   Its working specs are in `.lake/expansion-fuzz`, and failures are printed

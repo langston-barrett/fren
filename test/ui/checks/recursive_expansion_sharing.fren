@@ -1,0 +1,61 @@
+-- Recursive calls retain the evaluator body instead of copying an unfolding.
+set_option fren.lint.undecidable "allow"
+
+pub enum RecursiveList<T> { Nil, Cons(T, RecursiveList<T>) }
+
+pub fn clone<T>(xs: RecursiveList<T>): RecursiveList<T> := match xs {
+    RecursiveList::Nil => RecursiveList::Nil,
+    RecursiveList::Cons(x, tail) => RecursiveList::Cons(x, clone(tail)),
+}
+
+pub fn nested(xs: RecursiveList<Int>): RecursiveList<Int> := clone(
+    clone(
+        clone(
+            clone(
+                clone(
+                    clone(
+                        clone(
+                            clone(
+                                clone(
+                                    clone(
+                                        clone(
+                                            clone(
+                                                clone(
+                                                    clone(
+                                                        clone(
+                                                            clone(
+                                                                clone(
+                                                                    clone(
+                                                                        clone(
+                                                                            clone(
+                                                                                clone(
+                                                                                    clone(
+                                                                                        clone(
+                                                                                            clone(
+                                                                                                clone(clone(clone(clone(clone(clone(clone(clone(xs))))))))
+                                                                                            )
+                                                                                        )
+                                                                                    )
+                                                                                )
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                )
+                                                            )
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+)
+
+expect empty: nested(RecursiveList::Nil) = RecursiveList::Nil  --~ warning: this expectation mentions no variable
