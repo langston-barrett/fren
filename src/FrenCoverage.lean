@@ -120,7 +120,7 @@ def ownerOf (n : Name) : Name :=
 
 #guard ownerOf `FrenCli.run._lam_0 == `FrenCli.run
 #guard ownerOf `FrenCli.run._at_.FrenCli.main.spec_0 == `FrenCli.run
-#guard let atom := ((Name.mkNum `_private.FrenCli.Parse 0).mkStr "FrenCli").mkStr "atom"
+#guard let atom := ((Name.mkNum `_private.FrenCli.Parse.PatternSyntax 0).mkStr "FrenCli").mkStr "atom"
   ownerOf (atom.mkStr "_boxed") == atom
 #guard ownerOf `Fren.Core.Ty.node == `Fren.Core.Ty.node
 

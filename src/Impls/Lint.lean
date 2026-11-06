@@ -1,6 +1,9 @@
 -- keep-sorted start
 import Impls.Global
-import Impls.Lang
+import Impls.Lang.Decidability
+import Impls.Lang.Expressions
+import Impls.Lang.Methods
+import Impls.Lang.Types
 import Impls.View
 import Reqs.Lint
 -- keep-sorted end
