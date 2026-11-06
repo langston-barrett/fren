@@ -4724,15 +4724,13 @@ function at `path`, or of its contract, with the type parameters `tps`, at
 its instance with the type arguments `targs`: a type parameter's type
 argument, its `Inhabited` instance's, and any other placeholder itself
 (`Reqs/Generated#generic-functions`). -/
-def usesTerms (uses : Array Name) (path : Name) (tps : Array Name) (targs : Array Core.Ty) : TermElabM (Array Term) :=
-  uses.mapM fun u => do
-    for p in tps, k in [0:tps.size] do
-      let ph := placeholderName (Core.typeParamPath path k p)
-      if u == ph then return typeSyntax (← leanTypeOf targs[k]!)
-      -- `_`, which Lean fills with the instance itself, by instance
-      -- synthesis, rather than `inferInstance` around it, which `simp` sees.
-      if u == inhabitedName ph then return ← `(_)
-    return ⟨(mkCIdent u).raw⟩
+def usesTerms (uses : Array Name) (path : Name) (tps : Array Name) (targs : Array Core.Ty) : TermElabM (Array Term) := do
+  -- `_` lets Lean fill the dictionary by instance synthesis, rather than
+  -- putting `inferInstance` around it, which `simp` would see.
+  let args ← targs.flatMapM fun t => do
+    return #[typeSyntax (← leanTypeOf t), ← `(_)]
+  let images := typeInstanceImages path tps args uses
+  return uses.map fun u => (images[u]?).getD ⟨(mkCIdent u).raw⟩
 
 /-- Records an application of the generic function at `path` at the type
 arguments `targs`, in the current item (`Core.GenericUse`). -/

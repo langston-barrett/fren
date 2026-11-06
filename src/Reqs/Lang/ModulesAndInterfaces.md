@@ -153,7 +153,7 @@ An interface is a module whose parameter is `Self`. Today's
 [trait](Traits.md) is an interface: its carrier is `Self`, its methods are
 its abstract items, and its laws are axioms among its sentences.
 
-r[module.generic-function]
+r[module.generic-function] lang::generic_type_image, lang::generic_translation
 A generic function `fn f<T: B>` is a theory with one item, `f`. Its
 parameters are its type parameters and an implementation of each bound at
 them, and its sentences are `f`'s `require` and `ensure` clauses.
