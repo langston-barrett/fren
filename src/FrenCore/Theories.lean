@@ -107,7 +107,7 @@ def TheoryTerm.substitute (terms : Name → Option TheoryTerm) : TheoryTerm → 
 
 inductive TheorySentenceRole where
   | domain | theorem | axiom | goal
-  deriving Inhabited, DecidableEq
+  deriving Inhabited, BEq, DecidableEq, ReflBEq, LawfulBEq
 
 /-- One sentence: universally quantified parameters, a domain, the relations
 of its calls, and its claims. Its meaning is `domain ∧ calls ⇒ claims`
@@ -118,7 +118,7 @@ structure TheorySentence where
   domain : TheoryTerm
   calls : List TheoryTerm
   claims : List TheoryTerm
-  deriving Inhabited, BEq
+  deriving Inhabited, BEq, DecidableEq, ReflBEq, LawfulBEq
 
 /-- Translate every type and term of a sentence by the same morphism. Its
 role is preserved; turning translated laws into obligations or trusted axioms

@@ -9,7 +9,8 @@ MODELS = {"luna": "gpt-6-luna", "terra": "gpt-6.1-terra"}
 EFFORTS = {"low", "medium", "high"}
 PUSHERS = {"OWNER", "MEMBER", "COLLABORATOR"}
 MAX_ROUNDS = 3
-LIMIT = f"codex-agent has answered {MAX_ROUNDS} rounds; leaving this pull request to the coordinator."
+LIMIT = (f"codex-agent has answered {MAX_ROUNDS} rounds; "
+         "leaving this pull request to the coordinator.")
 ROUND = re.compile(r"codex-agent fix round (\d+)(?:,| made no change:| rejected:)")
 TRAILERS = re.compile(r"\n\nCodex-Agent-PR: (\d+)\nCodex-Agent-Round: (\d+)\n*\Z")
 

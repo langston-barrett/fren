@@ -16,6 +16,7 @@ import Impls.Eval
 import Impls.Fmt
 import Impls.Generated
 import Impls.Global
+import Impls.GroundClosure
 import Impls.GroundMatching
 import Impls.Guards
 import Impls.HigherOrder
@@ -148,9 +149,21 @@ tested lang::ground_join_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_listed_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_sentence_lists_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_rule_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_prepared_listed_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_prepared_rule_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_preparation_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_instance_list_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_instances_step: "src/FrenTest/GroundMatching.lean"
+
+-- Ranked construction and activation, including independent fixpoint proofs.
+tested lang::ground_assignment_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_candidate_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_pool_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_universe_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_applications_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_enabled_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_activation_step: "src/FrenTest/GroundClosure.lean"
+tested lang::ground_close_step: "src/FrenTest/GroundClosure.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under

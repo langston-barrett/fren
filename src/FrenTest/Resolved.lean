@@ -37,11 +37,13 @@ def check (bless : Bool) : IO (Array String) := do
   let src := "pub type Pos = x: Int where positive: x > 0\n"
   let st := FrenCli.elabText (FrenCli.initialState #[] none true) 0 src.toList.toArray
   let label := (src.splitOn "positive")[0]!.length
+  let exprStart := (src.splitOn "x >")[0]!.length
   if st.diags.any (·.severity == .error) then
     failures := failures.push "resolved dump: the subset regression did not elaborate"
   if (st.resolved?.getD #[]).any fun a => a.kind == "type" && a.span.start == label then
     failures := failures.push "resolved dump: a hidden subset predicate typed the invariant label"
-  unless (st.resolved?.getD #[]).any fun a => a.kind == "expr" && a.value == "Bool" do
+  unless (st.resolved?.getD #[]).any fun a => a.kind == "expr" &&
+      a.span.start == exprStart && a.span.stop == exprStart + 5 && a.value == "Bool" do
     failures := failures.push "resolved dump: the subset invariant lost its expression annotation"
   let src := "pub type Digit = Int is 0..=9\n"
   let st := FrenCli.elabText (FrenCli.initialState #[] none true) 0 src.toList.toArray
@@ -52,7 +54,8 @@ def check (bless : Bool) : IO (Array String) := do
     if (a.kind == "local" && Fren.Core.generatedName a.value) ||
         (a.kind == "expr" && a.span.start == base) then
       failures := failures.push "resolved dump: the shorthand's unwritten binder leaked into the surface"
-  unless (st.resolved?.getD #[]).any fun a => a.kind == "type" && a.span.start == base && a.value == "Int" do
+  unless (st.resolved?.getD #[]).any fun a => a.kind == "type" &&
+      a.span.start == base && a.span.stop == base + 3 && a.value == "Int" do
     failures := failures.push "resolved dump: the shorthand lost its written base type"
   for path in #["test/cli/args/dump_resolved.fren", "test/cli/args/dump_resolved_error.fren",
       "test/cli/args/dump_resolved_failed.fren", "test/ui/lang/resolved_surface.fren",
@@ -82,8 +85,9 @@ def check (bless : Bool) : IO (Array String) := do
       let expected := (System.FilePath.mk path).withExtension "expected"
       if bless then IO.FS.writeFile expected one.stdout
       else
-        unless one.stdout == (← IO.FS.readFile expected) do
-          failures := failures.push s!"{path}: blanked Markdown surface or offsets differ from the snapshot"
+        let snapshot ← if ← expected.pathExists then IO.FS.readFile expected else pure ""
+        unless one.stdout == snapshot do
+          failures := failures.push s!"{path}: blanked Markdown surface or offsets differ from the snapshot\n--- expected\n{snapshot}--- actual\n{one.stdout}---"
   -- The annotations of an imported generic are captured at its declaration,
   -- rather than at one of the concrete instances used by a later file.
   let dir : System.FilePath := ".lake/resolved-test"
