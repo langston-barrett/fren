@@ -40,9 +40,10 @@ descriptions, and commit messages. This keeps model text from starting an
 assistant under the publishing account or suppressing required checks.
 Git and API responses are captured; runner logs report exception types.
 After container teardown, a failed sandbox also reports up to three
-stderr error lines, bounded and redacted for known credentials and opaque
-token-like strings, even when its raw logs are withheld. If stderr has no
-error line, it falls back to Codex's structured JSON error events.
+distinct nonblank lines, even when its raw logs are withheld. It prefers
+stderr error lines, then Codex's structured JSON error events, then stderr
+lines of any kind. Every line is bounded, redacted for known credentials
+and opaque token-like strings, and made inert before printing.
 Mentions are broken with zero-width spaces, including entity forms and
 code. API bodies are bounded below GitHub's limit after neutralization,
 including multibyte text.
