@@ -438,7 +438,8 @@ def LintTarget.rejectedBy? (t : LintTarget) (levelOf : Lint → LintLevel) (requ
   | .lint l => if (setLevel (levelOf l) requested).1 then none else some l
   | .group g =>
     let forbidden := g.members.filter (levelOf · == .forbid)
-    if groupAccepted forbidden.size requested then none else forbidden[0]?
+    if groupAccepted forbidden.size requested then none else
+      (forbidden.qsort (·.name < ·.name))[0]?
 
 /-- The level of a lint from Lean options set outside the file, where there
 is no order: `forbid` wins, from its default, its own option or its
