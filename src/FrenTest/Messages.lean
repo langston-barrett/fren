@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Testing
 import FrenTest.Ui
 import Lean.Elab.Frontend
 -- keep-sorted end

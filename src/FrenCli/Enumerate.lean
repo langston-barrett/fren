@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Confirm
+import FrenCore.Check.Run
 import FrenCore.Enumeration
 -- keep-sorted end
 

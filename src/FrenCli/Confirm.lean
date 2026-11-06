@@ -2,6 +2,7 @@
 import FrenCli.Search
 import FrenCli.Smt
 import FrenCli.Verdicts
+import FrenCore.Check.ReportFormat
 -- keep-sorted end
 
 /-!

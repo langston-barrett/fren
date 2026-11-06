@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Diagnostic
 -- keep-sorted end
 
 /-! # The binary's exit code (`cli::exit`) -/

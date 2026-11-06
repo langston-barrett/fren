@@ -2,7 +2,27 @@
 -- on Lean core, and on the binary's parser, with which `FrenCore.Lint` reads
 -- the Fren quotations of its fixes (`FrenCli.Quote`).
 -- keep-sorted start
-import FrenCore.Check
+import FrenCore.Check.Assertions
+import FrenCore.Check.Backend
+import FrenCore.Check.BaseMessages
+import FrenCore.Check.Component
+import FrenCore.Check.Conflicts
+import FrenCore.Check.Contracts
+import FrenCore.Check.Decidability
+import FrenCore.Check.Evidence
+import FrenCore.Check.Hypotheses
+import FrenCore.Check.Model
+import FrenCore.Check.Properties
+import FrenCore.Check.Query
+import FrenCore.Check.Realizability
+import FrenCore.Check.ReportFormat
+import FrenCore.Check.Reporting
+import FrenCore.Check.Run
+import FrenCore.Check.Selection
+import FrenCore.Check.Sites
+import FrenCore.Check.Solver
+import FrenCore.Check.Testing
+import FrenCore.Check.Types
 import FrenCore.Closures
 import FrenCore.Diagnostic
 import FrenCore.Evidence

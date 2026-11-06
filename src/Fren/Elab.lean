@@ -6,6 +6,7 @@ import Fren.Model
 import Fren.SeqElems
 import Fren.SimpSet
 import Fren.Syntax
+import FrenCore.Check.Contracts
 import FrenCore.Checking
 import FrenCore.Closures
 import FrenCore.FnBlocks

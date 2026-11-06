@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Elab
+import FrenCore.Check.Run
 import FrenCore.Obligations
 -- keep-sorted end
 

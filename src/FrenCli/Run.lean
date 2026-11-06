@@ -8,6 +8,9 @@ import FrenCli.Quick
 import FrenCli.Same
 import FrenCli.Smt
 import FrenCli.TheoryDump
+import FrenCore.Check.Reporting
+import FrenCore.Check.Run
+import FrenCore.Check.Testing
 import FrenCore.Literate
 import FrenCore.Obligations
 import FrenCoreCodes
