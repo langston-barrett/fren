@@ -44,7 +44,7 @@ def contractTable (sc : WScope) (name : String) : R String := do
   return s!"pub fn {name}(x0: Int, x1?): (r: Int) \{\n{clauses}}\n"
 
 /-- Uninterpreted functions with contracts of each form, applied by an
-enumerated procedure (`check::contract_blocks_enumeration`): preconditions
+enumerated procedure (`check::contract_blocker`): preconditions
 alone, which do not keep it from being enumerated, postconditions alone,
 both, or no contract. They are declared in an order of their own, and
 applied in another, so that the function that `F0645` names, the first by
