@@ -1439,7 +1439,9 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
             if child.returncode is not None and (group_reported is None or now - group_reported >= 30):
                 pids = ("unavailable" if readings is None else
                         ", ".join(str(row["pid"]) for row in readings) or "none sampled")
-                print(f"heavy: `{shown}` leader exited with {child.returncode}; "
+                status = (child.returncode if child.returncode >= 0
+                          else 128 - child.returncode)
+                print(f"heavy: `{shown}` leader exited with {status}; "
                       f"holding slot for process group {child.pid} (namespace-local PGID); "
                       f"remaining procfs-view PIDs: {pids}", file=sys.stderr)
                 group_reported = now
