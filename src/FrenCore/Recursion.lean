@@ -81,10 +81,20 @@ def recursion (n : Nat) (uses : List RecUse) : Recursion :=
       let k := fs.foldl max 0
       .notStructural k (fs.idxOf k)
 
-/-- Ground applications receive postconditions and, when written, an equation.
-Binder-dependent applications receive neither (`lang::recursive_facts`). -/
-def recursiveFacts (introduced : Bool) (bound : Bool := false) : Bool × Bool :=
-  (!bound, !bound && !introduced)
+/-- Ground applications receive postconditions and, where their depth, how
+many defining equations away from the query they are, is less than the
+query's unfoldings (`unfoldings`), an equation. Binder-dependent
+applications receive neither (`lang::recursive_facts`). -/
+def recursiveFacts (depth : Nat) (bound : Bool := false) (unfoldings : Nat := 1) : Bool × Bool :=
+  (!bound, !bound && decide (depth < unfoldings))
+
+/-- How many steps of defining equations the check of a function generated
+for induction unfolds (`Reqs/Lang/Recursion#unfolding-in-an-induction`). -/
+def inductionUnfoldings : Nat := 3
+
+/-- A query's unfoldings: one step, but in the check of a function generated
+for induction (`induction`), `inductionUnfoldings` (`lang::unfoldings`). -/
+def unfoldings (induction : Bool) : Nat := if induction then inductionUnfoldings else 1
 
 /-- Whether a recursive function's applications bring its result type's
 constraint: where its declared result type has one (`constrained`). Which
@@ -130,7 +140,7 @@ def counterexampleReported (hyps : Array (Bool × Option Bool)) (goal : Bool × 
     (hyps.all (·.2 == some true) && goal.2 == some false) factsRecursive
 
 /-- The formulas whose applications of recursive functions a query reflects,
-with their one-step equations and postconditions (`lang::recursion_formulas`):
+with their defining equations and postconditions (`lang::recursion_formulas`):
 the facts that its variables' types bring, `varFacts`, those of the
 applications that it has, `appFacts` (`Fren.Core.appFactsWith`,
 `check::fact_applications`), and then its own hypotheses, `hyps`. Both

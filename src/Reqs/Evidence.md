@@ -44,14 +44,14 @@ application of an uninterpreted function with a
 [contract](Lang/Items.md#contracts) can hold only where the contract is
 realizable, and those about an application of a [recursive
 function](Lang/Recursion.md#solver-encoding), its postconditions as ground
-facts beside one step of its equations, only where its postconditions
-hold, which their checks by induction show. And a variable, parameter,
-existential output or uninterpreted application whose type is a [subset
-type](Lang/SubsetTypes.md) brings the type's invariants as assumptions,
-which can hold only where the type is inhabited, which its inhabitation
-check (`F0660`) shows. The checks of a function's own clauses have its
-preconditions among their hypotheses, which only the function's own
-contract realizability (`F0632`) shows can hold. So:
+facts beside the steps of its equations that the query unfolds, only where
+its postconditions hold, which their checks by induction show. And a
+variable, parameter, existential output or uninterpreted application whose
+type is a [subset type](Lang/SubsetTypes.md) brings the type's invariants as
+assumptions, which can hold only where the type is inhabited, which its
+inhabitation check (`F0660`) shows. The checks of a function's own clauses
+have its preconditions among their hypotheses, which only the function's
+own contract realizability (`F0632`) shows can hold. So:
 
 - a check's evidence is the weakest of its own method's and of every check
   that it *rests on*: the checks whose passes it takes as premises, and
