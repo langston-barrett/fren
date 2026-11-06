@@ -1237,19 +1237,21 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
   for f in hyps.map (·.2) |>.push goal do
     work := work ++ scan recs (expand f) #[] 0 #[]
   let mut out := #[]
-  let mut seen : Std.HashSet (SeqElems.SExpr × Array String × Nat) := {}
+  let mut seen : Std.HashMap (SeqElems.SExpr × Array String) Nat := {}
   let mut done := 0
   while done < work.size do
     let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, depth)
-    if seen.contains key then continue
-    seen := seen.insert key
+    let key := (app, gs)
+    if !Fren.Core.recursiveDepthImproves seen[key]? depth then continue
     let .list xs := app | continue
     let .atom head := xs[0]! | continue
     let args := xs.extract 1
     let text := toString app
     if ancestors.contains text then continue
+    -- A shallower visit subsumes equal and deeper visits, but a later
+    -- strictly shallower one must still expand its additional equations.
+    seen := seen.insert key depth
     let ancestors := ancestors.push text
     let domain := ((prelude.byQuoted.get[head]?.bind (prelude.decls[·]?)).map fun d =>
       let ps := (d.recursion?.map (·.1)).getD #[]

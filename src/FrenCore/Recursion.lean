@@ -88,6 +88,26 @@ applications receive neither (`lang::recursive_facts`). -/
 def recursiveFacts (depth : Nat) (bound : Bool := false) (unfoldings : Nat := 1) : Bool × Bool :=
   (!bound, !bound && decide (depth < unfoldings))
 
+/-- Whether this depth improves on the depth already used for the same
+application and guards (`lang::recursive_depth`). A shallower visit brings
+at least the facts of a deeper one; only a strict improvement needs work. -/
+def recursiveDepthImproves (previous : Option Nat) (depth : Nat) : Bool :=
+  match previous with
+  | none => true
+  | some earlier => decide (depth < earlier)
+
+/-- The shallower visit retains all postconditions and every equation
+allowed at the deeper depth. Descending through an equation adds one to
+both depths, preserving the same ordering. -/
+theorem recursiveFacts_subsumed (earlier depth unfoldings : Nat) (bound : Bool)
+    (h : earlier ≤ depth) :
+    (recursiveFacts earlier bound unfoldings).1 = (recursiveFacts depth bound unfoldings).1 ∧
+      ((recursiveFacts depth bound unfoldings).2 = true →
+        (recursiveFacts earlier bound unfoldings).2 = true) := by
+  constructor
+  · rfl
+  · cases bound <;> simp_all [recursiveFacts] <;> omega
+
 /-- How many steps of defining equations the check of a function generated
 for induction unfolds (`Reqs/Lang/Recursion#unfolding-in-an-induction`). -/
 def inductionUnfoldings : Nat := 3
