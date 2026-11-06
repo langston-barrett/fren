@@ -2845,8 +2845,9 @@ partial def patTerm (ty : Core.Ty) (p : Core.Pat) (x : Term) : TermElabM Term :=
 
 /-- The constraint `c` of the term `x` (`Core.Cons`), as the `fren`
 command's `consSmt` says, where `depth` numbers the bound variables of the
-quantifiers around it. -/
-partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM Term := do
+quantifiers around it. `natAsInt` is true at the root of a Nat-valued
+uninterpreted function's facts, where the solver represents it by Int. -/
+partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) (natAsInt : Bool := false) : TermElabM Term := do
   let st ← getState
   match c with
   | .predicate i =>
@@ -2854,10 +2855,10 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
     -- A Nat result is represented by Int in uninterpreted-function facts.
     -- Its nonnegativity is a separate base fact; evaluate the invariant
     -- on the corresponding Nat value while retaining that base fact.
-    let x ← if (f.ptys.1[0]?).any (·.ty == .nat) then do
-      let value ← elabTerm x none
-      let type ← whnf (← inferType value)
-      if type.isConstOf ``Int then `(Int.toNat $x) else pure x
+    -- Do not elaborate `x` here: a collection's binder is syntax whose
+    -- quantifier has not been elaborated yet. Projections and collection
+    -- members already have their declared Lean types.
+    let x ← if natAsInt && (f.ptys.1[0]?).any (·.ty == .nat) then `(Int.toNat $x)
       else pure x
     `($(mkCIdent f.decl) $(f.uses.map fun u => ⟨(mkCIdent u).raw⟩)* $x)
   | .pat ty p => patTerm ty p x
@@ -2884,16 +2885,16 @@ partial def consTerm (c : Core.Cons) (x : Term) (depth : Nat := 0) : TermElabM T
   | .pairs _ _ ca cb =>
     let (u, v) := (mkIdent (Name.mkSimple s!"fren_a{depth}"), mkIdent (Name.mkSimple s!"fren_b{depth}"))
     let parts := (← ca.toArray.mapM (consTerm · u (depth + 1))) ++ (← cb.toArray.mapM (consTerm · v (depth + 1)))
-    `(∀ $u:ident $v:ident, ($u, $v) ∈ $x → $((← conjTerm parts).getD (← `(True))))
+    `(Fren.relationObligation (∀ $u:ident $v:ident, ($u, $v) ∈ $x → $((← conjTerm parts).getD (← `(True)))))
   | .all cs =>
-    let ts ← cs.mapM (consTerm · x depth)
+    let ts ← cs.mapM (consTerm · x depth natAsInt)
     return (← conjTerm ts).getD (← `(True))
 
 /-- The constraint `c` of a value of the Lean type `ty`, as a predicate:
 `fun x => c x`. -/
 def predOf (ty : Expr) (c : Core.Cons) : TermElabM Expr :=
   withLocalDeclD `fren_x ty fun x => do
-    let p ← elabProp (← consTerm c (mkIdent `fren_x))
+    let p ← elabProp (← consTerm c (mkIdent `fren_x) (natAsInt := ty.isConstOf ``Int))
     mkLambdaFVars #[x] p
 
 /-- The constraint `c` of a value of the Lean type `ty`, which mentions the
@@ -7057,17 +7058,17 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
     if let .forallE _ condition tail _ := body then
       if !tail.hasLooseBVars && (← isProp condition) then return ← contains tail
     return false
-  let rec expand (body : Expr) (written : Syntax) (owner : Name) (guards : Array Expr) :
+  let rec expand (body : Expr) (written : Syntax) (owner : Name) (guards : Array Expr) (label : Syntax) :
       StateT (Std.TreeMap Name Nat Name.quickCmp) TermElabM (Array PropInfo × Array (Name × Expr) × CompIndexes) := do
     let body := body.consumeMData
     if let .forallE _ condition tail _ := body then
       if !tail.hasLooseBVars && (← isProp condition) then
-        return ← expand tail (if isBooleanGuard (unparen written) then (unparen written)[3] else written) owner (guards.push condition)
+        return ← expand tail (if isBooleanGuard (unparen written) then (unparen written)[3] else written) owner (guards.push condition) label
     if prop.kind != .cover && body.isAppOfArity ``And 2 && (← contains body) then
       let leftSource := if isBinOp (unparen written) "and" then (unparen written)[0] else written
       let rightSource := if isBinOp (unparen written) "and" then (unparen written)[2] else written
-      let left ← expand body.getAppArgs[0]! leftSource (Name.mkSimple (owner.toString (escape := false) ++ ".1")) guards
-      let right ← expand body.getAppArgs[1]! rightSource (Name.mkSimple (owner.toString (escape := false) ++ ".2")) guards
+      let left ← expand body.getAppArgs[0]! leftSource (Name.mkSimple (owner.toString (escape := false) ++ ".1")) guards leftSource
+      let right ← expand body.getAppArgs[1]! rightSource (Name.mkSimple (owner.toString (escape := false) ++ ".2")) guards rightSource
       return (left.1 ++ right.1, left.2.1 ++ right.2.1, left.2.2 ++ right.2.2)
     if let some (info, arguments, wanted) := predicateCallPolarity? state body then
       if prop.kind != .cover && wanted && !info.namedMembers.isEmpty then
@@ -7112,12 +7113,15 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
                 pure (some (← liftM (mkLambdaFVars fvs (mkAndN conditions))))) }
           let observations ← member.memberGroups.mapM fun group => do
             return { group with owner := name, members := ← group.members.mapM (fun m => liftM (mapMember m)) }
-          let child := { prop with name, ref := member.ref, body := ← mkLambdaFVars fvs instantiated, decl
-                                   trigger? := trigger, triggerRef? := (if trigger.isSome then some member.ref else none)
+          let memberPath := if member.name.isAnonymous then "" else member.name.toString (escape := false)
+          let sourceRef := Core.predicateCheckAtMember memberPath (prop.kind == .cover)
+          let ref := if sourceRef then member.ref else label
+          let child := { prop with name, ref, body := ← mkLambdaFVars fvs instantiated, decl
+                                   trigger? := trigger, triggerRef? := (if trigger.isSome then some ref else none)
                                    branchGroups := branches, memberGroups := observations
-                                   evidenceOwner? := some prop.name, source? := info.source?, sourceRef := true }
+                                   evidenceOwner? := some prop.name, source? := info.source?, sourceRef }
           if ← contains (predicateInstance info arguments member.body) then
-            let nested ← expand (predicateInstance info arguments member.body) member.ref name guards
+            let nested ← expand (predicateInstance info arguments member.body) member.ref name guards ref
             props := props ++ nested.1
             declarations := declarations ++ nested.2.1
             sites := sites ++ nested.2.2
@@ -7152,12 +7156,14 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
         let body := wrap guards body
         let decl := prop.decl ++ owner
         return (#[{ prop with
-          name := owner, ref := written, body := ← mkLambdaFVars fvs body, decl
+          name := owner, ref := if Core.predicateCheckAtMember "" (prop.kind == .cover) then written else label,
+          body := ← mkLambdaFVars fvs body, decl
           branchGroups := branches, memberGroups := observations, source? := info.source?
           evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
     let body := wrap guards body
     let decl := prop.decl ++ owner
-    return (#[{ prop with name := owner, ref := written, body := ← mkLambdaFVars fvs body, decl,
+    let ref := if Core.predicateCheckAtMember "" (prop.kind == .cover) then written else label
+    return (#[{ prop with name := owner, ref, body := ← mkLambdaFVars fvs body, decl,
                            evidenceOwner? := some prop.name }], (if decl == prop.decl then #[] else #[(decl, body)]), #[])
   let body ← zetaReduce (prop.body.beta fvs)
   if let some (info, arguments, wanted) := predicateCallPolarity? state body then
@@ -7178,9 +7184,10 @@ partial def expandPredicateConstraint (cx : ExprCtx) (prop : PropInfo) (source :
         return { g with
           owner := prop.name, wanted := (if wanted then g.wanted else !g.wanted)
           members := ← g.members.mapM mapMember }
-      return (#[{ prop with branchGroups := branches, memberGroups := observations, source? := info.source? }], #[], #[])
+      let ref := if Core.predicateCheckAtMember "" (prop.kind == .cover) then source else prop.ref
+      return (#[{ prop with ref, branchGroups := branches, memberGroups := observations, source? := info.source? }], #[], #[])
   if !(← contains body) then return (#[prop], #[], #[])
-  return (← (expand body source prop.name #[]).run {}).1
+  return (← (expand body source prop.name #[] prop.ref).run {}).1
 
 /-- A clause `e` of the contract of the function at `path`, whose
 parameters are `vars` and whose function parameters `fnVars`, and of whose
@@ -8925,11 +8932,9 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   generated := generated ++ (values.map (declBase ++ `out ++ ·.1)).filter env.contains
   if ok then
     let (relational, counts) ← checkCounts
-    let expandEvidence (evidence : Core.Tested) : Core.Tested :=
-      { evidence with props := evidence.props ++ props.filterMap fun prop =>
-          if prop.evidenceOwner?.any evidence.props.contains && !evidence.props.contains prop.name then some prop.name else none }
-    let tested := expandEvidence tested
-    let enumerated := expandEvidence enumerated
+    let owners := props.map fun prop => (prop.name, prop.evidenceOwner?)
+    let tested := tested.expandProps owners
+    let enumerated := enumerated.expandProps owners
     let info : CompInfo := { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
                              decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
                              relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed

@@ -711,6 +711,30 @@ its values up to the bound and whether they are all of its type's. -/
 partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
   let p := p.consumeMData
   if p.isAppOfArity ``Fren.typeObligation 2 then return ← partialDecide domain p.appArg!
+  -- A relation obligation quantifies over its actual pairs. Bounding its
+  -- two components independently loses that finite guard when either
+  -- component's type has values beyond the enumeration size.
+  if p.isAppOfArity ``Fren.relationObligation 1 then
+    return ← forallBoundedTelescope p.appArg! (some 2) fun components tail => do
+      let .forallE _ guard claim _ := tail | throwError "malformed relation obligation"
+      if components.size != 2 || claim.hasLooseBVars then throwError "malformed relation obligation"
+      let guard := guard.consumeMData
+      let args := guard.getAppArgs
+      unless (guard.isAppOf ``Membership.mem || guard.isAppOf ``Fren.FinSet.Mem) && args.size >= 2 do
+        throwError "a relation obligation has no membership guard"
+      let collection := args[args.size - 2]!
+      let member := args[args.size - 1]!
+      unless member.isAppOfArity ``Prod.mk 4 && member.getAppArgs[2]! == components[0]! &&
+          member.getAppArgs[3]! == components[1]! do
+        throwError "a relation obligation has no pair guard"
+      withLocalDeclD `pair (← inferType member) fun pair => do
+        let first ← mkAppM ``Prod.fst #[pair]
+        let second ← mkAppM ``Prod.snd #[pair]
+        let claim := claim.replaceFVars components #[first, second]
+        let body ← partialDecide domain claim
+        let fn ← mkLambdaFVars #[pair] body
+        let values ← mkAppM ``Fren.FinSet.toListImpl #[collection]
+        domain.wrap #[collection] (← mkAppM ``Enum.quantifyList #[values, toExpr true, fn])
   -- `decide P = true`, or `= false`.
   if p.isAppOfArity ``Eq 3 && p.getAppArgs[0]!.isConstOf ``Bool then
     let value := p.getAppArgs[1]!
@@ -828,13 +852,13 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   let substDefs (e : Expr) : Expr := defined.foldr (init := e) fun (_, fv, de) acc => acc.replaceFVar fv de
   -- Each index reads its element type's unspecified value out of range,
   -- and which atoms, a type's facts too, have one (`Atoms.readsIndex`).
-  let atoms ← atoms0.mapM fun a => do readIndexes (← specializeRecursions (← computableDecisions (← unfoldDefined (substDefs a))))
+  let atoms ← atoms0.mapM fun a => do readIndexes (← specializeRecursions (← computableDecisions (← unfoldDefined (substDefs a) (keepRelationObligations := true))))
   let atomIndexed := atoms.map (·.2)
   let atoms := atoms.map (·.1)
   -- And each defined output's definition, which `same` reads, and whose
   -- unspecified values and functions are enumerated as the atoms' are,
   -- as the `fren` command's are.
-  let defExprs ← defined.mapM fun (_, fv, _) => do readIndexes (← specializeRecursions (← computableDecisions (← unfoldDefined (substDefs fv))))
+  let defExprs ← defined.mapM fun (_, fv, _) => do readIndexes (← specializeRecursions (← computableDecisions (← unfoldDefined (substDefs fv) (keepRelationObligations := true))))
   let defIndexed := defExprs.map (·.2)
   let defExprs := defExprs.map (·.1)
   let scanned := atoms ++ defExprs
@@ -1061,7 +1085,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     -- where a quantifier leaves its value unknown in either.
     let sameFns ← defined.mapM fun (_, _, de) => withLocalDeclD `tables tablesTy fun tables =>
       withLocalDeclD `e₁ arrNat fun e₁ => withLocalDeclD `e₂ arrNat fun e₂ => do
-        let (de, _) ← readIndexes (← unfoldDefined de)
+        let (de, _) ← readIndexes (← unfoldDefined de (keepRelationObligations := true))
         let a ← overWith tables e₁ none de
         let b ← overWith tables e₂ none de
         mkLambdaFVars #[tables, e₁, e₂] (← if !(← hasQuantifier a) then mkAppM ``Option.some #[← decideOf (← mkEq a b)]

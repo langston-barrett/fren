@@ -138,6 +138,18 @@ def check : IO (Array String) := do
   let I : Interp := { defs := fun _ => some (#[`x], .typed predicate #[] (.bound `x), .bool) }
   check (((Ex.typed predicate #[] (.lit (.int extra))).eval I (fun _ => none)).isNone)
     "invariant evaluation reset the depth budget"
+  -- Main's giving-site obligations use the same remaining budget as
+  -- whole-type invariants, including a nested obligation's last step.
+  let obligation : Fren.Core.Cons := .predicate { name := `bounded, predicate := `bounded }
+  let I : Interp := { defs := fun _ => some (#[`x], nots (32 + extra) yes, .bool) }
+  let callCheck : Ex := .obligation obligation (.lit (.int extra))
+  check (callCheck.eval I (fun _ => none) == some (.bool true))
+    "a giving-site invariant lost its value within the depth budget"
+  check ((callCheck.eval I (fun _ => none) (depth := 4)).isNone)
+    "a giving-site invariant reset the depth budget"
+  let nestedCheck : Ex := .obligation (.newtype `Box .atLeast0) (.lit (.int extra))
+  check ((nestedCheck.eval {} (fun _ => none) (depth := 2)).isNone)
+    "a nested giving-site obligation panicked at the depth boundary"
   let tree : Fren.Core.PTy := { ty := .enum `Tree [] }
   let value := (List.range (2048 + extra)).foldl (fun v _ => Val.ctor `Tree 1 #[v]) (.ctor `Tree 0 #[])
   let I : Interp := { shapes := fun _ => some { parts := #[#[], #[tree]] } }

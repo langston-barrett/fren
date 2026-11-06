@@ -72,9 +72,10 @@ tested check::branch_query_families: "src/FrenTest/BranchForcing.lean"
 tested check::conditional_branch_core: "src/FrenTest/BranchForcing.lean"
 tested check::disjunction_core: "src/FrenTest/BranchForcing.lean"
 tested check::fact_applications: "test/ui/checks/fact_scope.fren", "test/cli/args/dump_smt_fact_scope.fren", "src/FrenTest/AppFacts.lean"
+tested check::predicate_check_site: "test/ui/checks/predicate_check_locations.fren"
 tested lang::block_evaluation: "src/FrenTest/BooleanSubsets.lean", "src/FrenTest/BooleanModels.lean"
 tested lang::block_result: "test/cli/results/boolean_block_members.fren"
-tested lang::block_values: "src/FrenTest/BooleanModels.lean", "test/cli/results/boolean_block_members.fren"
+tested lang::block_values: "src/FrenTest/BooleanModels.lean", "test/cli/results/boolean_block_members.fren", "test/ui/checks/enumeration_predicate_guards.fren"
 tested lang::boolean_block: "src/FrenTest/BooleanSubsets.lean"
 tested lang::clause_leaf_path: "src/FrenTest/NamedPredicateExpansion.lean"
 tested lang::clause_partition: "src/FrenTest/NamedPredicateExpansion.lean", "src/FrenTest/CoverMembers.lean"
@@ -87,7 +88,7 @@ tested lang::exactly_one_result: "src/FrenTest/BooleanSubsets.lean", "test/cli/r
 tested lang::fixed_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/FrenTest/SubsetObligations.lean"
 tested lang::named_conjunction: "src/FrenTest/NamedPredicateExpansion.lean", "test/cli/results/boolean_block_members.fren"
 tested lang::named_identity: "src/FrenTest/NamedPredicateExpansion.lean", "src/FrenTest/BooleanModels.lean"
-tested lang::named_node: "src/FrenTest/NamedPredicateExpansion.lean", "test/cli/results/boolean_block_members.fren"
+tested lang::named_node: "src/FrenTest/NamedPredicateExpansion.lean", "test/cli/results/boolean_block_members.fren", "test/ui/checks/enumeration_predicate_guards.fren"
 tested lang::query_purpose: "src/FrenTest/SubsetInhabitation.lean"
 tested lang::refinement_subset_domain: "src/FrenTest/SubsetObligations.lean"
 tested lang::subset_closed: "test/cli/types/f0373_subset_closed.fren"
@@ -96,7 +97,7 @@ tested lang::subset_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/F
 tested lang::subset_inheritance: "test/cli/types/subset_inheritance.fren", "src/FrenTest/NestedSubsetEnumeration.lean"
 tested lang::subset_labels: "test/cli/types/f0372_subset_labels.fren", "src/FrenTest/EmptySubset.lean"
 tested lang::subset_membership: "src/FrenTest/BooleanSubsets.lean", "src/FrenTest/NestedSubsetEnumeration.lean"
-tested lang::subset_obligations: "src/FrenTest/SubsetObligations.lean", "src/FrenTest/NestedSubsetEnumeration.lean"
+tested lang::subset_obligations: "src/FrenTest/SubsetObligations.lean", "src/FrenTest/NestedSubsetEnumeration.lean", "src/FrenTest/EnumerationObligations.lean"
 tested lang::varying_inhabitation: "src/FrenTest/SubsetInhabitation.lean", "src/FrenTest/SubsetObligations.lean"
 tested lang::recursive_post_result: "test/ui/checks/recursive_subsets.fren"
 tested lint::duplicate_scrutinee: "test/ui/lints/duplicate_scrutinee.fren"
@@ -132,7 +133,7 @@ tested lang::theory_translation: "src/FrenTest/Theories.lean"
 tested lang::theory_instance: "src/FrenTest/Theories.lean"
 
 -- Structural matching equations are proved for every input; these tests
--- exercise their composition before front-end integration in unit 10.
+-- exercise their composition before front-end integration under #758.
 tested lang::ground_match_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_parameter_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_extension_step: "src/FrenTest/GroundMatching.lean"
@@ -145,6 +146,9 @@ tested lang::ground_join_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_listed_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_sentence_lists_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_rule_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_preparation_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_instance_list_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_instances_step: "src/FrenTest/GroundMatching.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under

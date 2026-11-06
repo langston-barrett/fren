@@ -20,9 +20,10 @@ def resolvedPath (p : Lean.Name) : String :=
   (if Fren.Core.inPrelude p then "prelude::" else "") ++ Fren.Core.showPath p
 
 /-- One fact about the surface, before instantiation: an item's resolved
-path (`name`), a local name (`local`), a declared type (`type`), or an
-expression's type (`expr`) or inferred type arguments (`arguments`).
-Spans are half-open character offsets. -/
+path (`name`), a local name and its field reads (`local`), a declared or
+written type or function result type (`type`), or an expression's type
+(`expr`) or inferred type arguments (`arguments`). Spans are half-open
+character offsets. -/
 structure ResolvedAnnotation where
   file : Nat
   span : Span

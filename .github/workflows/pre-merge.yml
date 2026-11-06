@@ -131,8 +131,9 @@ jobs:
     # Only the test driver, and what it imports, not `Reqs`: the tests run
     # the binary's code in the driver's process, and import `Fren`. Shard 0
     # checks Fren's own requirements with the binary, the slowest job, and
-    # the others the rest (`Reqs/dev/Testing`).
-    - run: lake build fren_test
+    # the others the rest (`Reqs/dev/Testing`). Warnings in the driver or
+    # its imports fail the shard too: the default build omits the driver.
+    - run: lake build --wfail fren_test
     # Before the tests run, so that a reviewer can probe a head whose tests
     # fail. A stripped copy, with the merge commit, as for `fren`. Stripping
     # keeps the dynamic symbols, through which the interpreter finds the

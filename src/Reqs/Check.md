@@ -759,6 +759,23 @@ pub proc clash_notes(
 ```
 
 
+### Predicate check locations
+
+The default diagnostic site for an independent predicate member is that
+member's definition. A predicate kept as a whole check uses the written
+check's label, including below leading `when`, `unless`, `let` and `where`
+wrappers. Cover goals keep the whole predicate. An empty member path
+denotes a whole predicate; a nonempty path denotes a split member.
+`check::predicate_check_site` decides which source is used:
+
+```fren
+pub proc predicate_check_site(member_path: String, cover?): (at_member?) {
+    ensure source: at_member? iff (member_path != "" and not cover?)
+    expect whole: when member_path = "", not at_member?
+    expect cover_goal: when cover?, not at_member?
+}
+```
+
 ### Conditional branch cores
 
 [Named Boolean blocks](Lang/BooleanBlocks.md#branch-conflict-explanations)
@@ -1895,6 +1912,24 @@ or result, that of its checks, which takes precedence:
 | a procedure | all of the procedure's checks |
 | a global expectation | all of its checks, as before a procedure |
 | a [refinement](Lang/Refinement.md) | all of the checks of its obligation, including the definedness of the arguments of the abstract procedure's calls |
+
+A check generated from a named predicate clause inherits the evidence of
+its written constraint, including a member's override, for every evidence
+value. A leaf is selected by its own name or by its written owner's name.
+`check::expanded_evidence` computes that selection:
+
+```fren
+pub type EvidenceSubject
+
+pub proc expanded_evidence(
+    selected: Set<EvidenceSubject>,
+    leaf: EvidenceSubject,
+    owner: EvidenceSubject,
+    has_owner?,
+): (det included?) {
+    ensure selection: included? iff leaf in selected or (has_owner? and owner in selected)
+}
+```
 
 As with a [lint setting](Lint.md), `set_option` without `in` sets the
 evidence of every later procedure, global expectation and

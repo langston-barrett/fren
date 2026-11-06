@@ -1,0 +1,19 @@
+; resolved
+(file "test/cli/args/dump_resolved_markdown.md"
+  (surface "\n\n\n\n\n-- λ\npub fn identity(x: Int): Int := x\n\n\n\n\n\npub proc caller(x: Int): (det y: Int) { out y := identity(x) }\n\n")
+  (type 17 25 "Int")
+  (type 26 27 "Int")
+  (type 29 32 "Int")
+  (type 35 38 "Int")
+  (expr 42 43 "Int")
+  (local 42 43 "x")
+  (type 65 66 "Int")
+  (type 68 71 "Int")
+  (type 79 80 "Int")
+  (type 82 85 "Int")
+  (expr 98 109 "Int")
+  (name 98 106 "identity")
+  (expr 107 108 "Int")
+  (local 107 108 "x")
+)
+; end of resolved

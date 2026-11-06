@@ -568,6 +568,9 @@ inductive Ex where
   types, and those within it, say of it
   (`Reqs/Lang/SubsetTypes#static-types-assumptions-and-obligations`). -/
   | typed (t : Fren.Core.PTy) (ints : Array Int) (e : Ex)
+  /-- One giving-site obligation, retaining only its named invariant and
+  the projections and collection guards leading to it. -/
+  | obligation (c : Fren.Core.Cons) (e : Ex)
   deriving Inhabited
 
 structure Var where
@@ -607,6 +610,9 @@ structure Comp where
   constraints : Array Constraint
   /-- Declared type predicates, including those of defined results, for refinement claims. -/
   typeConstraints : Array Constraint := #[]
+  /-- Separate giving-site obligations of each input, in `Cons.namedParts`
+  order, as call checks name them. These differ from whole-type membership. -/
+  inputObligations : Array Constraint := #[]
   insts : Array Inst
   isGlobal : Bool := false
   /-- Each defined output, with its definition. -/
@@ -1734,6 +1740,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => evalResult (e.evalIn { I with lookup? := none } (fun _ => none) [] #[] .nil #[] fuel depth)
   | .typed t _ e => do truthV (typeV I fuel depth t (← e.evalIn I look locals slots frame memos fuel depth))
+  | .obligation c e => do truthV (consV I fuel depth c (← e.evalIn I look locals slots frame memos fuel depth))
   -- Match once, with constructor dispatch where compiled. Unknown
   -- scrutinees, guards and selected bodies use the same traversal, so
   -- none is evaluated again by a fallback (`Reqs/Eval#fuel`).
@@ -1786,6 +1793,58 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     | q => q.evalIn I look locals slots frame memos fuel depth
 termination_by (fuel, depth + 1, 0)
 where
+  /-- Evaluate just the obligation named by a call check, without assuming
+  its siblings or the structural facts that construction already guarantees.
+  Invariant applications spend the same fuel and remaining depth as
+  whole-type membership. -/
+  consV (I : @& Interp) (fuel depth : Nat) (c : Fren.Core.Cons) (v : Val) : Option Bool :=
+    match depth with
+    | 0 => none
+    | depth + 1 =>
+    match c with
+    | .predicate invariant => do
+      let (params, body, _) ← I.defs invariant.predicate
+      let parameter ← params[0]?
+      let fuel' + 1 := fuel | outOfFuel ()
+      let .bool holds ← body.evalIn I (fun _ => none) [(parameter, v)] #[] .nil #[] fuel' depth | none
+      return holds
+    | .pat _ p => some (patHolds p v)
+    | .atLeast0 => match v with
+      | .int i => some (0 ≤ i)
+      | _ => none
+    | .fields _ _ cs => do
+      let .ctor _ _ values := v | none
+      let mut result := some true
+      for (k, part) in cs do
+        let value ← values[k]?
+        result := Fren.Core.Enumeration.andTruth result (consV I fuel depth part value)
+      result
+    | .newtype _ part => consV I fuel depth part v
+    | .payloads _ _ cs => do
+      let .ctor _ variant values := v | none
+      let mut result := some true
+      for (which, k, part) in cs do
+        if which == variant then
+          let value ← values[k]?
+          result := Fren.Core.Enumeration.andTruth result (consV I fuel depth part value)
+      result
+    | .elems _ _ part => do
+      let values ← match v with | .set vs | .seq vs => some vs | _ => none
+      let mut result := some true
+      for value in values do result := Fren.Core.Enumeration.andTruth result (consV I fuel depth part value)
+      result
+    | .pairs _ _ left right => do
+      let .set values := v | none
+      let mut result := some true
+      for value in values do
+        let .pair a b := value | none
+        if let some part := left then result := Fren.Core.Enumeration.andTruth result (consV I fuel depth part a)
+        if let some part := right then result := Fren.Core.Enumeration.andTruth result (consV I fuel depth part b)
+      result
+    | .all cs =>
+      cs.foldl (fun result part => Fren.Core.Enumeration.andTruth result (consV I fuel depth part v)) (some true)
+  termination_by (fuel, depth + 1, 0)
+
   /-- Check actual invariant predicates as well as structural type facts.
   Every recursive call spends depth, including descent into a contained
   value or a newtype's underlying type. Checking an invariant is a step
@@ -1948,7 +2007,7 @@ def Ex.children : Ex → Array Ex
   | .memo lets e => lets.push e
   | .lifted lets q => lets.flatten.push q
   | .dispatch _ m => #[m]
-  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a | .typed _ _ a => #[a]
+  | .not a | .neg a | .field a _ | .card a | .matches a _ _ | .const _ a | .typed _ _ a | .obligation _ a => #[a]
   | .bin _ a b | .when _ a b | .pair a b | .index a b _ _ | .range a b => #[a, b]
   | .ite c a b => #[c, a, b]
   | .app _ args | .cardinality _ args | .ctor _ _ args | .setLit args | .seqLit args => args
@@ -2092,6 +2151,19 @@ partial def corePatSame : Fren.Core.Pat → Fren.Core.Pat → Bool
   | .or ps, .or qs => sameAll corePatSame ps qs
   | _, _ => false
 
+/-- Whether two giving-site obligations are the same. -/
+partial def consSame : Fren.Core.Cons → Fren.Core.Cons → Bool
+  | .predicate i, .predicate j => i == j
+  | .pat t p, .pat u q => t == u && corePatSame p q
+  | .atLeast0, .atLeast0 => true
+  | .fields p as cs, .fields q bs ds => p == q && as == bs && sameAll (fun (k, c) (j, d) => k == j && consSame c d) cs ds
+  | .newtype p c, .newtype q d => p == q && consSame c d
+  | .payloads p as cs, .payloads q bs ds => p == q && as == bs && sameAll (fun (v, k, c) (w, j, d) => v == w && k == j && consSame c d) cs ds
+  | .elems s t c, .elems s' t' d => s == s' && t == t' && consSame c d
+  | .pairs a b c d, .pairs a' b' c' d' => a == a' && b == b' && sameOpt consSame c c' && sameOpt consSame d d'
+  | .all cs, .all ds => sameAll consSame cs ds
+  | _, _ => false
+
 /-- Whether two declared types are the same. -/
 partial def ptySame (t u : Fren.Core.PTy) : Bool :=
   t.ty == u.ty && t.invariants == u.invariants && sameOpt corePatSame t.pat? u.pat? && sameAll ptySame t.elems u.elems && t.text == u.text
@@ -2129,6 +2201,7 @@ partial def Ex.same : Ex → Ex → Bool
   | .pre pos f gs e, .pre pos' f' gs' e' =>
     pos == pos' && f == f' && sameAll (fun (n, g) (n', g') => n == n' && g.same g') gs gs' && e.same e'
   | .typed t is e, .typed t' is' e' => ptySame t t' && is == is' && e.same e'
+  | .obligation c e, .obligation d f => consSame c d && e.same f
   | .strict as e, .strict bs e' => sameAll Ex.same as bs && e.same e'
   | .memo ls e, .memo ls' e' => sameAll Ex.same ls ls' && e.same e'
   | .lifted ls e, .lifted ls' e' => sameAll (sameAll Ex.same) ls ls' && e.same e'
@@ -2179,6 +2252,7 @@ partial def Ex.share (pick : Ex → Bool) (lets : Array Ex) (e : Ex) : Ex × Arr
   | .field a i => let (a, l) := a.share pick lets; (.field a i, l)
   | .matches a p re => let (a, l) := a.share pick lets; (.matches a p re, l)
   | .typed t is a => let (a, l) := a.share pick lets; (.typed t is a, l)
+  | .obligation c a => let (a, l) := a.share pick lets; (.obligation c a, l)
   | .bin op a b => let (a, l) := a.share pick lets; let (b, l) := b.share pick l; (.bin op a b, l)
   | .when n c d => let (c, l) := c.share pick lets; let (d, l) := d.share pick l; (.when n c d, l)
   | .ite c a b =>
@@ -2243,6 +2317,7 @@ partial def Ex.renumberShared (f : Nat → Nat) (e : Ex) : Ex :=
   | .field a i => .field (go a) i
   | .matches a p re => .matches (go a) p re
   | .typed t is a => .typed t is (go a)
+  | .obligation c a => .obligation c (go a)
   | .bin op a b => .bin op (go a) (go b)
   | .when n c d => .when n (go c) (go d)
   | .ite c a b => .ite (go c) (go a) (go b)
@@ -2323,6 +2398,7 @@ where
     -- an invariant reads the interpretation's definitions.
     let readsDefs := match e with
       | .typed t _ _ => !t.invariantFree shapes
+      | .obligation .. => true
       | .quant _ _ _ _ _ ts _ => !ts.all (·.invariantFree shapes)
       | _ => false
     -- A `.strict` whose arguments are not all known values, whose value
@@ -2345,6 +2421,7 @@ where
   | .field a i => .field (go a) i
   | .matches a p re => .matches (go a) p re
   | .typed t is a => .typed t is (go a)
+  | .obligation c a => .obligation c (go a)
   | .bin op a b => .bin op (go a) (go b)
   | .when n c d => .when n (go c) (go d)
   | .ite c a b => .ite (go c) (go a) (go b)
@@ -2750,6 +2827,7 @@ partial def Ex.renameBound (f : Name → Name) : Ex → Ex
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameBound f), v.renameBound f)) u
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.renameBound f)
+  | .obligation c a => .obligation c (a.renameBound f)
   | .match e arms pos ps u t =>
     .match (e.renameBound f) (arms.map fun (p, g?, b) => (p.rename f, g?.map (·.renameBound f), b.renameBound f)) pos ps u t
   | .quant file pos all ns ds ts b => .quant file pos all (ns.map f) (ds.map (·.map (·.renameBound f))) ts (b.renameBound f)
@@ -2792,6 +2870,7 @@ partial def Ex.renameVars (f : Name → Name) : Ex → Ex
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.renameVars f), v.renameVars f)) u
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.renameVars f)
+  | .obligation c a => .obligation c (a.renameVars f)
 
 /-- `e` with each variable `n` replaced by `f n`. -/
 partial def Ex.substVars (f : Name → Ex) : Ex → Ex
@@ -2830,6 +2909,7 @@ partial def Ex.substVars (f : Name → Ex) : Ex → Ex
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substVars f), v.substVars f)) u
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.substVars f)
+  | .obligation c a => .obligation c (a.substVars f)
 
 /-- `e` with each function of an unspecified value (`unspecifiedFn`) that it
 reads, where an index is out of range or no row of a table or arm of a
@@ -2872,6 +2952,7 @@ partial def Ex.mapNames (f app : Name → Name) : Ex → Ex
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.mapNames f app), v.mapNames f app)) (u.map f)
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.mapNames f app)
+  | .obligation c a => .obligation c (a.mapNames f app)
 
 /-- `e` with the binders of `σ` that are free in it replaced by their
 expressions. -/
@@ -2908,6 +2989,7 @@ partial def Ex.subst (σ : List (Name × Ex)) : Ex → Ex
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.subst σ), v.subst σ)) u
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.subst σ)
+  | .obligation c a => .obligation c (a.subst σ)
   -- An arm's binders shadow those of `σ`.
   | .match e arms pos ps u t =>
     .match (e.subst σ) (arms.map fun (p, g?, b) =>
@@ -3023,7 +3105,7 @@ partial def Ex.siteGoals (e : Ex) (wrap : Ex → Ex := id) : Array (Nat × Optio
   -- value by its own holding too; then the table's own questions.
   -- A constant's indexes and tables are the constant's.
   | .const .. => #[]
-  | .typed _ _ a => go a
+  | .typed _ _ a | .obligation _ a => go a
   | .table pos rows _ =>
     let unlessAll (cs : Array Ex) (g : Ex) : Ex := cs.foldr (fun c g => .when true c g) g
     let (inRows, _) := rows.foldl (init := ((#[] : Array (Nat × Option Fren.Core.TableGoal × Ex)), (#[] : Array Ex)))
@@ -3099,6 +3181,7 @@ partial def Ex.substFns (σ : List (Name × Array Name × Ex)) : Ex → Ex
   | .table pos rows u => .table pos (rows.map fun (p, c?, v) => (p, c?.map (·.substFns σ), v.substFns σ)) u
   | .const p e => .const p e
   | .typed t is a => .typed t is (a.substFns σ)
+  | .obligation c a => .obligation c (a.substFns σ)
   | .match e arms pos ps u t => .match (e.substFns σ) (arms.map fun (p, g?, b) => (p, g?.map (·.substFns σ), b.substFns σ)) pos ps u t
   | .quant file pos all ns ds ts b => .quant file pos all ns (ds.map (·.map (·.substFns σ))) ts (b.substFns σ)
   | .range lo hi => .range (lo.substFns σ) (hi.substFns σ)
@@ -3168,7 +3251,7 @@ def isUnspecifiedName (u : Name) : Bool := match u with
 may be unknown without an interpretation. -/
 partial def Ex.readsUnspecified : Ex → Bool
   | .index .. | .table _ _ (some _) | .const .. => true
-  | .typed _ _ a => a.readsUnspecified
+  | .typed _ _ a | .obligation _ a => a.readsUnspecified
   | .table _ rows none => rows.any fun (_, c?, v) => c?.any (·.readsUnspecified) || v.readsUnspecified
   | .lit _ | .var _ | .slot _ | .bound _ | .boundAt _ | .shared _ | .known _ => false
   | .memo lets a => a.readsUnspecified || lets.any (·.readsUnspecified)
@@ -3987,10 +4070,17 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
   -- split between type constraints and definedness obligations.
   let mut constraints := #[]
   let mut typeConstraints := #[]
+  let mut inputObligations := #[]
   for m in members do
     let .var isIn _ _ x ty? defn? := m | continue
     let some ty := ty? | continue
-    if let some c ← typeConstraint (if isIn then .assume else .ensure) (declName x) (← lowerPTy ty) then
+    let t ← lowerPTy ty
+    if isIn then
+      if let some obligation := t.obligation (← get).spec.shapes.find? then
+        inputObligations := inputObligations ++ obligation.namedParts.mapIdx fun k (label, part) =>
+          { kind := .assume, name := .num (declName x) k, e := .obligation part (.var (declName x))
+            typed? := some (if label.isAnonymous then t.text else "@invariant:" ++ showPath label) }
+    if let some c ← typeConstraint (if isIn then .assume else .ensure) (declName x) t then
       typeConstraints := typeConstraints.push c
       if defn?.isNone then constraints := constraints.push c
   let mut branchGroups : Array (Fren.Core.BranchGroup Ex) := #[]
@@ -4097,7 +4187,7 @@ def lowerComp (isPub : Bool) (name : Ident) (header body : Array Member) : L Uni
       let file := (← get).file
       let claim := if internal.isEmpty then claim else Ex.quant file 0 true orderedNames doms tys claim
       constraints := constraints.push { kind := .expect, name := Name.mkSimple s!"refines_{refinesIndex}", e := claim }
-  let c : Comp := { path, vars, constraints, insts, defs, typeConstraints, branchGroups, memberGroups }
+  let c : Comp := { path, vars, constraints, insts, defs, typeConstraints, inputObligations, branchGroups, memberGroups }
   modify fun s => { s with
     table := s.table.addItem { kind := .compItem, path, isPub, owner := s.module }
     scope := s.module

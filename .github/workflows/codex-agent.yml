@@ -1,0 +1,227 @@
+name: codex-agent
+
+# Work small follow-ups, then answer at most three reviews or CI failures.
+# prepare filters human comments and verifies automated review output.
+# agent confines Codex to an unprivileged container with the sign-in, the
+# checkout and output mounts, but no runner environment or processes. This
+# keeps the runner's runtime/cache token outside Codex's boundary, even
+# though this job runs in main's cache scope. publish gets FREN_DEV_TOKEN
+# on a fresh runner, validates the patch and never executes patched files.
+# Setup, authentication renewal and coordinator handoff:
+# .github/codex-agent/README.md.
+on:
+  # zizmor: ignore[dangerous-triggers] the issue author and label setter
+  # are checked, comments are association-filtered, and publishing is isolated.
+  issues:
+    types: [labeled]
+  # zizmor: ignore[dangerous-triggers] only this repository's agent/* PRs
+  # qualify; prepare checks the reviewed head and bot comment against the
+  # completed run's review artifact, and publish runs no PR code.
+  workflow_run:
+    workflows: [pre-merge, pr-review]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number
+        required: true
+        type: string
+      model:
+        description: Model
+        type: choice
+        options: [luna, terra]
+        default: luna
+      effort:
+        description: Reasoning effort
+        type: choice
+        options: [low, medium, high]
+        default: medium
+
+permissions: {}
+
+jobs:
+  prepare:
+    # No concurrency here: unrelated completions must never replace an
+    # agent run in a pending slot. pr-review itself runs on main, so its
+    # context artifact identifies the PR before the agent/* check in Python.
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'issues' && startsWith(github.event.label.name, 'agent/') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       ((github.event.workflow_run.name == 'pre-merge' &&
+         github.event.workflow_run.conclusion == 'failure' &&
+         startsWith(github.event.workflow_run.head_branch, 'agent/')) ||
+        (github.event.workflow_run.name == 'pr-review' &&
+         github.event.workflow_run.path == '.github/workflows/claude-review.yml' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.conclusion == 'success')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: read
+    outputs:
+      mode: ${{ steps.params.outputs.mode }}
+      issue: ${{ steps.params.outputs.issue }}
+      pr: ${{ steps.params.outputs.pr }}
+      branch: ${{ steps.params.outputs.branch }}
+      base: ${{ steps.params.outputs.base }}
+      model: ${{ steps.params.outputs.model }}
+      effort: ${{ steps.params.outputs.effort }}
+      round: ${{ steps.params.outputs.round }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - id: params
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        EVENT: ${{ github.event_name }}
+        LABEL: ${{ github.event.label.name }}
+        SENDER: ${{ github.event.sender.login }}
+        IN_ISSUE: ${{ inputs.issue }}
+        IN_MODEL: ${{ inputs.model }}
+        IN_EFFORT: ${{ inputs.effort }}
+        EV_ISSUE: ${{ github.event.issue.number }}
+        RUN_ID: ${{ github.event.workflow_run.id }}
+        RUN_NAME: ${{ github.event.workflow_run.name }}
+        RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+      run: |
+        if [ "$EVENT" = workflow_run ]; then
+          python3 .github/codex-agent/fixparams.py
+        else
+          python3 .github/codex-agent/params.py
+        fi
+    - if: ${{ steps.params.outputs.mode == 'issue' || steps.params.outputs.mode == 'fix' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: codex-prompt
+        path: agent/prompt.md
+        if-no-files-found: error
+        retention-days: 14
+
+  agent:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.mode == 'issue' || needs.prepare.outputs.mode == 'fix' }}
+    concurrency:
+      group: codex-agent-work-${{ needs.prepare.outputs.branch }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    # Public fetches need no credential. The host's runtime/cache token can
+    # write main's caches regardless of these permissions; sandbox.sh hides
+    # the host's processes and environment and kills all container children
+    # before any artifact step starts. No token is passed to the container.
+    permissions: {}
+    steps:
+    - name: Fetch the workflow's scripts and the saved base without credentials
+      env:
+        REPO: ${{ github.repository }}
+        TRUSTED_SHA: ${{ github.sha }}
+        BASE: ${{ needs.prepare.outputs.base }}
+      run: |
+        set -euo pipefail
+        git init --quiet .
+        git remote add origin "https://github.com/$REPO.git"
+        git fetch --quiet --depth 1 origin "$TRUSTED_SHA"
+        git checkout --quiet --detach FETCH_HEAD
+        git init --quiet work
+        git -C work fetch --quiet --depth 1 "https://github.com/$REPO.git" "$BASE"
+        git -C work checkout --quiet --detach FETCH_HEAD
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      with:
+        name: codex-prompt
+        path: agent
+    - uses: ./.github/actions/lake
+      with:
+        sha: ${{ github.sha }}
+    - name: Build the isolated Codex image
+      run: docker build --tag codex-agent:local .github/codex-agent
+    - name: Codex works on the issue or fixes its PR
+      env:
+        CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        MODEL: ${{ needs.prepare.outputs.model }}
+        EFFORT: ${{ needs.prepare.outputs.effort }}
+        BASE: ${{ needs.prepare.outputs.base }}
+        CODEX_CONTAINER: codex-agent-${{ github.run_id }}-${{ github.run_attempt }}
+      run: |
+        set -euo pipefail
+        mv .lake work/.lake
+        umask 077
+        # The secret is a snapshot. Use API-key auth for unattended runs;
+        # the owner renews a ChatGPT snapshot after rotation/expiration.
+        # run.py withholds credential-bearing files before artifact upload.
+        python3 .github/codex-agent/run.py
+    - id: teardown
+      name: Remove all agent processes before artifact upload
+      if: ${{ always() }}
+      env:
+        CODEX_CONTAINER: codex-agent-${{ github.run_id }}-${{ github.run_attempt }}
+      run: python3 .github/codex-agent/teardown.py
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      if: ${{ always() && steps.teardown.outcome == 'success' }}
+      with:
+        name: codex-result
+        path: ${{ runner.temp }}/codex-result
+        retention-days: 14
+
+  publish:
+    needs: [prepare, agent]
+    if: ${{ !cancelled() && (needs.agent.result == 'success' || needs.prepare.outputs.mode == 'limit') }}
+    concurrency:
+      group: codex-agent-publish-${{ needs.prepare.outputs.branch }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+        path: trusted
+        sparse-checkout: |
+          .github/codex-agent
+          .github/pr-review
+    - if: ${{ needs.prepare.outputs.mode != 'limit' }}
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ needs.prepare.outputs.base }}
+        path: work
+    - if: ${{ needs.prepare.outputs.mode != 'limit' }}
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      with:
+        name: codex-result
+        path: ${{ runner.temp }}/agent
+    - name: Validate the patch and publish, or post the round limit
+      # Only trusted scripts execute here, never an action, hook, config
+      # or program supplied by Codex. The working directory is set in the
+      # shell so that the limit notification needs no PR checkout.
+      env:
+        GH_TOKEN: ${{ secrets.FREN_DEV_TOKEN }}
+        REPO: ${{ github.repository }}
+        MODE: ${{ needs.prepare.outputs.mode }}
+        ISSUE: ${{ needs.prepare.outputs.issue }}
+        PR: ${{ needs.prepare.outputs.pr }}
+        BRANCH: ${{ needs.prepare.outputs.branch }}
+        BASE: ${{ needs.prepare.outputs.base }}
+        MODEL: ${{ needs.prepare.outputs.model }}
+        EFFORT: ${{ needs.prepare.outputs.effort }}
+        ROUND: ${{ needs.prepare.outputs.round }}
+        ARTIFACT: ${{ runner.temp }}/agent
+      run: |
+        set -euo pipefail
+        script="$GITHUB_WORKSPACE/trusted/.github/codex-agent/publish.py"
+        if [ "$MODE" != limit ]; then
+          cd work
+        fi
+        python3 -I "$script"

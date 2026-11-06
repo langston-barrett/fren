@@ -33,12 +33,72 @@ proc bad_output(): (r?: Truth) { ensure opposite: not r? }
 set_option fren.evidence "enumerated" in
 set_option fren.lint.constant_output "allow" in
 proc bad_definition(): (r: Positive) { out r := 0 }
+type EmptySequence = values: Seq<Bool> where empty: values = []
+set_option fren.lint.unused_variables "allow" in
+set_option fren.lint.undecidable "allow" in
+proc relation(values: Rel<EmptySequence, EmptySequence>) {}
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
+proc good_relation() { call c := relation({([], [])}) }
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
+proc bad_relation() { call c := relation({([true], [])}) }
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
+proc bad_right_relation() { call c := relation({([], [true])}) }
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+set_option fren.lint.undecidable "allow" in
+proc own_relation(values: Rel<EmptySequence, EmptySequence>): (copy: Rel<EmptySequence, EmptySequence>) {
+  call c := relation(values)
+  out copy := values
+  expect same: copy = values
+}
+-- Nat predicates below these generated quantifiers must be built without
+-- trying to elaborate their as-yet unbound element/pair names.
+type NaturalZero = value: Nat where zero: value = 0
+struct NatField { value: NaturalZero }
+enum NatPayload { Empty, Value(NaturalZero) }
+set_option fren.lint.undecidable "allow"
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+proc nat_sets(values: Set<NatField>) {
+  expect zero: forall (v: NatField), when v in values, v.value = 0
+}
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+proc nat_sequences(values: Seq<NatPayload>) {
+  expect zero: forall (v: NatPayload), when v in values, v = NatPayload::Empty or v = NatPayload::Value(0)
+}
+set_option fren.enumeration.size 1 in
+set_option fren.evidence "enumerated" in
+proc nat_relations(values: Rel<NatField, NatPayload>): (copy: Rel<NatField, NatPayload>) {
+  out copy := values
+  expect same: copy = values
+}
 open Lean Elab Command in
 elab "#check_nested_enumeration" : command => do
   liftTermElabM do
     let state ← Fren.getState
+    for (path, expected) in #[(`nested_subset_enumeration.good_relation, #[true, true]),
+        (`nested_subset_enumeration.bad_relation, #[false, true]),
+        (`nested_subset_enumeration.bad_right_relation, #[true, false]),
+        (`nested_subset_enumeration.own_relation, #[true, true])] do
+      let some comp := state.comps.get? path | throwError "missing relation component"
+      let (_, _, checked, _) ← Fren.checkComp comp #[.inst] (some Fren.Enumerate.enumerate)
+      let some (.ok checked) := checked | throwError "relation obligations were not enumerated"
+      unless checked.results.size == 2 do throwError "a relation obligation disappeared"
+      for result in checked.results do
+        let some (_, .num _ k) := result.target? | throwError "relation obligation lost its identity"
+        unless expected[k]?.any (fun pass => result.verdict == if pass then .pass else .fail) do
+          throwError "relation membership was bounded by its component types instead of its pairs"
     for path in #[`nested_subset_enumeration.records, `nested_subset_enumeration.wrappers,
-        `nested_subset_enumeration.payloads, `nested_subset_enumeration.shared] do
+        `nested_subset_enumeration.payloads, `nested_subset_enumeration.shared,
+        `nested_subset_enumeration.own_relation, `nested_subset_enumeration.nat_sets,
+        `nested_subset_enumeration.nat_sequences, `nested_subset_enumeration.nat_relations] do
       let some comp := state.comps.get? path | throwError "missing enumeration component {path}"
       let (_, _, checked, _) ← Fren.checkComp comp #[.expect] (some Fren.Enumerate.enumerate)
       let some checked := checked | throwError "enumeration was not requested for {path}"
