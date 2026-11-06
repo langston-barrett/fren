@@ -1,6 +1,6 @@
 ; obligations
 (obligation
-  ; at 7:6
+  ; at 8:6
   (item p)
   (check realizability (assumptions))
   (evidence solver)
@@ -9,7 +9,7 @@
   (goal false)
 )
 (obligation
-  ; at 7:6
+  ; at 8:6
   (item p)
   (check realizability (outputs))
   (evidence solver)
@@ -18,7 +18,7 @@
   (goal true)
 )
 (obligation
-  ; at 9:12
+  ; at 10:12
   (item p)
   (check expectation same)
   (evidence solver)
@@ -32,7 +32,7 @@
   (goal (= y x))
 )
 (obligation
-  ; at 7:6
+  ; at 8:6
   (item p)
   (check redundancy (assumptions))
   (evidence solver)
