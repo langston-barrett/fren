@@ -29,18 +29,21 @@ def read_regular(directory, name, limit=-1):
 
 
 def secrets(raw):
-    """Token/key values and opaque auth identifiers, including nested ones.
+    """Credential fields and opaque auth identifiers, including nested ones.
 
     Do not generate leak-detector fragments from the JSON structure:
     common auth metadata otherwise withholds ordinary error messages.
-    Copies of the full JSON still contain these credential values.
+    Other fields' short or non-opaque strings (such as email addresses)
+    are not covered. The leak detector also ignores forms shorter than
+    twelve characters. Copies of the full JSON contain the credential values.
     """
     found = []
 
     def visit(value):
         if isinstance(value, dict):
             for key, child in value.items():
-                if isinstance(child, str) and ("token" in key.lower() or "key" in key.lower()
+                if isinstance(child, str) and (any(part in key.lower() for part in
+                                                   ("token", "key", "secret", "password"))
                                                or key.lower().endswith("_id") or key.lower() == "id"):
                     found.append(child)
                 visit(child)

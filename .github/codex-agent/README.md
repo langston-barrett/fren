@@ -10,6 +10,10 @@ answers at most three blocking reviews or failed
 `pre-merge` runs. The coordinator handles conflicts with `main`, small
 findings on a clean review, and any remaining work after the round limit.
 These PRs still require the normal CI checks and review before merging.
+Only failed build or test jobs start a `pre-merge` fix round. Timeouts and
+cancellations alone leave the head unchanged for the coordinator to rerun.
+If the agent job fails, the publisher posts a fixed notice without reading
+its output. A missing patch also gets a rejection comment.
 
 Preparation only reads GitHub. Codex runs in an unprivileged container
 with its own PID namespace, no capabilities or privilege escalation, no
@@ -25,9 +29,9 @@ and teardown with `test_sandbox.sh` and a hostile stand-in for Codex.
 
 Only regular output files enter the artifact, after the workflow's trusted
 `pr-review/check.py` leak detector checks each against the original
-token/key values, auth identifiers, other opaque values and any refreshed
-values still present. It scans values, not common field names from the
-JSON structure.
+token/key/secret/password values, auth identifiers, other opaque values
+and any refreshed values still present. It scans values, not common field
+names from the JSON structure.
 Files containing known credential copies, plain or encoded, are withheld.
 No authentication file is uploaded. A separate fresh runner validates the
 patch and publishes it with `FREN_DEV_TOKEN`, without executing patched
@@ -83,6 +87,9 @@ container without writes to the read-only elan directory. Inspect the
 build log to confirm that moving the restored `.lake` to `/work` rebuilds
 only changed modules and dependencies. Confirm the generated pull request
 or no-change comment, its checks and review, and any subsequent fix-round
-response. Record any failure on the area's tracking queue for correction.
+response. In particular, confirm that a blocking bot review on an
+`agent/*` pull request starts a fix round. A bot review that does not match
+its validated artifact is skipped with a fixed diagnostic in the prepare
+log. Record any failure on the area's tracking queue for correction.
 
 [spend-limits]: https://developers.openai.com/api/docs/guides/spend-limits
