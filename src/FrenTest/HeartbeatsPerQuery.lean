@@ -87,3 +87,40 @@ info: fren: 50 passed, 1 failed, 0 inconclusive, 0 redundant
 #guard_msgs in
 set_option maxHeartbeats 100 in
 #fren_check
+
+open Lean
+
+mod instance_heartbeats
+
+pub fn other<T>(x: T): (r: T) { ensure diff: other(x) != x }
+proc caller(x: Int): (y: Int) { out y := x }
+
+-- Observe the budget at type instantiation, before the nested check can
+-- start a budget of its own. Both the generic and foreign paths must give
+-- Bool and Int separate starts; resetting only the nested checks fails.
+-- Apply the runtime limit after elaborating the test term.
+run_cmd do
+  Lean.Elab.Command.liftTermElabM do
+    withOptions (fun o => maxHeartbeats.set o 100) do
+      let st ← Fren.getState
+      let some c := st.bodies.get? `instance_heartbeats.other | throwError "missing other"
+      let some b := st.comps.get? `instance_heartbeats.caller | throwError "missing caller"
+      for foreign in [false, true] do
+        withCurrHeartbeats do
+          let starts ← IO.mkRef (#[] : Array Nat)
+          let hooks : Fren.ElabHooks := { Fren.elabHooks with
+            leanType := fun ty => do
+              let start := (← readThe Lean.Core.Context).initHeartbeats
+              starts.modify (·.push start)
+              Lean.Core.checkMaxHeartbeats "instance contract"
+              Fren.elabHooks.leanType ty }
+          let instances := #[#[Fren.Core.Ty.bool], #[Fren.Core.Ty.int]]
+          let (rs, _, _, _) ← if foreign then
+            Fren.checkComp b #[.realizable] none (some hooks) #[]
+              (instances.map fun ts => (`instance_heartbeats.other, ts))
+          else Fren.checkComp c #[.realizable] none (some hooks) instances
+          unless rs.size == (if foreign then 3 else 2) && rs.all (·.verdict == .pass) do
+            throwError "missing instance results"
+          let starts ← starts.get
+          unless starts.size == 2 && starts[0]! < starts[1]! do
+            throwError "instance construction reused a heartbeat budget"
