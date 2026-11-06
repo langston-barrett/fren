@@ -6,6 +6,7 @@ import FrenTest.Expansion
 import FrenTest.ExpansionFuzz
 import FrenTest.Frontends
 import FrenTest.FuzzFrontends
+import FrenTest.ImplPath
 import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.MutateDecisions
@@ -19,6 +20,7 @@ import FrenTest.SolverPairing
 import FrenTest.TheoryDump
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
+import Impls
 import Lean.Elab.Frontend
 -- keep-sorted end
 
@@ -4434,12 +4436,12 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"], ["sentenceBridge"]]
+    ++ #[["implPaths"], ["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"], ["sentenceBridge"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4458,6 +4460,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["outOfFuel"] => Fren.Test.OutOfFuel.tinyFuel
   -- Spawned by `panicGuard` only, with `LEAN_ABORT_ON_PANIC`.
   | ["unknownFirst"] => Fren.Test.OutOfFuel.unknownFirstLazy
+  | ["expansion"] => FrenTest.Expansion.runtimeChecks
   | ["snapshots"] => snapshots bless
   | ["errorCodes"] => errorCodes
   | ["manualExamples"] => do
@@ -4495,6 +4498,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
+  | ["implPaths"] => FrenTest.ImplPath.check
   | ["readingBeside"] => do FrenTest.ReadingBeside.agree (← ownSpecFiles)
   | ["expansionFuzz", count] => do
     let some n := count.toNat? | throw (IO.userError "invalid copying corpus count")
