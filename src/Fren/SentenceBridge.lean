@@ -1,6 +1,6 @@
 -- keep-sorted start
 import FrenCore.SentenceBridge
-import Lean.Meta.Basic
+import Lean.Meta.InferType
 -- keep-sorted end
 
 /-! Extraction and reconstruction of executable Lean sentence formulas (#758).
@@ -13,7 +13,19 @@ namespace Fren.SentenceBridge
 open Lean
 open Core.SentenceBridge
 
-abbrev Adapter := Bindings Expr
+/-- Native types retain their existential universe, before reconstruction.
+Use `Adapter.ofBindings` in the elaboration context of those types, and
+recompute it when the native type bindings change. -/
+structure Adapter extends Bindings Expr where
+  existsLevels : List (Core.Ty × Level) := []
+
+def Adapter.signature (b : Adapter) : Signature := b.toBindings.signature
+
+/-- `Exists.{u}` takes a domain in `Sort u`; ordinary Fren value types are
+in `Sort 1`. Read the native domain's sort rather than fixing that universe. -/
+def Adapter.ofBindings (b : Bindings Expr) : MetaM Adapter := do
+  let existsLevels ← b.types.mapM fun (ty, native) => return (ty, ← Meta.getLevel native)
+  return { toBindings := b, existsLevels }
 
 private def staticHead (b : Adapter) (e : Expr) : Bool :=
   !e.hasLooseBVars && !(e.find? fun t =>
@@ -75,8 +87,9 @@ partial def build (b : Adapter) : Input → Option Expr
     let (_, ty) ← unique? (b.types.filter (·.1 == ty))
     return .forallE .anonymous ty (← build b body) .default
   | .ex ty body => do
+    let level ← unique? ((b.existsLevels.filter (·.1 == ty)).map (·.2))
     let (_, ty) ← unique? (b.types.filter (·.1 == ty))
-    return mkApp2 (mkConst ``Exists [Level.zero]) ty (.lam .anonymous ty (← build b body) .default)
+    return mkApp2 (mkConst ``Exists [level]) ty (.lam .anonymous ty (← build b body) .default)
 
 def rebuild (b : Adapter) (parameters : List (Name × Core.Ty)) (t : Core.TheoryTerm) : Option Expr := do
   let (i, _) ← decode b.signature parameters [] t

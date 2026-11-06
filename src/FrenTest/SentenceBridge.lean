@@ -4,6 +4,8 @@ import Fren.SentenceBridge
 import Fren.Seq
 import FrenCli.SentenceBridge
 import FrenCore.GroundClosure
+import Lean.Elab.Command
+import Lean.Meta.Check
 -- keep-sorted end
 
 /-! Executable projection, instantiation and reconstruction, independent of
@@ -273,15 +275,68 @@ private def typeCases : Array (Ty × Expr × SExpr) := #[
   (.seq .int, mkApp (mkConst ``Fren.Seq [0]) intTy, parse "(Seq Int)"),
   (.enum `Color [], mkConst ``Color, parse "|Color|"),
   (.enum `Option [.int], mkApp (mkConst ``Option [0]) intTy, parse "(|Option| Int)"),
-  (.record `Box [.int], mkApp (mkConst ``Box [0]) intTy, parse "(|Box| Int)"),
+  (.record `Box [.int], mkApp (mkConst ``Box) intTy, parse "(|Box| Int)"),
   (.abstract `Abstract, mkConst ``Abstract, parse "|::Abstract|"),
   (.newtype `Age .int, mkConst ``Age, parse "Int"),
   (.param 0 `T, mkConst ``Abstract, parse "|T|")]
 
+-- The kernel checks native expressions, rather than the bridge's metadata
+-- type checker checking its own result. Include universes 0, 1 and 2, mixed
+-- and nested binders, and every native type used by the bounded generator.
+#guard (Fren.SentenceBridge.rebuild lean []
+  (.ex .int (Value.term ⟨.bool, "true"⟩))).isNone
+
+open Lean Meta in
+run_meta do
+  let domains := typeCases.toList ++ [
+    (.abstract `Proof, mkConst ``True, parse "Bool"),
+    (.abstract `Higher, mkSort 1, parse "Type")]
+  for (ty, native, _) in domains do
+    checkWithKernel native
+    let b ← Fren.SentenceBridge.Adapter.ofBindings {
+      types := [(ty, native)], values := [(⟨.bool, "true"⟩, mkConst ``True)] }
+    let body := Value.term ⟨.bool, "true"⟩
+    for term in [TheoryTerm.ex ty body, .ex ty (.ex ty body),
+        .all ty (.ex ty (.all ty body))] do
+      let some rebuilt := Fren.SentenceBridge.rebuild b [] term
+        | throwError "existential reconstruction failed"
+      checkWithKernel rebuilt
+      unless Fren.SentenceBridge.project b [] rebuilt == some term do
+        throwError "existential reconstruction changed the projected formula"
+  let b ← Fren.SentenceBridge.Adapter.ofBindings lean.toBindings
+  let term := TheoryTerm.ex .int (.ex .int (.app (.app eqn.term (.bound 1)) (.bound 0)))
+  let some rebuilt := Fren.SentenceBridge.rebuild b [] term
+    | throwError "nested existential reconstruction failed"
+  checkWithKernel rebuilt
+  unless Fren.SentenceBridge.project b [] rebuilt == some term do
+    throwError "nested existential reconstruction captured a bound variable"
+  for s in [rebuiltLean, collision.bind (Fren.SentenceBridge.rebuildSentence collisionLean),
+      fromClosure.bind (Fren.SentenceBridge.rebuildSentence lean)] do
+    let some s := s | throwError "sentence reconstruction failed"
+    for formula in s.domain :: (s.calls ++ s.claims).map (·.2) do
+      checkWithKernel formula
+  for e in [Fren.SentenceBridge.rebuild constructorLean [] noneHead.term,
+      Fren.SentenceBridge.rebuild literalLean [] stringValue.term,
+      Fren.SentenceBridge.rebuild nullaryLean [] nullary.term,
+      implicationProjected.bind (Fren.SentenceBridge.rebuild lean [])] do
+    let some e := e | throwError "native reconstruction failed"
+    checkWithKernel e
+  -- These negative controls are the reviewed bugs: structural round trips
+  -- alone accepted them, while native type checking must reject both.
+  let badExists := mkApp2 (mkConst ``Exists [0]) intTy
+    (.lam .anonymous intTy (mkConst ``True) .default)
+  for bad in [badExists, mkApp (mkConst ``Box [0]) intTy] do
+    if (Kernel.check (← getEnv) (← getLCtx) bad).isOk then
+      throwError "kernel accepted an incorrect universe argument"
+
 /-- A bounded generator for the new bridge, independent of the existing
 front-end corpus. It varies types, generic instances and application depth;
-both concrete representations must project and rebuild the same term. -/
-def check (seed : Nat := 758100) (count : Nat := 100) : IO (Array String) := do
+both concrete representations must project and rebuild the same term, and
+the kernel must accept the native types, inputs and reconstructed results. -/
+unsafe def check (seed : Nat := 758100) (count : Nat := 100) : IO (Array String) := do
+  enableInitializersExecution
+  initSearchPath (← findSysroot)
+  let env ← importModules #[{ module := `FrenTest.SentenceBridge }] {} (loadExts := true)
   let mut failures := #[]
   for i in [:count] do
     let k := seed + i * 37
@@ -302,10 +357,17 @@ def check (seed : Nat := 758100) (count : Nat := 100) : IO (Array String) := do
       se := .list #[parse "|::generic::id<T>|", se]
     let lt := Fren.SentenceBridge.project l [] le
     let st := FrenCli.SentenceBridge.project s [] se
-    let good := lt.isSome && lt == st && (lt.bind (Fren.SentenceBridge.rebuild l [])) == some le &&
+    let rebuilt := lt.bind (Fren.SentenceBridge.rebuild l [])
+    let nativeGood := (Kernel.check env {} nativeTy).isOk &&
+      [some le, rebuilt].all fun result => match result with
+        | none => false
+        | some e =>
+          let closed := mkLambda `a .default nativeTy (e.abstract #[nativeLocal])
+          (Kernel.check env {} closed).isOk
+    let good := nativeGood && lt.isSome && lt == st && rebuilt == some le &&
       (st.bind (FrenCli.SentenceBridge.rebuild s [])) == some se &&
       (lt.bind (context l.signature).typeOf) == some ty
-    unless good do failures := failures.push s!"sentence bridge seed {k}: projection/rebuild/type disagreement"
+    unless good do failures := failures.push s!"sentence bridge seed {k}: projection/rebuild/kernel type disagreement"
   return failures
 
 end FrenTest.SentenceBridge

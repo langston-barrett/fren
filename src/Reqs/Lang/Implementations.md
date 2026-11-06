@@ -4128,6 +4128,8 @@ pub proc ground_close_step(
 
 ## Executable sentence projection
 
+**Dynamic semantics**
+
 r[module.sentence.projection] lang::{bridge_reference_step, bridge_unique_step}
 
 The executable bridge for #758 keeps sentence parameters, free query locals
@@ -4140,6 +4142,10 @@ The bridge checks explicit argument types, preserves domain, calls and claims,
 and rejects an unknown or ambiguous interpretation. It does not infer identity
 from an expression's printed text. These are projection operations; they do
 not change the sentence's role or decide which sentences a check may use.
+Given well-typed native bindings faithful to those signatures, successful
+reconstruction must be well-typed in the bindings' declaration environment
+and local context. In particular, an existential uses the universe of its
+native domain's sort; it does not assume that every domain is in `Prop`.
 
 ```fren
 pub fn bridge_has_parameter?(TheoryVariables, TheoryName)
