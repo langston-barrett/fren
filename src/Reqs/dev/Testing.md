@@ -1094,10 +1094,11 @@ blocked around the completion check and signal, and while the registry lock
 is held; handlers are restored after monitoring.
 When heavy is PID 1 of its namespace, it also reaps adopted orphan workers
 after collecting the leader's exit status and RSS, in both subreaper and
-fallback modes. It peeks at exited children without reaping them: a newly
-adopted member of the original group goes through the group usage collector,
-while an outside-group orphan is reaped without adding its usage. Dead workers
-must not keep the process group visible as zombies until both escalation waits expire.
+fallback modes. It peeks at exited children without reaping them. In subreaper
+mode, a newly adopted member of the original group goes through the group usage
+collector; in fallback mode, it is reaped without adding its usage, like an
+outside-group orphan in either mode. Dead workers must not keep the process
+group visible as zombies until both escalation waits expire.
 
 If `/proc` belongs to an ancestor PID namespace, the owner translates its
 own child through parentage and `NSpid` before measuring it in that procfs
@@ -1862,8 +1863,10 @@ pub enum GroupProbe { Missing, Present, Denied }
 
 -- Peek at an exited child before selecting its wait, so adoption between
 -- group waits and init cleanup cannot discard the group's CPU usage.
+-- own_pid is heavy's PID; pgid is the child group and exited_group is
+-- the exited child's group, if a child is ready to reap.
 pub proc heavy_init_reap(
-    pid: Int,
+    own_pid: Int,
     pgid: Int,
     exited_group: Option<Int>,
     group_drained?,
@@ -1871,12 +1874,12 @@ pub proc heavy_init_reap(
 ): (det collect_group?, det reap_orphan?) {
     let exited? := exited_group != Option::None
     let same_group? := exited_group = Option::Some(pgid)
-    ensure group: collect_group? iff pid = 1 and group_drained? and exited? and same_group? and subreaper?
-    ensure orphan: reap_orphan? iff pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
+    ensure group: collect_group? iff own_pid = 1 and group_drained? and exited? and same_group? and subreaper?
+    ensure orphan: reap_orphan? iff own_pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
     expect distinct: not (collect_group? and reap_orphan?)
-    expect late_adoption: when pid = 1 and group_drained? and same_group? and subreaper?,
+    expect late_adoption: when own_pid = 1 and group_drained? and same_group? and subreaper?,
         collect_group? and not reap_orphan?
-    expect outside_group: when pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
+    expect outside_group: when own_pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
     expect wait_first: unless group_drained?, not collect_group? and not reap_orphan?
 }
 
