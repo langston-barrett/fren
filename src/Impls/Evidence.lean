@@ -16,6 +16,7 @@ import Impls.Eval
 import Impls.Fmt
 import Impls.Generated
 import Impls.Global
+import Impls.GroundMatching
 import Impls.Guards
 import Impls.HigherOrder
 import Impls.Impl
@@ -53,6 +54,8 @@ tested lang::global_successor: "test/ui/lang/global_preconditions.fren"
 tested lang::induction_candidate: "test/ui/checks/induction.fren"
 tested lang::induction_hypotheses: "test/ui/checks/induction.fren"
 tested lang::induction_verdict: "test/ui/checks/induction.fren"
+tested lang::induction_function: "test/ui/checks/induction_unfolding_forms.fren"
+tested lang::unfoldings: "test/ui/checks/induction.fren", "test/ui/checks/induction_unfolding_forms.fren"
 tested lang::trait_expectation: "test/ui/lang/traits.fren"
 tested view::inconclusive_reported: "src/FrenTest/InconclusiveReported.lean", "test/ui/lang/traits.fren", "test/ui/lang/traits_frontends.fren"
 tested refinement::positional_refinement: "test/ui/lang/refines.fren", "src/FrenTest/RefinesTests.lean"
@@ -69,6 +72,7 @@ tested check::branch_query_families: "src/FrenTest/BranchForcing.lean"
 tested check::conditional_branch_core: "src/FrenTest/BranchForcing.lean"
 tested check::disjunction_core: "src/FrenTest/BranchForcing.lean"
 tested check::fact_applications: "test/ui/checks/fact_scope.fren", "test/cli/args/dump_smt_fact_scope.fren", "src/FrenTest/AppFacts.lean"
+tested check::predicate_check_site: "test/ui/checks/predicate_check_locations.fren"
 tested lang::block_evaluation: "src/FrenTest/BooleanSubsets.lean", "src/FrenTest/BooleanModels.lean"
 tested lang::block_result: "test/cli/results/boolean_block_members.fren"
 tested lang::block_values: "src/FrenTest/BooleanModels.lean", "test/cli/results/boolean_block_members.fren", "test/ui/checks/enumeration_predicate_guards.fren"
@@ -127,6 +131,21 @@ tested lang::theory_variable_images: "src/FrenTest/Theories.lean"
 tested lang::theory_term_list: "src/FrenTest/Theories.lean"
 tested lang::theory_translation: "src/FrenTest/Theories.lean"
 tested lang::theory_instance: "src/FrenTest/Theories.lean"
+
+-- Structural matching equations are proved for every input; these tests
+-- exercise their composition before front-end integration in unit 10.
+tested lang::ground_match_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_parameter_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_extension_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_normalization: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_shape_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_subject_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_selection_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_variables_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_join_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_listed_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_sentence_lists_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_rule_step: "src/FrenTest/GroundMatching.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under

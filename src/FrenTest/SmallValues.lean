@@ -126,7 +126,7 @@ def differences (specs : Nat) : Array String := Id.run do
 
 -- A few specs at build time, that it runs at all; the job checks 300,
 -- compiled, rather than in the interpreter in every `lake build`, where
--- they took some 25 s on a Mac and 30 to 80 s on CI.
+-- they took some 25 s locally and 30 to 80 s on CI.
 #guard differences 3 == #[]
 
 end Fren.Test.SmallValues

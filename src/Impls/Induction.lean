@@ -11,6 +11,58 @@ namespace Fren.Impls
 
 open Fren.Core (BlockMember Verdict inductionMember inductionCandidate inductionHypotheses inductionVerdict payloadsOf)
 
+/-- The last string segment of the function's path; empty for an absent
+function, empty path or numeric last segment. This extracts syntax,
+leaving the prefix decision to `lang::induction_function`. -/
+def inductionSegment : Option Lean.Name → String
+  | some (.str _ s) => s
+  | _ => ""
+
+theorem induction_prefix (s : String) :
+    Fren.Str.startsWith s "#induction#" = s.startsWith "#induction#" := by
+  apply Bool.eq_iff_iff.mpr
+  simp [Fren.Str.startsWith_iff]
+
+-- The requirement reads the last segment of the real path.
+impl induction_function: lang::induction_function for (path : Lean.Name) {
+  last_segment := inductionSegment (some path),
+  «induction?» := Fren.Core.isInductionFn path,
+} by
+  intro path _
+  cases path <;>
+    simp [fren_spec, inductionSegment, lang.«induction_function?», Fren.Str.lit,
+      Fren.Core.isInductionFn, induction_prefix]
+
+-- Every generated name is recognized, for all expectation names, claims,
+-- parameters and source positions.
+impl generated_induction_function: lang::induction_function for (n claim x : String) (position : Nat) {
+  last_segment := Fren.Core.inductionFnName n claim x position,
+  «induction?» := true,
+} by
+  intro n claim x position _
+  have string_text (s : String) : toString s = s := rfl
+  simp [fren_spec, lang.«induction_function?», Fren.Str.startsWith, Fren.Str.lit,
+    Fren.Core.inductionFnName, String.toList_append, string_text]
+
+-- Both front ends compose these helpers on the optional function path.
+-- The requirement computes the prefix test itself from its last segment.
+impl unfoldings: lang::unfoldings for (path : Option Lean.Name) {
+  last_segment := inductionSegment path,
+  steps := Fren.Core.unfoldings (path.any Fren.Core.isInductionFn),
+} by
+  intro path _
+  rcases path with _ | path
+  · decide
+  · cases path with
+    | anonymous => decide
+    | num _ _ =>
+      simp [fren_spec, inductionSegment, lang.«induction_function?», Fren.Str.startsWith,
+        Fren.Str.lit, Fren.Core.isInductionFn, Fren.Core.unfoldings]
+    | str _ s =>
+      cases h : s.startsWith "#induction#" <;>
+        simp [fren_spec, inductionSegment, lang.«induction_function?», Fren.Str.lit,
+          Fren.Core.isInductionFn, induction_prefix, Fren.Core.unfoldings, Fren.Core.inductionUnfoldings, h]
+
 theorem inductionMember_iff (m : BlockMember) :
     inductionMember m = true ↔ toBlockMember m = .Assume ∨ toBlockMember m = .Expect ∨ toBlockMember m = .Cover := by
   cases m <;> decide

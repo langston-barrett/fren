@@ -438,18 +438,140 @@ input_file reqs_refine_md where
   path := "src/Reqs/Lang/Refinement.md"
   text := true
 
+-- Each lint group has its own Markdown dependency. The umbrella reads
+-- no Markdown; subchapters in a group elaborate in parallel where their
+-- imports allow it. A new chapter can be read with one #fren_md in its
+-- group's wrapper; the binary tests follow the wrappers too.
 lean_lib ReqsLint where
   globs := #[`Reqs.Lint]
-  needs := #[`@/reqs_lint_md, `@/reqs_lint_chapter_md]
   moreLeanArgs := reqsArgs
 
-input_dir reqs_lint_md where
-  path := "src/Reqs/Lint"
+lean_lib ReqsLintBase where
+  globs := #[`Reqs.Lint.Base]
+  needs := #[`@/reqs_lint_base_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_base_md where
+  path := "src/Reqs/Lint.md"
+  text := true
+
+lean_lib ReqsLintMeaning where
+  globs := #[`Reqs.Lint.Meaning]
+  needs := #[`@/reqs_lint_meaning_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_meaning_md where
+  path := "src/Reqs/Lint/Meaning.md"
+  text := true
+
+lean_lib ReqsLintUnused where
+  globs := #[`Reqs.Lint.Unused]
+  needs := #[`@/reqs_lint_unused_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_unused_md where
+  path := "src/Reqs/Lint/Unused.md"
+  text := true
+
+lean_lib ReqsLintNonstandardStyle where
+  globs := #[`Reqs.Lint.NonstandardStyle]
+  needs := #[`@/reqs_lint_nonstandard_style_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_nonstandard_style_md where
+  path := "src/Reqs/Lint/NonstandardStyle.md"
+  text := true
+
+lean_lib ReqsLintStyle where
+  globs := #[.andSubmodules `Reqs.Lint.Style]
+  needs := #[`@/reqs_lint_style_md, `@/reqs_lint_style_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_style_md where
+  path := "src/Reqs/Lint/Style.md"
+  text := true
+
+input_dir reqs_lint_style_chapters_md where
+  path := "src/Reqs/Lint/Style"
   text := true
   filter := .extension #["md"]
 
-input_file reqs_lint_chapter_md where
-  path := "src/Reqs/Lint.md"
+lean_lib ReqsLintComplexity where
+  globs := #[.andSubmodules `Reqs.Lint.Complexity]
+  needs := #[`@/reqs_lint_complexity_md, `@/reqs_lint_complexity_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_complexity_md where
+  path := "src/Reqs/Lint/Complexity.md"
+  text := true
+
+input_dir reqs_lint_complexity_chapters_md where
+  path := "src/Reqs/Lint/Complexity"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintSuspicious where
+  globs := #[.andSubmodules `Reqs.Lint.Suspicious]
+  needs := #[`@/reqs_lint_suspicious_md, `@/reqs_lint_suspicious_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_suspicious_md where
+  path := "src/Reqs/Lint/Suspicious.md"
+  text := true
+
+input_dir reqs_lint_suspicious_chapters_md where
+  path := "src/Reqs/Lint/Suspicious"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintPedantic where
+  globs := #[.andSubmodules `Reqs.Lint.Pedantic]
+  needs := #[`@/reqs_lint_pedantic_md, `@/reqs_lint_pedantic_chapters_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_pedantic_md where
+  path := "src/Reqs/Lint/Pedantic.md"
+  text := true
+
+input_dir reqs_lint_pedantic_chapters_md where
+  path := "src/Reqs/Lint/Pedantic"
+  text := true
+  filter := .extension #["md"]
+
+lean_lib ReqsLintRestriction where
+  globs := #[`Reqs.Lint.Restriction]
+  needs := #[`@/reqs_lint_restriction_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_restriction_md where
+  path := "src/Reqs/Lint/Restriction.md"
+  text := true
+
+lean_lib ReqsLintDecidability where
+  globs := #[`Reqs.Lint.Decidability]
+  needs := #[`@/reqs_lint_decidability_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_decidability_md where
+  path := "src/Reqs/Lint/Decidability.md"
+  text := true
+
+lean_lib ReqsLintPrinting where
+  globs := #[`Reqs.Lint.Printing]
+  needs := #[`@/reqs_lint_printing_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_printing_md where
+  path := "src/Reqs/Lint/Printing.md"
+  text := true
+
+lean_lib ReqsLintRewrites where
+  globs := #[`Reqs.Lint.Rewrites]
+  needs := #[`@/reqs_lint_rewrites_md]
+  moreLeanArgs := reqsArgs
+
+input_file reqs_lint_rewrites_md where
+  path := "src/Reqs/Lint/Rewrites.md"
   text := true
 
 lean_lib ReqsDev where
@@ -479,7 +601,11 @@ input_dir reqs_dev_md where
 
 lean_lib ImplsTested where
   globs := #[`Impls.Evidence, `Impls.Lint, `Impls.Trace]
-  needs := #[`@/tests, `@/test_lean, `@/test_files_lean, `@/test_main]
+  needs := #[`@/tests, `@/test_lean, `@/test_files_lean, `@/test_main, `@/heavy_test_py]
+
+input_file heavy_test_py where
+  path := "scripts/heavy_test.py"
+  text := true
 
 input_dir tests where
   path := "test"
@@ -572,7 +698,7 @@ target mimalloc_lazy_commit.o pkg : FilePath := do
 -- so the library is its modules.
 --
 -- Unlike `Fren.Elab`, `FrenCli.Elab` and its support modules keep `-O3`.
--- Before the module split, clang took some 40 s on its C code (on a Mac),
+-- Before the module split, clang took some 40 s on its C code (locally),
 -- spread over its functions since no function elaborates every kind of
 -- item (`FrenCli.elabItem`). At `-O0` (3 s), the binary elaborated 40–50%
 -- slower, and `lake test`, whose mutation jobs elaborate Fren's own
@@ -590,8 +716,11 @@ lean_lib FrenCli where
 
 -- `lake test`: ui tests through both front ends, and snapshot tests for the
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
+-- The resolved-dump job also runs `fren` itself, so a build of just the
+-- driver must build that executable too, refreshing a cached older binary.
 lean_exe fren_test where
   root := `FrenTestMain
+  needs := #[`@/fren]
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs

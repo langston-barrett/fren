@@ -339,8 +339,8 @@ partial def elabType [Monad m] [MonadEnv m] [MonadError m] [MonadOptions m] [Mon
   -- `fnParamType` elaborates (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   -- `Set<T>`: `"Set" "<" T ">"`; `Rel<A, B>`: `"Rel" "<" A "," B ">"`.
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
-  -- generic type's type parameter (`lang::element_parameter`).
+  -- An element type, which is never a `Nat` (`lang::nat_place`), and
+  -- may be a type parameter (`lang::element_parameter`).
   let elem (e : Syntax) : m Expr := do
     let t ← elabType modName e params
     if t.isConstOf ``Nat then throwErrorAt e (Core.natPlaceMsg .element).text
@@ -2743,8 +2743,8 @@ partial def elabPType (modName : Name) (ty : Syntax) (params : Array Name := #[]
   -- (`lang::function_type_place`).
   if let some w := Core.fnTypeWithin (typeSegs ty).toList then throwErrorAt ty (Core.fnTypePlaceMsg .constant w).text
   let text := Core.typeText (exactText ty)
-  -- An element type, which is never a `Nat` (`lang::nat_place`), nor a
-  -- generic type's type parameter (`lang::element_parameter`), and whose
+  -- An element type, which is never a `Nat` (`lang::nat_place`), may be a
+  -- type parameter (`lang::element_parameter`), and its
   -- constraint, if any, quantifies over the elements, outside the
   -- decidable core (`lang::subset_place`).
   let elem (e : Syntax) : TermElabM (Expr × Core.PTy) := do
@@ -4072,7 +4072,7 @@ def lintManualUpdate (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : Expr
     let t? ← try some <$> typeOf (← toTerm { cx with noteIndexes := false } recv) catch _ => pure none
     modifyLocal fun _ => saved
     let some t := t? | continue
-    unless (t.constName?.bind (← getState).recordOfDecl?).any (·.path == path) do continue
+    unless ((← getState).recordOf? t).any (·.path == path) do continue
     let w := Core.writtenForm (exactText recv)
     match copies.findIdx? (·.1 == w) with
     | some k => copies := copies.modify k fun (w, r, ks) => (w, r, ks.push i)
@@ -4093,7 +4093,8 @@ def lintUpdate (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   let saved ← getLocal
   let t? ← try some <$> typeOf (← toTerm { cx with noteIndexes := false } e[1]) catch _ => pure none
   modifyLocal fun _ => saved
-  let some info := t?.bind (·.constName?) |>.bind (← getState).recordOfDecl? | return
+  -- The record of an instance too, as `Box<Int>`, by its head (`State.recordOf?`).
+  let some info := t?.bind (← getState).recordOf? | return
   let given := e[3].getSepArgs
   if Core.needlessUpdate info.fields.size given.size then
     recordLint .needlessUpdate e (Core.needlessUpdateMsg (Core.showPath info.path) (exactText e[1]))
@@ -5715,13 +5716,6 @@ def boolOperand (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) 
   let x ← toTerm cx a
   checkTermType a x .bool (Core.opNote op .bool)
   return ← propositionTerm x
-
-/-- The nonempty `xs` joined by `op`, as a balanced tree, so that a
-quantifier's expansion is as deep as the logarithm of its instances, which
-the solver's preprocessing recurses through. -/
-partial def balanced (op : Expr → Expr → Expr) (xs : Array Expr) : Expr :=
-  if xs.size ≤ 1 then xs[0]!
-  else op (balanced op (xs.extract 0 (xs.size / 2))) (balanced op (xs.extract (xs.size / 2)))
 
 /-- Whether the quantifier `e` is a `forall`, rather than an `exists`. -/
 def isForall (e : Syntax) : Bool :=

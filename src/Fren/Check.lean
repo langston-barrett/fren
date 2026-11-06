@@ -4,6 +4,7 @@ import Fren.Lint
 import Fren.Model
 import Fren.SeqElems
 import Fren.SmtTranslate
+import Fren.SolverSorts
 import FrenCore.Check
 import FrenCore.Goals
 import FrenCore.Induction
@@ -723,7 +724,7 @@ private def sharedConjunctions : Nat → Expr
   (sharedConjunctions 64) #[]).map (·.1) == #[`r]
 
 /-- The recursive symbols a query uses, including dependencies needed by
-its one-step equations, each at the instances that it applies, the
+its defining equations, each at the instances that it applies, the
 dependencies of a generic one's at the instance
 (`Reqs/Lang/Recursion#generic-recursion`). Each becomes an uninterpreted
 local. -/
@@ -876,11 +877,14 @@ where
     else k xs
 
 /-- Ground equations and contract facts for recursive applications. The queue
-preserves origin through contracts: equation-introduced applications and their
-contracts receive no further equations. `allowPosts` lets induction proofs
-require evidence for a self-contract before using or expanding it. -/
+keeps each application's depth, how many equations away from the query it
+is, through contracts, and an application brings an equation only where its
+depth is less than `unfoldings` (`Core.recursiveFacts`). `allowPosts` lets
+induction proofs require evidence for a self-contract before using or
+expanding it. -/
 partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
-    (allowPosts : DefinedInfo → Expr → Array Expr → MetaM Bool := fun _ _ _ => pure true) : MetaM (Array (Name × Expr)) := do
+    (allowPosts : DefinedInfo → Expr → Array Expr → MetaM Bool := fun _ _ _ => pure true)
+    (unfoldings : Nat := 1) : MetaM (Array (Name × Expr)) := do
   let st ← getState
   let recs := st.defined.toArray.filterMap fun (_, d) =>
     if d.recursive then d.solver?.map (·, d) else none
@@ -891,14 +895,14 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
   if recs.isEmpty then return #[]
   let mut work := #[]
   for f in hyps.map (·.2) |>.push goal do
-    work := work ++ (← scan recs f #[] false #[])
+    work := work ++ (← scan recs f #[] 0 #[])
   let mut out := #[]
-  let mut seen : Array (Expr × Array Expr × Bool) := #[]
+  let mut seen : Array (Expr × Array Expr × Nat) := #[]
   let mut done := 0
   while done < work.size do
-    let (app, gs, introduced, ancestors) := work[done]!
+    let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, introduced)
+    let key := (app, gs, depth)
     if seen.contains key || ancestors.contains app then continue
     seen := seen.push key
     let .const c _ := app.getAppFn | continue
@@ -929,24 +933,25 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
     let implies (ps : Array Expr) (q : Expr) := ps.foldr (fun p b => mkForall `h .default p b) q
     for (name, f) in (if ← allowPosts d app gs then Core.postconditionFacts implies pres posts else #[]) do
       out := out.push ((name, f), gs)
-      work := work ++ (← scan recs f gs introduced ancestors)
-    if (Core.recursiveFacts introduced).2 then
+      work := work ++ (← scan recs f gs depth ancestors)
+    if (Core.recursiveFacts depth (unfoldings := unfoldings)).2 then
       if let some body := d.recBody? then
         let body ← unfoldDefined ((atI body).beta args)
         out := out.push ((`equation, ← mkEq app body), gs)
-        work := work ++ (← scan recs body gs true ancestors)
+        work := work ++ (← scan recs body gs (depth + 1) ancestors)
   -- Each fact once, where it is first found, under its weakest paths, as
   -- the binary asserts it.
   let implies (gs : Array Expr) (f : Expr) := gs.foldr (fun g b => mkForall `h .default g b) f
-  let conj (gs : Array Expr) := if gs.isEmpty then mkConst ``True else gs.pop.foldr mkAnd gs.back!
-  let disj (ps : List (Array Expr)) := match ps.reverse with
-    | [] => mkConst ``False
-    | p :: rest => rest.foldl (fun b q => mkOr (conj q) b) (conj p)
+  -- A linear tree of many guard paths reaches Lean's recursion limit
+  -- before the solver sees the facts; keep their connective depth small.
+  let conj (gs : Array Expr) := if gs.isEmpty then mkConst ``True else balanced mkAnd gs
+  let disj (ps : List (Array Expr)) :=
+    if ps.isEmpty then mkConst ``False else balanced mkOr (ps.toArray.map conj)
   return (Core.mergeGuarded Core.guardsWithin out.toList).toArray.map fun ((n, f), ps) =>
     (n, Core.guardedFact implies disj f ps)
 where
   scan (recs : NameMap DefinedInfo) (e : Expr) (gs : Array Expr)
-      (introduced : Bool) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Bool × Array Expr)) := do
+      (depth : Nat) (ancestors : Array Expr) : MetaM (Array (Expr × Array Expr × Nat × Array Expr)) := do
     -- A formula without a recursive symbol has no application to find:
     -- `find?` visits each shared subterm once, where the descent below
     -- would visit it once for each path to it.
@@ -956,18 +961,18 @@ where
     if (e.find? recursive).isNone then return #[]
     -- Descend through binders to find closed applications, but never export
     -- an application or a guard containing a binder-local variable.
-    let own := if (Core.recursiveFacts introduced e.hasLooseBVars).1 && recursive e.getAppFn && e.isApp then
-      #[(e, gs.filter (!·.hasLooseBVars), introduced, ancestors)] else #[]
+    let own := if (Core.recursiveFacts depth e.hasLooseBVars).1 && recursive e.getAppFn && e.isApp then
+      #[(e, gs.filter (!·.hasLooseBVars), depth, ancestors)] else #[]
     if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 then
       let args := e.getAppArgs
       let guard := if e.isAppOfArity ``And 2 then args[0]! else mkNot args[0]!
-      return own ++ (← scan recs args[0]! gs introduced ancestors)
-        ++ (← scan recs args[1]! (gs.push guard) introduced ancestors)
+      return own ++ (← scan recs args[0]! gs depth ancestors)
+        ++ (← scan recs args[1]! (gs.push guard) depth ancestors)
     else if e.isAppOfArity ``ite 5 then
       let args := e.getAppArgs
-      return own ++ (← scan recs args[1]! gs introduced ancestors)
-        ++ (← scan recs args[3]! (gs.push args[1]!) introduced ancestors)
-        ++ (← scan recs args[4]! (gs.push (mkNot args[1]!)) introduced ancestors)
+      return own ++ (← scan recs args[1]! gs depth ancestors)
+        ++ (← scan recs args[3]! (gs.push args[1]!) depth ancestors)
+        ++ (← scan recs args[4]! (gs.push (mkNot args[1]!)) depth ancestors)
     else match e with
     | .app .. =>
       -- Instance and proof arguments are elaboration artifacts, not
@@ -976,12 +981,12 @@ where
       let info ← getFunInfo e.getAppFn
       let args := e.getAppArgs.zipIdx.filter fun (_, i) =>
         !(info.paramInfo[i]?.any fun p => p.isInstance || p.isProp)
-      return own ++ (← args.flatMapM fun (arg, _) => scan recs arg gs introduced ancestors)
+      return own ++ (← args.flatMapM fun (arg, _) => scan recs arg gs depth ancestors)
     | .forallE _ p q _ =>
       let guards := if !p.hasLooseBVars && (← isProp p) then gs.push p else gs
-      return (← scan recs p gs introduced ancestors) ++ (← scan recs q guards introduced ancestors)
-    | .lam _ p q _ => return (← scan recs p gs introduced ancestors) ++ (← scan recs q gs introduced ancestors)
-    | .mdata _ b => scan recs b gs introduced ancestors
+      return (← scan recs p gs depth ancestors) ++ (← scan recs q guards depth ancestors)
+    | .lam _ p q _ => return (← scan recs p gs depth ancestors) ++ (← scan recs q gs depth ancestors)
+    | .mdata _ b => scan recs b gs depth ancestors
     | _ => return own
 
 /-- The value in a function's own contract is its body, once. Applications
@@ -1050,7 +1055,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
     (snapshots? : Option (IO.Ref (Array Smt.Model)) := none)
     (fnOf : Expr → Option Name := fun _ => none) (applied? : Option (IO.Ref (Array Name)) := none)
-    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) :
+    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) (sortHooks? : Option ElabHooks := none) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -1098,13 +1103,14 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       let goal := intro.goal
       -- The premises after the hypotheses, as the binary asserts them.
       let premises := intro.premises
+      withSolverCollectionSorts sortHooks? (#[goal] ++ premises ++ hs ++ recFvs) fun sortHints => do
       -- With `script?`, the query's script, as lean-smt writes it, kept
       -- there, and nothing asked (`Fren.Core.obligationsOf`).
       if let some r := script? then
         let mv ← mkFreshExprMVar goal
         let (_, text) ← queryShown do
           Smt.smt { trust := true, showQuery := true, embeddings := true, intros := false } mv.mvarId!
-            (premises.reverse ++ hs.reverse ++ recFvs)
+            (premises.reverse ++ hs.reverse ++ recFvs ++ sortHints)
         r.set text
         return (.unknown "not asked", false)
       -- Each attempt on a goal of its own.
@@ -1129,7 +1135,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
                         ++ (if finiteModel then Core.finiteModelOptions else []) ++ Core.quantifierOptions "ALL"
                         ++ logic ++ cvc5Defaults ++ requeryOptions
                         ++ resourceLimitOptions (← getOptions) ++ quietOptions }
-              mv.mvarId! (premises.reverse ++ hs.reverse ++ recFvs) with
+              mv.mvarId! (premises.reverse ++ hs.reverse ++ recFvs ++ sortHints) with
         | .sat (some m) =>
           let values := m.values.filterMap fun (k, v) =>
             match (vars.find? (·.2 == k)).map (·.1.name) with
@@ -1213,8 +1219,13 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     let hyps ← (Core.recursionFormulas unfoldedFacts appFacts unfoldedHyps).mapM
       fun (n, t) => return (n, ← contractBody c fvs t)
     let goal ← contractBody c fvs (← match unfolded? with | some (_, g) => pure g | none => unfoldDefined goal)
-    let reflected ← recursiveQueryFacts hyps goal
-    let hyps := reflected ++ hyps
+    -- Deeper in the check of a function generated for induction
+    -- (`lang::unfoldings`).
+    let reflected ← recursiveQueryFacts hyps goal (unfoldings := Core.unfoldings (c.fn?.any Core.isInductionFn))
+    -- A large local context becomes a linear telescope when lean-smt
+    -- preprocesses it. Keep the reflected facts in one balanced formula.
+    let hyps := if reflected.isEmpty then hyps else
+      #[(Name.mkSimple "#recursive_facts", balanced mkAnd (reflected.map (·.2)))] ++ hyps
     let goal ← smtBinders goal
     let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
     -- Each instance of a generic function without a body, a local of its
@@ -1863,6 +1874,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         (modelOptional := k == .cover) bounded instances (finiteModel := generic || c.finiteModel)
         (snapshots? := if full.memberGroups.isEmpty then none else some memberModels) fnOf
         (if script?.isSome then none else some applied) (heads.size + 1) script?
+        (hooks?.map fun h => { h with leanType := fun t => do rep (← h.leanType t), coreTy := fun t => h.coreTy (unrep t) })
     -- What each of its checks asks, for `set_option fren.dump
     -- "obligations"`, with its query's script as lean-smt would be given
     -- it, from a cache of its own, so that no answer is taken for it

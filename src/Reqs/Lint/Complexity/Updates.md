@@ -3,8 +3,9 @@
 ## Needless updates
 
 `needless_update` fires on a [record update](../../Lang/Expressions.md#record-updates)
-`{ r with ... }` that gives every field of `r`'s record: it reads nothing
-from `r`, so it has the value of the record literal of the same fields.
+`{ r with ... }` that gives every field of `r`'s record (for a value of
+an instance, as `Box<Int>`, that of the generic record `Box<T>`): it reads
+nothing from `r`, so it has the value of the record literal of the same fields.
 This is Clippy's `needless_update`, which is in its `complexity` group.
 There is no fix, as in Clippy. The literal names the record, which the
 fix would have to write by a path that resolves where the update is, and

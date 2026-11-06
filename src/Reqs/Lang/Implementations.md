@@ -208,6 +208,12 @@ rest on the obligation.
 > **Note:** So the obligation of the implementation at 5, proved from the
 > lemma at 4, does not rest on itself.
 
+The solver model stores every finite item order as a sequence, so lookup
+and length have their exact meanings in its witness checks. Enumeration
+uses a linked representation: it cannot index a sequence within a
+recursive function. Both use the same predicates, whose accessor gives
+raw items; the predicates compute sentence validity, scope and dependencies.
+
 ```fren
 -- What an item of a module is, to the checks that may use it.
 pub enum ModuleItemKind {
@@ -232,11 +238,8 @@ pub struct ModuleItem {
     asked_goals: Set<Int>,   -- an interface's expectations with assumptions or calls
 }
 
--- The items of a module in order, the first at place 0.
-pub enum ModuleItems { Nil, Cons(ModuleItem, ModuleItems) }
-
 -- A module: its items in order, each at its place.
-pub struct ModuleModel { items: ModuleItems }
+pub struct ModuleModel { items: Seq<ModuleItem> }
 
 -- What is at a place where no item is.
 pub const NO_ITEM: ModuleItem := ModuleItem {
@@ -251,16 +254,28 @@ pub const NO_ITEM: ModuleItem := ModuleItem {
     asked_goals := {},
 }
 
-pub fn item_at(items: ModuleItems, i: Int): ModuleItem := match items {
-    ModuleItems::Nil => NO_ITEM,
-    ModuleItems::Cons(item, rest) => if i = 0 then item else item_at(rest, i - 1),
-}
+-- A sequence retains every finite item order, with lookup and length
+-- available to the solver rather than hidden behind recursive contracts.
+pub fn item_at(items: Seq<ModuleItem>, i: Int): ModuleItem :=
+    if 0 <= i < items.len then items[i] else NO_ITEM
 
 pub fn item_of(m: ModuleModel, i: Int): ModuleItem := item_at(m.items, i)
 
-pub fn item_count(items: ModuleItems): Int := match items {
+pub fn item_count(items: Seq<ModuleItem>): Int := items.len
+
+-- A linked representation for executable enumeration: recursive sequence
+-- indexes cannot be enumerated. Both representations use the shared
+-- predicates, with only their raw-item accessor differing.
+pub enum ModuleItems { Nil, Cons(ModuleItem, ModuleItems) }
+
+pub fn linked_item_at(items: ModuleItems, i: Int): ModuleItem := match items {
+    ModuleItems::Nil => NO_ITEM,
+    ModuleItems::Cons(item, rest) => if i = 0 then item else linked_item_at(rest, i - 1),
+}
+
+pub fn linked_item_count(items: ModuleItems): Int := match items {
     ModuleItems::Nil => 0,
-    ModuleItems::Cons(_, rest) => 1 + item_count(rest),
+    ModuleItems::Cons(_, rest) => 1 + linked_item_count(rest),
 }
 
 -- A sentence that a check may see, by the place of the item that declares
@@ -292,34 +307,45 @@ pub fn declared_at(s: ModuleSentence): Int := match s {
     ModuleSentence::Assumed(a) => a,
 }
 
+pub fn kind_at_from?(get: fn(Int) -> ModuleItem, i: Int, wanted: ModuleItemKind) :=
+    0 <= i and get(i).kind = wanted
+
 pub fn kind_at?(m: ModuleModel, i: Int, wanted: ModuleItemKind) :=
-    0 <= i and item_of(m, i).kind = wanted
+    kind_at_from?(|place| item_of(m, place), i, wanted)
 
 -- The place of the interface that the implementation at `x` implements.
-pub fn implemented(m: ModuleModel, x: Int): Int := item_of(m, x).implements
+pub fn implemented_from(get: fn(Int) -> ModuleItem, x: Int): Int := get(x).implements
+
+pub fn implemented(m: ModuleModel, x: Int): Int := implemented_from(|place| item_of(m, place), x)
+
+pub fn implementation_at_from?(get: fn(Int) -> ModuleItem, x: Int) :=
+    kind_at_from?(get, x, ModuleItemKind::Implementation) and kind_at_from?(get, implemented_from(get, x), ModuleItemKind::Interface)
 
 pub fn implementation_at?(m: ModuleModel, x: Int) :=
-    kind_at?(m, x, ModuleItemKind::Implementation) and kind_at?(m, implemented(m, x), ModuleItemKind::Interface)
+    implementation_at_from?(|place| item_of(m, place), x)
 
 -- Whether `s` is a sentence of `m`.
 set_option fren.lint.undecidable "allow" in
-pub fn sentence_of?(m: ModuleModel, s: ModuleSentence) := match s {
+pub fn sentence_of_from?(get: fn(Int) -> ModuleItem, s: ModuleSentence) := match s {
     ModuleSentence::Law(i, k) =>
-        kind_at?(m, i, ModuleItemKind::Interface) and 0 <= k < item_of(m, i).laws,
+        kind_at_from?(get, i, ModuleItemKind::Interface) and 0 <= k < get(i).laws,
     ModuleSentence::InterfaceLemma(i, k) =>
-        kind_at?(m, i, ModuleItemKind::Interface) and 0 <= k < item_of(m, i).lemmas,
+        kind_at_from?(get, i, ModuleItemKind::Interface) and 0 <= k < get(i).lemmas,
     ModuleSentence::InterfaceGoal(i, k) =>
-        kind_at?(m, i, ModuleItemKind::Interface) and 0 <= k < item_of(m, i).goals,
+        kind_at_from?(get, i, ModuleItemKind::Interface) and 0 <= k < get(i).goals,
     ModuleSentence::Obligation(x, k) =>
-        implementation_at?(m, x) and 0 <= k < item_of(m, implemented(m, x)).laws and not k in item_of(m, x).unproved,
+        implementation_at_from?(get, x) and 0 <= k < get(implemented_from(get, x)).laws and not k in get(x).unproved,
     ModuleSentence::TrustedLaw(x, k) =>
-        implementation_at?(m, x) and 0 <= k < item_of(m, implemented(m, x)).laws and k in item_of(m, x).unproved,
+        implementation_at_from?(get, x) and 0 <= k < get(implemented_from(get, x)).laws and k in get(x).unproved,
     ModuleSentence::Translated(x, k) =>
-        implementation_at?(m, x) and 0 <= k < item_of(m, implemented(m, x)).lemmas,
-    ModuleSentence::ModuleLemma(t) => kind_at?(m, t, ModuleItemKind::Lemma),
-    ModuleSentence::ModuleGoal(t) => kind_at?(m, t, ModuleItemKind::Goal),
-    ModuleSentence::Assumed(a) => kind_at?(m, a, ModuleItemKind::Assume),
+        implementation_at_from?(get, x) and 0 <= k < get(implemented_from(get, x)).lemmas,
+    ModuleSentence::ModuleLemma(t) => kind_at_from?(get, t, ModuleItemKind::Lemma),
+    ModuleSentence::ModuleGoal(t) => kind_at_from?(get, t, ModuleItemKind::Goal),
+    ModuleSentence::Assumed(a) => kind_at_from?(get, a, ModuleItemKind::Assume),
 }
+
+pub fn sentence_of?(m: ModuleModel, s: ModuleSentence) :=
+    sentence_of_from?(|place| item_of(m, place), s)
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
@@ -377,39 +403,53 @@ pub fn interface_uses?(i: Int, own: Int, goal?, u: ModuleSentence) := match u {
 
 -- `implementation.dispatch.order`: whether the check of the item at `p`
 -- may take the implementation at `x`.
+pub fn implementation_in_scope_from?(get: fn(Int) -> ModuleItem, p: Int, x: Int) :=
+    implementation_at_from?(get, x) and x < p
+
 pub fn implementation_in_scope?(m: ModuleModel, p: Int, x: Int) :=
-    implementation_at?(m, x) and x < p
+    implementation_in_scope_from?(|place| item_of(m, place), p, x)
 
 -- `implementation.use`, `implementation.use.morphism` and
 -- `implementation.self`: what the check of the item at `p` uses, where
 -- `own` is the implementation whose obligation it is, or -1.
-pub fn item_uses?(m: ModuleModel, p: Int, own: Int, u: ModuleSentence) := match u {
+pub fn item_uses_from?(get: fn(Int) -> ModuleItem, p: Int, own: Int, u: ModuleSentence) := match u {
     ModuleSentence::Assumed(_) => true,
     ModuleSentence::ModuleLemma(t) => t < p,
-    ModuleSentence::Obligation(y, _) => y != own and implementation_in_scope?(m, p, y),
-    ModuleSentence::Translated(y, _) => y != own and implementation_in_scope?(m, p, y),
-    ModuleSentence::TrustedLaw(y, _) => y = own or implementation_in_scope?(m, p, y),
+    ModuleSentence::Obligation(y, _) => y != own and implementation_in_scope_from?(get, p, y),
+    ModuleSentence::Translated(y, _) => y != own and implementation_in_scope_from?(get, p, y),
+    ModuleSentence::TrustedLaw(y, _) => y = own or implementation_in_scope_from?(get, p, y),
     _ => false,
 }
+
+pub fn item_uses?(m: ModuleModel, p: Int, own: Int, u: ModuleSentence) :=
+    item_uses_from?(|place| item_of(m, place), p, own, u)
 
 -- `implementation.theorems`: what the lemma `k` translated along the
 -- implementation at `x` rests on.
-pub fn translation_rests?(m: ModuleModel, x: Int, k: Int, u: ModuleSentence) := match u {
-    ModuleSentence::Obligation(y, _) => y = x,
-    ModuleSentence::TrustedLaw(y, _) => y = x,
-    ModuleSentence::InterfaceLemma(i, l) => i = implemented(m, x) and l = k,
-    _ => false,
-}
+pub fn translation_rests_from?(get: fn(Int) -> ModuleItem, x: Int, k: Int, u: ModuleSentence) :=
+    match u {
+        ModuleSentence::Obligation(y, _) => y = x,
+        ModuleSentence::TrustedLaw(y, _) => y = x,
+        ModuleSentence::InterfaceLemma(i, l) => i = implemented_from(get, x) and l = k,
+        _ => false,
+    }
 
-pub fn rests_case?(m: ModuleModel, n: ModuleSentence, u: ModuleSentence) := match n {
-    ModuleSentence::InterfaceLemma(i, k) => interface_uses?(i, k, false, u),
-    ModuleSentence::InterfaceGoal(i, k) => interface_uses?(i, k, true, u),
-    ModuleSentence::Obligation(x, _) => item_uses?(m, x, x, u),
-    ModuleSentence::ModuleLemma(t) => item_uses?(m, t, -1, u),
-    ModuleSentence::ModuleGoal(t) => item_uses?(m, t, -1, u),
-    ModuleSentence::Translated(x, k) => translation_rests?(m, x, k, u),
-    _ => false,
-}
+pub fn translation_rests?(m: ModuleModel, x: Int, k: Int, u: ModuleSentence) :=
+    translation_rests_from?(|place| item_of(m, place), x, k, u)
+
+pub fn rests_case_from?(get: fn(Int) -> ModuleItem, n: ModuleSentence, u: ModuleSentence) :=
+    match n {
+        ModuleSentence::InterfaceLemma(i, k) => interface_uses?(i, k, false, u),
+        ModuleSentence::InterfaceGoal(i, k) => interface_uses?(i, k, true, u),
+        ModuleSentence::Obligation(x, _) => item_uses_from?(get, x, x, u),
+        ModuleSentence::ModuleLemma(t) => item_uses_from?(get, t, -1, u),
+        ModuleSentence::ModuleGoal(t) => item_uses_from?(get, t, -1, u),
+        ModuleSentence::Translated(x, k) => translation_rests_from?(get, x, k, u),
+        _ => false,
+    }
+
+pub fn rests_case?(m: ModuleModel, n: ModuleSentence, u: ModuleSentence) :=
+    rests_case_from?(|place| item_of(m, place), n, u)
 
 pub fn rests_between?(m: ModuleModel, n: ModuleSentence, u: ModuleSentence) :=
     sentence_of?(m, n) and sentence_of?(m, u) and rests_case?(m, n, u)
@@ -545,13 +585,9 @@ pub const HALF_SUM: ModuleItem := ModuleItem {
     asked_goals := {},
 }
 
-pub const PARTIAL: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(MONOID, ModuleItems::Cons(HALF_SUM, ModuleItems::Nil)),
-}
+pub const PARTIAL: ModuleModel := ModuleModel { items := [MONOID, HALF_SUM] }
 
-pub const TOTAL: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(MONOID, ModuleItems::Cons(SUM, ModuleItems::Nil)),
-}
+pub const TOTAL: ModuleModel := ModuleModel { items := [MONOID, SUM] }
 
 -- A total implementation proves its law.
 set_option fren.lint.undecidable "allow" in
@@ -577,19 +613,14 @@ expect partial_unproved() {
 }
 
 pub const LATE_IMPLEMENTATION: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(
+    items := [
         MONOID,
-        ModuleItems::Cons(
-            MODULE_LEMMA,
-            ModuleItems::Cons(
-                MODULE_LEMMA,
-                ModuleItems::Cons(
-                    MODULE_LEMMA,
-                    ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Cons(SUM, ModuleItems::Nil))
-                )
-            )
-        )
-    ),
+        MODULE_LEMMA,
+        MODULE_LEMMA,
+        MODULE_LEMMA,
+        MODULE_LEMMA,
+        SUM,
+    ],
 }
 
 -- The obligation of the implementation at 5 may use the lemma at 4.
@@ -644,23 +675,20 @@ expect own_translated_lemma() {
 
 -- An `assume` item is used wherever it is declared.
 pub const ASSUME_AFTER: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(
+    items := [
         MODULE_LEMMA,
-        ModuleItems::Cons(
-            ModuleItem {
-                kind := ModuleItemKind::Assume,
-                laws := 0,
-                lemmas := 0,
-                goals := 0,
-                implements := -1,
-                unproved := {},
-                asked? := false,
-                asked_lemmas := {},
-                asked_goals := {},
-            },
-            ModuleItems::Nil
-        )
-    ),
+        ModuleItem {
+            kind := ModuleItemKind::Assume,
+            laws := 0,
+            lemmas := 0,
+            goals := 0,
+            implements := -1,
+            unproved := {},
+            asked? := false,
+            asked_lemmas := {},
+            asked_goals := {},
+        },
+    ],
 }
 
 set_option fren.lint.undecidable "allow" in
@@ -683,8 +711,36 @@ implementations of the interface that are in scope at the check's place:
 ```fren
 -- Whether the implementation at `x` implements the interface at `i` and is
 -- in scope at `p`.
+pub fn candidate_from?(get: fn(Int) -> ModuleItem, p: Int, i: Int, x: Int) :=
+    implementation_in_scope_from?(get, p, x) and implemented_from(get, x) = i
+
 pub fn candidate?(m: ModuleModel, p: Int, i: Int, x: Int) :=
-    implementation_in_scope?(m, p, x) and implemented(m, x) = i
+    candidate_from?(|place| item_of(m, place), p, i, x)
+
+-- The two clauses of dispatch, shared with its fixed-module examples.
+set_option fren.lint.undecidable "allow" in
+pub fn dispatch_error_rule_from?(get: fn(Int) -> ModuleItem, p: Int, i: Int, named: Int, error?) :=
+    error? iff (if named != -1 then not candidate_from?(get, p, i, named)
+        else (exists (x: Int), 0 <= x < p and candidate_from?(get, p, i, x)
+        and (exists (y: Int), x < y < p and candidate_from?(get, p, i, y))))
+
+pub fn dispatch_error_rule?(m: ModuleModel, p: Int, i: Int, named: Int, error?) :=
+    dispatch_error_rule_from?(|place| item_of(m, place), p, i, named, error?)
+
+set_option fren.lint.undecidable "allow" in
+pub fn dispatch_taken_rule_from?(
+    get: fn(Int) -> ModuleItem,
+    p: Int,
+    i: Int,
+    named: Int,
+    taken: Int,
+    error?
+) :=
+    if error? then taken = -1 else if named != -1 then taken = named
+    else candidate_from?(get, p, i, taken) or (taken = -1 and not (exists (x: Int), 0 <= x < p and candidate_from?(get, p, i, x)))
+
+pub fn dispatch_taken_rule?(m: ModuleModel, p: Int, i: Int, named: Int, taken: Int, error?) :=
+    dispatch_taken_rule_from?(|place| item_of(m, place), p, i, named, taken, error?)
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "solver" in
@@ -694,11 +750,8 @@ pub proc dispatch(
     i: Int,          -- the interface whose method the check applies
     named: Int,      -- the implementation that the check names, or -1
 ): (det taken: Int, det error?) {
-    ensure error_rule: error? iff (if named != -1 then not candidate?(m, p, i, named)
-        else (exists (x: Int), 0 <= x < p and candidate?(m, p, i, x)
-        and (exists (y: Int), x < y < p and candidate?(m, p, i, y))))
-    ensure taken_rule: if error? then taken = -1 else if named != -1 then taken = named
-        else candidate?(m, p, i, taken) or (taken = -1 and not (exists (x: Int), 0 <= x < p and candidate?(m, p, i, x)))
+    ensure error_rule: dispatch_error_rule?(m, p, i, named, error?)
+    ensure taken_rule: dispatch_taken_rule?(m, p, i, named, taken, error?)
 
     expect later_never_taken: when taken != -1, taken < p
     expect taken_implements: when taken != -1, candidate?(m, p, i, taken)
@@ -708,20 +761,40 @@ pub proc dispatch(
 -- a check that names neither is an error, and one that names `product`
 -- takes it.
 pub const TWO_MONOIDS: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(
-        MONOID,
-        ModuleItems::Cons(
-            SUM,
-            ModuleItems::Cons(SUM, ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil))
-        )
-    ),
+    items := [MONOID, SUM, SUM, MODULE_LEMMA],
 }
+
+-- The same module as TWO_MONOIDS, in the executable linked view, to
+-- avoid a loop in cvc5's sequence solver on the concrete sequence.
+-- Implementations.lean proves that the two views and dispatch's clauses
+-- agree. These examples quantify every permitted output directly.
+pub const TWO_MONOID_ITEMS: ModuleItems := ModuleItems::Cons(
+    MONOID,
+    ModuleItems::Cons(
+        SUM,
+        ModuleItems::Cons(SUM, ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil))
+    )
+)
 
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
-expect dispatch_ambiguous() {
-    call r := dispatch(TWO_MONOIDS, 3, 0, -1)
-    expect several: r.error?
+expect dispatch_ambiguous(taken: Int, error?) {
+    assume permitted: dispatch_error_rule_from?(
+        |place| linked_item_at(TWO_MONOID_ITEMS, place),
+        3,
+        0,
+        -1,
+        error?
+    )
+        and dispatch_taken_rule_from?(
+            |place| linked_item_at(TWO_MONOID_ITEMS, place),
+            3,
+            0,
+            -1,
+            taken,
+            error?
+        )
+    expect several: error?
 }
 
 set_option fren.lint.undecidable "allow" in
@@ -734,9 +807,23 @@ expect dispatch_named() {
 -- A check at 2 has only `sum` in scope.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "random" in
-expect dispatch_earlier() {
-    call r := dispatch(TWO_MONOIDS, 2, 0, -1)
-    expect only_earlier: r.taken = 1 and not r.error?
+expect dispatch_earlier(taken: Int, error?) {
+    assume permitted: dispatch_error_rule_from?(
+        |place| linked_item_at(TWO_MONOID_ITEMS, place),
+        2,
+        0,
+        -1,
+        error?
+    )
+        and dispatch_taken_rule_from?(
+            |place| linked_item_at(TWO_MONOID_ITEMS, place),
+            2,
+            0,
+            -1,
+            taken,
+            error?
+        )
+    expect only_earlier: taken = 1 and not error?
 }
 ```
 
@@ -751,28 +838,28 @@ how a sentence is instantiated.
 
 **Legality rules**
 
-r[module.subject] lang::sentence_instantiation
+r[module.subject] lang::sentence_instantiation, lang::ground_subject_step
 A sentence's *subject* is the item, of those it applies or calls, that
 comes last in that order.
 
-r[module.anchor] lang::sentence_instantiation
+r[module.anchor] lang::sentence_instantiation, lang::ground_selection_step
 An *anchor* of a sentence is an application of its subject, as a function,
 that mentions no name that a quantifier within the sentence binds, and
 that has an argument that is neither a quantified variable nor a closed
 term. Where the sentence has no such application, each application of its
 subject, as a function, that mentions no such name is an anchor.
 
-r[module.matched] lang::sentence_instantiation
+r[module.matched] lang::sentence_instantiation, lang::ground_rule_step
 The *matched* applications of a sentence are its anchors and each of its
 calls that mentions no name that a quantifier within the sentence binds.
 
-r[module.binding] lang::sentence_instantiation
+r[module.binding] lang::sentence_instantiation, lang::ground_variables_step
 Each quantified variable of a sentence that occurs in an application of
 it, and whose type is not [listed](Quantifiers.md#types), occurs in a
 matched application. A variable that does not is an error that names it
 (the *binding rule*).
 
-r[module.binding.outside] lang::outside_variable, lang::theory_instance
+r[module.binding.outside] lang::{outside_variable, theory_instance, ground_listed_step}
 A quantified variable that the sentence mentions only outside its
 applications, as `n` in `law bounded(s: Self, n: Int): when n > 0, h(s) >=
 0`, needs no term: it stays quantified within each instance.
@@ -812,7 +899,7 @@ An *instance* of a sentence is the sentence with a ground term in place of
 each of its quantified variables that has one. It holds wherever the
 sentence does.
 
-r[module.instance.matching]
+r[module.instance.matching] lang::{ground_match_step, ground_normalization, ground_join_step, ground_rule_step}
 Fren takes the instances at which all the matched applications of the
 sentence are terms of the query at once: each anchor an application of the
 query, and each call a call of the query, with the same arguments once the
@@ -825,12 +912,12 @@ r[module.instance.ground] lang::{theory_ground_term, theory_variable_images, the
 An application of the query that mentions a name that a quantifier of the
 query binds is not a term at which a sentence is instantiated.
 
-r[module.instance.listed] lang::listed_variable
+r[module.instance.listed] lang::listed_variable, lang::ground_listed_step
 A quantified variable of a listed type that no matched application binds
 takes each value of its type, as a [quantifier over listed
 types](Quantifiers.md#meaning) does.
 
-r[module.instance.unused] lang::sentence_instantiation
+r[module.instance.unused] lang::sentence_instantiation, lang::ground_listed_step
 A quantified variable that the sentence does not mention takes no term.
 
 r[module.instance.hypothesis] lang::theory_instance
@@ -1796,7 +1883,7 @@ not assumed to.
 
 **Dynamic semantics**
 
-r[implementation.report.unchecked] lang::caveat_premise, lang::laws_of_own_interface, lang::translated_caveat_bounds
+r[implementation.report.unchecked] lang::caveat_premise, lang::caveat_calculation, lang::laws_of_own_interface, lang::translated_caveat_bounds
 The consistency of an `assume` item, and of a trait's laws, is not checked
 yet. A verdict carries `F0665` where
 [`check::law_premise`](../Evidence.md#the-laws-of-a-trait) gives it. Its
@@ -1843,24 +1930,34 @@ verdict, and where stage 5 finds the laws inconsistent, it reports that at
 the laws, as stage 5 states, not at the check.
 
 ```fren
+-- Whether the implementation at `x` leaves an actual law trusted.
+set_option fren.lint.undecidable "allow" in
+pub fn trusted_laws_from?(get: fn(Int) -> ModuleItem, x: Int) :=
+    exists (j: Int), 0 <= j < get(implemented_from(get, x)).laws and j in get(x).unproved
+
+pub fn trusted_laws?(m: ModuleModel, x: Int) := trusted_laws_from?(|place| item_of(m, place), x)
+
 -- Whether a check that rests on `u` rests on an axiom whose consistency
 -- is not checked: `u` is one, or is a lemma translated along an
 -- implementation that leaves a law trusted.
 set_option fren.lint.undecidable "allow" in
-pub fn caveat_source?(m: ModuleModel, u: ModuleSentence) := match u {
+pub fn caveat_source_from?(get: fn(Int) -> ModuleItem, u: ModuleSentence) := match u {
     ModuleSentence::Law(_, _) => true,
     ModuleSentence::TrustedLaw(_, _) => true,
     ModuleSentence::Assumed(_) => true,
-    ModuleSentence::Translated(x, _) => (exists (j: Int), 0 <= j < item_of(m, implemented(m, x)).laws and j in item_of(m, x).unproved),
+    ModuleSentence::Translated(x, _) => trusted_laws_from?(get, x),
     _ => false,
 }
+
+pub fn caveat_source?(m: ModuleModel, u: ModuleSentence) :=
+    caveat_source_from?(|place| item_of(m, place), u)
 
 -- Whether `n` rests on a sentence of `m` that is a caveat's source, of
 -- each kind of sentence in turn. Of laws, only those of the interface whose
 -- check it is, and all alike (`lang::laws_of_own_interface`), so law 0
 -- stands for them.
 set_option fren.lint.undecidable "allow" in
-pub fn rests_on_caveat?(m: ModuleModel, n: ModuleSentence) :=
+pub fn caveat_by_sentences?(m: ModuleModel, n: ModuleSentence) :=
     let count := item_count(m.items) in
     (item_of(m, check_place(n)).laws > 0 and rests_between?(m, n, ModuleSentence::Law(check_place(n), 0)))
     or (exists (y: Int), 0 <= y < count and (exists (j: Int), 0 <= j < item_of(m, implemented(m, y)).laws
@@ -1868,6 +1965,51 @@ pub fn rests_on_caveat?(m: ModuleModel, n: ModuleSentence) :=
     or (exists (a: Int), 0 <= a < count and rests_between?(m, n, ModuleSentence::Assumed(a)))
     or (exists (y: Int), 0 <= y < count and (exists (k: Int), 0 <= k < item_of(m, implemented(m, y)).lemmas
         and rests_between?(m, n, ModuleSentence::Translated(y, k)) and caveat_source?(m, ModuleSentence::Translated(y, k))))
+
+-- On valid sentences, which checks use the trusted laws of the
+-- implementation at `y`. An obligation uses its own and earlier ones;
+-- a translated lemma uses its own implementation's laws.
+pub fn trusts_at?(n: ModuleSentence, y: Int) := match n {
+    ModuleSentence::Obligation(x, _) => y <= x,
+    ModuleSentence::ModuleLemma(p) => y < p,
+    ModuleSentence::ModuleGoal(p) => y < p,
+    ModuleSentence::Translated(x, _) => y = x,
+    _ => false,
+}
+
+pub fn owns_laws_from?(get: fn(Int) -> ModuleItem, n: ModuleSentence) := match n {
+    ModuleSentence::InterfaceLemma(i, _) => get(i).laws > 0,
+    ModuleSentence::InterfaceGoal(i, _) => get(i).laws > 0,
+    _ => false,
+}
+
+pub fn owns_laws?(m: ModuleModel, n: ModuleSentence) :=
+    owns_laws_from?(|place| item_of(m, place), n)
+
+pub fn uses_assumptions?(n: ModuleSentence) :=
+    n is ModuleSentence::Obligation(_, _) or n is ModuleSentence::ModuleLemma(_) or n is ModuleSentence::ModuleGoal(_)
+
+-- Factor sentence validity and the trusted-law search out of the
+-- relation's cases. A translated source's trusted law is already used
+-- directly at every check that uses the translation.
+set_option fren.lint.undecidable "allow" in
+pub fn rests_on_caveat_from?(get: fn(Int) -> ModuleItem, count: Int, n: ModuleSentence) :=
+    sentence_of_from?(get, n) and (owns_laws_from?(get, n)
+        or (exists (y: Int), 0 <= y < count and implementation_at_from?(get, y)
+        and trusts_at?(n, y) and trusted_laws_from?(get, y))
+        or (uses_assumptions?(n) and (exists (a: Int), 0 <= a < count
+        and kind_at_from?(get, a, ModuleItemKind::Assume))))
+
+pub fn rests_on_caveat?(m: ModuleModel, n: ModuleSentence) :=
+    rests_on_caveat_from?(|place| item_of(m, place), item_count(m.items), n)
+
+-- Check the factored calculation against the relation on every model,
+-- including malformed counts and out-of-range entries in `unproved`.
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "solver" in
+expect caveat_calculation(m: ModuleModel, n: ModuleSentence) {
+    expect same: rests_on_caveat?(m, n) iff caveat_by_sentences?(m, n)
+}
 
 -- Only the checks of an interface rest on its laws, and on each of them
 -- where on one.
@@ -1886,50 +2028,62 @@ pub proc caveat_premise(m: ModuleModel, n: ModuleSentence): (det laws?) {
     expect axioms_have_none: when axiom?(n), not laws?
 }
 
--- Keep the fixture's model construction inside a function so that
--- enumeration ranges over the four Boolean choices, not ModuleModel.
-pub fn caveat_bounds_model(
+-- Keep the fixture linked so enumeration needs no unspecified value for
+-- an out-of-range sequence index. Its only inputs are four Booleans.
+pub fn caveat_bounds_items(
     include_negative?,
     include_valid?,
     include_end?,
     include_large?
-): ModuleModel :=
+): ModuleItems :=
     let unproved: Set<Int> := (if include_negative? then {-1} else {})
     union (if include_valid? then {0} else {}) union (if include_end? then {1} else {})
     union (if include_large? then {5} else {}) in
-    ModuleModel {
-        items := ModuleItems::Cons(
-            MONOID,
-            ModuleItems::Cons(
-                { SUM with unproved },
-                ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil)
-            )
-        ),
-    }
+    ModuleItems::Cons(
+        MONOID,
+        ModuleItems::Cons(
+            { SUM with unproved },
+            ModuleItems::Cons(MODULE_LEMMA, ModuleItems::Nil)
+        )
+    )
 
--- All 16 combinations of a negative number, valid law 0, the upper
+-- Prove all 16 combinations of a negative number, valid law 0, the upper
 -- bound 1 and a larger number 5, for a one-law interface. Out-of-range
 -- entries must not make either the translation a caveat's source or its
 -- consumer carry F0665, including when mixed with the valid law.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "enumerated" in
 expect translated_caveat_bounds(include_negative?, include_valid?, include_end?, include_large?) {
-    expect source_bounded: caveat_source?(
-        caveat_bounds_model(
-            include_negative?,
-            include_valid?,
-            include_end?,
-            include_large?
+    expect source_bounded: caveat_source_from?(
+        |place| linked_item_at(
+            caveat_bounds_items(
+                include_negative?,
+                include_valid?,
+                include_end?,
+                include_large?
+            ),
+            place
         ),
         ModuleSentence::Translated(1, 0)
     ) iff include_valid?
     -- This is the expression that `caveat_premise` defines `laws?` with.
-    expect report_bounded: rests_on_caveat?(
-        caveat_bounds_model(
-            include_negative?,
-            include_valid?,
-            include_end?,
-            include_large?
+    expect report_bounded: rests_on_caveat_from?(
+        |place| linked_item_at(
+            caveat_bounds_items(
+                include_negative?,
+                include_valid?,
+                include_end?,
+                include_large?
+            ),
+            place
+        ),
+        linked_item_count(
+            caveat_bounds_items(
+                include_negative?,
+                include_valid?,
+                include_end?,
+                include_large?
+            )
         ),
         ModuleSentence::ModuleLemma(2)
     ) iff include_valid?
@@ -1950,7 +2104,7 @@ pub fn today_forms?(m: ModuleModel) :=
 -- `Store`, a trait with one law and one expectation, and a global
 -- expectation after it.
 pub const STORE: ModuleModel := ModuleModel {
-    items := ModuleItems::Cons(
+    items := [
         ModuleItem {
             kind := ModuleItemKind::Interface,
             laws := 1,
@@ -1962,21 +2116,18 @@ pub const STORE: ModuleModel := ModuleModel {
             asked_lemmas := {},
             asked_goals := {},
         },
-        ModuleItems::Cons(
-            ModuleItem {
-                kind := ModuleItemKind::Goal,
-                laws := 0,
-                lemmas := 0,
-                goals := 0,
-                implements := -1,
-                unproved := {},
-                asked? := false,
-                asked_lemmas := {},
-                asked_goals := {},
-            },
-            ModuleItems::Nil
-        )
-    ),
+        ModuleItem {
+            kind := ModuleItemKind::Goal,
+            laws := 0,
+            lemmas := 0,
+            goals := 0,
+            implements := -1,
+            unproved := {},
+            asked? := false,
+            asked_lemmas := {},
+            asked_goals := {},
+        },
+    ],
 }
 
 -- Its expectation rests on its law, as `F0665` of `Store::read_back` says
@@ -2150,20 +2301,21 @@ pub fn candidates_from(order: SmallItems, k: Int): ModuleSentences := match orde
     SmallItems::Cons(s, rest) => append_sentences(sentences_at(s, k), candidates_from(rest, k + 1)),
 }
 
-pub fn present(m: ModuleModel, ns: ModuleSentences): ModuleSentences := match ns {
+pub fn present(m: ModuleItems, ns: ModuleSentences): ModuleSentences := match ns {
     ModuleSentences::Nil => ModuleSentences::Nil,
     ModuleSentences::Cons(n, rest) =>
-        if sentence_of?(m, n) then ModuleSentences::Cons(n, present(m, rest)) else present(m, rest),
+        if sentence_of_from?(|i| linked_item_at(m, i), n) then ModuleSentences::Cons(n, present(m, rest)) else present(m, rest),
 }
 
-pub fn rests_on_some?(m: ModuleModel, n: ModuleSentence, us: ModuleSentences) := match us {
+pub fn rests_on_some?(m: ModuleItems, n: ModuleSentence, us: ModuleSentences) := match us {
     ModuleSentences::Nil => false,
-    ModuleSentences::Cons(u, rest) => rests_case?(m, n, u) or rests_on_some?(m, n, rest),
+    ModuleSentences::Cons(u, rest) =>
+        rests_case_from?(|i| linked_item_at(m, i), n, u) or rests_on_some?(m, n, rest),
 }
 
 -- The sentences of `ns` that rest on a sentence of `remaining`.
 pub fn still_resting(
-    m: ModuleModel,
+    m: ModuleItems,
     ns: ModuleSentences,
     remaining: ModuleSentences
 ): ModuleSentences := match ns {
@@ -2176,7 +2328,7 @@ pub fn still_resting(
 -- How many rounds of removal are left.
 pub enum Rounds { Out, More(Rounds) }
 
-pub fn removed_by?(m: ModuleModel, remaining: ModuleSentences, rounds: Rounds) := match remaining {
+pub fn removed_by?(m: ModuleItems, remaining: ModuleSentences, rounds: Rounds) := match remaining {
     ModuleSentences::Nil => true,
     ModuleSentences::Cons(_, _) => match rounds {
         Rounds::Out => false,
@@ -2232,9 +2384,7 @@ pub const ENOUGH_ROUNDS: Rounds := Rounds::More(
 )
 
 pub fn acyclic_small?(order: SmallItems, choice: SmallChoice) :=
-    let m := ModuleModel {
-        items := small_items(order, choice, order),
-    } in
+    let m := small_items(order, choice, order) in
     removed_by?(m, present(m, candidates_from(order, 0)), ENOUGH_ROUNDS)
 
 -- One order of each class: items of a kind in the order of their names.
@@ -2402,10 +2552,652 @@ The Lean-hosted front end checks this chapter's items by name, since a
 #fren_check contract_without_result_used
 #fren_check arm_decided
 #fren_check laws_of_own_interface
+#fren_check caveat_calculation
 #fren_check caveat_premise
 #fren_check translated_caveat_bounds
 #fren_check today_caveat
 #fren_check today_global_caveat
 #fren_check today_caveats
 #fren_check small_modules_acyclic
+```
+
+### Ground matching equations
+
+These equations refine `module.instance.matching` and the normalization
+of [matching terms](../Evidence.md#matching-terms-and-finite-closure) over
+the shared theory syntax. Extraction supplies resolved identities, lexical
+definition environments, declaration order, term types and finite listed
+values. The core computes applications, subjects, anchors, binding and
+substitutions. Definitions have no escaping binder indices: sentence
+parameters and free query locals have their own resolved names. Applied
+item heads stay opaque; only query aliases and item constants are references
+to definitions. Builtins, literals, types and bound indices retain syntax.
+
+A match extends one simultaneous substitution and never captures a query
+binder. Every anchor and outer call must match at once. Listed variables
+without images take their values after matching; unused variables and
+outside-only unlisted variables retain their quantifiers. The recursive
+calls below are the same operation at immediate subterms or list tails.
+`Fren.Core.GroundMatching` implements these equations. Neither front end
+uses the engine yet; ranked candidate construction and application closure
+follow in unit 9b, and claim item integration in unit 10.
+
+```fren
+pub type GroundContext
+pub type GroundImages
+pub type GroundDefinitions
+pub type GroundResult
+
+pub fn ground_type_present?(GroundContext, TheoryTerm)
+pub fn ground_type(GroundContext, TheoryTerm): Ty
+pub fn ground_image_present?(GroundImages, TheoryName)
+pub fn ground_image(GroundImages, TheoryName): TheoryTerm
+pub fn ground_extend(GroundImages, TheoryName, TheoryTerm): GroundImages
+pub fn ground_parameter_present?(TheoryVariables, TheoryName)
+pub fn ground_parameter(TheoryVariables, TheoryName): Ty
+pub fn ground_success(GroundImages): GroundResult
+pub fn ground_failure(GroundImages): GroundResult
+pub fn ground_succeeded?(GroundResult)
+pub fn ground_result_images(GroundResult): GroundImages
+
+pub fn ground_match(
+    GroundContext,
+    TheoryVariables,
+    TheoryTerm,
+    TheoryTerm,
+    GroundImages
+): GroundResult
+
+pub proc ground_match_step(
+    ctx: GroundContext,
+    variables: TheoryVariables,
+    pattern: TheoryTerm,
+    target: TheoryTerm,
+    images: GroundImages,
+): (det result: GroundResult) {
+    ensure rule: result = match theory_term_kind(pattern) {
+        TheoryTermKind::Variable =>
+            if not ground_parameter_present?(variables, theory_term_name(pattern))
+            then if pattern = target then ground_success(images) else ground_failure(images)
+            else if not ground_term?(target, 0) or not ground_type_present?(ctx, target)
+            or ground_type(ctx, target) != ground_parameter(variables, theory_term_name(pattern))
+            then ground_failure(images)
+            else if ground_image_present?(images, theory_term_name(pattern))
+            then if ground_image(images, theory_term_name(pattern)) = target then ground_success(images) else ground_failure(images)
+            else ground_success(ground_extend(images, theory_term_name(pattern), target)),
+        TheoryTermKind::Apply =>
+            if theory_term_kind(target) != TheoryTermKind::Apply then ground_failure(images)
+            else if ground_succeeded?(
+                ground_match(
+                    ctx,
+                    variables,
+                    theory_term_left(pattern),
+                    theory_term_left(target),
+                    images
+                )
+            )
+            then ground_match(
+                ctx,
+                variables,
+                theory_term_right(pattern),
+                theory_term_right(target),
+                ground_result_images(
+                    ground_match(
+                        ctx,
+                        variables,
+                        theory_term_left(pattern),
+                        theory_term_left(target),
+                        images
+                    )
+                )
+            )
+            else ground_failure(images),
+        TheoryTermKind::All =>
+            if theory_term_kind(target) = TheoryTermKind::All and theory_term_type(pattern) = theory_term_type(target)
+            then ground_match(
+                ctx,
+                variables,
+                theory_term_left(pattern),
+                theory_term_left(target),
+                images
+            )
+            else ground_failure(images),
+        TheoryTermKind::Exists =>
+            if theory_term_kind(target) = TheoryTermKind::Exists and theory_term_type(pattern) = theory_term_type(target)
+            then ground_match(
+                ctx,
+                variables,
+                theory_term_left(pattern),
+                theory_term_left(target),
+                images
+            )
+            else ground_failure(images),
+        _ => if pattern = target then ground_success(images) else ground_failure(images),
+    }
+}
+
+pub proc ground_parameter_step(variables: TheoryVariables, name: TheoryName): (
+    det present?,
+    det result: Ty,
+) {
+    ensure presence: present? iff name in theory_variable_names(variables)
+    ensure rule: result = if theory_variables_empty?(variables) then theory_variable_type(variables)
+        else if theory_variable_name(variables) = name then theory_variable_type(variables)
+        else ground_parameter(theory_variables_rest(variables), name)
+}
+
+pub proc ground_extension_step(
+    images: GroundImages,
+    name: TheoryName,
+    value: TheoryTerm,
+    queried: TheoryName,
+): (det present?, det result: TheoryTerm) {
+    -- The matcher extends only a name without an existing image.
+    require fresh: not ground_image_present?(images, name)
+    ensure presence: present? iff queried = name or ground_image_present?(images, queried)
+    ensure lookup: result = if queried = name then value else ground_image(images, queried)
+}
+
+pub fn ground_definitions_empty?(GroundDefinitions)
+pub fn ground_definition_name(GroundDefinitions): TheoryTerm
+pub fn ground_definition_value(GroundDefinitions): TheoryTerm
+pub fn ground_definitions_rest(GroundDefinitions): GroundDefinitions
+pub fn ground_add_definition(TheoryTerm, TheoryTerm, GroundDefinitions): GroundDefinitions
+pub fn ground_lookup(GroundDefinitions, TheoryTerm): TheoryTerm
+pub fn ground_normalize(GroundDefinitions, TheoryTerm): TheoryTerm
+pub fn ground_normalize_definitions(GroundDefinitions): GroundDefinitions
+
+pub proc ground_normalization(defs: GroundDefinitions, term: TheoryTerm, other: TheoryTerm): (
+    det lookup_value: TheoryTerm,
+    det normalized: TheoryTerm,
+    det normalized_definitions: GroundDefinitions,
+    det same?,
+) {
+    ensure lookup_rule: lookup_value = if ground_definitions_empty?(defs) then term
+        else if ground_definition_name(defs) = term then ground_definition_value(defs)
+        else ground_lookup(ground_definitions_rest(defs), term)
+    ensure term_rule: normalized = match theory_term_kind(term) {
+        TheoryTermKind::Apply => theory_apply(
+            if theory_term_kind(theory_term_left(term)) = TheoryTermKind::Item then theory_term_left(term)
+                else ground_normalize(defs, theory_term_left(term)),
+            ground_normalize(defs, theory_term_right(term))
+        ),
+        TheoryTermKind::All => theory_all(
+            theory_term_type(term),
+            ground_normalize(defs, theory_term_left(term))
+        ),
+        TheoryTermKind::Exists => theory_exists(
+            theory_term_type(term),
+            ground_normalize(defs, theory_term_left(term))
+        ),
+        TheoryTermKind::Query | TheoryTermKind::Item => ground_lookup(defs, term),
+        _ => term,
+    }
+    ensure definitions_rule: normalized_definitions = if ground_definitions_empty?(defs) then defs
+        else ground_add_definition(
+            ground_definition_name(defs),
+            ground_normalize(
+                ground_normalize_definitions(ground_definitions_rest(defs)),
+                ground_definition_value(defs)
+            ),
+            ground_normalize_definitions(ground_definitions_rest(defs))
+        )
+    ensure equality: same? iff ground_normalize(ground_normalize_definitions(defs), term)
+        = ground_normalize(ground_normalize_definitions(defs), other)
+}
+
+pub type GroundOrder
+pub type GroundSubject
+
+pub fn ground_order_empty?(GroundOrder)
+pub fn ground_order_first(GroundOrder): TheoryName
+pub fn ground_order_rest(GroundOrder): GroundOrder
+pub fn ground_no_subject(GroundOrder): GroundSubject
+pub fn ground_named(TheoryName): GroundSubject
+pub fn ground_subject_present?(GroundSubject)
+pub fn ground_subject_name(GroundSubject): TheoryName
+pub fn ground_subject(GroundOrder, TheoryTerms): GroundSubject
+pub fn ground_uses?(TheoryTerms, TheoryName)
+pub fn ground_items(GroundContext): Set<TheoryName>
+pub fn ground_head(TheoryTerm): TheoryTerm
+pub fn ground_args(TheoryTerm): TheoryTerms
+pub fn ground_append(TheoryTerms, TheoryTerms): TheoryTerms
+pub fn ground_no_terms(TheoryTerm): TheoryTerms
+pub fn ground_outer?(TheoryTerm, Nat)
+pub fn ground_mentions?(TheoryName, TheoryTerm)
+pub fn ground_vars_mention?(TheoryVariables, TheoryTerm)
+pub fn ground_compound_arg?(TheoryVariables, TheoryTerm)
+pub fn ground_apps(GroundContext, TheoryTerm): TheoryTerms
+pub fn ground_argument_apps(GroundContext, TheoryTerm): TheoryTerms
+
+pub proc ground_shape_step(
+    ctx: GroundContext,
+    term: TheoryTerm,
+    variables: TheoryVariables,
+    name: TheoryName,
+    depth: Nat,
+): (
+    det head: TheoryTerm,
+    det args: TheoryTerms,
+    det outer?,
+    det mentions?,
+    det compound?,
+    det apps: TheoryTerms,
+    det argument_apps: TheoryTerms,
+) {
+    ensure head_rule: head = if theory_term_kind(term) = TheoryTermKind::Apply
+        then ground_head(theory_term_left(term)) else term
+    ensure args_rule: args = if theory_term_kind(term) = TheoryTermKind::Apply
+        then ground_append(
+            ground_args(theory_term_left(term)),
+            theory_add_term(theory_term_right(term), ground_no_terms(term))
+        )
+        else ground_no_terms(term)
+    ensure outer_rule: outer? iff match theory_term_kind(term) {
+        TheoryTermKind::Bound => theory_term_index(term) < depth,
+        TheoryTermKind::Apply =>
+            ground_outer?(theory_term_left(term), depth) and ground_outer?(theory_term_right(term), depth),
+        TheoryTermKind::All | TheoryTermKind::Exists =>
+            ground_outer?(theory_term_left(term), depth + 1),
+        _ => true,
+    }
+    ensure mentions_rule: mentions? iff match theory_term_kind(term) {
+        TheoryTermKind::Variable => theory_term_name(term) = name,
+        TheoryTermKind::Apply =>
+            ground_mentions?(name, theory_term_left(term)) or ground_mentions?(name, theory_term_right(term)),
+        TheoryTermKind::All | TheoryTermKind::Exists =>
+            ground_mentions?(name, theory_term_left(term)),
+        _ => false,
+    }
+    ensure compound_rule: compound? iff theory_term_kind(term) != TheoryTermKind::Variable and ground_vars_mention?(variables, term)
+    ensure apps_rule: apps = match theory_term_kind(term) {
+        TheoryTermKind::Apply => ground_append(
+            if theory_term_kind(ground_head(term)) = TheoryTermKind::Item and theory_term_name(ground_head(term)) in ground_items(ctx)
+                then theory_add_term(term, ground_no_terms(term)) else ground_no_terms(term),
+            ground_append(
+                ground_argument_apps(ctx, theory_term_left(term)),
+                ground_apps(ctx, theory_term_right(term))
+            )
+        ),
+        TheoryTermKind::All | TheoryTermKind::Exists => ground_apps(ctx, theory_term_left(term)),
+        _ => ground_no_terms(term),
+    }
+    ensure arguments_rule: argument_apps = if theory_term_kind(term) = TheoryTermKind::Apply
+        then ground_append(
+            ground_argument_apps(ctx, theory_term_left(term)),
+            ground_apps(ctx, theory_term_right(term))
+        )
+        else ground_no_terms(term)
+}
+
+pub proc ground_subject_step(order: GroundOrder, apps: TheoryTerms, name: TheoryName): (
+    det subject: GroundSubject,
+    det subject_used?,
+) {
+    ensure subject_rule: subject = if ground_order_empty?(order) then ground_no_subject(order)
+        else if ground_subject_present?(ground_subject(ground_order_rest(order), apps))
+        then ground_subject(ground_order_rest(order), apps)
+        else if ground_uses?(apps, ground_order_first(order)) then ground_named(ground_order_first(order))
+        else ground_no_subject(order)
+    ensure uses_rule: subject_used? iff not theory_terms_empty?(apps) and (
+        (theory_term_kind(ground_head(theory_first_term(apps))) = TheoryTermKind::Item
+        and theory_term_name(ground_head(theory_first_term(apps))) = name)
+        or ground_uses?(theory_terms_rest(apps), name)
+        )
+}
+
+pub fn ground_subject_apps(GroundSubject, TheoryTerms): TheoryTerms
+pub fn ground_compound_apps(TheoryVariables, TheoryTerms): TheoryTerms
+pub fn ground_anchors(TheoryVariables, TheoryTerms): TheoryTerms
+pub fn ground_any_mentions?(TheoryName, TheoryTerms)
+pub fn ground_listed?(GroundContext, Ty)
+pub fn ground_binding?(GroundContext, TheoryTerms, TheoryTerms, TheoryVariables)
+
+pub fn ground_any_compound?(TheoryVariables, TheoryTerms)
+
+pub proc ground_selection_step(
+    subject: GroundSubject,
+    apps: TheoryTerms,
+    variables: TheoryVariables,
+    name: TheoryName,
+): (
+    det subject_apps: TheoryTerms,
+    det compounds: TheoryTerms,
+    det anchors: TheoryTerms,
+    det mentioned?,
+    det compound_argument?,
+) {
+    ensure subjects_rule: subject_apps = if theory_terms_empty?(apps) then apps else
+        if ground_subject_present?(subject)
+        and theory_term_kind(ground_head(theory_first_term(apps))) = TheoryTermKind::Item
+        and theory_term_name(ground_head(theory_first_term(apps))) = ground_subject_name(subject)
+        and ground_outer?(theory_first_term(apps), 0)
+        then theory_add_term(
+            theory_first_term(apps),
+            ground_subject_apps(subject, theory_terms_rest(apps))
+        )
+        else ground_subject_apps(subject, theory_terms_rest(apps))
+    ensure compounds_rule: compounds = if theory_terms_empty?(apps) then apps else
+        if ground_any_compound?(variables, ground_args(theory_first_term(apps)))
+        then theory_add_term(
+            theory_first_term(apps),
+            ground_compound_apps(variables, theory_terms_rest(apps))
+        )
+        else ground_compound_apps(variables, theory_terms_rest(apps))
+    ensure anchors_rule: anchors = if theory_terms_empty?(ground_compound_apps(variables, apps))
+        then apps else ground_compound_apps(variables, apps)
+    ensure mentions_rule: mentioned? iff not theory_terms_empty?(apps) and (
+        ground_mentions?(name, theory_first_term(apps)) or ground_any_mentions?(name, theory_terms_rest(apps))
+        )
+    ensure compound_arguments_rule: compound_argument? iff not theory_terms_empty?(apps) and (
+        ground_compound_arg?(variables, theory_first_term(apps)) or ground_any_compound?(variables, theory_terms_rest(apps))
+        )
+}
+
+pub proc ground_variables_step(
+    ctx: GroundContext,
+    variables: TheoryVariables,
+    term: TheoryTerm,
+    apps: TheoryTerms,
+    matched: TheoryTerms,
+): (det mentions?, det binding?) {
+    ensure mentions_rule: mentions? iff not theory_variables_empty?(variables) and (
+        ground_mentions?(theory_variable_name(variables), term) or ground_vars_mention?(theory_variables_rest(variables), term)
+        )
+    ensure binding_rule: binding? iff theory_variables_empty?(variables) or (
+        (ground_listed?(ctx, theory_variable_type(variables))
+        or not ground_any_mentions?(theory_variable_name(variables), apps)
+        or ground_any_mentions?(theory_variable_name(variables), matched))
+        and ground_binding?(ctx, apps, matched, theory_variables_rest(variables))
+        )
+}
+
+pub type GroundMatches
+pub fn ground_matches_empty?(GroundMatches)
+pub fn ground_matches_first(GroundMatches): GroundImages
+pub fn ground_matches_rest(GroundMatches): GroundMatches
+pub fn ground_no_matches(TheoryVariables): GroundMatches
+pub fn ground_add_match(GroundImages, GroundMatches): GroundMatches
+pub fn ground_append_matches(GroundMatches, GroundMatches): GroundMatches
+pub fn ground_unique_matches(GroundMatches): GroundMatches
+
+pub fn ground_targets(
+    GroundContext,
+    TheoryVariables,
+    TheoryTerm,
+    TheoryTerms,
+    GroundImages
+): GroundMatches
+
+pub fn ground_many(
+    GroundContext,
+    TheoryVariables,
+    TheoryTerm,
+    TheoryTerms,
+    GroundMatches
+): GroundMatches
+
+pub fn ground_join(
+    GroundContext,
+    TheoryVariables,
+    TheoryTerms,
+    TheoryTerms,
+    GroundMatches
+): GroundMatches
+
+pub proc ground_join_step(
+    ctx: GroundContext,
+    variables: TheoryVariables,
+    pattern: TheoryTerm,
+    patterns: TheoryTerms,
+    targets: TheoryTerms,
+    images: GroundImages,
+    substitutions: GroundMatches,
+): (det target_matches: GroundMatches, det many: GroundMatches, det joined: GroundMatches) {
+    ensure targets_rule: target_matches = if theory_terms_empty?(targets) then ground_no_matches(variables)
+        else if ground_term?(theory_first_term(targets), 0)
+        and ground_succeeded?(
+            ground_match(ctx, variables, pattern, theory_first_term(targets), images)
+        )
+        then ground_add_match(
+            ground_result_images(
+                ground_match(ctx, variables, pattern, theory_first_term(targets), images)
+            ),
+            ground_targets(ctx, variables, pattern, theory_terms_rest(targets), images)
+        )
+        else ground_targets(ctx, variables, pattern, theory_terms_rest(targets), images)
+    ensure many_rule: many = if ground_matches_empty?(substitutions) then substitutions else
+        ground_append_matches(
+            ground_targets(
+                ctx,
+                variables,
+                pattern,
+                targets,
+                ground_matches_first(substitutions)
+            ),
+            ground_many(
+                ctx,
+                variables,
+                pattern,
+                targets,
+                ground_matches_rest(substitutions)
+            )
+        )
+    ensure join_rule: joined = if theory_terms_empty?(patterns) then substitutions else
+        ground_join(
+            ctx,
+            variables,
+            theory_terms_rest(patterns),
+            targets,
+            ground_many(
+                ctx,
+                variables,
+                theory_first_term(patterns),
+                targets,
+                substitutions
+            )
+        )
+}
+
+pub fn ground_listed_values(GroundContext, Ty): TheoryTerms
+
+pub fn ground_typed_extensions(
+    GroundContext,
+    TheoryName,
+    Ty,
+    TheoryTerms,
+    GroundImages
+): GroundMatches
+
+pub fn ground_listed_extensions(
+    GroundContext,
+    TheoryTerms,
+    TheoryName,
+    Ty,
+    GroundImages
+): GroundMatches
+
+pub fn ground_listed_many(GroundContext, TheoryTerms, TheoryName, Ty, GroundMatches): GroundMatches
+
+pub fn ground_complete_listed(
+    GroundContext,
+    TheoryTerms,
+    TheoryVariables,
+    GroundMatches
+): GroundMatches
+
+pub proc ground_listed_step(
+    ctx: GroundContext,
+    terms: TheoryTerms,
+    name: TheoryName,
+    ty: Ty,
+    values: TheoryTerms,
+    images: GroundImages,
+    substitutions: GroundMatches,
+    variables: TheoryVariables,
+): (
+    det typed: GroundMatches,
+    det extended: GroundMatches,
+    det many: GroundMatches,
+    det completed: GroundMatches,
+) {
+    ensure typed_rule: typed = if theory_terms_empty?(values) then ground_no_matches(variables)
+        else if ground_term?(theory_first_term(values), 0) and ground_type_present?(ctx, theory_first_term(values))
+        and ground_type(ctx, theory_first_term(values)) = ty
+        then ground_add_match(
+            ground_extend(images, name, theory_first_term(values)),
+            ground_typed_extensions(ctx, name, ty, theory_terms_rest(values), images)
+        )
+        else ground_typed_extensions(ctx, name, ty, theory_terms_rest(values), images)
+    ensure extensions_rule: extended =
+        if ground_image_present?(images, name) or not ground_any_mentions?(name, terms) or not ground_listed?(ctx, ty)
+        then ground_add_match(images, ground_no_matches(variables))
+        else ground_typed_extensions(ctx, name, ty, ground_listed_values(ctx, ty), images)
+    ensure many_rule: many = if ground_matches_empty?(substitutions) then substitutions else
+        ground_append_matches(
+            ground_listed_extensions(ctx, terms, name, ty, ground_matches_first(substitutions)),
+            ground_listed_many(ctx, terms, name, ty, ground_matches_rest(substitutions))
+        )
+    ensure completion_rule: completed = if theory_variables_empty?(variables) then substitutions else
+        ground_complete_listed(
+            ctx,
+            terms,
+            theory_variables_rest(variables),
+            ground_listed_many(
+                ctx,
+                terms,
+                theory_variable_name(variables),
+                theory_variable_type(variables),
+                substitutions
+            )
+        )
+}
+
+pub fn ground_apps_list(GroundContext, TheoryTerms): TheoryTerms
+pub fn ground_call_apps(GroundContext, TheoryTerms): TheoryTerms
+pub fn ground_outer_apps(TheoryTerms): TheoryTerms
+pub fn ground_order(GroundContext): GroundOrder
+pub fn ground_initial_matches(TheoryVariables): GroundMatches
+
+pub proc ground_sentence_lists_step(ctx: GroundContext, terms: TheoryTerms): (
+    det apps: TheoryTerms,
+    det calls: TheoryTerms,
+    det outer_apps: TheoryTerms,
+) {
+    ensure apps_rule: apps = if theory_terms_empty?(terms) then terms else
+        ground_append(
+            ground_apps(ctx, theory_first_term(terms)),
+            ground_apps_list(ctx, theory_terms_rest(terms))
+        )
+    ensure calls_rule: calls = if theory_terms_empty?(terms) then terms else
+        ground_append(
+            ground_apps_list(ctx, ground_args(theory_first_term(terms))),
+            ground_call_apps(ctx, theory_terms_rest(terms))
+        )
+    ensure outer_rule: outer_apps = if theory_terms_empty?(terms) then terms else
+        if ground_outer?(theory_first_term(terms), 0) then theory_add_term(
+            theory_first_term(terms),
+            ground_outer_apps(theory_terms_rest(terms))
+        )
+        else ground_outer_apps(theory_terms_rest(terms))
+}
+
+pub fn ground_rule_apps(GroundContext, TheorySentence): TheoryTerms
+pub fn ground_rule_subject(GroundContext, TheorySentence): GroundSubject
+pub fn ground_rule_anchors(GroundContext, TheorySentence): TheoryTerms
+
+pub proc ground_rule_step(
+    ctx: GroundContext,
+    sentence: TheorySentence,
+    query_apps: TheoryTerms,
+    query_calls: TheoryTerms,
+): (
+    det apps: TheoryTerms,
+    det subject: GroundSubject,
+    det anchors: TheoryTerms,
+    det binding?,
+    det substitutions: GroundMatches,
+) {
+    ensure apps_rule: apps = ground_append(
+        ground_apps_list(
+            ctx,
+            theory_add_term(
+                theory_sentence_domain(sentence),
+                theory_sentence_claims(sentence)
+            )
+        ),
+        ground_call_apps(ctx, theory_sentence_calls(sentence))
+    )
+    ensure subject_rule: subject = ground_subject(
+        ground_order(ctx),
+        ground_append(
+            ground_rule_apps(ctx, sentence),
+            theory_sentence_calls(sentence)
+        )
+    )
+    ensure anchors_rule: anchors = ground_anchors(
+        theory_sentence_variables(sentence),
+        ground_subject_apps(
+            ground_rule_subject(ctx, sentence),
+            ground_rule_apps(ctx, sentence)
+        )
+    )
+    ensure binding_rule: binding? iff ground_binding?(
+        ctx,
+        ground_append(
+            ground_rule_apps(ctx, sentence),
+            theory_sentence_calls(sentence)
+        ),
+        ground_append(
+            ground_rule_anchors(ctx, sentence),
+            ground_outer_apps(theory_sentence_calls(sentence))
+        ),
+        theory_sentence_variables(sentence)
+    )
+    ensure matches_rule: substitutions = if not binding? or (
+        ground_subject_present?(ground_rule_subject(ctx, sentence)) and not ground_uses?(
+            ground_append(query_apps, query_calls),
+            ground_subject_name(ground_rule_subject(ctx, sentence))
+        )
+        ) then ground_no_matches(theory_sentence_variables(sentence))
+        else ground_unique_matches(
+            ground_complete_listed(
+                ctx,
+                theory_add_term(
+                    theory_sentence_domain(sentence),
+                    ground_append(
+                        theory_sentence_calls(sentence),
+                        theory_sentence_claims(sentence)
+                    )
+                ),
+                theory_sentence_variables(sentence),
+                ground_join(
+                    ctx,
+                    theory_sentence_variables(sentence),
+                    ground_outer_apps(theory_sentence_calls(sentence)),
+                    query_calls,
+                    ground_join(
+                        ctx,
+                        theory_sentence_variables(sentence),
+                        ground_rule_anchors(ctx, sentence),
+                        query_apps,
+                        ground_initial_matches(theory_sentence_variables(sentence))
+                    )
+                )
+            )
+        )
+}
+
+#fren_check ground_match_step
+#fren_check ground_parameter_step
+#fren_check ground_extension_step
+#fren_check ground_normalization
+#fren_check ground_shape_step
+#fren_check ground_subject_step
+#fren_check ground_selection_step
+#fren_check ground_variables_step
+#fren_check ground_join_step
+#fren_check ground_listed_step
+#fren_check ground_sentence_lists_step
+#fren_check ground_rule_step
 ```

@@ -3,6 +3,7 @@ import FrenCli.Cvc5
 import FrenCli.Elab
 import FrenCli.QueryStore
 import FrenCli.SeqElems
+import FrenCli.SolverSorts
 import FrenCli.SolverStats
 import FrenCore.Check
 import FrenCore.Goals
@@ -107,6 +108,10 @@ def usedParams (decls : Array PreludeDecl) : Std.HashMap String (Array Bool) := 
 mentions. -/
 structure Prelude where
   decls : Array PreludeDecl
+  /-- Payload and field types, for initializing tuples at instances. -/
+  datatypes : Array DataDecl := #[]
+  /-- No per-query traversal when the declarations have no implicit tuple. -/
+  tupleSortsNeeded : Bool := false
   /-- The declaration of each symbol. -/
   owner : Std.HashMap String Nat
   /-- The declarations that each declaration mentions. -/
@@ -186,12 +191,12 @@ def recursionReach (decls : Array PreludeDecl) (defs : Std.HashMap String (Array
         changed := true
   return reach.toArray
 
-def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) : Prelude :=
+def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) (datatypes : Array DataDecl := #[]) : Prelude :=
   let marked := SeqElems.markedDefs (decls.map (·.text))
   let decls := if marked.isEmpty then decls else decls.map fun d => { d with text := SeqElems.plainText d.text }
   let owner := decls.zipIdx.foldl (init := {}) fun m (d, i) => d.syms.foldl (·.insert · i) m
   let unfolds := Thunk.mk fun _ => queryDefinitions decls factHeads marked
-  { decls, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
+  { decls, datatypes, tupleSortsNeeded := SolverSorts.needed datatypes, owner, deps := decls.map fun d => (quotedSymbols d.text).filterMap owner.get?
     used := Thunk.mk fun _ => usedParams decls
     smtTexts := decls.map fun d => Thunk.mk fun _ => solverText d.text, marked
     unfolds
@@ -203,7 +208,7 @@ def Prelude.ofDecls (decls : Array PreludeDecl) (factHeads : Array String) : Pre
 /-- The prelude of the queries of `st`'s spec, with the selectors whose
 payloads bring facts, which every front end of the CLI asks with. -/
 def State.queryPrelude (st : State) : Prelude :=
-  Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1))
+  Prelude.ofDecls st.prelude (st.funFacts.toArray.map (·.1)) st.datatypes
 
 /-- A `State`, `st`, with what checking each of its items reads of it that
 is the same for every item (`FrenCli.solveComp`), built once for all of
@@ -373,7 +378,20 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   -- commands, which close their quoted symbols and string literals, so
   -- the pieces' are the script's, and the prelude's are computed once.
   let symbols := quotedSymbols body ++ observations.flatMap (quotedSymbols ∘ (·.formula))
-  let defs := String.join ((prelude.neededDecls symbols).toList.map (prelude.smtTexts[·]!.get))
+  let needed := prelude.neededDecls symbols
+  let tuples := if prelude.tupleSortsNeeded then
+      SolverSorts.tupleSorts prelude.datatypes (String.join (needed.toList.map (prelude.decls[·]!.text)) ++ body ++ String.join (observations.toList.map (·.formula)))
+    else #[]
+  -- cvc5's implicit substitution into a datatype does not initialize its
+  -- concrete tuple encodings. Register them after their last sort
+  -- dependency, before a definition or assertion can use the instance.
+  let aliases := tuples.mapIdx fun i sort =>
+    let deps := (quotedSymbols sort).filterMap prelude.owner.get?
+    let after := deps.foldl (fun acc k => some (max (acc.getD k) k)) none
+    (after, solverText s!"(define-sort |#fren.tuple.{i}| () {sort})\n")
+  let defs := if aliases.isEmpty then String.join (needed.toList.map (prelude.smtTexts[·]!.get)) else
+    needed.foldl (init := String.join ((aliases.filter (·.1.isNone)).toList.map (·.2))) fun acc k =>
+      acc ++ prelude.smtTexts[k]!.get ++ String.join ((aliases.filter (·.1 == some k)).toList.map (·.2))
   -- Higher-order only if the script, including the definitions that it
   -- includes, projects a relation (`cli::logic`).
   let logic := Fren.Core.queryLogic logic (Fren.Core.projectsRelation defs || Fren.Core.projectsRelation body)
@@ -1194,12 +1212,15 @@ partial def contractBody (own : SeqElems.SExpr) (body : SeqElems.SExpr) (e : Seq
   | .list xs => .list (xs.map (contractBody own body))
   | _ => e
 
-/-- Finite one-step reflection. Nonrecursive definitions and clauses are
-expanded before finding applications; equation-introduced applications receive
-only contract facts. Guards follow the original conditional branches. -/
+/-- Finite reflection. Nonrecursive definitions and clauses are expanded
+before finding applications. Each application keeps its depth, how many
+equations away from the query it is, through contracts, and brings an
+equation only where its depth is less than `unfoldings`
+(`Fren.Core.recursiveFacts`); the others receive only contract facts.
+Guards follow the original conditional branches. -/
 partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (Bool × Contract))
     (types : Std.HashMap String String) (hyps : Array (Lean.Name × String)) (goal : String)
-    (mentioned : Std.HashSet String) : Array (Lean.Name × String) := Id.run do
+    (mentioned : Std.HashSet String) (unfoldings : Nat := 1) : Array (Lean.Name × String) := Id.run do
   let recs := prelude.recs.get
   if recs.isEmpty then return #[]
   -- Unfolding brings an application of a recursive function only into a
@@ -1215,14 +1236,14 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
   let expand (s : String) := (SeqElems.parse s).unfold defs
   let mut work := #[]
   for f in hyps.map (·.2) |>.push goal do
-    work := work ++ scan recs (expand f) #[] false #[]
+    work := work ++ scan recs (expand f) #[] 0 #[]
   let mut out := #[]
-  let mut seen : Std.HashSet (SeqElems.SExpr × Array String × Bool) := {}
+  let mut seen : Std.HashSet (SeqElems.SExpr × Array String × Nat) := {}
   let mut done := 0
   while done < work.size do
-    let (app, gs, introduced, ancestors) := work[done]!
+    let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, introduced)
+    let key := (app, gs, depth)
     if seen.contains key then continue
     seen := seen.insert key
     let .list xs := app | continue
@@ -1237,12 +1258,12 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
     for (n, f) in appFactsOf funs types text do
       let f := expand f
       out := out.push ((n, if domain.isEmpty then toString f else s!"(=> {conj domain} {f})"), gs)
-      work := work ++ scan recs f gs introduced ancestors
-    if (Fren.Core.recursiveFacts introduced).2 then
+      work := work ++ scan recs f gs depth ancestors
+    if (Fren.Core.recursiveFacts depth (unfoldings := unfoldings)).2 then
       if let some (_, ps, body) := recs.find? (·.1 == head) then
         let body := (body.subst (ps.zip args)).unfold defs
         out := out.push ((`equation, s!"(= {text} {body})"), gs)
-        work := work ++ scan recs body gs true ancestors
+        work := work ++ scan recs body gs (depth + 1) ancestors
   -- Each fact once, where it is first found, under its weakest paths.
   let implies (gs : Array String) (f : String) := if gs.isEmpty then f else s!"(=> {conj gs} {f})"
   let disj (ps : List (Array String)) := s!"(or {" ".intercalate (ps.map conj)})"
@@ -1250,34 +1271,34 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
     (n, Fren.Core.guardedFact implies disj f ps)
 where
   scan (recs : Array (String × Array String × SeqElems.SExpr)) (e : SeqElems.SExpr)
-      (gs : Array String) (introduced : Bool) (ancestors : Array String) (bound : Array String := #[]) :
-      Array (SeqElems.SExpr × Array String × Bool × Array String) :=
+      (gs : Array String) (depth : Nat) (ancestors : Array String) (bound : Array String := #[]) :
+      Array (SeqElems.SExpr × Array String × Nat × Array String) :=
     match e with
     | .atom _ => #[]
     | .list xs => Id.run do
       let own := match xs[0]? with
-        | some (SeqElems.SExpr.atom h) => if recs.any (·.1 == h) && (Fren.Core.recursiveFacts introduced (e.mentions bound)).1 then
+        | some (SeqElems.SExpr.atom h) => if recs.any (·.1 == h) && (Fren.Core.recursiveFacts depth (e.mentions bound)).1 then
           -- With nothing bound, no guard mentions a bound name.
           let gs := if bound.isEmpty then gs else gs.filter fun g => !(SeqElems.parse g).mentions bound
-          #[(e, gs, introduced, ancestors)] else #[]
+          #[(e, gs, depth, ancestors)] else #[]
         | _ => #[]
       if let some (names, body) := SeqElems.binderOf? e then
-        return scan recs body gs introduced ancestors (bound ++ names)
+        return scan recs body gs depth ancestors (bound ++ names)
       if xs[0]? == some (SeqElems.SExpr.atom "and") || xs[0]? == some (SeqElems.SExpr.atom "or") then
         let mut result := own
         let mut guards := gs
         for x in xs.extract 1 do
-          result := result ++ scan recs x guards introduced ancestors bound
+          result := result ++ scan recs x guards depth ancestors bound
           guards := guards.push (if xs[0]? == some (SeqElems.SExpr.atom "and") then toString x else s!"(not {x})")
         return result
       match xs with
       | #[.atom "ite", c, a, b] =>
-        return own ++ scan recs c gs introduced ancestors bound
-          ++ scan recs a (gs.push (toString c)) introduced ancestors bound
-          ++ scan recs b (gs.push s!"(not {c})") introduced ancestors bound
+        return own ++ scan recs c gs depth ancestors bound
+          ++ scan recs a (gs.push (toString c)) depth ancestors bound
+          ++ scan recs b (gs.push s!"(not {c})") depth ancestors bound
       | #[.atom "=>", c, b] =>
-        return own ++ scan recs c gs introduced ancestors bound ++ scan recs b (gs.push (toString c)) introduced ancestors bound
-      | _ => return own ++ xs.flatMap fun x => scan recs x gs introduced ancestors bound
+        return own ++ scan recs c gs depth ancestors bound ++ scan recs b (gs.push (toString c)) depth ancestors bound
+      | _ => return own ++ xs.flatMap fun x => scan recs x gs depth ancestors bound
 
 /-- The recursive functions, by path, that the SMT-LIB formula `f` applies
 once the definitions of `prelude` are unfolded, of those whose symbols are
@@ -1378,7 +1399,10 @@ def prepare (prelude : Prelude) (c : CComp) (strings sets : Bool) (projection : 
   let factRecs := appFacts.foldl (init := #[]) fun acc (_, f) =>
     (recursiveIn prelude recursiveSyms f).foldl (init := acc) fun acc p => if acc.contains p then acc else acc.push p
   -- Reflected with the hypotheses (`Fren.Core.recursionFormulas`).
-  let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas facts appFacts hyps) goal mentioned ++ hyps
+  -- Deeper in the check of a function generated for induction
+  -- (`lang::unfoldings`).
+  let hyps := facts ++ appFacts ++ recursiveQueryFacts prelude funs c.funFacts (Fren.Core.recursionFormulas facts appFacts hyps) goal mentioned
+    (Fren.Core.unfoldings (c.fn?.any Fren.Core.isInductionFn)) ++ hyps
   let options := Fren.Core.solverOptions strings sets ++ (if c.bounded then Fren.Core.boundedOptions else [])
     -- The contract of a generic function without a body, at its type
     -- parameters' sorts, with finite-model finding.

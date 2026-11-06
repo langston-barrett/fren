@@ -1,0 +1,21 @@
+-- Random testing reads instantiated collection payloads and fields.
+--@ only: cli
+set_option fren.lint.dead_code "allow"
+mod datatype_elements_tested
+
+pub enum Payload<T> { Full(Seq<Set<T>>) }
+pub struct Fields<A, B> { rel: Rel<A, B>, tag: Int }
+
+pub fn contents<T>(p: Payload<T>): Seq<Set<T>> := match p {
+    Payload::Full(q) => q,
+}
+
+pub fn make<T>(q: Seq<Set<T>>): Payload<T> := Payload::Full(q)
+pub fn pair<A, B>(a: A, b: B): Fields<A, B> := Fields { rel := {(a, b)}, tag := 0 }
+
+set_option fren.evidence "random" in
+proc by_testing(p: Payload<Bool>, q: Seq<Set<Int>>, r: Fields<Int, Bool>, x: Int, b?) {
+    expect roundtrip: make(contents(p)) = p
+    expect nested: contents(make(q)) = q
+    expect fields: { r with rel := pair(x, b?).rel }.rel = {(x, b?)}
+}
