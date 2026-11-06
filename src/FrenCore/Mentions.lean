@@ -130,4 +130,21 @@ def clauseMentions (names : Array Lean.Name) (defs : Array (Array Lean.Name)) (b
 /-- An expression with no parts. -/
 def MentionShape.leaf (k : MentionKind) : MentionShape := .node k []
 
+/-- A compact shape with the same mention support, in first-occurrence
+order. Both front ends use it for shared local definitions. -/
+def MentionShape.summary (shape : MentionShape) : MentionShape :=
+  .node .compound (shape.mentioned.eraseDups.map fun
+    | .var name => .leaf (.variable name)
+    | .fn name => .leaf (.uninterpreted name))
+
+theorem MentionShape.summary_mentioned (shape : MentionShape) :
+    shape.summary.mentioned = shape.mentioned.eraseDups := by
+  unfold summary
+  generalize shape.mentioned.eraseDups = mentions
+  induction mentions with
+  | nil => rfl
+  | cons mention rest ih =>
+    cases mention <;> simp_all [MentionShape.mentioned, MentionShape.allMentioned,
+      MentionShape.leaf, kindMentioned]
+
 end Fren.Core

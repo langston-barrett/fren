@@ -1,0 +1,29 @@
+-- Nested calls must be bounded in a procedure constraint too.
+--@ args: check --jobs 2
+pub fn twice(n: Int): Int := n + n
+
+pub proc p(n: Int): (det r: Int) {
+    ensure equation: r = twice(
+        twice(
+            twice(
+                twice(
+                    twice(
+                        twice(
+                            twice(
+                                twice(
+                                    twice(
+                                        twice(
+                                            twice(
+                                                twice(twice(twice(twice(twice(twice(twice(n)))))))
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+}

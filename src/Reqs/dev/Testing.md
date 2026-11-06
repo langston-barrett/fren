@@ -379,14 +379,16 @@ pub mod testing
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
   [--decidable] [--unfoldings] [--datatype-elements]
-  [--spec-timeout SECONDS]`): generates random specs and checks each with
-  both front ends, the `fren` command's pipeline
+  [--spec-timeout SECONDS]`, or
+  `lake exe fren_fuzz_frontends --copying COUNT`): generates
+  specs and checks each with both front ends, the `fren` command's pipeline
   and the Lean front end (in an environment that imports `Fren`, as the ui
   tests do), whose reports must agree (`cli::agreement`, `cli::agrees_with_build`): the
   same errors, warnings and notes at the same lines and columns, the
   same summary, and the exit status that Lean's messages call for: 2
   after a static error, else 1 when Lean reports an error, 3 when it
-  reports a warning, and 0 otherwise. The specs aim at the analyses that
+  reports a warning, and 0 otherwise, except for the resource-limit case
+  below. The specs aim at the analyses that
   each front end implements on its own: constants, definitions of
   results and `let` variables, defined and uninterpreted functions,
   calls, `match`, tables, string methods and `++`, products, orderings
@@ -474,8 +476,29 @@ pub mod testing
   another function's contract. Its generator is split off the seed, so the
   other modes stay unchanged. Its cut is empty, as
   `--induction-candidates`'s is.
-  A run with `--obligations` also compares the front ends' [obligations
-  dumps](../Cli.md#obligations), but for their metadata, from runs with
+
+  A separate invocation, `lake exe fren_fuzz_frontends --copying COUNT`,
+  checks the first `COUNT` seeds of an independent stream of copying
+  constructs (`FrenTest.ExpansionFuzz`): nested defined-function calls,
+  generic and higher-order applications, collection and compound types,
+  binders, and refinement locals. After the established function cases,
+  it appends consumers in procedure constraints, call bindings, global
+  claims, local-definition chains, nested matches and generic structural
+  recursion consumers, from a separate seed. It then adds high-fan-out
+  nested matches over integers, Booleans and sequence payloads, from another
+  independent seed. Ordinary cases must have no standalone error and no
+  front-end difference. Resource-limit probes run
+  separately: both front ends check the nested-function probe; the large
+  refinement, constraint and local-chain probes check the standalone
+  resource diagnostic, while smaller consumer forms compare both front
+  ends. Workers check at most 25 seeds.
+  This driver stops at the first failing worker, with its exit status;
+  unlike the ordinary fuzzer, it has no per-spec timeout or crash record.
+  Its working specs are in `.lake/expansion-fuzz`, and failures are printed
+  with their seeds. It does not take the ordinary generator's flags.
+
+  For the ordinary modes, a run with `--obligations` also compares the
+  front ends' [obligations dumps](../Cli.md#obligations), but for their metadata, from runs with
   the dump on, whose messages it then compares. It is off by default, so
   that a run compares the messages of what users run, which is what CI
   runs. It writes the dumps of each spec where they differ
@@ -498,7 +521,8 @@ pub mod testing
   - Lean's parse errors stand for the `fren` command's static
     errors on the same line, but not for a check's result: a check that
     fails where Lean rejects the constraint is a difference. Any other
-    error of either front end is compared.
+    error of either front end is compared, apart from the resource-limit
+    exception below.
   - Messages are compared by their first line, without the values of a
     model, which may differ, or the solver's reason for an undecided check.
     The names of the constraints that a message reports are compared,
@@ -510,6 +534,14 @@ pub mod testing
     guarantees.
   - Checks by testing, which Lean does not run, are left out, and so are
     the summary and exit status of a spec that has them.
+  - The [standalone evaluator's expansion limit](../Eval.md#expansion-limit)
+    has no hosted counterpart (`cli::accepts`, `cli::agreement`). The
+    comparison permits this exception only with exactly one located
+    expansion-limit diagnostic naming the item, exit 2, no standalone
+    check results or summary, and no other standalone error. It then
+    omits that resource diagnostic and the hosted check results and
+    summary. Static errors and lints are still compared; an internal
+    error or unexplained exit 2 is still a difference.
   - Under `--confirm`'s misread models, the front ends' solvers may give
     different models, and a model's confirmation says something about what
     a front end knows only of that model. So two results of a check, at
@@ -522,10 +554,10 @@ pub mod testing
     neither, even after a parse error. Any other message without a location
     is compared too.
 
-  Each spec where the front ends differ is written to `DIR` (default
-  `.lake/fuzz`) with the differences and both reports in comments, and the
-  differences are summarized by kind; those only in undecided checks,
-  which time limits may explain, are counted apart. Specs run in worker
+  In the ordinary fuzzer, each spec where the front ends differ is written
+  to `DIR` (default `.lake/fuzz`) with the differences and both reports in
+  comments, and the differences are summarized by kind; those only in
+  undecided checks, which time limits may explain, are counted apart. Specs run in worker
   processes, so a crash of the solver is recorded against its spec, and a
   spec that runs longer than `--spec-timeout` (default 30 s; a spec takes
   well under a second), leaving out its solver queries that reached their
@@ -616,6 +648,14 @@ pub mod testing
   The matching is the pure function `unmatched`, tested with `#guard`s
   beside it. A failure says how to reproduce the spec, and the entry that
   would list it.
+
+  The independent copying stream also has a fixed `lake test` job,
+  `expansionFuzz 60`, run directly as
+  `fren_test --job expansionFuzz 60`. It checks seeds 0 through 59 and the
+  separate resource-limit probes described above, without changing the
+  ordinary corpus's seeds or known differences. A nonzero optional start
+  (`--job expansionFuzz COUNT START`) checks that range without repeating
+  the resource probes.
 
   An extension of the generator leaves every seed's spec as it was, up to
   what it appends, so the corpus's differences stay as they were: it is

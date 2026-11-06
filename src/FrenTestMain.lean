@@ -2,6 +2,8 @@
 import Fren
 import FrenCli.Eval
 import FrenCli.Run
+import FrenTest.Expansion
+import FrenTest.ExpansionFuzz
 import FrenTest.Frontends
 import FrenTest.FuzzFrontends
 import FrenTest.Jobs
@@ -4423,7 +4425,7 @@ def jobs : IO (Array (List String)) := do
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["readingBeside"], ["resolvedDump"], ["theoriesDump"], ["sentenceBridge"]]
+    ++ #[["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"], ["sentenceBridge"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4480,6 +4482,13 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["decisions", path] => decisions path
   | ["laterFiles"] => laterFiles
   | ["readingBeside"] => do FrenTest.ReadingBeside.agree (← ownSpecFiles)
+  | ["expansionFuzz", count] => do
+    let some n := count.toNat? | throw (IO.userError "invalid copying corpus count")
+    FrenTest.ExpansionFuzz.run n
+  | ["expansionFuzz", count, start] => do
+    let some n := count.toNat? | throw (IO.userError "invalid copying corpus count")
+    let some start := start.toNat? | throw (IO.userError "invalid copying corpus start")
+    FrenTest.ExpansionFuzz.run n start
   | ["resolvedDump"] => FrenTest.Resolved.check bless
   | ["theoriesDump"] => do FrenTest.TheoryDump.check (← FrenTest.FuzzFrontends.loadFren)
   | ["sentenceBridge"] => FrenTest.SentenceBridge.check
