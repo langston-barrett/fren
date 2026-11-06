@@ -5,8 +5,11 @@ open Fren.Lang
 
 -- With `fren.runChecks` off, `#fren_check` checks nothing and reports
 -- nothing, not even a failing check, as `lake build` elaborates Fren's own
--- requirements (`Reqs/Lean#options`); a path it names must still resolve.
+-- requirements (`Reqs/Lean#options`); a path it names must still resolve
+-- to a procedure or a global expectation.
 mod run_checks_test
+
+pub const MARKER: Int := 0
 
 pub proc wrong(x: Int): (y: Int) {
     ensure r: y = x
@@ -23,6 +26,11 @@ set_option fren.runChecks false in
 #guard_msgs in
 set_option fren.runChecks false in
 #fren_check missing
+
+/-- error: expected a procedure or a global expectation, but `run_checks_test::MARKER` is a constant -/
+#guard_msgs in
+set_option fren.runChecks false in
+#fren_check MARKER
 
 -- On by default: the same check fails.
 /--
