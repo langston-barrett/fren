@@ -5,7 +5,9 @@ import FrenCli.Run
 import FrenTest.Expansion
 import FrenTest.ExpansionFuzz
 import FrenTest.Frontends
-import FrenTest.FuzzFrontends
+import FrenTest.FuzzFrontends.Checks
+import FrenTest.FuzzFrontends.Corpus
+import FrenTest.FuzzFrontends.Running
 import FrenTest.ImplPath
 import FrenTest.Jobs
 import FrenTest.Messages
