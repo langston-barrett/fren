@@ -104,12 +104,56 @@ def longest_prefix(text, page):
     return low
 
 
+def glob_matches(path, pattern):
+    """Keep fnmatch's wildcards, allowing **/ segments to match no directory."""
+    if fnmatch.fnmatchcase(path, pattern):
+        return True
+    chunks, start, index = [], 0, 0
+    while index < len(pattern):
+        if pattern[index] == "[":
+            end = index + 1
+            if end < len(pattern) and pattern[end] == "!":
+                end += 1
+            if end < len(pattern) and pattern[end] == "]":
+                end += 1
+            end = pattern.find("]", end)
+            if end >= 0:
+                index = end + 1
+                continue
+        if pattern.startswith("**/", index) and (index == 0 or pattern[index - 1] == "/"):
+            chunks.append(pattern[start:index])
+            index += 3
+            start = index
+        else:
+            index += 1
+    if not chunks:
+        return False
+    chunks.append(pattern[start:])
+    names = path.split("/")
+    count = len(names)
+    following = [fnmatch.fnmatchcase("/".join(names[first:]), chunks[-1])
+                 for first in range(count)]
+    # Work backward through directory boundaries, without enumerating
+    # every way to remove repeated **/ segments from the pattern.
+    for prefix in reversed(chunks[:-1]):
+        skipped = [False] * count
+        for first in reversed(range(count)):
+            skipped[first] = following[first] or (first + 1 < count and skipped[first + 1])
+        if not prefix:
+            following = skipped
+            continue
+        following = [any(skipped[end] and fnmatch.fnmatchcase(
+            "/".join(names[first:end]) + "/", prefix)
+            for end in range(first + 1, count)) for first in range(count)]
+    return following[0]
+
+
 def search_results(name, pattern, scope):
     for path in files():
         if scope and path != scope and not path.startswith(scope + "/"):
             continue
         if name == "Glob":
-            if fnmatch.fnmatchcase(path, pattern):
+            if glob_matches(path, pattern):
                 yield path
         else:
             try:
@@ -232,7 +276,8 @@ TOOLS = [
          "Follow next_offset/next_column as offset/column; matches may be split. No regex.",
          {"pattern": STRING, "path": STRING, "offset": {"type": "integer"},
           "column": {"type": "integer"}}, ["pattern"]),
-    tool("Glob", "List checkout paths matching a glob; * can match directories. "
+    tool("Glob", "List checkout paths matching a glob; * can match directories, "
+         "and **/ segments match zero or more directories. "
          "Follow next_offset/next_column as offset/column; long paths may be split.",
          {"pattern": STRING, "offset": {"type": "integer"}, "column": {"type": "integer"}}, ["pattern"]),
     tool("Write", "Replace review.md with the complete review. No other path is writable.",

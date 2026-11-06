@@ -73,6 +73,10 @@ for it (`Wide.inductionForms`); `--induction-candidates` generates declared
 type, comparison and binder forms (`Wide.inductionCandidates`).
 `--datatype-elements` generates generic enumerations and records with
 collection payloads and fields (`FuzzDatatypeElements.spec`).
+`--set-card-fallback` generates native-cardinality boundary and unlisted types.
+`--set-card` reproduces #820's set seeds and adds finite cardinalities of
+aggregate types and relation pairs (`Wide.genSetCard`). Its corpus and
+fresh runs reject shared internal errors and undecided queries too.
 `--confirm` generates what the confirmation of models evaluates
 (`Wide.genConfirmed`): `div` and `mod`, an index in an argument that a
 function's body never reads, the formulas whose value confirmation
@@ -3188,6 +3192,103 @@ def enumerationObligations (relations : Bool := false) : R String := do
 /-- A spec with constants, functions, and components over them. -/
 def genWide (avoidKnown : Bool := false) : R String := return (← genWideCuts avoidKnown).1
 
+/-- The set procedure from #818's decidable-core mode, with its original
+random draws (three for strings before the three for sets), so that #820's
+seed numbers reproduce the same checks independently of the other
+decidable-core procedures. Preconditions use the current `require` spelling. -/
+def setCardCore : R String := do
+  for _ in [0:3] do discard (below 2147483648)
+  let mut out := "mod sets\n\nset_option fren.lint.unused_variables \"allow\"\n\nenum E { A, B, C }\n\n"
+  let sets := #["s", "t", "(s union t)", "(s inter t)", "(s minus t)", "{1, 2}", "(t minus t)"]
+  let mut atoms : Array String := #[]
+  for _ in [0:3] do
+    let seed ← below 2147483648
+    let pick (xs : Array String) (salt : Nat) := xs[(seed / (salt + 7)) % xs.size]!
+    let a := pick sets 1
+    let b := pick sets 2
+    let i := toString ((seed / 13) % 4)
+    atoms := atoms.push <| pick #[
+      s!"x in {a}", s!"{a} subset {b}", s!"{a} = {b}", s!"{a} != {b}", s!"{a}.card <= {i}",
+      s!"{a}.card + {b}.card >= {i}", s!"e in es", "es = {E::A, E::B}", s!"es.card = {i}", "x in s and not x in t",
+      "s = {}"] 5
+  out := out ++ s!"proc c0(s: Set<Int>, t: Set<Int>, x: Int, es: Set<E>, e: E): (p?) \{\n    \
+    require a: not ({atoms[0]!} and {atoms[1]!})\n\n    ensure r: p? iff ({atoms[1]!} or {atoms[2]!})\n\n    \
+    expect g: when p?, {atoms[0]!} or {atoms[2]!}\n}\n\n"
+  return out
+
+/-- Finite cardinalities in each representation that the lowering can
+list: Booleans, variants, generic payloads, records, newtypes and pairs;
+under algebra, definitions, nesting, and every integer comparison. Draws
+come after `setCardCore`, preserving every original regression. -/
+def setCardForms : R String := do
+  let decls := "mod card_forms\n\nset_option fren.lint.unused_variables \"allow\"\n\n" ++
+    "enum E { A, B, C }\n\nenum G<T> { A, B(T) }\n\nstruct R<T> { x: T, y? }\n\n" ++
+    "struct N(Bool)\n\n"
+  let types := #[
+    ("Bool", "true", 2), ("E", "E::B", 3), ("G<Bool>", "G::B(true)", 3),
+    ("R<E>", "R { x := E::A, y? := true }", 6),
+    ("N", "N(true)", 2), ("G<R<Bool>>", "G::B(R { x := false, y? := true })", 5),
+    ("Option<Bool>", "Option::Some(true)", 3), ("Result<E, Bool>", "Result::Ok(E::A)", 5)]
+  let (ty, value, count) ← pick types
+  let recv ← pick #["s", "(s union t)", "(s inter t)", "(s minus t)", "{one}"]
+  let op ← pick #["=", "!=", "<", "<=", ">", ">="]
+  let bound ← below (count + 2)
+  let (other, otherValue, otherCount) ← pick types
+  let binder := if ty == "Bool" then "x?" else "x"
+  let claim := s!"{recv}.card {op} {bound}"
+  -- A typed constant also supplies Result's parameter absent from `Ok`.
+  let body := s!"const one: {ty} := {value}\n\nfn count(s: Set<{ty}>): Int := s.card\n\n" ++
+    s!"proc forms(s: Set<{ty}>, t: Set<{ty}>): (n: Int) \{\n    out n := {recv}.card\n\n" ++
+    s!"    expect bounds: 0 <= n <= {count}\n\n" ++
+    s!"    expect defined: count({recv}) = n\n\n" ++
+    s!"    expect singleton: when s = \{{value}}, s.card = 1\n\n" ++
+    s!"    expect comparison: ({claim}) iff (n {op} {bound})\n}\n\n" ++
+    s!"proc full(s: Set<{ty}>) \{\n    require all: forall ({binder}: {ty}), {binder} in s\n\n    expect count: s.card = {count}\n}\n\n" ++
+    s!"proc pairs(r: Rel<{ty}, {other}>): (n: Int) \{\n    out n := r.card\n\n    expect bound: 0 <= n <= {count * otherCount}\n\n" ++
+    s!"    expect singleton: when r = \{({value}, {otherValue})}, n = 1\n}\n"
+  return decls ++ body
+
+/-- Cardinality in quantifier bodies and function contracts. These draws
+follow every existing cardinality draw, retaining the old spec as a prefix. -/
+def setCardNested : R String := do
+  let (ty, count) ← pick #[("Bool", 2), ("E", 3), ("G<Bool>", 3), ("R<E>", 6),
+    ("N", 2), ("G<R<Bool>>", 5), ("Option<Bool>", 3), ("Result<E, Bool>", 5)]
+  let binder := if ty == "Bool" then "x?" else "x"
+  return "\nmod card_nested\n\n" ++
+    "pub enum E { A, B, C }\n\npub enum G<T> { A, B(T) }\n\n" ++
+    "pub struct R<T> { x: T, y? }\n\npub struct N(Bool)\n\n" ++
+    s!"pub fn count(s: Set<{ty}>): (n: Int) \{\n    out n := s.card\n\n" ++
+    s!"    ensure bound: 0 <= n <= {count}\n}\n\n" ++
+    s!"proc nested(s: Set<{ty}>) \{\n" ++
+    s!"    expect monotone: forall ({binder}: {ty}), (s union \{{binder}}).card >= s.card\n\n" ++
+    s!"    expect contract: count(s) <= {count}\n}\n"
+
+def genSetCard : R String := do
+  let original := (← setCardCore) ++ "\n" ++ (← setCardForms)
+  return original ++ (← setCardNested)
+
+/-- Native-cardinality fallback alone: a 257-value enum, 16 by 17 pairs,
+abstract element types and Int payloads. Only empty-set and singleton laws
+are asked, avoiding the known native finite-sort counterexample bug above
+the cap. -/
+def genSetCardFallback : R String := do
+  let kind ← below 4
+  let decls := "mod card_fallback\n\nset_option fren.lint.assertions_on_constants \"allow\"\n\n" ++
+    "type A\n\nenum G<T> { Item(T) }\n\n" ++
+    "struct Four { a?, b?, c?, d? }\n\n" ++
+    "struct Eight { a?, b?, c?, d?, e?, f?, g?, h? }\n\n" ++
+    "enum Seventeen { Extra, Bits(Four) }\n\nenum Beyond { Extra, Bits(Eight) }\n\n"
+  let (ty, singleton) := match kind with
+    | 0 => ("Set<Beyond>", "{Beyond::Extra}")
+    | 1 => ("Rel<Four, Seventeen>", "{(Four { a? := false, b? := false, c? := false, d? := false }, Seventeen::Extra)}")
+    | 2 => ("Set<A>", "{a}")
+    | _ => ("Set<G<Int>>", "{G::Item(0)}")
+  let arg := if kind == 2 then ", a: A" else ""
+  let single := "    expect singleton: " ++ singleton ++ ".card = 1\n\n"
+  return decls ++ s!"proc fallback(s: {ty}{arg}) \{\n" ++
+    "    expect empty: (s minus s).card = 0\n\n" ++ single ++
+    "    expect union_empty: when s = {}, (s union {}).card = 0\n}\n"
+
 /-- A random procedure in the decidable core of strings. -/
 def stringCore : R String := do
   let mut out := "set_option fren.lint.unused_variables \"allow\"\n\n"
@@ -3535,12 +3636,18 @@ structure Mode where
   unfoldings : Bool := false
   /-- Collection payloads and fields of generic datatypes. -/
   datatypeElements : Bool := false
+  /-- Finite set cardinalities and #820's regression seeds. -/
+  setCard : Bool := false
+  /-- Cardinalities beyond the expansion bound or of unlisted types. -/
+  setCardFallback : Bool := false
   /-- Singleton structural-group clients, including isolated invalid uses. -/
   recursionPositions : Bool := false
   deriving BEq
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  if m.enumerationObligations || m.enumerationRelations then
+  if m.setCardFallback then Id.run (Wide.genSetCardFallback.run' (rngOf seed))
+  else if m.setCard then Id.run (Wide.genSetCard.run' (rngOf seed))
+  else if m.enumerationObligations || m.enumerationRelations then
     Id.run ((Wide.enumerationObligations m.enumerationRelations).run' (rngOf seed))
   else if m.keywords then
     let block := Id.run (Wide.genKeywords.run' (rngOf seed))
@@ -3569,16 +3676,16 @@ the next; `--confirm` keeps the prefix before `Wide.confirmedSorts`;
 none for `--guards`, `--sites`, `--inductions`, `--induction-forms`,
 `--keywords` and `--recursion-positions`. The empty prefix of
 `--scrutinees`, `--fact-scopes`, `--induction-candidates`, `--decidable`,
-`--enumeration-obligations`, `--unfoldings` and `--datatype-elements`
-makes any static error a group error: these generators, like appended
-groups, promise to add none.
+`--enumeration-obligations`, `--unfoldings`, `--datatype-elements`,
+`--set-card` and `--set-card-fallback` makes any static error a group
+error: these generators, like appended groups, promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
 prefix, so its additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if m.confirm && !m.decidable && !m.enumerationObligations && !m.unfoldings then
+  if m.confirm && !m.setCard && !m.setCardFallback && !m.decidable && !m.enumerationObligations && !m.unfoldings then
     #[Id.run (Wide.genConfirmedBase.run' (rngOf seed))]
-  else if m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
+  else if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 def Mode.args (m : Mode) : Array String :=
@@ -3594,6 +3701,8 @@ def Mode.args (m : Mode) : Array String :=
     (if m.enumerationRelations then #["--enumeration-relations"] else #[]) ++
     (if m.unfoldings then #["--unfoldings"] else #[]) ++
     (if m.datatypeElements then #["--datatype-elements"] else #[]) ++
+    (if m.setCard then #["--set-card"] else #[]) ++
+    (if m.setCardFallback then #["--set-card-fallback"] else #[]) ++
     (if m.recursionPositions then #["--recursion-positions"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
@@ -3601,7 +3710,7 @@ def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates", "--decidable", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--datatype-elements", "--recursion-positions"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--decidable", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--datatype-elements", "--set-card", "--set-card-fallback", "--recursion-positions"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
@@ -3611,7 +3720,7 @@ def Mode.ofArgs? (args : List String) : Option Mode :=
            enumerationObligations := args.contains "--enumeration-obligations"
            enumerationRelations := args.contains "--enumeration-relations"
            unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements"
-           recursionPositions := args.contains "--recursion-positions" }
+           setCard := args.contains "--set-card", setCardFallback := args.contains "--set-card-fallback", recursionPositions := args.contains "--recursion-positions" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -3628,6 +3737,8 @@ def Mode.lean (m : Mode) : String :=
     (if m.enumerationRelations then ["enumerationRelations := true"] else []) ++
     (if m.unfoldings then ["unfoldings := true"] else []) ++
     (if m.datatypeElements then ["datatypeElements := true"] else []) ++
+    (if m.setCard then ["setCard := true"] else []) ++
+    (if m.setCardFallback then ["setCardFallback := true"] else []) ++
     (if m.recursionPositions then ["recursionPositions := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
@@ -4267,7 +4378,7 @@ end
 `[SEED, SEED + COUNT)` of each mode, split into jobs by `corpusJobs`.
 Sized so that the whole corpus takes about 2 minutes of one CI machine. -/
 def corpus : List (Mode × Nat × Nat) :=
-  [({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
+  ([({}, 0, 30), ({}, 30, 30), ({ guards := true }, 0, 20), ({ guards := true }, 20, 20), ({ sites := true }, 0, 20),
     ({ confirm := true }, 0, 20), ({ scrutinees := true }, 0, 20), ({ scrutinees := true }, 840434, 1),
     ({ inductions := true }, 0, 20),
     ({ inductionForms := true }, 0, 20), ({ factScopes := true }, 0, 20),
@@ -4278,7 +4389,13 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ enumerationObligations := true }, 555, 1), ({ enumerationRelations := true }, 0, 20),
     ({ unfoldings := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
     ({ recursionPositions := true }, 0, 20), ({ recursionPositions := true }, 934000, 1),
-    ({ recursionPositions := true }, 934051, 1)]
+    ({ recursionPositions := true }, 934051, 1), ({ setCardFallback := true }, 0, 8),
+    ({ setCardFallback := true }, 1324204, 1)] : List (Mode × Nat × Nat)) ++
+    -- Every seed of #820, including the four refuted models, plus a
+    -- vacuous check that must not count as a shared static error.
+    ([3, 19, 162, 228, 292, 310, 358, 495, 566, 807, 815, 866, 963, 1067, 1164, 1166, 1195,
+      1376, 1480, 1499, 1691, 1934, 1942, 2003, 2012, 2085, 2117, 2161, 2173, 2274, 2310,
+      2370, 2548, 2631, 2790, 2993].map fun s => ({ setCard := true }, s, 1))
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/
@@ -4425,14 +4542,47 @@ private def errAt (line : Nat) (code : String := "F0304") : Diagnostic :=
   not know the meaning of a formula of `fz::c0`" }] == #[3]
 end
 
+/-- A shared internal error or non-timeout undecided check still fails
+the cardinality regressions. Only an explicit solver timeout is excused. -/
+def setCardProblem? (d : Diagnostic) : Option String :=
+  let h := headOf d
+  let timedOut := !d.text.contains "solver error" &&
+    (h.endsWith ": the solver returned unknown (TIMEOUT)" || h.endsWith ": TIMEOUT")
+  if h.startsWith "internal error:" ||
+      (h.startsWith "could not decide" && !timedOut) then some h else none
+
+def setCardProblems (ran : Ran) : Array String :=
+  (ran.cli ++ ran.hosted).filterMap setCardProblem?
+
+section
+private def cardUndecided (code? : Option String) (why : String) : Diagnostic :=
+  { line := 1, severity := "error", code?, text := "could not decide whether `p::g` follows: " ++ why }
+-- Both readers' ordinary timeouts stay eligible for the time-limit filter.
+#guard (setCardProblem? (cardUndecided (some "F0608") "the solver returned unknown (TIMEOUT)")).isNone
+#guard (setCardProblem? (cardUndecided none "TIMEOUT")).isNone
+-- Agreement on a non-timeout unknown is still a cardinality regression.
+#guard ([some "F0608", none].all fun code? =>
+  ["INCOMPLETE", "RESOURCEOUT", "the solver returned unknown (INCOMPLETE)",
+    "the solver returned unknown (RESOURCEOUT)", "undecided\nnote: TIMEOUT"].all fun why =>
+    (setCardProblem? (cardUndecided code? why)).isSome)
+-- #820 was a solver error, not a timeout, even when both readers agreed.
+#guard (setCardProblem? (cardUndecided (some "F0608") "solver error: No more values for type E")).isSome
+#guard (setCardProblem? (cardUndecided none "solver error: No more values for type E")).isSome
+#guard (setCardProblem? (cardUndecided none "solver error: TIMEOUT")).isSome
+#guard (setCardProblem? { line := 1, severity := "error", text := "internal error: refuted model" }).isSome
+end
+
 /-- Checks the specs of the corpus with both front ends, in this process.
 Each failure is a difference that `knownDifferences` does not list, or a
 listed one that no longer occurs (`unmatched`), leaving out those that
 the solvers' time limits explain; or a static error in a group that the
 generator appends after a cut (`appendedErrors`), which it must not
-append, whether or not the spec stops before it. The recursion-position
-mode also checks its promised verdict: valid cases can fail a comparison,
-and invalid ones must reach `F0447`, rather than an earlier static error. -/
+append, whether or not the spec stops before it. Finite-cardinality
+regressions also reject shared internal errors and non-timeout undecided
+queries.
+The recursion-position mode also checks its promised verdict: valid cases
+can fail a comparison, and invalid ones must reach `F0447`, rather than an
+earlier static error. -/
 def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mode × Nat)) :
     IO (Array String) := do
   IO.FS.createDirAll dir
@@ -4441,6 +4591,9 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
   for (mode, s) in specs do
     let ran ← runFrontends env path (mode.spec s) mode.confirm
     let c := ran.comparison
+    if mode.setCard || mode.setCardFallback then
+      for problem in setCardProblems ran do
+        failures := failures.push s!"seed {s}{flags mode}: {problem}"
     let again := s!"`lake exe fren_fuzz_frontends{flags mode} --count 1 --seed {s}`"
     let (unlisted, vanished) := unmatched knownDifferences mode s c.decided c.undecided
     for f in unlisted do
@@ -4600,7 +4753,11 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) (compareDumps : B
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
     let ran ← runFrontends env run.spec text mode.confirm compareDumps
-    let (found, flaky, reports, errs) := (ran.comparison.found, ran.comparison.flaky, ran.reports, ran.errors)
+    let problems := if mode.setCard || mode.setCardFallback then setCardProblems ran ++
+      ((appendedErrors #[0] ran.cli ++ appendedErrors #[0] ran.hosted).map fun (_, d) =>
+        s!"unexpected static error: {headOf d}") else #[]
+    let (found, flaky, reports, errs) := (ran.comparison.found ++ problems,
+      problems.isEmpty && ran.comparison.flaky, ran.reports, ran.errors)
     -- The obligations dumps, compared without their metadata, and both
     -- written where they differ.
     let obligations := match ran.obligations? with
@@ -4880,10 +5037,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--set-card] [--set-card-fallback] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--recursion-positions] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--set-card] [--set-card-fallback] [--recursion-positions] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -4907,10 +5064,10 @@ unsafe def main (args : List String) : IO UInt32 := do
                        enumerationObligations := args.contains "--enumeration-obligations"
                        enumerationRelations := args.contains "--enumeration-relations"
                        unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements"
-                       recursionPositions := args.contains "--recursion-positions" }
+                       setCard := args.contains "--set-card", setCardFallback := args.contains "--set-card-fallback", recursionPositions := args.contains "--recursion-positions" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
     && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
-    && a != "--decidable" && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--datatype-elements" && a != "--recursion-positions")
+    && a != "--decidable" && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--datatype-elements" && a != "--set-card" && a != "--set-card-fallback" && a != "--recursion-positions")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

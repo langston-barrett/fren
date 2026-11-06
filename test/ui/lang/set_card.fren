@@ -1,0 +1,100 @@
+-- Finite cardinality is a sum over a complete universe, including the
+-- expansion bound, generic payloads, records, newtypes and relation pairs.
+-- fren-covers: lang::set_card_expansion
+
+enum E { A, B, C }
+
+enum G<T> { A, B(T) }
+
+struct R { b?, e: E }
+
+struct N(Bool)
+
+struct Eight { a?, b?, c?, d?, e?, f?, g?, h? }
+
+proc finite(s: Set<E>, t: Set<E>, r: Rel<Bool, E>) {
+    expect bound: s.card <= 3
+    expect partition: s.card = (s inter t).card + (s minus t).card
+    expect singleton: when s = {E::A}, s.card = 1
+    expect full: when s = {E::A, E::B, E::C}, s.card = 3
+    expect pairs: r.card <= 6
+    expect full_pairs: when r = {
+        (true, E::A),
+        (true, E::B),
+        (true, E::C),
+        (false, E::A),
+        (false, E::B),
+        (false, E::C),
+    },
+        r.card = 6
+}
+
+proc aggregates(s: Set<G<R>>, t: Set<N>, u: Set<Eight>) {
+    expect generic: s.card <= 7
+    expect newtype: t.card <= 2
+    expect at_limit: u.card <= 256
+}
+
+proc at_limit(u: Set<Eight>) {
+    require full: forall (x: Eight), x in u
+
+    expect count: u.card = 256
+}
+
+proc prelude(s: Set<Option<Bool>>, t: Set<Result<E, Bool>>) {
+    expect option: when s = {Option::None, Option::Some(true), Option::Some(false)}, s.card = 3
+    expect result: when t = {
+        Result::Ok(E::A),
+        Result::Ok(E::B),
+        Result::Ok(E::C),
+        Result::Err(true),
+        Result::Err(false),
+    },
+        t.card = 5
+}
+
+-- Cardinality in contracts and in a quantifier's body.
+pub fn counted(s: Set<E>): (n: Int) {
+    out n := s.card
+
+    ensure upper: 0 <= n <= 3
+}
+
+proc nested(s: Set<E>) {
+    expect quantified: forall (x: E), (s union {x}).card >= s.card
+    expect contract: counted(s) <= 3
+}
+
+-- The largest expanded universe with a nontrivial receiver in each body.
+proc quantified_limit(s: Set<Eight>) {
+    expect monotone: forall (x: Eight), (s union {x}).card >= s.card
+}
+
+struct Four { a?, b?, c?, d? }
+
+enum Seventeen { Extra, Bits(Four) }
+
+enum Beyond { Extra, Bits(Eight) }
+
+type A
+
+-- These receivers use native cardinality. Avoid the solver's known
+-- finite-sort model-construction bug: ask only empty and singleton laws.
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.lint.card_zero "allow" in
+set_option fren.lint.eq_op "allow" in
+proc fallback(s: Set<Beyond>, r: Rel<Four, Seventeen>, a: Set<A>, u: Set<G<Int>>) {
+    expect beyond: (s minus s).card = 0
+    expect beyond_singleton: {Beyond::Extra}.card = 1
+    expect product: (r minus r).card = 0
+    expect product_singleton: {
+        (Four {
+            a? := false,
+            b? := false,
+            c? := false,
+            d? := false,
+        }, Seventeen::Extra),
+    }.card = 1
+    expect abstract: (a minus a).card = 0
+    expect unbounded_payload: (u minus u).card = 0
+}

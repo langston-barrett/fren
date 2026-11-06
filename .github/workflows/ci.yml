@@ -436,5 +436,17 @@ jobs:
       run: lake -R -Kcoverage="$COVERAGE_RUNTIME" build fren fren_test fren_coverage FrenFuzz FrenFuzzFrontends
     - name: Run the tests
       run: lake -Kcoverage="$COVERAGE_RUNTIME" test
+    - name: Check coverage tool failures
+      run: |
+        set -euo pipefail
+        for gcov in false true; do
+          status=0
+          lake exe fren_coverage "$gcov" > "$RUNNER_TEMP/coverage-$gcov.log" 2>&1 || status=$?
+          if [ "$status" -ne 2 ]; then
+            cat "$RUNNER_TEMP/coverage-$gcov.log"
+            echo "fren_coverage $gcov: expected exit 2, got $status"
+            exit 1
+          fi
+        done
     - name: Report what the tests did not run
       run: lake exe fren_coverage "$LLVM_COV" gcov

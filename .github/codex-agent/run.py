@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 
 
 def failure_summary(output, credentials, status, label="codex-agent"):
-    """Report a few error lines only after teardown, without credentials."""
+    """Report a few diagnostic lines only after teardown, without credentials."""
     print(f"{label} sandbox exited {status}", file=sys.stderr)
     try:
         text = read_regular(output, "stderr.log", 16384).decode("utf-8", "replace")
@@ -36,7 +36,9 @@ def failure_summary(output, credentials, status, label="codex-agent"):
     source = "stderr"
     if not errors:
         # With --json, some configuration/provider failures appear only
-        # as stdout events. Never render arbitrary tool/model events.
+        # as stdout events. Inspect only structured JSON error events here.
+        # If none are found, the fallback below can report stderr lines of
+        # any kind, with the same bounds, redaction and neutralization.
         try:
             log = read_regular(output, "log.jsonl", 16384).decode("utf-8", "replace")
         except (OSError, ValueError):

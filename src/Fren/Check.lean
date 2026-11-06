@@ -839,9 +839,10 @@ def confirmModel (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name ×
 recursive functions `recs`: a bug in Fren, which the report of the model
 shows (`Reqs/Models#reporting`), not evidence about the functions'
 contracts (`Reqs/Lang/Recursion`). Read without the injected misread, as
-the recursive confirmation is. -/
+the recursive confirmation is. This model-reading step has its own
+heartbeat limit, as ordinary confirmation does (`Reqs/View#check-results`). -/
 def plainContradiction (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (Name × Expr)) (goal : Expr)
-    (model : Array (Name × Expr)) (recs : Array Name) : MetaM Bool := do
+    (model : Array (Name × Expr)) (recs : Array Name) : MetaM Bool := withCurrHeartbeats do
   let values ← modelValues c fvs primes model
   let formulas := (hyps.map (·.2)).push goal
   let recursive ← formulas.mapM (readsAny recs ·)
@@ -853,9 +854,10 @@ def plainContradiction (c : CompInfo) (fvs primes : Array Expr) (hyps : Array (N
 /-- Evaluate a model using real definitions, before reporting a recursive
 counterexample: the value of each of `hyps` at it, and then the goal's
 negation's, or none where evaluation fails, which is not confirmation
-(`Core.counterexampleReported`). -/
+(`Core.counterexampleReported`), with the heartbeat limit of a model-reading
+step of its own (`Reqs/View#check-results`). -/
 def confirmRecursiveModel (c : CompInfo) (fvs primes : Array Expr)
-    (hyps : Array (Name × Expr)) (goal : Expr) (model : Array (Name × Expr)) : MetaM (Option (Array Bool)) := do
+    (hyps : Array (Name × Expr)) (goal : Expr) (model : Array (Name × Expr)) : MetaM (Option (Array Bool)) := withCurrHeartbeats do
   try
     let read ← modelValues c fvs primes model
     -- A missing value is unknown here too, never an arbitrary default.
