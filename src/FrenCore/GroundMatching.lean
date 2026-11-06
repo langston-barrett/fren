@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Matching
 import FrenCore.Theories
 -- keep-sorted end
 
@@ -7,36 +8,18 @@ import FrenCore.Theories
 
 Input extraction supplies resolved typed syntax, declaration order and finite
 listed values. The core chooses anchors and substitutions. Candidate
-construction and closure follow in unit 9b; claim integration in unit 10.
+construction, closure and claim integration remain follow-ups of #758.
 -/
 
 namespace Fren.Core.GroundMatching
 
 open Lean (Name)
 
-deriving instance DecidableEq, ReflBEq, LawfulBEq for TheoryTerm
-
 abbrev Substitution := List (Name × TheoryTerm)
 
-/-- Expand an already normalized environment. Local aliases use `query`,
-constants use `item`; applied item heads stay opaque. -/
-def normalize (defs : List (TheoryTerm × TheoryTerm)) : TheoryTerm → TheoryTerm
-  | .app (.item n) a => .app (.item n) (normalize defs a)
-  | .app f a => .app (normalize defs f) (normalize defs a)
-  | .all ty b => .all ty (normalize defs b)
-  | .ex ty b => .ex ty (normalize defs b)
-  | t@(.query _) | t@(.item _) => ((defs.find? (·.1 == t)).map (·.2)).getD t
-  | t => t
-
-/-- Normalize definitions newest first, each value in the scope of its tail. -/
-def definitions : List (TheoryTerm × TheoryTerm) → List (TheoryTerm × TheoryTerm)
-  | [] => []
-  | (n, v) :: rest =>
-    let ds := definitions rest
-    (n, normalize ds v) :: ds
-
-def same (defs : List (TheoryTerm × TheoryTerm)) (a b : TheoryTerm) : Bool :=
-  normalize (definitions defs) a == normalize (definitions defs) b
+abbrev normalize := Matching.normalize (K := TheoryTerm) (T := TheoryTerm)
+abbrev definitions := Matching.definitions (K := TheoryTerm) (T := TheoryTerm)
+abbrev same := Matching.same (K := TheoryTerm) (T := TheoryTerm)
 
 /-- Simultaneous structural matching. Only declared parameters are holes.
 A hole never captures a query binder. The extractor supplies term types,
@@ -223,21 +206,30 @@ def matchNormalized (ctx : Context) (r : Rule) (q : Query) : List Substitution :
     let ss := join ctx r.sentence.variables (r.sentence.calls.filter (outer ·)) q.calls ss
     (completeListed ctx r.terms r.sentence.variables ss).eraseDups
 
+/-- Normalize listed values in the same environment as sentence and query
+terms, preserving the declaration order and resolved term types. -/
+def Context.normalizeListed (ctx : Context) (defs : List (TheoryTerm × TheoryTerm)) : Context :=
+  { ctx with listed := fun ty => (ctx.listed ty).map (List.map (normalize defs)) }
+
 /-- Join all anchors and calls through one substitution and two channels.
 This structural matcher is also usable independently of closure. -/
 def matchApplications (ctx : Context) (r : Rule) (q : Query) : List Substitution :=
   let ds := definitions ctx.definitions
   let norm := normalize ds
-  let ctx := { ctx with listed := fun ty => (ctx.listed ty).map (List.map norm) }
+  let ctx := ctx.normalizeListed ds
   let calls := q.calls.map norm
   matchNormalized ctx (r.normalize ds) {
     applications := q.applications.flatMap (fun t => applications ctx.items (norm t)) ++
       callApplications ctx.items calls,
     calls }
 
+/-- Apply each simultaneous substitution through the shared sentence core. -/
+def instantiateMatches (sentence : TheorySentence) (ss : List Substitution) : List TheorySentence :=
+  ss.filterMap fun s => sentence.instantiate (fun n => s.lookup n)
+
 /-- Preserve the complete domain/calls/claims and remaining quantifiers. -/
 def instances (ctx : Context) (r : Rule) (q : Query) : List TheorySentence :=
   let normalized := r.normalize (definitions ctx.definitions)
-  (matchApplications ctx r q).filterMap fun s => normalized.sentence.instantiate (fun n => s.lookup n)
+  instantiateMatches normalized.sentence (matchApplications ctx r q)
 
 end Fren.Core.GroundMatching

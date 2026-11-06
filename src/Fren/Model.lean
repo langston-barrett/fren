@@ -651,6 +651,8 @@ structure ClaimInfo where
   deriving Inhabited
 
 inductive Entry where
+  /-- A qualified trait law, including laws of traits without expectations. -/
+  | theoryLaw (path : Name)
   | item (i : ItemRef)
   | enumInfo (e : EnumInfo)
   | recordInfo (r : RecordInfo)
@@ -693,6 +695,8 @@ inductive Entry where
 structure State where
   /-- Names, modules and visibility, shared with the standalone binary. -/
   table : Core.Table := {}
+  /-- Law names retained independently of the expectations that use them. -/
+  theoryLaws : Array Name := #[]
   refs : NameMap Syntax := {}
   enums : NameMap EnumInfo := {}
   records : NameMap RecordInfo := {}
@@ -744,6 +748,7 @@ structure State where
   deriving Inhabited
 
 def State.add (s : State) : Entry → State
+  | .theoryLaw p => { s with theoryLaws := s.theoryLaws.push p }
   | .item i => { s with table := s.table.addItem i.item, refs := s.refs.insert i.item.path i.ref }
   | .enumInfo e =>
     { s with table := s.table.addEnum { path := e.path, variants := e.variants }, enums := s.enums.insert e.path e }
@@ -847,6 +852,12 @@ def State.shapeOf (s : State) (path : Name) : Option Core.DataShape :=
 definedness goal: `p`, marked with the type, as written, so that the check
 reports it (`Reqs/Check#subset-types`). -/
 def typeObligation (_ty : String) (p : Prop) : Prop := p
+
+/-- A relation's type constraint, kept as a unit while enumerating
+its actual pairs. The solver and proofs see the unchanged proposition. -/
+def relationObligation (p : Prop) : Prop := p
+
+@[simp, fren_spec] theorem relationObligation_eq (p : Prop) : relationObligation p = p := rfl
 
 /-- A distributed predicate leaf's obligation cannot assume that leaf. -/
 def leafObligation (p : Prop) : Prop := p

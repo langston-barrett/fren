@@ -1,0 +1,10 @@
+error[F0201]: cannot find `Missing` in this scope
+ --> test/cli/args/dump_theories_error.fren:3:11
+  |
+3 | proc c(x: Missing): (y: Int) { ensure same: y = x }
+  |           ^^^^^^^ not found in this scope
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0201`.
+exit=2

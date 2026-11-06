@@ -393,11 +393,22 @@ where
     (match e with
       -- An instance's, by its function's (`Reqs/Lang/Recursion#generic-recursion`).
       | .app f _ => if sp.recDefs.contains f then #[(sp.instanceOf.find? f).getD f] else #[]
+      | .obligation c _ => consNames c
       -- And those of the invariants of a subset type that a value is
       -- checked against, which evaluation applies.
       | .typed t _ _ => typeNames t
       | _ => #[])
       ++ e.children.flatMap names
+  consNames : Fren.Core.Cons → Array Name
+    | .predicate i => match sp.defs.find? i.predicate with
+      | some (_, body, _) => names body
+      | none => #[]
+    | .fields _ _ cs => cs.flatMap (consNames ∘ Prod.snd)
+    | .newtype _ c | .elems _ _ c => consNames c
+    | .payloads _ _ cs => cs.flatMap fun (_, _, c) => consNames c
+    | .pairs _ _ a b => a.toArray.flatMap consNames ++ b.toArray.flatMap consNames
+    | .all cs => cs.flatMap consNames
+    | _ => #[]
   typeNames (t : Fren.Core.PTy) : Array Name :=
     t.invariants.flatMap (fun i => match sp.defs.find? i.predicate with
       | some (_, body, _) => names body
@@ -546,9 +557,19 @@ meaning of the constraint of `ec` of the same name. Each index's
 definedness is paired by its position, one of `positions`, in order, the
 `n`th of the item's indexes at a position with the `n`th goal there, and
 each question about a table's rows likewise by where it is reported, one
-of `tablePositions`, and the question. -/
+of `tablePositions`, and the question. A giving-site obligation whose typed
+text differs between the readers is an internal error. -/
 def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions : Array Nat)
-    (tablePositions : Array Nat := #[]) : Fren.Core.Comp (String × Fm) :=
+    (tablePositions : Array Nat := #[]) : Except Fren.Core.Msg (Fren.Core.Comp (String × Fm)) := do
+  -- The two readers derive and number giving-site obligations separately.
+  -- A shared name must denote the same part, not merely the same index.
+  for i in core.insts do
+    let d? := (ec.insts.find? (·.name == i.name)).bind (sp.comp? ·.comp)
+    for (a, text) in i.typed do
+      let typed? := (d?.bind fun d => d.inputObligations.find? (·.name == a)).bind (·.typed?)
+      if typed? != some text then
+        throw (Fren.Core.Msg.internal s!"the evaluator's call obligation `{Fren.Core.showComp (core.path ++ i.name ++ a)}` \
+          has typed text `{typed?.getD "<missing>"}`, expected `{text}`")
   -- The expressions an index or a table can be in: the constraint, the
   -- definition, the call's bindings or the body that it names.
   let exsOf (n : Name) : Array Ex :=
@@ -584,7 +605,8 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
     let eg := ec.memberGroups.find? (·.owner == g.owner)
     { owner := g.owner, op := g.op, wanted := g.wanted,
       members := g.members.map fun m => pairedMember m (eg.bind fun eg => eg.members.find? (·.name == m.name)) }
-  { path := core.path, vars := core.vars, branchGroups := groups, memberGroups := observed
+  return {
+    path := core.path, vars := core.vars, branchGroups := groups, memberGroups := observed
     inhabitation := core.inhabitation
     defs := core.defs.map fun (d, eq, e) => (d, (eq, defn d), (e, defn d))
     assumes := props core.assumes, expects := props core.expects
@@ -639,10 +661,12 @@ def pairCore (sp : Spec) (ec : Comp) (core : Fren.Core.Comp String) (positions :
       { name := i.name, comp := i.comp
         bindings := (i.bindings, .atoms ((ei?.map (bindingAtoms .anonymous)).getD #[]))
         behaviour := (i.behaviour, .atoms ((d?.map (sp.meaning · i.name (typedInputs := false))).getD #[]))
-        -- An input's type's obligation, which the evaluator does not
-        -- know of, is not confirmed.
+        -- Giving-site obligations are the separate named parts of the
+        -- input's obligation, rather than its whole-type constraint.
         assumes := i.assumes.map fun (a, s) =>
-          let e? := d?.bind fun d => (d.constraints.find? (·.name == a)).map (·.e)
+          let e? := d?.bind fun d =>
+            let constraints := if i.typed.any (·.1 == a) then d.inputObligations else d.constraints
+            (constraints.find? (·.name == a)).map (·.e)
           (a, (s, match e? with
             | some e => .atoms #[{ label := i.name ++ a, pfx := i.name, e }]
             | none => if i.typed.any (·.1 == a) then .unknown else .atoms #[]))

@@ -80,7 +80,8 @@ def constructorCases : Array (String × Ex × Nat) := Id.run do
     ("const", .const `closed (b 0), 0),
     ("pre", .pre 0 `f #[(`first, b 0), (`second, b 1)] (b 2), 3),
     ("strict", .strict #[b 0, b 1] (b 2), 3),
-    ("typed", .typed { ty := .int } #[] (b 0), 1)]
+    ("typed", .typed { ty := .int } #[] (b 0), 1),
+    ("obligation", .obligation .atLeast0 (b 0), 1)]
 
 -- Adding a constructor requires adding its fixture, rather than silently
 -- leaving the new copying path outside this test.
@@ -118,6 +119,23 @@ def closureSubstitution (n : Nat) : Option Nat :=
 
 #guard closureSubstitution 4 == none
 #guard closureSubstitution 5 == some 0
+
+-- Giving-site obligations must spend visits in both reading substitutions
+-- and in the separate input-obligation roots retained by a procedure.
+#guard
+  match ((Ex.obligation .atLeast0 leaf).substFns []).run { expansionLeft := 1 } with
+  | .error (.expansionLimit _) => true
+  | _ => false
+#guard
+  match ((Ex.obligation .atLeast0 leaf).substVarsForRead (fun _ => pure leaf)).run { expansionLeft := 1 } with
+  | .error (.expansionLimit _) => true
+  | _ => false
+#guard
+  let obligation : Constraint := { kind := .assume, name := `input, e := .obligation .atLeast0 leaf }
+  let c : Comp := { path := `test, vars := #[], constraints := #[], insts := #[], inputObligations := #[obligation] }
+  match (inspectComp c).run { readingLeft := 1 } with
+  | .error (.expansionLimit _) => true
+  | _ => false
 
 /-- Starting a new source item resets the budget, including when reading
 continues from the state of a previous file. -/

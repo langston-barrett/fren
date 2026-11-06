@@ -138,8 +138,8 @@ def fromModel (ty : Expr) (val : Expr) : Expr :=
     else val
   else val
 
-/-- Restore Boolean codomains of reconstructed model functions too.
-SMT propositions represent Bool values, including inside lambda bodies. -/
+/-- Restore the declared types of reconstructed model values and functions.
+SMT propositions represent Bool values, and integers represent Nat values. -/
 partial def modelValue (ty value : Expr) : MetaM Expr := do
   if let .forallE _ expectedDomain result _ := ty.consumeMData then
     if let .lam name modelDomain body _ := value.consumeMData then
@@ -157,6 +157,9 @@ partial def modelValue (ty value : Expr) : MetaM Expr := do
       | .some found => pure found
       | _ => pure (mkApp (mkConst ``Classical.propDecidable) value)
     return mkApp2 (mkConst ``Decidable.decide) value decision
+  if ty.isConstOf ``Nat then
+    if let some i := intValue? value then
+      if 0 ≤ i then return mkNatLit i.toNat
   return fromModel ty value
 
 /-- The total SMT value of a partial source table/match is free at its
@@ -362,10 +365,11 @@ update binds its updated value with, and `let` and `where` become
 defined function's body may have one. The last arm of a complete `match` is
 its body (`Fren.lastArm`), unless `keepLastArm`, as a model's confirmation
 reads it (`atModel`). -/
-def unfoldDefined (e : Expr) (keepLastArm := false) : MetaM Expr := do
+def unfoldDefined (e : Expr) (keepLastArm := false) (keepRelationObligations := false) : MetaM Expr := do
   let s ← getState
   -- A subset type's obligation is its proposition (`Fren.typeObligation`).
   let init := ({} : NameSet).insert ``Fren.typeObligation
+  let init := if keepRelationObligations then init else init.insert ``Fren.relationObligation
   let ds := s.defined.foldl (init := init) fun acc _ d =>
     d.oblDecls.foldl (fun a (o, _) => a.insert o) (acc.insert d.decl)
   -- And the clauses of contracts, which the questions about applications
@@ -893,14 +897,16 @@ partial def recursiveQueryFacts (hyps : Array (Name × Expr)) (goal : Expr)
   for f in hyps.map (·.2) |>.push goal do
     work := work ++ (← scan recs f #[] 0 #[])
   let mut out := #[]
-  let mut seen : Array (Expr × Array Expr × Nat) := #[]
+  let mut seen : Std.HashMap (Expr × Array Expr) Nat := {}
   let mut done := 0
   while done < work.size do
     let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, depth)
-    if seen.contains key || ancestors.contains app then continue
-    seen := seen.push key
+    let key := (app, gs)
+    if ancestors.contains app || !Core.recursiveDepthImproves seen[key]? depth then continue
+    -- Keep only the shallowest processed depth. Equal and deeper visits
+    -- repeat its facts, while a later shallower visit can unfold further.
+    seen := seen.insert key depth
     let .const c _ := app.getAppFn | continue
     let some d := recs.get? c | continue
     let ancestors := ancestors.push app

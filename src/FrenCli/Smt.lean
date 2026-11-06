@@ -363,11 +363,11 @@ hypothesis followed by a comment with its name; without `(check-sat)`. The
 goal's leading heads are introduced first (`introduceSmtGoal`): its
 constants are declared after the variables, and its premises asserted
 after the hypotheses, each followed by the comment `; premise`. It
-declares only what the prelude needs to (`Prelude.neededDecls`), and is in
-`logic`, but for `ALL` instead of `HO_ALL` if it projects no relation
-(`Fren.Core.queryLogic`). -/
+declares what the query and its model observations need from the prelude
+(`Prelude.neededDecls`), and is in `logic`, but for `ALL` instead of
+`HO_ALL` if it projects no relation (`Fren.Core.queryLogic`). -/
 def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar) (limits : Limits)
-    (hyps : Array (Lean.Name × String)) (goal : String) : String :=
+    (hyps : Array (Lean.Name × String)) (goal : String) (observations : Array ModelObservation := #[]) : String :=
   let (constants, premises, goal) := introduceSmtGoal prelude vars hyps goal
   let decls := String.join (vars.toList.map fun v => s!"(declare-const {quote (v.name.toString (escape := false))} {v.ty.sort})\n")
   let decls := decls ++ String.join (constants.toList.map fun (x, s) => s!"(declare-const {x} {s})\n")
@@ -377,9 +377,10 @@ def queryScript (logic options : String) (prelude : Prelude) (vars : Array CVar)
   -- `mapQuoted` of the whole script, piece by piece: each piece is whole
   -- commands, which close their quoted symbols and string literals, so
   -- the pieces' are the script's, and the prelude's are computed once.
-  let needed := prelude.neededDecls (quotedSymbols body)
+  let symbols := quotedSymbols body ++ observations.flatMap (quotedSymbols ∘ (·.formula))
+  let needed := prelude.neededDecls symbols
   let tuples := if prelude.tupleSortsNeeded then
-      SolverSorts.tupleSorts prelude.datatypes (String.join (needed.toList.map (prelude.decls[·]!.text)) ++ body)
+      SolverSorts.tupleSorts prelude.datatypes (String.join (needed.toList.map (prelude.decls[·]!.text)) ++ body ++ String.join (observations.toList.map (·.formula)))
     else #[]
   -- cvc5's implicit substitution into a datatype does not initialize its
   -- concrete tuple encodings. Register them after their last sort
@@ -737,7 +738,7 @@ def runQuery (logic options : String) (prelude : Prelude) (vars : Array CVar) (l
     (dump? : Option (String → IO Unit)) (hyps : Array (Lean.Name × String)) (goal : String) (wantModel : Bool)
     (cache? : Option QueryCache := none) (observations : Array ModelObservation := #[])
     (item : Lean.Name) (kind : Fren.Core.CheckKind) : IO (Outcome String) := do
-  let script := queryScript logic options prelude vars limits hyps goal
+  let script := queryScript logic options prelude vars limits hyps goal observations
   -- Read from the script that would be asked, the definitions that it
   -- includes, its hypotheses and its goal, not from the spec: a query with a
   -- quantifier is never asked in a quantifier-free logic, whatever set it
@@ -1237,19 +1238,21 @@ partial def recursiveQueryFacts (prelude : Prelude) (funs : Std.HashMap String (
   for f in hyps.map (·.2) |>.push goal do
     work := work ++ scan recs (expand f) #[] 0 #[]
   let mut out := #[]
-  let mut seen : Std.HashSet (SeqElems.SExpr × Array String × Nat) := {}
+  let mut seen : Std.HashMap (SeqElems.SExpr × Array String) Nat := {}
   let mut done := 0
   while done < work.size do
     let (app, gs, depth, ancestors) := work[done]!
     done := done + 1
-    let key := (app, gs, depth)
-    if seen.contains key then continue
-    seen := seen.insert key
+    let key := (app, gs)
+    if !Fren.Core.recursiveDepthImproves seen[key]? depth then continue
     let .list xs := app | continue
     let .atom head := xs[0]! | continue
     let args := xs.extract 1
     let text := toString app
     if ancestors.contains text then continue
+    -- A shallower visit subsumes equal and deeper visits, but a later
+    -- strictly shallower one must still expand its additional equations.
+    seen := seen.insert key depth
     let ancestors := ancestors.push text
     let domain := ((prelude.byQuoted.get[head]?.bind (prelude.decls[·]?)).map fun d =>
       let ps := (d.recursion?.map (·.1)).getD #[]
@@ -1345,7 +1348,7 @@ def prepare (prelude : Prelude) (c : CComp) (strings sets : Bool) (projection : 
   -- Observe the same unfolded terms in the primary model. Keys retain
   -- their source identity for `backend`'s `modelBool?`.
   let observations := (observationsOf c).map fun observation =>
-    { observation with formula := expand observation.formula }
+    { observation with formula := dropUnusedLets (expand observation.formula) }
   let facts := c.natFacts false ++ c.natFacts true
   let facts := facts ++ (facts.map fun (n, f) => (n, prime c f)).filter (!facts.contains ·)
   let formulas := facts.map (·.2) ++ hyps.map (·.2) |>.push goal
@@ -1421,7 +1424,7 @@ def queryText (prelude : Prelude) (c : CComp) (limits : Limits) (strings sets : 
     (contractFns : Std.HashMap String Lean.Name := {}) (recursiveSyms : Std.HashMap String Lean.Name := {})
     (hyps : Array (Lean.Name × String)) (goal : String) : IO String := do
   let p ← prepare prelude c strings sets projection quantified funs kind contractFns none recursiveSyms hyps goal
-  return queryScript p.logic p.options prelude p.vars limits p.hyps p.goal
+  return queryScript p.logic p.options prelude p.vars limits p.hyps p.goal p.observations
 
 /-- The backend for `c`, where `strings` and `sets` say whether the spec uses
 strings and sets, and `projection` whether it projects a relation over a

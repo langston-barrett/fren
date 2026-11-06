@@ -1,7 +1,7 @@
 # The `fren` command
 
 ```
-fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|obligations|smt] [--timings] [--tests N]
+fren check [--timeout SECONDS] [--resource-limit N] [--examples N] [--jobs N] [--dump=resolved|theories|obligations|smt] [--timings] [--tests N]
     [--seed N] [--evidence METHOD] [--query-cache DIR] [--verify-query-cache DIR] [-A|-W|-D|-F LINT]... FILE...
 fren trace [--tests GLOB]... [--require LEVEL] [-A|-W|-D|-F LINT]... FILE...
 fren fmt [--check] [--ignore GLOB]... FILE...
@@ -41,6 +41,7 @@ installation. It is built by `lake build fren`.
 | `--examples N` | `check` and `mutate`: the most notes of [forced outputs](#forced-outputs) to show for each unrealizable procedure, a whole number or `all` (default 1) |
 | `--jobs N` | `check` and `quickcheck`: how many procedures to check or test at once (default: the number of cores); see [Parallel checking](#parallel-checking) |
 | `--dump=resolved` | `check`: write the resolved, typed surface to standard output; see [Resolved surface](#resolved-surface) |
+| `--dump=theories` | `check`: write the theory structure to standard output; see [Theories](#theories) |
 | `--dump=obligations` | `check`: write what each check asks to standard output; see [Obligations](#obligations) |
 | `--dump=smt`, `--dump-smt` | `check`: write each solver query to standard output; see [Solver queries](#solver-queries) |
 | `--timings` | `check`: report how long each procedure's checks took; see [Timings](#timings) |
@@ -128,7 +129,8 @@ output holds only what was asked for: the evidence report of `fren trace`,
 the evaluated behaviour of `fren eval`, the kill rates and the list of
 mutants of `fren mutate`, the diffs of `fren fmt --check` and `fren fix --check`, the [solver queries](#solver-queries) of `fren check --dump-smt` and the
 [obligations](#obligations) of `fren check --dump=obligations`, the
-[resolved surface](#resolved-surface) of `fren check --dump=resolved`, and the
+[resolved surface](#resolved-surface) of `fren check --dump=resolved`, the
+[theory structure](#theories) of `fren check --dump=theories`, and the
 text of `--explain`, `--help` and `--version`.
 
 Each [diagnostic](View.md) is printed with a header
@@ -174,16 +176,23 @@ have their resolved paths; declared types and value expressions have their
 types, including inferred types. Type parameters remain parameters, aliases
 retain their surface declarations, and newtypes retain their nominal types.
 The prelude's declarations, generated instances and hidden checks are omitted.
+Subset predicates' generated names are omitted too; their written binders
+and invariant expressions retain their annotations.
+A shorthand subset's unwritten binder does not turn its base type into a
+local reference or value expression.
 
 The dump represents the surface as each file's source text together with
 annotations over it. Each `(file "path" ...)` contains `(surface "text")`
 and annotations `(KIND START STOP "VALUE")`. `START` and `STOP` are half-open,
 zero-based character offsets into that surface, after a Markdown file's prose
-is blanked. `name` gives an item's resolved path, `local` identifies a local
-value name in its surface scope, `type` gives a declared type, and `expr` gives
-a value expression's type. `arguments` gives a function application's inferred
-type arguments, without expanding its generic definition. Paths and types from
-the prelude are qualified with `prelude::` to distinguish them from a user's
+is blanked. `name` spans an item reference and gives its resolved path.
+`local` spans a local name and any fields read from it, giving that dotted
+path in its surface scope. At a declared name, `type` gives its declared type,
+or a function's result type; at a written type, it gives the resolved type.
+`expr` spans a value expression and gives its type. `arguments` spans a function
+application and gives its inferred type arguments, without expanding its
+generic definition. Paths and types from the prelude are qualified with
+`prelude::` to distinguish them from a user's
 items of the same name. Strings use JSON escaping. These annotations describe
 the source sites, rather than the formulas or symbols that instantiation and
 lowering generate.
@@ -201,6 +210,74 @@ accepted only by `check`, can be repeated, and can be combined with the other
 dump flags: the resolved surface precedes their output. Diagnostics and the
 summary stay on standard error. The Lean-hosted front end has no resolved
 dump option.
+
+## Theories
+
+With `--dump=theories`, `fren check` writes the elaborated theory structure
+before checking. A module is a named theory with its signature and sentences;
+a trait is an interface theory with `Self` as a parameter and its laws as
+axioms. Generic functions and datatypes have theories whose signature
+parameters are their type parameters. Functions and procedures have named
+theories too, so that calls and generic applications can refer to them.
+Their entries also appear in their owning module. Prelude declarations and
+hidden checking helpers are omitted.
+
+Signatures identify abstract and defined items and give their types, including
+constructors and selectors of datatypes. Sentence headers identify clauses,
+their roles and typed variables. Function clause variables have positional
+names `arg0`, `arg1`, and so on; procedure variables keep their source names.
+Higher-order function parameters are abstract function parameters named
+`argument_0`, `argument_1`, and so on, by their position in the signature.
+A `require` or an output definition has domain role; an `ensure` is a theorem
+of a defined function and an axiom of an abstract function or procedure;
+an `expect` is a goal. Cover goals are queries, rather than theory sentences.
+Formula bodies, domains, claims and call bindings are
+opaque. Named predicates keep their written clause header, without the
+checking leaves that elaboration expands from their bodies. Datatype freeness
+belongs to its signature, without synthetic axioms.
+
+`cli::theory_clause_role` states the role of each header, independently of
+the outcome of checking:
+
+```fren
+pub proc theory_clause_role(defined?, keyword: String): (
+    det is_domain?,
+    det is_theorem?,
+    det is_axiom?,
+    det is_goal?,
+) {
+    ensure domain_rule: is_domain? iff keyword is "require" | "define"
+    ensure theorem_rule: is_theorem? iff keyword = "ensure" and defined?
+    ensure goal_rule: is_goal? iff keyword = "expect"
+    ensure axiom_rule: is_axiom? iff not is_domain? and not is_theorem? and not is_goal?
+
+    expect one_role: one {
+        domain: is_domain?,
+        theorem: is_theorem?,
+        axiom: is_axiom?,
+        goal: is_goal?,
+    }
+}
+```
+
+The diagram records import inclusions, procedure calls and generic
+instantiations, with their type and item maps and instantiated signatures.
+A symbolic instance belongs to its caller's scope; a concrete instance belongs
+to the generic declaration's module. Repeated applications share one instance
+and list their sites. Genuine Lean interpretations and implementations are
+opaque named references. The Lean front end logs the same view at
+`#fren_check` with `set_option fren.dump "theories"`; the comma separated
+value `"theories,obligations"` requests both views.
+
+The dump is delimited by `; theories` and `; end of theories`. Names and types
+are JSON strings, with `<root>` naming the root module and `prelude::`
+qualifying references into the prelude. Entries, sentences,
+links and sites are sorted, independent of map iteration order and job count.
+The format is for debugging and front-end comparison: nothing reads it back,
+and its spelling may change. A static error suppresses the whole dump.
+Diagnostics and exit status remain those of ordinary checking. Repeated
+flags print one copy; when combined, the resolved surface precedes theories,
+which precede obligations and SMT queries.
 
 ## Solver queries
 
@@ -226,10 +303,11 @@ Fren name contains `#`. A second
 copy of a variable, as used by the [determinism](Check.md#determinism)
 check, is `|y#'|`. A script declares every variable of its
 procedure, but of the spec's abstract types, enumerations, records and
-functions only those that its query mentions, directly or through
-another declaration: the others cannot change its answer, and declaring
-them all is most of the work of a small query. A [newtype](Lang/Items.md#newtypes)
-is erased: it is declared as its underlying type, `Ms(e)` is written as
+functions only those that its query or model observations mention,
+directly or through another declaration: the others cannot change its
+answer, and declaring them all is most of the work of a small query. A
+[newtype](Lang/Items.md#newtypes) is erased: it is declared as its
+underlying type, `Ms(e)` is written as
 `e`, `x.0` as `x`, and its operators as its underlying type's. A `Nat` is declared as an `Int`, and what
 [natural numbers](Lang/Procedures.md#natural-numbers) bring is asserted
 before the query's hypotheses, followed by the comment `; nat`.

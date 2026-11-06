@@ -441,7 +441,8 @@ input_file reqs_refine_md where
 -- Each lint group has its own Markdown dependency. The umbrella reads
 -- no Markdown; subchapters in a group elaborate in parallel where their
 -- imports allow it. A new chapter can be read with one #fren_md in its
--- group's wrapper; the binary tests follow the wrappers too.
+-- group's wrapper; the binary tests follow the wrappers too. A new
+-- top-level wrapper needs its own library and Markdown input below.
 lean_lib ReqsLint where
   globs := #[`Reqs.Lint]
   moreLeanArgs := reqsArgs
@@ -716,11 +717,8 @@ lean_lib FrenCli where
 
 -- `lake test`: ui tests through both front ends, and snapshot tests for the
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
--- The resolved-dump job also runs `fren` itself, so a build of just the
--- driver must build that executable too, refreshing a cached older binary.
 lean_exe fren_test where
   root := `FrenTestMain
-  needs := #[`@/fren]
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs
