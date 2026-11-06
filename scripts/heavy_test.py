@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from types import SimpleNamespace
 from unittest import mock
 
 # Loading `heavy` must leave no `__pycache__` in the checkout.
@@ -353,6 +354,9 @@ def test_job_log():
         assert row["peak_rss_kb"] > 0  # Even a job shorter than a sampling tick.
         assert row["load_samples"] == [0.5]
         assert row["load_mean"] == row["load_max"] == 0.5
+        assert row["cpu_user_seconds"] >= 0 and row["cpu_system_seconds"] >= 0
+        assert row["cpu_seconds"] == row["cpu_user_seconds"] + row["cpu_system_seconds"]
+        assert row["cpu_parallelism"] == row["cpu_seconds"] / row["run_seconds"]
         assert row["max_load"] == "off" and row["slots"] == 1
         assert row["enqueued_max_load"] == "off" and row["enqueued_slots"] == 1
         assert row["wait_policy_changed"] is False
@@ -378,6 +382,13 @@ def test_job_log():
             rows = [json.loads(line) for line in f]
         assert [r["exit_status"] for r in rows] == [7, 127, 143, 137]
         assert rows[-1]["peak_rss_kb"] > 0
+        assert rows[1]["cpu_seconds"] == rows[1]["cpu_parallelism"] == 0  # No child ran.
+        for row in rows:
+            assert row["cpu_seconds"] >= 0 and row["cpu_parallelism"] >= 0
+            if row["cpu_busy_samples"]:
+                assert 0 <= row["cpu_busy_mean"] <= row["cpu_busy_max"] <= 1
+            else:
+                assert row["cpu_busy_mean"] is row["cpu_busy_max"] is None
         result = tiny_job(state, ["--stats", "1"])
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["jobs"] == 4
@@ -790,6 +801,17 @@ def test_group_completion():
                     probe.assert_called_once_with(5, 0)
     with mock.patch.object(heavy.os, "killpg", side_effect=PermissionError()):
         assert not heavy.group_gone(5, lambda: True)
+    with mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()) as probe:
+        assert not heavy.group_gone(5, lambda: False, True)
+        probe.assert_not_called()
+        assert heavy.group_gone(5, lambda: True, True)
+        heavy.kill_group(5, lambda: True, True)
+        assert probe.call_args_list == [mock.call(5, 0)] * 2
+    with mock.patch.object(heavy.os, "killpg") as probe:
+        assert not heavy.group_gone(5, lambda: True, True)
+        probe.assert_called_once_with(5, 0)
+    with mock.patch.object(heavy.os, "killpg", side_effect=PermissionError()):
+        assert not heavy.group_gone(5, lambda: True, True)
 
 
 def test_namespace_init_reaping():
@@ -835,9 +857,10 @@ def test_namespace_init_workers():
         leader = ("import subprocess,sys,time; "
                   f"subprocess.Popen([sys.executable,'-c',{worker!r},{ready!r}]); time.sleep(60)")
         launcher = """
-import os, pathlib, runpy, sys
+import contextlib, os, pathlib, runpy, sys
 assert os.getpid() == 1
 h = runpy.run_path(sys.argv[1])
+h['main'].__globals__['child_subreaper'] = contextlib.contextmanager(lambda: iter([False]))
 waitpid = os.waitpid
 def record_reap(pid, flags):
     result = waitpid(pid, flags)
@@ -900,6 +923,7 @@ def test_fallback_escalation():
                   f"subprocess.Popen([sys.executable,'-c',{worker!r},{ready!r}], "
                   "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); time.sleep(60)")
         launcher = ("import contextlib,runpy,sys; h=runpy.run_path(sys.argv[1]); "
+                    "h['main'].__globals__['child_subreaper']=contextlib.contextmanager(lambda:iter([False])); "
                     "sys.exit(h['main'](sys.argv[3:],state=sys.argv[2],load_reader=lambda:0))")
         env = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="0.04", HEAVY_MAX_LOAD="off")
         env.pop("HEAVY_LOG", None)
@@ -1766,8 +1790,657 @@ def test_unverified_owners():
     print("heavy: lease tests passed with kernel lock owners hidden")
 
 
+def test_cpu_ticks():
+    # fren-covers: testing::heavy_busy
+    with tempfile.TemporaryDirectory() as state:
+        path = os.path.join(state, "stat")
+        assert heavy.cpu_ticks(path) is None
+        for line, expected in (
+                ("cpu 10 20 30 40 50 60 70 80 900 1000\ncpu0 1 2 3 4\n",
+                 (10, 20, 30, 40, 50, 60, 70, 80)),  # Guest must not count twice.
+                ("cpu 1 2 3 4\n", (1, 2, 3, 4, 0, 0, 0, 0)),
+                ("cpu 1 2 3 4 5\n", (1, 2, 3, 4, 5, 0, 0, 0)),
+                ("cpu0 1 2 3 4\n", None), ("cpu 1 2 3\n", None),
+                ("cpu 1 2 3 -4\n", None), ("cpu 1 2 nope 4\n", None), ("", None)):
+            with open(path, "w") as f:
+                f.write(line)
+            assert heavy.cpu_ticks(path) == expected, line
+        with open(path, "wb") as f:
+            f.write(b"cpu 1 2 3 \xff\n")
+        assert heavy.cpu_ticks(path) is None
+        assert heavy.cpu_ticks(state) is None  # Unreadable / unavailable is non-fatal.
+
+
+def test_cpu_samples():
+    # fren-covers: testing::heavy_busy, testing::heavy_cpu
+    zero = (0,) * 8
+    first = (10, 5, 15, 40, 10, 5, 5, 10)  # 50 busy of 100; idle/iowait excluded.
+    second = (90, 15, 65, 50, 20, 15, 15, 30)  # 180 busy of the next 200.
+    assert heavy.cpu_interval(zero, first) == {"busy_ticks": 50, "total_ticks": 100}
+    assert heavy.cpu_interval(None, first) is None
+    assert heavy.cpu_interval(first, None) is None
+    assert heavy.cpu_interval(first, first) is None
+    for i in range(8):
+        reset = list(second)
+        reset[i] = first[i] - 1
+        assert heavy.cpu_interval(first, reset) is None
+    readings = iter([zero, first, second])
+    record = {"cpu_busy_samples": [], "cpu_user_seconds": 3.5,
+              "cpu_system_seconds": 1.5, "run_seconds": 2, "peak_rss_kb": 0}
+    sample = lambda now, last=None, final=False: heavy.sample_cpu(
+        record, now, last, final, lambda: next(readings))
+    last = sample(0)
+    assert sample(29.99, last) is last
+    last = sample(30, last)
+    assert sample(30.99, last) is last
+    sample(31, last, final=True)  # Final interval counts even below the cadence.
+    heavy.cpu_summary(record)
+    assert len(record["cpu_busy_samples"]) == 2
+    assert record["cpu_busy_mean"] == 230 / 300  # Weighted by ticks, not sample count.
+    assert record["cpu_busy_max"] == 0.9
+    assert record["cpu_seconds"] == 5 and record["cpu_parallelism"] == 2.5
+    record.update(cpu_busy_samples=[], run_seconds=0)
+    heavy.cpu_summary(record)
+    assert record["cpu_busy_mean"] is record["cpu_busy_max"] is record["cpu_parallelism"] is None
+    # Missing readings and counter resets discard only their adjacent intervals.
+    for readings in ([zero, None, first, second], [second, zero, first]):
+        record["cpu_busy_samples"] = []
+        last = None
+        for i, ticks in enumerate(readings):
+            last = heavy.sample_cpu(record, i * 30, last, reader=lambda: ticks)
+        assert len(record["cpu_busy_samples"]) == 1
+    with tempfile.TemporaryDirectory() as state, \
+         tempfile.TemporaryFile(mode="w+") as slot, \
+         mock.patch.object(heavy, "cpu_ticks", return_value=None), \
+         mock.patch.object(heavy.subprocess, "Popen", side_effect=OSError(2, "missing")), \
+         contextlib.redirect_stderr(io.StringIO()):
+        record = {"started_at": 0}
+        assert heavy.run(slot, ["missing"], "missing", "missing", record,
+                         heavy.time.monotonic(), state, {}, lambda: None) == 127
+        with open(os.path.join(state, "log.jsonl")) as f:
+            row = json.loads(f.read())
+        assert row["cpu_busy_samples"] == []
+        assert row["cpu_busy_mean"] is row["cpu_busy_max"] is None
+        assert row["cpu_seconds"] == 0 and row["exit_status"] == 127
+
+
+def test_cpu_monitor():
+    # fren-covers: testing::heavy_cpu, testing::heavy_busy
+    record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": [],
+              "cpu_busy_samples": [], "cpu_user_seconds": 0, "cpu_system_seconds": 0}
+    child = SimpleNamespace(pid=42, returncode=None)
+    usage = SimpleNamespace(ru_utime=2.5, ru_stime=1.25, ru_maxrss=100, ru_nivcsw=6)
+    clock = [0]
+
+    def sleep(seconds):
+        clock[0] += 30
+
+    with tempfile.TemporaryDirectory() as state, \
+         tempfile.TemporaryFile(mode="w+") as slot, \
+         mock.patch.object(heavy.subprocess, "Popen", return_value=child), \
+         mock.patch.object(heavy.os, "wait4", side_effect=[(0, 0, None)] * 3 + [(42, 7 << 8, usage)]), \
+         mock.patch.object(heavy.time, "monotonic", side_effect=lambda: clock[0]), \
+         mock.patch.object(heavy.time, "sleep", side_effect=sleep), \
+         mock.patch.object(heavy, "cpu_ticks", side_effect=[
+             (0,) * 8, (10, 0, 0, 10, 0, 0, 0, 0),
+             (30, 0, 0, 10, 0, 0, 0, 0), (30, 0, 0, 30, 0, 0, 0, 0)]), \
+         mock.patch.object(heavy, "group_rss_kb", return_value={}), \
+         mock.patch.object(heavy, "group_processes", return_value=[]), \
+         mock.patch.object(heavy, "visible_group", return_value=42), \
+         mock.patch.object(heavy, "machine_counters", return_value={}), \
+         mock.patch.object(heavy, "mem_cap_kb", return_value=GB), \
+         mock.patch.object(heavy.os, "killpg", side_effect=ProcessLookupError()), \
+         mock.patch.object(heavy.signal, "signal"):
+        assert heavy.monitor_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0.5, False) == 7
+    assert record["cpu_busy_samples"] == [
+        {"busy_ticks": 10, "total_ticks": 20},
+        {"busy_ticks": 20, "total_ticks": 20},
+        {"busy_ticks": 0, "total_ticks": 20}]
+    record["run_seconds"] = 90
+    heavy.cpu_summary(record)
+    assert record["cpu_busy_mean"] == 0.5 and record["cpu_busy_max"] == 1
+    assert record["cpu_user_seconds"] == 2.5 and record["cpu_system_seconds"] == 1.25
+    assert record["cpu_scope"] == "waited_tree"
+    assert record["involuntary_context_switches"] == 6
+    # Rechecking an already-reaped child must not count it again.
+    assert heavy.reap_child(child, record)
+    assert record["cpu_seconds"] == 3.75
+
+
+def test_monitor_group_completion():
+    # fren-covers: testing::heavy_group_gone
+    for subreaper in (False, True):
+        record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
+        child = SimpleNamespace(pid=42, returncode=0)
+        with tempfile.TemporaryDirectory() as state, \
+             tempfile.TemporaryFile(mode="w+") as slot, \
+             mock.patch.object(heavy.subprocess, "Popen", return_value=child), \
+             mock.patch.object(heavy, "reap_child", return_value=True), \
+             mock.patch.object(heavy, "visible_group", return_value=42), \
+             mock.patch.object(heavy, "group_processes", return_value=[]), \
+             mock.patch.object(heavy, "group_rss_kb", return_value={42: 10}), \
+             mock.patch.object(heavy, "jobs", return_value=[]), \
+             mock.patch.object(heavy, "publish_memory") as publish, \
+             mock.patch.object(heavy, "mem_cap_kb", return_value=100), \
+             mock.patch.object(heavy, "machine_counters", return_value={}), \
+             mock.patch.object(heavy, "cpu_ticks", return_value=None), \
+             mock.patch.object(heavy.os, "getpid", return_value=2), \
+             mock.patch.object(heavy.os, "killpg", side_effect=[None, ProcessLookupError()]) as probe, \
+             mock.patch.object(heavy.time, "sleep") as sleep, \
+             mock.patch.object(heavy.signal, "signal"), \
+             mock.patch.object(heavy, "kill_group", side_effect=AssertionError("normal completion signaled")):
+            assert heavy.monitor_command(slot, ["tiny"], "tiny", record, state, {}, lambda: 0, subreaper) == 0
+            # Even with the leader collected and group waits exhausted,
+            # monitor/account once more while the original group exists.
+            assert probe.call_args_list == [mock.call(42, 0)] * 2
+            publish.assert_called_once_with(slot, 10, state)
+            sleep.assert_called_once_with(1)
+            assert record["peak_rss_kb"] == 10
+
+
+def test_cpu_descendants():
+    # fren-covers: testing::heavy_cpu
+    worker = ("import json,os,resource,time; start=time.process_time(); "
+              "exec('while time.process_time()-start < 0.3: os.stat(\"/dev/null\")'); "
+              "u=resource.getrusage(resource.RUSAGE_SELF); "
+              "print(json.dumps([u.ru_utime,u.ru_stime]),flush=True)")
+    commands = [f"ps=[subprocess.Popen([sys.executable,'-c',{worker!r}]) for _ in range(2)]; "
+                "assert all(p.wait()==0 for p in ps)"]
+    if heavy.platform.system() == "Linux":
+        # An orphan stays in the job's group. Count it even when the leader
+        # exits first, or dies from a signal, without changing the leader's status.
+        with heavy.child_subreaper() as enabled:
+            assert enabled
+        commands.extend([
+            f"subprocess.Popen([sys.executable,'-c',{worker!r}]); raise SystemExit(7)",
+            f"subprocess.Popen([sys.executable,'-c',{worker!r}]); os.kill(os.getpid(),signal.SIGTERM)"])
+    with tempfile.TemporaryDirectory() as state:
+        for body, status in zip(commands, (0, 7, 143)):
+            command = "import os,signal,subprocess,sys; " + body
+            result = tiny_job(state, [sys.executable, "-c", command])
+            assert result.returncode == status, result.stderr
+            readings = [json.loads(line) for line in result.stdout.splitlines()]
+            user, system = (sum(r[i] for r in readings) for i in range(2))
+            with open(os.path.join(state, "log.jsonl")) as f:
+                row = [json.loads(line) for line in f][-1]
+            assert user + system >= 0.3
+            assert row["cpu_user_seconds"] >= user and row["cpu_system_seconds"] >= system
+            if heavy.platform.system() == "Linux":
+                assert row["cpu_scope"] == "process_group"
+            # Parent/interpreter shutdown adds a little CPU; the descendant
+            # must be counted once, rather than once directly and again in its parent.
+            assert row["cpu_seconds"] < 2 * (user + system)
+
+
+def test_cpu_reaping():
+    # fren-covers: testing::heavy_cpu, testing::heavy_group_gone
+    record = {"peak_rss_kb": 0, "cpu_user_seconds": 0, "cpu_system_seconds": 0,
+              "cpu_busy_samples": [], "run_seconds": 2}
+    child = SimpleNamespace(pid=42, returncode=None, heavy_subreaper=True)
+    leader = SimpleNamespace(ru_utime=2, ru_stime=1, ru_maxrss=204800, ru_nivcsw=7)
+    worker = SimpleNamespace(ru_utime=3, ru_stime=4, ru_maxrss=102400, ru_nivcsw=11)
+    calls = [0]
+
+    def wait(pid, flags):
+        assert pid == -42 and flags == os.WNOHANG
+        calls[0] += 1
+        if calls[0] == 1:
+            # Simulate a signal handler reaping another process after the
+            # outer wait4 has succeeded but before its caller stores usage.
+            assert not heavy.reap_child(child, record)
+            return 42, 7 << 8, leader
+        if calls[0] == 2:
+            return 43, 9 << 8, worker
+        raise ChildProcessError
+
+    with mock.patch.object(heavy.os, "wait4", side_effect=wait), \
+         mock.patch.object(heavy.platform, "system", return_value="Linux"):
+        assert heavy.reap_child(child, record)
+        assert heavy.reap_child(child, record)
+    heavy.cpu_summary(record)
+    assert child.returncode == 7  # A worker's status never replaces the command's.
+    assert record["cpu_user_seconds"] == record["cpu_system_seconds"] == 5
+    assert record["cpu_seconds"] == 10 and record["cpu_parallelism"] == 5
+    assert record["peak_rss_kb"] == 204800 and "_cpu_usage" not in record
+    assert record["involuntary_context_switches"] == 18
+    heavy.cpu_summary(record)
+    assert record["involuntary_context_switches"] == 18 and record["cpu_seconds"] == 10
+
+
+def test_child_subreaper():
+    def prctl(op, value, *unused):
+        if op == 37:
+            value._obj.value = 1  # Preserve an already-enabled setting too.
+        return 0
+
+    with mock.patch.object(heavy.platform, "system", return_value="Linux"), \
+         mock.patch.object(heavy.ctypes, "CDLL") as libc:
+        libc.return_value.prctl.side_effect = prctl
+        with heavy.child_subreaper() as enabled:
+            assert enabled
+        assert [call.args[:2] for call in libc.return_value.prctl.call_args_list][1:] == [(36, 1), (36, 1)]
+        libc.return_value.prctl.reset_mock(side_effect=True)
+        libc.return_value.prctl.return_value = -1
+        with heavy.child_subreaper() as enabled:
+            assert not enabled
+        assert libc.return_value.prctl.call_count == 1
+        libc.return_value.prctl.reset_mock()
+        libc.return_value.prctl.side_effect = [0, -1]  # GET works; SET is refused.
+        with heavy.child_subreaper() as enabled:
+            assert not enabled
+        assert libc.return_value.prctl.call_count == 2
+    with mock.patch.object(heavy.platform, "system", return_value="Darwin"), \
+         mock.patch.object(heavy.ctypes, "CDLL", side_effect=AssertionError("not Linux")):
+        with heavy.child_subreaper() as enabled:
+            assert not enabled
+
+
+def test_cpu_many_waits():
+    # fren-covers: testing::heavy_cpu
+    record = {"peak_rss_kb": 0, "cpu_user_seconds": 0, "cpu_system_seconds": 0,
+              "cpu_busy_samples": [], "run_seconds": 10}
+    child = SimpleNamespace(pid=42, returncode=None, heavy_subreaper=True)
+    usage = SimpleNamespace(ru_utime=0.25, ru_stime=0.5, ru_maxrss=100, ru_nivcsw=3)
+    count = [0]
+    def wait(pid, flags):
+        assert pid == -42 and flags == os.WNOHANG
+        assert len(repr(record)) < 500
+        if count[0] == 4000:
+            raise ChildProcessError
+        count[0] += 1
+        return (42 if count[0] == 1 else 42 + count[0]), 0, usage
+    with mock.patch.object(heavy.os, "wait4", side_effect=wait), \
+         mock.patch.object(heavy.platform, "system", return_value="Linux"):
+        assert heavy.reap_child(child, record)
+    heavy.cpu_summary(record)
+    assert record["cpu_user_seconds"] == 1000 and record["cpu_system_seconds"] == 2000
+    assert record["cpu_seconds"] == 3000 and record["involuntary_context_switches"] == 12000
+    assert record["peak_rss_kb"] == 100
+
+
+def test_cpu_signal_fold():
+    # fren-covers: testing::heavy_cpu
+    handled = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+    for sig in handled:
+        record = {"peak_rss_kb": 0, "cpu_user_seconds": 0, "cpu_system_seconds": 0,
+                  "cpu_busy_samples": [], "run_seconds": 2}
+        child = SimpleNamespace(pid=42, returncode=None, heavy_subreaper=True)
+        sent, observed = [], []
+        class LeaderUsage:
+            ru_stime, ru_maxrss, ru_nivcsw = 1, 100, 7
+            @property
+            def ru_utime(self):
+                # Interrupt after the old aggregate is read, before the
+                # replacement is stored: the signal must wait for that store.
+                if not sent:
+                    sent.append(sig)
+                    os.kill(os.getpid(), sig)
+                return 2
+        worker = SimpleNamespace(ru_utime=3, ru_stime=4, ru_maxrss=200, ru_nivcsw=11)
+        results = iter([(42, 7 << 8, LeaderUsage()), (43, 0, worker)])
+        def wait(pid, flags):
+            # Exercise the blocking cleanup path too, with no new signal mask.
+            assert flags == 0 and handled.isdisjoint(signal.pthread_sigmask(signal.SIG_BLOCK, []))
+            try:
+                return next(results)
+            except StopIteration:
+                raise ChildProcessError from None
+        def on_signal(signo, frame):
+            observed.append(record.get("_cpu_usage"))
+            assert heavy.reap_child(child, record, 0)
+        previous_handler = signal.signal(sig, on_signal)
+        previous_mask = signal.pthread_sigmask(signal.SIG_UNBLOCK, handled)
+        try:
+            with mock.patch.object(heavy.os, "wait4", side_effect=wait), \
+                 mock.patch.object(heavy.platform, "system", return_value="Linux"):
+                assert heavy.reap_child(child, record, 0)
+        finally:
+            signal.signal(sig, previous_handler)
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        assert sent == [sig] and observed == [(2, 1, 100, 7)]
+        heavy.cpu_summary(record)
+        assert child.returncode == 7
+        assert record["cpu_user_seconds"] == record["cpu_system_seconds"] == 5
+        assert record["peak_rss_kb"] == 200 and record["involuntary_context_switches"] == 18
+
+
+def test_process_readings():
+    # fren-covers: testing::heavy_counter_rate
+    row = heavy.process_stat(proc_line(name="a ) b ( c"))
+    assert row["comm"] == "a ) b ( c" and row["ticks"] == 30
+    assert row["pid"] == 123 and row["pgrp"] == 7 and row["start"] == 100
+    for text in ("", "123 (short) R", proc_line(user=-1)):
+        assert raises(lambda: heavy.process_stat(text), (ValueError, IndexError))
+    assert heavy.process_switches("voluntary_ctxt_switches: 99\nnonvoluntary_ctxt_switches: 7\n") == 7
+    assert heavy.process_switches("nonvoluntary_ctxt_switches: -1\n") is None
+    assert heavy.process_switches("voluntary_ctxt_switches: 99\n") is None
+    with tempfile.TemporaryDirectory() as proc:
+        for pid, group in ((123, 7), (124, 8)):
+            path = os.path.join(proc, str(pid))
+            os.mkdir(path)
+            with open(os.path.join(path, "stat"), "w") as f:
+                f.write(proc_line(pid=pid, group=group, name="fren_fuzz_front"))
+            with open(os.path.join(path, "status"), "w") as f:
+                f.write("nonvoluntary_ctxt_switches: 7\n")
+            os.symlink("/nix/store/example/bin/fren_fuzz_frontends", os.path.join(path, "exe"))
+        live = set()
+        readings = heavy.group_processes(7, proc, live)
+        assert len(readings) == 1
+        assert live == {(123, 100), (124, 100)}  # Includes the other group.
+        assert readings[0]["name"] == "fren_fuzz_frontends" and readings[0]["switches"] == 7
+        rss = heavy.group_rss_kb(proc, "Linux")
+        assert rss[7] == rss[8] == 3 * os.sysconf("SC_PAGE_SIZE") // 1024
+        os.unlink(os.path.join(proc, "123", "exe"))
+        assert heavy.group_processes(7, proc)[0]["name"] is None
+        # A PID reused between the two stat reads must not mix identities.
+        with mock.patch.object(heavy.os, "listdir", return_value=["123"]), \
+             mock.patch.object(heavy, "process_stat", side_effect=[row, dict(row, start=101)]):
+            assert heavy.group_processes(7, proc) == []
+        assert heavy.group_processes(7, os.path.join(proc, "missing")) is None
+
+
+def process_row(pid, name, ticks, switches=0, start=10000, state="R"):
+    return {"pid": pid, "name": name, "comm": (name or "unknown")[:15],
+            "ticks": ticks, "switches": switches, "start": start, "state": state}
+
+
+def test_process_sampling():
+    # fren-covers: testing::heavy_counter_rate
+    sampler = heavy.ProcessSampler(100, 100)
+    sampler.sample(101, 101, [process_row(1, "lean", 100, 5),
+                              process_row(2, "lean", 50, 1, start=10050),
+                              process_row(3, "cvc5", 200, 3)])
+    sampler.sample(102, 102, [process_row(1, "lean", 200, 8),
+                              process_row(2, "lean", 150, 2, start=10050),
+                              process_row(3, "cvc5", 400, 6)])
+    record = {}
+    sampler.finish(record)
+    lean, solver = record["process_cpu"]["lean"], record["process_cpu"]["cvc5"]
+    assert lean["core_seconds"] == lean["observed_process_seconds"] == 3.5
+    assert lean["mean_cores_per_process"] == lean["peak_cores_per_process"] == 1
+    assert lean["peak_process_count"] == lean["processes_seen"] == 2
+    assert solver["core_seconds"] == 4 and solver["mean_cores_per_process"] == 2
+    assert solver["peak_cores_per_process"] == 2 and solver["peak_process_count"] == 1
+    assert record["nonvoluntary_ctxt_switches"] == 16
+    # PID reuse is a new lifetime; absent workers add no CPU or concurrency.
+    sampler.sample(103, 103, [process_row(1, "lean", 50, 4, start=10200)])
+    sampler.finish(record)
+    assert lean["core_seconds"] == 4 and lean["processes_seen"] == 3
+    assert lean["peak_process_count"] == 2 and record["nonvoluntary_ctxt_switches"] == 20
+    # exec preserves counters but changes attribution; a missing exe link
+    # on the next (zombie) reading must retain the full cached executable.
+    sampler.sample(104, 104, [process_row(1, "fren_fuzz_frontends", 150, 7, start=10200)])
+    sampler.sample(105, 105, [dict(process_row(1, None, 200, 9, start=10200, state="Z"),
+                                  comm="fren_fuzz_front")])
+    sampler.finish(record)
+    fuzz = record["process_cpu"]["fren_fuzz_frontends"]
+    assert fuzz["core_seconds"] == 1.5 and fuzz["processes_seen"] == fuzz["peak_process_count"] == 1
+    assert record["nonvoluntary_ctxt_switches"] == 25
+    empty = heavy.ProcessSampler(0, 100)
+    empty.sample(1, 1, None)
+    empty.finish(record)
+    assert record["process_cpu"] is record["nonvoluntary_ctxt_switches"] is None
+    # A missing scan contributes known lifetime CPU when the process returns,
+    # but cannot inflate the rate by adding that CPU to a shorter time window.
+    gap = heavy.ProcessSampler(0, 100)
+    gap.sample(1, 1, [process_row(1, "lean", 100, None, start=0)])
+    gap.sample(2, 2, None)
+    gap.sample(3, 3, [process_row(1, "lean", 300, 5, start=0)])
+    gap.sample(4, 4, [process_row(1, "lean", 400, None, start=0)])
+    gap.sample(5, 5, [process_row(1, "lean", 500, 8, start=0)])
+    gap.finish(record)
+    data = record["process_cpu"]["lean"]
+    assert data["core_seconds"] == 5 and data["observed_core_seconds"] == 3
+    assert data["observed_process_seconds"] == 3 and data["mean_cores_per_process"] == 1
+    assert record["nonvoluntary_ctxt_switches"] == 8
+    gap.sample(6, 6, [process_row(1, "lean", 10, 2, start=0)])
+    gap.finish(record)
+    assert data["core_seconds"] == 5 and record["nonvoluntary_ctxt_switches"] == 8
+    renamed = heavy.ProcessSampler(0, 100)
+    for i, name in enumerate(("lean", "lake", "lean"), 1):
+        renamed.sample(i, i, [process_row(1, name, i * 100, start=0)])
+    renamed.finish(record)
+    assert record["process_cpu"]["lean"]["processes_seen"] == 1
+    assert record["process_cpu"]["lean"]["core_seconds"] == 2
+    exited = heavy.ProcessSampler(0, 100)
+    exited.sample(1, 1, [process_row(1, "lake", 100, start=0)])
+    exited.sample(2, 2, [dict(process_row(1, None, 200, start=0, state="Z"), comm="lean")])
+    exited.finish(record)
+    assert record["process_cpu"]["lake"]["core_seconds"] == 1
+    assert record["process_cpu"]["lean"]["core_seconds"] == 1
+
+
+def test_process_lifetime_retention():
+    # fren-covers: testing::heavy_counter_rate
+    sampler = heavy.ProcessSampler(0, 100)
+    for i in range(1, 4001):
+        sampler.sample(i, i, [process_row(i, "lean", 100, 2, start=i * 100 - 50)])
+        assert len(sampler.previous) == 1
+        assert len(repr(sampler.__dict__)) < 2000
+    record = {}
+    sampler.finish(record)
+    data = record["process_cpu"]["lean"]
+    assert data["processes_seen"] == 4000
+    assert data["core_seconds"] == 4000
+    assert record["nonvoluntary_ctxt_switches"] == 8000
+    sampler.sample(4001, 4001, [])
+    assert sampler.previous == {}
+    sampler.finish(record)
+    assert data["processes_seen"] == 4000 and data["core_seconds"] == 4000
+
+
+def test_process_group_reentry():
+    # fren-covers: testing::heavy_counter_rate
+    sampler = heavy.ProcessSampler(0, 100)
+    identity = (7, 0)
+    sampler.sample(1, 1, [process_row(7, "lean", 100, 10, start=0)], {identity})
+    sampler.sample(2, 2, [], {identity})  # Alive in another process group.
+    assert len(sampler.previous) == 1
+    sampler.sample(3, 3, [process_row(7, "lean", 300, 30, start=0)], {identity})
+    sampler.sample(4, 4, [process_row(7, "lean", 400, 40, start=0)], {identity})
+    record = {}
+    sampler.finish(record)
+    data = record["process_cpu"]["lean"]
+    assert data["core_seconds"] == 4 and data["processes_seen"] == 1
+    assert data["observed_core_seconds"] == data["observed_process_seconds"] == 2
+    assert record["nonvoluntary_ctxt_switches"] == 40
+    sampler.sample(5, 5, [], set())  # The lifetime really ended.
+    assert sampler.previous == {}
+
+
+def test_machine_pressure():
+    # fren-covers: testing::heavy_pressure, testing::heavy_counter_rate
+    with tempfile.TemporaryDirectory() as proc:
+        path = os.path.join(proc, "stat")
+        with open(path, "w") as f:
+            f.write("cpu 0 0 0 0\ncpu0 0 0 0 0\ncpu1 0 0 0 0\n"
+                    "ctxt 1000\nprocs_running 8\nprocs_blocked 99\n")
+        assert heavy.machine_counters(path) == {"cpu_cores": 2, "ctxt": 1000, "procs_running": 8}
+        with open(path, "w") as f:
+            f.write("cpu0 0 0 0 0\nctxt -1\nprocs_running nope\n")
+        assert heavy.machine_counters(path) == {"cpu_cores": 1}
+        assert heavy.machine_counters(proc) == {}
+    sampler = heavy.MachineSampler()
+    sampler.sample(0, {"cpu_cores": 4, "procs_running": 8, "ctxt": 100})
+    sampler.sample(1, {"cpu_cores": 2, "procs_running": 2, "ctxt": 300})
+    sampler.sample(3, {"cpu_cores": 2, "procs_running": 0, "ctxt": 500})
+    record = {}
+    sampler.finish(record)
+    assert record["procs_running_mean"] == 10 / 3 and record["procs_running_max"] == 8
+    assert record["runnable_per_core_mean"] == 1 and record["runnable_per_core_max"] == 2
+    assert record["oversubscribed_fraction"] == 1 / 3  # Equality is not oversubscription.
+    assert record["ctxt_per_second_mean"] == 400 / 3 and record["ctxt_per_second_max"] == 200
+    assert record["procs_running_sample_count"] == 3
+    assert record["ctxt_rate_sample_count"] == 2
+    assert record["ctxt_switches"] == 400 and record["ctxt_observed_seconds"] == 3
+    # Thousands of seconds must not grow retained state or the logged record.
+    for now in range(4, 4004):
+        sampler.sample(now, {"cpu_cores": 2, "procs_running": 2, "ctxt": 500 + now})
+    long_record = {}
+    sampler.finish(long_record)
+    assert long_record["procs_running_sample_count"] == 4003
+    assert long_record["ctxt_rate_sample_count"] == 4002
+    assert long_record.keys() == record.keys()
+    assert all(not isinstance(v, (list, dict)) for v in vars(sampler).values())
+    assert len(json.dumps(long_record)) < 800
+    assert "procs_running_samples" not in long_record and "ctxt_rate_samples" not in long_record
+    gap = heavy.MachineSampler()
+    for now, reading in enumerate(({"ctxt": 100}, {}, {"ctxt": 500}, {"ctxt": 400}, {"ctxt": 700})):
+        gap.sample(now, reading)
+    gap.finish(record)
+    assert record["ctxt_per_second_mean"] == record["ctxt_per_second_max"] == 300
+    assert record["oversubscribed_fraction"] is record["procs_running_mean"] is None
+    gap.sample(5, {"cpu_cores": 0, "procs_running": 100})
+    gap.finish(record)
+    assert record["procs_running_sample_count"] == 0
+
+
+def test_memory_prediction():
+    # fren-covers: testing::heavy_memory_prediction
+    with tempfile.TemporaryDirectory() as state:
+        now = 1000000
+        def job(ended, peak, kind="lake build"):
+            heavy.append_log({"event": "job", "job_kind": kind, "ended_at": ended,
+                              "peak_rss_kb": peak}, state, {})
+        assert heavy.predict_peak_rss("lake build", state, {}, now) == (None, 0)
+        for i in reversed(range(1, 26)):
+            job(now - 30 + i, 100 + i if i > 5 else 99999)
+        for ended, peak, kind in ((now + 1, 999999, "lake build"),
+                                  (now - heavy.PREDICTION_SECONDS - 1, 999999, "lake build"),
+                                  (now, 999999, "lake test"), (now, True, "lake build"),
+                                  (now, 0, "lake build"), (float("nan"), 999999, "lake build"),
+                                  (10 ** 1000, 999999, "lake build")):
+            job(ended, peak, kind)
+        assert heavy.predict_peak_rss("lake build", state, {}, now) == (125, 20)
+        with open(os.path.join(state, "log.jsonl"), "a") as f:
+            f.write('null\n[]\n{"partial":')
+        assert heavy.predict_peak_rss("lake build", state, {}, now) == (125, 20)
+        override = os.path.join(state, "override.jsonl")
+        heavy.append_log({"job_kind": "lake build", "ended_at": now - 1, "peak_rss_kb": 777},
+                         state, {"HEAVY_LOG": override})
+        with open(override, "ab") as f:
+            f.write(b"\xff\n")
+        assert heavy.predict_peak_rss("lake build", state, {"HEAVY_LOG": override}, now) == (777, 1)
+        # Freeze the prediction before execution, then keep it beside the
+        # actual peak rather than recomputing with the new observation.
+        record = {"started_at": now}
+        def execute(*args):
+            record["peak_rss_kb"] = 999
+            return 0
+        with tempfile.TemporaryFile(mode="w+") as slot, \
+             mock.patch.object(heavy, "run_command", side_effect=execute):
+            assert heavy.run(slot, ["lake", "build"], "lake build", "lake build", record,
+                             heavy.time.monotonic(), state, {"HEAVY_LOG": override}, lambda: 0) == 0
+        assert record["predicted_peak_rss_kb"] == 777 and record["prediction_jobs"] == 1
+        assert record["peak_rss_kb"] == 999
+
+
+def test_process_integration():
+    # fren-covers: testing::heavy_counter_rate, testing::heavy_pressure
+    code = ("import os,time; start=time.process_time(); "
+            "exec('while time.process_time()-start < 1.2: os.stat(\"/dev/null\")')")
+    with tempfile.TemporaryDirectory() as state:
+        result = tiny_job(state, [sys.executable, "-c", code])
+        assert result.returncode == 0, result.stderr
+        with open(os.path.join(state, "log.jsonl")) as f:
+            row = json.loads(f.read())
+        assert row["involuntary_context_switches"] >= 0
+        if heavy.platform.system() == "Linux":
+            assert row["process_samples"] > 0
+            data = list(row["process_cpu"].values())
+            assert sum(d["core_seconds"] for d in data) > 0.5
+            assert max(d["peak_process_count"] for d in data) >= 1
+            assert 0 <= row["nonvoluntary_ctxt_switches"] <= row["involuntary_context_switches"]
+            assert row["procs_running_sample_count"] > 0 and 0 <= row["oversubscribed_fraction"] <= 1
+            assert row["ctxt_per_second_mean"] >= 0
+
+
+def test_subreaper_outside_parent():
+    # fren-covers: testing::heavy_group_gone, testing::heavy_owned_signal
+    if heavy.platform.system() != "Linux":
+        return
+    with heavy.child_subreaper() as enabled, tempfile.TemporaryDirectory() as state:
+        assert enabled
+        ready, outside, reaped = [os.path.join(state, name) for name in ("worker", "outside", "reaped")]
+        worker = ("import os,pathlib,signal,sys,time; "
+                  "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                  "pathlib.Path(sys.argv[1]+'.tmp').write_text(str(os.getpid())); "
+                  "os.replace(sys.argv[1]+'.tmp',sys.argv[1]); time.sleep(60)")
+        parent = ("import os,pathlib,subprocess,sys,time; "
+                  f"child=subprocess.Popen([sys.executable,'-c',{worker!r},sys.argv[1]]); "
+                  "exec('while not pathlib.Path(sys.argv[1]).exists(): time.sleep(0.01)'); "
+                  "os.setpgid(0,0); pathlib.Path(sys.argv[2]+'.tmp').write_text(str(os.getpid())); "
+                  "os.replace(sys.argv[2]+'.tmp',sys.argv[2]); result=child.wait(); "
+                  "pathlib.Path(sys.argv[3]+'.tmp').write_text(str(result)); "
+                  "os.replace(sys.argv[3]+'.tmp',sys.argv[3]); time.sleep(60)")
+        leader = ("import pathlib,subprocess,sys,time\n"
+                  f"subprocess.Popen([sys.executable,'-c',{parent!r},{ready!r},{outside!r},{reaped!r}])\n"
+                  f"while not pathlib.Path({outside!r}).exists(): time.sleep(0.01)\n"
+                  "raise SystemExit(7)\n")
+        child = subprocess.Popen([sys.executable, "-I", "-B", "-c", leader], start_new_session=True)
+        child.heavy_subreaper = True
+        record = {"peak_rss_kb": 0}
+        reap = lambda: heavy.reap_child(child, record)
+        worker_pid, parent_pid = None, None
+        try:
+            deadline = heavy.time.monotonic() + 15
+            while (child.returncode is None or not os.path.exists(outside)) and heavy.time.monotonic() < deadline:
+                reap()
+                heavy.time.sleep(0.02)
+            assert child.returncode == 7 and os.path.exists(outside)
+            with open(ready) as f:
+                worker_pid = int(f.read())
+            with open(outside) as f:
+                parent_pid = int(f.read())
+            assert os.getpgid(parent_pid) == parent_pid
+            assert os.getpgid(worker_pid) == child.pid
+            assert reap()  # ECHILD for -PGID, while the grandchild is not adoptable.
+            assert not heavy.group_gone(child.pid, reap, True), "ECHILD hid a live group member"
+            heavy.kill_group(child.pid, reap, True)
+            assert child.returncode == 7
+            os.kill(parent_pid, 0)  # The outside parent stayed alive throughout.
+            deadline = heavy.time.monotonic() + 5
+            while not os.path.exists(reaped) and heavy.time.monotonic() < deadline:
+                heavy.time.sleep(0.02)
+            assert os.path.exists(reaped)
+            with open(reaped) as f:
+                assert int(f.read()) == -signal.SIGKILL
+            assert raises(lambda: os.kill(worker_pid, 0), ProcessLookupError)
+        finally:
+            if child.returncode is None:
+                child.kill()
+                child.wait(timeout=10)
+            if parent_pid is None and os.path.exists(outside):
+                with open(outside) as f:
+                    parent_pid = int(f.read())
+            if worker_pid is None and os.path.exists(ready):
+                with open(ready) as f:
+                    worker_pid = int(f.read())
+            # Kill/reap the adopted outside parent first, so any surviving
+            # worker becomes our child and cannot be reused before our wait.
+            if parent_pid is not None:
+                try:
+                    os.kill(parent_pid, signal.SIGKILL)
+                    os.waitpid(parent_pid, 0)
+                except (ProcessLookupError, ChildProcessError):
+                    pass
+            if worker_pid is not None:
+                try:
+                    found, _ = os.waitpid(worker_pid, os.WNOHANG)
+                    if not found:
+                        os.kill(worker_pid, signal.SIGKILL)
+                        os.waitpid(worker_pid, 0)
+                except ChildProcessError:
+                    pass  # Its parent already waited for it.
+
+
 def main():
-    tests = [test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
+    tests = [test_process_lifetime_retention, test_process_group_reentry,
+             test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_monitor_group_completion,
+             test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
+             test_child_subreaper, test_process_readings,
+             test_process_sampling, test_machine_pressure, test_memory_prediction, test_process_integration,
+             test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
              test_registry_wait_messages,
              test_physical_memory,
              test_overrides, test_offline_command, test_load_admission, test_job_log,
@@ -1777,7 +2450,7 @@ def main():
              test_alternate_ignored_hangup, test_slot_identity, test_proc_namespace_translation,
              test_memory_victim, test_legacy_reservations, test_report_owner, test_legacy_proc_readings,
              test_legacy_report_reuse, test_legacy_coexistence, test_group_completion, test_fallback_escalation,
-             test_namespace_init_reaping, test_namespace_init_workers,
+             test_namespace_init_reaping, test_namespace_init_workers, test_subreaper_outside_parent,
              test_no_signal_after_reap, test_status_failure_cleanup, test_pid_namespace_jobs, test_report_clock,
              test_stopped_owner, test_registry_signals_and_release,
              test_own_cap_with_other_victim, test_stopped_registry_holder, test_unverified_owners]

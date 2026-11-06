@@ -1,0 +1,2 @@
+--@ argv: trace --dump=resolved test/cli/args/dump_resolved_trace.fren
+-- The resolved dump is an option of check alone.

@@ -817,10 +817,12 @@ its declaration for each: each front end gives the solver one SMT-LIB 2.6
 *parametric datatype* for it, as in
 `(declare-datatypes ((|List| 1)) ((par (|T|) ((List~Nil) (List~Cons (|List::Cons::0| |T|) (|List::Cons::1| (|List| |T|)))))))`,
 and each instance is a sort application, as `(|List| Int)`. Both front
-ends give the same declarations, up to the names of their symbols, which
-each front end writes its own way: one parametric datatype for each
-generic type, with the same constructors and selectors, and the same sort
-applications, so that they cannot differ in what the solver decides. The Lean-hosted front end declares a generic type as a
+ends use the same parametric datatype declarations, up to the names of
+their symbols, which each front end writes its own way: one declaration
+for each generic type, with the same constructors and selectors, and
+instances written as sort applications. They may also introduce sort
+aliases or unconstrained collection constants, which assert nothing about
+the spec's values. The Lean-hosted front end declares a generic type as a
 Lean inductive type with a parameter of type `Type` for each type
 parameter (see [Generated Lean](../Generated.md#generic-types)), which
 lean-smt gives the solver as a parametric datatype.
@@ -871,5 +873,7 @@ explicitly, through all of its payloads and fields, including fields the
 query never reads and collections nested within another instance. This
 applies to instances in function signatures and quantified types as well
 as procedure variables. A parametric declaration alone does not create
-these concrete tuple sorts. The extra sort aliases or unconstrained
-collection declarations add no assertion about the spec's values.
+these concrete tuple sorts. The CLI introduces sort aliases after their
+dependencies. The Lean-hosted front end supplies unconstrained set and
+relation locals so that lean-smt creates their tuple sorts. These extra
+declarations add no assertion about the spec's values.

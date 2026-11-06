@@ -1,0 +1,21 @@
+-- A resolved dump must preserve the checking of generic definitions,
+-- module imports, calls, local definitions and inferred construction types.
+pub mod resolved_library
+
+pub struct Box<T> { value: T }
+
+pub fn id<T>(x: T): T := x
+
+pub fn unwrap<T>(x: Box<T>): T := x.value
+
+pub proc echo(x: Int): (det y: Int) { out y := id(x) }
+
+mod resolved_client
+
+use resolved_library::{Box, echo, id, unwrap}
+
+proc round_trip(x: Int): (det y: Int) {
+    call inner := echo(x)
+    out y := unwrap(Box { value := id(inner.y) })
+    expect unchanged: let value := id(y) in value = x
+}

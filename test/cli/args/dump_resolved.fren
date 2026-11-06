@@ -1,0 +1,42 @@
+--@ args: check --dump=resolved
+-- The surface retains generic declarations, nominal newtypes, aliases,
+-- modules and calls; its annotations resolve imports and infer types.
+set_option fren.lint.glob_imports "allow"
+set_option fren.lint.manual_pattern_test "allow"
+set_option fren.lint.assertions_on_constants "allow"
+
+pub mod library
+
+pub struct Box<T> { value: T }
+
+pub struct Number(Int)
+
+pub type Alias := Number
+
+pub fn keep(x: Alias): Alias := x
+
+pub fn id<T>(x: T): T := x
+
+pub fn opt<T>(x: T): Option<T> := Option::Some(x)
+
+pub fn unwrap<T>(x: Box<T>): T := x.value
+
+pub enum Choice { A, B }
+
+pub proc echo(x: Int): (det y: Int) { out y := id(x) }
+
+mod client
+
+use library::{Box, Choice, Number, echo, id, keep, opt, unwrap}
+use library::Choice::*
+
+proc round_trip(x: Int, flag?): (det y: Int) {
+    call inner := echo(x)
+    out y := unwrap(Box { value := id(inner.y) })
+    expect unchanged: y = x
+    expect nominal: keep(Number(x)) = Number(x)
+    expect option: opt(y) = Option::Some(y)
+    expect variants: (if flag? then A else B) != (if flag? then B else A)
+    expect bound: forall (z: Choice), z = A or z = B
+    expect definitions: let value := id(y) in value = y
+}
