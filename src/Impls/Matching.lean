@@ -48,7 +48,7 @@ theorem lookup_eq (ds : List (String × Term)) (n : String) :
 
 theorem normalize_eq (ds : List (String × Term)) (t : Term) :
     term (normalize ds t) = check.normalize_term (defs ds) (term t) := by
-  induction t <;> simp [normalize, term, check.normalize_term, lookup_eq, *]
+  induction t <;> simp_all [normalize, Fren.Core.DefinitionSyntax.expand, Term.expandDefinitions, term, check.normalize_term, lookup_eq]
 
 theorem definitions_eq (ds : List (String × Term)) :
     defs (definitions ds) = check.normalize_definitions (defs ds) := by

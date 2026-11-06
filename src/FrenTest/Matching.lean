@@ -23,9 +23,9 @@ def aliases : List (String × Term) :=
 -- A function's symbol, a type, an operator and argument order remain
 -- syntax even if their values could be equal in an interpretation.
 #guard same [("f", value)] (.app "f" .nil) value == false
-#guard same [] (.atom "Int:1") (.atom "Nat:1") == false
-#guard same [] (.app "+" (.cons value (.cons (.atom "Int:0") .nil))) value == false
-#guard same [] (.app "f" (.cons value (.cons (.atom "Int:2") .nil)))
+#guard same ([] : List (String × Term)) (.atom "Int:1") (.atom "Nat:1") == false
+#guard same ([] : List (String × Term)) (.app "+" (.cons value (.cons (.atom "Int:0") .nil))) value == false
+#guard same ([] : List (String × Term)) (.app "f" (.cons value (.cons (.atom "Int:2") .nil)))
   (.app "f" (.cons (.atom "Int:2") (.cons value .nil))) == false
 #guard same aliases (.app "f<Int>" (.cons (.ref "out") .nil)) (.app "f<Int>" (.cons value .nil))
 #guard same aliases (.app "f<Int>" .nil) (.app "f<Nat>" .nil) == false

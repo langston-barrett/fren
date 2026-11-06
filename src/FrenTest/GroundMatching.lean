@@ -6,6 +6,7 @@ import FrenCore.GroundMatching
 -- fren-covers: lang::ground_normalization, lang::ground_shape_step, lang::ground_subject_step
 -- fren-covers: lang::ground_selection_step, lang::ground_variables_step, lang::ground_join_step
 -- fren-covers: lang::ground_listed_step, lang::ground_sentence_lists_step, lang::ground_rule_step
+-- fren-covers: lang::ground_preparation_step, lang::ground_instance_list_step, lang::ground_instances_step
 
 namespace FrenTest.GroundMatching
 
@@ -119,7 +120,8 @@ private def defs : List (TheoryTerm × TheoryTerm) :=
   { applications := [app `f [.query `localOut], app `f [a]] }).length == 1
 
 #guard (instances { ctx with definitions := defs } (rule [] [app `f [.query `localOut]])
-  { applications := [app `f [a]] }).length == 1
+  { applications := [app `f [a]] }).map (·.claims) ==
+  [[app `f [a]]]
 #guard normalize [(.bound 0, a), (.literal "1", b)] (.bound 0) == .bound 0
 #guard normalize [(.bound 0, a), (.literal "1", b)] (.literal "1") == .literal "1"
 #guard (matchApplications ctx swap { applications := [app `f [a, b], app `f [b, a], app `f [a, b]] }).length == 2
@@ -154,7 +156,13 @@ private def capture := rule [(`x, .int), (`y, .int)]
 private def aliasBoolCtx : Context := { boolCtx with
   definitions := [(.query `yes, .literal "true")]
   listed := fun ty => if ty == .bool then some [.query `yes] else none }
-#guard (instances aliasBoolCtx listed { applications := [app `f [a]] }).length == 1
+#guard (instances aliasBoolCtx listed { applications := [app `f [a]] }).map (·.claims) ==
+  [[app `f [a], .literal "true"]]
+
+-- Call witnesses use the same alias environment as the function anchors.
+#guard (instances { callCtx with definitions := defs } withCall
+  { applications := [app `f [a]], calls := [app `p [.query `localOut, b]] }).map (·.calls) ==
+  [[app `p [a, b]]]
 
 -- The domain and the relations of calls are part of the whole returned
 -- sentence. An unlisted parameter used only in the domain stays quantified.

@@ -1,4 +1,5 @@
 -- keep-sorted start
+import FrenCore.Definitions
 import FrenCore.Ty
 -- keep-sorted end
 
@@ -48,7 +49,19 @@ inductive TheoryTerm where
   | app (function argument : TheoryTerm)
   | all (type : Ty) (body : TheoryTerm)
   | ex (type : Ty) (body : TheoryTerm)
-  deriving Inhabited, BEq
+  deriving Inhabited, BEq, DecidableEq, ReflBEq, LawfulBEq
+
+/-- Visit references in the shared theory syntax. Applied item heads are
+opaque; query aliases and unapplied item constants can be expanded. -/
+def TheoryTerm.expandDefinitions (lookup : TheoryTerm → TheoryTerm → TheoryTerm) : TheoryTerm → TheoryTerm
+  | .app (.item n) a => .app (.item n) (a.expandDefinitions lookup)
+  | .app f a => .app (f.expandDefinitions lookup) (a.expandDefinitions lookup)
+  | .all ty b => .all ty (b.expandDefinitions lookup)
+  | .ex ty b => .ex ty (b.expandDefinitions lookup)
+  | t@(.query _) | t@(.item _) => lookup t t
+  | t => t
+
+instance : DefinitionSyntax TheoryTerm TheoryTerm := ⟨TheoryTerm.expandDefinitions⟩
 
 /-- A type and item map supplied by a resolved morphism. Images belong to the
 target signature: translation does not translate them again. Mapping types

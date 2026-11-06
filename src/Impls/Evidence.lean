@@ -132,7 +132,7 @@ tested lang::theory_translation: "src/FrenTest/Theories.lean"
 tested lang::theory_instance: "src/FrenTest/Theories.lean"
 
 -- Structural matching equations are proved for every input; these tests
--- exercise their composition before front-end integration in unit 10.
+-- exercise their composition before front-end integration under #758.
 tested lang::ground_match_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_parameter_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_extension_step: "src/FrenTest/GroundMatching.lean"
@@ -145,6 +145,9 @@ tested lang::ground_join_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_listed_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_sentence_lists_step: "src/FrenTest/GroundMatching.lean"
 tested lang::ground_rule_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_preparation_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_instance_list_step: "src/FrenTest/GroundMatching.lean"
+tested lang::ground_instances_step: "src/FrenTest/GroundMatching.lean"
 
 -- Implementations, dispatch and what each check rests on
 -- (`Reqs/Lang/Implementations`), and the verdicts of today's forms under
