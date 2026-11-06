@@ -1,0 +1,23 @@
+set_option fren.evidence "enumerated"
+set_option fren.enumeration.size 1
+
+pub struct Pair<A, B> { first: A, second: B }
+
+proc copy(value: Option<Pair<Rel<Option<Int>, Option<Int>>, Rel<Option<Int>, Option<Int>>>>): (
+    result: Option<Pair<Rel<Option<Int>, Option<Int>>, Rel<Option<Int>, Option<Int>>>>,
+) {
+    out result := value
+    expect same: result = value
+}
+
+pub enum Nest { End, More(Nest) }
+
+pub fn select(
+    t: Nest,
+    flag?
+): Option<Pair<Rel<Option<Int>, Option<Int>>, Rel<Option<Int>, Option<Int>>>> := match t {
+    Nest::End => Option::None,
+    Nest::More(rest) => if flag? then select(rest, flag?) else Option::None,
+}
+
+proc conditional() { expect none: select(Nest::More(Nest::End), true) = Option::None }

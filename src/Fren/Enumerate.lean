@@ -712,6 +712,9 @@ structure PartialEnv where
   recursiveInfos : Array DefinedInfo := #[]
   scrutinees : Array (Expr × Expr) := #[]
   recursiveCall? : Option (Expr → Expr → MetaM (Option Expr)) := none
+  /-- Completed depth families, by type instance and strictness. Captured
+  locals must still be in scope before an entry can be reused. -/
+  recursiveCache? : Option (IO.Ref (Array (RecInstance × Bool × Expr))) := none
 
 /-- Whether native evaluation would enter a structural recursion. -/
 def PartialEnv.hasRecursion (env : PartialEnv) (e : Expr) : Bool :=
@@ -830,6 +833,12 @@ def quantifyGuarded (env : PartialEnv) (universal : Bool) (x body fn : Expr) : M
       return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyNatRange #[lo, hi, toExpr universal, fn]))
     return some (← env.wrap #[lower, upper] (← mkAppM ``Enum.quantifyIntRange #[lo, hi, toExpr universal, fn]))
   | .unbounded => return none
+
+/-- A value comparison's dictionary may repeat its fields' dictionaries.
+Its size is bounded by enumeration's admitted type-work budget rather than
+Lean's small default for source-level instance search. -/
+def valueComparison (name : Name) (args : Array Expr) : MetaM Expr :=
+  withOptions (synthInstance.maxSize.set · maxTypeNodes) (mkAppM name args)
 
 mutual
 /-- The truth of the proposition `p`, an `Option Bool`, `none` where it is
@@ -982,7 +991,7 @@ partial def partialValueAt (domain : PartialEnv) (e : Expr) : MetaM Expr := do
   let thunk (value : Expr) := withLocalDeclD `_ (mkConst ``Unit) fun u => mkLambdaFVars #[u] value
   if e.isAppOfArity ``ite 5 then
     let args := e.getAppArgs
-    return ← mkAppM ``Enum.iteValue
+    return ← valueComparison ``Enum.iteValue
       #[← partialDecide domain args[1]!, ← thunk (← partialValue domain args[3]!), ← thunk (← partialValue domain args[4]!)]
   liftArgs domain e fun x => do
     if let some call := domain.recursiveCall? then
@@ -1071,6 +1080,12 @@ partial def boundedRecursiveCall (domain : PartialEnv) (prepare : Expr → MetaM
   let some d := domain.recursiveInfos.find? fun d => e.isAppOf d.decl || d.solver?.any e.isAppOf
     | return none
   let (inst, args) := evaluationInstance d e
+  if let some cache := domain.recursiveCache? then
+    let lctx ← getLCtx
+    for (key, strict, family) in ← cache.get do
+      if RecInstance.same key (d.decl, inst.2) && strict == domain.known?.isSome &&
+          (family.find? fun x => x.isFVar && !lctx.contains x.fvarId!).isNone then
+        return some (mkAppN (mkApp family remaining) args)
   let some body := d.recBody? | throwError "a structural recursion has no body"
   let body ← prepare (d.atRecInstance inst.2 body)
   lambdaTelescope body fun params result => do
@@ -1092,6 +1107,11 @@ partial def boundedRecursiveCall (domain : PartialEnv) (prepare : Expr → MetaM
         let fn ← mkLambdaFVars params value
         mkLambdaFVars #[depth, previous] fn
     let family ← mkAppM ``Core.Enumeration.depthFamily #[zero, step]
+    -- Keep repeated dependencies as named functions, so checking the next
+    -- caller does not traverse another copy of every dependency's code.
+    let family ← mkAuxDefinitionFor (← freshDeclName (domain.base ++ `_recursive)) family
+    if let some cache := domain.recursiveCache? then
+      cache.modify (·.push ((d.decl, inst.2), domain.known?.isSome, family))
     return some (mkAppN (mkApp family remaining) args)
 
 
@@ -1352,10 +1372,12 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
         domainError.set (some (notEnumerableMsg subject (notEnumerableWhy none why)))
         return (#[], false)
     let compileWork ← IO.mkRef maxEvalNodes
+    let recursiveCache ← IO.mkRef #[]
     let domain : PartialEnv := {
       values := domainValues
       base := c.decl ++ `_enum_domain
-      compileWork? := some compileWork }
+      compileWork? := some compileWork
+      recursiveCache? := some recursiveCache }
     -- The same, with every index out of range unknown, as `knownOf` has
     -- it of what has no quantifier.
     let strictDomain : PartialEnv := { domain with known? := some (knownOf decideOf) }
@@ -1404,7 +1426,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
         mkLambdaFVars #[tables, e₁, e₂] (← if ← isProp a then do
             mkAppM ``Enum.iffLazy #[← partialDecide da a,
               ← withLocalDeclD `_ (mkConst ``Unit) fun u => do mkLambdaFVars #[u] (← partialDecide db b)]
-          else mkAppM ``Enum.sameValue #[← partialValue da a, ← partialValue db b])
+          else valueComparison ``Enum.sameValue #[← partialValue da a, ← partialValue db b])
     if let some msg ← domainError.get then return .error msg
     -- Only syntactically unconditional `some` callbacks certify totality;
     -- a depth check, lookup or recursive call keeps the partial backend.

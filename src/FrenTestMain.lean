@@ -3767,7 +3767,8 @@ unsafe def evalLimitChecks : IO (Array String) := do
     (FrenTest.FuzzFrontends.mainFiles ["test/fixtures/resource_expression_depth.fren",
       "test/fixtures/resource_recursive_depth.fren", "test/fixtures/resource_recursive_shared.fren",
       "test/fixtures/resource_recursive_boundary.fren", "test/fixtures/resource_recursive_body_boundary.fren",
-      "test/fixtures/resource_recursive_refusal.fren"] ".lake/eval-limits")
+      "test/fixtures/resource_recursive_refusal.fren", "test/fixtures/resource_recursive_dependencies.fren",
+      "test/fixtures/resource_nested_equality.fren"] ".lake/eval-limits")
   let paired := if pairedCode == 0 then #[] else #[s!"resource limits differ between front ends:\n{pairedOutput}"]
   return failures ++ diagnostics ++ unknowns ++ boundaryFailures ++ bodyBoundaryFailures ++ paired
 

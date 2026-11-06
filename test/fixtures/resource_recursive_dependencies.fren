@@ -1,0 +1,72 @@
+set_option fren.evidence "enumerated"
+set_option fren.enumeration.size 1
+set_option fren.lint.nonminimal_bool "allow"
+
+pub enum T { Z, S(T) }
+
+pub fn layer0(t: T): Int := match t {
+    T::Z => 0,
+    T::S(rest) => layer0(rest),
+}
+
+pub fn layer1(t: T): Int := match t {
+    T::Z => layer0(t) + layer0(t),
+    T::S(rest) => layer1(rest),
+}
+
+pub fn layer2(t: T): Int := match t {
+    T::Z => layer1(t) + layer1(t),
+    T::S(rest) => layer2(rest),
+}
+
+pub fn layer3(t: T): Int := match t {
+    T::Z => layer2(t) + layer2(t),
+    T::S(rest) => layer3(rest),
+}
+
+pub fn layer4(t: T): Int := match t {
+    T::Z => layer3(t) + layer3(t),
+    T::S(rest) => layer4(rest),
+}
+
+pub fn layer5(t: T): Int := match t {
+    T::Z => layer4(t) + layer4(t),
+    T::S(rest) => layer5(rest),
+}
+
+pub fn layer6(t: T): Int := match t {
+    T::Z => layer5(t) + layer5(t),
+    T::S(rest) => layer6(rest),
+}
+
+pub fn layer7(t: T): Int := match t {
+    T::Z => layer6(t) + layer6(t),
+    T::S(rest) => layer7(rest),
+}
+
+pub fn layer8(t: T): Int := match t {
+    T::Z => layer7(t) + layer7(t),
+    T::S(rest) => layer8(rest),
+}
+
+pub fn layer9(t: T): Int := match t {
+    T::Z => layer8(t) + layer8(t),
+    T::S(rest) => layer9(rest),
+}
+
+pub fn layer10(t: T): Int := match t {
+    T::Z => layer9(t) + layer9(t),
+    T::S(rest) => layer10(rest),
+}
+
+pub fn layer11(t: T): Int := match t {
+    T::Z => layer10(t) + layer10(t),
+    T::S(rest) => layer11(rest),
+}
+
+pub fn layer12(t: T): Int := match t {
+    T::Z => layer11(t) + layer11(t),
+    T::S(rest) => layer12(rest),
+}
+
+proc shared_dependencies() { expect zero: layer12(T::Z) = 0 }

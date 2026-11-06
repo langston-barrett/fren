@@ -631,7 +631,7 @@ impl newtype_operator: lang::newtype_operator for (op : Fren.Core.NewtypeOp) (u 
     intro t; cases t <;> simp [isNewtype]
   simp only [fren_spec]
   cases op <;> simp only [toNewtypeOp, Fren.Core.newtypeOpAccepted, newtypeOpAccepted_add, newtypeOpAccepted_sub,
-    reduceCtorEq, ite_true, ite_false, decide_eq_true_eq]
+    reduceCtorEq, ite_true, ite_false]
   case add =>
     rw [exists_base hR hN (fun b => kindOf b ∈ ({lang.ValueType.IntTy, lang.ValueType.NatTy} : FinSet _)) u hw]
     cases baseOf u <;> simp [kindOf]

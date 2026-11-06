@@ -26,7 +26,7 @@ impl ordered_type: lang::ordered_type for (pt : Fren.Core.PTy) (os : List Lean.N
   ordered? := pt.ordered (fun x => decide (x ∈ os)),
 } by
   intro pt os _
-  simp [fren_spec, Fren.Core.PTy.ordered, ordered_iff]
+  simp [fren_spec, Fren.Core.PTy.ordered, ordered_iff, or_assoc]
 
 def toDeclaration : Fren.Core.OrderedDecl → lang.Declaration
   | .enumeration => .Enumeration
@@ -107,7 +107,7 @@ impl ordered_declaration: lang::ordered_declaration
         simp only [Fren.Core.PTy.ordered]
         cases hc : pts[k.toNat].ty.ordered (fun x => decide (x ∈ os))
         · rfl
-        · exact absurd (this.1 hc) (by simpa using hno))
+        · exact absurd (this.1 hc) (by simpa [and_assoc] using hno))
     simp only [hi, posOr]
     omega
   · cases hf : Fren.Core.PTy.firstUnordered? (fun x => decide (x ∈ os)) pts <;>
