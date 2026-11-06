@@ -610,6 +610,146 @@ class FixTests(unittest.TestCase):
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_failure_summary_falls_back_to_json_errors_before_stderr_warnings(self):
+        import json
+        token = "private-secret-0123456789-abcdefghijklmnopqrstuvwxyz"
+        events = [None, {"type": "item.completed", "message": "untrusted model text"},
+                  {"type": "error", "message": f"::error::Unsupported effort {token}"},
+                  {"type": "turn.failed", "error": {"message": "Please sign in again."}}]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "stderr.log").write_text("warning: progress only")
+            (root / "log.jsonl").write_text(
+                "not json\n" + "[" * 2000 + "0" + "]" * 2000 + "\n" +
+                "\n".join(json.dumps(e) for e in events))
+            output = io.StringIO()
+            with redirect_stderr(output):
+                agent_run.failure_summary(root, [token], 1)
+            summary = output.getvalue()
+            self.assertIn("Unsupported effort", summary)
+            self.assertIn("codex: Please sign in again.", summary)
+            self.assertNotIn("untrusted model text", summary)
+            self.assertNotIn("warning: progress", summary)
+            self.assertFalse(collect_outputs.checker.leaks(summary, [token]))
+            assert_inert(self, summary)
+            (root / "stderr.log").write_text("Error: stderr takes precedence")
+            output = io.StringIO()
+            with redirect_stderr(output):
+                agent_run.failure_summary(root, [token], 1)
+            self.assertIn("stderr: Error: stderr takes precedence", output.getvalue())
+            self.assertNotIn("Unsupported effort", output.getvalue())
+
+    def test_failed_run_reports_after_teardown_with_refreshed_credentials(self):
+        import json
+        old = "original-secret-0123456789-abcdefghijklmnopqrstuvwxyz"
+        refreshed = "refreshed-secret-9876543210-abcdefghijklmnopqrstuvwxyz"
+        removed = []
+        with tempfile.TemporaryDirectory() as temp, cwd(temp):
+            root = Path(temp)
+            (root / "agent").mkdir()
+            (root / "agent/prompt.md").write_text("prompt")
+            env = {"CODEX_AUTH_JSON": json.dumps({"OPENAI_API_KEY": old}),
+                   "RUNNER_TEMP": temp, "CODEX_CONTAINER": "codex-test",
+                   "MODEL": "gpt-6-luna", "EFFORT": "low", "BASE": SHA}
+
+            def sandbox(args, **kwargs):
+                (Path(args[5]) / "auth.json").write_text(
+                    json.dumps({"tokens": {"refresh_token": refreshed}}))
+                kwargs["stderr"].write(f"Error: {old} {refreshed}\n".encode())
+                return subprocess.CompletedProcess(args, 1)
+
+            real_summary = agent_run.failure_summary
+
+            def summary(*args):
+                self.assertEqual(removed, ["codex-test"])
+                self.assertIn(old, args[1])
+                self.assertIn(refreshed, args[1])
+                real_summary(*args)
+
+            output = io.StringIO()
+            with patch.dict(os.environ, env), patch.object(agent_run.signal, "signal"), \
+                    patch.object(subprocess, "run", side_effect=sandbox), \
+                    patch.object(agent_run, "remove", side_effect=removed.append), \
+                    patch.object(agent_run, "failure_summary", side_effect=summary), \
+                    redirect_stderr(output):
+                self.assertEqual(agent_run.main(), 1)
+            self.assertIn("sandbox exited 1", output.getvalue())
+            self.assertIn("stderr: Error:", output.getvalue())
+            self.assertFalse(collect_outputs.checker.leaks(output.getvalue(), [old, refreshed]))
+            self.assertFalse((root / "agent").exists())
+
+    def test_failure_summary_redacts_tokens_and_neutralizes_controls(self):
+        token = "known-secret-0123456789-abcdefghijklmnopqrstuvwxyz"
+        unknown = "unknown-token-9876543210-abcdefghijklmnopqrstuvwxyz"
+        encoded = base64.b64encode(token.encode()).decode()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "stderr.log").write_text(
+                "ordinary progress\n"
+                f"\x1b[31mERROR: access_token expired: {token}\x1b[0m\n"
+                f"::error::authentication failed: {unknown} Bearer short-value\n"
+                f"##[error]encoded credential {encoded} @claude\n"
+                "Error: fourth error must be omitted\n")
+            output = io.StringIO()
+            with redirect_stderr(output):
+                agent_run.failure_summary(root, [token], 1)
+        summary = output.getvalue()
+        self.assertIn("sandbox exited 1", summary)
+        self.assertIn("ERROR: access_token expired", summary)
+        self.assertEqual(summary.count("stderr:"), 3)
+        self.assertNotIn("ordinary progress", summary)
+        self.assertNotIn("fourth error", summary)
+        self.assertNotIn("short-value", summary)
+        self.assertNotIn("\x1b", summary)
+        self.assertNotIn(unknown, summary)
+        self.assertFalse(collect_outputs.checker.leaks(summary, [token]))
+        assert_inert(self, summary)
+
+    def test_failure_summary_withholds_separated_encoded_credentials(self):
+        token = "private-value-0123456789-abcdefghijklmnopqrstuvwxyz"
+        encoded = " ".join(token.encode().hex())
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "stderr.log").write_text(f"Error: {encoded}")
+            output = io.StringIO()
+            with redirect_stderr(output):
+                agent_run.failure_summary(root, [token], 1)
+        self.assertIn("redacted credential-bearing line", output.getvalue())
+        self.assertFalse(collect_outputs.checker.leaks(output.getvalue(), [token]))
+
+    def test_failure_summary_redacts_short_known_and_token_prefixed_values(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "stderr.log").write_text("Error: short-secret sk-fake ghp_fake github_pat_fake")
+            output = io.StringIO()
+            with redirect_stderr(output):
+                agent_run.failure_summary(root, ["short-secret"], 1)
+        for value in ("short-secret", "sk-fake", "ghp_fake", "github_pat_fake"):
+            self.assertNotIn(value, output.getvalue())
+
+    def test_failure_summary_is_bounded_and_rejects_nonregular_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / "stderr.log"
+            output = io.StringIO()
+            path.write_text("bad " * 10000)
+            with redirect_stderr(output):
+                agent_run.failure_summary(root, [], 1)
+            self.assertLess(len(output.getvalue()), 500)
+            self.assertIn("stderr: bad", output.getvalue())
+            path.unlink()
+            (root / "private").write_text("private contents")
+            path.symlink_to(root / "private")
+            output = io.StringIO()
+            with redirect_stderr(output):
+                agent_run.failure_summary(root, [], 1)
+            self.assertIn("stderr unavailable", output.getvalue())
+            self.assertNotIn("private contents", output.getvalue())
+            path.unlink()
+            os.mkfifo(path)
+            with redirect_stderr(io.StringIO()):
+                agent_run.failure_summary(root, [], 1)
+
     def test_host_collector_waits_for_teardown_and_never_uploads_auth(self):
         import json
         from types import SimpleNamespace
@@ -670,6 +810,47 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual((destination / "pr-body.md").read_text(), "Safe explanation")
             self.assertEqual((destination / "change.patch").read_bytes(), b"\0a safe binary patch")
             self.assertFalse((destination / "last.md").exists())
+
+    def test_auth_structure_does_not_withhold_authentication_errors(self):
+        import json
+        auth = json.dumps({"auth_mode": "chatgpt", "OPENAI_API_KEY": None,
+                           "tokens": {"access_token": "private-0123456789-abcdefghijklmnopqrstuvwxyz",
+                                      "refresh_token": "refresh-0123456789-abcdefghijklmnopqrstuvwxyz"}},
+                          indent=2)
+        creds = collect_outputs.secrets(auth)
+        with tempfile.TemporaryDirectory() as temp:
+            source, destination = Path(temp) / "source", Path(temp) / "safe"
+            source.mkdir()
+            error = "ERROR: auth mode chatgpt, OPENAI_API_KEY=null"
+            self.assertTrue(collect_outputs.checker.leaks(error, [auth]))
+            (source / "stderr.log").write_text(error)
+            (source / "last.md").write_text(auth)
+            (source / "log.jsonl").write_bytes(base64.b64encode(auth.encode()))
+            withheld = collect_outputs.collect(source, destination, creds)
+            self.assertEqual(set(withheld), {"last.md", "log.jsonl"})
+            self.assertEqual((destination / "stderr.log").read_text(), error)
+
+    def test_opaque_auth_values_and_nested_account_ids_are_still_withheld(self):
+        import json
+        account = "12345678-9abc-def0-1234-56789abcdef0"
+        opaque = "arbitrary-0123456789-abcdefghijklmnopqrstuvwxyz"
+        auth = json.dumps({"auth_mode": "chatgpt", "last_refresh": "2026-11-05T22:26:50Z",
+                           "tokens": {"account_id": account}, "other": {"identity": [opaque]}})
+        creds = collect_outputs.secrets(auth)
+        self.assertIn(account, creds)
+        self.assertIn(opaque, creds)
+        self.assertNotIn("chatgpt", creds)
+        self.assertNotIn("2026-11-05T22:26:50Z", creds)
+        with tempfile.TemporaryDirectory() as temp:
+            source, destination = Path(temp) / "source", Path(temp) / "safe"
+            source.mkdir()
+            (source / "last.md").write_text(account)
+            (source / "comment.md").write_bytes(base64.b64encode(account.encode()))
+            (source / "log.jsonl").write_text(opaque.encode().hex())
+            (source / "stderr.log").write_text("Error: auth_mode=chatgpt needs sign-in")
+            withheld = collect_outputs.collect(source, destination, creds)
+            self.assertEqual(set(withheld), {"last.md", "comment.md", "log.jsonl"})
+            self.assertTrue((destination / "stderr.log").exists())
 
     def test_symlink_fifo_and_symlink_parent_are_not_read(self):
         with tempfile.TemporaryDirectory() as temp:
