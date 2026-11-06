@@ -4340,25 +4340,33 @@ private def errAt (line : Nat) (code : String := "F0304") : Diagnostic :=
   not know the meaning of a formula of `fz::c0`" }] == #[3]
 end
 
-/-- A shared internal error or solver error still fails the cardinality
-regressions; an undecided check due only to a time limit does not. -/
+/-- A shared internal error or non-timeout undecided check still fails
+the cardinality regressions. Only an explicit solver timeout is excused. -/
 def setCardProblem? (d : Diagnostic) : Option String :=
   let h := headOf d
+  let timedOut := !d.text.contains "solver error" &&
+    (h.endsWith ": the solver returned unknown (TIMEOUT)" || h.endsWith ": TIMEOUT")
   if h.startsWith "internal error:" ||
-      (h.startsWith "could not decide" && !FrenTest.Frontends.isUndecided d) then some h else none
+      (h.startsWith "could not decide" && !timedOut) then some h else none
 
 def setCardProblems (ran : Ran) : Array String :=
   (ran.cli ++ ran.hosted).filterMap setCardProblem?
 
 section
 private def cardUndecided (code? : Option String) (why : String) : Diagnostic :=
-  { line := 1, severity := "error", code?, text := "could not decide whether `p::g` follows\n" ++ why }
+  { line := 1, severity := "error", code?, text := "could not decide whether `p::g` follows: " ++ why }
 -- Both readers' ordinary timeouts stay eligible for the time-limit filter.
-#guard (setCardProblem? (cardUndecided (some "F0608") "time limit")).isNone
-#guard (setCardProblem? (cardUndecided none "time limit")).isNone
+#guard (setCardProblem? (cardUndecided (some "F0608") "the solver returned unknown (TIMEOUT)")).isNone
+#guard (setCardProblem? (cardUndecided none "TIMEOUT")).isNone
+-- Agreement on a non-timeout unknown is still a cardinality regression.
+#guard ([some "F0608", none].all fun code? =>
+  ["INCOMPLETE", "RESOURCEOUT", "the solver returned unknown (INCOMPLETE)",
+    "the solver returned unknown (RESOURCEOUT)", "undecided\nnote: TIMEOUT"].all fun why =>
+    (setCardProblem? (cardUndecided code? why)).isSome)
 -- #820 was a solver error, not a timeout, even when both readers agreed.
 #guard (setCardProblem? (cardUndecided (some "F0608") "solver error: No more values for type E")).isSome
 #guard (setCardProblem? (cardUndecided none "solver error: No more values for type E")).isSome
+#guard (setCardProblem? (cardUndecided none "solver error: TIMEOUT")).isSome
 #guard (setCardProblem? { line := 1, severity := "error", text := "internal error: refuted model" }).isSome
 end
 
