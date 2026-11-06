@@ -661,7 +661,7 @@ have accepted the files after it only in part, and lowering assumes that
 it accepted them, so they are not lowered. -/
 def elaborateReading (paths srcs : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
     (evidence? : Option Fren.Core.Evidence := none) (resolved := false) :
-    IO (Array (String × Array Char) × State × IO (Option (Except String Eval.Spec))) := do
+    IO (Array (String × Array Char) × State × IO (Option (Except Eval.ReadError Eval.Spec))) := do
   let parses : Array (IO.Promise (Array Char × Array (Nat × Msg) × Parsed)) ← paths.mapM fun _ => IO.Promise.new
   let parsing ← IO.asTask (prio := .dedicated) do
     for path in paths, src in srcs, p in parses do
@@ -670,12 +670,12 @@ def elaborateReading (paths srcs : Array String) (lints : Array (Fren.Core.LintT
   -- Each file's parse and type arguments, or `none` once a file has an error.
   let toLower : Array (IO.Promise (Option (Parsed × Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)))) ←
     paths.mapM fun _ => IO.Promise.new
-  let reading : IO.Promise (Option (Except String Eval.Spec)) ← IO.Promise.new
+  let reading : IO.Promise (Option (Except Eval.ReadError Eval.Spec)) ← IO.Promise.new
   let lowering ← IO.asTask (prio := .dedicated) do
     let mut st? := Eval.preludeState
     for p in toLower do
       let some (parsed, callTargs) := p.result!.get | reading.resolve none; return
-      st? := do Eval.lowerFrom (← st?) #[← parsedItems parsed] callTargs
+      st? := do Eval.lowerFrom (← st?) #[← (parsedItems parsed).mapError Eval.ReadError.invalid] callTargs
     reading.resolve (some ((·.spec.keepCompiledRecs) <$> st?))
   let mut files := #[]
   let mut st := initialState lints evidence? resolved
@@ -688,7 +688,7 @@ def elaborateReading (paths srcs : Array String) (lints : Array (Fren.Core.LintT
     stopped := stopped || st.diags.any (·.severity == .error)
     q.resolve (if stopped then none else some (parsed, st.callTargs))
   let _ ← IO.wait parsing
-  let wait : IO (Option (Except String Eval.Spec)) := do
+  let wait : IO (Option (Except Eval.ReadError Eval.Spec)) := do
     let _ ← IO.wait lowering
     return reading.result!.get
   return (files, ← checkClaims st, wait)
@@ -757,8 +757,8 @@ the action reads the spec itself. `resolved` collects surface annotations
 in either path. -/
 def loadReading (p : Paint) (paths : Array String) (lints : Array (Fren.Core.LintTarget × Fren.Core.LintLevel))
     (evidence? : Option Fren.Core.Evidence) (jobs : Nat) (resolved := false) :
-    IO (Option (Array (String × Array Char) × State × IO (Except String Eval.Spec))) := do
-  let sequential (files : Array (String × Array Char)) (st : State) : IO (Except String Eval.Spec) :=
+    IO (Option (Array (String × Array Char) × State × IO (Except Eval.ReadError Eval.Spec))) := do
+  let sequential (files : Array (String × Array Char)) (st : State) : IO (Except Eval.ReadError Eval.Spec) :=
     IO.lazyPure fun _ => specOf files st.callTargs
   if jobs ≤ 1 then
     return (← load p paths lints evidence? resolved).map fun (files, st) => (files, st, sequential files st)
@@ -919,7 +919,7 @@ def testComp (args : Args) (files : Array (String × Array Char)) (sp : Eval.Spe
 
 /-- The SMT-LIB symbols of the evaluator's spec (`Symbols.of`), for
 confirming models (`solveComp`); none if it has none. -/
-def symbolsOf (spec? : Except String Eval.Spec) : Symbols :=
+def symbolsOf (spec? : Except Eval.ReadError Eval.Spec) : Symbols :=
   match spec? with
   | .ok sp => Symbols.of sp
   | .error _ => {}
@@ -933,7 +933,7 @@ of it, such as the prelude of its queries, built once for all the items
 rather than for each (`State.forSolving`). `sy` is `symbolsOf spec?`,
 built once for the spec, and `cache` holds the answers to the queries
 asked before (`QueryCache`). -/
-partial def solveComp (sv : Solving) (spec? : Except String Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
+partial def solveComp (sv : Solving) (spec? : Except Eval.ReadError Eval.Spec) (sy : Symbols) (c : CComp) (global : Bool)
     (kinds : Array Fren.Core.CheckKind)
     (limits : Limits) (cache : QueryCache) (dump? : Option (String → IO Unit) := none) (body : Bool := false)
     (examples : Option Nat := some 1) (instances : Bool := true)
@@ -1156,8 +1156,39 @@ def inParallel [Nonempty β] (jobs : Nat) (xs : Array α) (s : σ) (copy? : Opti
 runs it (`inParallel`). Not inlined, so that the compiler cannot share
 it with the caller's own reading of the same files. -/
 @[noinline] def ownSpecOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    IO (Except String Eval.Spec) :=
+    IO (Except Eval.ReadError Eval.Spec) :=
   IO.lazyPure fun _ => specOf files callTargs
+
+/-- All commands report a reading resource limit at its source item and
+exit 2. Other failures retain the command's existing internal-error code. -/
+def reportReadFailure (paint : Paint) (files : Array (String × Array Char)) (error : Eval.ReadError)
+    (invalidExit : UInt32 := 1) (notes : Array String := #[]) : IO UInt32 := do
+  match error with
+  | .expansionLimit site? =>
+    let site := site?.getD default
+    let msg : Msg := {
+      code? := none,
+      headline := s!"{Fren.Core.expansionLimitHeadline} while reading `{Fren.Core.showPath site.path}`",
+      label? := some s!"more than {Fren.Core.maxExpansionNodes} expansion visits",
+      notes := notes ++ #[s!"note: copying and measuring retained expressions each allow {Fren.Core.maxExpansionNodes} visits per source item",
+        s!"note: each pattern substitution has a size limit of {Fren.Core.maxExpansionNodes} expression occurrences",
+        "help: simplify this item's definitions or split it into smaller items"] }
+    printDiag paint files { file := site.file, span := site.span, msg }
+    return exitCode false none
+  | .invalid message =>
+    printDiag paint files {
+      file := 0
+      span := default
+      msg := Msg.internal s!"the evaluator cannot read the spec: {message}" }
+    return invalidExit
+
+/-- A mutant-only resource failure stops mutation testing without a
+summary. Name the mutant and render the reading's span against its source,
+which may have different offsets and lines from the original file. -/
+def reportMutantReadFailure (paint : Paint) (files : Array (String × Array Char))
+    (mutant : Mutate.Mutant) (chars : Array Char) (error : Eval.ReadError) : IO UInt32 :=
+  reportReadFailure paint (files.set! mutant.file (files[mutant.file]!.1, chars)) error
+    (notes := #[s!"note: on the mutant `{mutant.id}`"])
 
 /-- The report of `--timings` (`Reqs/Cli#timings`): for each procedure
 and global expectation, with its total time, the time of its solver's
@@ -1215,6 +1246,10 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- that makes it reads some of what `st` reaches (`elaborateReading`).
   let forSolving ← IO.lazyPure fun _ => st.forSolving
   let read ← reading
+  -- Stop before constructing or solving queries: model confirmation needs
+  -- this reading, and more solver work cannot repair an expansion limit.
+  if let .error e := read then
+    if e.stopsCommand then return ← reportReadFailure args.paint files e
   let sv ← shared args forSolving
   let prelude := sv.prelude
   -- A query asked again, as some checks of a procedure share one, is
@@ -1247,7 +1282,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- checks set to testing; reported below, in order
   -- (`Reqs/Cli#parallel-checking`). Only this thread prints, so that the
   -- output is the same as one at a time.
-  let solve := fun (spec? : Except String Eval.Spec)
+  let solve := fun (spec? : Except Eval.ReadError Eval.Spec)
       ((c, global, kinds, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × String) => do
     let n ← IO.mkRef 0
     let dumped ← IO.mkRef ""
@@ -1419,8 +1454,7 @@ def quickcheck (args : Args) : IO UInt32 := do
   let sp ← match ← shared args (← reading) with
     | .ok sp => pure sp
     | .error e =>
-      printDiag args.paint files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
-      return exitCode true (some .error)
+      return ← reportReadFailure args.paint files e
   let mut all := #[]
   let mut shown := st.diags.map (·.msg)
   let mut sevs := st.diags.map (·.severity)
@@ -1465,8 +1499,7 @@ def evalCmd (args : Args) : IO UInt32 := do
   let lst ← match specStateOf files st.callTargs with
     | .ok s => pure s
     | .error e =>
-      printDiag args.paint files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
-      return 2
+      return ← reportReadFailure args.paint files e (invalidExit := 2)
   let sp := lst.spec
   let path := (compText.splitOn "::").foldl Lean.Name.mkStr .anonymous
   let some c := sp.comp? path
@@ -1881,20 +1914,20 @@ def itemsOf (parsed : Array Parsed) : Except String (Array (Array Item)) :=
 (`Eval.lowerFrom`), and after the last; past a file that does not parse,
 an error that no mutant reads (`mutantSpec`). -/
 def lowerPrefixes (parsed : Array Parsed) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    Array (Except String Eval.LState) := Id.run do
-  let mut out : Array (Except String Eval.LState) := #[Eval.preludeState]
+    Array (Except Eval.ReadError Eval.LState) := Id.run do
+  let mut out : Array (Except Eval.ReadError Eval.LState) := #[Eval.preludeState]
   for p in parsed do
     out := out.push <| match out.back!, p with
       | .ok st, .ok (_, items, _) => Eval.lowerFrom st #[items] callTargs
       | .error e, _ => .error e
-      | .ok _, .error (_, msg) => .error msg.headline
+      | .ok _, .error (_, msg) => .error (.invalid msg.headline)
   return out
 
 /-- `specOf` of the files, whose parses are `parsed`, from their
 `lowerPrefixes`: an error if some file does not parse, as `specStateOf`
 reads them (`itemsOf`), else the state after the last file. -/
-def specOfParsed (parsed : Array Parsed) (prefixes : Array (Except String Eval.LState)) : Except String Eval.Spec := do
-  let _ ← itemsOf parsed
+def specOfParsed (parsed : Array Parsed) (prefixes : Array (Except Eval.ReadError Eval.LState)) : Except Eval.ReadError Eval.Spec := do
+  let _ ← (itemsOf parsed).mapError Eval.ReadError.invalid
   return (← prefixes.back!).spec
 
 /-- `specOf` of the files with the mutant `m` applied, where `parsed'` is
@@ -1902,9 +1935,9 @@ the parse of `m`'s file with `m` applied: the same reading of the files'
 items (`itemsOf`), and lowering from the state before `m`'s file
 (`lowerPrefixes`), which is that of lowering the files before it, all of
 which parse if every file does (`Eval.lowerAll`). -/
-def mutantSpec (parsed : Array Parsed) (prefixes : Array (Except String Eval.LState)) (m : Mutate.Mutant)
-    (parsed' : Parsed) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) : Except String Eval.Spec := do
-  let items ← itemsOf (parsed.set! m.file parsed')
+def mutantSpec (parsed : Array Parsed) (prefixes : Array (Except Eval.ReadError Eval.LState)) (m : Mutate.Mutant)
+    (parsed' : Parsed) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) : Except Eval.ReadError Eval.Spec := do
+  let items ← (itemsOf (parsed.set! m.file parsed')).mapError Eval.ReadError.invalid
   let st ← prefixes[m.file]!
   return (← Eval.lowerFrom st (items.extract m.file) callTargs).spec
 
@@ -1986,7 +2019,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       IO.println s!"{m.id} {path}:{line}:{col} {m.change}"
     return 0
   -- The results of testing `c`, kept by `keep`.
-  let testing (spec? : Except String Eval.Spec) (c : CComp) (global : Bool) (keep : Fren.Core.CheckResult → Bool) :
+  let testing (spec? : Except Eval.ReadError Eval.Spec) (c : CComp) (global : Bool) (keep : Fren.Core.CheckResult → Bool) :
       Array Fren.Core.CheckResult :=
     match spec? with
     | .ok sp => match sp.counterpart? c global with
@@ -2002,7 +2035,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
   let prelude := sv.prelude
   -- As `fren check` checks `c`: with the solver, and the checks set to
   -- testing by testing; with the internal errors, each at its place in `c`.
-  let solve (sv : Solving) (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+  let solve (sv : Solving) (spec? : Except Eval.ReadError Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) := do
     -- A procedure's checks share the symbols of its spec.
     let (rs, refuted, missing?) ← solveComp sv spec? (symbolsOf spec?) t.comp t.global t.kinds args.limits cache (body := t.body)
@@ -2012,14 +2045,15 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
       ((r.prop?.bind fun n => t.comp.props.find? (·.name == n)).map (·.span) |>.getD t.comp.span, msg)
     return (rs ++ tested, missing?.toArray.map (t.comp.span, ·) ++ errors)
   -- As `fren quickcheck` tests `c`.
-  let test (spec? : Except String Eval.Spec) (t : Mutate.Todo) :
+  let test (spec? : Except Eval.ReadError Eval.Spec) (t : Mutate.Todo) :
       IO (Array Fren.Core.CheckResult × Array (Span × Msg)) :=
     -- A body has no checks that testing runs.
     pure (if t.body then #[] else testing spec? t.comp t.global fun _ => true, #[])
   let prefixes := lowerPrefixes parsed st.callTargs
   let spec? := specOfParsed parsed prefixes
   if let .error e := spec? then
-    printDiag p files { file := 0, span := default, msg := Msg.internal s!"the evaluator cannot read the spec: {e}" }
+    if e.stopsCommand then return ← reportReadFailure p files e
+    discard <| reportReadFailure p files e
   -- What each procedure's checks read in the spec. The spec's own results
   -- are computed only for procedures that some mutant changes.
   let preludeText := st.preludeText
@@ -2090,6 +2124,7 @@ def mutate (args : Args) (probe? : Option Probe := none) : IO UInt32 := do
     else
       let spec'? := mutantSpec parsed prefixes m parsed' st'.callTargs
       if let .error e := spec'? then
+        if e.stopsCommand then return ← reportMutantReadFailure p files m chars' e
         report (Msg.internal s!"the evaluator cannot read the mutant `{m.id}`: {e}") .error
       let onMutant (msg : Msg) := report { msg with notes := msg.notes.push s!"note: on the mutant `{m.id}`" } .error
       let preludeText' := st'.preludeText

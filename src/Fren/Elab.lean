@@ -1470,9 +1470,9 @@ def chainBinders (cx : ExprCtx) (c : Syntax) : TermElabM (List String) := do
 /-- The shape of `e`, for what it mentions (`lang::mentions`), where `bs`
 are the binders of `e` around the subexpression, each with the shape of its
 scrutinee. -/
-partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.MentionShape) := #[]) : TermElabM Core.MentionShape := do
-  let parts (k : Core.MentionKind) (es : Array Syntax) : TermElabM Core.MentionShape :=
-    return .node k (← es.toList.mapM (shapeOf cx · bs))
+private partial def shapeOfM (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.MentionShape) := #[]) : StateT (NameMap Core.MentionShape) TermElabM Core.MentionShape := do
+  let parts (k : Core.MentionKind) (es : Array Syntax) : StateT (NameMap Core.MentionShape) TermElabM Core.MentionShape :=
+    return .node k (← es.toList.mapM (shapeOfM cx · bs))
   if let some (recv, _) := methodApp? cx e then
     return ← parts .method (#[(← pathExpr e recv)[0]] ++ e[2].getSepArgs)
   -- A cardinality operator has a fixed meaning, as an operator does.
@@ -1491,28 +1491,28 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     parts .compound (#[e[1]] ++ (← e[3].getSepArgs.mapM fun b =>
       if b[1].isNone then return (← pathExpr b[0] b[0].getId)[0] else pure b[1][1]))
   else if isMatchLike e || e.isOfKind ``Lang.lambdaMatchExpr then
-    let shapes ← (matchScrutinees e).mapM (shapeOf cx · bs)
+    let shapes ← (matchScrutinees e).mapM (shapeOfM cx · bs)
     let arms ← (matchSourceArms e).toList.flatMapM fun arm => do
       let mut new := #[]
       for p in matchPatterns e arm, j in [0:(matchPatterns e arm).size] do
         new := new ++ (← topBinders cx p).map fun b => ((declaredIdent b).1.getId,
           Core.MentionShape.node .binder (shapes[j]?.toList))
-      ((if arm[1].isNone then [] else [arm[1][1]]) ++ [arm[3]]).mapM (shapeOf cx · (bs ++ new))
+      ((if arm[1].isNone then [] else [arm[1][1]]) ++ [arm[3]]).mapM (shapeOfM cx · (bs ++ new))
     return .node .compound (shapes.toList ++ arms)
   else if e.isOfKind ``Lang.isExpr then parts .compound #[e[0]]
   else if e.isOfKind ``Lang.letExpr then
     -- Each name stands for its definition, which sees the earlier names.
     let bs ← e[1].getSepArgs.foldlM (init := bs) fun bs d => do
-      return bs.push ((declaredIdent d[0]).1.getId, .node .definition [← shapeOf cx d[3] bs])
-    return .node .compound [← shapeOf cx e[3] bs]
+      return bs.push ((declaredIdent d[0]).1.getId, .node .definition [(← shapeOfM cx d[3] bs).summary])
+    return .node .compound [← shapeOfM cx e[3] bs]
   else if e.isOfKind ``Lang.quantExpr then
     let new := quantNames e |>.map fun n => (n, Core.MentionShape.leaf .bound)
-    return .node .compound [← shapeOf cx e[3] (bs ++ new)]
+    return .node .compound [← shapeOfM cx e[3] (bs ++ new)]
   -- A closure's parameter varies, as a variable does
   -- (`Reqs/Lang/HigherOrder#arguments`).
   else if e.isOfKind ``Lang.closureExpr then
     let new := closureNames e |>.map fun n => (n, Core.MentionShape.leaf (.variable (n.toString (escape := false))))
-    return .node .compound [← shapeOf cx e[3] (bs ++ new)]
+    return .node .compound [← shapeOfM cx e[3] (bs ++ new)]
   else if e.isOfKind ``Lang.fren_path then
     let segs := pathSegs e
     if segs.size != 1 then return .leaf .constant
@@ -1520,20 +1520,30 @@ partial def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.Mentio
     if let some (_, k) := bs.reverse.find? (·.1 == n.getRoot) then return k
     if let some b := cx.binder? n.getRoot then
       let some sc := b.scrutinee | return .leaf (if b.unbounded then .variable (n.toString (escape := false)) else .bound)
-      return .node .binder [← shapeOf (cx.at b) sc]
+      return .node .binder [← shapeOfM (cx.at b) sc]
     -- Definitions are acyclic, so this ends.
     if let some d := (cx.vars.find? (·.name == n.getRoot)).bind (·.defn?) then
-      return .node .definition [← shapeOf { cx with binders := #[] } d]
+      if let some cached := (← get).find? n.getRoot then return cached
+      let summary := (← shapeOfM { cx with binders := #[] } d).summary
+      let shaped := Core.MentionShape.node .definition [summary]
+      modify fun cache => cache.insert n.getRoot shaped
+      return shaped
     return .leaf (if cx.vars.any (·.name.isPrefixOf n) then .variable (n.toString (escape := false)) else .constant)
   else if e.isAtom || e.isIdent then return .leaf .literal
   -- The names that the pattern tests of a condition, or of the left
   -- operand of `and`, bind, in what sees them (`lang::test_scope`).
   else if let some (c, d, others) := testScoped? e then
     let new ← (chainTests c).flatMapM fun (sc, p) => do
-      let s ← shapeOf cx sc bs
+      let s ← shapeOfM cx sc bs
       return (← topBinders cx p).map fun b => ((declaredIdent b).1.getId, Core.MentionShape.node .binder [s])
-    return .node .compound ([← shapeOf cx c bs, ← shapeOf cx d (bs ++ new)] ++ (← others.toList.mapM (shapeOf cx · bs)))
+    return .node .compound ([← shapeOfM cx c bs, ← shapeOfM cx d (bs ++ new)] ++ (← others.toList.mapM (shapeOfM cx · bs)))
   else parts .compound e.getArgs
+
+/-- Each definition's support is computed once in this lexical context.
+`Core.MentionShape.summary` preserves its mentions while keeping repeated
+local references compact, as in the standalone front end. -/
+def shapeOf (cx : ExprCtx) (e : Syntax) (bs : Array (Name × Core.MentionShape) := #[]) : TermElabM Core.MentionShape :=
+  (shapeOfM cx e bs).run' {}
 
 /-- Whether `e` mentions a variable or an uninterpreted function
 (`lang::mentions`). -/

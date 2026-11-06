@@ -721,12 +721,12 @@ def readItems (chars : Array Char) : Except String (Array Item) :=
 
 /-- The evaluator's reading of files that the elaborator accepted. -/
 def specStateOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    Except String LState := do
-  let items ← files.mapM fun (_, chars) => readItems chars
+    Except ReadError LState := do
+  let items ← ((files.mapM fun (_, chars) => readItems chars) : Except String (Array (Array Item))).mapError ReadError.invalid
   lowerAll items callTargs
 
 def specOf (files : Array (String × Array Char)) (callTargs : Std.HashMap (Nat × Nat) (Array Fren.Core.Ty)) :
-    Except String Spec := (·.spec.keepCompiledRecs) <$> specStateOf files callTargs
+    Except ReadError Spec := (·.spec.keepCompiledRecs) <$> specStateOf files callTargs
 
 /-- The evaluator's procedure for the elaborator's, matched by path, for a
 global expectation by its module and name, or for the body of a function
