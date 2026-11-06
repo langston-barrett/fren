@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Fren.View
+import FrenCli.Smt
 -- keep-sorted end
 
 open Fren.Lang
@@ -93,3 +94,55 @@ run_cmd do
           (unfoldings := 3)
         unless (← visits.get) == expected do
           throwError "size(t) visited {(← visits.get)} times, expected {expected}"
+
+-- The CLI must also memoize equal/deeper visits. These diamonds have only
+-- 16 distinct applications but exponentially many paths without the memo.
+-- All applications initially occur at depth zero in the second query;
+-- the bodies' later discoveries are deeper and must not expand again.
+-- Each traversal has a heartbeat budget, as the lookup test above does;
+-- keep the gap between memoized and repeated traversal when adjusting it.
+-- fren-covers: lang::recursive_depth
+run_cmd do
+  Lean.Elab.Command.liftTermElabM do
+    let levels := 16
+    let names := (List.range levels).toArray.map fun i => s!"f{i}"
+    let recs := names.map fun n => (n, #["x"], FrenCli.SeqElems.parse "0")
+    let prelude : FrenCli.Prelude :=
+      { (default : FrenCli.Prelude) with recs := Thunk.pure recs, recReach := Thunk.pure names }
+    let types := (names.zipIdx).foldl (init := {}) fun acc (n, i) =>
+      if i + 1 < levels then
+        acc.insert n s!"(= {FrenCli.factHole} (+ (f{i+1} x) (f{i+1} x)))"
+      else acc
+    withCurrHeartbeats do
+      let facts := FrenCli.recursiveQueryFacts prelude {} types #[] "(= (f0 x) 0)" {} 0
+      unless facts.size == levels - 1 do throwError "equal visits changed the CLI contract facts"
+      Lean.Core.checkMaxHeartbeatsCore "CLI equal visits" `maxHeartbeats (100 * 1000)
+    let recs := names.mapIdx fun i n =>
+      (n, #["x"], FrenCli.SeqElems.parse
+        (if i + 1 < levels then s!"(+ (f{i+1} x) (f{i+1} x))" else "0"))
+    let prelude := { prelude with recs := Thunk.pure recs }
+    let goal := "(+ " ++ " ".intercalate (names.toList.map fun n => s!"({n} x)") ++ ")"
+    withCurrHeartbeats do
+      let facts := FrenCli.recursiveQueryFacts prelude {} {} #[] goal {} levels
+      unless facts.size == levels do throwError "deeper visits changed the CLI equations"
+      Lean.Core.checkMaxHeartbeatsCore "CLI deeper visits" `maxHeartbeats (100 * 1000)
+
+-- The contract chain reaches size(x) at depth zero after other's body
+-- reaches it at depth one. Only the later visit may unfold its equation.
+run_cmd do
+  let recs := #[
+    ("size", #["x"], FrenCli.SeqElems.parse "42"),
+    ("other", #["x"], FrenCli.SeqElems.parse "(size x)"),
+    ("b0", #["x"], FrenCli.SeqElems.parse "0"),
+    ("b1", #["x"], FrenCli.SeqElems.parse "0"),
+    ("b2", #["x"], FrenCli.SeqElems.parse "0")]
+  let prelude : FrenCli.Prelude :=
+    { (default : FrenCli.Prelude) with recs := Thunk.pure recs, recReach := Thunk.pure #["size"] }
+  let types := ({} : Std.HashMap String String)
+    |>.insert "b2" s!"(= {FrenCli.factHole} (b1 x))"
+    |>.insert "b1" s!"(= {FrenCli.factHole} (b0 x))"
+    |>.insert "b0" s!"(= {FrenCli.factHole} (size x))"
+  let facts := FrenCli.recursiveQueryFacts prelude {} types #[]
+    "(= (+ (b2 x) (other x)) 0)" {} 1
+  unless facts.contains (`equation, "(= (size x) 42)") do
+    throwError "a later shallower CLI visit lost size's equation"
