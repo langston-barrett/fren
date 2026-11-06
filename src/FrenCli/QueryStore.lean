@@ -1,6 +1,6 @@
 -- keep-sorted start
 import FrenCli.Cvc5
-import FrenCore.Check
+import FrenCore.Check.Backend
 import cvc5
 -- keep-sorted end
 

@@ -2,7 +2,7 @@
 import Fren.FinSet
 import Fren.LastArm
 import Fren.Seq
-import FrenCore.Check
+import FrenCore.Check.Component
 import FrenCore.Closures
 import FrenCore.Enumeration
 import FrenCore.Evidence

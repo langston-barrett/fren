@@ -315,9 +315,10 @@ pub mod testing
   `ownSpec`'s [query cache](#query-cache), if it has one, taken once that
   run has filled it, so that their queries are answered from it rather
   than solved under load, where one could reach its time limit; with no
-  cache (`FREN_QUERY_CACHE` empty), they are checked with an empty one, so
-  solved. So the shared path's own-spec run is not independent of the
-  tests' path's solver answers: it answers from the cache that `ownSpec`'s
+  cache (`FREN_QUERY_CACHE` empty), both paths run without a query cache, so
+  their queries are solved. When the cache is used, the shared path's
+  own-spec run is not independent of the tests' path's solver answers: it
+  answers from the cache that `ownSpec`'s
   run filled, and a wrong answer that the solver gave there would be given
   again. Only a difference in a query's script, which changes its key, is
   solved anew. Run alone (`--job sharedSpec`), the tests' path is a run at

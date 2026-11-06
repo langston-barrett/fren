@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Elab.Model
+import FrenCore.Check.Contracts
 import FrenCore.SetCard
 -- keep-sorted end
 

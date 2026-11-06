@@ -1,6 +1,6 @@
 -- keep-sorted start
 import FrenCli.Parse.ExprSyntax
-import FrenCore.Check
+import FrenCore.Check.Types
 -- keep-sorted end
 
 /-! Item and member syntax, with their clause lowering helpers. -/
