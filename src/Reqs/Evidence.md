@@ -1149,8 +1149,10 @@ The graph is the finite universe presented to this closure model. The
 module matching engine (`Fren.Core.GroundClosure`, #758) constructs its
 universe from the query and the ranked sentences, including closed terms
 and subterms of listed values. Its finite activation kernel proves
-completion and leastness over that universe. Neither model enumerates an
-unbounded stream of instances before building the bound.
+completion and leastness over that universe. Completeness of the constructed
+universe under structural matching at the final query is tested in
+`FrenTest.GroundClosure`, not stated by a Req or proved. Neither model
+enumerates an unbounded stream of instances before building the bound.
 
 ```fren
 set_option fren.lint.undecidable "allow" in

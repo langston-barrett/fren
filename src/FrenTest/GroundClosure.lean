@@ -88,8 +88,20 @@ private def aliases := { ctx with definitions := [(.query `alias, a)] }
 #guard (close ctx [rule [(`x, .int), (`y, .int)] [app `f [x], app `g [y]]]
   { applications := [app `f [a]] }).instances.card == 0
 
--- Uses beneath query binders establish the subject without supplying images.
+-- Uses beneath query and instance binders establish subjects without images.
 private def inner := rule [] [.all .int (app `f [.bound 0])]
+private def introducesBinder := rule [(`x, .int)] [app `f [x], .all .int (app `g [.bound 0])]
+private def binderSubject := rule [] [.all .int (app `g [.bound 0])]
+#guard (close ctx [introducesBinder, binderSubject] { applications := [app `f [a]] }).instances.card == 2
+#guard app `g [.bound 0] ∉ (close ctx [introducesBinder, binderSubject]
+  { applications := [app `f [a]] }).applications
+#guard (close ctx [introducesBinder, binderSubject, rule [(`x, .int)] [app `g [x]]]
+  { applications := [app `f [a]] }).instances.card == 2
+private def domainBinder : Rule := { introducesBinder with sentence := {
+  introducesBinder.sentence with domain := .all .int (app `g [.bound 0]), claims := [app `f [x]] } }
+#guard (close ctx [domainBinder, binderSubject] { applications := [app `f [a]] }).instances.card == 2
+private def existentialBinder := rule [(`x, .int)] [app `f [x], .ex .int (app `g [.bound 0])]
+#guard (close ctx [existentialBinder, binderSubject] { applications := [app `f [a]] }).instances.card == 2
 #guard (close ctx [inner] { applications := [.all .int (app `f [.bound 0])] }).instances.card == 1
 #guard (close ctx [rule [(`x, .int)] [app `f [x]]]
   { applications := [.all .int (app `f [.bound 0])] }).instances.card == 0
@@ -102,8 +114,8 @@ private def inner := rule [] [.all .int (app `f [.bound 0])]
 private def closedUnderMatching (ctx : Fren.Core.GroundMatching.Context) (rs : List Rule) (q : Query) : Bool :=
   let p := prepare ctx rs q
   let result := close ctx rs q
-  let apps := (p.query.applications ++ p.candidates.flatMap (·.applications ctx.items)).filter
-    (fun t => decide (t ∈ result.applications))
+  let apps := p.query.applications ++ result.instanceList.flatMap fun c =>
+    ({ sentence := c.sentence } : Rule).applications ctx.items
   let sentences := FiniteActivation.collect (fun c => [c.sentence]) result.instances
   rs.all fun r => (GroundMatching.instances ctx r { applications := apps, calls := q.calls }).all
     (fun s => decide (s ∈ sentences))
@@ -112,6 +124,9 @@ private def closedUnderMatching (ctx : Fren.Core.GroundMatching.Context) (rs : L
 #guard closedUnderMatching rankedCtx [low, high] { applications := [app `h [a]] }
 #guard closedUnderMatching listedCtx [fromListed, intoListed] { applications := [app `f [.sort .int, app `g [a]]] }
 #guard closedUnderMatching ctx [inner] { applications := [.all .int (app `f [.bound 0])] }
+#guard closedUnderMatching ctx [introducesBinder, binderSubject] { applications := [app `f [a]] }
+#guard closedUnderMatching ctx [domainBinder, binderSubject] { applications := [app `f [a]] }
+#guard closedUnderMatching ctx [existentialBinder, binderSubject] { applications := [app `f [a]] }
 #guard closedUnderMatching matchedListedCtx [matchedListed] { applications := [app `f [a]] }
 #guard closedUnderMatching matchedListedCtx [unboundListed] { applications := [app `f [app `g [a]]] }
 

@@ -77,6 +77,7 @@ interp lang::ground_rest_candidates := fun (cs : List Candidate) => cs.tail
 interp lang::ground_append_candidates := fun (a b : List Candidate) => a ++ b
 interp lang::ground_unique_candidates := fun (cs : List Candidate) => cs.eraseDups
 interp lang::ground_candidate_apps := fun (ctx : Fren.Core.GroundMatching.Context) (cs : List Candidate) => cs.flatMap (·.applications ctx.items)
+interp lang::ground_candidate_all_apps := fun (ctx : Fren.Core.GroundMatching.Context) (cs : List Candidate) => cs.flatMap (·.allApplications ctx.items)
 interp lang::ground_seed_pool := fun ctx ds rs apps calls => seedPool (ctx.normalizeListed ds) rs { applications := apps, calls }
 interp lang::ground_instantiable? := fun (ctx : Fren.Core.GroundMatching.Context) s => ({ sentence := s } : Rule).instantiable ctx by
   intro ctx s
@@ -146,11 +147,12 @@ impl ground_pool_step: lang::ground_pool_step for (ctx : Fren.Core.GroundMatchin
   listed_rules := rs.flatMap (fun r => r.sentence.variables.flatMap (fun (_, ty) => ((ctx.normalizeListed ds).listed ty).getD [])),
   subterms := subterms t, many := ts.flatMap subterms,
   apps := cs.flatMap (·.applications ctx.items),
+  all_apps := cs.flatMap (·.allApplications ctx.items),
   ground_terms := ts.filter (·.ground), all_ground? := ts.all (·.ground),
   seeds := seedPool (ctx.normalizeListed ds) rs { applications := apps, calls },
 } by
   intro ctx ds rs vs ts t apps calls cs _
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · cases rs <;> simp [fren_spec, Rule.normalize, List.headD]
   · cases rs <;> simp [fren_spec, Rule.terms, List.headD]
   · cases vs with
@@ -161,7 +163,8 @@ impl ground_pool_step: lang::ground_pool_step for (ctx : Fren.Core.GroundMatchin
   · cases rs <;> simp [fren_spec, List.headD]
   · cases t <;> simp [fren_spec, subterms, termKind]
   · cases ts <;> simp [fren_spec, List.headD]
-  · cases cs <;> simp [fren_spec, Candidate.applications, List.headD]
+  · cases cs <;> simp [fren_spec, Candidate.applications, Candidate.allApplications, List.headD]
+  · cases cs <;> simp [fren_spec, Candidate.allApplications, List.headD]
   · cases ts with
     | nil => rfl
     | cons t ts => cases h : t.ground <;> simp [fren_spec, h, List.headD]
@@ -235,8 +238,8 @@ impl ground_enabled_step: lang::ground_enabled_step for (ctx : Fren.Core.GroundM
       FinSet.ofList (subjectNames ctx.items { applications := apps, calls } accepted) := by
     apply FinSet.ext
     intro n
-    simp [subjectsOf, subjectNames, applicationsOf_ofList, FiniteActivation.mem_collect,
-      queryTerms, List.mem_filterMap, or_and_right, exists_or, or_assoc]
+    simp [subjectsOf, subjectNames, FiniteActivation.mem_collect,
+      List.mem_filterMap, or_and_right, exists_or, or_assoc, or_comm]
   cases h : c.subject <;>
     simp [fren_spec, enabled, applicationsOf_ofList, hs, FinSet.subset_def,
       queryTerms, subjectNames, h, List.mem_filterMap]

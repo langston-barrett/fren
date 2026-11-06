@@ -3431,6 +3431,9 @@ item order, images come from ground query subterms, closed sentence terms,
 listed values and the applications generated at later subjects. Listed
 compound values contribute their subterms too. Construction overapproximates
 possible instances; activation requires all anchors and calls together.
+Subject use includes all applications of accepted instances, including those
+beneath their binders. The ground filter applies to matching witnesses and
+the image pool, rather than to subject use.
 
 The activation kernel removes a nonempty part of the pending candidates in
 each productive round. It preserves its seeds, adds only candidates and
@@ -3438,6 +3441,9 @@ leaves no enabled candidate pending. `FiniteActivation.Result.least` proves
 leastness for every monotone enabling predicate; `GroundClosure.enabled_mono`
 and `FiniteActivation.Result.sound` give soundness for this engine. These
 proofs quantify over arbitrary finite universes, without a testing bound.
+Completeness of the constructed universe under structural matching at the
+final query is tested in `FrenTest.GroundClosure`; no Req or Lean theorem
+states that property yet.
 Front-end extraction and claim integration remain follow-ups of #758.
 
 ```fren
@@ -3609,6 +3615,7 @@ pub fn ground_rest_candidates(GroundCandidates): GroundCandidates
 pub fn ground_append_candidates(GroundCandidates, GroundCandidates): GroundCandidates
 pub fn ground_unique_candidates(GroundCandidates): GroundCandidates
 pub fn ground_candidate_apps(GroundContext, GroundCandidates): TheoryTerms
+pub fn ground_candidate_all_apps(GroundContext, GroundCandidates): TheoryTerms
 
 pub proc ground_candidate_step(
     ctx: GroundContext,
@@ -3692,6 +3699,7 @@ pub proc ground_pool_step(
         det subterms: TheoryTerms,
         det many: TheoryTerms,
         det apps: TheoryTerms,
+        det all_apps: TheoryTerms,
         det ground_terms: TheoryTerms,
         det all_ground?,
         det seeds: TheoryTerms,
@@ -3755,6 +3763,14 @@ pub proc ground_pool_step(
                     )
                 ),
                 ground_candidate_apps(ctx, ground_rest_candidates(candidates))
+            )
+        ensure all_apps_rule: all_apps = if ground_candidates_empty?(candidates) then ground_no_terms(term) else
+            ground_append(
+                ground_rule_apps(
+                    ctx,
+                    ground_candidate_sentence(ground_first_candidate(candidates))
+                ),
+                ground_candidate_all_apps(ctx, ground_rest_candidates(candidates))
             )
         ensure ground_rule: ground_terms = if theory_terms_empty?(terms) then terms else
             if ground_term?(theory_first_term(terms), 0) then theory_add_term(
@@ -3950,7 +3966,10 @@ pub proc ground_applications_step(
             else ground_term_heads(theory_terms_rest(terms))
         ensure applications_rule: applications = ground_append(query_apps, ground_candidate_apps(ctx, accepted))
         ensure subjects_rule: subjects = ground_term_heads(
-            ground_append(ground_query_terms(ctx, query_apps, accepted), query_calls)
+            ground_append(
+                ground_append(query_apps, ground_candidate_all_apps(ctx, accepted)),
+                query_calls
+            )
         )
     }
 
