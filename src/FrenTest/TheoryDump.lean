@@ -35,6 +35,19 @@ private def symbolic : Fren.Core.TheoryDumpInput :=
   Fren.Core.dumpTheories (Fren.Core.theoryDiagram { symbolic with
     items := symbolic.items.reverse, genericUses := symbolic.genericUses.reverse })
 
+-- A trait's own Self and function are signature entries, not imports.
+-- Actual imports retain their inclusions, and opening a local enum stays
+-- an open morphism.
+private def ownScope : Fren.Core.TheoryDumpInput :=
+  { items := #[], uses := #[
+      { module := `library, scope := `library.Sized, target := `library.Sized.Self, glob := false },
+      { module := `library, scope := `library.Sized, target := `library.Sized.size, glob := false },
+      { module := `client, target := `library.Sized, glob := false },
+      { module := `library, scope := `library.Sized, target := `library.Sized.Choice, glob := true }] }
+
+#guard (Fren.Core.theoryDiagram ownScope).morphisms.map (fun m => (m.kind, m.source, m.target)) ==
+  #[("inclusion", `library.Sized, `client), ("open", `library.Sized.Choice, `library.Sized)]
+
 /-- Check independent extractions, separate CLI streams, static errors, failed
 checks, parallel loading and composition with the other dump flags. -/
 def check (env : Lean.Environment) : IO (Array String) := do
