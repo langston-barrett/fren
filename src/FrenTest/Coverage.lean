@@ -1,3 +1,7 @@
+-- keep-sorted start
+import FrenTest.Oracle
+-- keep-sorted end
+
 /-!
 # What `fren_coverage` makes of a declaration
 
@@ -10,6 +14,11 @@ entry points ran, and whether a compiled entry point reaches it
 -/
 
 namespace FrenTest.Coverage
+
+/-- A dynamic coverage report needs both modules read and declarations run.
+`--static` does not measure execution and does not call this guard. -/
+def inputFailures (modules ran : Nat) : Array String :=
+  Oracle.finish "coverage modules" modules 1 (Oracle.finish "coverage declarations run" ran 1 #[])
 
 /-- A counted declaration fails the coverage if no test ran it, a compiled
 entry point reaches it, and `test/coverage.txt` does not list it. One that
