@@ -324,9 +324,9 @@ pub mod testing
   The last two are checked on a sample of at most 24 mutants of each
   example. A new origin may need the examples strengthened, or new
   mutants listed.
-- **Enumeration agrees with the solver** (`lake test`, `enumeration`):
-  each ui test and example in the binary's corpus (excluding hosted-only
-  files and files annotated with exit 2) runs with `Args.evidence?` forced
+- **Enumeration agrees with the solver** (`lake test`, `enumeration`;
+  temporarily quarantined in CI, #995): each ui test and example in the
+  binary's corpus (excluding hosted-only files and files annotated with exit 2) runs with `Args.evidence?` forced
   to the solver, then forced to enumeration. The argument overrides the
   file's own settings, including scoped ones. A solver run with a static
   error is skipped, after checking for internal errors. Every recorded
@@ -379,8 +379,8 @@ pub mod testing
   conflicting source evidence settings under each forced method. The ui
   tests `checks/enumerated*.fren` and `checks/evidence_obligations.fren`
   cover enumeration in both front ends.
-- **Methods agree** (`methodsAgree`, on `main`): Fren's own requirements,
-  the same ui/example corpus as `enumeration`, and every seed of the
+- **Methods agree** (`methodsAgree`, temporarily quarantined on `main`,
+  #995): Fren's own requirements, the same ui/example corpus as `enumeration`, and every seed of the
   front-end fuzzer's fixed corpus run with argument overrides for the
   solver, enumeration and random testing. Every record's method is
   validated as above, including records left to the solver, before each
@@ -868,7 +868,10 @@ in turn to shards 1 to `N - 1`, so that the slowest, which come first,
 spread over them.
 `--skip-own-mutants` leaves out the slices of the mutants of Fren's own
 requirements, the slowest jobs, which only the CI run on `main` checks.
-The selection is made before `--bless` runs the snapshots job first.
+`--skip-unstable-legacy` first filters the exact jobs listed in the
+[quarantine](../../../test/legacy-native-quarantine.md); without that flag
+they remain selected. The selection is made before `--bless` runs the
+snapshots job first.
 `--timings` prints how long each job took, to balance the shards.
 
 ## Shards
@@ -2434,12 +2437,12 @@ request's.
 On a pull request, the `pre-merge` workflow checks the head merged into
 `main`, starting from the `.lake` that `main`'s last build left: two
 machines run `lake build --wfail`, and others run `lake test --
---skip-own-mutants --shard K/N`, each first building the test driver with
-`lake build --wfail fren_test`. A warning in the driver or in a module
-only it imports fails `pre-merge` too. One build machine builds Fren's own
-requirements and their `impl`s (`lake build --wfail Reqs Impls`), the
-other the rest of the default targets: the code, the tests, the examples
-and the binaries, among them the C code that the first needs none of.
+--skip-unstable-legacy --skip-own-mutants --shard K/N`, each first
+building the test driver with `lake build --wfail fren_test`. A warning in
+the driver or in a module only it imports fails `pre-merge` too. One build
+machine builds Fren's own requirements and their `impl`s (`lake build
+--wfail Reqs Impls`), the other the rest of the default targets: the code,
+the tests, the examples and the binaries, among them the C code that the first needs none of.
 Before the lint chapters were split, the build's critical path ran from
 `Fren.Elab` through the chapter modules from `Reqs.Lang.Base` to
 `Reqs.Lang.ScopeLaws`, then `Reqs.Lang`, `Reqs.Lint` and `Impls.Lint`.
@@ -2458,14 +2461,21 @@ and that of the rest 321, 392 and 297 s; so the build no longer outlasts
 the test shards. Both build what both import, from `FrenCore` to `Fren`, and
 `lake test`'s `libraries` job checks that the two lists of targets
 together are `lakefile.lean`'s default targets. On
-`main`, the `lean ci` workflow runs `lake build --wfail` and the whole
-`lake test`, first building the driver with `--wfail` in each shard. It
-samples mutants of Fren's own requirements, checks them in Lean and
-compares the front ends' messages about them ([Own
-requirements](#own-requirements)), measures the coverage, and saves the
-`.lake` for pull requests. Each job of a `lean ci` run waits for the same
-job of the run before it, not for the whole run, so that the build job
-saves the `.lake` as soon as it has built. A `pre-merge` run that starts
+`main`, the `lean ci` workflow runs `lake build --wfail` and `lake test
+-- --skip-unstable-legacy --shard K/N`, first building the driver with
+`--wfail` in each shard. Unlike `pre-merge`, its shards include the mutants
+of Fren's own requirements. Both workflows temporarily omit `enumeration`,
+`nativeDiagnostics` with `core`, `wait`, `own` or `wrapper`, and
+`nativeObservation`. The separate main `methods-agree` job is disabled.
+[The quarantine](../../../test/legacy-native-quarantine.md) records manual
+commands and restoration criteria; #995 tracks restoring the gates.
+A local `lake test` without the flag retains all jobs, and explicit
+`--job` commands remain available without this filtering. Main also samples
+mutants of Fren's own requirements, checks them in Lean and compares the
+front ends' messages about them ([Own requirements](#own-requirements)),
+measures the coverage, and saves the `.lake` for pull requests. Each job
+of a `lean ci` run waits for the same job of the run before it, not for
+the whole run, so that the build job saves the `.lake` as soon as it has built. A `pre-merge` run that starts
 before the `.lake` of its `main` is saved starts from an older one, and
 each of its machines rebuilds what `main` changed since. Over the runs of
 2026-11-01 and 2026-11-02, almost half did; had each build job waited only
@@ -2504,11 +2514,12 @@ On 2026-11-03, on a runner, elaborating
 beside it 90 and 95 s, and with three others 112 and 123 s, while in the
 build, beside the rest of `Reqs` and `Impls`, it took 121 to 152 s.
 
-The `lean ci` workflow also compares the methods on every check that
+The `lean ci` workflow normally compares the methods on every check that
 each can run (`methodsAgree`, [Agreement of
-methods](../Methods.md#agreement-of-methods)), and runs the front-end
-fuzzer on seeds that no run used before, from the run's number, with
-`--avoid-known`, of both generators. What fails that job is exactly a
+methods](../Methods.md#agreement-of-methods)); that job is quarantined,
+with restoration tracked in #995. It runs the front-end fuzzer on seeds
+that no run used before, from the run's number, with `--avoid-known`, of
+both generators. What fails that job is exactly a
 spec with a difference of a kind that is not known, a crash, or a
 timeout; a spec whose differences are all of known kinds
 (`knownDifferences` for `--avoid-known`, and `knownKinds`), or only in
@@ -2546,11 +2557,11 @@ request of its own rather than slowing every pull request down.
 | Check | `pre-merge` | `lean ci` | Why |
 |---|---|---|---|
 | `lake build --wfail`: the code, the regression tests, the `impl`s' proofs, the examples, and Fren's own requirements elaborated | yes, on two machines | yes | it is the build |
-| `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
+| `lake test`, excluding the quarantined legacy jobs and the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
 | Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the language and lint chapters were split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
-| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
+| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | quarantined (#995) | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
 | The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-merge`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
@@ -3091,12 +3102,17 @@ that runs or is no longer counted only weakens the list, and gets a
 warning, on GitHub Actions an annotation of the run too, that names the
 line to remove; `fren_coverage --write` rewrites the list as the run found
 it, keeping the reasons. The aim is a list of reasons alone. CI runs it on
-`main`, with Lean CI, and not in `pre-merge`: the instrumented build and
-the whole `lake test` on one machine take 20 to 35 minutes, about twice
-`pre-merge`'s 12 to 15, so a pull request that adds code no test runs
-fails `main` right after it merges, and a small pull request lists or
-tests it. The job's summary gives the counts, the failures, the stale
-lines and the dead code.
+`main`, with Lean CI, and not in `pre-merge`. The instrumented run uses
+`lake -Kcoverage=RUNTIME test -- --skip-unstable-legacy`, retaining
+`ownSpec`, all mutation slices and the other unquarantined jobs. It still
+checks the existing inventory and expects exit 2 from both a failing and
+an empty coverage tool. Omitting the quarantined jobs may leave more
+declarations uncovered and make the report fail. Before the quarantine,
+the instrumented build and whole `lake test` on one machine took 20 to 35
+minutes, about twice `pre-merge`'s 12 to 15. A pull request that adds code
+no test runs can therefore fail `main` right after it merges, and a small pull request
+lists or tests it. The job's summary gives the counts, the failures, the
+stale lines and the dead code.
 
 Before pushing, an author checks the definitions that the branch adds,
 in two steps, with `main`'s job as the backstop:
