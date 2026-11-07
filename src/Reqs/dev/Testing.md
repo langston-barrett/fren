@@ -1691,8 +1691,8 @@ The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
 `Heavy.Ownership` implements the registry attempt, report ownership,
-isolated-lease accounting and observed-memory victim decisions below, bound
-in `Impls.HeavyOwnership`.
+isolated-lease accounting, observed-memory victim and group-completion
+decisions below, bound in `Impls.HeavyOwnership`.
 Python remains the active scheduler and syscall adapter. The kernel takes
 decoded reports: wire version, token syntax, finite timestamps and monitor
 field shapes are checked by the adapter, not assumed to prove ownership.
@@ -1708,14 +1708,14 @@ fixtures and the existing `tested` claims. Both standalone Heavy kernels
 are outside those Fren runtimes. The `implPaths` audit therefore records
 each mapped output as an exact `unbound` observation in
 `test/impl_paths.txt`, including the forecast's two outputs and ownership's
-ten plus the conversion's four. These observations certify no runtime
+eleven plus the conversion's four. These observations certify no runtime
 connection; unexpected, duplicate and stale inventory entries still fail
 the audit. Its regressions also check that a real standalone kernel call,
 even through a proof adapter, does not count as a Fren production output
 function.
 This slice does not port set-wide admission accounting, sequence allocation
-or publication, completion or signalling. A lease's isolated
-admission charge is not a new admission rule and must not be summed over
+or publication, signalling, or OS waits, probes and PID 1 cleanup. A lease's
+isolated admission charge is not a new rule and must not be summed over
 unknown holders.
 
 The victim kernel takes the fields of rows after `jobs` has checked held locks
