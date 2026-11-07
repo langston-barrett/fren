@@ -1,0 +1,12 @@
+-- An unused argument's index still has its guarded definedness formula
+-- when confirming a model (#493, issuecomment-6576047576).
+set_option fren.lint.unused_variables "allow"
+
+fn ignore?(n: Int) := false
+
+proc guarded(q: Seq<Int>, a: Int) {
+    require pinned: q = [] and (a = 1 or at_most_one?(true, ignore?(q[5]), true))  --~ error: internal error: the solver's model for the definedness check of `guarded::pinned` makes the check's claim true in Fren's semantics
+    expect e: a = 3  --~ error: internal error: the solver's model for the expectation check of `guarded::e` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+--@ summary: 2 passed, 0 failed, 2 inconclusive, 0 redundant
