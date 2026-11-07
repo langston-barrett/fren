@@ -3796,9 +3796,11 @@ def MethodRun.found (run : MethodRun) (method : Fren.Core.ProofMethod) : Std.Has
 /-- Missing enumeration records are allowed only for a documented skip
 (`check::method_run`), a bounded vacuity/consistency result that can stop
 redundancy (`check::redundancy_asked`), or the particular procedure named
-by `F0644` (the behaviour cap) or `F0645` (an unsupported function).
-Solver-only obligations must still be present even in that procedure. -/
+by `F0644` (the behaviour cap) or `F0645` (an unsupported function),
+including a short expectation named by its claim. Solver-only obligations
+must still be present even in that item. -/
 def enumerationMayOmit (item : String) (r : Fren.Core.CheckResult) (run : MethodRun) : Bool :=
+  let subject := Fren.Core.subjectOf r.comp (item.startsWith "expect ") r.prop?
   !solverOnly item r &&
     ((Fren.Core.dispatchOf r.kind .component .enumerated).1 == .skip ||
       (r.kind == .redundancy && run.records.any fun (other, v, m) => other == item && m == .enumerated &&
@@ -3810,8 +3812,8 @@ def enumerationMayOmit (item : String) (r : Fren.Core.CheckResult) (run : Method
             | .unknown why => why.startsWith "no input meets the assumptions up to size" || why.startsWith "no outputs up to size"
             | _ => false))) ||
       run.diags.any fun (sev, code?, text) => sev == "error" &&
-        ((code? == some "F0645" && text.startsWith s!"`{Fren.Core.showComp r.comp}` cannot be enumerated:") ||
-          (code? == some "F0644" && text.startsWith s!"`{Fren.Core.showComp r.comp}` has ")))
+        ((code? == some "F0645" && text.startsWith s!"{subject} cannot be enumerated:") ||
+          (code? == some "F0644" && text.startsWith s!"{subject} has ")))
 
 /-- Known method differences, by file and exact check/diagnostic key, with
 an issue or semantic reason. Each excuses only the difference it names;
@@ -3921,6 +3923,12 @@ def methodAgreementChecks : IO (Array String) := do
       && !enumerationMayOmit "comp other" { r with comp := `other } unsupported
       && enumerationMayOmit "comp c" { r with kind := .definedness } {} do
     failures := failures.push "agreement adapter: omissions are not limited to documented skips and the named unsupported procedure"
+  let globalUnsupported := { unsupported with diags := #[("error", some "F0645", "`c::e` cannot be enumerated: unsupported function")] }
+  unless enumerationMayOmit "expect c::e" r globalUnsupported
+      && !enumerationMayOmit "expect c::other" { r with prop? := some `other } globalUnsupported
+      && !enumerationMayOmit "expect c::e" obligation globalUnsupported
+      && !enumerationMayOmit "comp c" r globalUnsupported do
+    failures := failures.push "agreement adapter: an unsupported global is not confined to its reported expectation"
   let internal := { enumerated with diags := #[("error", none, "internal error: injected")], code := 1 }
   unless !(methodRunFailures .enumerated internal).isEmpty
       && !(methodRunFailures .enumerated { internal with code := 2 } (staticOK := true)).isEmpty

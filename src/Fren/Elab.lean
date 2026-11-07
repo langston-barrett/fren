@@ -9192,11 +9192,15 @@ whose members, as a component's, are `members`
 candidate, in order (`Core.inductionCandidates`). Each is an item of the
 module that nothing reports, whose body is not checked as a function's,
 but only for the expectation, and which is kept apart from the defined
-functions (`State.inductionFns`). -/
-def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : CommandElabM Unit := do
+functions (`State.inductionFns`). A short expectation supplies `source?`
+and `local?` from a disposable elaboration with free inputs; the recorded
+global keeps its original quantified representation. -/
+def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax)
+    (source? : Option CompInfo := none) (local? : Option LocalState := none) : CommandElabM Unit := do
   let st ← getState
-  let some c := st.globals.get? path | return
-  let l ← getLocal
+  let some original := st.globals.get? path | return
+  let c := source?.getD original
+  let l := local?.getD (← getLocal)
   let kinds := (← blockMembers stx).map (·.2.1)
   let params := stx[4].getSepArgs.filter (·[3].isNone)
   let names := params.map fun p => (declaredIdent p[1]).1.getId
@@ -9233,7 +9237,7 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
       let .enum ep _ := tys[i]! | continue
       let some info := st.enums.get? ep | continue
       let n := params.size
-      let fname := Core.inductionFnName (Core.nameText (declaredIdent stx[2]).1.getId) (Core.nameText claim.getId)
+      let fname := Core.inductionFnName path.getString! (Core.nameText claim.getId)
         (Core.nameText names[i]!) position
       let cases := Core.inductionCases st.shapeOf tys i
       let builder : Core.InductionSyntax String := {
@@ -9272,7 +9276,10 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
       for a in assumptions, k in [0:assumptions.size] do
         post := substPath (Name.mkSimple (ph s!"a{k}")) a post
       post := substPath (Name.mkSimple (ph "c")) e post
-      let clause := mkNode ``Lang.fren_clause #[mkAtom "ensure", mkIdentFrom ref `claim, mkAtom ":", post, mkNullNode]
+      -- Keep a parseable raw spelling, as for the function's name.
+      let label := renameIdent (Name.mkSimple (ph "post")) (Name.mkSimple Core.inductionPostName)
+        (mkIdentFrom ref (Name.mkSimple (ph "post")))
+      let clause := mkNode ``Lang.fren_clause #[mkAtom "ensure", label, mkAtom ":", post, mkNullNode]
       let function := mkNode ``Lang.fnCmd (cmd.getArgs.push (mkNullNode #[clause]))
       -- Nothing about it is reported, and its body is checked only for
       -- the expectation.
@@ -9292,7 +9299,7 @@ def elabInductions (stx : Syntax) (path : Name) (members : Array Syntax) : Comma
       record (.inductionFn fpath)
       fns := fns.push fpath
     inductions := inductions.push (claim.getId, fns)
-  record (.globalInfo path { c with inductions })
+  record (.globalInfo path { original with inductions })
 
 /-- `expect n(x: T) { members }`, a global expectation with a block
 (`Reqs/Lang/Global`): elaborated as a procedure is, but for the members it
@@ -9618,6 +9625,40 @@ def globalText (stx : Syntax) : String :=
   record (.globalInfo path info)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
   modifyLocal fun l => { l with globals := l.globals.push path }.declared path
+  unless binders.isEmpty do
+    -- The quantified direct check keeps its original representation. This
+    -- disposable procedure exposes only its leading binders as free inputs
+    -- for candidate extraction; none of its declarations or lints survive.
+    let saved ← get
+    try
+      let groups := binders.map fun b => b[1].getArgs.map (·, b[3])
+      let params := Core.shortInductionParameters groups
+      let ref := nameStx
+      let mut stem := "fren_short_"
+      while (identNames stx).any (·.startsWith stem) do stem := stem ++ "_"
+      let signature := params.mapIdx fun i (x, _) => s!"{Core.nameText x.getId}: {stem}t{i}"
+      let text := s!"proc {stem}probe({", ".intercalate signature.toList}) \{ expect {stem}claim: if true then {stem}body else false }"
+      let mut proc ← parseAt `command text ref
+      for (_, ty) in params, i in [0:params.size] do
+        proc := substPath (Name.mkSimple s!"{stem}t{i}") ty proc
+      proc := renameIdent (Name.mkSimple s!"{stem}claim") (Name.mkSimple "#claim") proc
+      proc := substPath (Name.mkSimple s!"{stem}body") (withWhere stx[4] stx[5]) proc
+      let members ← procMembers proc
+      modifyLocal fun l => { l with
+        outsideCore := false, guardedUsed := false, undecidableDenied := false
+        relationalUsed := false, countRefs := #[], inductionArgs := #[], inductionAbstract := false }
+      let probeDecl ← generatedName (path ++ `shortInduction)
+      let (ok, _) ← liftTermElabM <|
+        elabCompMembers modName path modName probeDecl false nameStx members {} (global := true)
+      let probe := (← getState).globals.get? path
+      let probeLocal ← getLocal
+      set saved
+      if ok then
+        if let some c := probe then
+          elabInductions proc path members (some c) (some probeLocal)
+          let some current := (← getState).globals.get? path | return
+          record (.globalInfo path { current with inductions := current.inductions.map fun (_, fns) => (n, fns) })
+    catch _ => set saved
 
 
 end Fren
