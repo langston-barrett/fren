@@ -1523,7 +1523,7 @@ does not classify its entries in advance. `heavy_lease` calls
 `heavy_report_owner`; the recursive accounting functions use the same
 `report_owner?` definition, so victim selection and owned signaling also
 decide compatibility. A legacy job can admit new work only when a slot is
-free and the memory rule holds. Time values use one integral unit of the
+free and the memory rule holds. The integral model uses one time unit of the
 shared monotonic clock. Python tests check the concrete lock, clock, procfs and
 signal operations through `tested` claims in `Impls.Trace`; these tests run
 in the `lint` workflow, not in `lake test`. `heavy_registry` models the retry
@@ -1557,16 +1557,78 @@ fixtures and the existing `tested` claims. Both standalone Heavy kernels
 are outside those Fren runtimes. The `implPaths` audit therefore records
 each mapped output as an exact `unbound` observation in
 `test/impl_paths.txt`, including the forecast's two outputs and ownership's
-eight. These observations certify no runtime connection; unexpected,
-duplicate and stale inventory entries still fail the audit. Its regressions
-also check that a real standalone kernel call, even through a proof adapter,
-does not count as a Fren production output function.
+eight plus the conversion's four. These observations certify no runtime
+connection; unexpected, duplicate and stale inventory entries still fail
+the audit. Its regressions also check that a real standalone kernel call,
+even through a proof adapter, does not count as a Fren production output
+function.
 This slice does not port set-wide accounting, victim selection, sequence
 allocation or publication, completion or signalling. A lease's isolated
 admission charge is not a new admission rule and must not be summed over
 unknown holders.
 
+Python's clock arithmetic rounds before a freshness comparison. Converting
+the two operands to exact integer ticks and then subtracting changes that
+operation. For the Python conversion boundary, the adapter first computes
+the numeric elapsed value `now - updated_monotonic`, using Python's operand
+types and arithmetic. It encodes that rounded result and the TTL exactly
+in one positive integral scale. It supplies no freshness or approval Boolean.
+For registry attempts it computes the allocated deadline `started + wait`
+and then `deadline - now` in that order, encoding the numeric remaining
+value after both Python operations. The absolute clock origin is discarded.
+
+`heavy_time_conversion` states what the kernel establishes from those spans.
+A finite elapsed value `e` becomes the synthetic timestamp `-e` at `now = 0`;
+a non-finite elapsed value becomes timestamp 1, which is never fresh for a
+finite natural TTL. Report identity and RSS remain available, so a matching
+observed owner still keeps its last RSS and reserves a cap for stale data.
+A finite remaining value is a deadline relative to zero. Negative infinity
+is due; positive infinity and NaN are not due, matching Python's
+`remaining <= 0` test. These normal forms preserve the decisions here, not
+absolute timestamps, signed zero or the reason a report is stale.
+
+The integral conformance proofs do not prove Python floating-point
+arithmetic or this adapter's conversion. The `heavyOwnership` differential
+checks both complete ownership paths, the actual Python registry loop, and
+numeric conversion separately against exact rational arithmetic rounded to
+binary64. It includes representable neighbors, the rounded ten-second tie,
+mixed integer/float operands, invalid reports and non-finite differences.
+The forecast adapter already subtracts its window in Python before scaling
+the resulting cutoff; it does not move that subtraction into the kernel.
+
 ```fren
+pub enum TimeSpan { Finite(Int), PositiveInfinity, NegativeInfinity, NotANumber }
+
+pub proc heavy_time_conversion(span: TimeSpan, ttl: Nat): (
+    det elapsed_updated: Int,
+    det remaining_deadline: Int,
+    det fresh?,
+    det timed_out?,
+) {
+    out elapsed_updated := match span {
+        TimeSpan::Finite(e) => -e,
+        _ => 1,
+    }
+    out remaining_deadline := match span {
+        TimeSpan::Finite(r) => r,
+        TimeSpan::NegativeInfinity => -1,
+        _ => 1,
+    }
+    ensure freshness: fresh? iff (match span {
+        TimeSpan::Finite(e) => 0 <= e <= ttl,
+        _ => false,
+    })
+    expect normalized_freshness: fresh? iff 0 <= 0 - elapsed_updated <= ttl
+    ensure timeout: timed_out? iff (match span {
+        TimeSpan::Finite(r) => r <= 0,
+        TimeSpan::NegativeInfinity => true,
+        _ => false,
+    })
+    expect normalized_timeout: timed_out? iff remaining_deadline <= 0
+    expect nonfinite_stale: when span = TimeSpan::NotANumber, not fresh?
+    expect zero_fresh: when span = TimeSpan::Finite(0), fresh? and timed_out?
+}
+
 pub proc heavy_registry(available?, now: Int, deadline: Int, held?, requested?): (
     det acquired?,
     det retry?,

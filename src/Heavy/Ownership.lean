@@ -6,6 +6,30 @@ This module depends only on Std, never on Fren or its requirements. -/
 
 namespace Heavy.Ownership
 
+/-- Numeric results after the adapter's arithmetic. Finite ticks and TTL
+share a positive scale; infinities and NaN must not discard report identity.
+This type does not encode an approval or claim to implement IEEE arithmetic. -/
+inductive TimeSpan where
+  | finite (ticks : Int)
+  | positiveInfinity
+  | negativeInfinity
+  | notANumber
+  deriving Repr
+
+/-- A relative timestamp at now = 0. All non-finite elapsed values fail
+Python's bounded freshness comparison; the future timestamp 1 represents
+that outcome without discarding the report's owner or RSS. -/
+def elapsedTimestamp : TimeSpan → Int
+  | .finite e => -e
+  | _ => 1
+
+/-- A relative deadline at now = 0. Python's `remaining <= 0` is false
+for NaN and positive infinity, and true for negative infinity. -/
+def remainingDeadline : TimeSpan → Int
+  | .finite r => r
+  | .negativeInfinity => -1
+  | _ => 1
+
 structure RegistryDecision where
   acquired : Bool
   retry : Bool
@@ -32,8 +56,9 @@ structure Monitor where
   space : String
   deriving Repr, DecidableEq
 
-/-- A decoded protocol-v3 report. Timestamps and TTL share an integral
-monotonic unit. Malformed wire records are decoded as `none` by the adapter. -/
+/-- A decoded protocol-v3 report. Timestamps and TTL share an integral unit.
+The Python boundary uses `elapsedTimestamp` at now = 0 after computing its
+rounded elapsed value. Malformed wire records are decoded as `none`. -/
 structure Report where
   owner : Owner
   rss : Int

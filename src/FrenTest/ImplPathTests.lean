@@ -205,12 +205,14 @@ run_elab do
     (`Fren.Core.ImplPathFixture).isPrefixOf d.name)
   let g := graph env ds
   let target := `Fren.Core.ImplPathFixture.bound
-  -- Audit all four impls' deciding functions across both Heavy modules.
+  -- Audit all five impls' deciding functions across both Heavy modules.
   -- Conformance proofs and differential fixtures do not create a path from
   -- Fren's reporting roots. Keep the standalone scope distinct from adapters
   -- and the connected, discarded and erased runtime cases below.
   for n in #[`Heavy.Forecast.predict, `Heavy.Ownership.registry,
-      `Heavy.Ownership.reportOwner, `Heavy.Ownership.lease] do
+      `Heavy.Ownership.reportOwner, `Heavy.Ownership.lease,
+      `Heavy.Ownership.elapsedTimestamp, `Heavy.Ownership.remainingDeadline,
+      `Heavy.Ownership.freshReport] do
     unless env.contains n do
       throwError "implPaths: missing standalone kernel declaration: {n}"
     if production n then

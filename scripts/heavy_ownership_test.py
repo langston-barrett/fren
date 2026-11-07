@@ -4,6 +4,7 @@ Run after building Heavy.Ownership: python3 -I scripts/heavy_ownership_test.py.
 The active Python scheduler is the oracle; no real processes are signalled.
 """
 
+from fractions import Fraction
 import itertools
 import json
 import math
@@ -58,25 +59,82 @@ def decoded_report(raw):
     return r
 
 
+def reference_arithmetic(a, b, *, add=False):
+    """Independent round-to-binary64 oracle using Fraction's rounding.
+    Python converts mixed operands to binary64 before doing arithmetic;
+    int/int operations instead stay exact. Nonfinite results are classified
+    explicitly. Signed zero does not affect any decision in this port.
+    """
+    if type(a) is int and type(b) is int:
+        return a + b if add else a - b
+    a = float(Fraction(a)) if type(a) is int else a
+    b = float(Fraction(b)) if type(b) is int else b
+    if math.isnan(a) or math.isnan(b):
+        return math.nan
+    if not math.isfinite(a) or not math.isfinite(b):
+        if not add:
+            b = -b
+        if math.isinf(a) and math.isinf(b) and (a > 0) != (b > 0):
+            return math.nan
+        return a if math.isinf(a) else b
+    exact = Fraction.from_float(a)
+    exact = exact + Fraction.from_float(b) if add else exact - Fraction.from_float(b)
+    try:
+        return float(exact)
+    except OverflowError:
+        return math.inf if exact > 0 else -math.inf
+
+
+def arithmetic(a, b, *, add=False):
+    """The actual adapter operation, checked independently at each use."""
+    value = a + b if add else a - b
+    reference = reference_arithmetic(a, b, add=add)
+    assert value == reference or (math.isnan(value) and math.isnan(reference)), (a, b, value, reference)
+    return value
+
+
+def numeric_span(value, ttl=heavy.REPORT_STALE_SECONDS):
+    """Transport the arithmetic RESULT exactly, never a freshness decision.
+    The common positive scale preserves comparisons with the finite TTL.
+    Fraction independently decodes every emitted finite span and TTL.
+    """
+    finite = type(value) is int or math.isfinite(value)
+    scale = max(ttl.as_integer_ratio()[1], value.as_integer_ratio()[1] if finite else 1)
+    a, b = ttl.as_integer_ratio()
+    ttl_ticks = a * (scale // b)
+    assert Fraction(ttl_ticks, scale) == Fraction(ttl)
+    if finite:
+        a, b = value.as_integer_ratio()
+        span = dict(kind="finite", ticks=a * (scale // b))
+        assert Fraction(span["ticks"], scale) == Fraction(value)
+    else:
+        span = dict(kind="notANumber" if math.isnan(value) else
+                    "positiveInfinity" if value > 0 else "negativeInfinity")
+    return span, ttl_ticks
+
+
 def transport(case):
     r = decoded_report(case["report"])
     # The status adapter extracts only the terminal protocol token. Diagnostic
     # numeric PIDs never enter the Lean observations.
     token = re.search(r"\[heavy-job=([0-9a-f]{32})\]\s*$", case["status"])
-    now, ttl = case["now"], heavy.REPORT_STALE_SECONDS
-    # Preserve exact binary time ratios at both freshness endpoints.
-    times = [now, ttl] + ([r["updated_monotonic"]] if r else [])
-    scale = max(t.as_integer_ratio()[1] for t in times)
-
-    def ticks(t):
-        a, b = t.as_integer_ratio()
-        return a * (scale // b)
-
-    if r:
-        r["updated_monotonic"] = ticks(r["updated_monotonic"])
+    elapsed = arithmetic(case["now"], r.pop("updated_monotonic")) if r else 0
+    span, ttl = numeric_span(elapsed)
     return dict(kind="lease", report=r, status_job=token[1] if token else "",
                 observed=case["observed"], legacy_rss=case["legacy_rss"],
-                locked=case["locked"], cap=case["cap"], now=ticks(now), ttl=ticks(ttl))
+                locked=case["locked"], cap=case["cap"], span=span, ttl=ttl)
+
+
+def conversion_case(value):
+    span, ttl = numeric_span(value)
+    finite = span["kind"] == "finite"
+    ticks = span.get("ticks")
+    updated = -ticks if finite else 1
+    deadline = ticks if finite else (-1 if span["kind"] == "negativeInfinity" else 1)
+    # These numeric-span properties are independent of the Lean decoder and
+    # the full Python lease oracle. Comparisons use the unscaled result too.
+    expected = [updated, deadline, 0 <= value <= heavy.REPORT_STALE_SECONDS, value <= 0]
+    return dict(kind="conversion", span=span, ttl=ttl), expected
 
 
 def python_lease(case, path):
@@ -104,7 +162,7 @@ class Retried(Exception):
     pass
 
 
-def python_registry(available, now, deadline, requested, state):
+def python_registry(available, now, started, requested, state):
     """Stop the real acquisition loop at its first retry, without sleeping.
     Check the decision and mask from Python itself, not a restated predicate.
     """
@@ -122,7 +180,7 @@ def python_registry(available, now, deadline, requested, state):
 
     acquired = retry = timed_out = False
     with mock.patch.object(heavy.time, "monotonic",
-                           side_effect=[deadline - heavy.REGISTRY_WAIT_SECONDS, now]), \
+                           side_effect=[started, now]), \
          mock.patch.object(heavy.time, "sleep", side_effect=sleep), \
          mock.patch.object(heavy.fcntl, "flock", side_effect=None if available else BlockingIOError), \
          mock.patch.object(heavy.signal, "pthread_sigmask", side_effect=sigmask):
@@ -158,20 +216,65 @@ def main():
     for now in (100.125, 110.125, 110.12500000000001):
         cases.append(dict(base, now=now, observed=None,
                           report=dict(base["report"], updated_monotonic=100.125)))
+    # Adjacent representable timestamps around freshness and future boundaries,
+    # cancellation ties, mixed int/float conversion and overflowed differences.
+    for now in (0.0, 8.0, 16.0, 100.0, 2.0 ** 53, -16.0, 1e-308):
+        for center in (now, now - heavy.REPORT_STALE_SECONDS):
+            below, above = math.nextafter(center, -math.inf), math.nextafter(center, math.inf)
+            for stamp in (math.nextafter(below, -math.inf), below, center,
+                          above, math.nextafter(above, math.inf)):
+                for observed in (None, m, dict(m, namespace="pid:[200]")):
+                    cases.append(dict(base, now=now, observed=observed,
+                                      report=dict(base["report"], updated_monotonic=stamp)))
+    for now, stamp in ((2 ** 53 + 9, float(2 ** 53 - 2)),
+                       (2 ** 53 + 9, 2 ** 53 - 2), (1e308, -1e308), (-1e308, 1e308),
+                       (math.nan, 0.0), (math.inf, 0.0), (-math.inf, 0.0)):
+        for observed in (None, m):
+            cases.append(dict(base, now=now, observed=observed,
+                              report=dict(base["report"], updated_monotonic=stamp)))
     inputs, expected = [], []
+    registry_count = 0
     with tempfile.TemporaryDirectory() as state:
         path = Path(state) / "report.json"
         for case in cases:
             expected.append(python_lease(case, path))
+            if case["name"] in ("rounded_ttl_unobserved", "rounded_ttl_verified"):
+                assert expected[-1] == [True, True, 40, 40], (case, expected[-1])
             inputs.append(transport(case))
-        # Non-finite and malformed JSON never reach the typed kernel.
+        # Nonfinite timestamps and malformed JSON are rejected by the wire decoder.
         for text in ('{"updated_monotonic": NaN}', '{"partial":', 'null'):
             path.write_text(text)
             assert heavy.read_report(path) is None
-        for available, now, requested in itertools.product((False, True), (99, 100, 101), (False, True)):
-            inputs.append(dict(kind="registry", available=available, now=now, deadline=100,
+        # Deadline allocation is rounded once, then each remaining duration is
+        # rounded separately. Do not reconstruct the start by subtracting wait.
+        clocks = [(99.8, now) for now in (99, 100, 101)]
+        for started in (0.0, 1.0, 16.0, 2.0 ** 53, -16.0, 1e308, -1e308):
+            deadline = arithmetic(started, heavy.REGISTRY_WAIT_SECONDS, add=True)
+            clocks.extend((started, now) for now in
+                          (math.nextafter(deadline, -math.inf), deadline,
+                           math.nextafter(deadline, math.inf)))
+        clocks.extend((start, now) for start, now in
+                      ((math.inf, math.inf), (-math.inf, 0.0), (0.0, -math.inf),
+                       (0.0, math.nan), (math.nan, 0.0), (1e308, -1e308), (-1e308, 1e308)))
+        for (started, now), available, requested in itertools.product(clocks, (False, True), (False, True)):
+            deadline = arithmetic(started, heavy.REGISTRY_WAIT_SECONDS, add=True)
+            remaining = arithmetic(deadline, now)
+            span, _ = numeric_span(remaining)
+            inputs.append(dict(kind="registry", available=available, span=span,
                                held=available, requested=requested))
-            expected.append(python_registry(available, now, 100, requested, state))
+            expected.append(python_registry(available, now, started, requested, state))
+            registry_count += 1
+    # Exercise the actual Std normalizers independently of report decoding.
+    values = [-math.inf, math.inf, math.nan, -1, 0, 1, 10, 11]
+    for center in (0.0, 10.0, -10.0):
+        values.extend((math.nextafter(center, -math.inf), center, math.nextafter(center, math.inf)))
+    for now, stamp in ((16.0, 5.999999999999999), (2 ** 53 + 9, float(2 ** 53 - 2)),
+                       (2 ** 53 + 9, 2 ** 53 - 2), (1e308, -1e308), (-1e308, 1e308)):
+        values.append(arithmetic(now, stamp))
+    for value in values:
+        inp, want = conversion_case(value)
+        inputs.append(inp)
+        expected.append(want)
     run = subprocess.run(["lake", "env", "lean", "--run", "scripts/heavy_ownership_test.lean"],
                          cwd=ROOT, input="".join(json.dumps(j) + "\n" for j in inputs),
                          text=True, capture_output=True, timeout=120)
@@ -180,8 +283,8 @@ def main():
     assert len(actual) == len(expected), (len(actual), len(expected))
     for i, (got, want) in enumerate(zip(actual, expected)):
         assert got == want, (i, got, want, inputs[i])
-    print(f"{len(cases)} Lean/Python ownership cases and 12 registry attempts agree "
-          f"({len(fixed)} sanitized fixtures)")
+    print(f"{len(cases)} Lean/Python ownership cases and {registry_count} registry attempts agree "
+          f"({len(fixed)} sanitized fixtures); {len(values)} numeric conversion cases agree")
 
 
 if __name__ == "__main__":

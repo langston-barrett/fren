@@ -25,6 +25,38 @@ def report (r : Report) : testing.MemoryReport :=
 def memoryLease (r : Lease) : testing.MemoryLease :=
   ⟨r.report.map report, r.statusJob, r.observed.map monitor, r.legacyRss⟩
 
+def timeSpan : TimeSpan → testing.TimeSpan
+  | .finite e => .Finite e
+  | .positiveInfinity => .PositiveInfinity
+  | .negativeInfinity => .NegativeInfinity
+  | .notANumber => .NotANumber
+
+impl time_conversion: testing::heavy_time_conversion for (span : TimeSpan) (ttl : Nat) {
+  span := timeSpan span,
+  ttl := ttl,
+  elapsed_updated := elapsedTimestamp span,
+  remaining_deadline := remainingDeadline span,
+  fresh? := freshReport ⟨⟨"", 1⟩, 0, elapsedTimestamp span, none⟩ 0 ttl,
+  timed_out? := (Heavy.Ownership.registry false 0 (remainingDeadline span) false false).timedOut,
+} by
+  intro span ttl _
+  cases span <;>
+    simp [fren_spec, timeSpan, elapsedTimestamp, remainingDeadline, freshReport,
+      Heavy.Ownership.registry]
+
+/-- Normalization preserves all integral freshness inputs, not just fixtures. -/
+theorem integral_freshness (r : Report) (now : Int) (ttl : Nat) :
+    freshReport { r with updated := elapsedTimestamp (.finite (now - r.updated)) } 0 ttl =
+      freshReport r now ttl := by
+  simp [freshReport, elapsedTimestamp]
+
+/-- Normalization also preserves the original integral registry contract. -/
+theorem integral_registry (available : Bool) (now deadline : Int) (held requested : Bool) :
+    Heavy.Ownership.registry available 0 (remainingDeadline (.finite (deadline - now))) held requested =
+      Heavy.Ownership.registry available now deadline held requested := by
+  have hge : (0 ≥ deadline - now) ↔ now ≥ deadline := by omega
+  simp [Heavy.Ownership.registry, remainingDeadline, hge]
+
 impl registry: testing::heavy_registry
     for (available : Bool) (now deadline : Int) (held requested : Bool) {
   available? := available,

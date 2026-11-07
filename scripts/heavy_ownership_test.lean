@@ -15,22 +15,36 @@ def optionalField (j : Json) (key : String) (decode : Json → Except String α)
   | .null => return none
   | x => return some (← decode x)
 
-def report (j : Json) : Except String Report := do
+def timeSpan (j : Json) : Except String TimeSpan := do
+  match ← j.getObjValAs? String "kind" with
+  | "finite" => return .finite (← j.getObjValAs? Int "ticks")
+  | "positiveInfinity" => return .positiveInfinity
+  | "negativeInfinity" => return .negativeInfinity
+  | "notANumber" => return .notANumber
+  | _ => throw "unknown numeric span"
+
+def report (span : TimeSpan) (j : Json) : Except String Report := do
   return ⟨⟨← j.getObjValAs? String "job_id", ← j.getObjValAs? Int "order"⟩,
-    ← j.getObjValAs? Int "rss_kb", ← j.getObjValAs? Int "updated_monotonic",
+    ← j.getObjValAs? Int "rss_kb", elapsedTimestamp span,
     ← optionalField j "monitor" monitor⟩
 
 def check (j : Json) : Except String Json := do
-  let now ← j.getObjValAs? Int "now"
+  let span ← j.getObjVal? "span" >>= timeSpan
+  let now : Int := 0
   if (← j.getObjValAs? String "kind") == "registry" then
     let r := registry (← j.getObjValAs? Bool "available") now
-      (← j.getObjValAs? Int "deadline") (← j.getObjValAs? Bool "held")
+      (remainingDeadline span) (← j.getObjValAs? Bool "held")
       (← j.getObjValAs? Bool "requested")
     return .arr #[toJson r.acquired, toJson r.retry, toJson r.timedOut, toJson r.deferred]
-  let row : Lease := ⟨← optionalField j "report" report,
+  let ttl ← j.getObjValAs? Nat "ttl"
+  if (← j.getObjValAs? String "kind") == "conversion" then
+    let r : Report := ⟨⟨"", 1⟩, 0, elapsedTimestamp span, none⟩
+    return .arr #[toJson (elapsedTimestamp span), toJson (remainingDeadline span),
+      toJson (freshReport r 0 ttl),
+      toJson (registry false 0 (remainingDeadline span) false false).timedOut]
+  let row : Lease := ⟨← optionalField j "report" (report span),
     ← j.getObjValAs? String "status_job", ← optionalField j "observed" monitor,
     ← j.getObjValAs? (Option Int) "legacy_rss"⟩
-  let ttl ← j.getObjValAs? Nat "ttl"
   let r := lease (← j.getObjValAs? Nat "cap") (← j.getObjValAs? Bool "locked") row now ttl
   return .arr #[toJson (reportOwner row.report row.statusJob row.observed now ttl),
     toJson r.live, toJson r.admission, toJson r.eviction]
