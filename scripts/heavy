@@ -1347,7 +1347,8 @@ def legacy_readings(leases, proc="/proc", system=None):
     """Validate report owners and measure visible legacy child groups.
     Lock ownership and parentage come from the kernel, in one procfs view.
     Missing/filtered data leaves the reading unknown, never zero by default.
-    Do this scan outside registry: it must not delay other owners' checks."""
+    Monitor scans run outside the registry lock; admission scans hold it
+    through slot acquisition."""
     if not leases:
         return
     release = re.match(r"(\d+)\.(\d+)", platform.release())
