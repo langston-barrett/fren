@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Spec
 import Fren.View
 import FrenCore.Literate
 import Lean.Elab.Frontend
