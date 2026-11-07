@@ -6,7 +6,10 @@ namespace Fren.Core
 /-- The native evaluator's child selection when reconstructing source
 questions of an unfolded application (`eval::application_sites`): every
 retained argument, then the substituted body. An argument need not occur
-in the body, and repetitions remain visits. -/
+in the body, and repetitions remain visits. Native question generation
+and bounded inspection consume this list. The Lean-hosted front end
+records questions while translating source arguments, before applying
+the Lean definition; it has no retained-argument reconstruction step. -/
 def applicationParts (arguments : List α) (body : α) : List α :=
   arguments ++ [body]
 
