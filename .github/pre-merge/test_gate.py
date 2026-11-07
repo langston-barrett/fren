@@ -1235,6 +1235,40 @@ class InheritedReview(unittest.TestCase):
 
 
 class CheckRuns(unittest.TestCase):
+    def test_actual_pending_shell_binds_the_successful_prepare_attempt(self):
+        from inherited_cases import Scenario
+        workflow = (HERE.parent / "workflows/pre-merge.yml").read_text()
+        pending = workflow.split("  pending:\n", 1)[1].split("  slow:\n", 1)[0]
+        self.assertIn("name: ${{ needs.prepare.outputs.dependency || 'pending' }}", pending)
+        self.assertIn("dependency: ${{ steps.prepare.outputs.dependency }}", workflow)
+        shell = textwrap.dedent(pending.split("      run: |\n", 1)[1])
+        with Scenario("wording", bot_source=True) as c:
+            with patch.dict(os.environ, REVIEW_RUN="42"):
+                gate.prepare()
+            binding = gate.DEPENDENCY_CONTEXT.fullmatch(c.outputs()["dependency"])
+            self.assertEqual(binding.groups()[:3], ("12", c.head, c.source))
+            binary = c.root / "bin"
+            binary.mkdir()
+            gh = binary / "gh"
+            gh.write_text('''#!/usr/bin/python3
+import json, os, pathlib, sys
+assert sys.argv[1:3] == ['api', 'repos/owner/fren/check-runs']
+fields = dict(sys.argv[i+1].split('=', 1) for i in range(len(sys.argv)-1) if sys.argv[i] == '-f')
+pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps(fields))
+print('10')
+''')
+            gh.chmod(0o755)
+            capture = c.root / "pending.json"
+            env = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+                   "CAPTURE": str(capture), "REPO": REPO, "HEAD": c.head, "RUN_ID": "70", "ATTEMPT": "1",
+                   "URL": f"https://github.com/{REPO}/actions/runs/70"}
+            subprocess.run(["bash", "-euo", "pipefail", "-c", shell], env=env, check=True)
+            fields = json.loads(capture.read_text())
+            self.assertEqual(fields["external_id"], "pre-merge:70:1")
+            self.assertEqual(fields["head_sha"], c.head)
+            self.assertEqual(fields["status"], "in_progress")
+            self.assertEqual(c.outputs()["check"], "10")
+
     def test_updates_own_check_and_creates_failure_if_preparation_failed(self):
         for check in ("123", ""):
             with patch.dict(os.environ, GITHUB_REPOSITORY=REPO, CHECK_RUN_ID=check), \

@@ -42,6 +42,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
+      checks: read
     outputs:
       head: ${{ steps.prepare.outputs.head }}
       pr: ${{ steps.prepare.outputs.pr }}
@@ -52,6 +53,7 @@ jobs:
       revoked: ${{ steps.prepare.outputs.revoked }}
       recovered: ${{ steps.prepare.outputs.recovered }}
       source: ${{ steps.prepare.outputs.source }}
+      dependency: ${{ steps.prepare.outputs.dependency }}
       own-spec-agreement: ${{ steps.prepare.outputs.own-spec-agreement }}
       methods-agree: ${{ steps.prepare.outputs.methods-agree }}
       coverage: ${{ steps.prepare.outputs.coverage }}
@@ -69,6 +71,8 @@ jobs:
         REVIEW_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         PR_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || '' }}
   pending:
+    # Durable negative-only dependency evidence survives approval artifacts.
+    name: ${{ needs.prepare.outputs.dependency || 'pending' }}
     needs: prepare
     if: ${{ needs.prepare.outputs.head != '' }}
     runs-on: ubuntu-24.04
@@ -85,9 +89,11 @@ jobs:
         REPO: ${{ github.repository }}
         HEAD: ${{ needs.prepare.outputs.head }}
         URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        RUN_ID: ${{ github.run_id }}
+        ATTEMPT: ${{ github.run_attempt }}
       run: |
         check=$(gh api "repos/$REPO/check-runs" -f name=pre-merge -f head_sha="$HEAD" \
-          -f status=in_progress -f details_url="$URL" --jq .id)
+          -f status=in_progress -f details_url="$URL" -f external_id="pre-merge:$RUN_ID:$ATTEMPT" --jq .id)
         echo "check=$check" >> "$GITHUB_OUTPUT"
   slow:
     needs: [prepare, pending]

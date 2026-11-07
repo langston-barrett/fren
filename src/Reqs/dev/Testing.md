@@ -2255,18 +2255,30 @@ A blocking review revokes completed and running `pre-merge` checks on
 that head and on the current head that inherits that review through a
 permitted wording-only change or pure merge from main. Event handling
 and outputless recovery revalidate the live structural dependency, the
-source's latest verdict and both heads' review provenance. A different
-event head alone never supplies a target: an independently reviewed
-head, an unrelated source or a source whose latest trusted review is
-clean is left alone. Negative-only bot text cannot establish an
-independent review and erase a real dependency. Automatic and
-review-run-only positive source events never start or approve a
-dependent head's gate. Inherited approval still requires an explicit
-current-PR dispatch. These rules apply to local comments, attested
-completions and missing-attestation recovery, including when no slow job
-is selected or preparation failed or was cancelled. Every reporter
-checks the current review before and after publishing success, so an
-older run cannot restore green after a newer blocking review. This
+source's latest verdict and both heads' review provenance. A dependency
+consumed by successful authorization outlives its approval artifact:
+expiry, absence or a failed listing or download must not reclassify that
+source as unrelated. Trusted preparation records its selected source,
+PR, head, main snapshot, merge and attempt in the pending job's
+metadata; the check identifies that workflow run and attempt. Negative
+recovery validates the trusted main-context gate workflow, repository,
+successful preparation and actual job/check identities independently of
+artifacts. It rechecks the permitted structure and latest reviews before
+revoking. A later gate that consumed an independent head review
+supersedes the old dependency. This retained evidence never authorizes a
+pass or starts slow work. Loss of the original approval and of a newer
+blocking attestation are separate failures, even for a completed gate
+with no running check. A different event head alone never supplies a
+target: an independently reviewed head, an unrelated source or a source
+whose latest trusted review is clean is left alone. Negative-only bot
+text cannot establish an independent review and erase a real dependency.
+Automatic and review-run-only positive source events never start or
+approve a dependent head's gate. Inherited approval still requires an
+explicit current-PR dispatch. These rules apply to local comments,
+attested completions and missing-attestation recovery, including when no
+slow job is selected or preparation failed or was cancelled. Every
+reporter checks the current review before and after publishing success,
+so an older run cannot restore green after a newer blocking review. This
 applies when no slow job is selected too. With a usable attestation,
 revalidation leaves a newer clean review standing. If recording,
 uploading or reading authorization fails after publication, completion
@@ -2335,6 +2347,17 @@ completed/running check invalidation using real git objects and mocked
 transport. It covers both inheritance shapes, local and automated
 events, recleaned sources, independently reviewed heads, invalid
 structures and lost artifacts; it never supplies an approval flag.
+`authorization_source` returns the source actually selected by the clean
+review decision, and successful preparation persists that identity.
+`recorded_source` binds surviving check/run/attempt/job metadata to the
+negative recovery boundary. `evidence_cases.py` and its partitioned
+suites begin with actual successful inherited preparation and reporting,
+then independently remove, expire or fail reads of the original and new
+attestations. They check completed-only and completed-plus-running
+states, every event/dispatch entry and outputless recovery with real git
+objects and the production decisions. The pending shell regression
+executes the actual workflow command that binds the check to its run and
+attempt. No metadata receipt grants positive authorization.
 `test_gate.py` exercises these functions with mocked API and git
 transport, including superseded reviews, publication races, lost
 attestations after successful comment publication, all entry paths and

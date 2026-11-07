@@ -61,7 +61,8 @@ class Scenario:
         self.stack = ExitStack()
         self.stack.enter_context(patch.dict(os.environ, GITHUB_REPOSITORY=REPO, GH_TOKEN="read-only-token",
                 PR_INPUT="12", REVIEW_RUN="", REVIEW_ATTEMPT="", GITHUB_EVENT_NAME="workflow_dispatch",
-                GITHUB_EVENT_PATH=str(self.event_path), GITHUB_OUTPUT=str(self.output), CHECK_RUN_ID="10"))
+                GITHUB_EVENT_PATH=str(self.event_path), GITHUB_OUTPUT=str(self.output), CHECK_RUN_ID="10",
+                GITHUB_RUN_ID="70", GITHUB_RUN_ATTEMPT="1"))
         self.stack.enter_context(patch.object(gate, "api", side_effect=self.api))
         self.stack.enter_context(patch.object(gate.subprocess, "run", side_effect=self.command))
         self.reset()
@@ -79,6 +80,7 @@ class Scenario:
     def reset(self):
         self.comments, self.records, self.writes, self.fetches = [], {}, [], []
         self.loss = None
+        self.losses, self.gate_runs = {}, {}
         self.checks = {10: {"id": 10, "name": "pre-merge", "head_sha": self.head,
                             "app": {"slug": "github-actions"}, "conclusion": "success", "status": "completed"}}
         self.add_review(self.source, clean=True, bot=self.bot_source, run=42)
@@ -102,7 +104,10 @@ class Scenario:
 
     def artifact(self, run):
         return {"id": run, "name": gate.artifact_name(12, self.records[run]["head"]),
-                "expired": False, "workflow_run": {"id": run}}
+                "expired": self.loss_mode(run) == "expired", "workflow_run": {"id": run}}
+
+    def loss_mode(self, run):
+        return self.losses.get(run, self.loss if run == 43 else None)
 
     def api(self, endpoint, payload=None, method=None):
         path, query = urlsplit(endpoint).path, parse_qs(urlsplit(endpoint).query)
@@ -112,18 +117,21 @@ class Scenario:
         if path.endswith("/issues/12/comments"): return self.comments
         if "/actions/runs/" in path:
             run = int(path.split("/runs/")[1].split("/")[0])
+            if run in self.gate_runs:
+                record = self.gate_runs[run]
+                return {"jobs": record["jobs"]} if path.endswith("/jobs") else record["info"]
             if path.endswith("/jobs"):
                 return {"jobs": [{"name": f"Post review (PR 12, head {self.source}, attempt 1)",
                         "run_id": run, "run_attempt": 1, "status": "completed",
                         "conclusion": "cancelled" if self.loss == "missing" else "failure"}]}
             if path.endswith("/artifacts"):
-                if run == 43 and self.loss == "listing": raise OSError("artifact listing unavailable")
-                return {"artifacts": [self.artifact(run)] if run in self.records and not (run == 43 and self.loss == "missing") else []}
+                if self.loss_mode(run) == "listing": raise OSError("artifact listing unavailable")
+                return {"artifacts": [self.artifact(run)] if run in self.records and self.loss_mode(run) != "missing" else []}
             return {"id": run, "path": ".github/workflows/claude-review.yml", "head_repository": {"full_name": REPO},
                     "head_branch": "main", "status": "completed", "event": "workflow_run", "run_attempt": 1}
         if path.endswith("/actions/artifacts"):
             return {"artifacts": [self.artifact(r) for r in self.records
-                    if self.artifact(r)["name"] == query["name"][0] and not (r == 43 and self.loss == "missing")]}
+                    if self.artifact(r)["name"] == query["name"][0] and self.loss_mode(r) != "missing"]}
         if "/commits/" in path:
             head = path.split("/commits/")[1].split("/")[0]
             return {"check_runs": [c for c in self.checks.values() if c["head_sha"] == head]}
@@ -147,7 +155,7 @@ class Scenario:
             return subprocess.CompletedProcess(args, 0)
         if args[:3] == ["gh", "run", "download"]:
             run = int(args[3])
-            if run == 43 and self.loss == "download": raise OSError("download unavailable")
+            if self.loss_mode(run) == "download": raise OSError("download unavailable")
             Path(args[-1], "review.json").write_text(json.dumps(self.records[run]))
             return subprocess.CompletedProcess(args, 0)
         return REAL_RUN(args, **kwargs)
@@ -164,6 +172,15 @@ class Scenario:
         with patch.dict(os.environ, PR_INPUT="12", REVIEW_RUN="42" if self.bot_source else "", GITHUB_EVENT_NAME="workflow_dispatch"):
             gate.prepare()
             test.assertEqual(self.outputs()["relevant"], "false")
+            # GitHub retains this job name from actual successful prepare
+            # outputs. It is not supplied as an approval/dependency flag.
+            self.gate_runs[70] = {
+                "info": {"id": 70, "path": ".github/workflows/pre-merge.yml", "run_attempt": 1,
+                         "head_branch": "main", "head_repository": {"full_name": REPO}, "event": "workflow_dispatch"},
+                "jobs": [{"name": name, "run_id": 70, "run_attempt": 1, "status": "completed", "conclusion": "success"}
+                         for name in ("prepare", self.outputs()["dependency"])],
+            }
+            self.checks[10].update(external_id="pre-merge:70:1", details_url=f"https://github.com/{REPO}/actions/runs/70")
             self.finish(self.outputs(), prepare="success", check="10")
         test.assertEqual(self.checks[10]["conclusion"], "success")
         self.checks[11] = {**self.checks[10], "id": 11, "status": "in_progress", "conclusion": None}

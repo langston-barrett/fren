@@ -22,6 +22,8 @@ BOT = {"github-actions", "github-actions[bot]"}
 VERDICT = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues(?: \((?:fixes|rebase) only\))?|blocking issues)")
 CLEAN = re.compile(r"Review of ([0-9a-f]{40}): no blocking issues(?: \((?:fixes|rebase) only\))?")
 POST_CONTEXT = re.compile(r"Post review \(PR ([0-9]+), head ([0-9a-f]{40}), attempt ([0-9]+)\)")
+DEPENDENCY = "Gate dependency (PR {pr}, head {head}, source {source}, main {base}, merge {merge}, attempt {attempt})"
+DEPENDENCY_CONTEXT = re.compile(r"Gate dependency \(PR ([0-9]+), head ([0-9a-f]{40}), source ([0-9a-f]{40}), main ([0-9a-f]{40}), merge ([0-9a-f]{40}), attempt ([0-9]+)\)")
 
 
 def selected(paths):
@@ -143,16 +145,34 @@ def eligible(pr, repo, head):
             and pr["base"]["ref"] == "main" and pr["head"]["sha"] == head)
 
 
-def inherited_source(pr, main):
-    """Select the actual review dependency, separately from its verdict.
-
-    Authorization and negative event routing use these same structural
-    rules. A later blocking source verdict must not erase the dependency.
-    """
+def review_kind():
     path = Path(__file__).resolve().parents[1] / "pr-review/kind.py"
     spec = importlib.util.spec_from_file_location("review_kind", path)
     kind = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(kind)
+    return kind
+
+
+def main_update_sources(head, main):
+    # No custom conflict resolution can inherit a review. Follow at most
+    # ten updates, as in pr-review/prepare.sh.
+    commit = head
+    for _ in range(10):
+        parents = run("git", "show", "-s", "--format=%P", commit).split()
+        if len(parents) != 2:
+            return
+        first, source = parents
+        if subprocess.run(["git", "merge-base", "--is-ancestor", source, main]).returncode != 0:
+            return
+        if run("git", "merge-tree", "--write-tree", first, source) != run("git", "rev-parse", f"{commit}^{{tree}}"):
+            return
+        yield first
+        commit = first
+
+
+def inherited_source(pr, main):
+    """Select the currently evidenced dependency, separately from its verdict."""
+    kind = review_kind()
     # kind also reads human requests and accepts review prefixes. The gate
     # requires the complete verdict line, as it does for attestations.
     comments = []
@@ -173,22 +193,10 @@ def inherited_source(pr, main):
         previous = decision["previous"]
         if kind.wording_problem(previous, head) is None:
             return previous
-    # The same pure-main-update test as pr-review/prepare.sh. No custom
-    # conflict resolution can inherit a review. Follow at most ten updates.
-    commit = head
-    for _ in range(10):
-        parents = run("git", "show", "-s", "--format=%P", commit).split()
-        if len(parents) != 2:
-            return
-        first, source = parents
-        if subprocess.run(["git", "merge-base", "--is-ancestor", source, main]).returncode != 0:
-            return
-        if run("git", "merge-tree", "--write-tree", first, source) != run("git", "rev-parse", f"{commit}^{{tree}}"):
-            return
+    for first in main_update_sources(head, main):
         verdict = kind.verdict(pr, first)
         if verdict is not None:
             return first
-        commit = first
 
 
 def latest_verdict(pr, head):
@@ -200,12 +208,60 @@ def latest_verdict(pr, head):
     return latest
 
 
-def inherited_review(pr, main):
+def clean_source(pr, main):
     if latest_verdict(pr, pr["headRefOid"]) == "blocking issues":
-        return False
+        return
     source = inherited_source(pr, main)
     verdict = latest_verdict(pr, source) if source else None
-    return verdict is not None and CLEAN.fullmatch(f"Review of {source}: {verdict}") is not None
+    if verdict is not None and CLEAN.fullmatch(f"Review of {source}: {verdict}"):
+        return source
+
+
+def inherited_review(pr, main):
+    return clean_source(pr, main) is not None
+
+
+def recorded_source(repo, pr, head):
+    """Recover a previously trusted dependency, never a positive verdict.
+
+    The pending job's name is assigned from successful trusted preparation,
+    before PR code runs. Check metadata locates that run and attempt; neither
+    arbitrary check text nor an artifact supplies the dependency identity.
+    """
+    records = []
+    seen = set()
+    for check in pages(f"repos/{repo}/commits/{head}/check-runs?check_name=pre-merge&filter=all", "check_runs"):
+        match = re.fullmatch(r"pre-merge:([1-9][0-9]*):([1-9][0-9]*)", check.get("external_id") or "")
+        if (check.get("name") != "pre-merge" or check.get("head_sha") != head
+                or (check.get("app") or {}).get("slug") != "github-actions" or not match):
+            continue
+        run_id, attempt = map(int, match.groups())
+        if check.get("details_url") != f"https://github.com/{repo}/actions/runs/{run_id}":
+            continue
+        if (run_id, attempt) in seen:
+            continue
+        seen.add((run_id, attempt))
+        info = api(f"repos/{repo}/actions/runs/{run_id}/attempts/{attempt}")
+        if (info.get("path") != ".github/workflows/pre-merge.yml" or info.get("id") != run_id
+                or info.get("run_attempt") != attempt or info.get("head_branch") != "main"
+                or (info.get("head_repository") or {}).get("full_name") != repo
+                or info.get("event") not in ("workflow_run", "workflow_dispatch")):
+            continue
+        jobs = list(pages(f"repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs", "jobs"))
+        jobs = [j for j in jobs if j.get("run_id") == run_id and j.get("run_attempt") == attempt]
+        if not any(j["name"] == "prepare" and j["status"] == "completed"
+                   and j["conclusion"] == "success" for j in jobs):
+            continue
+        dependencies = []
+        for job in jobs:
+            binding = DEPENDENCY_CONTEXT.fullmatch(job["name"])
+            if (binding and int(binding[1]) == pr and binding[2] == head and int(binding[6]) == attempt
+                    and job["status"] in ("in_progress", "completed") and job["conclusion"] != "skipped"):
+                dependencies.append(binding[3])
+        if len(dependencies) == 1:
+            records.append((run_id, attempt, dependencies[0]))
+    # A later gate may have consumed an independent review of H itself.
+    return max(records)[2] if records else None
 
 
 def trusted_review_run(repo, review_run, attempt=None):
@@ -262,8 +318,22 @@ def negative_context(repo, pr, source, attested=None, blocking_comment=None):
                           capture_output=True).returncode != 0:
             return
         meta = review_metadata(repo, pr, head, attested, blocking_comment, source)
-        if inherited_source(meta, main) != source or latest_verdict(meta, source) != "blocking issues":
+        if latest_verdict(meta, source) != "blocking issues":
             return
+        selected = inherited_source(meta, main)
+        if selected == head:
+            return
+        recorded = recorded_source(repo, pr, head)
+        if recorded is not None and recorded != source:
+            return
+        if selected != source:
+            # Missing original evidence removes positive authorization, not
+            # a dependency already consumed by a trusted gate. A presently
+            # verified independent review or different source still wins.
+            if (selected is not None or recorded != source
+                    or not (review_kind().wording_problem(source, head) is None
+                            or source in main_update_sources(head, main))):
+                return
         # A head change while fetching or reading reviews needs a new
         # dependency decision, never a write against a different head.
         if current_context(repo, pr, head) is None:
@@ -431,19 +501,23 @@ def review_metadata(repo, pr, head, attested=None, blocking_comment=None, source
     return {"headRefOid": head, "comments": comments}
 
 
-def authorized(repo, pr, head, main, attested=None, manual=False, blocking_comment=None):
+def authorization_source(repo, pr, head, main, attested=None, manual=False, blocking_comment=None):
     """r[ci.current-review]: one authorization decision for every entry/report."""
     data = api(f"repos/{repo}/pulls/{pr}")
     if data["number"] != pr or not eligible(data, repo, head):
-        return False
+        return
     if attested and (int(attested["pr"]) != pr or (not manual and attested["head"] != head)):
-        return False
+        return
     meta = review_metadata(repo, pr, head, attested, blocking_comment)
     if not manual:
         # Automatic events never inherit a review of another head.
         latest = latest_verdict(meta, head)
-        return latest is not None and latest != "blocking issues"
-    return inherited_review(meta, main)
+        return head if latest is not None and latest != "blocking issues" else None
+    return clean_source(meta, main)
+
+
+def authorized(repo, pr, head, main, attested=None, manual=False, blocking_comment=None):
+    return authorization_source(repo, pr, head, main, attested, manual, blocking_comment) is not None
 
 
 def invalidate(head):
@@ -532,13 +606,16 @@ def prepare():
         raise ValueError("GitHub's merge ref does not yet match the current head and main; rerun")
     # The verified merge brought this snapshot's objects into the trusted
     # checkout, including the main commit used by structural inheritance.
-    if not authorized(repo, pr, head, main, attested, manual):
+    source = authorization_source(repo, pr, head, main, attested, manual)
+    if source is None:
         output(revoked=True)
         raise ValueError("The current review does not authorize this gate")
     names = subprocess.check_output(["git", "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
                                      "--name-only", "-z", f"{parents[0]}...{head}"])
     jobs = selected(names.decode().split("\0"))
-    output(merge=merge, base=parents[0], relevant=any(jobs.values()), **jobs)
+    dependency = DEPENDENCY.format(pr=pr, head=head, source=source, base=main, merge=merge,
+                                   attempt=int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")))
+    output(merge=merge, base=parents[0], source=source, dependency=dependency, relevant=any(jobs.values()), **jobs)
     print(json.dumps({"pr": pr, "head": head, "merge": merge, "jobs": jobs}, indent=2))
 
 
