@@ -5,6 +5,11 @@
 # Model/runtime bridges and dynamic quotation gaps: #846, item 3.
 # A new connection removes its old entry; there is no bless mode.
 
+# Standalone heavy kernel (#859): outside the audited Fren CLI/hosted
+# runtimes. Python remains the active scheduler in migration step 1.
+unbound: Fren.Impls.Heavy.memory_prediction jobs
+unbound: Fren.Impls.Heavy.memory_prediction prediction
+
 # Outputs represented by binders, literals, spec values, or output-free laws.
 unbound: Fren.Impls.Enumeration.contract_blocker right?
 unbound: Fren.Impls.Enumeration.shape_bound size
@@ -329,10 +334,7 @@ bypassed: Fren.Impls.Theories.theory_ground_term ground? Fren.Core.TheoryTerm.gr
 bypassed: Fren.Impls.Theories.theory_instance accepted? Fren.Core.TheorySentence.instantiate
 bypassed: Fren.Impls.Theories.theory_instance instance_sentence Fren.Core.TheorySentence.instantiate
 bypassed: Fren.Impls.Theories.theory_term_list substituted Fren.Core.TheoryTerm.substitute
-bypassed: Fren.Impls.Theories.theory_term_list translated Fren.Core.TheoryTerm.translate
 bypassed: Fren.Impls.Theories.theory_term_substitution substituted Fren.Core.TheoryTerm.substitute
-bypassed: Fren.Impls.Theories.theory_term_translation translated Fren.Core.TheoryTerm.translate
-bypassed: Fren.Impls.Theories.theory_translation translated Fren.Core.TheorySentence.translate
 bypassed: Fren.Impls.Theories.theory_variable_images accepted? Fren.Core.theoryGroundImages
 bypassed: Fren.Impls.Theories.theory_variable_images remaining Fren.Core.theoryRemainingVariables
 bypassed: Fren.Impls.application accepted? Fren.Core.applicationAccepted

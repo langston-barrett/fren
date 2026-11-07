@@ -7,9 +7,10 @@ import FrenCore.Ty
 # Theories (`Reqs/Lang/ModulesAndInterfaces`, `Reqs/Lang/Implementations`)
 
 The common representation for modules, generic functions and generic types.
-Front ends will extract declarations and sentences into it in later units of
-#761. A morphism translates types and signature items uniformly, including
-constants for unspecified values. Ground instantiation is simultaneous and
+Generic function instances translate their references through it; module
+and generic type adoption is separate work in #761. A morphism translates
+types and signature items uniformly, including constants for unspecified
+values. Ground instantiation is simultaneous and
 keeps the sentence's domain, calls and claims together. Choosing substitutions
 by matching, closing a query under instances, and discharging a morphism's
 obligations are separate operations, not implemented here.

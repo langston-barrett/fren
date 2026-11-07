@@ -121,7 +121,7 @@ def test_reservation_wait_message():
                  mock.patch.object(heavy.time, "sleep", side_effect=Waiting), \
                  mock.patch.object(heavy, "run", side_effect=AssertionError("admitted")):
                 assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
-                    {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}), Waiting)
+                    {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off", "HEAVY_ADMISSION": "forecast"}), Waiting)
             assert f"slot1 ({reason})" in stderr.getvalue()
             assert "resume stopped monitors or reduce running memory" in stderr.getvalue()
             assert "slots busy" not in stderr.getvalue()
@@ -152,6 +152,68 @@ def test_registry_wait_messages():
                 {"HEAVY_SLOTS": "1", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}), Waiting)
             run.assert_not_called()
             assert stderr.getvalue() == f"heavy: waiting for registry lock (see {state})\n"
+
+
+def test_admission_policy():
+    # fren-covers: testing::heavy_admission, testing::heavy_wait_message
+    assert heavy.admission_policy({}) == "rss"
+    assert heavy.admission_policy({"HEAVY_ADMISSION": "forecast"}) == "forecast"
+    for invalid in ("", "observe", "FORECAST"):
+        assert raises(lambda: heavy.admission_policy({"HEAVY_ADMISSION": invalid}), ValueError)
+    row = {"rss_kb": 10, "fresh": True, "predicted_peak_rss_kb": 200}
+    # A stale/outsize whole-build forecast cannot gate ordinary admission.
+    assert heavy.policy_fits([row], None, 100, "rss")
+    assert not heavy.policy_fits([row], None, 100, "forecast")
+    assert heavy.policy_fits([dict(row, rss_kb=60)], 200, 100, "rss")
+    assert not heavy.policy_fits([dict(row, rss_kb=61)], 1, 100, "rss")
+    assert not heavy.policy_fits([dict(row, fresh=False)], 1, 100, "rss")
+    legacy = {"legacy": True, "legacy_rss_kb": None}
+    assert heavy.rss_memory([legacy, legacy], 100) == 50
+    assert heavy.policy_fits([legacy, legacy], None, 100, "rss")
+    assert not heavy.policy_fits([legacy], 1, 100, "forecast")
+    assert heavy.policy_fits([], 200, 100, "forecast")
+    # Neither policy changes the measured-memory victim calculation.
+    assert heavy.memory_victim([dict(row, job_id="old", order=1)], 100) == (10, None)
+    with tempfile.TemporaryDirectory() as state:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            assert heavy.main([sys.executable, "-c", "pass"], state,
+                              {"HEAVY_ADMISSION": "wrong"}) == 2
+        assert "HEAVY_ADMISSION must be rss or forecast" in stderr.getvalue()
+        assert not os.path.exists(os.path.join(state, "log.jsonl"))
+
+
+def test_observed_forecast_disagreement():
+    # fren-covers: testing::heavy_admission, testing::heavy_memory_prediction
+    with tempfile.TemporaryDirectory() as state:
+        row = {"slot": "slot1", "rss_kb": 1, "fresh": True, "predicted_peak_rss_kb": 2 * GB}
+        env = {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "1"}
+        def load():
+            env["HEAVY_ADMISSION"] = "forecast"  # The queued invocation remains RSS.
+            return 0
+        with mock.patch.object(heavy, "jobs", return_value=[row]), \
+             mock.patch.object(heavy, "run_command", return_value=0), \
+             mock.patch.object(heavy.time, "sleep", side_effect=AssertionError("forecast delayed RSS mode")):
+            assert heavy.main([sys.executable, "-c", "pass"], state, env, load) == 0
+        with open(os.path.join(state, "log.jsonl")) as f:
+            record = json.loads(f.read())
+        assert record["admission_policy"] == "rss" and record["prediction_default"]
+        assert record["admission_cap_kb"] == GB and record["admission_running_jobs"] == 1
+        assert record["admission_rss_kb"] == 1 and record["admission_forecast_kb"] == 3 * GB
+        assert record["admission_forecast_fits"] is False
+
+
+def test_mixed_policy_order():
+    # fren-covers: testing::heavy_admission
+    with tempfile.TemporaryDirectory() as state:
+        with heavy.waiting_job(state, {"enqueued_at": 0, "admission_policy": "forecast"}, 101,
+                               {"HEAVY_PRIORITY": "merge-blocking"}) as strict, \
+             heavy.waiting_job(state, {"enqueued_at": 1, "admission_policy": "rss"}, 100, {}) as observed:
+            running = [{"rss_kb": 10, "fresh": True, "predicted_peak_rss_kb": 60}]
+            with heavy.registry(state):
+                # Fit is evaluated under each waiter's own frozen policy.
+                assert heavy.next_waiter(state, running, 100) == observed
+                assert heavy.next_waiter(state, [], 100) == strict
 
 
 def test_forecast_admission():
@@ -323,7 +385,7 @@ def test_forecast_queue_integration():
         heavy.append_log({"event": "job", "job_kind": heavy.job_kind(
             [sys.executable, "-c", worker, ready[0], stop[0]]),
             "ended_at": heavy.time.time() - 1, "peak_rss_kb": 60 * 1024}, state, {})
-        env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.1", HEAVY_MAX_LOAD="off")
+        env = dict(os.environ, HEAVY_SLOTS="2", HEAVY_MEM_GB="0.1", HEAVY_MAX_LOAD="off", HEAVY_ADMISSION="forecast")
         env.pop("HEAVY_LOG", None)
         env.pop("FREN_JOB_KIND", None)
         children = []
@@ -504,7 +566,7 @@ def tiny_job(state, command, overrides=None, timeout=30):
     # Invoke main in a fresh process, with no real load or shared state.
     code = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
             "sys.exit(h['main'](sys.argv[3:], state=sys.argv[2], load_reader=lambda: 0.5))")
-    environ = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="1", HEAVY_MAX_LOAD="off")
+    environ = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="1", HEAVY_MAX_LOAD="off", HEAVY_ADMISSION="rss")
     environ.pop("HEAVY_LOG", None)
     environ.pop("FREN_JOB_KIND", None)
     environ.update(overrides or {})
@@ -929,7 +991,7 @@ def test_legacy_coexistence():
                  mock.patch.object(heavy.time, "sleep", side_effect=Waiting) as sleep, \
                  mock.patch.object(heavy, "run", side_effect=AssertionError("admitted without a free slot")) as run:
                 assert raises(lambda: heavy.main([sys.executable, "-c", "pass"], state,
-                    {"HEAVY_SLOTS": str(slots), "HEAVY_MEM_GB": "0.5", "HEAVY_MAX_LOAD": "off"}), Waiting)
+                    {"HEAVY_SLOTS": str(slots), "HEAVY_MEM_GB": "0.5", "HEAVY_MAX_LOAD": "off", "HEAVY_ADMISSION": "forecast"}), Waiting)
                 run.assert_not_called()
                 sleep.assert_called_once_with(5)
             assert "waiting for memory" in stderr.getvalue()
@@ -2703,7 +2765,8 @@ def main():
              test_child_subreaper, test_process_readings,
              test_process_sampling, test_machine_pressure, test_memory_prediction, test_process_integration,
              test_parse_args, test_missing_command, test_atomic_admission, test_reservation_wait_message,
-             test_registry_wait_messages, test_forecast_admission, test_waiter_order, test_frozen_admission, test_forecast_slot_limit,
+             test_registry_wait_messages, test_admission_policy, test_observed_forecast_disagreement,
+             test_mixed_policy_order, test_forecast_admission, test_waiter_order, test_frozen_admission, test_forecast_slot_limit,
              test_forecast_queue_integration, test_adapter_denial, test_coordinator_kind,
              test_physical_memory,
              test_overrides, test_offline_command, test_load_admission, test_job_log,

@@ -1,4 +1,7 @@
+-- keep-sorted start
 import FrenTest.ExpansionFuzz
+import FrenTest.FuzzFrontends.Main
+-- keep-sorted end
 
 /-!
 # `lake exe fren_fuzz_frontends`

@@ -628,7 +628,7 @@ pub mod testing
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
   `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings` and
   `--datatype-elements`
-  (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  (`corpus` in `src/FrenTest/FuzzFrontends/Corpus.lean`), are checked
   with both front ends and compared as above. The `--decidable` corpus also
   rejects every error without a diagnostic code from `fren check`, even
   when both front ends agree. The `frontendFuzz` jobs contain at
@@ -1017,11 +1017,12 @@ a file takes effect without a restart:
   else 2.
 - **Memory:** `HEAVY_MEM_GB` gigabytes, else the number in
   `~/.cache/heavy/mem_gb`, else 80% of the machine's physical memory,
-  summed over each job's process group. A waiting job needs its frozen
-  forecast plus each running job's larger RSS or frozen forecast to fit
-  within the cap. With nothing running it may start even if its forecast
-  exceeds the cap. When measured memory exceeds the cap, heavy kills the
-  newest compatible owner and exits with 137.
+  summed over each job's process group. By default a waiting job needs
+  the existing RSS/legacy budget to be at most 60% of the cap. Forecasts
+  are observed without gating admission. Explicit `HEAVY_ADMISSION=forecast`
+  enables experimental forecast admission, described below. When measured
+  memory exceeds the cap, heavy kills the newest compatible owner and exits
+  with 137.
 - **Load (off by default):** `HEAVY_MAX_LOAD`, else the number in
   `~/.cache/heavy/max_load`. A waiting job also needs the 1-minute load
   to be below this value. After 10 minutes waiting it may start whatever
@@ -1078,10 +1079,11 @@ blocked around the completion check and signal, and while the registry lock
 is held; handlers are restored after monitoring.
 When heavy is PID 1 of its namespace, it also reaps adopted orphan workers
 after collecting the leader's exit status and RSS, in both subreaper and
-fallback modes. It peeks at exited children without reaping them: a newly
-adopted member of the original group goes through the group usage collector,
-while an outside-group orphan is reaped without adding its usage. Dead workers
-must not keep the process group visible as zombies until both escalation waits expire.
+fallback modes. It peeks at exited children without reaping them. In subreaper
+mode, a newly adopted member of the original group goes through the group usage
+collector; in fallback mode, it is reaped without adding its usage, like an
+outside-group orphan in either mode. Dead workers must not keep the process
+group visible as zombies until both escalation waits expire.
 
 If `/proc` belongs to an ancestor PID namespace, the owner translates its
 own child through parentage and `NSpid` before measuring it in that procfs
@@ -1103,17 +1105,35 @@ Linux's monotonic clock excludes suspended time, so resume does not age
 all reports by the suspension's duration. Reports use a common clock;
 time namespaces with different monotonic offsets are outside this protocol.
 
-Admission and eviction have different totals. Admission reserves the larger
-of each running job's current RSS and frozen forecast, then adds the waiting
-job's forecast. It admits only when that sum is at most the cap, except that
-an otherwise empty machine admits a job even if its forecast exceeds the
-cap. This exception does not waive the measured-memory backstop. An unknown
-forecast reserves a full cap. A stale or future-dated compatible report and
-each legacy holder reserve at least a full cap, or their forecast or verified
-RSS if larger. A held slot with zero RSS is still running for the alone rule.
-Missing or malformed forecasts also use the full-cap default.
+Admission and eviction have different totals. `HEAVY_ADMISSION=rss` is the
+default. It retains the existing budget: fresh compatible reports contribute
+RSS, verified stale or future-dated reports reserve a full cap, visible
+legacy RSS contributes its reading, and unobserved legacy holders share
+one half-cap charge. Admission needs this budget to be at most 60% of the
+cap. Frozen forecasts are recorded for observation and never enter this
+budget. Whole-build peaks mix cache states, source revisions and worktrees;
+summing them throughout each job can serialize ordinary builds for hours.
 
-Among waiting jobs whose forecasts fit, `HEAVY_PRIORITY=merge-blocking`
+Explicit `HEAVY_ADMISSION=forecast` opts one invocation into the experimental
+rule. Admission reserves the larger of each running job's current RSS and
+frozen forecast, then adds the waiting job's forecast. It admits only when
+that sum is at most the cap, except that an otherwise empty machine admits
+a job even if its forecast exceeds the cap. This exception does not waive
+the measured-memory backstop. An unknown forecast reserves a full cap. A
+stale or future-dated compatible report and each legacy holder reserve at
+least a full cap, or their forecast or verified RSS if larger. A held slot
+with zero RSS is still running for the alone rule. Missing or malformed
+forecasts also use the full-cap default. Opt-in can wait indefinitely for
+other jobs to drain; it is not the recommended shared-machine default.
+
+The policy is frozen before waiting, from the invocation's environment;
+there is no machine-wide opt-in file or timeout that silently weakens the
+forecast rule. An unrecognized policy exits with 2. The RSS default is an
+observation phase, not evidence that enforcing whole-build forecasts improves
+useful throughput. Per-process observation/admission remains separate work.
+
+Among eligible waiting jobs that fit their own selected policy,
+`HEAVY_PRIORITY=merge-blocking`
 precedes `exploratory` (the default); within a class, monotonic enqueue time
 decides.
 An unrecognized label uses the default class. A waiter denied by the load
@@ -1129,12 +1149,18 @@ it does not allocate cores or CPU time. Older versions retain their own
 admission rules, so mixed versions cannot guarantee this order or reservation.
 
 A memory wait names slots with their stale, legacy or frozen reservations.
-Those details appear only when memory blocks admission; a load-only wait
-does not recommend freeing memory. A registry deadline reports a registry
-wait, including while registering a waiter. The older protocol's diagnostic
-charge helpers (`heavy_lease`, `heavy_legacy_lease` and `admission_total`)
-retain their shared half-cap legacy estimate for compatibility tests; the
-forecast admission requirement below uses a full cap for each unknown owner.
+Those details appear only when the selected policy blocks admission; a
+load-only wait does not recommend freeing memory. A registry deadline
+reports a registry wait, including while registering a waiter. The raw-lease
+helpers (`heavy_lease`, `heavy_legacy_lease` and `admission_total`) supply the
+RSS policy's shared half-cap legacy budget; forecast mode uses a full cap
+for each unknown owner. Mixed policies use the same priority/arrival queue:
+a waiter that cannot fit may be bypassed by one that can. No future start
+time is reserved, so continual fitting arrivals can delay an opt-in job.
+Opt-in controls only that invocation's admission: RSS-mode or older jobs can
+start later without respecting its frozen reservation. An enforcement trial
+therefore needs a coordinated cohort; this flag provides no machine-wide
+forecast envelope among mixed policies.
 
 On Linux 4.9 and later, legacy measurements discover the current flock
 holder by device and inode in
@@ -1152,9 +1178,9 @@ identifiers differ, including btrfs subvolumes and some stacked filesystems,
 the owner cannot be matched. Compatible reports then use the freshness
 fallback, an unverified stale report becomes legacy after ten seconds, and
 legacy RSS remains unobserved. In that case the lookup cannot verify stopped
-owners or measure legacy holders; admission uses freshness and the full-cap
-forecast instead. The current implementation does not translate filesystem
-device identifiers.
+owners or measure legacy holders; admission uses freshness and the selected
+policy's legacy charge instead. The current implementation does not translate
+filesystem device identifiers.
 
 Eviction counts compatible owners' last reported RSS and verified legacy
 measurements. Forecasts never contribute to this total. When it exceeds the
@@ -1334,18 +1360,31 @@ just the sampled main-thread lower bound.
 Each job freezes `predicted_peak_rss_kb` before waiting beside its eventual
 `peak_rss_kb`. The prediction is the maximum positive measured peak among
 the latest 20 completed jobs of the same `job_kind` in the preceding seven
-days, ordered by completion time and excluding future completions. Failed
+days, ordered by completion time and excluding future completions. The
+lower cutoff is inclusive; larger peaks win completion-time ties. Failed
 jobs' observed peaks count too, though a killed job's peak does not show
 how much memory it needed to finish. `prediction_jobs` records the number
 used, and `prediction_method` is `"max_last_20_same_kind_7d"`. With no usable
 history, the frozen prediction is the current cap and `prediction_default`
 is true; otherwise it is false. Malformed records are skipped;
 `HEAVY_LOG` selects the prediction's source as well as the destination.
+Each admission logs `admission_policy`, `admission_cap_kb`,
+`admission_running_jobs`, the RSS/legacy budget (`admission_rss_kb`), the
+forecast sum including the candidate (`admission_forecast_kb`) and whether
+forecast mode would fit (`admission_forecast_fits`). RSS-mode disagreement
+is recorded without delaying the command. These summaries do not supply an
+RSS timeline, task/retry identity, source epoch or the remaining work of a
+killed command, so they cannot alone establish useful work saved.
 History is shared across worktrees of the same kind, so a lightly rebuilt
 worktree cannot narrow the history used elsewhere. The frozen value is
 published in the slot report and used throughout waiting and execution;
 a cap change does not rewrite it. Work amounts and build-cache states can
 vary within a kind, so historical peaks do not guarantee a future fit.
+`Heavy.Forecast` computes this bounded selection with a generic key and is
+bound to `heavy_memory_prediction` in `Impls.Heavy`. The active scheduler
+remains Python; its tested binding in `Impls.Trace` still covers log I/O.
+The `heavyPrediction` test job compares both forecasts on sanitized log
+observations and boundary cases.
 
 The following requirements state CPU accumulation and interval accounting.
 Time quantities use a common integral unit; ratios are numerator and
@@ -1441,34 +1480,100 @@ pub proc heavy_pressure(running: Nat, cores: Nat): (det ratio: CpuRatio, det ove
     expect equal: when running = cores, not oversubscribed?
 }
 
--- Fold the eligible historical peaks; filtering and selecting the latest
--- observations, from the concrete log, are exercised by the Python tests.
-pub proc heavy_memory_prediction(previous: Option<Int>, observed: Option<Int>): (
-    det prediction: Option<Int>,
-) {
-    require previous_positive: match previous {
-        Option::Some(p) => p > 0,
-        Option::None => true,
-    }
-    require observed_positive: match observed {
-        Option::Some(o) => o > 0,
-        Option::None => true,
-    }
-    ensure rule: match previous, observed {
-        Option::None, _ => prediction = observed,
-        _, Option::None => prediction = previous,
-        Option::Some(p), Option::Some(o) => prediction = Option::Some(p.max(o)),
+-- A common integral time unit represents completion times and the cutoff.
+-- Missing or malformed fields are None; log readers default a missing
+-- event to Some("job"). Keys are opaque strings here; the Lean kernel
+-- accepts any key type with decidable equality. Python uses the job kind.
+pub struct MemoryObservation {
+    event: Option<String>,
+    key: Option<String>,
+    ended: Option<Int>,
+    peak: Option<Int>,
+}
+
+pub enum MemoryHistory { Nil, Cons(MemoryObservation, MemoryHistory) }
+pub enum MemoryPeaks { Nil, Cons(Int, Int, MemoryPeaks) }
+
+pub fn memory_eligible?(o: MemoryObservation, key: String, cutoff: Int, now: Int) :=
+    o.event = Option::Some("job") and o.key = Option::Some(key)
+    and (match o.ended, o.peak {
+        Option::Some(t), Option::Some(p) => cutoff <= t <= now and p > 0,
+        _, _ => false,
+    })
+
+pub fn memory_take(n: Int, ps: MemoryPeaks): MemoryPeaks := match ps {
+    MemoryPeaks::Nil => MemoryPeaks::Nil,
+    MemoryPeaks::Cons(t, p, rest) =>
+        if n = 0 then MemoryPeaks::Nil
+        else MemoryPeaks::Cons(t, p, memory_take(n - 1, rest)),
+}
+
+-- Latest completion first; larger peaks win ties, as in Python's heap.
+pub fn memory_insert(t: Int, p: Int, n: Int, ps: MemoryPeaks): MemoryPeaks := match ps {
+    MemoryPeaks::Nil =>
+        if n = 0 then MemoryPeaks::Nil
+        else MemoryPeaks::Cons(t, p, MemoryPeaks::Nil),
+    MemoryPeaks::Cons(u, q, rest) =>
+        if n = 0 then MemoryPeaks::Nil
+        else if t > u or (t = u and p >= q) then
+        MemoryPeaks::Cons(t, p, memory_take(n - 1, ps))
+        else MemoryPeaks::Cons(u, q, memory_insert(t, p, n - 1, rest)),
+}
+
+pub fn memory_recent(hs: MemoryHistory, key: String, cutoff: Int, now: Int, n: Int): MemoryPeaks :=
+    match hs {
+        MemoryHistory::Nil => MemoryPeaks::Nil,
+        MemoryHistory::Cons(o, rest) => (let ps := memory_recent(rest, key, cutoff, now, n) in
+            match o.ended, o.peak {
+                Option::Some(t), Option::Some(p) => if memory_eligible?(o, key, cutoff, now) then
+                    memory_insert(t, p, n, ps) else ps,
+                _, _ => ps,
+            }),
     }
 
-    expect covers_observation: match observed, prediction {
-        Option::Some(o), Option::Some(p) => p >= o,
-        _, _ => true,
+-- The one-step coverage fact needed by the original maximum-fold Req.
+pub fn memory_head_covered?(ps: MemoryPeaks, prediction: Option<Int>) := match ps, prediction {
+    MemoryPeaks::Nil, _ => true,
+    MemoryPeaks::Cons(_, p, _), Option::Some(m) => m >= p,
+    _, _ => false,
+}
+
+pub fn memory_max(ps: MemoryPeaks): (prediction: Option<Int>) {
+    out prediction := match ps {
+        MemoryPeaks::Nil => Option::None,
+        MemoryPeaks::Cons(_, p, rest) => match memory_max(rest) {
+            Option::None => Option::Some(p),
+            Option::Some(q) => Option::Some(p.max(q)),
+        },
     }
+    ensure covers_head: memory_head_covered?(ps, prediction)
+}
+
+pub fn memory_count(ps: MemoryPeaks): Nat := match ps {
+    MemoryPeaks::Nil => 0,
+    MemoryPeaks::Cons(_, _, rest) => 1 + memory_count(rest),
+}
+
+pub proc heavy_memory_prediction(
+    history: MemoryHistory,
+    key: String,
+    cutoff: Int,
+    now: Int,
+    n: Nat,
+): (det prediction: Option<Int>, det jobs: Nat) {
+    ensure rule: prediction = memory_max(memory_recent(history, key, cutoff, now, n))
+    ensure count: jobs = memory_count(memory_recent(history, key, cutoff, now, n))
+
+    expect covers_observation: memory_head_covered?(
+        memory_recent(history, key, cutoff, now, n),
+        prediction
+    )
+    expect empty: when history = MemoryHistory::Nil, prediction = Option::None and jobs = 0
 }
 ```
 
 The following requirements compute compatibility, protocol charges,
-forecast admission and eviction from raw held-slot observations: a report,
+selected-policy admission and eviction from raw held-slot observations: a report,
 its status token, the observed monitor identity and any independently
 measured legacy RSS. `MemoryLeases`
 does not classify its entries in advance. `heavy_lease` calls
@@ -1477,8 +1582,9 @@ does not classify its entries in advance. `heavy_lease` calls
 decide compatibility. `heavy_admission` also reads the frozen forecast beside
 each raw lease and computes its reservation, rather than accepting a
 precomputed total or an empty-machine flag. New work needs a free slot and
-the forecast rule. Time values use one integral unit of the shared monotonic
-clock. Python tests check the concrete lock, clock, procfs and signal operations through `tested` claims in `Impls.Trace`; these tests run
+the selected memory rule. Time values use one integral unit of the shared
+monotonic clock. Python tests check the concrete lock, clock, procfs and
+signal operations through `tested` claims in `Impls.Trace`; these tests run
 in the `lint` workflow, not in `lake test`. `heavy_registry` models the retry
 and signal-deferral decisions, including refusal to retry after the deadline.
 These are per-attempt rules: the supplied deadline does not model its
@@ -1742,7 +1848,22 @@ pub fn forecast_total(cap: Nat, leases: ForecastLeases, now: Int, ttl: Nat): (re
     }
 }
 
+-- Strip only the forecasts; retain raw observations for RSS accounting.
+pub fn reported_leases(leases: ForecastLeases): (reports: MemoryLeases) {
+    out reports := match leases {
+        ForecastLeases::Nil => MemoryLeases::Nil,
+        ForecastLeases::Cons(lease, _, rest) => MemoryLeases::Cons(lease, reported_leases(rest)),
+    }
+    ensure empty: when leases = ForecastLeases::Nil, reports = MemoryLeases::Nil
+    ensure single: match leases {
+        ForecastLeases::Cons(lease, _, ForecastLeases::Nil) =>
+            reports = MemoryLeases::Cons(lease, MemoryLeases::Nil),
+        _ => true,
+    }
+}
+
 pub proc heavy_admission(
+    forecast?,
     cap: Nat,
     free?,
     candidate: Option<Int>,
@@ -1750,17 +1871,24 @@ pub proc heavy_admission(
     now: Int,
     ttl: Nat,
 ): (det reserved: Int, det prediction: Int, det fits?) {
-    out reserved := forecast_total(cap, leases, now, ttl)
+    out reserved :=
+        if forecast? then forecast_total(cap, leases, now, ttl)
+        else admission_total(cap, reported_leases(leases), now, ttl)
     out prediction := memory_forecast(candidate, cap)
-    ensure rule: fits? iff free? and (leases = ForecastLeases::Nil or reserved + prediction <= cap)
+    ensure rule: fits? iff free? and (if forecast?
+        then leases = ForecastLeases::Nil or reserved + prediction <= cap
+        else 5 * reserved <= 3 * cap)
     expect alone: when free? and leases = ForecastLeases::Nil, fits?
-    expect occupied: when free? and cap > 0 and candidate = Option::None
+    expect occupied: when forecast? and free? and cap > 0 and candidate = Option::None
         and leases = ForecastLeases::Cons(UNKNOWN_LEASE, Option::None, ForecastLeases::Nil), not fits?
     expect no_slot: unless free?, not fits?
     expect unknown: when candidate = Option::None, prediction = cap
+    expect rss_coexists: when not forecast? and free? and cap >= 5
+        and leases = ForecastLeases::Cons(UNKNOWN_LEASE, Option::None, ForecastLeases::Nil), fits?
 }
 
 pub proc heavy_wait_message(
+    forecast?,
     cap: Nat,
     candidate: Option<Int>,
     leases: ForecastLeases,
@@ -1769,7 +1897,7 @@ pub proc heavy_wait_message(
     reservations: Seq<String>,
     registry_busy?,
 ): (det memory_details?, det registry_message?) {
-    call admission := heavy_admission(cap, true, candidate, leases, now, ttl)
+    call admission := heavy_admission(forecast?, cap, true, candidate, leases, now, ttl)
     ensure memory: memory_details? iff not registry_busy? and not admission.fits? and reservations != []
     ensure registry: registry_message? iff registry_busy?
     expect load_only: when admission.fits?, not memory_details?
@@ -1864,8 +1992,10 @@ pub enum GroupProbe { Missing, Present, Denied }
 
 -- Peek at an exited child before selecting its wait, so adoption between
 -- group waits and init cleanup cannot discard the group's CPU usage.
+-- own_pid is heavy's PID; pgid is the child group and exited_group is
+-- the exited child's group, if a child is ready to reap.
 pub proc heavy_init_reap(
-    pid: Int,
+    own_pid: Int,
     pgid: Int,
     exited_group: Option<Int>,
     group_drained?,
@@ -1873,12 +2003,12 @@ pub proc heavy_init_reap(
 ): (det collect_group?, det reap_orphan?) {
     let exited? := exited_group != Option::None
     let same_group? := exited_group = Option::Some(pgid)
-    ensure group: collect_group? iff pid = 1 and group_drained? and exited? and same_group? and subreaper?
-    ensure orphan: reap_orphan? iff pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
+    ensure group: collect_group? iff own_pid = 1 and group_drained? and exited? and same_group? and subreaper?
+    ensure orphan: reap_orphan? iff own_pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
     expect distinct: not (collect_group? and reap_orphan?)
-    expect late_adoption: when pid = 1 and group_drained? and same_group? and subreaper?,
+    expect late_adoption: when own_pid = 1 and group_drained? and same_group? and subreaper?,
         collect_group? and not reap_orphan?
-    expect outside_group: when pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
+    expect outside_group: when own_pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
     expect wait_first: unless group_drained?, not collect_group? and not reap_orphan?
 }
 
@@ -1926,8 +2056,12 @@ trial. Archive it between trials while the controller and heavy jobs
 are stopped; preserve the flip records with their jobs so that exposure
 can still be measured. Automatic retention remains future work.
 
+Memory-policy trials must be separated using the raw `admission_policy`
+field. The existing `--stats` policy groups compare load settings and slots;
+they do not compare RSS and forecast admission or identify useful tasks.
+
 `scripts/heavy --stats [HOURS]` compares completions in the last HOURS
-(default 24), grouped by admission policy and slot count: jobs per hour,
+(default 24), grouped by load setting and slot count: jobs per hour,
 wait, run and total latency percentiles, and mean sampled load. It divides
 each policy's `rate_jobs` by that policy's active hours in the window,
 including idle time, from the flip records below. Only completions whose
@@ -1936,8 +2070,8 @@ count toward `rate_jobs`. Jobs admitted before the first flip, outside
 the window or under a different policy do not inflate that rate.
 Without flip records its policy rate is `null`, rather than an estimate
 from first and last jobs.
-A completion stays attributed to its admission policy if a flip happened
-while it ran. For policy comparisons, waits that span an observed change
+A completion stays attributed to its admission load setting and slot count
+if a flip happened while it ran. For policy comparisons, waits that span an observed change
 of load threshold or slot count are excluded from wait and total-latency
 percentiles and from `rate_jobs`. Records without enough information about
 the wait are excluded too. `wait_jobs` counts the jobs used for these percentiles;

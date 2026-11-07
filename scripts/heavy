@@ -18,12 +18,15 @@ Slots: at most `HEAVY_SLOTS` jobs run at once, else the number in
 Memory: the combined resident-memory target is `HEAVY_MEM_GB` gigabytes,
 else the number in ~/.cache/heavy/mem_gb, else 80% of the
 machine's physical memory. A job's memory is that of its whole process
-group, summed about every second. Admission reserves the larger of each
-running job's RSS and frozen per-kind peak forecast, plus the candidate's
-forecast, and waits until the sum fits. Unknown forecasts reserve a full
-cap; legacy and stale reports reserve at least a full cap. With nothing
-running, even an oversized forecast starts. Fitting waiters are ordered by
-HEAVY_PRIORITY (merge-blocking before exploratory), then enqueue time.
+group, summed about every second. The default HEAVY_ADMISSION=rss retains
+admission at at most 60% of the cap, with the existing stale/legacy charges.
+Frozen per-kind peak forecasts are recorded for observation. Explicitly set
+HEAVY_ADMISSION=forecast to enforce the sum of each running job's larger
+RSS or frozen forecast, plus the candidate's forecast. This experimental
+mode can impose long waits: unknown forecasts reserve a full cap, and
+legacy and stale reports reserve at least a full cap. With nothing running,
+even an oversized forecast starts. Fitting eligible waiters are ordered by
+HEAVY_PRIORITY (merge-blocking before exploratory), then monotonic arrival.
 When measured memory exceeds the cap, the compatible owner with the
 greatest admission sequence terminates its own group (TERM, then KILL) and
 exits with 137; estimates never trigger eviction. Every owner also enforces
@@ -54,8 +57,9 @@ rates. Process status switch counts complement wait4's final involuntary
 switch total. A historical per-kind memory prediction is frozen before
 waiting, published with the held slot and logged beside actual peak RSS.
 Logging never fails a job. `--stats`
-compares completions in the last HOURS (default 24), by admission policy
-and job kind. `--alternate` switches the file setting between VALUE and
+compares completions in the last HOURS (default 24), by load setting,
+slot count and job kind. Use raw admission_policy fields to separate memory
+experiments. `--alternate` switches the file setting between VALUE and
 absent every MINUTES, logging each flip for the policy exposure times.
 Run one alternator for all agents, with HEAVY_MAX_LOAD unset everywhere.
 SIGINT, SIGTERM and SIGHUP stop it and remove the file, leaving admission off,
@@ -262,9 +266,35 @@ def memory_fits(running, prediction, cap):
     return not running or forecast_memory(running, cap) + forecast_reservation(prediction, cap) <= cap
 
 
-def can_start(waited, running, cap, limit, load_reader=load_average, prediction=None):
+def admission_policy(environ):
+    """Freeze an explicit per-invocation policy; no machine-wide opt-in file."""
+    policy = environ.get("HEAVY_ADMISSION", "rss")
+    if policy not in ("rss", "forecast"):
+        raise ValueError("HEAVY_ADMISSION must be rss or forecast")
+    return policy
+
+
+def rss_memory(running, cap):
+    """The existing RSS budget: stale owners reserve a cap, and unobserved
+    legacy owners share one half-cap charge. Forecasts never enter it."""
+    measured = sum(max(0, j.get("legacy_rss_kb") or 0) if j.get("legacy")
+                   else j["rss_kb"] if j["fresh"] else cap for j in running)
+    unknown = any(j.get("legacy") and (j.get("legacy_rss_kb") is None or j["legacy_rss_kb"] < 0)
+                  for j in running)
+    return measured + (legacy_reservation(cap) if unknown else 0)
+
+
+def policy_fits(running, prediction, cap, policy):
+    if policy == "rss":
+        return 5 * rss_memory(running, cap) <= 3 * cap
+    if policy == "forecast":
+        return memory_fits(running, prediction, cap)
+    raise ValueError("unknown admission policy")
+
+
+def can_start(waited, running, cap, limit, load_reader=load_average, prediction=None, policy="rss"):
     """Admission besides the slot lock; a missing load reading fails open."""
-    if not memory_fits(running, prediction, cap):
+    if not policy_fits(running, prediction, cap, policy):
         return False
     # Load decays slowly and includes unrelated work. Ten minutes bounds
     # that extra delay without ever bypassing the slot or memory limits.
@@ -288,7 +318,8 @@ def waiting_job(state, record, prediction, environ, arrival=None):
                     fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     row = {"ticket": ticket, "arrival": record["enqueued_at"] if arrival is None else arrival,
                            "priority": environ.get("HEAVY_PRIORITY", "exploratory"),
-                           "prediction": prediction, "policy_ready": True}
+                           "prediction": prediction, "policy_ready": True,
+                           "admission_policy": record.get("admission_policy", "forecast")}
                     json.dump(row, f)
                     f.flush()
                 except BaseException:
@@ -335,7 +366,9 @@ def next_waiter(state, running, cap):
                 fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 row = json.load(f)
-                if row.get("policy_ready", True) and memory_fits(running, row["prediction"], cap):
+                # Tickets from the original experimental head have no policy.
+                policy = row.get("admission_policy", "forecast")
+                if row.get("policy_ready", True) and policy_fits(running, row["prediction"], cap, policy):
                     waiting.append(row)
             else:
                 os.unlink(path)
@@ -1629,17 +1662,15 @@ def heavy_rss_kb(state=STATE, cap=None, reservations=None):
             if unobserved:
                 names = ", ".join(sorted(j["slot"] for j in unobserved))
                 reservations.append(f"{names} (shared legacy forecast: {legacy_reservation(cap)} KB)")
-        measured = sum(max(0, j.get("legacy_rss_kb") or 0) if j.get("legacy")
-                       else j["rss_kb"] if j["fresh"] else cap for j in running)
-        return measured + (legacy_reservation(cap) if unobserved else 0)
+        return rss_memory(running, cap)
     except RegistryBusy:
         raise  # Admission must name a registry wait, not a memory shortfall.
     except OSError:
         return math.inf
 
 
-def memory_wait_message(state, reservations, running, prediction, cap):
-    if not memory_fits(running, prediction, cap) and reservations:
+def memory_wait_message(state, reservations, running, prediction, cap, policy="rss"):
+    if not policy_fits(running, prediction, cap, policy) and reservations:
         slots = ", ".join(sorted(reservations))
         return (f"heavy: waiting for memory: {slots}; resume stopped monitors or "
                 f"reduce running memory (see {state})")
@@ -1682,10 +1713,16 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     if os.sep not in command[0] and shutil.which(command[0]) is None:
         print(f"heavy: {command[0]}: command not found", file=sys.stderr)
         return 127
+    try:
+        policy = admission_policy(environ)
+    except ValueError as e:
+        print(f"heavy: {e}", file=sys.stderr)
+        return 2
     enqueued, queued = time.time(), time.monotonic()
     initial = (max_load(environ, state), slot_count(environ, state))
     record = {"enqueued_at": enqueued, "enqueued_max_load": "off" if initial[0] is None else initial[0],
-              "enqueued_slots": initial[1], "wait_policy_changed": False}
+              "enqueued_slots": initial[1], "wait_policy_changed": False,
+              "admission_policy": policy}
     kind = environ.get("FREN_JOB_KIND") or job_kind(command)
     shown = shlex.join(command)
     if offline:
@@ -1721,6 +1758,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
 def wait_for_slot(command, shown, kind, record, queued, initial, ticket, state, environ, load_reader):
     warned = None
     prediction = record["predicted_peak_rss_kb"]
+    policy = record["admission_policy"]
     registry_message = f"heavy: waiting for registry lock (see {state})"
     while True:
         wait_message = f"heavy: waiting for memory, priority or slots (see {state})"
@@ -1734,19 +1772,20 @@ def wait_for_slot(command, shown, kind, record, queued, initial, ticket, state, 
                 record["wait_policy_changed"] |= (limit, slots) != initial
                 running = jobs(state, registry_held=True)
                 waited = time.monotonic() - queued
-                allowed = can_start(waited, running, cap, limit, load_reader, prediction)
+                allowed = can_start(waited, running, cap, limit, load_reader, prediction, policy)
                 # Memory fit is recomputed for every waiter by next_waiter.
                 # Only an additional policy denial makes a ticket ineligible.
-                waiter_policy(state, ticket, allowed or not memory_fits(running, prediction, cap))
+                waiter_policy(state, ticket, allowed or not policy_fits(running, prediction, cap, policy))
                 if not allowed:
                     delay = 5
                     reservations = []
                     for job in running:
-                        reason = ("legacy forecast" if job.get("legacy") else
+                        reason = (("legacy RSS or shared charge" if policy == "rss" else "legacy forecast")
+                                  if job.get("legacy") else
                                   "stale or future-dated report" if not job["fresh"] else
-                                  "RSS or frozen forecast")
+                                  "RSS" if policy == "rss" else "RSS or frozen forecast")
                         reservations.append(f"{job['slot']} ({reason})")
-                    wait_message = memory_wait_message(state, reservations, running, prediction, cap)
+                    wait_message = memory_wait_message(state, reservations, running, prediction, cap, policy)
                 elif next_waiter(state, running, cap) == ticket:
                     # Settings files can change without taking registry.
                     # Retry if a load sample or queue scan crossed a change.
@@ -1768,7 +1807,11 @@ def wait_for_slot(command, shown, kind, record, queued, initial, ticket, state, 
                     if admitted_slot is not None:
                         admitted = time.monotonic()
                         record.update(started_at=time.time(), wait_seconds=admitted - queued,
-                                      max_load="off" if limit is None else limit, slots=slots)
+                                      max_load="off" if limit is None else limit, slots=slots,
+                                      admission_cap_kb=cap, admission_running_jobs=len(running),
+                                      admission_rss_kb=rss_memory(running, cap),
+                                      admission_forecast_kb=forecast_memory(running, cap) + prediction,
+                                      admission_forecast_fits=memory_fits(running, prediction, cap))
                         # Remove before unlocking: a registered owner is no
                         # longer a waiter, even if it has not launched yet.
                         os.unlink(os.path.join(state, f".wait-{ticket}.json"))
