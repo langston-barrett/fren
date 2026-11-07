@@ -2074,6 +2074,43 @@ on the head passes when every selected job passes, including when none is
 selected. These jobs share `slow-checks.yml` with `lean ci`, which keeps
 running all four on `main`.
 
+**Rules**
+
+r[ci.current-review]
+Every gate entry, automatic or dispatched, authorizes the current
+same-repository head from its latest trusted review, or a valid inherited
+source, in posted-comment order. A later blocking review supersedes an
+earlier clean one. Bot reviews count as clean only with a checked post-job attestation from the
+trusted review workflow's current attempt, matching the actual comment,
+its ID and its creation time. An unattested bot review cannot authorize
+success. An inherited review meets the structural rules above, and the
+latest verdict of its source must still be clean.
+
+r[ci.review-revocation]
+A blocking review revokes completed and running `pre-merge` checks on
+that head. Every reporter checks the current review before and after
+publishing success, so an older run cannot restore green after a newer
+blocking review. This applies when no slow job is selected too. When
+revalidation finds a newer clean review, the stale blocking event leaves
+it standing. Local blocking review comments take the same invalidation
+path, without starting slow jobs.
+
+r[ci.linked-runtime]
+Every changed path under `c/` selects all four slow jobs. Their executables
+link the compatibility and allocator runtime objects that Lake builds from
+these sources. This includes future files, headers and nested paths, as
+well as the three current C sources; the rule has no extension whitelist.
+
+The concrete bindings are `.github/pre-merge/gate.py`'s `authorized` and
+`review_metadata` for current reviews, `finish` and `invalidate` for
+revocation, and `selected` for runtime inputs. `record` and `posted_review`
+check the attestation's provenance. These external Python and GitHub
+workflow effects have no Lean `impl` proof. `test_gate.py` exercises these
+functions with mocked API and git transport, including superseded reviews,
+publication races, all entry paths and current and future runtime inputs;
+the `lint` workflow runs it. No precomputed approval flag stands in for
+the comment-ordering or provenance decision in those tests.
+
 On a pull request, the `pre-approval` workflow checks the head merged into
 `main`, starting from the `.lake` that `main`'s last build left: two
 machines run `lake build --wfail`, and others run `lake test --

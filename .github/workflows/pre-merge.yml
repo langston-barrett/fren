@@ -9,10 +9,14 @@ on:
   workflow_run:
     workflows: [pr-review]
     types: [completed]
+  # Local blocking rereviews must revoke already completed gates too. This
+  # trigger only invalidates; it never starts tests from comment text.
+  issue_comment:
+    types: [created, edited]
   workflow_dispatch:
     inputs:
       review-run:
-        description: Completed main-context pr-review run that posted the clean verdict
+        description: Completed main-context pr-review run that posted the checked verdict
         required: false
         type: string
         default: ""
@@ -26,7 +30,7 @@ permissions: {}
 
 # Serialize reruns of a review; different heads have separate statuses.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.workflow_run.id || inputs.review-run || inputs.pr }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id || inputs.review-run || inputs.pr || github.event.comment.id }}
   cancel-in-progress: false
 
 jobs:
@@ -44,6 +48,7 @@ jobs:
       merge: ${{ steps.prepare.outputs.merge }}
       base: ${{ steps.prepare.outputs.base }}
       relevant: ${{ steps.prepare.outputs.relevant }}
+      revoked: ${{ steps.prepare.outputs.revoked }}
       own-spec-agreement: ${{ steps.prepare.outputs.own-spec-agreement }}
       methods-agree: ${{ steps.prepare.outputs.methods-agree }}
       coverage: ${{ steps.prepare.outputs.coverage }}
@@ -100,15 +105,22 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      actions: read
       contents: read
+      pull-requests: read
       checks: write
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
-        sparse-checkout: .github/pre-merge
+        fetch-depth: 0
+        sparse-checkout: |
+          .github/pre-merge
+          .github/pr-review
     - run: python3 -I .github/pre-merge/gate.py finish
       env:
         GH_TOKEN: ${{ github.token }}
         NEEDS: ${{ toJSON(needs) }}
         CHECK_RUN_ID: ${{ needs.pending.outputs.check }}
+        REVIEW_RUN: ${{ github.event.workflow_run.id || inputs.review-run }}
+        PR_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || '' }}
