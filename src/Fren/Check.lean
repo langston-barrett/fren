@@ -1504,8 +1504,9 @@ def instanceContract (hooks : ElabHooks) (c : CompInfo) (f : Name) (targs : Arra
   let props := c.props.map fun p => { p with body := atI p.body, trigger? := p.trigger?.map atI }
   let indexes := c.indexes.map fun (n, pl, r, q, g) => (n, pl, r, q, atI g)
   let defs := c.defs.map fun (d, e) => (d, atI e)
+  let evaluationDefs? := c.evaluationDefs?.map fun ds => ds.map fun (d, e) => (d, atI e)
   let uses ← usesOf (props.map (·.body) ++ indexes.map (·.2.2.2.2) ++ defs.map (·.2))
-  return { c with vars, props, indexes, defs, uses, fn? := some (Core.instanceName f targs)
+  return { c with vars, props, indexes, defs, evaluationDefs?, uses, fn? := some (Core.instanceName f targs)
                   finiteModel := targs.any (·.hasTypeParam) }
 
 /-- The placeholders that the checks of `c` use: those of its formulas and

@@ -1,5 +1,6 @@
 -- keep-sorted start
-import FrenTest.FuzzFrontends
+import FrenTest.FuzzFrontends.Random
+import FrenTest.FuzzFrontends.Running
 -- keep-sorted end
 
 /-! An independent stream for evaluator-copying regressions. It leaves

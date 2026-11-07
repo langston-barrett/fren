@@ -266,6 +266,36 @@ Recursive bodies are admitted as independent roots, matching calls that
 remain opaque in the lowered tree. Entering a body still spends a call
 step during evaluation; admission does not inline it again at each call.
 
+Depth transport counts expression nodes rather than evaluator helper
+entries. A variable reference spends one step before evaluating its
+definition at the remainder. Earlier outputs remain references while each
+source definition is admitted; their substitutions retain those reference
+boundaries. A direct determinism lookup spends that same reference step.
+A shared read forces the expression it replaces at the current allowance,
+capped by its creator's allowance; its read adds no reference node.
+Compiled cache wrappers around tables add no source node; other raw helper
+shapes remain depth guarded. A match vector spends its constructor step
+before any component, in raw matches and constructor dispatch alike.
+
+A packed quantifier spends one step for each actual binder. Its first
+binder is charged by the quantifier expression; advancing to another
+binder spends one more, while entering the traversal helper or advancing
+past the final binder spends none. Ordinary and lifted quantifiers give
+their bodies the same remainder. Admission counts these packed binders
+as nested nodes too. `depth_transport` computes the continuation decision
+from its kind and binder position, not a precomputed charge flag.
+
+Native evaluation measures the current, fully substituted subtree. The
+maximum initial allowance and admission of its separate definitions do not
+imply that their substitution fits. Branching subtrees retain lazy
+traversal, which also prevents native decision dictionaries from duplicating
+deep branches. A measured linear subtree uses native evaluation when it
+fits a known allowance, or under the runtime depth guard when the allowance
+is dynamic. Native code may compact negation chains, but its allowance is
+measured on the original source tree. `native_subtree` states this selection;
+paired tests exercise the measurement after substitution, which its
+numerical inputs alone do not model.
+
 Enumeration applies the same depth bound and a tighter bound of 262144
 nodes before expanding the types of its variables and functions into
 shapes. All those roots share one node budget; constructor nodes and the
@@ -318,6 +348,39 @@ pub proc evaluation_depth(requested: Nat): (det budget: Nat) {
 
     expect bounded: budget <= MAX_EXPRESSION_DEPTH
     expect unchanged: when requested <= MAX_EXPRESSION_DEPTH, budget = requested
+}
+
+pub enum DepthUse { Expression, Continuation, QuantifierTail }
+
+pub proc depth_transport(remaining: Nat, kind: DepthUse, bound_index: Nat, binder_count: Nat): (
+    det after: Option<Int>,
+) {
+    ensure rule: after =
+        if kind = DepthUse::Continuation or (kind = DepthUse::QuantifierTail and bound_index >= binder_count)
+        then Option::Some(remaining)
+        else if remaining > 0 then Option::Some(remaining - 1) else Option::None
+
+    expect no_reset: match after {
+        Option::Some(n) => 0 <= n <= remaining,
+        Option::None => true,
+    }
+    expect expression: when kind = DepthUse::Expression and remaining > 0,
+        after = Option::Some(remaining - 1)
+    expect terminal: when kind = DepthUse::QuantifierTail and bound_index >= binder_count,
+        after = Option::Some(remaining)
+}
+
+pub struct SubtreeMeasure { height: Int, branches? }
+
+pub proc native_subtree(measure: Option<SubtreeMeasure>, remaining: Option<Int>): (det native?) {
+    ensure rule: native? iff match measure {
+        Option::None => false,
+        Option::Some(m) =>
+            not m.branches? and match remaining {
+                Option::None => true,
+                Option::Some(n) => m.height <= n.min(MAX_EXPRESSION_DEPTH),
+            },
+    }
 }
 ```
 

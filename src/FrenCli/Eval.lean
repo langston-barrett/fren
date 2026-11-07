@@ -1528,6 +1528,15 @@ parameter over, to keep the tail call. Passed through
 checks, from the IR, that the parameters stay borrowed. -/
 @[noinline] def evalResult (x : Option Val) : Option Val := x
 
+private theorem arraySize_le_sizeOf [SizeOf α] (xs : Array α) : xs.size ≤ sizeOf xs := by
+  cases xs with
+  | mk data =>
+    have h : data.length ≤ sizeOf data := by
+      induction data with
+      | nil => simp
+      | cons x rest ih => simp only [List.length_cons, List.cons.sizeOf_spec]; omega
+    simpa [Nat.add_comm] using Nat.le_trans h (Nat.le_succ _)
+
 /-- The value of an expression, as far as it is known: each variable as
 `look` gives it, each binder of an enclosing `match` arm or quantifier as
 its binding in `frame` does, the innermost first, and else as `locals`
@@ -1563,14 +1572,21 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     | some v => v
     | none => locals.lookup n
   | .boundAt k => frame.get k
-  | .shared k => if k < memos.size then memos[memos.size - 1 - k]!.get depth else none
+  | .shared k => if k < memos.size then
+      memos[memos.size - 1 - k]!.get
+        ((Fren.Core.Enumeration.transportDepth .continuation (depth + 1)).getD 0)
+    else none
   | .known v => v
   | .memo lets e =>
     -- The first of `lets` innermost, as `.shared 0`.
     let ms := lets.foldr (init := memos) fun x ms =>
       ms.push (Memo.ofFn depth fun remaining =>
         x.evalIn I look locals slots frame memos fuel (min remaining depth))
-    evalResult (e.evalIn I look locals slots frame ms fuel depth)
+    -- A compiled table's wrapper represents its source table node, not
+    -- an extra expression. Other raw helper shapes stay depth guarded.
+    match e with
+    | .table _ rows unspec? => tableV I look locals slots frame ms fuel depth rows unspec?
+    | e => evalResult (e.evalIn I look locals slots frame ms fuel depth)
   | .not a => notV (a.evalIn I look locals slots frame memos fuel depth)
   | .neg a => match a.evalIn I look locals slots frame memos fuel depth with
     | some (.int x) => some (.int (-x))
@@ -1761,12 +1777,7 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
   -- (`chainKnownBy`, which is `chainKnown`). Evaluate each condition and
   -- selected body once, including when the body is unknown: retrying it
   -- through a fallback makes nested unknown results exponential.
-  | .table _ rows unspec? =>
-    chainKnownBy (fun (_, c?, v) => (match c? with
-        | none => some true
-        | some c => truthOf (c.evalIn I look locals slots frame memos fuel depth),
-      fun _ => v.evalIn I look locals slots frame memos fuel depth))
-      rows.toList fun _ => do I.fn (← unspec?) #[]
+  | .table _ rows unspec? => tableV I look locals slots frame memos fuel depth rows unspec?
   -- A closed expression, which neither variables nor binders reach.
   | .const _ e => evalResult (e.evalIn { I with lookup? := none } (fun _ => none) [] #[] .nil #[] fuel depth)
   | .typed t _ e => do truthV (typeV I fuel depth t (← e.evalIn I look locals slots frame memos fuel depth))
@@ -1785,7 +1796,11 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
       | .ctor t i xs => if t == Fren.Core.matchVectorPath then some (t, i, xs) else none
       | _ => none
     let values : Array (Option Val) := match vector? with
-      | some (_, _, xs) => xs.map fun x => x.evalIn I look locals slots frame memos fuel depth
+      | some (_, _, xs) => match depth with
+        | 0 => xs.map fun _ => none
+        | remaining + 1 => xs.map fun x =>
+          x.evalIn I look locals slots frame memos fuel
+            ((Fren.Core.Enumeration.transportDepth .expression (remaining + 1)).getD 0)
       | none => #[e.evalIn I look locals slots frame memos fuel depth]
     let value? := match vector? with
       | some (t, i, _) => (values.mapM id).map (Val.ctor t i)
@@ -1823,6 +1838,18 @@ def Ex.evalIn (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) 
     | q => q.evalIn I look locals slots frame memos fuel depth
 termination_by (fuel, depth + 1, sizeOf whole)
 where
+  /-- Continue after the table's source step, including through its
+  compiled cache wrapper. This helper adds no expression node. -/
+  tableV (I : @& Interp) (look : @& Look) (locals : @& List (Name × Val)) (slots : @& Array (Option Val))
+      (frame : @& Frame) (memos : @& Array Memo) (fuel depth : Nat)
+      (rows : @& Array (Nat × Option Ex × Ex)) (unspec? : @& Option Name) : Option Val :=
+    chainKnownBy (fun (_, c?, v) => (match c? with
+        | none => some true
+        | some c => truthOf (c.evalIn I look locals slots frame memos fuel depth),
+      fun _ => v.evalIn I look locals slots frame memos fuel depth))
+      rows.toList fun _ => do I.fn (← unspec?) #[]
+  termination_by (fuel, depth + 2, sizeOf rows)
+
   /-- Evaluate just the obligation named by a call check, without assuming
   its siblings or the structural facts that construction already guarantees.
   Invariant applications spend the same fuel and remaining depth as
@@ -1935,15 +1962,13 @@ where
       (all : Bool) (names : @& Array Name) (doms : @& Array (Option Ex)) (tys : @& Array Fren.Core.PTy) (body : @& Ex)
       (lets : @& Array (Array Ex)) (k : Nat) (frame : @& Frame) (memos : @& Array Memo) :
       Option Val :=
-    match depth with
-    | 0 => none
-    | depth + 1 =>
     let memos := match lets[k]? with
       | some ls => ls.foldl (init := memos) fun ms x =>
         ms.push (Memo.ofFn depth fun remaining =>
           x.evalIn I look locals slots frame memos fuel (min remaining depth))
       | none => memos
     if h : k < names.size then
+      have hk : k < sizeOf names := Nat.lt_of_lt_of_le h (arraySize_le_sizeOf names)
       -- Its domain, or, without one, the values of its type up to the
       -- bound, if enumeration gives them.
       let listed := match doms[k]?.bind id |>.bind (·.evalIn I look locals slots frame memos fuel depth) with
@@ -1962,9 +1987,13 @@ where
           match typed with
           | some true =>
             let frame' := .bind names[k] (some v) frame
-            match quantV I look locals slots fuel depth all names doms tys body lets (k + 1) frame' memos with
-            | some (.bool b) => someBool b
-            | _ => none
+            match step : Fren.Core.Enumeration.transportDepth .quantifierTail depth (k + 1) names.size with
+            | none => none
+            | some remaining =>
+              have left := Fren.Core.Enumeration.transportDepth_le step
+              match quantV I look locals slots fuel remaining all names doms tys body lets (k + 1) frame' memos with
+              | some (.bool b) => someBool b
+              | _ => none
           | some false => someBool all
           | none => none
         -- Shared with the hosted front end (`check::quantified_truth`,
@@ -1973,7 +2002,20 @@ where
         truthV (quantTruthIn exact all inst vs)
       | none => none
     else evalResult (body.evalIn I look locals slots frame memos fuel depth)
-  termination_by (fuel, depth + 1, names.size - k)
+  termination_by (fuel, depth + 2, sizeOf names - k)
+  decreasing_by
+    all_goals try simp only [wfParam] at *
+    all_goals first
+      | decreasing_trivial
+      | (apply Prod.Lex.right; apply Prod.Lex.left; omega)
+      | (by_cases same : remaining = depth
+         · subst remaining
+           apply Prod.Lex.right
+           apply Prod.Lex.right
+           omega
+         · apply Prod.Lex.right
+           apply Prod.Lex.left
+           omega)
 
 
 /-- `Ex.evalIn`, from the top: with no locals, slots, binders or shared
@@ -1989,16 +2031,22 @@ a default is not borrowed (`@&`), whatever it is annotated. -/
 /-- Read a variable or evaluate its definition at the remaining depth.
 The callback installed in the interpretation carries the budget through a
 chain of definitions, including the expression around each reference. -/
-def readDefined (I : Interp) (base : Look) (defined : Name → Option Ex) (depth : Nat) (x : Name) : Option Val :=
+def readDefinedBody (I : Interp) (base : Look) (defined : Name → Option Ex) (depth : Nat) (x : Name) : Option Val :=
   match base x with
   | some v => some v
   | none => match depth with
     | 0 => none
     | depth + 1 => do
       let e ← defined x
-      e.eval { I with lookup? := some (fun remaining => readDefined I base defined (min remaining depth)) }
-        (readDefined I base defined depth) (depth := depth)
+      e.eval { I with lookup? := some (fun remaining => readDefinedBody I base defined (min remaining depth)) }
+        (readDefinedBody I base defined depth)
+        (depth := (Fren.Core.Enumeration.transportDepth .continuation (depth + 1)).getD 0)
 termination_by depth
+
+/-- A direct lookup pays for the reference; expression evaluation instead
+passes its already charged allowance to `readDefinedBody`. -/
+def readDefined (I : Interp) (base : Look) (defined : Name → Option Ex) (depth : Nat) (x : Name) : Option Val :=
+  Fren.Core.Enumeration.atDepth depth fun remaining => readDefinedBody I base defined remaining x
 
 /-! How `Ex.evalIn` spends `fuel` and `depth` (`evalFuel`, `evalDepth`):
 without depth it has no value; a part of an expression spends depth but
@@ -2064,12 +2112,21 @@ def Ex.children : Ex → Array Ex
 `children`, this includes strict arguments, which evaluation also traverses.
 The work list and the number of visits are bounded (`eval::expression_limit`). -/
 def Ex.withinLimits (e : Ex) : Bool :=
-  (Fren.Core.Enumeration.expressionDepthM (m := Id) (fun (e : Ex) =>
+  (Fren.Core.Enumeration.expressionDepthM (m := Id) (fun (e, binder) =>
     match e with
-    | .bin .eq a (.lit (.bool true)) => { children := #[a], transparent := true }
-    | .dispatch _ body@(.match ..) => { children := #[body], transparent := true }
-    | .strict args body => { children := args.push body }
-    | e => { children := e.children }) e).isSome
+    | .quant _ _ _ names domains _ body =>
+      -- A packed vector of binders represents nested quantifier nodes,
+      -- not a single node followed by an uncharged helper traversal.
+      let next := if binder + 1 < names.size then (e, binder + 1) else (body, 0)
+      { children := ((domains[binder]?.bind id).toArray.map (·, 0)).push next }
+    | _ =>
+      let layer : Fren.Core.Enumeration.ExpressionLayer Ex := match e with
+        | .bin .eq a (.lit (.bool true)) => { children := #[a], transparent := true }
+        | .dispatch _ body@(.match ..) => { children := #[body], transparent := true }
+        | .memo values body@(.table ..) => { children := values ++ body.children }
+        | .strict args body => { children := args.push body }
+        | e => { children := e.children }
+      { children := layer.children.map (·, 0), transparent := layer.transparent }) (e, 0)).isSome
 
 /-- A sufficient totality check for well-typed scalar formulas and their
 acyclic definitions. Every variable costs an extra unit for definition

@@ -67,6 +67,11 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"97e7501
 -- each module is built one way, no module is in the globs of two libraries,
 -- which `lake test`'s `libraries` job checks.
 
+-- Standalone scheduler kernels: only Lean core/Std, independent of Fren.
+lean_lib Heavy where
+  globs := #[.submodules `Heavy]
+  roots := #[]
+
 -- Shared by the Lean library and the binary; depends only on Lean core, and
 -- on the parser of the binary, with which `FrenCore.Lint` reads the Fren
 -- quotations of its fixes when it is built (`FrenCli.Quote`). All of its
@@ -742,9 +747,9 @@ lean_exe fren_coverage where
 -- `lake exe fren_fuzz_frontends`: random specs, checked by both front ends,
 -- whose reports must agree (`Reqs/dev/Testing`). It loads Fren's Lean
 -- environment at runtime, hence the interpreter. The fuzzer is the module
--- `FrenTest.FuzzFrontends`, which `fren_test` imports too, to check its
--- fixed corpus: an executable's root is in no library, so no module may
--- import it, since Lake would then use a stale `.olean` of it.
+-- `FrenTest.FuzzFrontends.Main`; `fren_test` imports `Checks` and `Corpus`
+-- to check its fixed corpus. An executable's root is in no library, so no
+-- module may import it, since Lake would then use a stale `.olean` of it.
 lean_exe fren_fuzz_frontends where
   root := `FrenFuzzFrontends
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]

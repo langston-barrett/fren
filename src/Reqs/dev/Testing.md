@@ -628,7 +628,7 @@ pub mod testing
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
   `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings` and
   `--datatype-elements`
-  (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  (`corpus` in `src/FrenTest/FuzzFrontends/Corpus.lean`), are checked
   with both front ends and compared as above. The `--decidable` corpus also
   rejects every error without a diagnostic code from `fren check`, even
   when both front ends agree. The `frontendFuzz` jobs contain at
@@ -1313,7 +1313,8 @@ just the sampled main-thread lower bound.
 Each job freezes `predicted_peak_rss_kb` before execution beside its eventual
 `peak_rss_kb`. The prediction is the maximum positive measured peak among
 the latest 20 completed jobs of the same `job_kind` in the preceding seven
-days, ordered by completion time and excluding future completions. Failed
+days, ordered by completion time and excluding future completions. The
+lower cutoff is inclusive; larger peaks win completion-time ties. Failed
 jobs' observed peaks count too, though a killed job's peak does not show
 how much memory it needed to finish. `prediction_jobs` records the number
 used, and `prediction_method` is `"max_last_20_same_kind_7d"`. With no usable
@@ -1323,6 +1324,11 @@ The current memory admission rule uses live RSS and lease reservations,
 without a per-kind estimate. This prediction is telemetry for assessing an admission model;
 it does not yet change that rule. Work amounts and build-cache states can
 vary within a kind, so historical peaks do not guarantee a future fit.
+`Heavy.Forecast` computes this bounded selection with a generic key and is
+bound to `heavy_memory_prediction` in `Impls.Heavy`. The active scheduler
+remains Python; its tested binding in `Impls.Trace` still covers log I/O.
+The `heavyPrediction` test job compares both forecasts on sanitized log
+observations and boundary cases.
 
 The following requirements state CPU accumulation and interval accounting.
 Time quantities use a common integral unit; ratios are numerator and
@@ -1418,29 +1424,95 @@ pub proc heavy_pressure(running: Nat, cores: Nat): (det ratio: CpuRatio, det ove
     expect equal: when running = cores, not oversubscribed?
 }
 
--- Fold the eligible historical peaks; filtering and selecting the latest
--- observations, from the concrete log, are exercised by the Python tests.
-pub proc heavy_memory_prediction(previous: Option<Int>, observed: Option<Int>): (
-    det prediction: Option<Int>,
-) {
-    require previous_positive: match previous {
-        Option::Some(p) => p > 0,
-        Option::None => true,
-    }
-    require observed_positive: match observed {
-        Option::Some(o) => o > 0,
-        Option::None => true,
-    }
-    ensure rule: match previous, observed {
-        Option::None, _ => prediction = observed,
-        _, Option::None => prediction = previous,
-        Option::Some(p), Option::Some(o) => prediction = Option::Some(p.max(o)),
+-- A common integral time unit represents completion times and the cutoff.
+-- Missing or malformed fields are None; log readers default a missing
+-- event to Some("job"). Keys are opaque strings here; the Lean kernel
+-- accepts any key type with decidable equality. Python uses the job kind.
+pub struct MemoryObservation {
+    event: Option<String>,
+    key: Option<String>,
+    ended: Option<Int>,
+    peak: Option<Int>,
+}
+
+pub enum MemoryHistory { Nil, Cons(MemoryObservation, MemoryHistory) }
+pub enum MemoryPeaks { Nil, Cons(Int, Int, MemoryPeaks) }
+
+pub fn memory_eligible?(o: MemoryObservation, key: String, cutoff: Int, now: Int) :=
+    o.event = Option::Some("job") and o.key = Option::Some(key)
+    and (match o.ended, o.peak {
+        Option::Some(t), Option::Some(p) => cutoff <= t <= now and p > 0,
+        _, _ => false,
+    })
+
+pub fn memory_take(n: Int, ps: MemoryPeaks): MemoryPeaks := match ps {
+    MemoryPeaks::Nil => MemoryPeaks::Nil,
+    MemoryPeaks::Cons(t, p, rest) =>
+        if n = 0 then MemoryPeaks::Nil
+        else MemoryPeaks::Cons(t, p, memory_take(n - 1, rest)),
+}
+
+-- Latest completion first; larger peaks win ties, as in Python's heap.
+pub fn memory_insert(t: Int, p: Int, n: Int, ps: MemoryPeaks): MemoryPeaks := match ps {
+    MemoryPeaks::Nil =>
+        if n = 0 then MemoryPeaks::Nil
+        else MemoryPeaks::Cons(t, p, MemoryPeaks::Nil),
+    MemoryPeaks::Cons(u, q, rest) =>
+        if n = 0 then MemoryPeaks::Nil
+        else if t > u or (t = u and p >= q) then
+        MemoryPeaks::Cons(t, p, memory_take(n - 1, ps))
+        else MemoryPeaks::Cons(u, q, memory_insert(t, p, n - 1, rest)),
+}
+
+pub fn memory_recent(hs: MemoryHistory, key: String, cutoff: Int, now: Int, n: Int): MemoryPeaks :=
+    match hs {
+        MemoryHistory::Nil => MemoryPeaks::Nil,
+        MemoryHistory::Cons(o, rest) => (let ps := memory_recent(rest, key, cutoff, now, n) in
+            match o.ended, o.peak {
+                Option::Some(t), Option::Some(p) => if memory_eligible?(o, key, cutoff, now) then
+                    memory_insert(t, p, n, ps) else ps,
+                _, _ => ps,
+            }),
     }
 
-    expect covers_observation: match observed, prediction {
-        Option::Some(o), Option::Some(p) => p >= o,
-        _, _ => true,
+-- The one-step coverage fact needed by the original maximum-fold Req.
+pub fn memory_head_covered?(ps: MemoryPeaks, prediction: Option<Int>) := match ps, prediction {
+    MemoryPeaks::Nil, _ => true,
+    MemoryPeaks::Cons(_, p, _), Option::Some(m) => m >= p,
+    _, _ => false,
+}
+
+pub fn memory_max(ps: MemoryPeaks): (prediction: Option<Int>) {
+    out prediction := match ps {
+        MemoryPeaks::Nil => Option::None,
+        MemoryPeaks::Cons(_, p, rest) => match memory_max(rest) {
+            Option::None => Option::Some(p),
+            Option::Some(q) => Option::Some(p.max(q)),
+        },
     }
+    ensure covers_head: memory_head_covered?(ps, prediction)
+}
+
+pub fn memory_count(ps: MemoryPeaks): Nat := match ps {
+    MemoryPeaks::Nil => 0,
+    MemoryPeaks::Cons(_, _, rest) => 1 + memory_count(rest),
+}
+
+pub proc heavy_memory_prediction(
+    history: MemoryHistory,
+    key: String,
+    cutoff: Int,
+    now: Int,
+    n: Nat,
+): (det prediction: Option<Int>, det jobs: Nat) {
+    ensure rule: prediction = memory_max(memory_recent(history, key, cutoff, now, n))
+    ensure count: jobs = memory_count(memory_recent(history, key, cutoff, now, n))
+
+    expect covers_observation: memory_head_covered?(
+        memory_recent(history, key, cutoff, now, n),
+        prediction
+    )
+    expect empty: when history = MemoryHistory::Nil, prediction = Option::None and jobs = 0
 }
 ```
 

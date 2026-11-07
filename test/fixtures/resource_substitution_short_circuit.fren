@@ -1,0 +1,20 @@
+set_option fren.evidence "enumerated"
+set_option fren.enumeration.size 1
+set_option fren.lint.nonminimal_bool "allow"
+set_option fren.lint.double_neg "allow"
+set_option fren.lint.redundant_bool_type "allow"
+set_option fren.lint.undecidable "allow"
+
+-- Every original root fits; substitution makes unused branches oversized.
+pub proc substituted(x?): (y?, det value: Int) {
+    out y? :=
+        not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not x?
+    out value := if true then 7 else if y? then 8 else 9
+    expect left: true or y?
+    expect right: y? or true
+    expect and_left: not (false and y?)
+    expect and_right: not (y? and false)
+    expect choose: if true then true else y?
+    expect choose_false: not (if false then y? else false)
+    expect chosen_value: value = 7
+}

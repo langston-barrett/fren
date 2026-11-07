@@ -565,6 +565,10 @@ structure CompInfo where
   /-- Each defined output and its definition, a closed lambda over all of
   the procedure's variables that mentions no defined output. -/
   defs : Array (Name × Expr) := #[]
+  /-- Source definitions in dependency order, closed over the procedure's
+  variables, before substituting earlier outputs. Enumeration preserves
+  their independent admission roots and each reference's depth step. -/
+  evaluationDefs? : Option (Array (Name × Expr)) := none
   /-- No construct of it is outside the decidable core
   (`view::inconclusive_advice`). -/
   decidable : Bool := true

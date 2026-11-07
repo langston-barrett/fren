@@ -6,7 +6,9 @@ import FrenTest.EvalLimits
 import FrenTest.Expansion
 import FrenTest.ExpansionFuzz
 import FrenTest.Frontends
-import FrenTest.FuzzFrontends
+import FrenTest.FuzzFrontends.Checks
+import FrenTest.FuzzFrontends.Corpus
+import FrenTest.FuzzFrontends.Running
 import FrenTest.ImplPath
 import FrenTest.Jobs
 import FrenTest.Messages
@@ -20,6 +22,7 @@ import FrenTest.SolverPairing
 import FrenTest.TheoryDump
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
+import Heavy.Forecast
 import Impls
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -3770,9 +3773,26 @@ unsafe def evalLimitChecks : IO (Array String) := do
       "test/fixtures/resource_recursive_depth.fren", "test/fixtures/resource_recursive_shared.fren",
       "test/fixtures/resource_recursive_boundary.fren", "test/fixtures/resource_recursive_body_boundary.fren",
       "test/fixtures/resource_recursive_refusal.fren", "test/fixtures/resource_recursive_dependencies.fren",
-      "test/fixtures/resource_nested_equality.fren"] ".lake/eval-limits")
+      "test/fixtures/resource_nested_equality.fren", "test/fixtures/resource_defined_boundary.fren",
+      "test/fixtures/resource_substitution_short_circuit.fren", "test/fixtures/resource_quantifier_boundary.fren",
+      "test/fixtures/resource_match_vector_boundary.fren"] ".lake/eval-limits")
   let paired := if pairedCode == 0 then #[] else #[s!"resource limits differ between front ends:\n{pairedOutput}"]
-  return failures ++ diagnostics ++ unknowns ++ boundaryFailures ++ bodyBoundaryFailures ++ paired
+  let mut transportFailures := #[]
+  let boundaries := #[
+    ("resource_defined_boundary", #[(`defined_input, Fren.Core.CheckKind.expect, Fren.Core.Verdict.fail),
+      (`defined_literal, .expect, .pass), (`defined_chain, .expect, .fail), (`defined_past, .expect, .inconclusive),
+      (`defined_chain_past, .expect, .inconclusive)]),
+    ("resource_substitution_short_circuit", #[(`substituted, .expect, .pass), (`substituted, .determinism, .pass)]),
+    ("resource_quantifier_boundary", #[(`ordinary_one, .expect, .fail), (`ordinary_two, .expect, .fail),
+      (`lifted_one, .expect, .fail), (`lifted_two, .expect, .fail)]),
+    ("resource_match_vector_boundary", #[(`vector_inside, .expect, .fail), (`vector_past, .expect, .inconclusive)])]
+  for (file, expected) in boundaries do
+    let run ← methodResults #[s!"test/fixtures/{file}.fren"] "enumerated" (some 1)
+    for (comp, kind, verdict) in expected do
+      let records := run.records.filter fun (_, r, _) => r.comp == comp && r.kind == kind
+      unless !records.isEmpty && records.all (fun (_, r, _) => r.verdict == verdict) do
+        transportFailures := transportFailures.push s!"{file}: {comp} lost its depth-boundary verdict:\n{run.output}"
+  return failures ++ diagnostics ++ unknowns ++ boundaryFailures ++ bodyBoundaryFailures ++ paired ++ transportFailures
 
 /-- A diagnostic that documents why this method cannot run a procedure.
 A code from another method is never an expected limitation. -/
@@ -4483,7 +4503,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["evalLimits"], ["smallValues"], ["renderedSets"]]
+      ["enumeration"], ["heavyPrediction"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["evalLimits"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -4538,6 +4558,10 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus
     | none => throw (IO.userError s!"unknown corpus `{name}`")
+  | ["heavyPrediction"] => do
+    -- The Heavy.Forecast import builds the module loaded by this transport.
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"heavy forecast differential check failed:\n{out.stdout}{out.stderr}"]
   | ["formatting"] => formatting
   | ["fixing"] => fixing
   | ["libraries"] => libraries

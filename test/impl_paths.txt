@@ -5,6 +5,11 @@
 # Model/runtime bridges and dynamic quotation gaps: #846, item 3.
 # A new connection removes its old entry; there is no bless mode.
 
+# Standalone heavy kernel (#859): outside the audited Fren CLI/hosted
+# runtimes. Python remains the active scheduler in migration step 1.
+unbound: Fren.Impls.Heavy.memory_prediction jobs
+unbound: Fren.Impls.Heavy.memory_prediction prediction
+
 # Outputs represented by binders, literals, spec values, or output-free laws.
 unbound: Fren.Impls.Enumeration.contract_blocker right?
 unbound: Fren.Impls.Enumeration.shape_bound size
@@ -214,6 +219,10 @@ cli only: Fren.Impls.wide_list wide? FrenCli.Fmt.listWide
 cli only: Fren.Impls.wide_within inner? FrenCli.Fmt.wideWithin
 cli only: Fren.Impls.worst_of worst Fren.Core.worst
 
+# Hosted calls Core.atDepth through generated quotation; its body calls
+# transportDepth. The static quotation gap is tracked with #846, item 3.
+cli only: Fren.Impls.depth_transport after Fren.Core.Enumeration.transportDepth
+
 # Hosted result dependency only, including Lean implementation commands.
 hosted only: Fren.Impls.Generated.definition_form form Fren.definitionForm
 hosted only: Fren.Impls.Generated.lean_name name Fren.leanName
@@ -227,6 +236,9 @@ hosted only: Fren.Impls.interpretation_contract proof Fren.contractProofOf
 hosted only: Fren.Impls.interpreted accepted? Fren.interpretedAccepted
 hosted only: Fren.Impls.lint_outside_options level Fren.Core.outsideLevel
 hosted only: Fren.Impls.mapping accepted? Fren.mappingAccepted
+# Only the hosted compiler selects native code; CLI evaluation uses its
+# bounded interpreter. Both public hosted value/proposition paths call it.
+hosted only: Fren.Impls.native_subtree native? Fren.Core.Enumeration.nativeAllowed
 hosted only: Fren.Impls.newtype unbounded? Fren.Core.newtypeUnbounded
 hosted only: Fren.Impls.obligation axiom? Fren.implVerdict
 hosted only: Fren.Impls.obligation names_failures? Fren.implVerdict

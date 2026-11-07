@@ -309,13 +309,15 @@ def enumerateComp (sp : Spec) (ec : Eval.Comp) (c : CComp) (kinds : Array Fren.C
     vals[i]?.bind (·[env[i]!]?)
   let look (env : Array Nat) := readDefined (interp env) (baseLook env) (defOf[·]?)
   let fuel := evalDepth
-  let reading (env : Array Nat) : Interp := { interp env with lookup? := some (look env) }
+  let reading (env : Array Nat) : Interp :=
+    { interp env with lookup? := some (readDefinedBody (interp env) (baseLook env) (defOf[·]?)) }
   let evalFm (f : Fm) (env : Array Nat) : Bool := Fm.holds (reading env) (look env fuel) f
   -- The same, with every index out of range unknown.
   let strict (env : Array Nat) : Interp := { interp env with outOfRange := fun _ => none }
   let lookStrict (env : Array Nat) := readDefined (strict env) (baseLook env) (defOf[·]?)
   let unknownFm (f : Fm) (env : Array Nat) : Bool :=
-    (Fm.value? { strict env with lookup? := some (lookStrict env) } (lookStrict env fuel) f).isNone &&
+    (Fm.value? { strict env with lookup? := some (readDefinedBody (strict env) (baseLook env) (defOf[·]?)) }
+      (lookStrict env fuel) f).isNone &&
       (Fm.value? (reading env) (look env fuel) f).isSome
   -- The slots that each atom reads: its variables', and those of the
   -- definitions of the defined outputs it mentions.

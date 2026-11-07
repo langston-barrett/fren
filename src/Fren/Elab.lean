@@ -8501,11 +8501,11 @@ def elabCompInsts (scope : Name) (members : Array Syntax) (vars : Array Var) (na
 /-- A procedure's calls, over its variables `fvs`, and then its definitions,
 each after those it mentions, with the earlier ones substituted, so that
 each value mentions no defined output: the calls, the generated
-definitions so far, the definitions' values, the variables they define,
-and the indexes, and whether all were elaborated. -/
+definitions so far, the expanded and source definitions' values, the
+variables they define, the indexes, and whether all were elaborated. -/
 def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array PendingInst) (declBase : Name)
     (fvs : Array Expr) :
-    TermElabM (Array InstInfo × Array (Name × Expr) × Array (Name × Expr) × Array Expr × CompIndexes × Bool) := do
+    TermElabM (Array InstInfo × Array (Name × Expr) × Array (Name × Expr) × Array (Name × Expr) × Array Expr × CompIndexes × Bool) := do
   let instNames := pending.map (·.name)
   let mut good := true
   let mut insts : Array InstInfo := #[]
@@ -8522,6 +8522,7 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
       indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (pi.name, .binding k, r, q, g)
     catch ex => logWithin ex; good := false
   let mut values : Array (Name × Expr) := #[]
+  let mut sourceValues : Array (Name × Expr) := #[]
   let mut todo := vars.filter (·.defn?.isSome)
   let mut defnFvs : Array Expr := #[]
   while !todo.isEmpty do
@@ -8542,12 +8543,13 @@ def elabCompDefinitions (scope : Name) (vars : Array Var) (pending : Array Pendi
         elabProp t v.type
       indexes := indexes ++ (← takeIndexes fvs).map fun (r, q, g) => (v.name, .prop, r, q, g)
       lintBools e (← hidesIn { modName := scope, vars, insts := instNames, place := .prop })
+      sourceValues := sourceValues.push (v.name, value)
       let value := value.replaceFVars defnFvs (values.map (·.2))
       defs := defs.push (declBase ++ `def ++ v.name, ← mkEq fvs[idx]! value)
       values := values.push (v.name, value)
       defnFvs := defnFvs.push fvs[idx]!
     catch ex => logWithin ex; good := false
-  return (insts, defs, values, defnFvs, indexes, good)
+  return (insts, defs, values, sourceValues, defnFvs, indexes, good)
 
 /-- A procedure's assumptions, requirements and expectations, over its variables
 `fvs`, where the defined outputs `defnFvs` have the values `values`: the
@@ -8847,16 +8849,16 @@ def addCompDefs (vars : Array Var) (declBase : Name) (fvs : Array Expr) (uses : 
 /-- A procedure's calls, definitions and constraints, elaborated over its
 variables, with its lints of them, and, if all were elaborated, its
 generated definitions added: the constraints, the calls, the
-placeholders used, the definitions' values over the variables, the
-indexes, and whether all were elaborated. -/
+placeholders used, the expanded and source definitions over the
+variables, the indexes, and whether all were elaborated. -/
 def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pending : Array PendingInst)
     (declBase : Name) (varsOk : Bool) (varNames : NameSet) (global := false) :
-    TermElabM (Array PropInfo × Array InstInfo × Array Name × Array (Name × Expr) × CompIndexes × Bool) := do
+    TermElabM (Array PropInfo × Array InstInfo × Array Name × Array (Name × Expr) × Array (Name × Expr) × CompIndexes × Bool) := do
   let instNames := pending.map (·.name)
   let decls := vars.map fun v => (v.name, fun _ => pure v.type)
   withLocalDeclsD decls fun fvs => do
     discard (takeIndexes fvs)
-    let (insts, defs, values, defnFvs, indexes, defsOk) ← elabCompDefinitions scope vars pending declBase fvs
+    let (insts, defs, values, sourceValues, defnFvs, indexes, defsOk) ← elabCompDefinitions scope vars pending declBase fvs
     let (props, defs, indexes, _, propsOk) ←
       elabCompConstraints scope members vars instNames declBase fvs defnFvs values varNames defs indexes
     let (refines, refineDefs, refineIndexes) ←
@@ -8875,7 +8877,8 @@ def elabCompBody (scope : Name) (members : Array Syntax) (vars : Array Var) (pen
     let uses ← usesOf ((← fvs.mapM fun x => inferType x) ++ vars.filterMap (·.fact?) ++ defs.map (·.2))
     if good then addCompDefs vars declBase fvs uses props values defs
     let closed ← values.mapM fun (d, v) => return (d, ← mkLambdaFVars fvs v)
-    return (props, insts, uses, closed, indexes, good)
+    let sourceClosed ← sourceValues.mapM fun (d, v) => return (d, ← mkLambdaFVars fvs v)
+    return (props, insts, uses, closed, sourceClosed, indexes, good)
 
 /-- `unused_variables` and `unused_assumption` (`lint::unused_assumption`)
 of a procedure whose items were all elaborated: the latter is recorded, to be
@@ -8980,7 +8983,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
   unless ok do return (false, #[])
   if global then lintUnrelatedCalls nameStx path.getString! members
   -- Bindings; assumptions, requirements and expectations
-  let (props, insts, uses, values, indexes, ok) ← elabCompBody scope members vars pending declBase ok names global
+  let (props, insts, uses, values, sourceValues, indexes, ok) ← elabCompBody scope members vars pending declBase ok names global
   lintManualNat path members
   if ok then lintCompUnused scope path members vars instNames global
   let mut generated := insts.map (·.decl) ++ props.map (·.decl) ++ #[declBase ++ `assumes, declBase ++ `ensures]
@@ -8993,6 +8996,7 @@ def elabCompMembers (scope path modName declBase : Name) (isPub : Bool) (nameStx
     let tested := tested.expandProps owners
     let enumerated := enumerated.expandProps owners
     let info : CompInfo := { path, vars, props, insts, ref := nameStx, decl := declBase, uses, defs := values
+                             evaluationDefs? := some sourceValues
                              decidable := !(← getLocal).outsideCore, undecidableDenied := (← getLocal).undecidableDenied
                              relational, counts, indexes, tested, enumerated, enumSize, guarded := (← getLocal).guardedUsed
                              global }

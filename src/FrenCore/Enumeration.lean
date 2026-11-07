@@ -71,12 +71,43 @@ where
 def expressionDepthM [Monad m] (layer : α → m (ExpressionLayer α)) (root : α) : m (Option Nat) := do
   return (← expressionInfoM layer root).map (·.1)
 
+/-- The semantic transition at an evaluator boundary. Definition transport,
+cache reads and the terminal quantifier continuation add no expression node. -/
+inductive DepthUse where
+  | expression
+  | continuation
+  | quantifierTail
+  deriving BEq
+
+/-- Transport an already bounded allowance (`eval::depth_transport`). A
+variable has paid for its lookup before entering its definition. A packed
+quantifier pays again only when another actual binder remains. -/
+def transportDepth (use : DepthUse) (remaining : Nat) (next total : Nat := 0) : Option Nat :=
+  let steps := match use with
+    | .expression => 1
+    | .continuation => 0
+    | .quantifierTail => if next < total then 1 else 0
+  if steps ≤ remaining then some (remaining - steps) else none
+
+@[simp] theorem transportDepth_expression_succ (remaining : Nat) :
+    transportDepth .expression (remaining + 1) = some remaining := by
+  simp [transportDepth]
+
+theorem transportDepth_le {use : DepthUse} {remaining next total after : Nat}
+    (h : transportDepth use remaining next total = some after) : after ≤ remaining := by
+  unfold transportDepth at h
+  split at h <;> simp_all <;> omega
+
 /-- Take one expression/body step; unlike semantic fuel this budget is
 never restored by a recursive call. -/
 def atDepth {α : Type} (depth : Nat) (run : Nat → Option α) : Option α :=
-  match boundedEvalDepth depth with
-  | 0 => none
-  | remaining + 1 => run remaining
+  (transportDepth .expression (boundedEvalDepth depth)).bind run
+
+/-- Keep branching subtrees lazy: substitution can exceed the allowance,
+and native decision dictionaries can duplicate their branches. A measured
+linear subtree uses its known allowance or the runtime depth guard. -/
+def nativeAllowed (info : Option (Nat × Bool)) (depth : Option Nat) : Bool :=
+  info.any fun (height, branching) => !branching && depth.all (height ≤ boundedEvalDepth ·)
 
 /-- A nonrecursive subtree may use native evaluation after Core has
 measured it. Keep its value lazy so an exhausted caller does no work. -/

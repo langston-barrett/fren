@@ -41,6 +41,8 @@ SKIP = {".lake", ".git", "book", ".claude"}
 # after its members, which the change that introduced `require` (#669)
 # converted by hand.
 KEEP = {os.path.join("src", "FrenCore", "Codes", "F0169.md"), os.path.join("src", "FrenTest", "FuzzFrontends.lean")}
+# The fuzzer's modules keep the same exception after its split.
+FUZZ_DIR = os.path.join("src", "FrenTest", "FuzzFrontends") + os.sep
 # The tests of `F0169`, which write `assume` on purpose.
 KEEP |= {os.path.join("test", "cli", "syntax", "f0169_assume.fren")} | {
     os.path.join("test", "ui", "syntax", f"{k}.fren")
@@ -136,7 +138,7 @@ def migrate(path, undecided):
 
 def wanted(p, f):
     n = os.path.normpath(p)
-    if n in KEEP:
+    if n in KEEP or n.startswith(FUZZ_DIR):
         return False
     if f.endswith(".fren") or f.endswith(".md"):
         return True

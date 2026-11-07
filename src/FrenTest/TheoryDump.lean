@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenTest.FuzzFrontends
+import FrenTest.FuzzFrontends.Running
 import FrenTest.Resolved
 -- keep-sorted end
 

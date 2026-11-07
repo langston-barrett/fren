@@ -13,6 +13,69 @@ open FrenCli.Eval
 open Fren.Core.Enumeration
 open Fren.Test.OutOfFuel (nots downInterp)
 
+/-- Transport through definitions, vector constructors and packed binders
+agrees at the last supported step, before and after compilation. -/
+def depthTransportChecks : IO (Array String) := do
+  let extra := (← IO.monoMsNow) % 1
+  let failures ← IO.mkRef (#[] : Array String)
+  let check (ok : Bool) (message : String) : IO Unit := do
+    unless ok do failures.modify (·.push message)
+  let yes : Ex := .lit (.bool true)
+  let no : Ex := .lit (.bool false)
+  let base : Look := fun n =>
+    if n == `x then some (.bool false)
+    else if n == `a || n == `b then some (.bool true) else none
+  let definitions : Lean.Name → Option Ex := fun n =>
+    if n == `y then some (.var `x) else if n == `z then some (.var `y) else none
+  let I : Interp := { lookup? := some (readDefinedBody {} base definitions) }
+  for (name, need) in [(`x, 1), (`y, 2), (`z, 3)] do
+    check ((Ex.var name).eval I base (depth := need) == some (.bool false))
+      s!"definition {name} spent its lookup twice"
+    check (((Ex.var name).eval I base (depth := need - 1)).isNone)
+      s!"definition {name} omitted its lookup step"
+    check (readDefined {} base definitions need name == some (.bool false))
+      s!"direct lookup {name} differs from expression lookup"
+    check ((readDefined {} base definitions (need - 1) name).isNone)
+      s!"direct lookup {name} did not spend its reference step"
+  let shared : Ex := .memo #[nots (maxEvalDepth - 3) (.var `x)]
+    (.table 0 #[(0, some yes, .shared 0)] none)
+  check (shared.eval I base (depth := maxEvalDepth - 1) == some (.bool true))
+    "a cache wrapper or read spent a synthetic expression step"
+  check ((shared.eval I base (depth := maxEvalDepth - 2)).isNone)
+    "a shared expression exceeded its caller's allowance"
+  let helper := (List.range (2048 + extra)).foldl (fun body _ => Ex.memo #[] body) yes
+  check ((helper.eval {} base).isNone) "raw cache helpers evaded the native depth guard"
+  let vector : Ex := .ctor Fren.Core.matchVectorPath 0 #[.var `a, .var `b]
+  let m : Ex := .match vector
+    #[(.ctor 0 #[.bool true, .bool true], none, yes), (.wild, none, no)] 0 #[] none none
+  for e in [m, .dispatch #[#[0, 1]] m] do
+    for e in [e, e.compile (fun _ => none) (some [])] do
+      check ((e.eval {} base (depth := 2)).isNone) "a match vector skipped its constructor step"
+      check (e.eval {} base (depth := 3) == some (.bool true)) "a match vector spent an extra step"
+  let domain : Interp := {
+    domain := fun _ => some (#[.bool false, .bool true], true)
+    fn := fun _ _ => some (.bool false) }
+  for count in [1, 2, 3] do
+    let names := (Array.range count).map fun k => Lean.Name.mkSimple s!"q{k}"
+    let types := Array.replicate count ({ ty := .bool } : Fren.Core.PTy)
+    for (leaf, lifted) in [(Ex.var `x, false), (Ex.app `value #[], true)] do
+      let body := nots (maxEvalDepth - count - 1) leaf
+      let q : Ex := .quant 0 0 true names (Array.replicate count none) types body
+      let compiled := q.compile (fun _ => none) (some [])
+      if lifted then
+        check (compiled matches .lifted ..) "quantifier regression did not exercise lifted values"
+      for e in [q, compiled] do
+        check ((e.eval domain base).isSome) "a quantifier body lost its boundary allowance"
+        check ((e.eval domain base (depth := maxEvalDepth - 1)).isNone)
+          "a quantifier body omitted a real binder step"
+  let cold := nots (2048 + extra) (.var `x)
+  for e in [Ex.memo #[cold] (.table 0 #[(0, none, yes)] none),
+      .lifted #[#[cold]] (.quant 0 0 true #[`b] #[none] #[{ ty := .bool }] yes)] do
+    check (!e.withinLimits) "a cache hid an oversized operand from admission"
+    check (((e.compile (fun _ => none) (some [])).eval domain base).isNone)
+      "compilation traversed an oversized cached operand before admission"
+  return ← failures.get
+
 def check : IO (Array String) := do
   let extra := (← IO.monoMsNow) % 1
   let failures ← IO.mkRef (#[] : Array String)
@@ -253,7 +316,8 @@ def check : IO (Array String) := do
   let names := (Array.range count).map fun k => Lean.Name.mkSimple s!"x{k}"
   let domains := Array.replicate count (some (Ex.seqLit #[yes]))
   let quant : Ex := .quant 0 0 true names domains #[] yes
+  check (!quant.withinLimits) "packed binders evaded expression-depth admission"
   check ((quant.eval {} (fun _ => none)).isNone) "quantifier binders exceeded the depth limit"
-  return ← failures.get
+  return (← failures.get) ++ (← depthTransportChecks)
 
 end Fren.Test.EvalLimits

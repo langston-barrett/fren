@@ -273,6 +273,15 @@ def valueArgs (e : Expr) (recs : Array DefinedInfo := #[]) : MetaM (Array Nat) :
     | some p => p.binderInfo == .default && !p.isProp
     | none => true
 
+/-- The function table's lookup machinery is not source syntax. Its
+indices retain the original arguments, each underneath `Enum.index`. -/
+def interpretedArgs? (e : Expr) : Option (Array Expr) := do
+  guard (e.isAppOfArity ``Enum.apply 8)
+  let (_, indices) ← e.appArg!.arrayLit?
+  indices.toArray.mapM fun index => do
+    guard (index.isAppOfArity ``Enum.index 4)
+    return index.appArg!
+
 /-- Find source operands without traversing a native helper recursively.
 A nested match or collection owns its own operands. -/
 def sourceOperands (names : Array Name) (root : Expr) : MetaM (Array Expr) :=
@@ -301,6 +310,7 @@ where
 pattern tests, selectors and literal constructors do not spend extra depth. -/
 def expressionLayer (e : Expr) (recs : Array DefinedInfo := #[]) : MetaM (ExpressionLayer Expr) := do
   let e := e.consumeMData
+  if let some args := interpretedArgs? e then return { children := args }
   if e.isAppOf ``Enum.pickE || e.isAppOf ``Enum.pick || e.isAppOf ``Fren.Str.lit || e.isAppOf ``Fren.evalBinding then return {}
   if e.isAppOf ``Fren.evalCollection then
     return { children := ← sourceOperands #[``Fren.evalElement] e.appArg! }
@@ -840,6 +850,25 @@ Lean's small default for source-level instance search. -/
 def valueComparison (name : Name) (args : Array Expr) : MetaM Expr :=
   withOptions (synthInstance.maxSize.set · maxTypeNodes) (mkAppM name args)
 
+/-- Compact native negations without changing the source tree that the
+resource guard measures. Nested decision dictionaries otherwise make a
+supported quantifier body exceed the compiler's heartbeat allowance. -/
+def nativeDecision (p : Expr) : MetaM Expr := do
+  let (negative, base) := strip maxEvalNodes false p
+  let value := mkApp2 (mkConst ``Decidable.decide) base (← decidableOf base)
+  if negative then mkAppM ``Bool.not #[value] else pure value
+where
+  strip : Nat → Bool → Expr → Bool × Expr
+    | 0, negative, p => (negative, p)
+    | fuel + 1, negative, p =>
+      let p := p.consumeMData
+      if p.isAppOfArity ``Not 1 then strip fuel (!negative) p.appArg! else
+      if p.isAppOfArity ``Eq 3 && p.getArg! 0 == mkConst ``Bool && p.getArg! 2 == mkConst ``Bool.true then
+        let value := (p.getArg! 1).consumeMData
+        if value.isAppOfArity ``Decidable.decide 2 then strip fuel negative (value.getArg! 0)
+        else (negative, p)
+      else (negative, p)
+
 mutual
 /-- The truth of the proposition `p`, an `Option Bool`, `none` where it is
 unknown: by the strong Kleene connectives, and each quantifier over its
@@ -873,8 +902,8 @@ partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
   if p.isAppOf ``Fren.evalScrutinee then
     return ← partialSource domain p
   unless domain.hasRecursion p || (← hasQuantifier p) do
-    if domain.depth == mkNatLit maxEvalDepth || (← expressionInfoM (expressionLayer · domain.recursiveInfos) p).any (fun info => !info.2) then
-      return ← domain.wrap #[p] (← domain.native p (mkApp2 (mkConst ``Decidable.decide) p (← decidableOf p)))
+    if nativeAllowed (← expressionInfoM (expressionLayer · domain.recursiveInfos) p) domain.depth.nat? then
+      return ← domain.wrap #[p] (← domain.native p (← nativeDecision p))
   domain.step fun child => partialDecideAt child p
 
 partial def partialDecideAt (domain : PartialEnv) (p : Expr) : MetaM Expr := do
@@ -978,12 +1007,15 @@ partial def partialValue (domain : PartialEnv) (e : Expr) : MetaM Expr := do
   if e.isAppOfArity ``Int.ofNat 1 && e.appArg!.nat?.isNone then
     return ← mkAppM ``Option.map #[mkConst ``Int.ofNat, ← partialValue domain e.appArg!]
   unless domain.hasRecursion e || (← hasQuantifier e) do
-    if domain.depth == mkNatLit maxEvalDepth || (← expressionInfoM (expressionLayer · domain.recursiveInfos) e).any (fun info => !info.2) then
+    if nativeAllowed (← expressionInfoM (expressionLayer · domain.recursiveInfos) e) domain.depth.nat? then
       return ← domain.wrap #[e] (← domain.native e e)
   domain.step fun child => partialValueAt child e
 
 partial def partialValueAt (domain : PartialEnv) (e : Expr) : MetaM Expr := do
   let e := e.consumeMData
+  if let some args := interpretedArgs? e then
+    return ← partialFree domain args e fun value => do
+      domain.wrap #[value] (← mkAppM ``Option.some #[value])
   if e.isLambda then
     return ← mkAppOptM ``Option.none #[some (← inferType e)]
   if e.isAppOfArity ``Decidable.decide 2 then return ← partialDecide domain e.getAppArgs[0]!
@@ -1153,10 +1185,14 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   let atoms0 := sourceAtoms ++ domains.map (·.2)
   let facts := domains.zipIdx.map fun (_, i) => EF.atom (sourceAtoms.size + i)
   let outputFacts := domains.zipIdx.filterMap fun ((output, _), i) => if output then some (EF.atom (sourceAtoms.size + i)) else none
-  -- The defined outputs, by their definitions, the last first, since each
-  -- mentions only earlier ones.
+  -- Keep source definitions in dependency order. Substitution below
+  -- visits them last first, since each mentions only earlier outputs.
   let varFv (x : Name) : Option Expr := (c.vars.findIdx? (·.name == x)).map (fvs[·]!)
-  let defined := full.defs.filterMap fun (d, _, e) => (varFv d).map (d, ·, e)
+  let roots ← match c.evaluationDefs? with
+    | some definitions => definitions.mapM fun (d, e) => do
+      return (d, (← Lean.Core.betaReduce (replaceUses c.uses ufs e)).beta fvs)
+    | none => pure (full.defs.map fun (d, _, e) => (d, e))
+  let defined := roots.filterMap fun (d, e) => (varFv d).map (d, ·, e)
   -- Variable definitions keep their lookup boundary; admit each lowered
   -- root before substituting them into its callers.
   for expression in atoms0 ++ defined.map (·.2.2) do
@@ -1416,9 +1452,8 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       if i then (acc.push (some j), j + 1) else (acc.push none, j)).1
     -- Whether a defined output is the same in two assignments, unknown
     -- where a quantifier leaves its value unknown in either.
-    let sameFns ← defined.mapM fun (_, _, de) => withLocalDeclD `tables tablesTy fun tables =>
+    let sameFns ← defExprs.mapM fun de => withLocalDeclD `tables tablesTy fun tables =>
       withLocalDeclD `e₁ arrNat fun e₁ => withLocalDeclD `e₂ arrNat fun e₂ => do
-        let (de, _) ← readIndexes (← unfoldDefined (← mkAppM ``Enum.definedValue #[de]) (keepRelationObligations := true))
         let a ← overWith tables e₁ none de
         let b ← overWith tables e₂ none de
         let da := resourceDomain domain tables e₁

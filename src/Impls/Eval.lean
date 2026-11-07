@@ -49,6 +49,40 @@ impl evaluation_depth: eval::evaluation_depth for (n : Nat) {
   simp [fren_spec, Fren.Core.Enumeration.boundedEvalDepth,
     Fren.Core.Enumeration.maxEvalDepth, Nat.min_def]
 
+def depthUse : Fren.Core.Enumeration.DepthUse → eval.DepthUse
+  | .expression => .Expression
+  | .continuation => .Continuation
+  | .quantifierTail => .QuantifierTail
+
+impl depth_transport: eval::depth_transport for (kind : Fren.Core.Enumeration.DepthUse) (d next total : Nat) {
+  remaining := d,
+  kind := depthUse kind,
+  bound_index := next,
+  binder_count := total,
+  after := (Fren.Core.Enumeration.transportDepth kind d next total).map Int.ofNat,
+} by
+  intro kind d next total _
+  cases kind <;> cases d <;>
+    simp [fren_spec, depthUse, Fren.Core.Enumeration.transportDepth] <;>
+    split <;> simp_all <;> omega
+
+def subtreeMeasure (m : Nat × Bool) : eval.SubtreeMeasure := ⟨m.1, m.2⟩
+
+impl native_subtree: eval::native_subtree for (info : Option (Nat × Bool)) (budget : Option Nat) {
+  measure := info.map subtreeMeasure,
+  remaining := budget.map Int.ofNat,
+  native? := Fren.Core.Enumeration.nativeAllowed info budget,
+} by
+  intro info budget _
+  cases info with
+  | none => simp [fren_spec, Fren.Core.Enumeration.nativeAllowed]
+  | some m =>
+    obtain ⟨height, branches⟩ := m
+    cases branches <;> cases budget <;>
+      simp [fren_spec, subtreeMeasure, Fren.Core.Enumeration.nativeAllowed,
+        Fren.Core.Enumeration.boundedEvalDepth, Fren.Core.Enumeration.maxEvalDepth, Nat.min_def] <;>
+      split <;> simp_all <;> omega
+
 impl expansion_budget: eval::expansion_budget {
   initial := Fren.Core.maxExpansionNodes,
 } by decide

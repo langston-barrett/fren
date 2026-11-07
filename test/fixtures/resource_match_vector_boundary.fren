@@ -1,0 +1,27 @@
+set_option fren.evidence "enumerated"
+set_option fren.enumeration.size 1
+set_option fren.lint.nonminimal_bool "allow"
+set_option fren.lint.double_neg "allow"
+set_option fren.lint.redundant_bool_type "allow"
+
+-- The vector must leave the recursive component its own body allowance.
+pub enum T { Z, S(T) }
+
+pub fn recur?(t: T, b?): Bool := match t {
+    T::Z => b?,
+    T::S(a) => recur?(a, b?),
+}
+
+pub proc vector_inside(b?) {
+    expect boundary: not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not (match recur?(T::Z, b?), true {
+        true, true => true,
+        _, _ => false,
+    })
+}
+
+pub proc vector_past(b?) {
+    expect exhausted: not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not not (match recur?(T::Z, b?), true {
+        true, true => true,
+        _, _ => false,
+    })
+}
