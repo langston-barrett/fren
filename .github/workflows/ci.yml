@@ -372,6 +372,11 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+    - name: Install the native test debugger
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gdb
+        gdb -q -nx -batch -ex 'python import gdb'
     - uses: ./.github/actions/lake
       with:
         sha: ${{ github.sha }}
@@ -382,10 +387,22 @@ jobs:
         LEAN_ABORT_ON_PANIC: "1"
       run: |
         set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/methods-ui-diagnostic"
+        git rev-parse HEAD > "$RUNNER_TEMP/methods-ui-diagnostic/source.txt"
+        sha256sum .lake/build/bin/fren_test > "$RUNNER_TEMP/methods-ui-diagnostic/binary.sha256"
         part() {
           local name="${*// /-}"
           local status=0
-          lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out" || status=$?
+          if [ "$*" = "ui 0 1" ]; then
+            FREN_ENUM_PROGRESS="$RUNNER_TEMP/methods-ui-diagnostic/journal.jsonl" \
+              lake env python3 scripts/native_diagnostic.py --report "$RUNNER_TEMP/methods-ui-diagnostic/report.json" \
+              -- .lake/build/bin/fren_test --job methodsAgree "$@" \
+              > "$RUNNER_TEMP/methods-$name.out" 2> "$RUNNER_TEMP/methods-ui-diagnostic/stderr" || status=$?
+            cp "$RUNNER_TEMP/methods-$name.out" "$RUNNER_TEMP/methods-ui-diagnostic/stdout"
+            cat "$RUNNER_TEMP/methods-ui-diagnostic/stderr" >&2
+          else
+            lake env .lake/build/bin/fren_test --job methodsAgree "$@" > "$RUNNER_TEMP/methods-$name.out" || status=$?
+          fi
           # A part that crashes prints no summary, so say how it ended: by
           # its exit status, or the signal that killed it.
           if [ "$status" -ne 0 ]; then
@@ -408,6 +425,13 @@ jobs:
           test "$(tail -n 1 "$f")" = "[]" || code=1
         done
         exit "$code"
+    - if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: methods-agree-ui-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/methods-ui-diagnostic
+        if-no-files-found: ignore
+        retention-days: 3
   # Every declaration of Fren's code is run by `lake test`, or listed in
   # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
   coverage:
