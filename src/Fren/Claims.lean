@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren.Elab
+import Fren.Elab.Syntax
 import Fren.Prelude
 import FrenCore.Trace
 -- keep-sorted end

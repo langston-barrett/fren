@@ -113,15 +113,15 @@ input_dir codes_md where
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
--- `Fren.Elab`, the hosted front end's elaborators, is compiled without
--- optimization. Only the executables that load `Fren` run its C code
+-- `Fren.Elab` and its submodules, the hosted elaborators, are compiled
+-- without optimization. Only the executables that load `Fren` run this C code
 -- (`fren_test`, `fren_fuzz_frontends`, `fren_coverage`): `lean` interprets
--- it on every build of `Reqs`. At `-O3`, clang took 17 s on it, on the path
--- of `lake test`'s build; at `-O0` it takes 3 s, and `lake test`'s run takes
--- no longer. A build reaches it only through `Fren`'s imports, so it is
--- built here (see the top of this file).
+-- the elaborators on every build of `Reqs`. On the original single module,
+-- clang took 17 s at `-O3` on the path of `lake test`'s build, and 3 s at
+-- `-O0`, with no longer test runs. The library gives every elaborator module
+-- these compiler arguments (see the top of this file).
 lean_lib FrenElab where
-  globs := #[`Fren.Elab]
+  globs := #[.andSubmodules `Fren.Elab]
   moreLeancArgs := coverageArgs ++ #["-O0"]
   moreLeanArgs := coverageLeanArgs
 

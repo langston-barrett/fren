@@ -1,3 +1,4 @@
+import Fren.Elab.SubsetDeclarations
 import Fren.View
 
 open Fren.Lang

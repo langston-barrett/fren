@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Exercise the real fuzzer CLI, supervisors and workers, including recovery.
 
-Run as `fren_test --job frontendFuzzDriver`, or after building
-fren_fuzz_frontends: lake env python3 -I scripts/fuzz_frontends_driver_test.py.
+Run one case as `fren_test --job frontendFuzzDriver test_odd_ranges`,
+or run all cases after building fren_fuzz_frontends with
+`lake env python3 -I scripts/fuzz_frontends_driver_test.py`.
 The caller supplies heavy/offline isolation; no builds or downloads run here.
 """
 
@@ -84,22 +85,30 @@ class DriverTests(unittest.TestCase):
         return ["--avoid-known", "--guards", "--count", str(count),
                 "--seed", str(SEED), "--spec-timeout", "90", *jobs]
 
-    def test_empty_single_and_odd_ranges(self):
-        for count in (0, 1, 5):
-            outcomes = []
-            for label, jobs in (("default", ()), ("serial", ("--jobs", "1")),
-                                ("parallel", ("--jobs", "2"))):
-                with self.subTest(count=count, jobs=label):
-                    with self.process(f"{label}-{count}", self.args(count, jobs)) as (proc, directory):
-                        self.wait(proc, directory, 0)
-                        rows = self.rows(directory, count, 2 if label == "parallel" and count > 1 else 1)
-                        self.assertTrue(all(r["status"] in ("ok", "known", "inconclusive") for r in rows))
-                        self.report(directory, count)
-                        outcomes.append([{k: v for k, v in r.items()
-                                          if k not in ("ms", "solverTimeoutMs")} for r in rows])
-            self.assertEqual(len(outcomes), 3)
-            self.assertEqual(outcomes[0], outcomes[1])
-            self.assertEqual(outcomes[0], outcomes[2])
+    def check_ranges(self, count):
+        outcomes = []
+        for label, jobs in (("default", ()), ("serial", ("--jobs", "1")),
+                            ("parallel", ("--jobs", "2"))):
+            with self.subTest(count=count, jobs=label):
+                with self.process(f"{label}-{count}", self.args(count, jobs)) as (proc, directory):
+                    self.wait(proc, directory, 0)
+                    rows = self.rows(directory, count, 2 if label == "parallel" and count > 1 else 1)
+                    self.assertTrue(all(r["status"] in ("ok", "known", "inconclusive") for r in rows))
+                    self.report(directory, count)
+                    outcomes.append([{k: v for k, v in r.items()
+                                      if k not in ("ms", "solverTimeoutMs")} for r in rows])
+        self.assertEqual(len(outcomes), 3)
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(outcomes[0], outcomes[2])
+
+    def test_empty_ranges(self):
+        self.check_ranges(0)
+
+    def test_single_ranges(self):
+        self.check_ranges(1)
+
+    def test_odd_ranges(self):
+        self.check_ranges(5)
 
     def test_invalid_jobs(self):
         for i, jobs in enumerate((("0",), ("3",), ("-1",), ("invalid",), ())):

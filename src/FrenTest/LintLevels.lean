@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren.Elab
+import Fren.Lint
 -- keep-sorted end
 open Lean Elab Command
 
