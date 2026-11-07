@@ -34,6 +34,16 @@ def victimRow (j : Json) : Except String VictimRow := do
     ← j.getObjValAs? (Option Int) "legacy_rss_kb"⟩
 
 def check (j : Json) : Except String Json := do
+  if (← j.getObjValAs? String "kind") == "cleanup" then
+    let cause ← match ← j.getObjValAs? String "cause" with
+      | "memory" => pure CleanupCause.memorySample
+      | "signal" => pure CleanupCause.externalSignal
+      | "setup" => pure CleanupCause.setupFailure
+      | "accounting" => pure CleanupCause.accountingFailure
+      | _ => throw "unknown cleanup cause"
+    let rows ← (← j.getObjValAs? (Array Json) "rows").toList.mapM victimRow
+    return toJson (cleanupTrigger cause (← j.getObjValAs? Nat "cap")
+      (← j.getObjValAs? Nat "rss") (← j.getObjValAs? (Option String) "own") rows)
   if (← j.getObjValAs? String "kind") == "group" then
     let wait ← match ← j.getObjValAs? String "wait" with
       | "pending" => pure GroupWait.pending
@@ -44,8 +54,11 @@ def check (j : Json) : Except String Json := do
       | "present" => pure GroupProbe.present
       | "denied" => pure GroupProbe.denied
       | _ => throw "unknown group probe"
-    return toJson (groupGone (← j.getObjValAs? Bool "subreaper")
-      (← j.getObjValAs? Bool "leader") wait probe)
+    let subreaper ← j.getObjValAs? Bool "subreaper"
+    let leader ← j.getObjValAs? Bool "leader"
+    if (← j.getObjValAs? Bool "attempt") then
+      return toJson (signalAttempt subreaper leader wait probe)
+    return toJson (groupGone subreaper leader wait probe)
   if (← j.getObjValAs? String "kind") == "victim" then
     let rows ← (← j.getObjValAs? (Array Json) "rows").toList.mapM victimRow
     let (total, selected) := memoryVictim (← j.getObjValAs? Nat "cap") rows

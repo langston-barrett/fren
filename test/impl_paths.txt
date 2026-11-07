@@ -9,6 +9,7 @@
 # runtimes. Python remains the active scheduler through migration step 2.
 unbound: Fren.Impls.Heavy.memory_prediction jobs
 unbound: Fren.Impls.Heavy.memory_prediction prediction
+unbound: Fren.Impls.HeavyOwnership.cleanup_trigger cleanup?
 unbound: Fren.Impls.HeavyOwnership.group_gone gone?
 unbound: Fren.Impls.HeavyOwnership.lease admission
 unbound: Fren.Impls.HeavyOwnership.lease eviction
@@ -20,6 +21,7 @@ unbound: Fren.Impls.HeavyOwnership.registry deferred?
 unbound: Fren.Impls.HeavyOwnership.registry retry?
 unbound: Fren.Impls.HeavyOwnership.registry timed_out?
 unbound: Fren.Impls.HeavyOwnership.report_owner compatible?
+unbound: Fren.Impls.HeavyOwnership.signal_attempt attempt?
 unbound: Fren.Impls.HeavyOwnership.time_conversion elapsed_updated
 unbound: Fren.Impls.HeavyOwnership.time_conversion fresh?
 unbound: Fren.Impls.HeavyOwnership.time_conversion remaining_deadline

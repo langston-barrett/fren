@@ -1691,8 +1691,8 @@ The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
 `Heavy.Ownership` implements the registry attempt, report ownership,
-isolated-lease accounting, observed-memory victim and group-completion
-decisions below, bound in `Impls.HeavyOwnership`.
+isolated-lease accounting, observed-memory victim, group-completion and
+owned-signalling decisions below, bound in `Impls.HeavyOwnership`.
 Python remains the active scheduler and syscall adapter. The kernel takes
 decoded reports: wire version, token syntax, finite timestamps and monitor
 field shapes are checked by the adapter, not assumed to prove ownership.
@@ -1708,13 +1708,13 @@ fixtures and the existing `tested` claims. Both standalone Heavy kernels
 are outside those Fren runtimes. The `implPaths` audit therefore records
 each mapped output as an exact `unbound` observation in
 `test/impl_paths.txt`, including the forecast's two outputs and ownership's
-eleven plus the conversion's four. These observations certify no runtime
+thirteen plus the conversion's four. These observations certify no runtime
 connection; unexpected, duplicate and stale inventory entries still fail
 the audit. Its regressions also check that a real standalone kernel call,
 even through a proof adapter, does not count as a Fren production output
 function.
 This slice does not port set-wide admission accounting, sequence allocation
-or publication, signalling, or OS waits, probes and PID 1 cleanup. A lease's
+or publication, or OS waits, probes, signal delivery and PID 1 cleanup. A lease's
 isolated admission charge is not a new rule and must not be summed over
 unknown holders.
 
@@ -1725,6 +1725,19 @@ verified stale report retains its RSS. The kernel tests eligibility itself;
 it does not establish that locks, reports or procfs readings are authentic.
 The differential fixtures compare it with `memory_victim`, while the existing
 Python tests exercise those OS-facing operations. Python remains the scheduler.
+
+The cleanup trigger consumes observed rows and an optional local job, and
+computes the victim rather than receiving it as an input. Registry contention
+leaves no selected victim but does not disable the local RSS cap. `CleanupCause`
+records a memory sample, an invocation of an installed signal handler, or a
+caught failure at the visible-group, legacy-status or shared-accounting
+cleanup call sites. It does not classify all monitor errors: spawn failure has
+no child to clean up, and exceptions outside these handlers need not initiate
+cleanup. The signal-attempt decision uses a separate completion observation
+per iteration; neither it nor the fixtures guarantee delivery or exclude OS
+races. The older lease-wide `heavy_owned_signal` is an idealized composite,
+not a binding to this producer. Python still performs the actual checks and
+system calls.
 
 Python's clock arithmetic rounds before a freshness comparison. Converting
 the two operands to exact integer ticks and then subtracting changes that
@@ -2167,6 +2180,34 @@ pub proc heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe
     expect wait_pending: when subreaper? and group_wait_pending?, not gone?
     cover nonchild_worker: subreaper? and leader_reaped? and not group_wait_pending?
         and probe = GroupProbe::Present
+}
+
+-- The old lease-wide rule below is an idealized composite; Python uses
+-- observed victim rows and separately checks completion inside kill_group.
+-- These two decisions describe those boundaries, not syscall delivery.
+pub enum CleanupCause { MemorySample, ExternalSignal, SetupFailure, AccountingFailure }
+
+pub proc heavy_cleanup_trigger(
+    cause: CleanupCause,
+    cap: Nat,
+    own_rss: Nat,
+    own_job: Option<String>,
+    rows: VictimRows,
+): (det cleanup?) {
+    let selected: Option<MemoryOwner> :=
+        if victim_total(rows) > cap then victim_latest(rows) else Option::None
+    let selected_own? := match selected, own_job {
+        Option::Some(owner), Option::Some(job) => owner.job = job,
+        _, _ => false,
+    }
+    ensure rule: cleanup? iff cause != CleanupCause::MemorySample or own_rss > cap or selected_own?
+}
+
+pub proc heavy_signal_attempt(subreaper?, leader_reaped?, group_wait_pending?, probe: GroupProbe): (
+    det attempt?,
+) {
+    call completion := heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe)
+    ensure rule: attempt? iff not completion.gone?
 }
 
 pub proc heavy_owned_signal(
