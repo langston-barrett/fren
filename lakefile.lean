@@ -751,6 +751,7 @@ lean_exe fren_coverage where
   root := `FrenCoverage
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
+  moreLinkArgs := coverageLinkArgs
 
 -- `lake exe fren_fuzz_frontends`: random specs, checked by both front ends,
 -- whose reports must agree (`Reqs/dev/Testing`). It loads Fren's Lean
