@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import resource
 from pathlib import Path
 import shutil
@@ -12,6 +13,45 @@ import tempfile
 import time
 
 from native_test_process import NativeTimeout, cleanup, initialize, run
+
+
+def fault_context_matches(report):
+    """Compare real stopped code/PC/registers with the captured thread stack."""
+    fault = report["faults"][0]
+    context = fault["context"]
+    thread = context["thread"]
+    assert thread["global_num"] > 0 and thread["ptid"][0] == report["original_pid"], context
+    assert context["pc"] > 0 and context["architecture"], context
+    instructions = context["instructions"]
+    assert 1 <= len(instructions) <= 3 and instructions[0]["addr"] == context["pc"], context
+    for i, instruction in enumerate(instructions):
+        assert instruction["length"] > 0 and 0 < len(instruction["asm"]) <= 256, context
+        if i:
+            previous = instructions[i - 1]
+            assert instruction["addr"] == previous["addr"] + previous["length"], context
+    name = context["architecture"]
+    if name.startswith("i386:x86-64"):
+        expected = {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp"} | {f"r{i}" for i in range(8, 16)}
+    elif name == "i386":
+        expected = {"eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp"}
+    elif name.startswith("aarch64"):
+        expected = {f"x{i}" for i in range(31)} | {"sp"}
+    else:
+        expected = set()
+        assert context["unavailable"]["registers"], context
+    assert set(context["registers"]) == expected, context
+    assert all(type(value) is int for value in context["registers"].values()), context
+    if sys.platform == "linux":
+        # GDB's Linux thread header ties these facts to the actual fault
+        # LWP, not another thread printed by `thread apply all`.
+        stack = re.search(rf"^Thread {thread['global_num']} [^\n]*\(LWP {thread['ptid'][1]}\)[^\n]*\n(#0[^\n]+)",
+                          fault["backtrace"], re.MULTILINE)
+        assert stack, context
+        # A fully symbolized source frame may omit its address in `bt`.
+        address = re.match(r"#0\s+(0x[0-9a-fA-F]+)\b", stack[1])
+        if address:
+            assert int(address[1], 16) == context["pc"], context
+    assert all("context" not in later for later in report["faults"][1:]), report
 
 
 def core(args, driver, wrapper, destination, debugger, protected, unprotected):
@@ -267,6 +307,7 @@ def wrapper_checks(args, driver, wrapper, destination, debugger, protected, unpr
                     assert report["faults"][0]["signal"] == "SIGABRT", report
                     assert "#0" in report["faults"][0]["backtrace"], report
                     assert "si_signo" in report["faults"][0]["siginfo"], report
+                    fault_context_matches(report)
                     assert "first" in report["context"] and not child.stdout, report
                     assert "SIGABRT" in child.stderr and "backtrace" in child.stderr, child.stderr
                 print(json.dumps({"mode": mode, "debugger": tool, "status": child.returncode,
@@ -281,13 +322,14 @@ def wrapper_checks(args, driver, wrapper, destination, debugger, protected, unpr
                          "--debugger", debugger,
                          "--", sys.executable, "-c", handled], peers=(sibling.pid,))
             report = json.loads(report_file.read_text())
+            if args.receipts:
+                (Path(args.receipts) / "handled.json").write_text(json.dumps(report, indent=2) + "\n")
             assert child.returncode == 139 and report["original_exit"] == 0, report
             assert report["original_signal"] is None and report["fault_signal"] == 11, report
             assert report["debugger_exit"] == 0 and report["debugger_status"] == "captured", report
             assert report["terminal_status_source"] in ["gdb", "waitpid"], report
             assert not report["terminated_by_debugger"] and sibling.poll() is None, report
-            if args.receipts:
-                (Path(args.receipts) / "handled.json").write_text(json.dumps(report, indent=2) + "\n")
+            fault_context_matches(report)
             # A hung leader and its pipe-holding descendant must be killed
             # and reaped without touching the deliberately live peer.
             hanging = "import time; time.sleep(60)"
