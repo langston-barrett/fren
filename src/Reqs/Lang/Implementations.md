@@ -2081,11 +2081,30 @@ pub fn rests_on_caveat?(m: ModuleModel, n: ModuleSentence) :=
     rests_on_caveat_from?(|place| item_of(m, place), item_count(m.items), n)
 
 -- Check the factored calculation against the relation on every model,
--- including malformed counts and out-of-range entries in `unproved`.
+-- including malformed counts and out-of-range entries in `unproved`. Split
+-- by every sentence constructor so the solver simplifies each relation case
+-- before searching for a counterexample; x and k remain arbitrary.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "solver" in
-expect caveat_calculation(m: ModuleModel, n: ModuleSentence) {
-    expect same: rests_on_caveat?(m, n) iff caveat_by_sentences?(m, n)
+expect caveat_calculation(m: ModuleModel, x: Int, k: Int) {
+    expect law: rests_on_caveat?(m, ModuleSentence::Law(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::Law(x, k))
+    expect interface_lemma: rests_on_caveat?(m, ModuleSentence::InterfaceLemma(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::InterfaceLemma(x, k))
+    expect interface_goal: rests_on_caveat?(m, ModuleSentence::InterfaceGoal(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::InterfaceGoal(x, k))
+    expect obligation: rests_on_caveat?(m, ModuleSentence::Obligation(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::Obligation(x, k))
+    expect trusted_law: rests_on_caveat?(m, ModuleSentence::TrustedLaw(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::TrustedLaw(x, k))
+    expect translated: rests_on_caveat?(m, ModuleSentence::Translated(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::Translated(x, k))
+    expect module_lemma: rests_on_caveat?(m, ModuleSentence::ModuleLemma(x)) iff
+        caveat_by_sentences?(m, ModuleSentence::ModuleLemma(x))
+    expect module_goal: rests_on_caveat?(m, ModuleSentence::ModuleGoal(x)) iff
+        caveat_by_sentences?(m, ModuleSentence::ModuleGoal(x))
+    expect assumed: rests_on_caveat?(m, ModuleSentence::Assumed(x)) iff
+        caveat_by_sentences?(m, ModuleSentence::Assumed(x))
 }
 
 -- Only the checks of an interface rest on its laws, and on each of them

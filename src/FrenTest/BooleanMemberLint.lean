@@ -1,3 +1,4 @@
+import Fren.Elab.GlobalBlocks
 import Fren.View
 
 open Fren.Lang

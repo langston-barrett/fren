@@ -1,4 +1,6 @@
 -- keep-sorted start
+import Fren.Elab.GlobalBlocks
+import Fren.Elab.SubsetDeclarations
 import Fren.Trace
 import Fren.View
 -- keep-sorted end
