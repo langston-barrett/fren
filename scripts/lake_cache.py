@@ -43,7 +43,9 @@ check keeps an artifact that a build used or saved again during the
 grace, all but one that a build links in the microseconds between that
 check and the deletion. An entry that names an artifact already gone, or that cannot be
 read, which would make a build warn and so fail `--wfail`, is deleted
-too. Run it under `scripts/heavy`, so that fewer builds run while it does.
+too. If the artifact scan finds no eligible artifacts, it skips the wait
+after cleaning entries. Run it under `scripts/heavy`, so that fewer builds
+run while it does.
 
 `test` runs the checks of `prune` on a scratch cache.
 """
@@ -55,6 +57,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
@@ -149,6 +152,10 @@ def prune(cache, days, grace, between=None):
         names = artifacts_of(e)
         if names is None or any(n in old or n not in arts for n in names):
             dropped += remove(e)
+    if not old:
+        print(f"deleted {dropped} of {len(entries)} entries; no eligible artifacts, skipping wait")
+        print("deleted 0 artifacts, 0.00 GiB")
+        return
     print(f"deleted {dropped} of {len(entries)} entries; waiting {grace} s", flush=True)
     if between is not None:
         between()
@@ -200,6 +207,29 @@ def test():
         assert left == ["kept.olean", "linked.olean"], left
         assert sorted(os.listdir(out)) == [], sorted(os.listdir(out))
         assert same_filesystem(cache, cache)
+    # Observe the wait itself with real scratch files, including an orphan
+    # artifact: entry deletion counts do not determine whether grace is needed.
+    with tempfile.TemporaryDirectory() as cache:
+        art, out = os.path.join(cache, "artifacts"), os.path.join(cache, "outputs")
+        os.makedirs(art)
+        os.makedirs(out)
+        with open(os.path.join(out, "bad.json"), "w") as f:
+            f.write("{")
+        with open(os.path.join(out, "dangling.json"), "w") as f:
+            json.dump({"data": "missing.olean"}, f)
+        with patch("time.sleep") as sleeper:
+            prune(cache, 0, 60)
+            sleeper.assert_not_called()
+        assert os.listdir(out) == [], os.listdir(out)
+
+        orphan = os.path.join(art, "orphan.olean")
+        with open(orphan, "w") as f:
+            f.write("orphan")
+        time.sleep(0.05)
+        with patch("time.sleep") as sleeper:
+            prune(cache, 0, 60)
+            sleeper.assert_called_once_with(60)
+        assert not os.path.exists(orphan)
     print("lake_cache: test passed")
 
 
