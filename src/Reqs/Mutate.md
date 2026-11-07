@@ -114,6 +114,25 @@ warning says so. Mutating an assumption checks the
 [call assumption](Check.md#call-assumptions) checks and
 refinements that rely on it.
 
+Every defined member of a [mutual group](Lang/Recursion.md) is visited as
+an ordinary defined function, in member order, with its own name and
+source spans. The group wrapper contributes no expression of its own and
+does not exclude its members from mutation. Divisor and range-bound
+discovery also visits every member body, so the constant protections above
+apply equally when the only use is inside a group. Selection and the
+mutation operators are unchanged by grouping.
+
+The executable requirements below start after source discovery: their
+selected-mutant model does not prove traversal of the parsed item tree.
+The source-level obligation here is checked by the real parser and
+`fren mutate --list` snapshots
+[`mutate_mutual.fren`](../../test/cli/commands/mutate_mutual.fren) and
+[`mutate_mutual_protection.fren`](../../test/cli/commands/mutate_mutual_protection.fren).
+They require edits in both member bodies, retain the divisor and range
+protections alongside ordinary-function controls, and still mutate an
+unprotected constant. These are concrete traversal regressions, not a
+proof of completeness over all parsed items.
+
 ## Identifiers
 
 Each mutant has an identifier, `ORIGIN-ITEM-HASH`, such as
@@ -520,6 +539,8 @@ pub proc same_decision(full: Outcome, other: Outcome): (det same?) {
     ensure rule: same? iff full_kind = other_kind
 
     expect reflexive: when full = other, same?
+    expect equivalent_full_survives_other: when full = Equivalent and other = Survived, same?
+    expect survived_full_equivalent_other: when full = Survived and other = Equivalent, same?
     expect killed_stays_killed: when same? and full = Killed, other = Killed
     expect unviable_stays_unviable: when same? and full = Unviable, other = Unviable
 }

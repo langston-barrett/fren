@@ -231,6 +231,7 @@ partial def allExprs (items : Array Item) : Array Expr :=
     | .lintSetting _ _ _ _ _ (some body) => ofItem body
     | .law _ _ e => #[e]
     | .trait _ _ members _ => members.flatMap ofItem
+    | .mutualFns members .. => members.flatMap ofItem
     | _ => #[]
   (items.flatMap ofItem).flatMap sub
 
@@ -627,6 +628,7 @@ where
         | .inst i _ bs .. => bs.filterMap fun (_, e?) => e?.map (.str c (declared i), some c, ·)
         | _ => #[]
     | .lintSetting _ _ _ _ _ (some body) => ofItem module body
+    | .mutualFns members .. => members.flatMap (ofItem module)
     | _ => #[]
 
 /-- `n` as an identifier's `ITEM`: each run of characters other than ASCII

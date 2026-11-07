@@ -1,0 +1,11 @@
+--@ args: mutate --list
+-- Every member body contributes edits, under its own name and source span.
+set_option fren.lint.assertions_on_constants "allow"
+mod m
+
+mutual {
+    pub fn increment(x: Int): Int := x + 1
+    pub fn decrement(x: Int): Int := x - 1
+}
+
+expect value: increment(0) = 1 and decrement(1) = 0

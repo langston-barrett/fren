@@ -1,0 +1,20 @@
+shift-integer-m::CONTROL-71001a1ee9df test/cli/commands/mutate_mutual_protection.fren:14:27 `3` changed to `4`
+shift-integer-m::CONTROL-9b00104f22e9 test/cli/commands/mutate_mutual_protection.fren:14:27 `3` changed to `2`
+swap-arithmetic-m::ordinary_div-f383b8537567 test/cli/commands/mutate_mutual_protection.fren:16:39 `div` changed to `mod`
+swap-arms-m::ordinary_range-e6c6fb588e0c test/cli/commands/mutate_mutual_protection.fren:19:26 `0, _ => 1` changed to `1, _ => 0`
+shift-integer-m::ordinary_range-97099f191429 test/cli/commands/mutate_mutual_protection.fren:19:26 `0` changed to `1`
+shift-integer-m::ordinary_range-e3bae5d1aa00 test/cli/commands/mutate_mutual_protection.fren:20:10 `1` changed to `2`
+shift-integer-m::ordinary_range-39baefa24a76 test/cli/commands/mutate_mutual_protection.fren:20:10 `1` changed to `0`
+swap-arithmetic-m::divided-5cc4433912dd test/cli/commands/mutate_mutual_protection.fren:24:38 `div` changed to `mod`
+drop-negation-m::divided-ef034ce49a2f test/cli/commands/mutate_mutual_protection.fren:24:42 `-GROUP_ALIAS` changed to `GROUP_ALIAS`
+swap-arithmetic-m::divided-e2282e292eeb test/cli/commands/mutate_mutual_protection.fren:24:55 `+` changed to `-`
+swap-arithmetic-m::divided-44b23be069af test/cli/commands/mutate_mutual_protection.fren:24:59 `mod` changed to `div`
+swap-arms-m::ranged-9db578a81cfc test/cli/commands/mutate_mutual_protection.fren:26:27 `0, _ => 1` changed to `1, _ => 0`
+shift-integer-m::ranged-fc16755684da test/cli/commands/mutate_mutual_protection.fren:26:27 `0` changed to `1`
+shift-integer-m::ranged-6366f1fc9af7 test/cli/commands/mutate_mutual_protection.fren:27:14 `1` changed to `2`
+shift-integer-m::ranged-3966fbcc61ed test/cli/commands/mutate_mutual_protection.fren:27:14 `1` changed to `0`
+swap-arms-m::multi-d073988793ca test/cli/commands/mutate_mutual_protection.fren:30:29 `0, _, _ => 1` changed to `1, _, _ => 0`
+shift-integer-m::multi-86180c745bf4 test/cli/commands/mutate_mutual_protection.fren:30:29 `0` changed to `1`
+shift-integer-m::multi-99689cb9fffd test/cli/commands/mutate_mutual_protection.fren:31:17 `1` changed to `2`
+shift-integer-m::multi-c36892ea3907 test/cli/commands/mutate_mutual_protection.fren:31:17 `1` changed to `0`
+exit=0

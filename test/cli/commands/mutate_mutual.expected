@@ -1,0 +1,7 @@
+swap-arithmetic-m::increment-20a7260dd9d8 test/cli/commands/mutate_mutual.fren:7:40 `+` changed to `-`
+shift-integer-m::increment-e9eb386dac17 test/cli/commands/mutate_mutual.fren:7:42 `1` changed to `2`
+shift-integer-m::increment-3feb423e4c8d test/cli/commands/mutate_mutual.fren:7:42 `1` changed to `0`
+swap-arithmetic-m::decrement-4e73c6fd222e test/cli/commands/mutate_mutual.fren:8:40 `-` changed to `+`
+shift-integer-m::decrement-36dee80241c3 test/cli/commands/mutate_mutual.fren:8:42 `1` changed to `2`
+shift-integer-m::decrement-0cdef1d208b9 test/cli/commands/mutate_mutual.fren:8:42 `1` changed to `0`
+exit=0

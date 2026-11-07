@@ -1,0 +1,34 @@
+--@ args: mutate --list
+-- Group-only divisors and range bounds are protected as ordinary ones are.
+-- An unrelated constant and the function bodies still contribute edits.
+mod m
+
+pub const GROUP_DIV: Int := 1
+pub const GROUP_ALIAS: Int := GROUP_DIV
+pub const GROUP_MOD: Int := 1
+pub const GROUP_RANGE: Int := 2
+pub const GROUP_MULTI: Int := 2
+pub const GROUP_IS: Int := 2
+pub const ORDINARY_DIV: Int := 1
+pub const ORDINARY_RANGE: Int := 2
+pub const CONTROL: Int := 3
+
+pub fn ordinary_div(x: Int): Int := x div ORDINARY_DIV
+
+pub fn ordinary_range(x: Int): Int := match x {
+    ..=ORDINARY_RANGE => 0,
+    _ => 1,
+}
+
+mutual {
+    pub fn divided(x: Int): Int := x div -GROUP_ALIAS + x mod GROUP_MOD
+    pub fn ranged(x: Int): Int := match x {
+        ..=GROUP_RANGE => 0,
+        _ => 1,
+    }
+    pub fn multi(x: Int, y: Int): Int := match x, y {
+        GROUP_MULTI.., _ => 0,
+        _, _ => 1,
+    }
+    pub fn small?(x: Int) := x is GROUP_IS..
+}

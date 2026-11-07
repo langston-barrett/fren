@@ -828,6 +828,28 @@ partial def elabItem (item : Item) : M Unit := do
   | .global name binders body => do
     modify fun s => { s with item := s.module ++ Name.mkSimple (declaredIdent name).1.name }
     elabGlobal name binders body
+    unless binders.isEmpty do
+      -- Elaborate free inputs only to extract candidacy. Discard that
+      -- probe completely before generating the hidden induction functions.
+      let saved ← get
+      let groups := binders.map fun b => b.names.map (·, b.ty)
+      let params := Fren.Core.shortInductionParameters groups
+      let header := params.map fun (x, ty) => Member.var true true false x (some ty) none
+      let claim : Ident := { name := "#claim", span := name.span }
+      -- Keep a Boolean block as one claim, as the closed quantifier does.
+      let whole := Expr.ite body.span (.bool body.span true) body (.bool body.span false)
+      let members := #[Member.prop .expect claim whole]
+      let probeName : Ident := { name := s!"#short#{name.name}", span := name.span }
+      try
+        elabComp false probeName header members #[body.span] name.span.stop (global := true)
+        let probe ← get
+        set saved
+        if let some c := probe.globals.back? then
+          elabInductions name header members (probe.applied.size > saved.applied.size)
+            (some { c with path := saved.module ++ Name.mkSimple (declaredIdent name).1.name }) (some probe.inductionArgs)
+          modify fun st => { st with globals := st.globals.modify (st.globals.size - 1) fun g =>
+            { g with inductions := g.inductions.map fun (_, fns) => (Name.mkSimple (declaredIdent name).1.name, fns) } }
+      catch _ => set saved
   | .globalBlock name header members close spans openStop => do
     let shown := (declaredIdent name).1
     modify fun s => { s with item := s.module ++ Name.mkSimple shown.name }
@@ -1026,11 +1048,14 @@ the global expectation `name`, just elaborated, whose header and block are
 `abstract` (`Reqs/Lang/Recursion#induction`): one for each of its claims
 and each candidate, in order (`Fren.Core.inductionCandidates`). Each is an
 item of the module that nothing reports, whose body is kept in
-`State.inductionBodies` rather than checked as a function's. -/
-partial def elabInductions (name : Ident) (header body : Array Member) (abstract : Bool) : M Unit := do
+`State.inductionBodies` rather than checked as a function's. A short
+expectation supplies `source?` and `arguments?` from a disposable elaboration
+with free inputs; its recorded global remains quantified. -/
+partial def elabInductions (name : Ident) (header body : Array Member) (abstract : Bool)
+    (source? : Option CComp := none) (arguments? : Option (Array Name) := none) : M Unit := do
   let st ← get
   let shown := (declaredIdent name).1
-  let some c := st.globals.back? | return
+  let some c := source?.orElse (fun _ => st.globals.back?) | return
   unless c.path == st.module ++ Name.mkSimple shown.name do return
   let members := splitConjunctionMembers body
   let kinds := (blockMembers #[] members (members.map fun _ => default)).map (·.2.1)
@@ -1041,7 +1066,7 @@ partial def elabInductions (name : Ident) (header body : Array Member) (abstract
   unless vars.size == params.size do return
   let tys := vars.map (·.ty)
   let candidates := Fren.Core.inductionCandidates st.shapeOf kinds.toList abstract
-    (vars.map fun v => (v.name, v.ptype)) st.inductionArgs
+    (vars.map fun v => (v.name, v.ptype)) (arguments?.getD st.inductionArgs)
   if candidates.isEmpty then return
   let assumptions := members.filterMap fun
     | .prop .assume _ e => some e
@@ -1083,7 +1108,7 @@ where
     let (fnBody, post) := Fren.Core.buildInduction builder st.shapeOf st.module ep (d.ctors.map (·.1))
       (params.map fun p => (declaredIdent p.1).1.name) tys fname i assumptions e
     let item := Item.function true fn #[] (params.map fun (x, ty) => (#[x], ty)) (some #[ident "Bool"]) (some fnBody)
-      #[(true, ident "claim", post)] sp {}
+      #[(true, ident Fren.Core.inductionPostName, post)] sp {}
     let before ← get
     try withoutGhostLints (elabItem item)
     catch _ =>

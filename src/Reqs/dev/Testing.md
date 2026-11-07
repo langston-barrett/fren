@@ -380,7 +380,7 @@ pub mod testing
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--decidable] [--unfoldings] [--datatype-elements]
+  [--decidable] [--unfoldings] [--short-inductions] [--datatype-elements]
   [--spec-timeout SECONDS]`, or
   `lake exe fren_fuzz_frontends --copying COUNT`): generates
   specs and checks each with both front ends, the `fren` command's pipeline
@@ -441,6 +441,12 @@ pub mod testing
   and through definitions, and a cover goal that mentions none of them.
   The mode compares the front ends' reports on these queries;
   `test/ui/checks/fact_scope.fren` pins the expected verdicts and witness.
+  `--short-inductions` generates single-expression global claims with a
+  leading `forall`: grouped binders, companion types, recursive lists and
+  branching trees, generic instances, comparisons, guards, definitions,
+  Boolean blocks, and shadowing. It also exercises unchanged restrictions
+  on candidacy and quantifiers without a leading binder. Its generator is
+  independent, so existing modes' seeds are unchanged.
   `--induction-candidates` generates companion parameter types, nested
   restrictions, decreasing-argument positions, shadowing, derived arguments,
   assumptions and comparisons of recursive applications. Its generator is
@@ -626,8 +632,8 @@ pub mod testing
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
-  `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings` and
-  `--datatype-elements`
+  `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings`,
+  `--short-inductions` and `--datatype-elements`
   (`corpus` in `src/FrenTest/FuzzFrontends/Corpus.lean`), are checked
   with both front ends and compared as above. The `--decidable` corpus also
   rejects every error without a diagnostic code from `fren check`, even

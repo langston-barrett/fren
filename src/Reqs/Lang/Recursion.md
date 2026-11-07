@@ -560,6 +560,31 @@ pub proc induction_candidate(
 }
 ```
 
+For a short-form expectation `expect n: forall (a b: T) (c: U), E`,
+induction uses the leading `forall`'s bindings as parameters: `a: T`,
+`b: T`, `c: U`, in that order, and `E` as its one claim.
+`lang::induction_short_parameters` states which bindings are supplied;
+each binding includes its declared type. A Boolean block in `E` remains
+one claim: proving one leaf does not prove the whole block. The ordinary
+candidate restrictions still apply. The direct quantified check, its
+decidability diagnostics, evidence settings and reported name remain those
+of the short form. Only an Inconclusive result may change, as
+`lang::induction_verdict` states.
+A quantifier inside the body, including one inside parentheses around the
+whole expression, is not a leading binder.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc induction_short_parameters(
+    -- Binding identifiers include their declared types.
+    leading_binders: Set<Set<Int>>,
+    parameters: Set<Int>,
+): (det supplied?) {
+    ensure rule: supplied? iff (forall (p: Int), p in parameters iff
+        (exists (group: Set<Int>), group in leading_binders and p in group))
+}
+```
+
 `lang::induction_argument` states which written names are collected at the
 decreasing argument: a name of a local variable, without a binder shadowing
 it. Parentheses do not change the expression; a path of several segments,
@@ -615,8 +640,9 @@ fn adds_on_a?(a: L, b: L): Bool := match a {
 }
 ```
 
-with the postcondition, named `claim`, that a [function
-block](Items.md#function-blocks)'s `ensure` lowers to:
+with the postcondition that a [function
+block](Items.md#function-blocks)'s `ensure` lowers to (its actual label is
+generated and cannot clash with a parameter):
 
 ```text
 ensure claim: adds_on_a?(a, b) and len(append(a, b)) = len(a) + len(b)
@@ -633,6 +659,11 @@ itself can apply it: an application elsewhere would rest on its contract,
 which is checked only where the claim's own check is Inconclusive. Nor is
 a generated name ever offered as a similar name for one that is not found
 (`F0201`), since a fix that wrote it could not be read.
+The generated recursive symbol's signature and its ground facts use the
+same interpretations of abstract parameter types as its arguments do.
+Within one module, distinct global expectations have distinct generated
+function names, even when their names start at the same position in
+different files.
 
 For example, the claim below passes by induction, although its syntax
 never mentions the base variant's name:
@@ -1082,6 +1113,7 @@ only uninterpreted functions to quantifier-free queries.
 #fren_check recursive_post_result
 #fren_check induction_argument
 #fren_check induction_candidate
+#fren_check induction_short_parameters
 #fren_check directly_recursive
 #fren_check induction_hypotheses
 #fren_check induction_verdict
