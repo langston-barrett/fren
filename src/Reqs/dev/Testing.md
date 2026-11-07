@@ -869,7 +869,7 @@ spread over them.
 `--skip-own-mutants` leaves out the slices of the mutants of Fren's own
 requirements, the slowest jobs, which only the CI run on `main` checks.
 `--skip-unstable-legacy` first filters the exact jobs listed in the
-[quarantine](../../../test/legacy-native-quarantine.md); without that flag
+repository file `test/legacy-native-quarantine.md`; without that flag
 they remain selected. The selection is made before `--bless` runs the
 snapshots job first.
 `--timings` prints how long each job took, to balance the shards.
@@ -2467,7 +2467,7 @@ together are `lakefile.lean`'s default targets. On
 of Fren's own requirements. Both workflows temporarily omit `enumeration`,
 `nativeDiagnostics` with `core`, `wait`, `own` or `wrapper`, and
 `nativeObservation`. The separate main `methods-agree` job is disabled.
-[The quarantine](../../../test/legacy-native-quarantine.md) records manual
+The repository file `test/legacy-native-quarantine.md` records manual
 commands and restoration criteria; #995 tracks restoring the gates.
 A local `lake test` without the flag retains all jobs, and explicit
 `--job` commands remain available without this filtering. Main also samples
