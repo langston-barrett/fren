@@ -1,0 +1,7 @@
+-- Ordinary dependency pruning must not bypass source validation.
+set_option fren.evidence "enumerated"
+set_option fren.lint.unused_variables "allow"
+
+pub fn unknown(Int): Int
+fn ignore?<T>(value: T) := true
+fn source_rejected?(value: Int) := ignore?(unknown(0))  --~ error: a defined function's body cannot apply uninterpreted function `unknown`

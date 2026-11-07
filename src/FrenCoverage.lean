@@ -510,18 +510,18 @@ unsafe def main (args : List String) : IO UInt32 := do
     let out ← IO.Process.output { cmd := gcov, args := gcovArgs, env := #[("LD_LIBRARY_PATH", none), ("DYLD_LIBRARY_PATH", none)] }
     -- A run that read no counters would report every declaration as never
     -- run, so a failure to read them stops it.
-    unless out.exitCode == 0 do
-      IO.eprintln s!"fren_coverage: `{gcov}` failed on {gcda} (exit {out.exitCode}):\n{out.stderr}"
+    let failures := FrenTest.Oracle.toolFailures out.stdout out.stderr out.exitCode.toNat
+    unless failures.isEmpty do
+      IO.eprintln s!"fren_coverage: `{gcov}` failed on {gcda}: {failures}\n{out.stdout}{out.stderr}"
       return 2
     read := read + 1
     for (f, r) in parseGcov out.stdout do
       if let some d := declOf? f then ran := ran.insert d (ran.getD d false || r)
-  if !o.static && read == 0 then
-    IO.eprintln "fren_coverage: no counters in .lake/build/ir: build with -Kcoverage and run lake test first"
-    return 2
-  unless o.static || ran.toList.any (·.2) do
-    IO.eprintln s!"fren_coverage: the counters of {read} modules show no declaration run: did `{gcov}` read them?"
-    return 2
+  if !o.static then
+    let failures := FrenTest.Coverage.inputFailures read (ran.toList.countP (·.2))
+    unless failures.isEmpty do
+      IO.eprintln s!"fren_coverage: {failures}: build with -Kcoverage and run lake test; did `{gcov}` read the counters?"
+      return 2
   -- A definition without arguments is a constant, computed when its module
   -- is initialized, and compiles to no function. One with arguments that
   -- gcov does not report did not run.

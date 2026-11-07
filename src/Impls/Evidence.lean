@@ -20,6 +20,7 @@ import Impls.GroundClosure
 import Impls.GroundMatching
 import Impls.Guards
 import Impls.Heavy
+import Impls.HeavyOwnership
 import Impls.HigherOrder
 import Impls.Impl
 import Impls.Induction
@@ -54,9 +55,10 @@ tested cli::fix_static_errors: "src/FrenTestMain.lean"
 
 tested lang::global_checks: "test/ui/lang/global.fren", "test/ui/lang/global_preconditions.fren"
 tested lang::global_successor: "test/ui/lang/global_preconditions.fren"
-tested lang::induction_candidate: "test/ui/checks/induction.fren"
+tested lang::induction_candidate: "test/ui/checks/induction.fren", "test/ui/checks/induction_short.fren", "src/FrenTest/InductionShortNames.lean"
+tested lang::induction_short_parameters: "test/ui/checks/induction_short.fren"
 tested lang::induction_hypotheses: "test/ui/checks/induction.fren"
-tested lang::induction_verdict: "test/ui/checks/induction.fren"
+tested lang::induction_verdict: "test/ui/checks/induction.fren", "test/ui/checks/induction_short.fren", "src/FrenTest/InductionShortNames.lean"
 tested lang::induction_function: "test/ui/checks/induction_unfolding_forms.fren"
 tested lang::unfoldings: "test/ui/checks/induction.fren", "test/ui/checks/induction_unfolding_forms.fren"
 tested lang::recursive_depth: "src/FrenTest/RecursiveFactLookup.lean"
@@ -129,9 +131,10 @@ tested model::fill_rule: "src/FrenTest/ModelDefaults.lean"
 -- checked by the solver.
 trusted lang::named: "no front end elaborates a name into the semantics' abstract syntax yet, so there is no code to bind it to; its expectations are checked by the solver"
 
--- The eight theory-core requirements below have `impl`s proved for every
+-- The theory-core requirements below have `impl`s proved for every
 -- input in `Impls/Theories.lean`; these tests are regression cross-checks.
--- Front ends adopt the structural core in later units of #761.
+-- Generic function instances use its morphisms; module and generic type
+-- adoption is separate work in #761.
 tested lang::theory_signature: "src/FrenTest/Theories.lean"
 tested lang::theory_term_translation: "src/FrenTest/Theories.lean"
 tested lang::theory_term_substitution: "src/FrenTest/Theories.lean"
@@ -140,6 +143,8 @@ tested lang::theory_variable_images: "src/FrenTest/Theories.lean"
 tested lang::theory_term_list: "src/FrenTest/Theories.lean"
 tested lang::theory_translation: "src/FrenTest/Theories.lean"
 tested lang::theory_instance: "src/FrenTest/Theories.lean"
+tested lang::generic_type_image: "src/FrenTest/GenericTheory.lean", "src/FrenTest/Theories.lean"
+tested lang::generic_translation: "src/FrenTest/GenericTheory.lean", "src/FrenTest/Theories.lean"
 
 -- Structural matching equations are proved for every input; these tests
 -- exercise their composition before front-end integration under #758.

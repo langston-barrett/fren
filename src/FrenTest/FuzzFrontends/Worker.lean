@@ -26,10 +26,13 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) (compareDumps : B
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
     let ran ← runFrontends env run.spec text mode.confirm compareDumps
-    let problems := if mode.depthBoundaries then depthBoundaryProblems s ran
-      else if mode.setCard || mode.setCardFallback then setCardProblems ran ++
-      ((appendedErrors #[0] ran.cli ++ appendedErrors #[0] ran.hosted).map fun (_, d) =>
-        s!"unexpected static error: {headOf d}") else #[]
+    let staticProblems := (appendedErrors #[0] ran.cli ++ appendedErrors #[0] ran.hosted).map fun (_, d) =>
+      s!"unexpected static error: {headOf d}"
+    let problems := if mode.genericFunctions then staticProblems
+      else if mode.argumentDependencies then argumentDependencyProblems ran ++ staticProblems
+      else if mode.depthBoundaries then depthBoundaryProblems s ran
+      else if mode.shortInductions && !mode.resources && !mode.resourceBoundaries then staticProblems
+      else if mode.setCard || mode.setCardFallback then setCardProblems ran ++ staticProblems else #[]
     let (found, flaky, reports, errs) := (ran.comparison.found ++ problems,
       problems.isEmpty && ran.comparison.flaky, ran.reports, ran.errors)
     -- The obligations dumps, compared without their metadata, and both

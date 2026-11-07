@@ -125,6 +125,27 @@ then evaluated where it is applied, as the checks ask them. For the
 function's own checks, each function parameter is an uninterpreted
 function, whose values the interpretation gives.
 
+## Source questions of applications
+
+Unfolding a defined function retains the source questions of every
+argument, even when its body never reads that argument: an index's
+definedness, a table's completeness, disjointness and reachability, and a
+`match`'s completeness and reachability. The questions keep the conditions
+and lexical binders around the application and their original source
+positions, so each check can be paired with its evaluator formula.
+
+`eval::application_sites` labels expression occurrences by integers.
+Its `visited` sequence lists the argument occurrences in order, followed
+by the substituted body. Repeated occurrences remain separate entries.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub proc application_sites(arguments: Seq<Int>, body: Int): (det visited: Seq<Int>) {
+    out visited := arguments ++ [body]
+    expect all_parts: visited = arguments ++ [body]
+}
+```
+
 ## Quantifiers
 
 The evaluator evaluates a [quantifier](Lang/Quantifiers.md) over listed

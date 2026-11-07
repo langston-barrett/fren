@@ -92,31 +92,61 @@ as `|::unwrap_or<Int>|` (`Reqs/Lang/GenericFunctions#meaning`). -/
 def instSym (path : Name) (args : Array Ty) : String :=
   quote s!"::{showPath path}{Fren.Core.instanceText args}"
 
-/-- `smt` with each quoted symbol that `repl` maps replaced, but within
-string literals. -/
-def replaceSymbols (smt : String) (repl : Std.HashMap String String) : String := Id.run do
+/-- Extract quoted references outside SMT string literals. Literal runs
+include all whitespace, punctuation, builtins and string contents. -/
+def theoryTextAtoms (smt : String) : List Fren.Core.TheoryTerm := Id.run do
   let cs := smt.toList.toArray
-  let mut out := ""
+  let mut atoms := #[]
+  let mut start := 0
   let mut i := 0
   while i < cs.size do
     let c := cs[i]!
     if c == '"' then
-      -- A string literal, whose `""` is a `"`.
       let mut j := i + 1
       while j < cs.size && !(cs[j]! == '"' && cs[j + 1]? != some '"') do
         j := if cs[j]! == '"' then j + 2 else j + 1
-      out := out ++ String.ofList (cs.extract i (j + 1)).toList
       i := j + 1
     else if c == '|' then
+      if start < i then atoms := atoms.push (.literal (String.ofList (cs.extract start i).toList))
       let mut j := i + 1
       while j < cs.size && cs[j]! != '|' do j := j + 1
-      let sym := String.ofList (cs.extract i (j + 1)).toList
-      out := out ++ (repl.getD sym sym)
+      atoms := atoms.push (.item (Name.mkSimple (String.ofList (cs.extract i (j + 1)).toList)))
       i := j + 1
-    else
-      out := out.push c
-      i := i + 1
-  return out
+      start := i
+    else i := i + 1
+  if start < cs.size then atoms := atoms.push (.literal (String.ofList (cs.extract start cs.size).toList))
+  return atoms.toList
+
+/-- Realize the translated SMT atoms, preserving all literal syntax. -/
+def theoryText (atoms : List Fren.Core.TheoryTerm) : String :=
+  String.join <| atoms.map fun
+    | .sort ty => ty.sort
+    | .item n => n.getString!
+    | .literal text => text
+    | _ => ""
+
+/-- Simultaneous renaming of quoted symbols outside string literals. -/
+def replaceSymbols (smt : String) (repl : Std.HashMap String String) : String :=
+  theoryText <| (theoryTextAtoms smt).map fun
+    | .item n => .item (Name.mkSimple (repl.getD n.getString! n.getString!))
+    | t => t
+
+/-- Extract SMT references as theory atoms. All other syntax, including
+string literals, stays literal. The shared morphism translates parameter
+sorts and resolved item images simultaneously. -/
+def genericText (path : Name) (params : Array Name) (args : Array Ty)
+    (repl : Std.HashMap String String) (smt : String) : String := Id.run do
+  let sorts := params.mapIdx fun k p => (itemSym (Fren.Core.typeParamPath path k p), Ty.param k p)
+  let items : Fren.Core.TheoryMorphism :=
+    { item := fun n => Name.mkSimple (repl.getD n.getString! n.getString!) }
+  let atoms := (theoryTextAtoms smt).map fun
+    | .item n => match sorts.find? (·.1 == n.getString!) with
+      | some (_, ty) => .sort ty
+      | none => .item n
+    | t => t
+  let sentence : Fren.Core.TheorySentence := {
+    role := .theorem, variables := [], domain := .literal "true", calls := [], claims := atoms }
+  return theoryText (Fren.Core.genericTranslation args items sentence).claims
 
 def ctorSym (enumPath : Name) (v : Name) : String := quote s!"{showPath enumPath}::{v}"
 

@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenTest.FuzzDatatypeElements
+import FrenTest.FuzzFrontends.ArgumentDependencies
 import FrenTest.FuzzFrontends.Confirmed
 import FrenTest.FuzzFrontends.Decidable
 import FrenTest.FuzzFrontends.DepthBoundaries
@@ -15,7 +16,9 @@ import FrenTest.FuzzFrontends.SetCard
 import FrenTest.FuzzFrontends.SetCardFallback
 import FrenTest.FuzzFrontends.Unfoldings
 import FrenTest.FuzzFrontends.Wide
+import FrenTest.FuzzGenericFunctions
 import FrenTest.FuzzRecursion
+import FrenTest.FuzzShortInduction
 -- keep-sorted end
 
 open Lean FrenCli FrenCli.Eval
@@ -43,7 +46,9 @@ seed so that its draws leave the other modes unchanged. -/
 def unfoldingRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x756e⟩
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  if m.depthBoundaries then depthBoundarySpec seed else if m.resourceBoundaries then resourceBoundarySpec seed else if m.resources then resourceSpec seed else if m.setCardFallback then Id.run (Wide.genSetCardFallback.run' (rngOf seed))
+  if m.genericFunctions then Id.run (FuzzGenericFunctions.spec.run' (rngOf seed))
+  else if m.argumentDependencies then argumentDependencySpec seed
+  else if m.depthBoundaries then depthBoundarySpec seed else if m.resourceBoundaries then resourceBoundarySpec seed else if m.resources then resourceSpec seed else if m.setCardFallback then Id.run (Wide.genSetCardFallback.run' (rngOf seed))
   else if m.setCard then Id.run (Wide.genSetCard.run' (rngOf seed))
   else if m.enumerationObligations || m.enumerationRelations then
     Id.run ((Wide.enumerationObligations m.enumerationRelations).run' (rngOf seed))
@@ -58,6 +63,7 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
     | [before, after] => before ++ decls ++ Id.run (Wide.genKeywordsItem.run' (itemRngOf seed)) ++ after
     | _ => spec
   else if m.inductionCandidates then Id.run (Wide.inductionCandidates.run' (inductionRngOf seed))
+  else if m.shortInductions then Id.run (FuzzShortInduction.spec.run' (rngOf seed))
   else if m.unfoldings then Id.run (Wide.unfoldings.run' (unfoldingRngOf seed))
   else
     Id.run ((if m.decidable then Wide.genDecidable
@@ -70,20 +76,31 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
       else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
-the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
+the next; none for `--guards`, `--sites`, `--inductions`,
 `--induction-forms`, `--keywords` and `--recursion-positions`. The empty
 prefix of `--scrutinees`, `--fact-scopes`, `--induction-candidates`,
-`--decidable`, `--enumeration-obligations`, `--unfoldings`,
-`--datatype-elements`, `--set-card` and `--set-card-fallback` makes any
-static error a group error: these generators, like appended groups,
-promise to add none.
+`--decidable`, `--enumeration-obligations`, `--unfoldings`, `--short-inductions`,
+`--datatype-elements`, `--generic-functions`, `--argument-dependencies`,
+`--set-card` and
+`--set-card-fallback` makes any static error a group error: these
+generators, like appended groups, promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
-prefix, so its additional cases must add no static error either. The
-resource mode keeps its original fixture as a prefix for the same reason. -/
+prefix, and `--confirm` its spec before the unused-argument cases, so
+their additional cases must add no static error either. The resource mode
+keeps its original fixture as a prefix for the same reason. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
+  if m.genericFunctions || m.argumentDependencies then #[""] else
   if m.depthBoundaries then #[] else if m.resourceBoundaries then #[] else if m.resources then #[resourceBaseSpec seed] else
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
+  if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.shortInductions || m.datatypeElements then #[""] else
+  if m.confirm then
+    match (m.spec seed).splitOn "\npub struct CfArgNew(Int)" with
+    | [before, _] => #[before]
+    | _ => #[]
+  else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
+
+-- The selected generator and its static-error check use the same priority.
+#guard ({ genericFunctions := true, enumerationRelations := true } : Mode).cuts 0 == #[""]
 
 end FrenTest.FuzzFrontends

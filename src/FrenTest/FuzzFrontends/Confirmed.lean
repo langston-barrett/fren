@@ -22,7 +22,9 @@ constant, and an `if`, a `match` and a table whose condition or scrutinee
 may be, with branches, arms or rows equal or not. A mode of its own, so
 that the specs of the other modes' seeds are as they were. No value of an
 abstract type or of a type parameter, which the Lean-hosted front end does
-not evaluate. -/
+not evaluate. Appended cases put tables, guarded matches and indexes in
+unused arguments, across scalar, collection and datatype arguments,
+through generic applications, nesting and local definitions. -/
 def genConfirmed : R String := do
   let k : R String := do return toString (← below 4)
   let divisor : R String := pick #["2", "3", "-2", "(-3)"]
@@ -50,9 +52,8 @@ def genConfirmed : R String := do
     match ← below 31 with
     | 0 => return s!"a {← pick #["=", "!="]} b"
     | 1 | 2 => return s!"{← int} {← op} {← int}"
-    -- An index in an argument that a body never reads only where nothing
-    -- guards it: the `fren` command gives such an index no definedness goal
-    -- (#493).
+    -- Keep these original forms and draws; guarded unused arguments are
+    -- appended below, after all the existing draws.
     | 3 => return s!"(q != [] and (q[0] {← op} {← int} or q[{← k}] = {← k}))"
     | 4 => return s!"(when {← k} < q.len, q[{← k}] {← op} {← int})"
     | 5 => return s!"(cf_ign?(q[{← k}]) or a {← op} {← k})"
@@ -186,6 +187,36 @@ def genConfirmed : R String := do
   let mut binders := ""
   for j in [0:(← below 3) + 1] do binders := binders ++ s!"    expect cb{j}: {← binderBool}\n"
   out := out ++ s!"\npub proc cfb(a: Int, b: Int, q: Seq<Int>, s: Seq<Ce>, o: Seq<Co>): (r: Int) \{\n    out r := a\n{binders}}\n"
+  -- Source questions survive unused arguments, through generic functions,
+  -- nested applications and local definitions. Append after every draw
+  -- above so that existing seeds keep their original specs as a prefix.
+  let (ty, value) ← pick #[
+    ("Int", "0"), ("Nat", "0"), ("Bool", "false"), ("String", "\"\""),
+    ("Set<Int>", "{}"), ("Rel<Bool, Bool>", "{}"), ("Seq<Int>", "[]"),
+    ("Option<Int>", "Option::None"), ("Ce", "Ce::Q"),
+    ("CfArgNew", "CfArgNew(0)"), ("CfArgRecord", "CfArgRecord { value := 0 }")]
+  let valueName := if ty == "Bool" then "cf_arg_value?" else "cf_arg_value"
+  let valueCall := valueName ++ "(0)"
+  let savedName := if ty == "Bool" then "saved?" else "saved"
+  out := out ++ "\npub struct CfArgNew(Int)\npub struct CfArgRecord { value: Int }\n" ++
+    s!"pub fn {valueName}(unused: Int): {ty} := {value}\n" ++
+    "pub fn cf_arg_ignore?<T>(value: T) := true\n" ++
+    "pub fn cf_arg_identity<T>(value: T): T := value\n"
+  let mut arguments := ""
+  for j in [0:3] do
+    let source ← match j with
+      | 0 => pure s!"table \{ enabled? => {valueCall} }"
+      | 1 => pure s!"match option \{ Option::Some(n) if n > 0 => {valueCall}, Option::None => {valueCall} }"
+      | _ => pure s!"[{valueCall}][k]"
+    let argument ← match ← below 3 with
+      | 0 => pure source
+      | 1 => pure s!"cf_arg_identity({source})"
+      | _ => pure s!"(let {savedName}: {ty} := {source} in {savedName})"
+    let test := s!"cf_arg_ignore?({argument}) {← pick #["=", "!=", "iff"]} enabled?"
+    arguments := arguments ++ s!"    expect arg{j}: when k {← op} {← k}, {test}\n"
+  let evidence ← pick #["enumerated", "solver"]
+  out := out ++ s!"\nset_option fren.enumeration.size 2 in\nset_option fren.evidence \"{evidence}\" in\n" ++
+    s!"pub proc cf_args(k: Int, enabled?, option: Option<Int>) \{\n{arguments}}\n"
   return out
 
 end FrenTest.FuzzFrontends.Wide

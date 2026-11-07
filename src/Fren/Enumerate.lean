@@ -1,6 +1,6 @@
 -- keep-sorted start
 import Fren.Check
-import Fren.Elab
+import Fren.Elab.TypeTerms
 import Fren.Prelude
 import FrenCore.Enumeration
 -- keep-sorted end
@@ -250,6 +250,41 @@ opaque Enum.compileAll (e : Expr) : MetaM Enum.Compiled
 namespace Enumerate
 
 open Core.Enumeration
+
+/-- Ordinary enumeration follows a substituted body's value, as the CLI's
+semantic dependency walk does. After admitting the original source roots,
+drop retained unused-argument metadata from dependency discovery and code
+generation. Keep call, lookup and match boundaries, including scrutinees.
+The iterative walk preserves sharing in substituted definitions. -/
+def enumerationBody (root : Expr) : MetaM Expr := do
+  let mut todo := [(root, false)]
+  -- Structural keys preserve binder names and metadata as well as meaning.
+  let mut rewritten : ExprStructMap Expr := {}
+  while !todo.isEmpty do
+    let (e, ready) := todo.head!
+    todo := todo.tail!
+    unless rewritten.contains e do
+      let marked := e.isAppOfArity ``Fren.evalArgument 4
+      if ready then
+        let get (child : Expr) := rewritten[(child : ExprStructEq)]!
+        let value := if marked then get e.appArg! else match e with
+          | .app f a => e.updateApp! (get f) (get a)
+          | .lam _ t b _ => e.updateLambdaE! (get t) (get b)
+          | .forallE _ t b _ => e.updateForallE! (get t) (get b)
+          | .letE _ t v b _ => e.updateLetE! (get t) (get v) (get b)
+          | .mdata _ b => e.updateMData! (get b)
+          | .proj _ _ b => e.updateProj! (get b)
+          | _ => e
+        rewritten := rewritten.insert e value
+      else
+        let children := if marked then [e.appArg!] else match e with
+          | .app f a => [f, a]
+          | .lam _ t b _ | .forallE _ t b _ => [t, b]
+          | .letE _ t v b _ => [t, v, b]
+          | .mdata _ b | .proj _ _ b => [b]
+          | _ => []
+        todo := children.foldr (fun child rest => (child, false) :: rest) ((e, true) :: todo)
+  return rewritten[(root : ExprStructEq)]!
 
 /-- The declared arguments of a recursive call, excluding the placeholders
 and generic dictionaries that the two generated forms take differently. -/
@@ -1125,6 +1160,7 @@ partial def boundedRecursiveCall (domain : PartialEnv) (prepare : Expr → MetaM
     let zero ← mkLambdaFVars params (mkApp (mkConst ``Option.none [0]) resultTy)
     if (← expressionDepthM (expressionLayer · domain.recursiveInfos) result).isNone then
       return some (mkAppN zero args)
+    let result ← enumerationBody result
     let fnTy ← inferType zero
     let familyTy ← mkArrow (mkConst ``Nat) fnTy
     let step ← withLocalDeclD `depth (mkConst ``Nat) fun depth =>
@@ -1195,21 +1231,24 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
   let defined := roots.filterMap fun (d, e) => (varFv d).map (d, ·, e)
   -- Variable definitions keep their lookup boundary; admit each lowered
   -- root before substituting them into its callers.
+  let mut admittedRoots : Array Expr := #[]
   for expression in atoms0 ++ defined.map (·.2.2) do
     let expression ← computableDecisions (← unfoldDefined expression (keepRelationObligations := true))
     if (← expressionDepthM (expressionLayer · recInfos) expression).isNone then
       return .error (notEnumerableMsg subject s!"an expression exceeds the evaluator's limit of {maxEvalDepth} levels or {maxEvalNodes} nodes")
+    admittedRoots := admittedRoots.push expression
+  let atomRoots ← (admittedRoots.extract 0 atoms0.size).mapM enumerationBody
   let substDefs (e : Expr) : MetaM Expr := defined.foldrM (init := e) fun (_, fv, de) acc => do
     acc.replaceFVar fv <$> mkAppM ``Enum.definedValue #[de]
   -- Each index reads its element type's unspecified value out of range,
   -- and which atoms, a type's facts too, have one (`Atoms.readsIndex`).
-  let atoms ← atoms0.mapM fun a => do readIndexes (← computableDecisions (← unfoldDefined (← substDefs a) (keepRelationObligations := true)))
+  let atoms ← atoms0.mapM fun a => do readIndexes (← enumerationBody (← computableDecisions (← unfoldDefined (← substDefs a) (keepRelationObligations := true))))
   let atomIndexed := atoms.map (·.2)
   let atoms := atoms.map (·.1)
   -- And each defined output's definition, which `same` reads, and whose
   -- unspecified values and functions are enumerated as the atoms' are,
   -- as the `fren` command's are.
-  let defExprs ← defined.mapM fun (_, fv, _) => do readIndexes (← computableDecisions (← unfoldDefined (← substDefs fv) (keepRelationObligations := true)))
+  let defExprs ← defined.mapM fun (_, fv, _) => do readIndexes (← enumerationBody (← computableDecisions (← unfoldDefined (← substDefs fv) (keepRelationObligations := true))))
   let defIndexed := defExprs.map (·.2)
   let defExprs := defExprs.map (·.1)
   let scanned := atoms ++ defExprs
@@ -1259,6 +1298,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
     if let some b := d.recBody? then
       if (← expressionDepthM (expressionLayer · recInfos) b).isNone then
         return .error (notEnumerableMsg subject s!"an expression exceeds the evaluator's limit of {maxEvalDepth} levels or {maxEvalNodes} nodes")
+      let b ← enumerationBody b
       if (b.find? fun x => x.isAppOfArity ``Fren.Seq.nth 4 && !isUnspecified x).isSome then recIndexed := true
       work := work ++ recs.filter (mentions b ·)
   if recIndexed then
@@ -1485,7 +1525,7 @@ def enumerateOnly (c : CompInfo) (full : Core.Comp Expr) (fvs ufs : Array Expr) 
       (slotFvs.zipIdx.filter fun (x, _) => a.containsFVar x.fvarId!).map (fun (_, j) => slotIdx[j]!)
         ++ (used.zip fslots).filterMap fun ((_, x, _, _), f) => if a.containsFVar x.fvarId! then some f.slot else none
     let atomSlots := atoms.map slotsOf
-    let atomDefs := atoms0.map fun a => defined.filterMap fun (d, fv, _) => if a.containsFVar fv.fvarId! then some d else none
+    let atomDefs := atomRoots.map fun a => defined.filterMap fun (d, fv, _) => if a.containsFVar fv.fvarId! then some d else none
     -- `eval`, `known` and `truth?` from one evaluation (`Atoms.ofTruth`).
     let ats : Atoms := { Atoms.ofTruth atomSlots fun k env => evals[k]! env with
       defs := atomDefs

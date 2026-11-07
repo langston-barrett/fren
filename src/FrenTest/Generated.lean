@@ -1,4 +1,6 @@
 -- keep-sorted start
+import Fren.Elab.Constants
+import Fren.Elab.GlobalBlocks
 import Fren.View
 -- keep-sorted end
 open Fren.Lang

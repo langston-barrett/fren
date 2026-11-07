@@ -83,6 +83,18 @@ impl native_subtree: eval::native_subtree for (info : Option (Nat × Bool)) (bud
         Fren.Core.Enumeration.boundedEvalDepth, Fren.Core.Enumeration.maxEvalDepth, Nat.min_def] <;>
       split <;> simp_all <;> omega
 
+-- The native source-site adapter's immediate child selection, computed
+-- from the arguments and body. The proof covers order and multiplicity;
+-- paired front-end fixtures check its use under lexical binders and the
+-- pairing of source positions with formulas.
+impl application_sites: eval::application_sites for (arguments : List Int) (body : Int) {
+  arguments := Fren.Seq.ofList arguments,
+  body := body,
+  visited := Fren.Seq.ofList (Fren.Core.applicationParts arguments body),
+} by
+  intro arguments body _
+  simp [fren_spec, Fren.Core.applicationParts, Fren.Seq.ofList, Fren.Seq.unit] <;> rfl
+
 impl expansion_budget: eval::expansion_budget {
   initial := Fren.Core.maxExpansionNodes,
 } by decide

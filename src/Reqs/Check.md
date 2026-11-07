@@ -2259,8 +2259,8 @@ function whose body indexes a sequence, whose value out of range
 enumeration cannot give (see [Searching](#searching)). It is then the
 error `F0645`, at it, and none of its checks set to enumeration is run.
 Of several functions with such contracts, it names the one whose path
-comes first, so that it does not depend on the order in which a front end
-finds them. A quantifier is enumerated too, up to the bound (see
+comes first in string order, so that it does not depend on the order
+in which a front end finds them. A quantifier is enumerated too, up to the bound (see
 [Quantifiers up to the bound](#quantifiers-up-to-the-bound)).
 
 ```fren
@@ -2270,8 +2270,8 @@ pub struct Applied { path: String, postconditions: Nat }
 
 -- Whether `named` is what keeps an item that applies the functions
 -- `applied` from being enumerated (`F0645`): of the functions whose
--- contracts have a postcondition, the one whose path comes first, which
--- the error names; or `None` if there is none, and the item may be
+-- contracts have a postcondition, the one whose path comes first in string order,
+-- which the error names; or `None` if there is none, and the item may be
 -- enumerated. A contract of preconditions alone does not keep it from
 -- being enumerated.
 set_option fren.lint.undecidable "allow" in

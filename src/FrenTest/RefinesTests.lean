@@ -1,5 +1,5 @@
 -- fren-covers: refinement::positional_refinement, refinement::block_refinement, refinement::refinement_computed_local
-import Fren.Elab
+import Fren.Elab.GlobalBlocks
 
 open Fren.Lang
 set_option fren.lint.unused_variables "allow"

@@ -787,14 +787,16 @@ def intResult : Expr → Expr
 
 /-- Recursive symbols are local uninterpreted functions, one for each
 instance that a query applies (`RecInstance`). A result in Nat uses an Int
-symbol with ground range facts, as other opaque functions do. -/
+symbol with ground range facts, as other opaque functions do. Its signature
+uses the query's interpretations of abstract types (`translateType`), as
+the arguments do. -/
 partial def withRecursiveDefs {α : Type} [Inhabited α] (recs : Array RecInstance)
-    (k : Array Expr → (Expr → Expr) → MetaM α) : MetaM α := go 0 #[] #[]
+    (translateType : Expr → MetaM Expr) (k : Array Expr → (Expr → Expr) → MetaM α) : MetaM α := go 0 #[] #[]
 where
   go (i : Nat) (fs reps : Array Expr) : MetaM α := do
     if h : i < recs.size then
       let (c, pre) := recs[i]
-      let ty ← instantiateForall (← getConstInfo c).type pre
+      let ty ← translateType (← instantiateForall (← getConstInfo c).type pre)
       let nat := (resultType ty).isConstOf ``Nat
       -- Named by the function's whole path, as the `fren` command names its
       -- symbol (`Core.ItemSymbol.item`), so that two functions of one name in
@@ -1073,14 +1075,16 @@ assumes of its own (`Reqs/Check`), and of the applications in those facts,
 in at most `rounds` rounds (`Core.appFactsWith`). With `modelOptional`, a model that lean-smt cannot read, as
 it cannot some values of abstract types, is left out rather than making the
 answer unknown: a cover goal passes on `sat`, with or without one. Such an
-answer is not cached. -/
+answer is not cached. `interpret` puts reflected signatures and formulas
+in the query's abstract context before they reach the solver. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array (Name × Expr) := #[])
     (outFacts : Array Expr := #[]) (appsOf : Expr → Array Expr := fun _ => #[])
     (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false)
     (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
     (snapshots? : Option (IO.Ref (Array Smt.Model)) := none)
     (fnOf : Expr → Option Name := fun _ => none) (applied? : Option (IO.Ref (Array Name)) := none)
-    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) (sortHooks? : Option ElabHooks := none) :
+    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) (sortHooks? : Option ElabHooks := none)
+    (interpret : Expr → MetaM Expr := pure) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -1094,7 +1098,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       MetaM (Core.Outcome Expr × Bool) := do
     -- Each recursive symbol is opaque to the solver.
     let recs ← recursiveSolvers (hyps.map (·.2) |>.push goal)
-    withRecursiveDefs recs fun recFvs sub => do
+    withRecursiveDefs recs interpret fun recFvs sub => do
     let hyps := hyps.map fun (n, t) => (n, sub t)
     let goal := sub goal
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
@@ -1251,8 +1255,10 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- preprocesses it. Keep the reflected facts in one balanced formula.
     let hyps := if reflected.isEmpty then hyps else
       #[(Name.mkSimple "#recursive_facts", balanced mkAnd (reflected.map (·.2)))] ++ hyps
-    let goal ← smtBinders goal
-    let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
+    -- Reflected bodies and clauses may reintroduce abstract constants.
+    -- Interpret them before collecting or identifying recursive instances.
+    let goal ← smtBinders (← interpret goal)
+    let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders (← interpret t))
     -- Each instance of a generic function without a body, a local of its
     -- own (`withInstances`), before any quantifier over elements is
     -- expanded.
@@ -1919,6 +1925,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         (snapshots? := if full.memberGroups.isEmpty then none else some memberModels) fnOf
         (if script?.isSome then none else some applied) (heads.size + 1) script?
         (hooks?.map fun h => { h with leanType := fun t => do rep (← h.leanType t), coreTy := fun t => h.coreTy (unrep t) })
+        (interpret := rep)
     -- What each of its checks asks, for `set_option fren.dump
     -- "obligations"`, with its query's script as lean-smt would be given
     -- it, from a cache of its own, so that no answer is taken for it

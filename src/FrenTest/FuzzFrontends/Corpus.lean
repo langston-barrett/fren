@@ -19,7 +19,8 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ decidable := true }, 8187312, 1),
     ({ enumerationObligations := true }, 0, 20), ({ enumerationObligations := true }, 438, 1),
     ({ enumerationObligations := true }, 555, 1), ({ enumerationRelations := true }, 0, 20),
-    ({ unfoldings := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
+    ({ unfoldings := true }, 0, 10), ({ shortInductions := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
+    ({ genericFunctions := true }, 0, 5),
     ({ recursionPositions := true }, 0, 20), ({ recursionPositions := true }, 934000, 1),
     ({ recursionPositions := true }, 934051, 1), ({ setCardFallback := true }, 0, 8),
     ({ setCardFallback := true }, 1324204, 1), ({ resources := true }, 0, 256), ({ resourceBoundaries := true }, 0, 48)] : List (Mode × Nat × Nat)) ++
@@ -34,6 +35,7 @@ def corpus : List (Mode × Nat × Nat) :=
     ++ ([56, 57, 74, 75, 76, 92, 93, 94, 110, 128, 146, 164,
       162, 168, 174, 182, 200, 218, 236, 254, 272, 290, 308, 326, 344].map
       fun s => ({ depthBoundaries := true }, s, 1))
+    ++ [({ argumentDependencies := true }, 0, 72)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/

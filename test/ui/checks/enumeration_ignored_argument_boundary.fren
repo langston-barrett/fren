@@ -1,0 +1,20 @@
+-- Source operands are admitted before ordinary dependency projection.
+set_option fren.evidence "enumerated"
+set_option fren.lint.double_neg "allow"
+set_option fren.lint.nonminimal_bool "allow"
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.assertions_on_constants "allow"
+
+fn ignore?(value: Int) := true
+
+proc at_limit(x: Int) {  --~ info: 2 checks of `at_limit` hold for every behaviour up to size 3
+    expect e: ignore?(
+        - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -x
+    )
+}
+
+proc past_limit(x: Int) {  --~ error: `past_limit` cannot be enumerated: an expression exceeds the evaluator's limit of 256 levels or 4194304 nodes
+    expect e: ignore?(
+        - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -x
+    )
+}

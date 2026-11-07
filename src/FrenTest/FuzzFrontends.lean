@@ -65,6 +65,10 @@ alone (`Wide.inductions`), which induction on a parameter may prove, and
 `--induction-forms` the forms in which the front ends read a candidate
 for it (`Wide.inductionForms`); `--induction-candidates` generates declared
 type, comparison and binder forms (`Wide.inductionCandidates`).
+`--generic-functions` generates whole generic function instances
+(`FuzzGenericFunctions.spec`), in an independent mode with defined,
+uninterpreted, higher-order and recursive functions. Fresh runs reject
+static errors from either front end, even when both give the same error.
 `--datatype-elements` generates generic enumerations and records with
 collection payloads and fields (`FuzzDatatypeElements.spec`).
 `--depth-boundaries` generates defined-output references, lazy branches after

@@ -112,6 +112,13 @@ def setCardProblem? (d : Diagnostic) : Option String :=
 def setCardProblems (ran : Ran) : Array String :=
   (ran.cli ++ ran.hosted).filterMap setCardProblem?
 
+/-- Every dependency fixture is finite and true. A shared refusal or
+bounded result must fail too, rather than pass by front-end agreement. -/
+def argumentDependencyProblems (ran : Ran) : Array String :=
+  (ran.cli ++ ran.hosted).filterMap fun d =>
+    let h := headOf d
+    if d.severity == "error" || h.startsWith "could not decide" || h.contains "up to size" then some h else none
+
 /-- Deliberate above-bound cases require the same resource refusal from
 both readers. Supported cases must not be refused; other static errors
 fail even if both readers agree on them. -/
@@ -166,11 +173,14 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
   for (mode, s) in specs do
     let ran ← runFrontends env path (mode.spec s) mode.confirm
     let c := ran.comparison
-    if mode.setCard || mode.setCardFallback then
+    if !mode.genericFunctions && !mode.argumentDependencies && (mode.setCard || mode.setCardFallback) then
       for problem in setCardProblems ran do
         failures := failures.push s!"seed {s}{flags mode}: {problem}"
     let again := s!"`lake exe fren_fuzz_frontends{flags mode} --count 1 --seed {s}`"
-    if mode.depthBoundaries then
+    if !mode.genericFunctions && mode.argumentDependencies then
+      for problem in argumentDependencyProblems ran do
+        failures := failures.push s!"seed {s}{flags mode}: {problem}"
+    if !mode.genericFunctions && !mode.argumentDependencies && mode.depthBoundaries then
       for problem in depthBoundaryProblems s ran do
         failures := failures.push s!"seed {s}{flags mode}: {problem}"
     if mode.resources then
