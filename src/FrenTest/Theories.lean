@@ -3,11 +3,13 @@ import FrenCore.Generics
 import FrenCore.Theories
 -- keep-sorted end
 
-/-! Regressions for the shared theory core and generic function morphisms. -/
+/-! Regressions for the shared theory core, generic function morphisms
+and generic datatype declarations. -/
 -- fren-covers: lang::theory_signature, lang::theory_translation, lang::theory_instance
 -- fren-covers: lang::theory_term_translation, lang::theory_term_substitution, lang::theory_ground_term
 -- fren-covers: lang::theory_variable_images, lang::theory_term_list
 -- fren-covers: lang::generic_type_image, lang::generic_translation
+-- fren-covers: lang::theory_declaration_translation, lang::theory_type_list
 
 open Fren.Core
 
@@ -138,5 +140,30 @@ private def theory : Theory := {
 #guard theory.signature.items == declarations
 #guard ({ parameters := [], entries := [] } : Theory).signature.items.isEmpty
 #guard theory.entries.length == declarations.length + 4
+
+-- Generic datatypes translate constructor signatures through the same
+-- morphism as sentences. Arguments are simultaneous, even when they
+-- contain parameters of another enclosing datatype.
+private def constructor : TheoryDeclaration := {
+  name := `Nested.Full, kind := .constructor, abstract := false,
+  types := [.record `Pair [.param 1 `B, .enum `Option [.param 0 `A]],
+    .set (.seq (.param 0 `A)), .rel (.param 1 `B) (.param 0 `A),
+    .enum `Nested [.param 0 `A, .param 1 `B], .newtype `Ms .int] }
+
+#guard instantiateTypeDeclaration constructor #[.bool, .string] == {
+  constructor with types := [.record `Pair [.string, .enum `Option [.bool]],
+    .set (.seq .bool), .rel .string .bool,
+    .enum `Nested [.bool, .string], .newtype `Ms .int] }
+#guard instantiateTypeDeclaration constructor #[.param 1 `Outer, .int] == {
+  constructor with types := [.record `Pair [.int, .enum `Option [.param 1 `Outer]],
+    .set (.seq (.param 1 `Outer)), .rel .int (.param 1 `Outer),
+    .enum `Nested [.param 1 `Outer, .int], .newtype `Ms .int] }
+#guard instantiateTypeDeclaration constructor #[] == constructor
+#guard (instantiateTypeDeclaration constructor #[.int]).types.head! ==
+  .record `Pair [.param 1 `B, .enum `Option [.int]]
+#guard (constructor.translate morphism).name == constructor.name
+#guard (declarations[4]!.translate morphism).name == `g
+#guard (declarations[4]!.translate morphism).abstract
+#guard (instantiateTypeDeclaration constructor #[.bool]).kind == .constructor
 
 end FrenTest.Theories

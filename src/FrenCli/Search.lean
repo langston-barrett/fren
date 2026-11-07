@@ -98,7 +98,7 @@ partial def valueOf (sp : Spec) (w : World) (h : UInt64) (depth : Nat := 2) : VT
     let i := (h % cs.size.toUInt64).toNat
     let c := cs[i]!
     let idx := (d.ctors.findIdx? (·.name == c.name)).getD 0
-    let args := c.fields.mapIdx fun k (_, t) => valueOf sp w (mix h (k.toUInt64 + 1)) (depth - 1) (t.subst targs)
+    let args := c.fields.mapIdx fun k (_, t) => valueOf sp w (mix h (k.toUInt64 + 1)) (depth - 1) (t.atTypeInstance sp targs)
     return .ctor p idx args
 
 partial def hashVal : Val → UInt64
@@ -388,7 +388,7 @@ partial def smallValuesMemo (sp : Spec) (w : World) (ints : Array Int) (strs : A
           if depth == 0 && !c.fields.isEmpty then continue
           let mut pools := #[]
           for (_, t) in c.fields do
-            pools := pools.push (← go (depth - 1) (t.subst targs))
+            pools := pools.push (← go (depth - 1) (t.atTypeInstance sp targs))
           fields := fields.push (idx, pools)
         let sizes := fields.map fun (_, pools) => combosSize cap pools
         let counts := interleavedCounts cap sizes

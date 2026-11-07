@@ -312,11 +312,13 @@ partial def valueExpr (ty : Expr) (v : EVal) : MetaM Expr := do
     let some d := ty.getAppFn.constName? | throwError "not a datatype: {ty}"
     let targs := ty.getAppArgs
     -- A prelude type's constructor is at universe 0 (`EnumInfo.ctorConst`).
-    let (c, ts) :=
-      if let some e := s.enumOfDecl? d then (e.ctorConst idx, (e.payloadsAt targs)[idx]?.getD #[])
-      else if let some r := s.recordOfDecl? d then (mkConst r.ctor, (r.fieldsAt targs).map (·.2))
-      else if let some n := s.newtypeOfDecl? d then (mkConst n.ctor, #[n.under])
-      else (mkConst .anonymous, #[])
+    let (c, ts) ←
+      if let some e := s.enumOfDecl? d then do
+        pure (e.ctorConst idx, (← e.payloadsAt targs)[idx]?.getD #[])
+      else if let some r := s.recordOfDecl? d then do
+        pure (mkConst r.ctor, (← r.fieldsAt targs).map (·.2))
+      else if let some n := s.newtypeOfDecl? d then pure (mkConst n.ctor, #[n.under])
+      else pure (mkConst .anonymous, #[])
     let as ← (args.toArray.zip ts).mapM fun (w, t) => valueExpr t w
     return mkAppN c (targs ++ as)
 

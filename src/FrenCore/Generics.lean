@@ -2,6 +2,7 @@
 import FrenCore.Checking
 import FrenCore.Quantifier
 import FrenCore.Theories
+import FrenCore.TypeSubstitution
 import FrenCore.Typing
 import Std.Data.HashMap.Lemmas
 -- keep-sorted end
@@ -21,30 +22,6 @@ and report the same first error.
 namespace Fren.Core
 
 open Lean (Name)
-
-mutual
-/-- `t`, with `args[k]` for each type parameter `k`
-(`lang::instantiation`). A parameter with no argument stays as it is, and
-a newtype, which has no type parameters, is left alone. -/
-def Ty.subst (args : Array Ty) : Ty → Ty
-  | .param k n => args[k]?.getD (.param k n)
-  | .set t => .set (t.subst args)
-  | .rel a b => .rel (a.subst args) (b.subst args)
-  | .seq t => .seq (t.subst args)
-  | .enum p as => .enum p (Ty.substAll args as)
-  | .record p as => .record p (Ty.substAll args as)
-  | .bool => .bool
-  | .int => .int
-  | .nat => .nat
-  | .string => .string
-  | .abstract p => .abstract p
-  | .newtype p u => .newtype p u
-
-/-- Each of `ts`, with `args` for the type parameters (`Ty.subst`). -/
-def Ty.substAll (args : Array Ty) : List Ty → List Ty
-  | [] => []
-  | t :: ts => t.subst args :: Ty.substAll args ts
-end
 
 mutual
 /-- Whether `t` mentions the type parameter `k`. -/

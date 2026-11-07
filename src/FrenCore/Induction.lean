@@ -74,7 +74,7 @@ def enumParts (shapes : Lean.Name → Option DataShape) (t : Ty) : Option (Array
   let .enum p args := t | none
   let d ← shapes p
   if d.isRecord || d.isNewtype then none
-  return d.parts.map (·.map (·.ty.subst args.toArray))
+  return d.parts.map (·.map (fun t => (genericTypeMorphism args.toArray).type t.ty))
 
 /-- The candidates, in parameter order (`lang::induction_candidate`).
 Both front ends extract variable paths, declared parameter types and enum

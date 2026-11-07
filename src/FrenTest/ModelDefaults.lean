@@ -196,14 +196,14 @@ partial def langValueExpr (ty val : Lean.Expr) : MetaM (Option Lean.Expr) := do
   let targs := ty.getAppArgs
   if let some r := st.recordOf? ty then
     let args := val.getAppArgs.extract r.params.size
-    let some fs ← ((r.fieldsAt targs).zip args).mapM (fun ((_, t), a) => langValueExpr t a)
+    let some fs ← ((← r.fieldsAt targs).zip args).mapM (fun ((_, t), a) => langValueExpr t a)
       <&> (·.mapM id) | return none
     return some (mkApp2 (mkConst ``lang.Value.Constructed)
       (mkStrLit (Fren.Core.showPath r.path)) (cons fs))
   if let some e := st.enumOf? ty then
     let .const c _ := val.getAppFn | return none
     let some idx := e.ctorIdx? c | return none
-    let tys := (e.payloadsAt targs)[idx]?.getD #[]
+    let tys := (← e.payloadsAt targs)[idx]?.getD #[]
     let args := val.getAppArgs.extract e.params.size
     let some ps ← (tys.zip args).mapM (fun (t, a) => langValueExpr t a) <&> (·.mapM id) | return none
     return some (mkApp2 (mkConst ``lang.Value.Constructed)

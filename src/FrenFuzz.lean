@@ -532,7 +532,7 @@ partial def domain (sp : Spec) (size : Nat) : VTy → Array Val
   | .data p args => match sp.data.find? p with
     | some d => (d.ctors.zipIdx).flatMap fun (c, i) =>
       (c.fields.foldl (init := #[#[]]) fun pre (_, t) =>
-        pre.flatMap fun xs => (domain sp size (t.subst args)).map xs.push).map (.ctor p i ·)
+        pre.flatMap fun xs => (domain sp size (t.atTypeInstance sp args)).map xs.push).map (.ctor p i ·)
     | none => #[]
   -- Substituted by the type's arguments, above.
   | .param _ => #[]
