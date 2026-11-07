@@ -1803,6 +1803,53 @@ pub proc theory_instance(s: TheorySubstitution, sentence: TheorySentence): (
 }
 ```
 
+## Generic function instances
+
+A generic function's type arguments give a morphism: every type in its
+signature, body and contract is instantiated with the same arguments.
+References to functions and clauses have the images resolved at those
+arguments. The images are simultaneous, so an image is not translated
+again. The front ends encode their type and item references as theory
+terms; their other syntax stays literal. Translation then uses the same
+operation as any other theory morphism. Ground value arguments use
+`theory_instance` separately; a type argument is not a sentence variable.
+
+```fren
+pub fn generic_morphism(Seq<Ty>, TheoryMorphism): TheoryMorphism
+
+pub proc generic_type_image(arguments: Seq<Ty>, items: TheoryMorphism, ty: Ty, name: TheoryName): (
+    det image: Ty,
+    det item_image: TheoryName,
+) {
+    out image := instantiated(ty, arguments)
+    out item_image := theory_item_image(items, name)
+}
+
+pub proc generic_translation(arguments: Seq<Ty>, items: TheoryMorphism, sentence: TheorySentence): (
+    det instance_sentence: TheorySentence,
+) {
+    out instance_sentence := theory_sentence(
+        theory_sentence_role(sentence),
+        translate_variables(
+            generic_morphism(arguments, items),
+            theory_sentence_variables(sentence)
+        ),
+        translate_term(
+            generic_morphism(arguments, items),
+            theory_sentence_domain(sentence)
+        ),
+        translate_terms(
+            generic_morphism(arguments, items),
+            theory_sentence_calls(sentence)
+        ),
+        translate_terms(
+            generic_morphism(arguments, items),
+            theory_sentence_claims(sentence)
+        )
+    )
+}
+```
+
 ## Induction by unfolding
 
 [Structural recursion](Recursion.md#induction) proves a claim of a global
@@ -2010,11 +2057,30 @@ pub fn rests_on_caveat?(m: ModuleModel, n: ModuleSentence) :=
     rests_on_caveat_from?(|place| item_of(m, place), item_count(m.items), n)
 
 -- Check the factored calculation against the relation on every model,
--- including malformed counts and out-of-range entries in `unproved`.
+-- including malformed counts and out-of-range entries in `unproved`. Split
+-- by every sentence constructor so the solver simplifies each relation case
+-- before searching for a counterexample; x and k remain arbitrary.
 set_option fren.lint.undecidable "allow" in
 set_option fren.evidence "solver" in
-expect caveat_calculation(m: ModuleModel, n: ModuleSentence) {
-    expect same: rests_on_caveat?(m, n) iff caveat_by_sentences?(m, n)
+expect caveat_calculation(m: ModuleModel, x: Int, k: Int) {
+    expect law: rests_on_caveat?(m, ModuleSentence::Law(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::Law(x, k))
+    expect interface_lemma: rests_on_caveat?(m, ModuleSentence::InterfaceLemma(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::InterfaceLemma(x, k))
+    expect interface_goal: rests_on_caveat?(m, ModuleSentence::InterfaceGoal(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::InterfaceGoal(x, k))
+    expect obligation: rests_on_caveat?(m, ModuleSentence::Obligation(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::Obligation(x, k))
+    expect trusted_law: rests_on_caveat?(m, ModuleSentence::TrustedLaw(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::TrustedLaw(x, k))
+    expect translated: rests_on_caveat?(m, ModuleSentence::Translated(x, k)) iff
+        caveat_by_sentences?(m, ModuleSentence::Translated(x, k))
+    expect module_lemma: rests_on_caveat?(m, ModuleSentence::ModuleLemma(x)) iff
+        caveat_by_sentences?(m, ModuleSentence::ModuleLemma(x))
+    expect module_goal: rests_on_caveat?(m, ModuleSentence::ModuleGoal(x)) iff
+        caveat_by_sentences?(m, ModuleSentence::ModuleGoal(x))
+    expect assumed: rests_on_caveat?(m, ModuleSentence::Assumed(x)) iff
+        caveat_by_sentences?(m, ModuleSentence::Assumed(x))
 }
 
 -- Only the checks of an interface rest on its laws, and on each of them
@@ -2520,6 +2586,8 @@ The Lean-hosted front end checks this chapter's items by name, since a
 #fren_check theory_term_list
 #fren_check theory_translation
 #fren_check theory_instance
+#fren_check generic_type_image
+#fren_check generic_translation
 #fren_check module_sentence
 #fren_check module_rests_on
 #fren_check rests_on_ranked

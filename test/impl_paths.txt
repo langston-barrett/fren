@@ -6,9 +6,21 @@
 # A new connection removes its old entry; there is no bless mode.
 
 # Standalone heavy kernel (#859): outside the audited Fren CLI/hosted
-# runtimes. Python remains the active scheduler in migration step 1.
+# runtimes. Python remains the active scheduler through migration step 2.
 unbound: Fren.Impls.Heavy.memory_prediction jobs
 unbound: Fren.Impls.Heavy.memory_prediction prediction
+unbound: Fren.Impls.HeavyOwnership.lease admission
+unbound: Fren.Impls.HeavyOwnership.lease eviction
+unbound: Fren.Impls.HeavyOwnership.lease live?
+unbound: Fren.Impls.HeavyOwnership.registry acquired?
+unbound: Fren.Impls.HeavyOwnership.registry deferred?
+unbound: Fren.Impls.HeavyOwnership.registry retry?
+unbound: Fren.Impls.HeavyOwnership.registry timed_out?
+unbound: Fren.Impls.HeavyOwnership.report_owner compatible?
+unbound: Fren.Impls.HeavyOwnership.time_conversion elapsed_updated
+unbound: Fren.Impls.HeavyOwnership.time_conversion fresh?
+unbound: Fren.Impls.HeavyOwnership.time_conversion remaining_deadline
+unbound: Fren.Impls.HeavyOwnership.time_conversion timed_out?
 
 # Outputs represented by binders, literals, spec values, output-free laws,
 # or functions outside the CLI/hosted production namespaces.
@@ -342,10 +354,7 @@ bypassed: Fren.Impls.Theories.theory_ground_term ground? Fren.Core.TheoryTerm.gr
 bypassed: Fren.Impls.Theories.theory_instance accepted? Fren.Core.TheorySentence.instantiate
 bypassed: Fren.Impls.Theories.theory_instance instance_sentence Fren.Core.TheorySentence.instantiate
 bypassed: Fren.Impls.Theories.theory_term_list substituted Fren.Core.TheoryTerm.substitute
-bypassed: Fren.Impls.Theories.theory_term_list translated Fren.Core.TheoryTerm.translate
 bypassed: Fren.Impls.Theories.theory_term_substitution substituted Fren.Core.TheoryTerm.substitute
-bypassed: Fren.Impls.Theories.theory_term_translation translated Fren.Core.TheoryTerm.translate
-bypassed: Fren.Impls.Theories.theory_translation translated Fren.Core.TheorySentence.translate
 bypassed: Fren.Impls.Theories.theory_variable_images accepted? Fren.Core.theoryGroundImages
 bypassed: Fren.Impls.Theories.theory_variable_images remaining Fren.Core.theoryRemainingVariables
 bypassed: Fren.Impls.application accepted? Fren.Core.applicationAccepted

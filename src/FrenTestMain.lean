@@ -24,6 +24,7 @@ import FrenTest.TheoryDump
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
 import Heavy.Forecast
+import Heavy.Ownership
 import Impls
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -4424,7 +4425,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["heavyPrediction"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -4478,6 +4479,10 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus
     | none => throw (IO.userError s!"unknown corpus `{name}`")
+  | ["heavyOwnership"] => do
+    -- Build the Std-only module loaded by the test transport.
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_ownership_test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"heavy ownership differential check failed:\n{out.stdout}{out.stderr}"]
   | ["heavyPrediction"] => do
     -- The Heavy.Forecast import builds the module loaded by this transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }

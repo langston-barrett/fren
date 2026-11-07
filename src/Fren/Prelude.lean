@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren.Elab
+import Fren.Elab.DataTypes
 import FrenCore.Prelude
 -- keep-sorted end
 
