@@ -13,8 +13,10 @@ import FrenTest.ImplPath
 import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.MutateDecisions
+import FrenTest.NativeDiagnostics
 import FrenTest.OracleChecks
 import FrenTest.OutOfFuel
+import FrenTest.OwnSpecProgress
 import FrenTest.Quote
 import FrenTest.ReadingBeside
 import FrenTest.Resolved
@@ -1593,6 +1595,9 @@ binary runs it, marking what its threads share persistent
 (`FrenCli.Args.persist`), with its output (stdout and stderr) and exit
 code. Once in the process, since what it marks is never freed. -/
 def persistentRun (args : List String) : IO (Array String) := do
+  if (← IO.getEnv "FREN_OWN_DIAG_ACTIVE") == some "1" then
+    let progress ← FrenTest.OwnSpecProgress.journal
+    progress.write #["persistent-invocation", (toJson args).compress]
   let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.run args (persist := true))
   return #[toString code, out]
 
@@ -1627,9 +1632,13 @@ the tests' path, unmarked. -/
 def sharedAgrees (args : List String) (ref : IO (String × UInt32)) : IO Agreement := do
   let cmd :: rest := args | return .same
   let name := " ".intercalate (cmd :: (rest.filter (!·.startsWith "src/Reqs/")))
-  let out ← IO.Process.output
-    { cmd := (← IO.appPath).toString, args := #["--job", "persistentRun", cmd, "--jobs", "4"] ++ rest.toArray }
+  let childArgs := #["--job", "persistentRun", cmd, "--jobs", "4"] ++ rest.toArray
+  let out ← if (← FrenTest.NativeDiagnostics.ownEnabled) &&
+      FrenTest.NativeDiagnostics.ownRequirements args then
+      FrenTest.NativeDiagnostics.captureOwn childArgs
+    else IO.Process.output { cmd := (← IO.appPath).toString, args := childArgs }
   let (one, oneCode) ← ref
+  if let some failure := FrenTest.NativeDiagnostics.failure? out then return .differs failure
   let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
   unless out.stderr.isEmpty do
     return .differs s!"`fren {name}` on the binary's shared path wrote to stderr:\n{out.stderr}"
@@ -1696,16 +1705,19 @@ A case that differs only because queries reached their time limit
 fresh copy of the cache that the tests' path filled, and is skipped if it
 still differs so. The skips are printed on stdout as `skipped: …` lines,
 which `spawnJob` shows. -/
-def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none) : IO (Array String) := do
+def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none)
+    (progress : String → IO Unit := fun _ => pure ()) : IO (Array String) := do
   let root : FilePath := ".lake" / "shared-spec-test" / s!"{← IO.monoNanosNow}"
   try
     let mut failures := #[]
     let mut skips := #[]
     for args in sharedSpecUi do
+      progress s!"sharedSpec: {" ".intercalate args}"
       let ui := runFren (args.head! :: "--jobs" :: "1" :: args.tail)
       let (f, s) ← sharedCase (← sharedAgrees args ui) (sharedAgrees args ui)
       failures := failures ++ f
       skips := skips ++ s
+    progress "sharedSpec: requirements"
     let ref : IO (String × UInt32) ← match own? with
       | some own => pure (pure own)
       | none => do
@@ -1736,11 +1748,14 @@ chapter that the Lean front end does; Lean checks every chapter too
 (`hostedChecks`); and the binary's shared path agrees with the tests'
 (`sharedSpec`), with this job's query cache, once it is filled. -/
 def ownSpec : IO (Array String) := do
+  let progress ← FrenTest.OwnSpecProgress.journal
+  progress.phase "reading chapter list"
   let files ← ownSpecFiles
   let missing := (← hostedSpecFiles).filter (!files.contains ·)
   let (queryCache?, verifyQueryCache?) ← ownSpecCaches
-  let (out, code) ← IO.FS.withIsolatedStreams
-    (FrenCli.check { files, queryCache?, verifyQueryCache? })
+  progress.phase "checking requirements"
+  let (out, code) ← FrenTest.NativeDiagnostics.runInitial (files, queryCache?, verifyQueryCache?)
+  progress.phase "validating query-cache comparisons"
   -- A contradiction leaves a mark next to the cache, so that CI does not
   -- save it (`Reqs/dev/Testing#query-cache`).
   if let some dir := queryCache? then
@@ -1759,11 +1774,15 @@ def ownSpec : IO (Array String) := do
           "header, bump `FrenCli.queryCacheVersion`"]
       else pure #[]
     else pure #[]
+  progress.phase "checking hosted coverage"
+  let hosted ← hostedChecks
+  let shared ← sharedSpec queryCache? (some (unverified out, code)) progress.phase
+  progress.phase "complete"
   return (missing.map (s!"{·} is read by `#fren_md` but not in `ownSpecFiles`, so the binary does not check it"))
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
     ++ compared
-    ++ (← hostedChecks)
-    ++ (← sharedSpec queryCache? (some (unverified out, code)))
+    ++ hosted
+    ++ shared
 
 /-- A message that Lake kept in a module's trace, `src/Reqs/M.lean:L:C: text`
 or `src/Reqs/M.lean:L:C: warning: text`, about a Markdown spec that the
@@ -3711,9 +3730,11 @@ structure MethodRun where
 /-- The checks of `files` under an argument override, which takes precedence
 over even a scoped evidence setting in the source. -/
 def methodResults (files : Array String) (value : String) (jobs? : Option Nat := none) : IO MethodRun := do
+  FrenTest.NativeDiagnostics.checkpoint (#["methodResults", "start", value] ++ files)
   let record ← IO.mkRef #[]
   let args : FrenCli.Args := { files, evidence? := Fren.Core.evidenceOf? value, jobs? }
   let (output, code) ← IO.FS.withIsolatedStreams (FrenCli.check args (some record))
+  FrenTest.NativeDiagnostics.checkpoint (#["methodResults", "done", value, toString code] ++ files)
   return { records := ← record.get, diags := (output.splitOn "\n").toArray.filterMap header?, output, code }
 
 /-- A diagnostic that documents why this method cannot run a procedure.
@@ -4057,12 +4078,16 @@ def methodAgreementChecks : IO (Array String) := do
 /-- Forced enumeration and solver runs compare every check in their union,
 including the obligations and function checks that stay the solver's. -/
 def enumerationAgrees : IO (Array String) := do
+  FrenTest.NativeDiagnostics.checkpoint #["phase", "adapter-regressions"]
   let mut failures ← methodAgreementChecks
+  FrenTest.NativeDiagnostics.checkpoint #["phase", "SolverPairing"]
   failures := failures ++ (← FrenTest.SolverPairing.check)
   let mut compared := 0
   let mut hit : Array (String × String) := #[]
+  FrenTest.NativeDiagnostics.checkpoint #["phase", "corpus-selection"]
   let corpus ← enumerationCorpus
   for f in corpus do
+    FrenTest.NativeDiagnostics.checkpoint #["fixture", f.toString]
     let solver ← methodResults #[f.toString] "solver"
     let (fs, hs) := knownMethodFailures f.toString (methodRunFailures .solver solver (staticOK := true))
     failures := failures ++ fs.map (s!"{f}: solver: {·}\n{solver.output}")
@@ -4075,11 +4100,14 @@ def enumerationAgrees : IO (Array String) := do
     if traitMethodRejected .enumerated enumerated then
       IO.println s!"enumeration: {f}: unsupported trait evidence (F0215); no checks ran"
       continue
+    FrenTest.NativeDiagnostics.checkpoint #["phase", "compare", f.toString]
     let (fs, n, hs) := compareEnumeration f.toString solver enumerated
     failures := failures ++ fs
     compared := compared + n
     hit := hit ++ hs
+  FrenTest.NativeDiagnostics.checkpoint #["phase", "stale-exceptions"]
   failures := failures ++ staleExceptions (corpus.map (·.toString)) hit (methods := #[.solver, .enumerated])
+  FrenTest.NativeDiagnostics.checkpoint #["phase", "complete"]
   return FrenTest.Oracle.finish "enumeration" compared 500 failures
 
 /-- What `methodsAgree` counted. -/
@@ -4439,13 +4467,15 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
     ++ #[["implPaths"], ["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"]]
+    ++ (#["core", "wait", "own", "wrapper"].map (fun group => ["nativeDiagnostics", group]))
+    ++ #[["nativeObservation"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4482,6 +4512,22 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["smallValues"] => pure (Fren.Test.SmallValues.differences 300)
   | ["renderedSets"] => pure renderedSets
   | ["ownSpec"] => ownSpec
+  | ["ownSpecProgress"] => do
+    FrenTest.OwnSpecProgress.regression
+  | ["nativeDiagnostics", group] => FrenTest.NativeDiagnostics.regression group
+  | ["nativeObservation"] => FrenTest.NativeDiagnostics.observationRegression
+  | ["nativeObservationProbe"] => do
+    let journal ← FrenTest.OwnSpecProgress.journal
+    journal.phase "live-isolated-start"
+    discard <| IO.FS.withIsolatedStreams do
+      IO.println "isolated output must not escape"
+      IO.sleep 1000
+    journal.phase "live-isolated-done"
+    return #[]
+  | ["nativeDiagnosticProbe", "pass"] => FrenTest.NativeDiagnostics.probe false
+  | ["nativeDiagnosticProbe", "crash"] => FrenTest.NativeDiagnostics.probe true
+  | ["ownSpecProgressProbe", "pass"] => FrenTest.OwnSpecProgress.probe false
+  | ["ownSpecProgressProbe", "crash"] => FrenTest.OwnSpecProgress.probe true
   -- Run by `ownSpec` too, after it, with its query cache.
   | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
   -- Spawned by `sharedSpec` only: what it marks is never freed.
@@ -4562,19 +4608,27 @@ def jobName (job : List String) : IO String := do
 
 /-- Runs `job` in a process of its own, returning its failures. If `timed`,
 prints how long it took (`--timings`). -/
-def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
+def spawnJob (bless timed : Bool) (job : List String)
+    (cohort : Array (List String) := #[]) (workers : Nat := 1) : IO (Array String) := do
   let args := #["--job"] ++ job.toArray ++ (if bless then #["--bless"] else #[])
   let start ← IO.monoMsNow
   -- A `panic!` aborts the job, so that it fails however its output is
   -- read: one in a `fren` run within it, such as `Ex.eval`'s when it runs
   -- out of fuel (`outOfFuel`), prints into that run's captured output,
   -- which a ui test reads only for its messages.
-  let env := #[("LEAN_ABORT_ON_PANIC", some "1")]
+  let env := #[("LEAN_ABORT_ON_PANIC", some "1")] ++ (← FrenTest.OwnSpecProgress.liveEnv)
+  let env := if job == ["ownSpec"] then
+      env.push ("FREN_OWN_DIAG_CONTEXT", some (toJson (cohort, workers)).compress)
+    else env
   -- Both front ends' readers of solver models misread them (`Fren.Core.misreadModels`).
   let env := if job.head? == some "uiMisread" then env.push ("FREN_MISREAD_MODELS", some "1") else env
   -- Both front ends ask every query that has a model again (`Fren.Core.askAgainForced`).
   let env := if job.head? == some "uiAskAgain" then env.push ("FREN_ASK_AGAIN", some "1") else env
-  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args, env }
+  let (out, progress) ← if job == ["ownSpec"] then FrenTest.OwnSpecProgress.capture args env else do
+    let out ← if job == ["enumeration"] && (← FrenTest.NativeDiagnostics.enabled) then
+        FrenTest.NativeDiagnostics.capture args env cohort workers
+      else IO.Process.output { cmd := (← IO.appPath).toString, args, env }
+    pure (out, "")
   let name ← jobName job
   if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"
   -- A case that a job skipped, which it says on a `skipped: …` line, is
@@ -4589,7 +4643,7 @@ def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
       if out.stderr.isEmpty then return failures
       return failures.push s!"the job `{name}` wrote to stderr:\n{out.stderr}"
   | .error _ => pure ()
-  return #[s!"the job `{name}` crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"]
+  return #[s!"the job `{name}` crashed (exit {out.exitCode}):\n{progress}{out.stdout}{out.stderr}"]
 
 /-- At most this many jobs run at once, unless `FREN_TEST_JOBS` says
 otherwise. This is a heuristic, not a bound on memory: the solver's time
@@ -4612,22 +4666,60 @@ def jobCount : IO Nat := do
 /-- Runs `jobs`, at most `jobCount` at once, printing how long each took if
 `timed`. -/
 def runJobs (bless timed : Bool) (jobs : Array (List String)) : IO (Array String) := do
+  let workers ← jobCount
   let next ← IO.mkRef 0
   let worker : IO (Array String) := do
     let mut failures := #[]
     repeat
       let k ← next.modifyGet fun k => (k, k + 1)
       let some job := jobs[k]? | break
-      failures := failures ++ (← spawnJob bless timed job)
+      failures := failures ++ (← spawnJob bless timed job jobs workers)
     return failures
-  let tasks ← (List.range (← jobCount)).mapM fun _ => IO.asTask worker .dedicated
+  let tasks ← (List.range workers).mapM fun _ => IO.asTask worker .dedicated
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
 
-unsafe def main (args : List String) : IO UInt32 := do
+unsafe def runMain (args : List String) : IO UInt32 := do
+  if args == ["--native-observable-parent"] then
+    let (_, (out, _)) ← IO.FS.withIsolatedStreams do
+      FrenTest.OwnSpecProgress.capture #["--job", "nativeObservationProbe"]
+    IO.print out.stdout
+    IO.eprint out.stderr
+    return out.exitCode
   -- A fresh CLI process for `resolvedDump`, preserving its separate streams
   -- and exit code without requiring a separately built `fren` executable.
   if let "--job" :: "resolvedRun" :: args := args then
     return ← FrenCli.run args (persist := true)
+  if let ["--own-spec-initial-check", raw] := args then
+    let input ← IO.ofExcept ((Json.parse raw >>= fromJson? :
+      Except String FrenTest.NativeDiagnostics.InitialInput).mapError IO.userError)
+    let (text, code) ← FrenTest.NativeDiagnostics.initial input
+    IO.println (toJson #[toString code, text]).compress
+    return code
+  if let ["--native-initial-child", mode, raw] := args then
+    let input ← IO.ofExcept ((Json.parse raw >>= fromJson? :
+      Except String FrenTest.NativeDiagnostics.InitialInput).mapError IO.userError)
+    let (text, code) ← FrenTest.NativeDiagnostics.initial input (mode == "crash")
+    if mode == "stderr" then IO.eprintln "initial child stderr must survive"
+    IO.println (toJson #[toString code, text]).compress
+    return code
+  if let ["--native-initial-parent", mode] := args then
+    let input := (#["test/fixtures/own_spec_progress.fren"], none, none)
+    let (text, code) ← FrenTest.NativeDiagnostics.runInitial input (some mode)
+    IO.println (toJson #[toString code, text]).compress
+    return code
+  if args == ["--native-persistent-parent"] then
+    let out ← FrenTest.NativeDiagnostics.captureOwn #["--job", "persistentRun", "check", "--jobs", "4",
+      "test/fixtures/own_spec_progress.fren"]
+    FrenTest.NativeDiagnostics.requireSuccess out
+    IO.print out.stdout
+    return 0
+  if args == ["--own-spec-initial-target"] then
+    unless ← FrenTest.NativeDiagnostics.ownEnabled do
+      throw (IO.userError "the initial target requires FREN_DIAG_OWN_SPEC_INITIAL=1")
+    let (cache, verify) ← ownSpecCaches
+    let (text, code) ← FrenTest.NativeDiagnostics.runInitial (← ownSpecFiles, cache, verify)
+    IO.println (toJson #[toString code, text]).compress
+    return code
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
   if args == ["--rules-report"] then
     IO.print (← rulesReport)
@@ -4635,7 +4727,11 @@ unsafe def main (args : List String) : IO UInt32 := do
   if let "--job" :: job := args then
     IO.println (toJson (← runJob bless (job.filter (· != "--bless")))).compress
     return 0
-  let selected ← IO.ofExcept ((selectJobs args (← jobs)).mapError IO.userError)
+  -- A source-bound test of the same runner/wrapper with a small live
+  -- cohort. The CI invocation still selects its complete original shard.
+  let selected ← if args == ["--native-diagnostic-cohort-test"] then
+      pure #[["enumeration"], ["ownSpecProgress"]]
+    else IO.ofExcept ((selectJobs args (← jobs)).mapError IO.userError)
   let (first, rest) := selected.partition (bless && · == ["snapshots"])
   let timed := args.contains "--timings"
   let failures := ((← runJobs bless timed first) ++ (← runJobs bless timed rest)).qsort (· < ·)
@@ -4645,3 +4741,9 @@ unsafe def main (args : List String) : IO UInt32 := do
     return 0
   IO.eprintln s!"fren_test: {failures.size} failure(s); `lake test -- --bless` accepts new snapshots"
   return 1
+
+/-- Start the relay before captured jobs inherit their stream contexts. -/
+unsafe def main (args : List String) : IO UInt32 := do
+  if (← FrenTest.NativeDiagnostics.enabled) || (← FrenTest.NativeDiagnostics.ownEnabled) then
+    FrenTest.OwnSpecProgress.withLive (runMain args)
+  else runMain args

@@ -1,0 +1,5 @@
+-- The ownSpecProgress job checks that a native signal retains the active
+-- component's name outside the check's captured streams.
+proc first(x: Int): (y: Int) { ensure same: y = x }
+
+proc second(x: Int): (y: Int) { ensure same: y = x + 1 }
