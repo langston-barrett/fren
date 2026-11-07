@@ -437,6 +437,25 @@ pub proc shards_partition(remainder: Nat, j: Nat, k: Nat) {
 }
 ```
 
+With the same spec, checker and seed, the full run, a sample and every
+shard give each selected mutant the same normalized outcome.
+Whether the solver proves equivalence within its wall-clock time limit
+may differ, so survival and equivalence count as the same decision here:
+
+```fren
+pub proc same_decision(full: Outcome, other: Outcome): (det same?) {
+    let full_kind: Outcome := if full = Equivalent then Survived else full
+    let other_kind: Outcome := if other = Equivalent then Survived else other
+    ensure rule: same? iff full_kind = other_kind
+
+    expect reflexive: when full = other, same?
+    expect equivalent_full_survives_other: when full = Equivalent and other = Survived, same?
+    expect survived_full_equivalent_other: when full = Survived and other = Equivalent, same?
+    expect killed_stays_killed: when same? and full = Killed, other = Killed
+    expect unviable_stays_unviable: when same? and full = Unviable, other = Unviable
+}
+```
+
 ## Output
 
 Except with `--list`, every selected mutant gets exactly one decision.
@@ -505,25 +524,6 @@ expect valid_ids_examples(id: String, other: String) {
     expect duplicate: not valid_ids?(one, one, DecisionIds::Cons(id, one))
     expect unselected: not valid_ids?(one, DecisionIds::Nil, one)
     expect later_missing: not valid_ids?(both, both, one)
-}
-```
-
-With the same spec, checker and seed, the full run, a sample and every
-shard give each selected mutant the same normalized outcome.
-Whether the solver proves equivalence within its wall-clock time limit
-may differ, so survival and equivalence count as the same decision here:
-
-```fren
-pub proc same_decision(full: Outcome, other: Outcome): (det same?) {
-    let full_kind: Outcome := if full = Equivalent then Survived else full
-    let other_kind: Outcome := if other = Equivalent then Survived else other
-    ensure rule: same? iff full_kind = other_kind
-
-    expect reflexive: when full = other, same?
-    expect equivalent_full_survives_other: when full = Equivalent and other = Survived, same?
-    expect survived_full_equivalent_other: when full = Survived and other = Equivalent, same?
-    expect killed_stays_killed: when same? and full = Killed, other = Killed
-    expect unviable_stays_unviable: when same? and full = Unviable, other = Unviable
 }
 ```
 
