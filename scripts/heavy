@@ -1590,7 +1590,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     initial = (max_load(environ, state), slot_count(environ, state))
     record = {"enqueued_at": enqueued, "enqueued_max_load": "off" if initial[0] is None else initial[0],
               "enqueued_slots": initial[1], "wait_policy_changed": False}
-    kind = job_kind(command)
+    kind = environ.get("FREN_JOB_KIND") or job_kind(command)
     shown = shlex.join(command)
     if offline:
         try:
