@@ -193,6 +193,13 @@ pub mod testing
   clock or charging the original's runtime against a control budget.
   Command errors and the last operation/output remain in the report
   separately from an observation-budget error; neither may erase the other.
+  Helper failures retain each bounded error-query result independently.
+  On Linux they also retain actual owned-inferior transport observations:
+  debugger/kernel identity, selected thread, memory-read lengths and kernel
+  errno from ptrace and new/cached proc memory descriptors. No memory bytes
+  are reported. Partial facts are published before a GDB memory query, which
+  stays inside the existing control budget. These observations never grant
+  access, change dumpability or establish an original terminal verdict.
   The runner kills/reaps only its owned descendants, with bounded cleanup,
   and records cleanup exits separately from observed original statuses.
   Captured child output uses regular files so an inherited writer cannot
@@ -203,6 +210,8 @@ pub mod testing
   beside a peer that must remain alive. They also cover a real post-run
   command error after observed original completion, a still-running GDB
   after that completion, and a nonzero original with an inherited writer.
+  A real command failure at protected native startup checks raw transport
+  receipts while the original has no observed terminal status.
   These bind the requirement to OS/FFI
   integration coverage: Lean proofs of job placement or checker semantics
   cannot prove POSIX capture, debugger or kernel wait behaviour. SIGKILL,

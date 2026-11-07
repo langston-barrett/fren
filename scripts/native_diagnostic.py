@@ -25,7 +25,8 @@ def observe_state(report, state):
     report["debugger_state"] = {key: state[key] for key in (
         "operation", "operation_id", "completed_operation_id", "operation_output",
         "helper_complete", "error", "failed_operation", "started", "original_pid", "exit_code",
-        "terminal_signal", "terminal_status_source", "terminal_status_event", "terminal_wait") if key in state}
+        "terminal_signal", "terminal_status_source", "terminal_status_event", "terminal_wait",
+        "transport", "error_observations") if key in state}
     report["helper_error"] = state.get("error")
     if state.get("original_pid"):
         report["original_pid"] = state["original_pid"]
@@ -106,11 +107,16 @@ def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_P
                 while process.poll() is None:
                     now = time.monotonic()
                     state = read(root / "inferior.json") if executable else {}
+                    if executable and (root / "transport.json").exists():
+                        state.setdefault("transport", read(root / "transport.json"))
                     old_state = report.get("debugger_state")
                     old_terminal = report["original_exit"]
                     old_pid = report.get("original_pid")
                     if executable:
                         observe_state(report, state)
+                        transport = report["debugger_state"].get("transport")
+                        if transport and transport != (old_state or {}).get("transport"):
+                            retain("transport-observation", facts=transport)
                     if report["original_exit"] is not None and terminal_start is None:
                         terminal_start = now
                     observed_operation = state.get("operation", "starting")
@@ -177,6 +183,8 @@ def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_P
                     time.sleep(0.02)
                 interrupted = report["observation_status"] != "running"
                 state = read(root / "inferior.json") if executable else {}
+                if executable and (root / "transport.json").exists():
+                    state.setdefault("transport", read(root / "transport.json"))
                 # Only a real terminal observation made before cleanup
                 # is original evidence. Cleanup's SIGKILL is separate.
                 if executable:

@@ -83,6 +83,85 @@ def terminal_status():
     return False
 
 
+def transport_observation():
+    """Read only this debugger and its current inferior; retain no memory bytes."""
+    facts = {"kernel": os.uname().release, "gdb": gdb.VERSION}
+    if sys.platform != "linux":
+        return dict(facts, unavailable="Linux transport observation is unavailable")
+    facts["debugger_status"] = [line for line in Path("/proc/self/status").read_text().splitlines()
+                                if line.startswith(("Uid:", "Gid:", "CapEff:", "CapPrm:", "Seccomp:"))]
+    facts["uid_map"] = Path("/proc/self/uid_map").read_text()[:256]
+    save(root / "transport.json", facts)
+    inferior = gdb.selected_inferior()
+    pid = inferior.pid
+    facts["inferior_pid"] = pid
+    if not pid:
+        return facts
+    fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    facts["inferior_state"] = fields[0]
+    facts["inferior_ppid"] = int(fields[1])
+    if facts["inferior_ppid"] != os.getpid():
+        return dict(facts, unavailable="inferior is not this debugger's child")
+    thread = gdb.selected_thread()
+    facts["selected_ptid"] = thread.ptid if thread else None
+    save(root / "transport.json", facts)
+    # This exported native-test symbol supplies a real mapped code address.
+    # Report lengths/errno only, never the original's memory contents.
+    address = int(gdb.parse_and_eval("(void*)&fren_test_raise_abrt"))
+    facts["address_source"] = "fren_test_raise_abrt"
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.ptrace.restype = ctypes.c_long
+    libc.ptrace.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
+    tid = thread.ptid[1] if thread else pid
+    ctypes.set_errno(0)
+    result = libc.ptrace(2, tid, address, None)  # PTRACE_PEEKDATA, owned inferior only.
+    facts["peekdata"] = {"tid": tid, "returned_minus_one": result == -1, "errno": ctypes.get_errno()}
+    if os.uname().machine == "x86_64":
+        # ps_get_thread_area uses this same x86-64 fs_base register slot.
+        ctypes.set_errno(0)
+        result = libc.ptrace(3, tid, 21 * 8, None)  # PTRACE_PEEKUSER.
+        facts["peekuser_fs_base"] = {"tid": tid, "returned_minus_one": result == -1,
+                                     "errno": ctypes.get_errno()}
+    try:
+        directory = os.open(f"/proc/{pid}", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            # Pin this proc entry and recheck ownership before opening mem;
+            # PID reuse cannot redirect the relative open to another task.
+            with os.fdopen(os.open("stat", os.O_RDONLY, dir_fd=directory)) as entry:
+                parent = int(entry.read().rsplit(")", 1)[1].split()[1])
+            if parent != os.getpid():
+                raise PermissionError("proc entry is not this debugger's child")
+            fd = os.open("mem", os.O_RDONLY | os.O_CLOEXEC, dir_fd=directory)
+            try:
+                facts["new_proc_mem_read_bytes"] = len(os.pread(fd, 1, address))
+            finally:
+                os.close(fd)
+        finally:
+            os.close(directory)
+    except OSError as error:
+        facts["new_proc_mem_errno"] = error.errno
+    facts["cached_proc_mem"] = []
+    for entry in list(Path("/proc/self/fd").iterdir())[:256]:
+        try:
+            target = os.readlink(entry)
+            if target.startswith(f"/proc/{pid}/") and target.endswith("/mem"):
+                row = {"fd": int(entry.name), "target": target}
+                try:
+                    row["read_bytes"] = len(os.pread(int(entry.name), 1, address))
+                except OSError as error:
+                    row["errno"] = error.errno
+                facts["cached_proc_mem"].append(row)
+        except FileNotFoundError:
+            pass
+    save(root / "transport.json", facts)
+    # Publish the raw kernel results before a GDB memory query can block.
+    try:
+        facts["gdb_read_bytes"] = len(inferior.read_memory(address, 1))
+    except Exception as error:
+        facts["gdb_read_error"] = str(error)
+    return facts
+
+
 def reap_terminal(pid):
     # Linux GDB can remove a zombie leader before its final wait status
     # arrives. With no threads left it reports NO_RESUMED, then only
@@ -202,11 +281,20 @@ except BaseException as error:
     # query or GDB shutdown cannot finish. A budget error must not erase it.
     save(root / "inferior.json", state)
     terminal_status()
+    operation("error-transport")
+    try:
+        state["transport"] = transport_observation()
+    except Exception as detail:
+        state["transport"] = dict(read(root / "transport.json"), unavailable=str(detail))
+    save(root / "inferior.json", state)
+    state["error_observations"] = {}
     for command in ["info threads", "info program", "p $_exitsignal", "show scheduler-locking"]:
         try:
-            gdb.write(execute(command, "error-observation"))
+            output = execute(command, "error-observation")
+            state["error_observations"][command] = output[-2048:]
         except Exception as detail:
-            gdb.write(f"{command}: {detail}\n")
+            state["error_observations"][command] = str(detail)
+        save(root / "inferior.json", state)
 finally:
     terminal_status()
     # The helper returning does not imply that the debugger has exited.

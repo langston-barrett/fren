@@ -66,9 +66,16 @@ def main():
                 return [sys.executable, wrapper, "--report", str(root / (name + ".json")),
                         *options, "--", *(argv or [sys.executable, "-c", program])]
 
-            def execute(name, program, *options, argv=None):
+            def execute(name, program, *options, argv=None, env=None):
                 started = time.monotonic()
-                result = run(command(name, program, *options, argv=argv), timeout=10, peers=(peer.pid,))
+                try:
+                    result = run(command(name, program, *options, argv=argv), timeout=10, peers=(peer.pid,), env=env)
+                except NativeTimeout as error:
+                    report_file = root / (name + ".json")
+                    rows.append({"case": name, "seconds": time.monotonic() - started,
+                                 "status": None, "timeout": error.receipt,
+                                 "report": json.loads(report_file.read_text()) if report_file.exists() else None})
+                    raise
                 report = json.loads((root / (name + ".json")).read_text())
                 rows.append({"case": name, "seconds": time.monotonic() - started,
                     "status": result.returncode, "stdout": result.stdout,
@@ -130,6 +137,34 @@ def main():
             assert "controlled failure after original completion" in report["helper_error"], report
             assert report["debugger_state"]["failed_operation"]["operation"] == "run", report
             assert report["terminal_status_event"] == "exited" and report["fault_signal"] is None, report
+            assert set(report["debugger_state"]["error_observations"]) == {
+                "info threads", "info program", "p $_exitsignal", "show scheduler-locking"}, report
+
+            if sys.platform == "linux":
+                # Stop the real native original after its coreless startup
+                # hook, then fail a real GDB command. Raw transport results
+                # describe this still-owned inferior, not a supplied health flag.
+                commands.write_text("define hook-run\nbreak lean_initialize\nend\n"
+                    "define hookpost-run\npython raise RuntimeError('controlled live transport observation')\nend\n")
+                live = root / "transport.jsonl"
+                live.touch()
+                result, report = execute("live-transport-error", "", "--debugger", str(blocked),
+                    argv=[driver, "--job", "nativeDiagnosticProbe", "pass"],
+                    env=dict(os.environ, FREN_NATIVE_LIVE_FILE=str(live)))
+                assert result.returncode == 125 and not result.stdout, rows[-1]
+                assert report["original_exit"] is None and report["fault_signal"] is None, report
+                assert "controlled live transport observation" in report["helper_error"], report
+                facts = report["debugger_state"]["transport"]
+                assert facts["inferior_pid"] == report["original_pid"], facts
+                assert facts["inferior_ppid"] == report["observer_child_pid"], facts
+                assert facts["gdb_read_bytes"] == 1 and facts["cached_proc_mem"], facts
+                assert all(row.get("read_bytes") == 1 or "errno" in row
+                           for row in facts["cached_proc_mem"]), facts
+                assert isinstance(facts["peekdata"]["errno"], int), facts
+                assert "new_proc_mem_read_bytes" in facts or "new_proc_mem_errno" in facts, facts
+                assert facts["debugger_status"] and facts["kernel"] and facts["gdb"], facts
+                events = [json.loads(line) for line in live.read_text().splitlines()]
+                assert any(row["native"] == "transport-observation" for row in events), events
 
             # The original really exits while gdb.execute('run') is still
             # inside its post-run hook. This must become bounded control
