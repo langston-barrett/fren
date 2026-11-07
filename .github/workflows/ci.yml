@@ -230,6 +230,7 @@ jobs:
         fi
     - run: lake test -- --timings --shard "$SHARD/5"
       env:
+        FREN_DIAG_ENUMERATION: "1"
         FREN_DIAG_OWN_SPEC_INITIAL: "1"
         SHARD: ${{ matrix.shard }}
         FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
