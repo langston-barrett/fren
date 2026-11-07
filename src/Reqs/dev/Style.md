@@ -23,8 +23,9 @@ examples, since Fren's are checked.
   of a rule, or the discussion that led to it.
 - Each page makes sense on its own. It says what it builds on, and defines
   each term it uses or links to where the term is defined.
-- Name a technique by its standard name and say what it means for Fren,
-  rather than citing a paper or a particular approach.
+- Name a technique by its standard name and say what it means for Fren. A
+  citation of a paper is welcome when the page also explains what the page
+  takes from it; never rely on the reader having read it.
 - Show each construct with a Fren example.
 - Issues are written by the same rules.
 
