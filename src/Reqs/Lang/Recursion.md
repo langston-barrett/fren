@@ -236,6 +236,28 @@ pub proc structural_group_search(counts: Seq<Int>, uses: Seq<GroupUse>): (det fo
     ensure rule: found? iff (exists (members: Seq<GroupParameter>),
         group_counts_match?(counts, members) and group_structural?(members, uses))
 }
+
+set_option fren.lint.undecidable "allow" in
+pub fn group_position_used?(uses: Seq<GroupUse>, member: Int) :=
+    exists (k: Int), 0 <= k < uses.len and (uses[k].caller = member or uses[k].callee = member)
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "solver" in
+pub proc group_search_positions(count: Int, uses: Seq<GroupUse>, member: Int): (det choices: Int) {
+    out choices := if count <= 0 then 0 else if group_position_used?(uses, member) then count else 1
+    expect empty: when count <= 0, choices = 0
+    expect unused: when 0 < count and not group_position_used?(uses, member), choices = 1
+    expect used: when 0 < count and group_position_used?(uses, member), choices = count
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "solver" in
+pub proc group_search_prefix(members: Seq<GroupParameter>, uses: Seq<GroupUse>): (det compatible?) {
+    ensure rule: compatible? iff (forall (k: Int), when 0 <= k < uses.len,
+        uses[k].form = RecForm::Applied and 0 <= uses[k].caller and 0 <= uses[k].callee
+        and (when uses[k].caller < members.len and uses[k].callee < members.len,
+        group_call_decreases?(members, uses[k])))
+}
 ```
 
 `Core.structuralGroup` is bound to `lang::structural_group` with an `impl`
@@ -244,12 +266,33 @@ bound to `lang::structural_group_search`: a choice must exist, rather than
 merely pass when the caller supplies one. `Core.recursionGroup`
 searches the finite product of the members' parameter positions in
 lexicographic order and returns the first accepted candidate, or none if
-there is none. Each member therefore keeps one position across every call
+there is none. It constructs one partial selection at a time and stops at
+the first success; it never materializes the Cartesian product. It checks
+raw call constraints as soon as both endpoints have positions, discarding
+an incompatible prefix before visiting its descendants. A member with no
+incident call constraint tries only position zero, including when a later
+constraint is unsatisfiable. These choices come from the raw uses, not a
+caller-supplied validity or reachability flag. `lang::group_search_positions`
+bounds the ascending range of positions to the member's arity, or one for
+an unconstrained member; `lang::group_search_prefix` checks the actual
+partial assignment.
+Their implementations are used by the shared search in both front ends.
+Constrained unsatisfiable searches may still take exponential time, but no
+cutoff removes a valid selection or changes diagnostics. Each member
+therefore keeps one position across every call
 to and from it. A member with no parameters has no candidate. An empty
 group has the empty candidate. Existing self-recursion with no uses remains
 nonrecursive; otherwise its singleton adapter chooses exactly the first
 parameter at which every self-application decreases, preserving the
 structural-recursion rule and its diagnostics.
+
+The original selection proof specified existence and acceptance, not eager
+allocation. The incremental search is proved equal to the exhaustive first
+choice for arbitrary finite inputs. The transition requirements above and
+the production scaling regression in `FrenTest.FuzzRecursion` additionally
+cover resource behavior: thirty independent two-parameter definitions and
+sparse late cross-calls run through both readers. These checks do not prove
+Lean's allocator or a universal running-time bound.
 
 ## Meaning
 
@@ -1103,6 +1146,8 @@ only uninterpreted functions to quantifier-free queries.
 #fren_check structural_recursion
 #fren_check structural_group
 #fren_check structural_group_search
+#fren_check group_search_positions
+#fren_check group_search_prefix
 #fren_check group_member
 #fren_check group_scope
 #fren_check group_dependencies

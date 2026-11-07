@@ -117,16 +117,50 @@ def structuralGroup (members : List GroupParameter) (uses : List GroupUse) : Boo
   members.all (fun m => decide (0 ≤ m.decreasing ∧ m.decreasing < m.count)) &&
     uses.all (groupCallDecreases members)
 
-/-- The finite product of parameter positions, in lexicographic order. -/
+/-- The finite product in lexicographic order: a mathematical reference for
+proofs and small oracle tests, not the production search. -/
 def groupCandidates : List Int → List (List GroupParameter)
   | [] => [[]]
   | n :: ns => (List.range n.toNat).flatMap fun (i : Nat) =>
       (groupCandidates ns).map ({ count := n, decreasing := (i : Int) } :: ·)
 
-/-- Infers one decreasing position per member, consistently across all edges.
-No candidate is available for a member with zero (or negative) parameters. -/
+/-- Whether a member participates in any raw call constraint. -/
+def groupPositionUsed (uses : List GroupUse) (i : Nat) : Bool :=
+  uses.any fun u => u.caller == (i : Int) || u.callee == (i : Int)
+
+/-- Try positions in order, but only zero for a member with no incident
+constraint (`lang::group_search_positions`). An invalid count has no choice. -/
+def groupPositionCount (n : Int) (uses : List GroupUse) (i : Nat) : Nat :=
+  if groupPositionUsed uses i then n.toNat else if 0 < n then 1 else 0
+
+/-- Check each constraint whose two endpoints have been assigned. Invalid
+forms and negative indices already fail, even at the empty prefix
+(`lang::group_search_prefix`). -/
+def groupPrefixCompatible (pre : List GroupParameter) (uses : List GroupUse) : Bool :=
+  uses.all fun u => u.form == .applied && decide (0 ≤ u.caller ∧ 0 ≤ u.callee) &&
+    (if u.caller < pre.length ∧ u.callee < pre.length then groupCallDecreases pre u else true)
+
+/-- Depth-first search in declaration/parameter order. `findSome?` invokes
+one child at a time and stops at the first success. Reject an incompatible
+prefix before descending; do not retain a product of complete selections. -/
+def groupSearch (uses : List GroupUse) (pre : List GroupParameter) :
+    List Int → Option (List GroupParameter)
+  | [] => if structuralGroup pre uses then some pre else none
+  | n :: ns =>
+    if groupPrefixCompatible pre uses then
+      (List.range (groupPositionCount n uses pre.length)).findSome? fun i =>
+        groupSearch uses (pre ++ [{ count := n, decreasing := (i : Int) }]) ns
+    else none
+
+/-- Infer the first admissible selection without materializing the finite
+product. Every member needs a positive count, and every raw edge needs valid
+indices. These checks also reject malformed signatures before searching. -/
 def recursionGroup (params : List Int) (uses : List GroupUse) : Option (List GroupParameter) :=
-  (groupCandidates params).find? (structuralGroup · uses)
+  if params.all (fun n => decide (0 < n)) &&
+      uses.all (fun u => decide (0 ≤ u.caller ∧ u.caller < params.length ∧
+        0 ≤ u.callee ∧ u.callee < params.length)) then
+    groupSearch uses [] params
+  else none
 
 /-- Reads the provenance relevant to a singleton group. An argument at
 position `i` is compared with parameter `i`; other positions cannot decide

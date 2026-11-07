@@ -4439,6 +4439,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
+    ++ (FrenTest.FuzzRecursion.searchScalingCases.map fun (name, _) => ["mutualSearch", name]).toArray
     ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
@@ -4458,6 +4459,14 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | "uiMisread" :: files => runJob bless ("ui" :: files)
   -- Spawned with `FREN_ASK_AGAIN` set (`spawnJob`).
   | "uiAskAgain" :: files => runJob bless ("ui" :: files)
+  | ["mutualSearch", name] => do
+    let some text := FrenTest.FuzzRecursion.searchScalingCases.lookup name
+      | throw (IO.userError s!"unknown mutual-search case `{name}`")
+    let dir : FilePath := ".lake" / "mutual-search"
+    IO.FS.createDirAll dir
+    let path := dir / s!"{name}.fren"
+    IO.FS.writeFile path text
+    runJob bless ["ui", path.toString]
   | ["leanTokens"] => leanTokens
   | ["panicGuard"] => panicGuard
   -- Spawned by `panicGuard` only: it panics.

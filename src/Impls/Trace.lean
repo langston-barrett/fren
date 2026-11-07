@@ -82,6 +82,8 @@ tested lang::structural_group: "src/FrenTest/MutualRecursion.lean",
   "test/ui/lang/mutual_recursion.fren", "test/ui/lang/mutual_recursion_predicate.fren",
   "test/ui/lang/mutual_recursion_static.fren"
 tested lang::structural_group_search: "src/FrenTest/MutualRecursion.lean"
+tested lang::group_search_positions: "src/FrenTest/MutualRecursion.lean"
+tested lang::group_search_prefix: "src/FrenTest/MutualRecursion.lean"
 tested lang::group_member: "src/FrenTest/MutualRecursion.lean", "test/cli/types/f0451_mutual_member.fren",
   "test/ui/lang/mutual_recursion.fren", "test/ui/lang/mutual_recursion_static.fren"
 tested lang::group_scope: "src/FrenTest/MutualRecursion.lean",

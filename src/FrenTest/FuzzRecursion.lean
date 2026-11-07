@@ -214,4 +214,42 @@ def genGroupCase : R Case := do
 
 def genGroup : R String := do return (← genGroupCase).text
 
+/-- Production UI inputs for the search resource regression. These draw no
+random numbers and leave every existing seed's generated text unchanged. -/
+def searchScalingCases : List (String × String) := Id.run do
+  let n := 30
+  let pre := groupPrelude ++ "set_option fren.lint.assertions_on_constants \"allow\"\n"
+  let mut independent := pre ++ "mutual {\n"
+  for i in List.range n do
+    independent := independent ++ s!"pub fn independent{i}(x: Int, y: Int): Int := x + y\n"
+  independent := independent ++ "}\nset_option fren.evidence \"enumerated\" in\n" ++
+    "expect all_members: " ++ " + ".intercalate ((List.range n).map fun i => s!"independent{i}(1, 2)") ++
+    " = 90\n--@ summary: 1 passed, 0 failed, 0 inconclusive, 0 redundant\n"
+  let linked (bad : Bool) := Id.run do
+    let mut text := pre ++ "pub enum SearchTree { End, Next(SearchTree) }\nmutual {\n" ++
+      (if bad then "pub fn first(a: SearchTree, b: SearchTree): Int := 0\n"
+       else "pub fn first(x: Int, t: SearchTree): Int := x\n")
+    for i in List.range (n - 2) do
+      text := text ++ s!"pub fn middle{i}(x: Int, y: Int): Int := x + y\n"
+    text := text ++ "pub fn last(t: SearchTree, x: Int): Int := match t {\nSearchTree::End => x,\n"
+    text := text ++ (if bad then
+        "SearchTree::Next(rest) => first(rest, SearchTree::End) + first(SearchTree::End, rest),  --~ error: mutual group is not structurally recursive\n"
+      else "SearchTree::Next(rest) => first(x, rest),\n")
+    text := text ++ "}\n}\n"
+    return if bad then text ++ "--@ exit: 2\n" else text ++
+      "set_option fren.evidence \"enumerated\" in\nexpect cross_call: last(SearchTree::Next(SearchTree::End), 7) = 7\n" ++
+      "set_option fren.evidence \"enumerated\" in\nexpect first_value: first(7, SearchTree::End) = 7\n" ++
+      "set_option fren.evidence \"enumerated\" in\nexpect middle_value: middle0(1, 2) = 3\n" ++
+      "--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant\n"
+  let mut cycle := pre ++ "pub enum SearchTree { End, Next(SearchTree) }\nmutual {\n"
+  for i in List.range n do
+    cycle := cycle ++ s!"pub fn cycle{i}(t: SearchTree, x: Int): Int := match t \{\n" ++
+      s!"SearchTree::End => x, SearchTree::Next(rest) => cycle{(i + 1) % n}(rest, x) }\n"
+  cycle := cycle ++ "}\nset_option fren.evidence \"enumerated\" in\n" ++
+    "expect cycle_value: cycle0(SearchTree::Next(SearchTree::End), 7) = 7\n" ++
+    "set_option fren.evidence \"enumerated\" in\nexpect cycle_base: cycle0(SearchTree::End, 7) = 7\n" ++
+    s!"set_option fren.evidence \"enumerated\" in\nexpect cycle_wrap: cycle{n - 1}(SearchTree::Next(SearchTree::End), 7) = 7\n" ++
+    "--@ summary: 3 passed, 0 failed, 0 inconclusive, 0 redundant\n"
+  return [("independent", independent), ("late", linked false), ("unsatisfiable", linked true), ("cycle", cycle)]
+
 end FrenTest.FuzzRecursion

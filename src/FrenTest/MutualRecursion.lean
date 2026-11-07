@@ -3,7 +3,7 @@ import Impls.Recursion
 /-! The shared termination model and generated mutual definitions for #604.
 fren-covers: lang::structural_group, lang::structural_group_search
 fren-covers: lang::group_member, lang::group_scope
-fren-covers: lang::group_dependencies
+fren-covers: lang::group_dependencies, lang::group_search_positions, lang::group_search_prefix
 -/
 
 namespace FrenTest.MutualRecursion
@@ -36,6 +36,19 @@ private def chosen (ns : List Int) (us : List GroupUse) : Option (List Int) :=
 private def cross : List GroupUse :=
   [{ caller := 0, callee := 1, form := .applied, args := [.other, .payload 0] },
    { caller := 1, callee := 0, form := .applied, args := [.payload 1, .other] }]
+
+-- Candidate domains and prefix rejection are production helpers, not
+-- supplied validity flags. Unconstrained members have a single choice.
+#guard groupPositionCount 3 [] 0 == 1
+#guard groupPositionCount 0 [] 0 == 0
+#guard groupPositionCount (-1) [] 0 == 0
+#guard groupPositionCount 3 cross 0 == 3
+#guard groupPositionCount 3 cross 2 == 1
+#guard groupPrefixCompatible [] cross
+#guard groupPrefixCompatible [{ count := 2, decreasing := 0 }] cross
+#guard !groupPrefixCompatible [{ count := 2, decreasing := 0 }, { count := 2, decreasing := 0 }] cross
+#guard groupPrefixCompatible [{ count := 2, decreasing := 0 }, { count := 2, decreasing := 1 }] cross
+#guard !groupPrefixCompatible [] (cross.map fun u => { u with form := .inClosure })
 
 #guard chosen [2, 2] cross == some [0, 1]
 #guard chosen [2, 2] (cross.reverse) == some [0, 1]
