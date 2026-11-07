@@ -113,15 +113,15 @@ input_dir codes_md where
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
--- `Fren.Elab`, the hosted front end's elaborators, is compiled without
--- optimization. Only the executables that load `Fren` run its C code
+-- `Fren.Elab` and its submodules, the hosted elaborators, are compiled
+-- without optimization. Only the executables that load `Fren` run this C code
 -- (`fren_test`, `fren_fuzz_frontends`, `fren_coverage`): `lean` interprets
--- it on every build of `Reqs`. At `-O3`, clang took 17 s on it, on the path
--- of `lake test`'s build; at `-O0` it takes 3 s, and `lake test`'s run takes
--- no longer. A build reaches it only through `Fren`'s imports, so it is
--- built here (see the top of this file).
+-- the elaborators on every build of `Reqs`. On the original single module,
+-- clang took 17 s at `-O3` on the path of `lake test`'s build, and 3 s at
+-- `-O0`, with no longer test runs. The library gives every elaborator module
+-- these compiler arguments (see the top of this file).
 lean_lib FrenElab where
-  globs := #[`Fren.Elab]
+  globs := #[.andSubmodules `Fren.Elab]
   moreLeancArgs := coverageArgs ++ #["-O0"]
   moreLeanArgs := coverageLeanArgs
 
@@ -699,6 +699,12 @@ target mimalloc_lazy_commit.o pkg : FilePath := do
   let src ← inputTextFile (pkg.dir / "c" / "mimalloc_lazy_commit.c")
   buildO (pkg.buildDir / "c" / "mimalloc_lazy_commit.o") src #["-I", (← getLeanIncludeDir).toString] #["-std=gnu17", "-fPIC", "-O2"]
 
+-- Process-local core protection after exec, only for the test driver's
+-- explicitly protected children (`c/native_test_core.c`).
+target native_test_core.o pkg : FilePath := do
+  let src ← inputTextFile (pkg.dir / "c" / "native_test_core.c")
+  buildO (pkg.buildDir / "c" / "native_test_core.o") src #["-I", (← getLeanIncludeDir).toString] #["-std=gnu17", "-fPIC", "-O2"]
+
 -- The standalone binary for `.fren` files: a native executable with cvc5
 -- linked in, needing no .olean files at runtime. There is no module `FrenCli`,
 -- so the library is its modules.
@@ -723,8 +729,10 @@ lean_lib FrenCli where
 -- `lake test`: ui tests through both front ends, and snapshot tests for the
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
 lean_exe fren_test where
+  -- The executable smoke job must exercise a freshly built fuzzer.
+  needs := #[`@/fren_fuzz_frontends]
   root := `FrenTestMain
-  moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
+  moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o, `@/native_test_core.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs
 

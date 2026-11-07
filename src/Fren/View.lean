@@ -1,6 +1,6 @@
 -- keep-sorted start
 import Fren.Check
-import Fren.Elab
+import Fren.Elab.SubsetTypes
 import Fren.Enumerate
 import Fren.Prelude
 import Fren.RecursiveProof

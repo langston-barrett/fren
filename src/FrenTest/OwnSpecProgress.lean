@@ -62,12 +62,15 @@ def capture (args : Array String) (env : Array (String × Option String) := #[])
   IO.FS.withTempFile fun _ path => do
     let out ← IO.Process.output {
       cmd := "sh", args := #["-c", "ulimit -c 0 && exec \"$@\"", "sh", (← IO.appPath).toString] ++ args,
-      env := env.push ("FREN_OWN_SPEC_PROGRESS", some path.toString) }
+      env := env.push ("FREN_OWN_SPEC_PROGRESS", some path.toString)
+        |>.push ("FREN_NATIVE_CORELESS", some "1") }
     return (out, summary (← IO.FS.readFile path))
 
 /-- A real check whose first component can receive SIGFPE, after its
 entry is flushed. The parent disables core dumps before starting it. -/
 def probe (crash : Bool) : IO (Array String) := do
+  if crash && (← IO.getEnv "FREN_NATIVE_CORELESS") != some "1" then
+    throw (IO.userError "the signal probe requires FREN_NATIVE_CORELESS=1")
   let file := "test/fixtures/own_spec_progress.fren"
   let j ← journal
   j.phase "checking requirements"

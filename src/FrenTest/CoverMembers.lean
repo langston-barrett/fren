@@ -1,6 +1,6 @@
 -- keep-sorted start
 import Fren.Check
-import Fren.Elab
+import Fren.Elab.GlobalBlocks
 -- keep-sorted end
 open Fren.Lang
 mod cover_members

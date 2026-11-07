@@ -2,6 +2,7 @@
 import Fren
 import FrenCli.Eval
 import FrenCli.Run
+import FrenTest.Conformance
 import FrenTest.Expansion
 import FrenTest.ExpansionFuzz
 import FrenTest.Frontends
@@ -13,6 +14,7 @@ import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.MutateDecisions
 import FrenTest.NativeDiagnostics
+import FrenTest.OracleChecks
 import FrenTest.OutOfFuel
 import FrenTest.OwnSpecProgress
 import FrenTest.Quote
@@ -24,6 +26,7 @@ import FrenTest.TheoryDump
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
 import Heavy.Forecast
+import Heavy.Ownership
 import Impls
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -1592,6 +1595,9 @@ binary runs it, marking what its threads share persistent
 (`FrenCli.Args.persist`), with its output (stdout and stderr) and exit
 code. Once in the process, since what it marks is never freed. -/
 def persistentRun (args : List String) : IO (Array String) := do
+  if (← IO.getEnv "FREN_OWN_DIAG_ACTIVE") == some "1" then
+    let progress ← FrenTest.OwnSpecProgress.journal
+    progress.write #["persistent-invocation", (toJson args).compress]
   let (out, code) ← IO.FS.withIsolatedStreams (FrenCli.run args (persist := true))
   return #[toString code, out]
 
@@ -1626,9 +1632,13 @@ the tests' path, unmarked. -/
 def sharedAgrees (args : List String) (ref : IO (String × UInt32)) : IO Agreement := do
   let cmd :: rest := args | return .same
   let name := " ".intercalate (cmd :: (rest.filter (!·.startsWith "src/Reqs/")))
-  let out ← IO.Process.output
-    { cmd := (← IO.appPath).toString, args := #["--job", "persistentRun", cmd, "--jobs", "4"] ++ rest.toArray }
+  let childArgs := #["--job", "persistentRun", cmd, "--jobs", "4"] ++ rest.toArray
+  let out ← if (← FrenTest.NativeDiagnostics.ownEnabled) &&
+      FrenTest.NativeDiagnostics.ownRequirements args then
+      FrenTest.NativeDiagnostics.captureOwn childArgs
+    else IO.Process.output { cmd := (← IO.appPath).toString, args := childArgs }
   let (one, oneCode) ← ref
+  if let some failure := FrenTest.NativeDiagnostics.failure? out then return .differs failure
   let last := ((out.stdout.splitOn "\n").filter (!·.isEmpty)).getLast?.getD ""
   unless out.stderr.isEmpty do
     return .differs s!"`fren {name}` on the binary's shared path wrote to stderr:\n{out.stderr}"
@@ -1744,8 +1754,7 @@ def ownSpec : IO (Array String) := do
   let missing := (← hostedSpecFiles).filter (!files.contains ·)
   let (queryCache?, verifyQueryCache?) ← ownSpecCaches
   progress.phase "checking requirements"
-  let (out, code) ← IO.FS.withIsolatedStreams
-    (FrenCli.check { files, queryCache?, verifyQueryCache? } (progress? := some progress.component))
+  let (out, code) ← FrenTest.NativeDiagnostics.runInitial (files, queryCache?, verifyQueryCache?)
   progress.phase "validating query-cache comparisons"
   -- A contradiction leaves a mark next to the cache, so that CI does not
   -- save it (`Reqs/dev/Testing#query-cache`).
@@ -2387,21 +2396,6 @@ def sequenceCorpus (n : Nat) : String := Id.run do
 def corpora : List (String × (Nat → String)) :=
   [("strings", stringCorpus), ("sets", setCorpus), ("relations", relationCorpus), ("sequences", sequenceCorpus)]
 
-/-- The fixed conformance corpus must execute checks, report no
-internal error, and leave no query undecided, including at a limit.
-Only evidence downgraded because its premise did not pass is allowed. -/
-def conformanceDecided (out : String) : Bool := Id.run do
-  let resting := (out.splitOn "warning[F0664]").length - 1
-  let some summary := (out.splitOn "\n").find? (·.startsWith "fren: ") | return false
-  let counts := ((summary.drop 6).toString.splitOn ", ").filterMap fun s => (s.splitOn " ").head?.bind String.toNat?
-  return counts.any (· > 0) && !out.contains "internal error:".toSlice &&
-    !out.contains "could not check".toSlice && summary.contains s!" {resting} inconclusive".toSlice
-
-#guard conformanceDecided "fren: 1 passed, 0 failed, 0 inconclusive, 0 redundant"
-#guard !conformanceDecided "fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant"
-#guard !conformanceDecided "internal error: bug\nfren: 1 passed, 0 failed, 0 inconclusive, 0 redundant"
-#guard !conformanceDecided "fren: 1 passed, 0 failed, 1 inconclusive, 0 redundant"
-
 /-- The solver decides every query of the corpus `name`: nothing is
 inconclusive but a pass that rests on a check that did not pass, such as
 an expectation of a procedure whose assumptions contradict each other
@@ -2410,10 +2404,8 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
   IO.FS.createDirAll (".lake" / "corpus")
   let file := s!".lake/corpus/{name}.fren"
   IO.FS.writeFile file (corpus 40)
-  let (out, _) ← runFren ["check", file]
-  if !conformanceDecided out then
-    return #[s!"the {name} corpus ({file}) is not decided:\n{out}"]
-  return #[]
+  let (out, code) ← runFren ["check", file]
+  return (FrenTest.Conformance.failures out code.toNat).map (s!"the {name} corpus ({file}): {·}\n{out}")
 
 /-- `src` laid out again at random, from `seed`, as `fmt::layout_free`
 allows: each gap whose line break a list or block decides, or that before
@@ -4108,7 +4100,7 @@ def enumerationAgrees : IO (Array String) := do
   FrenTest.NativeDiagnostics.checkpoint #["phase", "stale-exceptions"]
   failures := failures ++ staleExceptions (corpus.map (·.toString)) hit (methods := #[.solver, .enumerated])
   FrenTest.NativeDiagnostics.checkpoint #["phase", "complete"]
-  return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
+  return FrenTest.Oracle.finish "enumeration" compared 500 failures
 
 /-- What `methodsAgree` counted. -/
 structure MethodCounts where
@@ -4448,6 +4440,13 @@ def panicGuard : IO (Array String) := do
   | _, _ => failures := failures.push s!"`outOfFuel` crashed without `LEAN_ABORT_ON_PANIC` (exit {code}):\n{err}"
   return failures
 
+/-- Independent executable scenarios, split for the 30-second per-job
+budget. Together they run every case in `fuzz_frontends_driver_test.py`. -/
+def frontendFuzzDriverCases : Array String :=
+  #["test_odd_ranges", "test_crash_recovers_and_waits_for_peer",
+    "test_single_ranges", "test_timeouts_are_recorded_in_both_lanes",
+    "test_invalid_jobs", "test_empty_ranges"]
+
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
 def jobs : IO (Array (List String)) := do
   -- The ui tests of `misreadDir` run with the readers' injected bug.
@@ -4460,8 +4459,9 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["heavyPrediction"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+    ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -4521,11 +4521,21 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus
     | none => throw (IO.userError s!"unknown corpus `{name}`")
+  | ["heavyOwnership"] => do
+    -- Build the Std-only module loaded by the test transport.
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_ownership_test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"heavy ownership differential check failed:\n{out.stdout}{out.stderr}"]
   | ["heavyPrediction"] => do
     -- The Heavy.Forecast import builds the module loaded by this transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"heavy forecast differential check failed:\n{out.stdout}{out.stderr}"]
+  | ["frontendFuzzDriver", name] => do
+    unless frontendFuzzDriverCases.contains name do
+      throw (IO.userError s!"unknown front-end driver case `{name}`")
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/fuzz_frontends_driver_test.py", s!"DriverTests.{name}"] }
+    return if out.exitCode == 0 then #[] else #[s!"front-end fuzzer executable case {name} failed:\n{out.stdout}{out.stderr}"]
   | ["formatting"] => formatting
+  | ["oracleGuards"] => pure FrenTest.OracleChecks.check
   | ["fixing"] => fixing
   | ["libraries"] => libraries
   | ["lintChapters"] => lintChapters
@@ -4587,6 +4597,9 @@ def spawnJob (bless timed : Bool) (job : List String)
   -- out of fuel (`outOfFuel`), prints into that run's captured output,
   -- which a ui test reads only for its messages.
   let env := #[("LEAN_ABORT_ON_PANIC", some "1")]
+  let env := if job == ["ownSpec"] then
+      env.push ("FREN_OWN_DIAG_CONTEXT", some (toJson (cohort, workers)).compress)
+    else env
   -- Both front ends' readers of solver models misread them (`Fren.Core.misreadModels`).
   let env := if job.head? == some "uiMisread" then env.push ("FREN_MISREAD_MODELS", some "1") else env
   -- Both front ends ask every query that has a model again (`Fren.Core.askAgainForced`).
@@ -4650,6 +4663,37 @@ unsafe def main (args : List String) : IO UInt32 := do
   -- and exit code without requiring a separately built `fren` executable.
   if let "--job" :: "resolvedRun" :: args := args then
     return ← FrenCli.run args (persist := true)
+  if let ["--own-spec-initial-check", raw] := args then
+    let input ← IO.ofExcept ((Json.parse raw >>= fromJson? :
+      Except String FrenTest.NativeDiagnostics.InitialInput).mapError IO.userError)
+    let (text, code) ← FrenTest.NativeDiagnostics.initial input
+    IO.println (toJson #[toString code, text]).compress
+    return code
+  if let ["--native-initial-child", mode, raw] := args then
+    let input ← IO.ofExcept ((Json.parse raw >>= fromJson? :
+      Except String FrenTest.NativeDiagnostics.InitialInput).mapError IO.userError)
+    let (text, code) ← FrenTest.NativeDiagnostics.initial input (mode == "crash")
+    if mode == "stderr" then IO.eprintln "initial child stderr must survive"
+    IO.println (toJson #[toString code, text]).compress
+    return code
+  if let ["--native-initial-parent", mode] := args then
+    let input := (#["test/fixtures/own_spec_progress.fren"], none, none)
+    let (text, code) ← FrenTest.NativeDiagnostics.runInitial input (some mode)
+    IO.println (toJson #[toString code, text]).compress
+    return code
+  if args == ["--native-persistent-parent"] then
+    let out ← FrenTest.NativeDiagnostics.captureOwn #["--job", "persistentRun", "check", "--jobs", "4",
+      "test/fixtures/own_spec_progress.fren"]
+    FrenTest.NativeDiagnostics.requireSuccess out
+    IO.print out.stdout
+    return 0
+  if args == ["--own-spec-initial-target"] then
+    unless ← FrenTest.NativeDiagnostics.ownEnabled do
+      throw (IO.userError "the initial target requires FREN_DIAG_OWN_SPEC_INITIAL=1")
+    let (cache, verify) ← ownSpecCaches
+    let (text, code) ← FrenTest.NativeDiagnostics.runInitial (← ownSpecFiles, cache, verify)
+    IO.println (toJson #[toString code, text]).compress
+    return code
   let bless := args.contains "--bless" || (← IO.getEnv "FREN_BLESS").isSome
   if args == ["--rules-report"] then
     IO.print (← rulesReport)

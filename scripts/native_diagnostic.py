@@ -21,17 +21,24 @@ def encoded(returncode):
     return 128 - returncode if returncode < 0 else returncode
 
 
-def run(command, env, cohort, workers, debugger="gdb"):
+def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_PROGRESS"):
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     with tempfile.TemporaryDirectory(prefix="fren-native-diag-") as directory:
         root = Path(directory)
-        journal = root / "progress"
+        journal = Path(env[progress_env]) if env.get(progress_env) else root / "progress"
         journal.touch()
+        (root / "invocation.json").write_text(json.dumps({
+            "command": command, "cohort": cohort, "workers": workers,
+            "progress_env": progress_env, "original_exit": None,
+            "debugger_exit": None, "complete": False}, indent=2) + "\n")
         child_env = dict(env, FREN_ENUM_PROGRESS=str(journal),
+                         FREN_NATIVE_CORELESS="1",
                          FREN_ENUM_DIAG_ACTIVE="1", FREN_DIAG_ENUMERATION="0",
-                         FREN_NATIVE_DIAG_DIR=str(root))
+                         FREN_NATIVE_DIAG_DIR=str(root),
+                         FREN_DIAG_OWN_SPEC_INITIAL="0", FREN_OWN_DIAG_ACTIVE="1")
+        child_env[progress_env] = str(journal)
         executable = shutil.which(debugger)
-        report = {"cohort": cohort, "workers": workers, "debugger": debugger,
+        report = {"command": command, "progress_env": progress_env, "cohort": cohort, "workers": workers, "debugger": debugger,
                   "debugger_exit": None, "original_exit": None,
                   "original_signal": None, "fault_signal": None,
                   "terminated_by_debugger": False, "faults": [], "error": None}
@@ -61,6 +68,9 @@ def run(command, env, cohort, workers, debugger="gdb"):
                           original_exit=(128 + terminal_signal if terminal_signal else state.get("exit_code")) if not terminated else None,
                           original_signal=terminal_signal if not terminated else None,
                           terminated_by_debugger=terminated, faults=faults,
+                          debugger_core_policy=state.get("core_policy"),
+                          original_pid=state.get("original_pid"),
+                          terminal_status_source=state.get("terminal_status_source"),
                           error=state.get("error"))
             if faults:
                 report["fault_signal"] = int(getattr(signal, faults[0]["signal"]))
@@ -86,12 +96,14 @@ def main():
     parser.add_argument("--cohort", default="[]")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--debugger", default="gdb")
+    parser.add_argument("--progress-env", choices=["FREN_ENUM_PROGRESS", "FREN_OWN_SPEC_PROGRESS"],
+                        default="FREN_ENUM_PROGRESS")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("an original command is required")
-    code, stdout, stderr, report = run(command, os.environ, json.loads(args.cohort), args.workers, args.debugger)
+    code, stdout, stderr, report = run(command, os.environ, json.loads(args.cohort), args.workers, args.debugger, args.progress_env)
     Path(args.report).write_text(json.dumps(report, indent=2) + "\n")
     sys.stdout.buffer.write(stdout)
     sys.stderr.buffer.write(stderr)

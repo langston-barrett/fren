@@ -1,7 +1,11 @@
 """GDB-side capture for native_diagnostic.py; only debugs its own inferior."""
+import ctypes
 import json
 import os
+import resource
 import shlex
+import sys
+import time
 from pathlib import Path
 
 import gdb
@@ -15,21 +19,61 @@ last_signal = None
 
 def stopped(event):
     global last_signal
+    state["started"] = True
+    state["original_pid"] = gdb.selected_inferior().pid
     last_signal = event.stop_signal if isinstance(event, gdb.SignalEvent) else None
 
 
-def started(_event):
-    state["started"] = True
+def terminal_status():
+    # These values are set by GDB on actual process termination. Reading
+    # them does not require a live selected thread or infer status from a
+    # previously observed signal. A thread exit alone is not process exit.
+    for key, name in [("terminal_signal", "_exitsignal"), ("exit_code", "_exitcode")]:
+        value = gdb.convenience_variable(name)
+        if value is not None and value.type.code != gdb.TYPE_CODE_VOID:
+            state[key] = int(value)
+            state["terminal_status_source"] = "gdb"
+            state["started"] = True
+            return True
+    return False
 
 
-def exited(event):
-    state["exit_code"] = getattr(event, "exit_code", None)
+def reap_terminal(pid):
+    # Linux GDB can remove a zombie leader before its final wait status
+    # arrives. With no threads left it reports NO_RESUMED, then only
+    # reaps that leader during quit. Wait for this exact GDB-owned child
+    # here instead; never infer process status from the earlier fault.
+    deadline = time.monotonic() + 2
+    while True:
+        waited, status = os.waitpid(pid, os.WNOHANG)
+        if waited:
+            if os.WIFSIGNALED(status):
+                state["terminal_signal"] = os.WTERMSIG(status)
+            elif os.WIFEXITED(status):
+                state["exit_code"] = os.WEXITSTATUS(status)
+            else:
+                raise RuntimeError("native child wait did not report termination")
+            state["terminal_status_source"] = "waitpid"
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError("native child terminal wait did not complete")
+        time.sleep(0.01)
 
 
 gdb.events.stop.connect(stopped)
-gdb.events.new_thread.connect(started)
-gdb.events.exited.connect(exited)
 try:
+    # Protect this debugger too, not only its native inferior. Linux's
+    # piped collectors ignore RLIMIT_CORE even when it is zero.
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    policy = {"rlimit_core": resource.getrlimit(resource.RLIMIT_CORE)}
+    if sys.platform == "linux":
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE
+            raise OSError(ctypes.get_errno(), "cannot protect debugger from core collectors")
+        policy["dumpable"] = libc.prctl(3, 0, 0, 0, 0)  # PR_GET_DUMPABLE
+        if policy["dumpable"] != 0:
+            raise RuntimeError("debugger remains dumpable")
+    state["core_policy"] = policy
     for command in ["set pagination off", "set confirm off", "set print thread-events off",
                     "set print frame-arguments none",
                     "set disable-randomization off", "set follow-fork-mode parent",
@@ -41,11 +85,15 @@ try:
     # Supplying redirections to `run` replaces its argument list too.
     # Keep the original --args rather than accidentally running no job.
     arguments = gdb.parameter("args")
+    gdb.set_convenience_variable("_exitcode", None)
+    gdb.set_convenience_variable("_exitsignal", None)
     gdb.execute("run " + arguments + redirection)
-    while gdb.selected_inferior().pid:
-        if last_signal in fatal:
-            sig = last_signal
-            receiving_thread = gdb.selected_thread()
+    previous_threads = None
+    while not terminal_status():
+        sig, last_signal = last_signal, None
+        if sig is not None:
+            previous_threads = None
+        if sig in fatal:
             fault = {"signal": sig, "siginfo": None, "backtrace": None}
             state["signals"].append(fault)
             for key, command in [("siginfo", "p $_siginfo"), ("backtrace", "thread apply all bt 32")]:
@@ -63,15 +111,31 @@ try:
                 state["terminated_by_debugger"] = True
                 gdb.execute("kill")
                 break
-            if receiving_thread.is_valid():
-                receiving_thread.switch()
+            # `thread apply all` restores the receiving thread itself.
+            # Do not retain a Python thread object across process teardown.
+        elif sig is None:
+            live = [t for t in gdb.selected_inferior().threads() if t.is_stopped()]
+            identities = tuple(t.global_num for t in live)
+            if not live:
+                if gdb.selected_inferior().threads():
+                    raise RuntimeError("debugger returned with running threads but no stop")
+                pid = gdb.selected_inferior().pid
+                if sys.platform != "linux" or not pid:
+                    raise RuntimeError("debugger stopped without threads or terminal status")
+                reap_terminal(pid)
+                break
+            if identities == previous_threads:
+                raise RuntimeError("debugger stopped without thread progress or terminal status")
+            previous_threads = identities if sig is None else None
+            live[0].switch()
+            del live
         gdb.execute("continue")
-    if not gdb.selected_inferior().pid:
-        try:
-            state["terminal_signal"] = int(gdb.parse_and_eval("$_exitsignal"))
-        except gdb.error:
-            pass  # A normal exit has no $_exitsignal.
 except Exception as error:
-    state["error"] = str(error)
+    state["error"] = f"{type(error).__name__}: {error} (line {sys.exc_info()[2].tb_lineno})"
+    for command in ["info threads", "info program", "p $_exitsignal", "show scheduler-locking"]:
+        try:
+            gdb.write(gdb.execute(command, to_string=True))
+        except Exception as detail:
+            gdb.write(f"{command}: {detail}\n")
 finally:
     (root / "inferior.json").write_text(json.dumps(state, indent=2) + "\n")
