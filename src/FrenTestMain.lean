@@ -4412,6 +4412,13 @@ def panicGuard : IO (Array String) := do
   | _, _ => failures := failures.push s!"`outOfFuel` crashed without `LEAN_ABORT_ON_PANIC` (exit {code}):\n{err}"
   return failures
 
+/-- Independent executable scenarios, split for the 30-second per-job
+budget. Together they run every case in `fuzz_frontends_driver_test.py`. -/
+def frontendFuzzDriverCases : Array String :=
+  #["test_odd_ranges", "test_crash_recovers_and_waits_for_peer",
+    "test_single_ranges", "test_timeouts_are_recorded_in_both_lanes",
+    "test_invalid_jobs", "test_empty_ranges"]
+
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
 def jobs : IO (Array (List String)) := do
   -- The ui tests of `misreadDir` run with the readers' injected bug.
@@ -4426,6 +4433,7 @@ def jobs : IO (Array (List String)) := do
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+    ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -4487,6 +4495,11 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     -- The Heavy.Forecast import builds the module loaded by this transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"heavy forecast differential check failed:\n{out.stdout}{out.stderr}"]
+  | ["frontendFuzzDriver", name] => do
+    unless frontendFuzzDriverCases.contains name do
+      throw (IO.userError s!"unknown front-end driver case `{name}`")
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/fuzz_frontends_driver_test.py", s!"DriverTests.{name}"] }
+    return if out.exitCode == 0 then #[] else #[s!"front-end fuzzer executable case {name} failed:\n{out.stdout}{out.stderr}"]
   | ["formatting"] => formatting
   | ["oracleGuards"] => pure FrenTest.OracleChecks.check
   | ["fixing"] => fixing
