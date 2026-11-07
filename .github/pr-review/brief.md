@@ -68,6 +68,17 @@ credentials and no network. So:
 
 # The review
 
+When the diff adds or changes the reference's text (`src/Reqs`), judge it
+as a reader who has just opened that page, as `src/Reqs/dev/Style.md`'s
+"Readers" section describes: someone who knows programming languages in
+general but not the rest of Fren, nor the pull request, its issue or the
+discussion behind them. Each page must make sense on its own, use the
+standard terms of the programming-language literature rather than terms
+coined for Fren or in that discussion, and show its constructs with Fren
+examples. A rule that such a reader cannot understand is `[blocking]`;
+other text that relies on context the page doesn't give is
+`[non-blocking, fix before merge]`.
+
 Write the review with Write to `review.md` in the working directory. The
 workflow posts it as one comment; don't post anything yourself. Its first
 line is exactly one of:
