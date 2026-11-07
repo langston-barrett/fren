@@ -40,6 +40,66 @@ def execute(command, name):
         return ""
 
 
+def fault_context(fault):
+    """Optional first-stop instruction context, within one control budget.
+
+    The PC is a stopped instruction, including for a raised ABRT; it does
+    not by itself identify a bad access or an earlier corrupting operation.
+    Read no data memory, vector registers or other processes here.
+    """
+    context = {"thread": None, "architecture": None, "pc": None,
+               "instructions": None, "registers": {}, "unavailable": {}}
+    fault["context"] = context
+    operation("fault-context")
+
+    def sample(field, query):
+        try:
+            context[field] = query()
+        except Exception as error:
+            context["unavailable"][field] = str(error)[:256]
+        save(root / "inferior.json", state)
+
+    def selected_thread():
+        thread = gdb.selected_thread()
+        return {"global_num": thread.global_num, "ptid": list(thread.ptid)}
+
+    sample("thread", selected_thread)
+    try:
+        frame = gdb.newest_frame()
+        architecture = frame.architecture()
+    except Exception as error:
+        for field in ("architecture", "pc", "instructions", "registers"):
+            context["unavailable"][field] = str(error)[:256]
+    else:
+        sample("architecture", lambda: architecture.name()[:80])
+        sample("pc", lambda: int(frame.pc()))
+        if context["pc"] is not None:
+            sample("instructions", lambda: [
+                {"addr": row["addr"], "length": row["length"], "asm": row["asm"][:256]}
+                for row in architecture.disassemble(context["pc"], count=3)])
+        else:
+            context["unavailable"]["instructions"] = "stopped PC unavailable"
+        name = context["architecture"] or ""
+        if name.startswith("i386:x86-64"):
+            registers = ["rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp"] + [f"r{i}" for i in range(8, 16)]
+        elif name == "i386":
+            registers = ["eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp"]
+        elif name.startswith("aarch64"):
+            registers = [f"x{i}" for i in range(31)] + ["sp"]
+        else:
+            registers = []
+            context["unavailable"]["registers"] = f"no integer register set for architecture {name!r}"
+        for register in registers:
+            try:
+                context["registers"][register] = int(frame.read_register(register))
+            except Exception as error:
+                context["unavailable"][f"registers.{register}"] = str(error)[:256]
+            # Publish partial facts without restarting this operation's budget.
+            save(root / "inferior.json", state)
+    state["completed_operation_id"] = state["operation_id"]
+    save(root / "inferior.json", state)
+
+
 def stopped(event):
     global last_signal
     state["started"] = True
@@ -262,6 +322,8 @@ try:
             fault = {"signal": sig, "siginfo": None, "backtrace": None}
             state["signals"].append(fault)
             save(root / "inferior.json", state)
+            if len(state["signals"]) == 1:
+                fault_context(fault)
             for key, command in [("siginfo", "p $_siginfo"), ("backtrace", "thread apply all bt 32")]:
                 try:
                     fault[key] = execute(command, key)
