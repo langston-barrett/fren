@@ -12,8 +12,9 @@ crashed or killed holder releases its slot, and every copy of this script on
 a machine shares them. Each owner publishes its own memory report; numeric
 PIDs are local diagnostics, never identities for another owner to signal.
 
-Slots: at most `HEAVY_SLOTS` jobs run at once, else the number in
-~/.cache/heavy/slots, else 2.
+Slots: this invocation can take slot0 through slotN-1, where N is
+`HEAVY_SLOTS`, else the number in ~/.cache/heavy/slots, else 2. A common N
+bounds concurrent holders by N; different limits bound each client's range.
 
 Memory: the combined resident-memory target is `HEAVY_MEM_GB` gigabytes,
 else the number in ~/.cache/heavy/mem_gb, else 80% of the
@@ -27,6 +28,9 @@ mode can impose long waits: unknown forecasts reserve a full cap, and
 legacy and stale reports reserve at least a full cap. With nothing running,
 even an oversized forecast starts. Fitting eligible waiters are ordered by
 HEAVY_PRIORITY (merge-blocking before exploratory), then monotonic arrival.
+Each ticket publishes its own effective cap and slot count on every poll;
+selection skips missing, malformed and stale snapshots and probes free slot
+locks within each candidate's range. Owners recheck settings before claiming.
 When measured memory exceeds the cap, the compatible owner with the
 greatest admission sequence terminates its own group (TERM, then KILL) and
 exits with 137; estimates never trigger eviction. Every owner also enforces
@@ -205,7 +209,7 @@ def setting(env, name, kind, environ=None, state=STATE, warn=None):
     if text is not None:
         try:
             return positive(kind, text)
-        except ValueError:
+        except (ValueError, OverflowError):
             warn_once(env, text, warn)
     path = os.path.join(state, name)
     try:
@@ -215,7 +219,7 @@ def setting(env, name, kind, environ=None, state=STATE, warn=None):
         return None
     try:
         return positive(kind, text)
-    except ValueError:
+    except (ValueError, OverflowError):
         if text.strip():
             warn_once(path, text, warn)
         return None
@@ -318,8 +322,10 @@ def waiting_job(state, record, prediction, environ, arrival=None):
                     fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     row = {"ticket": ticket, "arrival": record["enqueued_at"] if arrival is None else arrival,
                            "priority": environ.get("HEAVY_PRIORITY", "exploratory"),
-                           "prediction": prediction, "policy_ready": True,
-                           "admission_policy": record.get("admission_policy", "forecast")}
+                           "prediction": prediction, "policy_ready": False,
+                           "admission_policy": record.get("admission_policy", "forecast"),
+                           "cap_kb": mem_cap_kb(environ, state), "slots": slot_count(environ, state),
+                           "updated_monotonic": time.monotonic()}
                     json.dump(row, f)
                     f.flush()
                 except BaseException:
@@ -340,42 +346,88 @@ def waiting_job(state, record, prediction, environ, arrival=None):
         f.close()
 
 
-def waiter_policy(state, ticket, ready):
-    """Publish a load/adapter denial under registry, preserving the lock inode.
-    Otherwise two queues could each wait for a different job to go first."""
+def waiter_policy(state, ticket, ready, cap, slots):
+    """Refresh this owner's effective limits and load/adapter eligibility.
+    Caller holds registry; preserve the locked inode while refreshing age."""
     with open(os.path.join(state, f".wait-{ticket}.json"), "r+") as f:
         row = json.load(f)
-        if row["policy_ready"] != ready:
-            row["policy_ready"] = ready
-            f.seek(0)
-            f.truncate()
-            json.dump(row, f)
-            f.flush()
+        row.update(policy_ready=ready, cap_kb=cap, slots=slots, updated_monotonic=time.monotonic())
+        f.seek(0)
+        f.truncate()
+        json.dump(row, f)
+        f.flush()
 
 
-def next_waiter(state, running, cap):
+def held_slots(state):
+    """Observe canonical slot locks, not a count of running reports.
+    Caller holds registry. A legacy client can still race the final claim."""
+    held = set()
+    for name in os.listdir(state):
+        if not re.fullmatch(r"slot(0|[1-9][0-9]*)", name):
+            continue
+        try:
+            with open(os.path.join(state, name)) as f:
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    held.add(int(name[4:]))
+        except FileNotFoundError:
+            pass
+    return held
+
+
+def has_free_slot(held, slots):
+    return len({i for i in held if 0 <= i < slots}) < slots
+
+
+def waiter_eligible(row, ticket, held, running, now):
+    """A live ticket needs its own fresh limits; never borrow the selector's.
+    Old/malformed tickets cannot establish eligibility and are skipped."""
+    if not isinstance(row, dict) or row.get("ticket") != ticket or row.get("policy_ready") is not True:
+        return False
+    cap, slots = row.get("cap_kb"), row.get("slots")
+    updated, arrival = row.get("updated_monotonic"), row.get("arrival")
+    if not (type(cap) is int and cap >= 0 and type(slots) is int and slots > 0
+            and type(updated) in (int, float) and math.isfinite(updated)
+            and updated >= 0 and 0 <= now - updated <= REPORT_STALE_SECONDS
+            and type(arrival) in (int, float) and math.isfinite(arrival) and arrival >= 0):
+        return False
+    policy = row.get("admission_policy", "forecast")
+    return (policy in ("rss", "forecast") and has_free_slot(held, slots)
+            and policy_fits(running, row.get("prediction"), cap, policy))
+
+
+def next_waiter(state, running, held=None):
     """First fitting waiter, by priority then arrival. Caller holds registry.
     Unlocked tickets are stale and removed without consulting numeric PIDs."""
     waiting = []
+    held = held_slots(state) if held is None else held
+    now = time.monotonic()
     for name in os.listdir(state):
         if not re.fullmatch(r"\.wait-[0-9a-f]{32}\.json", name):
             continue
         path = os.path.join(state, name)
-        with open(path) as f:
+        try:
+            f = open(path)
+        except FileNotFoundError:
+            continue
+        with f:
             try:
                 fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                row = json.load(f)
-                # Tickets from the original experimental head have no policy.
-                policy = row.get("admission_policy", "forecast")
-                if row.get("policy_ready", True) and policy_fits(running, row["prediction"], cap, policy):
+                try:
+                    row = json.load(f)
+                    eligible = waiter_eligible(row, name[6:-5], held, running, now)
+                except (ValueError, OverflowError):
+                    continue
+                if eligible:
                     waiting.append(row)
             else:
                 os.unlink(path)
     if not waiting:
         return None
     return min(waiting, key=lambda row: (
-        0 if row["priority"] == "merge-blocking" else 1,
+        0 if row.get("priority") == "merge-blocking" else 1,
         row["arrival"], row["ticket"]))["ticket"]
 
 
@@ -969,7 +1021,10 @@ def mem_cap_kb(environ=None, state=STATE, physical=None, warn=None):
     80% of `physical()`, the physical memory in KB."""
     gb = setting("HEAVY_MEM_GB", "mem_gb", float, environ, state, warn)
     if gb is not None:
-        return int(gb * 1024 * 1024)
+        try:
+            return int(gb * 1024 * 1024)
+        except OverflowError as e:
+            raise ValueError("memory cap is too large") from e
     if physical is None:
         if not _physical:
             _physical.append(physical_memory_kb())
@@ -1772,10 +1827,13 @@ def wait_for_slot(command, shown, kind, record, queued, initial, ticket, state, 
                 record["wait_policy_changed"] |= (limit, slots) != initial
                 running = jobs(state, registry_held=True)
                 waited = time.monotonic() - queued
-                allowed = can_start(waited, running, cap, limit, load_reader, prediction, policy)
-                # Memory fit is recomputed for every waiter by next_waiter.
-                # Only an additional policy denial makes a ticket ineligible.
-                waiter_policy(state, ticket, allowed or not policy_fits(running, prediction, cap, policy))
+                # Ask the load/installed adapter gate independently of memory:
+                # every policy fits an empty set. The queue recomputes memory
+                # and slot eligibility for each ticket with its own limits.
+                ready = can_start(waited, [], cap, limit, load_reader, prediction, policy)
+                allowed = ready and policy_fits(running, prediction, cap, policy)
+                waiter_policy(state, ticket, ready, cap, slots)
+                held = held_slots(state)
                 if not allowed:
                     delay = 5
                     reservations = []
@@ -1786,7 +1844,9 @@ def wait_for_slot(command, shown, kind, record, queued, initial, ticket, state, 
                                   "RSS" if policy == "rss" else "RSS or frozen forecast")
                         reservations.append(f"{job['slot']} ({reason})")
                     wait_message = memory_wait_message(state, reservations, running, prediction, cap, policy)
-                elif next_waiter(state, running, cap) == ticket:
+                elif not has_free_slot(held, slots):
+                    wait_message = f"heavy: all {slots} slots busy, waiting (see {state})"
+                elif next_waiter(state, running, held) == ticket:
                     # Settings files can change without taking registry.
                     # Retry if a load sample or queue scan crossed a change.
                     if (slots, limit, cap) != (slot_count(environ, state), max_load(environ, state),

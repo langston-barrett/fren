@@ -203,17 +203,26 @@ def test_observed_forecast_disagreement():
         assert record["admission_forecast_fits"] is False
 
 
+@contextlib.contextmanager
+def queued_job(state, record, prediction, environ, arrival=None, cap=100, slots=2):
+    # Unit-test fixture for an owner that has completed its first gate check.
+    with heavy.waiting_job(state, record, prediction, environ, arrival) as ticket:
+        with heavy.registry(state):
+            heavy.waiter_policy(state, ticket, True, cap, slots)
+        yield ticket
+
+
 def test_mixed_policy_order():
     # fren-covers: testing::heavy_admission
     with tempfile.TemporaryDirectory() as state:
-        with heavy.waiting_job(state, {"enqueued_at": 0, "admission_policy": "forecast"}, 101,
+        with queued_job(state, {"enqueued_at": 0, "admission_policy": "forecast"}, 101,
                                {"HEAVY_PRIORITY": "merge-blocking"}) as strict, \
-             heavy.waiting_job(state, {"enqueued_at": 1, "admission_policy": "rss"}, 100, {}) as observed:
+             queued_job(state, {"enqueued_at": 1, "admission_policy": "rss"}, 100, {}) as observed:
             running = [{"rss_kb": 10, "fresh": True, "predicted_peak_rss_kb": 60}]
             with heavy.registry(state):
                 # Fit is evaluated under each waiter's own frozen policy.
-                assert heavy.next_waiter(state, running, 100) == observed
-                assert heavy.next_waiter(state, [], 100) == strict
+                assert heavy.next_waiter(state, running) == observed
+                assert heavy.next_waiter(state, []) == strict
 
 
 def test_forecast_admission():
@@ -248,7 +257,7 @@ def test_waiter_order():
     # fren-covers: testing::heavy_admission
     with tempfile.TemporaryDirectory() as state, contextlib.ExitStack() as stack:
         def wait(arrival, prediction, priority="exploratory"):
-            return stack.enter_context(heavy.waiting_job(state, {"enqueued_at": arrival},
+            return stack.enter_context(queued_job(state, {"enqueued_at": arrival},
                 prediction, {"HEAVY_PRIORITY": priority}))
         large = wait(0, 101, "merge-blocking")
         older = wait(1, 30)
@@ -256,27 +265,27 @@ def test_waiter_order():
         priority = wait(3, 40, "merge-blocking")
         running = [{"rss_kb": 10, "fresh": True, "predicted_peak_rss_kb": 60}]
         with heavy.registry(state):
-            assert heavy.next_waiter(state, running, 100) == priority
-            assert heavy.next_waiter(state, running, 90) == older
-            assert heavy.next_waiter(state, running, 80) == newer
-            assert heavy.next_waiter(state, running, 79) is None
-            assert heavy.next_waiter(state, [], 100) == large
+            for cap, expected in ((100, priority), (90, older), (80, newer), (79, None)):
+                for ticket in (large, older, newer, priority):
+                    heavy.waiter_policy(state, ticket, True, cap, 2)
+                assert heavy.next_waiter(state, running) == expected
+            assert heavy.next_waiter(state, []) == large
     # Closed/crashed tickets cannot hold up new jobs, even if metadata remains.
     with tempfile.TemporaryDirectory() as state:
-        with heavy.waiting_job(state, {"enqueued_at": 0}, 1, {}) as stale:
+        with queued_job(state, {"enqueued_at": 0}, 1, {}) as stale:
             pass
-        with heavy.waiting_job(state, {"enqueued_at": 1}, 1, {}) as live:
+        with queued_job(state, {"enqueued_at": 1}, 1, {}) as live:
             with heavy.registry(state):
-                assert heavy.next_waiter(state, [], 100) == live
+                assert heavy.next_waiter(state, []) == live
                 assert not os.path.exists(os.path.join(state, f".wait-{stale}.json"))
 
 
     # Wall-clock corrections must not reverse the actual arrival order.
     with tempfile.TemporaryDirectory() as state:
-        with heavy.waiting_job(state, {"enqueued_at": 100}, 1, {}, arrival=1) as first, \
-             heavy.waiting_job(state, {"enqueued_at": 0}, 1, {}, arrival=2):
+        with queued_job(state, {"enqueued_at": 100}, 1, {}, arrival=1) as first, \
+             queued_job(state, {"enqueued_at": 0}, 1, {}, arrival=2):
             with heavy.registry(state):
-                assert heavy.next_waiter(state, [], 100) == first
+                assert heavy.next_waiter(state, []) == first
 
 
 def test_adapter_denial():
@@ -286,7 +295,7 @@ def test_adapter_denial():
     with tempfile.TemporaryDirectory() as state:
         # Model the installed fd adapter denying the older, higher-priority
         # job. The native queue must not then deny the adapter's chosen job.
-        with heavy.waiting_job(state, {"enqueued_at": 0}, 1,
+        with queued_job(state, {"enqueued_at": 0}, 1,
                                {"HEAVY_PRIORITY": "merge-blocking"}) as older:
             with mock.patch.object(heavy, "waiting_job", return_value=contextlib.nullcontext(older)), \
                  mock.patch.object(heavy, "can_start", return_value=False), \
@@ -298,8 +307,8 @@ def test_adapter_denial():
                 assert heavy.main([sys.executable, "-c", "pass"], state,
                     {"HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off"}) == 0
             with heavy.registry(state):
-                heavy.waiter_policy(state, older, True)
-                assert heavy.next_waiter(state, [], GB) == older
+                heavy.waiter_policy(state, older, True, GB, 2)
+                assert heavy.next_waiter(state, []) == older
 
 
 def test_coordinator_kind():
@@ -435,6 +444,223 @@ def test_forecast_queue_integration():
                 if child.poll() is None:
                     child.terminate()
                 child.communicate(timeout=15)
+
+
+def mixed_limits_progress(memory, older_policy="rss", newer_policy="rss", timeout=15):
+    # fren-covers: testing::heavy_admission, testing::heavy_queue
+    with tempfile.TemporaryDirectory() as state:
+        ready = [os.path.join(state, f"ready{i}") for i in range(3)]
+        stop = [os.path.join(state, f"stop{i}") for i in range(3)]
+        worker = ("import pathlib,sys,time; "
+                  "data=bytearray(int(sys.argv[3])*1024*1024); "
+                  "data[::4096]=b'x'*len(data[::4096]); "
+                  "pathlib.Path(sys.argv[1]).touch(); "
+                  "exec('while not pathlib.Path(sys.argv[2]).exists(): time.sleep(0.02)')")
+        launcher = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
+                    "sys.exit(h['main']([sys.executable,'-c',sys.argv[3],*sys.argv[4:]], "
+                    "state=sys.argv[2],load_reader=lambda:0))")
+        env = dict(os.environ, HEAVY_MEM_GB="1", HEAVY_SLOTS="2", HEAVY_MAX_LOAD="off",
+                   HEAVY_ADMISSION="rss")
+        env.pop("HEAVY_LOG", None)
+        env.pop("FREN_JOB_KIND", None)
+        # Known small forecasts let either policy expose the memory-cap bug.
+        heavy.append_log({"event": "job", "job_kind": heavy.job_kind(
+            [sys.executable, "-c", worker, ready[0], stop[0], "80"]),
+            "ended_at": heavy.time.time() - 1, "peak_rss_kb": 1024}, state, {})
+        children = []
+        def start(i, **overrides):
+            child = subprocess.Popen([sys.executable, "-I", "-B", "-c", launcher,
+                os.path.join(HERE, "heavy"), state, worker, ready[i], stop[i],
+                "80" if memory and i == 0 else "0"], env=dict(env, **overrides),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            children.append(child)
+        def await_ready(i):
+            deadline = heavy.time.monotonic() + timeout
+            while not os.path.exists(ready[i]):
+                assert children[i].poll() is None, f"client {i} exited before starting"
+                assert heavy.time.monotonic() < deadline, f"client {i} blocked by ineligible older waiter"
+                heavy.time.sleep(0.02)
+        def finish(i):
+            with open(stop[i], "w") as f:
+                f.write("stop")
+            out, err = children[i].communicate(timeout=15)
+            assert children[i].returncode == 0, (out, err)
+        try:
+            start(0)
+            await_ready(0)
+            if memory:
+                deadline = heavy.time.monotonic() + 15
+                while heavy.jobs(state)[0]["rss_kb"] <= 0.05 * GB:
+                    assert heavy.time.monotonic() < deadline
+                    heavy.time.sleep(0.02)
+            start(1, HEAVY_MEM_GB="0.05" if memory else "1",
+                  HEAVY_SLOTS="2" if memory else "1", HEAVY_ADMISSION=older_policy)
+            assert select.select([children[1].stderr], [], [], 15)[0]
+            assert "waiting" in children[1].stderr.readline()
+            assert not os.path.exists(ready[1])
+            start(2, HEAVY_ADMISSION=newer_policy)
+            await_ready(2)
+            assert children[0].poll() is None and not os.path.exists(stop[0])
+            assert children[1].poll() is None and not os.path.exists(ready[1])
+            assert {j["slot"] for j in heavy.jobs(state)} == {"slot0", "slot1"}
+            finish(2)
+            assert not os.path.exists(ready[1])  # Free slot1 cannot waive older's limits.
+            finish(0)
+            await_ready(1)
+            finish(1)
+        finally:
+            for path in stop:
+                with open(path, "w") as f:
+                    f.write("stop")
+            for child in children:
+                if child.poll() is None:
+                    child.terminate()
+                child.communicate(timeout=15)
+
+
+def test_mixed_memory_progress():
+    # fren-covers: testing::heavy_admission, testing::heavy_queue
+    mixed_limits_progress(True)
+
+
+def test_mixed_slots_progress():
+    # fren-covers: testing::heavy_admission, testing::heavy_queue
+    mixed_limits_progress(False)
+
+
+def test_mixed_policy_limits_progress():
+    # fren-covers: testing::heavy_queue
+    mixed_limits_progress(True, "forecast", "rss")
+    mixed_limits_progress(True, "rss", "forecast")
+
+
+def test_ticket_metadata():
+    # fren-covers: testing::heavy_queue
+    with tempfile.TemporaryDirectory() as state:
+        with queued_job(state, {"enqueued_at": 0, "admission_policy": "rss"}, 1, {}) as ticket:
+            path = os.path.join(state, f".wait-{ticket}.json")
+            with open(path) as f:
+                original = json.load(f)
+            def write(row):
+                with open(path, "w") as f:
+                    f.write(row if isinstance(row, str) else json.dumps(row))
+            # Unknown/old limits never inherit a selector's permissive limits.
+            missing = [dict(original) for _ in range(4)]
+            for row, key in zip(missing, ("cap_kb", "slots", "updated_monotonic", "policy_ready")):
+                del row[key]
+            invalid = missing + ["{partial", [], dict(original, ticket="wrong"),
+                dict(original, cap_kb=True), dict(original, cap_kb=-1),
+                dict(original, slots=True), dict(original, slots=0), dict(original, slots="2"),
+                dict(original, arrival=float("nan")), dict(original, arrival={}),
+                dict(original, arrival=10 ** 1000), dict(original, updated_monotonic=10 ** 1000),
+                dict(original, updated_monotonic=heavy.time.monotonic() + 100),
+                dict(original, updated_monotonic=heavy.time.monotonic() - 100),
+                dict(original, admission_policy="unknown"), dict(original, policy_ready="true")]
+            with heavy.registry(state), \
+                 mock.patch.object(heavy.time, "monotonic", return_value=original["updated_monotonic"]):
+                for row in invalid:
+                    write(row)
+                    assert heavy.next_waiter(state, []) is None, row
+                # Missing policy retains the original experimental interpretation.
+                row = dict(original)
+                del row["admission_policy"]
+                write(row)
+                assert heavy.next_waiter(state, []) == ticket
+                assert heavy.next_waiter(state, [{"rss_kb": 0, "fresh": True}]) is None
+                write(dict(original, prediction=None, priority=None))
+                assert heavy.next_waiter(state, []) == ticket  # RSS ignores predictions.
+                # Refresh preserves the flock's inode and restores stale readiness.
+                before = os.stat(path).st_ino
+                heavy.waiter_policy(state, ticket, True, 0, 1)
+                assert os.stat(path).st_ino == before
+                assert heavy.next_waiter(state, []) == ticket
+        with heavy.registry(state):
+            assert heavy.next_waiter(state, []) is None
+            assert not os.path.exists(path)
+
+
+def test_ticket_limit_refresh():
+    # fren-covers: testing::heavy_queue
+    with tempfile.TemporaryDirectory() as state:
+        with open(os.path.join(state, "mem_gb"), "w") as f:
+            f.write("1")
+        with open(os.path.join(state, "slots"), "w") as f:
+            f.write("1")
+        loads = []
+        def load():
+            loads.append(True)
+            if len(loads) == 1:
+                with open(os.path.join(state, "mem_gb"), "w") as f:
+                    f.write("2")
+                with open(os.path.join(state, "slots"), "w") as f:
+                    f.write("2")
+            return 0
+        def run(f, command, shown, kind, record, *args):
+            assert record["admission_cap_kb"] == 2 * GB and record["slots"] == 2
+            return 0
+        claim = heavy.claim_slot
+        def checked_claim(f, slot, state, record):
+            paths = [p for p in os.listdir(state) if p.startswith(".wait-")]
+            assert len(paths) == 1
+            with open(os.path.join(state, paths[0])) as row:
+                ticket = json.load(row)
+            assert ticket["cap_kb"] == 2 * GB and ticket["slots"] == 2
+            return claim(f, slot, state, record)
+        with mock.patch.object(heavy, "run", side_effect=run), \
+             mock.patch.object(heavy, "claim_slot", side_effect=checked_claim):
+            assert heavy.main([sys.executable, "-c", "pass"], state,
+                {"HEAVY_MAX_LOAD": "1", "HEAVY_MEM_GB": "nan", "HEAVY_SLOTS": "0"}, load) == 0
+        assert len(loads) >= 2
+    with tempfile.TemporaryDirectory() as state, contextlib.redirect_stderr(io.StringIO()):
+        assert heavy.slot_count({"HEAVY_SLOTS": "9" * 1000}, state) == 2
+        assert heavy.main([sys.executable, "-c", "pass"], state,
+                          {"HEAVY_MEM_GB": "1e308"}) == 2
+        assert not any(p.startswith(".wait-") for p in os.listdir(state))
+
+
+def test_ticket_slot_observations():
+    # fren-covers: testing::heavy_queue
+    with tempfile.TemporaryDirectory() as state, contextlib.ExitStack() as stack:
+        held = stack.enter_context(open(os.path.join(state, "slot1"), "w+"))
+        heavy.fcntl.flock(held, heavy.fcntl.LOCK_EX)
+        with queued_job(state, {"enqueued_at": 0, "admission_policy": "rss"}, 1, {}, slots=1) as ticket:
+            with heavy.registry(state):
+                assert heavy.held_slots(state) == {1}
+                assert heavy.next_waiter(state, []) == ticket  # slot0 is free.
+                assert not heavy.has_free_slot({0}, 1)
+                assert heavy.has_free_slot({0}, 2)
+                assert heavy.has_free_slot({0, 1}, 10 ** 100)  # No range-sized scan.
+
+
+def test_ticket_claim_race():
+    # fren-covers: testing::heavy_queue
+    with tempfile.TemporaryDirectory() as state:
+        lock = []
+        claim = heavy.claim_slot
+        def raced_claim(f, slot, state, record):
+            if not lock:
+                legacy = open(os.path.join(state, slot), "a+")
+                heavy.fcntl.flock(legacy, heavy.fcntl.LOCK_EX)
+                lock.append(legacy)  # Legacy admission need not take registry.
+                assert not claim(f, slot, state, record)
+                return False
+            return claim(f, slot, state, record)
+        def retry(delay):
+            assert lock and not lock[0].closed
+            lock[0].close()
+        def run(*args):
+            assert lock[0].closed
+            return 0
+        try:
+            with mock.patch.object(heavy, "claim_slot", side_effect=raced_claim), \
+                 mock.patch.object(heavy.time, "sleep", side_effect=retry), \
+                 mock.patch.object(heavy, "run", side_effect=run), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                assert heavy.main([sys.executable, "-c", "pass"], state,
+                    {"HEAVY_MEM_GB": "1", "HEAVY_SLOTS": "1", "HEAVY_MAX_LOAD": "off"}) == 0
+        finally:
+            for f in lock:
+                f.close()
 
 
 def test_physical_memory():
@@ -2767,7 +2993,10 @@ def main():
              test_parse_args, test_missing_command, test_atomic_admission, test_reservation_wait_message,
              test_registry_wait_messages, test_admission_policy, test_observed_forecast_disagreement,
              test_mixed_policy_order, test_forecast_admission, test_waiter_order, test_frozen_admission, test_forecast_slot_limit,
-             test_forecast_queue_integration, test_adapter_denial, test_coordinator_kind,
+             test_forecast_queue_integration, test_mixed_memory_progress, test_mixed_slots_progress,
+             test_mixed_policy_limits_progress, test_ticket_metadata, test_ticket_limit_refresh,
+             test_ticket_slot_observations, test_ticket_claim_race,
+             test_adapter_denial, test_coordinator_kind,
              test_physical_memory,
              test_overrides, test_offline_command, test_load_admission, test_job_log,
              test_admission_snapshot, test_job_kinds, test_policy_flip_while_waiting,

@@ -1014,7 +1014,8 @@ the slots. The settings are read again while jobs wait or run, so changing
 a file takes effect without a restart:
 
 - **Slots:** `HEAVY_SLOTS`, else the number in `~/.cache/heavy/slots`,
-  else 2.
+  else 2. This bounds the invocation's eligible slot indices; different
+  configurations do not impose one shared job count.
 - **Memory:** `HEAVY_MEM_GB` gigabytes, else the number in
   `~/.cache/heavy/mem_gb`, else 80% of the machine's physical memory,
   summed over each job's process group. By default a waiting job needs
@@ -1139,7 +1140,25 @@ decides.
 An unrecognized label uses the default class. A waiter denied by the load
 rule or an installed priority adapter publishes that denial, so it cannot
 hold up the queue's other eligible jobs. Memory fit is recomputed at each
-selection. Waiters hold locks on unique
+selection using each ticket's own effective memory cap and slot count.
+Each owner publishes these limits on registration, initially ineligible,
+and refreshes its limits, non-memory readiness and monotonic timestamp on
+every polling pass under registry. Slot eligibility means an actual free
+lock in that waiter's range `slot0` through `slotN-1`, not a free slot in
+the selector's range or a count of running reports. A denied older waiter
+cannot block a newer waiter whose own memory and slot limits permit entry.
+The owner rereads its settings before claiming and still takes the slot's
+flock; a legacy claimant racing the scan cannot waive that lock.
+
+Selection skips locked tickets with missing/malformed limits, invalid
+policy/readiness/order fields, or timestamps over ten seconds old or in the
+future. Live tickets are retained for their owners to refresh. This also
+skips old-format tickets without their own limits; substituting the
+selector's limits would recreate the mixed-limit deadlock. Older clients
+keep their own admission checks, so mixed versions do not guarantee queue
+order. A fresh snapshot can briefly delay others until its owner's next
+poll; a stopped owner loses queue eligibility after ten seconds. These
+queue snapshots do not reserve memory or future starts. Waiters hold locks on unique
 `.wait-<id>.json` files, so crashes and PID namespaces cannot leave a live
 queue entry behind. Unlocked entries are removed on the next queue scan.
 The memory check, waiter choice, slot acquisition and forecast publication
@@ -1159,8 +1178,9 @@ a waiter that cannot fit may be bypassed by one that can. No future start
 time is reserved, so continual fitting arrivals can delay an opt-in job.
 Opt-in controls only that invocation's admission: RSS-mode or older jobs can
 start later without respecting its frozen reservation. An enforcement trial
-therefore needs a coordinated cohort; this flag provides no machine-wide
-forecast envelope among mixed policies.
+therefore needs a coordinated cohort with common caps and policies; this
+flag provides no machine-wide forecast envelope among different policies
+or memory caps.
 
 On Linux 4.9 and later, legacy measurements discover the current flock
 holder by device and inode in
@@ -1645,7 +1665,7 @@ pub enum MemoryLeases {
     Cons(MemoryLease, MemoryLeases),
 }
 
-pub fn legacy_reservation(cap: Nat, observed: Option<Int>): Int := match observed {
+pub fn legacy_reservation(cap: Int, observed: Option<Int>): Int := match observed {
     Option::Some(rss) => if rss >= 0 then rss else ((cap + 1) div 2).max(1),
     Option::None => ((cap + 1) div 2).max(1),
 }
@@ -1717,7 +1737,7 @@ pub proc heavy_report_owner(
     }
 }
 
-pub fn admission_memory(cap: Nat, report: Option<MemoryReport>, now: Int, ttl: Nat): Int :=
+pub fn admission_memory(cap: Int, report: Option<MemoryReport>, now: Int, ttl: Nat): Int :=
     match report {
         Option::Some(r) =>
             if valid_report?(r) then (if fresh_report?(r, now, ttl) then r.rss else cap)
@@ -1770,7 +1790,7 @@ pub proc heavy_lease(cap: Nat, locked?, lease: MemoryLease, now: Int, ttl: Nat):
     }
 }
 
-pub fn observed_admission(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
+pub fn observed_admission(cap: Int, leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
     out rss := match leases {
         MemoryLeases::Nil => 0,
         MemoryLeases::Cons(lease, rest) =>
@@ -1779,6 +1799,10 @@ pub fn observed_admission(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (
             + observed_admission(cap, rest, now, ttl),
     }
     ensure empty: when leases = MemoryLeases::Nil, rss = 0
+    ensure single_owned: match leases {
+        MemoryLeases::Cons(lease, MemoryLeases::Nil) => (when report_owner?(lease.report, lease.status_job, lease.observed, now, ttl), rss = admission_memory(cap, lease.report, now, ttl)),
+        _ => true,
+    }
     ensure single_legacy: match leases {
         MemoryLeases::Cons(lease, MemoryLeases::Nil) => (unless report_owner?(
             lease.report,
@@ -1792,16 +1816,28 @@ pub fn observed_admission(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (
     }
 }
 
-pub fn unknown_legacy?(leases: MemoryLeases, now: Int, ttl: Nat) := match leases {
-    MemoryLeases::Nil => false,
-    MemoryLeases::Cons(lease, rest) =>
-        (not report_owner?(lease.report, lease.status_job, lease.observed, now, ttl) and (match lease.legacy_rss {
-            Option::Some(rss) => rss < 0,
-            Option::None => true,
-        })) or unknown_legacy?(rest, now, ttl),
+pub fn unknown_legacy?(leases: MemoryLeases, now: Int, ttl: Nat): (unknown?) {
+    out unknown? := match leases {
+        MemoryLeases::Nil => false,
+        MemoryLeases::Cons(lease, rest) =>
+            (not report_owner?(lease.report, lease.status_job, lease.observed, now, ttl) and (match lease.legacy_rss {
+                Option::Some(rss) => rss < 0,
+                Option::None => true,
+            })) or unknown_legacy?(rest, now, ttl),
+    }
+    ensure empty: when leases = MemoryLeases::Nil, not unknown?
+    ensure single: match leases {
+        MemoryLeases::Cons(lease, MemoryLeases::Nil) => unknown? iff
+            not report_owner?(lease.report, lease.status_job, lease.observed, now, ttl)
+            and (match lease.legacy_rss {
+                Option::Some(rss) => rss < 0,
+                Option::None => true,
+            }),
+        _ => true,
+    }
 }
 
-pub fn admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): Int :=
+pub fn admission_total(cap: Int, leases: MemoryLeases, now: Int, ttl: Nat): Int :=
     observed_admission(cap, leases, now, ttl)
     + (if unknown_legacy?(leases, now, ttl) then legacy_reservation(cap, Option::None) else 0)
 
@@ -1811,13 +1847,13 @@ pub enum ForecastLeases {
     Cons(MemoryLease, Option<Int>, ForecastLeases),
 }
 
-pub fn memory_forecast(prediction: Option<Int>, cap: Nat): Int := match prediction {
+pub fn memory_forecast(prediction: Option<Int>, cap: Int): Int := match prediction {
     Option::Some(p) => if p > 0 then p else cap,
     Option::None => cap,
 }
 
 pub fn forecast_charge(
-    cap: Nat,
+    cap: Int,
     lease: MemoryLease,
     prediction: Option<Int>,
     now: Int,
@@ -1828,17 +1864,17 @@ pub fn forecast_charge(
         else legacy_memory(lease.legacy_rss).max(cap)
 )
 
-pub fn forecast_total(cap: Nat, leases: ForecastLeases, now: Int, ttl: Nat): (reserved: Int) {
+pub fn forecast_total(cap: Int, leases: ForecastLeases, now: Int, ttl: Nat): (reserved: Int) {
     out reserved := match leases {
         ForecastLeases::Nil => 0,
         ForecastLeases::Cons(lease, prediction, rest) =>
             forecast_charge(cap, lease, prediction, now, ttl) + forecast_total(cap, rest, now, ttl),
     }
-    ensure nonnegative: reserved >= 0
+    ensure nonnegative: when cap >= 0, reserved >= 0
     ensure empty: when leases = ForecastLeases::Nil, reserved = 0
     ensure head: match leases {
         ForecastLeases::Cons(lease, prediction, _) =>
-            reserved >= forecast_charge(cap, lease, prediction, now, ttl),
+            (when cap >= 0, reserved >= forecast_charge(cap, lease, prediction, now, ttl)),
         _ => true,
     }
     ensure single: match leases {
@@ -1885,6 +1921,186 @@ pub proc heavy_admission(
     expect unknown: when candidate = Option::None, prediction = cap
     expect rss_coexists: when not forecast? and free? and cap >= 5
         and leases = ForecastLeases::Cons(UNKNOWN_LEASE, Option::None, ForecastLeases::Nil), fits?
+}
+
+-- Missing/malformed ticket scalars decode to None. Missing policy is the
+-- original forecast policy; an invalid policy decodes to Some(""). Keys
+-- decode only canonical lowercase UUID hex. File keys come from locked
+-- filenames. Times use the reports' common integral time unit.
+pub struct QueueTicket {
+    file_key: Int,
+    key: Option<Int>,
+    cap: Option<Int>,
+    slots: Option<Int>,
+    arrival: Option<Int>,
+    updated: Option<Int>,
+    ready: Option<Bool>,
+    policy: Option<String>,
+    priority: Option<String>,
+    prediction: Option<Int>,
+}
+
+pub enum QueueTickets { Nil, Cons(QueueTicket, QueueTickets) }
+pub enum HeldSlots { Nil, Cons(Int, HeldSlots) }
+
+pub fn slot_present?(held: HeldSlots, slot: Int): (present?) {
+    out present? := match held {
+        HeldSlots::Nil => false,
+        HeldSlots::Cons(i, rest) => i = slot or slot_present?(rest, slot),
+    }
+    ensure empty: when held = HeldSlots::Nil, not present?
+    ensure single: match held {
+        HeldSlots::Cons(i, HeldSlots::Nil) => present? iff i = slot,
+        _ => true,
+    }
+}
+
+-- Count distinct observed locks in this candidate's range, without scanning
+-- its potentially large configured range. Duplicated observations count once.
+pub fn held_in_range(held: HeldSlots, slots: Int): (count: Int) {
+    out count := match held {
+        HeldSlots::Nil => 0,
+        HeldSlots::Cons(i, rest) => held_in_range(rest, slots)
+            + (if 0 <= i < slots and not slot_present?(rest, i) then 1 else 0),
+    }
+    ensure nonnegative: count >= 0
+    ensure empty: when held = HeldSlots::Nil, count = 0
+    ensure single: match held {
+        HeldSlots::Cons(i, HeldSlots::Nil) => count = (if 0 <= i < slots then 1 else 0),
+        _ => true,
+    }
+}
+
+pub fn queue_memory?(ticket: QueueTicket, cap: Int, leases: ForecastLeases, now: Int, ttl: Nat) :=
+    if ticket.policy = Option::Some("rss") then
+    5 * admission_total(cap, reported_leases(leases), now, ttl) <= 3 * cap
+    else (ticket.policy = Option::None or ticket.policy = Option::Some("forecast"))
+    and (leases = ForecastLeases::Nil
+        or forecast_total(cap, leases, now, ttl) + memory_forecast(ticket.prediction, cap) <= cap)
+
+pub fn queue_eligible?(
+    ticket: QueueTicket,
+    held: HeldSlots,
+    leases: ForecastLeases,
+    now: Int,
+    ttl: Nat
+) := match ticket.cap, ticket.slots, ticket.arrival, ticket.updated {
+    Option::Some(cap), Option::Some(slots), Option::Some(arrival), Option::Some(updated) =>
+        ticket.file_key >= 0 and ticket.key = Option::Some(ticket.file_key)
+        and ticket.ready = Option::Some(true)
+        and cap >= 0 and arrival >= 0 and updated >= 0 and 0 <= now - updated <= ttl
+        and slots > 0 and held_in_range(held, slots) < slots
+        and queue_memory?(ticket, cap, leases, now, ttl),
+    _, _, _, _ => false,
+}
+
+pub fn queue_before?(a: QueueTicket, b: QueueTicket) :=
+    if (a.priority = Option::Some("merge-blocking")) != (b.priority = Option::Some("merge-blocking"))
+    then a.priority = Option::Some("merge-blocking")
+    else match a.arrival, b.arrival {
+        Option::Some(x), Option::Some(y) => x < y or (x = y and a.file_key < b.file_key),
+        _, _ => false,
+    }
+
+pub fn queue_choose(a: Option<QueueTicket>, b: Option<QueueTicket>): Option<QueueTicket> :=
+    match a, b {
+        Option::None, _ => b,
+        _, Option::None => a,
+        Option::Some(x), Option::Some(y) => if queue_before?(x, y) then a else b,
+    }
+
+pub fn queue_select(
+    tickets: QueueTickets,
+    held: HeldSlots,
+    leases: ForecastLeases,
+    now: Int,
+    ttl: Nat
+): (selected: Option<QueueTicket>) {
+    out selected := match tickets {
+        QueueTickets::Nil => Option::None,
+        QueueTickets::Cons(t, rest) => queue_choose(
+            if queue_eligible?(t, held, leases, now, ttl) then Option::Some(t) else Option::None,
+            queue_select(rest, held, leases, now, ttl)
+        ),
+    }
+    ensure pair: match tickets {
+        QueueTickets::Cons(a, QueueTickets::Cons(b, QueueTickets::Nil)) =>
+            selected = queue_choose(
+                if queue_eligible?(a, held, leases, now, ttl) then Option::Some(a) else Option::None,
+                if queue_eligible?(b, held, leases, now, ttl) then Option::Some(b) else Option::None
+            ),
+        _ => true,
+    }
+    ensure empty: when tickets = QueueTickets::Nil, selected = Option::None
+    ensure single: match tickets {
+        QueueTickets::Cons(t, QueueTickets::Nil) => selected =
+            (if queue_eligible?(t, held, leases, now, ttl) then Option::Some(t) else Option::None),
+        _ => true,
+    }
+}
+
+-- Concrete witnesses use the ordinary RSS policy, one held slot and 80 RSS.
+pub fn queue_example(key: Int, cap: Int, slots: Int): QueueTicket := QueueTicket {
+    file_key := key,
+    key := Option::Some(key),
+    cap := Option::Some(cap),
+    slots := Option::Some(slots),
+    arrival := Option::Some(0),
+    updated := Option::Some(0),
+    ready := Option::Some(true),
+    policy := Option::Some("rss"),
+    priority := Option::None,
+    prediction := Option::None,
+}
+
+pub const QUEUE_MEMORY: MemoryLease := MemoryLease {
+    report := Option::Some(
+        MemoryReport {
+            owner := MemoryOwner { job := "queue", sequence := 1 },
+            rss := 80,
+            updated := 0,
+            monitor := Option::None,
+        }
+    ),
+    status_job := "queue",
+    observed := Option::None,
+    legacy_rss := Option::None,
+}
+
+pub proc heavy_queue(
+    tickets: QueueTickets,
+    held: HeldSlots,
+    leases: ForecastLeases,
+    now: Int,
+    ttl: Nat,
+): (det selected: Option<QueueTicket>) {
+    out selected := queue_select(tickets, held, leases, now, ttl)
+    expect empty: when tickets = QueueTickets::Nil, selected = Option::None
+    expect memory_limits: when tickets = QueueTickets::Cons(
+        queue_example(1, 100, 2),
+        QueueTickets::Cons(queue_example(2, 200, 2), QueueTickets::Nil)
+    )
+        and held = HeldSlots::Cons(0, HeldSlots::Nil)
+        and leases = ForecastLeases::Cons(QUEUE_MEMORY, Option::None, ForecastLeases::Nil)
+        and now = 0 and ttl = 10, selected = Option::Some(queue_example(2, 200, 2))
+    expect slot_limits: when tickets = QueueTickets::Cons(
+        queue_example(1, 200, 1),
+        QueueTickets::Cons(queue_example(2, 200, 2), QueueTickets::Nil)
+    )
+        and held = HeldSlots::Cons(0, HeldSlots::Nil) and leases = ForecastLeases::Nil
+        and now = 0 and ttl = 10, selected = Option::Some(queue_example(2, 200, 2))
+    expect pair_order: match tickets {
+        QueueTickets::Cons(a, QueueTickets::Cons(b, QueueTickets::Nil)) => (when queue_eligible?(
+            a,
+            held,
+            leases,
+            now,
+            ttl
+        )
+            and queue_eligible?(b, held, leases, now, ttl) and queue_before?(a, b),
+            selected = Option::Some(a)),
+        _ => true,
+    }
 }
 
 pub proc heavy_wait_message(
