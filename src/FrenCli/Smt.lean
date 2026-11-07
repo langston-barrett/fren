@@ -894,7 +894,7 @@ partial def renderTerm (dts : Array DataDecl) (ty? : Option Fren.Core.Ty) (t : T
       | some (.enum _ as) | some (.record _ as) => as.toArray
       | _ => #[]
     let tys := match ts[0]? with
-      | some (Term.atom c) => ((fieldTys dts c).getD #[]).map (Fren.Core.Ty.subst instArgs)
+      | some (Term.atom c) => ((fieldTys dts c).getD #[]).map ((Fren.Core.genericTypeMorphism instArgs).type)
       | _ => #[]
     let args := (ts.extract 1 ts.size).mapIdx fun k a => renderTerm dts tys[k]? a
     match ts[0]? with

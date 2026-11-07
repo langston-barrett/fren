@@ -25,11 +25,8 @@ unsafe def worker (count seed : Nat) (run : Run) (mode : Mode) (compareDumps : B
     IO.FS.writeFile run.progress s!"{s}\n{solver0}"
     let text : String := mode.spec s
     let t0 ← IO.monoMsNow
-    let ran ← runFrontends env run.spec text (mode.confirm || mode.confirmMatches || mode.confirmArguments) compareDumps
-    let staticProblems := (appendedErrors #[0] ran.cli ++ appendedErrors #[0] ran.hosted).map fun (_, d) =>
-      s!"unexpected static error: {headOf d}"
-    let problems := if mode.genericFunctions || mode.confirmMatches || mode.confirmArguments then staticProblems
-      else if mode.setCard || mode.setCardFallback then setCardProblems ran ++ staticProblems else #[]
+    let ran ← runFrontends env run.spec text (mode.confirm || mode.confirmMatches || mode.confirmCounts || mode.confirmArguments) compareDumps
+    let problems := freshProblems mode ran
     let (found, flaky, reports, errs) := (ran.comparison.found ++ problems,
       problems.isEmpty && ran.comparison.flaky, ran.reports, ran.errors)
     -- The obligations dumps, compared without their metadata, and both

@@ -1,0 +1,20 @@
+-- Known front-end difference: https://github.com/langston-barrett/fren/issues/493
+-- Also reproduces on pre-PR main 9f4e73f43599a9f80811376ac8a95f09f34376df.
+-- The index inside the quantifier creates a quantified definedness goal
+-- with no index operation itself. Hosted confirmation retains its native
+-- compilation limit there. With FREN_MISREAD_MODELS=1, the standalone
+-- reader refutes that model, while hosted reports an ordinary index error.
+-- The surrounding count contradiction is now caught by both readers.
+-- Preserve this case explicitly; no knownDifferences mask or unsafe
+-- evaluation path is added for it.
+
+set_option fren.lint.undecidable "allow"
+
+proc guarded(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or (at_most_one?(
+        (forall (y: Int), when 0 <= y and y < 1, q[5] = 0),
+        true,
+        true
+    ) and q[5] = 0)
+    expect e: a = 3
+}

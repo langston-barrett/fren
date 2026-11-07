@@ -19,8 +19,11 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ decidable := true }, 8187312, 1),
     ({ enumerationObligations := true }, 0, 20), ({ enumerationObligations := true }, 438, 1),
     ({ enumerationObligations := true }, 555, 1), ({ enumerationRelations := true }, 0, 20),
-    ({ unfoldings := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
+    ({ unfoldings := true }, 0, 10), ({ shortInductions := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
     ({ genericFunctions := true }, 0, 5),
+    ({ genericTypes := true }, 0, 5),
+    -- A Bool Result payload needs a pattern binder ending in `?`.
+    ({ genericTypes := true }, 761611, 1),
     ({ recursionPositions := true }, 0, 20), ({ recursionPositions := true }, 934000, 1),
     ({ recursionPositions := true }, 934051, 1), ({ setCardFallback := true }, 0, 8),
     ({ setCardFallback := true }, 1324204, 1)] : List (Mode × Nat × Nat)) ++
@@ -30,7 +33,7 @@ def corpus : List (Mode × Nat × Nat) :=
       1376, 1480, 1499, 1691, 1934, 1942, 2003, 2012, 2085, 2117, 2161, 2173, 2274, 2310,
       2370, 2548, 2631, 2790, 2993].map fun s => ({ setCard := true }, s, 1)) ++
     [({ confirmMatches := true }, 0, 5), ({ confirmArguments := true }, 0, 20),
-      ({ confirmArguments := true }, 1349802, 1)]
+      ({ confirmArguments := true }, 1349802, 1), ({ confirmCounts := true }, 0, 3)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/

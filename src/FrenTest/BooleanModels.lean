@@ -2,6 +2,7 @@
 import Fren.Elab.GlobalBlocks
 import Fren.Impl
 import Fren.View
+import Reqs.Models
 -- keep-sorted end
 
 open Fren.Lang
@@ -133,6 +134,83 @@ elab "#check_quantifier_model" : command => do
 
 #check_quantifier_model
 
+-- Compare the whole prepared composition with the executable reference,
+-- whose quantifier expansion contains body expressions, not supplied truths.
+open Lean Elab Command Meta Term Fren.Generated in
+elab "#check_quantified_counts" : command => do
+  liftTermElabM do
+    let fin ← instantiateMVars (← elabType (← `(Fin 1)))
+    let referenceInterp : lang.Interp := ⟨.Empty, .Empty, .Empty⟩
+    let singleton ← instantiateMVars (← elabTerm (← `(Fren.Seq.ofList ([0] : List (Fin 1)))) none)
+    let lit (k : Int) : lang.Expr String := .Literal (.Integer k)
+    let referenceTruth (e : lang.Expr String) : Option Bool :=
+      match model.known_eval referenceInterp .Empty e with
+      | .Defined .True => some true
+      | .Defined .False => some false
+      | _ => none
+    for (stx, reference, unknown) in #[
+        ((← `(∀ x : Fin 1, ∀ y : Fin 1, y = x)),
+          model.quantified_expr true true (.Cons (model.quantified_expr true false .Nil) (.Nil : lang.Expr String)), true),
+        ((← `(∃ x : Fin 1, x ∈ Fren.Seq.ofList ([] : List (Fin 1)) ∧ ∀ y : Fin 1, y = x)),
+          model.quantified_expr false true .Nil, false),
+        ((← `(∀ x : Fin 1, x ∈ Fren.Seq.ofList ([] : List (Fin 1)) → ∃ y : Fin 1, y = x)),
+          model.quantified_expr true true .Nil, false)] do
+      let p ← instantiateMVars (← elabTerm stx none)
+      let p ← Fren.unknownQuantifiers #[fin] (Fren.markQuantifierDomains [true] p)
+      let p := (← Fren.Enumerate.readIndexes p (unspecified := true)).1
+      for ty in #[Lean.mkConst ``Int, Lean.mkConst ``Nat] do
+        for k in [0:3] do
+          let numeral (n : Nat) := mkNumeral ty n
+          let indicator ← mkAppOptM ``ite #[some ty, some p, some (← Fren.Enumerate.decidableOf p),
+            some (← numeral 1), some (← numeral 0)]
+          let sum ← mkAppM ``HAdd.hAdd #[indicator, ← numeral k]
+          let refSum : lang.Expr String := .Binary .Add (.If reference (lit 1) (lit 0)) (lit k)
+          let domain : Fren.Enumerate.PartialEnv :=
+            { values := fun _ => pure (#[], false), base := `Fren._count_test
+              known? := some (Fren.Enumerate.knownOf fun q => do
+                return mkApp2 (mkConst ``Decidable.decide) q (← Fren.Enumerate.decidableOf q)) }
+          if unknown then
+            let value ← Fren.Enumerate.partialValue domain sum
+            let known ← mkAppM ``Option.isSome #[value]
+            unless (← Fren.compileValues Bool (mkConst ``Bool) #[known]) == #[false] do
+              throwError "the numeric sum of an unknown condition became known"
+          for shape in [0:4] do
+            let one ← numeral 1
+            let (count, refCount) ← match shape with
+              | 0 => pure (← mkEq sum one, lang.Expr.Binary .Eq refSum (lit 1))
+              | 1 => pure (← mkEq one sum, lang.Expr.Binary .Eq (lit 1) refSum)
+              | 2 => pure (← mkAppM ``LE.le #[sum, one], lang.Expr.Binary .Le refSum (lit 1))
+              | _ => pure (← mkAppM ``GE.ge #[one, sum], lang.Expr.Binary .Le refSum (lit 1))
+            let negated := mkApp (mkConst ``Not) count
+            let last ← mkAppM ``Fren.lastArm #[count, mkConst ``True]
+            let value ← mkAppOptM ``ite #[some (mkConst ``Bool), some count,
+              some (← Fren.Enumerate.decidableOf count), some (mkConst ``Bool.true), some (mkConst ``Bool.false)]
+            let value ← mkEq value (mkConst ``Bool.true)
+            let unknownIndex ← instantiateMVars (← elabTerm
+              (← `(Fren.Seq.nth (Fren.Seq.ofList ([] : List Int)) 0 = 0)) none)
+            let unknownIndex := (← Fren.Enumerate.readIndexes unknownIndex (unspecified := true)).1
+            let outer (universal : Bool) := withLocalDeclD `i fin fun x => do
+              let member ← mkAppM ``Membership.mem #[singleton, x]
+              if universal then mkForallFVars #[x] (← mkArrow member count)
+              else mkAppM ``Exists #[← mkLambdaFVars #[x] (mkAnd member count)]
+            let ps := #[count, negated, last, value, mkAnd count unknownIndex, mkOr count (mkConst ``True),
+              ← outer true, ← outer false]
+            for q in ps do check q
+            let actual ← Fren.decideAll (ps.map fun q => some (q, q))
+            let refTrue : lang.Expr String := .Literal .True
+            let refFalse : lang.Expr String := .Literal .False
+            let refs := #[refCount, .Unary .Not refCount,
+              .Apply "strict" (.Cons refCount .Nil) (.Cons "unused" .Nil) refTrue,
+              .Binary .Eq (.If refCount refTrue refFalse) refTrue,
+              .And refCount (.Index .Nil (lit 0)), .Or refCount refTrue,
+              model.quantified_expr true true (.Cons refCount .Nil),
+              model.quantified_expr false true (.Cons refCount .Nil)]
+            let wanted := refs.map referenceTruth
+            unless actual == wanted do
+              throwError "quantified count composition disagrees with known_eval (shape {shape}, k {k}): {repr actual} versus {repr wanted}"
+
+#check_quantified_counts
+
 -- Substitution must rebuild a compound condition's whole decision, not
 -- just its inferred type. The false conjunct still decides the formula.
 open Lean Elab Command Meta Term in
@@ -226,3 +304,41 @@ elab "#check_solver_quantifier_domains" : command => do
         throwError "solver cleanup changed the caller's context"
 
 #check_solver_quantifier_domains
+
+-- Use the actual source component and its applied/unfolded pair, not
+-- only a hand-built count. A generic Bool application is noncomputable
+-- until its strict body is unfolded for partial quantified evaluation.
+set_option fren.lint.undecidable "allow" in
+fn count_source_all?<T>(x: T) := forall (y: T), y = x
+set_option fren.lint.unused_variables "allow" in
+fn count_source_accept?<T>(x: T) := true
+proc quantified_count_source(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or (((if count_source_all?(true) then 1 else 0) + 2 <= 1) and q[5] = 0)
+    expect e: a = 3
+}
+proc quantified_count_strict_source(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((not count_source_accept?((if count_source_all?(true) then 1 else 0) + 2 = 1)) and q[5] = 0)
+    expect e: a = 3
+}
+
+open Lean Elab Command Meta in
+elab "#check_quantified_count_source" : command => do
+  liftTermElabM do
+    for path in #[`boolean_model_test.quantified_count_source, `boolean_model_test.quantified_count_strict_source] do
+      let some c := (← Fren.getState).comps.get? path
+        | throwError "missing quantified count source component"
+      Fren.withNatUses c.uses fun uses _ => do
+        let rep (e : Expr) := Lean.Core.betaReduce (Fren.replaceUses c.uses uses e)
+        let types ← c.vars.mapM fun v => rep v.type
+        withLocalDeclsD ((c.vars.zip types).map fun (v, t) => (v.name, fun _ => pure t)) fun fvs => do
+          let int := mkConst ``Int
+          let empty ← mkAppM ``Fren.Seq.ofList #[← mkListLit int []]
+          let values := (fvs.zip types).map fun (x, t) => (x, some (if t.isConstOf ``Int then mkIntLit 2 else empty))
+          let some pinned := c.assumes.find? (·.name.getString! == "pinned")
+            | throwError "missing pinned hypothesis"
+          let formula := (← rep pinned.body).beta fvs
+          let prepared ← Fren.atModel values formula
+          unless (← Fren.decideAll #[prepared]) == #[some false] do
+            throwError "the actual source's applied expression discarded a known count contradiction"
+
+#check_quantified_count_source

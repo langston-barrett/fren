@@ -3,6 +3,7 @@ import FrenCore.Diagnostic
 import FrenCore.Generics
 import FrenCore.Global
 import FrenCore.Patterns
+import FrenCore.Theories
 -- keep-sorted end
 
 /-!
@@ -91,7 +92,7 @@ instance of a generic type. -/
 partial def PTy.subst (args : Array PTy) (t : PTy) : PTy :=
   match t.ty with
   | .param k _ => args[k]?.getD t
-  | ty => { t with ty := ty.subst (args.map (·.ty)), elems := t.parts.map (·.subst args) }
+  | ty => { t with ty := (genericTypeMorphism (args.map (·.ty))).type ty, elems := t.parts.map (·.subst args) }
 
 /-- The declared type `t`, of the generic function at `fn` with the type
 parameters `params`, with each type parameter as `Ty.param`, as
@@ -140,6 +141,12 @@ structure DataShape where
 parameters: its instance's (`PTy.subst`). -/
 def DataShape.inst (d : DataShape) (args : Array PTy) : DataShape :=
   if args.isEmpty then d else { d with parts := d.parts.map (·.map (·.subst args)) }
+
+/-- The declared part at an instance. Both front ends only supply the
+shape, constructor and part positions, and type arguments. -/
+def DataShape.instancePart (d : DataShape) (v k : Nat) (args : Array Ty) : PTy :=
+  let t := (d.parts[v]?.bind (·[k]?)).getD default
+  if args.isEmpty then t else t.subst (args.map .plain)
 
 /-- Whether checking that a value is of the declared type `t` evaluates
 no invariant (the binary's `Ex.evalIn.typeV`): `t` has none, nor do the

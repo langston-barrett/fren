@@ -20,6 +20,7 @@ import FrenCore.Regex
 import FrenCore.SeqElems
 import FrenCore.SubsetTypes
 import FrenCore.Symbols
+import FrenCore.Theories
 import FrenCore.Trace
 import FrenCore.Traits
 import FrenCore.Ty
@@ -193,7 +194,12 @@ def DataDecl.ty (d : DataDecl) (args : List Ty) : Ty := if d.isRecord then .reco
 instance with the arguments `args`. -/
 def DataDecl.instCtors (d : DataDecl) (args : List Ty) : Array (Name × Array (Name × Ty)) :=
   if d.params.isEmpty then d.ctors
-  else d.ctors.map fun (c, fs) => (c, fs.map fun (f, t) => (f, t.subst args.toArray))
+  else d.ctors.map fun (c, fs) =>
+    let declaration : Fren.Core.TheoryDeclaration := {
+      name := d.path ++ c, kind := .constructor, abstract := false,
+      types := (fs.map (·.2)).toList }
+    let translated := Fren.Core.instantiateTypeDeclaration declaration args.toArray
+    (c, (fs.map (·.1)).zip translated.types.toArray)
 
 def DataDecl.ctorSym (d : DataDecl) (c : Name) : String :=
   if let some l := d.lean? then quote (l.ctors[(l.variants.idxOf? c).getD 0]!.toString) else
@@ -304,7 +310,7 @@ partial def patSmt (dts : Name → Option DataDecl) (ty : Fren.Core.Ty) (p : Fre
     let (c, fs) := d.ctors[idx]!
     let tests := #[d.tester idx x targs] ++ (args.zipIdx.filterMap fun (a, k) =>
       -- With an instance's arguments for its type parameters.
-      let t := patSmt dts (fs[k]!.2.subst targs.toArray) a s!"({d.selSym c k} {x})"
+      let t := patSmt dts ((Fren.Core.genericTypeMorphism targs.toArray).type fs[k]!.2) a s!"({d.selSym c k} {x})"
       if t == "true" then none else some t)
     return smtAll tests
   | .or alts =>

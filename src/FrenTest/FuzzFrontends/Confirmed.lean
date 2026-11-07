@@ -471,6 +471,114 @@ def genConfirmed (withMatches := false) : R String := do
   let sorts ← confirmedSorts
   return base ++ sorts ++ (← confirmedDomains withMatches)
 
+-- A body index also creates a quantified definedness goal without an
+-- index of its own, which retains the pre-existing native limit #493:
+-- see test/known/493-quantified-index-count.fren. Keep that separate from
+-- these partial quantifier/count compositions; do not hide its diagnostic.
+/-- Counts of empty and inhabited guarded quantifiers whose bodies contain
+unbounded quantifiers. Both quantifiers must compose with the count itself, not
+only with a separately evaluated Boolean. Draw after the earlier tail. -/
+def confirmedCountDomains : R String := do
+  let mut out := "\npub enum CfCountBit { Off, On }\npub ordered struct CfCountOrd(Int)\n"
+  for j in [0:4] do
+    let universal := j % 2 == 0
+    let empty := j < 2
+    let range ← chance 25
+    let (ty, item, generic) ← if range then pick #[("Nat", "0", false), ("Int", "0", false),
+      ("CfCountOrd", "CfCountOrd(0)", false)] else pick #[
+      ("Bool", "true", false), ("Int", "0", false), ("String", "\"\"", false),
+      ("CfN", "x", false), ("CfTag", "x", false),
+      ("CfCountBit", "CfCountBit::On", false), ("Ce", "Ce::Q", false),
+      ("T", "x", true), ("Result<T, Bool>", "Result::Ok(x)", true),
+      ("Seq<T>", "[x]", true), ("Set<T>", "{x}", true),
+      ("Rel<T, T>", "{(x, x)}", true), ("CfBox<T>", "CfBox { value := x }", true),
+      ("CfWrap<T>", "CfWrap::One(x)", true)]
+    let collection ← pick #["Seq", "Set"]
+    let nested ← chance 50
+    let nestedAll ← chance 50
+    let direct ← chance 50
+    let quantified (a domain : String) := Id.run do
+      let y := if a == "Bool" then "y?" else "y"
+      let z := if a == "Bool" then "z?" else "z"
+      let guard (v : String) := if !range then s!"{v} in {domain}"
+        else if ty == "Nat" then s!"{v} < {domain}"
+        else s!"{if ty == "CfCountOrd" then "CfCountOrd(0)" else "0"} <= {v} and {v} < {domain}"
+      let body := if !nested then s!"cf_count_all?({y})"
+        else if nestedAll then s!"(forall ({z}: {a}), when {guard z}, cf_count_all?({z}))"
+        else s!"(exists ({z}: {a}), {guard z} and cf_count_all?({z}))"
+      return if universal then s!"(forall ({y}: {a}), when {guard y}, {body})"
+        else s!"(exists ({y}: {a}), {guard y} and ({body}))"
+    let helper := s!"cf_count_domain_q_{j}?"
+    if !direct then
+      out := out ++ (if range then
+        s!"\npub fn {helper}(n: {ty}) := {quantified ty "n"}\n"
+        else s!"\npub fn {helper}<A>(members: {collection}<A>) := {quantified "A" "members"}\n")
+    let bound := if empty then "0" else "1"
+    let domain := if !range then "members" else if ty == "CfCountOrd" then s!"CfCountOrd({bound})" else bound
+    let q := if direct then quantified ty domain else s!"{helper}({domain})"
+    let condition := if empty && !universal then s!"(not {q})" else q
+    let k := if empty then "1" else "2"
+    let sum := s!"((if {condition} then 1 else 0) + {k})"
+    let extra := if empty then "false" else "true"
+    let count ← pick #[s!"{sum} = 1", s!"1 = {sum}", s!"{sum} <= 1", s!"1 >= {sum}",
+      s!"exactly_one?({condition}, true, {extra})", s!"at_most_one?({condition}, true, {extra})"]
+    let pinned ← pick #[s!"a = 1 or (({count}) and unknowns[5] = 0)",
+      s!"if {count} then unknowns[5] = 0 else a = 1",
+      s!"a = 1 or ((not cf_count_accept?({count})) and unknowns[5] = 0)"]
+    let literal := if collection == "Seq" then (if empty then "[]" else s!"[{item}]")
+      else if empty then "{}" else "{" ++ item ++ "}"
+    let members := if range then "" else s!"    let members: {collection}<{ty}> := {literal}\n"
+    let head := if generic then s!"pub fn cf_count_guarded_{j}<T>" else s!"pub proc cf_count_guarded_{j}"
+    let parameter := if generic then "x: T, " else if item == "x" then s!"x: {ty}, " else ""
+    out := out ++ s!"\n{head}({parameter}unknowns: Seq<Int>, a: Int): (r: Int) \{\n" ++
+      members ++ s!"    require pinned: {pinned}\n    out r := a\n" ++
+      (if generic then "    ensure e: r = 3\n" else "    expect e: a = 3\n") ++ "}\n"
+  return out
+
+/-- Quantifiers inside count conditions, followed by Boolean, conditional
+and strict-argument compositions. Draw only after the old confirmation
+stream, in an opt-in mode, so every existing spec stays unchanged. -/
+def genConfirmedCounts : R String := do
+  let mut out ← genConfirmed false
+  out := out ++ "\npub fn cf_count_all?<A>(x: A) := forall (y: A), y = x\n" ++
+    "pub fn cf_count_accept?<A>(x: A) := true\n"
+  for j in [0:4] do
+    let (ty, item, generic) ← pick #[("Bool", "true", false), ("Int", "0", false),
+      ("Nat", "x", false), ("String", "\"\"", false), ("CfN", "x", false), ("CfTag", "x", false),
+      ("T", "x", true), ("Seq<T>", "[x]", true), ("Set<T>", "{x}", true),
+      ("Rel<T, T>", "{(x, x)}", true), ("CfBox<T>", "CfBox { value := x }", true),
+      ("CfWrap<T>", "CfWrap::One(x)", true)]
+    let direct ← chance 50
+    let nested ← chance 50
+    let y := if ty == "Bool" then "y?" else "y"
+    let z := if ty == "Bool" then "z?" else "z"
+    let body := if nested then s!"exists ({z}: {ty}), {z} = {item}" else s!"{y} = {item}"
+    let q := if direct then s!"(forall ({y}: {ty}), {body})" else s!"cf_count_all?({item})"
+    let sum := s!"((if {q} then 1 else 0) + 2)"
+    let count ← pick #[s!"{sum} = 1", s!"1 = {sum}", s!"{sum} <= 1", s!"1 >= {sum}",
+      s!"exactly_one?(true, {q}, true)", s!"at_most_one?({q}, true, true)"]
+    let settled := if j == 3 then s!"not at_most_one?({q}, false, false)" else count
+    let settled ← pick #[settled, s!"(exists (w: Int), w in [0] and ({settled}))",
+      s!"(forall (w: Int), when w in [0], ({settled}))"]
+    let pinned ← pick #[s!"a = 1 or (({settled}) and unknowns[5] = 0)",
+      s!"if {settled} then unknowns[5] = 0 else a = 1",
+      s!"a = 1 or ((not cf_count_accept?({settled})) and unknowns[5] = 0)"]
+    let head := if generic then s!"pub fn cf_count_{j}<T>" else s!"pub proc cf_count_{j}"
+    let parameter := if generic then "x: T, " else if item == "x" then s!"x: {ty}, " else ""
+    out := out ++ s!"\n{head}({parameter}unknowns: Seq<Int>, a: Int): (r: Int) \{\n" ++
+      s!"    require pinned: {pinned}\n    out r := a\n" ++
+      (if generic then "    ensure e: r = 3\n" else "    expect e: a = 3\n") ++ "}\n"
+  -- Ambiguous counts keep their unknown value, also through their reversed
+  -- spellings. The unbounded generic domain does not supply a finite list.
+  let unknown ← pick #["(if cf_count_all?(x) then 1 else 0) = 1",
+    "1 = (if cf_count_all?(x) then 1 else 0)",
+    "(if cf_count_all?(x) then 1 else 0) + 1 <= 1",
+    "1 >= (if cf_count_all?(x) then 1 else 0) + 1"]
+  out := out ++ "\npub fn cf_count_unknown<T>(x: T, a: Int): (r: Int) {\n" ++
+    s!"    require pinned: a = 1 or ({unknown})\n" ++
+    "    out r := a\n    ensure e: r = 3\n}\n"
+  return out ++ (← confirmedCountDomains)
+
 /-- Main's #940 generator in its own mode, so its appended draws do not
 change this PR's existing specs. Fix only its invalid Nat index annotation. -/
 def genConfirmedArguments : R String := do

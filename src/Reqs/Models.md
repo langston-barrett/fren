@@ -404,13 +404,16 @@ the shared core, from the outcomes of each form's operands:
   `lang::count_value`: `at_most_one?(true, true, q[5] = 0)` is `false`,
   where `lang::eval` leaves it undefined. A count spelled out, a sum of
   `if c then 1 else 0` and of literals that are not negative compared with
-  1 by `=`, `<=` or `>=`, as `(if q[5] = 0 then 1 else 0) + 2 <= 1`, each
+  1 by `=` in either order, `count <= 1` or `1 >= count`, as
+  `(if q[5] = 0 then 1 else 0) + 2 <= 1`, each
   integer a literal, negated or not, or a constant (`model::integer_of`),
   as both front ends read a constant by its value and `-0` as 0, is
   decided as the count of its conditions, an integer `k` as `k` of them
   that are `true`, as `exactly_one?` and `at_most_one?` are defined
   (`Reqs/Lang/Expressions#cardinality`): the Lean-hosted front end sees
-  the same term for both;
+  the same term for both. The conditions may contain quantifiers: their
+  partial outcomes are counted individually, so an unknown condition
+  does not make the whole numeric sum an unknown count comparison;
 - any other operation, and an application of a function, exactly as
   `lang::eval` has it: where every operand is known, and so is the result
   at them (`model::known_application`, which `Fren.Core.appliedKnown`
@@ -766,8 +769,9 @@ pub fn spelled_count(op: BinaryOp): Cardinality := match op {
 }
 
 pub fn counts?(i: Interp, op: BinaryOp, a: Expr<Id>, b: Expr<Id>) :=
-    op is BinaryOp::Eq | BinaryOp::Le and integer_of(i, b) = Outcome::Defined(Value::Integer(1))
-    and spelled?(i, a)
+    (op is BinaryOp::Eq | BinaryOp::Le and integer_of(i, b) = Outcome::Defined(Value::Integer(1))
+        and spelled?(i, a)) or (op = BinaryOp::Eq
+        and integer_of(i, a) = Outcome::Defined(Value::Integer(1)) and spelled?(i, b))
 
 pub fn number(o: Outcome): Int := match o {
     Outcome::Defined(Value::Integer(n)) => n,
@@ -875,11 +879,17 @@ pub fn known(i: Interp, env: Env, e: Expr<Id>, w: Want): (r: Outcome) {
             integer_of(i, e)
         ),
         Expr::Binary(op, a, b) =>
-            if w = Want::Value and counts?(i, op, a, b) then count_truth(
+            if w = Want::Value and counts?(i, op, a, b) then
+            if integer_of(i, b) = Outcome::Defined(Value::Integer(1)) and spelled?(i, a) then count_truth(
                 spelled_count(op),
                 number(known(i, env, a, Want::Trues)),
                 number(known(i, env, a, Want::Unknowns))
-            ) else known_binary_or_count(i, w, op, known(i, env, a, w), known(i, env, b, w)),
+            ) else count_truth(
+                spelled_count(op),
+                number(known(i, env, b, Want::Trues)),
+                number(known(i, env, b, Want::Unknowns))
+            )
+            else known_binary_or_count(i, w, op, known(i, env, a, w), known(i, env, b, w)),
         Expr::And(a, b) => known_and(known(i, env, a, Want::Value), known(i, env, b, Want::Value)),
         Expr::Or(a, b) => known_or(known(i, env, a, Want::Value), known(i, env, b, Want::Value)),
         Expr::If(c, t, f) => known_if_or_count(
@@ -938,6 +948,58 @@ pub fn known(i: Interp, env: Env, e: Expr<Id>, w: Want): (r: Outcome) {
 }
 
 pub fn known_eval(i: Interp, env: Env, e: Expr<Id>): Outcome := known(i, env, e, Want::Value)
+
+-- Expand a quantifier's instantiated body expressions, not their outcomes.
+-- An unexhausted domain ends in an unknown expression; a deciding body
+-- still settles the conjunction or disjunction before it.
+pub fn quantified_expr(universal?, exact?, instances: Expr<Id>): Expr<Id> := match instances {
+    Expr::Cons(body, rest) =>
+        if universal? then Expr::And(body, quantified_expr(universal?, exact?, rest))
+        else Expr::Or(body, quantified_expr(universal?, exact?, rest)),
+    Expr::Nil =>
+        if exact? then Expr::Literal(if universal? then Value::True else Value::False) else Expr::NoMatch,
+    _ => Expr::NoMatch,
+}
+
+set_option fren.evidence "random" in
+expect quantified_count_composition(
+    i: Interp,
+    env: Env,
+    universal?,
+    exact?,
+    instances: Expr<Id>,
+    k: Nat,
+) {
+    assume two: k >= 2
+    let condition: Expr<Id> := quantified_expr(universal?, exact?, instances)
+    let sum: Expr<Id> := Expr::Binary(
+        BinaryOp::Add,
+        Expr::If(
+            condition,
+            Expr::Literal(Value::Integer(1)),
+            Expr::Literal(Value::Integer(0))
+        ),
+        Expr::Literal(Value::Integer(k))
+    )
+    expect equality: known_eval(
+        i,
+        env,
+        Expr::Binary(BinaryOp::Eq, sum, Expr::Literal(Value::Integer(1)))
+    )
+        = Outcome::Defined(Value::False)
+    expect reversed: known_eval(
+        i,
+        env,
+        Expr::Binary(BinaryOp::Eq, Expr::Literal(Value::Integer(1)), sum)
+    )
+        = Outcome::Defined(Value::False)
+    expect at_most: known_eval(
+        i,
+        env,
+        Expr::Binary(BinaryOp::Le, sum, Expr::Literal(Value::Integer(1)))
+    )
+        = Outcome::Defined(Value::False)
+}
 
 -- Completing a variable that it does not know, by any value, never changes
 -- a value that it knows: soundness over the whole evaluator, at every rule.
@@ -1025,6 +1087,15 @@ over independently supplied outcomes for a quantifier and its match.
 The hosted regression also prepares and index-rewrites these expressions
 before evaluating their complete-match markers; the reference evaluator
 above has no quantifier form and cannot establish that adapter's result.
+
+For counts, `quantified_expr` expands instantiated body expressions into
+a conjunction or disjunction, ending in an unknown expression where the
+domain is not exhausted. The prepared-expression regressions compare
+the full count and its compositions with `known_eval` of that expansion.
+`quantified_count_composition` checks the deciding count rule in this
+reference too. Neither check supplies a quantifier's outcome or a count's
+validity as an input. This is bounded adapter testing, not a proof of
+the reflection from Lean expressions or of quantifier instantiation.
 
 ```fren
 type MatchToken

@@ -2,6 +2,7 @@
 import FrenCore.Theories
 import Impls.Lang.Instances
 import Impls.Lang.Types
+import Impls.Sequences
 import Reqs.Lang
 -- keep-sorted end
 
@@ -77,6 +78,30 @@ interp lang::theory_exists := TheoryTerm.ex
 interp lang::theory_type_image := fun (m : TheoryMorphism) t => m.type t
 interp lang::theory_item_image := fun (m : TheoryMorphism) n => m.item n
 interp lang::translate_term := fun (m : TheoryMorphism) t => t.translate m
+
+interp lang::theory_declaration_name := TheoryDeclaration.name
+interp lang::theory_declaration_types := fun (d : TheoryDeclaration) => Fren.Seq.ofList d.types
+interp lang::translate_types := fun (m : TheoryMorphism) (ts : Fren.Seq Ty) =>
+  Fren.Seq.ofList (ts.toList.map m.type)
+interp lang::theory_declaration_with := fun (d : TheoryDeclaration) n (ts : Fren.Seq Ty) =>
+  { d with name := n, types := ts.toList }
+
+impl theory_type_list: lang::theory_type_list for (m : TheoryMorphism) (d : TheoryDeclaration) {
+  m := m,
+  types := Fren.Seq.ofList d.types,
+  translated := Fren.Seq.ofList (d.translate m).types,
+} by
+  intro m d _
+  simpa [fren_spec, TheoryDeclaration.translate, Fren.Seq.unit] using seqMapParts m.type d.types
+
+impl theory_declaration_translation: lang::theory_declaration_translation for
+    (m : TheoryMorphism) (d : TheoryDeclaration) {
+  m := m,
+  declaration := d,
+  translated := d.translate m,
+} by
+  intro m d _
+  simp [fren_spec, TheoryDeclaration.translate]
 
 impl theory_term_translation: lang::theory_term_translation for (m : TheoryMorphism) (t : TheoryTerm) {
   m := m,

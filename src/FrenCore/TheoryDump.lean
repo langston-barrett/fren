@@ -187,7 +187,7 @@ private def dumpInstanceName (source scope : Name) (args : Array Ty) : Name :=
   parent ++ Name.mkSimple (source.getString! ++ s!"<{", ".intercalate (args.toList.map Ty.showQualified)}>")
 
 private def translateSignature (s : TheorySignature) (m : TheoryMorphism) : TheorySignature :=
-  { parameters := [], items := s.items.map fun d => { d with name := m.item d.name, types := d.types.map m.type } }
+  { parameters := [], items := s.items.map (·.translate m) }
 
 private partial def typeApplications (ty : Ty) : Array (Name × Array Ty) :=
   let nested := ty.parts.toArray.flatMap typeApplications

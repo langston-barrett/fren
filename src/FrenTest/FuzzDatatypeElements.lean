@@ -96,4 +96,46 @@ def spec : R String := do
     s!"    expect constant: get(CLOSED) = {closed}\n" ++ recChecks ++
     "}\n" ++ values
 
+/-- A separate stream for shared-core instantiation, leaving every existing
+mode's seed unchanged. Vary both parameters, swap their positions in nested
+instances, and use the instances in declarations as well as constructions. -/
+def genericTypes : R String := do
+  let original ← spec
+  let bases := #[
+    ("Bool", "true"), ("Int", "1"), ("String", "\"x\""),
+    ("Key", "Key::B"), ("Ms", "Ms(2)"), ("Small", "2"),
+    ("Option<Bool>", "Option::Some(false)"),
+    ("Box<Int>", "Box { value := 2 }"),
+    ("Set<Int>", "{1}"), ("Seq<Bool>", "[true]"),
+    ("Rel<Int, Bool>", "{(1, true)}") ]
+  let (a, av) := bases[← below bases.size]!
+  let (b, bv) := bases[← below bases.size]!
+  let op := #["=", "!="][← below 2]!
+  let order := #["<", "<=", ">", ">=", "=", "!="][← below 6]!
+  let resultValue := if b == "Bool" then "v?" else "v"
+  return original ++
+    "pub type Small = n: Int where invariant: n is 0..=3\n" ++
+    "pub struct Pair<A, B> { first: A, second: B }\n" ++
+    "pub ordered enum Phase<T> { Low, High }\n" ++
+    "pub enum Nested<A, B> { Empty, Full(Pair<B, Option<A>>) }\n" ++
+    "pub struct Outer<A, B> { value: Nested<B, A> }\n" ++
+    "pub struct Outcome<A, B> { value: Result<B, A> }\n" ++
+    "pub fn nested_value<A, B>(o: Outer<A, B>): Nested<B, A> := o.value\n" ++
+    s!"pub type OuterAlias := Outer<{a}, {b}>\n" ++
+    s!"pub const PAIR: Pair<{a}, {b}> := Pair \{ first := {av}, second := {bv} }\n" ++
+    s!"pub proc instances(p: Pair<{a}, {b}>, q: Pair<{a}, {b}>, n: Nested<{b}, {a}>, o: OuterAlias, phase: Phase<{a}>, other: Phase<{a}>, outcome: Outcome<{a}, {b}>) \{\n" ++
+    s!"    expect fields: PAIR.first = {av} and PAIR.second = {bv}\n" ++
+    s!"    expect comparison: p {op} q\n" ++
+    "    expect updated: { p with second := q.second }.second = q.second\n" ++
+    "    expect nested: when n = Nested::Full(Pair { first := p.first, second := Option::Some(p.second) }),\n" ++
+    "        match n { Nested::Empty => false, Nested::Full(v) => v.first = p.first and v.second = Option::Some(p.second) }\n" ++
+    "    expect split: n = Nested::Empty or n is Nested::Full(_)\n" ++
+    s!"    let inner: Nested<{b}, {a}> := o.value\n" ++
+    "    expect outer: when inner = Nested::Empty, o.value = Nested::Empty\n" ++
+    "    expect opaque_arguments: nested_value(o) = o.value\n" ++
+    s!"    expect ordering: phase {order} other\n" ++
+    s!"    let result: Result<{b}, {a}> := outcome.value\n" ++
+    s!"    expect prelude_result: when result = Result::Ok(p.second), match result \{ Result::Ok({resultValue}) => {resultValue} = p.second, Result::Err(_) => false }\n" ++
+    "}\n"
+
 end FrenTest.FuzzDatatypeElements

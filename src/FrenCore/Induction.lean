@@ -19,6 +19,13 @@ applications in each case, and `inductionVerdict` what the check reports.
 
 namespace Fren.Core
 
+/-- The bindings supplied by a short expectation's leading `forall`
+(`lang::induction_short_parameters`), in binder and name order, each with
+its declared type. Front ends extract the groups without deciding which
+bindings become parameters. -/
+def shortInductionParameters {B : Type} (binders : Array (Array B)) : Array B :=
+  binders.flatMap id
+
 /-- The members that a global expectation's block may have for induction on
 its parameters (`lang::induction_candidate`): assumptions, claims and
 scenarios, but no call, `let`, `use` or `refines`. -/
@@ -74,7 +81,7 @@ def enumParts (shapes : Lean.Name → Option DataShape) (t : Ty) : Option (Array
   let .enum p args := t | none
   let d ← shapes p
   if d.isRecord || d.isNewtype then none
-  return d.parts.map (·.map (·.ty.subst args.toArray))
+  return d.parts.map (·.map (fun t => (genericTypeMorphism args.toArray).type t.ty))
 
 /-- The candidates, in parameter order (`lang::induction_candidate`).
 Both front ends extract variable paths, declared parameter types and enum
@@ -109,6 +116,10 @@ inconclusive, not because of such a model, and an induction passes, and its
 own check's verdict otherwise. -/
 def inductionVerdict (direct : Verdict) (refuted : Bool) (attempts : List Verdict) : Verdict :=
   if direct == .inconclusive && !refuted && attempts.contains .pass then .pass else direct
+
+/-- The internal postcondition's label. No source parameter can have this
+name, so checking freshness never rejects an otherwise valid induction. -/
+def inductionPostName : String := "#claim"
 
 /-- The name of the function generated for induction on the parameter `x`
 of the claim `claim` of the global expectation `n`, whose name starts at

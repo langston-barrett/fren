@@ -228,7 +228,7 @@ partial def readValue (misread : Bool) (ty val : Expr) : MetaM Expr := do
     let targs := ty.getAppArgs
     if let some e := st.enumOfDecl? c.getPrefix <|> st.enumOf? ty then
       if let some idx := e.ctorIdx? c then
-        let tys := (e.payloadsAt targs)[idx]?.getD #[]
+        let tys := (← e.payloadsAt targs)[idx]?.getD #[]
         let all := val.getAppArgs
         let args := all.extract e.params.size
         if args.size == tys.size then
@@ -238,7 +238,7 @@ partial def readValue (misread : Bool) (ty val : Expr) : MetaM Expr := do
       let args := all.extract r.params.size
       if c == r.ctor && args.size == r.fields.size then
         return mkAppN val.getAppFn ((all.extract 0 r.params.size)
-          ++ (← ((r.fieldsAt targs).zip args).mapM fun ((_, t), a) => readValue misread t a))
+          ++ (← ((← r.fieldsAt targs).zip args).mapM fun ((_, t), a) => readValue misread t a))
   return val
 
 /-- The default value of the type `ty` (`model::default_value`), as
@@ -262,11 +262,11 @@ partial def defaultValue (ty : Expr) (seen : List Name := []) : MetaM (Option Ex
   let targs := ty.getAppArgs
   if let some r := st.recordOf? ty then
     if seen.contains r.decl then return none
-    let some fs ← (r.fieldsAt targs).mapM (defaultValue ·.2 (r.decl :: seen)) <&> (·.mapM id) | return none
+    let some fs ← (← r.fieldsAt targs).mapM (defaultValue ·.2 (r.decl :: seen)) <&> (·.mapM id) | return none
     return some (mkAppN (mkConst r.ctor (← getLevels ty)) (targs ++ fs))
   if let some e := st.enumOf? ty then
     if seen.contains e.decl then return none
-    for tys in e.payloadsAt targs, idx in [0:e.variants.size] do
+    for tys in (← e.payloadsAt targs), idx in [0:e.variants.size] do
       let some ps ← tys.mapM (defaultValue · (e.decl :: seen)) <&> (·.mapM id) | continue
       return some (mkAppN (e.ctorConst idx) (targs ++ ps))
   return none
@@ -345,14 +345,14 @@ where
       let args := val.getAppArgs.extract e.params.size
       let some idx := e.ctorIdx? c | return s!"{e.path.getString!}::{c.getString!}"
       let v := s!"{e.path.getString!}::{e.variants[idx]!}"
-      let tys := (e.payloadsAt targs)[idx]?.getD #[]
+      let tys := (← e.payloadsAt targs)[idx]?.getD #[]
       if args.isEmpty || args.size != tys.size then return v
       let vals ← (tys.zip args).mapM fun (t, a) => show_ t a
       return s!"{v}({", ".intercalate vals.toList})"
     if let some r := st.recordOfDecl? c.getPrefix then
       let args := val.getAppArgs.extract r.params.size
       if c == r.ctor && args.size == r.fields.size then
-        let fs ← ((r.fieldsAt targs).zip args).mapM fun ((f, t), a) => return s!"{f} := {← show_ t a}"
+        let fs ← ((← r.fieldsAt targs).zip args).mapM fun ((f, t), a) => return s!"{f} := {← show_ t a}"
         return s!"{r.path.getString!} \{ {", ".intercalate fs.toList} }"
   return toString (← ppExpr val)
 
@@ -586,22 +586,16 @@ def partialOp (e : Expr) : Bool :=
   e.isAppOfArity ``Fren.Seq.nth 4 ||
     (e.isAppOfArity ``HDiv.hDiv 6 || e.isAppOfArity ``HMod.hMod 6) && !(Enumerate.countLit? e.appArg!).any (· != 0)
 
-/-- Whether a part of `e` is `found`, directly unless `within`, or within the
-definitions of the spec's functions and clauses that it applies, and their
-auxiliary definitions, such as their `match`es. With `propositions`, only
-propositions match: a function type may have a quantifier's syntax too. -/
-partial def readsWhere (found : Expr → Bool) (e : Expr) (within := false) (propositions := false) : MetaM Bool := do
+/-- Search `e` and the spec-owned definition bodies it reads, each once.
+The predicate examines a whole expression and may inspect its types.
+With `within`, omit `e` itself. -/
+private partial def readsWith (found : Expr → MetaM Bool) (e : Expr) (within := false) : MetaM Bool := do
   let s ← getState
   let own := s.defined.foldl (init := #[``Fren.typeObligation]) fun acc _ d => acc.push d.decl ++ d.oblDecls.map (·.1)
   let own := s.contracts.foldl (init := own) fun acc _ k => acc ++ (k.pres ++ k.posts).map (·.decl)
   let rec go (e : Expr) (direct : Bool) (seen : NameSet) : MetaM (Bool × NameSet) := do
-    if direct && (e.find? found).isSome then
-      if !propositions then return (true, seen)
-      let hit ← IO.mkRef false
-      let _ ← Meta.transform e (pre := fun x => do
-        if found x && (← isProp x) then hit.set true
-        return .continue)
-      if ← hit.get then return (true, seen)
+    if direct then
+      if ← found e then return (true, seen)
     let mut seen := seen
     for c in e.getUsedConstants do
       if seen.contains c || !own.any (·.isPrefixOf c) then continue
@@ -612,6 +606,20 @@ partial def readsWhere (found : Expr → Bool) (e : Expr) (within := false) (pro
       seen := seen'
     return (false, seen)
   return (← go e (!within) {}).1
+
+/-- Whether a part of `e` is `found`, directly unless `within`, or within the
+definitions of the spec's functions and clauses that it applies, and their
+auxiliary definitions, such as their `match`es. With `propositions`, only
+propositions match: a function type may have a quantifier's syntax too. -/
+partial def readsWhere (found : Expr → Bool) (e : Expr) (within := false) (propositions := false) : MetaM Bool :=
+  readsWith (fun source => do
+    if (source.find? found).isNone then return false
+    if !propositions then return true
+    let hit ← IO.mkRef false
+    let _ ← Meta.transform source (pre := fun x => do
+      if found x && (← isProp x) then hit.set true
+      return .continue)
+    hit.get) e within
 
 /-- Whether `e` applies one of `targets`, directly or within the
 functions and clauses that it applies. -/
@@ -639,14 +647,14 @@ partial def valueSorts (ty val : Expr) (acc : Array (FVarId × Expr)) : MetaM (A
   let targs := ty.getAppArgs
   if let some e := st.enumOfDecl? c.getPrefix <|> st.enumOf? ty then
     if let some idx := e.ctorIdx? c then
-      let tys := (e.payloadsAt targs)[idx]?.getD #[]
+      let tys := (← e.payloadsAt targs)[idx]?.getD #[]
       let args := val.getAppArgs.extract e.params.size
       if args.size == tys.size then
         return ← (tys.zip args).foldlM (fun acc (t, a) => valueSorts t a acc) acc
   if let some r := st.recordOfDecl? c.getPrefix then
     let args := val.getAppArgs.extract r.params.size
     if c == r.ctor && args.size == r.fields.size then
-      return ← ((r.fieldsAt targs).zip args).foldlM (fun acc ((_, t), a) => valueSorts t a acc) acc
+      return ← ((← r.fieldsAt targs).zip args).foldlM (fun acc ((_, t), a) => valueSorts t a acc) acc
   return acc
 
 /-- The types that lean-smt reads the sorts of the types of `values`'
@@ -793,9 +801,15 @@ def atModel (values : Array (Expr × Option Expr)) (e : Expr) : MetaM (Option (E
   let prepare (p : Expr) := do
     specializeRecursions (← computableDecisions (← unknownQuantifiers standIns p))
   let unfolded ← prepare (← unfoldDefined e (keepLastArm := true))
-  -- Without a sort or an erased binder, the original application already
-  -- preserves strict reads. Avoid unfolding it a second time in that case.
-  let needsStrict ← if standIns.isEmpty then readsWhere (·.isAppOfArity ``Fren.unusedQuantifier 2) e else pure true
+  -- Keep the original application where native evaluation can read it.
+  -- Partial quantified evaluation needs its strict body: a generic call
+  -- may itself be noncomputable even at computable type arguments.
+  let erased (x : Expr) := x.isAppOfArity ``Fren.unusedQuantifier 2
+  let needsStrict : Bool ← if !standIns.isEmpty then pure true else do
+    let candidate ← readsWhere (fun x => erased x || x.isAppOfArity ``Fren.Seq.nth 4) e
+    if !candidate then pure false else
+      -- An ignored argument can hide the quantifier from `unfolded`.
+      readsWith (fun body => if (body.find? erased).isSome then pure true else Enumerate.hasQuantifier body) e
   let applied ← prepare (← if needsStrict then unfoldStrict e else pure e)
   -- A quantifier still hidden in a recursion cannot be replaced here.
   if needsStrict && (← readsWhere (quantifiesOver standIns) unfolded (propositions := true)) then return none
@@ -1010,14 +1024,16 @@ def intResult : Expr → Expr
 
 /-- Recursive symbols are local uninterpreted functions, one for each
 instance that a query applies (`RecInstance`). A result in Nat uses an Int
-symbol with ground range facts, as other opaque functions do. -/
+symbol with ground range facts, as other opaque functions do. Its signature
+uses the query's interpretations of abstract types (`translateType`), as
+the arguments do. -/
 partial def withRecursiveDefs {α : Type} [Inhabited α] (recs : Array RecInstance)
-    (k : Array Expr → (Expr → Expr) → MetaM α) : MetaM α := go 0 #[] #[]
+    (translateType : Expr → MetaM Expr) (k : Array Expr → (Expr → Expr) → MetaM α) : MetaM α := go 0 #[] #[]
 where
   go (i : Nat) (fs reps : Array Expr) : MetaM α := do
     if h : i < recs.size then
       let (c, pre) := recs[i]
-      let ty ← instantiateForall (← getConstInfo c).type pre
+      let ty ← translateType (← instantiateForall (← getConstInfo c).type pre)
       let nat := (resultType ty).isConstOf ``Nat
       -- Named by the function's whole path, as the `fren` command names its
       -- symbol (`Core.ItemSymbol.item`), so that two functions of one name in
@@ -1295,14 +1311,16 @@ assumes of its own (`Reqs/Check`), and of the applications in those facts,
 in at most `rounds` rounds (`Core.appFactsWith`). With `modelOptional`, a model that lean-smt cannot read, as
 it cannot some values of abstract types, is left out rather than making the
 answer unknown: a cover goal passes on `sat`, with or without one. Such an
-answer is not cached. -/
+answer is not cached. `interpret` puts reflected signatures and formulas
+in the query's abstract context before they reach the solver. -/
 def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (facts : Array (Name × Expr) := #[])
     (outFacts : Array Expr := #[]) (appsOf : Expr → Array Expr := fun _ => #[])
     (factsOf : Expr → MetaM (Array (Name × Expr)) := fun _ => pure #[]) (modelOptional : Bool := false)
     (bounded : Bool := false) (instances : Expr → Expr := id) (finiteModel : Bool := false)
     (snapshots? : Option (IO.Ref (Array Smt.Model)) := none)
     (fnOf : Expr → Option Name := fun _ => none) (applied? : Option (IO.Ref (Array Name)) := none)
-    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) (sortHooks? : Option ElabHooks := none) :
+    (rounds : Nat := 1) (script? : Option (IO.Ref String) := none) (sortHooks? : Option ElabHooks := none)
+    (interpret : Expr → MetaM Expr := pure) :
     Core.Backend MetaM Expr Expr :=
   let copied := c.vars.zip fvs |>.filter fun (v, _) => (Core.Symbol.ofRole v.role).copied
   let vars := c.vars.zip fvs ++ (copied.zip primes).map fun ((v, _), p) =>
@@ -1316,7 +1334,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
       MetaM (Core.Outcome Expr × Bool) := withSolverQuantifierDomainsErased do
     -- Each recursive symbol is opaque to the solver.
     let recs ← recursiveSolvers (hyps.map (·.2) |>.push goal)
-    withRecursiveDefs recs fun recFvs sub => do
+    withRecursiveDefs recs interpret fun recFvs sub => do
     let hyps := hyps.map fun (n, t) => (n, sub t)
     let goal := sub goal
     withLocalDeclsD (hyps.map fun (n, t) => (n, fun _ => pure t)) fun hs => do
@@ -1477,8 +1495,10 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- preprocesses it. Keep the reflected facts in one balanced formula.
     let hyps := if reflected.isEmpty then hyps else
       #[(Name.mkSimple "#recursive_facts", balanced mkAnd (reflected.map (·.2)))] ++ hyps
-    let goal ← smtBinders goal
-    let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders t)
+    -- Reflected bodies and clauses may reintroduce abstract constants.
+    -- Interpret them before collecting or identifying recursive instances.
+    let goal ← smtBinders (← interpret goal)
+    let hyps ← hyps.mapM fun (n, t) => return (n, ← smtBinders (← interpret t))
     -- Each instance of a generic function without a body, a local of its
     -- own (`withInstances`), before any quantifier over elements is
     -- expanded.
@@ -2144,6 +2164,7 @@ partial def checkComp (c : CompInfo) (kinds : Array CheckKind := Core.CheckKind.
         (snapshots? := if full.memberGroups.isEmpty then none else some memberModels) fnOf
         (if script?.isSome then none else some applied) (heads.size + 1) script?
         (hooks?.map fun h => { h with leanType := fun t => do rep (← h.leanType t), coreTy := fun t => h.coreTy (unrep t) })
+        (interpret := rep)
     -- What each of its checks asks, for `set_option fren.dump
     -- "obligations"`, with its query's script as lean-smt would be given
     -- it, from a cache of its own, so that no answer is taken for it

@@ -149,6 +149,24 @@ partial def indicators (e : Expr) : Option (Array (Bool ⊕ Expr)) :=
     | some k => if 0 ≤ k then some ((List.replicate (min k.toNat 2) (Sum.inl true)).toArray) else none
     | none => none
 
+/-- The conditions of a count compared with one, through newtype fields
+and integer casts. Equality accepts either order; `1 ≥ a` is `a ≤ 1`.
+Both knownness and partial evaluation must recognize the same count. -/
+def countArgs? (e : Expr) : MetaM (Option (Core.Cardinality × Array (Bool ⊕ Expr))) := do
+  let count (c : Core.Cardinality) (ty a one : Expr) := do
+    let (ty, a, one) ← underNewtype ty a one
+    unless ty.isConstOf ``Int || ty.isConstOf ``Nat do return none
+    unless countLit? (← unwrapNewtypes one) == some 1 do return none
+    return (indicators (← unwrapNewtypes a)).map (c, ·)
+  let e := e.consumeMData
+  match e.getAppFn.constName?, e.getAppArgs with
+  | some ``Eq, #[ty, a, b] =>
+    if let some found ← count .exactlyOne ty a b then return some found
+    count .exactlyOne ty b a
+  | some ``LE.le, #[ty, _, a, b] => count .atMostOne ty a b
+  | some ``GE.ge, #[ty, _, a, b] => count .atMostOne ty b a
+  | _, _ => return none
+
 /-- Whether `e`'s value is known with every index out of range unknown,
 as a `Bool` over `e`'s locals (`Atoms.unknown`), as the `fren` command's
 evaluator has it (`Interp.outOfRange`): an index is known where its parts
@@ -189,13 +207,7 @@ partial def knownOf (decideOf : Expr → MetaM Expr) (e : Expr) : MetaM Expr := 
   -- where the unknown conditions cannot change the count's comparison
   -- (`Core.Cardinality.holds?`), as the `fren` command has it
   -- (`Ex.countOfOne?`).
-  let countKnown (c : Core.Cardinality) (α a one : Expr) : MetaM (Option Expr) := do
-    -- At a newtype, as `=` compares its values, the sides' fields, which
-    -- the `fren` command, which erases newtypes, compares.
-    let (α, a, one) ← underNewtype α a one
-    let (a, one) := (← unwrapNewtypes a, ← unwrapNewtypes one)
-    unless (α.isConstOf ``Int || α.isConstOf ``Nat) && countLit? one == some 1 do return none
-    let some leaves := indicators a | return none
+  let countKnown (c : Core.Cardinality) (leaves : Array (Bool ⊕ Expr)) : MetaM Expr := do
     let ops ← leaves.mapM fun
       | .inl k => mkAppOptM ``Option.some #[mkConst ``Bool, mkConst (if k then ``Bool.true else ``Bool.false)]
       | .inr p => do
@@ -203,7 +215,7 @@ partial def knownOf (decideOf : Expr → MetaM Expr) (e : Expr) : MetaM Expr := 
         mkAppM ``cond #[← go p, v, ← mkAppOptM ``Option.none #[mkConst ``Bool]]
     let cE := mkConst (if c == .exactlyOne then ``Core.Cardinality.exactlyOne else ``Core.Cardinality.atMostOne)
     let r := mkApp2 (mkConst ``Core.Cardinality.holds?) cE (← mkListLit optBool ops.toList)
-    return some (← mkAppM ``Option.isSome #[r])
+    mkAppM ``Option.isSome #[r]
   -- Any other application: known where its arguments are, as evaluation
   -- is strict (`model::known_application`).
   let generic : MetaM Expr := do
@@ -212,6 +224,7 @@ partial def knownOf (decideOf : Expr → MetaM Expr) (e : Expr) : MetaM Expr := 
       if args.any fun a => (a.isLambda || a.isForall || a.isLet) && hasIndex a then return ff
       return mkApp2 (mkConst ``Core.appliedKnown) (← mkListLit (mkConst ``Bool) (← args.mapM go).toList) tt
     return ff
+  if let some (c, leaves) ← countArgs? e then return ← countKnown c leaves
   match e.getAppFn.constName?, e.getAppArgs with
   | some ``Fren.Enum.nthOr, #[_, _, q, i, _] =>
     let len ← mkAppM ``Fren.Seq.len #[q]
@@ -231,16 +244,6 @@ partial def knownOf (decideOf : Expr → MetaM Expr) (e : Expr) : MetaM Expr := 
         if ← isProp a then decideOf (← mkAppM ``Iff #[a, b]) else decideOf (← mkEq a b)
       catch _ => pure ff
     return mkApp4 (mkConst ``Core.iteKnown) (← truth kc (← decideOf c)) ka kb same
-  | some ``Eq, #[α, a, one] =>
-    if let some r ← countKnown .exactlyOne α a one then return r
-    generic
-  | some ``LE.le, #[α, _, a, one] =>
-    if let some r ← countKnown .atMostOne α a one then return r
-    generic
-  -- `1 ≥ a` is `a ≤ 1` (`Reqs/Lang/Semantics#derived-forms`).
-  | some ``GE.ge, #[α, _, one, a] =>
-    if let some r ← countKnown .atMostOne α a one then return r
-    generic
   | _, _ =>
     if let .forallE _ a b _ := e then
       if !b.hasLooseBVars && (← isProp a) then

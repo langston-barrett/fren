@@ -335,6 +335,15 @@ partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
     return ← mkAppM ``Enum.ifKnown
       #[← partialKnown domain p.getAppArgs[2]!, ← partialDecide domain p.appArg!]
   if p.isAppOfArity ``Fren.typeObligation 2 then return ← partialDecide domain p.appArg!
+  -- Preserve the count's truth even if a quantified condition has no
+  -- partial outcome. Strictly lifting the numeric sum would lose it.
+  if let some (c, leaves) ← countArgs? p then
+    let operands ← leaves.mapM fun
+      | .inl b => mkAppM ``Option.some #[toExpr b]
+      | .inr q => partialDecide domain q
+    let op := mkConst (if c == .exactlyOne then ``Core.Cardinality.exactlyOne else ``Core.Cardinality.atMostOne)
+    return mkApp2 (mkConst ``Core.Cardinality.holds?) op
+      (← mkListLit (mkApp (mkConst ``Option [0]) (mkConst ``Bool)) operands.toList)
   -- A relation obligation quantifies over its actual pairs. Bounding its
   -- two components independently loses that finite guard when either
   -- component's type has values beyond the enumeration size.

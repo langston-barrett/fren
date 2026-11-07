@@ -1,0 +1,54 @@
+-- Nested datatype declarations instantiate both parameters simultaneously.
+-- Constructor and field checks use the same translated signature.
+mod generics_theory_instances
+
+pub struct Pair<A, B> { first: A, second: B }
+pub enum Nested<A, B> { Empty, Full(Pair<B, Option<A>>) }
+pub struct Outer<A, B> { value: Nested<B, A> }
+pub enum Chain<T> { Nil, Cons(Outer<Bool, T>, Chain<T>) }
+pub type TextOuter := Outer<Bool, String>
+
+type Small = n: Int where invariant: n is 0..=3
+
+pub const PAIR: Pair<Bool, String> := Pair { first := true, second := "x" }
+
+pub fn nested_value<T>(o: Outer<Bool, T>): Nested<T, Bool> := o.value
+
+proc instances(p: Pair<Bool, String>, n: Nested<String, Bool>, o: TextOuter, c: Chain<String>) {
+    expect constant: when p = PAIR, p.first and p.second = "x"
+    expect update: { p with second := "y" }.first = p.first
+    expect payload: when n = Nested::Full(
+        Pair {
+            first := true,
+            second := Option::Some("x"),
+        }
+    ),
+        match n {
+            Nested::Empty => false,
+            Nested::Full(v) => v.first and v.second = Option::Some("x"),
+        }
+    let inner: Nested<String, Bool> := o.value
+    expect outer: when inner = Nested::Empty, o.value = Nested::Empty
+    expect opaque_argument: nested_value(o) = o.value
+    expect recursive: when c = Chain::Cons(o, Chain::Nil),
+        match c {
+            Chain::Nil => false,
+            Chain::Cons(v, _) => v.value = o.value,
+        }
+}
+
+proc constraints(o: Outer<Small, Bool>) {
+    expect invariant: match o.value {
+        Nested::Empty => true,
+        Nested::Full(v) => 0 <= v.first <= 3,
+    }
+}
+
+proc giver(n: Int): (det bad: Outer<Small, Bool>) {
+    out bad := Outer {
+        value := Nested::Full(Pair { first := n, second := Option::Some(true) }),
+    }
+    --~^^^ error: invariant `generics_theory_instances::Small::invariant` does not hold
+}
+
+--@ exit: 1

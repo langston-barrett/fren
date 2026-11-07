@@ -71,6 +71,10 @@ uninterpreted, higher-order and recursive functions. Fresh runs reject
 static errors from either front end, even when both give the same error.
 `--datatype-elements` generates generic enumerations and records with
 collection payloads and fields (`FuzzDatatypeElements.spec`).
+`--generic-types` adds nested instances with multiple, reordered type
+parameters and subset arguments (`FuzzDatatypeElements.genericTypes`).
+Its fresh runs fail if a shared static error prevents a spec from reaching
+its checks.
 `--set-card-fallback` generates native-cardinality boundary and unlisted types.
 `--set-card` reproduces #820's set seeds and adds finite cardinalities of
 aggregate types and relation pairs (`Wide.genSetCard`). Its corpus and
@@ -92,6 +96,9 @@ Their types include integers, naturals, Booleans, abstract types, type
 parameters and containers; both front ends misread models in this mode too.
 `--confirm-arguments` preserves main's ignored-argument stream from #940,
 including its full fixed corpus, without changing the older confirmation specs.
+`--confirm-counts` appends count comparisons whose conditions contain
+quantifiers, inside connectives, conditionals and strict arguments. It
+retains the older confirmation stream and rejects static errors in its tail.
 `--decidable` generates procedures in the decidable core of strings,
 sets, relations and sequences (`Wide.genDecidable`), in its own random
 stream so that every older mode's seeds are unchanged, then appends

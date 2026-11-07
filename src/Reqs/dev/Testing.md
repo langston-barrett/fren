@@ -378,9 +378,10 @@ pub mod testing
   supplements these fixed corpora with fresh seeds through both front ends.
 - **Front-end fuzzing** (`lake exe fren_fuzz_frontends [--count N]
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
-  [--confirm] [--obligations] [--scrutinees] [--inductions]
+  [--confirm] [--confirm-matches] [--confirm-counts] [--confirm-arguments]
+  [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--decidable] [--unfoldings] [--datatype-elements]
+  [--decidable] [--unfoldings] [--short-inductions] [--datatype-elements]
   [--spec-timeout SECONDS]`, or
   `lake exe fren_fuzz_frontends --copying COUNT`): generates
   specs and checks each with both front ends, the `fren` command's pipeline
@@ -436,7 +437,14 @@ pub mod testing
   checks both front ends misreading models, as
   `FREN_MISREAD_MODELS` makes them ([Testing](../Models.md#testing)), so
   that what one front end knows and the other does not is a message that
-  differs: one refutes the model, and the other shows it. `--scrutinees`
+  differs: one refutes the model, and the other shows it.
+  `--confirm-matches` appends quantified complete-match compositions;
+  `--confirm-counts` appends quantified count conditions, in either
+  comparison order and inside connectives, conditionals and strict
+  arguments. Both retain the entire original confirmation spec and reject
+  static errors in the new tails through both readers.
+  `--confirm-arguments` retains main's ignored-argument stream separately.
+  `--scrutinees`
   generates repeated and distinct columns of matches and tables, through
   calls, fields, definitions and nested expressions, including generic
   types and lambda matches. It has its own mode to preserve the older
@@ -459,6 +467,12 @@ pub mod testing
   and through definitions, and a cover goal that mentions none of them.
   The mode compares the front ends' reports on these queries;
   `test/ui/checks/fact_scope.fren` pins the expected verdicts and witness.
+  `--short-inductions` generates single-expression global claims with a
+  leading `forall`: grouped binders, companion types, recursive lists and
+  branching trees, generic instances, comparisons, guards, definitions,
+  Boolean blocks, and shadowing. It also exercises unchanged restrictions
+  on candidacy and quantifiers without a leading binder. Its generator is
+  independent, so existing modes' seeds are unchanged.
   `--induction-candidates` generates companion parameter types, nested
   restrictions, decreasing-argument positions, shadowing, derived arguments,
   assumptions and comparisons of recursive applications. Its generator is
@@ -643,9 +657,10 @@ pub mod testing
   itself is tested in `FrenTest/FrontendsCompare.lean`.
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
-  `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
-  `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings` and
-  `--datatype-elements`
+  `--sites`, `--confirm`, `--confirm-matches`, `--confirm-counts`,
+  `--confirm-arguments`, `--scrutinees`, `--inductions`, `--induction-forms`,
+  `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings`,
+  `--short-inductions` and `--datatype-elements`
   (`corpus` in `src/FrenTest/FuzzFrontends/Corpus.lean`), are checked
   with both front ends and compared as above. The `--decidable` corpus also
   rejects every error without a diagnostic code from `fren check`, even

@@ -15,6 +15,7 @@ import FrenTest.FuzzFrontends.Unfoldings
 import FrenTest.FuzzFrontends.Wide
 import FrenTest.FuzzGenericFunctions
 import FrenTest.FuzzRecursion
+import FrenTest.FuzzShortInduction
 -- keep-sorted end
 
 open Lean FrenCli FrenCli.Eval
@@ -42,7 +43,8 @@ seed so that its draws leave the other modes unchanged. -/
 def unfoldingRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x756e⟩
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  if m.confirmArguments then Id.run (Wide.genConfirmedArguments.run' (rngOf seed))
+  if m.confirmCounts then Id.run (Wide.genConfirmedCounts.run' (rngOf seed))
+  else if m.confirmArguments then Id.run (Wide.genConfirmedArguments.run' (rngOf seed))
   else if m.genericFunctions then Id.run (FuzzGenericFunctions.spec.run' (rngOf seed))
   else if m.setCardFallback then Id.run (Wide.genSetCardFallback.run' (rngOf seed))
   else if m.setCard then Id.run (Wide.genSetCard.run' (rngOf seed))
@@ -59,6 +61,7 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
     | [before, after] => before ++ decls ++ Id.run (Wide.genKeywordsItem.run' (itemRngOf seed)) ++ after
     | _ => spec
   else if m.inductionCandidates then Id.run (Wide.inductionCandidates.run' (inductionRngOf seed))
+  else if m.shortInductions then Id.run (FuzzShortInduction.spec.run' (rngOf seed))
   else if m.unfoldings then Id.run (Wide.unfoldings.run' (unfoldingRngOf seed))
   else
     Id.run ((if m.decidable then Wide.genDecidable
@@ -66,6 +69,7 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
       else if m.scrutinees then Wide.duplicateScrutineeGroup
       else if m.factScopes then Wide.factScopes else if m.confirm || m.confirmMatches then Wide.genConfirmed m.confirmMatches
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
+      else if m.genericTypes then FuzzDatatypeElements.genericTypes
       else if m.datatypeElements then FuzzDatatypeElements.spec
       else if m.recursionPositions then FuzzRecursion.gen
       else Wide.genWide m.avoidKnown).run' (rngOf seed))
@@ -73,27 +77,39 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; `--confirm` keeps the prefix before `Wide.confirmedSorts`;
 `--confirm-matches` also keeps the entire original confirmation spec;
+`--confirm-counts` keeps that same spec before its count compositions;
 `--confirm-arguments` keeps main's prefix before its ignored-argument tail.
-none for `--guards`, `--sites`, `--inductions`, `--induction-forms`,
+None for `--guards`, `--sites`, `--inductions`, `--induction-forms`,
 `--keywords` and `--recursion-positions`. The empty prefix of
 `--scrutinees`, `--fact-scopes`, `--induction-candidates`, `--decidable`,
-`--enumeration-obligations`, `--unfoldings`, `--datatype-elements`,
-`--generic-functions`, `--set-card` and `--set-card-fallback` makes any
-static error a group error: these generators, like appended groups,
-promise to add none.
+`--enumeration-obligations`, `--unfoldings`, `--short-inductions`,
+`--datatype-elements`, `--generic-functions`, `--generic-types`,
+`--set-card` and `--set-card-fallback` makes any static error a group
+error: these generators, like appended groups, promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
 prefix, so its additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
+  if m.confirmCounts then #[Id.run ((Wide.genConfirmed false).run' (rngOf seed))] else
   if m.confirmArguments then #[Id.run (Wide.genConfirmedPrefix.run' (rngOf seed))] else
   if m.genericFunctions then #[""] else
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if (m.confirm || m.confirmMatches) && !m.setCard && !m.setCardFallback && !m.decidable && !m.enumerationObligations && !m.unfoldings then
+  if (m.confirm || m.confirmMatches) && !m.setCard && !m.setCardFallback && !m.decidable && !m.enumerationObligations && !m.unfoldings && !m.shortInductions then
     let base := Id.run (Wide.genConfirmedBase.run' (rngOf seed))
     if m.confirmMatches then #[base, Id.run ((Wide.genConfirmed false).run' (rngOf seed))] else #[base]
-  else if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
+  else if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.shortInductions || m.datatypeElements || m.genericTypes then #[""] else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 -- The selected generator and its static-error check use the same priority.
 #guard ({ genericFunctions := true, enumerationRelations := true } : Mode).cuts 0 == #[""]
+#guard ({ confirmCounts := true, genericTypes := true } : Mode).spec 0 ==
+  ({ confirmCounts := true } : Mode).spec 0
+#guard ({ confirmArguments := true, genericTypes := true } : Mode).spec 0 ==
+  ({ confirmArguments := true } : Mode).spec 0
+#guard ({ confirmMatches := true, genericTypes := true } : Mode).spec 0 ==
+  ({ confirmMatches := true } : Mode).spec 0
+#guard ({ confirmCounts := true, genericTypes := true } : Mode).cuts 0 ==
+  ({ confirmCounts := true } : Mode).cuts 0
+#guard ({ confirmMatches := true, genericTypes := true } : Mode).cuts 0 ==
+  ({ confirmMatches := true } : Mode).cuts 0
 
 end FrenTest.FuzzFrontends

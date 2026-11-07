@@ -109,11 +109,6 @@ def EnumInfo.leanArgs (e : EnumInfo) (args : Array α) [Inhabited α] : Array α
   | some l => l.leanArgs args
   | none => args
 
-/-- The Lean types of each variant's payload, in the instance whose Lean
-type has the arguments `args` (`lang::instantiation`). -/
-def EnumInfo.payloadsAt (e : EnumInfo) (args : Array Expr) : Array (Array Expr) :=
-  if e.params.isEmpty then e.payloads else e.payloads.map (·.map (·.instantiate (e.frenArgs args)))
-
 /-- Its Lean type, at universe 0 if it is universe polymorphic, as Lean's
 `Option` is: once for each type parameter. -/
 def EnumInfo.const (e : EnumInfo) : Expr :=
@@ -170,11 +165,6 @@ structure RecordInfo where
   /-- Declared `ordered` (`Reqs/Lang/Items#ordered-declarations`). -/
   ordered : Bool := false
   deriving Inhabited
-
-/-- The fields, with their Lean types in the instance with the arguments
-`args` (`lang::instantiation`). -/
-def RecordInfo.fieldsAt (r : RecordInfo) (args : Array Expr) : Array (Name × Expr) :=
-  if r.params.isEmpty then r.fields else r.fields.map fun (f, t) => (f, t.instantiate args)
 
 /-- The constructor of the structure generated for a record: not `mk`,
 which may be a field. -/

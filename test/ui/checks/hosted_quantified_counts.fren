@@ -1,0 +1,76 @@
+-- Counts retain partial quantified operands through their compositions.
+-- Two true operands settle the comparison; a lone unknown stays unknown.
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.undecidable "allow"
+
+fn all_same?<T>(x: T) := forall (y: T), y = x
+fn counted?<T>(x: T) := (if all_same?(x) then 1 else 0) + 2 <= 1
+fn accept?<T>(x: T) := true
+type CountToken
+
+proc at_most(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((((if all_same?(true) then 1 else 0) + 2) <= 1) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `at_most::e` does not hold
+}
+
+proc exactly(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((((if all_same?(true) then 1 else 0) + 2) = 1) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `exactly::e` does not hold
+}
+
+proc reversed_most(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((1 >= ((if all_same?(true) then 1 else 0) + 2)) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `reversed_most::e` does not hold
+}
+
+proc reversed_exact(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((1 = ((if all_same?(true) then 1 else 0) + 2)) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `reversed_exact::e` does not hold
+}
+
+proc builtin_exact(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((exactly_one?(true, true, all_same?(true))) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `builtin_exact::e` does not hold
+}
+
+proc builtin_most(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((at_most_one?(all_same?(true), true, true)) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `builtin_most::e` does not hold
+}
+
+proc helper(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((counted?(true)) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `helper::e` does not hold
+}
+
+proc conditional(q: Seq<Int>, a: Int) {
+    require pinned: if ((if all_same?(true) then 1 else 0) + 2) <= 1 then q[5] = 0 else a = 1
+    expect e: a = 3  --~ error: expectation `conditional::e` does not hold
+}
+
+proc strict(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((not accept?(((if all_same?(true) then 1 else 0) + 2) = 1)) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `strict::e` does not hold
+}
+
+proc within_all(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((forall (w: Int), when w in [0], ((if all_same?(true) then 1 else 0) + 2 <= 1)) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `within_all::e` does not hold
+}
+
+proc within_exists(q: Seq<Int>, a: Int) {
+    require pinned: a = 1 or ((exists (w: Int), w in [0] and ((if all_same?(true) then 1 else 0) + 2 <= 1)) and q[5] = 0)
+    expect e: a = 3  --~ error: expectation `within_exists::e` does not hold
+}
+
+proc uncertain(x: CountToken, a: Int) {
+    require pinned: a = 1 or ((if all_same?(x) then 1 else 0) = 1)
+    expect e: a = 3  --~ error: expectation `uncertain::e` does not hold
+}
+
+proc uncertain_strict(x: CountToken, a: Int) {
+    require pinned: a = 1 or not accept?((if all_same?(x) then 1 else 0) = 1)
+    expect e: a = 3  --~ error: expectation `uncertain_strict::e` does not hold
+}
