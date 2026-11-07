@@ -128,6 +128,20 @@ def lease (cap : Nat) (locked : Bool) (row : Lease) (now : Int) (ttl : Nat) : Le
     ⟨true, admissionMemory cap row.report now ttl, evictionMemory row.report⟩
   else ⟨true, legacyReservation cap row.legacyRss, legacyMemory row.legacyRss⟩
 
+/-- Finite admission accounting over held slots. The adapter omits unlocked
+slots and supplies decoded observations; registry errors and OS failures are
+outside this pure total. Unknown legacy slots share one reservation. -/
+def admissionTotal (cap : Nat) (rows : List Lease) (now : Int) (ttl : Nat) : Int :=
+  let measured := rows.foldr (fun row total =>
+    (if reportOwner row.report row.statusJob row.observed now ttl then
+      admissionMemory cap row.report now ttl else legacyMemory row.legacyRss) + total) 0
+  let unknown := rows.any (fun row =>
+    !reportOwner row.report row.statusJob row.observed now ttl &&
+      match row.legacyRss with
+      | none => true
+      | some rss => decide (rss < 0))
+  measured + if unknown then legacyReservation cap none else 0
+
 /-- A held-job row before the victim eligibility check. Ownership is
 established by the adapter; no PID is used as an identity here. -/
 structure VictimRow where

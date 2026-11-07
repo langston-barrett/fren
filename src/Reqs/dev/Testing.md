@@ -1694,8 +1694,9 @@ The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
 `Heavy.Ownership` implements the registry attempt, report ownership,
-isolated-lease accounting, observed-memory victim, group-completion and
-owned-signalling decisions below, bound in `Impls.HeavyOwnership`.
+isolated-lease and set-wide admission accounting, observed-memory victim,
+group-completion and owned-signalling decisions below, bound in
+`Impls.HeavyOwnership`.
 Python remains the active scheduler and syscall adapter. The kernel takes
 decoded reports: wire version, token syntax, finite timestamps and monitor
 field shapes are checked by the adapter, not assumed to prove ownership.
@@ -1711,14 +1712,18 @@ fixtures and the existing `tested` claims. Both standalone Heavy kernels
 are outside those Fren runtimes. The `implPaths` audit therefore records
 each mapped output as an exact `unbound` observation in
 `test/impl_paths.txt`, including the forecast's two outputs and ownership's
-thirteen plus the conversion's four. These observations certify no runtime
+fourteen plus the conversion's four. These observations certify no runtime
 connection; unexpected, duplicate and stale inventory entries still fail
 the audit. Its regressions also check that a real standalone kernel call,
 even through a proof adapter, does not count as a Fren production output
 function.
-This slice does not port set-wide admission accounting, sequence allocation
-or publication, or OS waits, probes, signal delivery and PID 1 cleanup. A lease's
-isolated admission charge is not a new rule and must not be summed over
+The aggregate takes held rows, recomputes compatibility and freshness, and
+charges one shared forecast for unknown legacy readings. Lock discovery, report
+decoding and rounded elapsed-time transport remain adapter responsibilities.
+Registry timeout propagates and other OS errors yield infinity in Python; the
+pure finite total does not prove those IO paths. Sequence allocation and
+publication, OS waits, probes, signal delivery and PID 1 cleanup also remain
+outside this kernel. A lease's isolated admission charge is not a new rule and must not be summed over
 unknown holders.
 
 The victim kernel takes the fields of rows after `jobs` has checked held locks
@@ -2018,6 +2023,18 @@ pub fn unknown_legacy?(leases: MemoryLeases, now: Int, ttl: Nat) := match leases
 pub fn admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): Int :=
     observed_admission(cap, leases, now, ttl)
     + (if unknown_legacy?(leases, now, ttl) then legacy_reservation(cap, Option::None) else 0)
+
+-- The adapter supplies held slots only; unlocked metadata is omitted.
+pub proc heavy_admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (
+    det total: Int,
+) {
+    out total := admission_total(cap, leases, now, ttl)
+    expect empty: when leases = MemoryLeases::Nil, total = 0
+    expect two_unknown: when leases = MemoryLeases::Cons(
+        UNKNOWN_LEASE,
+        MemoryLeases::Cons(UNKNOWN_LEASE, MemoryLeases::Nil)
+    ), total = legacy_reservation(cap, Option::None)
+}
 
 pub fn eviction_total(leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
     out rss := match leases {

@@ -63,6 +63,16 @@ def check (j : Json) : Except String Json := do
     let rows ← (← j.getObjValAs? (Array Json) "rows").toList.mapM victimRow
     let (total, selected) := memoryVictim (← j.getObjValAs? Nat "cap") rows
     return .arr #[toJson total, toJson (selected.map (·.job))]
+  if (← j.getObjValAs? String "kind") == "aggregate" then
+    let ttl ← j.getObjValAs? Nat "ttl"
+    let mut rows := []
+    for item in (← j.getObjValAs? (Array Json) "rows") do
+      if ← item.getObjValAs? Bool "locked" then
+        let span ← item.getObjVal? "span" >>= timeSpan
+        rows := rows ++ [⟨← optionalField item "report" (report span),
+          ← item.getObjValAs? String "status_job", ← optionalField item "observed" monitor,
+          ← item.getObjValAs? (Option Int) "legacy_rss"⟩]
+    return toJson (admissionTotal (← j.getObjValAs? Nat "cap") rows 0 ttl)
   let span ← j.getObjVal? "span" >>= timeSpan
   let now : Int := 0
   if (← j.getObjValAs? String "kind") == "registry" then

@@ -9,6 +9,7 @@
 # runtimes. Python remains the active scheduler through migration step 2.
 unbound: Fren.Impls.Heavy.memory_prediction jobs
 unbound: Fren.Impls.Heavy.memory_prediction prediction
+unbound: Fren.Impls.HeavyOwnership.admission_total total
 unbound: Fren.Impls.HeavyOwnership.cleanup_trigger cleanup?
 unbound: Fren.Impls.HeavyOwnership.group_gone gone?
 unbound: Fren.Impls.HeavyOwnership.lease admission
