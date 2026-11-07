@@ -520,6 +520,8 @@ pub proc same_decision(full: Outcome, other: Outcome): (det same?) {
     ensure rule: same? iff full_kind = other_kind
 
     expect reflexive: when full = other, same?
+    expect equivalent_full_survives_other: when full = Equivalent and other = Survived, same?
+    expect survived_full_equivalent_other: when full = Survived and other = Equivalent, same?
     expect killed_stays_killed: when same? and full = Killed, other = Killed
     expect unviable_stays_unviable: when same? and full = Unviable, other = Unviable
 }
