@@ -21,6 +21,8 @@ exec 3<&0
 
 # Docker's default PID namespace is private; host/container PID sharing is
 # deliberately never requested.
+# Lake's default cache is inside the read-only toolchain. Keep its artifacts
+# in the writable checkout alongside, but separate from, the restored build.
 docker run --rm --interactive --pull never --name "$name" --init \
   --network bridge --ipc private --user "$uid:$gid" \
   --read-only --cap-drop ALL --security-opt no-new-privileges \
@@ -28,6 +30,7 @@ docker run --rm --interactive --pull never --name "$name" --init \
   --tmpfs /tmp:rw,nosuid,nodev,size=1g \
   --tmpfs "/home/codex:rw,nosuid,nodev,uid=$uid,gid=$gid,mode=0700,size=2g" \
   --env HOME=/home/codex --env CODEX_HOME=/auth --env ELAN_HOME=/opt/elan \
+  --env LAKE_CACHE_DIR=/work/.lake/author-cache \
   --env PATH=/opt/elan/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   --volume "$work:/work:rw" --volume "$output:/agent:rw" \
   --volume "$auth:/auth:rw" --volume "$elan:/opt/elan:ro" \

@@ -57,3 +57,4 @@ sandbox_pid=
 [ "$status" = 143 ]
 [ -z "$(docker ps --all --quiet --filter "name=^/$name$")" ]
 echo 'codex sandbox: boundaries, stdin and child teardown passed'
+bash "$here/test_lake_sandbox.sh"
