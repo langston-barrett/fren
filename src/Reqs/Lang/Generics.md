@@ -391,23 +391,29 @@ pub fn with_parts(Ty, Seq<Ty>): Ty
 ```
 
 `lang::instantiation` states what instantiating a type `ty` with the
-arguments `arguments` gives, from what instantiating each of its parts
-gives: a parameter is replaced by its argument, if there is one, and any
-other type is the same type with its parts instantiated, so that a type
-without parts is left as it is:
+arguments `arguments` gives. `instantiated_type` applies the same rule
+to each part. Those parts are computed from the type and its arguments:
+a parameter is replaced by its argument, if there is one, and any other
+type is the same type with its parts instantiated, so that a type without
+parts is left as it is:
 
 ```fren
-pub proc instantiation(
-    ty: Ty,
-    arguments: Seq<Ty>,
-    instantiated: Seq<Ty>,         -- each of the parts of `ty`, instantiated in turn
-): (det result: Ty) {
+pub fn instantiated_type(Ty, Seq<Ty>): Ty
+pub fn instantiated_parts(Seq<Ty>, Seq<Ty>): Seq<Ty>
+
+-- The recursive equation applies at every sequence length; the impl
+-- proves it for every list, rather than checking a bounded sample.
+set_option fren.lint.undecidable "allow" in
+pub proc instantiation_parts(types: Seq<Ty>, arguments: Seq<Ty>): (det instantiated: Seq<Ty>) {
+    out instantiated := if types = [] then [] else
+        [instantiated_type(types[0], arguments)] ++ instantiated_parts(types.slice(1, types.len), arguments)
+}
+
+pub proc instantiation(ty: Ty, arguments: Seq<Ty>): (det result: Ty) {
     out result :=
         if param?(ty) then
         (if param_index(ty) < arguments.len then arguments[param_index(ty)] else ty)
-        else with_parts(ty, instantiated)
-
-    require each_part: instantiated.len = parts(ty).len
+        else with_parts(ty, instantiated_parts(parts(ty), arguments))
 }
 ```
 

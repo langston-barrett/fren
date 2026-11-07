@@ -19,10 +19,9 @@ import FrenCore.TypeFacts
 
 The meaning of a spec on one behaviour: an interpretation and a value for
 each variable. It is computed from the parsed items, with its own types and
-its own reading of each expression, and shares only name resolution
-(`Fren.Core.Table`) with the elaborator, so that it is an independent
-statement of what a spec means, against which the formulas given to the
-solver are confirmed (`FrenCli.Confirm`).
+its own reading of each expression. Name resolution and generic datatype
+instantiation use the shared core. Evaluation gives the meaning against
+which the formulas given to the solver are confirmed (`FrenCli.Confirm`).
 
 Evaluation is three-valued: a variable without a value, or a function
 application that the interpretation does not give, is unknown (`none`),
@@ -77,7 +76,8 @@ partial def VTy.ofCore : Fren.Core.Ty → VTy
   | .param k _ => .param k
 
 /-- `t`, with the `k`th of `args` for each type parameter `k`
-(`lang::instantiation`). A parameter without one stays. -/
+(`lang::instantiation`). A parameter without one stays. Generic functions
+still use this operation; datatype instances use `VTy.atTypeInstance`. -/
 partial def VTy.subst (args : List VTy) : VTy → VTy
   | .param k => args[k]?.getD (.param k)
   | .set t => .set (t.subst args)
@@ -563,7 +563,7 @@ inductive Ex where
   arguments `args`, as lowering applies it: its value is `e`'s, but where
   evaluation is strict (`Interp.strict`), only where every argument's is
   known, though `e` may not read them all (`model::known_application`).
-  Only evaluation reads `args`: the solver and the checks see `e`. -/
+  Source questions visit `args` too, even where `e` never reads them. -/
   | strict (args : Array Ex) (e : Ex)
   /-- That `e` is a value of the declared type `t`: what its subset
   types, and those within it, say of it
@@ -693,6 +693,27 @@ structure Spec where
   instanceArgs : NameMap (Array Fren.Core.Ty) := {}
   deriving Inhabited
 
+/-- `t` as both front ends see it (`Fren.Core.Ty`). -/
+partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .set t => .set (t.core sp)
+  | .rel a b => .rel (a.core sp) (b.core sp)
+  | .seq t => .seq (t.core sp)
+  | .data p as =>
+    let as := as.map (·.core sp)
+    if (sp.data.find? p).any (·.isRecord) then .record p as else .enum p as
+  | .abstract p => .abstract p
+  | .newtype p u => .newtype p (u.core sp)
+  | .param k => .param k .anonymous
+
+/-- The evaluator extracts a type and its arguments; the theory morphism
+performs the same simultaneous substitution as the elaborators. -/
+def VTy.atTypeInstance (t : VTy) (sp : Spec) (args : List VTy) : VTy :=
+  VTy.ofCore ((Fren.Core.genericTypeMorphism (args.map (·.core sp)).toArray).type (t.core sp))
+
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
 
 /-- Every value of `t`, a type that a quantifier ranges over
@@ -703,7 +724,7 @@ partial def Spec.values (sp : Spec) : VTy → Array Val
   | .bool => #[.bool true, .bool false]
   | .data p args => match sp.data.find? p with
     | some d => (d.ctors.mapIdx fun idx c =>
-        (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values (t.subst args)).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
+        (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values (t.atTypeInstance sp args)).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
     | none => #[]
   -- A newtype's values are its underlying type's, as `Spec.ofPVal` has them.
   | .newtype _ u => sp.values u
@@ -1983,14 +2004,10 @@ def Ex.children : Ex → Array Ex
   | .quant _ _ _ _ ds _ b => (ds.filterMap id).push b
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => c?.toArray.push v
   | .pre _ _ gs e => (gs.map (·.2)).push e
-  -- Only evaluation reads the arguments (`Ex.strict`). The traversals built
-  -- on this, which look for recursions, indexes or unspecified values, miss
-  -- one in an argument that the body never reads. Its value can only make
-  -- the application unknown, in a confirmation, never give it another, and
-  -- outside one it is not evaluated. But `Ex.siteGoals` then gives such an
-  -- index no definedness goal, so the `fren` command shows the model of its
-  -- definedness check on the solver's word, where the Lean-hosted front end
-  -- may refute it (#493).
+  -- Semantic dependency queries follow the substituted body. An argument
+  -- that it never reads can only make strict confirmation unknown; outside
+  -- confirmation its value is not evaluated. Source questions visit every
+  -- retained argument through `Fren.Core.applicationParts`.
   | .strict _ e => #[e]
 
 /-- Whether `e` has an unbounded quantifier: one with a bound name whose
@@ -2537,7 +2554,7 @@ partial def Val.showAs (sp : Spec) (ty : VTy) (v : Val) : String :=
   | .data p targs, .ctor _ idx args =>
     match (sp.data.find? p).bind (·.ctors[idx]?), sp.data.find? p with
     | some c, some d =>
-      let shown := (c.fields.zip args).map fun ((_, t), a) => a.showAs sp (t.subst targs)
+      let shown := (c.fields.zip args).map fun ((_, t), a) => a.showAs sp (t.atTypeInstance sp targs)
       if d.isRecord then
         let fs := (c.fields.zip shown).toList.map fun ((f, _), a) => s!"{f} := {a}"
         s!"{p.getString!} \{ {", ".intercalate fs} }"
@@ -2751,7 +2768,7 @@ def readFields (e : Ex) (ty : VTy) (fs : List String) : L (Ex × VTy) := do
     let some c := d.ctors[0]? | throw s!"`{showPath p}` has no constructor"
     let some idx := c.fields.findIdx? (·.1 == Name.mkSimple f) | throw s!"`{showPath p}` has no field `{f}`"
     e := .field e idx
-    ty := c.fields[idx]!.2.subst targs
+    ty := c.fields[idx]!.2.atTypeInstance (← get).spec targs
   return (e, ty)
 
 def evalClosed (e : Ex) : Option Val := e.eval {} fun _ => none
@@ -3035,10 +3052,11 @@ def ReadingNode.children : ReadingNode → List ReadingNode
     -- Compilation enters a constant's closed body, although renaming and
     -- substitution share it. Count that later work at each use too.
     | .const _ body => if sites then [] else [.expr #[] [] false body]
-    -- `siteGoals` does not enter retained strict arguments, precondition
-    -- goals or compiled let values. Copying and compilation still do;
+    -- Source questions enter retained arguments too, under the same
+    -- lexical environment as the body. Precondition goals and compiled
+    -- let values are entered only for copying and compilation;
     -- count those trees without inventing nested pattern substitutions.
-    | .strict args body => (if sites then [] else args.toList.map copied) ++ [here body]
+    | .strict args body => (Fren.Core.applicationParts args.toList body).map here
     | .pre _ _ goals body => (if sites then [] else goals.toList.map (copied ·.2)) ++ [here body]
     | .memo values body => (if sites then [] else values.toList.map copied) ++ [here body]
     | .lifted values body => (if sites then [] else values.toList.flatMap (·.toList.map copied)) ++ [here body]
@@ -3076,7 +3094,8 @@ def ReadingNode.siteChildren : ReadingNode → List ReadingNode
     let here (e : Ex) := ReadingNode.expr defs bound false e
     match e with
     | .const .. => []
-    | .strict _ body | .memo _ body | .lifted _ body | .dispatch _ body | .pre _ _ _ body => [here body]
+    | .strict args body => (Fren.Core.applicationParts args.toList body).map here
+    | .memo _ body | .lifted _ body | .dispatch _ body | .pre _ _ _ body => [here body]
     | .quant _ _ _ names _ _ body =>
       [.expr defs (bound.filter fun (name, _) => !names.contains name) false body]
     | _ => (here e).children
@@ -3172,7 +3191,7 @@ partial def Ex.siteGoalsCore (e : Ex) (wrap : Ex → Ex) : Array (Nat × Option 
   -- Its arguments' questions, then its preconditions', as the elaborator
   -- records them.
   | .pre pos f goals e => go e ++ goals.map fun (p, g) => (pos, some (.precondition f p), wrap g)
-  | .strict _ e => go e
+  | .strict args e => (Fren.Core.applicationParts args.toList e).toArray.flatMap (go ·)
   | .matches r _ _ => go r
   | .index q i pos _ =>
     let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))
@@ -3391,7 +3410,8 @@ partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy �
     let .data path targs := t | throw "a variant matches a value that is not an enumeration"
     unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
     let d ← dataDef path
-    let tys := d.ctors[idx]!.fields.map (·.2.subst targs)
+    let sp := (← get).spec
+    let tys := d.ctors[idx]!.fields.map (fun f => f.2.atTypeInstance sp targs)
     let mut ps := #[]
     let mut bound := []
     for a in args?.getD #[], ta in tys do
@@ -3435,22 +3455,6 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .update e fs => e.readsUnspecified || fs.any (·.2.readsUnspecified)
   | .match e arms _ _ u _ => u.isSome || e.readsUnspecified || arms.any fun (_, g?, b) =>
     g?.any (·.readsUnspecified) || b.readsUnspecified
-
-/-- `t` as both front ends see it (`Fren.Core.Ty`). -/
-partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
-  | .bool => .bool
-  | .int => .int
-  | .nat => .nat
-  | .string => .string
-  | .set t => .set (t.core sp)
-  | .rel a b => .rel (a.core sp) (b.core sp)
-  | .seq t => .seq (t.core sp)
-  | .data p as =>
-    let as := as.map (·.core sp)
-    if (sp.data.find? p).any (·.isRecord) then .record p as else .enum p as
-  | .abstract p => .abstract p
-  | .newtype p u => .newtype p (u.core sp)
-  | .param k => .param k .anonymous
 
 /-- The type arguments that the elaborator inferred for the application at
 `span` of the generic function at `path`, in the file being lowered
@@ -3622,7 +3626,7 @@ partial def Spec.ofPVal (sp : Spec) : VTy → Fren.Core.PVal → Val
   | _, .int i => .int i
   | .newtype _ u, .ctor _ #[w] => sp.ofPVal u w
   | .data p targs, .ctor idx args => match sp.data.find? p with
-    | some d => .ctor p idx ((args.zip (d.ctors[idx]!.fields.map (·.2.subst targs))).map fun (w, u) => sp.ofPVal u w)
+    | some d => .ctor p idx ((args.zip (d.ctors[idx]!.fields.map (·.2.atTypeInstance sp targs))).map fun (w, u) => sp.ofPVal u w)
     | none => .ctor p idx #[]
   | _, .ctor idx _ => .ctor .anonymous idx #[]
 
@@ -4863,7 +4867,7 @@ partial def Spec.fits (sp : Spec) : VTy → Val → Bool
   | .newtype _ u, v => sp.fits u v
   | .abstract s, .abs s' _ => s == s'
   | .data p args, .ctor q idx vs => p == q && match (sp.data.find? p).bind (·.ctors[idx]?) with
-    | some c => c.fields.size == vs.size && (c.fields.zip vs).all fun ((_, t), v) => sp.fits (t.subst args) v
+    | some c => c.fields.size == vs.size && (c.fields.zip vs).all fun ((_, t), v) => sp.fits (t.atTypeInstance sp args) v
     | none => false
   | _, _ => false
 

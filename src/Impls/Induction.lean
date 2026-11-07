@@ -63,6 +63,21 @@ impl unfoldings: lang::unfoldings for (path : Option Lean.Name) {
         simp [fren_spec, inductionSegment, lang.«induction_function?», Fren.Str.lit,
           Fren.Core.isInductionFn, induction_prefix, Fren.Core.unfoldings, Fren.Core.inductionUnfoldings, h]
 
+impl induction_short_parameters: lang::induction_short_parameters for (bs : Array (Array Int)) {
+  leading_binders := Fren.FinSet.ofList (bs.toList.map fun b => Fren.FinSet.ofList b.toList),
+  parameters := Fren.FinSet.ofList (Fren.Core.shortInductionParameters bs).toList,
+  «supplied?» := true,
+} by
+  intro bs _
+  simp only [fren_spec, true_iff]
+  intro p
+  simp [Fren.Core.shortInductionParameters, Fren.FinSet.mem_ofList]
+  constructor
+  · rintro ⟨l, ⟨a, ha, rfl⟩, hp⟩
+    exact ⟨Fren.FinSet.ofList a.toList, ⟨a, ha, rfl⟩, Fren.FinSet.mem_ofList.mpr hp⟩
+  · rintro ⟨g, ⟨a, ha, rfl⟩, hp⟩
+    exact ⟨a.toList, ⟨a, ha, rfl⟩, Fren.FinSet.mem_ofList.mp hp⟩
+
 theorem inductionMember_iff (m : BlockMember) :
     inductionMember m = true ↔ toBlockMember m = .Assume ∨ toBlockMember m = .Expect ∨ toBlockMember m = .Cover := by
   cases m <;> decide

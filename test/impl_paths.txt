@@ -22,7 +22,8 @@ unbound: Fren.Impls.HeavyOwnership.time_conversion fresh?
 unbound: Fren.Impls.HeavyOwnership.time_conversion remaining_deadline
 unbound: Fren.Impls.HeavyOwnership.time_conversion timed_out?
 
-# Outputs represented by binders, literals, spec values, or output-free laws.
+# Outputs represented by binders, literals, spec values, output-free laws,
+# or functions outside the CLI/hosted production namespaces.
 unbound: Fren.Impls.Enumeration.contract_blocker right?
 unbound: Fren.Impls.Enumeration.shape_bound size
 unbound: Fren.Impls.Enumeration.shape_bound value?
@@ -41,11 +42,18 @@ unbound: Fren.Impls.PassEvidence.fact_applications closed?
 unbound: Fren.Impls.PatternTests.manual_pattern_test_fix <no public output>
 unbound: Fren.Impls.PatternTests.manual_pattern_test_reads <no public output>
 unbound: Fren.Impls.PatternTests.manual_pattern_test_refines <no public output>
+# The oracle impls bind FrenTest.Conformance.exitAllowed and FrenTest.Oracle's
+# finish, outputFailures and toolFailures. The driver and coverage executable
+# call them, but this audit excludes FrenTest and those executable roots.
+unbound: Fren.Impls.Testing.conformance_exit accepted?
 unbound: Fren.Impls.Testing.coverage_verdict fails?
 unbound: Fren.Impls.Testing.coverage_verdict stale?
 unbound: Fren.Impls.Testing.fuzz_overdue overdue?
 unbound: Fren.Impls.Testing.job_shard k
 unbound: Fren.Impls.Testing.job_shard runs?
+unbound: Fren.Impls.Testing.oracle_count passes?
+unbound: Fren.Impls.Testing.oracle_output passes?
+unbound: Fren.Impls.Testing.oracle_tool passes?
 unbound: Fren.Impls.Testing.ui_check passes?
 unbound: Fren.Impls.Theories.theory_variable_images translated
 unbound: Fren.Impls.block_errors from_earlier?
@@ -69,6 +77,10 @@ unbound: Fren.Impls.guard holds?
 unbound: Fren.Impls.guarded_match first
 unbound: Fren.Impls.index_set index_set?
 unbound: Fren.Impls.induction_hypotheses generated?
+# The short-induction relational witness supplied? is the literal true.
+# shortInductionParameters supplies the input parameters, outside this audit
+# of public outputs. This entry claims no reporting-path certificate for it.
+unbound: Fren.Impls.induction_short_parameters supplied?
 unbound: Fren.Impls.lexicographic decider
 unbound: Fren.Impls.manual_at_most_one_defined <no public output>
 unbound: Fren.Impls.merged_facts merged?
@@ -118,6 +130,10 @@ cli only: Fren.Impls.Enumeration.cardinality_truth truth Fren.Core.Cardinality.h
 cli only: Fren.Impls.Enumeration.partial_and truth Fren.Core.Enumeration.andTruth
 cli only: Fren.Impls.Enumeration.partial_not truth Fren.Core.Enumeration.notTruth
 cli only: Fren.Impls.apart apart? FrenCli.Fmt.apart
+# Native source-site reconstruction (eval::application_sites): the hosted
+# front end records argument questions during source translation, before
+# applying the Lean definition, without a retained-argument traversal.
+cli only: Fren.Impls.application_sites visited Fren.Core.applicationParts
 cli only: Fren.Impls.arm_test_of_tests test Fren.Core.armTest
 cli only: Fren.Impls.backjump_at resumes? FrenCli.Eval.resumesAt
 cli only: Fren.Impls.blank_lines kept FrenCli.Fmt.blankLines
@@ -345,8 +361,6 @@ bypassed: Fren.Impls.SubsetTypes.pattern_member witness Fren.Core.intervalIndex?
 bypassed: Fren.Impls.Theories.theory_ground_term ground? Fren.Core.TheoryTerm.ground
 bypassed: Fren.Impls.Theories.theory_instance accepted? Fren.Core.TheorySentence.instantiate
 bypassed: Fren.Impls.Theories.theory_instance instance_sentence Fren.Core.TheorySentence.instantiate
-bypassed: Fren.Impls.Theories.theory_term_list substituted Fren.Core.TheoryTerm.substitute
-bypassed: Fren.Impls.Theories.theory_term_substitution substituted Fren.Core.TheoryTerm.substitute
 bypassed: Fren.Impls.Theories.theory_variable_images accepted? Fren.Core.theoryGroundImages
 bypassed: Fren.Impls.Theories.theory_variable_images remaining Fren.Core.theoryRemainingVariables
 bypassed: Fren.Impls.application accepted? Fren.Core.applicationAccepted

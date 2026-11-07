@@ -14,31 +14,6 @@ namespace Fren
 -- and fails at once for any other bound, which the other rules then prove.
 local macro_rules | `(tactic| get_elem_tactic_extensible) => `(tactic| exact True.intro)
 
-/-- The Lean type of the Fren type `t`, the inverse of `coreTy?`, for the
-type arguments of a construction. -/
-partial def leanTypeOf (t : Core.Ty) : TermElabM Expr := do
-  let s ← getState
-  let set (e : Expr) := mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) e
-  match t with
-  | .bool => return Lean.mkConst ``Bool
-  | .int => return Lean.mkConst ``Int
-  | .nat => return Lean.mkConst ``Nat
-  | .string => return Lean.mkConst ``String
-  | .set e => return set (← leanTypeOf e)
-  | .rel a b => return set (mkApp2 (Lean.mkConst ``Prod [Level.zero, Level.zero]) (← leanTypeOf a) (← leanTypeOf b))
-  | .seq e => return mkApp (Lean.mkConst ``Fren.Seq [Level.zero]) (← leanTypeOf e)
-  | .enum p as =>
-    let some e := s.enums.get? p | throwError "internal error: unknown enum `{p}`"
-    return mkAppN e.const (e.leanArgs (← as.toArray.mapM leanTypeOf))
-  | .record p as =>
-    let some r := s.records.get? p | throwError "internal error: unknown record `{p}`"
-    return mkAppN (Lean.mkConst r.decl) (← as.toArray.mapM leanTypeOf)
-  | .abstract p => return Lean.mkConst (placeholderName p)
-  | .newtype p _ =>
-    let some n := s.newtypes.get? p | throwError "internal error: unknown newtype `{p}`"
-    return Lean.mkConst n.decl
-  | .param _ n => throwError "internal error: the type parameter `{n}` outside its declaration"
-
 /-- A construction of a generic type (`Reqs/Lang/Generics#type-arguments`).
 -/
 structure Construction where

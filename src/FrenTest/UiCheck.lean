@@ -27,6 +27,31 @@ def parsed (src : String) : Array (Nat × String × String × Option String × B
   | .ok s => s.summary? == some "1 passed, 0 failed, 0 inconclusive" && s.exit? == some 3 && s.only? == some "cli"
   | .error _ => false
 
+-- The parser retains valid values, including whitespace and exits beyond 2.
+#guard ["0", "1", "2", "3", " 42 ", "0003"].all fun v =>
+  match parse s!"--@ exit: {v}" with
+  | .ok s => s.exit? == v.trimAscii.toString.toNat? && s.exit?.isSome
+  | .error _ => false
+#guard ["cli", "hosted"].all fun fe =>
+  match parse s!"--@ only:  {fe}  \n--~[{fe}] error: x" with
+  | .ok s => s.only? == some fe && s.expectations[0]?.bind (·.frontEnd?) == some fe
+  | .error _ => false
+
+-- Invalid input must fail at the annotation, rather than erase an assertion
+-- or produce a selector that applies to neither front end.
+#guard ["", " ", "nonsense", "-1", "3x", "1 2"].all fun v =>
+  match parse s!"first\n--@ exit: {v}" with
+  | .error e => e.startsWith "line 2:"
+  | .ok _ => false
+#guard ["", " ", "clii", "CLI"].all fun fe =>
+  match parse s!"first\n--@ only: {fe}" with
+  | .error e => e.startsWith "line 2:"
+  | .ok _ => false
+#guard ["", "clii", "CLI", " cli "].all fun fe =>
+  match parse s!"first\n--~[{fe}] error: x" with
+  | .error e => e.startsWith "line 2:"
+  | .ok _ => false
+
 -- `--@ reference:` cites a rule, and expects nothing.
 #guard match parse "--@ reference: quantifier.limit" with
   | .ok s => s.expectations.isEmpty && s.summary?.isNone

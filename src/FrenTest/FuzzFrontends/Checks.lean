@@ -130,6 +130,38 @@ private def cardUndecided (code? : Option String) (why : String) : Diagnostic :=
 #guard (setCardProblem? { line := 1, severity := "error", text := "internal error: refuted model" }).isSome
 end
 
+/-- Fresh runs of a generator that promises well-typed specs reject
+shared static errors. Keep the cardinality modes' stricter checks too. -/
+def freshProblems (mode : Mode) (ran : Ran) : Array String :=
+  (if !(mode.genericFunctions || mode.shortInductions) && (mode.setCard || mode.setCardFallback) then setCardProblems ran else #[]) ++
+    (if mode.genericFunctions || mode.shortInductions || mode.setCard || mode.setCardFallback || mode.genericTypes then
+      (appendedErrors #[0] ran.cli ++ appendedErrors #[0] ran.hosted).map fun (_, d) =>
+        s!"unexpected static error: {headOf d}"
+     else #[])
+
+section
+private def sharedDiagnostic (d : Diagnostic) : Ran := {
+  comparison := {}, reports := "", errors := #[], cli := #[d], hosted := #[d] }
+private def sharedError (code : String) : Ran :=
+  sharedDiagnostic { line := 1, severity := "error", text := "shared error", code? := some code }
+-- Agreement on an invalid Bool binder cannot count as generic-type coverage.
+#guard !(freshProblems { genericTypes := true } (sharedError "F0303")).isEmpty
+-- Expected failed comparisons remain valid generated checks.
+#guard (freshProblems { genericTypes := true } (sharedError "F0603")).isEmpty
+-- The new mode leaves the existing modes' treatment of errors unchanged.
+#guard (freshProblems {} (sharedError "F0303")).isEmpty
+-- Generic-function mode keeps its existing priority over cardinality flags.
+#guard !(freshProblems { genericFunctions := true } (sharedError "F0303")).isEmpty
+#guard (freshProblems { genericFunctions := true, setCard := true }
+  (sharedDiagnostic (cardUndecided (some "F0608") "INCOMPLETE"))).isEmpty
+#guard !(freshProblems { setCard := true }
+  (sharedDiagnostic (cardUndecided (some "F0608") "INCOMPLETE"))).isEmpty
+-- Short induction preserves main's static-error check and flag priority.
+#guard !(freshProblems { shortInductions := true } (sharedError "F0303")).isEmpty
+#guard (freshProblems { shortInductions := true, setCard := true }
+  (sharedDiagnostic (cardUndecided (some "F0608") "INCOMPLETE"))).isEmpty
+end
+
 /-- Checks the specs of the corpus with both front ends, in this process.
 Each failure is a difference that `knownDifferences` does not list, or a
 listed one that no longer occurs (`unmatched`), leaving out those that

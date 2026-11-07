@@ -19,8 +19,11 @@ def corpus : List (Mode × Nat × Nat) :=
     ({ decidable := true }, 8187312, 1),
     ({ enumerationObligations := true }, 0, 20), ({ enumerationObligations := true }, 438, 1),
     ({ enumerationObligations := true }, 555, 1), ({ enumerationRelations := true }, 0, 20),
-    ({ unfoldings := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
+    ({ unfoldings := true }, 0, 10), ({ shortInductions := true }, 0, 10), ({ datatypeElements := true }, 0, 20),
     ({ genericFunctions := true }, 0, 5),
+    ({ genericTypes := true }, 0, 5),
+    -- A Bool Result payload needs a pattern binder ending in `?`.
+    ({ genericTypes := true }, 761611, 1),
     ({ recursionPositions := true }, 0, 20), ({ recursionPositions := true }, 934000, 1),
     ({ recursionPositions := true }, 934051, 1), ({ setCardFallback := true }, 0, 8),
     ({ setCardFallback := true }, 1324204, 1)] : List (Mode × Nat × Nat)) ++

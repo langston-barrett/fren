@@ -1218,8 +1218,11 @@ def jobsDefault : BaseIO Nat :=
 any solver queries to stdout; returns the exit code. `record?` collects the
 results of each item, by its key (`Mutate.Todo.key`), each with the method
 that ran it, for the tests of `fren mutate`'s decisions and of the
-agreement of methods (`check::methods_agree`). -/
-def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.CheckResult × Fren.Core.ProofMethod))) := none) :
+agreement of methods (`check::methods_agree`). For crash diagnostics,
+`progress?` receives a file and component label and `true` before its
+work starts, and `false` after all its methods return. -/
+def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.CheckResult × Fren.Core.ProofMethod))) := none)
+    (progress? : Option (String → Bool → IO Unit) := none) :
     IO UInt32 := do
   let jobs := args.jobs?.getD (← jobsDefault)
   let some (files, st, reading) ← loadReading args.paint args.files args.lints args.evidence? jobs args.dumpResolved
@@ -1287,6 +1290,10 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
   -- output is the same as one at a time.
   let solve := fun (spec? : Except Eval.ReadError Eval.Spec)
       ((c, global, kinds, body, _) : CComp × Bool × Array Fren.Core.CheckKind × Bool × String) => do
+    -- The test driver's crash journal records entry before any work and
+    -- completion after the solver, testing and enumeration have returned.
+    let label := if progress?.isSome then s!"{(files[c.file]?.map (·.1)).getD "?"}: {c.path}" else ""
+    if let some progress := progress? then progress label true
     let n ← IO.mkRef 0
     let dumped ← IO.mkRef ""
     let dump? := if args.dumpSmt then some fun script => do
@@ -1314,6 +1321,7 @@ def check (args : Args) (record? : Option (IO.Ref (Array (String × Fren.Core.Ch
     let tested? ← IO.lazyPure fun _ => tested?
     let enumerated? ← IO.lazyPure fun _ => enumerated?
     let timing := (solved - start, (← IO.monoNanosNow) - solved)
+    if let some progress := progress? then progress label false
     return (r, (← dumped.get, ← obligations.get), tested?, enumerated?, timing)
   let mut timings := #[]
   -- Those with checks by testing or enumeration first: they are the

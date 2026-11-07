@@ -1,0 +1,76 @@
+-- Short expectations keep their quantified direct check and reported name.
+-- Only the leading forall's bindings supply induction parameters.
+-- fren-covers: lang::induction_short_parameters, lang::induction_candidate, lang::induction_verdict
+--@ summary: 21 passed, 1 failed, 6 inconclusive, 0 redundant
+set_option fren.lint.undecidable "allow"
+set_option fren.lint.assertions_on_constants "allow"
+
+pub enum L { Nil, Cons(Int, L) }
+
+pub fn len(l: L): Int := match l {
+    L::Nil => 0,
+    L::Cons(_, t) => 1 + len(t),
+}
+
+pub fn append(a: L, b: L): L := match a {
+    L::Nil => b,
+    L::Cons(h, t) => L::Cons(h, append(t, b)),
+}
+
+expect nonnegative: forall (a: L), len(a) >= 0
+expect right: forall (a: L), append(a, L::Nil) = a
+expect adds: forall (a b: L), len(append(a, b)) = len(a) + len(b)
+expect groups: forall (a: L) (b: L), len(append(a, b)) = len(a) + len(b)
+expect clause_name: forall (claim: L), append(claim, L::Nil) = claim
+expect block_clause_name(claim: L) { expect right: append(claim, L::Nil) = claim }
+expect same_name: forall (same_name: L), append(same_name, L::Nil) = same_name
+expect guarded: forall (a b: L), when b = L::Nil, len(append(a, b)) = len(a)
+expect defined: forall (a: L), append(a, t) = a where t := L::Nil
+expect conjunction: forall (a: L), and { right: append(a, L::Nil) = a, length: len(a) >= 0 }
+
+-- A single proved leaf cannot prove the closed quantified conjunction.
+expect incomplete: forall (a: L), and { right: append(a, L::Nil) = a, wrong: len(a) = 3 }  --~ warning: could not decide whether `incomplete` holds
+
+pub enum G<A> { Z, S(A, G<A>) }
+
+pub fn count<A>(g: G<A>): Int := match g {
+    G::Z => 0,
+    G::S(_, t) => 1 + count(t),
+}
+
+expect generic: forall (g: G<Bool>), count(g) >= 0
+
+-- A generated recursive symbol and its arguments share the interpretation
+-- of an opaque companion type, including for generic recursion.
+pub type Atom
+
+pub fn keep<A>(x: A, a: L): A := match a {
+    L::Nil => x,
+    L::Cons(_, t) => keep(x, t),
+}
+
+expect generic_opaque: forall (x: Atom) (a: L), keep(x, a) = x
+
+expect block_generic_opaque(x: Atom, a: L) { expect same: keep(x, a) = x }
+
+expect opaque_after: forall (a: L) (x: Atom), append(a, L::Nil) = a  --~ warning: unused bound name `x`
+expect opaque_before: forall (x: Atom) (a: L), append(a, L::Nil) = a  --~ warning: unused bound name `x`
+expect opaque_generic: forall (x: Atom) (g: G<Int>), count(g) >= 0  --~ warning: unused bound name `x`
+
+expect block_opaque(x: Atom, a: L) {  --~ warning: unused variable `x`
+    expect right: append(a, L::Nil) = a
+}
+
+-- These restrictions remain: no leading binder, abstract applications or
+-- subset-typed parameters. A recursion on a constructed value also supplies
+-- no candidate.
+expect parenthesized: (forall (a: L), len(a) >= 0)  --~ warning: could not decide whether `parenthesized` holds
+expect constructed: forall (a: L), len(L::Cons(0, a)) >= 1  --~ warning: could not decide whether `constructed` holds
+expect alias_argument: forall (a: L), append(t, L::Nil) = t where t := a  --~ warning: could not decide whether `alias_argument` holds
+pub fn weight(L): Int
+expect abstract: forall (a: L), len(a) + weight(a) >= weight(a)  --~ warning: could not decide whether `abstract` holds
+pub type Nonempty = a: L where nonempty: a is L::Cons(_, _)
+expect subset_domain: forall (a: Nonempty), len(a) >= 1  --~ warning: could not decide whether `subset_domain` holds
+
+-- Ordinary disproved quantified claims retain their failure.
+expect wrong_bool: forall (b?: Bool), b?  --~ error: expectation `wrong_bool` does not hold

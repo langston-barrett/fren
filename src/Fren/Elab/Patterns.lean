@@ -147,7 +147,7 @@ partial def resolvePattern (cx : ExprCtx) (ty : Expr) (x : Term) (inOr test : Bo
     throwErrorAt p (Core.notAVariantOfMsg info.path s!"a variant of `{Core.showPath en.path}`").text
   let v := info.path ++ en.variants[idx]!
   -- The payload's types, with the scrutinee's arguments (`lang::instantiation`).
-  let tys := (info.payloadsAt ty.getAppArgs)[idx]!
+  let tys := (← info.payloadsAt ty.getAppArgs)[idx]!
   if let some msg := Core.variantMentionMsg? v tys.size (!p[1].isNone) then throwErrorAt p msg.text
   let args := patternArgs p
   unless args.size == tys.size do throwErrorAt p (Core.arityMsg v tys.size args.size "pattern").text

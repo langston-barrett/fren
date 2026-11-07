@@ -44,10 +44,14 @@ structure Mode where
   /-- Specs of claims that induction proves only by unfolding more than
   one step (`Wide.unfoldings`). -/
   unfoldings : Bool := false
+  /-- Short quantified global claims over recursive datatypes. -/
+  shortInductions : Bool := false
   /-- Collection payloads and fields of generic datatypes. -/
   datatypeElements : Bool := false
   /-- Type arguments and whole generic function instances. -/
   genericFunctions : Bool := false
+  /-- Nested and multi-parameter generic datatype instances. -/
+  genericTypes : Bool := false
   /-- Finite set cardinalities and #820's regression seeds. -/
   setCard : Bool := false
   /-- Cardinalities beyond the expansion bound or of unlisted types. -/
@@ -68,8 +72,10 @@ def Mode.args (m : Mode) : Array String :=
     (if m.enumerationObligations then #["--enumeration-obligations"] else #[]) ++
     (if m.enumerationRelations then #["--enumeration-relations"] else #[]) ++
     (if m.unfoldings then #["--unfoldings"] else #[]) ++
+    (if m.shortInductions then #["--short-inductions"] else #[]) ++
     (if m.datatypeElements then #["--datatype-elements"] else #[]) ++
     (if m.genericFunctions then #["--generic-functions"] else #[]) ++
+    (if m.genericTypes then #["--generic-types"] else #[]) ++
     (if m.setCard then #["--set-card"] else #[]) ++
     (if m.setCardFallback then #["--set-card-fallback"] else #[]) ++
     (if m.recursionPositions then #["--recursion-positions"] else #[])
@@ -79,7 +85,7 @@ def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates", "--decidable", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--datatype-elements", "--generic-functions", "--set-card", "--set-card-fallback", "--recursion-positions"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--decidable", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--short-inductions", "--datatype-elements", "--generic-functions", "--generic-types", "--set-card", "--set-card-fallback", "--recursion-positions"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
@@ -88,8 +94,10 @@ def Mode.ofArgs? (args : List String) : Option Mode :=
            decidable := args.contains "--decidable"
            enumerationObligations := args.contains "--enumeration-obligations"
            enumerationRelations := args.contains "--enumeration-relations"
-           unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements"
+           unfoldings := args.contains "--unfoldings", shortInductions := args.contains "--short-inductions"
+           datatypeElements := args.contains "--datatype-elements"
            genericFunctions := args.contains "--generic-functions"
+           genericTypes := args.contains "--generic-types"
            setCard := args.contains "--set-card", setCardFallback := args.contains "--set-card-fallback", recursionPositions := args.contains "--recursion-positions" }
   else none
 
@@ -106,8 +114,10 @@ def Mode.lean (m : Mode) : String :=
     (if m.enumerationObligations then ["enumerationObligations := true"] else []) ++
     (if m.enumerationRelations then ["enumerationRelations := true"] else []) ++
     (if m.unfoldings then ["unfoldings := true"] else []) ++
+    (if m.shortInductions then ["shortInductions := true"] else []) ++
     (if m.datatypeElements then ["datatypeElements := true"] else []) ++
     (if m.genericFunctions then ["genericFunctions := true"] else []) ++
+    (if m.genericTypes then ["genericTypes := true"] else []) ++
     (if m.setCard then ["setCard := true"] else []) ++
     (if m.setCardFallback then ["setCardFallback := true"] else []) ++
     (if m.recursionPositions then ["recursionPositions := true"] else [])
