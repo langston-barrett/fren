@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren.Elab
+import Fren.Elab.TypeTerms
 -- keep-sorted end
 
 /-!
