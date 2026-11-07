@@ -1,6 +1,11 @@
+module
+
 -- keep-sorted start
-import Fren.FinSet
+public import Fren.FinSet
+meta import Fren.FinSet
 -- keep-sorted end
+
+public section
 
 /-!
 # Relations

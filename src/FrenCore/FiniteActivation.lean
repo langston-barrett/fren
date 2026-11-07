@@ -1,5 +1,10 @@
-import Fren.FinSet
-import Lean.Elab.Tactic.Omega
+module
+
+public import Fren.FinSet
+public import Lean.Elab.Tactic.Omega
+meta import Lean.Elab.Tactic.Omega
+
+public section
 
 /-!
 # Complete activation of a finite candidate set

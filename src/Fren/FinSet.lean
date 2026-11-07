@@ -1,3 +1,7 @@
+module
+
+public section
+
 /-!
 # Finite sets
 
@@ -14,26 +18,26 @@ so that implementations over lists and arrays are proved by `simp`.
 namespace Fren
 
 /-- Two lists with the same members. -/
-def FinSet.Equiv (l₁ l₂ : List α) : Prop := ∀ x, x ∈ l₁ ↔ x ∈ l₂
+@[expose] def FinSet.Equiv (l₁ l₂ : List α) : Prop := ∀ x, x ∈ l₁ ↔ x ∈ l₂
 
 instance FinSet.setoid (α : Type u) : Setoid (List α) where
   r := FinSet.Equiv
   iseqv := ⟨fun _ _ => Iff.rfl, fun h x => (h x).symm, fun h₁ h₂ x => (h₁ x).trans (h₂ x)⟩
 
 /-- A finite set of values of `α`. -/
-def FinSet (α : Type u) : Type u := Quotient (FinSet.setoid α)
+@[expose] def FinSet (α : Type u) : Type u := Quotient (FinSet.setoid α)
 
 namespace FinSet
 
 variable {α : Type u}
 
 /-- The set of the members of `l`. -/
-def ofList (l : List α) : FinSet α := Quotient.mk _ l
+@[expose] def ofList (l : List α) : FinSet α := Quotient.mk _ l
 
 def ofArray (a : Array α) : FinSet α := ofList a.toList
 
 /-- Whether `x` is a member. -/
-protected def Mem (s : FinSet α) (x : α) : Prop :=
+@[expose] protected def Mem (s : FinSet α) (x : α) : Prop :=
   Quotient.liftOn s (fun l => x ∈ l) fun _ _ h => propext (h x)
 
 instance : Membership α (FinSet α) := ⟨FinSet.Mem⟩
@@ -97,7 +101,7 @@ def card [DecidableEq α] (s : FinSet α) : Int :=
     have h₂ := length_le_of_nodup (nodup_nub l₂) fun x hx => mem_nub.mpr ((h x).mpr (mem_nub.mp hx))
     omega
 
-@[simp] theorem card_ofList [DecidableEq α] (l : List α) : card (ofList l) = (nub l).length := rfl
+@[simp] theorem card_ofList [DecidableEq α] (l : List α) : card (ofList l) = (nub l).length := by rfl
 
 instance : EmptyCollection (FinSet α) := ⟨ofList []⟩
 instance : Inhabited (FinSet α) := ⟨∅⟩
@@ -144,7 +148,7 @@ instance : HasSubset (FinSet α) := ⟨fun s t => ∀ x, x ∈ s → x ∈ t⟩
   show x ∈ l₁.filter (· ∉ l₂) ↔ _
   simp
 
-theorem subset_def {s t : FinSet α} : s ⊆ t ↔ ∀ x, x ∈ s → x ∈ t := Iff.rfl
+theorem subset_def {s t : FinSet α} : s ⊆ t ↔ ∀ x, x ∈ s → x ∈ t := by rfl
 
 @[simp] theorem ofList_eq_empty {l : List α} : ofList l = ∅ ↔ l = [] := by
   rw [ext_iff]
@@ -159,7 +163,7 @@ instance [DecidableEq α] (x : α) (s : FinSet α) : Decidable (x ∈ s) :=
 
 instance [DecidableEq α] (s t : FinSet α) : Decidable (s ⊆ t) :=
   Quotient.recOnSubsingleton₂ s t fun l₁ l₂ =>
-    decidable_of_iff (∀ x ∈ l₁, x ∈ l₂) Iff.rfl
+    decidable_of_iff (∀ x ∈ l₁, x ∈ l₂) (by exact Iff.rfl)
 
 /-! ## Relations
 
