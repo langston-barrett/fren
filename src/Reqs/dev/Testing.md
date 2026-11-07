@@ -2155,6 +2155,8 @@ pub proc heavy_init_reap(
     expect wait_first: unless group_drained?, not collect_group? and not reap_orphan?
 }
 
+-- The wait observation is pending or exhausted; the adapter obtains it and
+-- the leader status from wait4, then performs init cleanup before probing.
 pub proc heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe: GroupProbe): (
     det gone?,
 ) {

@@ -34,6 +34,18 @@ def victimRow (j : Json) : Except String VictimRow := do
     ← j.getObjValAs? (Option Int) "legacy_rss_kb"⟩
 
 def check (j : Json) : Except String Json := do
+  if (← j.getObjValAs? String "kind") == "group" then
+    let wait ← match ← j.getObjValAs? String "wait" with
+      | "pending" => pure GroupWait.pending
+      | "exhausted" => pure GroupWait.exhausted
+      | _ => throw "unknown wait observation"
+    let probe ← match ← j.getObjValAs? String "probe" with
+      | "missing" => pure GroupProbe.missing
+      | "present" => pure GroupProbe.present
+      | "denied" => pure GroupProbe.denied
+      | _ => throw "unknown group probe"
+    return toJson (groupGone (← j.getObjValAs? Bool "subreaper")
+      (← j.getObjValAs? Bool "leader") wait probe)
   if (← j.getObjValAs? String "kind") == "victim" then
     let rows ← (← j.getObjValAs? (Array Json) "rows").toList.mapM victimRow
     let (total, selected) := memoryVictim (← j.getObjValAs? Nat "cap") rows

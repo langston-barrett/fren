@@ -158,4 +158,17 @@ def memoryVictim (cap : Nat) (rows : List VictimRow) : Int × Option Owner :=
     (measured + legacyMemory row.legacyRss + total, newestOwner owner latest)) (0, none)
   (total, if total > cap then latest else none)
 
+/-- Observations from wait4 and killpg, after any PID 1 cleanup. They do not
+claim that the probe or waits are atomic with subsequent OS activity. -/
+inductive GroupProbe where
+  | missing | present | denied
+  deriving Repr, BEq
+
+inductive GroupWait where
+  | pending | exhausted
+  deriving Repr, BEq
+
+def groupGone (subreaper leaderReaped : Bool) (wait : GroupWait) (probe : GroupProbe) : Bool :=
+  leaderReaped && (!subreaper || wait == .exhausted) && probe == .missing
+
 end Heavy.Ownership

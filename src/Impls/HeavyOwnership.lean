@@ -222,4 +222,21 @@ impl observed_victim: testing::heavy_observed_victim
   simp only [fren_spec, memoryVictim]
   split <;> simp_all <;> omega
 
+def groupProbe : GroupProbe → testing.GroupProbe
+  | .missing => .Missing
+  | .present => .Present
+  | .denied => .Denied
+
+impl group_gone: testing::heavy_group_gone
+    for (subreaper leader : Bool) (wait : GroupWait) (probe : GroupProbe) {
+  subreaper? := subreaper,
+  leader_reaped? := leader,
+  group_wait_pending? := wait == .pending,
+  probe := groupProbe probe,
+  gone? := groupGone subreaper leader wait probe,
+} by
+  intro subreaper leader wait probe _
+  cases subreaper <;> cases leader <;> cases wait <;> cases probe <;>
+    simp [fren_spec, groupGone, groupProbe] <;> decide
+
 end Fren.Impls.HeavyOwnership
