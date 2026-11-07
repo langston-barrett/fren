@@ -143,8 +143,12 @@ def eligible(pr, repo, head):
             and pr["base"]["ref"] == "main" and pr["head"]["sha"] == head)
 
 
-def inherited_review(pr, main):
-    """Use pr-review's structural rules on already authenticated comments."""
+def inherited_source(pr, main):
+    """Select the actual review dependency, separately from its verdict.
+
+    Authorization and negative event routing use these same structural
+    rules. A later blocking source verdict must not erase the dependency.
+    """
     path = Path(__file__).resolve().parents[1] / "pr-review/kind.py"
     spec = importlib.util.spec_from_file_location("review_kind", path)
     kind = importlib.util.module_from_spec(spec)
@@ -153,6 +157,8 @@ def inherited_review(pr, main):
     # requires the complete verdict line, as it does for attestations.
     comments = []
     for comment in pr["comments"]:
+        if comment.get("negativeOnly"):
+            continue  # It can block a verdict, not establish an independent review.
         body = comment["body"]
         if first_line(body).startswith("Review of ") and not VERDICT.fullmatch(first_line(body)):
             body = "Unrecognized review: " + body
@@ -161,32 +167,45 @@ def inherited_review(pr, main):
     head = pr["headRefOid"]
     verdict = kind.verdict(pr, head)
     if verdict is not None:
-        return CLEAN.fullmatch(f"Review of {head}: {verdict}") is not None
+        return head
     decision = kind.decide(pr, "workflow_dispatch")
     if decision["kind"] == "skip" and decision.get("previous"):
         previous = decision["previous"]
-        verdict = kind.verdict(pr, previous)
-        # decide looks at reviews before the skip request. Its source must
-        # still be clean now, including rereviews posted after that request.
-        return (verdict is not None and CLEAN.fullmatch(f"Review of {previous}: {verdict}") is not None
-                and kind.wording_problem(previous, head) is None)
+        if kind.wording_problem(previous, head) is None:
+            return previous
     # The same pure-main-update test as pr-review/prepare.sh. No custom
     # conflict resolution can inherit a review. Follow at most ten updates.
     commit = head
     for _ in range(10):
         parents = run("git", "show", "-s", "--format=%P", commit).split()
         if len(parents) != 2:
-            return False
+            return
         first, source = parents
         if subprocess.run(["git", "merge-base", "--is-ancestor", source, main]).returncode != 0:
-            return False
+            return
         if run("git", "merge-tree", "--write-tree", first, source) != run("git", "rev-parse", f"{commit}^{{tree}}"):
-            return False
+            return
         verdict = kind.verdict(pr, first)
         if verdict is not None:
-            return CLEAN.fullmatch(f"Review of {first}: {verdict}") is not None
+            return first
         commit = first
-    return False
+
+
+def latest_verdict(pr, head):
+    latest = None
+    for c in sorted(pr["comments"], key=lambda c: (c["createdAt"], c.get("id", 0))):
+        match = VERDICT.fullmatch(first_line(c["body"]))
+        if c["authorAssociation"] in PUSHERS and match and match[1] == head:
+            latest = match[2]
+    return latest
+
+
+def inherited_review(pr, main):
+    if latest_verdict(pr, pr["headRefOid"]) == "blocking issues":
+        return False
+    source = inherited_source(pr, main)
+    verdict = latest_verdict(pr, source) if source else None
+    return verdict is not None and CLEAN.fullmatch(f"Review of {source}: {verdict}") is not None
 
 
 def trusted_review_run(repo, review_run, attempt=None):
@@ -212,6 +231,44 @@ def current_context(repo, pr, head=None):
         # PR base metadata is an anchor, not the current target branch tip.
         # Negative recovery needs no main snapshot or tested merge identity.
         return {"pr": pr, "head": head, "pr-base": data["base"]["sha"]}
+
+
+def fetch_objects(*refs):
+    # Only git objects are read; no PR checkout/configuration is executed.
+    # Keep credentials out of argv, including CalledProcessError's text.
+    basic = base64.b64encode(f"x-access-token:{os.environ['GH_TOKEN']}".encode()).decode()
+    env = {**os.environ, "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+           "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {basic}"}
+    subprocess.run(["git", "fetch", "--quiet", "--no-tags", "origin", *refs], env=env, check=True)
+
+
+def negative_context(repo, pr, source, attested=None, blocking_comment=None):
+    """r[ci.review-revocation]: current head or a proven dependent only.
+
+    Different event heads are never positive authorizations. Only the
+    selected, currently blocked source of permitted inheritance can route
+    a negative event to the live dependent head.
+    """
+    if attested and int(attested["pr"]) != pr:
+        return
+    context = current_context(repo, pr)
+    if context is None:
+        return
+    head = context["head"]
+    if head != source:
+        main = current_main(repo)
+        fetch_objects(main, head)
+        if subprocess.run(["git", "merge-base", "--is-ancestor", source, head],
+                          capture_output=True).returncode != 0:
+            return
+        meta = review_metadata(repo, pr, head, attested, blocking_comment, source)
+        if inherited_source(meta, main) != source or latest_verdict(meta, source) != "blocking issues":
+            return
+        # A head change while fetching or reading reviews needs a new
+        # dependency decision, never a write against a different head.
+        if current_context(repo, pr, head) is None:
+            return
+    return {**context, "source": source}
 
 
 def current_main(repo):
@@ -241,7 +298,7 @@ def blocking_comment_event(repo):
     return {"pr": int(issue["number"]), "head": match[1], "comment": comment}
 
 
-def revocation_context(repo, review_run):
+def posted_target(repo, review_run):
     """r[ci.review-revocation]: recover a target without any uploaded artifact.
 
     GitHub persists the post job's name from main's trusted preparation
@@ -265,7 +322,12 @@ def revocation_context(repo, review_run):
     if len(targets) != 1:
         return
     pr, head = targets.pop()
-    return current_context(repo, pr, head)
+    return {"pr": pr, "source": head}
+
+
+def revocation_context(repo, review_run):
+    target = posted_target(repo, review_run)
+    return negative_context(repo, target["pr"], target["source"]) if target else None
 
 
 def posted_review(repo, review_run, artifact_id=None):
@@ -292,7 +354,7 @@ def posted_review(repo, review_run, artifact_id=None):
     return review
 
 
-def review_metadata(repo, pr, head, attested=None, blocking_comment=None):
+def review_metadata(repo, pr, head, attested=None, blocking_comment=None, source=None):
     """r[ci.current-review]: actual comment order and verified bot provenance.
 
     Names narrow the artifact query to this PR/head; each candidate still
@@ -301,12 +363,25 @@ def review_metadata(repo, pr, head, attested=None, blocking_comment=None):
     """
     records = {}
     heads = {head} | ({attested["head"]} if attested else set())
+    if source:
+        heads.add(source)
+    if blocking_comment:
+        heads.add(VERDICT.fullmatch(first_line(blocking_comment["body"]))[1])
     for sha in sorted(heads):
         name = artifact_name(pr, sha)
-        for artifact in pages(f"repos/{repo}/actions/artifacts?name={name}", "artifacts"):
+        try:
+            artifacts = list(pages(f"repos/{repo}/actions/artifacts?name={name}", "artifacts"))
+        except Exception:
+            artifacts = []
+        for artifact in artifacts:
             if artifact["expired"]:
                 continue
-            review = posted_review(repo, artifact["workflow_run"]["id"], artifact["id"])
+            try:
+                review = posted_review(repo, artifact["workflow_run"]["id"], artifact["id"])
+            except Exception:
+                # An unavailable artifact grants nothing. Keep reading the
+                # actual comments: unattested bot verdicts below only block.
+                continue
             if review and int(review["pr"]) == pr and review["head"] == sha:
                 records[int(review["commentId"])] = review
     if attested:
@@ -317,6 +392,7 @@ def review_metadata(repo, pr, head, attested=None, blocking_comment=None):
         association = c["author_association"]
         match = VERDICT.fullmatch(first_line(c["body"]))
         body = c["body"]
+        negative_only = False
         if c["user"]["login"] in BOT or association not in PUSHERS:
             record = records.get(c["id"])
             if (record and c["user"]["login"] in BOT
@@ -324,15 +400,18 @@ def review_metadata(repo, pr, head, attested=None, blocking_comment=None):
                     and record["createdAt"] == c["created_at"]):
                 association = "COLLABORATOR"
                 matched.add(c["id"])
-            elif match and match[1] in heads and c["user"]["login"] in BOT:
+            elif match and c["user"]["login"] in BOT:
                 # Includes edits and an in-progress or expired attestation.
                 # Never turn arbitrary bot text into a clean authorization.
+                # Source-head negatives must remain visible to inheritance
+                # even before its dependency has been selected.
                 association = "COLLABORATOR"
                 body = f"Review of {match[1]}: blocking issues"
+                negative_only = True
             else:
                 continue
         comments.append({"body": body, "authorAssociation": association,
-                         "createdAt": c["created_at"], "id": c["id"]})
+                         "createdAt": c["created_at"], "id": c["id"], "negativeOnly": negative_only})
     for comment, record in records.items():
         if comment not in matched:
             # API lag, deletion or editing cannot erase a signed blocking
@@ -344,8 +423,10 @@ def review_metadata(repo, pr, head, attested=None, blocking_comment=None):
         # A genuine blocking event is evidence of publication even if the
         # comment list lags. Fresh API text wins for edits; a later clean
         # review still supersedes this event in the ordinary posted order.
-        comments.append({"body": f"Review of {head}: blocking issues", "authorAssociation": "COLLABORATOR",
-                         "id": blocking_comment["id"], "createdAt": blocking_comment["created_at"]})
+        event_head = VERDICT.fullmatch(first_line(blocking_comment["body"]))[1]
+        comments.append({"body": f"Review of {event_head}: blocking issues", "authorAssociation": "COLLABORATOR",
+                         "id": blocking_comment["id"], "createdAt": blocking_comment["created_at"],
+                         "negativeOnly": blocking_comment["user"]["login"] in BOT})
     comments.sort(key=lambda c: (c["createdAt"], c["id"]))
     return {"headRefOid": head, "comments": comments}
 
@@ -360,11 +441,7 @@ def authorized(repo, pr, head, main, attested=None, manual=False, blocking_comme
     meta = review_metadata(repo, pr, head, attested, blocking_comment)
     if not manual:
         # Automatic events never inherit a review of another head.
-        latest = None
-        for comment in meta["comments"]:
-            verdict = VERDICT.fullmatch(first_line(comment["body"]))
-            if verdict and verdict[1] == head:
-                latest = verdict[2]
+        latest = latest_verdict(meta, head)
         return latest is not None and latest != "blocking issues"
     return inherited_review(meta, main)
 
@@ -420,38 +497,35 @@ def prepare():
         pr, head = int(attested["pr"]), attested["head"]
     else:
         return
+    invalidation = comment_event or (attested and not CLEAN.fullmatch(attested["body"].splitlines()[0]))
+    if invalidation:
+        source = comment_target["head"] if comment_target else attested["head"]
+        if attested and int(attested["pr"]) != pr:
+            raise ValueError("The review-run does not target the requested PR")
+        context = negative_context(repo, pr, source, attested,
+                                   comment_target["comment"] if comment_target else None)
+        if context is None:
+            return
+        try:
+            if context["head"] == source and authorized(repo, pr, source, None, attested,
+                    blocking_comment=comment_target["comment"] if comment_target else None):
+                return
+        except Exception:
+            output(**context, revoked=True, relevant=False)
+            raise
+        output(**context, revoked=True, relevant=False)
+        raise ValueError("The current review does not authorize this gate")
     data = api(f"repos/{repo}/pulls/{pr}")
     if data["number"] != pr or not eligible(data, repo, head):
         print("Review is stale, closed, from a fork, or not against main")
         return
-    # An old blocking completion must not invalidate a newer clean review.
-    invalidation = comment_event or (attested and not CLEAN.fullmatch(attested["body"].splitlines()[0]))
-    if invalidation:
-        try:
-            if authorized(repo, pr, head, None, attested,
-                          blocking_comment=comment_target["comment"] if comment_target else None):
-                return
-        except Exception:
-            output(head=head, pr=pr, revoked=True, **{"pr-base": data["base"]["sha"]})
-            raise
-    # Report a head even when its latest verdict is blocking or authorization
-    # fails. The always reporter must revoke any earlier green check.
+    # Positive source completions still cannot start a dependent head's gate.
     output(head=head, pr=pr, **{"pr-base": data["base"]["sha"]})
-    if invalidation:
-        output(revoked=True)
-        raise ValueError("The current review does not authorize this gate")
     main = current_main(repo)
     output(base=main)
     # Only read git objects in the trusted checkout. GitHub's merge ref is
     # the same merge pre-approval checks out; never test the head on its own.
-    basic = base64.b64encode(f"x-access-token:{os.environ['GH_TOKEN']}".encode()).decode()
-    # Keep credentials out of argv: CalledProcessError prints argv on a
-    # failed fetch, including an encoded token if it was passed with -c.
-    fetch_env = {**os.environ, "GIT_CONFIG_COUNT": "1",
-                 "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
-                 "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {basic}"}
-    subprocess.run(["git", "fetch", "--quiet", "--no-tags", "origin", f"refs/pull/{pr}/merge"],
-                   env=fetch_env, check=True)
+    fetch_objects(f"refs/pull/{pr}/merge")
     merge = run("git", "rev-parse", "FETCH_HEAD")
     parents = run("git", "show", "-s", "--format=%P", merge).split()
     if len(parents) != 2 or parents[1] != head or parents[0] != main:
@@ -468,6 +542,36 @@ def prepare():
     print(json.dumps({"pr": pr, "head": head, "merge": merge, "jobs": jobs}, indent=2))
 
 
+def report_blocked(repo, context, attested=None, blocking_comment=None):
+    """Publish only revocation; a direct event may have been superseded."""
+    head = context["head"]
+    try:
+        if head == context["source"] and authorized(repo, context["pr"], head, None, attested,
+                                                    blocking_comment=blocking_comment):
+            return
+    except Exception:
+        try:
+            invalidate(head)
+        finally:
+            status(head, "failure", "Blocking review ordering could not be verified")
+        raise
+    try:
+        invalidate(head)
+    finally:
+        status(head, "failure", "The current blocking review revokes this gate")
+    sys.exit(1)
+
+
+def report_unavailable(context):
+    # A missing attestation can only fail a verified negative target.
+    head = context["head"]
+    try:
+        invalidate(head)
+    finally:
+        status(head, "failure", "Review authorization unavailable; recovered target revoked")
+    sys.exit(1)
+
+
 def finish():
     """r[ci.review-revocation]: recheck publication and revoke stale success."""
     jobs = json.loads(os.environ["NEEDS"])
@@ -479,24 +583,33 @@ def finish():
         # the trusted event identifies this negative target; it cannot run
         # slow work or publish success. Revalidate eligibility and ordering.
         target = blocking_comment_event(repo)
-        context = current_context(repo, target["pr"], target["head"]) if target else None
-        if context is None:
-            return
-        head = context["head"]
+        context = negative_context(repo, target["pr"], target["head"], blocking_comment=target["comment"]) if target else None
+        if context:
+            report_blocked(repo, context, blocking_comment=target["comment"])
+        return
+    review_run = os.environ.get("REVIEW_RUN")
+    if review_run:
         try:
-            if authorized(repo, context["pr"], head, None, blocking_comment=target["comment"]):
-                return
+            attested = posted_review(repo, int(review_run))
         except Exception:
+            attested = None  # The known-head or independent recovery path below fails closed.
+        manual_pr = os.environ.get("PR_INPUT", "")
+        if (attested and not CLEAN.fullmatch(first_line(attested["body"]))
+                and (manual_pr in ("", "0") or int(manual_pr) == int(attested["pr"]))):
+            context = negative_context(repo, int(attested["pr"]), attested["head"], attested)
+            if context:
+                report_blocked(repo, context, attested)
+            return
+        if attested is None:
             try:
-                invalidate(head)
-            finally:
-                status(head, "failure", "Blocking review ordering could not be verified")
-            raise
-        try:
-            invalidate(head)
-        finally:
-            status(head, "failure", "The current blocking review revokes this gate")
-        sys.exit(1)
+                target = posted_target(repo, int(review_run))
+            except Exception:
+                target = None
+            if target and (manual_pr in ("", "0") or int(manual_pr) == target["pr"]):
+                context = negative_context(repo, target["pr"], target["source"])
+                if context:
+                    report_unavailable(context)
+                return  # An unrelated or recleaned source cannot revoke H.
     if not head:
         # Preparation may have failed/cancelled before writing outputs.
         # Retry recovery from job metadata, never from PR-controlled data.
@@ -514,16 +627,12 @@ def finish():
     if not head:
         return
     if prepared.get("recovered") == "true":
-        data = api(f"repos/{repo}/pulls/{int(prepared['pr'])}")
-        if data["number"] != int(prepared["pr"]) or not eligible(data, repo, head):
+        # Preparation's target may have gained an independent review or a
+        # different dependency. Recompute against the current PR and source.
+        context = negative_context(repo, int(prepared["pr"]), prepared.get("source", head))
+        if context is None:
             return
-        # Recovery is deliberately independent of artifact reads and cannot
-        # authorize success, including an otherwise successful no-job run.
-        try:
-            invalidate(head)
-        finally:
-            status(head, "failure", "Review authorization unavailable; recovered target revoked")
-        sys.exit(1)
+        report_unavailable(context)
     relevant = prepared.get("relevant") == "true"
     good = (jobs["prepare"]["result"] == "success" and jobs["pending"]["result"] == "success"
             and jobs["slow"]["result"] == ("success" if relevant else "skipped"))

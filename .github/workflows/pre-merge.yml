@@ -51,6 +51,7 @@ jobs:
       relevant: ${{ steps.prepare.outputs.relevant }}
       revoked: ${{ steps.prepare.outputs.revoked }}
       recovered: ${{ steps.prepare.outputs.recovered }}
+      source: ${{ steps.prepare.outputs.source }}
       own-spec-agreement: ${{ steps.prepare.outputs.own-spec-agreement }}
       methods-agree: ${{ steps.prepare.outputs.methods-agree }}
       coverage: ${{ steps.prepare.outputs.coverage }}

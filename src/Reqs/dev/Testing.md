@@ -2252,26 +2252,39 @@ latest verdict of its source must still be clean.
 
 r[ci.review-revocation]
 A blocking review revokes completed and running `pre-merge` checks on
-that head. Every reporter checks the current review before and after
-publishing success, so an older run cannot restore green after a newer
-blocking review. This applies when no slow job is selected too. With a
-usable attestation, revalidation leaves a newer clean review standing.
-If recording, uploading or reading authorization fails after
-publication, completion recovers a revocation-only target from GitHub's
-post-job metadata, independently of artifacts. The trusted main-context
-workflow, verified completion attempt, post role, actual post
-destination, repository and current PR head must all match. Missing
-authorization cannot yield success, even with no selected jobs or no
-preparation outputs. A cancelled review or failed artifact read takes
-the same recovery path. A local blocking comment event also recovers
-without preparation outputs, including after checkout, transport or
-cancellation failures. Its trusted repository, action, author and exact
-verdict identify only a negative target. The reporter validates the
-current same-repository PR/head and latest review again, leaving a newer
-clean review standing. A published blocking event still counts if the
-comment list lags; fresh API text wins for an edited comment. A failed
-review read cannot authorize success. This entry never starts slow work
-or publishes success.
+that head and on the current head that inherits that review through a
+permitted wording-only change or pure merge from main. Event handling
+and outputless recovery revalidate the live structural dependency, the
+source's latest verdict and both heads' review provenance. A different
+event head alone never supplies a target: an independently reviewed
+head, an unrelated source or a source whose latest trusted review is
+clean is left alone. Negative-only bot text cannot establish an
+independent review and erase a real dependency. Automatic and
+review-run-only positive source events never start or approve a
+dependent head's gate. Inherited approval still requires an explicit
+current-PR dispatch. These rules apply to local comments, attested
+completions and missing-attestation recovery, including when no slow job
+is selected or preparation failed or was cancelled. Every reporter
+checks the current review before and after publishing success, so an
+older run cannot restore green after a newer blocking review. This
+applies when no slow job is selected too. With a usable attestation,
+revalidation leaves a newer clean review standing. If recording,
+uploading or reading authorization fails after publication, completion
+recovers a revocation-only target from GitHub's post-job metadata,
+independently of artifacts. The trusted main-context workflow, verified
+completion attempt, post role, actual post destination and repository
+must all match; the current PR head must be the event head or a verified
+dependent. Missing authorization cannot yield success, even with no
+selected jobs or no preparation outputs. A cancelled review or failed
+artifact read takes the same recovery path. A local blocking comment
+event also recovers without preparation outputs, including after
+checkout, transport or cancellation failures. Its trusted repository,
+action, author and exact verdict identify only a negative target. The
+reporter validates the current same-repository PR/head and latest review
+again, leaving a newer clean review standing. A published blocking event
+still counts if the comment list lags; fresh API text wins for an edited
+comment. A failed review read cannot authorize success. This entry never
+starts slow work or publishes success.
 
 r[ci.merge-identity]
 The gate captures current `main` from its repository branch ref,
@@ -2310,11 +2323,23 @@ checked by `test_gate.py`'s `CommentRecovery` regressions.
 real-git inheritance regressions separate the PR anchor, target and
 merge identities. `pr-review/probe.sh` retains fast-artifact identities,
 checked by `test_probe_identity.py` with real git objects and the actual
-source-selection commands. `test_gate.py` exercises these functions with
-mocked API and git transport, including superseded reviews, publication
-races, lost attestations after successful comment publication, all entry
-paths and current and future runtime inputs; the `lint` workflow runs
-it. No precomputed approval flag stands in for the comment-ordering or
+source-selection commands. `inherited_source` is the shared structural
+decision used by inherited authorization and `negative_context` routing;
+`latest_verdict` keeps the selected source's status separate from its
+identity. `posted_target` retains independently trusted negative-event
+identity, and reporting rechecks the live dependency rather than
+trusting preparation's target. `inherited_cases.py`, run by the wording
+and main-merge test suites, composes these actual decisions with
+successful gate completion, source publication and existing
+completed/running check invalidation using real git objects and mocked
+transport. It covers both inheritance shapes, local and automated
+events, recleaned sources, independently reviewed heads, invalid
+structures and lost artifacts; it never supplies an approval flag.
+`test_gate.py` exercises these functions with mocked API and git
+transport, including superseded reviews, publication races, lost
+attestations after successful comment publication, all entry paths and
+current and future runtime inputs; the `lint` workflow runs it. No
+precomputed approval flag stands in for the comment-ordering or
 provenance decision in those tests.
 
 On a pull request, the `pre-approval` workflow checks the head merged into
@@ -2868,11 +2893,12 @@ that none of this reaches is no gap, and is not listed
 - it is the reference of a `@[csimp]` replacement, which runs in its
   place, or only such a reference uses it. One that ran although nothing
 reaches it shows a call that the graph does not see, such as one into
-`specRuntime` from a module that it should list; `fren_coverage` warns of
-each, by name, on GitHub Actions as an annotation too. The Lean-hosted
-front end's elaborators run in the interpreter where a test elaborates
-Fren in Lean, so some of them are listed although the ui tests elaborate
-them.
+`specRuntime` from a module that it should list; `fren_coverage` warns
+of each by name in the logs and coverage summary. Shared CI workers
+scrub workflow commands, so these warnings do not become Actions
+annotations. The Lean-hosted front end's elaborators run in the
+interpreter where a test elaborates Fren in Lean, so some of them are
+listed although the ui tests elaborate them.
 
 `testing::coverage` is proved of `fren_coverage`'s verdict on each
 declaration (`FrenTest.Coverage.fails` and `stale`). Its inputs are
@@ -2922,16 +2948,17 @@ fails on a counted declaration that does not run and is not listed: code
 that no test runs fails the coverage job, before merge on a relevant PR
 and on `main` as well. A listed one
 that runs or is no longer counted only weakens the list, and gets a
-warning, on GitHub Actions an annotation of the run too, that names the
-line to remove; `fren_coverage --write` rewrites the list as the run found
-it, keeping the reasons. The aim is a list of reasons alone. CI runs it on
-`main`, with Lean CI, and after a clean review in `pre-merge` whenever the
-diff can change coverage, including any Lean source or test list. The
-instrumented build and the whole `lake test` on one machine take 20 to 35
-minutes, about twice `pre-approval`'s 12 to 15, so they wait for review. A
-pull request adds tests or lists why a declaration does not run before it
-merges. The job's summary gives the counts, the failures, the stale lines
-and the dead code.
+warning that names the line to remove, in the logs and coverage summary.
+The shared worker keeps command output inert rather than publishing
+warning annotations. `fren_coverage --write` rewrites the list as the
+run found it, keeping the reasons. The aim is a list of reasons alone.
+CI runs it on `main`, with Lean CI, and after a clean review in
+`pre-merge` whenever the diff can change coverage, including any Lean
+source or test list. The instrumented build and the whole `lake test` on
+one machine take 20 to 35 minutes, about twice `pre-approval`'s 12 to
+15, so they wait for review. A pull request adds tests or lists why a
+declaration does not run before it merges. The job's summary gives the
+counts, the failures, the stale lines and the dead code.
 
 Before pushing, an author checks the definitions that the branch adds,
 in two steps, with `pre-merge` and `main`'s job as the backstops:

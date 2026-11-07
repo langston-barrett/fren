@@ -640,7 +640,8 @@ unsafe def main (args : List String) : IO UInt32 := do
     let msg := s!"{d}: ran, although no compiled entry point reaches it: a call that `FrenCoverage.reached` does not see"
     IO.eprintln s!"WARN {msg}"
     if annotate then IO.println s!"::warning title=fren_coverage::{escapeAnnotation msg}"
-  -- On GitHub Actions, also as an annotation of the run.
+  -- Shared CI workers scrub workflow commands; warnings remain in their
+  -- logs and coverage summary instead of becoming Actions annotations.
   let lines := (current.splitOn "\n").map (·.trimAscii.toString)
   for (d, why) in stale do
     let line := (lines.find? fun l => (parseList l).any (·.1 == d)).getD d

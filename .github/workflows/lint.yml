@@ -35,7 +35,11 @@ jobs:
         python3 -I -B scripts/heavy_test.py
         python3 -I -B scripts/lake_cache.py test
         python3 -I -B scripts/rules_report.py test
-        python3 -I -B -m unittest discover -s .github/pre-merge
+        # Keep each protocol/worker suite within its per-invocation budget,
+        # including every current and future discovered test file.
+        for suite in .github/pre-merge/test_*.py; do
+          python3 -I -B -m unittest discover -s .github/pre-merge -p "${suite##*/}"
+        done
         python3 -I -B -m unittest discover -s .github/codex-agent
         # pr-review's, with the CommonMark parser that test_frame.py needs.
         python3 -m venv "$RUNNER_TEMP/venv"

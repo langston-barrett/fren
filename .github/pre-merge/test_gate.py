@@ -364,6 +364,8 @@ class Protocol(unittest.TestCase):
         elif args[:2] == ["git", "fetch"]:
             self.assertNotIn("read-only-token", " ".join(args))
             self.assertIn("AUTHORIZATION: basic ", kwargs["env"]["GIT_CONFIG_VALUE_0"])
+        elif args[:3] == ["git", "merge-base", "--is-ancestor"]:
+            return subprocess.CompletedProcess(args, 1)
         else:
             raise AssertionError(args)
         return subprocess.CompletedProcess(args, 0)
@@ -955,7 +957,12 @@ class CommentRecovery(unittest.TestCase):
                 self.assertEqual(self.checks[10]["conclusion"], "success")
                 self.pr.clear()
                 self.pr.update(saved_pr)
-        self.command_mock.assert_not_called()
+        # A differing head is now checked for a real inheritance edge.
+        # Only object fetches and ancestry reads are permitted, never work.
+        allowed = (["git", "fetch", "--quiet", "--no-tags", "origin", self.main, "d" * 40],
+                   ["git", "merge-base", "--is-ancestor", HEAD, "d" * 40])
+        commands = [c.args[0] for c in self.command_mock.call_args_list]
+        self.assertEqual(commands, [allowed[0], allowed[1], allowed[0], allowed[1]])
         self.diff.assert_not_called()
 
 
