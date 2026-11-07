@@ -2684,6 +2684,62 @@ and its effects on decidability and evidence. Distinguish a limitation of
 the language from a missing model or test. A proposal does not authorize
 expanding the implementation's scope automatically.
 
+## Nonvacuous oracles
+
+The enumeration agreement job, decidable-core conformance jobs and dynamic
+coverage reports return their counted observations through the same guard
+(`testing::oracle_count`, `FrenTest.Oracle.finish`). The floor itself must
+be positive, and earlier failures must survive even when the floor is met.
+Enumeration requires 500 comparisons. Conformance requires at least one
+check; coverage requires both a module read and a declaration run.
+
+```fren
+pub proc oracle_count(compared: Nat, floor: Nat, failures: Nat): (det passes?) {
+    ensure rule: passes? iff failures = 0 and 0 < floor <= compared
+
+    expect nothing_compared: when compared = 0, not passes?
+    expect zero_floor: when floor = 0, not passes?
+    expect keep_failures: when failures > 0, not passes?
+}
+
+pub proc oracle_output(output: String): (det passes?) {
+    ensure rule: passes? iff output != "" and not output.contains?("internal error")
+
+    expect nothing_written: when output = "", not passes?
+    expect internal_error: when output.contains?("internal error"), not passes?
+}
+
+pub proc oracle_tool(output: String, stderr: String, exit: Nat): (det passes?) {
+    ensure rule: passes? iff exit = 0 and output != "" and not output.contains?("internal error")
+        and not stderr.contains?("internal error")
+
+    expect failed_tool: when exit != 0, not passes?
+}
+
+pub proc conformance_exit(exit: Nat, errors: Nat, warnings: Nat): (det accepted?) {
+    ensure rule: accepted? iff exit = 0 or (exit = 1 and errors > 0) or (exit = 3 and warnings > 0)
+
+    expect unexplained: when exit != 0 and errors = 0 and warnings = 0, not accepted?
+    expect static_error: when exit = 2, not accepted?
+}
+
+#fren_check oracle_count
+#fren_check oracle_output
+#fren_check oracle_tool
+#fren_check conformance_exit
+```
+
+`Impls.Testing` proves these guards on the functions whose returned failures
+the jobs report. `oracle_output` is applied to conformance's raw output
+before reading its summary, so an internal error cannot disappear beside
+normal results. Its summary must contain all four numeric counts, and only
+F0664 warnings explain inconclusive checks. A conformance run is an
+in-process checker invocation: exits 1 and 3 can describe expected failed
+checks or warnings, but need their diagnostics (`conformance_exit`). A
+coverage subprocess must exit zero and write nonempty output without an
+internal error (`oracle_tool`), before its counters are read. Static coverage
+does not measure execution and does not apply the observation guard.
+
 ## Coverage
 
 Every declaration of Fren's code must be run by `lake test`, or say why it
