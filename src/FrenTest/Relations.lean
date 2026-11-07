@@ -1,8 +1,8 @@
 module
 
 -- keep-sorted start
-public import Fren.FinSet
 meta import Fren.FinSet
+public import Fren.FinSet
 -- keep-sorted end
 
 public section
