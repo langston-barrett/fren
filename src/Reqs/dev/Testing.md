@@ -126,6 +126,17 @@ pub mod testing
   that a normal run keeps its output. This is integration coverage of
   native process termination and stream capture, which Lean proofs of
   the requirements do not model; it does not identify a crash's cause.
+  With `FREN_DIAG_ENUMERATION=1`, the parent runs the original enumeration
+  child under GDB while the other selected shard jobs continue. It records
+  the cohort and worker count, and flushes adapter, SolverPairing, fixture
+  and method checkpoints outside captured streams. A native fault reports
+  siginfo and bounded thread backtraces with core dumps disabled. Child
+  and debugger statuses stay separate: a fault still fails the job, and
+  missing or failed diagnostics cannot report success. There is no replay
+  after the workload drains, and ordinary local runs keep their output.
+  The native harness checks normal output, controlled SIGABRT handling
+  beside a live sibling, checkpoint retention and a missing debugger.
+  `persistentRun` still has only outer-phase context, not component traces.
 - **Formatting** (`lake test`): every `.fren` and Markdown spec in the
   repository must be formatted, as `fren fmt --check` says, except those
   listed as `--ignore` globs in `fmtIgnore` in `src/FrenTestMain.lean`:

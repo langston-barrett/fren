@@ -179,6 +179,7 @@ jobs:
           query-cache-${{ runner.os }}-${{ runner.arch }}-
     - run: lake test -- --skip-own-mutants --timings --shard "$SHARD/4"
       env:
+        FREN_DIAG_ENUMERATION: "1"
         SHARD: ${{ matrix.shard }}
         FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
   # The book, with the page of the rules that shard 0's test driver writes

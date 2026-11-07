@@ -21,10 +21,12 @@ open Lean System
 structure Journal where
   write : Array String → IO Unit
 
+instance : Inhabited Journal := ⟨⟨fun _ => pure ()⟩⟩
+
 /-- The journal that the parent gave this child, or a silent one when
 running a job directly. It is separate from the captured check output. -/
-def journal : IO Journal := do
-  let some path ← IO.getEnv "FREN_OWN_SPEC_PROGRESS" | return ⟨fun _ => pure ()⟩
+def journal (envKey : String := "FREN_OWN_SPEC_PROGRESS") : IO Journal := do
+  let some path ← IO.getEnv envKey | return ⟨fun _ => pure ()⟩
   let h ← IO.FS.Handle.mk path .append
   let lock ← Std.Mutex.new ()
   return ⟨fun event => lock.atomically do
