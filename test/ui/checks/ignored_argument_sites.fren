@@ -1,0 +1,71 @@
+-- Source questions remain when a defined function never reads its
+-- argument (`eval::application_sites`, #493, main seed 1345031).
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.assertions_on_constants "allow"
+
+enum E { A, B }
+fn constant(x: Int): String := "a"
+fn ignore?<T>(x: T) := true
+fn identity<T>(x: T): T := x
+fn twice(x: Int): Int := x + x
+
+set_option fren.enumeration.size 2 in
+set_option fren.evidence "enumerated" in
+proc original(): (unused: Int) {  --~ warning: could not decide whether `original` is realizable: no outputs up to size 2, but larger ones may exist
+    --~^ info: 1 check of `original` holds for every behaviour up to size 2
+    ensure q: constant(  --~ warning: the completeness of `original::q` rests on the realizability of `original`, which did not pass
+        match E::B {
+            E::A => 1,
+            E::B if false => 2,  --~ warning: this guard is always `false`, so the arm is never taken
+            --~^ warning: could not decide whether arm 2 of a `match` in `original::q` can be taken: no witness up to size 2, but a larger one may exist
+        }
+    ) < "a"
+}
+
+set_option fren.evidence "enumerated" in
+proc matched(b?) {
+    expect e: ignore?(
+        match b? {  --~ error: a `match` in `matched::e` may have no arm that is taken
+            true => 0,
+            false if false => 1,  --~ warning: this guard is always `false`, so the arm is never taken
+            --~^ error: arm 2 of a `match` in `matched::e` is never taken
+        }
+    )
+}
+
+set_option fren.evidence "enumerated" in
+proc tabled(b?) {
+    expect e: ignore?(
+        identity(
+            table {  --~ error: a table in `tabled::e` may have no row that holds
+                b? => true,
+            }
+        )
+    )
+}
+
+-- Substitution also repeats the argument in the body; the source check
+-- still pairs with one question about the original table.
+set_option fren.evidence "enumerated" in
+proc duplicated(b?) {
+    expect e: ignore?(
+        twice(
+            table {  --~ error: a table in `duplicated::e` may have no row that holds
+                b? => 1,
+            }
+        )
+    )
+}
+
+proc indexed(q: Seq<Int>) {
+    expect e: ignore?(q[0])  --~ error: an index of `indexed::e` may be out of range
+}
+
+proc bound(o: Option<Seq<Int>>) {
+    expect e: match o {
+        Option::Some(q) => ignore?(q[0]),  --~ error: an index of `bound::e` may be out of range
+        Option::None => true,
+    }
+}
+
+--@ summary: 12 passed, 6 failed, 3 inconclusive, 0 redundant

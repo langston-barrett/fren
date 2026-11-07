@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren.Elab
+import Fren.Elab.Procedures
 -- keep-sorted end
 
 -- Lean-only behaviour of the cardinality operators: `exactly_one?` and

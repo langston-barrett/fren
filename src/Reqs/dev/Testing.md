@@ -628,7 +628,7 @@ pub mod testing
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
   `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings` and
   `--datatype-elements`
-  (`corpus` in `src/FrenTest/FuzzFrontends.lean`), are checked
+  (`corpus` in `src/FrenTest/FuzzFrontends/Corpus.lean`), are checked
   with both front ends and compared as above. The `--decidable` corpus also
   rejects every error without a diagnostic code from `fren check`, even
   when both front ends agree. The `frontendFuzz` jobs contain at
@@ -720,7 +720,8 @@ jobs but the mutants of Fren's own requirements, and the others are dealt
 in turn to shards 1 to `N - 1`, so that the slowest, which come first,
 spread over them.
 `--skip-own-mutants` leaves out the slices of the mutants of Fren's own
-requirements, the slowest jobs, which only the CI run on `main` checks.
+requirements, the slowest jobs. CI checks them on `main` and when coverage
+runs before merge.
 The selection is made before `--bless` runs the snapshots job first.
 `--timings` prints how long each job took, to balance the shards.
 
@@ -1076,10 +1077,11 @@ blocked around the completion check and signal, and while the registry lock
 is held; handlers are restored after monitoring.
 When heavy is PID 1 of its namespace, it also reaps adopted orphan workers
 after collecting the leader's exit status and RSS, in both subreaper and
-fallback modes. It peeks at exited children without reaping them: a newly
-adopted member of the original group goes through the group usage collector,
-while an outside-group orphan is reaped without adding its usage. Dead workers
-must not keep the process group visible as zombies until both escalation waits expire.
+fallback modes. It peeks at exited children without reaping them. In subreaper
+mode, a newly adopted member of the original group goes through the group usage
+collector; in fallback mode, it is reaped without adding its usage, like an
+outside-group orphan in either mode. Dead workers must not keep the process
+group visible as zombies until both escalation waits expire.
 
 If `/proc` belongs to an ancestor PID namespace, the owner translates its
 own child through parentage and `NSpid` before measuring it in that procfs
@@ -1313,7 +1315,8 @@ just the sampled main-thread lower bound.
 Each job freezes `predicted_peak_rss_kb` before execution beside its eventual
 `peak_rss_kb`. The prediction is the maximum positive measured peak among
 the latest 20 completed jobs of the same `job_kind` in the preceding seven
-days, ordered by completion time and excluding future completions. Failed
+days, ordered by completion time and excluding future completions. The
+lower cutoff is inclusive; larger peaks win completion-time ties. Failed
 jobs' observed peaks count too, though a killed job's peak does not show
 how much memory it needed to finish. `prediction_jobs` records the number
 used, and `prediction_method` is `"max_last_20_same_kind_7d"`. With no usable
@@ -1323,6 +1326,11 @@ The current memory admission rule uses live RSS and lease reservations,
 without a per-kind estimate. This prediction is telemetry for assessing an admission model;
 it does not yet change that rule. Work amounts and build-cache states can
 vary within a kind, so historical peaks do not guarantee a future fit.
+`Heavy.Forecast` computes this bounded selection with a generic key and is
+bound to `heavy_memory_prediction` in `Impls.Heavy`. The active scheduler
+remains Python; its tested binding in `Impls.Trace` still covers log I/O.
+The `heavyPrediction` test job compares both forecasts on sanitized log
+observations and boundary cases.
 
 The following requirements state CPU accumulation and interval accounting.
 Time quantities use a common integral unit; ratios are numerator and
@@ -1418,29 +1426,95 @@ pub proc heavy_pressure(running: Nat, cores: Nat): (det ratio: CpuRatio, det ove
     expect equal: when running = cores, not oversubscribed?
 }
 
--- Fold the eligible historical peaks; filtering and selecting the latest
--- observations, from the concrete log, are exercised by the Python tests.
-pub proc heavy_memory_prediction(previous: Option<Int>, observed: Option<Int>): (
-    det prediction: Option<Int>,
-) {
-    require previous_positive: match previous {
-        Option::Some(p) => p > 0,
-        Option::None => true,
-    }
-    require observed_positive: match observed {
-        Option::Some(o) => o > 0,
-        Option::None => true,
-    }
-    ensure rule: match previous, observed {
-        Option::None, _ => prediction = observed,
-        _, Option::None => prediction = previous,
-        Option::Some(p), Option::Some(o) => prediction = Option::Some(p.max(o)),
+-- A common integral time unit represents completion times and the cutoff.
+-- Missing or malformed fields are None; log readers default a missing
+-- event to Some("job"). Keys are opaque strings here; the Lean kernel
+-- accepts any key type with decidable equality. Python uses the job kind.
+pub struct MemoryObservation {
+    event: Option<String>,
+    key: Option<String>,
+    ended: Option<Int>,
+    peak: Option<Int>,
+}
+
+pub enum MemoryHistory { Nil, Cons(MemoryObservation, MemoryHistory) }
+pub enum MemoryPeaks { Nil, Cons(Int, Int, MemoryPeaks) }
+
+pub fn memory_eligible?(o: MemoryObservation, key: String, cutoff: Int, now: Int) :=
+    o.event = Option::Some("job") and o.key = Option::Some(key)
+    and (match o.ended, o.peak {
+        Option::Some(t), Option::Some(p) => cutoff <= t <= now and p > 0,
+        _, _ => false,
+    })
+
+pub fn memory_take(n: Int, ps: MemoryPeaks): MemoryPeaks := match ps {
+    MemoryPeaks::Nil => MemoryPeaks::Nil,
+    MemoryPeaks::Cons(t, p, rest) =>
+        if n = 0 then MemoryPeaks::Nil
+        else MemoryPeaks::Cons(t, p, memory_take(n - 1, rest)),
+}
+
+-- Latest completion first; larger peaks win ties, as in Python's heap.
+pub fn memory_insert(t: Int, p: Int, n: Int, ps: MemoryPeaks): MemoryPeaks := match ps {
+    MemoryPeaks::Nil =>
+        if n = 0 then MemoryPeaks::Nil
+        else MemoryPeaks::Cons(t, p, MemoryPeaks::Nil),
+    MemoryPeaks::Cons(u, q, rest) =>
+        if n = 0 then MemoryPeaks::Nil
+        else if t > u or (t = u and p >= q) then
+        MemoryPeaks::Cons(t, p, memory_take(n - 1, ps))
+        else MemoryPeaks::Cons(u, q, memory_insert(t, p, n - 1, rest)),
+}
+
+pub fn memory_recent(hs: MemoryHistory, key: String, cutoff: Int, now: Int, n: Int): MemoryPeaks :=
+    match hs {
+        MemoryHistory::Nil => MemoryPeaks::Nil,
+        MemoryHistory::Cons(o, rest) => (let ps := memory_recent(rest, key, cutoff, now, n) in
+            match o.ended, o.peak {
+                Option::Some(t), Option::Some(p) => if memory_eligible?(o, key, cutoff, now) then
+                    memory_insert(t, p, n, ps) else ps,
+                _, _ => ps,
+            }),
     }
 
-    expect covers_observation: match observed, prediction {
-        Option::Some(o), Option::Some(p) => p >= o,
-        _, _ => true,
+-- The one-step coverage fact needed by the original maximum-fold Req.
+pub fn memory_head_covered?(ps: MemoryPeaks, prediction: Option<Int>) := match ps, prediction {
+    MemoryPeaks::Nil, _ => true,
+    MemoryPeaks::Cons(_, p, _), Option::Some(m) => m >= p,
+    _, _ => false,
+}
+
+pub fn memory_max(ps: MemoryPeaks): (prediction: Option<Int>) {
+    out prediction := match ps {
+        MemoryPeaks::Nil => Option::None,
+        MemoryPeaks::Cons(_, p, rest) => match memory_max(rest) {
+            Option::None => Option::Some(p),
+            Option::Some(q) => Option::Some(p.max(q)),
+        },
     }
+    ensure covers_head: memory_head_covered?(ps, prediction)
+}
+
+pub fn memory_count(ps: MemoryPeaks): Nat := match ps {
+    MemoryPeaks::Nil => 0,
+    MemoryPeaks::Cons(_, _, rest) => 1 + memory_count(rest),
+}
+
+pub proc heavy_memory_prediction(
+    history: MemoryHistory,
+    key: String,
+    cutoff: Int,
+    now: Int,
+    n: Nat,
+): (det prediction: Option<Int>, det jobs: Nat) {
+    ensure rule: prediction = memory_max(memory_recent(history, key, cutoff, now, n))
+    ensure count: jobs = memory_count(memory_recent(history, key, cutoff, now, n))
+
+    expect covers_observation: memory_head_covered?(
+        memory_recent(history, key, cutoff, now, n),
+        prediction
+    )
+    expect empty: when history = MemoryHistory::Nil, prediction = Option::None and jobs = 0
 }
 ```
 
@@ -1451,7 +1525,7 @@ does not classify its entries in advance. `heavy_lease` calls
 `heavy_report_owner`; the recursive accounting functions use the same
 `report_owner?` definition, so victim selection and owned signaling also
 decide compatibility. A legacy job can admit new work only when a slot is
-free and the memory rule holds. Time values use one integral unit of the
+free and the memory rule holds. The integral model uses one time unit of the
 shared monotonic clock. Python tests check the concrete lock, clock, procfs and
 signal operations through `tested` claims in `Impls.Trace`; these tests run
 in the `lint` workflow, not in `lake test`. `heavy_registry` models the retry
@@ -1468,7 +1542,95 @@ omit `scripts/`.
 The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
+`Heavy.Ownership` implements the registry attempt, report ownership and
+isolated-lease accounting decisions below, bound in `Impls.HeavyOwnership`.
+Python remains the active scheduler and syscall adapter. The kernel takes
+decoded reports: wire version, token syntax, finite timestamps and monitor
+field shapes are checked by the adapter, not assumed to prove ownership.
+The kernel checks sequence and RSS validity, token agreement, the entire
+observed monitor identity and freshness itself. The `heavyOwnership` job
+compares these decisions against Python with sanitized fixtures, including
+malformed reports, inherited tokens and namespace disagreements. It also
+checks registry retry boundaries against Python's acquisition loop.
+These `impl`s prove that the decoded Lean functions meet the requirements;
+they do not prove Python's code or establish a call from Fren's CLI or
+hosted front end. The Python connection is checked by the differential
+fixtures and the existing `tested` claims. Both standalone Heavy kernels
+are outside those Fren runtimes. The `implPaths` audit therefore records
+each mapped output as an exact `unbound` observation in
+`test/impl_paths.txt`, including the forecast's two outputs and ownership's
+eight plus the conversion's four. These observations certify no runtime
+connection; unexpected, duplicate and stale inventory entries still fail
+the audit. Its regressions also check that a real standalone kernel call,
+even through a proof adapter, does not count as a Fren production output
+function.
+This slice does not port set-wide accounting, victim selection, sequence
+allocation or publication, completion or signalling. A lease's isolated
+admission charge is not a new admission rule and must not be summed over
+unknown holders.
+
+Python's clock arithmetic rounds before a freshness comparison. Converting
+the two operands to exact integer ticks and then subtracting changes that
+operation. For the Python conversion boundary, the adapter first computes
+the numeric elapsed value `now - updated_monotonic`, using Python's operand
+types and arithmetic. It encodes that rounded result and the TTL exactly
+in one positive integral scale. It supplies no freshness or approval Boolean.
+For registry attempts it computes the allocated deadline `started + wait`
+and then `deadline - now` in that order, encoding the numeric remaining
+value after both Python operations. The absolute clock origin is discarded.
+
+`heavy_time_conversion` states what the kernel establishes from those spans.
+A finite elapsed value `e` becomes the synthetic timestamp `-e` at `now = 0`;
+a non-finite elapsed value becomes timestamp 1, which is never fresh for a
+finite natural TTL. Report identity and RSS remain available, so a matching
+observed owner still keeps its last RSS and reserves a cap for stale data.
+A finite remaining value is a deadline relative to zero. Negative infinity
+is due; positive infinity and NaN are not due, matching Python's
+`remaining <= 0` test. These normal forms preserve the decisions here, not
+absolute timestamps, signed zero or the reason a report is stale.
+
+The integral conformance proofs do not prove Python floating-point
+arithmetic or this adapter's conversion. The `heavyOwnership` differential
+checks both complete ownership paths, the actual Python registry loop, and
+numeric conversion separately against exact rational arithmetic rounded to
+binary64. It includes representable neighbors, the rounded ten-second tie,
+mixed integer/float operands, invalid reports and non-finite differences.
+The forecast adapter already subtracts its window in Python before scaling
+the resulting cutoff; it does not move that subtraction into the kernel.
+
 ```fren
+pub enum TimeSpan { Finite(Int), PositiveInfinity, NegativeInfinity, NotANumber }
+
+pub proc heavy_time_conversion(span: TimeSpan, ttl: Nat): (
+    det elapsed_updated: Int,
+    det remaining_deadline: Int,
+    det fresh?,
+    det timed_out?,
+) {
+    out elapsed_updated := match span {
+        TimeSpan::Finite(e) => -e,
+        _ => 1,
+    }
+    out remaining_deadline := match span {
+        TimeSpan::Finite(r) => r,
+        TimeSpan::NegativeInfinity => -1,
+        _ => 1,
+    }
+    ensure freshness: fresh? iff (match span {
+        TimeSpan::Finite(e) => 0 <= e <= ttl,
+        _ => false,
+    })
+    expect normalized_freshness: fresh? iff 0 <= 0 - elapsed_updated <= ttl
+    ensure timeout: timed_out? iff (match span {
+        TimeSpan::Finite(r) => r <= 0,
+        TimeSpan::NegativeInfinity => true,
+        _ => false,
+    })
+    expect normalized_timeout: timed_out? iff remaining_deadline <= 0
+    expect nonfinite_stale: when span = TimeSpan::NotANumber, not fresh?
+    expect zero_fresh: when span = TimeSpan::Finite(0), fresh? and timed_out?
+}
+
 pub proc heavy_registry(available?, now: Int, deadline: Int, held?, requested?): (
     det acquired?,
     det retry?,
@@ -1772,8 +1934,10 @@ pub enum GroupProbe { Missing, Present, Denied }
 
 -- Peek at an exited child before selecting its wait, so adoption between
 -- group waits and init cleanup cannot discard the group's CPU usage.
+-- own_pid is heavy's PID; pgid is the child group and exited_group is
+-- the exited child's group, if a child is ready to reap.
 pub proc heavy_init_reap(
-    pid: Int,
+    own_pid: Int,
     pgid: Int,
     exited_group: Option<Int>,
     group_drained?,
@@ -1781,12 +1945,12 @@ pub proc heavy_init_reap(
 ): (det collect_group?, det reap_orphan?) {
     let exited? := exited_group != Option::None
     let same_group? := exited_group = Option::Some(pgid)
-    ensure group: collect_group? iff pid = 1 and group_drained? and exited? and same_group? and subreaper?
-    ensure orphan: reap_orphan? iff pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
+    ensure group: collect_group? iff own_pid = 1 and group_drained? and exited? and same_group? and subreaper?
+    ensure orphan: reap_orphan? iff own_pid = 1 and group_drained? and exited? and not (same_group? and subreaper?)
     expect distinct: not (collect_group? and reap_orphan?)
-    expect late_adoption: when pid = 1 and group_drained? and same_group? and subreaper?,
+    expect late_adoption: when own_pid = 1 and group_drained? and same_group? and subreaper?,
         collect_group? and not reap_orphan?
-    expect outside_group: when pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
+    expect outside_group: when own_pid = 1 and group_drained? and exited? and not same_group?, reap_orphan?
     expect wait_first: unless group_drained?, not collect_group? and not reap_orphan?
 }
 
@@ -2099,8 +2263,28 @@ workflow, verified completion attempt, post role, actual post
 destination, repository and current PR head must all match. Missing
 authorization cannot yield success, even with no selected jobs or no
 preparation outputs. A cancelled review or failed artifact read takes
-the same recovery path. Local blocking review comments invalidate
-without starting slow jobs.
+the same recovery path. A local blocking comment event also recovers
+without preparation outputs, including after checkout, transport or
+cancellation failures. Its trusted repository, action, author and exact
+verdict identify only a negative target. The reporter validates the
+current same-repository PR/head and latest review again, leaving a newer
+clean review standing. A published blocking event still counts if the
+comment list lags; fresh API text wins for an edited comment. A failed
+review read cannot authorize success. This entry never starts slow work
+or publishes success.
+
+r[ci.merge-identity]
+The gate captures current `main` from its repository branch ref,
+independently of the PR's base anchor. The synthetic merge must have
+exactly that captured commit and the reviewed head as its first and
+second parents before jobs are selected. The diff, restored cache and
+review inheritance use the verified main snapshot. Reporting retains
+the tested snapshot when main advances; a new entry captures main anew
+and rejects a stale merge ref. Negative-only recovery records the PR
+anchor without claiming a main snapshot or a tested merge. A fast
+artifact's `MERGE_SHA` and `MERGE_PARENTS` describe its own tested source;
+probing or reconstructing that source never substitutes a newer main
+or the PR anchor for the artifact's recorded parent.
 
 r[ci.linked-runtime]
 Every changed path under `c/` selects all four slow jobs. Their executables
@@ -2119,11 +2303,18 @@ already started. Completion preparation and reporting both invoke it
 when authorization is unavailable. `current_context` revalidates the
 target, including an explicit dispatch's requested PR if preparation was
 interrupted. These external Python and GitHub workflow effects have no
-Lean `impl` proof. `test_gate.py` exercises these functions with mocked
-API and git transport, including superseded reviews, publication races,
-lost attestations after successful comment publication, all entry paths
-and current and future runtime inputs; the `lint` workflow runs it. No
-precomputed approval flag stands in for the comment-ordering or
+Lean `impl` proof. `blocking_comment_event`, preparation and reporting
+bind the local-event transition, with the actual workflow condition
+checked by `test_gate.py`'s `CommentRecovery` regressions.
+`current_main` and preparation bind merge identity; `TargetSnapshot` and
+real-git inheritance regressions separate the PR anchor, target and
+merge identities. `pr-review/probe.sh` retains fast-artifact identities,
+checked by `test_probe_identity.py` with real git objects and the actual
+source-selection commands. `test_gate.py` exercises these functions with
+mocked API and git transport, including superseded reviews, publication
+races, lost attestations after successful comment publication, all entry
+paths and current and future runtime inputs; the `lint` workflow runs
+it. No precomputed approval flag stands in for the comment-ordering or
 provenance decision in those tests.
 
 On a pull request, the `pre-approval` workflow checks the head merged into

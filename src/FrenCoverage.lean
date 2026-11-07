@@ -614,8 +614,8 @@ unsafe def main (args : List String) : IO UInt32 := do
   for d in decls do
     if FrenTest.Coverage.fails (ranBy d) (reachedBy d) (isListed d) then failures := failures.push s!"{d}: no test runs it"
   -- A stale listing only weakens the list, so it is a warning, which says
-  -- the line to remove: a pull request that makes a test run a listed
-  -- declaration is not checked for coverage before it merges.
+  -- the line to remove, even when pre-merge coverage finds that a pull
+  -- request's test now runs a listed declaration.
   -- By the name as written, which `toString` gives, private names and `«»`
   -- included.
   let mut stale : Array (String × String) := #[]

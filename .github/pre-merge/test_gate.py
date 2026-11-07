@@ -22,6 +22,32 @@ HEAD = "a" * 40
 REPO = "owner/fren"
 
 
+def report_runs(event, ref, head="", automatic=0, dispatch="", pr=0):
+    """Evaluate the actual reporter scheduling expression, not authorization."""
+    workflow = (HERE.parent / "workflows/pre-merge.yml").read_text()
+    report = workflow.split("  report:\n", 1)[1]
+    condition = re.search(r"^    if: \$\{\{ (.+) \}\}$", report, re.MULTILINE)[1]
+    expression = condition.replace("always()", "True")
+    for field, supplied in {"github.event_name": event, "github.ref": ref,
+                            "needs.prepare.outputs.head": head, "github.event.workflow_run.id": automatic,
+                            "inputs.review-run": dispatch, "inputs.pr": pr}.items():
+        expression = expression.replace(field, repr(supplied))
+    expression = expression.replace("&&", " and ").replace("||", " or ")
+    # Only the workflow's Boolean/string subset; no code evaluation or
+    # precomputed approval decision stands in for the actual protocol.
+    def value(node):
+        if isinstance(node, ast.Constant): return node.value
+        if isinstance(node, ast.BoolOp):
+            values = [value(v) for v in node.values]
+            return all(values) if isinstance(node.op, ast.And) else any(values)
+        if isinstance(node, ast.Compare) and len(node.ops) == 1:
+            left, right = value(node.left), value(node.comparators[0])
+            if isinstance(node.ops[0], ast.Eq): return left == right
+            if isinstance(node.ops[0], ast.NotEq): return left != right
+        raise AssertionError(ast.dump(node))
+    return bool(value(ast.parse(expression, mode="eval").body))
+
+
 class Filters(unittest.TestCase):
     def expect(self, paths, *jobs):
         self.assertEqual({job for job, yes in gate.selected(paths).items() if yes}, set(jobs), paths)
@@ -231,8 +257,12 @@ class Protocol(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.out = Path(self.temp.name, "outputs")
         self.main = "b" * 40
+        self.merge_parent = self.main
+        self.merge_head = HEAD
+        self.merge = "c" * 40
+        self.anchor = "e" * 40
         self.pr = {"number": 12, "state": "open", "head": {"repo": {"full_name": REPO}, "sha": HEAD},
-                   "base": {"repo": {"full_name": REPO}, "ref": "main", "sha": self.main}}
+                   "base": {"repo": {"full_name": REPO}, "ref": "main", "sha": self.anchor}}
         self.prs = {12: self.pr}
         self.reviews = {}
         self.job_contexts = {}
@@ -289,6 +319,8 @@ class Protocol(unittest.TestCase):
             if self.read_error:
                 raise OSError("review API unavailable")
             return self.prs[int(path.rsplit("/", 1)[1])]
+        if path.endswith("/git/ref/heads/main"):
+            return {"ref": "refs/heads/main", "object": {"type": "commit", "sha": self.main}}
         if path.endswith("/issues/12/comments"):
             return self.comments[(page-1)*100:page*100]
         if "/actions/runs/" in path:
@@ -338,14 +370,15 @@ class Protocol(unittest.TestCase):
 
     def git_output(self, *args):
         if args[1] == "rev-parse":
-            return "c" * 40
-        return self.main + " " + HEAD
+            return self.merge
+        return self.merge_parent + " " + self.merge_head
 
     def outputs(self):
         return dict(line.split("=", 1) for line in self.out.read_text().splitlines()) if self.out.exists() else {}
 
     def finish(self, outputs=None, prepare="success", slow="skipped", check="10"):
-        outputs = outputs or {"head": HEAD, "pr": "12", "base": self.main, "relevant": "false"}
+        if outputs is None:
+            outputs = {"head": HEAD, "pr": "12", "base": self.main, "relevant": "false"}
         needs = {"prepare": {"result": prepare, "outputs": outputs},
                  "pending": {"result": "success" if prepare == "success" else "skipped"}, "slow": {"result": slow}}
         with patch.dict(os.environ, NEEDS=json.dumps(needs), CHECK_RUN_ID=check):
@@ -415,7 +448,7 @@ class Protocol(unittest.TestCase):
 
     def test_local_blocking_review_event_revokes_without_starting_tests(self):
         self.add_review(43, 2, False, association="OWNER", attested=False)
-        event = {"issue": {"number": 12, "pull_request": {}}, "comment": self.comments[-1]}
+        event = {"repository": {"full_name": REPO}, "action": "created", "issue": {"number": 12, "pull_request": {}}, "comment": self.comments[-1]}
         event["issue"]["pull_request"] = {"url": "trusted-api-url"}
         path = Path(self.temp.name, "event.json")
         path.write_text(json.dumps(event))
@@ -429,7 +462,7 @@ class Protocol(unittest.TestCase):
 
     def test_editing_a_bot_review_to_blocking_revokes_completed_checks(self):
         self.comments[0]["body"] = f"Review of {HEAD}: blocking issues"
-        event = {"issue": {"number": 12, "pull_request": {"url": "pr"}}, "comment": self.comments[0]}
+        event = {"repository": {"full_name": REPO}, "action": "created", "issue": {"number": 12, "pull_request": {"url": "pr"}}, "comment": self.comments[0]}
         path = Path(self.temp.name, "event.json")
         path.write_text(json.dumps(event))
         with patch.dict(os.environ, GITHUB_EVENT_NAME="issue_comment", GITHUB_EVENT_PATH=str(path), REVIEW_RUN=""):
@@ -577,7 +610,7 @@ class Protocol(unittest.TestCase):
         for assoc, head in (("NONE", HEAD), ("OWNER", "d" * 40)):
             self.add_review(43, 2, False, head=head, association=assoc, attested=False)
             comment = {**self.comments[-1], "user": {"login": "outsider"}}
-            event = {"issue": {"number": 12, "pull_request": {"url": "pr"}}, "comment": comment}
+            event = {"repository": {"full_name": REPO}, "action": "created", "issue": {"number": 12, "pull_request": {"url": "pr"}}, "comment": comment}
             path = Path(self.temp.name, "event.json")
             path.write_text(json.dumps(event))
             with patch.dict(os.environ, GITHUB_EVENT_NAME="issue_comment", GITHUB_EVENT_PATH=str(path), REVIEW_RUN=""):
@@ -725,35 +758,13 @@ print(json.dumps({'id': 2, 'created_at': '2026-11-07T00:00:00Z', 'body': payload
         self.assertEqual(self.checks[10]["conclusion"], "failure")
 
     def test_workflow_report_runs_for_recovery_only_on_trusted_main_context(self):
-        workflow = (HERE.parent / "workflows/pre-merge.yml").read_text()
-        report = workflow.split("  report:\n", 1)[1]
-        condition = re.search(r"^    if: \$\{\{ (.+) \}\}$", report, re.MULTILINE)[1]
-        def evaluate(event, ref, head="", automatic=0, dispatch="", pr=0):
-            expression = condition.replace("always()", "True")
-            for field, value in {"github.event_name": event, "github.ref": ref,
-                                 "needs.prepare.outputs.head": head, "github.event.workflow_run.id": automatic,
-                                 "inputs.review-run": dispatch, "inputs.pr": pr}.items():
-                expression = expression.replace(field, repr(value))
-            expression = expression.replace("&&", " and ").replace("||", " or ")
-            # Test only the Boolean/string subset used by this workflow; no
-            # code evaluation or precomputed authorization decision is used.
-            def value(node):
-                if isinstance(node, ast.Constant): return node.value
-                if isinstance(node, ast.BoolOp):
-                    values = [value(v) for v in node.values]
-                    return all(values) if isinstance(node.op, ast.And) else any(values)
-                if isinstance(node, ast.Compare) and len(node.ops) == 1:
-                    left, right = value(node.left), value(node.comparators[0])
-                    if isinstance(node.ops[0], ast.Eq): return left == right
-                    if isinstance(node.ops[0], ast.NotEq): return left != right
-                raise AssertionError(ast.dump(node))
-            return bool(value(ast.parse(expression, mode="eval").body))
-        self.assertTrue(evaluate("workflow_run", "refs/heads/main", automatic=43))
-        self.assertTrue(evaluate("workflow_dispatch", "refs/heads/main", dispatch="43"))
-        self.assertTrue(evaluate("workflow_dispatch", "refs/heads/main", head=HEAD))
-        self.assertTrue(evaluate("workflow_dispatch", "refs/heads/main", pr=12))
-        self.assertFalse(evaluate("workflow_dispatch", "refs/heads/pr-code", dispatch="43"))
-        self.assertFalse(evaluate("issue_comment", "refs/heads/main"))
+        self.assertTrue(report_runs("workflow_run", "refs/heads/main", automatic=43))
+        self.assertTrue(report_runs("workflow_dispatch", "refs/heads/main", dispatch="43"))
+        self.assertTrue(report_runs("workflow_dispatch", "refs/heads/main", head=HEAD))
+        self.assertTrue(report_runs("workflow_dispatch", "refs/heads/main", pr=12))
+        self.assertFalse(report_runs("workflow_dispatch", "refs/heads/pr-code", dispatch="43"))
+        self.assertTrue(report_runs("issue_comment", "refs/heads/main"))
+        self.assertFalse(report_runs("issue_comment", "refs/heads/pr-code"))
 
     def test_recovered_context_never_authorizes_even_clean_or_no_posted_comment(self):
         self.trusted_post()
@@ -841,6 +852,202 @@ print(json.dumps({'id': 2, 'created_at': '2026-11-07T00:00:00Z', 'body': payload
 
 
 
+class CommentRecovery(unittest.TestCase):
+    """Actual comment event -> failed/outputless preparation -> revoked check."""
+    setUp = Protocol.setUp
+    add_review = Protocol.add_review
+    artifact = Protocol.artifact
+    api = Protocol.api
+    command = Protocol.command
+    git_output = Protocol.git_output
+    outputs = Protocol.outputs
+    finish = Protocol.finish
+
+    def event(self):
+        self.add_review(43, 2, False, association="OWNER", attested=False)
+        event = {"repository": {"full_name": REPO}, "action": "created",
+                 "issue": {"number": 12, "pull_request": {"url": "trusted-api-url"}},
+                 "comment": dict(self.comments[-1])}
+        path = Path(self.temp.name, "comment-event.json")
+        path.write_text(json.dumps(event))
+        return event, path
+
+    def test_green_comment_event_recovers_after_checkout_transport_and_cancellation(self):
+        for failure in ("checkout", "checkout-cancelled", "first-pr-read", "cancelled-pr-read"):
+            with self.subTest(failure=failure):
+                self.comments = self.comments[:1]
+                self.out.unlink(missing_ok=True)
+                self.checks[10]["conclusion"] = "success"
+                event, path = self.event()
+                with patch.dict(os.environ, GITHUB_EVENT_NAME="issue_comment", GITHUB_EVENT_PATH=str(path),
+                                REVIEW_RUN="", PR_INPUT=""):
+                    if failure.endswith("pr-read"):
+                        error = KeyboardInterrupt if failure == "cancelled-pr-read" else OSError
+                        def failed_read(endpoint, *args, **kwargs):
+                            if "/pulls/" in endpoint:
+                                raise error("first PR read interrupted")
+                            return self.api(endpoint, *args, **kwargs)
+                        with patch.object(gate, "api", side_effect=failed_read), self.assertRaises(error):
+                            gate.prepare()
+                    # Checkout failure/cancellation never reached prepare.
+                    self.assertEqual(self.outputs(), {})
+                    self.assertEqual(self.checks[10]["conclusion"], "success")
+                    self.assertTrue(report_runs("issue_comment", "refs/heads/main"))
+                    result = "cancelled" if "cancelled" in failure else "failure"
+                    with self.assertRaises(SystemExit):
+                        self.finish(outputs={}, prepare=result, check="")
+                self.assertTrue(all(c["conclusion"] == "failure" for c in self.checks.values()))
+                self.assertTrue(all(c.args[0][:3] == ["gh", "run", "download"] for c in self.command_mock.call_args_list))
+                self.diff.assert_not_called()
+
+    def test_comment_recovery_rechecks_latest_verdict_and_edits(self):
+        for change in ("new-clean", "edited-clean", "event-list-lag"):
+            with self.subTest(change=change):
+                self.comments = self.comments[:1]
+                self.checks[10]["conclusion"] = "success"
+                event, path = self.event()
+                if change == "new-clean":
+                    self.add_review(44, 3, True, association="OWNER", attested=False)
+                elif change == "edited-clean":
+                    self.comments[-1]["body"] = f"Review of {HEAD}: no blocking issues"
+                else:
+                    self.comments.pop()  # The trusted publication event precedes list visibility.
+                with patch.dict(os.environ, GITHUB_EVENT_NAME="issue_comment", GITHUB_EVENT_PATH=str(path), REVIEW_RUN=""):
+                    if change == "event-list-lag":
+                        with self.assertRaises(SystemExit):
+                            self.finish(outputs={}, prepare="failure", check="")
+                    else:
+                        self.finish(outputs={}, prepare="cancelled", check="")
+                self.assertEqual(self.checks[10]["conclusion"], "failure" if change == "event-list-lag" else "success")
+
+    def test_validated_comment_target_fails_closed_if_latest_review_read_fails(self):
+        _, path = self.event()
+        def failed_comments(endpoint, *args, **kwargs):
+            if "/comments?" in endpoint:
+                raise OSError("latest review unavailable")
+            return self.api(endpoint, *args, **kwargs)
+        with patch.dict(os.environ, GITHUB_EVENT_NAME="issue_comment", GITHUB_EVENT_PATH=str(path), REVIEW_RUN=""), \
+                patch.object(gate, "api", side_effect=failed_comments), self.assertRaisesRegex(OSError, "latest review"):
+            self.finish(outputs={}, prepare="failure", check="")
+        self.assertEqual(self.checks[10]["conclusion"], "failure")
+
+    def test_comment_recovery_rejects_wrong_provenance_or_ineligible_current_head(self):
+        for invalid in ("repository", "action", "issue", "outsider", "clean", "head", "fork", "closed", "base", "number"):
+            with self.subTest(invalid=invalid):
+                saved_pr = json.loads(json.dumps(self.pr))
+                event, path = self.event()
+                if invalid == "repository": event["repository"]["full_name"] = "fork/fren"
+                elif invalid == "action": event["action"] = "deleted"
+                elif invalid == "issue": event["issue"].pop("pull_request")
+                elif invalid == "outsider":
+                    event["comment"].update(author_association="NONE", user={"login": "outsider"})
+                elif invalid == "clean": event["comment"]["body"] = f"Review of {HEAD}: no blocking issues"
+                elif invalid == "head": self.pr["head"]["sha"] = "d" * 40
+                elif invalid == "fork": self.pr["head"]["repo"]["full_name"] = "fork/fren"
+                elif invalid == "closed": self.pr["state"] = "closed"
+                elif invalid == "base": self.pr["base"]["ref"] = "other"
+                elif invalid == "number": self.pr["number"] = 13
+                path.write_text(json.dumps(event))
+                with patch.dict(os.environ, GITHUB_EVENT_NAME="issue_comment", GITHUB_EVENT_PATH=str(path), REVIEW_RUN=""):
+                    gate.prepare()
+                    self.finish(outputs={}, prepare="cancelled", check="")
+                self.assertFalse(self.patches)
+                self.assertEqual(self.checks[10]["conclusion"], "success")
+                self.pr.clear()
+                self.pr.update(saved_pr)
+        self.command_mock.assert_not_called()
+        self.diff.assert_not_called()
+
+
+class TargetSnapshot(unittest.TestCase):
+    setUp = Protocol.setUp
+    add_review = Protocol.add_review
+    artifact = Protocol.artifact
+    api = Protocol.api
+    command = Protocol.command
+    git_output = Protocol.git_output
+    outputs = Protocol.outputs
+    finish = Protocol.finish
+
+    def test_anchor_main_and_tested_merge_remain_distinct_on_every_entry(self):
+        for event, manual in (("workflow_run", ""), ("workflow_dispatch", ""), ("workflow_dispatch", "12")):
+            with self.subTest(event=event, manual=manual), patch.dict(os.environ, GITHUB_EVENT_NAME=event, PR_INPUT=manual):
+                gate.prepare()
+                outputs = self.outputs()
+                self.assertNotEqual(self.anchor, self.main)
+                self.assertEqual(outputs["pr-base"], self.anchor)
+                self.assertEqual(outputs["base"], self.merge_parent)
+                self.assertEqual(outputs["merge"], self.merge)
+                self.assertEqual(self.diff.call_args.args[0][-1], f"{self.main}...{HEAD}")
+                self.finish(outputs)
+                self.assertEqual(self.checks[10]["conclusion"], "success")
+
+    def test_stale_main_parent_wrong_head_and_non_merge_never_select_jobs(self):
+        for invalid in ("anchor-parent", "other-parent", "wrong-head", "one-parent"):
+            with self.subTest(invalid=invalid):
+                self.out.unlink(missing_ok=True)
+                self.merge_parent = self.anchor if invalid == "anchor-parent" else "d" * 40 if invalid == "other-parent" else self.main
+                self.merge_head = "d" * 40 if invalid == "wrong-head" else HEAD
+                if invalid == "one-parent": self.merge_head = ""
+                with self.assertRaisesRegex(ValueError, "merge ref"):
+                    gate.prepare()
+                self.assertNotIn("relevant", self.outputs())
+                self.assertEqual(self.outputs()["base"], self.main)
+                with self.assertRaises(SystemExit):
+                    self.finish(self.outputs(), prepare="failure")
+        self.diff.assert_not_called()
+
+    def test_main_moves_after_capture_without_relabeling_tested_source_or_cache(self):
+        captured = self.main
+        def fetch_then_main_moves(args, **kwargs):
+            result = self.command(args, **kwargs)
+            if args[:2] == ["git", "fetch"]:
+                self.main = "d" * 40
+                self.pr["base"]["sha"] = "f" * 40  # Anchor metadata may move independently too.
+            return result
+        with patch.object(gate.subprocess, "run", side_effect=fetch_then_main_moves):
+            gate.prepare()
+        outputs = self.outputs()
+        self.assertEqual(outputs["base"], captured)
+        self.assertEqual(outputs["merge"], self.merge)
+        self.assertEqual(self.diff.call_args.args[0][-1], f"{captured}...{HEAD}")
+        # Reporting uses the tested snapshot for inheritance, not a new main
+        # read; the older fast artifact is a separate identity altogether.
+        with patch.object(gate, "current_main", side_effect=AssertionError("must retain tested snapshot")):
+            self.finish(outputs)
+        self.out.unlink()
+        with self.assertRaisesRegex(ValueError, "merge ref"):
+            gate.prepare()  # A new entry captures newer main and rejects the old merge ref.
+
+    def test_negative_recovery_does_not_mislabel_the_pr_anchor_as_main(self):
+        context = gate.current_context(REPO, 12, HEAD)
+        self.assertEqual(context, {"pr": 12, "head": HEAD, "pr-base": self.anchor})
+        self.assertNotIn("base", context)
+        for manual in ("", "12"):
+            self.out.unlink(missing_ok=True)
+            def no_main(endpoint, *args, **kwargs):
+                if "/git/ref/heads/main" in endpoint:
+                    raise OSError("main snapshot unavailable")
+                return self.api(endpoint, *args, **kwargs)
+            with patch.dict(os.environ, PR_INPUT=manual), patch.object(gate, "api", side_effect=no_main):
+                with self.assertRaisesRegex(OSError, "main snapshot"):
+                    gate.prepare()
+                self.assertEqual(self.outputs()["head"], HEAD)
+                self.assertNotIn("base", self.outputs())
+                with self.assertRaises(SystemExit):
+                    self.finish(self.outputs(), prepare="failure", check="")
+            self.assertEqual(self.checks[10]["conclusion"], "failure")
+        self.assertTrue(all(c.args[0][:3] == ["gh", "run", "download"] for c in self.command_mock.call_args_list))
+
+    def test_main_ref_identity_is_checked(self):
+        for ref, kind, sha in (("refs/heads/other", "commit", self.main),
+                               ("refs/heads/main", "tag", self.main),
+                               ("refs/heads/main", "commit", "not-a-sha")):
+            with patch.object(gate, "api", return_value={"ref": ref, "object": {"type": kind, "sha": sha}}), \
+                    self.assertRaisesRegex(ValueError, "main commit"):
+                gate.current_main(REPO)
+
+
 class InheritedReview(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -918,6 +1125,54 @@ class InheritedReview(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-q", "--amend", "--no-edit")
         self.assertFalse(gate.inherited_review(self.metadata(), main))
+
+    def test_prepare_inherits_against_captured_main_with_real_git_objects(self):
+        # A reviewed head is updated from newer main, whose commit is not
+        # the PR anchor. Its synthetic merge has a third, distinct identity.
+        self.git("checkout", "-q", "main")
+        Path("main.md").write_text("new main\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "new main")
+        main = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "feature")
+        self.git("merge", "-q", "--no-ff", "--no-edit", "main")
+        head = self.git("rev-parse", "HEAD")
+        meta = self.metadata()
+        self.git("checkout", "-q", "--detach", "main")
+        self.git("merge", "-q", "--no-ff", "--no-edit", "feature")
+        merge = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(main, self.base)
+        self.assertFalse(gate.inherited_review(meta, self.base))
+        self.assertTrue(gate.inherited_review(meta, main))
+        pr = {"number": 12, "state": "open", "head": {"repo": {"full_name": REPO}, "sha": head},
+              "base": {"repo": {"full_name": REPO}, "ref": "main", "sha": self.base}}
+        comments = [{"id": i, "body": c["body"], "created_at": c["createdAt"],
+                     "author_association": "OWNER", "user": {"login": "owner"}}
+                    for i, c in enumerate(meta["comments"], 1)]
+        def api(endpoint):
+            if "/pulls/" in endpoint: return pr
+            if endpoint.endswith("/git/ref/heads/main"):
+                return {"ref": "refs/heads/main", "object": {"type": "commit", "sha": main}}
+            if "/actions/artifacts?" in endpoint: return {"artifacts": []}
+            if "/issues/12/comments?" in endpoint: return comments
+            raise AssertionError(endpoint)
+        real_git_output = gate.run
+        def git_output(*args):
+            return merge if args == ("git", "rev-parse", "FETCH_HEAD") else real_git_output(*args)
+        def command(args, **kwargs):
+            # Fetch transport is mocked; all merge, inheritance and diff
+            # decisions use the actual objects created above.
+            return subprocess.CompletedProcess(args, 0) if args[:2] == ["git", "fetch"] else REAL_RUN(args, **kwargs)
+        output = Path(self.temp.name, "outputs")
+        with patch.dict(os.environ, GITHUB_REPOSITORY=REPO, GITHUB_EVENT_NAME="workflow_dispatch",
+                        PR_INPUT="12", REVIEW_RUN="", GITHUB_OUTPUT=str(output), GH_TOKEN="read-only-token"), \
+                patch.object(gate, "api", side_effect=api), patch.object(gate, "run", side_effect=git_output), \
+                patch.object(gate.subprocess, "run", side_effect=command):
+            gate.prepare()
+        outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+        self.assertEqual(outputs["pr-base"], self.base)
+        self.assertEqual(outputs["base"], main)
+        self.assertEqual(outputs["merge"], merge)
 
 
     def bot_metadata(self, metadata, attested=None):

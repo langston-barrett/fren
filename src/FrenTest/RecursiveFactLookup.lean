@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Elab.Blocks
 import Fren.View
 import FrenCli.Smt
 -- keep-sorted end

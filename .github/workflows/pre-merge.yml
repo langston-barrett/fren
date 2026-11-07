@@ -47,6 +47,7 @@ jobs:
       pr: ${{ steps.prepare.outputs.pr }}
       merge: ${{ steps.prepare.outputs.merge }}
       base: ${{ steps.prepare.outputs.base }}
+      pr-base: ${{ steps.prepare.outputs.pr-base }}
       relevant: ${{ steps.prepare.outputs.relevant }}
       revoked: ${{ steps.prepare.outputs.revoked }}
       recovered: ${{ steps.prepare.outputs.recovered }}
@@ -105,7 +106,7 @@ jobs:
     needs: [prepare, pending, slow]
     # Missing preparation outputs must not hide a posted blocking review.
     # Recovery runs only in the same trusted main context as preparation.
-    if: ${{ always() && (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') && (needs.prepare.outputs.head != '' || github.event.workflow_run.id || inputs.review-run || inputs.pr) }}
+    if: ${{ always() && (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') && (github.event_name == 'issue_comment' || needs.prepare.outputs.head != '' || github.event.workflow_run.id || inputs.review-run || inputs.pr) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

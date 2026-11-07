@@ -226,7 +226,7 @@ traits.law.interpretation
 module.theory -- partly formalized: `lang::theory_signature` separates declarations and sentences; extracting them from a module remains stage 3's
 module.theory.plain -- a definition: which theory a plain module is
 module.interface -- a definition: which theory an interface, today a trait, is
-module.generic-function -- a definition: which theory a generic function is
+module.generic-function -- partly formalized: `lang::generic_type_image` and `lang::generic_translation` instantiate its types and references; bounds remain part of #761
 module.procedures -- what a module's items may be; the front ends' reading, from stage 3
 module.use.inclusion -- what an import brings and owes is the front ends' reading of `use`, from stage 3
 module.generic-type -- a definition: which theory a generic type is
@@ -251,6 +251,7 @@ module.expansion -- partly formalized: `expansion::strict_expansion` and `expans
 lake.reader-inputs -- checked by concrete lakefile/source regressions; no formal binding for ownership, paths and input filters
 ci.current-review -- external Python/GitHub protocol; concrete authorization and provenance regressions bind the rule to gate.py
 ci.review-revocation -- external check-run writes, independent post-target metadata and their interleavings; concrete publication/recovery/report regressions bind the rule to gate.py
+ci.merge-identity -- external GitHub branch/merge/artifact protocol; concrete independent-ref, real-git inheritance and probe-source regressions, not a Lean impl
 ci.linked-runtime -- concrete path-selection regressions over every current C input and future c/ paths; no Lean binding to the Python selector
 
 # src/Reqs/Lang/Implementations.md

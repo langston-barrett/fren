@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Review the current branch with Codex before a push, by the brief that the
+"""Run a pre-push check of the current branch with Codex, by the brief that the
 `pr-review` workflow gives its reviewer.
 
     scripts/local-review [--base REF] [--dry-run] [--keep]
@@ -7,7 +7,7 @@
 Reviews HEAD's diff against its merge base with REF (default `origin/main`).
 The brief is composed by `.github/pr-review/compose.py` and `brief.md`, as
 REF has them, with REF's AGENTS.md, as the workflow composes it from
-`main`'s; a preamble says where a local review differs. The title and
+`main`'s; a preamble says where the pre-push check differs. The title and
 description are the branch's pull request's (`gh pr view`), or else the
 latest commit's subject and the messages of the branch's commits.
 
@@ -101,7 +101,7 @@ HAS_PR = """\
 The pull request is #{number}, and its title and description are quoted
   at the end."""
 
-PROBES = "No probe ran: this is a local review, before a push, and before `pre-approval`.\n"
+PROBES = "No probe ran: this is a pre-push check, before a push, and before `pre-approval`.\n"
 
 
 def fail(message):
@@ -226,7 +226,7 @@ def main(argv):
     codex = os.environ.get("LOCAL_REVIEW_CODEX") or "codex"
     if not args.dry_run and shutil.which(codex) is None:
         fail(f"`{codex}` is not installed or not on PATH: install the Codex CLI, "
-             "or skip the local review")
+             "or skip the pre-push check")
     model = os.environ.get("LOCAL_REVIEW_MODEL") or MODEL
     effort = os.environ.get("LOCAL_REVIEW_EFFORT") or EFFORT
 
@@ -249,7 +249,7 @@ def main(argv):
                                       capture_output=True, text=True).stdout.strip())
     facts = {
         "REPO": remote.group(1) if remote else "langston-barrett/fren",
-        "PR": number, "HEAD": head, "BASE": base, "RUN": "(none: local review)",
+        "PR": number, "HEAD": head, "BASE": base, "RUN": "(none: pre-push check)",
         "PREVIOUS": "",
     }
 

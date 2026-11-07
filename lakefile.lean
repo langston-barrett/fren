@@ -67,6 +67,11 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"97e7501
 -- each module is built one way, no module is in the globs of two libraries,
 -- which `lake test`'s `libraries` job checks.
 
+-- Standalone scheduler kernels: only Lean core/Std, independent of Fren.
+lean_lib Heavy where
+  globs := #[.submodules `Heavy]
+  roots := #[]
+
 -- Shared by the Lean library and the binary; depends only on Lean core, and
 -- on the parser of the binary, with which `FrenCore.Lint` reads the Fren
 -- quotations of its fixes when it is built (`FrenCli.Quote`). All of its
@@ -108,15 +113,15 @@ input_dir codes_md where
   moreLeancArgs := coverageArgs
   moreLeanArgs := coverageLeanArgs
 
--- `Fren.Elab`, the hosted front end's elaborators, is compiled without
--- optimization. Only the executables that load `Fren` run its C code
+-- `Fren.Elab` and its submodules, the hosted elaborators, are compiled
+-- without optimization. Only the executables that load `Fren` run this C code
 -- (`fren_test`, `fren_fuzz_frontends`, `fren_coverage`): `lean` interprets
--- it on every build of `Reqs`. At `-O3`, clang took 17 s on it, on the path
--- of `lake test`'s build; at `-O0` it takes 3 s, and `lake test`'s run takes
--- no longer. A build reaches it only through `Fren`'s imports, so it is
--- built here (see the top of this file).
+-- the elaborators on every build of `Reqs`. On the original single module,
+-- clang took 17 s at `-O3` on the path of `lake test`'s build, and 3 s at
+-- `-O0`, with no longer test runs. The library gives every elaborator module
+-- these compiler arguments (see the top of this file).
 lean_lib FrenElab where
-  globs := #[`Fren.Elab]
+  globs := #[.andSubmodules `Fren.Elab]
   moreLeancArgs := coverageArgs ++ #["-O0"]
   moreLeanArgs := coverageLeanArgs
 
@@ -742,9 +747,9 @@ lean_exe fren_coverage where
 -- `lake exe fren_fuzz_frontends`: random specs, checked by both front ends,
 -- whose reports must agree (`Reqs/dev/Testing`). It loads Fren's Lean
 -- environment at runtime, hence the interpreter. The fuzzer is the module
--- `FrenTest.FuzzFrontends`, which `fren_test` imports too, to check its
--- fixed corpus: an executable's root is in no library, so no module may
--- import it, since Lake would then use a stale `.olean` of it.
+-- `FrenTest.FuzzFrontends.Main`; `fren_test` imports `Checks` and `Corpus`
+-- to check its fixed corpus. An executable's root is in no library, so no
+-- module may import it, since Lake would then use a stale `.olean` of it.
 lean_exe fren_fuzz_frontends where
   root := `FrenFuzzFrontends
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]

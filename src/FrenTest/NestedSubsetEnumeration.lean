@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Elab.SubsetDeclarations
 import Fren.Enumerate
 -- keep-sorted end
 open Fren.Lang

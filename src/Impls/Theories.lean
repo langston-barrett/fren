@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Theories
+import Impls.Lang.Instances
 import Impls.Lang.Types
 import Reqs.Lang
 -- keep-sorted end
@@ -203,5 +204,28 @@ impl theory_instance: lang::theory_instance for (s : TheorySentence) (images : N
   intro s images _
   by_cases h : theoryGroundImages s.variables images <;>
     simp [fren_spec, TheorySentence.instantiate, h]
+
+interp lang::generic_morphism := fun (args : Fren.Seq Ty) (items : TheoryMorphism) =>
+  genericMorphism args.toList.toArray items
+
+impl generic_type_image: lang::generic_type_image for (args : List Ty) (items : TheoryMorphism) (ty : Ty) (n : Name) {
+  arguments := Fren.Seq.ofList args,
+  items := items,
+  ty := ty,
+  name := n,
+  image := (genericMorphism args.toArray items).type ty,
+  item_image := (genericMorphism args.toArray items).item n,
+} by
+  intro args items ty n _
+  simp [fren_spec, genericMorphism]
+
+impl generic_translation: lang::generic_translation for (args : List Ty) (items : TheoryMorphism) (s : TheorySentence) {
+  arguments := Fren.Seq.ofList args,
+  items := items,
+  sentence := s,
+  instance_sentence := genericTranslation args.toArray items s,
+} by
+  intro args items s _
+  simp [fren_spec, genericTranslation, TheorySentence.translate]
 
 end Fren.Impls.Theories

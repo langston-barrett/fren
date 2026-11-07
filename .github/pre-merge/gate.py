@@ -209,7 +209,36 @@ def current_context(repo, pr, head=None):
     data = api(f"repos/{repo}/pulls/{pr}")
     head = data["head"]["sha"] if head is None else head
     if data["number"] == pr and eligible(data, repo, head):
-        return {"pr": pr, "head": head, "base": data["base"]["sha"]}
+        # PR base metadata is an anchor, not the current target branch tip.
+        # Negative recovery needs no main snapshot or tested merge identity.
+        return {"pr": pr, "head": head, "pr-base": data["base"]["sha"]}
+
+
+def current_main(repo):
+    """Capture the target ref independently of the PR's base anchor."""
+    data = api(f"repos/{repo}/git/ref/heads/main")
+    commit = data["object"]
+    if (data["ref"] != "refs/heads/main" or commit["type"] != "commit"
+            or not re.fullmatch(r"[0-9a-f]{40}", commit["sha"])):
+        raise ValueError("The target branch did not identify a main commit")
+    return commit["sha"]
+
+
+def blocking_comment_event(repo):
+    """Read a negative-only target from GitHub's trusted event envelope."""
+    if os.environ.get("GITHUB_EVENT_NAME") != "issue_comment":
+        return
+    event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+    if (event.get("repository", {}).get("full_name") != repo
+            or event.get("action") not in ("created", "edited")):
+        return
+    issue, comment = event["issue"], event["comment"]
+    match = VERDICT.fullmatch(first_line(comment["body"]))
+    if (not issue.get("pull_request") or not match or match[2] != "blocking issues"
+            or (comment["author_association"] not in PUSHERS and comment["user"]["login"] not in BOT)
+            or int(issue["number"]) <= 0 or int(comment["id"]) <= 0):
+        return
+    return {"pr": int(issue["number"]), "head": match[1], "comment": comment}
 
 
 def revocation_context(repo, review_run):
@@ -263,7 +292,7 @@ def posted_review(repo, review_run, artifact_id=None):
     return review
 
 
-def review_metadata(repo, pr, head, attested=None):
+def review_metadata(repo, pr, head, attested=None, blocking_comment=None):
     """r[ci.current-review]: actual comment order and verified bot provenance.
 
     Names narrow the artifact query to this PR/head; each candidate still
@@ -311,18 +340,24 @@ def review_metadata(repo, pr, head, attested=None):
             comments.append({"body": f"Review of {record['head']}: blocking issues",
                              "authorAssociation": "COLLABORATOR", "id": comment,
                              "createdAt": record["createdAt"]})
+    if blocking_comment and not any(c["id"] == blocking_comment["id"] for c in comments):
+        # A genuine blocking event is evidence of publication even if the
+        # comment list lags. Fresh API text wins for edits; a later clean
+        # review still supersedes this event in the ordinary posted order.
+        comments.append({"body": f"Review of {head}: blocking issues", "authorAssociation": "COLLABORATOR",
+                         "id": blocking_comment["id"], "createdAt": blocking_comment["created_at"]})
     comments.sort(key=lambda c: (c["createdAt"], c["id"]))
     return {"headRefOid": head, "comments": comments}
 
 
-def authorized(repo, pr, head, main, attested=None, manual=False):
+def authorized(repo, pr, head, main, attested=None, manual=False, blocking_comment=None):
     """r[ci.current-review]: one authorization decision for every entry/report."""
     data = api(f"repos/{repo}/pulls/{pr}")
-    if not eligible(data, repo, head):
+    if data["number"] != pr or not eligible(data, repo, head):
         return False
     if attested and (int(attested["pr"]) != pr or (not manual and attested["head"] != head)):
         return False
-    meta = review_metadata(repo, pr, head, attested)
+    meta = review_metadata(repo, pr, head, attested, blocking_comment)
     if not manual:
         # Automatic events never inherit a review of another head.
         latest = None
@@ -352,7 +387,7 @@ def prepare():
         if eligible(manual_data, repo, manual_head):
             # Even an invalid review-run input must fail the known head's
             # aggregate, rather than leave an earlier green check untouched.
-            output(head=manual_head, pr=int(os.environ["PR_INPUT"]), base=manual_data["base"]["sha"])
+            output(head=manual_head, pr=int(os.environ["PR_INPUT"]), **{"pr-base": manual_data["base"]["sha"]})
     attested = None
     if os.environ.get("REVIEW_RUN"):
         review_run = int(os.environ["REVIEW_RUN"])
@@ -370,15 +405,12 @@ def prepare():
             if error is not None:
                 raise error
     comment_event = os.environ.get("GITHUB_EVENT_NAME") == "issue_comment"
+    comment_target = None
     if comment_event:
-        event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-        c = event["comment"]
-        match = VERDICT.fullmatch(first_line(c["body"]))
-        if (not event["issue"].get("pull_request") or not match or match[2] != "blocking issues"
-                or (c["author_association"] not in PUSHERS and c["user"]["login"] not in BOT)):
+        comment_target = blocking_comment_event(repo)
+        if comment_target is None:
             return
-        pr = int(event["issue"]["number"])
-        head = match[1]
+        pr, head = comment_target["pr"], comment_target["head"]
     elif manual:
         pr = int(os.environ["PR_INPUT"])
         head = manual_data["head"]["sha"]
@@ -389,25 +421,27 @@ def prepare():
     else:
         return
     data = api(f"repos/{repo}/pulls/{pr}")
-    if not eligible(data, repo, head):
+    if data["number"] != pr or not eligible(data, repo, head):
         print("Review is stale, closed, from a fork, or not against main")
         return
-    main = data["base"]["sha"]
     # An old blocking completion must not invalidate a newer clean review.
     invalidation = comment_event or (attested and not CLEAN.fullmatch(attested["body"].splitlines()[0]))
     if invalidation:
         try:
-            if authorized(repo, pr, head, main, attested):
+            if authorized(repo, pr, head, None, attested,
+                          blocking_comment=comment_target["comment"] if comment_target else None):
                 return
         except Exception:
-            output(head=head, pr=pr, base=main, revoked=True)
+            output(head=head, pr=pr, revoked=True, **{"pr-base": data["base"]["sha"]})
             raise
     # Report a head even when its latest verdict is blocking or authorization
     # fails. The always reporter must revoke any earlier green check.
-    output(head=head, pr=pr, base=main)
-    if invalidation or not authorized(repo, pr, head, main, attested, manual):
+    output(head=head, pr=pr, **{"pr-base": data["base"]["sha"]})
+    if invalidation:
         output(revoked=True)
         raise ValueError("The current review does not authorize this gate")
+    main = current_main(repo)
+    output(base=main)
     # Only read git objects in the trusted checkout. GitHub's merge ref is
     # the same merge pre-approval checks out; never test the head on its own.
     basic = base64.b64encode(f"x-access-token:{os.environ['GH_TOKEN']}".encode()).decode()
@@ -420,8 +454,13 @@ def prepare():
                    env=fetch_env, check=True)
     merge = run("git", "rev-parse", "FETCH_HEAD")
     parents = run("git", "show", "-s", "--format=%P", merge).split()
-    if len(parents) != 2 or parents[1] != head or parents[0] != data["base"]["sha"]:
+    if len(parents) != 2 or parents[1] != head or parents[0] != main:
         raise ValueError("GitHub's merge ref does not yet match the current head and main; rerun")
+    # The verified merge brought this snapshot's objects into the trusted
+    # checkout, including the main commit used by structural inheritance.
+    if not authorized(repo, pr, head, main, attested, manual):
+        output(revoked=True)
+        raise ValueError("The current review does not authorize this gate")
     names = subprocess.check_output(["git", "diff", "--no-ext-diff", "--no-textconv", "--no-renames",
                                      "--name-only", "-z", f"{parents[0]}...{head}"])
     jobs = selected(names.decode().split("\0"))
@@ -435,6 +474,29 @@ def finish():
     prepared = jobs["prepare"]["outputs"]
     head = prepared.get("head")
     repo = os.environ["GITHUB_REPOSITORY"]
+    if os.environ.get("GITHUB_EVENT_NAME") == "issue_comment":
+        # Checkout or preparation may have failed before any outputs. Only
+        # the trusted event identifies this negative target; it cannot run
+        # slow work or publish success. Revalidate eligibility and ordering.
+        target = blocking_comment_event(repo)
+        context = current_context(repo, target["pr"], target["head"]) if target else None
+        if context is None:
+            return
+        head = context["head"]
+        try:
+            if authorized(repo, context["pr"], head, None, blocking_comment=target["comment"]):
+                return
+        except Exception:
+            try:
+                invalidate(head)
+            finally:
+                status(head, "failure", "Blocking review ordering could not be verified")
+            raise
+        try:
+            invalidate(head)
+        finally:
+            status(head, "failure", "The current blocking review revokes this gate")
+        sys.exit(1)
     if not head:
         # Preparation may have failed/cancelled before writing outputs.
         # Retry recovery from job metadata, never from PR-controlled data.
@@ -470,9 +532,9 @@ def finish():
         repo = os.environ["GITHUB_REPOSITORY"]
         review_run = os.environ.get("REVIEW_RUN")
         attested = posted_review(repo, int(review_run)) if review_run else None
-        if review_run and attested is None:
+        if (review_run and attested is None) or (not prepared.get("base") and prepared.get("revoked") != "true"):
             return False
-        return authorized(repo, int(prepared["pr"]), head, prepared["base"], attested,
+        return authorized(repo, int(prepared["pr"]), head, prepared.get("base"), attested,
                           os.environ.get("PR_INPUT", "") not in ("", "0"))
 
     try:
