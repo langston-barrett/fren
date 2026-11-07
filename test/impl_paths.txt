@@ -358,8 +358,6 @@ bypassed: Fren.Impls.SubsetTypes.pattern_member witness Fren.Core.intervalIndex?
 bypassed: Fren.Impls.Theories.theory_ground_term ground? Fren.Core.TheoryTerm.ground
 bypassed: Fren.Impls.Theories.theory_instance accepted? Fren.Core.TheorySentence.instantiate
 bypassed: Fren.Impls.Theories.theory_instance instance_sentence Fren.Core.TheorySentence.instantiate
-bypassed: Fren.Impls.Theories.theory_term_list substituted Fren.Core.TheoryTerm.substitute
-bypassed: Fren.Impls.Theories.theory_term_substitution substituted Fren.Core.TheoryTerm.substitute
 bypassed: Fren.Impls.Theories.theory_variable_images accepted? Fren.Core.theoryGroundImages
 bypassed: Fren.Impls.Theories.theory_variable_images remaining Fren.Core.theoryRemainingVariables
 bypassed: Fren.Impls.application accepted? Fren.Core.applicationAccepted

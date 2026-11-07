@@ -71,6 +71,10 @@ uninterpreted, higher-order and recursive functions. Fresh runs reject
 static errors from either front end, even when both give the same error.
 `--datatype-elements` generates generic enumerations and records with
 collection payloads and fields (`FuzzDatatypeElements.spec`).
+`--generic-types` adds nested instances with multiple, reordered type
+parameters and subset arguments (`FuzzDatatypeElements.genericTypes`).
+Its fresh runs fail if a shared static error prevents a spec from reaching
+its checks.
 `--set-card-fallback` generates native-cardinality boundary and unlisted types.
 `--set-card` reproduces #820's set seeds and adds finite cardinalities of
 aggregate types and relation pairs (`Wide.genSetCard`). Its corpus and

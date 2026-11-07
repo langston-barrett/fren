@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Impls.Check
 import Impls.Lang.Types
+import Impls.Sequences
 import Reqs.Lang
 -- keep-sorted end
 open Fren.Lang
@@ -25,26 +26,41 @@ interp lang::param_index := paramIndex
 interp lang::parts := fun (t : Fren.Core.Ty) => Fren.Seq.ofList t.parts
 interp lang::with_parts := fun (t : Fren.Core.Ty) (ps : Fren.Seq Fren.Core.Ty) => t.withParts ps.toList
 
+interp lang::instantiated_type := fun (t : Fren.Core.Ty) (args : Fren.Seq Fren.Core.Ty) =>
+  t.subst args.toList.toArray
+
+interp lang::instantiated_parts := fun (ts : Fren.Seq Fren.Core.Ty) (args : Fren.Seq Fren.Core.Ty) =>
+  Fren.Seq.ofList (Fren.Core.Ty.substAll args.toList.toArray ts.toList)
+
 theorem substAll_eq_map (args : Array Fren.Core.Ty) (ts : List Fren.Core.Ty) :
     Fren.Core.Ty.substAll args ts = ts.map (Fren.Core.Ty.subst args) := by
   induction ts with
   | nil => simp [Fren.Core.Ty.substAll]
   | cons t ts ih => simp [Fren.Core.Ty.substAll, ih]
 
+impl instantiation_parts: lang::instantiation_parts for (ts args : List Fren.Core.Ty) {
+  types := Fren.Seq.ofList ts,
+  arguments := Fren.Seq.ofList args,
+  instantiated := Fren.Seq.ofList (Fren.Core.Ty.substAll args.toArray ts),
+} by
+  intro ts args _
+  simpa [fren_spec, substAll_eq_map, Fren.Seq.unit] using seqMapParts (Fren.Core.Ty.subst args.toArray) ts
+
 -- For every type and arguments, with the substitution that both front ends
 -- make in an instance's payloads and fields (`Ty.subst`).
 impl instantiation: lang::instantiation for (ty : Fren.Core.Ty) (args : List Fren.Core.Ty) {
   ty := ty,
   arguments := Fren.Seq.ofList args,
-  instantiated := Fren.Seq.ofList (ty.parts.map (·.subst args.toArray)),
-  result := ty.subst args.toArray,
+  result := (Fren.Core.genericTypeMorphism args.toArray).type ty,
 } by
   intro ty args _
   cases ty
   case param k n _ =>
-    by_cases h : k < args.length <;> simp [fren_spec, isParam, paramIndex, Fren.Core.Ty.subst, h]
+    by_cases h : k < args.length <;>
+      simp [fren_spec, isParam, paramIndex, Fren.Core.genericTypeMorphism, Fren.Core.Ty.subst, h]
   all_goals
-    simp [fren_spec, isParam, Fren.Core.Ty.subst, Fren.Core.Ty.parts, Fren.Core.Ty.withParts, substAll_eq_map]
+    simp [fren_spec, isParam, Fren.Core.genericTypeMorphism, Fren.Core.Ty.subst,
+      Fren.Core.Ty.parts, Fren.Core.Ty.withParts, Fren.Core.Ty.substAll]
 
 mutual
 /-- Matching against a declared type that does not mention `k` gives `k`

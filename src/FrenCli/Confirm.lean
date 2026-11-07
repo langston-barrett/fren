@@ -284,7 +284,7 @@ partial def Eval.Spec.defaultVal (sp : Spec) (t : VTy) (seen : List Name := []) 
     guard !(seen.contains p)
     let d ← sp.data.find? p
     d.ctors.zipIdx.findSome? fun (c, idx) => do
-      let args ← c.fields.mapM fun (_, f) => sp.defaultVal (f.subst targs) (p :: seen)
+      let args ← c.fields.mapM fun (_, f) => sp.defaultVal (f.atTypeInstance sp targs) (p :: seen)
       return .ctor p idx args
   | .abstract _ | .param _ => none
 

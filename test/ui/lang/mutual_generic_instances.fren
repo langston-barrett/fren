@@ -1,0 +1,82 @@
+-- Concrete generic instances keep their translated payloads across group calls.
+-- Members remain monomorphic; their decreasing positions are different.
+set_option fren.lint.assertions_on_constants "allow"
+mod mutual_generic_instances
+
+pub struct Pair<A, B> { first: A, second: B }
+pub enum Tree<T> { Empty, Node(T, Tree<T>) }
+pub type Input := Tree<Pair<Bool, Result<Bool, Bool>>>
+
+mutual {
+    pub fn first(t: Input): Option<Result<Bool, String>> := match t {
+        Tree::Empty => Option::None,
+        Tree::Node(p, rest) =>
+            if p.first then Option::Some(Result::Ok(p.first)) else later("tag", rest),
+    }
+    pub fn later(tag: String, t: Input): Option<Result<Bool, String>> := match t {
+        Tree::Empty => Option::Some(Result::Err(tag)),
+        Tree::Node(_, rest) => first(rest),
+    }
+}
+
+set_option fren.evidence "enumerated" in
+expect values() {
+    expect empty: first(Tree::Empty) = Option::None
+    expect ok: first(
+        Tree::Node(
+            Pair {
+                first := true,
+                second := Result::Ok(false),
+            },
+            Tree::Empty
+        )
+    ) = Option::Some(Result::Ok(true))
+    expect error: first(
+        Tree::Node(
+            Pair {
+                first := false,
+                second := Result::Err(true),
+            },
+            Tree::Empty
+        )
+    ) = Option::Some(Result::Err("tag"))
+    expect cross_call: later(
+        "x",
+        Tree::Node(
+            Pair {
+                first := false,
+                second := Result::Ok(true),
+            },
+            Tree::Empty
+        )
+    ) = Option::None
+}
+
+-- A finite query interpretation supplies a nested payload that the group ignores.
+set_option fren.evidence "enumerated" in
+expect enumerated(r: Result<Bool, Bool>) {
+    expect value: first(
+        Tree::Node(
+            Pair {
+                first := true,
+                second := r,
+            },
+            Tree::Empty
+        )
+    ) = Option::Some(Result::Ok(true))
+}
+
+set_option fren.evidence "solver" in
+expect solver_values(r: Result<Bool, Bool>) {
+    expect value: first(
+        Tree::Node(
+            Pair {
+                first := true,
+                second := r,
+            },
+            Tree::Empty
+        )
+    ) = Option::Some(Result::Ok(true))
+}
+
+--@ summary: 9 passed, 0 failed, 0 inconclusive, 0 redundant

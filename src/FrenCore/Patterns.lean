@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCore.Table
+import FrenCore.Theories
 import FrenCore.Ty
 -- keep-sorted end
 
@@ -64,11 +65,41 @@ partial def Ty.patTy (ty : Ty) : PatTy :=
   | .param k _ => .param k
   | _ => .other
 
-/-- `t`, with the `k`th of `args` for each `.param k`. -/
-partial def PatTy.subst (args : List PatTy) : PatTy → PatTy
-  | .param k => args[k]?.getD .other
-  | .enum p as => .enum p (as.map (·.subst args))
-  | t => t
+/-- Extract the types that patterns distinguish. An opaque type is enough
+for records and collections, which only binders and wildcards match. -/
+partial def PatTy.core : PatTy → Ty
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .enum p as => .enum p (as.map PatTy.core)
+  | .param k => .param k .anonymous
+  | .other => .abstract .anonymous
+
+/-- Pattern types as theory terms. Parameters have their own namespace;
+opaque types are sorts, and datatype arguments are curried applications. -/
+private partial def PatTy.theoryTerm : PatTy → TheoryTerm
+  | .param k => .variable (.num .anonymous k)
+  | .enum p as => as.foldl (fun f a => .app f a.theoryTerm) (.item p)
+  | t => .sort t.core
+
+/-- Render the translated tree. A missing parameter has no known
+constructors; a supplied parameter image keeps its own identity. -/
+private def patternTypeOfTheory : TheoryTerm → PatTy
+  | .sort t => t.patTy
+  | .item p => .enum p []
+  | .app f a => match patternTypeOfTheory f with
+    | .enum p as => .enum p (as ++ [patternTypeOfTheory a])
+    | _ => .other
+  | _ => .other
+
+/-- `t` at a generic datatype instance. The shared theory substitution
+inserts argument trees simultaneously, including parameter-valued images. -/
+def PatTy.subst (args : List PatTy) (t : PatTy) : PatTy :=
+  let images : Name → Option TheoryTerm := fun n => match n with
+    | .num .anonymous k => args[k]?.map (fun a => .sort a.core)
+    | _ => none
+  patternTypeOfTheory (t.theoryTerm.substitute images)
 
 /-- The variants of each enumeration, each with its payload's types, which
 mention its type parameters as `.param`. -/

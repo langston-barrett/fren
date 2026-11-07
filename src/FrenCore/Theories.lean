@@ -1,19 +1,21 @@
 -- keep-sorted start
 import FrenCore.Definitions
 import FrenCore.Ty
+import FrenCore.TypeSubstitution
 -- keep-sorted end
 
 /-!
 # Theories (`Reqs/Lang/ModulesAndInterfaces`, `Reqs/Lang/Implementations`)
 
 The common representation for modules, generic functions and generic types.
-Generic function instances translate their references through it; module
-and generic type adoption is separate work in #761. A morphism translates
-types and signature items uniformly, including constants for unspecified
-values. Ground instantiation is simultaneous and
-keeps the sentence's domain, calls and claims together. Choosing substitutions
-by matching, closing a query under instances, and discharging a morphism's
-obligations are separate operations, not implemented here.
+Generic function instances translate their references through it, and generic
+datatypes extract their constructor declarations into it. Module adoption
+continues in #761. A morphism translates types and signature items uniformly,
+including constants for unspecified values. Ground instantiation is
+simultaneous and keeps the sentence's domain, calls and claims together.
+Choosing substitutions by matching, closing a query under instances, and
+discharging a morphism's obligations are separate operations, not implemented
+here.
 -/
 
 namespace Fren.Core
@@ -72,6 +74,23 @@ structure TheoryMorphism where
   type : Ty → Ty := id
   item : Name → Name := id
   deriving Inhabited
+
+/-- Translate a signature declaration, preserving its kind and abstractness
+(`lang::theory_declaration_translation`). Constructor types translate just
+like the types of functions and constants. -/
+def TheoryDeclaration.translate (d : TheoryDeclaration) (m : TheoryMorphism) : TheoryDeclaration :=
+  { d with name := m.item d.name, types := d.types.map m.type }
+
+/-- The type morphism of a generic instance. Substitution is simultaneous,
+including within other datatype instances (`lang::instantiation`). -/
+def genericTypeMorphism (args : Array Ty) : TheoryMorphism :=
+  { type := (·.subst args) }
+
+/-- A generic datatype's constructor or field declaration at its type
+arguments. Datatype freeness stays in the declaration; instantiation adds
+no axiom (`module.generic-type.sentences`). -/
+def instantiateTypeDeclaration (d : TheoryDeclaration) (args : Array Ty) : TheoryDeclaration :=
+  d.translate (genericTypeMorphism args)
 
 /-- Structural translation along a morphism (`implementation.morphism`). -/
 def TheoryTerm.translate (m : TheoryMorphism) : TheoryTerm → TheoryTerm
