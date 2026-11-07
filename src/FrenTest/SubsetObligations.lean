@@ -1,6 +1,8 @@
 -- keep-sorted start
 import Fren.Check
-import Fren.Elab
+import Fren.Elab.DataTypes
+import Fren.Elab.GlobalBlocks
+import Fren.Elab.SubsetDeclarations
 -- keep-sorted end
 
 open Fren.Lang

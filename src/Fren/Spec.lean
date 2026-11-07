@@ -1,6 +1,10 @@
 -- keep-sorted start
 import Fren.Claims
-import Fren.Elab
+import Fren.Elab.Constants
+import Fren.Elab.DataTypes
+import Fren.Elab.MutualFunctions
+import Fren.Elab.SubsetDeclarations
+import Fren.Elab.Traits
 import Fren.Prelude
 -- keep-sorted end
 

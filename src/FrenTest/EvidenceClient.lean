@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Elab.Procedures
 import FrenTest.EvidenceLib
 -- keep-sorted end
 open Fren.Lang
