@@ -1,0 +1,7 @@
+{"cap":0,"rows":[],"expected":[0,null]}
+{"cap":1,"rows":[{"job_id":null,"order":null,"rss_kb":null,"legacy_rss_kb":30}],"expected":[30,null]}
+{"cap":80,"rows":[{"job_id":"old","order":1,"rss_kb":60,"legacy_rss_kb":null},{"job_id":"new","order":2,"rss_kb":20,"legacy_rss_kb":null}],"expected":[80,null]}
+{"cap":79,"rows":[{"job_id":"old","order":1,"rss_kb":60,"legacy_rss_kb":null},{"job_id":"new","order":2,"rss_kb":20,"legacy_rss_kb":null}],"expected":[80,"new"]}
+{"cap":79,"rows":[{"job_id":"old","order":1,"rss_kb":60,"legacy_rss_kb":null},{"job_id":"new","order":2,"rss_kb":20,"legacy_rss_kb":null,"fresh":false}],"expected":[80,"new"]}
+{"cap":0,"rows":[{"job_id":"first","order":3,"rss_kb":0,"legacy_rss_kb":1},{"job_id":"second","order":3,"rss_kb":0,"legacy_rss_kb":null}],"expected":[1,"first"]}
+{"cap":0,"rows":[{"job_id":"second","order":3,"rss_kb":0,"legacy_rss_kb":null},{"job_id":"first","order":3,"rss_kb":0,"legacy_rss_kb":1}],"expected":[1,"second"]}

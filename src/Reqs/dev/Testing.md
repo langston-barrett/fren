@@ -1690,8 +1690,9 @@ omit `scripts/`.
 The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
-`Heavy.Ownership` implements the registry attempt, report ownership and
-isolated-lease accounting decisions below, bound in `Impls.HeavyOwnership`.
+`Heavy.Ownership` implements the registry attempt, report ownership,
+isolated-lease accounting and observed-memory victim decisions below, bound
+in `Impls.HeavyOwnership`.
 Python remains the active scheduler and syscall adapter. The kernel takes
 decoded reports: wire version, token syntax, finite timestamps and monitor
 field shapes are checked by the adapter, not assumed to prove ownership.
@@ -1707,15 +1708,23 @@ fixtures and the existing `tested` claims. Both standalone Heavy kernels
 are outside those Fren runtimes. The `implPaths` audit therefore records
 each mapped output as an exact `unbound` observation in
 `test/impl_paths.txt`, including the forecast's two outputs and ownership's
-eight plus the conversion's four. These observations certify no runtime
+ten plus the conversion's four. These observations certify no runtime
 connection; unexpected, duplicate and stale inventory entries still fail
 the audit. Its regressions also check that a real standalone kernel call,
 even through a proof adapter, does not count as a Fren production output
 function.
-This slice does not port set-wide accounting, victim selection, sequence
-allocation or publication, completion or signalling. A lease's isolated
+This slice does not port set-wide admission accounting, sequence allocation
+or publication, completion or signalling. A lease's isolated
 admission charge is not a new admission rule and must not be summed over
 unknown holders.
+
+The victim kernel takes the fields of rows after `jobs` has checked held locks
+and report ownership. The adapter must preserve row order and Python integer
+values, including missing fields and independently observed legacy RSS. A
+verified stale report retains its RSS. The kernel tests eligibility itself;
+it does not establish that locks, reports or procfs readings are authentic.
+The differential fixtures compare it with `memory_victim`, while the existing
+Python tests exercise those OS-facing operations. Python remains the scheduler.
 
 Python's clock arithmetic rounds before a freshness comparison. Converting
 the two operands to exact integer ticks and then subtracting changes that
@@ -2037,6 +2046,50 @@ pub fn latest_owner(leases: MemoryLeases, now: Int, ttl: Nat): (owner: Option<Me
         ),
     }
     ensure empty: when leases = MemoryLeases::Nil, owner = Option::None
+}
+
+-- Rows returned by jobs after its lock and report checks. Missing fields do
+-- not qualify; legacy readings contribute independently, even on an eligible
+-- row. Reservations are not measurements. Ties retain the first row.
+pub struct VictimRow {
+    job: Option<String>,
+    order: Option<Int>,
+    rss: Option<Int>,
+    legacy_rss: Option<Int>,
+}
+
+pub enum VictimRows { Nil, Cons(VictimRow, VictimRows) }
+
+pub fn victim_owner(row: VictimRow): Option<MemoryOwner> := match row.job, row.order, row.rss {
+    Option::Some(job), Option::Some(order), Option::Some(rss) =>
+        if order > 0 and rss >= 0 then Option::Some(MemoryOwner { job, sequence := order })
+        else Option::None,
+    _, _, _ => Option::None,
+}
+
+pub fn victim_total(rows: VictimRows): Int := match rows {
+    VictimRows::Nil => 0,
+    VictimRows::Cons(row, rest) =>
+        (match victim_owner(row), row.rss {
+            Option::Some(_), Option::Some(rss) => rss,
+            _, _ => 0,
+        }) + legacy_memory(row.legacy_rss) + victim_total(rest),
+}
+
+pub fn victim_latest(rows: VictimRows): Option<MemoryOwner> := match rows {
+    VictimRows::Nil => Option::None,
+    VictimRows::Cons(row, rest) => newest_owner(victim_owner(row), victim_latest(rest)),
+}
+
+pub proc heavy_observed_victim(cap: Nat, rows: VictimRows): (
+    det total: Int,
+    det selected: Option<MemoryOwner>,
+) {
+    out total := victim_total(rows)
+    out selected := if total > cap then victim_latest(rows) else Option::None
+    expect within_cap: when total <= cap, selected = Option::None
+    expect no_owner: when victim_latest(rows) = Option::None, selected = Option::None
+    expect empty: when rows = VictimRows::Nil, total = 0 and selected = Option::None
 }
 
 pub proc heavy_memory_victim(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (

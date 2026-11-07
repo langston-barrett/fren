@@ -162,4 +162,64 @@ impl lease: testing::heavy_lease
   · by_cases h : reportOwner row.report row.statusJob row.observed now ttl = true <;>
       simp [Heavy.Ownership.lease, h]
 
+def victimRow (r : VictimRow) : testing.VictimRow :=
+  ⟨r.job, r.order, r.rss, r.legacyRss⟩
+
+def victimRows : List VictimRow → testing.VictimRows
+  | [] => .Nil
+  | r :: rs => .Cons (victimRow r) (victimRows rs)
+
+theorem victim_owner_eq (r : VictimRow) :
+    testing.victim_owner (victimRow r) = (victimOwner r).map owner := by
+  cases r with
+  | mk job order rss legacy =>
+    cases job <;> cases order <;> cases rss <;>
+      simp [testing.victim_owner, victimRow, victimOwner, owner]
+
+theorem newest_owner_eq (a b : Option Owner) :
+    testing.newest_owner (a.map owner) (b.map owner) = (newestOwner a b).map owner := by
+  cases a <;> cases b <;> simp [testing.newest_owner, newestOwner, owner]
+  split <;> rfl
+
+/-- Equal orders keep the first owner, regardless of their identities. -/
+theorem newest_tie (a b : Owner) (h : a.sequence = b.sequence) :
+    newestOwner (some a) (some b) = some a := by
+  simp [newestOwner, h]
+
+theorem victim_summary_eq (rows : List VictimRow) :
+    (rows.foldr (fun row (total, latest) =>
+      let o := victimOwner row
+      let measured := if o.isSome then row.rss.getD 0 else 0
+      (measured + legacyMemory row.legacyRss + total, newestOwner o latest)) (0, none)).1 =
+        testing.victim_total (victimRows rows) ∧
+    (rows.foldr (fun row (total, latest) =>
+      let o := victimOwner row
+      let measured := if o.isSome then row.rss.getD 0 else 0
+      (measured + legacyMemory row.legacyRss + total, newestOwner o latest)) (0, none)).2.map owner =
+        testing.victim_latest (victimRows rows) := by
+  induction rows with
+  | nil => simp [victimRows, testing.victim_total, testing.victim_latest]
+  | cons r rs ih =>
+    have ho := victim_owner_eq r
+    have hl := legacy_memory_eq r.legacyRss
+    have hn := newest_owner_eq (victimOwner r) ((rs.foldr (fun row (total, latest) =>
+      let o := victimOwner row
+      let measured := if o.isSome then row.rss.getD 0 else 0
+      (measured + legacyMemory row.legacyRss + total, newestOwner o latest)) (0, none)).2)
+    cases h : victimOwner r <;> cases hr : r.rss <;>
+      simp_all [victimRows, testing.victim_total, testing.victim_latest, victimRow,
+        victimOwner]
+
+impl observed_victim: testing::heavy_observed_victim
+    for (cap : Nat) (rows : List VictimRow) {
+  cap := cap,
+  rows := victimRows rows,
+  total := (memoryVictim cap rows).1,
+  selected := (memoryVictim cap rows).2.map owner,
+} by
+  intro cap rows _
+  have h := victim_summary_eq rows
+  simp only [fren_spec, memoryVictim]
+  split <;> simp_all <;> omega
+
 end Fren.Impls.HeavyOwnership
