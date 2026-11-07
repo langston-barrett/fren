@@ -128,4 +128,34 @@ def lease (cap : Nat) (locked : Bool) (row : Lease) (now : Int) (ttl : Nat) : Le
     ⟨true, admissionMemory cap row.report now ttl, evictionMemory row.report⟩
   else ⟨true, legacyReservation cap row.legacyRss, legacyMemory row.legacyRss⟩
 
+/-- A held-job row before the victim eligibility check. Ownership is
+established by the adapter; no PID is used as an identity here. -/
+structure VictimRow where
+  job : Option String
+  order : Option Int
+  rss : Option Int
+  legacyRss : Option Int
+  deriving Repr
+
+def victimOwner (row : VictimRow) : Option Owner :=
+  match row.job, row.order, row.rss with
+  | some job, some order, some rss =>
+    if order > 0 ∧ rss ≥ 0 then some ⟨job, order⟩ else none
+  | _, _, _ => none
+
+def newestOwner (first second : Option Owner) : Option Owner :=
+  match first, second with
+  | none, _ => second
+  | _, none => first
+  | some a, some b => if b.sequence > a.sequence then second else first
+
+/-- Observed pressure and the first newest eligible owner, only above cap.
+Legacy readings contribute independently; forecasts do not. -/
+def memoryVictim (cap : Nat) (rows : List VictimRow) : Int × Option Owner :=
+  let (total, latest) := rows.foldr (fun row (total, latest) =>
+    let owner := victimOwner row
+    let measured := if owner.isSome then row.rss.getD 0 else 0
+    (measured + legacyMemory row.legacyRss + total, newestOwner owner latest)) (0, none)
+  (total, if total > cap then latest else none)
+
 end Heavy.Ownership

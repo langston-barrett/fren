@@ -28,7 +28,16 @@ def report (span : TimeSpan) (j : Json) : Except String Report := do
     ← j.getObjValAs? Int "rss_kb", elapsedTimestamp span,
     ← optionalField j "monitor" monitor⟩
 
+def victimRow (j : Json) : Except String VictimRow := do
+  return ⟨← j.getObjValAs? (Option String) "job_id",
+    ← j.getObjValAs? (Option Int) "order", ← j.getObjValAs? (Option Int) "rss_kb",
+    ← j.getObjValAs? (Option Int) "legacy_rss_kb"⟩
+
 def check (j : Json) : Except String Json := do
+  if (← j.getObjValAs? String "kind") == "victim" then
+    let rows ← (← j.getObjValAs? (Array Json) "rows").toList.mapM victimRow
+    let (total, selected) := memoryVictim (← j.getObjValAs? Nat "cap") rows
+    return .arr #[toJson total, toJson (selected.map (·.job))]
   let span ← j.getObjVal? "span" >>= timeSpan
   let now : Int := 0
   if (← j.getObjValAs? String "kind") == "registry" then

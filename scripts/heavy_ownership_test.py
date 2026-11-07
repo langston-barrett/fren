@@ -233,6 +233,27 @@ def main():
             cases.append(dict(base, now=now, observed=observed,
                               report=dict(base["report"], updated_monotonic=stamp)))
     inputs, expected = [], []
+    # Rows are the actual selector's inputs, after jobs has verified a report.
+    # Stale verified owners retain their measurements; freshness and PID are
+    # deliberately absent from this selector's input.
+    victim_cases = [json.loads(line) for line in
+                    (ROOT / "test/heavy/victim.jsonl").read_text().splitlines()]
+    for case in victim_cases:
+        rows, cap = case["rows"], case["cap"]
+        result = heavy.memory_victim(rows, cap)
+        assert list(result) == case["expected"], case
+        inputs.append(dict(kind="victim", rows=rows, cap=cap))
+        expected.append(list(result))
+    # Exercise all optional/invalid field combinations and both permutations.
+    for job, order, rss, legacy in itertools.product(
+            (None, "a"), (None, -1, 0, 1, 2 ** 100),
+            (None, -1, 0, 1, 2 ** 100), (None, -1, 0, 1, 2 ** 100)):
+        row = dict(job_id=job, order=order, rss_kb=rss, legacy_rss_kb=legacy)
+        other = dict(job_id="b", order=1, rss_kb=1, legacy_rss_kb=None)
+        for rows in ([row, other], [other, row]):
+            for cap in (0, 1, 2 ** 100):
+                inputs.append(dict(kind="victim", rows=rows, cap=cap))
+                expected.append(list(heavy.memory_victim(rows, cap)))
     registry_count = 0
     with tempfile.TemporaryDirectory() as state:
         path = Path(state) / "report.json"
@@ -285,6 +306,7 @@ def main():
         assert got == want, (i, got, want, inputs[i])
     print(f"{len(cases)} Lean/Python ownership cases and {registry_count} registry attempts agree "
           f"({len(fixed)} sanitized fixtures); {len(values)} numeric conversion cases agree")
+    print(f"{len(victim_cases)} victim fixtures and 3000 generated comparisons agree")
 
 
 if __name__ == "__main__":

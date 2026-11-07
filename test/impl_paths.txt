@@ -12,6 +12,8 @@ unbound: Fren.Impls.Heavy.memory_prediction prediction
 unbound: Fren.Impls.HeavyOwnership.lease admission
 unbound: Fren.Impls.HeavyOwnership.lease eviction
 unbound: Fren.Impls.HeavyOwnership.lease live?
+unbound: Fren.Impls.HeavyOwnership.observed_victim selected
+unbound: Fren.Impls.HeavyOwnership.observed_victim total
 unbound: Fren.Impls.HeavyOwnership.registry acquired?
 unbound: Fren.Impls.HeavyOwnership.registry deferred?
 unbound: Fren.Impls.HeavyOwnership.registry retry?
