@@ -222,4 +222,74 @@ impl observed_victim: testing::heavy_observed_victim
   simp only [fren_spec, memoryVictim]
   split <;> simp_all <;> omega
 
+def groupProbe : GroupProbe → testing.GroupProbe
+  | .missing => .Missing
+  | .present => .Present
+  | .denied => .Denied
+
+impl group_gone: testing::heavy_group_gone
+    for (subreaper leader : Bool) (wait : GroupWait) (probe : GroupProbe) {
+  subreaper? := subreaper,
+  leader_reaped? := leader,
+  group_wait_pending? := wait == .pending,
+  probe := groupProbe probe,
+  gone? := groupGone subreaper leader wait probe,
+} by
+  intro subreaper leader wait probe _
+  cases subreaper <;> cases leader <;> cases wait <;> cases probe <;>
+    simp [fren_spec, groupGone, groupProbe] <;> decide
+
+def cleanupCause : CleanupCause → testing.CleanupCause
+  | .memorySample => .MemorySample
+  | .externalSignal => .ExternalSignal
+  | .setupFailure => .SetupFailure
+  | .accountingFailure => .AccountingFailure
+
+theorem victim_selected_eq (cap : Nat) (rows : List VictimRow) :
+    (memoryVictim cap rows).2.map owner =
+      (if testing.victim_total (victimRows rows) > cap then
+        testing.victim_latest (victimRows rows) else none) := by
+  have h := victim_summary_eq rows
+  simp only [memoryVictim]
+  rw [← h.1, ← h.2]
+  split <;> simp
+
+set_option maxRecDepth 4096 in
+impl cleanup_trigger: testing::heavy_cleanup_trigger
+    for (cause : CleanupCause) (cap ownRss : Nat) (ownJob : Option String)
+        (rows : List VictimRow) {
+  cause := cleanupCause cause,
+  cap := cap,
+  own_rss := ownRss,
+  own_job := ownJob,
+  rows := victimRows rows,
+  cleanup? := cleanupTrigger cause cap ownRss ownJob rows,
+} by
+  intro cause cap ownRss ownJob rows _
+  have hv := victim_selected_eq cap rows
+  cases hs : (memoryVictim cap rows).2 with
+  | none =>
+    simp only [hs, Option.map_none] at hv
+    cases cause <;> cases ownJob <;>
+      simp [fren_spec, cleanupCause, cleanupTrigger, hs, ← hv]
+  | some selected =>
+    simp only [hs, Option.map_some] at hv
+    cases cause <;> cases ownJob with
+    | none => simp [fren_spec, cleanupCause, cleanupTrigger, hs, ← hv, owner]
+    | some job =>
+      by_cases eq : selected.job = job <;>
+        simp [fren_spec, cleanupCause, cleanupTrigger, hs, ← hv, owner, eq]
+
+impl signal_attempt: testing::heavy_signal_attempt
+    for (subreaper leader : Bool) (wait : GroupWait) (probe : GroupProbe) {
+  subreaper? := subreaper,
+  leader_reaped? := leader,
+  group_wait_pending? := wait == .pending,
+  probe := groupProbe probe,
+  attempt? := signalAttempt subreaper leader wait probe,
+} by
+  intro subreaper leader wait probe _
+  cases subreaper <;> cases leader <;> cases wait <;> cases probe <;>
+    simp [fren_spec, signalAttempt, groupGone, groupProbe] <;> decide
+
 end Fren.Impls.HeavyOwnership

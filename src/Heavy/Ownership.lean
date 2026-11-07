@@ -158,4 +158,37 @@ def memoryVictim (cap : Nat) (rows : List VictimRow) : Int × Option Owner :=
     (measured + legacyMemory row.legacyRss + total, newestOwner owner latest)) (0, none)
   (total, if total > cap then latest else none)
 
+/-- Observations from wait4 and killpg, after any PID 1 cleanup. They do not
+claim that the probe or waits are atomic with subsequent OS activity. -/
+inductive GroupProbe where
+  | missing | present | denied
+  deriving Repr, BEq
+
+inductive GroupWait where
+  | pending | exhausted
+  deriving Repr, BEq
+
+def groupGone (subreaper leaderReaped : Bool) (wait : GroupWait) (probe : GroupProbe) : Bool :=
+  leaderReaped && (!subreaper || wait == .exhausted) && probe == .missing
+
+/-- Cause observed at the cleanup call site. Registry contention stays a
+memory sample with no selected victim, rather than an accounting failure. -/
+inductive CleanupCause where
+  | memorySample | externalSignal | setupFailure | accountingFailure
+  deriving Repr, BEq
+
+def cleanupTrigger (cause : CleanupCause) (cap ownRss : Nat) (ownJob : Option String)
+    (rows : List VictimRow) : Bool :=
+  match cause with
+  | .memorySample => decide (ownRss > cap) ||
+      match (memoryVictim cap rows).2, ownJob with
+      | some selected, some job => selected.job == job
+      | _, _ => false
+  | _ => true
+
+/-- A decision immediately before one signal attempt; it does not assert
+that a signal is delivered or that the group remains unchanged. -/
+def signalAttempt (subreaper leader : Bool) (wait : GroupWait) (probe : GroupProbe) : Bool :=
+  !groupGone subreaper leader wait probe
+
 end Heavy.Ownership
