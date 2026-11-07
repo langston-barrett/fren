@@ -723,6 +723,8 @@ lean_lib FrenCli where
 -- `lake test`: ui tests through both front ends, and snapshot tests for the
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
 lean_exe fren_test where
+  -- The executable smoke job must exercise a freshly built fuzzer.
+  needs := #[`@/fren_fuzz_frontends]
   root := `FrenTestMain
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
