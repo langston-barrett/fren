@@ -2,7 +2,8 @@ import Heavy.Ownership
 import Lean
 
 /-! Test-only transport of decoded observations. It supplies no precomputed
-ownership, freshness, charge or registry decision to the kernel. -/
+ownership, freshness, charge or registry decision to the kernel. Each row
+has one elapsed span, unlike the Python producer's two clock samples. -/
 
 open Lean Heavy.Ownership
 

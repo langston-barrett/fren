@@ -130,7 +130,9 @@ def lease (cap : Nat) (locked : Bool) (row : Lease) (now : Int) (ttl : Nat) : Le
 
 /-- Finite admission accounting over held slots. The adapter omits unlocked
 slots and supplies decoded observations; registry errors and OS failures are
-outside this pure total. Unknown legacy slots share one reservation. -/
+outside this pure total. One `now` is used for both compatibility and
+charge freshness; Python may sample those at different times. Unknown legacy
+slots share one reservation. -/
 def admissionTotal (cap : Nat) (rows : List Lease) (now : Int) (ttl : Nat) : Int :=
   let measured := rows.foldr (fun row total =>
     (if reportOwner row.report row.statusJob row.observed now ttl then

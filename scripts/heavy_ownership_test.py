@@ -16,6 +16,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 from unittest import mock
 
 sys.dont_write_bytecode = True
@@ -116,6 +117,8 @@ def numeric_span(value, ttl=heavy.REPORT_STALE_SECONDS):
 
 
 def transport(case):
+    # One elapsed observation supplies both ownership and freshness. The real
+    # jobs producer can sample twice; see two_clock_producer below.
     r = decoded_report(case["report"])
     # The status adapter extracts only the terminal protocol token. Diagnostic
     # numeric PIDs never enter the Lean observations.
@@ -161,6 +164,7 @@ def python_lease(case, path):
 
 
 def python_aggregate(cases, cap, path):
+    # This oracle models a single snapshot, not jobs' two clock samples.
     rows = []
     for i, case in enumerate(cases):
         if not case["locked"]:
@@ -186,6 +190,30 @@ def aggregate_transport(cases, cap):
         if row["span"]["kind"] == "finite":
             row["span"]["ticks"] *= ttl // row["ttl"]
     return dict(kind="aggregate", cap=cap, ttl=ttl, rows=rows)
+
+
+def two_clock_producer():
+    """Exercise the actual jobs producer and accounting with mocked IO.
+
+    The first clock is used for stored freshness, the second for ownership.
+    A single elapsed span cannot represent this compatible but stale row.
+    """
+    report = dict(version=3, job_id="a" * 32, order=1, rss_kb=40,
+                  updated_monotonic=100.0, monitor=None)
+    status = "5 0 [heavy-job=" + "a" * 32 + "]\n"
+    with mock.patch.object(heavy, "registry", return_value=contextlib.nullcontext()), \
+         mock.patch.object(heavy.os, "listdir", return_value=["slot0"]), \
+         mock.patch("builtins.open", mock.mock_open(read_data=status)), \
+         mock.patch.object(heavy, "read_report", side_effect=lambda _: dict(report)), \
+         mock.patch.object(heavy.fcntl, "flock", side_effect=BlockingIOError), \
+         mock.patch.object(heavy.os, "fstat", return_value=SimpleNamespace(st_dev=0, st_ino=1)), \
+         mock.patch.object(heavy.platform, "system", return_value="Darwin"), \
+         mock.patch.object(heavy.platform, "release", return_value="24.0"), \
+         mock.patch.object(heavy.time, "monotonic", side_effect=[99.0, 100.0, 99.0, 100.0]):
+        rows = heavy.jobs("unused")
+        total = heavy.heavy_rss_kb(state="unused", cap=100)
+    assert len(rows) == 1 and rows[0]["fresh"] is False and rows[0]["legacy"] is False, rows
+    assert rows[0]["rss_kb"] == 40 and total == 100, (rows, total)
 
 
 class Retried(Exception):
@@ -397,6 +425,7 @@ def main():
             cases.append(dict(base, now=now, observed=observed,
                               report=dict(base["report"], updated_monotonic=stamp)))
     escalation_checks()
+    two_clock_producer()
     inputs, expected = [], []
     group_count = 0
     for subreaper, leader, wait, probe in itertools.product(

@@ -1720,6 +1720,13 @@ function.
 The aggregate takes held rows, recomputes compatibility and freshness, and
 charges one shared forecast for unknown legacy readings. Lock discovery, report
 decoding and rounded elapsed-time transport remain adapter responsibilities.
+The model and differential transport use one time observation per row for
+both compatibility and charge freshness. Python's `jobs` stores freshness
+from one clock sample and may check compatibility at a later sample. With
+no observed monitor, a report can therefore be compatible but stored stale,
+a combination this single-snapshot model cannot express. Full adapter parity
+and runtime use require a model of both raw observations and a regression for
+that case; the mocked Python producer regression preserves it separately.
 Registry timeout propagates and other OS errors yield infinity in Python; the
 pure finite total does not prove those IO paths. Sequence allocation and
 publication, OS waits, probes, signal delivery and PID 1 cleanup also remain
