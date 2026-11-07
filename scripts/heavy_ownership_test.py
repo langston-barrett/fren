@@ -196,6 +196,26 @@ def python_registry(available, now, started, requested, state):
     return [acquired, retry, timed_out, deferred]
 
 
+def python_group(subreaper, leader, wait, probe):
+    # Drive the real reap_child and group_gone, mocking only OS observations.
+    child = mock.Mock(pid=123, returncode=0 if leader else None,
+                      heavy_subreaper=subreaper)
+    observation = ChildProcessError() if wait == "exhausted" else (0, 0, None)
+    outcome = {"missing": ProcessLookupError(), "present": None,
+               "denied": PermissionError()}[probe]
+    with mock.patch.object(heavy.os, "getpid", return_value=42), \
+         mock.patch.object(heavy.os, "wait4", side_effect=observation if isinstance(observation, Exception)
+                           else None, return_value=observation), \
+         mock.patch.object(heavy.os, "killpg", side_effect=outcome) as kill:
+        result = heavy.group_gone(123, lambda: heavy.reap_child(child, {}), subreaper)
+        # Collection failure must prevent even the group probe.
+        if not leader or (subreaper and wait == "pending"):
+            kill.assert_not_called()
+        else:
+            kill.assert_called_once_with(123, 0)
+        return result
+
+
 def main():
     # Synthetic identities and times derived from the ownership regressions;
     # no production PID, job identity, namespace or path is recorded here.
@@ -233,6 +253,22 @@ def main():
             cases.append(dict(base, now=now, observed=observed,
                               report=dict(base["report"], updated_monotonic=stamp)))
     inputs, expected = [], []
+    group_count = 0
+    for subreaper, leader, wait, probe in itertools.product(
+            (False, True), (False, True), ("pending", "exhausted"),
+            ("missing", "present", "denied")):
+        inputs.append(dict(kind="group", subreaper=subreaper, leader=leader,
+                           wait=wait, probe=probe))
+        expected.append(python_group(subreaper, leader, wait, probe))
+        group_count += 1
+    # PID 1 can discover a newly adopted group child after the first reap.
+    # A failed second reap must stop before the probe even if it would be missing.
+    with mock.patch.object(heavy.os, "getpid", return_value=1), \
+         mock.patch.object(heavy.os, "waitid", return_value=mock.Mock(si_pid=124)), \
+         mock.patch.object(heavy.os, "getpgid", return_value=123), \
+         mock.patch.object(heavy.os, "killpg") as kill:
+        assert not heavy.group_gone(123, mock.Mock(side_effect=[True, False]), True)
+        kill.assert_not_called()
     # Rows are the actual selector's inputs, after jobs has verified a report.
     # Stale verified owners retain their measurements; freshness and PID are
     # deliberately absent from this selector's input.
@@ -308,6 +344,7 @@ def main():
         assert got == want, (i, got, want, inputs[i])
     print(f"{len(cases)} Lean/Python ownership cases and {registry_count} registry attempts agree "
           f"({len(fixed)} sanitized fixtures); {len(values)} numeric conversion cases agree")
+    print(f"{group_count} group completion comparisons agree")
     print(f"{len(victim_cases)} victim fixtures and {generated_count} generated comparisons agree")
 
 
