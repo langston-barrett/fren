@@ -6,7 +6,10 @@ import Reqs.Testing
 open Fren.Lang
 
 /-! The Std-only ownership kernel, bound to the existing heavy requirements.
-Python's concrete lock, wire decoding and procfs tests remain in `Impls.Trace`. -/
+These proofs establish conformance of the decoded Lean functions, not their
+use by Fren's CLI or hosted front end. Each output is inventoried outside
+those runtimes in `test/impl_paths.txt`. Python's concrete lock, wire decoding
+and procfs tests remain in `Impls.Trace`. -/
 
 namespace Fren.Impls.HeavyOwnership
 

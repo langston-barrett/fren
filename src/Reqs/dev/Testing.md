@@ -1550,6 +1550,17 @@ observed monitor identity and freshness itself. The `heavyOwnership` job
 compares these decisions against Python with sanitized fixtures, including
 malformed reports, inherited tokens and namespace disagreements. It also
 checks registry retry boundaries against Python's acquisition loop.
+These `impl`s prove that the decoded Lean functions meet the requirements;
+they do not prove Python's code or establish a call from Fren's CLI or
+hosted front end. The Python connection is checked by the differential
+fixtures and the existing `tested` claims. Both standalone Heavy kernels
+are outside those Fren runtimes. The `implPaths` audit therefore records
+each mapped output as an exact `unbound` observation in
+`test/impl_paths.txt`, including the forecast's two outputs and ownership's
+eight. These observations certify no runtime connection; unexpected,
+duplicate and stale inventory entries still fail the audit. Its regressions
+also check that a real standalone kernel call, even through a proof adapter,
+does not count as a Fren production output function.
 This slice does not port set-wide accounting, victim selection, sequence
 allocation or publication, completion or signalling. A lease's isolated
 admission charge is not a new admission rule and must not be summed over

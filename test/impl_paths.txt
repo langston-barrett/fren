@@ -6,9 +6,17 @@
 # A new connection removes its old entry; there is no bless mode.
 
 # Standalone heavy kernel (#859): outside the audited Fren CLI/hosted
-# runtimes. Python remains the active scheduler in migration step 1.
+# runtimes. Python remains the active scheduler through migration step 2.
 unbound: Fren.Impls.Heavy.memory_prediction jobs
 unbound: Fren.Impls.Heavy.memory_prediction prediction
+unbound: Fren.Impls.HeavyOwnership.lease admission
+unbound: Fren.Impls.HeavyOwnership.lease eviction
+unbound: Fren.Impls.HeavyOwnership.lease live?
+unbound: Fren.Impls.HeavyOwnership.registry acquired?
+unbound: Fren.Impls.HeavyOwnership.registry deferred?
+unbound: Fren.Impls.HeavyOwnership.registry retry?
+unbound: Fren.Impls.HeavyOwnership.registry timed_out?
+unbound: Fren.Impls.HeavyOwnership.report_owner compatible?
 
 # Outputs represented by binders, literals, spec values, or output-free laws.
 unbound: Fren.Impls.Enumeration.contract_blocker right?

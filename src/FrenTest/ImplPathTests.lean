@@ -1,5 +1,7 @@
 -- keep-sorted start
 import FrenTest.ImplPath
+import Heavy.Forecast
+import Heavy.Ownership
 -- keep-sorted end
 
 /-! Regressions use real compiled declarations and real `impl` theorems.
@@ -70,6 +72,11 @@ def unwrapSubtype {p : Bool → Prop} (x : Subtype p) : Bool := x.val
 
 def identityValue {α : Type u} (x : α) : α := x
 
+-- A real call to the standalone kernel is still outside the audited Fren
+-- runtimes. Naming its adapter in Fren.Impls must not turn it into production.
+def standaloneRegistry (b : Bool) : Bool :=
+  (Heavy.Ownership.registry (!b) 0 1 false false).acquired
+
 def readTag : Fren.Core.ImplPathFixture.Tag → Bool
   | .yes => true
   | .no => false
@@ -107,6 +114,13 @@ impl adapter_discarded: rule {
   b? := false,
   accepted? := Fren.Impls.ImplPathFixture.discard (Fren.Core.ImplPathFixture.bound true),
 }
+
+impl standalone_kernel: rule for (b : Bool) {
+  b? := b,
+  accepted? := Fren.Impls.ImplPathFixture.standaloneRegistry b,
+} by
+  intro b _
+  cases b <;> decide
 
 impl binder_domain: rule for
     (_h : Fren.Generated.impl_path_fixture.rule.assumes true (Fren.Core.ImplPathFixture.derived false)) {
@@ -191,6 +205,16 @@ run_elab do
     (`Fren.Core.ImplPathFixture).isPrefixOf d.name)
   let g := graph env ds
   let target := `Fren.Core.ImplPathFixture.bound
+  -- Audit all four impls' deciding functions across both Heavy modules.
+  -- Conformance proofs and differential fixtures do not create a path from
+  -- Fren's reporting roots. Keep the standalone scope distinct from adapters
+  -- and the connected, discarded and erased runtime cases below.
+  for n in #[`Heavy.Forecast.predict, `Heavy.Ownership.registry,
+      `Heavy.Ownership.reportOwner, `Heavy.Ownership.lease] do
+    unless env.contains n do
+      throwError "implPaths: missing standalone kernel declaration: {n}"
+    if production n then
+      throwError "implPaths: standalone kernel counted as Fren production: {n}"
   for n in #[`Fren.Core.ImplPathFixture.direct, `Fren.Core.ImplPathFixture.derived,
       `Fren.Core.ImplPathFixture.branch, `Fren.Core.ImplPathFixture.closure] do
     unless (paths g #[n]).contains target do
@@ -214,6 +238,10 @@ run_elab do
     | throwError "implPaths: did not extract the discarded adapter impl"
   unless discarded.functions.isEmpty do
     throwError "implPaths: treated a discarded adapter argument as a result binding"
+  let some standalone := bs.find? (·.impl == `FrenTest.ImplPathTests.standalone_kernel)
+    | throwError "implPaths: did not extract the standalone-kernel impl"
+  unless standalone.output == `accepted? && standalone.functions.isEmpty do
+    throwError "implPaths: treated a standalone kernel as a Fren production binding"
   let some binderDomain := bs.find? (·.impl == `FrenTest.ImplPathTests.binder_domain)
     | throwError "implPaths: did not extract the proof-binder impl"
   unless binderDomain.functions == #[target] do
