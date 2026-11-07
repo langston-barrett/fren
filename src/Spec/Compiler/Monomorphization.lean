@@ -1,9 +1,5 @@
-module
-
-public import Fren.Impl
-public import Fren.Literate
-
-public section
+import Fren.Impl
+import Fren.Literate
 
 open Fren.Lang
 

@@ -254,8 +254,9 @@ def exampleBlocks (md : String) : Array (Nat × String) :=
 #guard exampleBlocks "````text\n```fren example\nx\n```\n````\n" == #[]
 #guard exampleBlocks "```` ```fren example ```` inline\n```fren example\nx\n```\n" == #[(2, "x\n")]
 
-/-- The Markdown files of the reference, `src/Reqs/**/*.md`. -/
-def manualFiles : IO (Array FilePath) := sortedFiles ("src" / "Reqs") "md"
+/-- The Markdown files of both references. -/
+def manualFiles : IO (Array FilePath) := do
+  return (← sortedFiles ("src" / "Reqs") "md") ++ (← sortedFiles ("src" / "Spec") "md")
 
 /-- Each ```` ```fren example ```` block of the reference, as a spec of its
 own, passes as a ui test through both front ends
@@ -1101,7 +1102,7 @@ partial def lintSpecFilesFrom (entry : FilePath) (seen : Array FilePath) : IO (A
 each module is declared before it is used. -/
 def ownSpecFiles : IO (Array String) := do
   let lint ← lintSpecFilesFrom "src/Reqs/Lint.lean" #[]
-  return #[
+  let chapters := #[
     "Lang/Overview",
     "Lang/Lexical",
     "Lang/Types",
@@ -1148,12 +1149,14 @@ def ownSpecFiles : IO (Array String) := do
     "Markdown",
     "dev/Testing",
   ].flatMap fun r => if r == "Lint" then lint.2 else #[s!"src/Reqs/{r}.md"]
+  let spec ← sortedFiles "src/Spec" "md"
+  return chapters ++ (spec.filter fun p => !p.toString.startsWith "src/Spec/dev/").map (·.toString)
 
 /-- The Markdown specs that the Lean front end reads, by the `#fren_md`
-commands of `src/Reqs`, each as a path from the repository's root. -/
+commands of `src/Reqs` and `src/Spec`, each as a path from the repository's root. -/
 def hostedSpecFiles : IO (Array String) := do
   let mut files := #[]
-  for entry in ← sortedFiles "src/Reqs" "lean" do
+  for entry in (← sortedFiles "src/Reqs" "lean") ++ (← sortedFiles "src/Spec" "lean") do
     for line in (← IO.FS.readFile entry).splitOn "\n" do
       if let [_, rest] := line.splitOn "#fren_md \"" then
         if let some name := (rest.splitOn "\"").head? then
@@ -1223,7 +1226,7 @@ Markdown does. A check in an imported module does not count for items
 declared in the importing module. -/
 def hostedChecks : IO (Array String) := do
   let mut failures := #[]
-  for entry in ← sortedFiles "src/Reqs" "lean" do
+  for entry in (← sortedFiles "src/Reqs" "lean") ++ (← sortedFiles "src/Spec" "lean") do
     let mut chunks : Array (String × Array String) := #[]
     for line in (← IO.FS.readFile entry).splitOn "\n" do
       if let [_, rest] := line.splitOn "#fren_md \"" then
@@ -2989,7 +2992,7 @@ def checkLibraries (lakefile : String) : IO (Array String) := do
     | .ok needed =>
       return reads.filterMap (fun p =>
         if needed p then none else some s!"{sourceOf m}: reads `{p}`, which `{lib}` in `lakefile.lean` does not need")
-  for f in (← System.FilePath.walkDir "src/Reqs").push "src/Reqs.lean" do
+  for f in (← System.FilePath.walkDir "src/Reqs") ++ (← System.FilePath.walkDir "src/Spec") |>.push "src/Reqs.lean" do
     if f.extension != some "lean" then continue
     let m := ((f.withExtension "").toString.dropPrefix "src/").toString.replace "/" "."
     let reads := (specsOf (← IO.FS.readFile f)).map fun (spec : String) =>

@@ -3,7 +3,7 @@
 # `main`. `mdbook build` writes it to `book/`.
 [book]
 title = "Fren"
-src = "src/Reqs"
+src = "."
 
 [build]
 build-dir = "book"
@@ -20,5 +20,7 @@ command = "mdbook-spec"
 # rule's identifier line, `r[ID] LINKS`, before mdbook-spec, which reads only
 # `r[ID]`.
 [preprocessor.rules]
-command = "python3 scripts/rules_report.py"
+# The preprocessor's paths are relative to the book source. The reference
+# now lives under src/Reqs within that source.
+command = """python3 -c 'import scripts.rules_report as r; r.PARENT="src/Reqs/dev/Style.md"; r.PATH="src/Reqs/dev/Rules.md"; r.main()'"""
 before = ["spec"]

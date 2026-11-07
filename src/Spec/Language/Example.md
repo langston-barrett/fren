@@ -13,7 +13,5 @@ Doubling an integer gives its sum with itself.
 pub mod spec
 pub mod spec::language_example
 
-pub proc double(n: Int): (result: Int) {
-    ensure sum: result = n + n
-}
+pub proc double(n: Int): (result: Int) { ensure sum: result = n + n }
 ```

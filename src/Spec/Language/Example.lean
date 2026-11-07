@@ -1,9 +1,5 @@
-module
-
-public import Fren.Impl
-public import Fren.Literate
-
-public section
+import Fren.Impl
+import Fren.Literate
 
 open Fren.Lang
 
@@ -15,7 +11,7 @@ namespace Spec.Language.Example
 
 def double (n : Int) : Int := n + n
 
-impl double_meets: spec::language_example::double for (n : Int) {
+impl double_meets: double for (n : Int) {
   n := n, result := double n
 } by
   intro n _
