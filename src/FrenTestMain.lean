@@ -13,6 +13,7 @@ import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.MutateDecisions
 import FrenTest.OutOfFuel
+import FrenTest.OwnSpecProgress
 import FrenTest.Quote
 import FrenTest.ReadingBeside
 import FrenTest.Resolved
@@ -1693,16 +1694,19 @@ A case that differs only because queries reached their time limit
 fresh copy of the cache that the tests' path filled, and is skipped if it
 still differs so. The skips are printed on stdout as `skipped: …` lines,
 which `spawnJob` shows. -/
-def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none) : IO (Array String) := do
+def sharedSpec (cache : Option String) (own? : Option (String × UInt32) := none)
+    (progress : String → IO Unit := fun _ => pure ()) : IO (Array String) := do
   let root : FilePath := ".lake" / "shared-spec-test" / s!"{← IO.monoNanosNow}"
   try
     let mut failures := #[]
     let mut skips := #[]
     for args in sharedSpecUi do
+      progress s!"sharedSpec: {" ".intercalate args}"
       let ui := runFren (args.head! :: "--jobs" :: "1" :: args.tail)
       let (f, s) ← sharedCase (← sharedAgrees args ui) (sharedAgrees args ui)
       failures := failures ++ f
       skips := skips ++ s
+    progress "sharedSpec: requirements"
     let ref : IO (String × UInt32) ← match own? with
       | some own => pure (pure own)
       | none => do
@@ -1733,11 +1737,15 @@ chapter that the Lean front end does; Lean checks every chapter too
 (`hostedChecks`); and the binary's shared path agrees with the tests'
 (`sharedSpec`), with this job's query cache, once it is filled. -/
 def ownSpec : IO (Array String) := do
+  let progress ← FrenTest.OwnSpecProgress.journal
+  progress.phase "reading chapter list"
   let files ← ownSpecFiles
   let missing := (← hostedSpecFiles).filter (!files.contains ·)
   let (queryCache?, verifyQueryCache?) ← ownSpecCaches
+  progress.phase "checking requirements"
   let (out, code) ← IO.FS.withIsolatedStreams
-    (FrenCli.check { files, queryCache?, verifyQueryCache? })
+    (FrenCli.check { files, queryCache?, verifyQueryCache? } (progress? := some progress.component))
+  progress.phase "validating query-cache comparisons"
   -- A contradiction leaves a mark next to the cache, so that CI does not
   -- save it (`Reqs/dev/Testing#query-cache`).
   if let some dir := queryCache? then
@@ -1756,11 +1764,15 @@ def ownSpec : IO (Array String) := do
           "header, bump `FrenCli.queryCacheVersion`"]
       else pure #[]
     else pure #[]
+  progress.phase "checking hosted coverage"
+  let hosted ← hostedChecks
+  let shared ← sharedSpec queryCache? (some (unverified out, code)) progress.phase
+  progress.phase "complete"
   return (missing.map (s!"{·} is read by `#fren_md` but not in `ownSpecFiles`, so the binary does not check it"))
     ++ (if code == 0 then #[] else #[s!"src/Reqs failed under the binary:\n{out}"])
     ++ compared
-    ++ (← hostedChecks)
-    ++ (← sharedSpec queryCache? (some (unverified out, code)))
+    ++ hosted
+    ++ shared
 
 /-- A message that Lake kept in a module's trace, `src/Reqs/M.lean:L:C: text`
 or `src/Reqs/M.lean:L:C: warning: text`, about a Markdown spec that the
@@ -4438,7 +4450,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["heavyPrediction"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
@@ -4480,6 +4492,9 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["smallValues"] => pure (Fren.Test.SmallValues.differences 300)
   | ["renderedSets"] => pure renderedSets
   | ["ownSpec"] => ownSpec
+  | ["ownSpecProgress"] => FrenTest.OwnSpecProgress.regression
+  | ["ownSpecProgressProbe", "pass"] => FrenTest.OwnSpecProgress.probe false
+  | ["ownSpecProgressProbe", "crash"] => FrenTest.OwnSpecProgress.probe true
   -- Run by `ownSpec` too, after it, with its query cache.
   | ["sharedSpec"] => do sharedSpec (← ownSpecCaches).1
   -- Spawned by `sharedSpec` only: what it marks is never freed.
@@ -4562,7 +4577,9 @@ def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
   let env := if job.head? == some "uiMisread" then env.push ("FREN_MISREAD_MODELS", some "1") else env
   -- Both front ends ask every query that has a model again (`Fren.Core.askAgainForced`).
   let env := if job.head? == some "uiAskAgain" then env.push ("FREN_ASK_AGAIN", some "1") else env
-  let out ← IO.Process.output { cmd := (← IO.appPath).toString, args, env }
+  let (out, progress) ← if job == ["ownSpec"] then FrenTest.OwnSpecProgress.capture args env else do
+    let out ← IO.Process.output { cmd := (← IO.appPath).toString, args, env }
+    pure (out, "")
   let name ← jobName job
   if timed then IO.println s!"fren_test: {(← IO.monoMsNow) - start} ms: {name}"
   -- A case that a job skipped, which it says on a `skipped: …` line, is
@@ -4577,7 +4594,7 @@ def spawnJob (bless timed : Bool) (job : List String) : IO (Array String) := do
       if out.stderr.isEmpty then return failures
       return failures.push s!"the job `{name}` wrote to stderr:\n{out.stderr}"
   | .error _ => pure ()
-  return #[s!"the job `{name}` crashed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"]
+  return #[s!"the job `{name}` crashed (exit {out.exitCode}):\n{progress}{out.stdout}{out.stderr}"]
 
 /-- At most this many jobs run at once, unless `FREN_TEST_JOBS` says
 otherwise. This is a heuristic, not a bound on memory: the solver's time

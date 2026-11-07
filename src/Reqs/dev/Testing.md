@@ -116,6 +116,16 @@ pub mod testing
 - **Fren's own requirements** (`lake test`, `ownSpec`): checked by the
   `fren` command; `lake build` only elaborates them, and Lean checks them
   on `main` (see [Own requirements](#own-requirements)).
+  The parent retains a separate progress journal when this job crashes:
+  its last phase and, during the initial check, the files and components
+  with an entry but no completion record. Each event is flushed outside
+  the check's captured streams, so a native signal cannot lose it with
+  those streams. A partial final event leaves earlier complete events usable.
+  Core dumps are disabled for this child. The `ownSpecProgress` job
+  checks this with a real SIGFPE during a component's check, and checks
+  that a normal run keeps its output. This is integration coverage of
+  native process termination and stream capture, which Lean proofs of
+  the requirements do not model; it does not identify a crash's cause.
 - **Formatting** (`lake test`): every `.fren` and Markdown spec in the
   repository must be formatted, as `fren fmt --check` says, except those
   listed as `--ignore` globs in `fmtIgnore` in `src/FrenTestMain.lean`:
