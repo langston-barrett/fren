@@ -10,7 +10,8 @@
 unbound: Fren.Impls.Heavy.memory_prediction jobs
 unbound: Fren.Impls.Heavy.memory_prediction prediction
 
-# Outputs represented by binders, literals, spec values, or output-free laws.
+# Outputs represented by binders, literals, spec values, output-free laws,
+# or functions outside the CLI/hosted production namespaces.
 unbound: Fren.Impls.Enumeration.contract_blocker right?
 unbound: Fren.Impls.Enumeration.shape_bound size
 unbound: Fren.Impls.Enumeration.shape_bound value?
@@ -29,11 +30,18 @@ unbound: Fren.Impls.PassEvidence.fact_applications closed?
 unbound: Fren.Impls.PatternTests.manual_pattern_test_fix <no public output>
 unbound: Fren.Impls.PatternTests.manual_pattern_test_reads <no public output>
 unbound: Fren.Impls.PatternTests.manual_pattern_test_refines <no public output>
+# The oracle impls bind FrenTest.Conformance.exitAllowed and FrenTest.Oracle's
+# finish, outputFailures and toolFailures. The driver and coverage executable
+# call them, but this audit excludes FrenTest and those executable roots.
+unbound: Fren.Impls.Testing.conformance_exit accepted?
 unbound: Fren.Impls.Testing.coverage_verdict fails?
 unbound: Fren.Impls.Testing.coverage_verdict stale?
 unbound: Fren.Impls.Testing.fuzz_overdue overdue?
 unbound: Fren.Impls.Testing.job_shard k
 unbound: Fren.Impls.Testing.job_shard runs?
+unbound: Fren.Impls.Testing.oracle_count passes?
+unbound: Fren.Impls.Testing.oracle_output passes?
+unbound: Fren.Impls.Testing.oracle_tool passes?
 unbound: Fren.Impls.Testing.ui_check passes?
 unbound: Fren.Impls.Theories.theory_variable_images translated
 unbound: Fren.Impls.block_errors from_earlier?
