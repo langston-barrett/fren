@@ -1,0 +1,42 @@
+-- Confirmation's domain annotations must not change solver queries. In
+-- particular, Nat embedding must retain the guard introduced before a
+-- goal, including after an unused Int binder (default fuzzer seed 52).
+
+set_option fren.lint.undecidable "allow"
+set_option fren.lint.unused_variables "allow"
+
+pub proc guarded(n: Int) {
+    expect unused: forall (unused: Int) (i: Nat), when i < n, i < 1 or (i < n)
+    expect natural: forall (i: Nat), when i < n, i < 1 or (i < n)
+    expect integer: forall (i: Int), when 0 <= i < n, i < 1 or (i < n)
+    expect nested: forall (i: Nat), when i < n, forall (j: Nat), when j < i, j < 1 or (j < i)
+    expect witness: when n > 0, exists (i: Nat), i < n and i = 0
+}
+
+pub proc failing(n: Int) {
+    require positive: n > 0
+    expect negative: forall (i: Nat), when i < n, i < 0  --~ error: expectation `failing::negative` does not hold
+}
+
+-- Induction introduces the contract's quantified locals before its solver
+-- step, so their types need the same cleanup as ordinary query formulas.
+pub enum Chain { End, Link(Chain) }
+
+pub fn length(l: Chain): (n: Nat) {
+    out n := match l {
+        Chain::End => 0,
+        Chain::Link(rest) => length(rest) + 1,
+    }
+    ensure bounded: forall (i: Nat), when i < n, i + 1 <= n  --~ warning: over integers, this is a strict comparison
+}
+
+-- An application found in a guarded quantifier and again in its own fact
+-- brings that fact once, even when the binder keeps a confirmation domain.
+pub fn nat_value(Int): Nat
+
+pub proc quantified_nat_result(n: Int): (ok?) {
+    ensure definition: ok? iff (forall (i: Int), when 0 <= i < n, nat_value(i) >= 0)  --~ warning: could not decide whether `quantified_nat_result::definition` is redundant
+    expect nonnegative: ok?
+}
+
+--@ exit: 1

@@ -364,13 +364,46 @@ unsafe def compileValuesUnsafe (α : Type) [Inhabited α] (ty : Expr) (fs : Arra
 @[implemented_by compileValuesUnsafe]
 opaque compileValues (α : Type) [Inhabited α] (ty : Expr) (fs : Array Expr) : MetaM (Array α)
 
+/-- Remove confirmation's private domain annotations before sending a
+formula to lean-smt. Its Nat embedding counts the nonnegativity premises
+it adds by exact types; an annotated Nat would shift its hypothesis map. -/
+def eraseQuantifierDomains (e : Expr) : CoreM Expr := do
+  if (e.find? fun
+      | .mdata data _ => data.contains quantifierDomainKey
+      | _ => false).isNone then return e
+  Lean.Core.transform e (post := fun x => do
+    if let .mdata data body := x then
+      if data.contains quantifierDomainKey then
+        let data := data.erase quantifierDomainKey
+        return .done (if data.isEmpty then body else .mdata data body)
+    return .done x)
+
+private def withSolverQuantifierDomainsErasedImp {α : Type} (act : MetaM α) : MetaM α := do
+  let lctx ← getLCtx
+  let lctx ← lctx.foldlM (init := lctx) fun ctx d => do
+    let type ← eraseQuantifierDomains d.type
+    let original := d.value? (allowNondep := true)
+    let value? ← original.mapM (fun value => do return ← eraseQuantifierDomains value)
+    if Expr.equal type d.type && value?.map ExprStructEq.mk == original.map ExprStructEq.mk then return ctx
+    let d := d.setType type
+    let d := (value?.map d.setValue).getD d
+    return ctx.modifyLocalDecl d.fvarId (fun _ => d)
+  withLCtx lctx (← getLocalInstances) act
+
+/-- The same cleanup for locals already introduced by a proof tactic.
+Only metadata changes; the original context is restored afterward. -/
+def withSolverQuantifierDomainsErased {m : Type → Type} [Monad m] [MonadControlT MetaM m]
+    {α : Type} : m α → m α :=
+  mapMetaM withSolverQuantifierDomainsErasedImp
+
 /-- `e` with the definitions of defined functions unfolded, so that the
 solver sees their bodies, and without `let`s and `have`s, which a record
 update binds its updated value with, and `let` and `where` become
 (`Reqs/Lang/Let#meaning`), and lean-smt does not translate: last, since a
 defined function's body may have one. The last arm of a complete `match` is
 its body (`Fren.lastArm`), unless `keepLastArm`, as a model's confirmation
-reads it (`atModel`). -/
+reads it (`atModel`). With `keepLastArm`, quantifier-domain annotations
+remain too; otherwise they are erased for solver queries. -/
 def unfoldDefined (e : Expr) (keepLastArm := false) (keepRelationObligations := false) : MetaM Expr := do
   let s ← getState
   -- A subset type's obligation is its proposition (`Fren.typeObligation`).
@@ -381,7 +414,9 @@ def unfoldDefined (e : Expr) (keepLastArm := false) (keepRelationObligations := 
   -- And the clauses of contracts, which the questions about applications
   -- and the facts about them apply.
   let ds := s.contracts.foldl (init := ds) fun acc _ k => (k.pres ++ k.posts).foldl (·.insert ·.decl) acc
-  Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains keepLastArm))
+  let e ← Meta.zetaReduce (← Lean.Core.betaReduce (← deltaDefined s e ds.contains keepLastArm))
+  if keepLastArm then return e
+  eraseQuantifierDomains e
 
 /-- Unfold definitions for evaluation while retaining strict arguments.
 `lastArm` keeps an unused argument unknown where its value is unknown,
@@ -1282,7 +1317,7 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
   -- and whether to cache it: not if it leaves out a model that lean-smt
   -- could not read.
   let askSmt (requery : Bool) (hyps : Array (Name × Expr)) (goal : Expr) (wantModel : Bool) (extra : Array Expr := #[]) :
-      MetaM (Core.Outcome Expr × Bool) := do
+      MetaM (Core.Outcome Expr × Bool) := withSolverQuantifierDomainsErased do
     -- Each recursive symbol is opaque to the solver.
     let recs ← recursiveSolvers (hyps.map (·.2) |>.push goal)
     withRecursiveDefs recs fun recFvs sub => do
@@ -1414,8 +1449,12 @@ def leanBackend (c : CompInfo) (fvs primes : Array Expr) (cache : QueryCache) (f
     -- And those of the applications in those facts, once their clauses
     -- are unfolded (`Core.closeApps`).
     let factAppsOf (f : Expr) : MetaM (Array Expr) := return appsOf (← unfoldDefined f)
+    -- A bounded binder and its unfolded fact must close the same
+    -- application. Erase confirmation annotations before collecting
+    -- applications too, so their facts are not collected twice.
+    let factInput (f : Expr) : MetaM Expr := do eraseQuantifierDomains (← zetaReduce f)
     let some (appFacts, fns) ← Core.appFactsWith appsOf factsOf fnOf factAppsOf rounds
-        (← hyps.mapM fun (n, t) => return (n, ← zetaReduce t)) (← zetaReduce goal) c.fn?
+        (← hyps.mapM fun (n, t) => return (n, ← factInput t)) (← factInput goal) c.fn?
       | throwError Core.factRoundsMsg
     let unfoldedHyps ← match unfolded? with
       | some (us, _) => pure (hyps.zipWith (fun (n, _) u => (n, u)) us)

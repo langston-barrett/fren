@@ -29,7 +29,7 @@ def hasRecursiveDependencyProof (p : ClauseInfo) (type : Expr) : MetaM Bool := d
 the case. Self contracts come only from smaller arguments' induction facts. -/
 elab "fren_recursive_case" self:ident ihName:(ident)? : tactic => do
   let initial ← getMainGoal
-  initial.withContext do
+  initial.withContext <| withSolverQuantifierDomainsErased do
     let g := initial
     let strongIH ← ihName.mapM fun n => getFVarId n
     let st ← getState
@@ -128,7 +128,7 @@ elab "fren_recursive_case" self:ident ihName:(ident)? : tactic => do
         return acc.push d.toExpr
       let opts ← getOptions
       let timeout := fren.timeout.get opts
-      let query ← mkFreshExprMVar (← g.getType)
+      let query ← mkFreshExprMVar (← eraseQuantifierDomains (← g.getType))
       let limit := if timeout == 0 then 30 else min 30 timeout
       match ← Core.timeQuery limit smtTimedOut <|
           Smt.smt { trust := true, timeout := some limit

@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Impl
 import Fren.View
 -- keep-sorted end
 
@@ -110,3 +111,44 @@ elab "#check_quantifier_decision" : command => do
       throwError "an unused binder's compound decision hid a known false conjunct"
 
 #check_quantifier_decision
+
+-- Solver formulas must lose confirmation's domain annotations before
+-- lean-smt introduces locals and embeds Nat into Int (#847, seed 52).
+-- Confirmation must retain them, including on both parts of an exists.
+open Lean Elab Command Meta Term in
+elab "#check_solver_quantifier_domains" : command => do
+  liftTermElabM do
+    for (stx, domains) in #[
+        ((← `(∀ i : Nat, i < 3 → i < 1 ∨ i < 3)), [true]),
+        ((← `(∃ i : Nat, i < 3 ∧ i = 0)), [true]),
+        ((← `(∀ (i : Int) (j : Nat), 0 ≤ i → i < 3 → j < i → j < 3)), [true, true]),
+        ((← `(∃ (i : Nat) (j : Int), i < 3 ∧ 0 ≤ j ∧ j < i)), [true, true])] do
+      let p ← instantiateMVars (← elabTerm stx none)
+      let marked := Fren.markQuantifierDomains domains p
+      let plain ← Fren.unfoldDefined p
+      unless Expr.equal (← Fren.unfoldDefined marked) plain do
+        throwError "confirmation annotations changed a solver formula"
+      unless (← Fren.solverAnswer marked) == Fren.Core.Answer.unsat do
+        throwError "confirmation annotations changed an implementation proof"
+      let retained ← Fren.unfoldDefined marked (keepLastArm := true)
+      unless (retained.find? fun
+          | .mdata d _ => d.contains Fren.quantifierDomainKey
+          | _ => false).isSome do
+        throwError "confirmation lost its quantifier domains"
+    let invalid ← instantiateMVars (← elabTerm (← `(∀ i : Nat, i < 3 → i < 0)) none)
+    unless (← Fren.solverAnswer (Fren.markQuantifierDomains [true] invalid)) == Fren.Core.Answer.sat do
+      throwError "an invalid annotated implementation proof was accepted"
+    let nat := Expr.mdata (KVMap.empty.insert Fren.quantifierDomainKey (.ofBool true)) (Lean.mkConst ``Nat)
+    withLocalDeclD `introduced nat fun x => do
+      let guard ← mkAppM ``LT.lt #[x, Lean.mkNatLit 3]
+      let small ← mkAppM ``LT.lt #[x, Lean.mkNatLit 1]
+      let goal ← mkArrow guard (mkOr small guard)
+      unless (← Fren.solverAnswer goal) == Fren.Core.Answer.unsat do
+        throwError "an introduced annotation changed an implementation proof"
+      Fren.withSolverQuantifierDomainsErased do
+        unless Expr.equal (← inferType x) (Lean.mkConst ``Nat) do
+          throwError "an introduced local retained a confirmation annotation"
+      unless Expr.equal (← inferType x) nat do
+        throwError "solver cleanup changed the caller's context"
+
+#check_solver_quantifier_domains

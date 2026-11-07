@@ -996,11 +996,16 @@ members of a sequence or set, ranges over that domain instead. A
 comparison gives a finite interval only for integers and newtypes over
 them, by the same shared range rule as enumeration. The
 hosted front end retains each binder's domain from the shared guard
-rules, including through sort substitution and unfolding. It shares
-guarded, three-valued evaluation with enumeration: an empty domain
-decides its quantifier even when the body is unknown. These rules also
-apply beside a structural recursion without type parameters: a
-known operand can decide a formula whose other operand is unknown.
+rules, including through sort substitution and unfolding. These
+annotations are for confirmation alone: every solver entry point erases
+them from formulas and introduced locals before lean-smt embeds `Nat`
+into `Int`. Query builders erase them before collecting application facts
+too, so that an application in a quantifier and in its unfolded fact is
+the same application. The hosted front end shares guarded, three-valued
+evaluation with enumeration: an empty domain decides its quantifier even
+when the body is unknown. These rules also apply beside a structural
+recursion without type parameters: a known operand can decide a formula
+whose other operand is unknown.
 Unfolding a function keeps its arguments strict, so
 an unknown argument still makes the application unknown even when its
 body does not read that argument.

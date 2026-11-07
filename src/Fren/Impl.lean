@@ -289,7 +289,7 @@ def generatedDecls : MetaM NameSet := do
 /-- Asks the solver to prove `stmt`, with Fren's generated definitions, and
 the interpretations if `interps`, unfolded, and the implementation's treated
 as uninterpreted. -/
-def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := do
+def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := withSolverQuantifierDomainsErased do
   -- A binder of a function type is beyond the solver's first-order logic,
   -- and lean-smt's preprocessing fails on one.
   if ← forallTelescopeReducing stmt fun xs _ => xs.anyM fun x => return (← whnf (← inferType x)).isForall then
@@ -301,7 +301,7 @@ def solverAnswer (stmt : Expr) (interps := false) : MetaM Core.Answer := do
   let stmt ← deltaDefined (← getState) stmt gen.contains
   -- Without the `let`s of record updates and the `have`s of `let`s and
   -- `where` clauses, which lean-smt does not translate.
-  let stmt ← Meta.zetaReduce (← Core.betaReduce stmt)
+  let stmt ← eraseQuantifierDomains (← Meta.zetaReduce (← Core.betaReduce stmt))
   let mv ← mkFreshExprMVar stmt
   try
     match ← Core.timeQuery (fren.timeout.get (← getOptions)) smtTimedOut <|
