@@ -57,6 +57,10 @@ unbound: Fren.Impls.guard holds?
 unbound: Fren.Impls.guarded_match first
 unbound: Fren.Impls.index_set index_set?
 unbound: Fren.Impls.induction_hypotheses generated?
+# The short-induction relational witness supplied? is the literal true.
+# shortInductionParameters supplies the input parameters, outside this audit
+# of public outputs. This entry claims no reporting-path certificate for it.
+unbound: Fren.Impls.induction_short_parameters supplied?
 unbound: Fren.Impls.lexicographic decider
 unbound: Fren.Impls.manual_at_most_one_defined <no public output>
 unbound: Fren.Impls.merged_facts merged?

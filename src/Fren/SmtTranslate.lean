@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren.Elab
+import Fren.Elab.TypeTerms
 import Fren.FinSet
 import Fren.Model
 import Fren.Seq
