@@ -4,15 +4,44 @@
    before the runtime starts, without changing any signal disposition. */
 
 #include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <lean/lean.h>
 #ifdef __linux__
 #include <sys/prctl.h>
 #endif
+
+/* The root relay bypasses Lean's isolated streams. Open a separate
+   nonblocking description: changing fd 2's flags would affect inherited
+   writers. A blocked downstream consumer is a diagnostic failure. */
+LEAN_EXPORT lean_obj_res fren_test_live_write(b_lean_obj_arg bytes, lean_obj_arg world) {
+  (void)world;
+#ifdef __linux__
+  struct stat target;
+  int fd = fstat(2, &target) == 0 && S_ISREG(target.st_mode)
+    ? dup(2) : open("/proc/self/fd/2", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+  if (fd >= 0) {
+    size_t size = lean_sarray_size(bytes);
+    const unsigned char *data = lean_sarray_cptr(bytes);
+    struct pollfd ready = {fd, POLLOUT, 0};
+    /* The relay passes at most PIPE_BUF bytes. One successful write is
+       complete for a pipe, and regular-file short writes are failures. */
+    int available = poll(&ready, 1, 100);
+    ssize_t written = available > 0 ? write(fd, data, size) : -1;
+    close(fd);
+    if (written == (ssize_t)size) return lean_io_result_mk_ok(lean_box(0));
+  }
+#endif
+  return lean_io_result_mk_error(lean_mk_io_user_error(
+    lean_mk_string("native live relay unavailable or blocked")));
+}
 
 /* Raise on the checking worker itself, without a signal helper process
    or pipe-reader threads at the controlled fatal stop. */

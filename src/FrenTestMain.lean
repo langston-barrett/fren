@@ -4466,6 +4466,8 @@ def jobs : IO (Array (List String)) := do
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
     ++ #[["implPaths"], ["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"]]
+    ++ (#["core", "wait", "own", "wrapper"].map (fun group => ["nativeDiagnostics", group]))
+    ++ #[["nativeObservation"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4503,7 +4505,17 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["renderedSets"] => pure renderedSets
   | ["ownSpec"] => ownSpec
   | ["ownSpecProgress"] => do
-    return (← FrenTest.OwnSpecProgress.regression) ++ (← FrenTest.NativeDiagnostics.regression)
+    FrenTest.OwnSpecProgress.regression
+  | ["nativeDiagnostics", group] => FrenTest.NativeDiagnostics.regression group
+  | ["nativeObservation"] => FrenTest.NativeDiagnostics.observationRegression
+  | ["nativeObservationProbe"] => do
+    let journal ← FrenTest.OwnSpecProgress.journal
+    journal.phase "live-isolated-start"
+    discard <| IO.FS.withIsolatedStreams do
+      IO.println "isolated output must not escape"
+      IO.sleep 1000
+    journal.phase "live-isolated-done"
+    return #[]
   | ["nativeDiagnosticProbe", "pass"] => FrenTest.NativeDiagnostics.probe false
   | ["nativeDiagnosticProbe", "crash"] => FrenTest.NativeDiagnostics.probe true
   | ["ownSpecProgressProbe", "pass"] => FrenTest.OwnSpecProgress.probe false
@@ -4596,7 +4608,7 @@ def spawnJob (bless timed : Bool) (job : List String)
   -- read: one in a `fren` run within it, such as `Ex.eval`'s when it runs
   -- out of fuel (`outOfFuel`), prints into that run's captured output,
   -- which a ui test reads only for its messages.
-  let env := #[("LEAN_ABORT_ON_PANIC", some "1")]
+  let env := #[("LEAN_ABORT_ON_PANIC", some "1")] ++ (← FrenTest.OwnSpecProgress.liveEnv)
   let env := if job == ["ownSpec"] then
       env.push ("FREN_OWN_DIAG_CONTEXT", some (toJson (cohort, workers)).compress)
     else env
@@ -4658,7 +4670,13 @@ def runJobs (bless timed : Bool) (jobs : Array (List String)) : IO (Array String
   let tasks ← (List.range workers).mapM fun _ => IO.asTask worker .dedicated
   tasks.foldlM (init := #[]) fun acc t => return acc ++ (← IO.ofExcept t.get)
 
-unsafe def main (args : List String) : IO UInt32 := do
+unsafe def runMain (args : List String) : IO UInt32 := do
+  if args == ["--native-observable-parent"] then
+    let (_, (out, _)) ← IO.FS.withIsolatedStreams do
+      FrenTest.OwnSpecProgress.capture #["--job", "nativeObservationProbe"]
+    IO.print out.stdout
+    IO.eprint out.stderr
+    return out.exitCode
   -- A fresh CLI process for `resolvedDump`, preserving its separate streams
   -- and exit code without requiring a separately built `fren` executable.
   if let "--job" :: "resolvedRun" :: args := args then
@@ -4715,3 +4733,9 @@ unsafe def main (args : List String) : IO UInt32 := do
     return 0
   IO.eprintln s!"fren_test: {failures.size} failure(s); `lake test -- --bless` accepts new snapshots"
   return 1
+
+/-- Start the relay before captured jobs inherit their stream contexts. -/
+unsafe def main (args : List String) : IO UInt32 := do
+  if (← FrenTest.NativeDiagnostics.enabled) || (← FrenTest.NativeDiagnostics.ownEnabled) then
+    FrenTest.OwnSpecProgress.withLive (runMain args)
+  else runMain args

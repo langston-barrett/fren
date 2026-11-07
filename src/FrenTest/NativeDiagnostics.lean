@@ -40,7 +40,7 @@ def capture (args : Array String) (env : Array (String × Option String))
         "--cohort", (toJson cohort).compress, "--workers", toString workers,
         "--progress-env", progressEnv,
         "--", (← IO.appPath).toString] ++ args,
-      env }
+      env := env ++ (← FrenTest.OwnSpecProgress.liveEnv) }
     -- A local integration test can retain the exact parent receipt even
     -- on success; CI's normal successful output remains unchanged.
     if let some destination ← IO.getEnv "FREN_ENUM_DIAG_RECEIPT" then
@@ -153,12 +153,20 @@ def probe (crash : Bool) : IO (Array String) := do
   return if code == 0 then #[] else #[s!"native diagnostic probe failed (exit {code}):\n{out}"]
 
 /-- The native wrapper's integration tests use this freshly built driver. -/
-def regression : IO (Array String) := do
+def regression (group : String) : IO (Array String) := do
   let out ← IO.Process.output {
-    cmd := "python3", args := #["scripts/native_diagnostic_test.py", "--driver", (← IO.appPath).toString] }
+    cmd := "python3", args := #["scripts/native_diagnostic_test.py", "--driver", (← IO.appPath).toString,
+      "--group", group] }
   for line in out.stdout.splitOn "\n" do
     if line.startsWith "skipped: " then IO.println line
   return if out.exitCode == 0 then #[] else
     #[s!"native diagnostic harness failed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"]
+
+/-- Real process checks of live capture, interruption and owned lifetime. -/
+def observationRegression : IO (Array String) := do
+  let out ← IO.Process.output {
+    cmd := "python3", args := #["scripts/native_observation_test.py", "--driver", (← IO.appPath).toString] }
+  return if out.exitCode == 0 then #[] else
+    #[s!"native observation harness failed (exit {out.exitCode}):\n{out.stdout}{out.stderr}"]
 
 end FrenTest.NativeDiagnostics

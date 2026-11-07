@@ -156,7 +156,45 @@ pub mod testing
   Timed-out harness commands keep their failure. On
   Linux their owned descendants are killed and reaped with bounded cleanup;
   a regression checks this beside the live peer. The execution deadline
-  stays at 60 seconds.
+  stays at 60 seconds. The original assertions run in separate
+  `nativeDiagnostics core`, `wait`, `own` and `wrapper` jobs, so their
+  combined work does not hold one registered job above its 30-second target.
+  `ownSpecProgress` retains the original progress/SIGFPE assertions.
+  The live-capture requirement is checked by `nativeObservation` through
+  the production runner and real processes, not supplied health flags.
+  A diagnostic root must expose bounded invocation/start, actual journal
+  events and child/debugger/wait milestones before captured work finishes.
+  Its relay writes and flushes through the root OS stderr, outside both
+  nested process capture and isolated checker streams. It preserves the
+  original stdout/failure-array protocol and does not print checker output
+  or the environment into this channel. Ordinary local jobs keep their
+  output. Live relay support currently requires Linux `/proc`; unavailable
+  or blocked relay writes fail explicitly.
+  Productive debugger `run` and `continue` waits have no new cohort
+  deadline. Every 120 seconds the observer samples that same original
+  child, requests an interrupt/backtrace and resumes it without delivering
+  its observational interrupt as a product signal. This interval permits
+  ordinary multi-minute cohorts: it is neither the solver query limit nor
+  the regression harness deadline. Diagnostic startup, backtrace and
+  interrupt acknowledgement have a five-second observation budget; the
+  terminal reap remains bounded at two seconds. An incomplete observation
+  fails diagnostics, retaining bounded owned PID/thread/wait readings and
+  last phase. It never invents an original terminal exit, signal or verdict.
+  Reports are updated before completion, and live milestones survive a
+  lost final report. Cancellation records its signal and cleanup initiator.
+  The runner kills/reaps only its owned descendants, with bounded cleanup,
+  and records cleanup exits separately from observed original statuses.
+  Captured child output uses regular files so an inherited writer cannot
+  indefinitely delay pipe EOF; a live descendant surviving its observed
+  leader is a diagnostic lifetime failure. Reaped zombies alone are not.
+  The process regressions cover a slow live child, a blocked real debugger,
+  an inherited pipe writer, cancellation and loss of the final report,
+  beside a peer that must remain alive. This binds the requirement to OS/FFI
+  integration coverage: Lean proofs of job placement or checker semantics
+  cannot prove POSIX capture, debugger or kernel wait behaviour. SIGKILL,
+  an uninterruptible kernel operation, filesystem failure or loss of the
+  root's output consumer can prevent a final receipt; none establishes a
+  product verdict. The workflow's 90-minute limit is unchanged.
   With `FREN_DIAG_OWN_SPEC_INITIAL=1`, ownSpec's original initial check
   runs once in a GDB child through the same check function, file list,
   cache options and default checker concurrency as its ordinary inline

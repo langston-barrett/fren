@@ -10,6 +10,9 @@ from pathlib import Path
 
 import gdb
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from native_observer import read, save
+
 root = Path(os.environ["FREN_NATIVE_DIAG_DIR"])
 state = {"started": False, "exit_code": None, "terminal_signal": None,
          "terminated_by_debugger": False, "signals": [], "error": None}
@@ -17,11 +20,35 @@ fatal = {"SIGSEGV", "SIGBUS", "SIGILL", "SIGABRT", "SIGFPE"}
 last_signal = None
 
 
+def operation(name):
+    state["operation"] = name
+    state["operation_id"] = state.get("operation_id", 0) + 1
+    save(root / "inferior.json", state)
+
+
+def execute(command, name):
+    operation(name)
+    try:
+        return gdb.execute(command, to_string=True)
+    except KeyboardInterrupt:
+        if not (root / "observe.json").exists():
+            raise
+        return ""
+
+
 def stopped(event):
     global last_signal
     state["started"] = True
     state["original_pid"] = gdb.selected_inferior().pid
     last_signal = event.stop_signal if isinstance(event, gdb.SignalEvent) else None
+    save(root / "inferior.json", state)
+
+
+def started_thread(_event):
+    pid = gdb.selected_inferior().pid
+    if pid and not state.get("original_pid"):
+        state.update(started=True, original_pid=pid)
+        save(root / "inferior.json", state)
 
 
 def terminal_status():
@@ -34,6 +61,7 @@ def terminal_status():
             state[key] = int(value)
             state["terminal_status_source"] = "gdb"
             state["started"] = True
+            save(root / "inferior.json", state)
             return True
     return False
 
@@ -54,6 +82,7 @@ def reap_terminal(pid):
             else:
                 raise RuntimeError("native child wait did not report termination")
             state["terminal_status_source"] = "waitpid"
+            save(root / "inferior.json", state)
             return
         if time.monotonic() >= deadline:
             raise RuntimeError("native child terminal wait did not complete")
@@ -61,7 +90,9 @@ def reap_terminal(pid):
 
 
 gdb.events.stop.connect(stopped)
+gdb.events.new_thread.connect(started_thread)
 try:
+    operation("configure")
     # Protect this debugger too, not only its native inferior. Linux's
     # piped collectors ignore RLIMIT_CORE even when it is zero.
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -87,18 +118,31 @@ try:
     arguments = gdb.parameter("args")
     gdb.set_convenience_variable("_exitcode", None)
     gdb.set_convenience_variable("_exitsignal", None)
-    gdb.execute("run " + arguments + redirection)
+    execute("run " + arguments + redirection, "run")
     previous_threads = None
     while not terminal_status():
         sig, last_signal = last_signal, None
+        request = read(root / "observe.json")
+        if request and sig in (None, "SIGINT"):
+            # The supervisor interrupted this same original child. This
+            # stop is observational, never a native product fault. Drop
+            # only our interrupt before resuming the original invocation.
+            state["observation"] = {"id": request["id"], "initiator": request["initiator"]}
+            state["observation"]["backtrace"] = execute("thread apply all bt 8", "observation-backtrace")
+            (root / "observe.json").unlink()
+            save(root / "inferior.json", state)
+            execute("signal 0", "continue")
+            previous_threads = None
+            continue
         if sig is not None:
             previous_threads = None
         if sig in fatal:
             fault = {"signal": sig, "siginfo": None, "backtrace": None}
             state["signals"].append(fault)
+            save(root / "inferior.json", state)
             for key, command in [("siginfo", "p $_siginfo"), ("backtrace", "thread apply all bt 32")]:
                 try:
-                    fault[key] = gdb.execute(command, to_string=True)
+                    fault[key] = execute(command, key)
                 except Exception as error:
                     state["error"] = f"{key} unavailable: {error}"
             # Deliver the original signal, rather than replacing it with
@@ -122,6 +166,7 @@ try:
                 pid = gdb.selected_inferior().pid
                 if sys.platform != "linux" or not pid:
                     raise RuntimeError("debugger stopped without threads or terminal status")
+                operation("terminal-reap")
                 reap_terminal(pid)
                 break
             if identities == previous_threads:
@@ -129,7 +174,7 @@ try:
             previous_threads = identities if sig is None else None
             live[0].switch()
             del live
-        gdb.execute("continue")
+        execute("continue", "continue")
 except Exception as error:
     state["error"] = f"{type(error).__name__}: {error} (line {sys.exc_info()[2].tb_lineno})"
     for command in ["info threads", "info program", "p $_exitsignal", "show scheduler-locking"]:
@@ -138,4 +183,4 @@ except Exception as error:
         except Exception as detail:
             gdb.write(f"{command}: {detail}\n")
 finally:
-    (root / "inferior.json").write_text(json.dumps(state, indent=2) + "\n")
+    operation("finished")

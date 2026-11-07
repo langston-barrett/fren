@@ -14,22 +14,7 @@ import time
 from native_test_process import NativeTimeout, cleanup, initialize, run
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--driver", required=True)
-    parser.add_argument("--receipts")
-    args = parser.parse_args()
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    driver = str(Path(args.driver).resolve())
-    wrapper = str(Path(__file__).with_name("native_diagnostic.py"))
-    destination = Path(args.receipts) if args.receipts else None
-    if destination:
-        destination.mkdir(parents=True, exist_ok=True)
-    debugger = shutil.which("gdb")
-    if not debugger:
-        print("native diagnostic harness requires GDB in PATH", file=sys.stderr)
-        return 125
-    initialize()
+def core(args, driver, wrapper, destination, debugger, protected, unprotected):
     # The real harness must fail when its required tool is absent, rather
     # than silently omitting native-frame assertions.
     with tempfile.TemporaryDirectory(prefix="fren-no-debugger-") as empty:
@@ -41,9 +26,6 @@ def main():
         (destination / "missing-environment.json").write_text(json.dumps({
             "status": missing.returncode, "stdout": missing.stdout, "stderr": missing.stderr,
             "cleanup": missing.cleanup}, indent=2) + "\n")
-    protected = dict(os.environ, FREN_NATIVE_CORELESS="1")
-    unprotected = dict(os.environ)
-    unprotected.pop("FREN_NATIVE_CORELESS", None)
     for probe, sig in [("nativeDiagnosticProbe", 6), ("ownSpecProgressProbe", 8)]:
         refused = run([driver, "--job", probe, "crash"], env=unprotected)
         assert refused.returncode != 0 and refused.returncode != -sig, refused
@@ -70,6 +52,9 @@ def main():
                 "status": crash.returncode, "stdout": crash.stdout, "stderr": crash.stderr,
                 "seconds": time.monotonic() - start, "context": context,
                 "cleanup": crash.cleanup}, indent=2) + "\n")
+
+
+def wait(args, driver, wrapper, destination, debugger, protected, unprotected):
     # Exercise the source-bound terminal-wait helper inside real GDB,
     # including a nonzero exit and a live child that must remain a failure.
     # This does not rely on winning the zombie-leader race to cover it.
@@ -113,6 +98,9 @@ ns["root"].joinpath("wait-receipt.json").write_text(json.dumps(rows))
         assert checked.returncode == 0 and (root / "wait-receipt.json").exists(), checked
         if destination:
             shutil.copyfile(root / "wait-receipt.json", destination / "terminal-wait.json")
+
+
+def own(args, driver, wrapper, destination, debugger, protected, unprotected):
     # The production initial-check boundary serializes its actual verdict
     # and output. Exercise both caller decoders: valid JSON must not hide
     # a missing debugger's 125, and a real native crash must retain frames.
@@ -121,6 +109,8 @@ ns["root"].joinpath("wait-receipt.json").write_text(json.dumps(rows))
         empty = root / "tools"
         empty.mkdir()
         (empty / "python3").symlink_to(sys.executable)
+        live = root / "live.jsonl"
+        live.touch()
         cohort = [["ownSpec"], ["nativeDiagnosticSibling"]]
         for name, command, absent in [
                 ("initial-pass", ["--native-initial-parent", "pass"], False),
@@ -134,6 +124,7 @@ ns["root"].joinpath("wait-receipt.json").write_text(json.dumps(rows))
             report_file = root / (name + ".json")
             env = dict(protected, FREN_DIAG_OWN_SPEC_INITIAL="1",
                        FREN_OWN_DIAG_CONTEXT=json.dumps([cohort, 2]),
+                       FREN_NATIVE_LIVE_FILE=str(live),
                        FREN_OWN_SPEC_PROGRESS=str(journal),
                        FREN_ENUM_DIAG_RECEIPT=str(report_file))
             if absent:
@@ -175,6 +166,10 @@ ns["root"].joinpath("wait-receipt.json").write_text(json.dumps(rows))
             else:
                 assert "persistent-invocation" in journal.read_text(), journal.read_text()
                 assert report["command"][1:6] == ["--job", "persistentRun", "check", "--jobs", "4"], report
+
+
+def wrapper_checks(args, driver, wrapper, destination, debugger, protected, unprotected):
+    plain = run([driver, "--job", "nativeDiagnosticProbe", "pass"], env=unprotected)
     cases = [("pass", "fren-deliberately-missing-debugger", 125)]
     cases += [("pass", debugger, 0), ("crash", debugger, 134)]
     # An actual sibling stays alive while the controlled child crashes.
@@ -270,6 +265,32 @@ ns["root"].joinpath("wait-receipt.json").write_text(json.dumps(rows))
         except subprocess.TimeoutExpired:
             receipt = cleanup(sibling, ())
             raise AssertionError(f"native test peer did not terminate: {receipt}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--driver", required=True)
+    parser.add_argument("--receipts")
+    parser.add_argument("--group", choices=["core", "wait", "own", "wrapper"])
+    args = parser.parse_args()
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    driver = str(Path(args.driver).resolve())
+    wrapper = str(Path(__file__).with_name("native_diagnostic.py"))
+    destination = Path(args.receipts) if args.receipts else None
+    if destination:
+        destination.mkdir(parents=True, exist_ok=True)
+    debugger = shutil.which("gdb")
+    if not debugger:
+        print("native diagnostic harness requires GDB in PATH", file=sys.stderr)
+        return 125
+    initialize()
+    protected = dict(os.environ, FREN_NATIVE_CORELESS="1")
+    unprotected = dict(os.environ)
+    unprotected.pop("FREN_NATIVE_CORELESS", None)
+    groups = {"core": core, "wait": wait, "own": own, "wrapper": wrapper_checks}
+    for name, check in groups.items():
+        if args.group is None or name == args.group:
+            check(args, driver, wrapper, destination, debugger, protected, unprotected)
     return 0
 
 

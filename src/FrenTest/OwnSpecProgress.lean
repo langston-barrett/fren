@@ -9,13 +9,47 @@ import Std.Sync.Mutex
 
 The checks capture their streams in memory. A native signal loses that
 output, so the parent gives `ownSpec` a separate journal, flushed before
-each component starts. The parent reports it only after a crash. This
-does not handle signals or change the checks, their methods or parallelism.
+each component starts. The diagnostic root also relays bounded events
+while captured children run. This does not handle signals or change the
+checks, their methods or parallelism.
 -/
 
 namespace FrenTest.OwnSpecProgress
 
 open Lean System
+
+initialize livePath : IO.Ref (Option String) ← IO.mkRef none
+
+/-- Pass the root relay's file through every captured process boundary. -/
+def liveEnv : IO (Array (String × Option String)) := do
+  let path ← match ← IO.getEnv "FREN_NATIVE_LIVE_FILE" with
+    | some path => pure (some path)
+    | none => livePath.get
+  return path.toArray.map (fun path => ("FREN_NATIVE_LIVE_FILE", some path))
+
+@[extern "fren_test_live_write"]
+private opaque liveWrite (bytes : ByteArray) : IO Unit
+
+/-- Only the root driver relays live records through its OS stderr,
+rather than a nested process or isolated check's captured stream. -/
+def withLive (action : IO α) : IO α := do
+  if (← IO.getEnv "FREN_NATIVE_LIVE_FILE").isSome then return ← action
+  IO.FS.withTempFile fun _ path => do
+    let input ← IO.FS.Handle.mk path .read
+    let stop ← IO.mkRef false
+    livePath.set (some path.toString)
+    let relay ← IO.asTask (prio := .dedicated) do
+      repeat
+        let chunk ← input.read 4096
+        if !chunk.isEmpty then
+          liveWrite chunk
+        else if ← stop.get then break
+        else IO.sleep 20
+    try action
+    finally
+      stop.set true
+      discard <| IO.ofExcept relay.get
+      livePath.set none
 
 /-- Writes one complete event at a time, including from checker workers. -/
 structure Journal where
@@ -28,10 +62,19 @@ running a job directly. It is separate from the captured check output. -/
 def journal (envKey : String := "FREN_OWN_SPEC_PROGRESS") : IO Journal := do
   let some path ← IO.getEnv envKey | return ⟨fun _ => pure ()⟩
   let h ← IO.FS.Handle.mk path .append
+  let live ← match ← IO.getEnv "FREN_NATIVE_LIVE_FILE" with
+    | none => pure none
+    | some path => some <$> IO.FS.Handle.mk path .append
   let lock ← Std.Mutex.new ()
   return ⟨fun event => lock.atomically do
     h.putStrLn (toJson event).compress
-    h.flush⟩
+    h.flush
+    if let some live := live then
+      -- The complete event remains in the journal. The live channel has
+      -- bounded excerpts and never forwards isolated checker output.
+      live.putStrLn (toJson (#["native-progress", envKey] ++
+        (event.take 8).map (fun s => (s.take 512).toString))).compress
+      live.flush⟩
 
 /-- Starts a phase, whose components have not started yet. -/
 def Journal.phase (j : Journal) (name : String) : IO Unit := j.write #["phase", name]
@@ -57,13 +100,14 @@ def summary (text : String) : String := Id.run do
 
 /-- Captures a child and its separate progress journal. Core dumps are
 disabled even when the caller allows them; the original exit status and
-streams are retained. Shell arguments are forwarded without interpolation. -/
+streams are retained. Arguments are forwarded without interpolation. -/
 def capture (args : Array String) (env : Array (String × Option String) := #[]) : IO (IO.Process.Output × String) :=
   IO.FS.withTempFile fun _ path => do
-    let out ← IO.Process.output {
-      cmd := "sh", args := #["-c", "ulimit -c 0 && exec \"$@\"", "sh", (← IO.appPath).toString] ++ args,
-      env := env.push ("FREN_OWN_SPEC_PROGRESS", some path.toString)
-        |>.push ("FREN_NATIVE_CORELESS", some "1") }
+    let out ← IO.FS.withTempFile fun _ report => do IO.Process.output {
+      cmd := "python3", args := #["scripts/native_diagnostic.py", "--capture-only",
+        "--report", report.toString, "--progress-env", "FREN_OWN_SPEC_PROGRESS",
+        "--", (← IO.appPath).toString] ++ args,
+      env := env ++ (← liveEnv) ++ #[("FREN_OWN_SPEC_PROGRESS", some path.toString)] }
     return (out, summary (← IO.FS.readFile path))
 
 /-- A real check whose first component can receive SIGFPE, after its
