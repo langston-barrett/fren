@@ -1,6 +1,8 @@
 """Gate decisions, failure propagation, and trusted review attestations."""
 
+import ast
 import importlib.util
+import re
 import itertools
 import json
 import os
@@ -15,6 +17,7 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("slow_gate", HERE / "gate.py")
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
+REAL_RUN = subprocess.run
 HEAD = "a" * 40
 REPO = "owner/fren"
 
@@ -122,6 +125,27 @@ print(json.dumps({'id': 123, 'created_at': '2026-11-06T12:00:00Z', 'body': paylo
             self.assertIn("recorded=true", (root / "out").read_text())
             self.assertEqual(result.stdout, "")
 
+    def test_workflow_post_rejects_non_numeric_destinations_before_publication(self):
+        workflow = (HERE.parent / "workflows/claude-review.yml").read_text()
+        block = workflow.split("    # A run by hand posts only where its `post` input says.\n", 1)[1]
+        shell = textwrap.dedent(block.split("      run: |\n", 1)[1].split("      env:\n", 1)[0])
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "comment.md").write_text(f"Review of {HEAD}: blocking issues")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            gh = bin_dir / "gh"
+            gh.write_text('#!/bin/sh\n: > "$RUNNER_TEMP/gh-was-called"\nexit 0\n')
+            gh.chmod(0o755)
+            with patch.dict(os.environ, RUNNER_TEMP=temp, REPO=REPO, PR="12", POST="13/comments/../../13",
+                            GH_TOKEN="dummy-token", PATH=str(bin_dir) + os.pathsep + os.environ["PATH"]):
+                result = REAL_RUN(["bash", "-euo", "pipefail", "-c", shell], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("must be a PR number", result.stderr)
+            self.assertFalse((root / "gh-was-called").exists())
+            self.assertFalse((root / "comment.json").exists())
+            self.assertFalse((root / "posted-comment.json").exists())
+
     def test_reject_fork_closed_wrong_base_and_stale_head(self):
         pr = {"state": "open", "head": {"repo": {"full_name": REPO}, "sha": HEAD},
               "base": {"repo": {"full_name": REPO}, "ref": "main"}}
@@ -138,7 +162,8 @@ print(json.dumps({'id': 123, 'created_at': '2026-11-06T12:00:00Z', 'body': paylo
             self.assertFalse(gate.eligible(p, REPO, HEAD), key)
 
     def test_prepare_fails_closed_before_download(self):
-        info = {"path": ".github/workflows/claude-review.yml", "head_repository": {"full_name": REPO},
+        info = {"id": 42, "event": "workflow_run", "run_attempt": 2,
+                "path": ".github/workflows/claude-review.yml", "head_repository": {"full_name": REPO},
                 "head_branch": "main", "status": "completed", "conclusion": "success"}
         for key, value in (("path", ".github/workflows/fake.yml"), ("head_branch", "trial"),
                            ("status", "in_progress"), ("head_repository", {"full_name": "fork/fren"})):
@@ -147,7 +172,7 @@ print(json.dumps({'id': 123, 'created_at': '2026-11-06T12:00:00Z', 'body': paylo
                     patch.object(gate, "api", return_value=candidate) as api, \
                     patch.object(gate.subprocess, "run") as command:
                 gate.prepare()
-                self.assertEqual(api.call_count, 1)
+                self.assertTrue(all(call.args == (f"repos/{REPO}/actions/runs/42",) for call in api.call_args_list))
                 command.assert_not_called()
 
 
@@ -169,8 +194,8 @@ class Aggregate(unittest.TestCase):
                         gate.finish()
                 self.assertEqual(status.call_args.args[:2], (HEAD, "success" if good else "failure"))
 
-    def test_no_status_for_stale_review_or_fork(self):
-        with patch.dict(os.environ, NEEDS=json.dumps({"prepare": {"outputs": {}}})), \
+    def test_no_status_when_neither_head_nor_review_run_is_available(self):
+        with patch.dict(os.environ, GITHUB_REPOSITORY=REPO, REVIEW_RUN="", NEEDS=json.dumps({"prepare": {"outputs": {}}})), \
                 patch.object(gate, "status") as status:
             gate.finish()
             status.assert_not_called()
@@ -206,9 +231,15 @@ class Protocol(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.out = Path(self.temp.name, "outputs")
         self.main = "b" * 40
-        self.pr = {"state": "open", "head": {"repo": {"full_name": REPO}, "sha": HEAD},
+        self.pr = {"number": 12, "state": "open", "head": {"repo": {"full_name": REPO}, "sha": HEAD},
                    "base": {"repo": {"full_name": REPO}, "ref": "main", "sha": self.main}}
+        self.prs = {12: self.pr}
         self.reviews = {}
+        self.job_contexts = {}
+        self.attempt_info = {}
+        self.artifact_errors = set()
+        self.download_errors = set()
+        self.bad_artifacts = set()
         self.expired = set()
         self.comments = []
         self.checks = {10: {"id": 10, "name": "pre-merge", "app": {"slug": "github-actions"}, "conclusion": "success"}}
@@ -218,7 +249,7 @@ class Protocol(unittest.TestCase):
         self.read_error = False
         self.next_check = 100
         env = dict(GITHUB_REPOSITORY=REPO, REVIEW_RUN="42", PR_INPUT="", CHECK_RUN_ID="",
-                   GH_TOKEN="read-only-token", GITHUB_OUTPUT=str(self.out), GITHUB_EVENT_NAME="workflow_run")
+                   GH_TOKEN="read-only-token", GITHUB_OUTPUT=str(self.out), GITHUB_EVENT_NAME="workflow_run", REVIEW_ATTEMPT="")
         self.env = patch.dict(os.environ, env)
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -241,8 +272,9 @@ class Protocol(unittest.TestCase):
         if attested:
             self.reviews[run] = {"pr": 12, "head": head, "body": body, "attempt": 2,
                                  "commentId": comment, "createdAt": self.comments[-1]["created_at"]}
-            self.info[run] = {"path": ".github/workflows/claude-review.yml", "head_repository": {"full_name": REPO},
-                              "head_branch": "main", "status": "completed", "conclusion": "success", "run_attempt": 2}
+            self.info[run] = {"id": run, "event": "workflow_run", "path": ".github/workflows/claude-review.yml",
+                              "head_repository": {"full_name": REPO}, "head_branch": "main",
+                              "status": "completed", "conclusion": "success", "run_attempt": 2}
 
     def artifact(self, run):
         r = self.reviews[run]
@@ -253,16 +285,23 @@ class Protocol(unittest.TestCase):
         parsed = urlsplit(endpoint)
         path, query = parsed.path, parse_qs(parsed.query)
         page = int(query.get("page", [1])[0])
-        if path.endswith("/pulls/12"):
+        if "/pulls/" in path:
             if self.read_error:
                 raise OSError("review API unavailable")
-            return self.pr
+            return self.prs[int(path.rsplit("/", 1)[1])]
         if path.endswith("/issues/12/comments"):
             return self.comments[(page-1)*100:page*100]
         if "/actions/runs/" in path:
             run = int(path.split("/runs/")[1].split("/")[0])
+            if path.endswith("/jobs"):
+                rows = self.job_contexts.get(run, [])
+                return {"jobs": rows[(page-1)*100:page*100]}
             if path.endswith("/artifacts"):
+                if run in self.artifact_errors:
+                    raise OSError("artifact listing failed")
                 return {"artifacts": [self.artifact(run)] if run in self.reviews else []}
+            if "/attempts/" in path:
+                return self.attempt_info[(run, int(path.rsplit("/", 1)[1]))]
             return self.info[run]
         if path.endswith("/actions/artifacts"):
             artifacts = [self.artifact(run) for run in self.reviews if self.artifact(run)["name"] == query["name"][0]]
@@ -285,8 +324,11 @@ class Protocol(unittest.TestCase):
 
     def command(self, args, **kwargs):
         if args[:3] == ["gh", "run", "download"]:
-            review = self.reviews[int(args[3])]
-            Path(args[-1], "review.json").write_text(json.dumps(review))
+            run = int(args[3])
+            if run in self.download_errors:
+                raise subprocess.CalledProcessError(1, args)
+            review = self.reviews[run]
+            Path(args[-1], "review.json").write_text("not json" if run in self.bad_artifacts else json.dumps(review))
         elif args[:2] == ["git", "fetch"]:
             self.assertNotIn("read-only-token", " ".join(args))
             self.assertIn("AUTHORIZATION: basic ", kwargs["env"]["GIT_CONFIG_VALUE_0"])
@@ -541,6 +583,261 @@ class Protocol(unittest.TestCase):
             with patch.dict(os.environ, GITHUB_EVENT_NAME="issue_comment", GITHUB_EVENT_PATH=str(path), REVIEW_RUN=""):
                 gate.prepare()
             self.assertFalse(self.out.exists())
+
+
+class RecoveryProtocol(unittest.TestCase):
+    """Published comment -> lost authorization -> completion -> revoked green.
+
+    Only transport and failure injection are mocked; recovery reads the real
+    run/job/PR protocol and never receives a precomputed approval decision.
+    """
+    setUp = Protocol.setUp
+    add_review = Protocol.add_review
+    artifact = Protocol.artifact
+    api = Protocol.api
+    command = Protocol.command
+    git_output = Protocol.git_output
+    outputs = Protocol.outputs
+    finish = Protocol.finish
+
+    def trusted_post(self, run=43, *, pr=12, head=HEAD, attempt=2, conclusion="failure",
+                     event="workflow_run", post=None):
+        self.info[run] = {"id": run, "event": event, "path": ".github/workflows/claude-review.yml",
+                          "head_repository": {"full_name": REPO}, "head_branch": "main",
+                          "status": "completed", "conclusion": conclusion, "run_attempt": attempt}
+        workflow = (HERE.parent / "workflows/claude-review.yml").read_text()
+        post_block = workflow.split("  post:\n", 1)[1]
+        template = re.search(r"^    name: (.+)$", post_block, re.MULTILINE)[1]
+        post = str(pr) if post is None and event == "workflow_dispatch" else (post or "")
+        target = post or (str(pr) if event == "workflow_run" else "")
+        name = (template.replace("${{ inputs.post || (github.event_name == 'workflow_run' && needs.prepare.outputs.pr) || '' }}", target)
+                .replace("${{ needs.prepare.outputs.head }}", head)
+                .replace("${{ github.run_attempt }}", str(attempt)))
+        self.job_contexts[run] = [{"name": name,
+                                   "run_id": run, "run_attempt": attempt,
+                                   "status": "completed", "conclusion": conclusion}]
+
+    def publish(self, *, clean=False):
+        workflow = (HERE.parent / "workflows/claude-review.yml").read_text()
+        block = workflow.split("    # A run by hand posts only where its `post` input says.\n", 1)[1]
+        shell = textwrap.dedent(block.split("      run: |\n", 1)[1].split("      env:\n", 1)[0])
+        root = Path(self.temp.name)
+        body = f"Review of {HEAD}: " + ("no blocking issues" if clean else "blocking issues")
+        body += "\n\nProbes: protocol regression.\n"
+        (root / "comment.md").write_text(body)
+        bin_dir = root / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        gh = bin_dir / "gh"
+        gh.write_text("""#!/usr/bin/python3
+import json, pathlib, sys
+assert sys.argv[1:5] == ['api', 'repos/owner/fren/issues/12/comments', '--method', 'POST']
+payload = json.loads(pathlib.Path(sys.argv[sys.argv.index('--input') + 1]).read_text())
+print(json.dumps({'id': 2, 'created_at': '2026-11-07T00:00:00Z', 'body': payload['body'],
+                  'author_association': 'NONE', 'user': {'login': 'github-actions[bot]'}}))
+""")
+        gh.chmod(0o755)
+        env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+               "RUNNER_TEMP": str(root), "REPO": REPO, "PR": "12", "POST": "", "GH_TOKEN": "dummy-token"}
+        result = REAL_RUN(["bash", "-euo", "pipefail", "-c", shell], env=env,
+                          capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout, "")
+        published = json.loads((root / "posted-comment.json").read_text())
+        self.comments.append(published)
+        return published
+
+    def test_green_through_published_block_lost_attestation_and_completion(self):
+        for event, failure in itertools.product(("workflow_run", "workflow_dispatch"),
+                ("record", "upload", "cancel", "list", "download", "corrupt", "expired")):
+            with self.subTest(event=event, failure=failure):
+                self.comments = self.comments[:1]
+                self.checks = {10: {"id": 10, "name": "pre-merge", "app": {"slug": "github-actions"}, "conclusion": "success"}}
+                self.reviews.pop(43, None)
+                self.artifact_errors.clear()
+                self.download_errors.clear()
+                self.bad_artifacts.clear()
+                self.expired.clear()
+                self.out.unlink(missing_ok=True)
+                local_artifact = Path(self.temp.name, "posted-review")
+                if local_artifact.exists():
+                    (local_artifact / "review.json").unlink()
+                    local_artifact.rmdir()
+                with patch.dict(os.environ, REVIEW_RUN="42"):
+                    gate.prepare()
+                    self.assertEqual(self.outputs()["relevant"], "false")
+                    self.finish(self.outputs())
+                self.assertEqual(self.checks[10]["conclusion"], "success")
+                self.out.unlink()
+                published = self.publish()
+                self.trusted_post(conclusion="cancelled" if failure == "cancel" else "failure")
+                with patch.dict(os.environ, RUNNER_TEMP=self.temp.name, PR="12", POST="", HEAD=HEAD,
+                                GITHUB_RUN_ATTEMPT="2"):
+                    if failure == "record":
+                        with patch.object(Path, "mkdir", side_effect=OSError("recording failed")), self.assertRaises(OSError):
+                            gate.record()
+                    elif failure != "cancel":
+                        gate.record()
+                if failure in ("list", "download", "corrupt", "expired"):
+                    self.reviews[43] = {"pr": 12, "head": HEAD, "body": published["body"],
+                                        "attempt": 2, "commentId": 2, "createdAt": published["created_at"]}
+                if failure == "list":
+                    self.artifact_errors.add(43)
+                elif failure == "download":
+                    self.download_errors.add(43)
+                elif failure == "corrupt":
+                    self.bad_artifacts.add(43)
+                elif failure == "expired":
+                    self.expired.add(43)
+                # This event is completion/dispatch, never issue_comment.
+                with patch.dict(os.environ, GITHUB_EVENT_NAME=event, REVIEW_RUN="43", PR_INPUT=""):
+                    with self.assertRaisesRegex(ValueError, "revocation-only"):
+                        gate.prepare()
+                    recovered = self.outputs()
+                    self.assertEqual(recovered["head"], HEAD)
+                    self.assertEqual(recovered["recovered"], "true")
+                    self.assertEqual(recovered["relevant"], "false")
+                    with self.assertRaises(SystemExit):
+                        self.finish(recovered, prepare="failure", check="")
+                self.assertTrue(all(c["conclusion"] == "failure" for c in self.checks.values()))
+
+    def test_report_recovers_when_preparation_has_no_outputs_or_was_cancelled(self):
+        self.publish()
+        self.trusted_post(conclusion="cancelled")
+        for result in ("failure", "cancelled", "success"):
+            with self.subTest(result=result), patch.dict(os.environ, REVIEW_RUN="43"):
+                with self.assertRaises(SystemExit):
+                    self.finish(outputs={"unrelated": "output"}, prepare=result, check="")
+                self.assertTrue(all(c["conclusion"] == "failure" for c in self.checks.values()))
+
+    def test_report_retries_context_when_preparation_recovery_failed(self):
+        self.publish()
+        self.trusted_post()
+        real_api = self.api
+        def unavailable_jobs(endpoint, payload=None, method=None):
+            if "/attempts/" in endpoint and "/jobs?" in endpoint:
+                raise OSError("job metadata temporarily unavailable")
+            return real_api(endpoint, payload, method)
+        with patch.dict(os.environ, REVIEW_RUN="43"):
+            with patch.object(gate, "api", side_effect=unavailable_jobs), self.assertRaises(OSError):
+                gate.prepare()
+            self.assertNotIn("head", self.outputs())
+            with self.assertRaises(SystemExit):
+                self.finish(outputs=self.outputs() or {"unrelated": "output"}, prepare="failure", check="")
+        self.assertEqual(self.checks[10]["conclusion"], "failure")
+
+    def test_workflow_report_runs_for_recovery_only_on_trusted_main_context(self):
+        workflow = (HERE.parent / "workflows/pre-merge.yml").read_text()
+        report = workflow.split("  report:\n", 1)[1]
+        condition = re.search(r"^    if: \$\{\{ (.+) \}\}$", report, re.MULTILINE)[1]
+        def evaluate(event, ref, head="", automatic=0, dispatch="", pr=0):
+            expression = condition.replace("always()", "True")
+            for field, value in {"github.event_name": event, "github.ref": ref,
+                                 "needs.prepare.outputs.head": head, "github.event.workflow_run.id": automatic,
+                                 "inputs.review-run": dispatch, "inputs.pr": pr}.items():
+                expression = expression.replace(field, repr(value))
+            expression = expression.replace("&&", " and ").replace("||", " or ")
+            # Test only the Boolean/string subset used by this workflow; no
+            # code evaluation or precomputed authorization decision is used.
+            def value(node):
+                if isinstance(node, ast.Constant): return node.value
+                if isinstance(node, ast.BoolOp):
+                    values = [value(v) for v in node.values]
+                    return all(values) if isinstance(node.op, ast.And) else any(values)
+                if isinstance(node, ast.Compare) and len(node.ops) == 1:
+                    left, right = value(node.left), value(node.comparators[0])
+                    if isinstance(node.ops[0], ast.Eq): return left == right
+                    if isinstance(node.ops[0], ast.NotEq): return left != right
+                raise AssertionError(ast.dump(node))
+            return bool(value(ast.parse(expression, mode="eval").body))
+        self.assertTrue(evaluate("workflow_run", "refs/heads/main", automatic=43))
+        self.assertTrue(evaluate("workflow_dispatch", "refs/heads/main", dispatch="43"))
+        self.assertTrue(evaluate("workflow_dispatch", "refs/heads/main", head=HEAD))
+        self.assertTrue(evaluate("workflow_dispatch", "refs/heads/main", pr=12))
+        self.assertFalse(evaluate("workflow_dispatch", "refs/heads/pr-code", dispatch="43"))
+        self.assertFalse(evaluate("issue_comment", "refs/heads/main"))
+
+    def test_recovered_context_never_authorizes_even_clean_or_no_posted_comment(self):
+        self.trusted_post()
+        for published_clean in (False, True):
+            if published_clean:
+                self.publish(clean=True)
+            with patch.dict(os.environ, REVIEW_RUN="43"):
+                with self.assertRaises(ValueError):
+                    gate.prepare()
+                # Even an otherwise-successful no-job path stays negative.
+                with self.assertRaises(SystemExit):
+                    self.finish(self.outputs(), prepare="success", check="")
+            self.assertTrue(all(c["conclusion"] == "failure" for c in self.checks.values()))
+
+    def test_recovery_checks_run_attempt_role_and_current_pr_head_provenance(self):
+        for invalid in ("workflow", "branch", "repo", "event", "id", "running", "attempt",
+                        "job-run", "job-attempt", "job-role", "skip", "ambiguous", "fork", "head", "base", "number"):
+            with self.subTest(invalid=invalid):
+                self.trusted_post()
+                info, job = self.info[43], self.job_contexts[43][0]
+                saved_pr = json.loads(json.dumps(self.pr))
+                if invalid == "workflow": info["path"] = ".github/workflows/fake.yml"
+                elif invalid == "branch": info["head_branch"] = "pr-controlled"
+                elif invalid == "repo": info["head_repository"]["full_name"] = "fork/fren"
+                elif invalid == "event": info["event"] = "pull_request"
+                elif invalid == "id": info["id"] = 44
+                elif invalid == "running": info["status"] = "in_progress"
+                elif invalid == "attempt": job["name"] = job["name"].replace("attempt 2", "attempt 1")
+                elif invalid == "job-run": job["run_id"] = 44
+                elif invalid == "job-attempt": job["run_attempt"] = 1
+                elif invalid == "job-role": job["name"] = "probe: " + job["name"]
+                elif invalid == "skip": job["conclusion"] = "skipped"
+                elif invalid == "ambiguous": self.job_contexts[43].append({**job, "name": job["name"].replace("PR 12", "PR 13")})
+                elif invalid == "fork": self.pr["head"]["repo"]["full_name"] = "fork/fren"
+                elif invalid == "head": self.pr["head"]["sha"] = "d" * 40
+                elif invalid == "base": self.pr["base"]["ref"] = "other"
+                elif invalid == "number": self.pr["number"] = 13
+                self.assertIsNone(gate.revocation_context(REPO, 43))
+                self.pr.clear()
+                self.pr.update(saved_pr)
+        self.assertFalse(self.patches)
+
+    def test_completed_event_attempt_recovers_even_after_a_rerun_started(self):
+        self.publish()
+        self.trusted_post()
+        self.attempt_info[(43, 2)] = dict(self.info[43])
+        self.info[43] = {**self.info[43], "run_attempt": 3, "status": "in_progress"}
+        with patch.dict(os.environ, REVIEW_RUN="43", REVIEW_ATTEMPT="2"):
+            with self.assertRaisesRegex(ValueError, "revocation-only"):
+                gate.prepare()
+            with self.assertRaises(SystemExit):
+                self.finish(self.outputs(), prepare="failure", check="")
+        self.assertEqual(self.checks[10]["conclusion"], "failure")
+
+    def test_manual_preview_without_post_intent_cannot_revoke_a_gate(self):
+        self.trusted_post(event="workflow_dispatch", post="", conclusion="success")
+        with patch.dict(os.environ, REVIEW_RUN="43"):
+            gate.prepare()
+            self.assertNotIn("head", self.outputs())
+            self.finish(outputs={"unrelated": "output"}, prepare="success", check="")
+        self.assertFalse(self.patches)
+        self.assertEqual(self.checks[10]["conclusion"], "success")
+
+    def test_outputless_manual_reporting_revokes_only_the_requested_current_pr(self):
+        other = "d" * 40
+        self.trusted_post(pr=13, head=other)
+        self.prs[13] = {**self.pr, "number": 13, "head": {"repo": {"full_name": REPO}, "sha": other}}
+        with patch.dict(os.environ, REVIEW_RUN="43", PR_INPUT="12"), \
+                patch.object(gate, "api", side_effect=self.api) as calls, self.assertRaises(SystemExit):
+            self.finish(outputs={"unrelated": "output"}, prepare="cancelled", check="")
+        reads = [call.args[0] for call in calls.call_args_list if "/commits/" in call.args[0]]
+        self.assertTrue(reads)
+        self.assertTrue(all(f"/commits/{HEAD}/" in path for path in reads))
+        self.assertEqual(self.checks[10]["conclusion"], "failure")
+
+    def test_post_destination_is_the_recovered_pr_and_manual_mismatch_is_rejected(self):
+        self.trusted_post(pr=13, event="workflow_dispatch")
+        self.prs[13] = {**self.pr, "number": 13}
+        self.assertEqual(gate.revocation_context(REPO, 43)["pr"], 13)
+        with patch.dict(os.environ, REVIEW_RUN="43", PR_INPUT="12"), self.assertRaises(ValueError):
+            gate.prepare()
+        self.assertEqual(self.outputs()["pr"], "12")
+        self.assertNotIn("recovered", self.outputs())
+
 
 
 

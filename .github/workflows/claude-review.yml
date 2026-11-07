@@ -300,6 +300,10 @@ jobs:
         path: ${{ runner.temp }}/review
         if-no-files-found: error
   post:
+    # Persist preparation's target in GitHub job metadata before publication.
+    # The gate uses this only to revoke when recording/upload is interrupted.
+    # A manual preview has no destination and cannot supply recovery context.
+    name: Post review (PR ${{ inputs.post || (github.event_name == 'workflow_run' && needs.prepare.outputs.pr) || '' }}, head ${{ needs.prepare.outputs.head }}, attempt ${{ github.run_attempt }})
     needs: [prepare, review]
     if: ${{ !cancelled() && needs.prepare.outputs.kind != '' && needs.prepare.outputs.kind != 'skip' }}
     runs-on: ubuntu-24.04
@@ -337,13 +341,16 @@ jobs:
     # A run by hand posts only where its `post` input says.
     - if: ${{ github.event_name == 'workflow_run' || inputs.post != '' }}
       run: |
+        target=${POST:-$PR}
+        # Keep the actual destination identical to the numeric job metadata.
+        [[ "$target" =~ ^[0-9]+$ ]] || { echo 'Post destination must be a PR number' >&2; exit 1; }
         python3 -I - <<'PYTHON'
         import json, os
         from pathlib import Path
         temp = Path(os.environ["RUNNER_TEMP"])
         (temp / "comment.json").write_text(json.dumps({"body": (temp / "comment.md").read_text()}))
         PYTHON
-        gh api "repos/$REPO/issues/${POST:-$PR}/comments" --method POST \
+        gh api "repos/$REPO/issues/$target/comments" --method POST \
           --input "$RUNNER_TEMP/comment.json" > "$RUNNER_TEMP/posted-comment.json"
       env:
         GH_TOKEN: ${{ github.token }}

@@ -49,6 +49,7 @@ jobs:
       base: ${{ steps.prepare.outputs.base }}
       relevant: ${{ steps.prepare.outputs.relevant }}
       revoked: ${{ steps.prepare.outputs.revoked }}
+      recovered: ${{ steps.prepare.outputs.recovered }}
       own-spec-agreement: ${{ steps.prepare.outputs.own-spec-agreement }}
       methods-agree: ${{ steps.prepare.outputs.methods-agree }}
       coverage: ${{ steps.prepare.outputs.coverage }}
@@ -63,6 +64,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         REVIEW_RUN: ${{ github.event.workflow_run.id || inputs.review-run }}
+        REVIEW_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         PR_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || '' }}
   pending:
     needs: prepare
@@ -101,7 +103,9 @@ jobs:
       fuzz-frontends: ${{ needs.prepare.outputs.fuzz-frontends == 'true' }}
   report:
     needs: [prepare, pending, slow]
-    if: ${{ always() && needs.prepare.outputs.head != '' }}
+    # Missing preparation outputs must not hide a posted blocking review.
+    # Recovery runs only in the same trusted main context as preparation.
+    if: ${{ always() && (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') && (needs.prepare.outputs.head != '' || github.event.workflow_run.id || inputs.review-run || inputs.pr) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -123,4 +127,5 @@ jobs:
         NEEDS: ${{ toJSON(needs) }}
         CHECK_RUN_ID: ${{ needs.pending.outputs.check }}
         REVIEW_RUN: ${{ github.event.workflow_run.id || inputs.review-run }}
+        REVIEW_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         PR_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || '' }}

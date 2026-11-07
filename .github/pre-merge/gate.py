@@ -21,6 +21,7 @@ PUSHERS = {"OWNER", "MEMBER", "COLLABORATOR"}
 BOT = {"github-actions", "github-actions[bot]"}
 VERDICT = re.compile(r"Review of ([0-9a-f]{40}): (no blocking issues(?: \((?:fixes|rebase) only\))?|blocking issues)")
 CLEAN = re.compile(r"Review of ([0-9a-f]{40}): no blocking issues(?: \((?:fixes|rebase) only\))?")
+POST_CONTEXT = re.compile(r"Post review \(PR ([0-9]+), head ([0-9a-f]{40}), attempt ([0-9]+)\)")
 
 
 def selected(paths):
@@ -188,13 +189,60 @@ def inherited_review(pr, main):
     return False
 
 
+def trusted_review_run(repo, review_run, attempt=None):
+    endpoint = f"repos/{repo}/actions/runs/{review_run}"
+    if attempt is not None:
+        endpoint += f"/attempts/{attempt}"
+    info = api(endpoint)
+    if (info.get("path") != ".github/workflows/claude-review.yml"
+            or (info.get("head_repository") or {}).get("full_name") != repo
+            or info.get("head_branch") != "main" or info.get("status") != "completed"
+            or info.get("event") not in ("workflow_run", "workflow_dispatch")
+            or info.get("id") != review_run or int(info.get("run_attempt", 0)) <= 0
+            or (attempt is not None and info["run_attempt"] != attempt)):
+        return
+    return info
+
+
+def current_context(repo, pr, head=None):
+    """Validate a negative target against the repository's current PR data."""
+    data = api(f"repos/{repo}/pulls/{pr}")
+    head = data["head"]["sha"] if head is None else head
+    if data["number"] == pr and eligible(data, repo, head):
+        return {"pr": pr, "head": head, "base": data["base"]["sha"]}
+
+
+def revocation_context(repo, review_run):
+    """r[ci.review-revocation]: recover a target without any uploaded artifact.
+
+    GitHub persists the post job's name from main's trusted preparation
+    outputs, including the actual post destination and attempt. PR code,
+    reviewer text, logs and artifact names cannot supply this context.
+    It can only revoke: it never stands in for a posted authorization.
+    """
+    event_attempt = os.environ.get("REVIEW_ATTEMPT")
+    info = trusted_review_run(repo, review_run, int(event_attempt) if event_attempt else None)
+    if info is None:
+        return
+    attempt = info["run_attempt"]
+    targets = set()
+    for job in pages(f"repos/{repo}/actions/runs/{review_run}/attempts/{attempt}/jobs", "jobs"):
+        match = POST_CONTEXT.fullmatch(job["name"])
+        if (match and int(match[1]) > 0 and int(match[3]) == attempt
+                and job["run_id"] == review_run and job["run_attempt"] == attempt
+                and job["status"] == "completed" and job["conclusion"] != "skipped"):
+            targets.add((int(match[1]), match[2]))
+    # There is one non-matrix post job. Reject ambiguous or absent context.
+    if len(targets) != 1:
+        return
+    pr, head = targets.pop()
+    return current_context(repo, pr, head)
+
+
 def posted_review(repo, review_run, artifact_id=None):
-    info = api(f"repos/{repo}/actions/runs/{review_run}")
-    # Only main's completed review workflow attests bot reviews. An overall
-    # failure can follow a valid posted verdict (for example probe cleanup).
-    if (info["path"] != ".github/workflows/claude-review.yml"
-            or info["head_repository"]["full_name"] != repo
-            or info["head_branch"] != "main" or info["status"] != "completed"):
+    # An overall failure/cancellation may follow a valid posted verdict.
+    info = trusted_review_run(repo, review_run)
+    if info is None:
         return
     artifacts = pages(f"repos/{repo}/actions/runs/{review_run}/artifacts", "artifacts")
     artifact = next((a for a in artifacts if not a["expired"]
@@ -305,7 +353,22 @@ def prepare():
             # Even an invalid review-run input must fail the known head's
             # aggregate, rather than leave an earlier green check untouched.
             output(head=manual_head, pr=int(os.environ["PR_INPUT"]), base=manual_data["base"]["sha"])
-    attested = posted_review(repo, int(os.environ["REVIEW_RUN"])) if os.environ.get("REVIEW_RUN") else None
+    attested = None
+    if os.environ.get("REVIEW_RUN"):
+        review_run = int(os.environ["REVIEW_RUN"])
+        error = None
+        try:
+            attested = posted_review(repo, review_run)
+        except Exception as failure:
+            error = failure
+        if attested is None:
+            context = revocation_context(repo, review_run)
+            if context and (not manual or (context["pr"] == int(os.environ["PR_INPUT"])
+                                          and context["head"] == manual_data["head"]["sha"])):
+                output(**context, recovered=True, revoked=True, relevant=False)
+                raise ValueError("Missing authorization attestation; recovered a revocation-only target")
+            if error is not None:
+                raise error
     comment_event = os.environ.get("GITHUB_EVENT_NAME") == "issue_comment"
     if comment_event:
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
@@ -371,8 +434,34 @@ def finish():
     jobs = json.loads(os.environ["NEEDS"])
     prepared = jobs["prepare"]["outputs"]
     head = prepared.get("head")
+    repo = os.environ["GITHUB_REPOSITORY"]
+    if not head:
+        # Preparation may have failed/cancelled before writing outputs.
+        # Retry recovery from job metadata, never from PR-controlled data.
+        context = None
+        manual_pr = os.environ.get("PR_INPUT", "")
+        if manual_pr not in ("", "0"):
+            # An explicit permissioned dispatch targets this PR, even if its
+            # review-run input names a different one. Never revoke that one.
+            context = current_context(repo, int(manual_pr))
+        elif os.environ.get("REVIEW_RUN"):
+            context = revocation_context(repo, int(os.environ["REVIEW_RUN"]))
+        if context:
+            prepared = {**context, "recovered": "true"}
+            head = context["head"]
     if not head:
         return
+    if prepared.get("recovered") == "true":
+        data = api(f"repos/{repo}/pulls/{int(prepared['pr'])}")
+        if data["number"] != int(prepared["pr"]) or not eligible(data, repo, head):
+            return
+        # Recovery is deliberately independent of artifact reads and cannot
+        # authorize success, including an otherwise successful no-job run.
+        try:
+            invalidate(head)
+        finally:
+            status(head, "failure", "Review authorization unavailable; recovered target revoked")
+        sys.exit(1)
     relevant = prepared.get("relevant") == "true"
     good = (jobs["prepare"]["result"] == "success" and jobs["pending"]["result"] == "success"
             and jobs["slow"]["result"] == ("success" if relevant else "skipped"))

@@ -250,7 +250,7 @@ module.expansion -- partly formalized: `expansion::strict_expansion` and `expans
 # src/Reqs/dev/Testing.md
 lake.reader-inputs -- checked by concrete lakefile/source regressions; no formal binding for ownership, paths and input filters
 ci.current-review -- external Python/GitHub protocol; concrete authorization and provenance regressions bind the rule to gate.py
-ci.review-revocation -- external check-run writes and their interleavings; concrete entry/report regressions bind the rule to gate.py
+ci.review-revocation -- external check-run writes, independent post-target metadata and their interleavings; concrete publication/recovery/report regressions bind the rule to gate.py
 ci.linked-runtime -- concrete path-selection regressions over every current C input and future c/ paths; no Lean binding to the Python selector
 
 # src/Reqs/Lang/Implementations.md

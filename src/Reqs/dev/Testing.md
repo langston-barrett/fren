@@ -2090,10 +2090,17 @@ r[ci.review-revocation]
 A blocking review revokes completed and running `pre-merge` checks on
 that head. Every reporter checks the current review before and after
 publishing success, so an older run cannot restore green after a newer
-blocking review. This applies when no slow job is selected too. When
-revalidation finds a newer clean review, the stale blocking event leaves
-it standing. Local blocking review comments take the same invalidation
-path, without starting slow jobs.
+blocking review. This applies when no slow job is selected too. With a
+usable attestation, revalidation leaves a newer clean review standing.
+If recording, uploading or reading authorization fails after
+publication, completion recovers a revocation-only target from GitHub's
+post-job metadata, independently of artifacts. The trusted main-context
+workflow, verified completion attempt, post role, actual post
+destination, repository and current PR head must all match. Missing
+authorization cannot yield success, even with no selected jobs or no
+preparation outputs. A cancelled review or failed artifact read takes
+the same recovery path. Local blocking review comments invalidate
+without starting slow jobs.
 
 r[ci.linked-runtime]
 Every changed path under `c/` selects all four slow jobs. Their executables
@@ -2103,13 +2110,21 @@ well as the three current C sources; the rule has no extension whitelist.
 
 The concrete bindings are `.github/pre-merge/gate.py`'s `authorized` and
 `review_metadata` for current reviews, `finish` and `invalidate` for
-revocation, and `selected` for runtime inputs. `record` and `posted_review`
-check the attestation's provenance. These external Python and GitHub
-workflow effects have no Lean `impl` proof. `test_gate.py` exercises these
-functions with mocked API and git transport, including superseded reviews,
-publication races, all entry paths and current and future runtime inputs;
-the `lint` workflow runs it. No precomputed approval flag stands in for
-the comment-ordering or provenance decision in those tests.
+revocation, and `selected` for runtime inputs. `record`, `posted_review`
+and `trusted_review_run` check the attestation's provenance.
+`revocation_context` recovers negative-only context from the trusted
+post job's name and attempt metadata; it never approves a review.
+Completion recovery uses the event's attempt even if a later rerun has
+already started. Completion preparation and reporting both invoke it
+when authorization is unavailable. `current_context` revalidates the
+target, including an explicit dispatch's requested PR if preparation was
+interrupted. These external Python and GitHub workflow effects have no
+Lean `impl` proof. `test_gate.py` exercises these functions with mocked
+API and git transport, including superseded reviews, publication races,
+lost attestations after successful comment publication, all entry paths
+and current and future runtime inputs; the `lint` workflow runs it. No
+precomputed approval flag stands in for the comment-ordering or
+provenance decision in those tests.
 
 On a pull request, the `pre-approval` workflow checks the head merged into
 `main`, starting from the `.lake` that `main`'s last build left: two
