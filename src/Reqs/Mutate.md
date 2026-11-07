@@ -509,7 +509,7 @@ expect valid_ids_examples(id: String, other: String) {
 ```
 
 With the same spec, checker and seed, the full run, a sample and every
-shard give each selected mutant the same decision and killing checks.
+shard give each selected mutant the same normalized outcome.
 Whether the solver proves equivalence within its wall-clock time limit
 may differ, so survival and equivalence count as the same decision here:
 
