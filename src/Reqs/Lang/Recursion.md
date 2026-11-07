@@ -38,9 +38,8 @@ function parameter, is an error (`F0447`), at the first application by
 which every parameter has failed, saying why its argument is not a payload
 of the parameter there: the parameter itself, another name, or another
 expression. A higher-order function is never recursive (`F0331`), and
-mutual recursion cannot be written, since a function is not in scope in the
-bodies of the functions declared before it. `lang::self_application` states
-which functions may apply themselves: whether a function is generic does
+forward references outside an explicit structural group are not in scope.
+`lang::self_application` states which functions may apply themselves: whether a function is generic does
 not matter, since the structural rule does not look at the types of the
 payloads that the recursion decreases on (see [Generic
 recursion](#generic-recursion)). A structural recursion is accepted, with
@@ -137,12 +136,59 @@ Every edge must decrease, including an edge from a member to itself. A
 call in a closure, or a member passed as a function argument, fails the
 judgment. Other arguments are unrestricted.
 
-This is the termination model for mutual recursion, not yet surface syntax
-for declaring a group. Both front ends use its singleton case for existing
-self-recursion. Forward scope, simultaneous contract checking and Lean
-`mutual` definitions remain to be implemented before groups can be written.
+An explicit `mutual { ... }` block declares a structural group. Its members
+are defined, monomorphic, first-order functions without contracts. Each
+signature is registered before any body is read, so a body may call a
+member written later in the block. All member names are in scope while
+signatures and block imports are read, including for shadowing checks.
+Outside the block, the functions have the visibility of their own `pub`
+declarations. Names outside the group
+retain their ordinary scope; a later item outside it is not visible.
+Parameter and result types must be readable before the block's bodies.
+Both expression definitions and function blocks with an `out` are allowed.
+Group contracts and generic group members are not yet supported.
+
+Both front ends use the same group decision, computing argument origins
+relative to the caller's parameters, even when the callee chooses another
+position. They reject the whole block when no selection passes. If any
+member fails, none of the group's declarations is published; dead-code and
+single-call checks see only a completed group. Definitions are
+simultaneous: evaluation of an application enters the called member's
+body with its arguments, including when that member is declared later.
+The hosted front end generates the members together as a Lean `mutual`
+definition. The solver treats every member as a structural recursion,
+with finite ground equations as below; it never unfolds the cycle eagerly.
 The judgment concerns structural descent only; it neither accepts recursion
 on an arbitrary measure nor adds mutually recursive datatypes.
+
+```fren
+pub proc group_member(defined?, generic?, higher_order?, contract?): (det accepted?) {
+    ensure rule: accepted? iff defined? and not generic? and not higher_order? and not contract?
+}
+
+set_option fren.lint.undecidable "allow" in
+pub proc group_scope(members: Seq<String>, caller: Int, target: String): (det visible?) {
+    ensure rule: visible? iff 0 <= caller < members.len
+        and (exists (i: Int), 0 <= i < members.len and members[i] = target)
+}
+
+set_option fren.lint.undecidable "allow" in
+set_option fren.evidence "random" in
+pub proc group_dependencies(marked: Set<Int>, calls: Rel<Int, Int>): (det affected: Set<Int>) {
+    out affected := marked union calls.inverse.closure.image(marked)
+}
+```
+
+Body classifications follow the group's call graph too. A member inherits
+an outside-core construct, or a need for bounded solver options, from
+every member it reaches. `group_dependencies` computes that closure from
+the initially marked members and raw caller/callee pairs; neither front
+end supplies a precomputed reachability judgment. An unrelated member is
+unaffected. The traversal uses the finite graph bound of
+[`check::finite_application_closure`](../Evidence.md#matching-terms-and-finite-closure).
+The same closure propagates noncomputability of the generated Lean
+definitions: a member that calls a noncomputable member is noncomputable,
+while an unrelated member retains its own classification.
 
 The inputs record each member's parameter count and a proposed decreasing
 position, and each use's caller, callee, form and argument origins. A
@@ -1026,6 +1072,9 @@ only uninterpreted functions to quantifier-free queries.
 #fren_check structural_recursion
 #fren_check structural_group
 #fren_check structural_group_search
+#fren_check group_member
+#fren_check group_scope
+#fren_check group_dependencies
 #fren_check recursive_match
 #fren_check recursive_facts
 #fren_check recursive_depth

@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Elab.Procedures
+import FrenCore.RecursionGroup
 -- keep-sorted end
 
 /-!
@@ -550,7 +551,8 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
   let (smt, t) ← elabExpr cx body
   let uses := (← get).recUses
   -- Existing self-recursion is a singleton structural group.
-  let recursion := Fren.Core.selfRecursion vars.size (uses.toList.map (·.2))
+  let recursion := if (← get).groupCaller?.isSome then .notRecursive
+    else Fren.Core.selfRecursion vars.size (uses.toList.map (·.2))
   if let .structural i := recursion then
     if let some m := (← get).recMatches[0]? then err m (Fren.Core.recursiveMatchMsg path)
     modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path, recursiveDecreasing := s.recursiveDecreasing.insert path i }
@@ -558,7 +560,7 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
     -- constraint, as its postconditions, a hypothesis at a recursive
     -- application in its own body too (`lang::recursive_facts`).
     if Fren.Core.recursiveResultFact (rp.cons (← get).shapeOf).isSome then noteResultFact path rp
-  notePredicateClauses cx path vars body smt
+  unless (← get).groupCaller?.isSome do notePredicateClauses cx path vars body smt
   noteObligation cx .body body.span rp smt
   let bodyTables ← takeTables
   let bodyObligations ← takeIndexes
@@ -624,7 +626,7 @@ def elabDefinedFunction (isPub : Bool) (name : Ident) (n path : Name) (typeParam
 /-- Elaborates a function (`Reqs/Lang/Items#functions`). -/
 def elabFunction (isPub : Bool) (name : Ident) (typeParams : Array Ident) (params : Array (Array Ident × Option (Array Ident)))
     (result : Option (Array Ident)) (body : Option Expr) (clauses : Array (Bool × Ident × Expr)) (last : Span)
-    (block : FnBlockInfo) : M Unit := do
+    (block : FnBlockInfo) (registered := false) : M Unit := do
   modify fun s => { s with outsideCore := false, guardedUsed := false }
   modify fun s => { s with contractIndexes := #[], itemBranches := #[], itemMemberGroups := #[] }
   let clauses := splitContractClauses clauses
@@ -636,7 +638,7 @@ def elabFunction (isPub : Bool) (name : Ident) (typeParams : Array Ident) (param
   liftMsg name.span (Fren.Core.checkNoBang n)
   liftMsg name.span (Fren.Core.checkFnName n)
   let module := (← get).module
-  liftMsg written ((← get).table.checkFreshItem module n bang)
+  unless registered do liftMsg written ((← get).table.checkFreshItem module n bang)
   lintName .function n name.span
   startDeclared
   let path := module ++ n
@@ -704,7 +706,7 @@ def elabFunction (isPub : Bool) (name : Ident) (typeParams : Array Ident) (param
     modify fun s => { s with fnTypeParams := none }
   | some body =>
     elabDefinedFunction isPub name n path typeParams tps params result body clauses contract last
-  unless isPub do
+  if !isPub && (← get).groupCaller?.isNone then
     modify fun s =>
       let r : Fren.Core.ItemRecord :=
         -- A trait's method is never dead (`lint::dead_item`).
@@ -805,6 +807,7 @@ partial def elabItem (item : Item) : M Unit := do
   | .abstractType isPub name => elabAbstractType isPub name
   | .function isPub name typeParams params result body clauses last block =>
     elabFunction isPub name typeParams params result body clauses last block
+  | .mutualFns members spans span => elabMutual members spans span
   | .comp isPub name header members close spans openStop => do
     -- Its declaration and line lints are about its name, without its `!`.
     let shown := (declaredIdent name).1
@@ -862,6 +865,81 @@ partial def elabItem (item : Item) : M Unit := do
     | .item { kind := .compItem, .. } | .item { kind := .expectItem, .. } => pure ()
     | r => err (segs[0]!.span.to segs.back!.span) (Fren.Core.wrongKindMsg "a procedure or a global expectation" r)
   | .lintSetting stx opt value valueSpan removal body? => elabLintSetting stx opt value valueSpan removal body?
+
+/-- Register a group's signatures, elaborate its bodies, then publish its
+shared structural selection. -/
+partial def elabMutual (members : Array Item) (memberSpans : Array Span) (span : Span) : M Unit := do
+  modify fun s => { s with groupFns := #[], groupUses := #[] }
+  for member in members, k in [0:members.size] do
+    let .function isPub name tps params _ body clauses _ _ := member
+      | err (memberSpans[k]?.getD span) Fren.Core.groupMemberMsg
+    let module := (← get).module
+    let n := Name.mkSimple (declaredIdent name).1.name
+    liftMsg name.span (Fren.Core.checkNoBang n)
+    liftMsg name.span (Fren.Core.checkFnName n)
+    liftMsg name.span ((← get).table.checkFreshItem module n (declaredIdent name).2)
+    let higher := params.any fun (_, ty) => ty.any (·[0]?.any (·.name == Parser.fnSeg))
+    unless Fren.Core.groupMemberAccepted body.isSome (!tps.isEmpty) higher (!clauses.isEmpty) do
+      err name.span Fren.Core.groupMemberMsg
+    let path := module ++ n
+    modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := module } }
+  for member in members do
+    let .function _ name _ params result body _ _ block := member | pure ()
+    let (params, _) := lambdaMatchFunction params body
+    let path := (← get).module ++ Name.mkSimple (declaredIdent name).1.name
+    let named (p : Array Ident × Option (Array Ident)) :=
+      p.2.isSome || (p.1.size == 1 && (declaredIdent p.1[0]!).1.name.endsWith "?")
+    unless Fren.Core.functionParamsAccepted true false params.size (params.filter named).size do
+      let bad := (params.find? (!named ·)).map (·.1[0]!.span) |>.getD name.span
+      err bad (Fren.Core.functionParamsMsg path true false)
+    -- Read signatures without recording the body's declaration lints twice.
+    let saved ← get
+    declareMemberUses path block.uses
+    let (vars, _) ← (fnParamsOf params true).run #[]
+    let rp ← varPTy result name
+    set saved
+    modify fun s => { s with
+      groupFns := s.groupFns.push (path, { params := vars.map (·.ty), result := rp.ty })
+      funPTys := s.funPTys.insert path (vars.map (·.ptype), rp)
+      defs := s.defs.push (path, vars.map fun v => (v.name, v.ty), rp.ty, "") }
+  for member in members, caller in [0:members.size] do
+    let .function isPub name tps params result body clauses last block := member | pure ()
+    let path := (← get).groupFns[caller]!.1
+    modify fun s => { s with scope := s.module, groupCaller? := some caller
+                             defs := s.defs.filter (·.1 != path) }
+    elabFunction isPub name tps params result body clauses last block true
+    if let some bad := (← get).recMatches[0]? then err bad (Fren.Core.recursiveMatchMsg path)
+  let s ← get
+  let some positions := Fren.Core.recursionGroup (s.groupFns.toList.map fun (_, ft) => ft.params.size)
+      (s.groupUses.toList.map (·.2)) | err span Fren.Core.groupTerminationMsg
+  let pathsFor (flags : List Bool) : Std.HashSet Name :=
+    (Fren.Core.groupInherited flags (s.groupUses.toList.map (·.2))).foldl (init := {}) fun paths i =>
+      match s.groupFns[i.toNat]? with
+      | some (path, _) => paths.insert path
+      | none => paths
+  let outside := pathsFor (s.groupFns.toList.map fun (path, _) => s.outsideCoreItems.contains path)
+  let guarded := pathsFor (s.groupFns.toList.map fun (path, _) => s.guardedItems.contains path)
+  for (path, _) in s.groupFns, position in positions do
+    modify fun s => { s with recursiveDefs := s.recursiveDefs.insert path
+                             recursiveDecreasing := s.recursiveDecreasing.insert path position.decreasing.toNat
+                             guardedItems := if guarded.contains path then s.guardedItems.insert path else s.guardedItems.erase path
+                             outsideCoreItems := if outside.contains path then s.outsideCoreItems.insert path else s.outsideCoreItems.erase path }
+    if let some (_, rp) := (← get).funPTys.find? path then noteResultFact path rp
+  for member in members do
+    let .function isPub name .. := member | pure ()
+    unless isPub do
+      let path := (← get).module ++ Name.mkSimple (declaredIdent name).1.name
+      modify fun s =>
+        let r : Fren.Core.ItemRecord :=
+          { what := .function, path, level := s.levels.get .deadCode
+            singleCall? := some (s.levels.get .singleCallFn) }
+        { s with items := s.items.push (r, name.span) }
+  modify fun s => { s with
+    bodies := s.bodies.map fun b => match b.fn? with
+      | some p => if s.groupFns.any (·.1 == p) then
+          { b with recursive := true, decidable := !outside.contains p, guarded := guarded.contains p } else b
+      | none => b
+    groupFns := #[], groupCaller? := none, groupUses := #[] }
 
 /-- Elaborates a subset type (`Reqs/Lang/SubsetTypes`), with the items it declares. -/
 partial def elabSubsetType (isPub : Bool) (name binder : Ident) (base : Array Ident) (clauses : Array (Ident × Expr)) : M Unit := do
@@ -1124,6 +1202,7 @@ partial def elabTrait (isPub : Bool) (name : Ident) (members : Array Item) : M U
     | .mod .. => (.other "modules", false, false, false, none)
     | .use .. | .useGroup .. => (.other "`use`s", false, false, false, none)
     | .trait .. => (.other "traits", false, false, false, none)
+    | .mutualFns .. => (.other "mutual groups", false, false, false, none)
     | .claim .. => (.other "claims", false, false, false, none)
     -- Never a member: a keyword error of a member breaks the trait.
     | .check .. | .lintSetting .. | .broken .. => (.other "commands", false, false, false, none)

@@ -124,6 +124,8 @@ structure FnBlockInfo where
   deriving Inhabited
 
 inductive Item where
+  /-- Simultaneous structural function definitions. -/
+  | mutualFns (members : Array Item) (memberSpans : Array Span) (span : Span)
   | mod (isPub : Bool) (path : Array Ident)
   /-- `use a::b` or `use a::E::*`, with the span of the whole item. -/
   | use (span : Span) (path : Array Ident) (glob : Bool)

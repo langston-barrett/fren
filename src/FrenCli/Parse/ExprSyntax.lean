@@ -85,7 +85,7 @@ def Expr.explicitMatch (span : Span) (values : Array Expr)
 
 /-- Expand the match before its optional `where` definitions are lowered. -/
 partial def Expr.implicitMatchBody (names : Array Ident) : Expr → Option Expr
-  | .matches span #[] arms false => some (.explicitMatch span (names.map fun n => .path span #[n]) arms)
+  | .matches span #[] arms false => some (.explicitMatch span (names.map fun n => .path n.span #[n]) arms)
   | .«let» span defs body true => (body.implicitMatchBody names).map fun b => .«let» span defs b true
   | _ => none
 

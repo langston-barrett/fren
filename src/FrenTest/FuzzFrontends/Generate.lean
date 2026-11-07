@@ -67,11 +67,13 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
       else if m.datatypeElements then FuzzDatatypeElements.spec
       else if m.recursionPositions then FuzzRecursion.gen
+      else if m.mutualGroups then FuzzRecursion.genGroup
       else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; none for `--guards`, `--sites`, `--confirm`, `--inductions`,
-`--induction-forms`, `--keywords` and `--recursion-positions`. The empty
+`--induction-forms`, `--keywords`, `--recursion-positions` and
+`--mutual-groups`. The empty
 prefix of `--scrutinees`, `--fact-scopes`, `--induction-candidates`,
 `--decidable`, `--enumeration-obligations`, `--unfoldings`,
 `--datatype-elements`, `--generic-functions`, `--set-card` and
@@ -82,7 +84,7 @@ prefix, so its additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
   if m.genericFunctions then #[""] else
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
+  if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.confirm || m.inductions || m.inductionForms || m.keywords || m.recursionPositions || m.mutualGroups then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 -- The selected generator and its static-error check use the same priority.

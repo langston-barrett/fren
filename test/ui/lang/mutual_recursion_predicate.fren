@@ -1,0 +1,25 @@
+-- Recursive members remain opaque to named-predicate decomposition.
+-- fren-covers: lang::structural_group, lang::group_scope
+set_option fren.lint.style "allow"
+set_option fren.lint.restriction "allow"
+
+mod mutual_recursion_predicate
+
+pub enum T { End, Next(T) }
+
+mutual {
+    pub fn first?(t: T): Bool := and {
+        descent: match t {
+            T::End => false,
+            T::Next(rest) => second?(rest),
+        },
+        value: true,
+    }
+    pub fn second?(t: T): Bool := match t {
+        T::End => false,
+        T::Next(rest) => first?(rest),
+    }
+}
+
+set_option fren.evidence "enumerated" in
+expect rejected_value: first?(T::Next(T::End))  --~ error: expectation `mutual_recursion_predicate::rejected_value` does not hold

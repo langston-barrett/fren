@@ -392,6 +392,16 @@ parameter's type and its `Inhabited` instance first, and `p` takes every
 type parameter's placeholder and its instance's, so that each instance is
 `p.«#solver»` at its type arguments.
 
+The members of an explicit [structural group](Lang/Recursion.md#structural-groups)
+are generated together as Lean mutual definitions, over the same list of
+placeholders. Their applications within the group refer to those real
+definitions, including forward calls. Each member has its own solver form
+and finite ground equations, as a singleton structural recursion does.
+The temporary signatures used while reading the bodies occur in none of
+the completed definitions or equations.
+Noncomputability follows the group's call graph too, as
+[`lang::group_dependencies`](Lang/Recursion.md#structural-groups) specifies.
+
 ## Computable definitions
 
 Each generated definition that has something to run is compiled, so that

@@ -1089,6 +1089,10 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   it is written (`lang::structural_recursion`). -/
   recApps : Array (Span × Array String × Array String) := #[]
   recUses : Array (Span × Fren.Core.RecUse) := #[]
+  /-- Signatures registered before any body of a surface group is read. -/
+  groupFns : Array (Name × Fren.Core.FnTy) := #[]
+  groupCaller? : Option Nat := none
+  groupUses : Array (Span × Fren.Core.GroupUse) := #[]
   /-- In a defined function's body, the patterns of the `match`es on a
   parameter, or on a binder bound from a payload of one, that are not a Lean
   `match` and have a recursive application under them, each the first

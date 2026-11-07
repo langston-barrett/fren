@@ -14,12 +14,25 @@ mutual
 (`traitMember`). -/
 partial def item (inTrait := false) : P Item := do
   markStart
-  -- This item's first token. An item is inside another only as the item
-  -- that the other's `set_option ... in` ends with; `file` starts the list
-  -- anew for each top-level item.
+  -- This item's first token, including option-wrapped items and group
+  -- members; `file` starts the list anew for each top-level item.
   modify fun s => { s with items := s.items.push s.pos }
   let first := (← get).pos
   let t ← peek
+  if isKw t "mutual" then
+    discard bump
+    openList .members
+    discard (expectKw "{")
+    let mut members := #[]
+    let mut spans := #[]
+    while !isKw (← peek) "}" do
+      unless members.isEmpty do memberEnd
+      let start := (← peek).span
+      members := members.push (← item)
+      spans := spans.push (start.to (← lastSpan))
+    closeList
+    let close ← expectKw "}"
+    return .mutualFns members spans (t.span.to close.span)
   if isKw t "#fren_check" then
     discard bump
     -- A Lean keyword after it starts the next command in Lean

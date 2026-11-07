@@ -16,6 +16,37 @@ uses, and decide by `selfRecursion`, the singleton case of `recursionGroup`.
 
 namespace Fren.Core
 
+/-- Members supported by surface structural groups (`lang::group_member`). -/
+def groupMemberAccepted (defined generic higherOrder contract : Bool) : Bool :=
+  defined && !generic && !higherOrder && !contract
+
+/-- Forward scope is confined to the group's members (`lang::group_scope`). -/
+def groupVisible [BEq α] (members : List α) (caller : Int) (target : α) : Bool :=
+  decide (0 ≤ caller ∧ caller < members.length) && members.contains target
+
+/-- Resolve a group target from the raw member identities. -/
+def groupTarget? [BEq α] (members : List α) (caller : Int) (target : α) : Option Nat :=
+  if groupVisible members caller target then members.idxOf? target else none
+
+/-- The index lookup implements the visibility judgment for every identity
+type with lawful equality, including the front ends' resolved names. -/
+theorem groupTarget?_isSome [BEq α] [LawfulBEq α] (members : List α) (caller : Int) (target : α) :
+    (groupTarget? members caller target).isSome = groupVisible members caller target := by
+  by_cases h : 0 ≤ caller ∧ caller < members.length
+  · simp only [groupTarget?, groupVisible, h]
+    split <;> simp_all
+  · simp [groupTarget?, groupVisible, h]
+
+/-- A surface group member outside the supported signature boundary. -/
+def groupMemberMsg : Msg :=
+  { code? := some "F0451", headline := "a mutual group requires defined, monomorphic first-order functions without contracts" }
+
+/-- No consistent structural descent across the group's calls. -/
+def groupTerminationMsg : Msg :=
+  { code? := some "F0447", headline := "mutual group is not structurally recursive"
+    notes := #["note: choose one parameter per member; every group call must pass a payload of the caller's chosen parameter to the callee's chosen parameter",
+      "note: group members cannot be called within closures or passed as functions"] }
+
 /-- Where a recursive application's argument at one position comes from,
 relative to the function's parameter at that same position. -/
 inductive RecArg where

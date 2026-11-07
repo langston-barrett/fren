@@ -146,6 +146,24 @@ def ExprCtx.recArg (cx : ExprCtx) (a : Expr) (i : Nat) : Fren.Core.RecArg :=
   | some (j, false) => if j == i then .itself else .name
   | none => if (soleName? a).isSome then .name else .expr
 
+/-- Resolve a group member using the same lexical scope as any function. -/
+def groupTarget? (cx : ExprCtx) (segs : Array Ident) : M (Option Nat) := do
+  let s ← get
+  let some caller := s.groupCaller? | return none
+  let .ok (.item { kind := .fnItem, path, .. }) :=
+      s.table.resolvePath s.scope (segNames segs) cx.shadowing | return none
+  return Fren.Core.groupTarget? (s.groupFns.toList.map (·.1)) caller path
+
+/-- Preserve raw cross-call origins for the shared termination decision. -/
+def noteGroupUse (span : Span) (callee : Nat) (form : Fren.Core.RecForm) (args : List Fren.Core.GroupArg) : M Unit := do
+  let s ← get
+  let some caller := s.groupCaller? | return
+  if s.groupUses.any (fun (sp, u) => u.caller == caller && sp == span) then return
+  let uses := s.groupUses.push (span, { caller, callee, form, args })
+  modify fun s => { s with groupUses := uses }
+  if (Fren.Core.recursionGroup (s.groupFns.toList.map fun (_, ft) => ft.params.size) (uses.toList.map (·.2))).isNone then
+    err span Fren.Core.groupTerminationMsg
+
 
 /-- The constant that `segs` names, without recording its use. -/
 def constPath? (cx : ExprCtx) (segs : Array Ident) : M (Option Name) := do

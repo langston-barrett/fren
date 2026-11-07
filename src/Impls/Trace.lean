@@ -69,15 +69,25 @@ tested lang::subset_widening: "test/ui/checks/subset_obligations.fren"
 tested check::subset_obligation: "test/ui/checks/subset_obligations.fren", "test/ui/checks/subset_obligations_elements.fren"
 tested lang::nat_place: "test/ui/lang/nat_static.fren", "test/cli/types/f0338_payload.fren", "test/ui/lang/subset_types_static.fren",
   "test/ui/lang/subset_types_meaning.fren", "test/ui/lang/nat_fields.fren",
-  "test/cli/types/f0338_element.fren", "test/ui/lang/let_types.fren"
+  "test/cli/types/f0338_element.fren", "test/ui/lang/let_types.fren", "test/ui/lang/mutual_recursion.fren"
 tested lang::modifiers: "test/cli/syntax/f0110_pub_param.fren", "test/cli/syntax/f0110_det_param.fren", "test/cli/syntax/f0113_det_assume.fren", "test/cli/syntax/f0113_pub_inst.fren"
 tested lang::function_body: "test/ui/lang/defined_functions_static.fren", "test/cli/types/f0331_recursive.fren"
+tested lang::checked: "test/ui/lang/mutual_recursion.fren"
+tested lang::expected_type: "test/ui/lang/mutual_recursion.fren"
 tested lang::inherited_core: "src/FrenTestFiles/InheritedCore.lean"
 tested lang::structural_recursion: "test/ui/lang/structural_recursion_static.fren", "test/cli/types/f0447_count.fren",
   "test/ui/lang/recursion_group_singleton.fren", "test/ui/lang/recursion_group_singleton_static.fren"
 tested lang::structural_group: "src/FrenTest/MutualRecursion.lean",
-  "test/ui/lang/recursion_group_singleton.fren", "test/ui/lang/recursion_group_singleton_static.fren"
+  "test/ui/lang/recursion_group_singleton.fren", "test/ui/lang/recursion_group_singleton_static.fren",
+  "test/ui/lang/mutual_recursion.fren", "test/ui/lang/mutual_recursion_predicate.fren",
+  "test/ui/lang/mutual_recursion_static.fren"
 tested lang::structural_group_search: "src/FrenTest/MutualRecursion.lean"
+tested lang::group_member: "src/FrenTest/MutualRecursion.lean", "test/cli/types/f0451_mutual_member.fren",
+  "test/ui/lang/mutual_recursion.fren", "test/ui/lang/mutual_recursion_static.fren"
+tested lang::group_scope: "src/FrenTest/MutualRecursion.lean",
+  "test/ui/lang/mutual_recursion.fren", "test/ui/lang/mutual_recursion_predicate.fren",
+  "test/ui/lang/mutual_recursion_static.fren"
+tested lang::group_dependencies: "src/FrenTest/MutualRecursion.lean"
 tested lang::constant: "test/ui/lang/constants_recursive.fren"
 tested lang::recursive_facts: "test/ui/checks/recursion_hoare.fren",
   "test/ui/checks/recursion_reflection.fren", "test/ui/checks/recursion_reflected_contracts.fren",

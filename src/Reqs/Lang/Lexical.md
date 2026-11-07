@@ -214,6 +214,7 @@ pub const RESERVED: Set<String> := {
     "struct",
     "type",
     "fn",
+    "mutual",
     "const",
     "proc",
     "trait",

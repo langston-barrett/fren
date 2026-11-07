@@ -2583,6 +2583,9 @@ structure LState where
   applied itself, in a structural recursion (`Spec.recDefs`). -/
   lowering : Option Name := none
   selfApplied : Bool := false
+  /-- Members registered together, whose calls must stay unevaluated while
+  their bodies are lowered. Evaluation enters the completed body table. -/
+  groupFns : NameSet := {}
   /-- Nodes left for eager expansion in the current source item. Kept
   across temporary changes of the lexical state. -/
   expansionLeft : Nat := Fren.Core.maxExpansionNodes
@@ -3817,7 +3820,7 @@ partial def lowerExpr (cx : Cx) : Expr → L (Ex × VTy)
       if let some (ps, body, r) := item.defn? then
         -- An application of itself, in a structural recursion: applied
         -- when evaluated, not unfolded here.
-        if (← get).lowering == some path then
+        if (← get).lowering == some path || (← get).groupFns.contains path then
           modify fun s => { s with selfApplied := true }
           return (← withPres (.app path args), r)
         -- Structural recursions already have an evaluator body. Keep the
@@ -4457,6 +4460,31 @@ def lowerGlobal (name : Ident) (binders : Array Binder) (body : Expr) : L Unit :
     spec.globals := s.spec.globals.push { shell with constraints := #[{ kind := .expect, name := n, e }] } }
 
 partial def lowerItem : Item → L Unit
+  | .mutualFns members _ _ => do
+    for member in members do
+      let .function isPub name .. := member | throw "invalid mutual member"
+      let path := (← get).module ++ itemName name
+      modify fun s => { s with table := s.table.addItem { kind := .fnItem, path, isPub, owner := s.module } }
+    for member in members do
+      let .function _ name _ params result body _ _ block := member | throw "invalid mutual member"
+      let (params, _) := lambdaMatchFunction params body
+      let path := (← get).module ++ itemName name
+      let saved ← get
+      for m in block.uses do
+        match m with
+        | .use _ segs glob => declareUseIn segs glob (some path)
+        | .useGroup _ pre paths => for p in paths do declareUseIn (pre ++ p) false (some path)
+        | _ => pure ()
+      let r ← varTy result
+      let ps ← params.mapM fun (p, ty) => return ((← get).module ++ itemName name ++ declName p[0]!, ← varTy ty)
+      set saved
+      modify fun s => { s with
+        spec.defs := s.spec.defs.insert path (ps.map (·.1), .lit (.bool true), r)
+        groupFns := s.groupFns.insert path }
+    for member in members do
+      modify fun s => { s with scope := s.module }
+      lowerItem member
+    modify fun s => { s with groupFns := {}, scope := s.module }
   | .mod isPub segs => do
     let (path, new) ← liftE ((← get).table.declareModule (segNames segs) isPub)
     modify fun s => { s with table := new.foldl (·.addItem ·) s.table, module := path, scope := path }
@@ -4624,7 +4652,7 @@ partial def lowerItem : Item → L Unit
                                spec.defs := s.spec.defs.insert path (all.map (path ++ ·), .lit (.bool true), r)
                                lowering := some path, selfApplied := false }
       let (b, _) ← lowerExpr { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } body
-      let recursive := (← get).selfApplied
+      let recursive := (← get).selfApplied || (← get).groupFns.contains path
       modify fun s => { s with lowering := none, selfApplied := false }
       -- Binders named after the function, so that substituting arguments
       -- never captures a binder of theirs: theirs are a procedure's or another
@@ -4632,7 +4660,7 @@ partial def lowerItem : Item → L Unit
       let b ← renameForRead b (path ++ ·)
       modify fun s => { s with spec.defs := s.spec.defs.insert path (all.map (path ++ ·), b, r)
                                spec.recDefs := if recursive then s.spec.recDefs.insert path (all.map (path ++ ·), b) else s.spec.recDefs }
-      if body.conjunctionRoot || (observedMembers body).isSome || (← lowerPredicateClauses { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } body).isSome then
+      if !(← get).groupFns.contains path && (body.conjunctionRoot || (observedMembers body).isSome || (← lowerPredicateClauses { binders := ps.toList.reverse.map fun (n, t) => (n, t, n), fnParams } body).isSome) then
         let mut members := #[]
         let mut nestedOccurrences : Std.HashMap Name Nat := {}
         let mut nestedNumber := 0

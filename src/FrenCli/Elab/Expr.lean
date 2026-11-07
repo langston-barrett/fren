@@ -1010,6 +1010,22 @@ partial def elabAppExpr (cx : ExprCtx) (expected? : Option Ty) (span : Span) (se
   let fnSpan := segs[0]!.span.to segs.back!.span
   if segs.size == 1 && (cx.vars.any (·.name == identName segs[0]!.name) || (cx.binder? (identName segs[0]!.name)).isSome) then
     err fnSpan (Fren.Core.varNotAFunctionMsg (identName segs[0]!.name))
+  if let some callee ← groupTarget? cx segs then
+    discard (resolveWritten segs cx.shadowing cx.noteIndexes)
+    let (path, ft) := (← get).groupFns[callee]!
+    unless args.size == ft.params.size do err span (Fren.Core.arityMsg path ft.params.size args.size)
+    noteResolved "name" fnSpan fun _ => resolvedPath path
+    noteGroupUse fnSpan callee (if cx.inClosure then .inClosure else .applied)
+      (args.toList.map fun a => match cx.recOrigin? a with
+        | some (i, true) => .payload i | _ => .other)
+    let mut smts := #[]
+    for a in args, t in ft.params, k in [0:args.size] do
+      let (x, ta) ← elabExpr { cx with expected? := some t } a
+      liftMsg a.span (Fren.Core.checkType t ta (some s!"note: argument {k + 1} of `{showPath path}` has type `{t.show}`"))
+      let pt := (((← get).funPTys.find? path).map (·.1[k]?.getD default)).getD default
+      noteObligation cx .argument a.span pt x
+      smts := smts.push x
+    return (s!"({itemSym path} {" ".intercalate smts.toList})", ft.result)
   if segs.size == 1 && cx.selfFn == some (Name.mkSimple segs[0]!.name) then
     let f := (← get).module ++ Name.mkSimple segs[0]!.name
     noteResolved "name" fnSpan fun _ => resolvedPath f
@@ -1267,6 +1283,7 @@ partial def elabFnArg (cx : ExprCtx) (f : String) (ft : Fren.Core.FnTy) (ps : Ar
     elabClosure cx named body r? false
   | .path span segs =>
     -- The function itself, in its own body, not applied.
+    if let some callee ← groupTarget? cx segs then noteGroupUse span callee .passed []
     if let some (ps, _, _) := cx.selfRec? then
       if segs.size == 1 && cx.selfFn == some (Name.mkSimple segs[0]!.name) then
         noteRecUse span ((← get).module ++ Name.mkSimple segs[0]!.name) ps { form := .passed }
@@ -1585,7 +1602,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   let baseSigs ← patSigs
   let (sigs, pty, pats) := if many?.isSome then Fren.Core.matchVector baseSigs (values.map (·.2.patTy)) rows
     else (baseSigs, ts.patTy, rows.map (·[0]!))
-  let usesBefore := (← get).recUses.size
+  let usesBefore := (← get).recUses.size + (← get).groupUses.size
   let guarded := arms.map (·.2.1.isSome)
   -- In a table over a scrutinee, only the last arm may be `_` without a
   -- guard, the otherwise (`Reqs/Lang/Expressions#tables-over-a-scrutinee`).
@@ -1698,7 +1715,7 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
     let nonLean? := if many?.isSome then (rows.zipIdx.find? fun (ps, j) => ps.any (!·.leanPattern) || guarded[j]!).map (·.2)
       else Fren.Core.firstNonLeanPattern? pats guarded
     if let some k := nonLean? then
-      if (← get).recUses.size > usesBefore then
+      if (← get).recUses.size + (← get).groupUses.size > usesBefore then
         modify fun s => { s with recMatches := s.recMatches.push arms[k]!.1.span }
   -- The first arm that is taken. Where the arms without guards are
   -- exhaustive, the last arm has none, and takes whatever is left;

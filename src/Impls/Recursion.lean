@@ -1,11 +1,37 @@
 -- keep-sorted start
-import FrenCore.Recursion
+import FrenCore.RecursionGroup
+import Impls.PassEvidence
 import Reqs.Lang.Recursion
 -- keep-sorted end
 
 open Fren.Lang
 
 namespace Fren.Impls
+
+private theorem lawfulBEq_eq (a b : BEq α) [@LawfulBEq α a] [@LawfulBEq α b] : a = b := by
+  cases a with
+  | mk a =>
+    cases b with
+    | mk b =>
+      congr 1
+      funext x y
+      apply Bool.eq_iff_iff.mpr
+      exact (@beq_iff_eq α ⟨a⟩ _ x y).trans (@beq_iff_eq α ⟨b⟩ _ x y).symm
+
+private theorem matchingClosure_beq (a b : BEq α) [ha : @LawfulBEq α a] [hb : @LawfulBEq α b]
+    (marked : List α) (calls : List (α × α)) :
+    @Fren.Core.Matching.closure α a ha marked calls (fun _ => true) =
+      @Fren.Core.Matching.closure α b hb marked calls (fun _ => true) := by
+  cases lawfulBEq_eq a b
+  rfl
+
+impl group_member: lang::group_member for (defined generic higherOrder contract : Bool) {
+  defined? := defined, generic? := generic, higher_order? := higherOrder, contract? := contract,
+  accepted? := Fren.Core.groupMemberAccepted defined generic higherOrder contract,
+} by
+  intro defined generic higherOrder contract _
+  cases defined <;> cases generic <;> cases higherOrder <;> cases contract <;>
+    simp [fren_spec, Fren.Core.groupMemberAccepted]
 
 def groupParameterOf (m : Fren.Core.GroupParameter) : lang.GroupParameter :=
   { count := m.count, decreasing := m.decreasing }
@@ -37,6 +63,49 @@ private theorem forall_seq_nth {α : Type} [Inhabited α] (xs : List α) (P : α
   · intro h k hk₀ hk₁
     rw [Fren.Seq.nth_of_lt _ _ hk₀ (by simpa using hk₁)]
     exact h _ (List.getElem_mem _)
+
+impl group_scope: lang::group_scope for (members : List String) (caller : Int) (target : String) {
+  members := Fren.Seq.ofList members, caller := caller, target := target,
+  visible? := (Fren.Core.groupTarget? members caller target).isSome,
+} by
+  intro members caller target _
+  have exists_nth : (∃ k : Int, (0 ≤ k ∧ k < (members.length : Int)) ∧
+      (Fren.Seq.ofList members).nth k = target) ↔ target ∈ members := by
+    constructor
+    · rintro ⟨k, hk, he⟩
+      rw [Fren.Seq.nth_of_lt _ _ hk.1 (by simpa using hk.2)] at he
+      exact he ▸ List.getElem_mem _
+    · intro hm
+      obtain ⟨i, hi, he⟩ := List.getElem_of_mem hm
+      exact ⟨i, ⟨by omega, by simpa using hi⟩, by simpa [Fren.Seq.nth_of_lt, hi] using he⟩
+  simp [fren_spec, Fren.Core.groupTarget?_isSome, Fren.Core.groupVisible, exists_nth]
+
+impl group_dependencies: lang::group_dependencies for (flags : List Bool) (uses : List Fren.Core.GroupUse) {
+  marked := Fren.FinSet.ofList (Fren.Core.groupMarked flags),
+  calls := Fren.FinSet.ofList (uses.map fun u => (u.caller, u.callee)),
+  affected := Fren.FinSet.ofList (Fren.Core.groupInherited flags uses),
+} by
+  intro flags uses _
+  let marked := Fren.Core.groupMarked flags
+  let calls := uses.map fun u => (u.caller, u.callee)
+  have h := Fren.Impls.PassEvidence.finite_application_closure marked (calls.map Prod.swap) (by trivial)
+  simp only [fren_spec] at h ⊢
+  have inverse : Fren.FinSet.ofList (calls.map Prod.swap) = (Fren.FinSet.ofList calls).inverse := by
+    apply Fren.FinSet.ext
+    intro p
+    rcases p with ⟨a, b⟩
+    simp only [Fren.FinSet.mem_ofList, Fren.FinSet.mem_inverse, List.mem_map]
+    constructor
+    · rintro ⟨p, hp, he⟩
+      have : p = (b, a) := congrArg Prod.swap he
+      exact this ▸ hp
+    · intro hp
+      exact ⟨(b, a), hp, rfl⟩
+  have result := h.1.2
+  rw [inverse] at result
+  -- The spec imports and the runtime module choose different lawful instances.
+  rw [matchingClosure_beq Auto.instBEqInt_auto (instBEqOfDecidableEq : BEq Int)] at result
+  simpa [Fren.Core.groupInherited, marked, calls, List.map_map, Function.comp_def] using result
 
 private theorem group_call_spec (ms : List Fren.Core.GroupParameter) (u : Fren.Core.GroupUse) :
     lang.group_call_decreases? (Fren.Seq.ofList (ms.map groupParameterOf)) (groupUseOf u) =

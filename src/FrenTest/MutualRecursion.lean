@@ -1,12 +1,32 @@
 import Impls.Recursion
 
-/-! The termination model for #604, before surface groups are enabled.
+/-! The shared termination model and generated mutual definitions for #604.
 fren-covers: lang::structural_group, lang::structural_group_search
+fren-covers: lang::group_member, lang::group_scope
+fren-covers: lang::group_dependencies
 -/
 
 namespace FrenTest.MutualRecursion
 
 open Fren.Core
+
+#guard groupMemberAccepted true false false false
+#guard !groupMemberAccepted false false false false
+#guard !groupMemberAccepted true true false false
+#guard !groupMemberAccepted true false true false
+#guard !groupMemberAccepted true false false true
+#guard groupVisible ["first", "later"] 0 "later"
+#guard !groupVisible ["first", "later"] 2 "later"
+#guard !groupVisible ["first", "later"] (-1) "later"
+#guard !groupVisible ["first", "later"] 0 "outside"
+#guard groupTarget? ["first", "later"] 0 "later" == some 1
+#guard groupInherited [] [] == []
+#guard Id.run do
+  let inherited := groupInherited [false, false, true, false]
+    [{ caller := 0, callee := 1, form := .applied, args := [] },
+     { caller := 1, callee := 2, form := .applied, args := [] },
+     { caller := 2, callee := 0, form := .applied, args := [] }]
+  return [0, 1, 2].all inherited.contains && !inherited.contains 3
 
 private def chosen (ns : List Int) (us : List GroupUse) : Option (List Int) :=
   (recursionGroup ns us).map (List.map (·.decreasing))
@@ -64,3 +84,57 @@ private def cross : List GroupUse :=
    { form := .passed }] == .notStructural 1 0
 
 end FrenTest.MutualRecursion
+
+-- Generated declarations reduce through both members in Lean itself.
+namespace FrenTest.MutualDefinitions
+open Fren.Lang
+
+mod mutual_definitions
+
+pub enum MutualTree { End, Next(MutualTree) }
+mutual {
+  pub fn mutual_first(t: MutualTree): Int := match t {
+    MutualTree::End => 0,
+    MutualTree::Next(rest) => 1 + mutual_later(rest),
+  }
+  pub fn mutual_later(t: MutualTree): Int := match t {
+    MutualTree::End => 0,
+    MutualTree::Next(rest) => 1 + mutual_first(rest),
+  }
+}
+
+example : mutual_definitions.mutual_first
+    (mutual_definitions.MutualTree.Next
+      (mutual_definitions.MutualTree.Next mutual_definitions.MutualTree.End)) = 2 := rfl
+
+set_option fren.lint.undecidable "allow" in
+pub fn outside_helper(x: Int): Int :=
+  if (forall (i: Int), when 0 <= i < x, i >= 0) then 0 else 1
+
+set_option fren.lint.unused_variables "allow" in
+mutual {
+  pub fn inherited_first(t: MutualTree, x: Int): Int := match t {
+    MutualTree::End => 0,
+    MutualTree::Next(rest) => inherited_later(rest, x),
+  }
+  pub fn inherited_later(t: MutualTree, x: Int): Int := match t {
+    MutualTree::End => outside_helper(x),
+    MutualTree::Next(rest) => inherited_first(rest, x),
+  }
+  pub fn isolated(t: MutualTree): Int := 0
+}
+
+run_cmd do
+  let state ← Fren.getState
+  unless state.outsideCoreItems.contains `mutual_definitions.inherited_first &&
+      state.outsideCoreItems.contains `mutual_definitions.inherited_later &&
+      !state.outsideCoreItems.contains `mutual_definitions.isolated do
+    Lean.throwError "group core classification did not follow the call graph"
+  let env ← Lean.getEnv
+  for (name, expected) in [(`inherited_first, true), (`inherited_later, true), (`isolated, false)] do
+    let some info := state.defined.get? (`mutual_definitions ++ name)
+      | Lean.throwError "missing group definition {name}"
+    unless Lean.isNoncomputable env info.decl == expected do
+      Lean.throwError "group computability did not follow the call graph at {name}"
+
+end FrenTest.MutualDefinitions

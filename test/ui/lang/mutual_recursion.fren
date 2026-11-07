@@ -1,0 +1,182 @@
+-- fren-covers: lang::group_scope, lang::group_member, lang::structural_group
+-- fren-covers: lang::checked, lang::expected_type, lang::nat_place
+set_option fren.lint.style "allow"
+set_option fren.lint.restriction "allow"
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.dead_code "allow"
+
+mod mutual_recursion
+
+pub enum Token { TTrue, LParen }
+pub enum Tokens { Nil, Cons(Token, Tokens) }
+pub enum Term { True }
+pub enum Parsed { Ok(Term, Tokens), Fail }
+
+-- The precedence-level example of #604: parse_term is visible before its
+-- definition, and each call consumes a payload of the token sequence.
+mutual {
+    pub fn parse_atom(ts: Tokens): Parsed := match ts {
+        Tokens::Cons(Token::TTrue, rest) => Parsed::Ok(Term::True, rest),
+        Tokens::Cons(Token::LParen, rest) => parse_term(rest),
+        _ => Parsed::Fail,
+    }
+
+    pub fn parse_term(ts: Tokens): Parsed := match ts {
+        Tokens::Cons(_, rest) => parse_atom(rest),
+        Tokens::Nil => Parsed::Fail,
+    }
+}
+
+-- Three members choose different positions, including a function block
+-- and a nested payload pattern. Companion arguments need not decrease.
+mutual {
+    pub fn first(a: Tokens, b: Int): Int := match a {
+        Tokens::Nil => b,
+        Tokens::Cons(_, rest) => middle(b, rest),
+    }
+
+    pub fn middle(a: Int, b: Tokens): (r: Int) {
+        out r := match b {
+            Tokens::Nil => a,
+            Tokens::Cons(_, Tokens::Cons(_, rest)) => self::last(a, false, rest),
+            Tokens::Cons(_, rest) => last(a, false, rest),
+        }
+    }
+
+    pub fn last(a: Int, b?, c: Tokens): Int := match c {
+        Tokens::Nil => a,
+        Tokens::Cons(_, rest) => first(rest, a),
+    }
+}
+
+pub enum Chain<A> { Nil, Cons(A, Chain<A>) }
+
+pub fn apply_parser(g: fn(Tokens) -> Parsed, ts: Tokens): Parsed := g(ts)
+
+mutual {
+    pub fn even?(t: Chain<Int>): Bool := match t {
+        Chain::Nil => true,
+        Chain::Cons(_, rest) => odd?(rest),
+    }
+    pub fn odd?(t: Chain<Int>): Bool := match t {
+        Chain::Nil => false,
+        Chain::Cons(_, rest) => even?(rest),
+    }
+    pub fn always?(ignored?): Bool := true
+}
+
+-- Anonymous parameter lists retain their positions in the group model.
+mutual {
+    pub fn implicit_first(Tokens): Int := match {
+        Tokens::Nil => 0,
+        Tokens::Cons(_, rest) => 1 + implicit_later(rest),
+    }
+    pub fn implicit_later(Tokens): Int := match {
+        Tokens::Nil => 0,
+        Tokens::Cons(_, rest) => 1 + implicit_first(rest),
+    }
+}
+
+-- Group members may have different result types and compare a cross-call.
+mutual {
+    pub fn rank(t: Tokens): Int := match t {
+        Tokens::Nil => 0,
+        Tokens::Cons(_, rest) => if accepts?(rest) then 1 else 2,
+    }
+    pub fn accepts?(t: Tokens): Bool := match t {
+        Tokens::Nil => true,
+        Tokens::Cons(_, rest) => rank(rest) = 0,
+    }
+}
+
+set_option fren.evidence "enumerated" in
+expect parser_values() {
+    expect direct: parse_atom(Tokens::Cons(Token::TTrue, Tokens::Nil)) = Parsed::Ok(Term::True, Tokens::Nil)
+    expect forward: parse_atom(
+        Tokens::Cons(
+            Token::LParen,
+            Tokens::Cons(Token::LParen, Tokens::Cons(Token::TTrue, Tokens::Nil))
+        )
+    ) = Parsed::Ok(Term::True, Tokens::Nil)
+    expect three: first(
+        Tokens::Cons(
+            Token::LParen,
+            Tokens::Cons(Token::LParen, Tokens::Cons(Token::LParen, Tokens::Nil))
+        ),
+        7
+    ) = 7
+    expect concrete_generic: even?(Chain::Cons(1, Chain::Cons(2, Chain::Nil)))
+    expect constant_member: always?(false)
+    expect callback: apply_parser(parse_atom, Tokens::Cons(Token::TTrue, Tokens::Nil)) = Parsed::Ok(Term::True, Tokens::Nil)
+    expect mixed_results: rank(Tokens::Cons(Token::TTrue, Tokens::Nil)) = 1
+    expect implicit_parameters: implicit_first(
+        Tokens::Cons(Token::TTrue, Tokens::Cons(Token::TTrue, Tokens::Nil))
+    ) = 2
+}
+
+mod mutual_recursion::local_types
+pub enum LocalTree { End, Next(LocalTree) }
+
+mod mutual_recursion
+
+-- A block's imports cover its signature and may name later members.
+-- They do not leak to other members.
+mutual {
+    pub fn imported_first(t: LocalTree): (r: Int) {
+        use self::imported_later
+        use self::local_types::LocalTree
+        out r := match t {
+            LocalTree::End => 0,
+            LocalTree::Next(rest) => 1 + imported_later(rest),
+        }
+    }
+    pub fn imported_later(t: local_types::LocalTree): Int := match t {
+        local_types::LocalTree::End => 0,
+        local_types::LocalTree::Next(rest) => 1 + imported_first(rest),
+    }
+}
+
+set_option fren.evidence "enumerated" in
+expect imported_signatures() {
+    expect value: imported_first(local_types::LocalTree::Next(local_types::LocalTree::End)) = 1
+}
+
+-- Group bodies and arguments have the same declared type context as
+-- ordinary functions, including empty collection literals.
+mutual {
+    pub fn empty_first(t: Tokens): Rel<Int, Int> := match t {
+        Tokens::Nil => {},
+        Tokens::Cons(_, rest) => empty_later(rest, [], {}, Option::None),
+    }
+    pub fn empty_later(
+        t: Tokens,
+        values: Seq<Int>,
+        bag: Set<Int>,
+        opt: Option<Int>
+    ): Rel<Int, Int> := match t {
+        Tokens::Nil => {},
+        Tokens::Cons(_, rest) => empty_first(rest),
+    }
+    pub fn empty_sequence(ignored?): Seq<Int> := []
+}
+
+set_option fren.evidence "enumerated" in
+expect empty_values() {
+    expect relation: empty_first(Tokens::Cons(Token::TTrue, Tokens::Nil)) = {}
+    expect sequence: empty_sequence(false) = []
+}
+
+-- Literal arguments inherit a later member's Nat parameter type.
+mutual {
+    pub fn nat_first(t: Tokens, n: Nat): Nat := match t {
+        Tokens::Nil => n,
+        Tokens::Cons(_, rest) => nat_later(0, rest),
+    }
+    pub fn nat_later(n: Nat, t: Tokens): Nat := match t {
+        Tokens::Nil => n,
+        Tokens::Cons(_, rest) => nat_first(rest, 0),
+    }
+}
+
+set_option fren.evidence "enumerated" in
+expect nat_arguments: nat_first(Tokens::Cons(Token::TTrue, Tokens::Nil), 4) = 0

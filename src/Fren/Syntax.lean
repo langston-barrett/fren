@@ -553,6 +553,9 @@ scoped syntax (name := fnBlockCmd) ("pub ")? "fn " frenIdent (noWs fren_type_par
   noWs "(" sepBy1(fren_param, ", ") ")" " : " "(" sepBy1(fren_result, ", ", ", ", allowTrailingSep) ")"
   " { " fren_member* " }" : command
 
+/-- A simultaneous group of structural function definitions. -/
+scoped syntax (name := mutualCmd) "mutual " "{" command* "}" : command
+
 /-- `const N: T := e`. -/
 scoped syntax (name := constCmd) ("pub ")? "const " frenIdent " : " fren_type " := " fren_expr (fren_where)? : command
 

@@ -1,0 +1,10 @@
+error[F0451]: a mutual group requires defined, monomorphic first-order functions without contracts
+ --> test/cli/types/f0451_mutual_member.fren:3:13
+  |
+3 | mutual { fn unknown(Int): Int }
+  |             ^^^^^^^
+
+error: could not check due to previous errors
+
+For more information about this error, try `fren --explain F0451`.
+exit=2

@@ -1104,6 +1104,11 @@ structure LocalState where
   it is written (`lang::structural_recursion`). -/
   recApps : Array (Syntax × Array Expr × Array Expr) := #[]
   recUses : Array (Lean.Syntax × Core.RecUse) := #[]
+  /-- The surface group's signatures, current caller and uses. Temporary
+  constants give every body access to every signature before definitions. -/
+  groupFns : Array (Name × Core.FnTy × Name) := #[]
+  groupCaller? : Option Nat := none
+  groupUses : Array (Syntax × Core.GroupUse) := #[]
   /-- In a defined function's body, the patterns of the `match`es on a
   parameter, or on a binder bound from a payload of one, that are not a Lean
   `match` and have a recursive application under them, each the first

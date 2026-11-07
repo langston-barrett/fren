@@ -1,0 +1,3 @@
+-- Mutual groups require defined, monomorphic first-order members (F0451).
+-- fren-covers: lang::group_member
+mutual { fn unknown(Int): Int }

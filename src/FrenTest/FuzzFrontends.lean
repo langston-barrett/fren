@@ -87,6 +87,9 @@ stream so that every older mode's seeds are unchanged, then appends
 implicit output invariants to check the rule for generated queries
 (`Wide.outputInvariantCore`), and opt-outs inherited through helpers and
 contracts (`Wide.inheritedCore`).
+`--mutual-groups` generates structural groups of two or three functions,
+with forward calls, mixed types and independent decreasing positions,
+plus isolated non-decreasing, closure and passed-function uses.
 -/
 
 /-!

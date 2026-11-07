@@ -325,9 +325,6 @@ bypassed: Fren.Impls.GroundMatching.ground_variables_step mentions? Fren.Core.Gr
 bypassed: Fren.Impls.Matching.matching_normalization left Fren.Core.Matching.normalize
 bypassed: Fren.Impls.Matching.matching_normalization right Fren.Core.Matching.normalize
 bypassed: Fren.Impls.Matching.matching_normalization same? Fren.Core.Matching.same
-bypassed: Fren.Impls.PassEvidence.finite_application_closure brought Fren.Core.Matching.closure
-bypassed: Fren.Impls.PassEvidence.finite_application_closure ended? Fren.Core.Matching.closure
-bypassed: Fren.Impls.PassEvidence.finite_application_closure rounds Fren.Core.Matching.closure
 bypassed: Fren.Impls.SubsetTypes.pattern_member member? Fren.Core.intervalsHold
 bypassed: Fren.Impls.SubsetTypes.pattern_member witness Fren.Core.intervalIndex?
 bypassed: Fren.Impls.Theories.theory_ground_term ground? Fren.Core.TheoryTerm.ground

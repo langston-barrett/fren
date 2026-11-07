@@ -111,7 +111,9 @@ the name, by where they are declared. From the innermost, at depth 0, out:
    `declared` of them are declared before the name: those before the item
    it is written in, as [`lang::declared_before`](Items.md#items) orders
    them, and that item itself where it may contain itself, as a recursive
-   enumeration does. So a later item is not in scope, and a declaration
+   enumeration does. An explicit [structural group](Recursion.md#structural-groups)
+   registers every member before any body, so its members see one another.
+   Otherwise a later item is not in scope, and a declaration
    named like one hides nothing. A module's scope does not include its
    parent's.
 5. The [prelude's](Prelude.md) items and variants, `Option`, `Result`,

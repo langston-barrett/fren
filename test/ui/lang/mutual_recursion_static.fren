@@ -1,0 +1,104 @@
+-- fren-covers: lang::group_member, lang::group_scope, lang::structural_group
+set_option fren.lint.style "allow"
+set_option fren.lint.restriction "allow"
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.dead_code "allow"
+
+mod mutual_recursion_static
+
+pub enum T { End, Next(T) }
+
+mutual {
+    const VALUE: Int := 0  --~ error: a mutual group requires defined, monomorphic first-order functions without contracts
+}
+
+mutual {
+    fn unchanged(t: T): Int := later(t)  --~ error: mutual group is not structurally recursive
+    fn later(t: T): Int := match t {
+        T::End => 0,
+        T::Next(rest) => unchanged(rest),
+    }
+}
+
+mutual {
+    fn unknown(T): Int  --~ error: a mutual group requires defined, monomorphic first-order functions without contracts
+}
+
+mutual {
+    fn unnamed(T): Int := 0  --~ error: the parameters of defined function `mutual_recursion_static::unnamed` must be named
+}
+
+mutual {
+    fn generic<A>(a: A): A := a  --~ error: a mutual group requires defined, monomorphic first-order functions without contracts
+}
+
+mutual {
+    fn contract(t: T): (r: Int) {  --~ error: a mutual group requires defined, monomorphic first-order functions without contracts
+        out r := 0
+        ensure zero: r = 0
+    }
+}
+
+-- A group does not grant forward scope outside its block.
+mutual {
+    fn isolated(t: T): Int := outside(t)  --~ error: cannot find `outside` in this scope
+}
+
+fn outside(t: T): Int := 0
+
+fn apply(g: fn(T) -> Int, t: T): Int := g(t)
+
+mutual {
+    fn in_closure(t: T): Int := match t {
+        T::End => 0,
+        T::Next(rest) => apply(|child| other(child), rest),  --~ error: mutual group is not structurally recursive
+    }
+    fn other(t: T): Int := match t {
+        T::End => 0,
+        T::Next(rest) => in_closure(rest),
+    }
+}
+
+mutual {
+    fn passed(t: T): Int := match t {
+        T::End => 0,
+        T::Next(rest) => apply(other_passed, rest),  --~ error: mutual group is not structurally recursive
+    }
+    fn other_passed(t: T): Int := match t {
+        T::End => 0,
+        T::Next(rest) => passed(rest),
+    }
+}
+
+mutual {
+    fn higher(g: fn(T) -> Int, t: T): Int := g(t)  --~ error: a mutual group requires defined, monomorphic first-order functions without contracts
+}
+
+mutual {
+    fn conflicting(a: T, b: T): Int := match a {
+        T::End => 0,
+        T::Next(rest) => one(rest),
+    }
+    fn one(a: T): Int := match a {
+        T::End => 0,
+        T::Next(rest) => conflicting(a, rest),  --~ error: mutual group is not structurally recursive
+    }
+}
+
+-- Failed groups publish no forward declarations.
+fn after_failure(t: T): Int := other(t)  --~ error: cannot find `other` in this scope
+
+-- A rejected group has no published private members to lint.
+set_option fren.lint.dead_code "warn" in
+mutual {
+    fn unpublished(t: T): Int := 0
+    fn rejected(t: T): Int := rejected(t)  --~ error: mutual group is not structurally recursive
+}
+
+-- A member's ordinary body errors belong to that member's source.
+mutual {
+    fn bad_collection(T, Seq<Int>): Int := match {  --~ error: cannot match on `Seq<Int>`
+        T::End, _ => 0,
+        T::Next(_), _ => 1,
+    }
+}

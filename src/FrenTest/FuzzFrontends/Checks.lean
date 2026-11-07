@@ -167,8 +167,9 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
       for d in ran.cli do
         if d.severity == "error" && d.code?.isNone then
           failures := failures.push s!"seed {s}{flags mode}: {d.text}\n  reproduce it with {again}"
-    if ({ mode with avoidKnown := false } : Mode) == { recursionPositions := true } then
-      let rejects := (Id.run (FuzzRecursion.genCase.run' (rngOf s))).rejects
+    if ({ mode with avoidKnown := false } : Mode) == { recursionPositions := true } ||
+        ({ mode with avoidKnown := false } : Mode) == { mutualGroups := true } then
+      let rejects := (Id.run ((if mode.mutualGroups then FuzzRecursion.genGroupCase else FuzzRecursion.genCase).run' (rngOf s))).rejects
       let errors := ran.errors.toList.eraseDups
       if (rejects && errors != ["F0447"]) || (!rejects && errors.any (· != "F0603")) then
         let expected := if rejects then "a structural-recursion error (F0447)" else "only failed comparisons (F0603), if any"

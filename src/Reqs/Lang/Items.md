@@ -5,13 +5,16 @@ items can be mixed with Lean code.
 
 ```
 item := module | use | enumeration | record | abstract-type | type-alias | function | constant
-      | procedure | trait | expectation | check | claim | lint-setting | lean-item
+      | procedure | trait | mutual-group | expectation | check | claim | lint-setting | lean-item
+mutual-group := "mutual" "{" function* "}"
 ```
 
 Items are processed in order: an item must be declared before it is used,
-including by a `use` declaration. Within a module, the names of items and
-of `use`-imported names must be unique. `lang::declared_before` states the
-order, over the items of a file and its imports, in order, and the
+including by a `use` declaration. A [structural group](Recursion.md#structural-groups)
+registers all its members' signatures before any of their bodies. Within a
+module, the names of items and of `use`-imported names must be unique.
+`lang::declared_before` states the order, over the items of a file and its
+imports, in order, and the
 positions of the item that a path names and of the item it is written in:
 
 ```fren
@@ -597,9 +600,8 @@ of the function's module, written with `!`. The body mentions no
 procedure's variables: only the parameters, binders of its own [`match`
 arms](Expressions.md#matches), names of its own [`let`s and `where`
 clauses](Let.md), constants, variants, and defined functions
-declared before the function.
-So a function is not in scope in the bodies of those declared before it,
-and defined functions are never recursive through each other. A function's
+declared before the function, or in its explicit
+[structural group](Recursion.md#structural-groups). A function's
 own name in its body is an application of itself, which must be a
 [structural recursion](Recursion.md). Nor
 does the body apply an uninterpreted function, so a defined function's
