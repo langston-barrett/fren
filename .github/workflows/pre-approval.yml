@@ -131,6 +131,13 @@ jobs:
         fetch-depth: 2
     - id: base
       run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+    # Registered native diagnostic regressions require GDB, including its
+    # Python support. Provision it only where the full test driver runs.
+    - name: Install the native test debugger
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gdb
+        gdb -q -nx -batch -ex 'python import gdb'
     - uses: ./.github/actions/lake
       with:
         sha: ${{ steps.base.outputs.sha }}
@@ -179,6 +186,8 @@ jobs:
           query-cache-${{ runner.os }}-${{ runner.arch }}-
     - run: lake test -- --skip-own-mutants --timings --shard "$SHARD/4"
       env:
+        FREN_DIAG_ENUMERATION: "1"
+        FREN_DIAG_OWN_SPEC_INITIAL: "1"
         SHARD: ${{ matrix.shard }}
         FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
   # The book, with the page of the rules that shard 0's test driver writes

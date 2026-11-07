@@ -114,7 +114,7 @@ def updateTerm (toTerm : ExprCtx → Syntax → TermElabM Term) (cx : ExprCtx) (
   let cargs := match ← coreTy? ty with
     | some (.record _ as) => as.toArray
     | _ => #[]
-  let args ← (info.fieldsAt targs).zipIdx.mapM fun ((f, ty), k) => do
+  let args ← (← info.fieldsAt targs).zipIdx.mapM fun ((f, ty), k) => do
     let some b := given.find? (·[0].getId == f) | `($(mkCIdentFrom e[1] (info.decl ++ f)) $r)
     let v := if b[1].isNone then b[0] else b[1][1]
     let x? ← coreTy? ty

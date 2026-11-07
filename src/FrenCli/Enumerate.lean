@@ -162,7 +162,7 @@ partial def evalOf (sp : Spec) (ty : VTy) (v : EVal) : Val :=
       | _ => .bool false)
   | .newtype _ t, .ctor _ [v] => evalOf sp t v
   | .data p args, .ctor idx xs =>
-    let fields := ((sp.data.find? p).bind (·.ctors[idx]?)).map (·.fields.map fun (_, t) => t.subst args)
+    let fields := ((sp.data.find? p).bind (·.ctors[idx]?)).map (·.fields.map fun (_, t) => t.atTypeInstance sp args)
     .ctor p idx ((xs.toArray.zip (fields.getD #[])).map fun (v, t) => evalOf sp t v)
   | _, v => match v.toPVal? with
     | some pv => sp.ofPVal ty pv

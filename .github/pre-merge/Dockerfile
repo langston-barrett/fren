@@ -18,7 +18,8 @@ RUN if [ "$LLVM_VERSION" != none ]; then \
       printf 'deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-%s main\n' "$LLVM_VERSION" \
         > /etc/apt/sources.list.d/llvm.list && \
       apt-get update && apt-get install --yes --no-install-recommends \
-        "libclang-rt-$LLVM_VERSION-dev" "llvm-$LLVM_VERSION" && \
+        "libclang-rt-$LLVM_VERSION-dev" "llvm-$LLVM_VERSION" gdb && \
+      gdb -q -nx -batch -ex 'python import gdb' && \
       rm -rf /var/lib/apt/lists/* /tmp/llvm.asc; \
     fi
 USER nobody

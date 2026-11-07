@@ -116,6 +116,147 @@ pub mod testing
 - **Fren's own requirements** (`lake test`, `ownSpec`): checked by the
   `fren` command; `lake build` only elaborates them, and Lean checks them
   on `main` (see [Own requirements](#own-requirements)).
+  The parent retains a separate progress journal when this job crashes:
+  its last phase and, during the initial check, the files and components
+  with an entry but no completion record. Each event is flushed outside
+  the check's captured streams, so a native signal cannot lose it with
+  those streams. A partial final event leaves earlier complete events usable.
+  Core dumps are disabled for this child. The `ownSpecProgress` job
+  checks this with a real SIGFPE during a component's check, and checks
+  that a normal run keeps its output. This is integration coverage of
+  native process termination and stream capture, which Lean proofs of
+  the requirements do not model; it does not identify a crash's cause.
+  With `FREN_DIAG_ENUMERATION=1`, the parent runs the original enumeration
+  child under GDB while the other selected shard jobs continue. It records
+  the cohort and worker count, and flushes adapter, SolverPairing, fixture
+  and method checkpoints outside captured streams. A native fault reports
+  siginfo and bounded thread backtraces with core dumps disabled. Child
+  and debugger statuses stay separate: a fault still fails the job, and
+  missing or failed diagnostics cannot report success. There is no replay
+  after the workload drains, and ordinary local runs keep their output.
+  The native harness checks normal output, controlled SIGABRT handling
+  beside a live sibling, checkpoint retention and a missing debugger.
+  GDB with Python support is required for the registered harness; the CI
+  test shards and coverage job install and check it. A missing debugger
+  fails the harness instead of skipping native-frame assertions. A negative
+  environment regression checks that failure with an empty tool path.
+  Protected test children set `FREN_NATIVE_CORELESS=1`: the test driver's
+  startup hook disables core files and, on Linux, dumpability after exec.
+  The latter also prevents piped core collectors, which ignore a zero
+  core-file limit and can delay reaping. The hook affects only that child
+  and leaves its signal dispositions intact. GDB applies and reports this
+  protection to its own process after initializing its memory transport at
+  the original child's first instruction stop, before continuing the child.
+  It inherits a zero core-file limit throughout startup. Disabling GDB's
+  dumpability before its proc-memory self-test makes its own memory file
+  root-owned and inaccessible to a non-root debugger; the resulting ptrace
+  fallback cannot read the protected native child. Initialization must
+  therefore precede that guard, with no warmup child or replay. The receipt
+  ties the initial stop, executable, UID/capabilities and guard transition
+  to the same original PID and its later physical terminal status.
+  This initial exec stop is diagnostic startup, under the existing
+  five-second control budget, not a new deadline for the checker cohort.
+  The Linux wrapper regression runs GDB as a non-root user without
+  capabilities. When the caller is root, it requires `unshare` to create
+  an additional user namespace mapping the caller to a non-root UID;
+  it never skips the assertion or grants debugger privileges. Ordinary
+  non-root callers use their existing identity and isolation.
+  Controls that block a later debugger operation use the production
+  five-second operation budget; shortening it globally can expire during
+  startup before the intended stop is reached. They retain their external
+  test bounds and require the actual targeted phase and separate statuses.
+  Controlled crash probes refuse to run without `FREN_NATIVE_CORELESS=1`.
+  The ABRT probe raises its signal on the checking worker
+  without starting a helper process or pipe-reader threads at the fatal stop.
+  The debugger consumes each stop once and reads its actual terminal status;
+  a thread's exit alone is not treated as the process's exit. If Linux GDB
+  has removed all threads before reaping its zombie leader, a bounded wait
+  for that exact child obtains the kernel's terminal status. The receipt
+  distinguishes this from GDB's terminal status; an absent status still fails.
+  Timed-out harness commands keep their failure. On
+  Linux their owned descendants are killed and reaped with bounded cleanup;
+  a regression checks this beside the live peer. The execution deadline
+  stays at 60 seconds. The original assertions run in separate
+  `nativeDiagnostics core`, `wait`, `own` and `wrapper` jobs, so their
+  combined work does not hold one registered job above its 30-second target.
+  `ownSpecProgress` retains the original progress/SIGFPE assertions.
+  The live-capture requirement is checked by `nativeObservation` through
+  the production runner and real processes, not supplied health flags.
+  A diagnostic root must expose bounded invocation/start, actual journal
+  events and child/debugger/wait milestones before captured work finishes.
+  Its relay writes and flushes through the root OS stderr, outside both
+  nested process capture and isolated checker streams. It preserves the
+  original stdout/failure-array protocol and does not print checker output
+  or the environment into this channel. Ordinary local jobs keep their
+  output. Live relay support currently requires Linux `/proc`; unavailable
+  or blocked relay writes fail explicitly.
+  Productive debugger `run` and `continue` waits have no new cohort
+  deadline. Every 120 seconds the observer samples that same original
+  child, requests an interrupt/backtrace and resumes it without delivering
+  its observational interrupt as a product signal. This interval permits
+  ordinary multi-minute cohorts: it is neither the solver query limit nor
+  the regression harness deadline. Diagnostic startup, backtrace and
+  interrupt acknowledgement have a five-second observation budget; the
+  terminal reap remains bounded at two seconds. An incomplete observation
+  fails diagnostics, retaining bounded owned PID/thread/wait readings and
+  last phase. It never invents an original terminal exit, signal or verdict.
+  Reports are updated before completion, and live milestones survive a
+  lost final report. Cancellation records its signal and cleanup initiator.
+  An actual GDB process-exit event or terminal wait publishes the original
+  status independently of command unwinding and debugger shutdown. A
+  completed original beside an unfinished debugger retains its observed
+  physical status, while the incomplete diagnostic still fails. A helper
+  returning is not evidence that GDB exited, and a zombie is not an exit
+  code. After observed original completion, even a still-pending GDB
+  `run` or `continue` call is control work: its five-second budget starts
+  at that terminal observation, rather than using the productive sampling
+  clock or charging the original's runtime against a control budget.
+  Command errors and the last operation/output remain in the report
+  separately from an observation-budget error; neither may erase the other.
+  Helper failures retain each bounded error-query result independently.
+  On Linux they also retain actual owned-inferior transport observations:
+  debugger/kernel identity, selected thread, memory-read lengths and kernel
+  errno from ptrace and new/cached proc memory descriptors. No memory bytes
+  are reported. Partial facts are published before a GDB memory query, which
+  stays inside the existing control budget. These observations never grant
+  access, change dumpability or establish an original terminal verdict.
+  The runner kills/reaps only its owned descendants, with bounded cleanup,
+  and records cleanup exits separately from observed original statuses.
+  Captured child output uses regular files so an inherited writer cannot
+  indefinitely delay pipe EOF; a live descendant surviving its observed
+  leader is a diagnostic lifetime failure. Reaped zombies alone are not.
+  The process regressions cover a slow live child, a blocked real debugger,
+  an inherited pipe writer, cancellation and loss of the final report,
+  beside a peer that must remain alive. They also cover a real post-run
+  command error after observed original completion, a still-running GDB
+  after that completion, and a nonzero original with an inherited writer.
+  A real command failure at protected native startup checks raw transport
+  receipts while the original has no observed terminal status.
+  These bind the requirement to OS/FFI
+  integration coverage: Lean proofs of job placement or checker semantics
+  cannot prove POSIX capture, debugger or kernel wait behaviour. SIGKILL,
+  an uninterruptible kernel operation, filesystem failure or loss of the
+  root's output consumer can prevent a final receipt; none establishes a
+  product verdict. The workflow's 90-minute limit is unchanged.
+  The terminal-wait utility regression uses the production observer too;
+  its GDB bootstrap/shutdown must not bypass observation and wait for the
+  outer 60-second harness deadline. Auxiliary wait-test children write
+  separate receipts and cannot replace the bootstrap original's status.
+  With `FREN_DIAG_OWN_SPEC_INITIAL=1`, ownSpec's original initial check
+  runs once in a GDB child through the same check function, file list,
+  cache options and default checker concurrency as its ordinary inline
+  invocation. Its returned verdict and captured output feed every later
+  ownSpec check. A native or diagnostic failure stops that invocation and
+  fails the job; a serialized success cannot conceal diagnostic status 125.
+  The original requirements `persistentRun` child is wrapped at its launch,
+  with its unchanged arguments and `--jobs 4`; paired UI invocations are
+  excluded. The wrapper records each command and the outer shard cohort,
+  flushes the initial components into the existing ownSpec journal, and
+  disables recursive wrapping. It does not replay a failed check.
+  `persistentRun` still has only invocation context, not component traces.
+  A bounded initial-only diagnostic entrypoint can observe the first check
+  without spending its capture budget on later agreement comparisons.
+  Such a diagnostic does not establish that the complete ownSpec job passed.
 - **Formatting** (`lake test`): every `.fren` and Markdown spec in the
   repository must be formatted, as `fren fmt --check` says, except those
   listed as `--ignore` globs in `fmtIgnore` in `src/FrenTestMain.lean`:
@@ -380,7 +521,7 @@ pub mod testing
   [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites]
   [--confirm] [--obligations] [--scrutinees] [--inductions]
   [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates]
-  [--decidable] [--unfoldings] [--datatype-elements]
+  [--decidable] [--unfoldings] [--short-inductions] [--datatype-elements]
   [--spec-timeout SECONDS]`, or
   `lake exe fren_fuzz_frontends --copying COUNT`): generates
   specs and checks each with both front ends, the `fren` command's pipeline
@@ -441,6 +582,12 @@ pub mod testing
   and through definitions, and a cover goal that mentions none of them.
   The mode compares the front ends' reports on these queries;
   `test/ui/checks/fact_scope.fren` pins the expected verdicts and witness.
+  `--short-inductions` generates single-expression global claims with a
+  leading `forall`: grouped binders, companion types, recursive lists and
+  branching trees, generic instances, comparisons, guards, definitions,
+  Boolean blocks, and shadowing. It also exercises unchanged restrictions
+  on candidacy and quantifiers without a leading binder. Its generator is
+  independent, so existing modes' seeds are unchanged.
   `--induction-candidates` generates companion parameter types, nested
   restrictions, decreasing-argument positions, shadowing, derived arguments,
   assumptions and comparisons of recursive applications. Its generator is
@@ -626,8 +773,8 @@ pub mod testing
 - **Front-end corpus** (`lake test`): the front-end fuzzer's specs of a
   fixed set of seeds, from its generators, the default one, `--guards`,
   `--sites`, `--confirm`, `--scrutinees`, `--inductions`, `--induction-forms`,
-  `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings` and
-  `--datatype-elements`
+  `--fact-scopes`, `--induction-candidates`, `--decidable`, `--unfoldings`,
+  `--short-inductions` and `--datatype-elements`
   (`corpus` in `src/FrenTest/FuzzFrontends/Corpus.lean`), are checked
   with both front ends and compared as above. The `--decidable` corpus also
   rejects every error without a diagnostic code from `fren check`, even
@@ -2822,6 +2969,62 @@ today, the intended syntax and semantics, counterexamples it must reject,
 and its effects on decidability and evidence. Distinguish a limitation of
 the language from a missing model or test. A proposal does not authorize
 expanding the implementation's scope automatically.
+
+## Nonvacuous oracles
+
+The enumeration agreement job, decidable-core conformance jobs and dynamic
+coverage reports return their counted observations through the same guard
+(`testing::oracle_count`, `FrenTest.Oracle.finish`). The floor itself must
+be positive, and earlier failures must survive even when the floor is met.
+Enumeration requires 500 comparisons. Conformance requires at least one
+check; coverage requires both a module read and a declaration run.
+
+```fren
+pub proc oracle_count(compared: Nat, floor: Nat, failures: Nat): (det passes?) {
+    ensure rule: passes? iff failures = 0 and 0 < floor <= compared
+
+    expect nothing_compared: when compared = 0, not passes?
+    expect zero_floor: when floor = 0, not passes?
+    expect keep_failures: when failures > 0, not passes?
+}
+
+pub proc oracle_output(output: String): (det passes?) {
+    ensure rule: passes? iff output != "" and not output.contains?("internal error")
+
+    expect nothing_written: when output = "", not passes?
+    expect internal_error: when output.contains?("internal error"), not passes?
+}
+
+pub proc oracle_tool(output: String, stderr: String, exit: Nat): (det passes?) {
+    ensure rule: passes? iff exit = 0 and output != "" and not output.contains?("internal error")
+        and not stderr.contains?("internal error")
+
+    expect failed_tool: when exit != 0, not passes?
+}
+
+pub proc conformance_exit(exit: Nat, errors: Nat, warnings: Nat): (det accepted?) {
+    ensure rule: accepted? iff exit = 0 or (exit = 1 and errors > 0) or (exit = 3 and warnings > 0)
+
+    expect unexplained: when exit != 0 and errors = 0 and warnings = 0, not accepted?
+    expect static_error: when exit = 2, not accepted?
+}
+
+#fren_check oracle_count
+#fren_check oracle_output
+#fren_check oracle_tool
+#fren_check conformance_exit
+```
+
+`Impls.Testing` proves these guards on the functions whose returned failures
+the jobs report. `oracle_output` is applied to conformance's raw output
+before reading its summary, so an internal error cannot disappear beside
+normal results. Its summary must contain all four numeric counts, and only
+F0664 warnings explain inconclusive checks. A conformance run is an
+in-process checker invocation: exits 1 and 3 can describe expected failed
+checks or warnings, but need their diagnostics (`conformance_exit`). A
+coverage subprocess must exit zero and write nonempty output without an
+internal error (`oracle_tool`), before its counters are read. Static coverage
+does not measure execution and does not apply the observation guard.
 
 ## Coverage
 

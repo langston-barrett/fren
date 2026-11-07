@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Elab.Context
 import Fren.Elab.Types
+import FrenCore.Theories
 -- keep-sorted end
 
 /-! # Hosted elaboration: type terms -/
@@ -40,6 +41,67 @@ partial def coreTyOf (s : State) (t : Expr) (params : Array Name := #[]) : Optio
       if let some n := s.newtypeOfDecl? d then (go n.under).map (.newtype n.path)
       else (s.abstracts.foldl (init := none) fun acc _ a => acc <|> if a.placeholder == d then some a else none).map
         (.abstract ·.path)
+
+/-- Render a Fren type for constructions and instantiated datatype
+signatures. A loose bound variable preserves an enclosing datatype
+parameter; other types are the inverse of `coreTyOf`. -/
+partial def leanTypeOf [Monad m] [MonadEnv m] [MonadError m] (t : Core.Ty) : m Expr := do
+  let s ← getState
+  let set (e : Expr) := mkApp (Lean.mkConst ``Fren.FinSet [Level.zero]) e
+  match t with
+  | .bool => return Lean.mkConst ``Bool
+  | .int => return Lean.mkConst ``Int
+  | .nat => return Lean.mkConst ``Nat
+  | .string => return Lean.mkConst ``String
+  | .set e => return set (← leanTypeOf e)
+  | .rel a b => return set (mkApp2 (Lean.mkConst ``Prod [Level.zero, Level.zero]) (← leanTypeOf a) (← leanTypeOf b))
+  | .seq e => return mkApp (Lean.mkConst ``Fren.Seq [Level.zero]) (← leanTypeOf e)
+  | .enum p as =>
+    let some e := s.enums.get? p | throwError "internal error: unknown enum `{p}`"
+    return mkAppN e.const (e.leanArgs (← as.toArray.mapM leanTypeOf))
+  | .record p as =>
+    let some r := s.records.get? p | throwError "internal error: unknown record `{p}`"
+    return mkAppN (Lean.mkConst r.decl) (← as.toArray.mapM leanTypeOf)
+  | .abstract p => return Lean.mkConst (placeholderName p)
+  | .newtype p _ =>
+    let some n := s.newtypes.get? p | throwError "internal error: unknown newtype `{p}`"
+    return Lean.mkConst n.decl
+  | .param k _ => return .bvar k
+
+/-- Extract constructor types into the shared signature representation,
+translate once, and render the resulting types. Arguments are opaque
+images, preserving local types in model checking as well as constants
+and enclosing datatype parameters. -/
+def instanceTypes [Monad m] [MonadEnv m] [MonadError m] (name : Name)
+    (params : Array Name) (types : Array Expr) (args : Array Expr) : m (Array Expr) := do
+  let s ← getState
+  let read (ps : Array Name) (t : Expr) : m Core.Ty :=
+    match coreTyOf s t ps with
+    | some t => pure t
+    | none => throwError "internal error: not a Fren datatype type: {t}"
+  let arguments := args.mapIdx fun k _ => Core.Ty.abstract (.num .anonymous k)
+  let images := args.mapIdx fun k a => (placeholderName (.num .anonymous k), a)
+  let declaration : Core.TheoryDeclaration := {
+    name, kind := .constructor, abstract := false,
+    types := (← types.mapM (read params)).toList }
+  let translated ← (Core.instantiateTypeDeclaration declaration arguments).types.toArray.mapM leanTypeOf
+  return translated.map fun t => t.replace fun
+    | .const c _ => images.findSome? fun (n, a) => if c == n then some a else none
+    | _ => none
+
+/-- Payload types at the instance, in Fren parameter order even for a
+prelude datatype whose Lean arguments have a different order. -/
+def EnumInfo.payloadsAt [Monad m] [MonadEnv m] [MonadError m]
+    (e : EnumInfo) (args : Array Expr) : m (Array (Array Expr)) := do
+  if e.params.isEmpty then return e.payloads
+  e.payloads.mapIdxM fun i ts => instanceTypes (e.path ++ e.variants[i]!) e.params ts (e.frenArgs args)
+
+/-- Fields at the instance, translated by the shared type morphism. -/
+def RecordInfo.fieldsAt [Monad m] [MonadEnv m] [MonadError m]
+    (r : RecordInfo) (args : Array Expr) : m (Array (Name × Expr)) := do
+  if r.params.isEmpty then return r.fields
+  let ts ← instanceTypes (r.path ++ Name.mkSimple "{}") r.params (r.fields.map (·.2)) args
+  return (r.fields.map (·.1)).zip ts
 
 /-- What counting the values of the instances of the enumeration or record
 `p` needs of its declaration (`Core.Ty.valueCount`), given the model `s`. -/
@@ -283,11 +345,11 @@ partial def valuesOf? (ty : Expr) (cap : Nat := 64) : MetaM (Option (Array Expr)
     if ty.isAppOfArity ``Prod 2 then pure #[(``Prod.mk, targs)]
     else if let some e := s.enumOf? ty then
       if (exprFacts s ty).unbounded then return none
-      let ps := e.payloadsAt targs
+      let ps := (← e.payloadsAt targs)
       pure (e.variants.mapIdx fun i _ => (e.ctor i, ps[i]?.getD #[]))
     else if let some r := s.recordOf? ty then
       if (exprFacts s ty).unbounded then return none
-      pure #[(r.ctor, (r.fieldsAt targs).map (·.2))]
+      pure #[(r.ctor, (← r.fieldsAt targs).map (·.2))]
     else if let some n := ty.constName?.bind s.newtypeOfDecl? then
       pure #[(n.ctor, #[n.under])]
     else return none
@@ -533,7 +595,7 @@ def readField (ref : Syntax) (t : Term) (ty : Expr) (f : Name) : TermElabM (Term
   let some r := (← getState).recordOf? ty
     | throwErrorAt ref (Core.noFieldMsg f (← typeName ty) #[]).text
   -- With the record's arguments for its type parameters (`lang::instantiation`).
-  let some (_, ft) := (r.fieldsAt ty.getAppArgs).find? (·.1 == f)
+  let some (_, ft) := (← r.fieldsAt ty.getAppArgs).find? (·.1 == f)
     | throwErrorAt ref (Core.noFieldMsg f (← typeName ty) (r.fields.map (·.1))).text
   return (← `($(mkCIdentFrom ref (r.decl ++ f)) $t), ft)
 

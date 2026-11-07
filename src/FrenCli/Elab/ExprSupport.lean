@@ -1304,8 +1304,7 @@ def noteObligation (cx : ExprCtx) (place : Fren.Core.ValuePlace) (span : Span) (
 `v` of the record, newtype or enumeration `p`, with the type arguments
 `args` for its type parameters, if it is generic (`Fren.Core.PTy.subst`). -/
 def partPTy (p : Name) (v k : Nat) (args : Array Ty := #[]) : M Fren.Core.PTy := do
-  let some t := ((← get).shapeOf p).bind (·.parts[v]?) |>.bind (·[k]?) | return default
-  return if args.isEmpty then t else t.subst (args.map .plain)
+  return (((← get).shapeOf p).getD {}).instancePart v k args
 
 /-- The value of a table of type `t` where no row holds: an index out of
 range of the empty sequence, which is unspecified

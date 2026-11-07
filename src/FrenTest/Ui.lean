@@ -72,8 +72,15 @@ def parse (src : String) : Except String Spec := do
     if let some rest := (line.splitOn "--@ ")[1]? then
       match rest.splitOn ": " with
       | ["summary", v] => spec := { spec with summary? := some v.trimAscii.toString }
-      | ["exit", v] => spec := { spec with exit? := v.trimAscii.toString.toNat? }
-      | ["only", v] => spec := { spec with only? := some v.trimAscii.toString }
+      | ["exit", v] =>
+        let some n := v.trimAscii.toString.toNat?
+          | throw s!"line {i}: invalid exit value `{v}`"
+        spec := { spec with exit? := some n }
+      | ["only", v] =>
+        let fe := v.trimAscii.toString
+        if fe != "cli" && fe != "hosted" then
+          throw s!"line {i}: unknown frontend `{fe}`"
+        spec := { spec with only? := some fe }
       -- Read by the `ruleReqs` job (`Reqs/dev/Style#rules-and-requirements`).
       | ["reference", _] => pure ()
       | _ => throw s!"line {i}: unknown directive `--@ {rest}`"
@@ -90,6 +97,9 @@ def parse (src : String) : Except String Spec := do
         | fe :: rest => (some fe, "]".intercalate rest)
         | [] => (none, ann)
       else (none, ann)
+    if let some fe := frontEnd? then
+      if fe != "cli" && fe != "hosted" then
+        throw s!"line {i}: unknown frontend `{fe}`"
     let ann := ann.trimAscii.toString
     let some (sev, text) := severities.findSome? fun s =>
         (ann.dropPrefix? (s ++ ": ")).map (s, ·.toString)

@@ -66,11 +66,13 @@ partial def valueTerm (ty : Expr) (v : Core.PVal) : TermElabM Term := do
     let some d := ty.getAppFn.constName? | `(sorry)
     -- With an instance's arguments for its type parameters.
     let targs := ty.getAppArgs
-    let (c, ts) :=
-      if let some e := s.enumOfDecl? d then (e.ctor idx, (e.payloadsAt targs)[idx]?.getD #[])
-      else if let some r := s.recordOfDecl? d then (r.ctor, (r.fieldsAt targs).map (·.2))
-      else if let some n := s.newtypeOfDecl? d then (n.ctor, #[n.under])
-      else (.anonymous, #[])
+    let (c, ts) ←
+      if let some e := s.enumOfDecl? d then do
+        pure (e.ctor idx, (← e.payloadsAt targs)[idx]?.getD #[])
+      else if let some r := s.recordOfDecl? d then do
+        pure (r.ctor, (← r.fieldsAt targs).map (·.2))
+      else if let some n := s.newtypeOfDecl? d then pure (n.ctor, #[n.under])
+      else pure (.anonymous, #[])
     let as ← (args.zip ts).mapM fun (w, t) => valueTerm t w
     `($(mkCIdent c) $as*)
 

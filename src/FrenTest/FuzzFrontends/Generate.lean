@@ -15,6 +15,7 @@ import FrenTest.FuzzFrontends.Unfoldings
 import FrenTest.FuzzFrontends.Wide
 import FrenTest.FuzzGenericFunctions
 import FrenTest.FuzzRecursion
+import FrenTest.FuzzShortInduction
 -- keep-sorted end
 
 open Lean FrenCli FrenCli.Eval
@@ -58,6 +59,7 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
     | [before, after] => before ++ decls ++ Id.run (Wide.genKeywordsItem.run' (itemRngOf seed)) ++ after
     | _ => spec
   else if m.inductionCandidates then Id.run (Wide.inductionCandidates.run' (inductionRngOf seed))
+  else if m.shortInductions then Id.run (FuzzShortInduction.spec.run' (rngOf seed))
   else if m.unfoldings then Id.run (Wide.unfoldings.run' (unfoldingRngOf seed))
   else
     Id.run ((if m.decidable then Wide.genDecidable
@@ -65,6 +67,7 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
       else if m.scrutinees then Wide.duplicateScrutineeGroup
       else if m.factScopes then Wide.factScopes else if m.confirm then Wide.genConfirmed
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
+      else if m.genericTypes then FuzzDatatypeElements.genericTypes
       else if m.datatypeElements then FuzzDatatypeElements.spec
       else if m.recursionPositions then FuzzRecursion.gen
       else Wide.genWide m.avoidKnown).run' (rngOf seed))
@@ -73,17 +76,17 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 the next; none for `--guards`, `--sites`, `--inductions`,
 `--induction-forms`, `--keywords` and `--recursion-positions`. The empty
 prefix of `--scrutinees`, `--fact-scopes`, `--induction-candidates`,
-`--decidable`, `--enumeration-obligations`, `--unfoldings`,
-`--datatype-elements`, `--generic-functions`, `--set-card` and
-`--set-card-fallback` makes any static error a group error: these
-generators, like appended groups, promise to add none.
+`--decidable`, `--enumeration-obligations`, `--unfoldings`, `--short-inductions`,
+`--datatype-elements`, `--generic-functions`, `--generic-types`,
+`--set-card` and `--set-card-fallback` makes any static error a group
+error: these generators, like appended groups, promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
 prefix, and `--confirm` its spec before the unused-argument cases, so
 their additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
   if m.genericFunctions then #[""] else
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else
+  if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.shortInductions || m.datatypeElements || m.genericTypes then #[""] else
   if m.confirm then
     match (m.spec seed).splitOn "\npub struct CfArgNew(Int)" with
     | [before, _] => #[before]

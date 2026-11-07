@@ -1,5 +1,7 @@
 -- keep-sorted start
 import Fren.Elab.Evidence
+import Fren.Elab.Induction
+import Fren.Elab.ProcedureParts
 import Fren.Elab.Terms
 -- keep-sorted end
 
@@ -97,7 +99,40 @@ def globalText (stx : Syntax) : String :=
   record (.globalInfo path info)
   elabCommand (← `(attribute [fren_spec] $(mkCIdent decl)))
   modifyLocal fun l => { l with globals := l.globals.push path }.declared path
-
+  unless binders.isEmpty do
+    -- The quantified direct check keeps its original representation. This
+    -- disposable procedure exposes only its leading binders as free inputs
+    -- for candidate extraction; none of its declarations or lints survive.
+    let saved ← get
+    try
+      let groups := binders.map fun b => b[1].getArgs.map (·, b[3])
+      let params := Core.shortInductionParameters groups
+      let ref := nameStx
+      let mut stem := "fren_short_"
+      while (identNames stx).any (·.startsWith stem) do stem := stem ++ "_"
+      let signature := params.mapIdx fun i (x, _) => s!"{Core.nameText x.getId}: {stem}t{i}"
+      let text := s!"proc {stem}probe({", ".intercalate signature.toList}) \{ expect {stem}claim: if true then {stem}body else false }"
+      let mut proc ← parseAt `command text ref
+      for (_, ty) in params, i in [0:params.size] do
+        proc := substPath (Name.mkSimple s!"{stem}t{i}") ty proc
+      proc := renameIdent (Name.mkSimple s!"{stem}claim") (Name.mkSimple "#claim") proc
+      proc := substPath (Name.mkSimple s!"{stem}body") (withWhere stx[4] stx[5]) proc
+      let members ← procMembers proc
+      modifyLocal fun l => { l with
+        outsideCore := false, guardedUsed := false, undecidableDenied := false
+        relationalUsed := false, countRefs := #[], inductionArgs := #[], inductionAbstract := false }
+      let probeDecl ← generatedName (path ++ `shortInduction)
+      let (ok, _) ← liftTermElabM <|
+        elabCompMembers modName path modName probeDecl false nameStx members {} (global := true)
+      let probe := (← getState).globals.get? path
+      let probeLocal ← getLocal
+      set saved
+      if ok then
+        if let some c := probe then
+          elabInductions proc path members (some c) (some probeLocal)
+          let some current := (← getState).globals.get? path | return
+          record (.globalInfo path { current with inductions := current.inductions.map fun (_, fns) => (n, fns) })
+    catch _ => set saved
 
 
 end Fren

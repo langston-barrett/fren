@@ -61,7 +61,7 @@ pub mod lang
 
 **Legality rules**
 
-r[implementation.morphism] lang::{theory_term_translation, theory_term_list, theory_translation}
+r[implementation.morphism] lang::{theory_declaration_translation, theory_type_list, theory_term_translation, theory_term_list, theory_translation}
 An implementation `mod x: I<T>` of an interface `I` maps `I`'s `Self` to
 `T` and each method of `I` that it defines to that definition. Each
 sentence of `I`, translated, is a sentence of the module that declares the
@@ -1763,6 +1763,30 @@ pub fn theory_sentence(
     TheoryTerms
 ): TheorySentence
 
+-- A declaration keeps its kind and abstractness while translating its
+-- name and every type, including constructor payloads and record fields.
+pub fn theory_declaration_name(TheoryDeclaration): TheoryName
+pub fn theory_declaration_types(TheoryDeclaration): Seq<Ty>
+pub fn translate_types(TheoryMorphism, Seq<Ty>): Seq<Ty>
+pub fn theory_declaration_with(TheoryDeclaration, TheoryName, Seq<Ty>): TheoryDeclaration
+
+-- The recursive equation applies to declaration type lists of any length.
+set_option fren.lint.undecidable "allow" in
+pub proc theory_type_list(m: TheoryMorphism, types: Seq<Ty>): (det translated: Seq<Ty>) {
+    out translated := if types = [] then [] else
+        [theory_type_image(m, types[0])] ++ translate_types(m, types.slice(1, types.len))
+}
+
+pub proc theory_declaration_translation(m: TheoryMorphism, declaration: TheoryDeclaration): (
+    det translated: TheoryDeclaration,
+) {
+    out translated := theory_declaration_with(
+        declaration,
+        theory_item_image(m, theory_declaration_name(declaration)),
+        translate_types(m, theory_declaration_types(declaration))
+    )
+}
+
 pub proc theory_translation(m: TheoryMorphism, sentence: TheorySentence): (
     det translated: TheorySentence,
 ) {
@@ -2584,6 +2608,8 @@ The Lean-hosted front end checks this chapter's items by name, since a
 #fren_check theory_term_substitution
 #fren_check theory_variable_images
 #fren_check theory_term_list
+#fren_check theory_type_list
+#fren_check theory_declaration_translation
 #fren_check theory_translation
 #fren_check theory_instance
 #fren_check generic_type_image

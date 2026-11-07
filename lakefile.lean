@@ -699,6 +699,12 @@ target mimalloc_lazy_commit.o pkg : FilePath := do
   let src ← inputTextFile (pkg.dir / "c" / "mimalloc_lazy_commit.c")
   buildO (pkg.buildDir / "c" / "mimalloc_lazy_commit.o") src #["-I", (← getLeanIncludeDir).toString] #["-std=gnu17", "-fPIC", "-O2"]
 
+-- Process-local core protection after exec, only for the test driver's
+-- explicitly protected children (`c/native_test_core.c`).
+target native_test_core.o pkg : FilePath := do
+  let src ← inputTextFile (pkg.dir / "c" / "native_test_core.c")
+  buildO (pkg.buildDir / "c" / "native_test_core.o") src #["-I", (← getLeanIncludeDir).toString] #["-std=gnu17", "-fPIC", "-O2"]
+
 -- The standalone binary for `.fren` files: a native executable with cvc5
 -- linked in, needing no .olean files at runtime. There is no module `FrenCli`,
 -- so the library is its modules.
@@ -723,8 +729,10 @@ lean_lib FrenCli where
 -- `lake test`: ui tests through both front ends, and snapshot tests for the
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
 lean_exe fren_test where
+  -- The executable smoke job must exercise a freshly built fuzzer.
+  needs := #[`@/fren_fuzz_frontends]
   root := `FrenTestMain
-  moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
+  moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o, `@/native_test_core.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs
 
