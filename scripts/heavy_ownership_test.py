@@ -245,6 +245,7 @@ def main():
         inputs.append(dict(kind="victim", rows=rows, cap=cap))
         expected.append(list(result))
     # Exercise all optional/invalid field combinations and both permutations.
+    generated_start = len(inputs)
     for job, order, rss, legacy in itertools.product(
             (None, "a"), (None, -1, 0, 1, 2 ** 100),
             (None, -1, 0, 1, 2 ** 100), (None, -1, 0, 1, 2 ** 100)):
@@ -254,6 +255,7 @@ def main():
             for cap in (0, 1, 2 ** 100):
                 inputs.append(dict(kind="victim", rows=rows, cap=cap))
                 expected.append(list(heavy.memory_victim(rows, cap)))
+    generated_count = len(inputs) - generated_start
     registry_count = 0
     with tempfile.TemporaryDirectory() as state:
         path = Path(state) / "report.json"
@@ -306,7 +308,7 @@ def main():
         assert got == want, (i, got, want, inputs[i])
     print(f"{len(cases)} Lean/Python ownership cases and {registry_count} registry attempts agree "
           f"({len(fixed)} sanitized fixtures); {len(values)} numeric conversion cases agree")
-    print(f"{len(victim_cases)} victim fixtures and 3000 generated comparisons agree")
+    print(f"{len(victim_cases)} victim fixtures and {generated_count} generated comparisons agree")
 
 
 if __name__ == "__main__":
