@@ -20,6 +20,23 @@ def encoded(returncode):
     return 128 - returncode if returncode < 0 else returncode
 
 
+def observe_state(report, state):
+    """Publish real terminal evidence independently of debugger completion."""
+    report["debugger_state"] = {key: state[key] for key in (
+        "operation", "operation_id", "completed_operation_id", "operation_output",
+        "helper_complete", "error", "failed_operation", "started", "original_pid", "exit_code",
+        "terminal_signal", "terminal_status_source", "terminal_status_event", "terminal_wait") if key in state}
+    report["helper_error"] = state.get("error")
+    if state.get("original_pid"):
+        report["original_pid"] = state["original_pid"]
+    if state.get("terminal_status_source") and not state.get("terminated_by_debugger"):
+        terminal_signal = state.get("terminal_signal")
+        report.update(original_exit=128 + terminal_signal if terminal_signal else state.get("exit_code"),
+                      original_signal=terminal_signal,
+                      terminal_status_source=state["terminal_status_source"],
+                      terminal_status_event=state.get("terminal_status_event"))
+
+
 def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_PROGRESS",
         *, report_path=None, capture_only=False, sample_seconds=120, operation_seconds=5):
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -84,18 +101,33 @@ def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_P
                 pending = None
                 operation = "starting"
                 operation_start = started
+                terminal_start = None
                 sequence = 0
                 while process.poll() is None:
                     now = time.monotonic()
                     state = read(root / "inferior.json") if executable else {}
+                    old_state = report.get("debugger_state")
+                    old_terminal = report["original_exit"]
+                    old_pid = report.get("original_pid")
+                    if executable:
+                        observe_state(report, state)
+                    if report["original_exit"] is not None and terminal_start is None:
+                        terminal_start = now
                     observed_operation = state.get("operation", "starting")
                     if observed_operation != operation or state.get("operation_id") != report.get("operation_id"):
                         operation, operation_start = observed_operation, now
                         report["operation_id"] = state.get("operation_id")
-                        retain("debugger-wait", operation=operation, original_pid=state.get("original_pid"))
-                    if state.get("original_pid") and state["original_pid"] != report.get("original_pid"):
-                        report["original_pid"] = state["original_pid"]
+                        retain("debugger-wait", operation=operation, original_pid=state.get("original_pid"),
+                               helper_error=state.get("error"))
+                    elif executable and old_state != report["debugger_state"]:
+                        retain("debugger-state", operation=operation, helper_error=state.get("error"),
+                               output=state.get("operation_output", "")[-1024:])
+                    if state.get("original_pid") and state["original_pid"] != old_pid:
                         retain("original-start", pid=state["original_pid"])
+                    if old_terminal is None and report["original_exit"] is not None:
+                        retain("original-terminal", original_exit=report["original_exit"],
+                               original_signal=report["original_signal"],
+                               source=report["terminal_status_source"])
                     if pending and state.get("observation", {}).get("id") == pending[0]:
                         report["observation"] = state["observation"]
                         retain("observation-complete", observation=report["observation"])
@@ -108,23 +140,32 @@ def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_P
                         last_heartbeat = now
                     # run/continue are productive waits, not query/cohort
                     # deadlines. Sample the same live child and resume it.
-                    if executable and not pending and operation in ("run", "continue") and now - last_sample >= sample_seconds:
+                    if executable and terminal_start is None and not pending and operation in ("run", "continue") and now - last_sample >= sample_seconds:
                         sequence += 1
                         save(root / "observe.json", {"id": sequence, "initiator": "native-observer"})
                         report["snapshot"] = snapshot()
                         retain("interrupt-request", id=sequence, snapshot=report["snapshot"])
                         process.send_signal(signal.SIGINT)
                         pending = (sequence, now + operation_seconds)
-                    blocked = executable and operation not in ("run", "continue") and now - operation_start >= operation_seconds
+                    # A GDB run/continue call can still be unwinding after
+                    # its original exited. That is now control work, not a
+                    # productive child wait. Start its unchanged budget at
+                    # the observed terminal event, never at the child's start.
+                    terminal_command = terminal_start is not None and operation in ("run", "continue")
+                    control_start = terminal_start if terminal_command else operation_start
+                    control_operation = "terminal-command-return" if terminal_command else operation
+                    blocked = executable and (terminal_command or operation not in ("run", "continue")) and now - control_start >= operation_seconds
                     incomplete = pending and now >= pending[1]
                     if cancelled or blocked or incomplete:
                         report["observation_status"] = "cancelled" if cancelled else "incomplete"
                         report["cancel_signal"] = cancelled[0] if cancelled else None
                         report["error"] = "observer cancelled" if cancelled else "diagnostic operation did not complete within observation budget"
                         report["snapshot"] = snapshot()
+                        report["control_operation"] = control_operation
                         report["cleanup_initiator"] = "native-observer:cancel" if cancelled else "native-observer:operation-budget"
-                        retain("observation-incomplete", operation=operation, snapshot=report["snapshot"],
-                               original_exit=None, debugger_exit=None, initiator=report["cleanup_initiator"])
+                        retain("observation-incomplete", operation=control_operation, snapshot=report["snapshot"],
+                               original_exit=report["original_exit"], debugger_exit=None,
+                               helper_error=state.get("error"), initiator=report["cleanup_initiator"])
                         # One bounded interrupt opportunity even for an
                         # observer blocked before the helper's run call.
                         if executable and not pending and not cancelled:
@@ -139,6 +180,7 @@ def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_P
                 # Only a real terminal observation made before cleanup
                 # is original evidence. Cleanup's SIGKILL is separate.
                 if executable:
+                    observe_state(report, state)
                     report["debugger_exit"] = process.poll()
                     faults = state.get("signals", [])
                     report.update(faults=faults, terminated_by_debugger=state.get("terminated_by_debugger", False),
@@ -155,6 +197,8 @@ def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_P
                     report["error"] = report["error"] or state.get("error")
                     if report["debugger_status"] == "failed":
                         report["error"] = report["error"] or "debugger did not report an executed original child's terminal status"
+                        if report["observation_status"] == "running":
+                            report["observation_status"] = "failed"
                 elif not interrupted:
                     report.update(original_exit=encoded(process.returncode),
                                   original_signal=-process.returncode if process.returncode < 0 else None,

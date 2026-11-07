@@ -182,6 +182,17 @@ pub mod testing
   last phase. It never invents an original terminal exit, signal or verdict.
   Reports are updated before completion, and live milestones survive a
   lost final report. Cancellation records its signal and cleanup initiator.
+  An actual GDB process-exit event or terminal wait publishes the original
+  status independently of command unwinding and debugger shutdown. A
+  completed original beside an unfinished debugger retains its observed
+  physical status, while the incomplete diagnostic still fails. A helper
+  returning is not evidence that GDB exited, and a zombie is not an exit
+  code. After observed original completion, even a still-pending GDB
+  `run` or `continue` call is control work: its five-second budget starts
+  at that terminal observation, rather than using the productive sampling
+  clock or charging the original's runtime against a control budget.
+  Command errors and the last operation/output remain in the report
+  separately from an observation-budget error; neither may erase the other.
   The runner kills/reaps only its owned descendants, with bounded cleanup,
   and records cleanup exits separately from observed original statuses.
   Captured child output uses regular files so an inherited writer cannot
@@ -189,12 +200,19 @@ pub mod testing
   leader is a diagnostic lifetime failure. Reaped zombies alone are not.
   The process regressions cover a slow live child, a blocked real debugger,
   an inherited pipe writer, cancellation and loss of the final report,
-  beside a peer that must remain alive. This binds the requirement to OS/FFI
+  beside a peer that must remain alive. They also cover a real post-run
+  command error after observed original completion, a still-running GDB
+  after that completion, and a nonzero original with an inherited writer.
+  These bind the requirement to OS/FFI
   integration coverage: Lean proofs of job placement or checker semantics
   cannot prove POSIX capture, debugger or kernel wait behaviour. SIGKILL,
   an uninterruptible kernel operation, filesystem failure or loss of the
   root's output consumer can prevent a final receipt; none establishes a
   product verdict. The workflow's 90-minute limit is unchanged.
+  The terminal-wait utility regression uses the production observer too;
+  its GDB bootstrap/shutdown must not bypass observation and wait for the
+  outer 60-second harness deadline. Auxiliary wait-test children write
+  separate receipts and cannot replace the bootstrap original's status.
   With `FREN_DIAG_OWN_SPEC_INITIAL=1`, ownSpec's original initial check
   runs once in a GDB child through the same check function, file list,
   cache options and default checker concurrency as its ordinary inline

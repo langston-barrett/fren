@@ -62,40 +62,67 @@ def wait(args, driver, wrapper, destination, debugger, protected, unprotected):
         root = Path(directory)
         helper = str(Path(__file__).with_name("native_diag_gdb.py").resolve())
         script = root / "wait.py"
-        script.write_text("import runpy,subprocess,sys,time,json\n" +
+        script.write_text("import runpy,subprocess,sys,time,json\nfrom pathlib import Path\n" +
                           "ns=runpy.run_path(" + repr(helper) + ")\n" +
-                          "driver=" + repr(driver) + "\npython=" + repr(sys.executable) + "\n" + r"""
+                          "driver=" + repr(driver) + "\npython=" + repr(sys.executable) +
+                          "\nreceipt_path=" + repr(str(root / "wait-receipt.json")) + "\n" + r"""
+# The one bootstrap original belongs to the production observer. Do not
+# overwrite its terminal receipt with the utility test children's statuses.
+assert ns["state"]["exit_code"] == 0 and not ns["state"]["error"], ns["state"]
+production_root = ns["root"]
+globals_ = ns["reap_terminal"].__globals__
+production_state = globals_["state"]
+utility_root = production_root / "wait-controls"
+utility_root.mkdir()
+globals_["root"] = utility_root
+globals_["state"] = {"exit_code": None, "terminal_signal": None}
 rows = []
 for command, expected in [([python, "-c", "raise SystemExit(23)"], 23),
                           ([driver, "--job", "nativeDiagnosticProbe", "crash"], -6),
                           ([python, "-c", "import time; time.sleep(60)"], None)]:
     child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    ns["state"].update(exit_code=None, terminal_signal=None)
+    globals_["state"].update(exit_code=None, terminal_signal=None)
     start = time.monotonic()
     try:
         try:
             ns["reap_terminal"](child.pid)
         except RuntimeError as error:
             assert expected is None and "did not complete" in str(error), str(error)
-            rows.append({"timed_out": True, "seconds": time.monotonic() - start})
+            rows.append({"timed_out": True, "pid": child.pid, "seconds": time.monotonic() - start})
         else:
-            state = ns["state"]
+            state = globals_["state"]
             actual = -state["terminal_signal"] if state["terminal_signal"] else state["exit_code"]
             assert actual == expected and expected is not None, state
             assert state["terminal_status_source"] == "waitpid", state
             child.returncode = actual
-            rows.append({"status": actual, "source": state["terminal_status_source"]})
+            rows.append({"status": actual, "pid": child.pid, "source": state["terminal_status_source"],
+                         "raw_wait": state["terminal_wait"]})
     finally:
         if child.returncode is None:
             child.kill()
         child.communicate(timeout=2)
     assert child.returncode == (expected if expected is not None else -9), child.returncode
-ns["root"].joinpath("wait-receipt.json").write_text(json.dumps(rows))
+Path(receipt_path).write_text(json.dumps(rows))
+globals_["root"] = production_root
+globals_["state"] = production_state
 """)
-        checked = run([debugger, "-q", "-nx", "-batch", "-iex", "set debuginfod enabled off", "-x", str(script), "--args",
-                       driver, "--job", "nativeDiagnosticProbe", "pass"],
-                      env=dict(protected, FREN_NATIVE_DIAG_DIR=directory))
-        assert checked.returncode == 0 and (root / "wait-receipt.json").exists(), checked
+        # Use the production observer for this GDB call too: a bootstrap
+        # or shutdown stall must not bypass it and consume the outer 60s.
+        tool = root / "wait-gdb"
+        tool.write_text("#!" + sys.executable + "\nimport os,sys\na=sys.argv[1:]\n" +
+            "a[a.index('-x')+1]=" + repr(str(script)) + "\nos.execv(" + repr(debugger) +
+            ", [" + repr(debugger) + "]+a)\n")
+        tool.chmod(0o755)
+        report_file = root / "report.json"
+        checked = run([sys.executable, wrapper, "--report", str(report_file), "--debugger", str(tool),
+                       "--", driver, "--job", "nativeDiagnosticProbe", "pass"], env=protected)
+        original = json.loads(report_file.read_text())
+        if destination:
+            shutil.copyfile(report_file, destination / "terminal-wait-observer.json")
+        assert checked.returncode == 0 and (root / "wait-receipt.json").exists(), (checked, original)
+        assert original["original_exit"] == 0 and original["debugger_exit"] == 0, original
+        rows = json.loads((root / "wait-receipt.json").read_text())
+        assert all(row["pid"] != original["original_pid"] for row in rows), (rows, original)
         if destination:
             shutil.copyfile(root / "wait-receipt.json", destination / "terminal-wait.json")
 

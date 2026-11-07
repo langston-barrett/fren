@@ -117,6 +117,76 @@ def main():
             assert report["debugger_exit"] is None and report["debugger_cleanup_exit"] == -9, report
             assert report["observation_status"] == "incomplete" and report["faults"][0]["backtrace"] is None, report
 
+            # Real original completion can precede a failing GDB command.
+            # The command's failure must not erase GDB's actual exit event.
+            fact = root / "terminal-fact.json"
+            commands.write_text("define hookpost-run\npython import gdb,json; from pathlib import Path; " +
+                "Path(" + repr(str(fact)) + ").write_text(json.dumps({\"exit_code\":int(gdb.convenience_variable(\"_exitcode\"))}))\n" +
+                "python raise RuntimeError(\"controlled failure after original completion\")\nend\n")
+            result, report = execute("post-run-error", "print('[]')", "--debugger", str(blocked))
+            assert json.loads(fact.read_text())["exit_code"] == 0, fact.read_text()
+            assert result.returncode == 125 and report["original_exit"] == 0, rows[-1]
+            assert report["debugger_exit"] == 0 and report["observation_status"] == "failed", report
+            assert "controlled failure after original completion" in report["helper_error"], report
+            assert report["debugger_state"]["failed_operation"]["operation"] == "run", report
+            assert report["terminal_status_event"] == "exited" and report["fault_signal"] is None, report
+
+            # The original really exits while gdb.execute('run') is still
+            # inside its post-run hook. This must become bounded control
+            # work, not wait for the 120-second productive sampling clock.
+            commands.write_text("define hookpost-run\npython import signal,time; " +
+                "signal.signal(signal.SIGINT,signal.SIG_IGN); time.sleep(60)\nend\n")
+            result, report = execute("terminal-command-return", "", "--debugger", str(blocked),
+                "--operation-seconds", "1", argv=[driver, "--job", "nativeDiagnosticProbe", "pass"])
+            assert result.returncode == 125 and report["original_exit"] == 0, rows[-1]
+            assert result.stdout == "[]\n" and report["original_signal"] is None and report["fault_signal"] is None, report
+            assert report["control_operation"] == "terminal-command-return", report
+            assert report["debugger_state"]["operation"] == "run", report
+            assert report["debugger_exit"] is None and report["debugger_cleanup_exit"] == -9, report
+            assert report["observation_status"] == "incomplete" and report["cleanup_initiator"] == "native-observer:operation-budget", report
+
+            # Hold the real debugger after the production helper returns.
+            # Its physical status is still unknown, but the original's
+            # actual terminal status must be published before that wait.
+            commands.write_text("define hookpost-run\npython raise RuntimeError(\"controlled error before debugger shutdown\")\nend\n")
+            blocked.write_text("#!" + sys.executable + "\nimport os,sys\na=sys.argv[1:]\ni=a.index('--args')\n" +
+                "os.execv(" + repr(debugger) + ", [" + repr(debugger) + ",'-ix'," + repr(str(commands)) + "]+a[:i]+['-ex'," +
+                repr("python import signal,time; signal.signal(signal.SIGINT,signal.SIG_IGN); time.sleep(60)") +
+                "]+a[i:])\n")
+            name = "completed-before-debugger"
+            child = subprocess.Popen(command(name, "raise SystemExit(23)", "--debugger", str(blocked),
+                "--operation-seconds", "1"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True)
+            try:
+                deadline = time.monotonic() + 4
+                report = {}
+                while time.monotonic() < deadline:
+                    try:
+                        report = json.loads((root / (name + ".json")).read_text())
+                    except (FileNotFoundError, json.JSONDecodeError):
+                        pass
+                    if report.get("original_exit") == 23:
+                        break
+                    time.sleep(0.01)
+                assert report.get("original_exit") == 23 and child.poll() is None, report
+                assert report["debugger_exit"] is None and not report["complete"], report
+                stdout, stderr = child.communicate(timeout=5)
+                report = json.loads((root / (name + ".json")).read_text())
+                assert child.returncode == 23 and report["original_exit"] == 23, report
+                assert report["debugger_exit"] is None and report["debugger_cleanup_exit"] == -9, report
+                assert report["observation_status"] == "incomplete", report
+                assert "controlled error before debugger shutdown" in report["helper_error"], report
+                assert "observation budget" in report["error"], report
+                assert report["cleanup_initiator"] == "native-observer:operation-budget", report
+                assert report["debugger_state"]["operation"] == "debugger-shutdown", report
+                rows.append({"case": name, "status": child.returncode, "stdout": stdout.decode(),
+                             "stderr": stderr.decode(), "report": report})
+            finally:
+                receipt = cleanup(child, (peer.pid,))
+                assert not receipt["remaining"] and not receipt["errors"] and peer.poll() is None, receipt
+                child.stdout.close()
+                child.stderr.close()
+
             if sys.platform == "linux":
                 holder = "import os,time; p=os.fork(); time.sleep(60) if p==0 else print('[]',flush=True)"
                 # The old pipe-shaped capture really blocks on EOF after
@@ -131,6 +201,10 @@ def main():
                 result, report = execute("inherited-writer", holder, "--capture-only")
                 assert result.returncode == 125 and result.stdout == "[]\n", rows[-1]
                 assert report["original_exit"] == 0 and report["debugger_exit"] is None, report
+                assert report["observation_status"] == "incomplete" and report["cleanup"]["reaped"], report
+                assert report["cleanup_initiator"] == "native-observer:surviving-descendants", report
+                result, report = execute("inherited-writer-nonzero", holder + "; raise SystemExit(23)", "--capture-only")
+                assert result.returncode == 23 and report["original_exit"] == 23, rows[-1]
                 assert report["observation_status"] == "incomplete" and report["cleanup"]["reaped"], report
                 assert report["cleanup_initiator"] == "native-observer:surviving-descendants", report
 

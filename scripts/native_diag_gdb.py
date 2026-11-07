@@ -29,7 +29,11 @@ def operation(name):
 def execute(command, name):
     operation(name)
     try:
-        return gdb.execute(command, to_string=True)
+        output = gdb.execute(command, to_string=True)
+        state["operation_output"] = output[-8192:]
+        state["completed_operation_id"] = state["operation_id"]
+        save(root / "inferior.json", state)
+        return output
     except KeyboardInterrupt:
         if not (root / "observe.json").exists():
             raise
@@ -51,10 +55,23 @@ def started_thread(_event):
         save(root / "inferior.json", state)
 
 
+def exited(event):
+    # This is GDB's actual process-exit event, not a thread exit or an
+    # inference from /proc. Publish before command hooks/unwinding/quit
+    # can fail or block and prevent the caller's next convenience read.
+    code = getattr(event, "exit_code", None)
+    if code is not None:
+        state.update(started=True, exit_code=code,
+                     terminal_status_source="gdb", terminal_status_event="exited")
+        save(root / "inferior.json", state)
+
+
 def terminal_status():
     # These values are set by GDB on actual process termination. Reading
     # them does not require a live selected thread or infer status from a
     # previously observed signal. A thread exit alone is not process exit.
+    if state["exit_code"] is not None or state["terminal_signal"] is not None:
+        return True
     for key, name in [("terminal_signal", "_exitsignal"), ("exit_code", "_exitcode")]:
         value = gdb.convenience_variable(name)
         if value is not None and value.type.code != gdb.TYPE_CODE_VOID:
@@ -82,6 +99,7 @@ def reap_terminal(pid):
             else:
                 raise RuntimeError("native child wait did not report termination")
             state["terminal_status_source"] = "waitpid"
+            state["terminal_wait"] = {"pid": pid, "raw_status": status}
             save(root / "inferior.json", state)
             return
         if time.monotonic() >= deadline:
@@ -91,6 +109,7 @@ def reap_terminal(pid):
 
 gdb.events.stop.connect(stopped)
 gdb.events.new_thread.connect(started_thread)
+gdb.events.exited.connect(exited)
 try:
     operation("configure")
     # Protect this debugger too, not only its native inferior. Linux's
@@ -175,12 +194,22 @@ try:
             live[0].switch()
             del live
         execute("continue", "continue")
-except Exception as error:
+except BaseException as error:
     state["error"] = f"{type(error).__name__}: {error} (line {sys.exc_info()[2].tb_lineno})"
+    state["failed_operation"] = {"operation": state.get("operation"),
+                                 "operation_id": state.get("operation_id"), "error": state["error"]}
+    # Preserve the original command error even if a subsequent diagnostic
+    # query or GDB shutdown cannot finish. A budget error must not erase it.
+    save(root / "inferior.json", state)
+    terminal_status()
     for command in ["info threads", "info program", "p $_exitsignal", "show scheduler-locking"]:
         try:
-            gdb.write(gdb.execute(command, to_string=True))
+            gdb.write(execute(command, "error-observation"))
         except Exception as detail:
             gdb.write(f"{command}: {detail}\n")
 finally:
-    operation("finished")
+    terminal_status()
+    # The helper returning does not imply that the debugger has exited.
+    # The outer observer still waits for that separate physical status.
+    state["helper_complete"] = True
+    operation("debugger-shutdown")
