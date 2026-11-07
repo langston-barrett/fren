@@ -17,6 +17,11 @@ structure Mode where
   /-- Specs of what the confirmation of models evaluates
   (`Wide.genConfirmed`). -/
   confirm : Bool := false
+  /-- Append quantified Boolean-match compositions after the unchanged
+  confirmation stream (`Wide.confirmedDomains`). -/
+  confirmMatches : Bool := false
+  /-- Main's ignored-argument confirmation stream, before hosted-sort additions. -/
+  confirmArguments : Bool := false
   /-- Multi-scrutinee lints alone (`Wide.duplicateScrutineeGroup`). -/
   scrutinees : Bool := false
   /-- Specs of global expectations over recursive enumerations alone
@@ -59,6 +64,8 @@ structure Mode where
 def Mode.args (m : Mode) : Array String :=
   (if m.avoidKnown then #["--avoid-known"] else #[]) ++ (if m.guards then #["--guards"] else #[]) ++
     (if m.sites then #["--sites"] else #[]) ++ (if m.confirm then #["--confirm"] else #[]) ++
+    (if m.confirmMatches then #["--confirm-matches"] else #[]) ++
+    (if m.confirmArguments then #["--confirm-arguments"] else #[]) ++
     (if m.scrutinees then #["--scrutinees"] else #[]) ++
     (if m.inductions then #["--inductions"] else #[]) ++ (if m.inductionForms then #["--induction-forms"] else #[]) ++
     (if m.keywords then #["--keywords"] else #[]) ++
@@ -78,10 +85,12 @@ def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
-  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
+  if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--confirm-matches", "--confirm-arguments", "--scrutinees", "--inductions", "--induction-forms",
       "--keywords", "--fact-scopes", "--induction-candidates", "--decidable", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--datatype-elements", "--generic-functions", "--set-card", "--set-card-fallback", "--recursion-positions"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
-           confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
+           confirm := args.contains "--confirm", confirmMatches := args.contains "--confirm-matches"
+           confirmArguments := args.contains "--confirm-arguments"
+           scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
            keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
            inductionCandidates := args.contains "--induction-candidates"
@@ -97,6 +106,8 @@ def Mode.ofArgs? (args : List String) : Option Mode :=
 def Mode.lean (m : Mode) : String :=
   let fields := (if m.avoidKnown then ["avoidKnown := true"] else []) ++ (if m.guards then ["guards := true"] else []) ++
     (if m.sites then ["sites := true"] else []) ++ (if m.confirm then ["confirm := true"] else []) ++
+    (if m.confirmMatches then ["confirmMatches := true"] else []) ++
+    (if m.confirmArguments then ["confirmArguments := true"] else []) ++
     (if m.scrutinees then ["scrutinees := true"] else []) ++
     (if m.inductions then ["inductions := true"] else []) ++ (if m.inductionForms then ["inductionForms := true"] else []) ++
     (if m.keywords then ["keywords := true"] else []) ++

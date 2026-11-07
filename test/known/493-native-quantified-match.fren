@@ -1,0 +1,21 @@
+-- Known front-end difference: https://github.com/langston-barrett/fren/issues/493
+-- An unbounded integer quantifier has no computable native decision.
+-- With FREN_MISREAD_MODELS=1, the standalone front end refutes pinned;
+-- hosted confirmation retains its documented native-compilation limit.
+-- This also reproduces on pre-PR main e33fcd84, independently of #847.
+-- Kept outside the supported confirmation-composition corpus; no unsafe
+-- evaluation or diagnostic mask is added to make the readers agree.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.undecidable "allow"
+
+proc integer_composed(x: Int, q: Set<Int>, a: Int) {
+    require empty: q = {}
+    require pinned: match (exists (y: Int), y in q and (forall (z: Int), z = y)) {
+        true => false,
+        false => a = -1,
+    }
+    expect bad: a > 0
+}

@@ -1,5 +1,5 @@
 -- keep-sorted start
-import Fren.Elab
+import Fren.Elab.TypeTerms
 import Fren.Known
 import Fren.Prelude
 -- keep-sorted end
@@ -329,7 +329,11 @@ its values up to the bound and whether they are all of its type's. -/
 partial def partialDecide (domain : PartialEnv) (p : Expr) : MetaM Expr := do
   let p := p.consumeMData
   if p.isAppOfArity ``Fren.lastArm 4 then
-    return ← domain.wrap #[p.getAppArgs[2]!] (← partialDecide domain p.appArg!)
+    -- A guarded quantifier can already be known, even with an unknown
+    -- index under its binder. Ask the same partial evaluator as its body,
+    -- rather than the quantifier-free knownness check.
+    return ← mkAppM ``Enum.ifKnown
+      #[← partialKnown domain p.getAppArgs[2]!, ← partialDecide domain p.appArg!]
   if p.isAppOfArity ``Fren.typeObligation 2 then return ← partialDecide domain p.appArg!
   -- A relation obligation quantifies over its actual pairs. Bounding its
   -- two components independently loses that finite guard when either
@@ -401,6 +405,11 @@ share, and an application with an unknown argument has none. -/
 partial def partialValue (domain : PartialEnv) (e : Expr) : MetaM Expr := do
   let e := e.consumeMData
   unless ← hasQuantifier e do return ← domain.wrap #[e] (← mkAppM ``Option.some #[e])
+  if e.isAppOfArity ``Fren.lastArm 4 then
+    -- Boolean matches also have value-valued arms. Their scrutinee can
+    -- still be a proposition, which generic argument lifting cannot read.
+    return ← mkAppM ``Enum.ifKnown
+      #[← partialKnown domain e.getAppArgs[2]!, ← partialValue domain e.appArg!]
   if e.isAppOfArity ``Decidable.decide 2 then return ← partialDecide domain e.getAppArgs[0]!
   if let .letE _ _ value body _ := e then return ← partialValue domain (body.instantiate1 value)
   let thunk (value : Expr) := withLocalDeclD `_ (mkConst ``Unit) fun u => mkLambdaFVars #[u] value
@@ -409,6 +418,17 @@ partial def partialValue (domain : PartialEnv) (e : Expr) : MetaM Expr := do
     return ← mkAppM ``Enum.iteValue
       #[← partialDecide domain args[1]!, ← thunk (← partialValue domain args[3]!), ← thunk (← partialValue domain args[4]!)]
   liftArgs domain e fun x => do domain.wrap #[x] (← mkAppM ``Option.some #[x])
+
+/-- Whether a strict marker's scrutinee has a partial outcome, including
+when it is a quantified proposition rather than a Boolean decision. -/
+partial def partialKnown (domain : PartialEnv) (e : Expr) : MetaM Expr := do
+  -- Strict applications also retain erased type and instance arguments.
+  -- Keep the quantifier-free check for these: wrapping a type in our
+  -- value-level Option would have the wrong universe.
+  if (!(← isProp e) && (← isType e)) || (← isProof e) || !(← hasQuantifier e) then
+    return ← (domain.known?.map (· e)).getD (pure (mkConst ``Bool.true))
+  let value ← if ← isProp e then partialDecide domain e else partialValue domain e
+  mkAppM ``Option.isSome #[value]
 
 /-- `leaf` of the application `e`, an `Option`, with each of its arguments
 that has a quantifier evaluated first by `partialValue`: `none` if one is

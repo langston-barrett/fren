@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Elab.GlobalBlocks
 import Fren.Impl
 import Fren.View
 -- keep-sorted end
@@ -86,7 +87,10 @@ elab "#check_quantifier_model" : command => do
         ((← `(∀ x : Fin 1, ∀ y : Fin 1, y = x)), none),
         ((← `(∀ x : Fin 1, True → ∀ y : Fin 1, y = x)), none),
         ((← `(∀ x : Fin 1, x ∈ Fren.Seq.ofList ([] : List (Fin 1)) → ∃ y : Fin 1, y = x)), some true),
-        ((← `(∃ x : Fin 1, x ∈ Fren.Seq.ofList ([] : List (Fin 1)) ∧ ∀ y : Fin 1, y = x)), some false)] do
+        ((← `(∃ x : Fin 1, x ∈ Fren.Seq.ofList ([] : List (Fin 1)) ∧ ∀ y : Fin 1, y = x)), some false),
+        ((← `(∃ x : Fin 1, x ∈ Fren.Seq.ofList ([0] : List (Fin 1)) ∧ ∀ y : Fin 1, y = x)), none),
+        ((← `(∃ x : Fin 1, x ∈ Fren.Seq.ofList ([0] : List (Fin 1)) ∧ (False ∧ ∀ y : Fin 1, y = x))), some false),
+        ((← `(∀ x : Fin 1, x ∈ Fren.Seq.ofList ([0] : List (Fin 1)) → (True ∨ ∀ y : Fin 1, y = x))), some true)] do
       let p ← instantiateMVars (← elabTerm stx none)
       let p := Fren.markQuantifierDomains [true] p
       let prepared ← Fren.unknownQuantifiers #[fin] p
@@ -94,6 +98,38 @@ elab "#check_quantifier_model" : command => do
       let values ← Fren.decideAll #[some (prepared, prepared)]
       unless values == #[expected] do
         throwError "a bounded binder changed a nested quantifier: expected {repr expected}, got {repr values}; {prepared}"
+      -- Compose the actual prepared/index-rewritten quantifier with the
+      -- complete-match marker. Its body being a literal must neither
+      -- lose a known empty-domain result nor make an unknown one known.
+      let decideOf (q : Expr) : MetaM Expr :=
+        return mkApp2 (mkConst ``Decidable.decide) q (← Fren.Enumerate.decidableOf q)
+      let decision ← decideOf prepared
+      for body in #[false, true] do
+        for scrutinee in #[decision, prepared] do
+          let wrapped ← mkAppM ``Fren.lastArm #[scrutinee, mkConst (if body then ``True else ``False)]
+          unless (← Fren.decideAll #[some (wrapped, wrapped)]) == #[expected.map (fun _ => body)] do
+            throwError "lastArm lost its partially evaluated scrutinee or was not strict"
+          for typeArgument in #[fin, ← mkArrow fin fin] do
+            let genericApplication ← mkAppM ``Fren.lastArm #[typeArgument, wrapped]
+            unless (← Fren.decideAll #[some (genericApplication, genericApplication)]) == #[expected.map (fun _ => body)] do
+              throwError "a strict type argument discarded its quantified body's value"
+      let finalArm ← mkAppM ``Fren.lastArm #[decision, mkConst ``False]
+      let complete ← mkAppOptM ``ite #[some (mkSort 0), some prepared, some (← Fren.Enumerate.decidableOf prepared),
+        some (mkConst ``True), some finalArm]
+      unless (← Fren.decideAll #[some (complete, complete)]) == #[expected] do
+        throwError "a complete Boolean match changed its quantified scrutinee"
+      let finalValue ← mkAppM ``Fren.lastArm #[prepared, mkConst ``Bool.false]
+      let completeValue ← mkAppOptM ``ite #[some (mkConst ``Bool), some prepared,
+        some (← Fren.Enumerate.decidableOf prepared), some (mkConst ``Bool.true), some finalValue]
+      let completeValue ← mkEq completeValue (mkConst ``Bool.true)
+      unless (← Fren.decideAll #[some (completeValue, completeValue)]) == #[expected] do
+        throwError "a value-valued Boolean match changed its quantified scrutinee"
+      for scrutinee in #[decision, prepared] do
+        let wrapped ← mkAppM ``Fren.lastArm #[scrutinee, mkNatLit 7]
+        let equal ← mkEq wrapped (mkNatLit 7)
+        let actual ← Fren.decideAll #[some (equal, equal)]
+        unless actual == #[expected.map (fun _ => true)] do
+          throwError "a value-valued lastArm changed its quantified scrutinee: {repr actual}; {prepared}"
 
 #check_quantifier_model
 
@@ -111,6 +147,44 @@ elab "#check_quantifier_decision" : command => do
       throwError "an unused binder's compound decision hid a known false conjunct"
 
 #check_quantifier_decision
+
+-- Expansion changes the condition as well as its decision. Count the
+-- logical quantifier once, even if the decision repeats its annotation.
+open Lean Elab Command Meta Term in
+elab "#check_expanded_quantifier_decision" : command => do
+  liftTermElabM do
+    let seq ← instantiateMVars (← elabType (← `(Fren.Seq Int)))
+    withLocalDeclD `q seq fun q => do
+      for all in #[false, true] do
+        let p ← withLocalDeclD `y (mkConst ``Int) fun y => do
+          let member ← mkAppM ``Membership.mem #[q, y]
+          if all then mkForallFVars #[y] (← mkArrow member (mkConst ``True))
+          else mkAppM ``Exists #[← mkLambdaFVars #[y] (mkAnd member (mkConst ``True))]
+        for repeated in #[false, true] do
+          let marked := Fren.Elems.mark 1 p
+          let decision := mkApp (mkConst ``Classical.propDecidable) (if repeated then marked else p)
+          let e ← mkAppOptM ``ite #[some (mkConst ``Bool), some marked, some decision,
+            some (mkConst ``Bool.true), some (mkConst ``Bool.false)]
+          let scan ← IO.mkRef ({} : Fren.Elems.Scan)
+          let e ← Fren.Elems.scan (.ofList [q.fvarId!]) scan #[] e
+          let sites := (← scan.get).sites
+          unless sites.size == 1 do throwError "a decision duplicated its source quantifier"
+          let count ← IO.mkRef 0
+          let expanded ← Fren.Elems.expand sites (fun _ _ _ => pure []) count e
+          check expanded
+          unless !expanded.hasFVar && (← count.get) == 0 do
+            throwError "empty expansion kept an old decision or consumed the instance budget"
+          unless (← Fren.compileValues Bool (mkConst ``Bool) #[expanded]) == #[all] do
+            throwError "an empty-domain condition changed its Boolean value"
+          let count ← IO.mkRef 0
+          let overflow ← try
+            discard <| Fren.Elems.expand sites
+              (fun _ _ _ => pure (List.replicate (Fren.Core.maxElementInstances + 1) (mkIntLit 0))) count e
+            pure false
+          catch ex => pure ((← ex.toMessageData.toString).startsWith Fren.Elems.tooManyTag)
+          unless overflow do throwError "quantifier expansion lost its instance limit"
+
+#check_expanded_quantifier_decision
 
 -- Solver formulas must lose confirmation's domain annotations before
 -- lean-smt introduces locals and embeds Nat into Int (#847, seed 52).

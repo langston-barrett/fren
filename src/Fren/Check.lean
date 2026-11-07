@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Decisions
 import Fren.Known
 import Fren.Lint
 import Fren.Model
@@ -734,17 +735,12 @@ partial def unknownQuantifiers (tys : Array Expr) (e : Expr) : MetaM Expr := do
       -- needs. A computable unused-binder instance still decides the old
       -- body; refresh it for the unknown proposition instead.
       let args := x.getAppArgs
-      let positions := if x.isAppOfArity ``Decidable.decide 2 then some (0, 1)
-        else if x.isAppOfArity ``ite 5 || x.isAppOfArity ``dite 5 then some (1, 2) else none
-      if let some (p, d) := positions then
+      if let some (p, _) := Decisions.positions? x then
         let p := args[p]!
         if (p.find? (· == prop)).isSome then
           -- Inferring an instance's type does not check its arguments:
           -- a nested And/Or instance can retain a stale child decision.
-          let expected := mkApp (mkConst ``Decidable) p
-          let decision? ← try synthInstance? expected catch _ => pure none
-          let decision := decision?.getD (mkApp (mkConst ``Classical.propDecidable) p)
-          return .done (mkAppN x.getAppFn (args.set! d decision))
+          return .done (← Decisions.refresh x)
       return .continue)
 
 /-- `e` at the values `values` (`modelValues`), as confirmation evaluates

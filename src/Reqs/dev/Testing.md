@@ -1542,7 +1542,7 @@ does not classify its entries in advance. `heavy_lease` calls
 `heavy_report_owner`; the recursive accounting functions use the same
 `report_owner?` definition, so victim selection and owned signaling also
 decide compatibility. A legacy job can admit new work only when a slot is
-free and the memory rule holds. Time values use one integral unit of the
+free and the memory rule holds. The integral model uses one time unit of the
 shared monotonic clock. Python tests check the concrete lock, clock, procfs and
 signal operations through `tested` claims in `Impls.Trace`; these tests run
 in the `lint` workflow, not in `lake test`. `heavy_registry` models the retry
@@ -1559,7 +1559,95 @@ omit `scripts/`.
 The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
+`Heavy.Ownership` implements the registry attempt, report ownership and
+isolated-lease accounting decisions below, bound in `Impls.HeavyOwnership`.
+Python remains the active scheduler and syscall adapter. The kernel takes
+decoded reports: wire version, token syntax, finite timestamps and monitor
+field shapes are checked by the adapter, not assumed to prove ownership.
+The kernel checks sequence and RSS validity, token agreement, the entire
+observed monitor identity and freshness itself. The `heavyOwnership` job
+compares these decisions against Python with sanitized fixtures, including
+malformed reports, inherited tokens and namespace disagreements. It also
+checks registry retry boundaries against Python's acquisition loop.
+These `impl`s prove that the decoded Lean functions meet the requirements;
+they do not prove Python's code or establish a call from Fren's CLI or
+hosted front end. The Python connection is checked by the differential
+fixtures and the existing `tested` claims. Both standalone Heavy kernels
+are outside those Fren runtimes. The `implPaths` audit therefore records
+each mapped output as an exact `unbound` observation in
+`test/impl_paths.txt`, including the forecast's two outputs and ownership's
+eight plus the conversion's four. These observations certify no runtime
+connection; unexpected, duplicate and stale inventory entries still fail
+the audit. Its regressions also check that a real standalone kernel call,
+even through a proof adapter, does not count as a Fren production output
+function.
+This slice does not port set-wide accounting, victim selection, sequence
+allocation or publication, completion or signalling. A lease's isolated
+admission charge is not a new admission rule and must not be summed over
+unknown holders.
+
+Python's clock arithmetic rounds before a freshness comparison. Converting
+the two operands to exact integer ticks and then subtracting changes that
+operation. For the Python conversion boundary, the adapter first computes
+the numeric elapsed value `now - updated_monotonic`, using Python's operand
+types and arithmetic. It encodes that rounded result and the TTL exactly
+in one positive integral scale. It supplies no freshness or approval Boolean.
+For registry attempts it computes the allocated deadline `started + wait`
+and then `deadline - now` in that order, encoding the numeric remaining
+value after both Python operations. The absolute clock origin is discarded.
+
+`heavy_time_conversion` states what the kernel establishes from those spans.
+A finite elapsed value `e` becomes the synthetic timestamp `-e` at `now = 0`;
+a non-finite elapsed value becomes timestamp 1, which is never fresh for a
+finite natural TTL. Report identity and RSS remain available, so a matching
+observed owner still keeps its last RSS and reserves a cap for stale data.
+A finite remaining value is a deadline relative to zero. Negative infinity
+is due; positive infinity and NaN are not due, matching Python's
+`remaining <= 0` test. These normal forms preserve the decisions here, not
+absolute timestamps, signed zero or the reason a report is stale.
+
+The integral conformance proofs do not prove Python floating-point
+arithmetic or this adapter's conversion. The `heavyOwnership` differential
+checks both complete ownership paths, the actual Python registry loop, and
+numeric conversion separately against exact rational arithmetic rounded to
+binary64. It includes representable neighbors, the rounded ten-second tie,
+mixed integer/float operands, invalid reports and non-finite differences.
+The forecast adapter already subtracts its window in Python before scaling
+the resulting cutoff; it does not move that subtraction into the kernel.
+
 ```fren
+pub enum TimeSpan { Finite(Int), PositiveInfinity, NegativeInfinity, NotANumber }
+
+pub proc heavy_time_conversion(span: TimeSpan, ttl: Nat): (
+    det elapsed_updated: Int,
+    det remaining_deadline: Int,
+    det fresh?,
+    det timed_out?,
+) {
+    out elapsed_updated := match span {
+        TimeSpan::Finite(e) => -e,
+        _ => 1,
+    }
+    out remaining_deadline := match span {
+        TimeSpan::Finite(r) => r,
+        TimeSpan::NegativeInfinity => -1,
+        _ => 1,
+    }
+    ensure freshness: fresh? iff (match span {
+        TimeSpan::Finite(e) => 0 <= e <= ttl,
+        _ => false,
+    })
+    expect normalized_freshness: fresh? iff 0 <= 0 - elapsed_updated <= ttl
+    ensure timeout: timed_out? iff (match span {
+        TimeSpan::Finite(r) => r <= 0,
+        TimeSpan::NegativeInfinity => true,
+        _ => false,
+    })
+    expect normalized_timeout: timed_out? iff remaining_deadline <= 0
+    expect nonfinite_stale: when span = TimeSpan::NotANumber, not fresh?
+    expect zero_fresh: when span = TimeSpan::Finite(0), fresh? and timed_out?
+}
+
 pub proc heavy_registry(available?, now: Int, deadline: Int, held?, requested?): (
     det acquired?,
     det retry?,
@@ -2613,6 +2701,62 @@ today, the intended syntax and semantics, counterexamples it must reject,
 and its effects on decidability and evidence. Distinguish a limitation of
 the language from a missing model or test. A proposal does not authorize
 expanding the implementation's scope automatically.
+
+## Nonvacuous oracles
+
+The enumeration agreement job, decidable-core conformance jobs and dynamic
+coverage reports return their counted observations through the same guard
+(`testing::oracle_count`, `FrenTest.Oracle.finish`). The floor itself must
+be positive, and earlier failures must survive even when the floor is met.
+Enumeration requires 500 comparisons. Conformance requires at least one
+check; coverage requires both a module read and a declaration run.
+
+```fren
+pub proc oracle_count(compared: Nat, floor: Nat, failures: Nat): (det passes?) {
+    ensure rule: passes? iff failures = 0 and 0 < floor <= compared
+
+    expect nothing_compared: when compared = 0, not passes?
+    expect zero_floor: when floor = 0, not passes?
+    expect keep_failures: when failures > 0, not passes?
+}
+
+pub proc oracle_output(output: String): (det passes?) {
+    ensure rule: passes? iff output != "" and not output.contains?("internal error")
+
+    expect nothing_written: when output = "", not passes?
+    expect internal_error: when output.contains?("internal error"), not passes?
+}
+
+pub proc oracle_tool(output: String, stderr: String, exit: Nat): (det passes?) {
+    ensure rule: passes? iff exit = 0 and output != "" and not output.contains?("internal error")
+        and not stderr.contains?("internal error")
+
+    expect failed_tool: when exit != 0, not passes?
+}
+
+pub proc conformance_exit(exit: Nat, errors: Nat, warnings: Nat): (det accepted?) {
+    ensure rule: accepted? iff exit = 0 or (exit = 1 and errors > 0) or (exit = 3 and warnings > 0)
+
+    expect unexplained: when exit != 0 and errors = 0 and warnings = 0, not accepted?
+    expect static_error: when exit = 2, not accepted?
+}
+
+#fren_check oracle_count
+#fren_check oracle_output
+#fren_check oracle_tool
+#fren_check conformance_exit
+```
+
+`Impls.Testing` proves these guards on the functions whose returned failures
+the jobs report. `oracle_output` is applied to conformance's raw output
+before reading its summary, so an internal error cannot disappear beside
+normal results. Its summary must contain all four numeric counts, and only
+F0664 warnings explain inconclusive checks. A conformance run is an
+in-process checker invocation: exits 1 and 3 can describe expected failed
+checks or warnings, but need their diagnostics (`conformance_exit`). A
+coverage subprocess must exit zero and write nonempty output without an
+internal error (`oracle_tool`), before its counters are read. Static coverage
+does not measure execution and does not apply the observation guard.
 
 ## Coverage
 

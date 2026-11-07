@@ -1,0 +1,23 @@
+-- Known front-end difference: https://github.com/langston-barrett/fren/issues/871
+-- Independent nested sequence inputs can contain a returned sort value
+-- absent from lean-smt's finite domain. The members redundancy query
+-- then warns about an index outside that domain before confirmation.
+-- This reproduces on pre-PR main e33fcd84, with injected model misreads.
+-- Ordinary composition cases construct nested values from direct sort
+-- inputs; this independent-input reproduction stays separate.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.undecidable "allow"
+
+type Token
+
+proc nested_domain(x: Seq<Token>, q: Seq<Seq<Token>>, a: Int) {
+    require members: q = [x]
+    require pinned: match (forall (y: Seq<Token>), when y in q, forall (z: Seq<Token>), z = y) {
+        true => a = -1,
+        false => true,
+    }
+    expect bad: a > 0
+}

@@ -1,6 +1,7 @@
 -- keep-sorted start
 import FrenTest.ExpansionFuzz
 import FrenTest.FuzzFrontends.Main
+import FrenTest.FuzzFrontends.Parallel
 -- keep-sorted end
 
 /-!
@@ -9,6 +10,10 @@ import FrenTest.FuzzFrontends.Main
 The fuzzer's entry point. The fuzzer itself is `FrenTest.FuzzFrontends`,
 in a library, so that `lake test` can import it to check its fixed corpus
 (`FrenTest.FuzzFrontends.corpus`).
+
+`--jobs 2` checks two seed ranges concurrently in isolated workers. The
+default is one lane, since callers such as CI already launch several
+fuzzers at once. Shorter parallel workers bound retained environments.
 
 `--copying COUNT` checks an independent stream of copying constructs,
 including refinement locals. Short workers keep the hosted environments
@@ -37,4 +42,4 @@ unsafe def main (args : List String) : IO UInt32 := do
     let failures ← FrenTest.ExpansionFuzz.run count start
     for failure in failures do IO.eprintln failure
     return if failures.isEmpty then 0 else 1
-  | _ => FrenTest.FuzzFrontends.main args
+  | _ => FrenTest.FuzzFrontends.main args (some FrenTest.FuzzFrontends.Parallel.run)

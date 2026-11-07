@@ -161,7 +161,9 @@ its unknown conditions cannot change it (`Core.Cardinality.holds?`); any
 other application where its arguments are (`Core.appliedKnown`), the last
 arm of a complete `match` among them (`Fren.lastArm`). An index under a
 binder is not analysed, and is never known. `decide` gives each
-proposition's value. -/
+proposition's value. Quantified compositions use `partialDecide` and
+`partialValue` instead, so this conservative check does not discard a
+quantifier's known empty-domain result. -/
 partial def knownOf (decideOf : Expr → MetaM Expr) (e : Expr) : MetaM Expr := do
   let e := e.consumeMData
   let tt := mkConst ``Bool.true

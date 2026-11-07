@@ -26,16 +26,18 @@ Crashes and timeouts are findings: the run then exits nonzero. A worker
 that dies while checking no spec, before its first or between two, is
 blamed on none: the run resumes after the last spec recorded, or stops if
 the worker recorded none. With `compareDumps`, the workers compare the
-obligations dumps too (`worker`). -/
-unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit : Nat) (compareDumps : Bool) :
-    IO UInt32 := do
+obligations dumps too (`worker`). An explicit `id?` keeps parallel lanes'
+files separate; `workerLimit?` bounds their retained environments. -/
+unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit : Nat) (compareDumps : Bool)
+    (id? : Option String := none) (workerLimit? : Option Nat := none) : IO UInt32 := do
   let start ← IO.monoMsNow
-  let run : Run := { dir, id := toString (← IO.Process.getPID) }
+  let run : Run := { dir, id := id?.getD (toString (← IO.Process.getPID)) }
   IO.FS.writeFile run.results ""
   let mut next := seed
   -- The appended enumeration groups put more declarations in each spec;
   -- restart their workers sooner to keep the retained environments small.
   let perWorker := if mode.enumerationObligations || mode.enumerationRelations then workerSpecs / 2 else workerSpecs
+  let perWorker := min perWorker (max 1 (workerLimit?.getD perWorker))
   while next < seed + count do
     IO.FS.writeFile run.progress ""
     let batch := min (seed + count - next) perWorker
@@ -112,26 +114,32 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--generic-functions] [--set-card] [--set-card-fallback] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--jobs 1|2] [--avoid-known] [--guards] [--sites] [--confirm] [--confirm-matches] [--confirm-arguments] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--generic-functions] [--set-card] [--set-card-fallback] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--generic-functions] [--set-card] [--set-card-fallback] [--recursion-positions] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--confirm-matches] [--confirm-arguments] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--datatype-elements] [--generic-functions] [--set-card] [--set-card-fallback] [--recursion-positions] --print SEED"
 
 structure Opts where
   count : Nat := 100
   seed : Nat := 0
   dir : String := ".lake/fuzz"
   limit : Nat := 30
+  /-- At most two isolated workers; `--jobs 1` keeps the serial schedule. -/
+  jobs : Nat := 1
   worker? : Option String := none
   /-- Compare the obligations dumps too (`--obligations`, `worker`). -/
   compareDumps : Bool := false
 
-unsafe def main (args : List String) : IO UInt32 := do
+/-- Parse the shared command line. The executable can supply a parallel
+schedule; workers and fixed-corpus callers keep their existing paths. -/
+unsafe def main (args : List String) (run? : Option (Opts → Mode → IO UInt32) := none) : IO UInt32 := do
   if let "--files" :: files := args then
     IO.FS.createDirAll ".lake/fuzz"
     return ← mainFiles files ".lake/fuzz"
   let mode : Mode := { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards"
-                       sites := args.contains "--sites", confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
+                       sites := args.contains "--sites", confirm := args.contains "--confirm"
+                       confirmMatches := args.contains "--confirm-matches"
+                       confirmArguments := args.contains "--confirm-arguments", scrutinees := args.contains "--scrutinees"
                        inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
                        keywords := args.contains "--keywords", factScopes := args.contains "--fact-scopes"
                        inductionCandidates := args.contains "--induction-candidates"
@@ -141,7 +149,7 @@ unsafe def main (args : List String) : IO UInt32 := do
                        unfoldings := args.contains "--unfoldings", datatypeElements := args.contains "--datatype-elements"
                        genericFunctions := args.contains "--generic-functions"
                        setCard := args.contains "--set-card", setCardFallback := args.contains "--set-card-fallback", recursionPositions := args.contains "--recursion-positions" }
-  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
+  let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--confirm-matches" && a != "--confirm-arguments" && a != "--scrutinees"
     && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
     && a != "--decidable" && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--datatype-elements" && a != "--generic-functions" && a != "--set-card" && a != "--set-card-fallback" && a != "--recursion-positions")
   if let ["--report", dir] := args then
@@ -154,6 +162,8 @@ unsafe def main (args : List String) : IO UInt32 := do
   let rec parse : List String → Opts → Option Opts
     | [], o => some o
     | "--count" :: n :: rest, o => n.toNat?.bind fun n => parse rest { o with count := n }
+    | "--jobs" :: "1" :: rest, o => parse rest { o with jobs := 1 }
+    | "--jobs" :: "2" :: rest, o => parse rest { o with jobs := 2 }
     | "--seed" :: n :: rest, o => n.toNat?.bind fun n => parse rest { o with seed := n }
     | "--out" :: d :: rest, o => parse rest { o with dir := d }
     | "--spec-timeout" :: n :: rest, o => n.toNat?.bind fun n => parse rest { o with limit := n }
@@ -164,6 +174,9 @@ unsafe def main (args : List String) : IO UInt32 := do
   IO.FS.createDirAll o.dir
   match o.worker? with
   | some id => worker o.count o.seed { dir := o.dir, id } mode o.compareDumps
-  | none => mainFrontends o.count o.seed o.dir mode o.limit o.compareDumps
+  | none =>
+    match run? with
+    | some run => run o mode
+    | none => mainFrontends o.count o.seed o.dir mode o.limit o.compareDumps
 
 end FrenTest.FuzzFrontends

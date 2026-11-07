@@ -147,7 +147,7 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
   let path := dir / s!"corpus-{← IO.Process.getPID}.fren"
   let mut failures := #[]
   for (mode, s) in specs do
-    let ran ← runFrontends env path (mode.spec s) mode.confirm
+    let ran ← runFrontends env path (mode.spec s) (mode.confirm || mode.confirmMatches || mode.confirmArguments)
     let c := ran.comparison
     if !mode.genericFunctions && (mode.setCard || mode.setCardFallback) then
       for problem in setCardProblems ran do
@@ -174,7 +174,9 @@ def corpusFailures (env : Environment) (dir : System.FilePath) (specs : List (Mo
         let expected := if rejects then "a structural-recursion error (F0447)" else "only failed comparisons (F0603), if any"
         failures := failures.push s!"seed {s}{flags mode}: generator expected {expected}, got {errors}; reproduce with {again}"
     let cutLines := (mode.cuts s).map fun c => (c.splitOn "\n").length - 1
-    for (start, d) in appendedErrors cutLines ran.cli do
+    let appended := appendedErrors cutLines ran.cli ++
+      (if mode.confirmMatches || mode.confirmArguments then appendedErrors cutLines ran.hosted else #[])
+    for (start, d) in appended do
       failures := failures.push s!"seed {s}{flags mode}: what the generator appends after line {start} adds a static \
         error at line {d.line}, error{(d.code?.map (s!"[{·}]")).getD ""}: {headOf d}; an error stops \
         every check of the spec, so put deliberate errors in a mode of their own \

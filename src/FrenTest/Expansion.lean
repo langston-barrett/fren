@@ -296,13 +296,23 @@ def fanoutQueryLimit (width depth allowance : Nat) : Bool :=
 #guard
   (Fren.Core.readingBudget ReadingNode.children 2 [.expr #[] [] false (.const `closed (.bin .add leaf leaf))]).isNone
 
--- Retained arguments are copied and compiled, but `siteGoals` does not
--- visit them and does not substitute their nested pattern binders.
+-- Retained arguments are inspected for source questions too, even when
+-- the substituted body never reads them.
 #guard
   let expanded := Ex.bin .add leaf leaf
   let argument := Ex.match expanded #[(.bind `p, none, .pair (.bound `p) (.bound `p))] 0 #[] none none
   Fren.Core.readingBudget ReadingNode.children 9 [.expr #[] [] false (.strict #[argument] leaf)] == some 0 &&
-    Fren.Core.readingBudget ReadingNode.children 2 [.expr #[] [] true (.strict #[argument] leaf)] == some 0
+    Fren.Core.readingBudget ReadingNode.children 9 [.expr #[] [] true (.strict #[argument] leaf)] == some 0 &&
+    (Fren.Core.readingBudget ReadingNode.children 8 [.expr #[] [] true (.strict #[argument] leaf)]).isNone
+
+-- The bounded presence query and question generation must both enter an
+-- unused argument, retaining its position and enclosing pattern binder.
+#guard
+  let argument := Ex.index (.var `q) (.bound `p) 42 `unspecified
+  let application := Ex.strict #[argument] (.lit (.bool true))
+  let expression := Ex.match (.lit (.int 0)) #[(.bind `p, none, application)] 43 #[44] none none
+  (ReadingNode.expr #[] [] false application).hasSites &&
+    (expression.indexGoals.map (·.1)) == #[42]
 
 -- This linear-size tree used to revisit exponentially many occurrences
 -- even though it has no site questions. Its empty answer needs no copies.

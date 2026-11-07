@@ -1,0 +1,50 @@
+-- Empty domains decide the scrutinee before complete-match strictness.
+-- The injected integer misread falsifies both pinned hypotheses. An
+-- unbounded scrutinee remains unknown despite equal arm bodies.
+
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.unused_assumption "allow"
+set_option fren.lint.dead_code "allow"
+set_option fren.lint.undecidable "allow"
+
+type Token
+
+proc exists_empty(x: Token, q: Seq<Token>, a: Int) {
+    require empty: q = []  --~ warning: could not decide whether `exists_empty::empty` is redundant
+    require pinned: match (exists (y: Token), y in q and (forall (z: Token), z = y)) {
+        true => true,
+        false => a = -1,
+    }
+    expect bad: a > 0  --~ error: internal error: the solver's model for the expectation check of `exists_empty::bad` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc forall_empty(x: Token, q: Set<Token>, a: Int) {
+    require empty: q = {}
+    require pinned: match (forall (y: Token), when y in q, exists (z: Token), z = y) {
+        false => true,
+        true => a = -1,
+    }
+    expect bad: a > 0  --~ error: internal error: the solver's model for the expectation check of `forall_empty::bad` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+proc still_unknown(a: Int) {
+    require pinned: match (forall (y: Token), y = y) {  --~ warning: both operands of `=` are written the same
+        true => a = -1,
+        false => a = -1,
+    }
+    expect bad: a > 0  --~ error: expectation `still_unknown::bad` does not hold
+}
+
+fn matched?<T>(q: Seq<T>) := match (exists (y: T), y in q and (forall (z: T), z = y)) {  --~ warning: this `match` only tests which of its patterns its scrutinee matches
+    true => true,
+    false => false,
+}
+
+proc through_definition(q: Seq<Token>, a: Int) {
+    require empty: q = []  --~ warning: could not decide whether `through_definition::empty` is redundant
+    require pinned: if matched?(q) then true else a = -1  --~ warning: this `Bool` expression can be simpler
+    expect bad: a > 0  --~ error: internal error: the solver's model for the expectation check of `through_definition::bad` makes its hypothesis `pinned` false in Fren's semantics
+}
+
+--@ summary: 9 passed, 1 failed, 5 inconclusive, 0 redundant
+--@ exit: 1

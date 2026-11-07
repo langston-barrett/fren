@@ -2,6 +2,7 @@
 import Fren.Impl
 import Fren.Trace
 import FrenCore.SolverTime
+import FrenTest.Conformance
 import FrenTest.Coverage
 import FrenTest.Jobs
 import FrenTest.SpecTimeout
@@ -27,7 +28,11 @@ that a definition's `source?` keeps. `testing::fuzz_overdue`, proved of
 `FrenTest.Coverage.fails` and `stale`, by which `fren_coverage` judges each
 counted declaration; its inputs are trusted: `ran?` is gcov's counters and
 `reached?` is `FrenCoverage.reached`, which nothing proves or tests yet
-(#679). `testing::fresh` rests on Lake, so it is trusted. -/
+(#679). The `oracle_count`, `oracle_output`, `oracle_tool` and
+`conformance_exit` requirements are proved of the guards that enumeration,
+conformance and coverage use to retain failures and reject empty counts,
+internal errors and failed tools. `testing::fresh` rests on Lake, so it
+is trusted. -/
 
 namespace Fren.Impls.Testing
 
@@ -705,5 +710,61 @@ impl portable_name: testing::portable_name for (root file : String) {
   exact ⟨by first | rfl | simp [Fren.portableName, Fren.Str.lit], trivial⟩
 
 trusted testing::fresh: "Lake rebuilds a module when a file that its library needs changed since its last build, and takes a module's outputs from its artifact cache only for a build whose inputs, those files among them, had the same content, which is part of Lake's rule and not checked by Fren; that the modules that read files read only files that their library needs is checked by `lake test`'s `libraries` job, which reads the sources and `lakefile.lean`"
+
+-- These are the returned failures of enumeration, conformance and coverage,
+-- including every failure accumulated before checking the count.
+impl oracle_count: testing::oracle_count for (name : String) (compared floor : Nat) (fs : Array String) {
+  compared := compared,
+  floor := floor,
+  failures := fs.size,
+  passes? := (FrenTest.Oracle.finish name compared floor fs).isEmpty,
+} by
+  intro name compared floor fs _
+  simp only [fren_spec, FrenTest.Oracle.finish_isEmpty, Bool.and_eq_true, decide_eq_true_eq,
+    Array.isEmpty_iff_size_eq_zero]
+  omega
+
+/-- The native search on tool reports agrees with the requirement's
+string predicate. -/
+theorem str_contains (s t : String) : Fren.Str.contains s t = s.contains t := by
+  rw [Bool.eq_iff_iff, String.contains_string_iff]
+  simp only [Fren.Str.contains, List.any_eq_true, List.mem_range, List.isPrefixOf_iff_prefix]
+  constructor
+  · rintro ⟨i, _, hi⟩
+    exact List.infix_iff_prefix_suffix.mpr ⟨_, hi, List.drop_suffix i s.toList⟩
+  · intro h
+    obtain ⟨u, hu, hs⟩ := List.infix_iff_prefix_suffix.mp h
+    refine ⟨s.length - u.length, by omega, ?_⟩
+    rw [← String.length_toList, ← List.suffix_iff_eq_drop.mp hs]
+    exact hu
+
+impl oracle_output: testing::oracle_output for (out : String) {
+  output := out,
+  passes? := (FrenTest.Oracle.outputFailures out).isEmpty,
+} by
+  intro out _
+  simp only [fren_spec, FrenTest.Oracle.outputFailures, Fren.Str.lit, str_contains]
+  split <;> simp_all <;> grind
+
+impl oracle_tool: testing::oracle_tool for (out err : String) (exit : Nat) {
+  output := out,
+  stderr := err,
+  exit := exit,
+  passes? := (FrenTest.Oracle.toolFailures out err exit).isEmpty,
+} by
+  intro out err exit _
+  simp only [fren_spec, FrenTest.Oracle.toolFailures, FrenTest.Oracle.outputFailures, Fren.Str.lit, str_contains]
+  repeat' split <;> simp_all <;> grind
+
+impl conformance_exit: testing::conformance_exit for (exit errors warnings : Nat) {
+  exit := exit,
+  errors := errors,
+  warnings := warnings,
+  accepted? := FrenTest.Conformance.exitAllowed exit errors warnings,
+} by
+  intro exit errors warnings _
+  simp only [fren_spec, FrenTest.Conformance.exitAllowed, Bool.or_eq_true, Bool.and_eq_true,
+    beq_iff_eq, decide_eq_true_eq]
+  omega
 
 end Fren.Impls.Testing

@@ -1,6 +1,6 @@
 -- keep-sorted start
 import Fren.Check
-import Fren.Elab
+import Fren.Elab.TypeTerms
 import Fren.PartialEval
 import Fren.Prelude
 import FrenCore.Enumeration

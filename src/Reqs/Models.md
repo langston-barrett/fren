@@ -380,12 +380,18 @@ the shared core, from the outcomes of each form's operands:
   where the scrutinee is unknown, such an arm's test is unknown too. The
   Lean-hosted front end writes the last arm of a complete `match`, which
   has no test there, as `Fren.lastArm` of the scrutinees, which it knows
-  only where it knows them; and a `Prop` that a table or a `match` reads
-  where no row or arm is taken as `Bool`'s unspecified value, which has a
-  decision, so that a table whose last row is `true` is decided as its
-  `if`s are. A `match` of several scrutinees, which `lang::Expr` does not
-  have, tests each on its own: an arm's test is the strong Kleene
-  conjunction of the tests of its patterns that test their scrutinees,
+  only where their partial evaluation gives a value. This includes a
+  quantified scrutinee: its guard's domain is evaluated before deciding
+  whether the final arm is known. In particular, an empty-domain
+  existential is false and selects the false arm even where its body is
+  unknown; an empty-domain universal is true and selects the true arm.
+  An unknown scrutinee still leaves the final arm unknown, including
+  where that arm's body is a literal. It writes a `Prop` that a table or a
+  `match` reads where no row or arm is taken as `Bool`'s unspecified value,
+  which has a decision, so that a table whose last row is `true` is
+  decided as its `if`s are. A `match` of several scrutinees, which
+  `lang::Expr` does not have, tests each on its own: an arm's test is the
+  strong Kleene conjunction of the tests of its patterns that test their scrutinees,
   each unknown where its scrutinee is, and `true` where none does
   (`model::arm_test_of`, which `Fren.Core.armTest` implements, over the
   patterns that `Fren.Core.Pat.irrefutable` finds test something). So
@@ -1006,9 +1012,36 @@ evaluation with enumeration: an empty domain decides its quantifier even
 when the body is unknown. These rules also apply beside a structural
 recursion without type parameters: a known operand can decide a formula
 whose other operand is unknown.
+When preparation or query expansion rewrites a quantifier in a compiled
+Boolean condition, its decision is rebuilt for the new proposition.
+The old decision dictionary is not a second source quantifier: expansion
+counts and rewrites the logical condition and operands once.
 Unfolding a function keeps its arguments strict, so
 an unknown argument still makes the application unknown even when its
 body does not read that argument.
+
+The composition is checked over the source expressions themselves, not
+over independently supplied outcomes for a quantifier and its match.
+The hosted regression also prepares and index-rewrites these expressions
+before evaluating their complete-match markers; the reference evaluator
+above has no quantifier form and cannot establish that adapter's result.
+
+```fren
+type MatchToken
+
+set_option fren.lint.undecidable "allow" in
+expect complete_quantified_match(q: Seq<MatchToken>, b?) {
+    assume empty: q = []
+    expect existential: (match (exists (y: MatchToken), y in q and (forall (z: MatchToken), z = y)) {
+        true => not b?,
+        false => b?,
+    }) iff b?
+    expect universal: (match (forall (y: MatchToken), when y in q, exists (z: MatchToken), z = y) {
+        false => not b?,
+        true => b?,
+    }) iff b?
+}
+```
 
 The pinned lean-smt can omit values returned inside nested datatype
 payloads from a sort's finite domain ([#871](https://github.com/langston-barrett/fren/issues/871)).
@@ -1018,9 +1051,12 @@ confirmation evaluates a formula. The hosted front end can then report
 an inconclusive model-reading warning where the standalone command
 reports a counterexample. Independent record inputs remain a tracked
 coverage limitation until that dependency bug is fixed; the confirmation
-corpus currently equates them. `test/known/871-record-domain.fren` retains
-the distinct-record reproduction separately, with and without injected
-model misreads.
+corpus currently equates them. The same missing-domain failure occurs
+with independent nested sequence inputs. Composition cases construct
+nested values from directly read sort values instead.
+`test/known/871-record-domain.fren` and
+`test/known/871-nested-quantified-match.fren` retain the independent-input
+reproductions separately, with and without injected model misreads.
 
 The formulas that the Lean-hosted front end does not evaluate are
 `Undefined` to it:
@@ -1033,6 +1069,13 @@ The formulas that the Lean-hosted front end does not evaluate are
 - those whose value a quantifier over a sort hidden within a structural
   recursion may change;
 - those that Lean cannot compile.
+
+`test/known/493-native-quantified-match.fren` retains an uncomputable
+integer-quantifier composition that also differs on pre-PR main. It stays
+within that native-compilation limit; the partial evaluator is not an
+unsafe fallback for unsupported native decisions. The supported
+composition tests exercise unknown abstract or generic quantifiers under
+guarded domains through both `partialDecide` and `partialValue`.
 
 A generated [selector](Generated.md) of a payload is total in the same way
 as an index, by a `| _ => default` arm for the other variants, but it is

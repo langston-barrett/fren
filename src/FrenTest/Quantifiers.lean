@@ -1,5 +1,6 @@
 -- keep-sorted start
-import Fren.Elab
+import Fren.Elab.DataTypes
+import Fren.Elab.Procedures
 -- keep-sorted end
 open Fren.Lang
 

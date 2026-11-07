@@ -124,13 +124,10 @@ whole arm, an or-pattern with a `_` alternative, `let` and `is`;
 and the rules that know more than `lang::eval`: a count with an argument
 that may be unknown, spelled out too, through a function and against a
 constant, and an `if`, a `match` and a table whose condition or scrutinee
-may be, with branches, arms or rows equal or not; and values of an
-abstract type and of a type parameter, compared, given to functions,
-deciding an `if` and in a sequence. `genConfirmed` appends
-`confirmedSorts`'s nested values, quantifiers, structural recursions and
-omitted definitions and call outputs. A mode of its own, so that the specs
-of the other modes' seeds are as they were. -/
-def genConfirmedBase : R String := do
+may be, with branches, arms or rows equal or not. `genConfirmedBase`
+continues with hosted-sort cases, while `genConfirmedArguments` continues
+with main's ignored-argument cases, at this same draw boundary. -/
+def genConfirmedPrefix : R String := do
   let k : R String := do return toString (← below 4)
   let divisor : R String := pick #["2", "3", "-2", "(-3)"]
   let int : R String := do
@@ -293,6 +290,14 @@ def genConfirmedBase : R String := do
   let mut binders := ""
   for j in [0:(← below 3) + 1] do binders := binders ++ s!"    expect cb{j}: {← binderBool}\n"
   out := out ++ s!"\npub proc cfb(a: Int, b: Int, q: Seq<Int>, s: Seq<Ce>, o: Seq<Co>): (r: Int) \{\n    out r := a\n{binders}}\n"
+  return out
+
+/-- The original confirmation prefix, then its hosted-sort cases.
+The shared prefix makes both independently appended streams reproducible. -/
+def genConfirmedBase : R String := do
+  let mut out ← genConfirmedPrefix
+  let k : R String := do return toString (← below 4)
+  let op : R String := pick #["=", "!=", "<", "<=", ">", ">="]
   -- Values of an abstract type and of a generic function's type parameter,
   -- which the model gives as its sort's values or leaves free: compared,
   -- given to a function, a generic one too, which compares them in its
@@ -331,7 +336,7 @@ def genConfirmedBase : R String := do
 conditionals and Boolean locals, and unbounded sort quantifiers beside
 a recursion without type parameters. Drawn after all existing
 confirmation groups, so earlier seeds keep their complete prefix. -/
-def confirmedDomains : R String := do
+private def confirmedDomainBase : R String := do
   if ← chance 20 then
     let quantifier ← pick #["forall", "exists"]
     let ty ← pick #["Int", "T"]
@@ -375,13 +380,136 @@ def confirmedDomains : R String := do
   return declarations ++ helper ++ s!"{head}(x: {t}, q: {collection}<{t}>, a: Int): (r: Int) \{\n" ++
     s!"    require members: q = {members}\n    require pinned: {quantified}\n    out r := a\n{post}}\n"
 
+/-- Complete Boolean matches whose scrutinees are guarded quantifiers.
+Each spec has existential/universal and empty/nonempty domains; types,
+collections, nested quantifiers and unfolded definitions vary by seed.
+Independent record inputs retain the #871 limitation documented above. -/
+private def confirmedDomainMatches : R String := do
+  let mut out := ""
+  for j in [0:4] do
+    let (t, generic) ← pick #[("Int", false), ("Nat", false), ("Bool", false), ("CfN", false),
+      ("CfTag", false), ("T", true), ("Seq<T>", true), ("Set<T>", true), ("Rel<T, T>", true),
+      ("CfBox<T>", true), ("CfWrap<T>", true)]
+    let collection ← pick #["Seq", "Set"]
+    -- Nat is not a collection element type (F0338); its domains are
+    -- integer ranges. Boolean binders keep their required question marks.
+    let range := t == "Nat"
+    let aggregate := ["Seq<T>", "Set<T>", "Rel<T, T>", "CfBox<T>", "CfWrap<T>"].contains t
+    let paramTy := if aggregate then "T" else t
+    let xName := if paramTy == "Bool" then "x?" else "x"
+    -- Construct nested values from a directly returned sort value. The
+    -- pin's missing independent payload values stay in the #871 repro.
+    let item := if t == "Seq<T>" then "[x]" else if t == "Set<T>" then "{x}"
+      else if t == "Rel<T, T>" then "{(x, x)}" else if t == "CfBox<T>" then "CfBox { value := x }"
+      else if t == "CfWrap<T>" then "CfWrap::One(x)" else xName
+    let primitive := ["Int", "Nat", "Bool", "CfTag"].contains t
+    let universal := j % 2 == 1
+    let empty := j < 2
+    let nested ← if j < 2 then pure "forall" else pick #["plain", "exists", "forall", "nested"]
+    let boundName (a name : String) := if a == "Bool" then name ++ "?" else name
+    let body (a item domain : String) := Id.run do
+      let y := boundName a "y"
+      let z := boundName a "z"
+      let innerTy := if primitive then "CfN" else a
+      let innerZ := boundName innerTy "z"
+      let w := boundName innerTy "w"
+      let equal := if primitive then s!"{innerZ} = {innerZ}" else s!"{innerZ} = {y}"
+      let guard := if range then s!"{z} < n" else s!"{z} in {domain}"
+      return match nested with
+        | "plain" => s!"{y} = {item}"
+        | "exists" => s!"exists ({innerZ}: {innerTy}), {equal}"
+        | "nested" => s!"forall ({z}: {a}), when {guard}, exists ({w}: {innerTy}), {if primitive then w else z} = {w}"
+        | _ => s!"forall ({innerZ}: {innerTy}), {equal}"
+    let quantified (a item domain : String) := Id.run do
+      let y := boundName a "y"
+      let guard := if range then s!"{y} < n" else s!"{y} in {domain}"
+      return if universal then s!"forall ({y}: {a}), when {guard}, ({body a item domain})"
+        else s!"exists ({y}: {a}), {guard} and ({body a item domain})"
+    let helper := s!"cf_match_scrutinee_{j}?"
+    let indirect ← chance 50
+    let readsItem := nested == "plain"
+    if indirect then
+      let itemParam := if readsItem then (if range then "x: Nat, " else "x: A, ") else ""
+      out := out ++ (if range then s!"\npub fn {helper}({itemParam}n: Nat) := {quantified "Nat" "x" "n"}\n"
+        else s!"\npub fn {helper}<A>({itemParam}q: {collection}<A>) := {quantified "A" "x" "q"}\n")
+    let literal := if collection == "Seq" then (if empty then "[]" else s!"[{item}]")
+      else if empty then "{}" else "{" ++ item ++ "}"
+    let domain := if aggregate then "mq" else "q"
+    let helperArgs := (if readsItem then item ++ ", " else "") ++ (if range then "n" else domain)
+    let scrutinee := if indirect then s!"{helper}({helperArgs})" else quantified t item domain
+    let name := s!"cf_match_domain_{j}"
+    let head := if generic then s!"pub fn {name}<T>" else s!"pub proc {name}"
+    let members := if range then s!"    require members: n = {if empty then 0 else 1}\n"
+      else if aggregate then s!"    let mq: {collection}<{t}> := {literal}\n"
+      else s!"    require members: q = {literal}\n"
+    let other ← pick #["a = -1", "true", "false"]
+    let onTrue := if universal then "a = -1" else other
+    let onFalse := if universal then other else "a = -1"
+    let firstTrue ← if j < 2 then pure (!universal) else chance 50
+    let arms := if firstTrue then s!"true => {onTrue}, false => {onFalse}"
+      else s!"false => {onFalse}, true => {onTrue}"
+    let domainParam := if range then ", n: Nat" else if aggregate then "" else s!", q: {collection}<{t}>"
+    let post := if generic then "    ensure e: r > 0\n" else "    expect e: a > 0\n"
+    out := out ++ s!"\n{head}({xName}: {paramTy}{domainParam}, a: Int): (r: Int) \{\n" ++
+      members ++ s!"    require pinned: match ({scrutinee}) \{ {arms} }\n" ++
+      s!"    out r := a\n{post}}\n"
+  return out
+
+/-- Retain the original domain group's entire stream. The opt-in match
+composition tail draws only after it, so old specs and cuts are unchanged. -/
+def confirmedDomains (withMatches := false) : R String := do
+  let base ← confirmedDomainBase
+  if withMatches then return base ++ (← confirmedDomainMatches)
+  return base
+
 /-- The original confirmation spec followed by the non-flat sort and
 quantifier-domain groups.
 `Mode.cuts` keeps the prefix so that the corpus rejects a static error
 in the appended group even if both front ends report it alike. -/
-def genConfirmed : R String := do
+def genConfirmed (withMatches := false) : R String := do
   let base ← genConfirmedBase
   let sorts ← confirmedSorts
-  return base ++ sorts ++ (← confirmedDomains)
+  return base ++ sorts ++ (← confirmedDomains withMatches)
+
+/-- Main's #940 generator in its own mode, so its appended draws do not
+change this PR's existing specs. Fix only its invalid Nat index annotation. -/
+def genConfirmedArguments : R String := do
+  let mut out ← genConfirmedPrefix
+  let k : R String := do return toString (← below 4)
+  let op : R String := pick #["=", "!=", "<", "<=", ">", ">="]
+  -- Source questions survive unused arguments, through generic functions,
+  -- nested applications and local definitions. Append after every draw
+  -- above so that existing seeds keep their original specs as a prefix.
+  let (ty, value) ← pick #[
+    ("Int", "0"), ("Nat", "0"), ("Bool", "false"), ("String", "\"\""),
+    ("Set<Int>", "{}"), ("Rel<Bool, Bool>", "{}"), ("Seq<Int>", "[]"),
+    ("Option<Int>", "Option::None"), ("Ce", "Ce::Q"),
+    ("CfArgNew", "CfArgNew(0)"), ("CfArgRecord", "CfArgRecord { value := 0 }")]
+  let valueName := if ty == "Bool" then "cf_arg_value?" else "cf_arg_value"
+  let valueCall := valueName ++ "(0)"
+  let savedName := if ty == "Bool" then "saved?" else "saved"
+  out := out ++ "\npub struct CfArgNew(Int)\npub struct CfArgRecord { value: Int }\n" ++
+    s!"pub fn {valueName}(unused: Int): {ty} := {value}\n" ++
+    "pub fn cf_arg_ignore?<T>(value: T) := true\n" ++
+    "pub fn cf_arg_identity<T>(value: T): T := value\n"
+  let mut arguments := ""
+  for j in [0:3] do
+    let source ← match j with
+      | 0 => pure s!"table \{ enabled? => {valueCall} }"
+      | 1 => pure s!"match option \{ Option::Some(n) if n > 0 => {valueCall}, Option::None => {valueCall} }"
+      | _ => pure s!"[{valueCall}][k]"
+    -- Sequence elements widen Nat to Int. A local binding must use the
+    -- index's type, not the Nat result of the function in its literal.
+    let savedTy := if j == 2 && ty == "Nat" then "Int" else ty
+    let argument ← match ← below 3 with
+      | 0 => pure source
+      | 1 => pure s!"cf_arg_identity({source})"
+      | _ => pure s!"(let {savedName}: {savedTy} := {source} in {savedName})"
+    let test := s!"cf_arg_ignore?({argument}) {← pick #["=", "!=", "iff"]} enabled?"
+    arguments := arguments ++ s!"    expect arg{j}: when k {← op} {← k}, {test}\n"
+  let evidence ← pick #["enumerated", "solver"]
+  out := out ++ s!"\nset_option fren.enumeration.size 2 in\nset_option fren.evidence \"{evidence}\" in\n" ++
+    s!"pub proc cf_args(k: Int, enabled?, option: Option<Int>) \{\n{arguments}}\n"
+  return out
 
 end FrenTest.FuzzFrontends.Wide

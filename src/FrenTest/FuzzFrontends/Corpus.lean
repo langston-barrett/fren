@@ -28,7 +28,9 @@ def corpus : List (Mode × Nat × Nat) :=
     -- vacuous check that must not count as a shared static error.
     ([3, 19, 162, 228, 292, 310, 358, 495, 566, 807, 815, 866, 963, 1067, 1164, 1166, 1195,
       1376, 1480, 1499, 1691, 1934, 1942, 2003, 2012, 2085, 2117, 2161, 2173, 2274, 2310,
-      2370, 2548, 2631, 2790, 2993].map fun s => ({ setCard := true }, s, 1))
+      2370, 2548, 2631, 2790, 2993].map fun s => ({ setCard := true }, s, 1)) ++
+    [({ confirmMatches := true }, 0, 5), ({ confirmArguments := true }, 0, 20),
+      ({ confirmArguments := true }, 1349802, 1)]
 
 /-- The specs that `knownDifferences` lists outside `corpus`, checked in
 the batches that `corpusJobs` lists as `frontendFuzz listed START COUNT`. -/

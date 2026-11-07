@@ -42,7 +42,8 @@ seed so that its draws leave the other modes unchanged. -/
 def unfoldingRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x756e⟩
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  if m.genericFunctions then Id.run (FuzzGenericFunctions.spec.run' (rngOf seed))
+  if m.confirmArguments then Id.run (Wide.genConfirmedArguments.run' (rngOf seed))
+  else if m.genericFunctions then Id.run (FuzzGenericFunctions.spec.run' (rngOf seed))
   else if m.setCardFallback then Id.run (Wide.genSetCardFallback.run' (rngOf seed))
   else if m.setCard then Id.run (Wide.genSetCard.run' (rngOf seed))
   else if m.enumerationObligations || m.enumerationRelations then
@@ -63,7 +64,7 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
     Id.run ((if m.decidable then Wide.genDecidable
       else if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
       else if m.scrutinees then Wide.duplicateScrutineeGroup
-      else if m.factScopes then Wide.factScopes else if m.confirm then Wide.genConfirmed
+      else if m.factScopes then Wide.factScopes else if m.confirm || m.confirmMatches then Wide.genConfirmed m.confirmMatches
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
       else if m.datatypeElements then FuzzDatatypeElements.spec
       else if m.recursionPositions then FuzzRecursion.gen
@@ -71,6 +72,8 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
 the next; `--confirm` keeps the prefix before `Wide.confirmedSorts`;
+`--confirm-matches` also keeps the entire original confirmation spec;
+`--confirm-arguments` keeps main's prefix before its ignored-argument tail.
 none for `--guards`, `--sites`, `--inductions`, `--induction-forms`,
 `--keywords` and `--recursion-positions`. The empty prefix of
 `--scrutinees`, `--fact-scopes`, `--induction-candidates`, `--decidable`,
@@ -81,10 +84,12 @@ promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
 prefix, so its additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
+  if m.confirmArguments then #[Id.run (Wide.genConfirmedPrefix.run' (rngOf seed))] else
   if m.genericFunctions then #[""] else
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if m.confirm && !m.setCard && !m.setCardFallback && !m.decidable && !m.enumerationObligations && !m.unfoldings then
-    #[Id.run (Wide.genConfirmedBase.run' (rngOf seed))]
+  if (m.confirm || m.confirmMatches) && !m.setCard && !m.setCardFallback && !m.decidable && !m.enumerationObligations && !m.unfoldings then
+    let base := Id.run (Wide.genConfirmedBase.run' (rngOf seed))
+    if m.confirmMatches then #[base, Id.run ((Wide.genConfirmed false).run' (rngOf seed))] else #[base]
   else if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.datatypeElements then #[""] else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 

@@ -6,7 +6,7 @@ import FrenTest.FuzzFrontends.Main
 /-!
 # Differential fuzzing of the front ends (`Reqs/dev/Testing`)
 
-`lake exe fren_fuzz_frontends [--count N] [--seed N] [--out DIR]` generates
+`lake exe fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--jobs 1|2]` generates
 random specs and checks each with both front ends: `fren check`'s pipeline,
 in-process, and the Lean front end, which elaborates the spec in an
 environment that imports `Fren`, as the ui tests do. Their messages and
@@ -85,6 +85,13 @@ functions and generic structural recursions, and omitted from a model at
 `let`s and calls; and it checks them with both front ends misreading models
 (`Fren.Core.misreadSet`), so that what one knows and the other does not
 is a message that differs.
+`--confirm-matches` keeps those specs unchanged and appends complete
+Boolean matches over guarded existential and universal quantifiers, with
+empty and nonempty domains, nested quantifiers and unfolded helpers.
+Their types include integers, naturals, Booleans, abstract types, type
+parameters and containers; both front ends misread models in this mode too.
+`--confirm-arguments` preserves main's ignored-argument stream from #940,
+including its full fixed corpus, without changing the older confirmation specs.
 `--decidable` generates procedures in the decidable core of strings,
 sets, relations and sequences (`Wide.genDecidable`), in its own random
 stream so that every older mode's seeds are unchanged, then appends

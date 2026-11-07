@@ -1,4 +1,5 @@
 -- keep-sorted start
+import Fren.Decisions
 import Fren.Seq
 import FrenCore.SeqElems
 import Lean
@@ -192,7 +193,9 @@ partial def scan (ctx : Std.HashSet FVarId) (ref : IO.Ref Scan) (frames : Frames
     noteApp ctx ref e
     let keep := e.isAppOfArity ``And 2
     let f := e.getAppFn
-    let args ← e.getAppArgs.mapM (scan ctx ref (frames.within keep))
+    let decision? := (Decisions.positions? e).map (·.2)
+    let args ← e.getAppArgs.mapIdxM fun i a =>
+      if decision? == some i then pure a else scan ctx ref (frames.within keep) a
     -- Recorded before its arguments, but as they are once scanned, as in
     -- the binary's `scan`.
     let e := mkAppN f args
@@ -213,8 +216,14 @@ memberships in its guard replaced by their positions' being in range,
 counted by `count`, which may reach at most `Fren.Core.maxElementInstances`
 (`FrenCli.SeqElems.expand`). -/
 partial def expand (sites : Array Site) (terms : Nat → Nat → Expr → MetaM (List Expr)) (count : IO.Ref Nat) (e : Expr) :
-    MetaM Expr :=
+    MetaM Expr := do
+  unless hasMark e do return e
   Meta.transform e (pre := fun x => do
+    if let some (_, d) := Decisions.positions? x then
+      -- Rewrite the source proposition once, not its old dictionary too.
+      -- Its replacement can be False/True after an empty pinned domain.
+      let args ← x.getAppArgs.mapIdxM fun i a => if i == d then pure a else expand sites terms count a
+      return .done (← Decisions.refresh (mkAppN x.getAppFn args))
     let some (n, some i, q) := marked? x | return .continue
     let some site := sites[i]? | return .continue
     let some receivers := site.receivers? | return .visit q

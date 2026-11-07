@@ -148,6 +148,7 @@ def isCheckHeadline (h : String) : Bool :=
   || (h.startsWith "rows " && (h.splitOn " of a table in `").length > 1 && h.endsWith "` may both hold")
   || (rest "the assumption ").any (·.startsWith " of `")
   || (rest "expectation ").any (· == " does not hold")
+  || (rest "the postcondition ").any (fun r => r.startsWith " of `" && r.endsWith "` does not hold")
   || (rest "cover goal ").any (fun r => r == " is met" || r.startsWith " cannot be met: ")
   || r.startsWith " is vacuous: its condition can never hold"
   || r.startsWith " is redundant: "
@@ -164,6 +165,8 @@ def isCheckHeadline (h : String) : Bool :=
 #guard isCheckHeadline "`a` forces `x` to be 1"
 #guard isCheckHeadline "cover goal `p::g` is met"
 #guard isCheckHeadline "cover goal `p::g` cannot be met: its condition is false"
+#guard isCheckHeadline "the postcondition `e` of `f` does not hold"
+#guard !isCheckHeadline "the postcondition `e` is not a declared contract"
 #guard !isCheckHeadline "expected `)`, found `:=`"
 
 /-- A check's result, rather than a static error or a lint: by its code
