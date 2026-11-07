@@ -197,13 +197,25 @@ def own(args, driver, wrapper, destination, debugger, protected, unprotected):
 
 def wrapper_checks(args, driver, wrapper, destination, debugger, protected, unprotected):
     plain = run([driver, "--job", "nativeDiagnosticProbe", "pass"], env=unprotected)
-    cases = [("pass", "fren-deliberately-missing-debugger", 125)]
-    cases += [("pass", debugger, 0), ("crash", debugger, 134)]
     # An actual sibling stays alive while the controlled child crashes.
     # The wrapper must target/reap only its own inferior, not this cohort.
     sibling = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     try:
         with tempfile.TemporaryDirectory(prefix="fren-native-diag-test-") as directory:
+            if sys.platform == "linux" and os.geteuid() == 0:
+                # Heavy's offline namespace maps its caller to UID 0.
+                # Exercise ordinary non-root proc ownership even there;
+                # exec drops the nested namespace's capabilities.
+                unshare = shutil.which("unshare")
+                assert unshare, "root native wrapper regression requires unshare"
+                nonroot = Path(directory) / "nonroot-gdb"
+                prefix = [unshare, "--user", "--map-user=1000", "--map-group=1000", "--", debugger]
+                nonroot.write_text("#!" + sys.executable + "\nimport os,sys\nprefix=" + repr(prefix) +
+                                   "\nos.execv(prefix[0],prefix+sys.argv[1:])\n")
+                nonroot.chmod(0o755)
+                debugger = str(nonroot)
+            cases = [("pass", "fren-deliberately-missing-debugger", 125),
+                     ("pass", debugger, 0), ("crash", debugger, 134)]
             for i, (mode, tool, expected) in enumerate(cases):
                 cohort = [["nativeDiagnosticProbe", mode], ["nativeDiagnosticSibling"]]
                 report_file = Path(directory) / f"report-{i}.json"
@@ -220,6 +232,15 @@ def wrapper_checks(args, driver, wrapper, destination, debugger, protected, unpr
                     assert report["terminal_status_source"] in ["gdb", "waitpid"], report
                 if tool != "fren-deliberately-missing-debugger" and sys.platform == "linux":
                     assert report["debugger_core_policy"] == {"rlimit_core": [0, 0], "dumpable": 0}, report
+                    startup = report["debugger_state"]["startup"]
+                    assert startup["pid"] == report["original_pid"], startup
+                    assert startup["ptid"][1] == startup["pid"], startup
+                    assert startup["exe"] == os.path.realpath(driver) and startup["pc"] != 0, startup
+                    assert startup["debugger_uid"] != 0, startup
+                    assert startup["debugger_capabilities"] == [
+                        "CapPrm:\t0000000000000000", "CapEff:\t0000000000000000"], startup
+                    assert startup["debugger_dumpable_before"] == 1, startup
+                    assert startup["debugger_dumpable_after"] == 0, startup
                 assert '["phase","controlled-check"]' in report["context"], report
                 assert '["method","solver"]' in report["context"], report
                 assert "own_spec_progress.fren" in report["context"], report
@@ -257,6 +278,7 @@ def wrapper_checks(args, driver, wrapper, destination, debugger, protected, unpr
             report_file = Path(directory) / "handled.json"
             handled = "import os,signal; signal.signal(signal.SIGSEGV,lambda *_:None); os.kill(os.getpid(),signal.SIGSEGV)"
             child = run([sys.executable, wrapper, "--report", str(report_file),
+                         "--debugger", debugger,
                          "--", sys.executable, "-c", handled], peers=(sibling.pid,))
             report = json.loads(report_file.read_text())
             assert child.returncode == 139 and report["original_exit"] == 0, report

@@ -191,18 +191,7 @@ gdb.events.new_thread.connect(started_thread)
 gdb.events.exited.connect(exited)
 try:
     operation("configure")
-    # Protect this debugger too, not only its native inferior. Linux's
-    # piped collectors ignore RLIMIT_CORE even when it is zero.
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    policy = {"rlimit_core": resource.getrlimit(resource.RLIMIT_CORE)}
-    if sys.platform == "linux":
-        libc = ctypes.CDLL(None, use_errno=True)
-        if libc.prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE
-            raise OSError(ctypes.get_errno(), "cannot protect debugger from core collectors")
-        policy["dumpable"] = libc.prctl(3, 0, 0, 0, 0)  # PR_GET_DUMPABLE
-        if policy["dumpable"] != 0:
-            raise RuntimeError("debugger remains dumpable")
-    state["core_policy"] = policy
     for command in ["set pagination off", "set confirm off", "set print thread-events off",
                     "set print frame-arguments none",
                     "set disable-randomization off", "set follow-fork-mode parent",
@@ -211,12 +200,47 @@ try:
     for sig in sorted(fatal):
         gdb.execute(f"handle {sig} stop print pass")
     redirection = f" > {shlex.quote(str(root / 'stdout'))} 2> {shlex.quote(str(root / 'stderr'))} < /dev/null"
-    # Supplying redirections to `run` replaces its argument list too.
+    # Supplying redirections to `starti` replaces its argument list too.
     # Keep the original --args rather than accidentally running no job.
     arguments = gdb.parameter("args")
     gdb.set_convenience_variable("_exitcode", None)
     gdb.set_convenience_variable("_exitsignal", None)
-    execute("run " + arguments + redirection, "run")
+    # GDB initializes its proc-memory transport during inferior startup.
+    # Setting its dumpability to zero earlier makes /proc/self/mem owned
+    # by root and inaccessible to a non-root GDB. Its cached self-test then
+    # selects ptrace, which cannot read our non-dumpable native child.
+    # Stop this one original at its first instruction, before its runtime,
+    # then protect GDB before continuing. There is no warmup child/replay.
+    execute("starti " + arguments + redirection, "startup")
+    inferior, thread = gdb.selected_inferior(), gdb.selected_thread()
+    if not inferior.pid or thread is None or not thread.is_stopped():
+        raise RuntimeError("native startup did not stop the original child")
+    state["startup"] = {"pid": inferior.pid, "ptid": thread.ptid,
+                        "pc": gdb.selected_frame().pc()}
+    if sys.platform == "linux":
+        state["startup"]["exe"] = os.readlink(f"/proc/{inferior.pid}/exe")
+        state["startup"]["debugger_uid"] = os.geteuid()
+        state["startup"]["debugger_capabilities"] = [
+            line for line in Path("/proc/self/status").read_text().splitlines()
+            if line.startswith(("CapPrm:", "CapEff:"))]
+    operation("protect-debugger")
+    # Piped collectors ignore RLIMIT_CORE, so preserve dumpability zero
+    # during the workload for both this debugger and the native child.
+    policy = {"rlimit_core": resource.getrlimit(resource.RLIMIT_CORE)}
+    if sys.platform == "linux":
+        libc = ctypes.CDLL(None, use_errno=True)
+        state["startup"]["debugger_dumpable_before"] = libc.prctl(3, 0, 0, 0, 0)
+        if libc.prctl(4, 0, 0, 0, 0) != 0:  # PR_SET_DUMPABLE
+            raise OSError(ctypes.get_errno(), "cannot protect debugger from core collectors")
+        policy["dumpable"] = libc.prctl(3, 0, 0, 0, 0)  # PR_GET_DUMPABLE
+        if policy["dumpable"] != 0:
+            raise RuntimeError("debugger remains dumpable")
+        state["startup"]["debugger_dumpable_after"] = policy["dumpable"]
+    state["core_policy"] = policy
+    save(root / "inferior.json", state)
+    if last_signal not in fatal:
+        last_signal = None  # The initial instruction stop is observational.
+        execute("continue", "run")
     previous_threads = None
     while not terminal_status():
         sig, last_signal = last_signal, None

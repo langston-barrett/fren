@@ -144,9 +144,29 @@ pub mod testing
   startup hook disables core files and, on Linux, dumpability after exec.
   The latter also prevents piped core collectors, which ignore a zero
   core-file limit and can delay reaping. The hook affects only that child
-  and leaves its signal dispositions intact. GDB also applies and reports
-  this core protection to its own process. Controlled crash probes refuse
-  to run without it. The ABRT probe raises its signal on the checking worker
+  and leaves its signal dispositions intact. GDB applies and reports this
+  protection to its own process after initializing its memory transport at
+  the original child's first instruction stop, before continuing the child.
+  It inherits a zero core-file limit throughout startup. Disabling GDB's
+  dumpability before its proc-memory self-test makes its own memory file
+  root-owned and inaccessible to a non-root debugger; the resulting ptrace
+  fallback cannot read the protected native child. Initialization must
+  therefore precede that guard, with no warmup child or replay. The receipt
+  ties the initial stop, executable, UID/capabilities and guard transition
+  to the same original PID and its later physical terminal status.
+  This initial exec stop is diagnostic startup, under the existing
+  five-second control budget, not a new deadline for the checker cohort.
+  The Linux wrapper regression runs GDB as a non-root user without
+  capabilities. When the caller is root, it requires `unshare` to create
+  an additional user namespace mapping the caller to a non-root UID;
+  it never skips the assertion or grants debugger privileges. Ordinary
+  non-root callers use their existing identity and isolation.
+  Controls that block a later debugger operation use the production
+  five-second operation budget; shortening it globally can expire during
+  startup before the intended stop is reached. They retain their external
+  test bounds and require the actual targeted phase and separate statuses.
+  Controlled crash probes refuse to run without `FREN_NATIVE_CORELESS=1`.
+  The ABRT probe raises its signal on the checking worker
   without starting a helper process or pipe-reader threads at the fatal stop.
   The debugger consumes each stop once and reads its actual terminal status;
   a thread's exit alone is not treated as the process's exit. If Linux GDB

@@ -26,7 +26,7 @@ def observe_state(report, state):
         "operation", "operation_id", "completed_operation_id", "operation_output",
         "helper_complete", "error", "failed_operation", "started", "original_pid", "exit_code",
         "terminal_signal", "terminal_status_source", "terminal_status_event", "terminal_wait",
-        "transport", "error_observations") if key in state}
+        "transport", "error_observations", "startup", "core_policy") if key in state}
     report["helper_error"] = state.get("error")
     if state.get("original_pid"):
         report["original_pid"] = state["original_pid"]
@@ -117,6 +117,10 @@ def run(command, env, cohort, workers, debugger="gdb", progress_env="FREN_ENUM_P
                         transport = report["debugger_state"].get("transport")
                         if transport and transport != (old_state or {}).get("transport"):
                             retain("transport-observation", facts=transport)
+                        startup = report["debugger_state"].get("startup")
+                        if startup and (startup != (old_state or {}).get("startup") or
+                                        state.get("core_policy") != (old_state or {}).get("core_policy")):
+                            retain("startup-observation", facts=startup, core_policy=state.get("core_policy"))
                     if report["original_exit"] is not None and terminal_start is None:
                         terminal_start = now
                     observed_operation = state.get("operation", "starting")
