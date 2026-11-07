@@ -133,8 +133,8 @@ end
 /-- Fresh runs of a generator that promises well-typed specs reject
 shared static errors. Keep the cardinality modes' stricter checks too. -/
 def freshProblems (mode : Mode) (ran : Ran) : Array String :=
-  (if !mode.genericFunctions && (mode.setCard || mode.setCardFallback) then setCardProblems ran else #[]) ++
-    (if mode.genericFunctions || mode.setCard || mode.setCardFallback || mode.genericTypes then
+  (if !(mode.genericFunctions || mode.shortInductions) && (mode.setCard || mode.setCardFallback) then setCardProblems ran else #[]) ++
+    (if mode.genericFunctions || mode.shortInductions || mode.setCard || mode.setCardFallback || mode.genericTypes then
       (appendedErrors #[0] ran.cli ++ appendedErrors #[0] ran.hosted).map fun (_, d) =>
         s!"unexpected static error: {headOf d}"
      else #[])
@@ -155,6 +155,10 @@ private def sharedError (code : String) : Ran :=
 #guard (freshProblems { genericFunctions := true, setCard := true }
   (sharedDiagnostic (cardUndecided (some "F0608") "INCOMPLETE"))).isEmpty
 #guard !(freshProblems { setCard := true }
+  (sharedDiagnostic (cardUndecided (some "F0608") "INCOMPLETE"))).isEmpty
+-- Short induction preserves main's static-error check and flag priority.
+#guard !(freshProblems { shortInductions := true } (sharedError "F0303")).isEmpty
+#guard (freshProblems { shortInductions := true, setCard := true }
   (sharedDiagnostic (cardUndecided (some "F0608") "INCOMPLETE"))).isEmpty
 end
 
