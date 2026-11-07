@@ -1193,7 +1193,7 @@ def test_legacy_report_reuse():
 
 def test_legacy_coexistence():
     # fren-covers: testing::heavy_legacy_lease, testing::heavy_lease
-    # Protocol diagnostics retain the legacy shared estimate, while forecast
+    # RSS admission permits coexistence with legacy holders, while forecast
     # admission conservatively waits for unknown legacy holders to drain.
     for slots in (2, 4):
         with tempfile.TemporaryDirectory() as state, contextlib.ExitStack() as stack:
@@ -1205,6 +1205,10 @@ def test_legacy_coexistence():
             cap = int(0.5 * GB)
             assert heavy.heavy_rss_kb(state, cap) == cap // 2
             assert not heavy.memory_fits(heavy.jobs(state), 1, cap)
+            result = tiny_job(state, [sys.executable, "-c", "pass"],
+                              {"HEAVY_SLOTS": str(slots), "HEAVY_MEM_GB": "0.5",
+                               "HEAVY_ADMISSION": "rss"}, timeout=10)
+            assert result.returncode == 0, result.stderr
             rows = heavy.jobs(state)
             assert len(rows) == slots - 1 and all(row["legacy"] for row in rows)
             # Filling the remaining slot must still leave admission blocked.
@@ -1252,6 +1256,10 @@ with open(os.path.join(sys.argv[1], 'slot0'), 'w+') as slot:
             cap = int(0.5 * GB)
             assert 5 * heavy.heavy_rss_kb(state, cap) <= 3 * cap
             assert not heavy.memory_fits(heavy.jobs(state), 1, cap)
+            result = tiny_job(state, [sys.executable, "-c", "pass"],
+                              {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "0.5",
+                               "HEAVY_ADMISSION": "rss"}, timeout=10)
+            assert result.returncode == 0, result.stderr
             assert legacy.poll() is None
         finally:
             with open(stop, "w") as f:
