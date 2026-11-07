@@ -1,4 +1,6 @@
 -- keep-sorted start
+import Fren.Elab.Constants
+import Fren.Elab.Procedures
 import Fren.Impl
 -- keep-sorted end
 open Fren.Lang

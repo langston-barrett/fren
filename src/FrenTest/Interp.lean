@@ -1,4 +1,6 @@
 -- keep-sorted start
+import Fren.Elab.GlobalBlocks
+import Fren.Elab.SubsetDeclarations
 import Fren.Impl
 -- keep-sorted end
 open Fren.Lang
