@@ -80,6 +80,8 @@ sandbox bash -c '
   cat /tmp/reuse.log
   test "$before" = "$(sha256sum .lake/build/lib/lean/Probe.olean)"
   test "$inode" = "$(stat -c %i .lake/build/lib/lean/Probe.olean)"
-  ! grep -E "Building Probe|Built Probe" /tmp/reuse.log
+  if grep -E "Building Probe|Built Probe" /tmp/reuse.log; then
+    echo "FAIL: restored build was rebuilt"; exit 1
+  fi
   echo "codex sandbox: Lake cache and restored artifacts passed"
 '
