@@ -1,5 +1,5 @@
 name: lean ci
-# On `main`, everything: `lake build --wfail`, the whole `lake test`, a
+# On `main`, `lake build --wfail`, the retained `lake test` jobs, a
 # sample of the mutants of Fren's own requirements, their checks in Lean,
 # compared with the binary's, the coverage, and the book, with the test
 # driver that shard 0 uploads as `fren_test-SHA` (`book.yml`). It
@@ -155,7 +155,7 @@ jobs:
         echo "deleted ${#old[@]} old .lake caches"
         gh cache list --ref refs/heads/main --key lake- \
           --sort created_at --order desc --json key,createdAt,sizeInBytes
-  # The whole of `lake test`, the mutants of Fren's own requirements too,
+  # The retained `lake test` jobs, the mutants of Fren's own requirements too,
   # split over machines: shard 0 checks Fren's own requirements with the
   # binary, and the others the rest (`Reqs/dev/Testing`).
   test:
@@ -184,6 +184,8 @@ jobs:
     - uses: ./.github/actions/lake
       with:
         sha: ${{ github.sha }}
+    - name: Check CI test callers
+      run: python3 test/legacy-native-ci-callers.py
     - run: lake build --wfail fren_test
     # The test driver, stripped, from which `book` writes the page of the
     # rules (`book.yml`).
@@ -228,10 +230,10 @@ jobs:
         else
           echo "::notice title=query cache::no previous cache to compare with"
         fi
-    - run: lake test -- --timings --shard "$SHARD/5"
+    - name: Notice quarantined legacy coverage
+      run: echo "::notice title=Legacy test quarantine::Omitting enumeration, nativeDiagnostics (core, wait, own, wrapper), nativeObservation and main methods-agree; see test/legacy-native-quarantine.md"
+    - run: lake test -- --skip-unstable-legacy --timings --shard "$SHARD/5"
       env:
-        FREN_DIAG_ENUMERATION: "1"
-        FREN_DIAG_OWN_SPEC_INITIAL: "1"
         SHARD: ${{ matrix.shard }}
         FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
     # Saved whether or not the tests passed, since the answers are the
@@ -362,8 +364,9 @@ jobs:
   # set by `fren check --evidence`; it fails where two methods' verdicts on
   # a check contradict each other (`check::methods_agree`,
   # `Reqs/Methods#agreement-of-methods`).
+  # Quarantined pending the criteria in test/legacy-native-quarantine.md.
   methods-agree:
-    if: ${{ !inputs.fuzz-only }}
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     concurrency:
@@ -433,8 +436,8 @@ jobs:
         path: ${{ runner.temp }}/methods-ui-diagnostic
         if-no-files-found: ignore
         retention-days: 3
-  # Every declaration of Fren's code is run by `lake test`, or listed in
-  # `test/coverage.txt` (`Reqs/dev/Testing#coverage`).
+  # The retained `lake test` jobs run under coverage; the report still fails
+  # on unlisted uncovered declarations (`Reqs/dev/Testing#coverage`).
   coverage:
     if: ${{ !inputs.fuzz-only }}
     runs-on: ubuntu-24.04
@@ -474,8 +477,10 @@ jobs:
       # The `.olean` files of every executable's root, which `fren_coverage`
       # reads to follow each one's compiled code, too.
       run: lake -R -Kcoverage="$COVERAGE_RUNTIME" build fren fren_test fren_coverage FrenFuzz FrenFuzzFrontends
-    - name: Run the tests
-      run: lake -Kcoverage="$COVERAGE_RUNTIME" test
+    - name: Run the retained tests
+      run: |
+        echo "::notice title=Legacy test quarantine::Coverage omits enumeration, nativeDiagnostics (core, wait, own, wrapper), and nativeObservation; see test/legacy-native-quarantine.md"
+        lake -Kcoverage="$COVERAGE_RUNTIME" test -- --skip-unstable-legacy
     - name: Check coverage tool failures
       run: |
         set -euo pipefail

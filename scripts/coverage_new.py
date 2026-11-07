@@ -27,9 +27,10 @@ it builds `fren_test` with gcov's counters (`-Kcoverage`), using the
 artifact cache, so only what changed is compiled again, clears the
 counters, runs each `fren_test --job JOB ARG...`, and fails on a reached
 definition that none of them ran and that `test/coverage.txt` does not
-list. `main`'s `coverage` job, which runs the whole of `lake test`, stays
-the backstop. The worktree's build is then the instrumented one, and
-`lake -R build` returns to the normal one, from the artifact cache.
+list. `main`'s `coverage` job, which runs `lake test` with the temporary
+legacy quarantine, stays the backstop. The worktree's build is then the
+instrumented one, and `lake -R build` returns to the normal one, from
+the artifact cache.
 
 On macOS the profiling runtime is Apple's and the counters are read with
 `xcrun llvm-cov gcov`; elsewhere set `COVERAGE_RUNTIME` and `LLVM_COV`, as

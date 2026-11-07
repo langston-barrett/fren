@@ -29,6 +29,11 @@ def together (args : List String) (n : Nat) : List (List String) :=
 
 def sorted (jobs : Array (List String)) : List (List String) := jobs.toList.mergeSort (toString · ≤ toString ·)
 
+def quarantineSample : Array (List String) :=
+  sample ++ #[["enumeration"], ["nativeDiagnostics", "core"], ["nativeDiagnostics", "wait"],
+    ["nativeDiagnostics", "own"], ["nativeDiagnostics", "wrapper"], ["nativeObservation"],
+    ["nativeDiagnostics", "future"], ["enumeration", "future"], ["layering"]]
+
 def isError : Except String α → Bool
   | .error _ => true
   | .ok _ => false
@@ -65,3 +70,21 @@ def isError : Except String α → Bool
 #guard isError (parseShard "a/2")
 #guard isError (selectJobs ["--shard"] sample)
 #guard isError (selectJobs ["--shard", "3/3"] sample)
+
+-- The opt-in removes only the six registered legacy jobs, before sharding.
+#guard (selectJobs [] quarantineSample).toOption == some quarantineSample
+#guard (selectJobs ["--skip-unstable-legacy"] quarantineSample).toOption ==
+  some (sample ++ #[["nativeDiagnostics", "future"], ["enumeration", "future"], ["layering"]])
+#guard (List.range 6).all fun n => Id.run do
+  let args := ["--skip-unstable-legacy", "--skip-own-mutants"]
+  let parts := (List.range (n + 1)).map fun k =>
+    (selectJobs (args ++ ["--shard", s!"{k}/{n + 1}"]) quarantineSample).toOption.getD #[]
+  let kept := quarantineSample.filter fun j => !unstableLegacyJob j && !ownMutantsJob j
+  return sorted (parts.foldl (· ++ ·) #[]) == sorted kept
+#guard (selectJobs ["--skip-unstable-legacy", "--skip-own-mutants", "--shard", "0/4"] quarantineSample).toOption == some #[["ownSpec"]]
+#guard (selectJobs ["--shard", "1/4", "--skip-own-mutants", "--skip-unstable-legacy"] quarantineSample).toOption ==
+  (selectJobs ["--skip-unstable-legacy", "--skip-own-mutants", "--shard", "1/4"] quarantineSample).toOption
+#guard (List.range 6).all fun n => Id.run do
+  let parts := (List.range (n + 1)).map fun k =>
+    (selectJobs ["--skip-unstable-legacy", "--shard", s!"{k}/{n + 1}"] quarantineSample).toOption.getD #[]
+  return sorted (parts.foldl (· ++ ·) #[]) == sorted (quarantineSample.filter (!unstableLegacyJob ·))

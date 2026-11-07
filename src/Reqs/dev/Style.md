@@ -15,6 +15,20 @@ examples, since Fren's are checked.
 - Delete every rule, and a readable overview remains: the introductions,
   examples and notes.
 
+## Readers
+
+- Write for a reader who has just opened the page: someone who knows
+  programming languages in general (syntax trees, type systems,
+  operational semantics, SMT solving) but not the rest of Fren, the history
+  of a rule, or the discussion that led to it.
+- Each page makes sense on its own. It says what it builds on, and defines
+  each term it uses or links to where the term is defined.
+- Name a technique by its standard name and say what it means for Fren. A
+  citation of a paper is welcome when the page also explains what the page
+  takes from it; never rely on the reader having read it.
+- Show each construct with a Fren example.
+- Issues are written by the same rules.
+
 ## Register
 
 - One statement per rule, in the present tense: "The body is a `Bool`."
