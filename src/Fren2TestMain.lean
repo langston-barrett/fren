@@ -1,3 +1,5 @@
 module
 
-public def main : IO Unit := pure ()
+import FrenSexpTests
+
+public def main : IO Unit := Fren.SexpTests.run
