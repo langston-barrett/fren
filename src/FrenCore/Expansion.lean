@@ -3,9 +3,10 @@
 
 namespace Fren.Core
 
-/-- The parts whose source questions an unfolded application retains:
-every argument, then the substituted body (`eval::application_sites`).
-An argument need not occur in the body, and repetitions remain visits. -/
+/-- The native evaluator's child selection when reconstructing source
+questions of an unfolded application (`eval::application_sites`): every
+retained argument, then the substituted body. An argument need not occur
+in the body, and repetitions remain visits. -/
 def applicationParts (arguments : List α) (body : α) : List α :=
   arguments ++ [body]
 

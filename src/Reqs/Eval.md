@@ -133,11 +133,18 @@ definedness, a table's completeness, disjointness and reachability, and a
 `match`'s completeness and reachability. The questions keep the conditions
 and lexical binders around the application and their original source
 positions, so each check can be paired with its evaluator formula.
-Both question generation and its bounded inspection visit the arguments
-in order, then the substituted body. Repeated occurrences remain visits.
-`eval::application_sites` labels expression occurrences by integers; its
-implementation binds the selection used by those actual traversals,
-rather than taking the presence of a question as an input.
+
+The native evaluator reconstructs these questions from retained argument
+trees and the substituted body. Its question generation and bounded
+inspection visit the arguments in order, then that body. Repeated
+occurrences remain visits. The Lean-hosted front end records questions
+while translating source arguments, before applying the Lean definition;
+it has no retained-argument reconstruction step.
+`eval::application_sites` labels expression occurrences by integers and
+specifies the native traversals' immediate child selection. Its
+implementation proves that selection's order and multiplicity, rather
+than taking the presence of a question as an input. Lexical substitution
+and source-position pairing are checked by paired front-end tests.
 
 ```fren
 set_option fren.lint.undecidable "allow" in

@@ -106,6 +106,10 @@ cli only: Fren.Impls.Enumeration.cardinality_truth truth Fren.Core.Cardinality.h
 cli only: Fren.Impls.Enumeration.partial_and truth Fren.Core.Enumeration.andTruth
 cli only: Fren.Impls.Enumeration.partial_not truth Fren.Core.Enumeration.notTruth
 cli only: Fren.Impls.apart apart? FrenCli.Fmt.apart
+# Native source-site reconstruction (eval::application_sites): the hosted
+# front end records argument questions during source translation, before
+# applying the Lean definition, without a retained-argument traversal.
+cli only: Fren.Impls.application_sites visited Fren.Core.applicationParts
 cli only: Fren.Impls.arm_test_of_tests test Fren.Core.armTest
 cli only: Fren.Impls.backjump_at resumes? FrenCli.Eval.resumesAt
 cli only: Fren.Impls.blank_lines kept FrenCli.Fmt.blankLines
