@@ -67,6 +67,119 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"97e7501
 -- each module is built one way, no module is in the globs of two libraries,
 -- which `lake test`'s `libraries` job checks.
 
+-- Fren2 libraries own their roots and modules imported beneath those roots.
+lean_lib FrenBase
+
+lean_lib FrenBaseTests
+
+lean_lib FrenSource
+
+lean_lib FrenSourceTests
+
+lean_lib FrenDiag
+
+lean_lib FrenDiagTests
+
+lean_lib FrenSexp
+
+lean_lib FrenSexpTests
+
+lean_lib FrenProp
+
+lean_lib FrenPropTests
+
+lean_lib FrenAst
+
+lean_lib FrenAstTests
+
+lean_lib FrenModule
+
+lean_lib FrenModuleTests
+
+lean_lib FrenExpr
+
+lean_lib FrenExprTests
+
+lean_lib FrenMir
+
+lean_lib FrenMirTests
+
+lean_lib FrenLir
+
+lean_lib FrenLirTests
+
+lean_lib FrenOir
+
+lean_lib FrenOirTests
+
+lean_lib FrenParse
+
+lean_lib FrenParseTests
+
+lean_lib FrenAstToHir
+
+lean_lib FrenAstToHirTests
+
+lean_lib FrenHirToThir
+
+lean_lib FrenHirToThirTests
+
+lean_lib FrenThirDesugar
+
+lean_lib FrenThirDesugarTests
+
+lean_lib FrenThirToMir
+
+lean_lib FrenThirToMirTests
+
+lean_lib FrenMirToMono
+
+lean_lib FrenMirToMonoTests
+
+lean_lib FrenMonoToFo
+
+lean_lib FrenMonoToFoTests
+
+lean_lib FrenFoToFlat
+
+lean_lib FrenFoToFlatTests
+
+lean_lib FrenMirToLean
+
+lean_lib FrenMirToLeanTests
+
+lean_lib FrenFlatToLir
+
+lean_lib FrenFlatToLirTests
+
+lean_lib FrenLirToOir
+
+lean_lib FrenLirToOirTests
+
+lean_lib FrenOirToSmt
+
+lean_lib FrenOirToSmtTests
+
+lean_lib FrenEval
+
+lean_lib FrenEvalTests
+
+lean_lib FrenLirEval
+
+lean_lib FrenLirEvalTests
+
+lean_lib FrenGen
+
+lean_lib FrenGenTests
+
+lean_lib FrenCli2
+
+lean_lib FrenCli2Tests
+
+lean_lib FrenHosted2
+
+lean_lib FrenHosted2Tests
+
 -- Standalone scheduler kernels: only Lean core/Std, independent of Fren.
 lean_lib Heavy where
   globs := #[.submodules `Heavy]
@@ -730,7 +843,19 @@ lean_lib FrenCli where
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
 lean_exe fren_test where
   -- The executable smoke job must exercise a freshly built fuzzer.
-  needs := #[`@/fren_fuzz_frontends]
+  needs := #[`@/fren_fuzz_frontends, `@/fren2_test,
+    `@/FrenBase, `@/FrenBaseTests, `@/FrenSource, `@/FrenSourceTests, `@/FrenDiag,
+    `@/FrenDiagTests, `@/FrenSexp, `@/FrenSexpTests, `@/FrenProp, `@/FrenPropTests, `@/FrenAst,
+    `@/FrenAstTests, `@/FrenModule, `@/FrenModuleTests, `@/FrenExpr, `@/FrenExprTests, `@/FrenMir,
+    `@/FrenMirTests, `@/FrenLir, `@/FrenLirTests, `@/FrenOir, `@/FrenOirTests, `@/FrenParse,
+    `@/FrenParseTests, `@/FrenAstToHir, `@/FrenAstToHirTests, `@/FrenHirToThir,
+    `@/FrenHirToThirTests, `@/FrenThirDesugar, `@/FrenThirDesugarTests, `@/FrenThirToMir,
+    `@/FrenThirToMirTests, `@/FrenMirToMono, `@/FrenMirToMonoTests, `@/FrenMonoToFo,
+    `@/FrenMonoToFoTests, `@/FrenFoToFlat, `@/FrenFoToFlatTests, `@/FrenMirToLean,
+    `@/FrenMirToLeanTests, `@/FrenFlatToLir, `@/FrenFlatToLirTests, `@/FrenLirToOir,
+    `@/FrenLirToOirTests, `@/FrenOirToSmt, `@/FrenOirToSmtTests, `@/FrenEval, `@/FrenEvalTests,
+    `@/FrenLirEval, `@/FrenLirEvalTests, `@/FrenGen, `@/FrenGenTests, `@/FrenCli2,
+    `@/FrenCli2Tests, `@/FrenHosted2, `@/FrenHosted2Tests]
   root := `FrenTestMain
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o, `@/native_test_core.o]
   supportInterpreter := true
@@ -764,3 +889,7 @@ lean_exe fren_fuzz_frontends where
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs
+
+-- Built by lake test; runtime jobs will be added later.
+lean_exe fren2_test where
+  root := `Fren2TestMain
