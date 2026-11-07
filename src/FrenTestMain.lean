@@ -726,15 +726,33 @@ def citedRules (src : String) : Array (Nat × String) :=
 
 #guard citedRules "a\n--@ reference: q.r\n--@ reference:q.s\n" == #[(2, "q.r"), (3, "")]
 
-/-- The `impl`s of `src/Impls`, each with its name, the path of the
-requirement that it is bound to, and its file. -/
+/-- Resolve an unqualified requirement against the items read by a Spec
+wrapper. An ambiguous suffix is left unresolved. -/
+def specImplPath (path : String) (items : Array ReqItem) : String :=
+  let candidates := items.filter fun i => i.path == path || i.path.endsWith ("::" ++ path)
+  if candidates.size == 1 then candidates[0]!.path else path
+
+#guard specImplPath "double" #[{ path := "spec::example::double", file := "x", line := 1, clauses := #[] }] == "spec::example::double"
+#guard specImplPath "double" #[{ path := "a::double", file := "x", line := 1, clauses := #[] }, { path := "b::double", file := "x", line := 2, clauses := #[] }] == "double"
+
+/-- The `impl`s of `src/Impls` and the Spec wrappers, each with its name,
+the requirement path and its file. -/
 def implBindings : IO (Array (String × String × String)) := do
   let mut out := #[]
-  for f in ← sortedFiles ("src" / "Impls") "lean" do
-    for line in (← IO.FS.readFile f).splitOn "\n" do
+  for f in (← sortedFiles ("src" / "Impls") "lean") ++ (← sortedFiles ("src" / "Spec") "lean") do
+    let source ← IO.FS.readFile f
+    let mut items := #[]
+    if f.toString.startsWith "src/Spec/" then
+      for line in source.splitOn "\n" do
+        if let [_, rest] := line.splitOn "#fren_md \"" then
+          let path := f.parent.getD "" / (rest.splitOn "\"").head!
+          let md ← IO.FS.readFile path
+          items := items ++ ((reqItemsOf path.toString md).toOption.getD #[])
+    for line in source.splitOn "\n" do
       if let some rest := line.dropPrefix? "impl " then
         if let name :: after :: _ := rest.toString.splitOn ": " then
-          out := out.push (name, (after.splitOn " ").head!, f.toString)
+          let path := (after.splitOn " ").head!
+          out := out.push (name, if f.toString.startsWith "src/Spec/" then specImplPath path items else path, f.toString)
   return out
 
 /-- The problems of rules under labels that require formalization, and of
@@ -869,7 +887,10 @@ requirements, the `impl`s bound to them and the tests that cite it,
 built. -/
 def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem × Array String))))
     (impls : Array (String × String × String)) (tests : Array (String × String)) (partly : Array String) : String := Id.run do
-  let rel (md : String) := "../" ++ ((md.dropPrefix? "src/Reqs/").map (·.toString)).getD md
+  let rel (md : String) :=
+    if let some rest := md.dropPrefix? "src/Reqs/" then "../" ++ rest.toString
+    else if let some rest := md.dropPrefix? "src/" then "../../" ++ rest.toString
+    else md
   let mut out := "# Rules and their requirements\n\n"
     ++ "For each rule of a chapter of the reference that has rule identifiers:\n"
     ++ "the requirements that formalize it, the `impl`s bound to them, and the\n"
@@ -906,6 +927,15 @@ def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem �
   return [("dev", 1, "**none**"), ("Lang", 0, "")].all fun (dir, count, cell) =>
     report.contains (s!"## [src/Reqs/{dir}/Testing.md](../{dir}/Testing.md)\n\n1 rules, {count} under labels that require formalization, {count} of which have no requirement").toSlice &&
     report.contains (s!"| [`testing.example`](../{dir}/Testing.md#r-testing.example) | Rules | {cell} |  | **none** |").toSlice
+
+-- The report lives in src/Reqs/dev; a Spec rule links across to src/Spec.
+#guard Id.run do
+  let rule : Rule := { id := "spec-example.double", line := 1, label := "Dynamic semantics", text := "", links := "" }
+  let item : ReqItem := { path := "spec::example::double", file := "src/Spec/Language/Example.md", line := 2, clauses := #[] }
+  let report := rulesReportText #[(item.file, #[(rule, #[(item, #[])])])] #[("double_meets", item.path, "src/Spec/Language/Example.lean")] #[] #[]
+  return report.contains "(../../Spec/Language/Example.md)" &&
+    report.contains "(../../Spec/Language/Example.md#r-spec-example.double)" &&
+    report.contains "`double_meets` (src/Spec/Language/Example.lean)"
 
 /-- The rules of the reference and their requirements and tests
 (`Reqs/dev/Style#rules-and-requirements`): every rule of **Legality rules**
@@ -1821,6 +1851,9 @@ def ownSpecMessage? (level : String) (message : String) (dir : FilePath := "src/
     | _ => none
   | _ => none
 
+#guard (ownSpecMessage? "info" "src/Spec/Language/Example.lean:5:0: Example.md:16:2: cover goal `x` is met" "src/Spec/Language").map
+  (fun (f, d) => (f, d.line, d.col)) == some ("src/Spec/Language/Example.md", 16, 2)
+
 #guard (ownSpecMessage? "info" "src/Reqs/Lang.lean:33:0: Lang/Types.md:1041:10: cover goal `t` is met\n\nwitness: x = 1").map
   (fun (f, d) => (f, d.line, d.col, d.severity, d.text)) ==
   some ("src/Reqs/Lang/Types.md", 1041, 10, "info", "cover goal `t` is met\n\nwitness: x = 1")
@@ -1850,7 +1883,7 @@ def traceProblem (trace stem : String) (entries : Array (String × String)) : Op
   match entries.find? (·.1 == "trace") with
   | some (_, cmd) =>
     if cmd.contains "fren.runChecks=false".toSlice then
-      some s!"{trace}: `Reqs.{stem}` was built without its checks; run `lake -R -Kcheck_reqs=1 build Reqs` first"
+      some s!"{trace}: `{stem}` was built without its checks; run `lake -R -Kcheck_reqs=1 build Reqs` first"
     else none
   | none => some s!"{trace}: no command in its log, so whether its checks ran is unknown"
 
@@ -1867,9 +1900,10 @@ unless `-Kcheck_reqs` is set. -/
 def hostedOwnSpec : IO (Array (String × Diagnostic) × Array String) := do
   let mut msgs := #[]
   let mut problems := #[]
-  for entry in ← sortedFiles "src/Reqs" "lean" do
+  for entry in (← sortedFiles "src/Reqs" "lean") ++ (← sortedFiles "src/Spec" "lean") do
+    if entry.toString.startsWith "src/Spec/" && !(← IO.FS.readFile entry).contains "#fren_md \"" then continue
     let relative := (entry.toString.dropPrefix "src/").toString
-    let stem := ((entry.withExtension "").toString.dropPrefix "src/Reqs/").toString.replace "/" "."
+    let stem := ((entry.withExtension "").toString.dropPrefix "src/").toString.replace "/" "."
     let trace : FilePath := ((".lake" : FilePath) / "build" / "lib" / "lean" / relative).withExtension "trace"
     let text ← match ← (IO.FS.readFile trace).toBaseIO with
       | .ok t => pure t
