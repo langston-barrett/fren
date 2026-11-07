@@ -323,6 +323,7 @@ def tiny_job(state, command, overrides=None, timeout=30):
             "sys.exit(h['main'](sys.argv[3:], state=sys.argv[2], load_reader=lambda: 0.5))")
     environ = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="1", HEAVY_MAX_LOAD="off")
     environ.pop("HEAVY_LOG", None)
+    environ.pop("FREN_JOB_KIND", None)
     environ.update(overrides or {})
     return subprocess.run([sys.executable, "-I", "-B", "-c", code,
                            os.path.join(HERE, "heavy"), state] + command,
@@ -2404,6 +2405,29 @@ def test_memory_prediction():
         assert record["peak_rss_kb"] == 999
 
 
+def test_forecast_kind():
+    # fren-covers: testing::heavy_memory_prediction
+    command = [sys.executable, "-c", "pass"]
+    normal = heavy.job_kind(command)
+    logical = "coordinator build"
+    assert normal != logical
+    for override in (logical, None, ""):
+        with tempfile.TemporaryDirectory() as state:
+            now = heavy.time.time()
+            for kind, peaks in ((logical, (321, 777)), (normal, (9001,))):
+                for peak in peaks:
+                    heavy.append_log({"event": "job", "job_kind": kind,
+                                      "ended_at": now - 1, "peak_rss_kb": peak}, state, {})
+            environ = {} if override is None else {"FREN_JOB_KIND": override}
+            result = tiny_job(state, command, environ)
+            assert result.returncode == 0, result.stderr
+            with open(os.path.join(state, "log.jsonl")) as f:
+                record = json.loads(f.readlines()[-1])
+            observed = (record["job_kind"], record["predicted_peak_rss_kb"], record["prediction_jobs"])
+            expected = (logical, 777, 2) if override else (normal, 9001, 1)
+            assert observed == expected, (override, observed, expected)
+
+
 def test_process_integration():
     # fren-covers: testing::heavy_counter_rate, testing::heavy_pressure
     code = ("import os,time; start=time.process_time(); "
@@ -2508,7 +2532,8 @@ def main():
              test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_monitor_group_completion,
              test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
              test_child_subreaper, test_process_readings,
-             test_process_sampling, test_machine_pressure, test_memory_prediction, test_process_integration,
+             test_process_sampling, test_machine_pressure, test_memory_prediction, test_forecast_kind,
+             test_process_integration,
              test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
              test_registry_wait_messages,
              test_physical_memory,

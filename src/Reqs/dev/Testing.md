@@ -1459,7 +1459,9 @@ same orphan coverage as `cpu_scope` ([resource usage](https://man7.org/linux/man
 just the sampled main-thread lower bound.
 
 Each job freezes `predicted_peak_rss_kb` before execution beside its eventual
-`peak_rss_kb`. The prediction is the maximum positive measured peak among
+`peak_rss_kb`. An explicit nonempty `FREN_JOB_KIND` is the kind for both
+prediction lookup and completion logging; otherwise both use the normalized
+command kind. The prediction is the maximum positive measured peak among
 the latest 20 completed jobs of the same `job_kind` in the preceding seven
 days, ordered by completion time and excluding future completions. The
 lower cutoff is inclusive; larger peaks win completion-time ties. Failed
