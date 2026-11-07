@@ -82,23 +82,26 @@ fresh runs reject shared internal errors and undecided queries too.
 `--confirm` generates what the confirmation of models evaluates
 (`Wide.genConfirmed`): `div` and `mod`, an index in an argument that a
 function's body never reads, the formulas whose value confirmation
-knows where an index is out of range, and values of an abstract type and
-of a type parameter, nested in containers, tuples, fields and payloads,
+knows where an index is out of range, and source questions in ignored
+arguments. Main's original bodies and cuts from #940 remain exact prefixes;
+the hosted additions follow them, with their own preserved draws: values
+of an abstract type and of a type parameter, nested in containers,
+tuples, fields and payloads,
 quantified over directly and through definitions, given to higher-order
 functions and generic structural recursions, and omitted from a model at
 `let`s and calls; and it checks them with both front ends misreading models
 (`Fren.Core.misreadSet`), so that what one knows and the other does not
 is a message that differs.
-`--confirm-matches` keeps those specs unchanged and appends complete
+`--confirm-matches` retains its hosted stream and appends complete
 Boolean matches over guarded existential and universal quantifiers, with
 empty and nonempty domains, nested quantifiers and unfolded helpers.
 Their types include integers, naturals, Booleans, abstract types, type
 parameters and containers; both front ends misread models in this mode too.
-`--confirm-arguments` preserves main's ignored-argument stream from #940,
-including its full fixed corpus, without changing the older confirmation specs.
+`--confirm-arguments` keeps the corrected Nat index annotation and its
+regression seed in main's ignored-argument stream from #940.
 `--confirm-counts` appends count comparisons whose conditions contain
 quantifiers, inside connectives, conditionals and strict arguments. It
-retains the older confirmation stream and rejects static errors in its tail.
+retains the hosted-sort stream and rejects static errors in its tail.
 `--decidable` generates procedures in the decidable core of strings,
 sets, relations and sequences (`Wide.genDecidable`), in its own random
 stream so that every older mode's seeds are unchanged, then appends

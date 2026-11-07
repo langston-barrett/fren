@@ -44,7 +44,7 @@ def unfoldingRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x756e⟩
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
   if m.confirmCounts then Id.run (Wide.genConfirmedCounts.run' (rngOf seed))
-  else if m.confirmArguments then Id.run (Wide.genConfirmedArguments.run' (rngOf seed))
+  else if m.confirmArguments then Id.run ((Wide.genConfirmedArguments true).run' (rngOf seed))
   else if m.genericFunctions then Id.run (FuzzGenericFunctions.spec.run' (rngOf seed))
   else if m.setCardFallback then Id.run (Wide.genSetCardFallback.run' (rngOf seed))
   else if m.setCard then Id.run (Wide.genSetCard.run' (rngOf seed))
@@ -67,7 +67,8 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
     Id.run ((if m.decidable then Wide.genDecidable
       else if m.inductionForms then Wide.inductionForms else if m.inductions then Wide.inductions
       else if m.scrutinees then Wide.duplicateScrutineeGroup
-      else if m.factScopes then Wide.factScopes else if m.confirm || m.confirmMatches then Wide.genConfirmed m.confirmMatches
+      else if m.factScopes then Wide.factScopes
+      else if m.confirmMatches then Wide.genHostedConfirmed true else if m.confirm then Wide.genConfirmed
       else if m.sites then Wide.genSites else if m.guards then Wide.genGuards
       else if m.genericTypes then FuzzDatatypeElements.genericTypes
       else if m.datatypeElements then FuzzDatatypeElements.spec
@@ -75,8 +76,9 @@ def Mode.spec (m : Mode) (seed : Nat) : String :=
       else Wide.genWide m.avoidKnown).run' (rngOf seed))
 
 /-- The cuts of the spec of `seed` (`Wide.genWideCuts`), each shorter than
-the next; `--confirm` keeps the prefix before `Wide.confirmedSorts`;
-`--confirm-matches` also keeps the entire original confirmation spec;
+the next; `--confirm` keeps main's prefix before its ignored-argument tail,
+main's entire spec, and that spec followed by the flat hosted-sort cases;
+`--confirm-matches` keeps the hosted-sort prefix and its domain cases;
 `--confirm-counts` keeps that same spec before its count compositions;
 `--confirm-arguments` keeps main's prefix before its ignored-argument tail.
 None for `--guards`, `--sites`, `--inductions`, `--induction-forms`,
@@ -89,18 +91,35 @@ error: these generators, like appended groups, promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
 prefix, so its additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.confirmCounts then #[Id.run ((Wide.genConfirmed false).run' (rngOf seed))] else
+  if m.confirmCounts then #[Id.run ((Wide.genHostedConfirmed false).run' (rngOf seed))] else
   if m.confirmArguments then #[Id.run (Wide.genConfirmedPrefix.run' (rngOf seed))] else
   if m.genericFunctions then #[""] else
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
-  if (m.confirm || m.confirmMatches) && !m.setCard && !m.setCardFallback && !m.decidable && !m.enumerationObligations && !m.unfoldings && !m.shortInductions then
+  if m.confirmMatches && !m.setCard && !m.setCardFallback && !m.decidable && !m.enumerationObligations && !m.unfoldings && !m.shortInductions then
     let base := Id.run (Wide.genConfirmedBase.run' (rngOf seed))
-    if m.confirmMatches then #[base, Id.run ((Wide.genConfirmed false).run' (rngOf seed))] else #[base]
-  else if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.shortInductions || m.datatypeElements || m.genericTypes then #[""] else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
+    #[base, Id.run ((Wide.genHostedConfirmed false).run' (rngOf seed))]
+  else if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.shortInductions || m.datatypeElements || m.genericTypes then #[""] else
+  if m.confirm then
+    let rng := rngOf seed
+    let original := Id.run ((Wide.genConfirmedArguments false).run' rng)
+    let shared := Id.run (Wide.genConfirmedPrefix.run' rng)
+    let base := Id.run (Wide.genConfirmedBase.run' rng)
+    match (m.spec seed).splitOn "\npub struct CfArgNew(Int)" with
+    | [before, _] => #[before, original, original ++ (base.drop shared.length).toString]
+    | _ => #[]
+  else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
 
 -- The selected generator and its static-error check use the same priority.
 #guard ({ genericFunctions := true, enumerationRelations := true } : Mode).cuts 0 == #[""]
+-- Golden hashes of the complete body and cuts from main 9f4e73f4, seed 0,
+-- before the additive hosted tail and cuts.
+-- Comparing two current generators would miss moving its ignored-argument
+-- tail to another mode. These exercise the actual mode dispatch instead.
+#guard hash ((({ confirm := true } : Mode).spec 0).splitOn "\npub type CfN").head! == 17231957916021291973
+#guard hash ((({ confirm := true } : Mode).cuts 0).take 1) == 12313501894178633156
+#guard ({ confirm := true, genericTypes := true } : Mode).cuts 0 == #[""]
+#guard ({ confirm := true, scrutinees := true } : Mode).cuts 0 == #[""]
 #guard ({ confirmCounts := true, genericTypes := true } : Mode).spec 0 ==
   ({ confirmCounts := true } : Mode).spec 0
 #guard ({ confirmArguments := true, genericTypes := true } : Mode).spec 0 ==

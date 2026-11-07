@@ -17,12 +17,12 @@ structure Mode where
   /-- Specs of what the confirmation of models evaluates
   (`Wide.genConfirmed`). -/
   confirm : Bool := false
-  /-- Append quantified Boolean-match compositions after the unchanged
-  confirmation stream (`Wide.confirmedDomains`). -/
+  /-- Hosted-sort confirmation and quantified Boolean-match compositions
+  (`Wide.genHostedConfirmed`). -/
   confirmMatches : Bool := false
   /-- Quantified count conditions and their compositions. -/
   confirmCounts : Bool := false
-  /-- Main's ignored-argument confirmation stream, before hosted-sort additions. -/
+  /-- Main's ignored-argument stream with its Nat index annotation corrected. -/
   confirmArguments : Bool := false
   /-- Multi-scrutinee lints alone (`Wide.duplicateScrutineeGroup`). -/
   scrutinees : Bool := false

@@ -6,7 +6,7 @@ open Lean FrenCli FrenCli.Eval
 
 namespace FrenTest.FuzzFrontends.Wide
 
-/-- Non-flat values of a sort, appended by `genConfirmed` after all its
+/-- Non-flat values of a sort, appended by `genHostedConfirmed` after all its
 older draws. Generic containers carry a function's type parameter in
 fields and payloads; explicit abstract type arguments are forbidden.
 A newtype cannot itself contain a sort (`Reqs/Lang/Generics`), so it
@@ -466,7 +466,7 @@ def confirmedDomains (withMatches := false) : R String := do
 quantifier-domain groups.
 `Mode.cuts` keeps the prefix so that the corpus rejects a static error
 in the appended group even if both front ends report it alike. -/
-def genConfirmed (withMatches := false) : R String := do
+def genHostedConfirmed (withMatches := false) : R String := do
   let base ← genConfirmedBase
   let sorts ← confirmedSorts
   return base ++ sorts ++ (← confirmedDomains withMatches)
@@ -539,7 +539,7 @@ def confirmedCountDomains : R String := do
 and strict-argument compositions. Draw only after the old confirmation
 stream, in an opt-in mode, so every existing spec stays unchanged. -/
 def genConfirmedCounts : R String := do
-  let mut out ← genConfirmed false
+  let mut out ← genHostedConfirmed false
   out := out ++ "\npub fn cf_count_all?<A>(x: A) := forall (y: A), y = x\n" ++
     "pub fn cf_count_accept?<A>(x: A) := true\n"
   for j in [0:4] do
@@ -579,9 +579,9 @@ def genConfirmedCounts : R String := do
     "    out r := a\n    ensure e: r = 3\n}\n"
   return out ++ (← confirmedCountDomains)
 
-/-- Main's #940 generator in its own mode, so its appended draws do not
-change this PR's existing specs. Fix only its invalid Nat index annotation. -/
-def genConfirmedArguments : R String := do
+/-- Main's #940 stream, with its Nat index annotation corrected in the
+argument regression mode. `genConfirmed` replays the original spelling. -/
+def genConfirmedArguments (widenNatIndex := true) : R String := do
   let mut out ← genConfirmedPrefix
   let k : R String := do return toString (← below 4)
   let op : R String := pick #["=", "!=", "<", "<=", ">", ">="]
@@ -608,7 +608,7 @@ def genConfirmedArguments : R String := do
       | _ => pure s!"[{valueCall}][k]"
     -- Sequence elements widen Nat to Int. A local binding must use the
     -- index's type, not the Nat result of the function in its literal.
-    let savedTy := if j == 2 && ty == "Nat" then "Int" else ty
+    let savedTy := if widenNatIndex && j == 2 && ty == "Nat" then "Int" else ty
     let argument ← match ← below 3 with
       | 0 => pure source
       | 1 => pure s!"cf_arg_identity({source})"
@@ -619,5 +619,17 @@ def genConfirmedArguments : R String := do
   out := out ++ s!"\nset_option fren.enumeration.size 2 in\nset_option fren.evidence \"{evidence}\" in\n" ++
     s!"pub proc cf_args(k: Int, enabled?, option: Option<Int>) \{\n{arguments}}\n"
   return out
+
+/-- Main's entire original `--confirm` stream, then the hosted additions.
+Replay the hosted generator from the saved seed state so its existing
+cases also keep their draws; append only what follows the shared prefix.
+The argument mode keeps the corrected Nat annotation regression without
+rewriting main's old seeds. -/
+def genConfirmed : R String := do
+  let rng ← get
+  let original ← genConfirmedArguments false
+  let shared := Id.run (genConfirmedPrefix.run' rng)
+  let hosted := Id.run ((genHostedConfirmed false).run' rng)
+  return original ++ (hosted.drop shared.length).toString
 
 end FrenTest.FuzzFrontends.Wide
