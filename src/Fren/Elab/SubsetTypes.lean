@@ -214,7 +214,7 @@ def factPred? (ty : Expr) (pt : Core.PTy) (nat : Bool := false) : TermElabM (Opt
 of generic functions without a body, the Lean types of their signatures,
 and the constraints of their result types (`Reqs/Lang/GenericFunctions#uninterpreted-generic-functions`). -/
 def elabHooks : ElabHooks where
-  leanType t := (leanTypeOf t).run'
+  leanType t := (leanTypeOf (m := TermElabM) t).run'
   fact pt nat := (do
     if (pt.cons (← getState).shapeOf).isNone then return none
     let nat := nat && pt.ty == Core.Ty.nat
@@ -239,8 +239,7 @@ def varPType (modName : Name) (name : Syntax) (ty? : Option Syntax) : TermElabM 
 type arguments `args` for its type parameters, if it is generic, as the
 `fren` command's `partPTy` has it (`Core.PTy.subst`). -/
 def partPType (shape : Core.DataShape) (v k : Nat) (args : Array Core.Ty := #[]) : Core.PTy :=
-  let t := (shape.parts[v]?.bind (·[k]?)).getD default
-  if args.isEmpty then t else t.subst (args.map .plain)
+  shape.instancePart v k args
 
 /-- Records the obligation of the value `x`, given at `ref` where the type
 `t` is declared, if it has one, for the subset-type check

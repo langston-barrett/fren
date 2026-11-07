@@ -226,7 +226,7 @@ partial def readValue (misread : Bool) (ty val : Expr) : MetaM Expr := do
     let targs := ty.getAppArgs
     if let some e := st.enumOfDecl? c.getPrefix <|> st.enumOf? ty then
       if let some idx := e.ctorIdx? c then
-        let tys := (e.payloadsAt targs)[idx]?.getD #[]
+        let tys := (← e.payloadsAt targs)[idx]?.getD #[]
         let all := val.getAppArgs
         let args := all.extract e.params.size
         if args.size == tys.size then
@@ -236,7 +236,7 @@ partial def readValue (misread : Bool) (ty val : Expr) : MetaM Expr := do
       let args := all.extract r.params.size
       if c == r.ctor && args.size == r.fields.size then
         return mkAppN val.getAppFn ((all.extract 0 r.params.size)
-          ++ (← ((r.fieldsAt targs).zip args).mapM fun ((_, t), a) => readValue misread t a))
+          ++ (← ((← r.fieldsAt targs).zip args).mapM fun ((_, t), a) => readValue misread t a))
   return val
 
 /-- The default value of the type `ty` (`model::default_value`), as
@@ -260,11 +260,11 @@ partial def defaultValue (ty : Expr) (seen : List Name := []) : MetaM (Option Ex
   let targs := ty.getAppArgs
   if let some r := st.recordOf? ty then
     if seen.contains r.decl then return none
-    let some fs ← (r.fieldsAt targs).mapM (defaultValue ·.2 (r.decl :: seen)) <&> (·.mapM id) | return none
+    let some fs ← (← r.fieldsAt targs).mapM (defaultValue ·.2 (r.decl :: seen)) <&> (·.mapM id) | return none
     return some (mkAppN (mkConst r.ctor (← getLevels ty)) (targs ++ fs))
   if let some e := st.enumOf? ty then
     if seen.contains e.decl then return none
-    for tys in e.payloadsAt targs, idx in [0:e.variants.size] do
+    for tys in (← e.payloadsAt targs), idx in [0:e.variants.size] do
       let some ps ← tys.mapM (defaultValue · (e.decl :: seen)) <&> (·.mapM id) | continue
       return some (mkAppN (e.ctorConst idx) (targs ++ ps))
   return none
@@ -343,14 +343,14 @@ where
       let args := val.getAppArgs.extract e.params.size
       let some idx := e.ctorIdx? c | return s!"{e.path.getString!}::{c.getString!}"
       let v := s!"{e.path.getString!}::{e.variants[idx]!}"
-      let tys := (e.payloadsAt targs)[idx]?.getD #[]
+      let tys := (← e.payloadsAt targs)[idx]?.getD #[]
       if args.isEmpty || args.size != tys.size then return v
       let vals ← (tys.zip args).mapM fun (t, a) => show_ t a
       return s!"{v}({", ".intercalate vals.toList})"
     if let some r := st.recordOfDecl? c.getPrefix then
       let args := val.getAppArgs.extract r.params.size
       if c == r.ctor && args.size == r.fields.size then
-        let fs ← ((r.fieldsAt targs).zip args).mapM fun ((f, t), a) => return s!"{f} := {← show_ t a}"
+        let fs ← ((← r.fieldsAt targs).zip args).mapM fun ((f, t), a) => return s!"{f} := {← show_ t a}"
         return s!"{r.path.getString!} \{ {", ".intercalate fs.toList} }"
   return toString (← ppExpr val)
 

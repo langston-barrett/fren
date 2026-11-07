@@ -76,7 +76,7 @@ partial def leanPattern (names : Array Name) (ty : Expr) (q : Core.Pat) : StateT
   | .ctor idx args =>
     let some info := (← getState).enumOf? ty
       | throwError "internal error: a variant's pattern of a value that is not of an enumeration"
-    let tys := (info.payloadsAt ty.getAppArgs)[idx]!
+    let tys := (← info.payloadsAt ty.getAppArgs)[idx]!
     let ps ← (args.zip tys).mapM fun (a, t) => leanPattern names t a
     if ps.isEmpty then pure ⟨mkCIdent (info.ctor idx)⟩ else `($(mkCIdent (info.ctor idx)) $ps*)
   | _ => throwError "internal error: a pattern that is not Lean's"

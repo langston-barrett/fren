@@ -33,7 +33,7 @@ partial def Ty.collectionSorts (shapes : Lean.Name → Option DataShape) (t : Ty
     (seen : List Lean.Name := []) (args : Array Ty := #[]) : Array Ty := Id.run do
   if let .param k _ := t then
     return (args[k]?.map fun a => a.collectionSorts shapes seen).getD #[]
-  let actual := t.subst args
+  let actual := (genericTypeMorphism args).type t
   let mut out := t.parts.toArray.flatMap (·.collectionSorts shapes seen args)
   if let some p := actual.dataPath? then
     unless seen.contains p do

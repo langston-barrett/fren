@@ -19,10 +19,9 @@ import FrenCore.TypeFacts
 
 The meaning of a spec on one behaviour: an interpretation and a value for
 each variable. It is computed from the parsed items, with its own types and
-its own reading of each expression, and shares only name resolution
-(`Fren.Core.Table`) with the elaborator, so that it is an independent
-statement of what a spec means, against which the formulas given to the
-solver are confirmed (`FrenCli.Confirm`).
+its own reading of each expression. Name resolution and generic datatype
+instantiation use the shared core. Evaluation gives the meaning against
+which the formulas given to the solver are confirmed (`FrenCli.Confirm`).
 
 Evaluation is three-valued: a variable without a value, or a function
 application that the interpretation does not give, is unknown (`none`),
@@ -77,7 +76,8 @@ partial def VTy.ofCore : Fren.Core.Ty → VTy
   | .param k _ => .param k
 
 /-- `t`, with the `k`th of `args` for each type parameter `k`
-(`lang::instantiation`). A parameter without one stays. -/
+(`lang::instantiation`). A parameter without one stays. Generic functions
+still use this operation; datatype instances use `VTy.atTypeInstance`. -/
 partial def VTy.subst (args : List VTy) : VTy → VTy
   | .param k => args[k]?.getD (.param k)
   | .set t => .set (t.subst args)
@@ -693,6 +693,27 @@ structure Spec where
   instanceArgs : NameMap (Array Fren.Core.Ty) := {}
   deriving Inhabited
 
+/-- `t` as both front ends see it (`Fren.Core.Ty`). -/
+partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
+  | .bool => .bool
+  | .int => .int
+  | .nat => .nat
+  | .string => .string
+  | .set t => .set (t.core sp)
+  | .rel a b => .rel (a.core sp) (b.core sp)
+  | .seq t => .seq (t.core sp)
+  | .data p as =>
+    let as := as.map (·.core sp)
+    if (sp.data.find? p).any (·.isRecord) then .record p as else .enum p as
+  | .abstract p => .abstract p
+  | .newtype p u => .newtype p (u.core sp)
+  | .param k => .param k .anonymous
+
+/-- The evaluator extracts a type and its arguments; the theory morphism
+performs the same simultaneous substitution as the elaborators. -/
+def VTy.atTypeInstance (t : VTy) (sp : Spec) (args : List VTy) : VTy :=
+  VTy.ofCore ((Fren.Core.genericTypeMorphism (args.map (·.core sp)).toArray).type (t.core sp))
+
 def Spec.comp? (sp : Spec) (path : Name) : Option Comp := sp.comps.find? (·.path == path)
 
 /-- Every value of `t`, a type that a quantifier ranges over
@@ -703,7 +724,7 @@ partial def Spec.values (sp : Spec) : VTy → Array Val
   | .bool => #[.bool true, .bool false]
   | .data p args => match sp.data.find? p with
     | some d => (d.ctors.mapIdx fun idx c =>
-        (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values (t.subst args)).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
+        (c.fields.foldl (fun acc (_, t) => acc.flatMap fun pre => (sp.values (t.atTypeInstance sp args)).map pre.push) #[#[]]).map (.ctor p idx ·)).flatten
     | none => #[]
   -- A newtype's values are its underlying type's, as `Spec.ofPVal` has them.
   | .newtype _ u => sp.values u
@@ -2533,7 +2554,7 @@ partial def Val.showAs (sp : Spec) (ty : VTy) (v : Val) : String :=
   | .data p targs, .ctor _ idx args =>
     match (sp.data.find? p).bind (·.ctors[idx]?), sp.data.find? p with
     | some c, some d =>
-      let shown := (c.fields.zip args).map fun ((_, t), a) => a.showAs sp (t.subst targs)
+      let shown := (c.fields.zip args).map fun ((_, t), a) => a.showAs sp (t.atTypeInstance sp targs)
       if d.isRecord then
         let fs := (c.fields.zip shown).toList.map fun ((f, _), a) => s!"{f} := {a}"
         s!"{p.getString!} \{ {", ".intercalate fs} }"
@@ -2747,7 +2768,7 @@ def readFields (e : Ex) (ty : VTy) (fs : List String) : L (Ex × VTy) := do
     let some c := d.ctors[0]? | throw s!"`{showPath p}` has no constructor"
     let some idx := c.fields.findIdx? (·.1 == Name.mkSimple f) | throw s!"`{showPath p}` has no field `{f}`"
     e := .field e idx
-    ty := c.fields[idx]!.2.subst targs
+    ty := c.fields[idx]!.2.atTypeInstance (← get).spec targs
   return (e, ty)
 
 def evalClosed (e : Ex) : Option Val := e.eval {} fun _ => none
@@ -3389,7 +3410,8 @@ partial def lowerPattern (t : VTy) (p : Pattern) : L (Pat × List (Name × VTy �
     let .data path targs := t | throw "a variant matches a value that is not an enumeration"
     unless en.path == path do throw s!"the pattern's variant is not of `{showPath path}`"
     let d ← dataDef path
-    let tys := d.ctors[idx]!.fields.map (·.2.subst targs)
+    let sp := (← get).spec
+    let tys := d.ctors[idx]!.fields.map (fun f => f.2.atTypeInstance sp targs)
     let mut ps := #[]
     let mut bound := []
     for a in args?.getD #[], ta in tys do
@@ -3433,22 +3455,6 @@ partial def Ex.readsUnspecified : Ex → Bool
   | .update e fs => e.readsUnspecified || fs.any (·.2.readsUnspecified)
   | .match e arms _ _ u _ => u.isSome || e.readsUnspecified || arms.any fun (_, g?, b) =>
     g?.any (·.readsUnspecified) || b.readsUnspecified
-
-/-- `t` as both front ends see it (`Fren.Core.Ty`). -/
-partial def VTy.core (sp : Spec) : VTy → Fren.Core.Ty
-  | .bool => .bool
-  | .int => .int
-  | .nat => .nat
-  | .string => .string
-  | .set t => .set (t.core sp)
-  | .rel a b => .rel (a.core sp) (b.core sp)
-  | .seq t => .seq (t.core sp)
-  | .data p as =>
-    let as := as.map (·.core sp)
-    if (sp.data.find? p).any (·.isRecord) then .record p as else .enum p as
-  | .abstract p => .abstract p
-  | .newtype p u => .newtype p (u.core sp)
-  | .param k => .param k .anonymous
 
 /-- The type arguments that the elaborator inferred for the application at
 `span` of the generic function at `path`, in the file being lowered
@@ -3620,7 +3626,7 @@ partial def Spec.ofPVal (sp : Spec) : VTy → Fren.Core.PVal → Val
   | _, .int i => .int i
   | .newtype _ u, .ctor _ #[w] => sp.ofPVal u w
   | .data p targs, .ctor idx args => match sp.data.find? p with
-    | some d => .ctor p idx ((args.zip (d.ctors[idx]!.fields.map (·.2.subst targs))).map fun (w, u) => sp.ofPVal u w)
+    | some d => .ctor p idx ((args.zip (d.ctors[idx]!.fields.map (·.2.atTypeInstance sp targs))).map fun (w, u) => sp.ofPVal u w)
     | none => .ctor p idx #[]
   | _, .ctor idx _ => .ctor .anonymous idx #[]
 
@@ -4861,7 +4867,7 @@ partial def Spec.fits (sp : Spec) : VTy → Val → Bool
   | .newtype _ u, v => sp.fits u v
   | .abstract s, .abs s' _ => s == s'
   | .data p args, .ctor q idx vs => p == q && match (sp.data.find? p).bind (·.ctors[idx]?) with
-    | some c => c.fields.size == vs.size && (c.fields.zip vs).all fun ((_, t), v) => sp.fits (t.subst args) v
+    | some c => c.fields.size == vs.size && (c.fields.zip vs).all fun ((_, t), v) => sp.fits (t.atTypeInstance sp args) v
     | none => false
   | _, _ => false
 

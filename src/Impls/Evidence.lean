@@ -133,8 +133,10 @@ trusted lang::named: "no front end elaborates a name into the semantics' abstrac
 
 -- The theory-core requirements below have `impl`s proved for every
 -- input in `Impls/Theories.lean`; these tests are regression cross-checks.
--- Generic function instances use its morphisms; module and generic type
--- adoption is separate work in #761.
+-- Generic functions and datatypes use these morphisms; module adoption
+-- continues in #761.
+tested lang::theory_declaration_translation: "src/FrenTest/Theories.lean"
+tested lang::theory_type_list: "src/FrenTest/Theories.lean"
 tested lang::theory_signature: "src/FrenTest/Theories.lean"
 tested lang::theory_term_translation: "src/FrenTest/Theories.lean"
 tested lang::theory_term_substitution: "src/FrenTest/Theories.lean"
