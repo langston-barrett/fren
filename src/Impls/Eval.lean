@@ -22,6 +22,14 @@ open Fren.Core (CheckKind Verdict)
 open FrenCli.Eval (Status Confirmation Unreached UnreachedWarning statusOf evalExit reached counted triggerUnknown unreachedOf unreachedWarning testVerdict
   confirmation confirmedVerdict)
 
+impl application_sites: eval::application_sites for (arguments : List Int) (body : Int) {
+  arguments := Fren.Seq.ofList arguments,
+  body := body,
+  visited := Fren.Seq.ofList (Fren.Core.applicationParts arguments body),
+} by
+  intro arguments body _
+  simp [fren_spec, Fren.Core.applicationParts, Fren.Seq.ofList, Fren.Seq.unit] <;> rfl
+
 impl expansion_budget: eval::expansion_budget {
   initial := Fren.Core.maxExpansionNodes,
 } by decide

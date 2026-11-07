@@ -563,7 +563,7 @@ inductive Ex where
   arguments `args`, as lowering applies it: its value is `e`'s, but where
   evaluation is strict (`Interp.strict`), only where every argument's is
   known, though `e` may not read them all (`model::known_application`).
-  Only evaluation reads `args`: the solver and the checks see `e`. -/
+  Source questions visit `args` too, even where `e` never reads them. -/
   | strict (args : Array Ex) (e : Ex)
   /-- That `e` is a value of the declared type `t`: what its subset
   types, and those within it, say of it
@@ -1983,14 +1983,10 @@ def Ex.children : Ex → Array Ex
   | .quant _ _ _ _ ds _ b => (ds.filterMap id).push b
   | .table _ rows _ => rows.flatMap fun (_, c?, v) => c?.toArray.push v
   | .pre _ _ gs e => (gs.map (·.2)).push e
-  -- Only evaluation reads the arguments (`Ex.strict`). The traversals built
-  -- on this, which look for recursions, indexes or unspecified values, miss
-  -- one in an argument that the body never reads. Its value can only make
-  -- the application unknown, in a confirmation, never give it another, and
-  -- outside one it is not evaluated. But `Ex.siteGoals` then gives such an
-  -- index no definedness goal, so the `fren` command shows the model of its
-  -- definedness check on the solver's word, where the Lean-hosted front end
-  -- may refute it (#493).
+  -- Semantic dependency queries follow the substituted body. An argument
+  -- that it never reads can only make strict confirmation unknown; outside
+  -- confirmation its value is not evaluated. Source questions visit every
+  -- retained argument through `Fren.Core.applicationParts`.
   | .strict _ e => #[e]
 
 /-- Whether `e` has an unbounded quantifier: one with a bound name whose
@@ -3035,10 +3031,11 @@ def ReadingNode.children : ReadingNode → List ReadingNode
     -- Compilation enters a constant's closed body, although renaming and
     -- substitution share it. Count that later work at each use too.
     | .const _ body => if sites then [] else [.expr #[] [] false body]
-    -- `siteGoals` does not enter retained strict arguments, precondition
-    -- goals or compiled let values. Copying and compilation still do;
+    -- Source questions enter retained arguments too, under the same
+    -- lexical environment as the body. Precondition goals and compiled
+    -- let values are entered only for copying and compilation;
     -- count those trees without inventing nested pattern substitutions.
-    | .strict args body => (if sites then [] else args.toList.map copied) ++ [here body]
+    | .strict args body => (Fren.Core.applicationParts args.toList body).map here
     | .pre _ _ goals body => (if sites then [] else goals.toList.map (copied ·.2)) ++ [here body]
     | .memo values body => (if sites then [] else values.toList.map copied) ++ [here body]
     | .lifted values body => (if sites then [] else values.toList.flatMap (·.toList.map copied)) ++ [here body]
@@ -3076,7 +3073,8 @@ def ReadingNode.siteChildren : ReadingNode → List ReadingNode
     let here (e : Ex) := ReadingNode.expr defs bound false e
     match e with
     | .const .. => []
-    | .strict _ body | .memo _ body | .lifted _ body | .dispatch _ body | .pre _ _ _ body => [here body]
+    | .strict args body => (Fren.Core.applicationParts args.toList body).map here
+    | .memo _ body | .lifted _ body | .dispatch _ body | .pre _ _ _ body => [here body]
     | .quant _ _ _ names _ _ body =>
       [.expr defs (bound.filter fun (name, _) => !names.contains name) false body]
     | _ => (here e).children
@@ -3172,7 +3170,7 @@ partial def Ex.siteGoalsCore (e : Ex) (wrap : Ex → Ex) : Array (Nat × Option 
   -- Its arguments' questions, then its preconditions', as the elaborator
   -- records them.
   | .pre pos f goals e => go e ++ goals.map fun (p, g) => (pos, some (.precondition f p), wrap g)
-  | .strict _ e => go e
+  | .strict args e => (Fren.Core.applicationParts args.toList e).toArray.flatMap (go ·)
   | .matches r _ _ => go r
   | .index q i pos _ =>
     let bounds := Ex.bin .and (.bin .le (.lit (.int 0)) i) (.bin .lt i (.method .len q #[]))

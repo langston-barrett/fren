@@ -3,6 +3,12 @@
 
 namespace Fren.Core
 
+/-- The parts whose source questions an unfolded application retains:
+every argument, then the substituted body (`eval::application_sites`).
+An argument need not occur in the body, and repetitions remain visits. -/
+def applicationParts (arguments : List α) (body : α) : List α :=
+  arguments ++ [body]
+
 /-- The separate copying and inspection allowances while reading one
 source item, across expansions, binder renamings and site searches. -/
 -- `orders_acyclic?` was the largest item of Fren's own requirements at
