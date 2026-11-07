@@ -126,8 +126,8 @@ The executable requirements below start after source discovery: their
 selected-mutant model does not prove traversal of the parsed item tree.
 The source-level obligation here is checked by the real parser and
 `fren mutate --list` snapshots
-[`mutate_mutual.fren`](../../test/cli/commands/mutate_mutual.fren) and
-[`mutate_mutual_protection.fren`](../../test/cli/commands/mutate_mutual_protection.fren).
+[`mutate_mutual.fren`](https://github.com/langston-barrett/fren/blob/22835d2d7927e774fd63e73025d819dd610ff3ad/test/cli/commands/mutate_mutual.fren) and
+[`mutate_mutual_protection.fren`](https://github.com/langston-barrett/fren/blob/22835d2d7927e774fd63e73025d819dd610ff3ad/test/cli/commands/mutate_mutual_protection.fren).
 They require edits in both member bodies, retain the divisor and range
 protections alongside ordinary-function controls, and still mutate an
 unprotected constant. These are concrete traversal regressions, not a
@@ -528,7 +528,7 @@ expect valid_ids_examples(id: String, other: String) {
 ```
 
 With the same spec, checker and seed, the full run, a sample and every
-shard give each selected mutant the same decision and killing checks.
+shard give each selected mutant the same normalized outcome.
 Whether the solver proves equivalence within its wall-clock time limit
 may differ, so survival and equivalence count as the same decision here:
 
