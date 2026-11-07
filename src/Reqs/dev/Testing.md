@@ -1540,6 +1540,21 @@ omit `scripts/`.
 The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
+`Heavy.Ownership` implements the registry attempt, report ownership and
+isolated-lease accounting decisions below, bound in `Impls.HeavyOwnership`.
+Python remains the active scheduler and syscall adapter. The kernel takes
+decoded reports: wire version, token syntax, finite timestamps and monitor
+field shapes are checked by the adapter, not assumed to prove ownership.
+The kernel checks sequence and RSS validity, token agreement, the entire
+observed monitor identity and freshness itself. The `heavyOwnership` job
+compares these decisions against Python with sanitized fixtures, including
+malformed reports, inherited tokens and namespace disagreements. It also
+checks registry retry boundaries against Python's acquisition loop.
+This slice does not port set-wide accounting, victim selection, sequence
+allocation or publication, completion or signalling. A lease's isolated
+admission charge is not a new admission rule and must not be summed over
+unknown holders.
+
 ```fren
 pub proc heavy_registry(available?, now: Int, deadline: Int, held?, requested?): (
     det acquired?,
