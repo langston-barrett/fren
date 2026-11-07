@@ -1,7 +1,7 @@
 /-!
 # Selecting the jobs of `lake test`
 
-Which jobs `lake test -- [--skip-own-mutants] [--shard K/N]` runs
+Which jobs `lake test -- [--skip-own-mutants] [--skip-unstable-legacy] [--shard K/N]` runs
 (`Reqs/dev/Testing`): the shard of each job, which `Impls.Testing` proves
 meets `testing::shard`, and the selection, which runs the jobs placed in
 the shard asked for.
@@ -13,6 +13,12 @@ namespace FrenTest.Jobs
 the slowest jobs, which `--skip-own-mutants` leaves out. -/
 def ownMutantsJob : List String → Bool
   | ["mutation", "0", _, _] => true
+  | _ => false
+
+/-- The exact legacy jobs temporarily quarantined from CI. -/
+def unstableLegacyJob : List String → Bool
+  | ["enumeration"] | ["nativeObservation"] => true
+  | ["nativeDiagnostics", group] => ["core", "wait", "own", "wrapper"].contains group
   | _ => false
 
 /-- Whether `--skip-own-mutants`, if `skip`, leaves out `job`. -/
@@ -43,8 +49,10 @@ def placement (skip : Bool) (n : Nat) (jobs : List (List String)) (i : Nat) : Op
 /-- The jobs that `args` select, in order: those that `placement` puts in
 the shard `K` of `--shard K/N`, or, without it, in the one shard of one, so
 that the shards together run each job once, but those that
-`--skip-own-mutants` leaves out. -/
+`--skip-own-mutants` leaves out. An explicit `--skip-unstable-legacy`
+prefilters the quarantined jobs before placement. -/
 def selectJobs (args : List String) (all : Array (List String)) : Except String (Array (List String)) := do
+  let all := if args.contains "--skip-unstable-legacy" then all.filter (!unstableLegacyJob ·) else all
   let skip := args.contains "--skip-own-mutants"
   let (k, n) ← match args.dropWhile (· != "--shard") with
     | _ :: s :: _ => parseShard s

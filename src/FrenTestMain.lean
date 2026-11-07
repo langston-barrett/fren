@@ -11,6 +11,7 @@ import FrenTest.FuzzFrontends.Corpus
 import FrenTest.FuzzFrontends.Running
 import FrenTest.ImplPath
 import FrenTest.Jobs
+import FrenTest.Layering
 import FrenTest.Messages
 import FrenTest.MutateDecisions
 import FrenTest.NativeDiagnostics
@@ -4467,7 +4468,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
@@ -4558,6 +4559,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["oracleGuards"] => pure FrenTest.OracleChecks.check
   | ["fixing"] => fixing
   | ["libraries"] => libraries
+  | ["layering"] => FrenTest.Layering.check
   | ["lintChapters"] => lintChapters
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
