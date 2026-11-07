@@ -672,7 +672,7 @@ def leanKeywords : List String :=
    "inferInstanceAs", "infix", "infixl", "infixr", "init_grind_norm", "init_quot", "initialize", "instance",
    "leading_parser", "letI", "let_delayed", "let_expr", "let_fun", "let_opaque", "let_tmp", "local",
    "logNamedError", "logNamedErrorAt", "logNamedWarning", "logNamedWarningAt", "macro", "macro_rules",
-   "match_expr", "matches", "max_prec", "meta", "mkConstFamily", "mod_cast", "mut", "mutual", "namespace",
+   "match_expr", "matches", "max_prec", "meta", "mkConstFamily", "mod_cast", "mut", "namespace",
    "nat_lit", "ncInterp", "no_index", "nofun", "nomatch", "noncomputable", "nonrec", "norm_cast_add_elim",
    "notation", "omit", "opaque", "open", "partial", "partial_fixpoint", "postfix", "prefix", "private",
    "protected", "public", "recommended_spelling", "register_builtin_option", "register_error_explanation",

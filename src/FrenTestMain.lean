@@ -2,6 +2,7 @@
 import Fren
 import FrenCli.Eval
 import FrenCli.Run
+import FrenTest.Conformance
 import FrenTest.Expansion
 import FrenTest.ExpansionFuzz
 import FrenTest.Frontends
@@ -12,6 +13,7 @@ import FrenTest.ImplPath
 import FrenTest.Jobs
 import FrenTest.Messages
 import FrenTest.MutateDecisions
+import FrenTest.OracleChecks
 import FrenTest.OutOfFuel
 import FrenTest.Quote
 import FrenTest.ReadingBeside
@@ -22,6 +24,7 @@ import FrenTest.TheoryDump
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
 import Heavy.Forecast
+import Heavy.Ownership
 import Impls
 import Lean.Elab.Frontend
 -- keep-sorted end
@@ -2374,21 +2377,6 @@ def sequenceCorpus (n : Nat) : String := Id.run do
 def corpora : List (String × (Nat → String)) :=
   [("strings", stringCorpus), ("sets", setCorpus), ("relations", relationCorpus), ("sequences", sequenceCorpus)]
 
-/-- The fixed conformance corpus must execute checks, report no
-internal error, and leave no query undecided, including at a limit.
-Only evidence downgraded because its premise did not pass is allowed. -/
-def conformanceDecided (out : String) : Bool := Id.run do
-  let resting := (out.splitOn "warning[F0664]").length - 1
-  let some summary := (out.splitOn "\n").find? (·.startsWith "fren: ") | return false
-  let counts := ((summary.drop 6).toString.splitOn ", ").filterMap fun s => (s.splitOn " ").head?.bind String.toNat?
-  return counts.any (· > 0) && !out.contains "internal error:".toSlice &&
-    !out.contains "could not check".toSlice && summary.contains s!" {resting} inconclusive".toSlice
-
-#guard conformanceDecided "fren: 1 passed, 0 failed, 0 inconclusive, 0 redundant"
-#guard !conformanceDecided "fren: 0 passed, 0 failed, 0 inconclusive, 0 redundant"
-#guard !conformanceDecided "internal error: bug\nfren: 1 passed, 0 failed, 0 inconclusive, 0 redundant"
-#guard !conformanceDecided "fren: 1 passed, 0 failed, 1 inconclusive, 0 redundant"
-
 /-- The solver decides every query of the corpus `name`: nothing is
 inconclusive but a pass that rests on a check that did not pass, such as
 an expectation of a procedure whose assumptions contradict each other
@@ -2397,10 +2385,8 @@ def conformance (name : String) (corpus : Nat → String) : IO (Array String) :=
   IO.FS.createDirAll (".lake" / "corpus")
   let file := s!".lake/corpus/{name}.fren"
   IO.FS.writeFile file (corpus 40)
-  let (out, _) ← runFren ["check", file]
-  if !conformanceDecided out then
-    return #[s!"the {name} corpus ({file}) is not decided:\n{out}"]
-  return #[]
+  let (out, code) ← runFren ["check", file]
+  return (FrenTest.Conformance.failures out code.toNat).map (s!"the {name} corpus ({file}): {·}\n{out}")
 
 /-- `src` laid out again at random, from `seed`, as `fmt::layout_free`
 allows: each gap whose line break a list or block decides, or that before
@@ -4086,7 +4072,7 @@ def enumerationAgrees : IO (Array String) := do
     compared := compared + n
     hit := hit ++ hs
   failures := failures ++ staleExceptions (corpus.map (·.toString)) hit (methods := #[.solver, .enumerated])
-  return if compared < 500 then failures.push s!"enumeration: only {compared} checks compared" else failures
+  return FrenTest.Oracle.finish "enumeration" compared 500 failures
 
 /-- What `methodsAgree` counted. -/
 structure MethodCounts where
@@ -4426,6 +4412,13 @@ def panicGuard : IO (Array String) := do
   | _, _ => failures := failures.push s!"`outOfFuel` crashed without `LEAN_ABORT_ON_PANIC` (exit {code}):\n{err}"
   return failures
 
+/-- Independent executable scenarios, split for the 30-second per-job
+budget. Together they run every case in `fuzz_frontends_driver_test.py`. -/
+def frontendFuzzDriverCases : Array String :=
+  #["test_odd_ranges", "test_crash_recovers_and_waits_for_peer",
+    "test_single_ranges", "test_timeouts_are_recorded_in_both_lanes",
+    "test_invalid_jobs", "test_empty_ranges"]
+
 /-- The jobs, as the arguments of `--job`, the slowest first. -/
 def jobs : IO (Array (List String)) := do
   -- The ui tests of `misreadDir` run with the readers' injected bug.
@@ -4438,8 +4431,9 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["heavyPrediction"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+    ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
@@ -4493,11 +4487,21 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["conformance", name] => match corpora.lookup name with
     | some corpus => conformance name corpus
     | none => throw (IO.userError s!"unknown corpus `{name}`")
+  | ["heavyOwnership"] => do
+    -- Build the Std-only module loaded by the test transport.
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_ownership_test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"heavy ownership differential check failed:\n{out.stdout}{out.stderr}"]
   | ["heavyPrediction"] => do
     -- The Heavy.Forecast import builds the module loaded by this transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"heavy forecast differential check failed:\n{out.stdout}{out.stderr}"]
+  | ["frontendFuzzDriver", name] => do
+    unless frontendFuzzDriverCases.contains name do
+      throw (IO.userError s!"unknown front-end driver case `{name}`")
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/fuzz_frontends_driver_test.py", s!"DriverTests.{name}"] }
+    return if out.exitCode == 0 then #[] else #[s!"front-end fuzzer executable case {name} failed:\n{out.stdout}{out.stderr}"]
   | ["formatting"] => formatting
+  | ["oracleGuards"] => pure FrenTest.OracleChecks.check
   | ["fixing"] => fixing
   | ["libraries"] => libraries
   | ["lintChapters"] => lintChapters
