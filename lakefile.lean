@@ -86,6 +86,27 @@ lean_lib FrenSexp
 
 lean_lib FrenSexpTests
 
+-- Development helpers; no production IR library depends on them.
+lean_lib FrenTextTests
+
+lean_lib FrenTextTestsTests
+
+lean_lib FrenTextDemo
+
+-- Include this in text-test libraries: -Kbless=1 must fail clearly, and its
+-- compiler option must be part of Lake's artifact key. Bless natively instead.
+def textTestLeanArgs : Array String :=
+  if (get_config? bless).isSome then #["-Dfren.textTests.bless=true"] else #[]
+
+lean_lib FrenTextDemoTests where
+  moreLeanArgs := textTestLeanArgs
+  needs := #[`@/fren_text_demo]
+
+input_dir fren_text_demo where
+  path := "test/FrenTextDemo"
+  text := true
+  filter := .extension #["fren"]
+
 lean_lib FrenProp
 
 lean_lib FrenPropTests
@@ -1175,6 +1196,7 @@ lean_exe fren_fuzz_frontends where
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs
 
--- Built by lake test; runtime jobs will be added later.
+-- Default S-expression checks and selected registered textual tests.
 lean_exe fren2_test where
+  needs := #[`@/FrenTextDemoTests, `@/FrenTextTestsTests]
   root := `Fren2TestMain
