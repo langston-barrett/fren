@@ -1,0 +1,28 @@
+pub mod skeleton
+
+pub enum Light { Red, Amber, Green }
+
+pub fn next(l: Light): Light := match l {
+    Light::Red => Light::Green,
+    Light::Green => Light::Amber,
+    Light::Amber => Light::Red,
+}
+
+pub fn wait(l: Light, base: Int): Int := match l {
+    Light::Red => base + 30,
+    Light::Amber => base + 5,
+    Light::Green => base,
+}
+
+expect cycles(l: Light) {
+    expect back: next(next(next(l))) = l
+}
+
+expect waits(l: Light, base: Int) {
+    assume bounded: base <= 100
+    expect at_most: wait(l, base) <= 130
+}
+
+expect wrong(l: Light) {
+    expect never_red: next(l) != Light::Red
+}

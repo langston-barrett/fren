@@ -161,7 +161,13 @@ input_dir fren_parse_text where
 
 lean_lib FrenAstToHir
 
-lean_lib FrenAstToHirTests
+lean_lib FrenAstToHirTests where
+  needs := #[`@/fren_resolve_inputs]
+
+input_dir fren_resolve_inputs where
+  path := "test/FrenResolve"
+  text := false
+  filter := .extension #["fren", "refs"]
 
 lean_lib FrenHirToThir
 
