@@ -25,7 +25,7 @@ private def rejectedAt (entry : Entry) (source : String) (start stop : Nat) : Bo
 #eval show IO Unit from do
   for gap in ["\n", "\r\n", " -- é😀\n", " -- é😀\r\n\t", "\n-- comment\n"] do
     for body in ["1", "(\n1)", "if true then 1 else 2", "let x := 1 in x"] do
-      let source := "fn f(): Int := " ++ body ++ gap ++ "mod second\nfn g(): Int := 2"
+      let source := "fn f(x: Int): Int := " ++ body ++ gap ++ "mod second\nfn g(x: Int): Int := 2"
       for entry in [Entry.file, Entry.context] do
         let .ok doc := parse entry ⟨1⟩ source | throw <| IO.userError "module boundary parse"
         let .declarations decls := doc.root | throw <| IO.userError "declarations root"
@@ -46,7 +46,7 @@ private def rejectedAt (entry : Entry) (source : String) (start stop : Nat) : Bo
       let source := s!"a {first} b {second} c"
       let offset := (s!"a {first} b ").utf8ByteSize
       for entry in [Entry.expression, Entry.file, Entry.context] do
-        let lead := if entry == .expression then "" else "fn f(): Bool := "
+        let lead := if entry == .expression then "" else "fn f(x: Int): Bool := "
         unless rejectedAt entry (lead ++ source) (lead.utf8ByteSize + offset)
             (lead.utf8ByteSize + offset + second.utf8ByteSize) do
           throw <| IO.userError s!"unsupported comparison chain {source}"
@@ -74,7 +74,7 @@ private def check (p : Prop) (p' : Decorations.DecorationsOf p := by mk_decorati
 #eval check <| ∀ (n : Nat) (crlf : Bool),
   let x := toString n
   let gap := if crlf then " -- é😀\r\n" else " -- é😀\n"
-  let whole := s!"fn f(): Int := {x}" ++ gap ++ "mod second"
+  let whole := s!"fn f(x: Int): Int := {x}" ++ gap ++ "mod second"
   (match parseFile ⟨1⟩ whole with
    | .ok doc => coherent doc && doc.emit == whole &&
        (match doc.root with | .declarations ds => ds.size == 2 | _ => false)
@@ -103,7 +103,7 @@ open FrenAst FrenParse
     let start := ("a " ++ operator ++ " ").utf8ByteSize
     let source := "a " ++ operator ++ " let x := true in x"
     for entry in [Entry.expression, Entry.file, Entry.context] do
-      let lead := if entry == .expression then "" else "fn f(): Bool := "
+      let lead := if entry == .expression then "" else "fn f(x: Int): Bool := "
       unless rejectedAt entry (lead ++ source) (lead.utf8ByteSize + start)
           (lead.utf8ByteSize + start + 3) do
         throw <| IO.userError s!"bare let operand: {source}"
@@ -120,7 +120,7 @@ open FrenAst FrenParse
   for word in ["proc", "forall", "exists", "use", "struct", "where", "with"] do
     unless rejectedAt .expression word 0 word.utf8ByteSize do
       throw <| IO.userError s!"unsupported reserved word became a name: {word}"
-  for source in ["fn f(assume: Int): Int := assume", "fn assume(): Int := 1",
+  for source in ["fn f(assume: Int): Int := assume", "fn assume(x: Int): Int := 1",
       "enum E { Int, Bool, not, assume, true, false }"] do
     let .ok doc := parseFile ⟨1⟩ source | throw <| IO.userError "contextual name grammar"
     unless coherent doc && doc.emit == source do throw <| IO.userError "contextual name tree"
@@ -159,7 +159,7 @@ private def typeName : Ty → String
       unless typeName annotation == expected && coherent doc && doc.emit == source do
         throw <| IO.userError "expectation type path classification"
     for source in ["fn f(b?:", "expect e(b?:", "fn f(x: Int::", "fn f(x: Bool::",
-        "fn f(): Int::", "fn f(): Bool::", "expect e(x: Int::", "expect e(x: Bool::"] do
+        "fn f(x: Int): Int::", "fn f(x: Int): Bool::", "expect e(x: Int::", "expect e(x: Bool::"] do
       unless rejectedAt entry source source.utf8ByteSize source.utf8ByteSize do
         throw <| IO.userError s!"type truncation: {source}"
     for source in ["fn f(b?): Bool := b?", "fn f(b: Bool): Bool := b?",
@@ -179,7 +179,7 @@ private def requiredExpression (source : String) : IO Unit := do
 
 private def forbiddenExpression (source : String) : IO Unit := do
   for entry in [Entry.expression, Entry.file, Entry.context] do
-    let lead := if entry == .expression then "" else "fn f(): Int := "
+    let lead := if entry == .expression then "" else "fn f(x: Int): Int := "
     let .error failure := parse entry ⟨1⟩ (lead ++ source)
       | throw <| IO.userError s!"unsupported expression category: {source}"
     unless failure.emit == lead ++ source do throw <| IO.userError "category failure ownership"
@@ -217,5 +217,28 @@ private def forbiddenExpression (source : String) : IO Unit := do
   unless rejectedAt .expression "f -- é😀\r\n(x)" 13 14 &&
       rejectedAt .expression "1(x)" 1 2 do throw <| IO.userError "call opener byte anchors"
   IO.println "atom scrutinees, iff definition/arm categories, adjacent named calls and parameter openers passed"
+
+end FrenParseTests
+
+namespace FrenParseTests
+open FrenAst FrenParse
+
+#eval show IO Unit from do
+  for source in ["f()", "f( -- é😀\n)", "f(x,)", "f(x, y,)", "f(x, -- comment\r\n)"] do
+    forbiddenExpression source
+  for entry in [Entry.file, Entry.context] do
+    for source in ["fn f(): Int := 1", "fn f( -- comment\n): Int := 1",
+        "fn f(x: Int,): Int := x", "fn f(x: Int, -- comment\r\n): Int := x",
+        "enum E {}", "enum E { -- é😀\n}"] do
+      let .error failure := parse entry ⟨1⟩ source | throw <| IO.userError s!"required list element: {source}"
+      unless failure.emit == source do throw <| IO.userError "list failure ownership"
+    for source in ["expect e() {}", "expect e(x: Int,) { expect c: true }",
+        "expect e(x: Int, -- é😀\n) {}", "enum E { A, }", "enum E { A, B, }",
+        "fn f(l: E): Int := match l {}", "fn f(l: E): Int := match l { E::A => 1, }",
+        "fn f(x: Int): Int := unknown(x)", "fn f(x: Int, y: Int): Int := x(y)"] do
+      let .ok doc := parse entry ⟨1⟩ source | throw <| IO.userError s!"valid distinct list policy: {source}"
+      unless coherent doc && doc.emit == source do throw <| IO.userError "valid list ownership"
+  for source in ["f(x)", "f(x, y)", "f(g(x), h(y))"] do requiredExpression source
+  IO.println "list policies: nonempty/no-trailing functions and applications; nonempty/trailing enums; empty/trailing expectations and matches passed"
 
 end FrenParseTests

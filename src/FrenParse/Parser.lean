@@ -63,7 +63,10 @@ private def typeSyntax (c : Cursor) : Except Diagnostic (Ty × Cursor) := do
   if p.tail.isEmpty && p.head.text == "Int" then return (.int p.head, c)
   return (.named p, c)
 
-private def parameters (c : Cursor) : Except Diagnostic (Parameters × Cursor) := do
+private inductive ParameterEntry where
+  | functionGroup | expectationGroup
+
+private def parameters (entry : ParameterEntry) (c : Cursor) : Except Diagnostic (Parameters × Cursor) := do
   if !adjacentBefore c then fail c "`(` immediately after the declaration name"
   let (openToken, c) ← take c "("
   let mut c := c
@@ -71,6 +74,9 @@ private def parameters (c : Cursor) : Except Diagnostic (Parameters × Cursor) :
   let mut commas := #[]
   for _ in [:c.lexed.tokens.size + 1] do
     if hasText c ")" then
+      match entry with
+      | .functionGroup => fail c "a function parameter"
+      | .expectationGroup => pure ()
       let (closeToken, rest) ← take c ")"
       return (⟨openToken, values, commas, closeToken⟩, rest)
     let (name, rest) ← identifier c
@@ -202,9 +208,8 @@ private def tails : Nat → Nat → Expr → Cursor → Except Diagnostic (Expr 
       | none => return (left, c)
 
 private def arguments : Nat → Cursor → Except Diagnostic (Array Expr × Array Token × Cursor)
-  | 0, c => fail c "an argument or `)`"
+  | 0, c => fail c "an argument expression"
   | fuel + 1, c => do
-    if hasText c ")" then return (#[], #[], c)
     let (value, c) ← expression fuel 0 c
     if !hasText c "," then return (#[value], #[], c)
     let (comma, c) ← take c ","
@@ -247,6 +252,7 @@ private def declaration (c : Cursor) : Except Diagnostic (Decl × Cursor) := do
     let mut commas := #[]
     for _ in [:c.lexed.tokens.size + 1] do
       if hasText c "}" then
+        if variants.isEmpty then fail c "an enumeration variant"
         let (closeToken, rest) ← take c "}"
         return (.enumDecl visibility keyword name openToken variants commas closeToken, rest)
       let (variant, rest) ← identifier c
@@ -262,7 +268,7 @@ private def declaration (c : Cursor) : Except Diagnostic (Decl × Cursor) := do
   if hasText c "fn" then
     let (keyword, c) ← take c "fn"
     let (name, c) ← identifier c
-    let (params, c) ← parameters c
+    let (params, c) ← parameters .functionGroup c
     let (colon, c) ← take c ":"
     let (result, c) ← typeSyntax c
     let (assign, c) ← take c ":="
@@ -271,7 +277,7 @@ private def declaration (c : Cursor) : Except Diagnostic (Decl × Cursor) := do
   if visibility.isNone && hasText c "expect" then
     let (keyword, c) ← take c "expect"
     let (name, c) ← identifier c
-    let (params, c) ← parameters c
+    let (params, c) ← parameters .expectationGroup c
     let (openToken, c) ← take c "{"
     let mut c := c
     let mut members : Array Member := #[]

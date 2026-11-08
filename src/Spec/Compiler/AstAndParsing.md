@@ -94,6 +94,13 @@ begin immediately after the declaration name. Ordinary grouping
 parentheses may still follow trivia. These are syntax rules; a named
 application such as `unknown(x)` or `x(y)` still parses before resolution
 or typing.
+Function parameter lists and ordinary call argument lists are nonempty and
+do not allow a trailing comma. An enumeration has at least one variant;
+its variants may have a trailing comma. Global-expectation parameters may
+be empty and may have a trailing comma. Match arms may have a trailing
+comma or be empty; missing-variant checking, including an empty match,
+remains a later pass. Empty declaration sequences and empty expectation
+member blocks are also syntax.
 
 **Proof obligations**
 
