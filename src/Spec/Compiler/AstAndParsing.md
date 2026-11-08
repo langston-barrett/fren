@@ -51,17 +51,56 @@ expect division(x: Int) { expect euclidean: x = (x div 2) * 2 + x mod 2 }
 ```
 
 Integer division is written `div`; `/` is rejected. The division example
-uses the constant nonzero divisor 2.
+uses the constant nonzero divisor 2. The remainder operator `mod` must be
+on the line where its left operand ends. A `mod` after an LF or CRLF starts
+a module declaration instead, including when comments intervene. Within an
+expression entry or an unclosed delimiter, that declaration is unexpected.
+A remainder may put its right operand on the next line.
 
 `base + 5 * 2` groups as `base + (5 * 2)`, and `base - 5 - 2` as
 `(base - 5) - 2`. Calls bind before arithmetic; unary minus binds before
 multiplication, then addition, then comparisons, then `not`, `and`, `or`
 and `iff`, in decreasing precedence. Parentheses override that grouping.
+A prefix operand must respect this precedence too: `a + not b` and `-not b`
+require parentheses around the `not` expression. A `let` used as an
+operator's operand likewise requires parentheses, as in
+`a and (let x := true in x)`. Repeated `not not b` is valid. `if` and `match`
+are atoms and do not acquire these restrictions.
+`iff` does not associate: write `(a iff b) iff c` or `a iff (b iff c)`.
+This walking slice has binary comparisons only. Unparenthesized comparison
+chains, including the full language's `a < b <= c`, are unsupported rather
+than parsed as nested binary operators. Explicitly parenthesized comparisons
+remain syntax trees whose operand types are checked later.
 A `let` has the form `let x := value in body`; its body extends to the
-right. An `if` requires both `then` and `else`. A match arm pairs a
-qualified variant pattern with an expression using `=>`; arms are
+right. The definition's value is read at the `iff` level, so a nested `let`
+there requires parentheses; a right-nested `let` in the body remains valid.
+An `if` requires both `then` and `else`. A match scrutinee is an atom, such
+as a name, call, parenthesized expression, `if` or nested `match`; a bare
+operator or `let` expression there requires parentheses. A match arm pairs
+a qualified variant pattern with an expression at the `iff` level using
+`=>`, so a bare `let` arm body also requires parentheses. Arms are
 comma-separated and may have a trailing comma. Function parameters use
-`name: Type` (a `?` suffix supplies `Bool`), and a function body follows `:=`.
+`name: Type` (a `?` suffix supplies `Bool` when the annotation is omitted),
+and a function body follows `:=`. A suffix does not remove an explicit
+annotation: `b?: Bool` and `b?: Int` both parse, and the latter's type
+inconsistency is checked later. Named type paths are read in full before a
+bare `Bool` or `Int` is classified as built-in: `Int::T` and `Bool::T` are
+written paths whose resolution is also later work.
+Calls apply a written path, as in `f(x)` or `A::f(x)`, rather than an
+arbitrary expression or a previous call result. The opening `(` touches
+the last name: spaces, tabs, line endings and comments are not allowed
+between them. Function and global-expectation parameter lists likewise
+begin immediately after the declaration name. Ordinary grouping
+parentheses may still follow trivia. These are syntax rules; a named
+application such as `unknown(x)` or `x(y)` still parses before resolution
+or typing.
+Function parameter lists and ordinary call argument lists are nonempty and
+do not allow a trailing comma. An enumeration has at least one variant;
+its variants may have a trailing comma. Global-expectation parameters may
+be empty and may have a trailing comma. Match arms may have a trailing
+comma or be empty; missing-variant checking, including an empty match,
+remains a later pass. Empty declaration sequences and empty expectation
+member blocks are also syntax.
 
 **Proof obligations**
 
@@ -108,11 +147,21 @@ entry categories select grammar roots, not independent parser implementations.
 
 A *token* is a written identifier, keyword, literal or punctuator. *Trivia*
 is text between tokens: spaces, tabs, line endings and comments. The
-walking slice includes `--` line comments ending before LF or CRLF, or
+walking identifiers start with an ASCII letter or `_`, followed by ASCII
+letters, digits or `_`, with an optional final `?`. Fren's reserved words
+remain reserved even when their constructs are unsupported: `proc` and
+`forall` are not names in this slice. Contextual `assume` is an ordinary
+name outside an expectation member's keyword position. `Bool`, `Int`,
+`true`, `false` and `not` are interpreted at their type, literal or operator
+positions, rather than globally reserved from name positions. This does not
+add the constructs or broader lexical forms deferred below. The walking
+slice includes `--` line comments ending before LF or CRLF, or
 at EOF. LF and CRLF retain their original bytes. A keyword is recognized only
 at a token boundary: `next_step` is one identifier. Punctuators use longest
 matching spelling, so `<=`, `!=`, `:=`, `=>` and `::` are not split into
-shorter tokens. Comment text is not parsed as declarations.
+shorter tokens. The unsupported punctuator `<-` is likewise one rejected
+slice; `x<-1` fails, while `x < -1` contains a comparison and unary minus.
+Comment text is not parsed as declarations.
 
 **Proof obligations**
 

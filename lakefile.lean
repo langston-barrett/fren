@@ -119,7 +119,14 @@ lean_lib FrenPropTests
 
 lean_lib FrenAst
 
-lean_lib FrenAstTests
+lean_lib FrenAstTests where
+  moreLeanArgs := textTestLeanArgs
+  needs := #[`@/fren_ast_text]
+
+input_dir fren_ast_text where
+  path := "test/FrenAst"
+  text := false
+  filter := .extension #["fren"]
 
 lean_lib FrenModule
 
@@ -143,7 +150,14 @@ lean_lib FrenOirTests
 
 lean_lib FrenParse
 
-lean_lib FrenParseTests
+lean_lib FrenParseTests where
+  moreLeanArgs := textTestLeanArgs
+  needs := #[`@/fren_parse_text]
+
+input_dir fren_parse_text where
+  path := "test/FrenParse"
+  text := false
+  filter := .extension #["fren"]
 
 lean_lib FrenAstToHir
 
