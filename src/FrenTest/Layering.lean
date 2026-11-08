@@ -29,7 +29,9 @@ private def allowed : List (String × List String) :=
    ("FrenFlatToLir", base ++ ["FrenExpr", "FrenMir", "FrenLir"]),
    ("FrenLirToOir", base ++ ["FrenLir", "FrenOir"]),
    ("FrenOirToSmt", base ++ ["FrenOir"]),
-   ("FrenEval", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
+   -- The walking adapter proves admission with the actual checked producer.
+   -- This dependency does not prescribe the future generic evaluator boundary.
+   ("FrenEval", base ++ ["FrenModule", "FrenExpr", "FrenMir", "FrenHirToThir"]),
    ("FrenLirEval", base ++ ["FrenLir"]),
    ("FrenGen", base ++ ["FrenProp"] ++ ir),
    ("FrenCli2", []), ("FrenHosted2", [])]
@@ -52,7 +54,7 @@ private def permits (owner imported : String) : Bool := Id.run do
   if owner == imported then return true
   if owner == "FrenTest.Fren2Typing" then return imported == "FrenHirToThirTests"
   if owner == "FrenTest.Fren2Resolver" then return imported == "FrenAstToHirTests"
-  if ["FrenProp", "FrenAstToHirTests", "FrenHirToThirTests"].contains owner && imported == "Plausible" then return true
+  if ["FrenProp", "FrenAstToHirTests", "FrenHirToThirTests", "FrenEvalTests"].contains owner && imported == "Plausible" then return true
   if owner == "FrenTextTests" then return false
   if owner == "FrenTextTestsTests" then return imported == "FrenTextTests"
   if owner == "FrenTextDemo" then return imported == "FrenTextTests"
@@ -80,6 +82,11 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard permits "FrenAst" "FrenSexp"
 #guard !permits "Fren2TestMain" "FrenCore"
 #guard !permits "FrenBaseTests" "Fren"
+#guard permits "FrenEval" "FrenHirToThir"
+#guard permits "FrenEvalTests" "Plausible"
+#guard !permits "FrenEval" "Plausible"
+#guard !permits "FrenEval" "FrenCore"
+#guard !permits "FrenLirEval" "FrenHirToThir"
 
 private def rootOf (name : Lean.Name) : String :=
   (name.toString.splitOn ".").headD ""
