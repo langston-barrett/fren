@@ -40,6 +40,7 @@ private def tests : List String := roots.map (· ++ "Tests")
 private def permits (owner imported : String) : Bool := Id.run do
   if ["Lean", "Std", "Init"].contains imported then return true
   if owner == imported then return true
+  if owner == "FrenProp" && imported == "Plausible" then return true
   if owner == "Fren2TestMain" then return (roots ++ tests).contains imported
   if let some original := owner.dropSuffix? "Tests" then
     let original := original.toString
@@ -51,6 +52,8 @@ private def permits (owner imported : String) : Bool := Id.run do
     return roots.contains imported && imported != "FrenProp"
   return ((allowed.lookup owner).getD []).contains imported
 
+#guard permits "FrenProp" "Plausible"
+#guard !permits "FrenBase" "Plausible"
 #guard permits "FrenGen" "FrenProp"
 #guard permits "FrenBaseTests" "FrenProp"
 #guard !permits "FrenCli2" "FrenProp"

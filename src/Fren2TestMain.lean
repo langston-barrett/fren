@@ -1,5 +1,7 @@
 module
 
+meta import FrenBaseTests.Properties
+meta import FrenSourceTests.Properties
 import FrenSexpTests
 
 public def main : IO Unit := do
