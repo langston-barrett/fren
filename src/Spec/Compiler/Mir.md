@@ -173,10 +173,11 @@ the meaning of assumptions.
 
 There is a current partiality mismatch to resolve before claiming a general
 outcome simulation. The accepted [walking evaluator](Evaluator.md) eagerly
-evaluates let values and both Boolean operands. The design's demand-based
-assert insertion and the current Language
+evaluates let values and both operands of `and` and `or`. The design's
+demand-based assert insertion and the current Language
 [evaluation rules](../../Reqs/Lang/EvaluationRules.md#let-expressions) make
-let definitions and Boolean right operands lazy. For example,
+let definitions and the right operands of `and` and `or` lazy. `iff`, Boolean
+equality/inequality and ordinary call arguments remain strict. For example,
 `let x := 1 div 0 in 0` does not demand `x` in its body, but the actual
 walking interpreter reports undefined. This chapter retains the deciding
 syntax and contexts and records the mismatch; it does not claim these
