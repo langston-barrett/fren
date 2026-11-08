@@ -82,6 +82,23 @@ pub mod testing
   Each distinct message has one, named after its code (`f0105_eqeq.fren`).
   A line `--@ args: ARGS` runs `fren ARGS X.fren`, and `--@ argv: ARGS` runs
   `fren ARGS` alone. `lake test -- --bless` updates them.
+- **Fren2 runner:** `fren2_test` gives each selected job a 30-second
+  elapsed deadline. Its default run gives each constituent job its own
+  deadline. A Linux Python controller runs the job in its own process group,
+  outside the controller. It kills the group and reaps its waitable children
+  when the job ends, the deadline expires, or the runner exits. It keeps the
+  direct child waitable until it signals the group. The timer starts before
+  job startup; a blocked startup can delay enforcement. The controller requires Python 3,
+  Linux pidfds, subreaping and procfs. Controller setup or control failures
+  return 125; failure to launch Python also returns nonzero.
+  A deadline returns 124 and a diagnostic. A job exit is forwarded; a signal
+  is reported as 128 plus its number. Those numeric codes can also be returned
+  by a job. Standard output and error stream through; working directory,
+  arguments and environment are inherited. Input is inherited for batch use;
+  interactive terminal job control is not provided. A stopped job does not
+  stop its controller's timer. An externally stopped controller cannot act
+  until resumed. Uninterruptible processes, descendants that leave the group,
+  or abrupt loss of the controller can prevent or delay cleanup.
 - **Layout:** tests are in subdirectories by area. Under `test/cli/`, the
   snapshots of codes are by their [group](../View.md#error-codes) (`syntax/`,
   `names/`, `types/`, `instances/`, `traceability/`, `results/`), those of
