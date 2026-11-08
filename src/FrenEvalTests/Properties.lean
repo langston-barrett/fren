@@ -28,18 +28,29 @@ private def sample (n : Nat) (x y : Int) : Option Counts := do
     "fn sub(a: Int, b: Int): Int := a - b\n" ++
     s!"fn f(x: Int, y: Int): Int := let x := x + {offset} in if true then sub(x, y) else 1 div 0\n" ++
     "fn select(l: Light, x: Int): Int := match l { Light::Red => x, Light::Amber => 1 div 0, Light::Green => x + 1 }\n" ++
-    "fn strict(x: Int): Bool := false and (x div 0 = 0)\n" ++
+    "fn conjunction(x: Int, b?: Bool): Bool := b? and (x div 0 = 0)\n" ++
+    "fn disjunction(x: Int, b?: Bool): Bool := b? or (x mod 0 = 0)\n" ++
+    s!"fn unusedLet(x: Int): Int := let y := x div 0 in x + {offset}\n" ++
+    "fn usedLet(x: Int): Int := let y := x div 0 in y\n" ++
+    "fn guarded(d: Int): Int := let y := 1 div d in if d != 0 then y else 0\n" ++
     "expect q(x: Int) { assume a: x <= 0 expect e: x div 0 = 0 }"
   let .ok p := fromSource ⟨n⟩ source | none
   let .ok actual := FrenHirToThir.checkWalkingSource ⟨n⟩ source | none
   if p.typed != actual || p.typed.resolved.document.emit != source then none else pure ()
-  if !hasValue (result p "f" #[.int x, .int y]) (.int (x + offset - y)) ||
-      !hasValue (result p "select" #[light "Red", .int x]) (.int x) ||
-      !hasValue (result p "select" #[light "Green", .int x]) (.int (x + 1)) ||
-      !hasValue (result p "q" #[.int x] (some "a")) (.bool (x ≤ 0)) then none else pure ()
-  if !isUndefined (result p "select" #[light "Amber", .int x]) ||
-      !isUndefined (result p "strict" #[.int x]) ||
-      !isUndefined (result p "q" #[.int x] (some "e")) then none else pure ()
+  let defined := #[(result p "f" #[.int x, .int y], .int (x + offset - y)),
+    (result p "select" #[light "Red", .int x], .int x),
+    (result p "select" #[light "Green", .int x], .int (x + 1)),
+    (result p "q" #[.int x] (some "a"), .bool (x ≤ 0)),
+    (result p "conjunction" #[.int x, .bool false], .bool false),
+    (result p "disjunction" #[.int x, .bool true], .bool true),
+    (result p "unusedLet" #[.int x], .int (x + offset)),
+    (result p "guarded" #[.int 0], .int 0), (result p "guarded" #[.int 1], .int 1)]
+  if defined.any (fun (o, v) => !hasValue o v) then none else pure ()
+  let undefined := #[result p "select" #[light "Amber", .int x],
+    result p "conjunction" #[.int x, .bool true],
+    result p "disjunction" #[.int x, .bool false], result p "usedLet" #[.int x],
+    result p "q" #[.int x] (some "e")]
+  if undefined.any (fun o => !isUndefined o) then none else pure ()
   if !isInvalid (result p "f" #[.int x]) ||
       !isInvalid (result p "f" #[.bool false, .int y]) ||
       !isInvalid (result p "select" #[.enum (key "Other") ((key "Other").named "Red"), .int x]) ||
@@ -57,10 +68,10 @@ private def sample (n : Nat) (x y : Int) : Option Counts := do
   let .ok mutant := fromSource ⟨n⟩ (source.replace "a - b" "a + b") | none
   if !hasValue (result mutant "f" #[.int x, .int 1]) (.int (x + offset + 1)) ||
       hasValue (result mutant "f" #[.int x, .int 1]) (.int (x + offset - 1)) then none else pure ()
-  return ⟨1, 4, 3, 4, 1, 5, 1, 1⟩
+  return ⟨1, defined.size, undefined.size, 4, 1, 5, 1, 1⟩
 
 private def audit (n : Nat) (x y : Int) : Bool :=
-  (sample n x y).any (· == ⟨1, 4, 3, 4, 1, 5, 1, 1⟩)
+  (sample n x y).any (· == ⟨1, 9, 5, 4, 1, 5, 1, 1⟩)
 
 private def primitives (a b : Int) : Bool :=
   (match binary .add (.int a) (.int b) with
@@ -93,7 +104,7 @@ def runProperties : IO Unit := do
     counts := ⟨counts.admittedBase + c.admittedBase, counts.defined + c.defined,
       counts.undefined + c.undefined, counts.invalid + c.invalid, counts.exhausted + c.exhausted,
       counts.rejected + c.rejected, counts.rejectedProducer + c.rejectedProducer, counts.mutations + c.mutations⟩
-  require (counts == ⟨24, 96, 72, 96, 24, 120, 24, 24⟩) "vacuous evaluator premise census"
+  require (counts == ⟨24, 216, 120, 96, 24, 120, 24, 24⟩) "vacuous evaluator premise census"
   IO.println s!"actual evaluator premise census: {repr counts}; discarded=0; finite evidence only"
 
 end FrenEvalTests
