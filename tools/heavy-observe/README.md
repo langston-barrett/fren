@@ -575,10 +575,11 @@ indefinitely.
 
 Notification uses a nonblocking private datagram, with an authenticated pidfd
 signal fallback when the channel fails. A full channel already has a pending
-cancellation. If both notification methods fail, the observer returns 125;
-the controller cannot be guaranteed to learn the cutoff. A controller that has
-already died cannot be notified. These are IO failure limits, not a successful
-deadline. The session returns 124 for a received deadline after successful cleanup,
+cancellation. If both notification methods fail, the observer records a control
+error and returns 125 if its remaining observation and record work completes.
+Neither bounded observer exit nor controller cancellation is guaranteed in that
+case. A controller that has already died cannot be notified. These are IO
+failure limits, not a successful deadline. The session returns 124 for a received deadline after successful cleanup,
 and 125 for a control or cleanup failure. Its diagnostic contains the child's
 raw wait status, clock samples, PID and requested limit when the datagram arrives.
 The signal fallback cannot carry those observations; a process record may also be
