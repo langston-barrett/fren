@@ -72,7 +72,7 @@ def capture (compiler : String) (args : List String) : IO Context := do
     version := ← query "--version", githash := ← query "--githash", args
     setup := m.setup, setupFingerprint := ← m.setup.mapM fingerprint }
 
-def run (request : Json) : IO Json := do
+def run (request : Json) : IO (Json × Context × Option Int) := do
   let get := @IO.ofExcept
   let compiler ← get (str request "real_compiler")
   unless compiler.startsWith "/" do throw (IO.userError "absolute compiler required")
@@ -98,7 +98,7 @@ def run (request : Json) : IO Json := do
   let now ← IO.monoNanosNow
   let (peak, samples) := advice records c boot cutoff now n minimum
   let stable := c == current && boot == bootAfter
-  return Json.mkObj [
+  return (Json.mkObj [
     ("status", toJson (if stable && peak.isSome then "estimate" else "unknown")),
     ("estimated_peak_rss_kib", if stable then toJson peak else .null),
     ("sample_count", toJson samples), ("rejected_records", toJson rejected),
@@ -109,17 +109,46 @@ def run (request : Json) : IO Json := do
       ("setup", toJson c.setup), ("setup_fingerprint", toJson c.setupFingerprint)]),
     ("boot_id", toJson boot), ("now_monotonic_ns", toJson now),
     ("cutoff_monotonic_ns", toJson cutoff), ("recent_count", toJson n), ("minimum_samples", toJson minimum),
-    ("limits", toJson "advisory selected maximum only; partial noncryptographic identity; no input closure, headroom, fallback, concurrent RAM or future bound; no gate enforcement")]
+    ("limits", toJson "advisory selected maximum only; partial noncryptographic identity; no input closure, headroom, fallback, concurrent RAM or future bound; no gate enforcement")], c, if stable then peak else none)
 
 end CompilerAdvice
 
 def main (args : List String) : IO UInt32 := do
-  try
-    let [path] := args | throw (IO.userError "usage: compiler_advice REQUEST.json")
-    let request ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-    IO.println (← CompilerAdvice.run request).compress
-    return 0
-  catch e =>
-    IO.println (Json.mkObj [("status", toJson "unknown"), ("estimated_peak_rss_kib", .null),
-      ("sample_count", toJson (0 : Nat)), ("error", toJson e.toString)]).compress
-    return 0
+  match args with
+  | ["--manifest", "--padding-kib", paddingText, path] =>
+    try
+      let some padding := paddingText.toNat? | throw (IO.userError "invalid padding")
+      if padding == 0 || padding > 2^50 then throw (IO.userError "padding out of range")
+      let request ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
+      let (_, context, peak) ← CompilerAdvice.run request
+      let some peak := peak | throw (IO.userError "unknown advice; no manifest row")
+      if peak ≤ 0 || peak + padding > (2^50 : Int) then
+        throw (IO.userError "demand out of range")
+      let canonical ← IO.FS.realPath context.source
+      let source := canonical.toString
+      let fingerprint ← CompilerAdvice.fingerprint source
+      if fingerprint != context.sourceFingerprint then
+        throw (IO.userError "source changed; no manifest row")
+      if [source, fingerprint].any (fun s => s.contains '\t' || s.contains '\n' || s.contains '\r') then
+        throw (IO.userError "unsupported manifest field")
+      IO.println s!"{source}\t{fingerprint}\t{peak + padding}"
+      return 0
+    catch e =>
+      (← IO.getStderr).putStrLn s!"compiler_advice: {e}"
+      return 1
+  | [path] =>
+    if path.startsWith "--" then
+      (← IO.getStderr).putStrLn "usage: compiler_advice REQUEST.json | --manifest --padding-kib N REQUEST.json"
+      return 1
+    try
+      let request ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
+      let (result, _, _) ← CompilerAdvice.run request
+      IO.println result.compress
+      return 0
+    catch e =>
+      IO.println (Json.mkObj [("status", toJson "unknown"), ("estimated_peak_rss_kib", .null),
+        ("sample_count", toJson (0 : Nat)), ("error", toJson e.toString)]).compress
+      return 0
+  | _ =>
+    (← IO.getStderr).putStrLn "usage: compiler_advice REQUEST.json | --manifest --padding-kib N REQUEST.json"
+    return 1
