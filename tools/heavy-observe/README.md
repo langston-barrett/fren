@@ -10,7 +10,7 @@ and its measured-memory backstop remain active.
 From the repository root, with the pinned toolchain already installed:
 
 ```sh
-scripts/heavy lake -d tools/heavy-observe build heavy_observe process_tests budget_session budget_tests --wfail
+scripts/heavy lake -d tools/heavy-observe build heavy_observe process_tests budget_session budget_tests compiler_advice --wfail
 scripts/heavy --offline python3 -I tools/heavy-observe/overlay.py \
   "$PWD/tools/heavy-observe/overlay" \
   --real-lean /opt/elan/toolchains/leanprover--lean4---v4.32.0/bin/lean
