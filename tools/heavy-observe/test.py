@@ -228,7 +228,19 @@ end Measure
     shutil.rmtree(scratch / ".lake/build")
     before = {p.name for p in records.iterdir()}
     overlay_env = {**env, "LAKE_OVERRIDE_LEAN": "true", "LEAN_SYSROOT": str(overlay)}
-    observed = run([lake, "-q", "build", "Measure"], cwd=scratch, variables=overlay_env)
+    # Explicit source-bound synthetic requests: not calibrated forecasts.
+    manifest = work / "budget-requests"
+    request_rows = []
+    for source, demand in [(scratch / "Measure/Base.lean", 900000),
+                           (scratch / "Measure/Map.lean", 1100000),
+                           (scratch / "Measure.lean", 700000)]:
+        digest = run([HERE / ".lake/build/bin/process_tests", "--read", source]).stdout.decode().strip().removeprefix("some:")
+        request_rows.append(f"{source}\tlean-bytearray64:{source.stat().st_size}:{digest}\t{demand}\n")
+    manifest.write_text("".join(request_rows))
+    gated_command = [HERE / ".lake/build/bin/budget_session", work / "budget-session", "1300000", "100000", "1200000", "5000",
+                     manifest, "--", lake, "-q", "build", "Measure"]
+    observed = run(gated_command, cwd=scratch, variables=overlay_env)
+    gated_seconds = timings[-1]["seconds"]
     assert (observed.returncode, observed.stdout, observed.stderr) == (
         ordinary.returncode, ordinary.stdout, ordinary.stderr), (ordinary, observed)
     assert artifacts() == ordinary_artifacts, "compiler artifacts differ"
@@ -237,6 +249,9 @@ end Measure
     assert len(compilers) == 3, build_rows
     assert {Path(r["source"]).name for r in compilers} == {"Base.lean", "Map.lean", "Measure.lean"}
     for r in compilers:
+        assert r["gate_errno"] == 0 and r["child_present"] and r["schema"] == 3
+        assert r["requested_reservation_kib"] > 0 and r["request_provenance"] == "explicit-source-request"
+        assert r["parent_headroom_kib"] + r["held_before_kib"] + r["requested_reservation_kib"] <= r["allowance_kib"]
         assert r["result_kind"] == 0 and r["result_detail"] == 0
         assert r["peak_rss_kib"] > 0 and r["wall_ns"] > 0
         assert r["wall_ns"] == r["end_monotonic_ns"] - r["start_monotonic_ns"]
@@ -280,7 +295,9 @@ end Measure
               "abi": abi, "file_controls": file_evidence, "metadata_controls": metadata_evidence,
               "raw_status_cases": len(lines), "checks": "all passed", "compiler_records": compilers,
               "scratch_ordinary_s": next(t["seconds"] for t in timings if t["command"] == [str(lake), "-q", "build", "Measure"]),
-              "scratch_observed_s": [t["seconds"] for t in timings if t["command"] == [str(lake), "-q", "build", "Measure"]][-1],
+              "scratch_gated_s": gated_seconds,
+              "synthetic_request_manifest": str(manifest),
+              "scratch_manifest_sha256": hashlib.sha256((scratch / "lake-manifest.json").read_bytes()).hexdigest(),
               "warm_direct_pairs_s": pairs,
               "median_paired_overhead_s": statistics.median(p["observed"] - p["ordinary"] for p in pairs),
               "artifact_sha256": ordinary_artifacts, "timings": timings}

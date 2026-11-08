@@ -1,3 +1,4 @@
+import BudgetAdapter
 import Heavy.Process
 
 /-! Standalone Linux Lean compiler observer. No Fren, solver or Lake imports.
@@ -16,6 +17,10 @@ opaque writeRecord (dir record : @& String) : IO UInt32
 
 @[extern "heavy_observe_read_regular"]
 opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO (Option ByteArray)
+
+@[extern "heavy_budget_observe"]
+opaque observeBudget (exe : @& String) (args : @& Array String) (dir : @& String)
+    (demand : UInt64) (decide : @& (Array String → Array UInt64)) : IO (Array UInt64)
 
 -- JSON output needs no elaborator/Lean JSON dependency.
 def quoted (s : String) : String := Id.run do
@@ -86,12 +91,35 @@ def run (args : List String) : IO UInt32 := do
     let out ← IO.Process.output {cmd := real.toString, args := #["--githash"]}
     pure (if out.exitCode == 0 then some out.stdout.trimAscii.copy else none)
     catch _ => pure none
-  let raw ← observe real.toString args.toArray
-  if raw.size != 11 then throw (IO.userError "invalid FFI observation length")
+  let gateDir ← IO.getEnv "HEAVY_BUDGET_DIR"
+  let gated := gateDir.isSome && (parsed.map (·.kind)) != some "query"
+  let mut requestDemand := 0
+  let mut provenance := ""
+  let raw ← if gated then do
+    let dir := FilePath.mk gateDir.get!
+    let some configBytes ← readRegular (dir / "config").toString fingerprintAllowed
+      | throw (IO.userError "unreadable budget config")
+    let some config := String.fromUTF8? configBytes | throw (IO.userError "invalid budget config")
+    let [_, _, fallback, _] := BudgetAdapter.words config.trimAscii.copy
+      | throw (IO.userError "malformed budget config")
+    let some fallback := fallback.toNat? | throw (IO.userError "malformed fallback")
+    let some bytes ← readRegular (dir / "requests").toString fingerprintAllowed
+      | throw (IO.userError "unreadable request manifest")
+    let some manifest := String.fromUTF8? bytes | throw (IO.userError "invalid request manifest")
+    let canonical ← source.mapM fun s => IO.FS.realPath s
+    let some (demand, origin) := BudgetAdapter.request manifest (canonical.map (·.toString))
+        (sourceBefore.bind id) fallback | throw (IO.userError "invalid request demand")
+    requestDemand := demand
+    provenance := origin
+    observeBudget real.toString args.toArray dir.toString demand.toUInt64 BudgetAdapter.snapshot
+    else observe real.toString args.toArray
+  if raw.size != (if gated then 18 else 11) then throw (IO.userError "invalid FFI observation length")
   let v := fun i => raw[i]!.toNat
+  let gateError := if gated then v 11 else 0
+  let childPresent := !gated || v 5 != 0
   let outcome := result (v 0) (v 1) (v 2) (v 4)
-  let wall := elapsed (v 3) (v 6) (v 7)
-  let measured := usage (v 0) (v 1) (v 2) (v 4) (v 8) (v 9) (v 10)
+  let wall := if childPresent then elapsed (v 3) (v 6) (v 7) else none
+  let measured := if childPresent then usage (v 0) (v 1) (v 2) (v 4) (v 8) (v 9) (v 10) else none
   let inputClosure : Option String := none
   let complete := identityComplete (sourceBefore.bind id) compilerFingerprint inputClosure
   let outputs := [parsed.bind (·.olean), parsed.bind (·.ilean), parsed.bind (·.c), parsed.bind (·.bc)] |>.filterMap id
@@ -99,8 +127,16 @@ def run (args : List String) : IO UInt32 := do
   try
     let artifacts ← outputs.mapM artifact
     let sourceAfter ← source.mapM fun s => fingerprint s
-    let record := object [
-      ("schema", "2"), ("family", quoted "lean"),
+    let gateFields := if gated then [
+      ("gate_errno", toString gateError), ("admission_wait_ns", toString (v 12)),
+      ("admission_granted_ns", toString (v 17)),
+      ("reservation_ticket", toString (v 13)), ("held_before_kib", toString (v 14)),
+      ("allowance_kib", toString (v 15)), ("parent_headroom_kib", toString (v 16)),
+      ("requested_reservation_kib", toString requestDemand), ("request_provenance", quoted provenance),
+      ("child_present", toString childPresent),
+      ("wrapper_code", toString (if gateError != 0 then 125 else outcome.shellCode))] else []
+    let record := object (gateFields ++ [
+      ("schema", if gated then "3" else "2"), ("family", quoted "lean"),
       ("input_kind", quoted ((parsed.map (·.kind)).getD "unknown")),
       ("source", jsonOption quoted source),
       ("module_hint", jsonOption quoted (source.map fun s => (FilePath.mk s).withExtension "" |>.toString.replace "/" ".")),
@@ -121,14 +157,17 @@ def run (args : List String) : IO UInt32 := do
       ("system_us", toString (v 9)), ("peak_rss_kib", toString (v 10)),
       ("measured_cpu_us", jsonOption (fun p => toString p.1) measured),
       ("measured_peak_rss_kib", jsonOption (fun p => toString p.2) measured),
-      ("result_kind", toString outcome.kind), ("result_detail", toString outcome.detail),
-      ("shell_code", toString outcome.shellCode)]
+      ("result_kind", if childPresent then toString outcome.kind else "null"), ("result_detail", if childPresent then toString outcome.detail else "null"),
+      ("shell_code", if childPresent then toString outcome.shellCode else "null")])
     let dir := (← IO.getEnv "HEAVY_OBSERVE_DIR").map FilePath.mk |>.getD (root / "records")
     -- Atomic publication gives each invocation its own file, avoiding JSONL races.
     IO.FS.createDirAll dir
     let err ← writeRecord dir.toString record
     if err != 0 then warn s!"record failed (errno {err}): {dir}"
   catch e => warn s!"record failed: {e}"
+  if gateError != 0 then
+    warn s!"budget control failed (errno {gateError}); child present={childPresent}"
+    return 125
   if outcome.kind == 2 then warn s!"exec failed (errno {outcome.detail}): {real}"
   if outcome.kind == 3 then warn s!"observation failed (errno {outcome.detail})"
   if outcome.kind == 1 then terminateBySignal outcome.detail.toUInt32

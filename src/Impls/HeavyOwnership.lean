@@ -1,5 +1,6 @@
 -- keep-sorted start
 import Fren.Impl
+import Heavy.Budget
 import Heavy.Ownership
 import Heavy.Process
 import Reqs.Testing
@@ -535,5 +536,43 @@ impl process_identity: testing::heavy_process_identity
   cases source <;> cases toolchain <;> cases inputClosure <;>
     simp [fren_spec, Heavy.Process.identityComplete, Heavy.Process.identityPart,
       testing.identity_part?]
+
+end Fren.Impls.HeavyOwnership
+
+namespace Fren.Impls.HeavyOwnership
+
+impl compile_budget: testing::heavy_compile_budget
+    for (allowance parent held demand ticket oldest : Int) {
+  allowance := allowance,
+  parent := parent,
+  held := held,
+  demand := demand,
+  ticket := ticket,
+  oldest := oldest,
+  decision := Heavy.Budget.decision allowance parent held demand ticket oldest,
+} by
+  intro allowance parent held demand ticket oldest _
+  simp [fren_spec, Heavy.Budget.decision, or_assoc]
+
+impl compile_row: testing::heavy_compile_row
+    for (locked : Bool) (state ticket : Int) (row : Heavy.Ownership.Lease) {
+  locked? := locked,
+  state := state,
+  ticket := ticket,
+  lease := memoryLease row,
+  charge := Heavy.Budget.charge locked state ticket row,
+} by
+  intro locked state ticket row _
+  cases locked <;> cases hr : row.report <;> cases hm : row.observed <;>
+    simp [fren_spec, Heavy.Budget.charge, memoryLease, hr, hm, report, owner, monitor,
+      Heavy.Ownership.reportOwner, Heavy.Ownership.validReport, Bool.and_assoc,
+      and_assoc, Str.lit]
+  rename_i r m
+  cases r.monitor with
+  | none => simp
+  | some other =>
+    cases other
+    cases m
+    simp
 
 end Fren.Impls.HeavyOwnership

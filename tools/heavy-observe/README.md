@@ -1,7 +1,7 @@
 # Lean compiler observations for Heavy
 
-This opt-in Linux launcher records a real Lean compiler subprocess, without
-changing admission. It is a standalone package using Lean core/Std and
+This opt-in Linux launcher records a real Lean compiler subprocess. With no
+budget configuration it preserves the original observe-only behavior. It is a standalone package using Lean core/Std and
 `observer.c`; it imports the actual `src/Heavy/Process.lean` pure functions.
 It has no Fren, solver or third-party package dependency. Invocation never
 runs Lake or builds the project being observed. The installed Python Heavy
@@ -10,7 +10,7 @@ and its measured-memory backstop remain active.
 From the repository root, with the pinned toolchain already installed:
 
 ```sh
-scripts/heavy lake -d tools/heavy-observe build heavy_observe process_tests --wfail
+scripts/heavy lake -d tools/heavy-observe build heavy_observe process_tests budget_session budget_tests --wfail
 scripts/heavy --offline python3 -I tools/heavy-observe/overlay.py \
   "$PWD/tools/heavy-observe/overlay" \
   --real-lean /opt/elan/toolchains/leanprover--lean4---v4.32.0/bin/lean
@@ -38,7 +38,8 @@ Lake uses `getLean` from its detected installation: a PATH shim alone does
 not intercept module compilation. Discovery queries are forwarded to the
 real compiler, including its real `--print-prefix`. `leanir`, C compilation
 and linking are delegated, not measured by this slice. Do not use this
-experimental overlay as an installed toolchain or an admission controller.
+experimental overlay as an installed toolchain. The optional development
+controller below admits compiler children within one build.
 
 Each invocation inherits cwd, environment, arguments and standard streams.
 It records the explicit compiler's version and git hash before launching,
@@ -48,7 +49,7 @@ nanoseconds, user/system CPU microseconds and peak RSS in KiB. It publishes
 one mode-0600 `process-*.json` per invocation in `overlay/records`, or
 `HEAVY_OBSERVE_DIR`. Read records after invocations finish. An abrupt observer
 termination can lose a record; there is no durability or supervisor-recovery
-claim. The observer adds no signal handlers for cancellation/cleanup.
+claim. The observe-only path adds no signal handlers for cancellation/cleanup.
 Signals delivered to the child are recorded and re-raised by the observer.
 A record-write or clock failure does not replace an available child outcome.
 A setup failure returns 125; exec failure returns 127 and records its errno.
@@ -106,7 +107,7 @@ peak, private memory, PSS, a reservation or a safe bound. Wall time covers
 fork through wait4, excluding fingerprinting, version probes and publishing.
 Measure caller wall time for total observer overhead.
 
-The registered Linux `heavyProcess` job builds both standalone targets and
+The registered Linux `heavyProcess` job builds the standalone targets and
 runs the harness as part of `lake test`. With the repository driver already
 built, run `scripts/heavy --offline lake env .lake/build/bin/fren_test
 --job heavyProcess`. Other platforms report a skip, since this first
@@ -114,13 +115,13 @@ observer is Linux-only. The manual standalone recipe
 above remains independent of Fren.
 
 The integration test retains its owned scratch directory and `report.json`
-under `test-work/`. It compares a clean three-module Lake build on each side
+under `test-work/`. It compares a clean ordinary and budget-controlled three-module Lake build
 with cache restoration disabled, including artifact SHA256, and runs bounded
 warm direct-compiler pairs. It checks discovery, streams/args/environment,
 ordinary errors/exits, a real Lean process's self-signal, missing executables,
 record failure, recursive overlays, changed/incomplete identity and concurrent
-record publication. The harness also compiles all four C definitions against the actual emitted
-Main.c declarations. Old extra world parameters are incompatible even when
+record publication. The harness also compiles all six C definitions against the actual emitted
+Main.c and BudgetMain.c declarations. Old extra world parameters are incompatible even when
 unused; no runtime failure or refcount bug is inferred. Metadata controls use
 the pinned compiler, including repeated settings, option-shaped operands,
 stdin/discovery, unsupported long/attached forms and run boundaries. This
@@ -136,3 +137,107 @@ usage, fingerprint eligibility, argument boundary and identity functions are
 bound in `src/Impls/HeavyOwnership.lean`.
 The proofs cover decoded pure values. Clock/fork/exec/wait4, filesystem and
 signal authenticity remain external assumptions exercised by integration.
+
+
+## One-build compiler reservations
+
+`budget_session` owns one new mode-0700 directory and one controlled build
+process group. It is a transient parent, not a service or machine scheduler.
+Use an absolute directory under an owned temporary build directory; it must
+not exist. An example with explicitly selected development values follows:
+
+```sh
+/path/to/repo/scripts/heavy --offline env \
+  LAKE_OVERRIDE_LEAN=true LEAN_SYSROOT=/path/to/owned/overlay \
+  /path/to/budget_session /path/to/owned/build/session \
+  1300000 100000 1200000 5000 /path/to/owned/requests -- \
+  /opt/elan/toolchains/leanprover--lean4---v4.32.0/bin/lake build Measure
+```
+
+Arguments are session directory, total allowance in KiB, parent headroom in
+KiB, unknown-request fallback in KiB, admission timeout in milliseconds,
+request manifest, `--`, absolute command and its arguments. The example
+leaves 1200000 KiB for compiler reservations. Parent headroom is subtracted
+once. It covers Lake, wrappers and the existing pre-admission version/hash
+discovery probes; those probes are not separately charged compiler requests.
+The allowance is therefore reservation accounting, not a bound on their RAM.
+The outer Heavy/fd reservation and cgroup are unchanged; these inner
+charges are not added to its forecast. No CPU weights, affinity, tokens,
+installation defaults or cross-build admission change.
+
+The manifest has one tab-separated absolute canonical source path,
+`lean-bytearray64:<bytes>:<hash>` fingerprint and positive KiB demand per
+line. Use `process_tests --read PATH` to obtain the same ByteArray hash as
+the observer; prefix its `some:HASH` result with the source byte count as
+above. A match selects the explicit request; unsupported, absent or changed
+metadata uses the explicit positive fallback. Malformed and duplicate rows
+fail configuration. The caller supplies both requests and fallback. Neither
+is calibrated or a safe upper bound merely because it is positive. These
+source-bound requests are configuration, not measured peaks or exact-key
+forecasts: dependencies, plugins and environment closure remain incomplete.
+
+The gate freezes the selected demand, publishes an increasing waiting
+ticket, and holds one registry lock while reading locked leases, calling
+the actual Std-only ownership/charge/fit functions and publishing running
+state. Only the oldest held waiter may start; after it starts, another
+fitting request may start too. There is no concurrency cap. Intrinsically
+oversized requests fail promptly. Lock contention and capacity waits retry
+until the fixed caller deadline. Read, lock and write failures fail closed.
+A held malformed or independently mismatched owner fails the snapshot;
+unlocked residual metadata contributes nothing. Reservations do not age.
+
+Every held row has PID, start counter, boot ID and PID namespace identity.
+The gate checks its session owner's lock and independently reads its raw
+identity on every snapshot. It rejects ancestor-mounted procfs and callers
+outside the owned process group. It never takes over a session or signals
+a ledger PID. The compiler inherits its own lease descriptor across exec;
+the observer closes only that descriptor after wait4. A surviving inherited
+holder cannot silently become a zero charge when its monitor disappears.
+
+In this controlled Linux envelope, parent-death SIGKILL propagates through
+the command, observer and compiler. INT/TERM/HUP cancellation during gated
+execution first terminates the observer's own unreaped child, then escalates
+after about 250 ms; a failed reap stops waiting after about 1.25 seconds.
+The session parent pins its group ID with its unreaped command leader,
+terminates that group on completion/cancellation and checks for inherited
+leases. Reap and lease cleanup each have a one-second bound. A stuck task
+or retained lease returns a cleanup error and leaves a retired directory.
+Session directories are deliberately retained for inspection and cannot
+be reused. Abrupt owner death can lose records and leave residual files;
+there is no durable recovery or takeover. Commands that escape the process
+group, change parent-death semantics or close inherited leases are outside
+this controlled compiler boundary. Same-user hostile mutation and Linux
+syscall/procfs/FFI authenticity are external assumptions, not pure proofs.
+
+Gated records use schema 3. Requested reservation, held charge, allowance,
+parent headroom, ticket, grant timestamp and admission wait are separate
+from fork-to-wait child wall/CPU/wait4 RSS. `gate_errno` and `wrapper_code`
+report control errors independently of a physical child outcome. Without a
+child, `child_present` is false, result/usage/wall fields are absent/null,
+and raw zero slots do not assert a successful child. Charge/grant fields
+are meaningful as admitted snapshots only when `gate_errno` is zero; a zero
+raw charge slot on a failed snapshot never means an unknown holder was free. Pre-gate configuration
+errors return 125 with a diagnostic and may have no record. Abrupt death
+may also leave no record. Failure of the child's parent-death setup is an observer launch error, with
+its physical wait status retained and measured usage absent. A completed
+cancelled child retains its raw wait
+status even when the wrapper returns 125. Observe-only schema 2 is unchanged.
+
+This allowance bounds known reservation charges at locked snapshots. It
+cannot bound actual RAM, private/PSS or concurrent process-tree RSS. The
+existing Python observed-memory/kill-newest backstop remains the runtime
+safety layer. All children inherit the parent's priority and cgroup.
+
+The separate bounded `heavyBudget` test job runs real deterministic
+producers against actual shared locks/tickets, including unequal overlap,
+FIFO, cancellation, inherited holders, owner death, unknown/PID-reused/raw
+stale rows, partial publication, oversized requests and injected counter
+write failure. The same producers with the actual gate bypassed demonstrate
+the non-fitting overlap violation. `budget_tests` checks raw arithmetic,
+owner and request boundaries. `heavyProcess` retains the existing raw-status,
+FIFO, parser and ABI controls, and its one three-module Lake comparison
+requires admission records plus equal streams, status and artifact bytes.
+Its synthetic demands establish controller behavior, not performance or
+memory-calibration evidence. Warm direct pairs still measure observe-only
+cost. Requirements/impls bind the actual row charge and budget decisions;
+the arithmetic theorem applies only to completed registry-locked snapshots.

@@ -1716,6 +1716,51 @@ pub proc heavy_process_identity(
 #fren_check heavy_process_identity
 ```
 
+The opt-in compiler budget applies within one owned build session. All
+quantities below are KiB reservations, not observed RSS. Parent headroom
+is subtracted once from the session allowance; the outer Heavy reservation
+is unchanged. Admission uses a registry-locked snapshot. Every held row
+must have positive demand and matching raw owner identity, including boot,
+PID namespace and process start counter. An unknown held row is an error,
+never a zero charge. Unlocked rows contribute nothing. Held reservations
+do not expire with time. Waiting requests use increasing session tickets;
+only the oldest held waiter can start. No concurrency limit is imposed.
+
+The runtime must publish its waiting row under the registry lock, retain
+its lease through compiler exit, and publish running state before fork.
+Release closes only its own lease. Cancellation must reap its own child;
+an inherited lease protects the interval after abrupt observer death.
+OS locking, procfs identity, fork/exec, parent-death signals and cleanup
+remain external assumptions, exercised by producer tests. The arithmetic
+invariant holds at completed locked snapshots, not during arbitrary IO.
+
+```fren
+pub proc heavy_compile_budget(
+    allowance: Int,
+    parent: Int,
+    held: Int,
+    demand: Int,
+    ticket: Int,
+    oldest: Int,
+): (det decision: Int) {
+    -- 2: malformed accounting; 3: intrinsically oversized; 0: wait; 1: admit.
+    out decision :=
+        if allowance < 0 or parent < 0 or parent > allowance or held < 0
+        or demand <= 0 or ticket <= 0 or oldest <= 0 then 2
+        else if demand > allowance - parent then 3
+        else if ticket = oldest and held + demand <= allowance - parent then 1
+        else 0
+
+    expect snapshot_bound: when decision = 1,
+        0 <= held and 0 < demand and parent + held + demand <= allowance
+    expect no_parent_underflow: when decision = 1, 0 <= parent <= allowance
+    expect oversized_stops: when allowance >= parent >= 0 and demand > allowance - parent
+        and held >= 0 and ticket > 0 and oldest > 0, decision = 3
+}
+
+#fren_check heavy_compile_budget
+```
+
 The following requirements state CPU accumulation and interval accounting.
 Time quantities use a common integral unit; ratios are numerator and
 denominator pairs, since Fren has no fractional numeric type. The Python
@@ -2157,6 +2202,23 @@ pub fn report_owner?(
         }),
     Option::None => false,
 }
+
+pub proc heavy_compile_row(locked?, state: Int, ticket: Int, lease: MemoryLease): (
+    det charge: Option<Int>,
+) {
+    out charge :=
+        if not locked? then Option::Some(0)
+        else match lease.report, lease.observed {
+            Option::Some(r), Option::Some(m) =>
+                if (state is 0 | 1) and ticket > 0 and r.owner.sequence = ticket
+                and r.rss > 0 and m.pid > 0 and m.start > 0 and m.space != ""
+                and report_owner?(lease.report, lease.status_job, lease.observed, 0, 0)
+                then Option::Some(if state = 1 then r.rss else 0) else Option::None,
+            _, _ => Option::None,
+        }
+}
+
+#fren_check heavy_compile_row
 
 pub proc heavy_report_owner(
     report: Option<MemoryReport>,

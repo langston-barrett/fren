@@ -9,32 +9,42 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/prctl.h>
 
 extern char **environ;
 
 /* Raw Linux observations only. All classification happens in Heavy.Process.
  * Slots: launch errno, exec errno, wait errno, clock errno, status, pid,
  * monotonic start/end ns, wait4 user/system us, wait4 maxrss KiB. */
-LEAN_EXPORT lean_obj_res heavy_observe_wait(b_lean_obj_arg exe,
-                                           b_lean_obj_arg args) {
+static volatile sig_atomic_t budget_cancelled;
+static void budget_signal(int sig) { budget_cancelled = sig; }
+
+static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int guarded) {
     uint64_t v[11] = {0};
     size_t n = lean_array_size(args);
     char **argv = calloc(n + 2, sizeof(char *));
     int pipefd[2] = {-1, -1};
     struct timespec t;
     if (!argv) { v[0] = ENOMEM; goto done; }
+    if (guarded && budget_cancelled) { v[0] = ECANCELED; goto done; }
     argv[0] = (char *)lean_string_cstr(exe);
     for (size_t i = 0; i < n; ++i)
         argv[i + 1] = (char *)lean_string_cstr(lean_array_get_core(args, i));
     if (pipe2(pipefd, O_CLOEXEC) < 0) { v[0] = errno; goto done; }
     if (clock_gettime(CLOCK_MONOTONIC, &t) < 0) v[3] = errno;
     else v[6] = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
+    pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) { v[0] = errno; goto done; }
     if (pid == 0) {
         close(pipefd[0]);
-        execve(argv[0], argv, environ);
-        int e = errno;
+        int e = 0, code = 127;
+        if (guarded) {
+            if (prctl(PR_SET_PDEATHSIG, SIGKILL) < 0) e = -errno;
+            else if (getppid() != parent) e = -EOWNERDEAD;
+        }
+        if (e) code = 125;
+        else { execve(argv[0], argv, environ); e = errno; }
         /* Only async-signal-safe operations between fork and _exit. */
         const char *p = (const char *)&e;
         size_t left = sizeof(e);
@@ -44,15 +54,32 @@ LEAN_EXPORT lean_obj_res heavy_observe_wait(b_lean_obj_arg exe,
             if (k <= 0) break;
             p += k; left -= (size_t)k;
         }
-        _exit(127);
+        _exit(code);
     }
     v[5] = (uint64_t)pid;
     close(pipefd[1]); pipefd[1] = -1;
     int status = 0;
     struct rusage usage = {0};
     pid_t waited;
-    do { waited = wait4(pid, &status, 0, &usage); }
-    while (waited < 0 && errno == EINTR);
+    if (!guarded) {
+        do { waited = wait4(pid, &status, 0, &usage); }
+        while (waited < 0 && errno == EINTR);
+    } else {
+        unsigned cancelled_ticks = 0;
+        for (;;) {
+            waited = wait4(pid, &status, WNOHANG, &usage);
+            if (waited != 0 && !(waited < 0 && errno == EINTR)) break;
+            /* This PID is our unreaped child, so cannot be reused. */
+            if (budget_cancelled) {
+                if (cancelled_ticks == 0) kill(pid, SIGTERM);
+                if (cancelled_ticks == 25) kill(pid, SIGKILL);
+                if (cancelled_ticks >= 125) { errno = ETIMEDOUT; waited = -1; break; }
+                ++cancelled_ticks;
+            }
+            struct timespec pause = {0, 10000000};
+            nanosleep(&pause, NULL);
+        }
+    }
     if (waited < 0) v[2] = errno;
     else {
         v[4] = (unsigned int)status;
@@ -64,14 +91,17 @@ LEAN_EXPORT lean_obj_res heavy_observe_wait(b_lean_obj_arg exe,
     else v[7] = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
     int exec_error = 0;
     size_t used = 0;
-    while (used < sizeof(exec_error)) {
+    while ((!guarded || waited >= 0) && used < sizeof(exec_error)) {
         ssize_t k = read(pipefd[0], (char *)&exec_error + used, sizeof(exec_error) - used);
         if (k < 0 && errno == EINTR) continue;
         if (k < 0) { v[2] = errno; break; }
         if (k == 0) break;
         used += (size_t)k;
     }
-    if (used == sizeof(exec_error)) v[1] = (unsigned int)exec_error;
+    if (used == sizeof(exec_error)) {
+        if (guarded && exec_error < 0) v[0] = (unsigned int)(-exec_error);
+        else v[1] = (unsigned int)exec_error;
+    }
     else if (used) v[2] = EIO;
 done:
     if (pipefd[0] >= 0) close(pipefd[0]);
@@ -80,6 +110,10 @@ done:
     lean_object *a = lean_alloc_array(0, 11);
     for (size_t i = 0; i < 11; ++i) a = lean_array_push(a, lean_box_uint64(v[i]));
     return lean_io_result_mk_ok(a);
+}
+
+LEAN_EXPORT lean_obj_res heavy_observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args) {
+    return observe_wait(exe, args, 0);
 }
 
 /* Preserve a child's signal termination after Lean has flushed its record. */
@@ -174,3 +208,5 @@ LEAN_EXPORT lean_obj_res heavy_observe_read_regular(b_lean_obj_arg path,
     lean_ctor_set(some, 0, bytes);
     return lean_io_result_mk_ok(some);
 }
+
+#include "budget.c"
