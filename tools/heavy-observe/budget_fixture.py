@@ -2,6 +2,7 @@
 """Owned deterministic exec fixture; KiB requests are synthetic decisions."""
 import json
 import os
+import signal
 from pathlib import Path
 import sys
 import time
@@ -29,5 +30,10 @@ else:
             os._exit(0)
     event.with_suffix(".end").write_text(str(time.monotonic_ns()))
     print("stdout " + source.stem)
-    print("stderr " + source.stem, file=sys.stderr)
+    if source.stem != "Closed":
+        print("stderr " + source.stem, file=sys.stderr)
+    if source.stem == "Signal":
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.kill(os.getpid(), signal.SIGTERM)
     raise SystemExit(7 if source.stem == "Exit" else 0)

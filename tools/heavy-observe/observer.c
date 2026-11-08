@@ -11,6 +11,27 @@
 #include <unistd.h>
 #include <sys/prctl.h>
 
+/* The note must not change child status, including when stderr is a closed
+ * pipe. Block SIGPIPE only in this thread and consume only our new signal. */
+LEAN_EXPORT lean_obj_res heavy_observe_notice(b_lean_obj_arg message, lean_obj_arg world) {
+    (void)world;
+    sigset_t set, old, pending;
+    sigemptyset(&set);
+    sigaddset(&set, SIGPIPE);
+    if (sigprocmask(SIG_BLOCK, &set, &old) == 0) {
+        int had_pending = sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE);
+        const char *s = lean_string_cstr(message);
+        ssize_t ignored = write(STDERR_FILENO, s, lean_string_size(message) - 1);
+        (void)ignored;
+        if (!had_pending) {
+            struct timespec zero = {0, 0};
+            (void)sigtimedwait(&set, NULL, &zero);
+        }
+        (void)sigprocmask(SIG_SETMASK, &old, NULL);
+    }
+    return lean_io_result_mk_ok(lean_box(0));
+}
+
 extern char **environ;
 
 /* Raw Linux observations only. All classification happens in Heavy.Process.

@@ -189,6 +189,8 @@ def main():
     cases = ["serial-fifo", "unequal", "cancel", "wait-cancel", "unknown", "pid-reuse", "namespace", "partial", "raw-stale",
              "unlocked", "oversize", "bad-config", "bad-counter", "registry", "write-error", "missing-manifest", "preexec-error",
              "exec-error", "exit", "fallback", "fork-lease", "observer-death", "owner-death", "bypass"]
+    feedback = subprocess.run([sys.executable, "-I", str(HERE / "feedback_test.py")], capture_output=True, timeout=30)
+    assert feedback.returncode == 0, (feedback.stdout, feedback.stderr)
     pure = subprocess.run([str(BIN / "budget_tests")], capture_output=True, timeout=3)
     assert pure.returncode == 0, (pure.stdout, pure.stderr)
     fault_command = ["cc", "-shared", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror",

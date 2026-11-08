@@ -22,6 +22,13 @@ def main (args : List String) : IO Unit := do
   unless elapsed 0 10 17 == some 7 do throw (IO.userError "elapsed")
   unless elapsed 0 17 10 == none do throw (IO.userError "reversed clock")
   unless elapsed 5 10 17 == none do throw (IO.userError "clock failure")
+  unless requestExcess (some 10) (some 15) == some 5 &&
+      requestExcess (some 10) (some 10) == some 0 &&
+      requestExcess (some 10) (some 9) == some 0 &&
+      requestExcess (some 0) (some 15) == none &&
+      requestExcess none (some 15) == none &&
+      requestExcess (some 10) none == none do
+    throw (IO.userError "request excess")
   unless usage 0 0 0 15 7 8 99 == some (15, 99) do throw (IO.userError "signal usage")
   unless usage 0 2 0 0 7 8 99 == none do throw (IO.userError "exec usage")
   unless usage 0 0 5 0 7 8 99 == none do throw (IO.userError "wait usage")

@@ -1510,6 +1510,17 @@ permission to run. No physical clock, fork, exec, wait4, filesystem or signal
 authenticity is proved by these pure functions: the owned subprocess tests
 exercise those external assumptions, including failures.
 
+For an admitted file compiler with a positive requested reservation and valid
+child peak, the launcher compares the raw request with the observed wait4
+peak. It emits a best-effort stderr note only when the peak exceeds that
+request, stating both amounts and their difference in KiB. The pure
+`Heavy.Process.requestExcess` computes truncated subtraction; missing inputs
+or a zero request are unknown. Queries, unsupported metadata and absent child
+usage are not treated as zero excess. The note is not a Lean warning, a
+physical limit, a budget failure, or a bound on future usage. The IO boundary
+is the actual gate and wait4 observation; the arithmetic theorem does not
+prove those OS observations or the delivery of the note.
+
 Source paths, arguments, setup-file and output-artifact content fingerprints,
 cwd and the actual compiler's path/version/hash accompany each observation.
 Content fingerprints in this slice are explicitly non-cryptographic Lean

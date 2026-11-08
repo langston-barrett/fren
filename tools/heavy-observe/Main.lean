@@ -15,6 +15,10 @@ opaque terminateBySignal (signal : UInt32) : IO Unit
 @[extern "heavy_observe_write"]
 opaque writeRecord (dir record : @& String) : IO UInt32
 
+-- Best-effort bounded diagnostic; the FFI suppresses SIGPIPE for this write.
+@[extern "heavy_observe_notice"]
+opaque notice (message : @& String) : IO Unit
+
 @[extern "heavy_observe_read_regular"]
 opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO (Option ByteArray)
 
@@ -147,6 +151,14 @@ def run (args : List String) : IO UInt32 := do
   let outcome := result (v 0) (v 1) (v 2) (v 4)
   let wall := if childPresent then elapsed (v 3) (v 6) (v 7) else none
   let measured := if childPresent then usage (v 0) (v 1) (v 2) (v 4) (v 8) (v 9) (v 10) else none
+  -- Compare exactly the request and wait4 peak recorded below. Unsupported
+  -- metadata, queries, no admission and missing usage are unknown, not zero.
+  let requested := if gated && gateError == 0 && childPresent &&
+      (parsed.map (·.kind)) == some "file" then some requestDemand else none
+  let excess := requestExcess requested (measured.map (·.2))
+  if let some amount := excess then
+    if amount > 0 then
+      notice s!"heavy-observe: observed child peak {v 10} KiB above requested amount {requestDemand} KiB by {amount} KiB\n"
   let inputClosure : Option String := none
   let complete := identityComplete (sourceBefore.bind id) compilerFingerprint inputClosure
   let outputs := [parsed.bind (·.olean), parsed.bind (·.ilean), parsed.bind (·.c), parsed.bind (·.bc)] |>.filterMap id
