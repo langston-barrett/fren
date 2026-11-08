@@ -20,7 +20,8 @@ opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO 
 
 @[extern "heavy_budget_observe"]
 opaque observeBudget (exe : @& String) (args : @& Array String) (dir : @& String)
-    (demand : UInt64) (decide : @& (Array String → Array UInt64)) : IO (Array UInt64)
+    (demand : UInt64) (decide : @& (Array String → Array UInt64))
+    (control : @& (Array UInt64 → Array UInt64)) : IO (Array UInt64)
 
 -- JSON output needs no elaborator/Lean JSON dependency.
 def quoted (s : String) : String := Id.run do
@@ -111,7 +112,7 @@ def run (args : List String) : IO UInt32 := do
         (sourceBefore.bind id) fallback | throw (IO.userError "invalid request demand")
     requestDemand := demand
     provenance := origin
-    observeBudget real.toString args.toArray dir.toString demand.toUInt64 BudgetAdapter.snapshot
+    observeBudget real.toString args.toArray dir.toString demand.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
     else observe real.toString args.toArray
   if raw.size != (if gated then 18 else 11) then throw (IO.userError "invalid FFI observation length")
   let v := fun i => raw[i]!.toNat

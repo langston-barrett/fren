@@ -106,14 +106,63 @@ static int budget_handlers(struct sigaction old[3], int install) {
     }
     return 0;
 }
-static int budget_lock(int fd, uint64_t deadline) {
+/* Invoke the shared Std-only control kernel on raw observations. */
+static int budget_control(b_lean_obj_arg control, uint64_t *values, size_t count,
+                          size_t outputs, size_t index, uint64_t *answer) {
+    lean_object *raw = lean_alloc_array(0, count);
+    for (size_t i = 0; i < count; ++i) raw = lean_array_push(raw, lean_box_uint64(values[i]));
+    lean_inc(control);
+    lean_object *result = lean_apply_1(control, raw);
+    if (lean_array_size(result) != outputs) { lean_dec(result); return EPROTO; }
+    *answer = lean_unbox_uint64(lean_array_get_core(result, index));
+    lean_dec(result); return 0;
+}
+static int budget_deadline(b_lean_obj_arg control, uint64_t limit, uint64_t *sample) {
+    struct timespec t;
+    uint64_t error = 0;
+    *sample = 0;
+    if (clock_gettime(CLOCK_MONOTONIC, &t) < 0) error = errno;
+    else *sample = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
+    uint64_t raw[] = {0, error, *sample, limit}, answer;
+    int e = budget_control(control, raw, 4, 1, 0, &answer);
+    if (e) return e;
+    return answer == 0 ? 0 : answer == 1 ? ETIMEDOUT : answer == 2 ? (error ? (int)error : EIO) : EPROTO;
+}
+static int budget_lifecycle(b_lean_obj_arg control, int previous, int wait_error,
+                            pid_t observed, pid_t expected, pid_t reaped, size_t output) {
+    struct sigaction action = {0};
+    int error = sigaction(SIGCHLD, NULL, &action) < 0 ? errno : 0;
+    uint64_t raw[] = {1, (uint64_t)error, (uint64_t)(uintptr_t)action.sa_handler,
+        (unsigned)action.sa_flags, SA_NOCLDWAIT, (uint64_t)previous, (uint64_t)wait_error,
+        (uint64_t)observed, (uint64_t)expected, (uint64_t)reaped}, answer;
+    int e = budget_control(control, raw, 10, 2, output, &answer);
+    if (e) return e;
+    if (answer == 1) return 0;
+    if (answer != 0) return EPROTO;
+    return error ? error : previous ? previous : wait_error ? wait_error : ENOTSUP;
+}
+static int budget_group_signal(b_lean_obj_arg control, pid_t child, int signal,
+                               int previous, pid_t reaped) {
+    siginfo_t info = {0};
+    int error = waitid(P_PID, (id_t)child, &info, WEXITED | WNOHANG | WNOWAIT) < 0 ? errno : 0;
+    int e = budget_lifecycle(control, previous, error, info.si_pid, child, reaped, 1);
+    if (e) return e;
+    if (kill(-child, signal) < 0 && errno != ESRCH) return errno;
+    return 0;
+}
+static int budget_lock(b_lean_obj_arg control, int fd, uint64_t deadline) {
     for (;;) {
         if (budget_cancelled) return ECANCELED;
-        if (flock(fd, LOCK_EX | LOCK_NB) == 0) return 0;
+        uint64_t now;
+        int e = budget_deadline(control, deadline, &now);
+        if (e) return e;
+        if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
+            /* Acquisition itself can be preempted across the deadline. */
+            e = budget_deadline(control, deadline, &now);
+            if (e && flock(fd, LOCK_UN) < 0) return errno;
+            return e;
+        }
         if (errno != EAGAIN && errno != EWOULDBLOCK) return errno;
-        uint64_t now = budget_now();
-        if (!now) return EIO;
-        if (now >= deadline) return ETIMEDOUT;
         struct timespec pause = {0, 10000000}; nanosleep(&pause, NULL);
     }
 }
@@ -121,7 +170,7 @@ static int budget_lock(int fd, uint64_t deadline) {
  * stored ticket/state/demand/owner and an independent procfs observation.
  * No ownership/fit Boolean is supplied to Lean. */
 LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg args,
-    b_lean_obj_arg path, uint64_t demand, b_lean_obj_arg decide) {
+    b_lean_obj_arg path, uint64_t demand, b_lean_obj_arg decide, b_lean_obj_arg control) {
     uint64_t extra[7] = {0}; /* error, admission wait ns, ticket, held, allowance, parent */
     lean_object *result = NULL;
     int dir = -1, registry = -1, owner = -1, ticketfd = -1, counter = -1, config = -1;
@@ -131,6 +180,7 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
     long owner_pid;
     uint64_t begin = budget_now(), deadline = 0;
     struct sigaction old[3]; budget_cancelled = 0;
+    if ((e = budget_lifecycle(control, 0, 0, 0, 0, 0, 0))) goto done;
     if ((e = budget_handlers(old, 1))) goto done;
     handlers = 1;
     if (!begin) { e = EIO; goto done; }
@@ -156,7 +206,8 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
         fallback > (1ULL << 50) || wait_ms == 0 || wait_ms > 600000) { e = EINVAL; goto done; }
     extra[4] = allowance; extra[5] = parent;
     deadline = begin + wait_ms * 1000000;
-    if ((e = budget_lock(registry, deadline))) goto done;
+    if (deadline < begin) { e = EOVERFLOW; goto done; }
+    if ((e = budget_lock(control, registry, deadline))) goto done;
     locked = 1;
     if ((e = budget_read(counter, buf, sizeof(buf)))) goto done;
     cursor = buf;
@@ -174,7 +225,7 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
     if ((e = budget_text(ticketfd, buf))) goto done;
     for (;;) {
         if (!locked) {
-            if ((e = budget_lock(registry, deadline))) goto done;
+            if ((e = budget_lock(control, registry, deadline))) goto done;
             locked = 1;
         }
         /* Session identity is checked every snapshot; unlocked/dead owners
@@ -236,10 +287,13 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
         if (code > 3) { e = EPROTO; goto done; }
         if (budget_cancelled) { e = ECANCELED; goto done; }
         if (code == 1) {
+            uint64_t now;
+            if ((e = budget_deadline(control, deadline, &now))) goto done;
             snprintf(buf, sizeof(buf), "%llu 1 %llu %s\n", next, (unsigned long long)demand, self);
             if ((e = budget_text(ticketfd, buf))) goto done;
-            uint64_t now = budget_now();
-            if (!now) { e = EIO; goto done; }
+            /* Publication/decoding may cross expiry too. No child is started
+             * unless this actual commit sample is still eligible. */
+            if ((e = budget_deadline(control, deadline, &now))) goto done;
             extra[1] = now - begin; extra[6] = now;
             if (flock(registry, LOCK_UN) < 0) { e = errno; goto done; }
             locked = 0;
@@ -250,8 +304,8 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
         if (flock(registry, LOCK_UN) < 0) { e = errno; goto done; }
         locked = 0;
         if (budget_cancelled) { e = ECANCELED; goto done; }
-        uint64_t now = budget_now();
-        if (!now || now >= deadline) { e = now ? ETIMEDOUT : EIO; goto done; }
+        uint64_t now;
+        if ((e = budget_deadline(control, deadline, &now))) goto done;
         struct timespec pause = {0, 10000000}; nanosleep(&pause, NULL);
     }
 done:
@@ -277,17 +331,21 @@ done:
     return lean_io_result_mk_ok(a);
 }
 
-/* A transient owner for exactly one controlled build process group. The
- * unreaped leader pins the group number until cleanup has finished. */
+/* A transient owner for exactly one controlled build process group.
+ * Only a supported disposition and successful unreaped-child observations
+ * permit numeric group signals. SIGCHLD disposition is never changed. */
 LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_arg config,
-    b_lean_obj_arg requests, b_lean_obj_arg exe, b_lean_obj_arg args) {
+    b_lean_obj_arg requests, b_lean_obj_arg exe, b_lean_obj_arg args, b_lean_obj_arg control) {
     uint64_t values[3] = {0}; /* control errno, command raw status, cleanup errno */
     int dir = -1, owner = -1, fd = -1, pipefd[2] = {-1, -1};
-    pid_t child = -1;
+    pid_t child = -1, last_reaped = 0;
+    int previous_wait_error = 0;
     int handlers = 0;
     char **argv = NULL;
     char identity[256], text[512];
     struct sigaction old[3]; budget_cancelled = 0;
+    values[0] = budget_lifecycle(control, 0, 0, 0, 0, 0, 0);
+    if (values[0]) goto done;
     values[0] = budget_handlers(old, 1);
     if (values[0]) goto done;
     handlers = 1;
@@ -340,25 +398,27 @@ LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_ar
         siginfo_t info = {0};
         if (waitid(P_PID, (id_t)child, &info, WEXITED | WNOHANG | WNOWAIT) < 0) {
             if (errno == EINTR) continue;
-            values[0] = errno; break;
+            previous_wait_error = errno; values[0] = errno; break;
         }
         if (info.si_pid || budget_cancelled) break;
         struct timespec pause = {0, 10000000}; nanosleep(&pause, NULL);
     }
 cleanup:
-    /* The leader has not been reaped; this process group cannot be recycled.
-     * Only this session's group is signalled, never a ledger PID. */
+    /* Recheck raw disposition and waitid before EACH signal. An earlier
+     * wait error remains disqualifying, even if a later probe succeeds. */
     if (child > 0) {
-        if (kill(-child, SIGTERM) < 0 && errno != ESRCH) values[2] = errno;
-        struct timespec pause = {0, 50000000}; nanosleep(&pause, NULL);
-        if (kill(-child, SIGKILL) < 0 && errno != ESRCH) values[2] = errno;
+        values[2] = budget_group_signal(control, child, SIGTERM, previous_wait_error, last_reaped);
+        if (!values[2]) {
+            struct timespec pause = {0, 50000000}; nanosleep(&pause, NULL);
+            values[2] = budget_group_signal(control, child, SIGKILL, previous_wait_error, last_reaped);
+        }
         /* A killed task stuck in uninterruptible kernel IO may not reap in
          * time. Report timeout and retain the retired session, never hang. */
         uint64_t limit = budget_now() + 1000000000;
         int status = 0;
         for (;;) {
             pid_t got = waitpid(child, &status, WNOHANG);
-            if (got == child) { values[1] = (unsigned)status; break; }
+            if (got == child) { last_reaped = got; values[1] = (unsigned)status; break; }
             if (got < 0 && errno != EINTR) { values[2] = errno; break; }
             uint64_t now = budget_now();
             if (!now || now >= limit) { values[2] = ETIMEDOUT; break; }

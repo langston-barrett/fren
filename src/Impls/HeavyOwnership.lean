@@ -575,4 +575,30 @@ impl compile_row: testing::heavy_compile_row
     cases m
     simp
 
+impl compile_deadline: testing::heavy_compile_deadline for (clockError now limit : Int) {
+  clock_error := clockError,
+  now := now,
+  deadline := limit,
+  decision := Heavy.Budget.deadline clockError now limit,
+} by
+  intro clockError now limit _
+  simp [fren_spec, Heavy.Budget.deadline, or_assoc]
+
+impl compile_lifecycle: testing::heavy_compile_lifecycle
+    for (actionError handler flags autoReapBit previousWaitError waitError observed expected reaped : Int) {
+  action_error := actionError,
+  handler := handler,
+  flags := flags,
+  auto_reap_bit := autoReapBit,
+  previous_wait_error := previousWaitError,
+  wait_error := waitError,
+  observed := observed,
+  expected := expected,
+  reaped := reaped,
+  waitable? := Heavy.Budget.waitable actionError handler flags autoReapBit,
+  signal? := Heavy.Budget.groupSignal actionError handler flags autoReapBit previousWaitError waitError observed expected reaped,
+} by
+  intro actionError handler flags autoReapBit previousWaitError waitError observed expected reaped _
+  simp [fren_spec, Heavy.Budget.waitable, Heavy.Budget.groupSignal, and_assoc, Bool.and_assoc]
+
 end Fren.Impls.HeavyOwnership

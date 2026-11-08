@@ -49,6 +49,18 @@ def snapshot (raw : Array String) : Array UInt64 := Id.run do
   if !own then return #[2, 0]
   return #[(decision a p total d t oldest).toNat.toUInt64, total.toNat.toUInt64]
 
+/-- Actual FFI control observations, with no supplied freshness/owner verdict.
+Tag 0: clock errno, now ns, fixed deadline ns. Tag 1: sigaction errno, raw
+handler, sa_flags, SA_NOCLDWAIT, prior/current wait errno, si_pid, child PID,
+last reap PID. The C caller requires exact output lengths and values. -/
+def control (raw : Array UInt64) : Array UInt64 :=
+  match raw.toList.map (fun n => (n.toNat : Int)) with
+  | [0, error, now, limit] => #[(deadline error now limit).toNat.toUInt64]
+  | [1, error, handler, flags, bit, previous, errorWait, observed, expected, reaped] =>
+    #[if waitable error handler flags bit then 1 else 0,
+      if groupSignal error handler flags bit previous errorWait observed expected reaped then 1 else 0]
+  | _ => #[2]
+
 /-- Explicit source-bound requests are fixtures/configuration, not forecasts.
 The noncryptographic fingerprint is a mismatch check, never input closure.
 All absent/unsupported/mismatched inputs use a caller-specified positive

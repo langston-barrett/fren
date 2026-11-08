@@ -241,3 +241,44 @@ Its synthetic demands establish controller behavior, not performance or
 memory-calibration evidence. Warm direct pairs still measure observe-only
 cost. Requirements/impls bind the actual row charge and budget decisions;
 the arithmetic theorem applies only to completed registry-locked snapshots.
+
+## Deadline and waitable-owner checks
+
+The admission timeout uses raw monotonic nanoseconds and one fixed deadline.
+The actual Std-only deadline function checks samples before and after registry
+acquisition, before publishing a running row, and after publication while the
+registry is still held. An expired sample returns timeout before any compiler
+launch. Waiting does not replace the ticket or extend the deadline. This is
+checked eligibility at those boundaries; preemption after a successful check
+can delay the eventual fork, so there is no hard real-time launch guarantee.
+
+Before either a session command or gated compiler is forked, the controller
+reads SIGCHLD disposition. This narrow Linux policy accepts only SIG_DFL
+without SA_NOCLDWAIT (supported raw bit value 2). Explicit SIG_IGN, custom
+handlers, automatic reaping, an unsupported bit ABI or a failed query return
+125 before fork. The controller does not change SIGCHLD, so no normalization
+or restoration is needed and the supported disposition is inherited normally.
+INT/TERM/HUP save/rollback/restore behavior is unchanged.
+
+Each session group signal independently obtains raw waitid WNOWAIT and
+sigaction observations and calls the shared lifecycle function. A previous
+wait error, a current error, another observed PID, a recorded reap or an
+unsupported disposition forbids the signal. An ECHILD monitor result cannot
+be erased by a later probe. TERM and KILL both require eligibility; no numeric
+group signal occurs after an error loses the anchor. This relies on the
+controlled process having no unrelated thread/handler reaping its children
+or changing SIGCHLD between checks. OS identity, wait and signal authenticity
+remain external assumptions, not a pure proof of Linux atomicity.
+
+`heavyBudgetBoundaries` runs synchronized late-lock initial/reacquisition,
+snapshot-crossing and running-publication-crossing deadline controls, plus a
+timely admission. It exercises actual inherited SIGCHLD=SIG_IGN, actual
+SA_NOCLDWAIT/custom dispositions, a real owned-child reap, query failures
+and ordinary child statuses. The test interposer suppresses all numeric
+group signals in its harmless true-child probes, recording raw wait results
+before delivery; it never forces PID reuse or signals a foreign group.
+The old 9e83 binaries fail those safety assertions. The ordinary 24-case
+`heavyBudget` job retains real cancellation, inherited-holder and owner-death
+cleanup without this signal suppression. `fren_test --job heavyProcess controls`
+runs the existing real compiler, FIFO, raw parser/status and emitted C ABI
+controls without repeating the historical three-module Lake comparison.

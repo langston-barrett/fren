@@ -1734,6 +1734,19 @@ OS locking, procfs identity, fork/exec, parent-death signals and cleanup
 remain external assumptions, exercised by producer tests. The arithmetic
 invariant holds at completed locked snapshots, not during arbitrary IO.
 
+Acquisition and grant publication check raw monotonic samples against the
+same fixed deadline, including after lock acquisition and after publishing
+a running row. A successful check permits eligibility at that sample; it
+does not prevent preemption before the subsequent fork.
+
+Before fork, the session and gated observer require SIGCHLD's raw handler
+to be SIG_DFL with no SA_NOCLDWAIT. They reject unsupported dispositions
+without changing SIGCHLD. Each group signal additionally checks raw waitid
+WNOWAIT observations and recorded wait/reap results. A previous wait error
+cannot be forgiven by a later probe. This policy assumes no unrelated
+thread or handler changes SIGCHLD or reaps these children between checks;
+Linux observation authenticity remains an external obligation.
+
 ```fren
 pub proc heavy_compile_budget(
     allowance: Int,
@@ -1758,6 +1771,42 @@ pub proc heavy_compile_budget(
         and held >= 0 and ticket > 0 and oldest > 0, decision = 3
 }
 
+-- Raw monotonic observations at acquisition and grant commit boundaries.
+-- 0 eligible, 1 expired, 2 clock/representation error. Equality is expired.
+pub proc heavy_compile_deadline(clock_error: Int, now: Int, deadline: Int): (det decision: Int) {
+    out decision :=
+        if clock_error != 0 or now < 0 or deadline < 0 then 2
+        else if now < deadline then 0 else 1
+    expect checked_time: when decision = 0, clock_error = 0 and 0 <= now < deadline
+    expect expiry: when clock_error = 0 and now >= deadline >= 0, decision = 1
+}
+
+-- Linux SIG_DFL has raw handler value 0. The adapter supplies the actual
+-- sa_flags and SA_NOCLDWAIT bit value, not an already-decided ownership flag.
+-- This Linux boundary supports bit value 2 and rejects a different ABI.
+-- observed is waitid's si_pid; reaped is the last successful waitpid result.
+pub proc heavy_compile_lifecycle(
+    action_error: Int,
+    handler: Int,
+    flags: Int,
+    auto_reap_bit: Int,
+    previous_wait_error: Int,
+    wait_error: Int,
+    observed: Int,
+    expected: Int,
+    reaped: Int,
+): (det waitable?, det signal?) {
+    out waitable? := action_error = 0 and handler = 0 and flags >= 0 and auto_reap_bit = 2
+        and (flags div 2) mod 2 = 0
+    out signal? := waitable? and previous_wait_error = 0 and wait_error = 0
+        and expected > 0 and (observed = 0 or observed = expected) and reaped = 0
+    expect lost_anchor: when previous_wait_error != 0 or wait_error != 0 or reaped != 0, not signal?
+    expect no_child: when expected <= 0, not signal?
+    expect ignored: when handler != 0, not waitable? and not signal?
+}
+
+#fren_check heavy_compile_deadline
+#fren_check heavy_compile_lifecycle
 #fren_check heavy_compile_budget
 ```
 
