@@ -61,9 +61,9 @@ Each representation admits only the forms available at its phase.
 | Source tokens, comments and whitespace | AST |
 | Unresolved paths and names | AST |
 | Resolved surface sugar, including `where` and `table` | HIR through THIR |
-| Types and resolved overloads and views | THIR onward, in the form appropriate to each phase |
+| Inferred type annotations and resolved overloads and views | THIR onward, in the form appropriate to each phase |
 | Desugared expressions | Desugared THIR through `flat` |
-| Subset types in expressions | THIR and desugared THIR; erased in MIR with assumptions and obligations |
+| Written type syntax, including subset-type arguments | HIR through desugared THIR; subset types erased in MIR with assumptions and obligations |
 | Generic uses | HIR through MIR; instances replace them in `mono` |
 | Closures and function-typed parameters | HIR through `mono`; lowered in `fo` |
 | Pattern matches | HIR through `fo`; compiled in `flat` |
@@ -213,9 +213,9 @@ A commuting-square test evaluates an expression before and after a pass and
 compares the results. If both evaluations use an evaluator that implements
 `a + b` as `a - b`, the results can agree while both are wrong. An independent
 arithmetic fact such as `2 + 1 = 3` detects that particular mistake. The
-contract below checks this fact about Fren's addition; connecting a future
-evaluator to its primitive contract is separate work. It does not claim that
-any production pass or evaluator is already bound or verified.
+contract below checks an independent increase property that also catches this
+error. Connecting a future evaluator to its primitive contract is separate
+work. The contract does not bind or verify a production pass or evaluator.
 
 **Proof obligations**
 
