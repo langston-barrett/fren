@@ -114,10 +114,10 @@ unsafe def mainFrontends (count seed : Nat) (dir : String) (mode : Mode) (limit 
   return if n "differ" + n "crash" + n "timeout" == 0 then 0 else 1
 
 def usage : String :=
-  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--jobs 1|2] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--short-inductions] [--datatype-elements] [--generic-functions] [--generic-types] [--set-card] [--set-card-fallback] [--recursion-positions] [--spec-timeout SECONDS]\n" ++
+  "usage: fren_fuzz_frontends [--count N] [--seed N] [--out DIR] [--jobs 1|2] [--avoid-known] [--guards] [--sites] [--confirm] [--obligations] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--short-inductions] [--datatype-elements] [--generic-functions] [--generic-types] [--set-card] [--set-card-fallback] [--recursion-positions] [--match-paths] [--spec-timeout SECONDS]\n" ++
   "       fren_fuzz_frontends --files FILE...\n" ++
   "       fren_fuzz_frontends --report DIR\n" ++
-  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--short-inductions] [--datatype-elements] [--generic-functions] [--generic-types] [--set-card] [--set-card-fallback] [--recursion-positions] --print SEED"
+  "       fren_fuzz_frontends [--avoid-known] [--guards] [--sites] [--confirm] [--scrutinees] [--inductions] [--induction-forms] [--keywords] [--fact-scopes] [--induction-candidates] [--decidable] [--enumeration-obligations] [--enumeration-relations] [--unfoldings] [--short-inductions] [--datatype-elements] [--generic-functions] [--generic-types] [--set-card] [--set-card-fallback] [--recursion-positions] [--match-paths] --print SEED"
 
 structure Opts where
   count : Nat := 100
@@ -148,10 +148,10 @@ unsafe def main (args : List String) (run? : Option (Opts → Mode → IO UInt32
                        datatypeElements := args.contains "--datatype-elements"
                        genericFunctions := args.contains "--generic-functions"
                        genericTypes := args.contains "--generic-types"
-                       setCard := args.contains "--set-card", setCardFallback := args.contains "--set-card-fallback", recursionPositions := args.contains "--recursion-positions" }
+                       setCard := args.contains "--set-card", setCardFallback := args.contains "--set-card-fallback", recursionPositions := args.contains "--recursion-positions", matchPaths := args.contains "--match-paths" }
   let args := args.filter (fun a => a != "--avoid-known" && a != "--guards" && a != "--sites" && a != "--confirm" && a != "--scrutinees"
     && a != "--inductions" && a != "--induction-forms" && a != "--keywords" && a != "--fact-scopes" && a != "--induction-candidates"
-    && a != "--decidable" && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--short-inductions" && a != "--datatype-elements" && a != "--generic-functions" && a != "--generic-types" && a != "--set-card" && a != "--set-card-fallback" && a != "--recursion-positions")
+    && a != "--decidable" && a != "--enumeration-obligations" && a != "--enumeration-relations" && a != "--unfoldings" && a != "--short-inductions" && a != "--datatype-elements" && a != "--generic-functions" && a != "--generic-types" && a != "--set-card" && a != "--set-card-fallback" && a != "--recursion-positions" && a != "--match-paths")
   if let ["--report", dir] := args then
     IO.print (report (← outcomesIn dir))
     return 0

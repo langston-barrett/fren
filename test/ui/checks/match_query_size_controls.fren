@@ -1,0 +1,134 @@
+-- Each indexed arm exercises the production SMT path encoder.
+set_option fren.lint.duplicate_scrutinee "allow"
+set_option fren.lint.unused_variables "allow"
+set_option fren.lint.match_could_be_table "allow"
+set_option fren.lint.match_overlapping_arm "allow"
+set_option fren.lint.unnested_or_patterns "allow"
+
+pub enum Choice { A(Int), B(Bool), Box(Choice), Unit }
+
+pub proc distinct(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::A(x) => q[0] + x,
+        Choice::B(_) => q[0] + 1,
+        Choice::Box(_) => q[0] + 2,
+        Choice::Unit => q[0] + 3,
+    }
+}
+
+pub proc earlier_guard(c: Choice, q: Seq<Int>, flag?): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::A(_) if flag? => q[0],
+        Choice::B(_) => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc current_guard(c: Choice, q: Seq<Int>, flag?): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::A(_) => q[0],
+        Choice::B(_) if flag? => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc literal(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::A(0) => q[0],
+        Choice::B(_) => q[0] + 1,
+        Choice::A(_) => q[0] + 2,
+        _ => q[0] + 3,
+    }
+}
+
+pub proc nested(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::Box(Choice::Unit) => q[0],
+        Choice::B(_) => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc alternatives(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::A(_) | Choice::Unit => q[0],
+        Choice::B(_) => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc current_literal(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::B(_) => q[0],
+        Choice::A(0) => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc default_arm(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::A(_) => q[0],
+        _ => q[0] + 1,
+    }
+}
+
+pub proc vector(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c, c {
+        Choice::A(_), _ => q[0],
+        _, Choice::B(_) => q[0] + 1,
+        _, _ => q[0] + 2,
+    }
+}
+
+pub proc table_paths(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := table c {
+        Choice::A(_) => q[0],
+        Choice::B(_) => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc overlap(c: Choice, q: Seq<Int>, flag?): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::A(_) if flag? => q[0],
+        Choice::A(_) => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc current_nested(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::B(_) => q[0],
+        Choice::Box(Choice::Unit) => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc current_alternatives(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::B(_) => q[0],
+        Choice::A(_) | Choice::Unit => q[0] + 1,
+        _ => q[0] + 2,
+    }
+}
+
+pub proc default_binder(c: Choice, q: Seq<Int>): (value: Int) {
+    require nonempty: q != []
+    out value := match c {
+        Choice::A(_) => q[0],
+        rest => q[0] + 1,
+    }
+}

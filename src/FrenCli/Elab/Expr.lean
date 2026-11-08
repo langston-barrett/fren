@@ -1,5 +1,6 @@
 -- keep-sorted start
 import FrenCli.Elab.ExprSupport
+import FrenCli.MatchDisjoint
 -- keep-sorted end
 
 /-!
@@ -1625,8 +1626,14 @@ partial def elabMatchExpr (cx : ExprCtx) (e : Expr) (expected? : Option Ty) (par
   -- its being the first arm taken (`Fren.Core.GuardedOperand.armBody`).
   -- They are built directly: their negations are never needed, so
   -- `guard` would only return them.
-  for (_, guard?, body) in arms, (_, bs, test) in resolved do
-    let before := cx.guards ++ taken.filterMap (·.map (s!"(not {·})"))
+  for (_, guard?, body) in arms, (_, bs, test) in resolved, j in [:arms.size] do
+    -- The datatype already excludes distinct, unguarded constructor arms
+    -- whose fields are only binders or wildcards. All other paths retain
+    -- every earlier exclusion, including tables and match vectors.
+    let earlier := (arms.extract 0 j).mapIdx fun i arm => (pats[i]!, arm.2.1)
+    let exclusions := if !isTable && many?.isNone && omitMatchExclusions ts.patTy pats[j]! guard? earlier then #[]
+      else taken.filterMap (·.map (s!"(not {·})"))
+    let before := cx.guards ++ exclusions
     let armGuards := before ++ test.toArray
     -- Distinct names (`lang::distinct_names`), by the names they declare,
     -- without the `!` of shadowing.

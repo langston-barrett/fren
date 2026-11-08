@@ -27,6 +27,7 @@ import Impls.Induction
 import Impls.Lang
 import Impls.Lint
 import Impls.Markdown
+import Impls.MatchDisjoint
 import Impls.Models
 import Impls.Modules
 import Impls.Mutate

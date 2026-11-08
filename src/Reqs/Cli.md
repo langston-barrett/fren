@@ -1510,3 +1510,68 @@ pub proc substitution_scope(name: SubstitutionName): (det replace?, det rename?)
 
 #fren_check substitution_scope
 ```
+
+## Disjoint constructor paths
+
+The standalone SMT encoder may omit all earlier-arm exclusions from a
+`match` arm's path only when that arm and every earlier arm are unguarded
+constructors of the scrutinee's datatype, each earlier constructor distinct
+from the current one, with only binders or wildcards in every immediate
+field. Otherwise it retains every exclusion. Tables, match vectors, guards,
+literals, nested subpatterns, alternatives and default arms retain the
+existing encoding. This changes neither the arm tests nor source labels.
+
+`cli::match_exclusions` states this decision over the resolved patterns'
+constructor indexes and immediate field kinds. Sets forget order and
+duplicates, which do not affect the condition over every field and earlier
+arm. `Test` includes every field pattern other than a binder or wildcard.
+All patterns have already been
+validated against one scrutinee type, so an index identifies a constructor
+of that datatype. `Other` and `Vector` types cannot use the optimization.
+The implementation binding projects these kinds from real patterns and
+binds the actual helper called by the production encoder, rather than a
+caller-supplied disjointness flag.
+
+Distinct constructors of one SMT datatype cannot match the same value.
+Thus the current constructor test implies every omitted exclusion; removing
+them preserves the path's meaning, including which binders are available.
+The binding proves the omission policy for all resolved patterns and arm
+sequences. It does not prove pattern resolution, the translation of testers,
+SMT datatype axioms, or the complete encoder correct. Production query tests
+and differential tests cover that boundary. The hosted lean-smt encoding is
+unchanged. The rule opts out of the decidable core because it quantifies
+over a set of unlisted arm values; its implementation proof is an unbounded
+Lean proof. The caller's table and single-scrutinee gates are checked by
+production query controls, rather than proved by this binding.
+
+```fren
+pub enum MatchQueryField { Wildcard, Binder, Test }
+pub enum MatchQueryPattern { Constructor(Int, Set<MatchQueryField>), Other }
+pub enum MatchQueryType { Datatype, Vector, Other }
+pub struct MatchQueryArm { pattern: MatchQueryPattern, guarded? }
+
+pub fn match_query_constructor(p: MatchQueryPattern): Option<Int> := match p {
+    MatchQueryPattern::Constructor(index, fields) =>
+        if (forall (field: MatchQueryField), when field in fields, field != MatchQueryField::Test) then Some(index) else None,
+    MatchQueryPattern::Other => None,
+}
+
+set_option fren.lint.undecidable "allow" in
+pub proc match_exclusions(
+    kind: MatchQueryType,
+    current: MatchQueryArm,
+    earlier: Set<MatchQueryArm>,
+): (det omit?) {
+    ensure policy: omit? iff kind = MatchQueryType::Datatype and not current.guarded? and
+        (match match_query_constructor(current.pattern) {
+            Some(index) => (forall (arm: MatchQueryArm), when arm in earlier, not arm.guarded? and
+                (match match_query_constructor(arm.pattern) {
+                    Some(prior) => prior != index,
+                    None => false,
+                })),
+            None => false,
+        })
+}
+
+#fren_check match_exclusions
+```

@@ -133,8 +133,8 @@ end
 /-- Fresh runs of a generator that promises well-typed specs reject
 shared static errors. Keep the cardinality modes' stricter checks too. -/
 def freshProblems (mode : Mode) (ran : Ran) : Array String :=
-  (if !(mode.genericFunctions || mode.shortInductions) && (mode.setCard || mode.setCardFallback) then setCardProblems ran else #[]) ++
-    (if mode.genericFunctions || mode.shortInductions || mode.setCard || mode.setCardFallback || mode.genericTypes then
+  (if !(mode.matchPaths || mode.genericFunctions || mode.shortInductions) && (mode.setCard || mode.setCardFallback) then setCardProblems ran else #[]) ++
+    (if mode.matchPaths || mode.genericFunctions || mode.shortInductions || mode.setCard || mode.setCardFallback || mode.genericTypes then
       (appendedErrors #[0] ran.cli ++ appendedErrors #[0] ran.hosted).map fun (_, d) =>
         s!"unexpected static error: {headOf d}"
      else #[])
@@ -144,6 +144,8 @@ private def sharedDiagnostic (d : Diagnostic) : Ran := {
   comparison := {}, reports := "", errors := #[], cli := #[d], hosted := #[d] }
 private def sharedError (code : String) : Ran :=
   sharedDiagnostic { line := 1, severity := "error", text := "shared error", code? := some code }
+-- Agreement on a static error cannot count as match-path coverage.
+#guard !(freshProblems { matchPaths := true } (sharedError "F0303")).isEmpty
 -- Agreement on an invalid Bool binder cannot count as generic-type coverage.
 #guard !(freshProblems { genericTypes := true } (sharedError "F0303")).isEmpty
 -- Expected failed comparisons remain valid generated checks.

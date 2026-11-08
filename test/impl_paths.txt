@@ -131,6 +131,8 @@ unbound: unless_not_keeps_meaning <no public output>
 cli only: Fren.Impls.Enumeration.cardinality_truth truth Fren.Core.Cardinality.holds?
 cli only: Fren.Impls.Enumeration.partial_and truth Fren.Core.Enumeration.andTruth
 cli only: Fren.Impls.Enumeration.partial_not truth Fren.Core.Enumeration.notTruth
+# Standalone SMT path optimization; hosted lean-smt retains its encoding.
+cli only: Fren.Impls.MatchDisjoint.match_exclusions omit? FrenCli.omitMatchExclusions
 cli only: Fren.Impls.apart apart? FrenCli.Fmt.apart
 # Native source-site reconstruction (eval::application_sites): the hosted
 # front end records argument questions during source translation, before

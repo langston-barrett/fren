@@ -1,0 +1,76 @@
+; earlier_guard: query 5
+(assert (and true (= |c| (|Choice::A| (|Choice::A::0| |c|))) |flag?|)) ; premise
+; earlier_guard: query 6
+(assert (and true (not (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) |flag?|)) (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; earlier_guard: query 7
+(assert (and true (not (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) |flag?|)) (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))))) ; premise
+; current_guard: query 5
+(assert (and true (= |c| (|Choice::A| (|Choice::A::0| |c|))))) ; premise
+; current_guard: query 6
+(assert (and true (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))) (= |c| (|Choice::B| (|Choice::B::0| |c|))) |flag?|)) ; premise
+; current_guard: query 7
+(assert (and true (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))) (not (and (= |c| (|Choice::B| (|Choice::B::0| |c|))) |flag?|)))) ; premise
+; literal: query 5
+(assert (and true (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= (|Choice::A::0| |c|) 0)))) ; premise
+; literal: query 6
+(assert (and true (not (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= (|Choice::A::0| |c|) 0))) (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; literal: query 7
+(assert (and true (not (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= (|Choice::A::0| |c|) 0))) (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))) (= |c| (|Choice::A| (|Choice::A::0| |c|))))) ; premise
+; literal: query 8
+(assert (and true (not (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= (|Choice::A::0| |c|) 0))) (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))) (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))))) ; premise
+; nested: query 5
+(assert (and true (and (= |c| (|Choice::Box| (|Choice::Box::0| |c|))) (= (|Choice::Box::0| |c|) |Choice::Unit|)))) ; premise
+; nested: query 6
+(assert (and true (not (and (= |c| (|Choice::Box| (|Choice::Box::0| |c|))) (= (|Choice::Box::0| |c|) |Choice::Unit|))) (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; nested: query 7
+(assert (and true (not (and (= |c| (|Choice::Box| (|Choice::Box::0| |c|))) (= (|Choice::Box::0| |c|) |Choice::Unit|))) (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))))) ; premise
+; alternatives: query 5
+(assert (and true (or (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= |c| |Choice::Unit|)))) ; premise
+; alternatives: query 6
+(assert (and true (not (or (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= |c| |Choice::Unit|))) (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; alternatives: query 7
+(assert (and true (not (or (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= |c| |Choice::Unit|))) (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))))) ; premise
+; current_literal: query 5
+(assert (and true (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; current_literal: query 6
+(assert (and true (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))) (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= (|Choice::A::0| |c|) 0)))) ; premise
+; current_literal: query 7
+(assert (and true (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))) (not (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= (|Choice::A::0| |c|) 0))))) ; premise
+; default_arm: query 5
+(assert (and true (= |c| (|Choice::A| (|Choice::A::0| |c|))))) ; premise
+; default_arm: query 6
+(assert (and true (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))))) ; premise
+; vector: query 5
+(assert (and true (= |c| (|Choice::A| (|Choice::A::0| |c|))))) ; premise
+; vector: query 6
+(assert (and true (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))) (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; vector: query 7
+(assert (and true (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))) (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))))) ; premise
+; table_paths: query 5
+(assert (and true (= |c| (|Choice::A| (|Choice::A::0| |c|))))) ; premise
+; table_paths: query 6
+(assert (and true (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))) (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; table_paths: query 7
+(assert (and true (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))) (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))))) ; premise
+; overlap: query 5
+(assert (and true (= |c| (|Choice::A| (|Choice::A::0| |c|))) |flag?|)) ; premise
+; overlap: query 6
+(assert (and true (not (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) |flag?|)) (= |c| (|Choice::A| (|Choice::A::0| |c|))))) ; premise
+; overlap: query 7
+(assert (and true (not (and (= |c| (|Choice::A| (|Choice::A::0| |c|))) |flag?|)) (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))))) ; premise
+; current_nested: query 5
+(assert (and true (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; current_nested: query 6
+(assert (and true (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))) (and (= |c| (|Choice::Box| (|Choice::Box::0| |c|))) (= (|Choice::Box::0| |c|) |Choice::Unit|)))) ; premise
+; current_nested: query 7
+(assert (and true (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))) (not (and (= |c| (|Choice::Box| (|Choice::Box::0| |c|))) (= (|Choice::Box::0| |c|) |Choice::Unit|))))) ; premise
+; current_alternatives: query 5
+(assert (and true (= |c| (|Choice::B| (|Choice::B::0| |c|))))) ; premise
+; current_alternatives: query 6
+(assert (and true (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))) (or (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= |c| |Choice::Unit|)))) ; premise
+; current_alternatives: query 7
+(assert (and true (not (= |c| (|Choice::B| (|Choice::B::0| |c|)))) (not (or (= |c| (|Choice::A| (|Choice::A::0| |c|))) (= |c| |Choice::Unit|))))) ; premise
+; default_binder: query 5
+(assert (and true (= |c| (|Choice::A| (|Choice::A::0| |c|))))) ; premise
+; default_binder: query 6
+(assert (and true (not (= |c| (|Choice::A| (|Choice::A::0| |c|)))))) ; premise

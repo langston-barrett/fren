@@ -7,6 +7,7 @@ import FrenTest.FuzzFrontends.FactScopes
 import FrenTest.FuzzFrontends.InductionCandidates
 import FrenTest.FuzzFrontends.InductionForms
 import FrenTest.FuzzFrontends.Keywords
+import FrenTest.FuzzFrontends.MatchPaths
 import FrenTest.FuzzFrontends.Mode
 import FrenTest.FuzzFrontends.Scrutinees
 import FrenTest.FuzzFrontends.SetCard
@@ -43,7 +44,8 @@ seed so that its draws leave the other modes unchanged. -/
 def unfoldingRngOf (seed : Nat) : Rng := ⟨mix seed.toUInt64 0x756e⟩
 
 def Mode.spec (m : Mode) (seed : Nat) : String :=
-  if m.genericFunctions then Id.run (FuzzGenericFunctions.spec.run' (rngOf seed))
+  if m.matchPaths then Id.run (Wide.matchPaths.run' (rngOf seed))
+  else if m.genericFunctions then Id.run (FuzzGenericFunctions.spec.run' (rngOf seed))
   else if m.setCardFallback then Id.run (Wide.genSetCardFallback.run' (rngOf seed))
   else if m.setCard then Id.run (Wide.genSetCard.run' (rngOf seed))
   else if m.enumerationObligations || m.enumerationRelations then
@@ -78,13 +80,13 @@ the next; none for `--guards`, `--sites`, `--inductions`,
 prefix of `--scrutinees`, `--fact-scopes`, `--induction-candidates`,
 `--decidable`, `--enumeration-obligations`, `--unfoldings`, `--short-inductions`,
 `--datatype-elements`, `--generic-functions`, `--generic-types`,
-`--set-card` and `--set-card-fallback` makes any static error a group
+`--set-card`, `--set-card-fallback` and `--match-paths` makes any static error a group
 error: these generators, like appended groups, promise to add none.
 `--enumeration-relations` keeps the original enumeration spec as its
 prefix, and `--confirm` its spec before the unused-argument cases, so
 their additional cases must add no static error either. -/
 def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
-  if m.genericFunctions then #[""] else
+  if m.matchPaths || m.genericFunctions then #[""] else
   if m.enumerationRelations then #[Id.run ((Wide.enumerationObligationCases false).run' (rngOf seed))] else
   if m.setCard || m.setCardFallback || m.scrutinees || m.factScopes || m.inductionCandidates || m.decidable || m.enumerationObligations || m.unfoldings || m.shortInductions || m.datatypeElements || m.genericTypes then #[""] else
   if m.confirm then
@@ -93,6 +95,9 @@ def Mode.cuts (m : Mode) (seed : Nat) : Array String :=
     | _ => #[]
   else if m.guards || m.sites || m.inductions || m.inductionForms || m.keywords || m.recursionPositions then #[] else
     (Id.run ((Wide.genWideCuts m.avoidKnown).run' (rngOf seed))).2
+
+#guard ({ matchPaths := true } : Mode).args == #["--match-paths"]
+#guard Mode.ofArgs? ["--match-paths"] == some { matchPaths := true }
 
 -- The selected generator and its static-error check use the same priority.
 #guard ({ genericFunctions := true, enumerationRelations := true } : Mode).cuts 0 == #[""]

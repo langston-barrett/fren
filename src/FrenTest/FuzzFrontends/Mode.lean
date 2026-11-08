@@ -58,6 +58,8 @@ structure Mode where
   setCardFallback : Bool := false
   /-- Singleton structural-group clients, including isolated invalid uses. -/
   recursionPositions : Bool := false
+  /-- Standalone constructor-path omission and conservative fallbacks. -/
+  matchPaths : Bool := false
   deriving BEq
 
 def Mode.args (m : Mode) : Array String :=
@@ -78,14 +80,15 @@ def Mode.args (m : Mode) : Array String :=
     (if m.genericTypes then #["--generic-types"] else #[]) ++
     (if m.setCard then #["--set-card"] else #[]) ++
     (if m.setCardFallback then #["--set-card-fallback"] else #[]) ++
-    (if m.recursionPositions then #["--recursion-positions"] else #[])
+    (if m.recursionPositions then #["--recursion-positions"] else #[]) ++
+    (if m.matchPaths then #["--match-paths"] else #[])
 
 def flags (m : Mode) : String := String.join (m.args.toList.map (" " ++ ·))
 
 /-- The mode of the flags `args`, if they are only flags of a mode. -/
 def Mode.ofArgs? (args : List String) : Option Mode :=
   if args.all (· ∈ ["--avoid-known", "--guards", "--sites", "--confirm", "--scrutinees", "--inductions", "--induction-forms",
-      "--keywords", "--fact-scopes", "--induction-candidates", "--decidable", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--short-inductions", "--datatype-elements", "--generic-functions", "--generic-types", "--set-card", "--set-card-fallback", "--recursion-positions"]) then
+      "--keywords", "--fact-scopes", "--induction-candidates", "--decidable", "--enumeration-obligations", "--enumeration-relations", "--unfoldings", "--short-inductions", "--datatype-elements", "--generic-functions", "--generic-types", "--set-card", "--set-card-fallback", "--recursion-positions", "--match-paths"]) then
     some { avoidKnown := args.contains "--avoid-known", guards := args.contains "--guards", sites := args.contains "--sites",
            confirm := args.contains "--confirm", scrutinees := args.contains "--scrutinees"
            inductions := args.contains "--inductions", inductionForms := args.contains "--induction-forms"
@@ -98,7 +101,7 @@ def Mode.ofArgs? (args : List String) : Option Mode :=
            datatypeElements := args.contains "--datatype-elements"
            genericFunctions := args.contains "--generic-functions"
            genericTypes := args.contains "--generic-types"
-           setCard := args.contains "--set-card", setCardFallback := args.contains "--set-card-fallback", recursionPositions := args.contains "--recursion-positions" }
+           setCard := args.contains "--set-card", setCardFallback := args.contains "--set-card-fallback", recursionPositions := args.contains "--recursion-positions", matchPaths := args.contains "--match-paths" }
   else none
 
 /-- The mode as Lean writes it in `knownDifferences`. -/
@@ -120,7 +123,8 @@ def Mode.lean (m : Mode) : String :=
     (if m.genericTypes then ["genericTypes := true"] else []) ++
     (if m.setCard then ["setCard := true"] else []) ++
     (if m.setCardFallback then ["setCardFallback := true"] else []) ++
-    (if m.recursionPositions then ["recursionPositions := true"] else [])
+    (if m.recursionPositions then ["recursionPositions := true"] else []) ++
+    (if m.matchPaths then ["matchPaths := true"] else [])
   if fields.isEmpty then "{}" else "{ " ++ ", ".intercalate fields ++ " }"
 
 end FrenTest.FuzzFrontends
