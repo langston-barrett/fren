@@ -409,20 +409,120 @@ def arguments : List String → testing.ProcessArguments
   | [] => .Nil
   | a :: rest => .Cons a (arguments rest)
 
+def metadata (m : Heavy.Process.Metadata) : testing.ProcessMetadata :=
+  ⟨m.kind, m.source, m.olean, m.ilean, m.c, m.bc, m.setup⟩
+
+theorem empty_metadata_eq (kind : String) :
+    metadata (Heavy.Process.emptyMetadata kind) = testing.process_empty_metadata kind := by rfl
+
+theorem set_metadata_eq (m : Heavy.Process.Metadata) (flag value : String) :
+    metadata (Heavy.Process.setMetadata m flag value) =
+      testing.process_set_metadata (metadata m) flag value := by
+  simp [metadata, Heavy.Process.setMetadata, testing.process_set_metadata]
+
+theorem finish_metadata_eq (m : Heavy.Process.Metadata) :
+    (Heavy.Process.finishMetadata m).map metadata = testing.process_finish_metadata (metadata m) := by
+  cases m with
+  | mk kind source o i c b setup =>
+    cases source <;> by_cases h : kind = "stdin" <;>
+      simp [metadata, Heavy.Process.finishMetadata, testing.process_finish_metadata, h]
+
+theorem value_flag_eq (arg : String) : testing.process_value_flag? arg = Heavy.Process.valueFlag arg := by
+  simp [testing.process_value_flag?, Heavy.Process.valueFlag]
+
+theorem query_flag_eq (arg : String) : testing.process_query_flag? arg = Heavy.Process.queryFlag arg := by
+  simp [testing.process_query_flag?, Heavy.Process.queryFlag]
+
+theorem plain_flag_eq (arg : String) : testing.process_plain_flag? arg = Heavy.Process.plainFlag arg := by
+  simp [testing.process_plain_flag?, Heavy.Process.plainFlag]
+
+theorem metadata_source (m : Heavy.Process.Metadata) : (metadata m).source = m.source := rfl
+
+set_option linter.unusedSimpArgs false in
+theorem metadata_loop_eq (args : List String) (m : Heavy.Process.Metadata) :
+    (Heavy.Process.metadataLoop args m).map metadata =
+      testing.process_metadata_loop (arguments args) (metadata m) := by
+  induction args, m using Heavy.Process.metadataLoop.induct with
+  | case1 m =>
+    simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case2 arg m hv =>
+    simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case3 arg m hv value tail ih =>
+    simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case4 arg rest m hv hq =>
+    cases rest <;> simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case5 rest m hv hq ih =>
+    cases rest <;> simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case6 m file tail hs ho hv hq hi =>
+    simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case7 m file tail hs ho hv hq hi =>
+    simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case8 rest m hn hv hq hi =>
+    cases rest <;> cases hs : m.source <;> simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case9 arg rest m hv hq hi hr hp ih =>
+    cases rest <;> simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case10 arg rest m hv hq hi hr hp ho =>
+    cases rest <;> simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case11 arg rest m hv hq hi hr hp ho value hs =>
+    cases rest <;> simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+  | case12 arg rest m hv hq hi hr hp ho hs ih =>
+    cases rest <;> simp_all [Heavy.Process.metadataLoop, arguments, testing.process_metadata_loop,
+      value_flag_eq, query_flag_eq, plain_flag_eq, Heavy.Process.valueFlag,
+      Heavy.Process.queryFlag, Heavy.Process.plainFlag, Heavy.Process.optionLike,
+      Fren.Str.startsWith, Fren.Str.lit, ← empty_metadata_eq,
+      ← set_metadata_eq, ← finish_metadata_eq, metadata_source]
+
 impl process_arguments: testing::heavy_process_arguments for (args : List String) {
   args := arguments args,
-  compiler_args := arguments (Heavy.Process.compilerArguments args),
+  parsed := (Heavy.Process.parseMetadata args).map metadata,
 } by
   intro args _
-  simp only [fren_spec]
-  induction args with
-  | nil => simp [arguments, Heavy.Process.compilerArguments, testing.process_compiler_arguments]
-  | cons a rest ih =>
-    cases rest with
-    | nil => by_cases h : a = "--run" <;>
-        simp [arguments, Heavy.Process.compilerArguments, testing.process_compiler_arguments, h]
-    | cons b tail => by_cases h : a = "--run" <;>
-        simp_all [arguments, Heavy.Process.compilerArguments, testing.process_compiler_arguments]
+  simpa [fren_spec, Heavy.Process.parseMetadata, empty_metadata_eq] using
+    metadata_loop_eq args (Heavy.Process.emptyMetadata "file")
 
 impl process_identity: testing::heavy_process_identity
     for (source toolchain inputClosure : Option String) {

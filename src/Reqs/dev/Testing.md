@@ -1521,16 +1521,34 @@ successful builds. A source hash alone is never an exact forecast key.
 parts, not a supplied verdict. Historical measurements can inform a later
 conservative predictor; this slice provides no admission or memory bound.
 
-Fingerprint reads open without blocking, inspect the opened descriptor's raw
-mode and size, and call `heavy_process_fingerprint` before reading bytes.
-Nonregular files and files over 64 MiB produce absent fingerprints, including
-FIFO sources/outputs and piped standard streams. Filesystem authenticity and
-concurrent mutation are external assumptions; there is no universal OS proof.
-`heavy_process_arguments` takes raw arguments and retains the `--run` operand
-while excluding the executed program's following arguments from metadata.
-Forwarding still uses the entire original argument list. The Linux-only
-`heavyProcess` test job builds the standalone targets and runs their actual
-subprocess controls, so the normal `lake test` path exercises this boundary.
+Fingerprint identity is acquired with Linux `O_PATH`, which does not open a
+FIFO as a reader and must not release a producer blocked in its writer open.
+The pinned descriptor supplies raw mode, size, device and inode. The actual
+`heavy_process_fingerprint` function decides mode/size eligibility before any
+read-capable open. Only eligible pinned regular files are reopened through
+`/proc/self/fd`; both descriptors must name the same device/inode. A pathname
+stat followed by a pathname read-open is insufficient. The Python setup helper
+uses the same pinned-object route for both executable candidates. This applies
+to source-before/after, setup, compiler, every selected output and recursion
+copy checks. Nonregular, oversized and incomplete reads have no fingerprint.
+The pure Req proves mode/size eligibility, not absence of open side effects,
+procfs authenticity or atomic content snapshots. Those Linux/IO assumptions
+are exercised by synchronized producer-first and pathname-replacement tests.
+
+`heavy_process_arguments` parses raw argv into selected input kind and last
+effective separated settings for `-o`, `-i`, `-c`, `-b` and `--setup`.
+Operands are consumed even when spelled like options. Stdin has no disk source
+fingerprint, including a `.lean` label; queries have no source/setup/output
+metadata. Canonical `--run file` ends compiler metadata before program data.
+Supported neutral flags and separated `-R`/`--root` operands are explicit
+below. Unknown, attached/other long forms, `--` boundaries, missing operands,
+multiple positional files and ambiguous run forms yield absent metadata.
+This is a conservative subset, not an emulation of every compiler option.
+Fields describe selected input and requested output paths, not proof that a
+failed process consumed or produced their bytes. All original argv/env/streams
+are forwarded unchanged; incomplete identity never excuses a mislabeled stdin
+fingerprint. The Linux `heavyProcess` job checks actual compiler behavior and
+retains the positive three-module Lake path.
 
 ```fren
 pub struct ProcessResult { kind: Nat, detail: Nat, shell_code: Nat }
@@ -1607,20 +1625,74 @@ pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
 
 pub enum ProcessArguments { Nil, Cons(String, ProcessArguments) }
 
-pub fn process_compiler_arguments(args: ProcessArguments): ProcessArguments := match args {
-    ProcessArguments::Nil => ProcessArguments::Nil,
-    ProcessArguments::Cons(arg, rest) =>
-        if arg = "--run" then match rest {
-            ProcessArguments::Nil => ProcessArguments::Cons(arg, ProcessArguments::Nil),
-            ProcessArguments::Cons(file, _) =>
-                ProcessArguments::Cons(arg, ProcessArguments::Cons(file, ProcessArguments::Nil)),
-        }
-        else ProcessArguments::Cons(arg, process_compiler_arguments(rest)),
+pub struct ProcessMetadata {
+    kind: String, source: Option<String>, olean: Option<String>, ilean: Option<String>,
+    c: Option<String>, bc: Option<String>, setup: Option<String>,
 }
 
-pub proc heavy_process_arguments(args: ProcessArguments): (det compiler_args: ProcessArguments) {
-    out compiler_args := process_compiler_arguments(args)
-    expect boundary: compiler_args = process_compiler_arguments(args)
+pub fn process_empty_metadata(kind: String): ProcessMetadata := ProcessMetadata {
+    kind,
+    source := Option::None,
+    olean := Option::None,
+    ilean := Option::None,
+    c := Option::None,
+    bc := Option::None,
+    setup := Option::None,
+}
+
+pub fn process_value_flag?(arg: String) :=
+    arg is "-o" | "-i" | "-c" | "-b" | "--setup" | "-R" | "--root"
+
+pub fn process_query_flag?(arg: String) :=
+    arg is "--version" | "-v" | "--short-version" | "-V" | "--githash" | "-g" | "--help" | "-h" | "--features" | "--print-prefix" | "--print-libdir"
+
+pub fn process_plain_flag?(arg: String) :=
+    arg is "--json" | "-q" | "--stats" | "-Dweak.fren.runChecks=false"
+
+pub fn process_set_metadata(m: ProcessMetadata, flag: String, value: String): ProcessMetadata :=
+    ProcessMetadata {
+        kind := if flag = "--stdin" then "stdin" else m.kind,
+        source := if flag = "input" then Option::Some(value) else m.source,
+        olean := if flag = "-o" then Option::Some(value) else m.olean,
+        ilean := if flag = "-i" then Option::Some(value) else m.ilean,
+        c := if flag = "-c" then Option::Some(value) else m.c,
+        bc := if flag = "-b" then Option::Some(value) else m.bc,
+        setup := if flag = "--setup" then Option::Some(value) else m.setup,
+    }
+
+pub fn process_finish_metadata(m: ProcessMetadata): Option<ProcessMetadata> :=
+    if m.kind = "stdin" then Option::Some({ m with source := Option::None })
+    else match m.source {
+        Option::Some(_) => Option::Some(m),
+        Option::None => Option::None,
+    }
+
+pub fn process_metadata_loop(args: ProcessArguments, m: ProcessMetadata): Option<ProcessMetadata> :=
+    match args {
+        ProcessArguments::Nil => process_finish_metadata(m),
+        ProcessArguments::Cons(arg, rest) =>
+            if process_value_flag?(arg) then match rest {
+                ProcessArguments::Nil => Option::None,
+                ProcessArguments::Cons(value, tail) =>
+                    process_metadata_loop(tail, process_set_metadata(m, arg, value)),
+            }
+            else if process_query_flag?(arg) then Option::Some(process_empty_metadata("query"))
+            else if arg = "--stdin" then process_metadata_loop(rest, process_set_metadata(m, arg, ""))
+            else if arg = "--run" then match rest, m.source {
+                ProcessArguments::Cons(file, _), Option::None =>
+                    if file.starts_with?("-") then Option::None else process_finish_metadata(process_set_metadata(m, "input", file)),
+                _, _ => Option::None,
+            }
+            else if process_plain_flag?(arg) then process_metadata_loop(rest, m)
+            else if arg.starts_with?("-") then Option::None
+            else match m.source {
+                Option::Some(_) => Option::None,
+                Option::None => process_metadata_loop(rest, process_set_metadata(m, "input", arg)),
+            },
+    }
+
+pub proc heavy_process_arguments(args: ProcessArguments): (det parsed: Option<ProcessMetadata>) {
+    out parsed := process_metadata_loop(args, process_empty_metadata("file"))
 }
 
 pub fn identity_part?(part: Option<String>) := match part {

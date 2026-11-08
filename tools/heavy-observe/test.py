@@ -20,6 +20,8 @@ import time
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from overlay import create
+from abi_check import check as check_abi
+from regressions import file_controls, metadata_controls
 
 HERE = Path(__file__).resolve().parent
 # Test-only discovery; the launcher itself always uses explicit configuration.
@@ -40,6 +42,8 @@ def main():
     env.pop("LAKE_OVERRIDE_LEAN", None)
     env.pop("LEAN", None)
     timings = []
+    abi = check_abi(HERE, REAL, work)
+    assert abi["status"] == 0, (work / "abi-check.log").read_text()
 
     def run(command, *, cwd=work, variables=None, stdin=None):
         start = time.monotonic()
@@ -158,27 +162,8 @@ def main():
         assert compare(["Special.lean", "-c", output]).returncode == 0
         assert all(r["artifacts"][0]["fingerprint"] is None for r in rows()
                    if r["args"] == ["Special.lean", "-c", output])
-    source_fifo = work / "Input.lean"
-    os.mkfifo(source_fifo)
-    def with_source_fifo(exe):
-        writer = subprocess.Popen([sys.executable, "-c",
-            "import sys; f=open(sys.argv[1], 'wb'); f.write(b'def fifoValue : Nat := 4\\n'); f.close()",
-            str(source_fifo)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        try:
-            result = run([exe, str(source_fifo)])
-            writer.communicate(timeout=2)
-            assert writer.returncode == 0
-            return result
-        finally:
-            if writer.poll() is None:
-                writer.kill(); writer.wait()
-    plain_fifo = with_source_fifo(REAL)
-    observed_fifo = with_source_fifo(shim)
-    assert plain_fifo.returncode == 0
-    assert (plain_fifo.returncode, plain_fifo.stdout, plain_fifo.stderr) == (
-        observed_fifo.returncode, observed_fifo.stdout, observed_fifo.stderr)
-    assert any(r["source"] == str(source_fifo) and r["source_before"] is None
-               and r["source_after"] is None for r in rows())
+    file_evidence = file_controls(work, REAL, shim, HERE / ".lake/build/bin/process_tests", run)
+    metadata_evidence = metadata_controls(work, compare, rows)
     output_fifo = work / "output.c"
     os.mkfifo(output_fifo)
     def with_output_fifo(exe):
@@ -202,9 +187,16 @@ def main():
     oversized = work / "oversized"
     with oversized.open("wb") as f:
         f.truncate(67108865)
-    assert compare(["--version", "-o", str(oversized)]).returncode == 0
-    assert any(r["args"] == ["--version", "-o", str(oversized)]
+    assert compare(["Bad.lean", "-o", str(oversized)]).returncode == 1
+    assert any(r["args"] == ["Bad.lean", "-o", str(oversized)]
                and r["artifacts"][0]["fingerprint"] is None for r in rows())
+
+    if "--controls-only" in sys.argv:
+        report = {"work": str(work), "abi": abi, "file_controls": file_evidence,
+                  "metadata_controls": metadata_evidence, "checks": "controls passed", "timings": timings}
+        (work / "controls-report.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(str(work / "controls-report.json"))
+        return
 
     # Exactly one scratch experiment: same 3-module graph and output paths,
     # clean local build artifacts before each side; no cache downloads/restores.
@@ -285,6 +277,7 @@ end Measure
     assert all(p.returncode == 0 for p in concurrent) and len(rows()) == before + 3
     assert not list(records.glob(".process-*"))
     report = {"work": str(work), "real_compiler": str(REAL), "compiler_version": compilers[0]["compiler_version"],
+              "abi": abi, "file_controls": file_evidence, "metadata_controls": metadata_evidence,
               "raw_status_cases": len(lines), "checks": "all passed", "compiler_records": compilers,
               "scratch_ordinary_s": next(t["seconds"] for t in timings if t["command"] == [str(lake), "-q", "build", "Measure"]),
               "scratch_observed_s": [t["seconds"] for t in timings if t["command"] == [str(lake), "-q", "build", "Measure"]][-1],

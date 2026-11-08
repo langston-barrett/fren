@@ -3,7 +3,16 @@ import Heavy.Process
 open Heavy.Process
 
 -- Exhaustive raw 16-bit wait-status transport, compared to Python's OS macros.
-def main : IO Unit := do
+@[extern "heavy_observe_read_regular"]
+opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO (Option ByteArray)
+
+-- The direct reader mode tests the same FFI implementation and eligibility
+-- function used at every runtime fingerprint call site.
+def main (args : List String) : IO Unit := do
+  if args.head? == some "--read" then
+    let bytes ← readRegular args[1]! fingerprintAllowed
+    IO.println (bytes.map (fun b => s!"some:{hash b}") |>.getD "none")
+    return
   for status in List.range 65536 do
     let r := result 0 0 0 status
     IO.println s!"{status} {r.kind} {r.detail} {r.shellCode}"
@@ -21,10 +30,13 @@ def main : IO Unit := do
     for bytes in [0, 67108864, 67108865] do
       unless fingerprintAllowed mode bytes == ((mode == 32768 || mode == 33188) && bytes ≤ 67108864) do
         throw (IO.userError "fingerprint raw mode/size")
-  unless compilerArguments ["--run", "Main.lean", "-o", "data", "Other.lean"] == ["--run", "Main.lean"] do
-    throw (IO.userError "run boundary")
-  unless compilerArguments ["-o", "out", "Main.lean"] == ["-o", "out", "Main.lean"] do
-    throw (IO.userError "ordinary arguments")
+  unless (parseMetadata ["--run", "Main.lean", "-o", "data", "Other.lean"]).map (·.source) == some (some "Main.lean") do
+    throw (IO.userError "run metadata")
+  unless (parseMetadata ["Main.lean", "-o", "old", "-o", "new"]).map (·.olean) == some (some "new") do
+    throw (IO.userError "last setting")
+  unless (parseMetadata ["--stdin", "Label.lean"]).map (·.source) == some none do
+    throw (IO.userError "stdin disk source")
+  unless parseMetadata ["--olean=out.lean"] == none do throw (IO.userError "unsupported metadata")
   for source in [none, some "", some "source"] do
     for toolchain in [none, some "", some "compiler"] do
       for closure in [none, some "", some "closure"] do

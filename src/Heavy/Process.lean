@@ -29,17 +29,73 @@ def usage (launchError execError waitError status user system rss : Nat) : Optio
   if launchError = 0 ∧ execError = 0 ∧ waitError = 0 ∧ status % 128 < 127 then
     some (user + system, rss) else none
 
-/-- Linux raw mode and size, inspected on the opened descriptor. A bounded
-regular-file read cannot consume a FIFO or allocate an unbounded buffer. -/
+/-- Linux raw mode/size from an O_PATH descriptor, before read-capable open.
+This decides eligibility, not whether acquiring identity has OS side effects. -/
 def fingerprintAllowed (mode bytes : Nat) : Bool :=
   decide (mode / 4096 % 16 = 8 ∧ bytes ≤ 67108864)
 
-/-- Metadata stops after the operand of --run; program arguments are opaque.
-The actual compiler invocation retains the entire original argument list. -/
-def compilerArguments : List String → List String
-  | [] => []
-  | arg :: rest => if arg == "--run" then arg :: rest.take 1
-      else arg :: compilerArguments rest
+/-- A conservative selected-input/requested-output description, not a claim
+that failed compilation consumed/produced bytes. `none` means unsupported. -/
+structure Metadata where
+  kind : String
+  source : Option String := none
+  olean : Option String := none
+  ilean : Option String := none
+  c : Option String := none
+  bc : Option String := none
+  setup : Option String := none
+  deriving Repr, BEq
+
+def emptyMetadata (kind : String) : Metadata := ⟨kind, none, none, none, none, none, none⟩
+
+def valueFlag (arg : String) : Bool := decide
+  (arg = "-o" ∨ arg = "-i" ∨ arg = "-c" ∨ arg = "-b" ∨ arg = "--setup" ∨
+   arg = "-R" ∨ arg = "--root")
+
+def queryFlag (arg : String) : Bool := decide
+  (arg = "--version" ∨ arg = "-v" ∨ arg = "--short-version" ∨ arg = "-V" ∨
+   arg = "--githash" ∨ arg = "-g" ∨ arg = "--help" ∨ arg = "-h" ∨
+   arg = "--features" ∨ arg = "--print-prefix" ∨ arg = "--print-libdir")
+
+def plainFlag (arg : String) : Bool := decide
+  (arg = "--json" ∨ arg = "-q" ∨ arg = "--stats" ∨
+   arg = "-Dweak.fren.runChecks=false")
+
+def optionLike (arg : String) : Bool := ['-'].isPrefixOf arg.toList
+
+def setMetadata (m : Metadata) (flag value : String) : Metadata :=
+  { kind := if flag = "--stdin" then "stdin" else m.kind
+    source := if flag = "input" then some value else m.source
+    olean := if flag = "-o" then some value else m.olean
+    ilean := if flag = "-i" then some value else m.ilean
+    c := if flag = "-c" then some value else m.c
+    bc := if flag = "-b" then some value else m.bc
+    setup := if flag = "--setup" then some value else m.setup }
+
+def finishMetadata (m : Metadata) : Option Metadata :=
+  if m.kind = "stdin" then some {m with source := none}
+  else match m.source with | some _ => some m | none => none
+
+/-- Consume operands before interpreting flags. Unsupported syntax discards
+all affected metadata instead of guessing; forwarding does not use this result. -/
+def metadataLoop : List String → Metadata → Option Metadata
+  | [], m => finishMetadata m
+  | arg :: rest, m =>
+    if valueFlag arg then match rest with
+      | [] => none
+      | value :: tail => metadataLoop tail (setMetadata m arg value)
+    else if queryFlag arg then some (emptyMetadata "query")
+    else if arg = "--stdin" then metadataLoop rest (setMetadata m arg "")
+    else if arg = "--run" then match rest, m.source with
+      | file :: _, none => if optionLike file then none else finishMetadata (setMetadata m "input" file)
+      | _, _ => none
+    else if plainFlag arg then metadataLoop rest m
+    else if optionLike arg then none
+    else match m.source with
+      | some _ => none
+      | none => metadataLoop rest (setMetadata m "input" arg)
+
+def parseMetadata (args : List String) : Option Metadata := metadataLoop args (emptyMetadata "file")
 
 def identityPart : Option String → Bool
   | some s => s != ""

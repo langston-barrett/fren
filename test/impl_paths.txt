@@ -17,7 +17,7 @@ unbound: Fren.Impls.HeavyOwnership.lease eviction
 unbound: Fren.Impls.HeavyOwnership.lease live?
 unbound: Fren.Impls.HeavyOwnership.observed_victim selected
 unbound: Fren.Impls.HeavyOwnership.observed_victim total
-unbound: Fren.Impls.HeavyOwnership.process_arguments compiler_args
+unbound: Fren.Impls.HeavyOwnership.process_arguments parsed
 unbound: Fren.Impls.HeavyOwnership.process_elapsed elapsed
 unbound: Fren.Impls.HeavyOwnership.process_fingerprint read?
 unbound: Fren.Impls.HeavyOwnership.process_identity complete?

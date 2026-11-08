@@ -53,25 +53,49 @@ Signals delivered to the child are recorded and re-raised by the observer.
 A record-write or clock failure does not replace an available child outcome.
 A setup failure returns 125; exec failure returns 127 and records its errno.
 
-`source` plus `cwd` identifies the compiler input. `module_hint` is a path
-hint, not a parsed Lake module name. Arguments, setup-file fingerprint,
-source content before/after and requested `-o/-i/-c/-b` artifact fingerprints
-are retained. Missing/ambiguous source paths stay absent. Fingerprints are
-labelled `lean-bytearray64:<bytes>:<hash>`: non-cryptographic, partial content
-observations. The executable fingerprint does not hash the toolchain's
-shared libraries. Imports, plugins, environment and arbitrary reader inputs
-are not closed over. `input_closure` is always absent and
-`identity_complete` is therefore always false in this launcher. Never feed
-these partial identities into an exact-key forecast as if they were complete.
+Schema 2 adds `input_kind` (`file`, `stdin`, `query`, or `unknown`). The shared
+Std-only parser selects one positional input and the last separated setting
+of `-o/-i/-c/-b/--setup`, consuming operands even when they look like options.
+`source` plus `cwd` identifies the selected disk input; stdin labels are never
+disk sources. Queries have no source/setup/output fields. Canonical
+`--run file` excludes subsequent program data from metadata. Selected paths
+on failed invocations do not establish that bytes were consumed or produced.
 
-Fingerprinting opens nonblocking and inspects that descriptor with `fstat`.
-The actual Lean `fingerprintAllowed` function checks raw mode/size before
-any bytes are read. Pipes, FIFOs, devices, directories, files over 64 MiB
-and incomplete reads have absent fingerprints. This bounds the observer's
-fingerprint buffer and avoids consuming a compiler's FIFO input or hanging
-on piped output such as `-c /dev/stdout`. Metadata extraction stops after
-the `--run` operand; following program arguments remain opaque and are
-still forwarded unchanged.
+The parser deliberately supports a conservative subset. Neutral `--json`,
+`-q`, `--stats`, the root build's `-Dweak.fren.runChecks=false`, and separated
+`-R/--root` operands are recognized. Other options, attached/other long
+forms, `--` boundaries, missing operands, multiple positional files and
+ambiguous run syntax produce `unknown` with no source/setup/output metadata.
+Once a query or canonical run boundary is recognized, later tokens are not
+compiler metadata. The raw argument list is always forwarded unchanged.
+Ordinary Lake's separated settings remain fully observed.
+
+`module_hint` is a path hint, not a parsed module name. Source content
+before/after, setup and selected output-path fingerprints are partial,
+non-cryptographic `lean-bytearray64:<bytes>:<hash>` values. The executable
+fingerprint does not hash shared libraries. Imports, plugins, environment
+and arbitrary reader inputs are not closed over. `input_closure` remains
+absent and `identity_complete` false. These are never exact forecast keys.
+
+Fingerprinting first pins the candidate with Linux `O_PATH`, then obtains
+raw mode/size/device/inode with `fstat`. This identity acquisition must not
+open a FIFO as a reader or release a blocked producer. The actual Lean
+`fingerprintAllowed` function checks mode/size before a read-capable open.
+Only an eligible pinned regular object is reopened through `/proc/self/fd`;
+the reopened descriptor must retain the device/inode identity. No second
+pathname lookup for reading is used. This protects against pathname
+replacement without the FIFO rendezvous caused even by `O_RDONLY|O_NONBLOCK`.
+The Python helper uses the same route for both candidates and copies the
+validated observer bytes, without reopening its pathname for the copy.
+
+Pipes, FIFOs, devices, directories, files over 64 MiB and incomplete reads
+have absent fingerprints. The buffer bound remains 64 MiB. Procfs and OS
+semantics, descriptor authenticity and concurrent content mutation remain
+external assumptions; the pure eligibility theorem is not an OS proof.
+All runtime fingerprint roles, including recursion-copy checks, use the
+same reader. Synchronized producer-first controls verify the shared reader
+and a real compiler FIFO invocation; a helper control replaces the actual
+pathname after pinning and verifies the original inode's bytes are read.
 
 Raw usage fields always accompany their error/status fields.
 `measured_cpu_us` and `measured_peak_rss_kib` are absent unless an executed,
@@ -95,7 +119,14 @@ with cache restoration disabled, including artifact SHA256, and runs bounded
 warm direct-compiler pairs. It checks discovery, streams/args/environment,
 ordinary errors/exits, a real Lean process's self-signal, missing executables,
 record failure, recursive overlays, changed/incomplete identity and concurrent
-record publication. The pure test checks every 16-bit wait status against
+record publication. The harness also compiles all four C definitions against the actual emitted
+Main.c declarations. Old extra world parameters are incompatible even when
+unused; no runtime failure or refcount bug is inferred. Metadata controls use
+the pinned compiler, including repeated settings, option-shaped operands,
+stdin/discovery, unsupported long/attached forms and run boundaries. This
+toolchain has LLVM emission disabled; `-b` setting controls use a real run
+boundary that skips emission, and make no bitcode-generation claim.
+The pure test checks every 16-bit wait status against
 Python's OS macros and the error/clock/identity boundaries. All signals target
 owned test processes. No other compiler families or admission rollout are
 included.

@@ -16,9 +16,7 @@ extern char **environ;
  * Slots: launch errno, exec errno, wait errno, clock errno, status, pid,
  * monotonic start/end ns, wait4 user/system us, wait4 maxrss KiB. */
 LEAN_EXPORT lean_obj_res heavy_observe_wait(b_lean_obj_arg exe,
-                                           b_lean_obj_arg args,
-                                           lean_obj_arg world) {
-    (void)world;
+                                           b_lean_obj_arg args) {
     uint64_t v[11] = {0};
     size_t n = lean_array_size(args);
     char **argv = calloc(n + 2, sizeof(char *));
@@ -85,8 +83,7 @@ done:
 }
 
 /* Preserve a child's signal termination after Lean has flushed its record. */
-LEAN_EXPORT lean_obj_res heavy_observe_signal(uint32_t sig, lean_obj_arg world) {
-    (void)world;
+LEAN_EXPORT lean_obj_res heavy_observe_signal(uint32_t sig) {
     struct sigaction sa = {0};
     sa.sa_handler = SIG_DFL;
     sigemptyset(&sa.sa_mask);
@@ -104,9 +101,7 @@ LEAN_EXPORT lean_obj_res heavy_observe_signal(uint32_t sig, lean_obj_arg world) 
 /* Filesystem authenticity is an external assumption, tested by integration.
  * Publish only complete records; concurrent observers never share a file. */
 LEAN_EXPORT lean_obj_res heavy_observe_write(b_lean_obj_arg dir,
-                                            b_lean_obj_arg record,
-                                            lean_obj_arg world) {
-    (void)world;
+                                            b_lean_obj_arg record) {
     const char *d = lean_string_cstr(dir);
     const char *r = lean_string_cstr(record);
     char *tmp = NULL, *final = NULL;
@@ -135,22 +130,32 @@ done:
 
 #include <sys/stat.h>
 
-/* Inspect the opened file, not a racy pathname stat followed by a blocking
- * reopen. The actual Lean policy decides from raw mode/size before any read. */
+/* O_PATH pins identity without opening a FIFO as a reader (even a nonblocking
+ * read-open can wake its producer). Only after the actual Lean eligibility
+ * callback do we open the pinned regular object via procfs, not its pathname. */
 LEAN_EXPORT lean_obj_res heavy_observe_read_regular(b_lean_obj_arg path,
-                                                   b_lean_obj_arg accept,
-                                                   lean_obj_arg world) {
-    (void)world;
-    int fd = open(lean_string_cstr(path), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-    if (fd < 0) return lean_io_result_mk_ok(lean_box(0));
+                                                   b_lean_obj_arg accept) {
+    int pinned = open(lean_string_cstr(path), O_PATH | O_CLOEXEC);
+    if (pinned < 0) return lean_io_result_mk_ok(lean_box(0));
     struct stat st;
-    if (fstat(fd, &st) < 0) { close(fd); return lean_io_result_mk_ok(lean_box(0)); }
+    if (fstat(pinned, &st) < 0) { close(pinned); return lean_io_result_mk_ok(lean_box(0)); }
     lean_inc(accept);
     lean_object *allowed = lean_apply_2(accept, lean_uint64_to_nat((uint64_t)st.st_mode),
                                         lean_uint64_to_nat((uint64_t)st.st_size));
     bool ok = lean_unbox(allowed);
     lean_dec(allowed);
-    if (!ok) { close(fd); return lean_io_result_mk_ok(lean_box(0)); }
+    if (!ok) { close(pinned); return lean_io_result_mk_ok(lean_box(0)); }
+    char procpath[64];
+    snprintf(procpath, sizeof(procpath), "/proc/self/fd/%d", pinned);
+    int fd = open(procpath, O_RDONLY | O_CLOEXEC);
+    struct stat reopened;
+    if (fd < 0 || fstat(fd, &reopened) < 0 ||
+        st.st_dev != reopened.st_dev || st.st_ino != reopened.st_ino) {
+        if (fd >= 0) close(fd);
+        close(pinned);
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    close(pinned);
     size_t size = (size_t)st.st_size, at = 0;
     lean_object *bytes = lean_alloc_sarray(1, size, size);
     while (at < size) {

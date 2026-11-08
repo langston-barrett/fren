@@ -8,26 +8,33 @@ import argparse
 import os
 import stat
 from pathlib import Path
-import shutil
 import subprocess
 
 
 def regular_bytes(path):
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
-    with os.fdopen(fd, "rb") as f:
-        info = os.fstat(f.fileno())
+    pinned = os.open(path, os.O_PATH | os.O_CLOEXEC)
+    try:
+        info = os.fstat(pinned)
         if not stat.S_ISREG(info.st_mode) or info.st_size > 67108864:
             raise ValueError("compiler and observer must be regular files at most 64 MiB")
-        data = f.read(67108865)
-        if len(data) != info.st_size:
-            raise ValueError("compiler file changed or is incomplete")
-        return data
+        fd = os.open(f"/proc/self/fd/{pinned}", os.O_RDONLY | os.O_CLOEXEC)
+        with os.fdopen(fd, "rb") as f:
+            reopened = os.fstat(f.fileno())
+            if (info.st_dev, info.st_ino) != (reopened.st_dev, reopened.st_ino):
+                raise ValueError("pinned file identity changed")
+            data = f.read(67108865)
+            if len(data) != info.st_size:
+                raise ValueError("compiler file changed or is incomplete")
+            return data
+    finally:
+        os.close(pinned)
 
 
 def create(destination, real, observer):
     destination, real, observer = map(lambda p: Path(p).absolute(), (destination, real, observer))
     real, observer = real.resolve(strict=True), observer.resolve(strict=True)
-    if regular_bytes(real) == regular_bytes(observer):
+    real_data, observer_data = regular_bytes(real), regular_bytes(observer)
+    if real_data == observer_data:
         raise ValueError("recursive overlay: real compiler is the observer")
     # Explicit path, never PATH or an overlay's discovery result at runtime.
     prefix = Path(subprocess.check_output([str(real), "--print-prefix"], text=True).strip()).resolve(strict=True)
@@ -35,7 +42,8 @@ def create(destination, real, observer):
         raise ValueError("real compiler must be the pinned installation's bin/lean")
     destination.mkdir(parents=True, exist_ok=False)
     (destination / "bin").mkdir()
-    shutil.copy2(observer, destination / "bin/lean")
+    (destination / "bin/lean").write_bytes(observer_data)
+    (destination / "bin/lean").chmod(0o755)
     (destination / "real-lean.path").write_text(str(real) + "\n")
     (destination / "records").mkdir(mode=0o700)
     # Read-only installed assets, not build outputs, packages or git metadata.

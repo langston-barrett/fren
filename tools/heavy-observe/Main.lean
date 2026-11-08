@@ -1,7 +1,7 @@
 import Heavy.Process
 
 /-! Standalone Linux Lean compiler observer. No Fren, solver or Lake imports.
-The package build links only Lean's runtime and observer.c. -/
+The standalone package uses the installed Lean core/Std and observer.c. -/
 
 open Heavy.Process System
 
@@ -48,11 +48,6 @@ def fingerprint (path : FilePath) : IO (Option String) := do
   let bytes ← readRegular path.toString fingerprintAllowed
   return bytes.map fun bytes => s!"lean-bytearray64:{bytes.size}:{hash bytes}"
 
-def after (args : List String) (flag : String) : Option String :=
-  match args with
-  | a :: b :: rest => if a == flag then some b else after (b :: rest) flag
-  | _ => none
-
 def artifact (path : String) : IO String := do
   return object [("path", quoted path), ("fingerprint", jsonOption quoted (← fingerprint path))]
 
@@ -77,12 +72,10 @@ def run (args : List String) : IO UInt32 := do
       let b ← readRegular real.toString fingerprintAllowed
       if a.isSome && a == b then throw (IO.userError "recursive overlay: real compiler is a copy of the observer")
   let cwd ← IO.currentDir
-  let compilerArgs := compilerArguments args
-  let source := match compilerArgs.filter (·.endsWith ".lean") with
-    | [s] => some s
-    | _ => none
+  let parsed := parseMetadata args
+  let source := parsed.bind (·.source)
   let sourceBefore ← source.mapM fun s => fingerprint s
-  let setup := after compilerArgs "--setup"
+  let setup := parsed.bind (·.setup)
   let setupBefore ← setup.mapM fun s => fingerprint s
   let compilerFingerprint ← fingerprint real
   let version ← try
@@ -101,13 +94,14 @@ def run (args : List String) : IO UInt32 := do
   let measured := usage (v 0) (v 1) (v 2) (v 4) (v 8) (v 9) (v 10)
   let inputClosure : Option String := none
   let complete := identityComplete (sourceBefore.bind id) compilerFingerprint inputClosure
-  let outputs := [after compilerArgs "-o", after compilerArgs "-i", after compilerArgs "-c", after compilerArgs "-b"] |>.filterMap id
+  let outputs := [parsed.bind (·.olean), parsed.bind (·.ilean), parsed.bind (·.c), parsed.bind (·.bc)] |>.filterMap id
   -- Recording failures are explicitly separate from the available child outcome.
   try
     let artifacts ← outputs.mapM artifact
     let sourceAfter ← source.mapM fun s => fingerprint s
     let record := object [
-      ("schema", "1"), ("family", quoted "lean"),
+      ("schema", "2"), ("family", quoted "lean"),
+      ("input_kind", quoted ((parsed.map (·.kind)).getD "unknown")),
       ("source", jsonOption quoted source),
       ("module_hint", jsonOption quoted (source.map fun s => (FilePath.mk s).withExtension "" |>.toString.replace "/" ".")),
       ("cwd", quoted cwd.toString), ("args", strings args),
