@@ -23,7 +23,9 @@ path in `real-lean.path`. Only installed toolchain assets are delegated via
 read-only-use symlinks. The overlay's configuration, executable, records and
 all build caches are owned locally; no `.lake/packages` or `.git` is shared.
 Never write through the delegated asset links. No shared toolchain is edited.
-Python is needed for setup/tests, not for compiler invocation.
+Observe-only overlays use Python for setup and tests, not compiler invocation.
+The budgeted entrypoint additionally uses PATH-resolved Python 3 to run the
+absolute checkout publisher for eligible compiler records.
 
 In an already prepared, dependency-local scratch package, select the overlay
 using the real Lake executable (substitute absolute paths):
@@ -108,12 +110,18 @@ peak, private memory, PSS, a reservation or a safe bound. Wall time covers
 fork through wait4, excluding fingerprinting, version probes and publishing.
 Measure caller wall time for total observer overhead.
 
-The registered Linux `heavyProcess` job builds the standalone targets and
-runs the harness as part of `lake test`. With the repository driver already
-built, run `scripts/heavy --offline lake env .lake/build/bin/fren_test
---job heavyProcess`. Other platforms report a skip, since this first
-observer is Linux-only. The manual standalone recipe
-above remains independent of Fren.
+The registered Linux `heavyProcess` jobs build the standalone targets and run
+five disjoint harness selections as part of `lake test`: `publisher`,
+`forecast`, `entrypoint`, `cohort` and `core`. With the repository driver
+already built, run a selection with `scripts/heavy --offline lake env
+.lake/build/bin/fren_test --job heavyProcess publisher` (substitute another
+selection). The manual `--job heavyProcess` runs all five in one job, and
+`--job heavyProcess controls` runs publisher, forecast, entrypoint and cohort
+plus the pre-scratch core controls. The normal `core` selection and the
+no-argument aggregate also retain the later changed-source assertions, warm
+pairs and concurrent discovery checks. Neither manual aggregate is a
+30-second registered job. Other platforms skip these Linux-only controls. The
+standalone recipe above remains independent of Fren.
 
 The registered harness also runs the bounded cohort gate fixture under isolated
 Python. It checks actual extracted source identity for a supported argv change:
@@ -126,9 +134,10 @@ with cache restoration disabled, including artifact SHA256, and runs bounded
 warm direct-compiler pairs. It checks discovery, streams/args/environment,
 ordinary errors/exits, a real Lean process's self-signal, missing executables,
 record failure, recursive overlays, changed/incomplete identity and concurrent
-record publication. The harness also compiles all six C definitions against the actual emitted
-Main.c and BudgetMain.c declarations. Old extra world parameters are incompatible even when
-unused; no runtime failure or refcount bug is inferred. Metadata controls use
+record publication. The harness also compiles all Heavy extern definitions
+against the actual emitted Main.c and BudgetMain.c declarations. Old extra world
+parameters are incompatible even when unused; no runtime failure or refcount
+bug is inferred. Metadata controls use
 the pinned compiler, including repeated settings, option-shaped operands,
 stdin/discovery, unsupported long/attached forms and run boundaries. This
 toolchain has LLVM emission disabled; `-b` setting controls use a real run
@@ -444,8 +453,10 @@ by replacing the launcher with `exec`, fails the existing parent/group check.
 
 All values are explicit development accounting inputs, not memory guarantees.
 The entrypoint passes the command after `--` as argv without shell reparsing,
-keeps the inherited environment except for `LAKE_OVERRIDE_LEAN`, `LEAN_SYSROOT`
-and `HEAVY_OBSERVE_DIR`, and replaces itself with `budget_session`. Records are
+keeps the inherited environment except for `LAKE_OVERRIDE_LEAN`, `LEAN_SYSROOT`,
+`HEAVY_OBSERVE_DIR` and `HEAVY_OBSERVE_PUBLISHER`, and replaces itself with
+`budget_session`. The last variable identifies the absolute checkout helper;
+Python 3 is resolved through PATH. Records are
 in `new-state/overlay/records`; the retained session is `new-state/session`.
 It neither chooses a cache policy nor verifies dependency checkouts. Before
 using Lake offline, verify the pinned dependency URLs and revisions and choose
@@ -526,9 +537,10 @@ plugins or the environment.
 This statistical advice does not change complete-input provenance:
 `identity_complete` remains false. Imports, environment, plugins and
 libraries remain outside the partial noncryptographic identity. The peak
-is neither concurrent physical RAM nor a guaranteed future bound. There
-is no automatic capture, history database, gate injection, headroom or
-fallback policy. Callers choose padding and provide a positive fallback.
+is neither concurrent physical RAM nor a guaranteed future bound. Raw capture
+is automatic for eligible budgeted compiler results. There is no automatic
+advice selection, gate injection, headroom or fallback policy.
+Callers choose padding and provide a positive fallback.
 
 The existing standalone integration harness runs `forecast_test.py` with
 one tiny actual observed compilation and bounded raw JSON mutations through
@@ -586,3 +598,24 @@ The signal fallback cannot carry those observations; a process record may also b
 absent if cancellation interrupts its publication. Existing records retain raw
 wait status and timing separately from the timeout cause. The polling interval is
 10 ms; scheduling and bounded shutdown add latency.
+
+Successful supported budgeted compiler observations are also optionally copied
+from the observer into `~/.cache/heavy/compiler-observations`. The private
+per-build record is still written first. The observer applies the existing
+compiler sample and cohort checks to actual fields; the publisher checks the
+raw record again. It keeps at most two newest records per cohort, 128 cohorts,
+16 MiB and seven days of same-boot monotonic history, pruning on publication.
+The spool and its files are private and updates are serialized and published
+atomically. The publisher is a separate Python process for each eligible
+compiler result; lock contention is bounded to one second. Publication
+failures emit a warning and do not change the compiler status. The observer
+waits at most three monotonic seconds before killing and reaping its owned
+publisher; cancellation also cleans up and re-raises the signal.
+Uninterruptible kernel operations and a killed observer can delay cleanup.
+The next writer recovers owned interrupted pending files under the lock.
+The implementation trusts the owning user's processes and filesystem;
+these records are not authenticated against deliberate same-user tampering.
+The partial cohort does not bind imports, environment or other reader inputs.
+
+This is storage only: ordinary builds still use their explicit request manifest
+or positive unknown fallback. No automatic selection from the spool is enabled.

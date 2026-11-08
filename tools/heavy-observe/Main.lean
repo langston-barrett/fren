@@ -15,6 +15,9 @@ opaque terminateBySignal (signal : UInt32) : IO Unit
 @[extern "heavy_observe_write"]
 opaque writeRecord (dir record : @& String) : IO UInt32
 
+@[extern "heavy_observe_publish"]
+opaque publishProcess (helper record : @& String) : IO UInt32
+
 @[extern "heavy_observe_read_regular"]
 opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO (Option ByteArray)
 
@@ -98,6 +101,12 @@ def artifact (path : String) : IO String := do
 def warn (s : String) : IO Unit := do
   try (← IO.getStderr).putStrLn s!"heavy-observe: {s}"
   catch _ => pure ()
+
+def publishOptional (publisher record : String) : IO Unit := do
+  try
+    let result ← publishProcess publisher record
+    if result != 0 then warn s!"optional publication failed (status {result})"
+  catch e => warn s!"optional publication failed: {e}"
 
 def run (args : List String) : IO UInt32 := do
   let self ← IO.FS.realPath (← IO.appPath)
@@ -258,6 +267,41 @@ def run (args : List String) : IO UInt32 := do
     IO.FS.createDirAll dir
     let err ← writeRecord dir.toString record
     if err != 0 then warn s!"record failed (errno {err}): {dir}"
+    -- Persistence is optional; neither its failure nor its status replaces
+    -- the observed compiler result. The private receipt is written first.
+    if gated && err == 0 then
+      let currentBoot := boot.getD ""
+      let now ← IO.monoNanosNow
+      let candidate : Option Unit := do
+        let source ← source
+        let before ← sourceBefore.bind id
+        let after ← sourceAfter.bind id
+        let compilerFp ← compilerFingerprint
+        let version ← version
+        let githash ← githash
+        let peak ← measured.map (fun (usage : Nat × Nat) => usage.2)
+        let setupFp ← match setup, setupBefore with
+          | none, none => some none
+          | some _, some (some f) => some (some f)
+          | _, _ => none
+        let context : Heavy.CompilerForecast.Context := {
+          source, cwd := cwd.toString, sourceFingerprint := before,
+          compiler := real.toString, compilerFingerprint := compilerFp,
+          version, githash, args, setup, setupFingerprint := setupFp }
+        let sample : Heavy.CompilerForecast.Record := {
+          context, sourceAfter := after, boot, schema := 3, family := "lean",
+          kind := (parsed.map (fun (metadata : Metadata) => metadata.kind)).getD "unknown", launchError := v 0,
+          execError := v 1, waitError := v 2, clockError := v 3, status := v 4,
+          pid := v 5, gateError := some gateError, childPresent := some childPresent,
+          wrapperCode := if v 15 == 1 || v 17 != 0 then none else
+            some (if gateError != 0 then 125 else outcome.shellCode),
+          start := v 6, finish := v 7, rss := v 10, measuredRss := peak }
+        if Heavy.CompilerForecast.eligible sample context currentBoot (now - 604800000000000) now
+          && (Heavy.CompilerForecast.cohortIdentity context currentBoot).isSome
+        then some () else none
+      if candidate.isSome then
+        if let some publisher ← IO.getEnv "HEAVY_OBSERVE_PUBLISHER" then
+          publishOptional publisher record
   catch e => warn s!"record failed: {e}"
   if gated && (v 15 == 1 || v 17 != 0) then
     if v 17 != 0 then return 125

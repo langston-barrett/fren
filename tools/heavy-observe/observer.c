@@ -287,3 +287,56 @@ LEAN_EXPORT lean_obj_res heavy_observe_read_regular(b_lean_obj_arg path,
 }
 
 #include "budget.c"
+
+/* The optional publisher has a separate, finite lifetime after compiler wait4.
+ * No pipes are retained. Cancellation kills and reaps this owned child before
+ * restoring and redelivering the signal. Uninterruptible kernel IO can still
+ * delay waitpid, and SIGKILL of the observer bypasses userspace cleanup. */
+static volatile sig_atomic_t publish_cancelled;
+static void publish_signal(int sig) { if (!publish_cancelled) publish_cancelled = sig; }
+
+LEAN_EXPORT lean_obj_res heavy_observe_publish(b_lean_obj_arg helper, b_lean_obj_arg record) {
+    const int signals[] = {SIGINT, SIGTERM, SIGHUP};
+    struct sigaction old[3], action = {0};
+    int installed = 0, status = 0, result = 1;
+    pid_t child = -1;
+    struct timespec begin, now, delay = {0, 10000000};
+    action.sa_handler = publish_signal;
+    sigemptyset(&action.sa_mask);
+    publish_cancelled = 0;
+    for (int i = 0; i < 3; i++) {
+        if (sigaction(signals[i], NULL, &old[i]) < 0) goto cleanup;
+        if (old[i].sa_handler != SIG_IGN && sigaction(signals[i], &action, NULL) < 0) goto cleanup;
+        installed++;
+    }
+    if (clock_gettime(CLOCK_MONOTONIC, &begin) < 0 || publish_cancelled) goto cleanup;
+    pid_t parent = getpid();
+    child = fork();
+    if (child < 0) goto cleanup;
+    if (child == 0) {
+        if (prctl(PR_SET_PDEATHSIG, SIGKILL) < 0 || getppid() != parent) _exit(125);
+        for (int i = 0; i < 3; i++) sigaction(signals[i], &old[i], NULL);
+        int nullfd = open("/dev/null", O_RDWR | O_CLOEXEC);
+        if (nullfd < 0 || dup2(nullfd, 0) < 0 || dup2(nullfd, 1) < 0 || dup2(nullfd, 2) < 0) _exit(125);
+        if (nullfd > 2) close(nullfd);
+        execlp("python3", "python3", lean_string_cstr(helper), lean_string_cstr(record), (char *)NULL);
+        _exit(127);
+    }
+    for (;;) {
+        pid_t w = waitpid(child, &status, WNOHANG);
+        if (w == child) { child = -1; result = WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 1; break; }
+        if (w < 0 && errno != EINTR) { if (errno == ECHILD) child = -1; break; }
+        if (publish_cancelled || clock_gettime(CLOCK_MONOTONIC, &now) < 0 ||
+            (now.tv_sec - begin.tv_sec > 3 ||
+             (now.tv_sec - begin.tv_sec == 3 && now.tv_nsec >= begin.tv_nsec))) break;
+        nanosleep(&delay, NULL);
+    }
+cleanup:
+    if (child > 0) {
+        kill(child, SIGKILL);
+        while (waitpid(child, &status, 0) < 0 && errno == EINTR) {}
+    }
+    for (int i = 0; i < installed; i++) sigaction(signals[i], &old[i], NULL);
+    if (publish_cancelled) raise(publish_cancelled);
+    return lean_io_result_mk_ok(lean_box_uint32((uint32_t)result));
+}

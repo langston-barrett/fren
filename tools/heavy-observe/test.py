@@ -31,12 +31,25 @@ OBSERVER = HERE / ".lake/build/bin/heavy_observe"
 
 
 def main():
-    subprocess.run([sys.executable, "-I", str(HERE / "forecast_test.py")], check=True)
-    subprocess.run([sys.executable, "-I", str(HERE / "entrypoint_test.py")], check=True)
+    args = sys.argv[1:]
+    parts = {"publisher", "forecast", "entrypoint", "cohort", "core"}
+    if args in ([], ["--controls-only"]):
+        selected = parts
+    elif len(args) == 2 and args[0] == "--part" and args[1] in parts:
+        selected = {args[1]}
+    else:
+        raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core}]")
+    for part, script in (("publisher", "publish_test.py"), ("forecast", "forecast_test.py"),
+                         ("entrypoint", "entrypoint_test.py")):
+        if part in selected:
+            subprocess.run([sys.executable, "-I", str(HERE / script)], check=True)
+    if not ({"cohort", "core"} & selected): return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=HERE / "test-work"))
-    subprocess.run([sys.executable, "-I", str(HERE / "cohort_gate_test.py"),
-                    str(work / "cohort-gate")], check=True)
+    if "cohort" in selected:
+        subprocess.run([sys.executable, "-I", str(HERE / "cohort_gate_test.py"),
+                        str(work / "cohort-gate")], check=True)
+    if "core" not in selected: return
     overlay = create(work / "overlay", REAL, OBSERVER)
     records = overlay / "records"
     shim = overlay / "bin/lean"
