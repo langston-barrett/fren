@@ -15,6 +15,9 @@ opaque terminateBySignal (signal : UInt32) : IO Unit
 @[extern "heavy_observe_write"]
 opaque writeRecord (dir record : @& String) : IO UInt32
 
+@[extern "heavy_observe_publish"]
+opaque publishProcess (helper record : @& String) : IO UInt32
+
 @[extern "heavy_observe_read_regular"]
 opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO (Option ByteArray)
 
@@ -101,8 +104,8 @@ def warn (s : String) : IO Unit := do
 
 def publishOptional (publisher record : String) : IO Unit := do
   try
-    let p ← IO.Process.output {cmd := "python3", args := #[publisher, record]}
-    if p.exitCode != 0 then warn s!"optional publication failed: {p.stderr}"
+    let result ← publishProcess publisher record
+    if result != 0 then warn s!"optional publication failed (status {result})"
   catch e => warn s!"optional publication failed: {e}"
 
 def run (args : List String) : IO UInt32 := do

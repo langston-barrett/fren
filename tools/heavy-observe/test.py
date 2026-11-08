@@ -31,6 +31,7 @@ OBSERVER = HERE / ".lake/build/bin/heavy_observe"
 
 
 def main():
+    subprocess.run([sys.executable, "-I", str(HERE / "publish_test.py")], check=True)
     subprocess.run([sys.executable, "-I", str(HERE / "forecast_test.py")], check=True)
     subprocess.run([sys.executable, "-I", str(HERE / "entrypoint_test.py")], check=True)
     (HERE / "test-work").mkdir(exist_ok=True)

@@ -16,6 +16,7 @@ MAX_RECORD = 65536
 FIELDS = ('source', 'cwd', 'source_before', 'real_compiler', 'compiler_fingerprint',
           'compiler_version', 'compiler_githash', 'args', 'setup', 'setup_fingerprint', 'boot_id')
 NAME = re.compile(r'^[0-9a-f]{64}\.json$')
+PENDING = re.compile(r'^\.pending-[0-9a-f]{32}$')
 
 
 def decode(raw):
@@ -115,6 +116,28 @@ def publish(raw, home):
                     if time.monotonic() >= deadline: raise TimeoutError('spool lock busy')
                     time.sleep(0.005)
             check_directory()
+            # A crash before/after link may leave our private temporary. Check
+            # its inode and (when linked) its hash-named final before unlinking.
+            for name in os.listdir(fd):
+                if not PENDING.fullmatch(name): continue
+                temporary = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=fd)
+                try:
+                    st = os.fstat(temporary)
+                    if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid() or
+                        stat.S_IMODE(st.st_mode) != 0o600 or st.st_nlink not in (1, 2) or st.st_size > MAX_RECORD):
+                        raise ValueError('invalid pending file')
+                    if st.st_nlink == 2:
+                        data = os.read(temporary, MAX_RECORD + 1)
+                        if len(data) != st.st_size: raise ValueError('changed pending file')
+                        final = hashlib.sha256(data).hexdigest() + '.json'
+                        target = os.stat(final, dir_fd=fd, follow_symlinks=False)
+                        if (target.st_dev, target.st_ino) != (st.st_dev, st.st_ino):
+                            raise ValueError('pending final mismatch')
+                    current = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                    if (current.st_dev, current.st_ino) != (st.st_dev, st.st_ino):
+                        raise ValueError('pending file replaced')
+                    os.unlink(name, dir_fd=fd)
+                finally: os.close(temporary)
             rows = []
             for name in os.listdir(fd):
                 if name == '.lock': continue

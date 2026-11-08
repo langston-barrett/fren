@@ -1953,8 +1953,11 @@ private spool. The real observer applies `heavy_compiler_sample` and the
 supported cohort identity to its raw result before publication. The optional
 publisher rechecks the record, serializes updates, and retains at most two
 records per cohort, 128 cohorts, 16 MiB and seven days of same-boot monotonic
-history on publication. A failed write reports a warning without replacing the
-physical compiler status. The private per-build record remains the receipt.
+history on publication. Under the lock, a later writer recovers owned pending
+files left by interruption. The observer bounds the optional publisher by a
+separate three-second monotonic deadline and reaps it on timeout or
+cancellation; uninterruptible kernel operations can delay cleanup. A failed
+write reports a warning without replacing the physical compiler status. The private per-build record remains the receipt.
 These filesystem and process properties are exercised at the IO boundary, not
 proved by `heavy_compiler_sample`; ownership and stable directory identities
 are OS assumptions. The spool is not yet an input to request selection.
@@ -1962,8 +1965,10 @@ are OS assumptions. The spool is not yet an input to request selection.
 The opt-in `scripts/heavy-lean-build` entrypoint prepares a new owned overlay
 using the selected real compiler and the existing helper, then replaces itself
 with the existing budget session. It passes the command after `--` as argv,
-retains the caller environment apart from the documented overlay selection and
-record directory, and requires explicit session accounting inputs. It neither
+retains the caller environment apart from the documented overlay selection,
+record directory and absolute checkout publisher helper, and requires explicit
+session accounting inputs. Eligible publication invokes Python 3 through PATH;
+observe-only overlays and pure kernels do not require that invocation. It neither
 builds missing tools nor chooses a forecast or cache policy. The standalone
 entrypoint integration test exercises real process forwarding, failure status,
 invalid inputs, missing tools and a small Lake build with source and fallback

@@ -23,7 +23,9 @@ path in `real-lean.path`. Only installed toolchain assets are delegated via
 read-only-use symlinks. The overlay's configuration, executable, records and
 all build caches are owned locally; no `.lake/packages` or `.git` is shared.
 Never write through the delegated asset links. No shared toolchain is edited.
-Python is needed for setup/tests, not for compiler invocation.
+Observe-only overlays use Python for setup and tests, not compiler invocation.
+The budgeted entrypoint additionally uses PATH-resolved Python 3 to run the
+absolute checkout publisher for eligible compiler records.
 
 In an already prepared, dependency-local scratch package, select the overlay
 using the real Lake executable (substitute absolute paths):
@@ -444,8 +446,10 @@ by replacing the launcher with `exec`, fails the existing parent/group check.
 
 All values are explicit development accounting inputs, not memory guarantees.
 The entrypoint passes the command after `--` as argv without shell reparsing,
-keeps the inherited environment except for `LAKE_OVERRIDE_LEAN`, `LEAN_SYSROOT`
-and `HEAVY_OBSERVE_DIR`, and replaces itself with `budget_session`. Records are
+keeps the inherited environment except for `LAKE_OVERRIDE_LEAN`, `LEAN_SYSROOT`,
+`HEAVY_OBSERVE_DIR` and `HEAVY_OBSERVE_PUBLISHER`, and replaces itself with
+`budget_session`. The last variable identifies the absolute checkout helper;
+Python 3 is resolved through PATH. Records are
 in `new-state/overlay/records`; the retained session is `new-state/session`.
 It neither chooses a cache policy nor verifies dependency checkouts. Before
 using Lake offline, verify the pinned dependency URLs and revisions and choose
@@ -526,9 +530,10 @@ plugins or the environment.
 This statistical advice does not change complete-input provenance:
 `identity_complete` remains false. Imports, environment, plugins and
 libraries remain outside the partial noncryptographic identity. The peak
-is neither concurrent physical RAM nor a guaranteed future bound. There
-is no automatic capture, history database, gate injection, headroom or
-fallback policy. Callers choose padding and provide a positive fallback.
+is neither concurrent physical RAM nor a guaranteed future bound. Raw capture
+is automatic for eligible budgeted compiler results. There is no automatic
+advice selection, gate injection, headroom or fallback policy.
+Callers choose padding and provide a positive fallback.
 
 The existing standalone integration harness runs `forecast_test.py` with
 one tiny actual observed compilation and bounded raw JSON mutations through
@@ -596,7 +601,12 @@ raw record again. It keeps at most two newest records per cohort, 128 cohorts,
 The spool and its files are private and updates are serialized and published
 atomically. The publisher is a separate Python process for each eligible
 compiler result; lock contention is bounded to one second. Publication
-failures emit a warning and do not change the compiler status. The implementation trusts the owning user's processes and filesystem;
+failures emit a warning and do not change the compiler status. The observer
+waits at most three monotonic seconds before killing and reaping its owned
+publisher; cancellation also cleans up and re-raises the signal.
+Uninterruptible kernel operations and a killed observer can delay cleanup.
+The next writer recovers owned interrupted pending files under the lock.
+The implementation trusts the owning user's processes and filesystem;
 these records are not authenticated against deliberate same-user tampering.
 The partial cohort does not bind imports, environment or other reader inputs.
 
