@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build Lake targets with a private Heavy compiler-budget session."""
 import os
+import shutil
 import stat
 from pathlib import Path
 import subprocess
@@ -10,8 +11,166 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def lake_build(command):
+    """Effective build configuration under the pinned Lake CLI grammar.
+
+    Mirror Util/Cli's token insertion and Main's two leading-option passes,
+    then build's collectArgs pass. Only this private token copy is rewritten.
+    Unknown grammar fails closed; forwarded caller argv is never normalized.
+    """
+    if Path(command[0]).name != 'lake':
+        return None
+    args = list(command[1:])
+    if args and args[0].startswith('+'):
+        args.pop(0)  # elan's leading toolchain selection, not a Lake option.
+    if args == ['--version']:
+        return None
+    directory, config, help_requested = '.', 'lakefile.lean', False
+    operands = {'-d', '-f', '-o', '-K', '--dir', '--file', '--packages',
+                '--service', '--scope', '--repo', '--platform', '--toolchain',
+                '--rev', '--max-revs', '--linters', '--lint-only', '--only',
+                '--log-level', '--fail-level'}
+    flags = {'-q', '-v', '-U', '-R', '-h', '-H', '-J', '--help',
+             '--quiet', '--verbose', '--update', '--keep-toolchain',
+             '--reconfigure', '--old', '--text', '--json', '--allow-empty',
+             '--no-build', '--no-cache', '--try-cache', '--rehash', '--offline',
+             '--wfail', '--iofail', '--no-overwrite', '--force-overwrite',
+             '--force-download', '--download-arts', '--mappings-only',
+             '--ansi', '--no-ansi', '--builtin-lint', '--builtin-only',
+             '--record-exceptions', '--force', '--keep-implied', '--keep-prefix',
+             '--keep-public', '--add-public', '--gh-style', '--explain',
+             '--trace', '--fix'}
+
+    def option(token):
+        nonlocal directory, config, help_requested
+        if token.startswith('--'):
+            # Lake applies the equals split before the space split, even when
+            # both occur within the same literal argument.
+            if '=' in token:
+                token, value = token.split('=', 1)
+                args.insert(0, value)
+            if ' ' in token:
+                token, value = token.split(' ', 1)
+                args.insert(0, value)
+        elif len(token) > 2:
+            value = token[3:] if token[2] == '=' else token[2:]
+            if token[2] == ' ':
+                value = value.lstrip(' \t\n\r\v\f')
+            args.insert(0, value)
+            token = token[:2]
+        if token == '--':
+            args.clear()  # Lake stores the remainder as subArgs, not targets.
+        elif token in operands:
+            if not args:
+                raise ValueError(f'missing Lake option operand: {token}')
+            value = args.pop(0)
+            if token in ('-d', '--dir'):
+                directory = value
+            elif token in ('-f', '--file'):
+                config = value
+        elif token in flags:
+            help_requested |= token in ('-h', '--help')
+        else:
+            raise ValueError(f'unsupported Lake option for controlled routing: {token}')
+
+    def leading():
+        while args:
+            if args[0] == '':
+                args.pop(0)
+            elif len(args[0]) > 1 and args[0].startswith('-'):
+                option(args.pop(0))
+            else:
+                break
+
+    leading()
+    if not args:
+        return None
+    verb = args.pop(0)
+    if verb != 'build':
+        return None
+    leading()
+    if help_requested:
+        return None
+    while args:
+        arg = args.pop(0)
+        if len(arg) > 1 and arg.startswith('-'):
+            option(arg)
+    return Path(directory).absolute().resolve(), config
+
+
+def heavy_command(command, cap):
+    """Adapter called after Heavy admission, before its offline wrapper."""
+    selected = lake_build(command)
+    if selected is None:
+        return command
+    directory, config = selected
+    tools = (ROOT / 'tools/heavy-observe').resolve()
+    if directory == tools and (directory / config).resolve() == tools / 'lakefile.lean':
+        return command
+    return [str(ROOT / 'scripts/fren-build'), '--heavy-lake', str(cap), *command]
+
+
+def outer_allowance(cap):
+    """Bound configuration by Heavy and visible cgroup-v2 ancestor limits.
+
+    This does not measure free RAM or guarantee a per-build physical limit.
+    An unreadable advertised hierarchy fails setup rather than guessing.
+    """
+    for line in Path('/proc/self/cgroup').read_text().splitlines():
+        if line.startswith('0::'):
+            relative = Path(line[3:]).relative_to('/')
+            if '..' in relative.parts:
+                raise ValueError('unresolved cgroup path')
+            root = Path('/sys/fs/cgroup')
+            current = root / relative
+            if not current.is_dir():
+                raise ValueError('cgroup-v2 directory is not visible')
+            while True:
+                limit = current / 'memory.max'
+                if limit.exists():
+                    value = limit.read_text().strip()
+                    if value != 'max':
+                        cap = min(cap, int(value) // 1024)
+                if current == root:
+                    break
+                current = current.parent
+            break
+    # Leave space for the outer Python monitor; headroom inside the allowance
+    # separately covers Lake, the controller and discovery probes.
+    return min(1300000, cap - 100000)
+
+
+def selected_lake(command, env):
+    """Resolve the executable the caller requested, including elan selection."""
+    selected = Path(shutil.which(command[0]) or command[0]).resolve(strict=True)
+    elan = shutil.which('elan')
+    args = list(command[1:])
+    if elan and os.path.samefile(selected, elan):
+        if args and args[0].startswith('+'):
+            env['ELAN_TOOLCHAIN'] = args.pop(0)[1:]
+        cwd = Path.cwd()
+        pin_file = next((p / 'lean-toolchain' for p in (cwd, *cwd.parents)
+                         if (p / 'lean-toolchain').is_file()), None)
+        pin = env.get('ELAN_TOOLCHAIN') or (pin_file.read_text().strip() if pin_file else None)
+        installed = subprocess.check_output([elan, 'toolchain', 'list'], text=True).splitlines()
+        names = [line.split()[0] for line in installed if line.split()]
+        # Accept the default origin's short installed version spelling too.
+        # Never resolve an unknown channel: even `elan run` without --install
+        # may contact the release service before checking availability.
+        if pin is not None and not any(pin in (name, name.removeprefix('leanprover/lean4:'))
+                                       for name in names):
+            raise ValueError(f'pinned toolchain {pin!r} is not installed')
+        selected = Path(subprocess.check_output([elan, 'which', 'lake'], env=env,
+                                               text=True).strip()).resolve(strict=True)
+    real = selected.parent / 'lean'
+    if not real.is_file() or not os.access(real, os.X_OK):
+        raise ValueError(f'missing compiler beside selected Lake: {real}')
+    return real, [str(selected), *args]
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+    ordinary = sys.argv[1:2] == ['--heavy-lake']
+    if not ordinary and (len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help')):
         print('Usage: scripts/fren-build LAKE_BUILD_ARGUMENT...', file=sys.stderr)
         return 0 if len(sys.argv) > 1 else 2
     tools = ROOT / 'tools/heavy-observe/.lake/build/bin'
@@ -20,21 +179,35 @@ def main():
               'scripts/heavy lake -d tools/heavy-observe build heavy_observe budget_session --wfail', file=sys.stderr)
         return 125
     try:
-        cwd = Path.cwd()
-        pin_file = next((p / 'lean-toolchain' for p in (cwd, *cwd.parents)
-                         if (p / 'lean-toolchain').is_file()), None)
-        if pin_file is None:
-            raise ValueError('no lean-toolchain found in caller directory or its parents')
-        pin = pin_file.read_text().strip()
-        installed = subprocess.check_output(['elan', 'toolchain', 'list'], text=True).splitlines()
-        if not pin or not any(line.split()[0] == pin for line in installed if line.split()):
-            raise ValueError(f'pinned toolchain {pin!r} is not installed')
         env = os.environ.copy()
-        env['ELAN_TOOLCHAIN'] = pin
-        real = Path(subprocess.check_output(['elan', 'which', 'lean'], env=env, text=True).strip()).resolve(strict=True)
-        lake = real.parent / 'lake'
-        if not lake.is_file() or not os.access(lake, os.X_OK):
-            raise ValueError(f'missing Lake beside pinned compiler: {lake}')
+        if 'HEAVY_BUDGET_DIR' in env:
+            raise ValueError('already budgeted: invoke Lake directly inside the existing session')
+        if ordinary:
+            if 'LEAN_SYSROOT' in env or 'LAKE_OVERRIDE_LEAN' in env:
+                raise ValueError('existing Lean override: use the explicit heavy-lean-build entrypoint')
+            cap = int(sys.argv[2])
+            allowance = outer_allowance(cap)
+            real, command = selected_lake(sys.argv[3:], env)
+        else:
+            cwd = Path.cwd()
+            pin_file = next((p / 'lean-toolchain' for p in (cwd, *cwd.parents)
+                             if (p / 'lean-toolchain').is_file()), None)
+            if pin_file is None:
+                raise ValueError('no lean-toolchain found in caller directory or its parents')
+            pin = pin_file.read_text().strip()
+            installed = subprocess.check_output(['elan', 'toolchain', 'list'], text=True).splitlines()
+            if not pin or not any(line.split()[0] == pin for line in installed if line.split()):
+                raise ValueError(f'pinned toolchain {pin!r} is not installed')
+            env['ELAN_TOOLCHAIN'] = pin
+            real = Path(subprocess.check_output(['elan', 'which', 'lean'], env=env, text=True).strip()).resolve(strict=True)
+            lake = real.parent / 'lake'
+            if not lake.is_file() or not os.access(lake, os.X_OK):
+                raise ValueError(f'missing Lake beside pinned compiler: {lake}')
+            command = [str(lake), 'build', *sys.argv[1:]]
+            allowance = 1300000
+        requested = int(env.get('FREN_BUILD_ALLOWANCE_KIB', str(allowance)))
+        if ordinary and (requested <= 0 or requested > allowance):
+            raise ValueError(f'allowance must be positive and at most {allowance} KiB')
         configured = env.get('FREN_BUILD_REQUESTS_FILE')
         if configured is not None:
             requests = Path(configured)
@@ -57,11 +230,11 @@ def main():
         print(f'fren-build: retained private state: {work}', file=sys.stderr, flush=True)
         entry = ROOT / 'scripts/heavy-lean-build'
         os.execve(str(entry), [str(entry), '--state', str(work / 'state'), '--real-lean', str(real),
-                  '--allowance-kib', env.get('FREN_BUILD_ALLOWANCE_KIB', '1300000'),
+                  '--allowance-kib', str(requested),
                   '--headroom-kib', env.get('FREN_BUILD_HEADROOM_KIB', '100000'),
                   '--fallback-kib', env.get('FREN_BUILD_FALLBACK_KIB', '600000'),
                   '--timeout-ms', env.get('FREN_BUILD_TIMEOUT_MS', '30000'),
-                  '--requests', str(requests), '--', str(lake), 'build', *sys.argv[1:]], env)
+                  '--requests', str(requests), '--', *command], env)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(f'fren-build: {error}', file=sys.stderr)
         return 125

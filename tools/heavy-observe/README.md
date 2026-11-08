@@ -1,6 +1,6 @@
 # Lean compiler observations for Heavy
 
-This opt-in Linux launcher records a real Lean compiler subprocess. With no
+This Linux launcher records a real Lean compiler subprocess. With no
 budget configuration it preserves the original observe-only behavior. It is a standalone package using Lean core/Std and
 `observer.c`; it imports the actual `src/Heavy/Process.lean` pure functions.
 It has no Fren, solver or third-party package dependency. Invocation never
@@ -39,7 +39,8 @@ not intercept module compilation. Discovery queries are forwarded to the
 real compiler, including its real `--print-prefix`. `leanir`, C compilation
 and linking are delegated, not measured by this slice. Do not use this
 experimental overlay as an installed toolchain. The optional development
-controller below admits compiler children within one build.
+controller below admits compiler children within one build. Ordinary direct
+`scripts/heavy lake build ...` commands use that controller.
 
 Each invocation inherits cwd, environment, arguments and standard streams.
 It records the explicit compiler's version and git hash before launching,
@@ -321,19 +322,76 @@ For an ordinary build, first build the standalone tools from this checkout:
 scripts/heavy lake -d tools/heavy-observe build heavy_observe budget_session --wfail
 ```
 
-Then, from the package to build, under the existing fd job and Heavy envelope:
+Then use the normal command from the package to build, under the existing fd
+job envelope:
 
 ```sh
-scripts/heavy scripts/fren-build FrenSexpTests fren2_test
+scripts/heavy lake build FrenSexpTests fren2_test
 ```
 
-Use the path to this checkout's `scripts/fren-build` when building another
-worktree; its prebuilt tools must match its reviewed source. The command uses
-the caller's nearest `lean-toolchain` pin and requires it to be installed in
-elan; it invokes the Lake beside that compiler in the caller's directory. It
-passes each argument literally after `lake build`. It neither builds missing
-tools nor installs a toolchain. Lake may access or reconcile dependencies; use
-`--offline` on the outer Heavy command only with a prepared local package.
+Heavy admits the job once, then reuses `scripts/fren-build` and
+`scripts/heavy-lean-build` to prepare the existing controller. The direct Lake
+command may use an absolute executable and global options such as `-d` and
+`--no-cache`; its arguments, streams and caller directory are retained. A native
+Lake uses its sibling compiler. An elan shim resolves the caller's selection,
+including `ELAN_TOOLCHAIN` and a leading `+toolchain`, before overlay setup.
+Missing tools or required setup fail with 125 rather than running an ungated
+build. No toolchain is installed by setup. Prebuilt tools must match this
+checkout's reviewed source; use this checkout's Heavy path when building another
+worktree. Lake may access or reconcile dependencies; use `--offline` only with a
+prepared local package.
+
+Only direct commands whose executable is named `lake` and whose verb is `build`
+are dispatched. Shell scripts, `env lake ...`, `lake test`, `lake exe` and other
+commands retain their existing outer Heavy behavior. Building the standalone
+`tools/heavy-observe` package via `lake -d ... build ...` bypasses the inner
+controller so its own tools can bootstrap. Routing follows the pinned Lake
+parser, including options after `build`, repeated/attached/space forms, empty
+arguments and `--` subArgs semantics. Only the effective tools directory with
+its actual `lakefile.lean` is exempt; selecting an alternate configuration or
+redirecting back to an ordinary package requires the controller. Unknown option
+grammar fails closed. Forwarded argv remains literal. Bootstrap retains outer
+Heavy admission.
+Existing `HEAVY_BUDGET_DIR`, `LEAN_SYSROOT` or `LAKE_OVERRIDE_LEAN` settings reject
+a new ordinary session; invoke Lake directly inside an existing budget session,
+or use the explicit entrypoint for a deliberately selected overlay. No second
+budget session is created.
+
+For controlled builds, Heavy samples and publishes RSS for the whole process
+session it created, including the controller's separate Lake group. It
+requires a Linux subreaper, native procfs PID visibility and pidfd support
+before launch. The initial child remains unreaped as the session anchor while
+Heavy discovers members. Each signal uses a pidfd acquired between matching
+process-identity reads, so no numeric SID, registry PID or other job's group
+is signalled. Heavy reaps only identified direct/adopted members. After
+reaping the anchor it discovers only kernel-parented adopted children; final
+completion requires kernel ECHILD, so a sampled empty census cannot hide a
+missed fork/adoption. The dedicated monitor assumes no unrelated child
+creation or reaper. It retains the slot and memory publication during cleanup.
+It covers ordinary Lake helpers as well as gated observers, including when the
+controller is stopped or unavailable. Parent-death signals alone do not
+protect arbitrary Lake helper children.
+
+Cancellation, identification/status/accounting failures, local/shared over-cap
+and a leader exiting with remaining members use this same cleanup path. It
+allows five seconds after TERM and two after KILL. Physical leader status,
+cleanup result/errors and elapsed time are recorded separately. Heavy retains
+`command_raw_wait_status`, signed `command_returncode`, and the raw waitid
+observation independently of its own shell exit status; a failed final wait
+returns 125 with the remaining known identities instead of waiting without a
+bound. Procfs membership visibility, pidfd/syscall authenticity, adoption and
+absence of unrelated concurrent reapers are IO assumptions, not pure ownership
+proofs. Session/namespace escape, hostile same-user mutation and
+uninterruptible kernel work remain outside the controlled boundary. Abrupt
+outer-monitor death can leave ordinary helpers alive; there is no durable
+supervisor or takeover. Non-build commands retain their existing process-group
+termination and accounting. Machine-wide admission and the sampled memory
+backstop remain active; reservations are additional accounting.
+
+`scripts/fren-build TARGET...` remains available for explicit use under Heavy.
+That short command retains its nearest caller `lean-toolchain` pin selection and
+passes each argument literally after `lake build`. Neither entrypoint builds
+missing tools automatically.
 
 Each invocation prints and retains a new private temporary directory containing
 the overlay, session and records under `state`. Remove it when no longer
@@ -344,9 +402,16 @@ gate and selection rules described above; invalid paths fail before compilation.
 The precheck opens nonblocking and checks the opened file; the controller reads
 the path again, so the name is not a stable file identity. Keep the file
 available for the invocation. Requests are explicit operator
-configuration; historical adviser output is not automatically adopted. Defaults are
-1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
-30,000 ms wait; override them with `FREN_BUILD_ALLOWANCE_KIB`,
+configuration; historical adviser output is not automatically adopted. Defaults
+are 1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
+30,000 ms wait. For ordinary Heavy dispatch the allowance is at most the smaller
+of Heavy's launch-time memory cap and visible cgroup-v2 ancestor `memory.max`
+limits, minus 100,000 KiB for the outer monitor, and never above 1,300,000 KiB.
+An unreadable advertised hierarchy fails setup. This is a configuration ceiling,
+not a free-memory measurement, independent per-build cgroup reservation or RAM
+bound. An explicit allowance above that ceiling fails; small caps may also make
+the configured headroom or fallback impossible and fail. Configure values with
+`FREN_BUILD_ALLOWANCE_KIB`,
 `FREN_BUILD_HEADROOM_KIB`, `FREN_BUILD_FALLBACK_KIB` and
 `FREN_BUILD_TIMEOUT_MS`. Reservations are estimates, not memory bounds; the
 outer fd/Heavy cap and its backstop remain required. The session reports the
@@ -382,11 +447,18 @@ It neither chooses a cache policy nor verifies dependency checkouts. Before
 using Lake offline, verify the pinned dependency URLs and revisions and choose
 an appropriate owned cache if needed; an offline Lake invocation can still
 reconcile local package directories. A cached target may perform no compilation.
-No default admission, forecast, installation or machine-wide configuration is
-changed. If tools are missing, build the standalone targets using the documented
-recipe first; the caller must ensure those prebuilt binaries match this source.
+No machine-wide admission, forecast, installation or cap configuration is
+changed. This integration does not add per-module CPU/wall limits, test budgets,
+automatic request prediction or a total-throughput claim. Python caller/IO
+selection and cgroup discovery are finite integration checks, outside the pure
+Lean requirements and their existing implementation bindings. If tools are
+missing, build the standalone targets using the documented recipe first; the caller must ensure those prebuilt binaries match this source.
 The focused standalone test is `python3 -I tools/heavy-observe/entrypoint_test.py`
-through `scripts/heavy --offline`; it is also included in `test.py`.
+through `scripts/heavy --offline`; it is also included in `test.py`. The ordinary
+dispatch controls are separate: `scripts/heavy --offline python3 -I
+scripts/heavy_build_test.py --output /absolute/new/owned/directory`. They use the
+real controller with bounded physical child/status, cancellation and memory
+backstop controls; they do not compile the whole project.
 
 ## Compiler forecast adviser
 

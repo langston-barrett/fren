@@ -1167,7 +1167,8 @@ a file takes effect without a restart:
   else 2.
 - **Memory:** `HEAVY_MEM_GB` gigabytes, else the number in
   `~/.cache/heavy/mem_gb`, else 80% of the machine's physical memory,
-  summed over each job's process group. A job waits to start while the
+  summed over each job's process group (the owned process session for the
+  controlled build entrypoints below). A job waits to start while the
   running ones use more than 60% of the cap; when they use more than
   the cap, heavy kills the newest compatible owner and exits with 137.
 - **Load (off by default):** `HEAVY_MAX_LOAD`, else the number in
@@ -1182,8 +1183,9 @@ with a warning.
 
 Slot locks, not numeric PIDs, determine whether jobs are live. Each owner
 has a unique `job_id` and a sequence number allocated under `registry.lock`.
-It atomically publishes its own process-group RSS about every second in
-`.slotN.json` while holding `slotN`; admission sums these reports across
+It atomically publishes its own process-group or controlled-session RSS
+about every second in `.slotN.json` while holding `slotN`; admission sums these
+reports across
 namespaces. Acquisition and release also hold the registry lock, so a new
 compatible holder cannot inherit the previous holder's report. Slot files themselves
 are never replaced or removed while in use. A report without a held lock
@@ -1340,8 +1342,10 @@ it has no admission and produces no job record.
 Each job also records `cpu_user_seconds` and `cpu_system_seconds`, from
 `wait4`'s usage of the command and its descendants, summed once, and
 `cpu_seconds`, their sum. This measures the job's own work, excluding
-heavy's monitor and other jobs. On Linux, heavy becomes a child subreaper
-while the command runs: it adopts and reaps orphaned workers in the
+heavy's monitor and other jobs. The following process-group details apply
+outside the controlled build entrypoints described below. On Linux, heavy
+becomes a child subreaper while the command runs: it adopts and reaps
+orphaned workers in the
 command's process group too, even after the command exits or is killed.
 It holds the slot until the original process group disappears, retaining
 the command's exit status. A background daemon remaining in that group
@@ -1886,6 +1890,50 @@ entrypoint integration test exercises real process forwarding, failure status,
 invalid inputs, missing tools and a small Lake build with source and fallback
 requests. These IO controls do not prove filesystem, process or toolchain
 identity assumptions, and do not establish a memory bound.
+
+Ordinary direct `scripts/heavy lake build ...` dispatch uses the caller's
+selected Lake and the existing overlay/session entrypoint. Its Python adapter
+follows the pinned Lake CLI's leading-option and build-wide option passes,
+including empty arguments, attached or space-containing options, last
+directory and configuration selection, and `--` subArgs consumption. Only the
+actual standalone tools directory and its default configuration bypass inner
+budgeting. An alternate configuration or a later option redirecting to another
+package must retain budgeting. Unknown routing grammar fails setup; literal
+forwarded arguments remain unchanged. These are caller IO checks against the
+pinned Lake, not a theorem supplied with precomputed build/bootstrap verdicts.
+
+For these controlled builds, the Python outer monitor requires native Linux
+procfs, pidfds and a working child subreaper before launch. It retains its own
+initial child unreaped as the session identity anchor while discovering
+members. Pidfds are acquired between matching raw PID/start/session reads;
+signals target those handles, never ledger PIDs or numeric sessions. This
+covers ordinary Lake helpers in separate groups, which do not inherit a
+guaranteed parent-death chain. Cancellation, identification/status/accounting
+failure, local/shared over-cap, and remaining members after leader exit use
+the same cleanup path. Shared memory publication and admission remain held
+during the five-second TERM and two-second KILL waits. Direct/adopted
+identified children are reaped without a blocking final wait. After anchor
+reaping, discovery uses only kernel-parented adopted children, not an
+unanchored numeric session. Completion requires kernel ECHILD after a non-
+consuming wait observation, so an empty procfs census alone cannot establish
+completion. The dedicated monitor assumes no unrelated child creation or
+reaper. An incomplete cleanup returns 125 and records known remaining
+identities, errors and elapsed time separately from the observed physical
+leader status.
+
+The existing single-group and C controller lifecycle requirements do not prove
+this Python process-family IO. Native procfs visibility, process
+birth/adoption, pidfd identity and delivery, supported signal dispositions,
+absence of concurrent unrelated reapers and Linux syscall authenticity remain
+external assumptions. Session/namespace escape, hostile mutation and
+uninterruptible kernel tasks are outside this boundary. Abrupt death of the
+outer monitor can leave ordinary helpers alive; there is no durable supervisor
+or takeover. Actual stopped-controller/ordinary-helper controls, unrelated-job
+survival and injected cleanup-caller failures exercise it; a zero probe-
+wrapper exit is not itself product success. Harness readiness/timeout failures
+must retain partial streams, physical status or explicit unknown, and bounded
+handle-verified cleanup evidence before raising. No new pure kernel verdict is
+substituted for these OS observations.
 
 The opt-in compiler budget applies within one owned build session. All
 quantities below are KiB reservations, not observed RSS. Parent headroom

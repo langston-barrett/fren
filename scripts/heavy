@@ -27,6 +27,9 @@ greatest admission sequence terminates its own group (TERM, then KILL) and
 exits with 137; estimates never trigger eviction. Every owner also enforces
 its own cap. Registry waits have a short deadline: on timeout admission
 waits and monitors enforce their own cap until shared accounting resumes.
+Controlled build entrypoints instead include every group in their owned Linux
+process session and use anchored pidfd cleanup; they require a subreaper and
+native procfs visibility. Other commands retain the process-group path.
 Failure to identify, measure or publish memory otherwise stops the command
 with exit 125. Linux requires `NSpid` in
 procfs status; systems without it fail identification with exit 125.
@@ -77,6 +80,8 @@ scratch state and tiny jobs.
 import contextlib
 import ctypes
 import heapq
+import importlib.machinery
+import importlib.util
 import fcntl
 import json
 import math
@@ -261,13 +266,13 @@ def process_stat(text):
     """Identity, group and self CPU ticks; comm may contain spaces or ')'."""
     left, right = text.index("("), text.rindex(")")
     fields = text[right + 1:].split()  # Begins at field 3 (state).
-    pid, ppid, pgrp, user, system, start, rss = (int(v) for v in
-                                              (text[:left], fields[1], fields[2], fields[11],
+    pid, ppid, pgrp, session, user, system, start, rss = (int(v) for v in
+                                              (text[:left], fields[1], fields[2], fields[3], fields[11],
                                                fields[12], fields[19], fields[21]))
-    if pid <= 0 or min(ppid, pgrp, user, system, start, rss) < 0:
+    if pid <= 0 or min(ppid, pgrp, session, user, system, start, rss) < 0:
         raise ValueError("invalid process counters")
     return {"pid": pid, "ppid": ppid, "comm": text[left + 1:right], "state": fields[0],
-            "pgrp": pgrp, "ticks": user + system, "start": start, "rss_pages": rss}
+            "pgrp": pgrp, "session": session, "ticks": user + system, "start": start, "rss_pages": rss}
 
 
 def cpu_ticks(path="/proc/stat"):
@@ -405,7 +410,7 @@ def process_switches(text):
     return None
 
 
-def group_processes(pgid, proc="/proc", live=None):
+def group_processes(pgid, proc="/proc", live=None, session=False):
     """Linux process-group snapshots, or None when procfs is unavailable.
     Read self utime/stime only: child times would count workers twice."""
     try:
@@ -413,6 +418,7 @@ def group_processes(pgid, proc="/proc", live=None):
     except OSError:
         return None
     found = []
+    scope = "session" if session else "pgrp"
     for entry in entries:
         if not entry.isdigit():
             continue
@@ -424,7 +430,7 @@ def group_processes(pgid, proc="/proc", live=None):
                 continue
             if live is not None:
                 live.add((row["pid"], row["start"]))
-            if row["pgrp"] != pgid:
+            if row[scope] != pgid:
                 continue
             try:
                 row["name"] = os.path.basename(os.readlink(os.path.join(path, "exe")))
@@ -438,7 +444,7 @@ def group_processes(pgid, proc="/proc", live=None):
                 row["switches"] = None
             with open(os.path.join(path, "stat")) as f:
                 check = process_stat(f.read())
-            if (check["pid"], check["start"], check["pgrp"]) == (row["pid"], row["start"], pgid):
+            if (check["pid"], check["start"], check[scope]) == (row["pid"], row["start"], pgid):
                 found.append(row)
         except (OSError, ValueError, IndexError):
             continue  # Processes can disappear or become unreadable during a scan.
@@ -878,7 +884,7 @@ def offline_command(command, system=None, check=None):
     raise RuntimeError(f"heavy: --offline is not supported on {system}")
 
 
-def group_rss_kb(proc="/proc", system=None):
+def group_rss_kb(proc="/proc", system=None, session=False):
     """Resident memory of groups visible through this caller's procfs/ps view.
     These IDs must never be looked up on another namespace's behalf."""
     if (system or platform.system()) == "Linux":
@@ -891,7 +897,8 @@ def group_rss_kb(proc="/proc", system=None):
                 with open(os.path.join(proc, pid, "stat")) as f:
                     row = process_stat(f.read())
                 kb = row["rss_pages"] * page_size // 1024
-                rss[row["pgrp"]] = rss.get(row["pgrp"], 0) + kb
+                key = row["session" if session else "pgrp"]
+                rss[key] = rss.get(key, 0) + kb
             except (OSError, ValueError, IndexError):
                 continue
         return rss
@@ -1340,6 +1347,20 @@ def child_subreaper():
             prctl(36, previous.value, 0, 0, 0)
 
 
+def record_child_usage(record, usage):
+    kb = usage.ru_maxrss / 1024 if platform.system() == "Darwin" else usage.ru_maxrss
+    # A handler can reap between wait4 and this fold. Mask only the
+    # bounded update, never a wait4 that might block during cleanup.
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
+    try:
+        before = record.get("_cpu_usage", (0, 0, 0, 0))
+        record["_cpu_usage"] = (before[0] + usage.ru_utime, before[1] + usage.ru_stime,
+                                 max(before[2], int(kb)), before[3] + usage.ru_nivcsw)
+        record["peak_rss_kb"] = max(record.get("peak_rss_kb", 0), int(kb))
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
 def reap_child(child, record, flags=os.WNOHANG):
     """Keep the kernel RSS high-water mark too, including for subsecond jobs.
     The sampled process-group sum also accounts for parallel workers."""
@@ -1355,18 +1376,185 @@ def reap_child(child, record, flags=os.WNOHANG):
             return False
         if pid == child.pid:
             child.returncode = os.waitstatus_to_exitcode(status)
-        kb = usage.ru_maxrss / 1024 if platform.system() == "Darwin" else usage.ru_maxrss
-        # A handler can reap between wait4 and this fold. Mask only the
-        # bounded update, never a wait4 that might block during cleanup.
+        record_child_usage(record, usage)
+    return True
+
+
+class ControlledSession:
+    """Linux IO boundary for the session created by our own unreaped child.
+
+    Session-wide discovery stops before reaping that anchor. Signals use only pidfds opened
+    between matching procfs identity reads. No ledger PID or numeric SID is
+    signalled. A dedicated subreaper, native procfs and no concurrent reaper are
+    required; session/namespace escape and hostile mutation are outside scope.
+    """
+    def __init__(self, child, record):
+        self.child, self.record = child, record
+        self.handles = {}
+        self.finished = False
+        self.cleanup_failed = False
+        self.exited = False
+
+    @staticmethod
+    def preflight(subreaper):
+        if not subreaper or not hasattr(signal, "pidfd_send_signal") or not hasattr(os, "pidfd_open"):
+            raise OSError("controlled builds require a Linux subreaper and pidfds")
+        with open("/proc/self/stat") as f:
+            if process_stat(f.read())["pid"] != os.getpid():
+                raise OSError("controlled builds require native procfs PID visibility")
+        if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
+            raise OSError("controlled builds require the default SIGCHLD disposition")
+        fd = os.pidfd_open(os.getpid())
+        os.close(fd)
+
+    def observe(self):
+        # Keep the initial session ID anchored until the first apparently empty
+        # census. After reaping it, use only kernel-parented adopted children;
+        # never discover another process through a now-unanchored numeric SID.
+        if self.child.returncode is None:
+            event = os.waitid(os.P_PID, self.child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            if event is not None and event.si_pid != self.child.pid:
+                raise OSError("lost controlled session anchor")
+            self.exited = event is not None
+            if event is not None:
+                self.record["command_wait_observation"] = {"pid": event.si_pid, "code": event.si_code, "status": event.si_status}
+                self.record["command_observed_status"] = (event.si_status if event.si_code == os.CLD_EXITED
+                                                            else 128 + event.si_status)
+            entries = os.listdir("/proc")
+        else:
+            with open(f"/proc/self/task/{os.getpid()}/children") as f:
+                entries = f.read().split()
+        rows = {}
+        for entry in entries:
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat") as f:
+                    row = process_stat(f.read())
+                if row["pid"] != int(entry):
+                    raise OSError("inconsistent procfs PID")
+                if row["session"] != self.child.pid:
+                    continue
+                if self.child.returncode is not None and row["ppid"] != os.getpid():
+                    continue
+                key = row["pid"], row["start"]
+                if key not in self.handles:
+                    fd = os.pidfd_open(row["pid"])
+                    try:
+                        with open(f"/proc/{entry}/stat") as f:
+                            after = process_stat(f.read())
+                        with open(f"/proc/self/fdinfo/{fd}") as f:
+                            pinned = next(int(s.split()[1]) for s in f if s.startswith("Pid:"))
+                        if (after["pid"], after["start"], after["session"], pinned) != (*key, self.child.pid, key[0]):
+                            continue
+                        if self.child.returncode is not None and after["ppid"] != os.getpid():
+                            continue
+                        self.handles[key] = fd
+                        fd = None
+                    finally:
+                        if fd is not None:
+                            os.close(fd)
+                rows[key] = row
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+        for key in list(self.handles):
+            if key not in rows:
+                os.close(self.handles.pop(key))
+        return rows
+
+    def reap(self, pid):
+        try:
+            got, status, usage = os.wait4(pid, os.WNOHANG)
+        except ChildProcessError:
+            return False
+        if not got:
+            return False
+        if got == self.child.pid:
+            self.child.returncode = os.waitstatus_to_exitcode(status)
+            self.record.update(command_raw_wait_status=status, command_returncode=self.child.returncode)
+        record_child_usage(self.record, usage)
+        return True
+
+    def done(self):
         previous = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
         try:
-            before = record.get("_cpu_usage", (0, 0, 0, 0))
-            record["_cpu_usage"] = (before[0] + usage.ru_utime, before[1] + usage.ru_stime,
-                                     max(before[2], int(kb)), before[3] + usage.ru_nivcsw)
-            record["peak_rss_kb"] = max(record.get("peak_rss_kb", 0), int(kb))
+            if self.finished:
+                return True
+            rows = self.observe()
+            others = []
+            for row in rows.values():
+                if row["pid"] != self.child.pid:
+                    # Only our direct/adopted children can supply wait4 usage.
+                    if row["ppid"] != os.getpid() or not self.reap(row["pid"]):
+                        others.append(row)
+            if self.exited and not others:
+                if self.child.returncode is None and not self.reap(self.child.pid):
+                    raise OSError("cannot reap controlled session anchor")
+                # A procfs census can miss a fork/adoption during iteration.
+                # ECHILD, not a sampled empty list, establishes completion for
+                # this dedicated subreaper. WNOWAIT consumes no foreign status.
+                try:
+                    os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                except ChildProcessError:
+                    self.finished = True
+            return self.finished
         finally:
             signal.pthread_sigmask(signal.SIG_SETMASK, previous)
-    return True
+
+    def stop(self, account, reason):
+        if self.finished or self.cleanup_failed:
+            return self.finished
+        start = time.monotonic()
+        result = {"reason": reason, "signals": {}, "errors": [], "accounting_errors": []}
+        self.record["controlled_cleanup"] = result
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
+        try:
+            for sig, seconds in ((signal.SIGTERM, 5), (signal.SIGKILL, 2)):
+                sent = set()
+                deadline = time.monotonic() + seconds
+                while True:
+                    try:
+                        if self.done():
+                            result["outcome"] = "complete"
+                            return True
+                    except (OSError, ValueError, StopIteration) as error:
+                        # Never discover via a lost/reaped anchor. Known handles
+                        # still target the processes we actually identified.
+                        message = str(error)
+                        if message not in result["errors"]:
+                            result["errors"].append(message)
+                    for key, fd in self.handles.items():
+                        if key in sent:
+                            continue
+                        try:
+                            signal.pidfd_send_signal(fd, sig)
+                            result["signals"][str(int(sig))] = result["signals"].get(str(int(sig)), 0) + 1
+                            sent.add(key)
+                        except ProcessLookupError:
+                            pass
+                        except OSError as error:
+                            if str(error) not in result["errors"]:
+                                result["errors"].append(str(error))
+                    try:
+                        account()
+                    except (OSError, ValueError) as error:
+                        if str(error) not in result["accounting_errors"]:
+                            result["accounting_errors"].append(str(error))
+                    if time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.1)
+            self.cleanup_failed = True
+            result.update(outcome="failed", remaining_known=[{"pid": p, "start": s} for p, s in self.handles])
+            print("heavy: controlled session cleanup failed after bounded TERM/KILL waits", file=sys.stderr)
+            return False
+        finally:
+            result["seconds"] = time.monotonic() - start
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+    def close(self):
+        for fd in self.handles.values():
+            os.close(fd)
+        self.handles.clear()
 
 
 def run_command(f, command, shown, record, state, environ, load_reader):
@@ -1376,7 +1564,8 @@ def run_command(f, command, shown, record, state, environ, load_reader):
 
 def monitor_command(f, command, shown, record, state, environ, load_reader, group):
     record.setdefault("cpu_busy_samples", [])
-    record["cpu_scope"] = "process_group" if group else "waited_tree"
+    session = record.get("compiler_budget", False) and platform.system() == "Linux"
+    record["cpu_scope"] = "process_session" if session and group else "process_group" if group else "waited_tree"
     sampled = sample_load(record, load_reader, time.monotonic())
     cpu_sampled = sample_cpu(record, time.monotonic())
     machine = MachineSampler()
@@ -1388,6 +1577,12 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
     processes = ProcessSampler(time.monotonic(), hz)
     completed = False
     group_reported = None
+    if session:
+        try:
+            ControlledSession.preflight(group)
+        except (OSError, ValueError) as error:
+            print(f"heavy: cannot own a controlled session: {error}", file=sys.stderr)
+            return 125
     try:
         child = subprocess.Popen(command, start_new_session=True)
     except OSError as e:
@@ -1396,13 +1591,35 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
     child.heavy_subreaper = group
     reap = lambda: reap_child(child, record)
     handlers = {}
+    family = None
+    def cleanup_account():
+        rss = group_rss_kb(session=True).get(child.pid, 0)
+        record["peak_rss_kb"] = max(record["peak_rss_kb"], rss)
+        try:
+            publish_memory(f, rss, state)
+        except RegistryBusy:
+            pass  # The existing short registry deadline also bounds cleanup.
+    def terminate(reason, final_wait=True):
+        if family is not None:
+            # Cover stop's initial terminal check too: a second pending signal
+            # must not restart or overwrite an already completed cleanup.
+            previous = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM, signal.SIGHUP))
+            try:
+                return family.stop(cleanup_account, reason)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        kill_group(child.pid, reap, group)
+        if final_wait:
+            reap_child(child, record, 0)
+        return True
     try:
+        if session:
+            family = ControlledSession(child, record)
         try:
             proc_group = visible_group(child.pid)
         except (OSError, ValueError, StopIteration) as e:
             print(f"heavy: cannot identify the command's memory in this procfs view: {e}", file=sys.stderr)
-            kill_group(child.pid, reap, group)
-            reap_child(child, record, 0)
+            terminate("identification failure")
             return 125
         own = getattr(f, "heavy_job", None)
         if own is not None:
@@ -1417,11 +1634,10 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
                 write_status(f, text)
             except (OSError, ValueError) as e:
                 print(f"heavy: cannot publish the command's slot status: {e}", file=sys.stderr)
-                kill_group(child.pid, reap, group)
-                reap_child(child, record, 0)
+                terminate("status publication failure")
                 return 125
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-            handlers[sig] = signal.signal(sig, lambda s, _: kill_group(child.pid, reap, group))
+            handlers[sig] = signal.signal(sig, lambda s, _: terminate(f"signal {s}", final_wait=False))
         while True:
             now = time.monotonic()
             try:
@@ -1429,9 +1645,24 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
             except OSError:
                 boot_now = None
             live = set()
-            readings = group_processes(proc_group, live=live)
+            readings = (group_processes(proc_group, live=live, session=True) if session
+                        else group_processes(proc_group, live=live))
             processes.sample(now, boot_now, readings, live)
-            completed = group_gone(child.pid, reap, group)
+            if family is not None:
+                if family.cleanup_failed:
+                    return 125
+                try:
+                    completed = family.done()
+                    if family.exited and not completed:
+                        completed = terminate("leader exited with session members")
+                        if not completed:
+                            return 125
+                except (OSError, ValueError, StopIteration) as error:
+                    print(f"heavy: cannot observe controlled session: {error}", file=sys.stderr)
+                    terminate("session observation failure")
+                    return 125
+            else:
+                completed = group_gone(child.pid, reap, group)
             if completed or now - machine.last[0] >= 1:
                 machine.sample(time.monotonic(), machine_counters())
             if completed:
@@ -1446,7 +1677,7 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
                       f"remaining procfs-view PIDs: {pids}", file=sys.stderr)
                 group_reported = now
             try:
-                rss = group_rss_kb().get(proc_group, 0)
+                rss = (group_rss_kb(session=True) if session else group_rss_kb()).get(proc_group, 0)
                 cap = mem_cap_kb(environ, state)
                 try:
                     publish_memory(f, rss, state)
@@ -1456,8 +1687,7 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
                     total, victim = rss, None
             except (OSError, ValueError) as e:
                 print(f"heavy: cannot maintain shared memory accounting: {e}", file=sys.stderr)
-                kill_group(child.pid, reap, group)
-                reap_child(child, record, 0)
+                terminate("accounting failure")
                 return 125
             record["peak_rss_kb"] = max(record["peak_rss_kb"], rss)
             sampled = sample_load(record, load_reader, time.monotonic(), sampled)
@@ -1469,12 +1699,16 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
                 print(f"heavy: killed `{shown}`: {reason}, over the {cap / 1048576:.1f} GB cap "
                       f"(HEAVY_MEM_GB, {os.path.join(state, 'mem_gb')}); run it again when "
                       "fewer jobs run", file=sys.stderr)
-                kill_group(child.pid, reap, group)
-                reap_child(child, record, 0)
-                return 137
+                return 137 if terminate("memory cap exceeded") else 125
             time.sleep(1)
         return child.returncode if child.returncode >= 0 else 128 - child.returncode
     finally:
+        if family is not None:
+            try:
+                if not family.finished and not family.cleanup_failed:
+                    terminate("monitor exit")
+            finally:
+                family.close()
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
 
@@ -1592,9 +1826,10 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
               "enqueued_slots": initial[1], "wait_policy_changed": False}
     kind = environ.get("FREN_JOB_KIND") or job_kind(command)
     shown = shlex.join(command)
+    offline_wrapper = []
     if offline:
         try:
-            command = offline_command(command)
+            offline_wrapper = offline_command([])
         except RuntimeError as e:
             print(e, file=sys.stderr)
             return 126
@@ -1678,7 +1913,22 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             if waited > 1:
                 print(f"heavy: got slot {i} after {waited:.0f}s", file=sys.stderr)
             try:
-                return run(f, command, shown, kind, record, admitted, state, environ, load_reader)
+                launched = command
+                if os.path.basename(command[0]) == "lake":
+                    loader = importlib.machinery.SourceFileLoader(
+                        "heavy_build", os.path.join(os.path.dirname(os.path.realpath(__file__)), "fren-build"))
+                    spec = importlib.util.spec_from_loader(loader.name, loader)
+                    entry = importlib.util.module_from_spec(spec)
+                    loader.exec_module(entry)
+                    try:
+                        launched = entry.heavy_command(command, cap)
+                    except (OSError, ValueError) as error:
+                        print(f"heavy: build routing failed: {error}", file=sys.stderr)
+                        return 125
+                entries = {os.path.join(os.path.dirname(os.path.realpath(__file__)), name)
+                           for name in ("fren-build", "heavy-lean-build")}
+                record["compiler_budget"] = os.path.realpath(launched[0]) in entries
+                return run(f, offline_wrapper + launched, shown, kind, record, admitted, state, environ, load_reader)
             finally:
                 release_slot(f, state)
         if wait_message != warned:
