@@ -29,6 +29,8 @@ else:
             time.sleep(5)
             os._exit(0)
     event.with_suffix(".end").write_text(str(time.monotonic_ns()))
+    if source.stem == "Silent":
+        raise SystemExit(7)
     print("stdout " + source.stem)
     if source.stem != "Closed":
         print("stderr " + source.stem, file=sys.stderr)

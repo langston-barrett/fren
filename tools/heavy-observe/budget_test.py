@@ -124,7 +124,7 @@ def producer(case, work, shim):
                 evidence["a"] = result(a, 125)
                 assert not (events / "A.start").exists()
                 held.close()
-        elif case in ("oversize", "bad-config", "bad-counter", "registry", "write-error", "missing-manifest", "preexec-error"):
+        elif case in ("oversize", "bad-config", "bad-counter", "registry", "write-error", "missing-manifest", "preexec-error", "zero-request"):
             held = None
             if case == "bad-config": (session / "config").write_text("malformed")
             if case == "bad-counter": (session / "counter").write_text("partial")
@@ -137,6 +137,11 @@ def producer(case, work, shim):
                 os.environ["LD_PRELOAD"] = str(work.parent / "fault.so")
                 os.environ["BUDGET_FAIL_PREEXEC"] = "1"
             if case == "missing-manifest": (session / "requests").unlink()
+            if case == "zero-request":
+                path = session / "requests"
+                rows = path.read_text().splitlines()
+                rows[0] = rows[0].rsplit("\t", 1)[0] + "\t0"
+                path.write_text("\n".join(rows) + "\n")
             a = launch("A"); evidence["a"] = result(a, 125)
             assert not (events / "A.start").exists()
             if held: held.close()
@@ -188,9 +193,7 @@ def main():
     work = Path(tempfile.mkdtemp(prefix="budget-", dir=HERE / "test-work"))
     cases = ["serial-fifo", "unequal", "cancel", "wait-cancel", "unknown", "pid-reuse", "namespace", "partial", "raw-stale",
              "unlocked", "oversize", "bad-config", "bad-counter", "registry", "write-error", "missing-manifest", "preexec-error",
-             "exec-error", "exit", "fallback", "fork-lease", "observer-death", "owner-death", "bypass"]
-    signal_control = subprocess.run([sys.executable, "-I", str(HERE / "notice_signal_test.py")], capture_output=True, timeout=60)
-    assert signal_control.returncode == 0, (signal_control.stdout, signal_control.stderr)
+             "exec-error", "exit", "fallback", "zero-request", "fork-lease", "observer-death", "owner-death", "bypass"]
     feedback = subprocess.run([sys.executable, "-I", str(HERE / "feedback_test.py")], capture_output=True, timeout=30)
     assert feedback.returncode == 0, (feedback.stdout, feedback.stderr)
     pure = subprocess.run([str(BIN / "budget_tests")], capture_output=True, timeout=3)
@@ -256,8 +259,10 @@ def main():
         if case == "preexec-error":
             assert rows[0]["launch_errno"] == 5 and rows[0]["raw_wait_status"] == 125 << 8
             assert rows[0]["measured_peak_rss_kib"] is None and rows[0]["result_kind"] == 3
+            assert rows[0]["request_excess_kib"] is None
         if case == "fallback":
             assert rows[0]["request_provenance"] == "explicit-unknown-fallback" and rows[0]["requested_reservation_kib"] == 9
+        if case == "zero-request": assert not rows
         if case == "bypass": assert all("gate_errno" not in r for r in rows)
         if case == "owner-death":
             info = json.loads((directory / "events/A.start").read_text())

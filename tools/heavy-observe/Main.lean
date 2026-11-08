@@ -15,10 +15,6 @@ opaque terminateBySignal (signal : UInt32) : IO Unit
 @[extern "heavy_observe_write"]
 opaque writeRecord (dir record : @& String) : IO UInt32
 
--- Best-effort bounded diagnostic; the FFI suppresses SIGPIPE for this write.
-@[extern "heavy_observe_notice"]
-opaque notice (message : @& String) : IO Unit
-
 @[extern "heavy_observe_read_regular"]
 opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO (Option ByteArray)
 
@@ -156,9 +152,6 @@ def run (args : List String) : IO UInt32 := do
   let requested := if gated && gateError == 0 && childPresent &&
       (parsed.map (·.kind)) == some "file" then some requestDemand else none
   let excess := requestExcess requested (measured.map (·.2))
-  if let some amount := excess then
-    if amount > 0 then
-      notice s!"heavy-observe: observed child peak {v 10} KiB above requested amount {requestDemand} KiB by {amount} KiB\n"
   let inputClosure : Option String := none
   let complete := identityComplete (sourceBefore.bind id) compilerFingerprint inputClosure
   let outputs := [parsed.bind (·.olean), parsed.bind (·.ilean), parsed.bind (·.c), parsed.bind (·.bc)] |>.filterMap id
@@ -197,6 +190,7 @@ def run (args : List String) : IO UInt32 := do
       ("system_us", toString (v 9)), ("peak_rss_kib", toString (v 10)),
       ("measured_cpu_us", jsonOption (fun p => toString p.1) measured),
       ("measured_peak_rss_kib", jsonOption (fun p => toString p.2) measured),
+      ("request_excess_kib", jsonOption toString excess),
       ("result_kind", if childPresent then toString outcome.kind else "null"), ("result_detail", if childPresent then toString outcome.detail else "null"),
       ("shell_code", if childPresent then toString outcome.shellCode else "null")])
     let dir := (← IO.getEnv "HEAVY_OBSERVE_DIR").map FilePath.mk |>.getD (root / "records")

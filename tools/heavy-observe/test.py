@@ -48,16 +48,6 @@ def main():
     timings = []
     abi = check_abi(HERE, REAL, work)
     assert abi["status"] == 0, (work / "abi-check.log").read_text()
-    # The predecessor's obsolete world argument must fail against emitted ABI.
-    old = work / "observer-old-abi.c"
-    source = (HERE / "observer.c").read_text()
-    old.write_text(source.replace("heavy_observe_notice(b_lean_obj_arg message)",
-                                  "heavy_observe_notice(b_lean_obj_arg message, lean_obj_arg world)"))
-    # observer.c includes budget.c relative to its own directory.
-    shutil.copy(HERE / "budget.c", work / "budget.c")
-    old_abi = check_abi(HERE, REAL, work, old)
-    assert old_abi["status"] != 0 and b"heavy_observe_notice" in (work / "abi-check.log").read_bytes()
-
 
     def run(command, *, cwd=work, variables=None, stdin=None):
         start = time.monotonic()

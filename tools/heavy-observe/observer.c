@@ -11,30 +11,6 @@
 #include <unistd.h>
 #include <sys/prctl.h>
 
-/* Best effort, without changing disposition. Standard signals can coalesce:
- * Linux cannot distinguish a concurrent SIGPIPE from the write's SIGPIPE.
- * A signal already pending on entry is never consumed. */
-LEAN_EXPORT lean_obj_res heavy_observe_notice(b_lean_obj_arg message) {
-    sigset_t set, old, pending;
-    sigemptyset(&set);
-    sigaddset(&set, SIGPIPE);
-    if (sigprocmask(SIG_BLOCK, &set, &old) == 0) {
-        int known = sigpending(&pending) == 0;
-        int had_pending = known && sigismember(&pending, SIGPIPE);
-        const char *s = lean_string_cstr(message);
-        ssize_t written = write(STDERR_FILENO, s, lean_string_size(message) - 1);
-        int write_error = written < 0 ? errno : 0;
-        if (known && !had_pending && write_error == EPIPE) {
-            struct timespec zero = {0, 0};
-            int result;
-            do { result = sigtimedwait(&set, NULL, &zero); }
-            while (result < 0 && errno == EINTR);
-        }
-        (void)sigprocmask(SIG_SETMASK, &old, NULL);
-    }
-    return lean_io_result_mk_ok(lean_box(0));
-}
-
 extern char **environ;
 
 /* Raw Linux observations only. All classification happens in Heavy.Process.

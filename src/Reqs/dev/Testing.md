@@ -1511,24 +1511,17 @@ authenticity is proved by these pure functions: the owned subprocess tests
 exercise those external assumptions, including failures.
 
 For an admitted file compiler with a positive requested reservation and valid
-child peak, the launcher compares the raw request with the observed wait4
-peak. It emits a best-effort stderr note only when the peak exceeds that
-request, stating both amounts and their difference in KiB. The pure
-`Heavy.Process.requestExcess` computes truncated subtraction; missing inputs
-or a zero request are unknown. Queries, unsupported metadata and absent child
-usage are not treated as zero excess. The note is not a Lean warning, a
-physical limit, a budget failure, or a bound on future usage. The IO boundary
-is the actual gate and wait4 observation; the arithmetic theorem does not
-prove those OS observations or the delivery of the note.
-For the best-effort write, the Linux adapter temporarily blocks SIGPIPE in
-the calling thread and restores its prior mask without changing disposition.
-It consumes a newly pending SIGPIPE only after EPIPE and only if none was
-pending before the write, retrying an interrupted drain. Standard SIGPIPE
-signals can coalesce, so an unrelated concurrent SIGPIPE during an EPIPE
-cannot be distinguished from the write's signal. Successful or other failed
-writes do not drain. These transitions rely on Linux signal and write
-semantics and are exercised by owned controls and labelled fault injection,
-not established by the arithmetic proof.
+child peak, the additive `request_excess_kib` record field contains the
+observed wait4 peak minus the requested amount, saturated at zero. The field
+is null for a missing or zero request, a query, unsupported metadata, no
+admission or absent child usage. It describes an observed child peak relative
+to the request, not a physical limit, budget failure or future bound. Older
+records may lack the field; the adviser reads the original raw fields rather
+than trusting this derived value. The checked `Heavy.Process.requestExcess`
+arithmetic does not prove OS observation, record publication or completion.
+Finite owned process controls exercise those IO boundaries, including silent
+children with closed or full-but-open stderr; other existing diagnostics and
+the filesystem remain subject to their own IO behavior.
 
 Source paths, arguments, setup-file and output-artifact content fingerprints,
 cwd and the actual compiler's path/version/hash accompany each observation.
