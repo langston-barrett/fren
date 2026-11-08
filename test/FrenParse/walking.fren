@@ -288,3 +288,38 @@ expect wrong(l: Light) {
 -- case: bare_cr_comment
 -- αpub fn this_is_still_a_comment(
 -- result: context=0;
+
+-- case: module_boundary
+fn f(): Int := 1
+-- comment
+mod second
+fn g(): Int := 2
+-- result: context=0; fn f 1; mod second; fn g 2
+
+-- case: same_line_remainder
+fn f(): Int := 1 mod 2
+-- result: context=0; fn f (mod 1 2)
+
+-- case: unsupported_arrow
+fn f(): Bool := x<-1
+-- result: syntax 17:19: expected a module, enum, function or expectation declaration
+
+-- case: spaced_lt_negation
+fn f(): Bool := x < -1
+-- result: context=0; fn f (< x (- 1))
+
+-- case: comparison_chain
+fn f(): Bool := a < b <= c
+-- result: syntax 22:24: expected parentheses around nested comparisons or `iff` (chains are outside the walking subset)
+
+-- case: parenthesized_comparison
+fn f(): Bool := (a < b) <= c
+-- result: context=0; fn f (<= (paren (< a b)) c)
+
+-- case: iff_chain
+fn f(): Bool := a iff b iff c
+-- result: syntax 24:27: expected parentheses around nested comparisons or `iff` (chains are outside the walking subset)
+
+-- case: parenthesized_iff
+fn f(): Bool := a iff (b iff c)
+-- result: context=0; fn f (iff a (paren (iff b c)))

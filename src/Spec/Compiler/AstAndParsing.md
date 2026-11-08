@@ -51,12 +51,21 @@ expect division(x: Int) { expect euclidean: x = (x div 2) * 2 + x mod 2 }
 ```
 
 Integer division is written `div`; `/` is rejected. The division example
-uses the constant nonzero divisor 2.
+uses the constant nonzero divisor 2. The remainder operator `mod` must be
+on the line where its left operand ends. A `mod` after an LF or CRLF starts
+a module declaration instead, including when comments intervene. Within an
+expression entry or an unclosed delimiter, that declaration is unexpected.
+A remainder may put its right operand on the next line.
 
 `base + 5 * 2` groups as `base + (5 * 2)`, and `base - 5 - 2` as
 `(base - 5) - 2`. Calls bind before arithmetic; unary minus binds before
 multiplication, then addition, then comparisons, then `not`, `and`, `or`
 and `iff`, in decreasing precedence. Parentheses override that grouping.
+`iff` does not associate: write `(a iff b) iff c` or `a iff (b iff c)`.
+This walking slice has binary comparisons only. Unparenthesized comparison
+chains, including the full language's `a < b <= c`, are unsupported rather
+than parsed as nested binary operators. Explicitly parenthesized comparisons
+remain syntax trees whose operand types are checked later.
 A `let` has the form `let x := value in body`; its body extends to the
 right. An `if` requires both `then` and `else`. A match arm pairs a
 qualified variant pattern with an expression using `=>`; arms are
@@ -112,7 +121,9 @@ walking slice includes `--` line comments ending before LF or CRLF, or
 at EOF. LF and CRLF retain their original bytes. A keyword is recognized only
 at a token boundary: `next_step` is one identifier. Punctuators use longest
 matching spelling, so `<=`, `!=`, `:=`, `=>` and `::` are not split into
-shorter tokens. Comment text is not parsed as declarations.
+shorter tokens. The unsupported punctuator `<-` is likewise one rejected
+slice; `x<-1` fails, while `x < -1` contains a comparison and unary minus.
+Comment text is not parsed as declarations.
 
 **Proof obligations**
 

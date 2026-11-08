@@ -76,7 +76,11 @@ def tokenize (file : FrenSource.FileId) (source : String) : Lexed := Id.run do
         stop := j + 1
     else
       let pair := String.ofList [c, chars[i+1]?.getD '\x00']
-      if ["<=", ">=", "!=", ":=", "=>", "::"].contains pair then
+      if pair == "<-" then
+        -- Maximal punctuation ownership: this is unsupported, not `<` and `-`.
+        kind := .rejected
+        stop := i + 2
+      else if ["<=", ">=", "!=", ":=", "=>", "::"].contains pair then
         kind := .punctuation
         stop := i + 2
       else if ['(', ')', '{', '}', ',', ':', '+', '-', '*', '=', '<', '>'].contains c then

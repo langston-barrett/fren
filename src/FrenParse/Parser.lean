@@ -12,6 +12,16 @@ private structure Cursor where
 
 private def peek (c : Cursor) : Option Token := c.lexed.tokens[c.index]?
 private def hasText (c : Cursor) (text : String) : Bool := (peek c).any (·.text == text)
+/-- Only LF and CRLF end a line in the walking grammar. The decision uses
+actual intervening trivia after the left operand's last token, including
+comments and a closing parenthesis on a later line. -/
+private def newlineBefore (c : Cursor) : Bool :=
+  match peek c, c.lexed.tokens[c.index - 1]? with
+  | some current, some previous =>
+    (c.lexed.tape.extract (previous.slice + 1) current.slice).any
+      (fun piece => piece.text.toList.contains '\n')
+  | _, _ => false
+
 private def advance (c : Cursor) : Cursor := { c with index := c.index + 1 }
 private def fail (c : Cursor) (expected : String) : Except Diagnostic α :=
   .error ⟨(peek c).map (·.span) |>.getD c.lexed.eof, expected⟩
@@ -86,6 +96,18 @@ def binaryOperator (text : String) : Option (BinaryOp × Nat) :=
   | "*" => some (.mul, 7) | "div" => some (.div, 7) | "mod" => some (.mod, 7)
   | _ => none
 
+private def comparison : BinaryOp → Bool
+  | .eq | .ne | .lt | .le | .gt | .ge => true
+  | _ => false
+
+/-- The walking AST represents binary comparisons, not full-language chains.
+An explicit paren node ends this restriction; typing still remains later. -/
+private def unsupportedChain (left : Expr) (op : BinaryOp) : Bool :=
+  match left with
+  | .binary _ _ previous _ =>
+    (comparison previous && comparison op) || (previous == .iff && op == .iff)
+  | _ => false
+
 -- Structural recursion on a token-derived budget, with no fixed nesting cap.
 -- An expression/leading transition costs one, and each tail/list transition
 -- either consumes a token or finishes. Four units per input token plus four
@@ -150,9 +172,12 @@ private def tails : Nat → Nat → Expr → Cursor → Except Diagnostic (Expr 
       let (closeToken, c) ← take c ")"
       tails fuel minPrec (.call left openToken args commas closeToken) c
     else
+      if hasText c "mod" && newlineBefore c then return (left, c)
       match (peek c).bind (fun t => binaryOperator t.text) with
       | some (op, prec) =>
         if prec < minPrec then return (left, c)
+        if unsupportedChain left op then
+          fail c "parentheses around nested comparisons or `iff` (chains are outside the walking subset)"
         let some token := peek c | fail c "an operator"
         let (right, c) ← expression fuel (prec + 1) (advance c)
         tails fuel minPrec (.binary left token op right) c
