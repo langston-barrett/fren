@@ -21,7 +21,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from overlay import create
 from abi_check import check as check_abi
-from regressions import file_controls, metadata_controls
+from regressions import file_controls, metadata_controls, metadata_reuse_controls
 
 HERE = Path(__file__).resolve().parent
 # Test-only discovery; the launcher itself always uses explicit configuration.
@@ -195,9 +195,12 @@ def main():
     assert any(r["args"] == ["Bad.lean", "-o", str(oversized)]
                and r["artifacts"][0]["fingerprint"] is None for r in rows())
 
+    reuse_evidence = metadata_reuse_controls(work, OBSERVER)
+
     if "--controls-only" in sys.argv:
         report = {"work": str(work), "abi": abi, "file_controls": file_evidence,
-                  "metadata_controls": metadata_evidence, "checks": "controls passed", "timings": timings}
+                  "metadata_controls": metadata_evidence, "metadata_reuse_controls": reuse_evidence,
+                  "checks": "controls passed", "timings": timings}
         (work / "controls-report.json").write_text(json.dumps(report, indent=2) + "\n")
         print(str(work / "controls-report.json"))
         return
@@ -297,6 +300,7 @@ end Measure
     assert not list(records.glob(".process-*"))
     report = {"work": str(work), "real_compiler": str(REAL), "compiler_version": compilers[0]["compiler_version"],
               "abi": abi, "file_controls": file_evidence, "metadata_controls": metadata_evidence,
+              "metadata_reuse_controls": reuse_evidence,
               "raw_status_cases": len(lines), "checks": "all passed", "compiler_records": compilers,
               "scratch_ordinary_s": next(t["seconds"] for t in timings if t["command"] == [str(lake), "-q", "build", "Measure"]),
               "scratch_gated_s": gated_seconds,
