@@ -115,9 +115,69 @@ pass. Neither that representation, pass, evaluator nor their correspondence
 is established by this chapter.
 
 - [x] Check the small arithmetic contract independently with Fren.
-- [ ] Implement the walking evaluator on actual admitted typed syntax and bind
-  its primitive decisions and outcome laws to actual code.
-- [ ] Establish traversal, typing, determinism and definedness correspondence;
-  exercise actual code on accepted and rejected inputs with premise counts.
+- [x] Implement the walking evaluator on actual admitted typed syntax in
+  `FrenEval`, with actual-code arithmetic and outcome boundary laws in Lean.
+- [x] Exercise actual code with direct Plausible and concrete controls on
+  accepted, rejected, undefined and invalid inputs, with premise counts.
+- [ ] Prove universal traversal soundness, result completeness and definedness
+  correspondence; the output type check and finite controls do not prove these.
 - [ ] Establish the future desugared THIR correspondence when that producer
   and evaluator exist.
+
+## Implemented walking boundary
+
+`FrenEval.Program` stores the actual `Typed` value and proof that
+`checkWalking input = .ok typed`. `fromResolved` runs that producer;
+`fromSource` runs the real parser and resolver before it. `fromTyped` requires
+proof of actual typing before running walking validation. An edited record
+or a supplied Boolean cannot create this evidence. `Program.retains`,
+`Program.static` and `fromResolved_success` bind this boundary to the actual
+producer and its retained document, coverage and non-recursion results.
+
+`evaluate` selects a retained body by canonical owner and optional member
+label. Its positional concrete arguments must match the body's parameters;
+they are reversed into the existing nearest-first context. Enum inputs must
+name an actual declared constructor of their recorded canonical owner.
+The interpreter walks the existing syntax and resolved references, using
+typed callable occurrences to enter a named body with only its arguments.
+There is no second syntax tree, executable Fren pass model or solver call.
+The result retains the original body and complete check member, including
+whether it is an assumption or expectation, its label and its source spans.
+Clients must keep assumptions when interpreting check assignments.
+
+An outcome is a concrete `Value`, semantic `Failure.undefined` (zero divisor),
+`Failure.exhausted`, or an invalid/unsupported diagnostic. Missing requests
+are invalid; bad arguments are invalid outcomes associated with the retained
+body. These failures carry source spans and details; undefinedness also
+retains its operator. They are never converted to false or a solver verdict.
+
+The total implementation uses the static walker's depth approach: each
+demanded expression, including entry into a callee body, consumes one unit.
+Siblings receive the same remaining depth; the bound does not count total
+steps. `defaultDepth` multiplies the largest body token count plus one by
+the function count plus one. Callers may supply another depth, including
+zero. Exhaustion is explicitly separate from semantic undefinedness. No
+theorem currently proves that this default suffices for every admitted
+program, or bounds total execution time, memory or integer magnitude.
+
+`binary_add`, `binary_sub`, `binary_mul`, `binary_div`, `binary_mod`,
+`div_zero`, `mod_zero` and `euclidean` prove the actual primitive arithmetic
+decisions. The independent Fren contract above remains checked separately;
+changing its addition to subtraction must fail. Native controls also mutate
+operators in actual admitted source and require the changed concrete results.
+`evaluate_selected` proves retained body selection, `evaluate_type` proves
+that a returned value matches the retained body's type and constructor
+inventory, and `evaluate_deterministic` proves uniqueness at fixed depth.
+The type theorem follows from an explicit output check, not a universal
+preservation proof of the recursive interpreter.
+
+Direct Plausible generates source programs and concrete values, then runs
+the real producer and evaluator. Every source sample requires defined,
+undefined, invalid, exhausted and rejected cases; no failed premise is
+discarded. The separate fixed census reports each class explicitly. These
+tests include S1's three concrete results above, strict operands and calls,
+unselected undefined branches, nearest-first shadowing, nominal input
+rejection and operator mutation sensitivity. They remain finite evidence.
+
+- [ ] Restate recursive evaluation and its correspondence laws in Fren once
+  Fren2 can express recursive syntax and judgments, without copying the IR.
