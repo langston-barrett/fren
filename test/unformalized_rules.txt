@@ -274,3 +274,47 @@ implementation.report.stage-5 -- stage 5's messages, which stage 5 states
 # src/Reqs/ModuleReports.md
 module.instance.models -- partly formalized: `expansion::today_verdict` gives the verdicts of today's forms; the confirmation of a model against axioms is a check of stage 3
 module.expansion.corpus -- a step of each stage's landing: comparing the corpus before and after
+
+# src/Spec/Compiler/Overview.md (Interlock pending)
+compiler.pipeline.parser
+compiler.pipeline.stages
+compiler.pipeline.order
+compiler.forms.phases
+compiler.identity.binders
+compiler.identity.items
+compiler.identity.instances
+compiler.identity.origins
+compiler.identity.origin-independence
+compiler.identity.occurrences
+compiler.work.item
+compiler.work.groups
+compiler.work.instances
+compiler.work.errors
+compiler.work.order
+compiler.correctness.simulation
+compiler.diagnostic.data
+compiler.diagnostic.rendering
+compiler.diagnostic.error-node
+compiler.evidence.data
+compiler.evidence.dependencies
+compiler.evidence.limits
+
+# src/Spec/Compiler/BaseDefinitions.md (Interlock pending)
+base.item.path
+base.item.generated
+base.item.determinism
+base.span.file
+base.span.bounds
+base.source-map.embedded
+base.source-map.utf16
+base.origin.contents
+base.origin.table
+base.origin.remap
+base.origin.independence
+base.origin.occurrences
+base.diagnostic.contents
+base.diagnostic.suggestion
+base.diagnostic.applicability
+base.diagnostic.rendering
+base.sexp.version
+base.sexp.saved-version
