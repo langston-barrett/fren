@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Exercise exported identity through the actual observer and budget session."""
 import json, os, pathlib, subprocess, sys
-from overlay import create
 here = pathlib.Path(__file__).resolve().parent
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(here))
+from overlay import create
 bins = here / '.lake/build/bin'
 work = pathlib.Path(sys.argv[1]).resolve(); work.mkdir(parents=True, exist_ok=False)
 prefix = work / 'compiler'; (prefix / 'bin').mkdir(parents=True)
@@ -41,7 +43,21 @@ results['changed_setup'] = gate('setup', manifest)
 setup.unlink()
 results['unavailable_setup'] = gate('unavailable-setup', manifest)
 setup.write_text('{}')
-results['changed_argv'] = gate('argv', manifest, args + ['-Dfoo=bar'])
+# Both rows see the same real extracted source on the supported argv change;
+# only the cohort row must reject the differently configured invocation.
+supported_args = args + ['-q']
+results['legacy_supported_argv'] = gate('legacy-supported-argv', legacy, supported_args,
+                                        origin='explicit-source-request', wanted=demand)
+results['changed_supported_argv'] = gate('supported-argv', manifest, supported_args)
+for key in ('matched', 'legacy_supported_argv', 'changed_supported_argv'):
+ r = results[key]
+ assert r['input_kind'] == 'file' and r['source'] == raw['source'] == 'Tiny.lean', r
+ assert r['source_before'] == raw['source_before'] and r['source_before'] is not None, r
+ assert r['setup'] == raw['setup'] and r['setup_fingerprint'] == raw['setup_fingerprint'], r
+assert results['legacy_supported_argv']['args'] == results['changed_supported_argv']['args'] == supported_args
+results['unsupported_argv'] = gate('unsupported-argv', manifest, args + ['-Dfoo=bar'])
+assert results['unsupported_argv']['input_kind'] == 'unknown'
+assert results['unsupported_argv']['source'] is None and results['unsupported_argv']['source_before'] is None
 compiler.write_text(compiler.read_text()+'# changed\n'); compiler.chmod(0o755)
 results['changed_compiler'] = gate('compiler', manifest)
 compiler.write_text(compiler.read_text().replace('# changed\n','')); compiler.chmod(0o755)

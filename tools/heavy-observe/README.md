@@ -114,6 +114,11 @@ built, run `scripts/heavy --offline lake env .lake/build/bin/fren_test
 observer is Linux-only. The manual standalone recipe
 above remains independent of Fren.
 
+The registered harness also runs the bounded cohort gate fixture under isolated
+Python. It checks actual extracted source identity for a supported argv change:
+the legacy source-only row selects its request while the cohort row falls back.
+Unsupported metadata has its own fallback control.
+
 The integration test retains its owned scratch directory and `report.json`
 under `test-work/`. It compares a clean ordinary and budget-controlled three-module Lake build
 with cache restoration disabled, including artifact SHA256, and runs bounded
