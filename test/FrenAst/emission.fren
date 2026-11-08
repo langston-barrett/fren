@@ -1,0 +1,52 @@
+-- case: emit_0
+abc
+-- result: 3 characters; 3 bytes
+
+-- case: emit_1
+aéz
+-- result: 3 characters; 4 bytes
+
+-- case: emit_2
+😀
+-- result: 1 characters; 4 bytes
+
+-- case: emit_3
+	 x
+-- result: 3 characters; 3 bytes
+
+-- case: emit_4
+-- comment
+-- result: 10 characters; 10 bytes
+
+-- case: emit_5
+
+
+
+-- result: 2 characters; 2 bytes
+
+-- case: emit_6
+
+
+
+-- result: 4 characters; 4 bytes
+
+-- case: emit_7
+fn f(): Int := 0
+-- result: 16 characters; 16 bytes
+
+-- case: emit_8
+x != y
+-- result: 6 characters; 6 bytes
+
+-- case: emit_9
+:: := => <= >=
+-- result: 14 characters; 14 bytes
+
+-- case: emit_10
+αβγ
+-- result: 3 characters; 6 bytes
+
+-- case: emit_11
+-- 😀
+α
+-- result: 7 characters; 11 bytes

@@ -1,0 +1,290 @@
+-- case: number
+pub fn f(): Int := 42
+-- result: context=0; fn f 42
+
+-- case: boolean
+pub fn f(): Int := true
+-- result: context=0; fn f true
+
+-- case: false
+pub fn f(): Int := false
+-- result: context=0; fn f false
+
+-- case: undefined
+pub fn f(): Int := y + 1
+-- result: context=0; fn f (+ y 1)
+
+-- case: type_error
+pub fn f(): Int := l + 1
+-- result: context=0; fn f (+ l 1)
+
+-- case: priority
+pub fn f(): Int := base + 5 * 2
+-- result: context=0; fn f (+ base (* 5 2))
+
+-- case: left_assoc
+pub fn f(): Int := base - 5 - 2
+-- result: context=0; fn f (- (- base 5) 2)
+
+-- case: negate
+pub fn f(): Int := -x * 2
+-- result: context=0; fn f (* (- x) 2)
+
+-- case: comparison
+pub fn f(): Int := x + 1 <= y
+-- result: context=0; fn f (<= (+ x 1) y)
+
+-- case: not_comparison
+pub fn f(): Int := not x = y and true
+-- result: context=0; fn f (and (not (= x y)) true)
+
+-- case: booleans
+pub fn f(): Int := a or b and c iff d
+-- result: context=0; fn f (iff (or a (and b c)) d)
+
+-- case: calls
+pub fn f(): Int := f(g(x), y)
+-- result: context=0; fn f (call f (call g x) y)
+
+-- case: empty_call
+pub fn f(): Int := f()
+-- result: context=0; fn f (call f)
+
+-- case: qualified
+pub fn f(): Int := A::B::c
+-- result: context=0; fn f A::B::c
+
+-- case: parens
+pub fn f(): Int := (1 + 2) * 3
+-- result: context=0; fn f (* (paren (+ 1 2)) 3)
+
+-- case: if
+pub fn f(): Int := if b? then 1 else 2
+-- result: context=0; fn f (if b? 1 2)
+
+-- case: let
+pub fn f(): Int := let x := base + 5 in if b? then x else base
+-- result: context=0; fn f (let x (+ base 5) (if b? x base))
+
+-- case: div_mod
+pub fn f(): Int := x div 2 * 2 + x mod 2
+-- result: context=0; fn f (+ (* (div x 2) 2) (mod x 2))
+
+-- case: match
+pub fn f(): Int := match l { Light::Red => 1, Light::Green => 2, }
+-- result: context=0; fn f (match l (Light::Red 1) (Light::Green 2))
+
+-- case: missing_variants
+pub fn f(): Int := match l { Light::Red => 1 }
+-- result: context=0; fn f (match l (Light::Red 1))
+
+-- case: next_step
+pub fn f(): Int := next_step + 1
+-- result: context=0; fn f (+ next_step 1)
+
+-- case: nested_if
+pub fn f(): Int := if a then if b then 1 else 2 else 3
+-- result: context=0; fn f (if a (if b 1 2) 3)
+
+-- case: right_let
+pub fn f(): Int := let x := 1 in let y := x in y
+-- result: context=0; fn f (let x 1 (let y x y))
+
+-- case: operator_ne
+pub fn f(): Int := x != y
+-- result: context=0; fn f (!= x y)
+
+-- case: operator_lt
+pub fn f(): Int := x < y
+-- result: context=0; fn f (< x y)
+
+-- case: operator_gt
+pub fn f(): Int := x > y
+-- result: context=0; fn f (> x y)
+
+-- case: operator_ge
+pub fn f(): Int := x >= y
+-- result: context=0; fn f (>= x y)
+
+-- case: operator_sub
+pub fn f(): Int := x - y
+-- result: context=0; fn f (- x y)
+
+-- case: operator_add
+pub fn f(): Int := x + y
+-- result: context=0; fn f (+ x y)
+
+-- case: operator_mul
+pub fn f(): Int := x * y
+-- result: context=0; fn f (* x y)
+
+-- case: operator_eq
+pub fn f(): Int := x = y
+-- result: context=0; fn f (= x y)
+
+-- case: operator_and
+pub fn f(): Int := x and y
+-- result: context=0; fn f (and x y)
+
+-- case: operator_or
+pub fn f(): Int := x or y
+-- result: context=0; fn f (or x y)
+
+-- case: operator_iff
+pub fn f(): Int := x iff y
+-- result: context=0; fn f (iff x y)
+
+-- case: typed_context
+-- context: pub enum C { A, B }
+pub fn f(): Int := x
+-- result: context=1; fn f x
+
+-- case: empty
+
+-- result: context=0;
+
+-- case: comments
+-- pub fn not_code( 😀
+-- eof
+-- result: context=0;
+
+-- case: parameter_forms
+pub fn f(b?, x: Int, l: A::Light): Bool := b?
+-- result: context=0; fn f b?
+
+-- case: trivia
+-- é 😀
+pub	mod	walking
+-- tail
+-- result: context=0; mod walking
+
+-- case: ordered
+pub enum E { Z, A, Q, }
+-- result: context=0; enum E [Z,A,Q]
+
+-- case: expectation
+expect e(x: Int) { assume bound: x <= 2 expect goal: x != 3 }
+-- result: context=0; expect e [assume bound (<= x 2),expect goal (!= x 3)]
+
+-- case: truncated_fn
+pub fn f(
+-- result: syntax 9:9: expected an identifier
+
+-- case: truncated_body
+pub fn f(): Int :=
+-- result: syntax 18:18: expected an expression
+
+-- case: missing_brace
+pub enum E { A
+-- result: syntax 14:14: expected `}`
+
+-- case: extra_brace
+pub mod x }
+-- result: syntax 10:11: expected a module, enum, function or expectation declaration
+
+-- case: missing_else
+pub fn f(): Int := if b? then 1
+-- result: syntax 31:31: expected `else`
+
+-- case: missing_then
+pub fn f(): Int := if b? 1 else 2
+-- result: syntax 25:26: expected `then`
+
+-- case: truncated_let
+pub fn f(): Int := let x :=
+-- result: syntax 27:27: expected an expression
+
+-- case: missing_in
+pub fn f(): Int := let x := 1
+-- result: syntax 29:29: expected `in`
+
+-- case: truncated_arm
+pub fn f(): Int := match l { E::A =>
+-- result: syntax 36:36: expected an expression
+
+-- case: unqualified_arm
+pub fn f(): Int := match l { A => 1 }
+-- result: syntax 31:33: expected `::` and a variant name
+
+-- case: payload_variant
+pub enum E { A(Int) }
+-- result: syntax 14:15: expected `}`
+
+-- case: missing_comma
+pub enum E { A B }
+-- result: syntax 15:16: expected `}`
+
+-- case: slash
+pub fn f(): Int := x / 2
+-- result: syntax 21:22: expected a module, enum, function or expectation declaration
+
+-- case: percent
+pub fn f(): Int := x % 2
+-- result: syntax 21:22: expected a module, enum, function or expectation declaration
+
+-- case: bang
+pub fn f(): Int := x ! 2
+-- result: syntax 21:22: expected a module, enum, function or expectation declaration
+
+-- case: bit_or
+pub fn f(): Int := x | 2
+-- result: syntax 21:22: expected a module, enum, function or expectation declaration
+
+-- case: arrow
+pub fn f(): Int := x => 2
+-- result: syntax 21:23: expected a module, enum, function or expectation declaration
+
+-- case: double_equal
+pub fn f(): Int := x == 2
+-- result: syntax 22:23: expected an expression
+
+-- case: unicode_rejected
+é
+-- result: syntax 0:2: expected a module, enum, function or expectation declaration
+
+-- case: missing_label
+expect e() { expect : true }
+-- result: syntax 20:21: expected an identifier
+
+-- case: missing_close_call
+pub fn f(): Int := f(1, 2
+-- result: syntax 25:25: expected `)`
+
+-- case: qualified_truncation
+pub mod A::
+-- result: syntax 11:11: expected an identifier
+
+-- case: fixed_walking
+pub mod skeleton
+
+pub enum Light { Red, Amber, Green }
+
+pub fn next(l: Light): Light := match l {
+    Light::Red => Light::Green,
+    Light::Green => Light::Amber,
+    Light::Amber => Light::Red,
+}
+
+pub fn wait(l: Light, base: Int): Int := match l {
+    Light::Red => base + 30,
+    Light::Amber => base + 5,
+    Light::Green => base,
+}
+
+expect cycles(l: Light) {
+    expect back: next(next(next(l))) = l
+}
+
+expect waits(l: Light, base: Int) {
+    assume bounded: base <= 100
+    expect at_most: wait(l, base) <= 130
+}
+
+expect wrong(l: Light) {
+    expect never_red: next(l) != Light::Red
+}
+-- result: context=0; mod skeleton; enum Light [Red,Amber,Green]; fn next (match l (Light::Red Light::Green) (Light::Green Light::Amber) (Light::Amber Light::Red)); fn wait (match l (Light::Red (+ base 30)) (Light::Amber (+ base 5)) (Light::Green base)); expect cycles [expect back (= (call next (call next (call next l))) l)]; expect waits [assume bounded (<= base 100),expect at_most (<= (call wait l base) 130)]; expect wrong [expect never_red (!= (call next l) Light::Red)]
+
+-- case: bare_cr_comment
+-- αpub fn this_is_still_a_comment(
+-- result: context=0;

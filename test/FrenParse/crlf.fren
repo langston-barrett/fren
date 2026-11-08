@@ -1,0 +1,6 @@
+-- case: crlf
+-- leading é😀
+pub fn f(x: Int): Int :=
+    x div 2
+-- trailing
+-- result: context=0; fn f (div x 2)

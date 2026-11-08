@@ -5,6 +5,8 @@ meta import FrenBaseTests.Binding
 meta import FrenSourceTests.Properties
 import FrenSexpTests
 import FrenTextDemo
+import FrenAstTests
+import FrenParseTests
 
 fren_test_runners textRunners
 
