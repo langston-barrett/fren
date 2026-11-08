@@ -2013,17 +2013,27 @@ def renderedSets : Array String := Id.run do
 
 /-- The specs in the repository: its `.fren` and Markdown files, outside
 `.lake`, `.git`, the built book and `.claude`, which may hold other
-worktrees. -/
+worktrees, and the Git-ignored root `out` directory of local receipts. -/
 def specFiles : IO (Array String) := do
-  let skip (p : FilePath) : IO Bool := pure !([".lake", ".git", "book", ".lun", ".claude"].contains (p.fileName.getD ""))
+  let skip (p : FilePath) : IO Bool := pure
+    (!([".lake", ".git", "book", ".lun", ".claude"].contains (p.fileName.getD "")) &&
+      p != "./out" && p != "out")
   let fs ← System.FilePath.walkDir "." skip
   let fs := fs.filter fun f => f.extension == some "fren" || f.extension == some "md"
   return (fs.map fun f => ((f.toString.dropPrefix? "./").map (·.toString)).getD f.toString).qsort (· < ·)
 
+/-- These container fixtures deliberately pin bytes, token spans or text-runner
+oracles. The Fren2 parser, AST, resolver and text jobs check them directly;
+the legacy formatter must neither rewrite them nor treat them as format laws. -/
+def fmtExactBytes : List String :=
+  ["test/FrenParse/crlf.fren", "test/FrenParse/walking.fren",
+   "test/FrenResolve/s1.fren", "test/FrenAst/emission.fren",
+   "test/FrenTextBytes/eol.fren", "test/FrenTextDemo/sums.fren"]
+
 /-- Specs that are not formatted, as `--ignore` globs: those deliberately
 not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
-def fmtIgnore : List String :=
+def fmtIgnore : List String := fmtExactBytes ++
   ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
    "test/cli/fmt/chain_error.fren", "test/cli/fmt/quantifier.fren", "test/cli/fmt/quantifier_error.fren", "test/cli/fmt/quantifier_unbounded.fren",
    "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
@@ -2639,6 +2649,7 @@ def formatting : IO (Array String) := do
   let mut failures := #[]
   let mut relaidSome := false
   for f in ← specFiles do
+    if FrenCli.Fmt.ignored fmtExactBytes.toArray f then continue
     let src ← IO.FS.readFile f
     let .ok new := FrenCli.Fmt.formatFile f src | continue
     if fmtKept f src != fmtKept f new then

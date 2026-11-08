@@ -226,7 +226,5 @@ Adding one to an integer increases it.
 pub mod spec
 pub mod spec::compiler_overview
 
-pub proc addition(x: Int) {
-  expect increases: x + 1 > x
-}
+pub proc addition(x: Int) { expect increases: x + 1 > x }
 ```
