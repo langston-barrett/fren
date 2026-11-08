@@ -1,7 +1,7 @@
 # THIR and walking type checking
 
 The typed high-level intermediate representation (THIR) adds value types to
-resolved expressions. This chapter contracts the next production
+resolved expressions. This chapter contracts the production
 `FrenHirToThir` slice using the real `FrenAst` and `FrenModule.Resolved` APIs.
 The actual pass now retains resolved syntax plus typed occurrence data; this
 chapter does not freeze a complete THIR schema. The
@@ -106,9 +106,9 @@ Whole walking static acceptance requires admitted input, successful typing,
 `WalkingCoverage` and `WalkingNonrecursive`; typing alone establishes only
 the first two.
 
-The next typing slice must decide arity, callability and constructor owner
-compatibility itself. It need not implement the two named validators, but
-must expose their outstanding status and retain the information they need.
+The type-only `check` and `checkSource` decide arity, callability and
+constructor owner compatibility. They retain the information the two
+validators consume; they do not run those validators.
 A nonempty partial match with compatible bodies and a recursive call can
 be type correct while still failing walking validation. No downstream
 consumer may assume those checks passed merely because THIR exists.
@@ -117,11 +117,59 @@ operator definedness, solver success, evidence quality, or the correctness
 of later desugaring and lowering. No evaluator simulation law is claimed
 before the actual typed representation and evaluator exist.
 
+## Actual static boundary
+
+`validateCoverage` visits the actual typed postorder occurrences in every
+function and check member, including assumptions and unreachable written
+branches. It identifies the scrutinee occurrence by its complete token
+sequence, reads its nominal enum type, and takes the constructor inventory
+from the admitted declaration scope, filtered by canonical owner. It checks
+pattern reference identities in written order, recording every repeated
+case and every absent constructor independently of the arm count. The
+walking AST supports only constructor paths as patterns. It has no wildcard
+or pattern binder; unresolved `_` and wrong-owner patterns fail before static
+validation rather than silently discharging coverage.
+
+`callEdges` reads actual call nodes and the callable signatures of their
+callee occurrences. The source grammar currently admits adjacent named
+calls only. Names in other positions and local values create no edge. `validateNonrecursive` searches
+from every declared function, even unused ones. Each breadth-first search
+enqueues each canonical function once, with a bound from the actual
+signature count, and detects a path back to its root. Declaration order,
+body postorder and written child order decide failure order; hash iteration
+and display names never decide identity. Calls inside check members do not
+create function edges because checks cannot be called.
+
+The raw validation helpers require genuine `check r = .ok t` output. An
+arbitrary caller-edited `Typed` record does not establish that precondition.
+`checkWalking` runs admission and actual typing on its resolved input before
+both validators; `checkWalkingSource` runs the actual source pipeline first.
+`checkWalkingTyped` instead requires proof of actual successful producer
+output. Successful results preserve the complete typed value, syntax and
+references. `StaticFailure.typing` retains existing diagnostics, including
+`F0201` and `F0304`. Validation failures are structured data without invented
+catalogue codes: coverage includes the owner, missing and repeated IDs; a
+cycle includes a closed canonical function path. Missing cases point at the
+match keyword, repetitions at the first repeated pattern, and cycles at the
+closing call's callee. Metadata failures also carry the actual source span.
+Rendering these new failures is future work.
+
+The actual Lean laws `validateWalking_iff`, `walking_success`,
+`walking_failure_iff`, `walking_retains` and `walking_deterministic` establish
+the executable success/failure boundary, admission, preservation and
+uniqueness. They do not prove a universal correspondence between traversal
+and the declarative coverage or graph obligations. Direct Plausible and
+native tests exercise actual generated programs with successful, partial,
+repeated, ill-typed, cyclic and edited-provider variants, requiring explicit
+nonzero premise counts and no discards. Finite tests are evidence rather
+than recursive universal soundness proofs.
+
 ## Focused examples and evidence
 
 This checked program exercises constructor values, positional calls, a
 nearest-first let context, if branches, match results and Bool conditions.
-It runs with today's checker, not the future Fren2 typechecker.
+The fence runs through Fren1's documentation wrapper; native walking tests
+exercise the actual Fren2 checker separately.
 
 ```fren
 pub mod typing
@@ -172,9 +220,13 @@ successful typed result or an empty set of goals.
 - [ ] Prove the declarative `HasValue` relation for every successful actual
   traversal (`TypingSound`). The finite native and Plausible cases do not
   establish universal soundness or complete traversal correctness.
-- [ ] Implement and test `WalkingCoverage` and `WalkingNonrecursive` before
-  claiming whole walking static acceptance. Preserve the distinction from
-  evaluation, solver verdicts and evidence checks.
+- [x] Implement and test `WalkingCoverage` and `WalkingNonrecursive` over
+  actual typed syntax, and provide the admitted whole walking static entry.
+  S1 retains all four Bool members, including the false `never_red` goal.
+- [ ] Prove universal declarative coverage/call-graph correspondence for the
+  actual validators; finite tests and executable boundary laws do not prove it.
+- [ ] Restate recursive coverage traversal and call-graph laws in Fren once
+  recursive syntax and graph reachability can be expressed there.
 - [ ] Restate the recursive typing/preservation relation in Fren once Fren2
   supports recursive expression datatypes and recursive judgments over
   their children and binder contexts. State it in Lean over the real pass

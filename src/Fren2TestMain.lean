@@ -19,6 +19,12 @@ public def main (args : List String) : IO UInt32 := do
   if args == ["--job", "resolverProperties"] then
     FrenAstToHirTests.runProperties
     return 0
+  if args == ["--job", "walkingProperties"] then
+    FrenHirToThirTests.runWalkingProperties
+    return 0
+  if args == ["--job", "walking"] then
+    FrenHirToThirTests.runWalking
+    return ← Fren.TextTests.cli textRunners ["--lib", "FrenWalking"]
   if args == ["--job", "typing"] then
     FrenHirToThirTests.runCases
     FrenHirToThirTests.runAdmission
@@ -32,6 +38,10 @@ public def main (args : List String) : IO UInt32 := do
   unless args.isEmpty do return ← Fren.TextTests.cli textRunners args
   FrenAstToHirTests.runCases
   FrenAstToHirTests.runProperties
+  FrenHirToThirTests.runWalking
+  let walkingText ← Fren.TextTests.cli textRunners ["--lib", "FrenWalking"]
+  if walkingText != 0 then return walkingText
+  FrenHirToThirTests.runWalkingProperties
   FrenHirToThirTests.runCases
   FrenHirToThirTests.runAdmission
   FrenHirToThirTests.runOperators

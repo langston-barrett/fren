@@ -4,3 +4,9 @@ public import FrenHirToThirTests.Cases
 public import FrenHirToThirTests.Operators
 public import FrenHirToThirTests.Admission
 public import FrenHirToThirTests.Properties
+public import FrenHirToThirTests.Walking
+public import FrenHirToThirTests.WalkingProperties
+public import FrenHirToThirTests.WalkingText
+meta import FrenHirToThirTests.WalkingText
+
+#fren_tests FrenHirToThirTests.walkingRunner

@@ -172,7 +172,13 @@ input_dir fren_resolve_inputs where
 lean_lib FrenHirToThir
 
 lean_lib FrenHirToThirTests where
-  needs := #[`@/fren_typecheck_inputs, `@/fren_resolve_inputs]
+  moreLeanArgs := textTestLeanArgs
+  needs := #[`@/fren_typecheck_inputs, `@/fren_resolve_inputs, `@/fren_walking_inputs]
+
+input_dir fren_walking_inputs where
+  path := "test/FrenWalking"
+  text := false
+  filter := .extension #["fren"]
 
 input_dir fren_typecheck_inputs where
   path := "test/FrenTypecheck"

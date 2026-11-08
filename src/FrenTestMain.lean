@@ -2028,7 +2028,8 @@ the legacy formatter must neither rewrite them nor treat them as format laws. -/
 def fmtExactBytes : List String :=
   ["test/FrenParse/crlf.fren", "test/FrenParse/walking.fren",
    "test/FrenResolve/s1.fren", "test/FrenAst/emission.fren",
-   "test/FrenTextBytes/eol.fren", "test/FrenTextDemo/sums.fren"]
+   "test/FrenTextBytes/eol.fren", "test/FrenTextDemo/sums.fren",
+   "test/FrenWalking/static.fren"]
 
 /-- Specs that are not formatted, as `--ignore` globs: those deliberately
 not formatted, and those that `fren fmt` cannot parse, such as tests of
@@ -4517,7 +4518,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["fren2", "resolver"], ["fren2", "resolverProperties"], ["fren2", "typing"], ["fren2", "typingOperators"], ["fren2", "typingProperties"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["fren2", "resolver"], ["fren2", "resolverProperties"], ["fren2", "walking"], ["fren2", "walkingProperties"], ["fren2", "typing"], ["fren2", "typingOperators"], ["fren2", "typingProperties"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyProcess"], ["heavyBudget"], ["heavyBudgetBoundaries"], ["heavyMissingSource"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
@@ -4654,7 +4655,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["libraries"] => libraries
   | ["layering"] => FrenTest.Layering.check
   | ["fren2", job] => do
-    unless ["resolver", "resolverProperties", "typing", "typingOperators", "typingProperties"].contains job do
+    unless ["resolver", "resolverProperties", "walking", "walkingProperties", "typing", "typingOperators", "typingProperties"].contains job do
       throw (IO.userError s!"unknown Fren2 job `{job}`")
     let out ← IO.Process.output { cmd := ".lake/build/bin/fren2_test", args := #["--job", job] }
     return if out.exitCode == 0 then #[] else #[s!"Fren2 {job} failed:\n{out.stdout}{out.stderr}"]

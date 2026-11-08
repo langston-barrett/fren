@@ -3,10 +3,13 @@
 A type describes which values an expression can produce. This chapter fixes
 only the single-file [walking subset](../Compiler/AstAndParsing.md#walking-subset):
 `Bool`, `Int`, payload-free enumerations and non-generic function signatures.
-[THIR](../Compiler/Thir.md) specifies the next checker over resolved syntax.
+[THIR](../Compiler/Thir.md) specifies the checker and static boundary over
+resolved syntax.
 The actual walking checker is `FrenHirToThir.check`; its retained syntax and
 typed occurrences implement this slice. Coverage and non-recursion remain
-separate validators.
+separate validators, now executed by `checkWalking` and
+`checkWalkingSource` after actual typing. Their success establishes static
+subset acceptance; it gives no evaluator or solver verdict.
 
 ## Value types and signatures
 
@@ -228,8 +231,8 @@ context entries. These are primitive proofs, not whole-traversal soundness.
 
 ## Diagnostic anchor and remaining evidence
 
-This isolated example pins today's checker, not an implemented Fren2 pass.
-Its `l` operand is on line 5, column 28 (zero-based byte span `[71, 72)`).
+This fence pins the Fren1 documentation checker. Native tests also check
+the actual Fren2 diagnostic independently. Its `l` operand is on line 5, column 28 (zero-based byte span `[71, 72)`).
 
 ```fren example
 pub mod bad

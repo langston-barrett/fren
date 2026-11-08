@@ -1,0 +1,33 @@
+-- case: full_reordered
+mod m
+enum E { A, B }
+fn f(e: E): Int := match e { E::B => 1, E::A => 0 }
+-- result: static accepted; functions=1; bodies=1
+
+-- case: missing
+mod m
+enum E { A, B }
+fn f(e: E): Int := match e { E::A => 0 }
+-- result: coverage m.E; missing=1; repeated=0
+
+-- case: same_count_duplicate
+mod m
+enum E { A, B }
+fn f(e: E): Int := match e { E::A => 0, E::A => 1 }
+-- result: coverage m.E; missing=1; repeated=1
+
+-- case: self_cycle
+mod m
+fn f(x: Int): Int := f(x)
+-- result: cycle m.f -> m.f
+
+-- case: mutual_cycle
+mod m
+fn f(x: Int): Int := g(x)
+fn g(x: Int): Int := f(x)
+-- result: cycle m.f -> m.g -> m.f
+
+-- case: false_goal_remains_goal
+mod m
+expect q() { expect deliberately_false: false }
+-- result: static accepted; functions=0; bodies=1

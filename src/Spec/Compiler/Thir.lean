@@ -23,6 +23,11 @@ theorem nominal_key (a b : FrenBase.ItemId) : (a == b) = true ↔ a = b :=
 #check FrenHirToThir.erasure
 #check FrenHirToThir.deterministic
 #check FrenHirToThir.TypingSound
+#check FrenHirToThir.validateWalking_iff
+#check FrenHirToThir.walking_success
+#check FrenHirToThir.walking_failure_iff
+#check FrenHirToThir.walking_retains
+#check FrenHirToThir.walking_deterministic
 
 -- Focused accepted-resolver input and source anchor, not a typing verdict.
 private def enumArithmetic :=

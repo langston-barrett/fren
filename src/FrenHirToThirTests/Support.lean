@@ -64,4 +64,10 @@ def localsRetained (t : Typed) : Bool := t.bodies.all fun b =>
       | none => false
     | _ => true
 
+def sameResult [BEq ε] [BEq α] (left right : Except ε α) : Bool :=
+  match left, right with
+  | .ok a, .ok b => a == b
+  | .error a, .error b => a == b
+  | _, _ => false
+
 end FrenHirToThirTests
