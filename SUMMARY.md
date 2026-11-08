@@ -125,6 +125,7 @@
 - [Compiler](src/Spec/Compiler/index.md)
   - [Overview](src/Spec/Compiler/Overview.md)
   - [Base definitions](src/Spec/Compiler/BaseDefinitions.md)
+  - [Binders and substitution](src/Spec/Compiler/Bindings.md)
   - [AST and parsing](src/Spec/Compiler/AstAndParsing.md)
   - [HIR](src/Spec/Compiler/Hir.md)
   - [THIR](src/Spec/Compiler/Thir.md)
