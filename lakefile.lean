@@ -427,6 +427,14 @@ input_file spec_compiler_base_definitions_md where
   path := "src/Spec/Compiler/BaseDefinitions.md"
   text := true
 
+lean_lib SpecCompilerBindings where
+  globs := #[`Spec.Compiler.Bindings]
+  needs := #[`@/spec_compiler_bindings_md]
+
+input_file spec_compiler_bindings_md where
+  path := "src/Spec/Compiler/Bindings.md"
+  text := true
+
 lean_lib SpecCompilerAstAndParsing where
   globs := #[`Spec.Compiler.AstAndParsing]
   needs := #[`@/spec_compiler_ast_and_parsing_md]

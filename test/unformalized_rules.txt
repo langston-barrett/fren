@@ -318,3 +318,24 @@ base.diagnostic.applicability
 base.diagnostic.rendering
 base.sexp.version
 base.sexp.saved-version
+
+# src/Spec/Compiler/Bindings.md
+bindings.representation.raw -- prototype raw indices and Scoped exist; production representation binding pending
+bindings.scope.context -- recursive Scoped exists in Lean; no recursive Fren requirement or production binding yet
+bindings.scope.children -- prototype checks every array member; shared child-depth interface binding pending
+bindings.scope.boundary -- production checked boundary API is not implemented
+bindings.identity.context -- context correspondence is a caller obligation; production context API binding pending
+bindings.identity.metadata -- prototype has no metadata; production metadata-independent binding pending
+bindings.operations.total -- prototype rename and subst are total; future opening, closing and free-index code pending
+bindings.rename.lift -- prototype upRen exists; production binder lifting binding pending
+bindings.rename.structure -- prototype fold traverses arrays; generic shared traversal theorem and binding pending
+bindings.shift.cutoff -- prototype shift exists; recursive requirement and production binding pending
+bindings.substitution.lift -- prototype upSub exists; recursive requirement and production binding pending
+bindings.substitution.structure -- prototype subst traverses arrays; shared traversal binding pending
+bindings.substitution.top -- prototype substTop exists with scope proof; production API binding pending
+bindings.substitution.at -- defined here through actual simultaneous substitution; production slot-deletion API pending
+bindings.opening.definition -- defined here as substTop; production opening API and binding pending
+bindings.closing.definition -- defined here as renaming; closing implementation and binding pending
+bindings.free-indices.definition -- mathematical definition here; actual collector and recursive formalization pending
+bindings.free-indices.children -- mathematical child rule here; actual collector and recursive formalization pending
+bindings.alpha.definition -- structural definition here; production metadata-independent equality API pending

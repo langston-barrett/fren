@@ -1,5 +1,6 @@
 import Spec.Compiler.AstAndParsing
 import Spec.Compiler.BaseDefinitions
+import Spec.Compiler.Bindings
 import Spec.Compiler.ClosureSpecialization
 import Spec.Compiler.Desugaring
 import Spec.Compiler.Evaluator
