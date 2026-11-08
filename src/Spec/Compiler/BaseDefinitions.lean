@@ -4,3 +4,5 @@ import Fren.Literate
 open Fren.Lang
 
 #fren_md "BaseDefinitions.md"
+
+#fren_check

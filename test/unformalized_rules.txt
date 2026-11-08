@@ -298,3 +298,23 @@ compiler.diagnostic.error-node
 compiler.evidence.data
 compiler.evidence.dependencies
 compiler.evidence.limits
+
+# src/Spec/Compiler/BaseDefinitions.md (Interlock pending)
+base.item.path
+base.item.generated
+base.item.determinism
+base.span.file
+base.span.bounds
+base.source-map.embedded
+base.source-map.utf16
+base.origin.contents
+base.origin.table
+base.origin.remap
+base.origin.independence
+base.origin.occurrences
+base.diagnostic.contents
+base.diagnostic.suggestion
+base.diagnostic.applicability
+base.diagnostic.rendering
+base.sexp.version
+base.sexp.saved-version
