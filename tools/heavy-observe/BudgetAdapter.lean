@@ -1,5 +1,6 @@
 import Heavy.Budget
 import Heavy.Process
+import Heavy.CompilerForecast
 
 /-! Raw protocol adapter for the single-use session, shared with its tests.
 Malformed input has no zero-demand or launch-anyway path. -/
@@ -61,25 +62,42 @@ def control (raw : Array UInt64) : Array UInt64 :=
       if groupSignal error handler flags bit previous errorWait observed expected reaped then 1 else 0]
   | _ => #[2]
 
+/-- Selection compares the actual encoded observations, never a supplied verdict. -/
+def cohortDemand (expected : String) (observed : Option String) (demand : Nat) :
+    Option (Nat × String) :=
+  if observed == some expected then some (demand, "explicit-cohort-request") else none
+
+theorem cohort_mismatch (expected : String) (observed : Option String) (demand : Nat)
+    (h : observed ≠ some expected) : cohortDemand expected observed demand = none := by
+  simp [cohortDemand, h]
+
 /-- Explicit source-bound requests are fixtures/configuration, not forecasts.
 The noncryptographic fingerprint is a mismatch check, never input closure.
 All absent/unsupported/mismatched inputs use a caller-specified positive
 fallback. Duplicate or malformed entries fail configuration entirely. -/
-def request (manifest : String) (source fingerprint : Option String) (fallback : Nat) :
+def request (manifest : String) (source fingerprint : Option String) (fallback : Nat) (cohort : Option String := none) :
     Option (Nat × String) := do
   if fallback == 0 then none else do
     let mut selected := none
     let mut seen : List String := []
     for line in manifest.splitOn "\n" do
       if line == "" then continue
-      let [path, digest, demand] := line.splitOn "\t" | none
-      let demand ← demand.toNat?
+      let (path, digest, identity, demandText) ← match line.splitOn "\t" with
+        | [path, digest, demand] => some (path, digest, none, demand)
+        | [path, digest, "cohort-v1", identity, demand] =>
+          if identity == "" || identity.utf8ByteSize > 65536 then none
+          else some (path, digest, some identity, demand)
+        | _ => none
+      let demand ← demandText.toNat?
       if path == "" || digest == "" || demand == 0 || demand > 2^50 || seen.contains path then none
       else do
         seen := path :: seen
-        if source == some path && fingerprint == some digest then selected := some demand
+        if source == some path && fingerprint == some digest then
+          match identity with
+          | none => selected := some (demand, "explicit-source-request")
+          | some expected => selected := cohortDemand expected cohort demand
     return match selected with
-      | some n => (n, "explicit-source-request")
+      | some pair => pair
       | none => (fallback, "explicit-unknown-fallback")
 
 end BudgetAdapter

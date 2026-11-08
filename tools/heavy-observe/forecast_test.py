@@ -90,7 +90,10 @@ def main():
         (case / 'stdout').write_text(proc.stdout); (case / 'stderr').write_text(proc.stderr)
         if ok:
             assert proc.returncode == 0 and proc.stderr == '', (name, proc.stderr)
-            assert proc.stdout == f"{source.resolve()}\t{raw['source_before']}\t{(raw['peak_rss_kib'] if peak is None else peak) + int(padding)}\n"
+            fields = proc.stdout.rstrip('\n').split('\t')
+            assert fields[:3] == [str(source.resolve()), raw['source_before'], 'cohort-v1']
+            assert fields[3] and len(fields[3]) <= 65536
+            assert int(fields[4]) == (raw['peak_rss_kib'] if peak is None else peak) + int(padding)
         else:
             assert proc.returncode != 0 and proc.stdout == '' and proc.stderr, (name, proc)
         return proc
