@@ -169,3 +169,53 @@ private def typeName : Ty → String
   IO.println "type grammar: 28 explicit suffix/path positives, 16 EOF truncations, 8 existing parameter positives passed"
 
 end FrenParseTests
+
+namespace FrenParseTests
+open FrenAst FrenParse
+
+private def requiredExpression (source : String) : IO Unit := do
+  let .ok doc := parseExpression ⟨1⟩ source | throw <| IO.userError s!"required expression: {source}"
+  unless coherent doc && doc.emit == source do throw <| IO.userError "required expression tree"
+
+private def forbiddenExpression (source : String) : IO Unit := do
+  for entry in [Entry.expression, Entry.file, Entry.context] do
+    let lead := if entry == .expression then "" else "fn f(): Int := "
+    let .error failure := parse entry ⟨1⟩ (lead ++ source)
+      | throw <| IO.userError s!"unsupported expression category: {source}"
+    unless failure.emit == lead ++ source do throw <| IO.userError "category failure ownership"
+
+#eval show IO Unit from do
+  -- Atom restriction: infix, either unary prefix and let cannot be a bare
+  -- scrutinee, while parentheses and actual atoms preserve their written tree.
+  for scrutinee in ["l + 1", "l = r", "-l", "not l", "let x := l in x"] do
+    forbiddenExpression ("match " ++ scrutinee ++ " { E::A => 1 }")
+    requiredExpression ("match (" ++ scrutinee ++ ") { E::A => 1 }")
+  for scrutinee in ["l", "unknown(l)", "1", "true", "if b then l else r",
+      "match l { E::A => l }"] do
+    requiredExpression ("match " ++ scrutinee ++ " { E::A => 1 }")
+  for source in ["let x := let y := 1 in y in x", "match l { E::A => let x := 1 in x }"] do
+    forbiddenExpression source
+  for source in ["let x := (let y := 1 in y) in x", "match l { E::A => (let x := 1 in x) }",
+      "let x := 1 in let y := x in y", "let x := if b then 1 else 2 in x",
+      "f(let x := 1 in x)", "if b then let x := 1 in x else 2"] do
+    requiredExpression source
+  for gap in [" ", "\t", "\n", "\r\n", " -- é😀\n", " -- é😀\r\n"] do
+    forbiddenExpression ("f" ++ gap ++ "(x)")
+    forbiddenExpression ("A::f" ++ gap ++ "(x)")
+    for entry in [Entry.file, Entry.context] do
+      for source in ["fn f" ++ gap ++ "(x: Int): Int := x",
+          "expect e" ++ gap ++ "(x: Int) { expect c: true }"] do
+        let .error failure := parse entry ⟨1⟩ source | throw <| IO.userError "spaced parameter opener"
+        unless failure.emit == source do throw <| IO.userError "opener failure ownership"
+  for source in ["1(x)", "true(x)", "(f)(x)", "f(x)(y)",
+      "(if b then f else g)(x)", "match l { E::A => f }(x)"] do
+    forbiddenExpression source
+  for source in ["unknown(x)", "A::unknown(x)", "x(y)", "f(g(x), h(y))",
+      "1 + (x)", "1 +\n(x)", "f((x))"] do
+    requiredExpression source
+  -- Independent source byte anchoring for separated and generic openers.
+  unless rejectedAt .expression "f -- é😀\r\n(x)" 13 14 &&
+      rejectedAt .expression "1(x)" 1 2 do throw <| IO.userError "call opener byte anchors"
+  IO.println "atom scrutinees, iff definition/arm categories, adjacent named calls and parameter openers passed"
+
+end FrenParseTests

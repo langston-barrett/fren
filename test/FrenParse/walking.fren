@@ -375,3 +375,15 @@ fn f(b?:
 -- case: truncated_qualified_type
 fn f(): Int::
 -- result: syntax 13:13: expected an identifier
+
+-- case: call_gap
+fn f(): Int := g (x)
+-- result: syntax 17:18: expected `(` adjacent to its called name
+
+-- case: match_infix_scrutinee
+fn f(): Int := match l + 1 { E::A => 1 }
+-- result: syntax 23:24: expected `{`
+
+-- case: match_parenthesized_scrutinee
+fn f(): Int := match (l + 1) { E::A => 1 }
+-- result: context=0; fn f (match (paren (+ l 1)) (E::A 1))

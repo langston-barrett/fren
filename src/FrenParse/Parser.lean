@@ -22,6 +22,14 @@ private def newlineBefore (c : Cursor) : Bool :=
       (fun piece => piece.text.toList.contains '\n')
   | _, _ => false
 
+/-- Applications and declaration parameter lists use the source byte boundary,
+not a rendered name or character count. Any trivia breaks adjacency. -/
+private def adjacentBefore (c : Cursor) : Bool :=
+  match peek c, c.lexed.tokens[c.index - 1]? with
+  | some current, some previous =>
+    c.index > 0 && previous.span.stop == current.span.start
+  | _, _ => false
+
 private def advance (c : Cursor) : Cursor := { c with index := c.index + 1 }
 private def fail (c : Cursor) (expected : String) : Except Diagnostic α :=
   .error ⟨(peek c).map (·.span) |>.getD c.lexed.eof, expected⟩
@@ -56,6 +64,7 @@ private def typeSyntax (c : Cursor) : Except Diagnostic (Ty × Cursor) := do
   return (.named p, c)
 
 private def parameters (c : Cursor) : Except Diagnostic (Parameters × Cursor) := do
+  if !adjacentBefore c then fail c "`(` immediately after the declaration name"
   let (openToken, c) ← take c "("
   let mut c := c
   let mut values : Array Parameter := #[]
@@ -123,6 +132,8 @@ private def leading : Nat → Nat → Cursor → Except Diagnostic (Expr × Curs
   | 0, _, c => fail c "an expression"
   | fuel + 1, minPrec, c => do
     let some token := peek c | fail c "an expression"
+    if token.text == "-" && 8 < minPrec then
+      fail c "an atom (parenthesize unary minus)"
     if token.text == "not" && 4 < minPrec then
       fail c "parentheses around `not` in a tighter operand"
     if token.text == "let" && 0 < minPrec then
@@ -145,12 +156,13 @@ private def leading : Nat → Nat → Cursor → Except Diagnostic (Expr × Curs
     if token.text == "let" then
       let (name, c) ← identifier (advance c)
       let (assign, c) ← take c ":="
-      let (value, c) ← expression fuel 0 c
+      let (value, c) ← expression fuel 1 c
       let (inToken, c) ← take c "in"
       let (body, c) ← expression fuel 0 c
       return (.letE token name assign value inToken body, c)
     if token.text == "match" then
-      let (scrutinee, c) ← expression fuel 0 (advance c)
+      -- A scrutinee is an atom, including calls and explicit parentheses.
+      let (scrutinee, c) ← expression fuel 9 (advance c)
       let (openToken, c) ← take c "{"
       let (arms, c) ← matchArms fuel c
       let (closeToken, c) ← take c "}"
@@ -169,6 +181,10 @@ private def tails : Nat → Nat → Expr → Cursor → Except Diagnostic (Expr 
   | 0, _, _, c => fail c "an expression continuation"
   | fuel + 1, minPrec, left, c => do
     if hasText c "(" then
+      unless adjacentBefore c do fail c "`(` adjacent to its called name"
+      match left with
+      | .name _ => pure ()
+      | _ => fail c "a named path before a call's `(`"
       let (openToken, c) ← take c "("
       let (args, commas, c) ← arguments fuel c
       let (closeToken, c) ← take c ")"
@@ -203,7 +219,7 @@ private def matchArms : Nat → Cursor → Except Diagnostic
     let (variant, c) ← path c
     if variant.tail.isEmpty then fail c "`::` and a variant name"
     let (arrow, c) ← take c "=>"
-    let (body, c) ← expression fuel 0 c
+    let (body, c) ← expression fuel 1 c
     if !hasText c "," then return (#[⟨variant, arrow, body, none⟩], c)
     let (comma, c) ← take c ","
     let (arms, c) ← matchArms fuel c

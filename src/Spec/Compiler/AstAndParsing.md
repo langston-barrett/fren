@@ -72,8 +72,13 @@ chains, including the full language's `a < b <= c`, are unsupported rather
 than parsed as nested binary operators. Explicitly parenthesized comparisons
 remain syntax trees whose operand types are checked later.
 A `let` has the form `let x := value in body`; its body extends to the
-right. An `if` requires both `then` and `else`. A match arm pairs a
-qualified variant pattern with an expression using `=>`; arms are
+right. The definition's value is read at the `iff` level, so a nested `let`
+there requires parentheses; a right-nested `let` in the body remains valid.
+An `if` requires both `then` and `else`. A match scrutinee is an atom, such
+as a name, call, parenthesized expression, `if` or nested `match`; a bare
+operator or `let` expression there requires parentheses. A match arm pairs
+a qualified variant pattern with an expression at the `iff` level using
+`=>`, so a bare `let` arm body also requires parentheses. Arms are
 comma-separated and may have a trailing comma. Function parameters use
 `name: Type` (a `?` suffix supplies `Bool` when the annotation is omitted),
 and a function body follows `:=`. A suffix does not remove an explicit
@@ -81,6 +86,14 @@ annotation: `b?: Bool` and `b?: Int` both parse, and the latter's type
 inconsistency is checked later. Named type paths are read in full before a
 bare `Bool` or `Int` is classified as built-in: `Int::T` and `Bool::T` are
 written paths whose resolution is also later work.
+Calls apply a written path, as in `f(x)` or `A::f(x)`, rather than an
+arbitrary expression or a previous call result. The opening `(` touches
+the last name: spaces, tabs, line endings and comments are not allowed
+between them. Function and global-expectation parameter lists likewise
+begin immediately after the declaration name. Ordinary grouping
+parentheses may still follow trivia. These are syntax rules; a named
+application such as `unknown(x)` or `x(y)` still parses before resolution
+or typing.
 
 **Proof obligations**
 
