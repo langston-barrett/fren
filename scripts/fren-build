@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build Lake targets with a private Heavy compiler-budget session."""
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -37,12 +38,18 @@ def main():
         configured = env.get('FREN_BUILD_REQUESTS_FILE')
         if configured is not None:
             requests = Path(configured)
-            if (not requests.is_absolute() or not requests.is_file() or not requests.stat().st_mode & 0o444
-                    or not os.access(requests, os.R_OK)):
+            if not requests.is_absolute():
                 raise ValueError('FREN_BUILD_REQUESTS_FILE must be an absolute readable regular file')
-            # Check actual readability before starting the controller.
-            with requests.open('rb'):
-                pass
+            try:
+                fd = os.open(requests, os.O_RDONLY | os.O_NONBLOCK)
+                try:
+                    mode = os.fstat(fd).st_mode
+                    if not stat.S_ISREG(mode) or not mode & 0o444:
+                        raise ValueError('FREN_BUILD_REQUESTS_FILE must be an absolute readable regular file')
+                finally:
+                    os.close(fd)
+            except OSError as error:
+                raise ValueError(f'FREN_BUILD_REQUESTS_FILE: {error}') from error
         work = Path(tempfile.mkdtemp(prefix='fren-build-')).resolve()
         if configured is None:
             requests = work / 'requests.tsv'

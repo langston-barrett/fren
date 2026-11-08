@@ -139,6 +139,63 @@ def main():
             proc = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg, env=invalid_env, capture_output=True, timeout=10)
             assert proc.returncode == 125 and b'FREN_BUILD_REQUESTS_FILE' in proc.stderr, (invalid, proc.returncode, proc.stderr)
             assert set(work.glob('fren-build-*')) == before
+        fifo = work / 'stable-fifo'; os.mkfifo(fifo)
+        before = set(work.glob('fren-build-*'))
+        proc = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg,
+                              env=dict(env, FREN_BUILD_REQUESTS_FILE=str(fifo)), capture_output=True, timeout=10)
+        assert proc.returncode == 125 and set(work.glob('fren-build-*')) == before
+        # Replace a regular manifest immediately at either implementation's actual
+        # open boundary, so the old and new controls exercise the same transition.
+        hook = r"""
+import os, pathlib, runpy, sys
+path = os.environ['FREN_BUILD_REQUESTS_FILE']
+marker = os.environ['FIFO_MARKER']
+original_path_open = pathlib.Path.open
+original_os_open = os.open
+replaced = False
+def replace(candidate):
+    global replaced
+    if not replaced and os.fspath(candidate) == path:
+        os.unlink(path)
+        os.mkfifo(path)
+        pathlib.Path(marker).write_text('replaced at open')
+        replaced = True
+def path_open(self, *args, **kwargs):
+    replace(self)
+    return original_path_open(self, *args, **kwargs)
+def os_open(candidate, *args, **kwargs):
+    replace(candidate)
+    return original_os_open(candidate, *args, **kwargs)
+pathlib.Path.open = path_open
+os.open = os_open
+script = sys.argv[1]
+sys.argv = [script, '+Tiny']
+runpy.run_path(script, run_name='__main__')
+"""
+        def transition(script, label, expect_timeout):
+            target = work / (label + '-manifest'); target.write_text('')
+            marker = work / (label + '-marker')
+            before = set(work.glob('fren-build-*'))
+            transition_env = dict(env, FREN_BUILD_REQUESTS_FILE=str(target), FIFO_MARKER=str(marker))
+            try:
+                proc = subprocess.run([sys.executable, '-c', hook, str(script)], cwd=pkg,
+                                      env=transition_env, capture_output=True, timeout=5)
+                result = {'case': label, 'status': proc.returncode, 'stdout': proc.stdout.decode(),
+                          'stderr': proc.stderr.decode(), 'timed_out': False}
+                assert not expect_timeout and proc.returncode == 125 and b'FREN_BUILD_REQUESTS_FILE' in proc.stderr
+            except subprocess.TimeoutExpired as error:
+                result = {'case': label, 'timed_out': True, 'stdout': (error.stdout or b'').decode(),
+                          'stderr': (error.stderr or b'').decode()}
+                assert expect_timeout
+            finally:
+                target.unlink(missing_ok=True)
+            assert marker.read_text() == 'replaced at open'
+            assert set(work.glob('fren-build-*')) == before
+            results.append(result)
+        old_transition = os.environ.get('HEAVY_TEST_OLD_TRANSITION_BUILD')
+        if old_transition:
+            transition(old_transition, 'old-fifo-transition', True)
+        transition(BUILD, 'fifo-transition', False)
         bad = work / 'bad-short'; bad.write_text('invalid\n')
         proc = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg,
                               env=dict(env, FREN_BUILD_REQUESTS_FILE=str(bad)), capture_output=True, timeout=10)

@@ -336,7 +336,9 @@ needed. By default it also contains an empty request manifest, so all compiler
 requests use the explicit unknown fallback. Set `FREN_BUILD_REQUESTS_FILE` to
 an absolute readable regular file to pass an existing manifest to the same
 gate and selection rules described above; invalid paths fail before compilation.
-Keep the file available for the invocation. Requests are explicit operator
+The precheck opens nonblocking and checks the opened file; the controller reads
+the path again, so the name is not a stable file identity. Keep the file
+available for the invocation. Requests are explicit operator
 configuration; historical adviser output is not automatically adopted. Defaults are
 1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
 30,000 ms wait; override them with `FREN_BUILD_ALLOWANCE_KIB`,
