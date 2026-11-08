@@ -10,7 +10,7 @@ and its measured-memory backstop remain active.
 From the repository root, with the pinned toolchain already installed:
 
 ```sh
-scripts/heavy lake -d tools/heavy-observe build heavy_observe process_tests budget_session budget_tests --wfail
+scripts/heavy lake -d tools/heavy-observe build heavy_observe process_tests budget_session budget_tests compiler_advice --wfail
 scripts/heavy --offline python3 -I tools/heavy-observe/overlay.py \
   "$PWD/tools/heavy-observe/overlay" \
   --real-lean /opt/elan/toolchains/leanprover--lean4---v4.32.0/bin/lean
@@ -310,7 +310,40 @@ not a pure filesystem or dependency-closure proof.
 
 ## Developer entrypoint
 
-With `heavy_observe` and `budget_session` already built for this checkout,
+For an ordinary build, first build the standalone tools from this checkout:
+
+```sh
+scripts/heavy lake -d tools/heavy-observe build heavy_observe budget_session --wfail
+```
+
+Then, from the package to build, under the existing fd job and Heavy envelope:
+
+```sh
+scripts/heavy scripts/fren-build FrenSexpTests fren2_test
+```
+
+Use the path to this checkout's `scripts/fren-build` when building another
+worktree; its prebuilt tools must match its reviewed source. The command uses
+the caller's nearest `lean-toolchain` pin and requires it to be installed in
+elan; it invokes the Lake beside that compiler in the caller's directory. It
+passes each argument literally after `lake build`. It neither builds missing
+tools nor installs a toolchain. Lake may access or reconcile dependencies; use
+`--offline` on the outer Heavy command only with a prepared local package.
+
+Each invocation prints and retains a new private temporary directory containing
+an empty request manifest and the overlay, session and records under `state`.
+Remove it when no longer needed. All compiler requests use the explicit
+unknown fallback: no historical adviser output is adopted. Defaults are
+1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
+30,000 ms wait; override them with `FREN_BUILD_ALLOWANCE_KIB`,
+`FREN_BUILD_HEADROOM_KIB`, `FREN_BUILD_FALLBACK_KIB` and
+`FREN_BUILD_TIMEOUT_MS`. Reservations are estimates, not memory bounds; the
+outer fd/Heavy cap and its backstop remain required. The session reports the
+child's exit status, with a signal represented by the usual 128 + signal
+shell status. `TMPDIR` selects the parent of the private directory.
+
+For explicit source requests and a selected compiler,
+with `heavy_observe` and `budget_session` already built for this checkout,
 `scripts/heavy-lean-build` creates a new owned overlay and session, then
 executes the existing session controller. It does not build tools or packages.
 Choose the actual installed toolchain's absolute `bin/lean` explicitly; the
@@ -343,3 +376,49 @@ changed. If tools are missing, build the standalone targets using the documented
 recipe first; the caller must ensure those prebuilt binaries match this source.
 The focused standalone test is `python3 -I tools/heavy-observe/entrypoint_test.py`
 through `scripts/heavy --offline`; it is also included in `test.py`.
+
+## Compiler forecast adviser
+
+Build the separate `compiler_advice` target with the pinned standalone
+package. It reads one JSON request file, captures current identity in its
+actual cwd, and prints one JSON advice object. For example:
+
+```json
+{"real_compiler":"/absolute/toolchain/bin/lean","args":["Tiny.lean","--setup","setup.json"],"cutoff_monotonic_ns":123456000000,"recent_count":20,"minimum_samples":3,"records":["/absolute/owned/process-1.json","/absolute/owned/process-2.json"]}
+```
+
+The cutoff is an explicit CLOCK_MONOTONIC nanosecond value in the current
+Linux boot, never a wall-clock timestamp. The executable obtains current
+monotonic now and boot identity itself. The observer adds best-effort
+optional `boot_id` to schema 2/3; inability to read it does not change child
+status. Records without that identity remain unknown; no completion time is
+inferred from file mtime. Read completed, trusted observer files, listing
+each invocation once. File authenticity and Linux clock/filesystem behavior
+are external assumptions, not kernel proofs.
+
+The Std-only `Heavy.CompilerForecast` kernel filters exact raw source/cwd,
+source content, compiler path/content/version/git hash, ordered argv and
+setup cohorts, then retains at most the requested recent count (maximum
+1024 at the executable boundary). It selects successful, stable-source,
+positive physical wait4 observations in the same boot/window and returns
+their exact maximum plus count if the explicit positive minimum is met.
+Malformed records are rejected and counted; missing current identity or
+insufficient usable evidence returns `unknown` with a null peak. This is a
+sample count, not a claim of independent observations or calibration.
+Current identity is recaptured after reading history; no subsequent
+stale-safe use is guaranteed. A setup fingerprint is the producer's
+before-run observation; it does not prove setup stability during that run.
+
+This statistical advice does not change complete-input provenance:
+`identity_complete` remains false. Imports, environment, plugins and
+libraries remain outside the partial noncryptographic identity. The peak
+is neither concurrent physical RAM nor a guaranteed future bound. There
+is no automatic capture, history database, gate injection, headroom or
+fallback policy. Callers still supply manual requests and positive fallback
+to the existing controller API.
+
+The existing standalone integration harness runs `forecast_test.py` with
+one tiny actual observed compilation and bounded raw JSON mutations through
+the executable/decoder/kernel. Run that focused check alone after building
+`compiler_advice heavy_observe`, under Heavy offline. `--output` selects a
+new absolute owned directory for its records, requests, advice and timing.

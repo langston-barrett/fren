@@ -5,7 +5,7 @@ package heavyObserve
 
 lean_lib Heavy where
   srcDir := "../../src"
-  globs := #[`Heavy.Process, `Heavy.Budget, `Heavy.Ownership]
+  globs := #[`Heavy.Process, `Heavy.Budget, `Heavy.Ownership, `Heavy.Forecast, `Heavy.CompilerForecast]
 
 lean_lib BudgetAdapter
 
@@ -30,3 +30,6 @@ lean_exe budget_session where
 
 lean_exe budget_tests where
   root := `BudgetTests
+
+lean_exe compiler_advice where
+  root := `ForecastMain

@@ -77,6 +77,11 @@ def run (args : List String) : IO UInt32 := do
       let a ← readRegular self.toString fingerprintAllowed
       let b ← readRegular real.toString fingerprintAllowed
       if a.isSome && a == b then throw (IO.userError "recursive overlay: real compiler is a copy of the observer")
+  -- Best effort only: missing boot identity cannot change the child's status.
+  let boot ← try
+    let value := (← IO.FS.readFile "/proc/sys/kernel/random/boot_id").trimAscii.copy
+    pure (if value == "" then none else some value)
+    catch _ => pure none
   let cwd ← IO.currentDir
   let parsed := parseMetadata args
   let source := parsed.bind (·.source)
@@ -141,6 +146,7 @@ def run (args : List String) : IO UInt32 := do
       ("child_present", toString childPresent),
       ("wrapper_code", toString (if gateError != 0 then 125 else outcome.shellCode))] else []
     let record := object (gateFields ++ [
+      ("boot_id", jsonOption quoted boot),
       ("schema", if gated then "3" else "2"), ("family", quoted "lean"),
       ("input_kind", quoted ((parsed.map (·.kind)).getD "unknown")),
       ("source", jsonOption quoted source),

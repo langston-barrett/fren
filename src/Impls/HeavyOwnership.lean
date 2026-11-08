@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Impl
 import Heavy.Budget
+import Heavy.CompilerForecast
 import Heavy.Ownership
 import Heavy.Process
 import Reqs.Testing
@@ -610,5 +611,74 @@ impl compile_source_identity: testing::heavy_compile_source_identity
 } by
   intro canonical fingerprint _
   cases canonical <;> simp [fren_spec, Heavy.Budget.sourceIdentity]
+
+end Fren.Impls.HeavyOwnership
+
+namespace Fren.Impls.HeavyOwnership
+
+open Heavy.CompilerForecast
+
+def compilerContext (c : Context) : testing.CompilerContext :=
+  ⟨c.source, c.cwd, c.sourceFingerprint, c.compiler, c.compilerFingerprint,
+    c.version, c.githash, arguments c.args, c.setup, c.setupFingerprint⟩
+
+theorem arguments_injective : Function.Injective arguments := by
+  intro a b h
+  induction a generalizing b with
+  | nil => cases b <;> simp [arguments] at h ⊢
+  | cons a as ih =>
+    cases b with
+    | nil => simp [arguments] at h
+    | cons b bs =>
+      simp only [arguments] at h
+      injection h with hab ht
+      cases hab
+      exact congrArg (List.cons a) (ih ht)
+
+theorem compilerContext_injective : Function.Injective compilerContext := by
+  intro a b h
+  cases a; cases b
+  simp only [compilerContext] at h
+  injection h with hs hc hf hp ht hv hg ha hu hz
+  have ha := arguments_injective ha
+  cases hs; cases hc; cases hf; cases hp; cases ht
+  cases hv; cases hg; cases ha; cases hu; cases hz
+  rfl
+
+impl compiler_sample: testing::heavy_compiler_sample
+    for (r : Record) (c : Context) (boot : String) (cutoff now : Nat) {
+  observed := compilerContext r.context,
+  current := compilerContext c,
+  source_after := r.sourceAfter,
+  boot := r.boot,
+  current_boot := boot,
+  schema := r.schema,
+  family := r.family,
+  kind := r.kind,
+  launch_error := r.launchError,
+  exec_error := r.execError,
+  wait_error := r.waitError,
+  clock_error := r.clockError,
+  status := r.status,
+  pid := r.pid,
+  gate_error := r.gateError.map Int.ofNat,
+  child_present := r.childPresent,
+  wrapper_code := r.wrapperCode.map Int.ofNat,
+  start := r.start,
+  finish := r.finish,
+  cutoff := cutoff,
+  now := now,
+  rss := r.rss,
+  measured_rss := r.measuredRss,
+  usable? := sample r c boot cutoff now,
+} by
+  intro r c boot cutoff now _
+  have hc : compilerContext r.context = compilerContext c ↔ r.context = c :=
+    compilerContext_injective.eq_iff
+  have hs2 : ((r.schema : Int) = 2) ↔ r.schema = 2 := by omega
+  have hs3 : ((r.schema : Int) = 3) ↔ r.schema = 3 := by omega
+  cases hg : r.gateError <;> cases hw : r.wrapperCode <;>
+    by_cases h2 : r.schema = 2 <;>
+    simp [fren_spec, sample, ← hc, compilerContext, hg, hw, h2, hs2, hs3, and_assoc]
 
 end Fren.Impls.HeavyOwnership

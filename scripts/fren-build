@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Build Lake targets with a private Heavy compiler-budget session."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+        print('Usage: scripts/fren-build LAKE_BUILD_ARGUMENT...', file=sys.stderr)
+        return 0 if len(sys.argv) > 1 else 2
+    tools = ROOT / 'tools/heavy-observe/.lake/build/bin'
+    if any(not os.access(tools / name, os.X_OK) for name in ('heavy_observe', 'budget_session')):
+        print('fren-build: missing prebuilt tools; from this checkout run: '
+              'scripts/heavy lake -d tools/heavy-observe build heavy_observe budget_session --wfail', file=sys.stderr)
+        return 125
+    try:
+        cwd = Path.cwd()
+        pin_file = next((p / 'lean-toolchain' for p in (cwd, *cwd.parents)
+                         if (p / 'lean-toolchain').is_file()), None)
+        if pin_file is None:
+            raise ValueError('no lean-toolchain found in caller directory or its parents')
+        pin = pin_file.read_text().strip()
+        installed = subprocess.check_output(['elan', 'toolchain', 'list'], text=True).splitlines()
+        if not pin or not any(line.split()[0] == pin for line in installed if line.split()):
+            raise ValueError(f'pinned toolchain {pin!r} is not installed')
+        env = os.environ.copy()
+        env['ELAN_TOOLCHAIN'] = pin
+        real = Path(subprocess.check_output(['elan', 'which', 'lean'], env=env, text=True).strip()).resolve(strict=True)
+        lake = real.parent / 'lake'
+        if not lake.is_file() or not os.access(lake, os.X_OK):
+            raise ValueError(f'missing Lake beside pinned compiler: {lake}')
+        work = Path(tempfile.mkdtemp(prefix='fren-build-')).resolve()
+        requests = work / 'requests.tsv'
+        requests.write_text('')
+        print(f'fren-build: retained private state: {work}', file=sys.stderr, flush=True)
+        entry = ROOT / 'scripts/heavy-lean-build'
+        os.execve(str(entry), [str(entry), '--state', str(work / 'state'), '--real-lean', str(real),
+                  '--allowance-kib', env.get('FREN_BUILD_ALLOWANCE_KIB', '1300000'),
+                  '--headroom-kib', env.get('FREN_BUILD_HEADROOM_KIB', '100000'),
+                  '--fallback-kib', env.get('FREN_BUILD_FALLBACK_KIB', '600000'),
+                  '--timeout-ms', env.get('FREN_BUILD_TIMEOUT_MS', '30000'),
+                  '--requests', str(requests), '--', str(lake), 'build', *sys.argv[1:]], env)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'fren-build: {error}', file=sys.stderr)
+        return 125
+
+
+if __name__ == '__main__':
+    sys.exit(main())
