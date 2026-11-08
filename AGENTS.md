@@ -62,3 +62,21 @@ Both front ends must give the same messages for every spec. Two rules keep them 
 
 Avoid stacking a PR on another that is still under review: base it on main, or wait until the lower PR is close to merging.
 
+
+# Fren2 module and physical line budgets
+
+The default `layering` test checks every file under its existing Fren2 library,
+test, helper and driver inventory using Lean's parsed module header. Each must
+use `module`. Production files have at most 1000 physical source lines;
+standalone test modules and the test driver/support have at most 500 lines.
+Comments, blank lines and an unterminated last line count; CRLF counts once.
+An additional 500 test lines requires a trailing, top-level, unmodified
+`section Fren2Tests` on its own line, closed by `end Fren2Tests`. That entire
+section and trailing trivia count as tests; only anonymous `example`, `#check`
+and `#eval` commands are permitted there, with no named declarations, nested
+sections or commands after its end. This opt-in section must parse with Lean's
+builtin command parser; custom-syntax tests belong in standalone test modules.
+There is no 1500-line production allowance. The existing Fren1 `Spec` checker
+wrappers and `FrenTestMain` registration file are outside this Fren2 inventory;
+Spec-like names inside a Fren2 source root receive no exemption. This check
+enforces source structure and size, not CPU, wall-time or memory budgets.
