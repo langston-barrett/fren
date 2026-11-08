@@ -109,7 +109,7 @@ private def testStart (source path : String) (input : Lean.Parser.InputContext)
       let errors ← messages.toList.mapM (fun message => message.data.toString)
       return .error s!"{path}: cannot parse co-located test section: {String.intercalate "; " errors}"
     if command.isOfKind ``Lean.Parser.Command.eoi then
-      if start.isSome && closed then return .ok start
+      if start.isNone || closed then return .ok start
       return .error s!"{path}: expected a complete trailing section Fren2Tests"
     if closed then return .error s!"{path}: commands follow end Fren2Tests"
     if start.isSome then
@@ -181,6 +181,9 @@ private def qualityControls : IO (Array String) := do
     ("comment-only fake module", "FrenAst", "/- module -/\ndef x := 1\n", false),
     ("module after imports", "FrenAst", "import Lean\nmodule\n", false),
     ("module after declaration", "FrenAst", "def x := 1\nmodule\n", false),
+    ("inert marker in comment", "FrenAst", "module\n/-\n" ++ tests 3 ++ "-/\ndef x := 1\n", true),
+    ("inert marker in doc comment", "FrenAst", "module\n/--\n" ++ tests 3 ++ "-/\ndef x := 1\n", true),
+    ("inert marker in string", "FrenAst", "module\ndef marker := \"\nsection Fren2Tests\nend Fren2Tests\n\"\ndef x := 1\n", true),
     ("exact production", "FrenAst", production 1000, true),
     ("production one over", "FrenAst", production 1001, false),
     ("no blanket 1500", "FrenAst", production 1500, false),
@@ -200,6 +203,7 @@ private def qualityControls : IO (Array String) := do
     ("unclosed section", "FrenAst", production 2 ++ "section Fren2Tests\nexample : True := True.intro\n", false),
     ("nested section", "FrenAst", production 2 ++ "namespace N\n" ++ tests 3 ++ "end N\n", false),
     ("fake section in comment", "FrenAst", production 1000 ++ "/-\n" ++ tests 3 ++ "-/\n", false),
+    ("fake section in doc comment", "FrenAst", production 1000 ++ "/--\n" ++ tests 3 ++ "-/\ndef x := 1\n", false),
     ("fake section in string", "FrenAst", production 1000 ++
       "def marker := \"\nsection Fren2Tests\nend Fren2Tests\n\"\n", false),
     ("CRLF physical lines", "FrenAstTests", (production 500).replace "\n" "\r\n", true),
@@ -208,6 +212,10 @@ private def qualityControls : IO (Array String) := do
     let actual ← checkSource owner ("src/" ++ owner ++ "/quality-fixture.lean") source
     unless actual.isEmpty == expected do
       failures := failures.push s!"quality control {name}: expected acceptance={expected}, got {actual}"
+    if name.startsWith "fake section in " then
+      let diagnostic := s!"src/{owner}/quality-fixture.lean: {physicalLines source} physical source lines exceed 1000"
+      unless actual == #[diagnostic] do
+        failures := failures.push s!"quality control {name}: expected only the source-cap diagnostic, got {actual}"
   unless !owners.contains "Spec.Compiler.Hir" && !owners.contains "FrenTestMain" do
     failures := failures.push "quality inventory included legacy Fren1 documentation/driver infrastructure"
   let nested ← checkSource "FrenAst" "src/FrenAst/Spec/Compiler/Hir.lean" "import Lean\n"
