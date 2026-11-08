@@ -12,44 +12,100 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def lake_build(command):
-    """Locate Lake's build verb without treating option operands as commands.
+    """Effective build configuration under the pinned Lake CLI grammar.
 
-    Keep arguments literal. Unknown options are left to Lake; they cannot
-    introduce an operand named build in the supported pinned Lake CLI.
+    Mirror Util/Cli's token insertion and Main's two leading-option passes,
+    then build's collectArgs pass. Only this private token copy is rewritten.
+    Unknown grammar fails closed; forwarded caller argv is never normalized.
     """
     if Path(command[0]).name != 'lake':
         return None
-    directory = Path.cwd()
-    i = 1
-    while i < len(command):
-        arg = command[i]
-        if arg in ('--help', '-h', '--version'):
-            return None
-        if arg in ('-d', '--dir', '-f', '--file', '-o', '-K', '--packages',
-                   '--service', '--scope', '--repo', '--platform', '--toolchain',
-                   '--rev', '--max-revs', '--linters', '--lint-only', '--only',
-                   '--log-level', '--fail-level'):
-            if i + 1 == len(command):
-                return None  # Lake diagnoses the missing operand.
-            if arg in ('-d', '--dir'):
-                directory = Path(command[i + 1]).absolute()
-            i += 2
-            continue
-        if arg.startswith(('--dir=', '-d=')) or (arg.startswith('-d') and len(arg) > 2):
-            directory = Path(arg.split('=', 1)[1] if '=' in arg else arg[2:]).absolute()
-        if arg == '--':
-            i += 1
-            break
-        if not arg.startswith('-') and not (i == 1 and arg.startswith('+')):
-            break
-        i += 1
-    return directory.resolve() if i < len(command) and command[i] == 'build' else None
+    args = list(command[1:])
+    if args and args[0].startswith('+'):
+        args.pop(0)  # elan's leading toolchain selection, not a Lake option.
+    if args == ['--version']:
+        return None
+    directory, config, help_requested = '.', 'lakefile.lean', False
+    operands = {'-d', '-f', '-o', '-K', '--dir', '--file', '--packages',
+                '--service', '--scope', '--repo', '--platform', '--toolchain',
+                '--rev', '--max-revs', '--linters', '--lint-only', '--only',
+                '--log-level', '--fail-level'}
+    flags = {'-q', '-v', '-U', '-R', '-h', '-H', '-J', '--help',
+             '--quiet', '--verbose', '--update', '--keep-toolchain',
+             '--reconfigure', '--old', '--text', '--json', '--allow-empty',
+             '--no-build', '--no-cache', '--try-cache', '--rehash', '--offline',
+             '--wfail', '--iofail', '--no-overwrite', '--force-overwrite',
+             '--force-download', '--download-arts', '--mappings-only',
+             '--ansi', '--no-ansi', '--builtin-lint', '--builtin-only',
+             '--record-exceptions', '--force', '--keep-implied', '--keep-prefix',
+             '--keep-public', '--add-public', '--gh-style', '--explain',
+             '--trace', '--fix'}
+
+    def option(token):
+        nonlocal directory, config, help_requested
+        if token.startswith('--'):
+            # Lake applies the equals split before the space split, even when
+            # both occur within the same literal argument.
+            if '=' in token:
+                token, value = token.split('=', 1)
+                args.insert(0, value)
+            if ' ' in token:
+                token, value = token.split(' ', 1)
+                args.insert(0, value)
+        elif len(token) > 2:
+            value = token[3:] if token[2] == '=' else token[2:]
+            if token[2] == ' ':
+                value = value.lstrip(' \t\n\r\v\f')
+            args.insert(0, value)
+            token = token[:2]
+        if token == '--':
+            args.clear()  # Lake stores the remainder as subArgs, not targets.
+        elif token in operands:
+            if not args:
+                raise ValueError(f'missing Lake option operand: {token}')
+            value = args.pop(0)
+            if token in ('-d', '--dir'):
+                directory = value
+            elif token in ('-f', '--file'):
+                config = value
+        elif token in flags:
+            help_requested |= token in ('-h', '--help')
+        else:
+            raise ValueError(f'unsupported Lake option for controlled routing: {token}')
+
+    def leading():
+        while args:
+            if args[0] == '':
+                args.pop(0)
+            elif len(args[0]) > 1 and args[0].startswith('-'):
+                option(args.pop(0))
+            else:
+                break
+
+    leading()
+    if not args:
+        return None
+    verb = args.pop(0)
+    if verb != 'build':
+        return None
+    leading()
+    if help_requested:
+        return None
+    while args:
+        arg = args.pop(0)
+        if len(arg) > 1 and arg.startswith('-'):
+            option(arg)
+    return Path(directory).absolute().resolve(), config
 
 
 def heavy_command(command, cap):
     """Adapter called after Heavy admission, before its offline wrapper."""
-    directory = lake_build(command)
-    if directory is None or directory == (ROOT / 'tools/heavy-observe').resolve():
+    selected = lake_build(command)
+    if selected is None:
+        return command
+    directory, config = selected
+    tools = (ROOT / 'tools/heavy-observe').resolve()
+    if directory == tools and (directory / config).resolve() == tools / 'lakefile.lean':
         return command
     return [str(ROOT / 'scripts/fren-build'), '--heavy-lake', str(cap), *command]
 

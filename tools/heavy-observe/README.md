@@ -345,20 +345,48 @@ Only direct commands whose executable is named `lake` and whose verb is `build`
 are dispatched. Shell scripts, `env lake ...`, `lake test`, `lake exe` and other
 commands retain their existing outer Heavy behavior. Building the standalone
 `tools/heavy-observe` package via `lake -d ... build ...` bypasses the inner
-controller so its own tools can bootstrap. It retains outer Heavy admission.
+controller so its own tools can bootstrap. Routing follows the pinned Lake
+parser, including options after `build`, repeated/attached/space forms, empty
+arguments and `--` subArgs semantics. Only the effective tools directory with
+its actual `lakefile.lean` is exempt; selecting an alternate configuration or
+redirecting back to an ordinary package requires the controller. Unknown option
+grammar fails closed. Forwarded argv remains literal. Bootstrap retains outer
+Heavy admission.
 Existing `HEAVY_BUDGET_DIR`, `LEAN_SYSROOT` or `LAKE_OVERRIDE_LEAN` settings reject
 a new ordinary session; invoke Lake directly inside an existing budget session,
 or use the explicit entrypoint for a deliberately selected overlay. No second
 budget session is created.
 
 For controlled builds, Heavy samples and publishes RSS for the whole process
-session it created, including the controller's separate Lake group. It retains
-its slot until that session is empty and reaps adopted children. Cancellation
-still goes to Heavy's own initial group; the existing controller and parent-death
-chain clean up their children. This depends on the controller's documented
-process-group and parent-death boundary. Non-build commands retain their existing
-process-group accounting. The machine-wide admission and sampled memory
-backstop remain active; the reservation ledger is additional accounting.
+session it created, including the controller's separate Lake group. It
+requires a Linux subreaper, native procfs PID visibility and pidfd support
+before launch. The initial child remains unreaped as the session anchor while
+Heavy discovers members. Each signal uses a pidfd acquired between matching
+process-identity reads, so no numeric SID, registry PID or other job's group
+is signalled. Heavy reaps only identified direct/adopted members. After
+reaping the anchor it discovers only kernel-parented adopted children; final
+completion requires kernel ECHILD, so a sampled empty census cannot hide a
+missed fork/adoption. The dedicated monitor assumes no unrelated child
+creation or reaper. It retains the slot and memory publication during cleanup.
+It covers ordinary Lake helpers as well as gated observers, including when the
+controller is stopped or unavailable. Parent-death signals alone do not
+protect arbitrary Lake helper children.
+
+Cancellation, identification/status/accounting failures, local/shared over-cap
+and a leader exiting with remaining members use this same cleanup path. It
+allows five seconds after TERM and two after KILL. Physical leader status,
+cleanup result/errors and elapsed time are recorded separately. Heavy retains
+`command_raw_wait_status`, signed `command_returncode`, and the raw waitid
+observation independently of its own shell exit status; a failed final wait
+returns 125 with the remaining known identities instead of waiting without a
+bound. Procfs membership visibility, pidfd/syscall authenticity, adoption and
+absence of unrelated concurrent reapers are IO assumptions, not pure ownership
+proofs. Session/namespace escape, hostile same-user mutation and
+uninterruptible kernel work remain outside the controlled boundary. Abrupt
+outer-monitor death can leave ordinary helpers alive; there is no durable
+supervisor or takeover. Non-build commands retain their existing process-group
+termination and accounting. Machine-wide admission and the sampled memory
+backstop remain active; reservations are additional accounting.
 
 `scripts/fren-build TARGET...` remains available for explicit use under Heavy.
 That short command retains its nearest caller `lean-toolchain` pin selection and
