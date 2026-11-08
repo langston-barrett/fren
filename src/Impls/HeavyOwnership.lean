@@ -162,6 +162,58 @@ impl lease: testing::heavy_lease
   · by_cases h : reportOwner row.report row.statusJob row.observed now ttl = true <;>
       simp [Heavy.Ownership.lease, h]
 
+def memoryLeases : List Lease → testing.MemoryLeases
+  | [] => .Nil
+  | r :: rs => .Cons (memoryLease r) (memoryLeases rs)
+
+theorem observed_admission_eq (cap : Nat) (rows : List Lease) (now : Int) (ttl : Nat) :
+    testing.observed_admission cap (memoryLeases rows) now ttl =
+      rows.foldr (fun row total =>
+        (if reportOwner row.report row.statusJob row.observed now ttl then
+          admissionMemory cap row.report now ttl else legacyMemory row.legacyRss) + total) 0 := by
+  induction rows with
+  | nil => rfl
+  | cons r rs ih =>
+    simp only [testing.observed_admission, memoryLeases, memoryLease, List.foldr_cons]
+    rw [report_owner_eq, admission_eq, legacy_memory_eq, ih]
+
+set_option linter.unusedSimpArgs false in
+theorem unknown_legacy_eq (rows : List Lease) (now : Int) (ttl : Nat) :
+    testing.unknown_legacy? (memoryLeases rows) now ttl =
+      rows.any (fun row => !reportOwner row.report row.statusJob row.observed now ttl &&
+        match row.legacyRss with | none => true | some rss => decide (rss < 0)) := by
+  induction rows with
+  | nil => rfl
+  | cons r rs ih =>
+    simp only [testing.unknown_legacy?, memoryLeases, memoryLease, List.any_cons]
+    rw [report_owner_eq, ih]
+    cases howner : reportOwner r.report r.statusJob r.observed now ttl <;>
+      cases hany : rs.any (fun row => !reportOwner row.report row.statusJob row.observed now ttl &&
+        match row.legacyRss with | none => true | some rss => decide (rss < 0)) <;>
+      cases r.legacyRss <;> simp only [howner, hany, Bool.false_eq_true, Bool.true_eq_false,
+        Bool.not_false, Bool.not_true, Bool.false_and, Bool.true_and, Bool.false_or, Bool.true_or,
+        Bool.or_false, Bool.or_true, decide_true, decide_false, not_false_eq_true, not_true_eq_false,
+        false_and, true_and, false_or, true_or] <;> simp
+
+impl admission_total: testing::heavy_admission_total
+    for (cap : Nat) (rows : List Lease) (now : Int) (ttl : Nat) {
+  cap := cap,
+  leases := memoryLeases rows,
+  now := now,
+  ttl := ttl,
+  total := admissionTotal cap rows now ttl,
+} by
+  intro cap rows now ttl _
+  simp [fren_spec, testing.admission_total, admissionTotal, observed_admission_eq,
+    unknown_legacy_eq, legacyReservation, Int.max_def]
+  rfl
+
+/-- A concrete mixed regression, independent of Fren's recursive solver. -/
+theorem mixed_legacy_57 :
+    admissionTotal 100 [⟨none, "", none, some 7⟩, ⟨none, "", none, none⟩,
+      ⟨none, "", none, none⟩] 0 10 = 57 := by
+  decide
+
 def victimRow (r : VictimRow) : testing.VictimRow :=
   ⟨r.job, r.order, r.rss, r.legacyRss⟩
 

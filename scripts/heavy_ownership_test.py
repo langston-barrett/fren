@@ -16,6 +16,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 from unittest import mock
 
 sys.dont_write_bytecode = True
@@ -116,6 +117,8 @@ def numeric_span(value, ttl=heavy.REPORT_STALE_SECONDS):
 
 
 def transport(case):
+    # One elapsed observation supplies both ownership and freshness. The real
+    # jobs producer can sample twice; see two_clock_producer below.
     r = decoded_report(case["report"])
     # The status adapter extracts only the terminal protocol token. Diagnostic
     # numeric PIDs never enter the Lean observations.
@@ -158,6 +161,59 @@ def python_lease(case, path):
         admission = heavy.heavy_rss_kb(cap=case["cap"])
     measured, _ = heavy.memory_victim([row], 10 ** 100)
     return [compatible, True, admission, measured]
+
+
+def python_aggregate(cases, cap, path):
+    # This oracle models a single snapshot, not jobs' two clock samples.
+    rows = []
+    for i, case in enumerate(cases):
+        if not case["locked"]:
+            continue
+        path.write_text(json.dumps(case["report"]))
+        report = heavy.read_report(path)
+        token = heavy.slot_job_id(case["status"])
+        compatible = report is not None and heavy.report_current(
+            report, token, case["observed"], case["now"])
+        if compatible:
+            rows.append(dict(report, legacy=False, slot=str(i),
+                             fresh=0 <= case["now"] - report["updated_monotonic"] <= heavy.REPORT_STALE_SECONDS))
+        else:
+            rows.append(dict(legacy=True, legacy_rss_kb=case["legacy_rss"], slot=str(i)))
+    with mock.patch.object(heavy, "jobs", return_value=rows):
+        return heavy.heavy_rss_kb(cap=cap)
+
+
+def aggregate_transport(cases, cap):
+    rows = [transport(case) for case in cases]
+    ttl = max((row["ttl"] for row in rows), default=numeric_span(0)[1])
+    for row in rows:
+        if row["span"]["kind"] == "finite":
+            row["span"]["ticks"] *= ttl // row["ttl"]
+    return dict(kind="aggregate", cap=cap, ttl=ttl, rows=rows)
+
+
+def two_clock_producer():
+    """Exercise the actual jobs producer and accounting with mocked IO.
+
+    The first clock is used for stored freshness, the second for ownership.
+    A single elapsed span cannot represent this compatible but stale row.
+    """
+    report = dict(version=3, job_id="a" * 32, order=1, rss_kb=40,
+                  updated_monotonic=100.0, monitor=None)
+    status = "5 0 [heavy-job=" + "a" * 32 + "]\n"
+    with mock.patch.object(heavy, "registry", return_value=contextlib.nullcontext()), \
+         mock.patch.object(heavy.os, "listdir", return_value=["slot0"]), \
+         mock.patch("builtins.open", mock.mock_open(read_data=status)), \
+         mock.patch.object(heavy, "read_report", side_effect=lambda _: dict(report)), \
+         mock.patch.object(heavy.fcntl, "flock", side_effect=BlockingIOError), \
+         mock.patch.object(heavy.os, "fstat", return_value=SimpleNamespace(st_dev=0, st_ino=1)), \
+         mock.patch.object(heavy.platform, "system", return_value="Darwin"), \
+         mock.patch.object(heavy.platform, "release", return_value="24.0"), \
+         mock.patch.object(heavy.time, "monotonic", side_effect=[99.0, 100.0, 99.0, 100.0]):
+        rows = heavy.jobs("unused")
+        total = heavy.heavy_rss_kb(state="unused", cap=100)
+    assert len(rows) == 1 and rows[0]["fresh"] is False and rows[0]["legacy"] is False, rows
+    assert rows[0]["rss_kb"] == 40 and total == 100, (rows, total)
 
 
 class Retried(Exception):
@@ -369,6 +425,7 @@ def main():
             cases.append(dict(base, now=now, observed=observed,
                               report=dict(base["report"], updated_monotonic=stamp)))
     escalation_checks()
+    two_clock_producer()
     inputs, expected = [], []
     group_count = 0
     for subreaper, leader, wait, probe in itertools.product(
@@ -443,6 +500,23 @@ def main():
             if case["name"] in ("rounded_ttl_unobserved", "rounded_ttl_verified"):
                 assert expected[-1] == [True, True, 40, 40], (case, expected[-1])
             inputs.append(transport(case))
+        # Aggregate actual jobs rows after lock and identity observations. Exercise
+        # the shared forecast in both orders and across numeric boundaries.
+        unknown = dict(base, report=None, legacy_rss=None, locked=True)
+        known = dict(unknown, legacy_rss=7)
+        variants = [unknown, known, dict(unknown, legacy_rss=-1),
+                    dict(unknown, legacy_rss=0), dict(unknown, locked=False),
+                    dict(base, observed=None), dict(base, now=111),
+                    dict(base, observed=dict(m, namespace="other")),
+                    dict(base, observed=None, now=110.00000000000001)]
+        groups = [[], [unknown], [unknown, unknown], [known, unknown, unknown],
+                  [unknown, unknown, known]]
+        groups += [list(pair) for pair in itertools.product(variants, repeat=2)]
+        for cap, group in itertools.product((0, 1, 2, 100, 101), groups):
+            inputs.append(aggregate_transport(group, cap))
+            expected.append(python_aggregate(group, cap, path))
+        assert python_aggregate([unknown, unknown], 100, path) == 50
+        assert python_aggregate([known, unknown, unknown], 100, path) == 57
         # Nonfinite timestamps and malformed JSON are rejected by the wire decoder.
         for text in ('{"updated_monotonic": NaN}', '{"partial":', 'null'):
             path.write_text(text)
