@@ -24,6 +24,60 @@ private structure ParseHeader (α : Type u) (β : Type v) where
   marker : Unit
   deriving BEq, Repr, ToSexp, FromSexp
 
+/-- Elaboration contracts for the actual generated declarations. Universe
+parameters remain arbitrary and independent; these are instance conformance
+checks, not roundtrip proofs for arbitrary supplied field codecs. -/
+example {α : Type u} [ToSexp α] : ToSexp (Packet α) := inferInstance
+example {α : Type u} [FromSexp α] : FromSexp (Packet α) := inferInstance
+example {α : Type u} {β : Type v} [ToSexp α] [ToSexp β] :
+    ToSexp (ParseHeader α β) := inferInstance
+example {α : Type u} {β : Type v} [FromSexp α] [FromSexp β] :
+    FromSexp (ParseHeader α β) := inferInstance
+
+-- Test-only lawful field codecs. Explicit Except operations preserve the lift's
+-- universe; the Nat codec independently determines its wire representation.
+private instance : ToSexp (ULift.{u} Nat) := ⟨fun n => toSexp n.down⟩
+private instance : FromSexp (ULift.{u} Nat) :=
+  ⟨fun value => Except.map ULift.up (fromSexp (α := Nat) value)⟩
+
+private def universeTests : Except String Unit :=
+  let value : Packet (ULift.{1} Nat) := .one ⟨37⟩
+  if encode value != "(one 37)" then .error "higher-universe constructor wire"
+  else match fromSexp (α := Packet (ULift.{1} Nat)) (toSexp value),
+      decode (α := Packet (ULift.{1} Nat)) "(one 37)" with
+  | .ok (.one direct), .ok (.one parsed) =>
+    if direct.down != 37 || parsed.down != 37 then .error "higher-universe constructor roundtrip"
+    else
+      -- Independent Type-1 and Type-2 fields, mixed with Type-0 String/Unit.
+      let record : ParseHeader (ULift.{1} Nat) (ULift.{2} Nat) :=
+        ⟨"higher", #[⟨11⟩, ⟨29⟩], some ⟨53⟩, ()⟩
+      let text := "(parse_header \"higher\" (11 29) (some 53) unit)"
+      if encode record != text then .error "higher-universe record wire"
+      else match fromSexp (α := ParseHeader (ULift.{1} Nat) (ULift.{2} Nat)) (toSexp record),
+          decode (α := ParseHeader (ULift.{1} Nat) (ULift.{2} Nat)) text with
+      | .ok direct, .ok parsed =>
+        if direct.values.map (·.down) != #[11, 29] ||
+            parsed.values.map (·.down) != #[11, 29] ||
+            direct.extra.map (·.down) != some 53 || parsed.extra.map (·.down) != some 53 ||
+            direct.label != "higher" || parsed.label != "higher" then
+          .error "higher-universe record roundtrip"
+        else match decode (α := Packet (ULift.{1} Nat)) "(one nope)",
+            decode (α := ParseHeader (ULift.{1} Nat) (ULift.{2} Nat))
+              "(parse_header \"higher\" (11 29) (some nope) unit)" with
+        | .error ctorError, .error recordError =>
+          if ctorError.expected == "a natural numeral" &&
+              ctorError.position == { byteOffset := 5, column := 6 } &&
+              recordError.expected == "a natural numeral" &&
+              recordError.position == { byteOffset := 37, column := 38 } then
+            match decode (α := Packet (ULift.{1} Nat)) "empty",
+                decode (α := Packet (ULift.{1} Nat)) "(header 8 \"label\" true)" with
+            | .ok .empty, .ok (.header 8 "label" true) => .ok ()
+            | _, _ => .error "higher-universe nullary/Type-0 payload branch"
+          else .error "higher-universe malformed field location"
+        | _, _ => .error "accepted higher-universe malformed field"
+      | _, _ => .error "higher-universe record parse"
+  | _, _ => .error "higher-universe constructor parse"
+
 private structure EmptyPacket where
   deriving BEq, Repr, ToSexp, FromSexp
 
@@ -215,7 +269,7 @@ private def derivationTests : Except String Unit := do
 /-- Finite executable contracts, run at build time and by the compiled Fren2 driver.
 These checks are tests of the actual derived instances, not universal proofs. -/
 public def runDerive : IO Unit := do
-  match derivationTests with
+  match derivationTests *> universeTests with
   | .ok () => IO.println "S-expression deriving tests passed"
   | .error e => throw (IO.userError e)
 

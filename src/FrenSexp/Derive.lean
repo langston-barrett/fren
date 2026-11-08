@@ -90,15 +90,17 @@ private meta def mkInstance (name : Name) (encode : Bool) : TermElabM Syntax := 
       let xs := mkIdent (← mkFreshUserName `fields)
       let reads ← names.mapIdxM fun i _ =>
         ``(Fren.Sexp.atChild $(quote (i + 1)) (Fren.fromSexp $xs[$(quote (i + 1))]!))
-      let branch ← `(do
-        let $xs ← Fren.Sexp.readConstructorFields $value $tagText $(quote ctor.numFields)
-        $[let $names:ident ← $reads:term]*
-        pure $ctorApp)
+      -- Monad.bind fixes one value universe. Explicit Except.bind permits each
+      -- field, the Type-0 wire intermediates and the result to have different ones.
+      let mut branch ← ``(Except.ok $ctorApp)
+      for i in (List.range names.size).reverse do
+        branch ← ``(Except.bind $(reads[i]!) (fun $(names[i]!) => $branch))
+      branch ← ``(Except.bind
+        (Fren.Sexp.readConstructorFields $value $tagText $(quote ctor.numFields))
+        (fun $xs => $branch))
       parser ← `(if $tag == $tagText then $branch else $parser)
   let body ← if encode then `(term| match $value:term with $alts:matchAlt*)
-    else `(do
-      let $tag ← Fren.Sexp.readConstructorTag $value
-      return ← $parser)
+    else ``(Except.bind (Fren.Sexp.readConstructorTag $value) (fun $tag => $parser))
   let instName ← mkInstName cls name
   `(command|
     instance $(mkIdent instName):ident $binders:implicitBinder* :
