@@ -4,20 +4,24 @@ public import FrenSexp.Constructor
 public meta import FrenSexp.Basic
 public meta import Lean.Elab.Deriving.Basic
 public meta import Lean.Elab.Deriving.Util
+public meta import Lean.PrettyPrinter.Delaborator
 
 /-!
 `deriving Fren.ToSexp, Fren.FromSexp` supports nonrecursive inductives and
-structures with ordinary type parameters. Tags use `constructorAtom`; structures
-use their type name. Fields use constructor declaration order, including Unit
+structures with uniform type and value parameters, including phase-computed
+field types. Only field codecs are required; parameters are never serialized.
+Computed families use Lean instance search (use an abbrev/reducible family for
+concrete-phase inference, or supply its field codec). Tags use `constructorAtom`;
+structures use their type name. Fields use constructor declaration order, including Unit
 fields, and their existing codecs. Nullary constructors use atoms, payloads use
 lists with exact arity. Parsing is type-directed and prefixes field failures by
 their wire child index.
 
-Recursive, mutual, nested-recursive and indexed types, value/higher-kinded
-parameters, proof fields, dependent fields and function fields are rejected in
-this slice. No recursive parser, production IR schema or proof-field omission
-is implied. Roundtrip evidence for derived clients is in FrenSexpTests.Derive;
-the handler does not generate a roundtrip theorem.
+Recursive, mutual, nested-recursive and constructor-refined indexed types,
+higher-kinded/proof parameters, proof fields, dependent fields and function
+fields are rejected in this slice. No recursive parser, production IR schema or proof-field omission
+is implied. Roundtrip evidence for derived clients is in FrenSexpTests.Derive
+and FrenSexpTests.Phase; the handler does not generate a roundtrip theorem.
 -/
 
 namespace Fren.Sexp.Deriving
@@ -35,8 +39,8 @@ private meta def validate (name : Name) : TermElabM (InductiveVal × Array Strin
   forallTelescopeReducing ind.type fun params _ => do
     for param in params do
       let type ← whnf (← inferType param)
-      unless type.isSort && !(← isProp param) do
-        throwError "S-expression deriving supports only ordinary type parameters"
+      if type.isForall || (← isProp type) || (type.isSort && (← isProp param)) then
+        throwError "S-expression deriving: unsupported higher-kinded or proof parameter"
     let mut tags := #[]
     for ctorName in ind.ctors do
       let tagName := if isStructure (← getEnv) name then name else ctorName
@@ -61,12 +65,38 @@ private meta def validate (name : Name) : TermElabM (InductiveVal × Array Strin
             throwError "S-expression deriving: unsupported dependent field {i + 1} of {privateToUserName ctor.name}"
     return (ind, tags)
 
+/-- Ask for codecs on the actual field types, not on parameter values. Closed
+fields use existing instances. Parameter-dependent constraints let instance
+search compute a reducible annotation family at concrete phases. -/
+private meta def fieldBinders (ind : InductiveVal) (argNames : Array Name) (cls : Name) :
+    TermElabM (Array Syntax) :=
+  forallTelescopeReducing ind.type fun params _ => do
+    let mut lctx ← getLCtx
+    for i in [:params.size] do
+      lctx := lctx.setUserName params[i]!.fvarId! argNames[i]!
+    withLCtx lctx (← getLocalInstances) do
+      let mut types : Array Expr := #[]
+      let mut binders := #[]
+      for ctorName in ind.ctors do
+        let ctor := mkConst ctorName (ind.levelParams.map Level.param)
+        let fieldTypes ← forallTelescopeReducing (← inferType (mkAppN ctor params)) fun fields _ =>
+          fields.mapM fun f => do inferType f
+        for type in fieldTypes do
+          if params.any (fun p => type.containsFVar p.fvarId!) && !types.contains type then
+            types := types.push type
+            -- Preserve hidden parameters and independent universe arguments.
+            let stx ← withOptions (fun o =>
+                (o.setBool `pp.universes true).setBool `pp.explicit true) do
+              PrettyPrinter.delab type
+            binders := binders.push (← `(instBinderF| [$(mkCIdent cls) $stx]))
+      return binders
+
 private meta def mkInstance (name : Name) (encode : Bool) : TermElabM Syntax := do
   let (ind, tags) ← validate name
   let cls := if encode then ``Fren.ToSexp else ``Fren.FromSexp
   let argNames ← mkInductArgNames ind
   let binders ← mkImplicitBinders argNames
-  let binders := binders ++ (← mkInstImplicitBinders cls ind argNames)
+  let binders := binders ++ (← fieldBinders ind argNames cls)
   let target ← mkInductiveApp ind argNames
   let value := mkIdent (← mkFreshUserName `value)
   let mut alts : Array (TSyntax ``matchAlt) := #[]
