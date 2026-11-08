@@ -127,3 +127,45 @@ open FrenAst FrenParse
   IO.println "prefix operand restrictions, explicit parentheses, atoms, and reserved/contextual names passed"
 
 end FrenParseTests
+
+namespace FrenParseTests
+open FrenAst FrenParse
+
+private def typeName : Ty → String
+  | .bool _ => "builtin Bool"
+  | .int _ => "builtin Int"
+  | .named p => "path " ++ "".intercalate (p.tokens.map (·.text))
+
+#eval show IO Unit from do
+  for entry in [Entry.file, Entry.context] do
+    for ty in ["Bool", "Int", "E", "Int::T", "Bool::T", "A::Int", "Bool::Int::T"] do
+      let source := s!"fn f(b?: {ty}): {ty} := b?"
+      let .ok doc := parse entry ⟨1⟩ source | throw <| IO.userError s!"explicit suffix annotation: {source}"
+      let .declarations decls := doc.root | throw <| IO.userError "declaration root"
+      let some decl := decls[0]? | throw <| IO.userError "function missing"
+      let .function _ _ _ params _ result _ _ := decl | throw <| IO.userError "function form"
+      let some param := params.values[0]? | throw <| IO.userError "parameter missing"
+      let some (_, annotation) := param.annotation | throw <| IO.userError "written annotation discarded"
+      let expected := if ty == "Int" || ty == "Bool" then "builtin " ++ ty else "path " ++ ty
+      unless typeName annotation == expected && typeName result == expected &&
+          coherent doc && doc.emit == source do throw <| IO.userError "type path classification"
+      let source := s!"expect e(b?: {ty}) \{ expect c: b? }"
+      let .ok doc := parse entry ⟨1⟩ source | throw <| IO.userError "expectation annotation"
+      let .declarations decls := doc.root | throw <| IO.userError "expectation root"
+      let some decl := decls[0]? | throw <| IO.userError "expectation missing"
+      let .expectation _ _ params _ _ _ := decl | throw <| IO.userError "expectation form"
+      let some param := params.values[0]? | throw <| IO.userError "expectation parameter"
+      let some (_, annotation) := param.annotation | throw <| IO.userError "expectation annotation lost"
+      unless typeName annotation == expected && coherent doc && doc.emit == source do
+        throw <| IO.userError "expectation type path classification"
+    for source in ["fn f(b?:", "expect e(b?:", "fn f(x: Int::", "fn f(x: Bool::",
+        "fn f(): Int::", "fn f(): Bool::", "expect e(x: Int::", "expect e(x: Bool::"] do
+      unless rejectedAt entry source source.utf8ByteSize source.utf8ByteSize do
+        throw <| IO.userError s!"type truncation: {source}"
+    for source in ["fn f(b?): Bool := b?", "fn f(b: Bool): Bool := b?",
+        "expect e(b?) { expect c: b? }", "expect e(b: Bool) { expect c: b? }"] do
+      let .ok doc := parse entry ⟨1⟩ source | throw <| IO.userError "existing parameter form"
+      unless coherent doc && doc.emit == source do throw <| IO.userError "existing parameter tree"
+  IO.println "type grammar: 28 explicit suffix/path positives, 16 EOF truncations, 8 existing parameter positives passed"
+
+end FrenParseTests

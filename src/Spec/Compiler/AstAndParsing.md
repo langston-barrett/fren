@@ -75,7 +75,12 @@ A `let` has the form `let x := value in body`; its body extends to the
 right. An `if` requires both `then` and `else`. A match arm pairs a
 qualified variant pattern with an expression using `=>`; arms are
 comma-separated and may have a trailing comma. Function parameters use
-`name: Type` (a `?` suffix supplies `Bool`), and a function body follows `:=`.
+`name: Type` (a `?` suffix supplies `Bool` when the annotation is omitted),
+and a function body follows `:=`. A suffix does not remove an explicit
+annotation: `b?: Bool` and `b?: Int` both parse, and the latter's type
+inconsistency is checked later. Named type paths are read in full before a
+bare `Bool` or `Int` is classified as built-in: `Int::T` and `Bool::T` are
+written paths whose resolution is also later work.
 
 **Proof obligations**
 

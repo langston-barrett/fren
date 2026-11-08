@@ -347,3 +347,31 @@ fn f(): Int := proc
 -- case: contextual_name
 fn f(assume: Int): Int := assume
 -- result: context=0; fn f assume
+
+-- case: explicit_bool_suffix
+fn f(b?: Bool): Bool := b?
+-- result: context=0; fn f b?
+
+-- case: explicit_type_invalid_suffix
+fn f(b?: Int): Int := b?
+-- result: context=0; fn f b?
+
+-- case: expect_explicit_suffix
+expect e(b?: Bool) { expect c: b? }
+-- result: context=0; expect e [expect c b?]
+
+-- case: qualified_builtin_heads
+fn f(x: Int::T): Bool::T := x
+-- result: context=0; fn f x
+
+-- case: qualified_bool_parameter
+fn f(x: Bool::T): Int := x
+-- result: context=0; fn f x
+
+-- case: truncated_bool_annotation
+fn f(b?:
+-- result: syntax 8:8: expected an identifier
+
+-- case: truncated_qualified_type
+fn f(): Int::
+-- result: syntax 13:13: expected an identifier

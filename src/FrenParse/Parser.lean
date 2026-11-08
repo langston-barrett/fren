@@ -50,13 +50,9 @@ private def path (c : Cursor) : Except Diagnostic (Path × Cursor) := do
   fail c "a finite name path"
 
 private def typeSyntax (c : Cursor) : Except Diagnostic (Ty × Cursor) := do
-  if hasText c "Bool" then
-    let (t, c) ← take c "Bool"
-    return (.bool t, c)
-  if hasText c "Int" then
-    let (t, c) ← take c "Int"
-    return (.int t, c)
   let (p, c) ← path c
+  if p.tail.isEmpty && p.head.text == "Bool" then return (.bool p.head, c)
+  if p.tail.isEmpty && p.head.text == "Int" then return (.int p.head, c)
   return (.named p, c)
 
 private def parameters (c : Cursor) : Except Diagnostic (Parameters × Cursor) := do
@@ -69,10 +65,12 @@ private def parameters (c : Cursor) : Except Diagnostic (Parameters × Cursor) :
       let (closeToken, rest) ← take c ")"
       return (⟨openToken, values, commas, closeToken⟩, rest)
     let (name, rest) ← identifier c
-    let (annotation, rest) ← if name.text.endsWith "?" then pure (none, rest) else do
+    let (annotation, rest) ← if hasText rest ":" then do
       let (colon, rest) ← take rest ":"
       let (ty, rest) ← typeSyntax rest
       pure (some (colon, ty), rest)
+      else if name.text.endsWith "?" then pure (none, rest)
+      else fail rest "`:`"
     values := values.push ⟨name, annotation⟩
     c := rest
     if !hasText c "," then
