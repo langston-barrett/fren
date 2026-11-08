@@ -1662,6 +1662,22 @@ pub proc heavy_compiler_cpu_limit(seconds: Nat, gated?, query?): (det limit: Opt
         then Option::None else Option::Some(if query? then 0 else seconds))
 }
 
+-- A selected compiler's wall setting is independent of admission timeout.
+-- The execution deadline uses heavy_compile_deadline on monotonic samples;
+-- timeout requests cancellation of the same privately owned build session.
+pub proc heavy_compiler_wall_limit(milliseconds: Nat, gated?, query?): (det limit: Option<Int>) {
+    ensure selection: limit = (if milliseconds > 2147483647 or (milliseconds > 0 and not gated?)
+        then Option::None else Option::Some(if query? then 0 else milliseconds))
+}
+
+pub proc heavy_wall_signal_mask(error: Nat, usr1: Nat, usr2: Nat): (det safe?) {
+    ensure raw_mask: safe? iff error = 0 and usr1 = 0 and usr2 = 0
+}
+
+pub proc heavy_wall_message(bytes: Nat, expected: Nat, cause: Nat): (det valid?) {
+    ensure complete: valid? iff bytes = expected and cause is 1 | 2
+}
+
 pub proc heavy_compiler_cpu_observation(
     seconds: Nat,
     bytes: Nat,
@@ -1785,6 +1801,9 @@ pub proc heavy_process_metadata_reuse(
 #fren_check heavy_process_elapsed
 #fren_check heavy_process_usage
 #fren_check heavy_process_request_excess
+#fren_check heavy_wall_message
+#fren_check heavy_wall_signal_mask
+#fren_check heavy_compiler_wall_limit
 #fren_check heavy_compiler_cpu_limit
 #fren_check heavy_compiler_cpu_observation
 #fren_check heavy_process_fingerprint

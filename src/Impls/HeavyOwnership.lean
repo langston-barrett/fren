@@ -426,6 +426,28 @@ impl compiler_cpu_limit: testing::heavy_compiler_cpu_limit for (seconds : Nat) (
   cases query <;> simp only [fren_spec, Heavy.Process.compilerCpuLimit] <;>
     split <;> split <;> simp_all <;> omega
 
+impl compiler_wall_limit: testing::heavy_compiler_wall_limit for (milliseconds : Nat) (gated query : Bool) {
+  milliseconds := milliseconds, gated? := gated, query? := query,
+  limit := (Heavy.Process.compilerWallLimit milliseconds gated query).map Int.ofNat,
+} by
+  intro milliseconds gated query _
+  cases query <;> simp only [fren_spec, Heavy.Process.compilerWallLimit, Heavy.Process.compilerCpuLimit] <;>
+    split <;> split <;> simp_all <;> omega
+
+impl wall_signal_mask: testing::heavy_wall_signal_mask for (error usr1 usr2 : Nat) {
+  error := error, usr1 := usr1, usr2 := usr2,
+  safe? := Heavy.Process.wallSignalMaskSafe error usr1 usr2,
+} by
+  intro error usr1 usr2 _
+  simp [fren_spec, Heavy.Process.wallSignalMaskSafe]
+
+impl wall_message: testing::heavy_wall_message for (bytes expected cause : Nat) {
+  bytes := bytes, expected := expected, cause := cause,
+  valid? := Heavy.Process.wallMessageValid bytes expected cause,
+} by
+  intro bytes expected cause _
+  simp [fren_spec, Heavy.Process.wallMessageValid] <;> omega
+
 impl compiler_cpu_observation: testing::heavy_compiler_cpu_observation
     for (seconds bytes first readError eof waitError : Nat) {
   seconds := seconds, bytes := bytes, first := first, read_error := readError,
