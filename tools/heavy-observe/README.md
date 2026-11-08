@@ -116,10 +116,12 @@ five disjoint harness selections as part of `lake test`: `publisher`,
 already built, run a selection with `scripts/heavy --offline lake env
 .lake/build/bin/fren_test --job heavyProcess publisher` (substitute another
 selection). The manual `--job heavyProcess` runs all five in one job, and
-`--job heavyProcess controls` runs all controls without the scratch comparison;
-neither manual aggregate is a 30-second registered job. Other platforms skip
-these Linux-only controls. The standalone recipe above remains independent of
-Fren.
+`--job heavyProcess controls` runs publisher, forecast, entrypoint and cohort
+plus the pre-scratch core controls. The normal `core` selection and the
+no-argument aggregate also retain the later changed-source assertions, warm
+pairs and concurrent discovery checks. Neither manual aggregate is a
+30-second registered job. Other platforms skip these Linux-only controls. The
+standalone recipe above remains independent of Fren.
 
 The registered harness also runs the bounded cohort gate fixture under isolated
 Python. It checks actual extracted source identity for a supported argv change:
@@ -132,9 +134,10 @@ with cache restoration disabled, including artifact SHA256, and runs bounded
 warm direct-compiler pairs. It checks discovery, streams/args/environment,
 ordinary errors/exits, a real Lean process's self-signal, missing executables,
 record failure, recursive overlays, changed/incomplete identity and concurrent
-record publication. The harness also compiles all six C definitions against the actual emitted
-Main.c and BudgetMain.c declarations. Old extra world parameters are incompatible even when
-unused; no runtime failure or refcount bug is inferred. Metadata controls use
+record publication. The harness also compiles all Heavy extern definitions
+against the actual emitted Main.c and BudgetMain.c declarations. Old extra world
+parameters are incompatible even when unused; no runtime failure or refcount
+bug is inferred. Metadata controls use
 the pinned compiler, including repeated settings, option-shaped operands,
 stdin/discovery, unsupported long/attached forms and run boundaries. This
 toolchain has LLVM emission disabled; `-b` setting controls use a real run
