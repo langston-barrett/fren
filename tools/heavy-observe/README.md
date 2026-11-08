@@ -282,3 +282,15 @@ The old 9e83 binaries fail those safety assertions. The ordinary 24-case
 cleanup without this signal suppression. `fren_test --job heavyProcess controls`
 runs the existing real compiler, FIFO, raw parser/status and emitted C ABI
 controls without repeating the historical three-module Lake comparison.
+
+
+Failed source canonicalization supplies absent identity and fingerprint to
+request selection. It still validates the whole manifest and uses the
+configured positive fallback; original compiler arguments remain unchanged.
+The actual compiler diagnoses missing, non-directory, cyclic or inaccessible
+source paths. `heavyMissingSource` compares ordinary, observe-only and gated
+status/stdout/stderr with the pinned compiler, requiring a real fallback
+reservation/record, and separately preserves malformed-manifest rejection.
+The bound normalization rule states optional-input handling; filesystem
+exception authenticity and forwarding remain an actual finite IO contract,
+not a pure proof of filesystem behavior or input closure.

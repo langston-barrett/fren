@@ -107,9 +107,13 @@ def run (args : List String) : IO UInt32 := do
     let some bytes ← readRegular (dir / "requests").toString fingerprintAllowed
       | throw (IO.userError "unreadable request manifest")
     let some manifest := String.fromUTF8? bytes | throw (IO.userError "invalid request manifest")
-    let canonical ← source.mapM fun s => IO.FS.realPath s
-    let some (demand, origin) := BudgetAdapter.request manifest (canonical.map (·.toString))
-        (sourceBefore.bind id) fallback | throw (IO.userError "invalid request demand")
+    -- Identity is optional even when realPath fails: the compiler must still
+    -- receive the original arguments and diagnose its own inaccessible input.
+    let canonical ← try source.mapM fun s => do pure (← IO.FS.realPath s).toString
+      catch _ => pure none
+    let (requestSource, requestFingerprint) := Heavy.Budget.sourceIdentity canonical (sourceBefore.bind id)
+    let some (demand, origin) := BudgetAdapter.request manifest requestSource requestFingerprint fallback
+      | throw (IO.userError "invalid request demand")
     requestDemand := demand
     provenance := origin
     observeBudget real.toString args.toArray dir.toString demand.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control

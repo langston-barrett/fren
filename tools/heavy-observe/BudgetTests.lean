@@ -51,4 +51,11 @@ def main : IO Unit := do
   check (!waitable 0 0 0 4) "unsupported signal ABI"
   check (BudgetAdapter.control #[0, 0, 10, 10] == #[1]) "deadline callback contract"
   check (BudgetAdapter.control #[1, 0, 0, 0, 2, 10, 0, 10, 10, 0] == #[1, 0]) "lifecycle callback contract"
+  for canonical in [none, some "/source"] do
+    for fingerprint in [none, some "observed"] do
+      let observed := sourceIdentity canonical fingerprint
+      check (observed == (canonical, if canonical.isSome then fingerprint else none)) "source identity normalization"
+      if canonical.isNone then
+        check (BudgetAdapter.request "/source\tobserved\t2\n" observed.1 observed.2 9 ==
+          some (9, "explicit-unknown-fallback")) "canonicalization failure reaches positive fallback"
   IO.println "budget raw inputs passed"

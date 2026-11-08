@@ -1726,6 +1726,15 @@ never a zero charge. Unlocked rows contribute nothing. Held reservations
 do not expire with time. Waiting requests use increasing session tickets;
 only the oldest held waiter can start. No concurrency limit is imposed.
 
+Source canonicalization is an optional observation, not a prerequisite to
+forwarding the compiler invocation. Every error from that source-only IO
+call becomes absent identity, with absent fingerprint for request selection.
+The existing selector must then receive those raw options and the positive
+configured fallback, while still rejecting malformed manifests. Original
+arguments and physical compiler error status/streams are retained. The pure
+normalization below does not prove that the filesystem adapter catches its
+exception: actual pinned-compiler producer controls check that IO boundary.
+
 The runtime must publish its waiting row under the registry lock, retain
 its lease through compiler exit, and publish running state before fork.
 Release closes only its own lease. Cancellation must reap its own child;
@@ -1748,6 +1757,20 @@ thread or handler changes SIGCHLD or reaps these children between checks;
 Linux observation authenticity remains an external obligation.
 
 ```fren
+pub proc heavy_compile_source_identity(canonical: Option<String>, fingerprint: Option<String>): (
+    det source: Option<String>,
+    det digest: Option<String>,
+) {
+    out source := canonical
+    out digest := match canonical {
+        Option::Some(_) => fingerprint,
+        Option::None => Option::None,
+    }
+    expect unknown: when canonical = Option::None, source = Option::None and digest = Option::None
+}
+
+#fren_check heavy_compile_source_identity
+
 pub proc heavy_compile_budget(
     allowance: Int,
     parent: Int,

@@ -601,4 +601,14 @@ impl compile_lifecycle: testing::heavy_compile_lifecycle
   intro actionError handler flags autoReapBit previousWaitError waitError observed expected reaped _
   simp [fren_spec, Heavy.Budget.waitable, Heavy.Budget.groupSignal, and_assoc, Bool.and_assoc]
 
+impl compile_source_identity: testing::heavy_compile_source_identity
+    for (canonical fingerprint : Option String) {
+  canonical := canonical,
+  fingerprint := fingerprint,
+  source := (Heavy.Budget.sourceIdentity canonical fingerprint).1,
+  digest := (Heavy.Budget.sourceIdentity canonical fingerprint).2,
+} by
+  intro canonical fingerprint _
+  cases canonical <;> simp [fren_spec, Heavy.Budget.sourceIdentity]
+
 end Fren.Impls.HeavyOwnership

@@ -4506,7 +4506,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyProcess"], ["heavyBudget"], ["heavyBudgetBoundaries"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyProcess"], ["heavyBudget"], ["heavyBudgetBoundaries"], ["heavyMissingSource"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
@@ -4617,6 +4617,16 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
       return #[s!"standalone budget build failed:\n{built.stdout}{built.stderr}"]
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/budget_boundaries.py"] }
     return if out.exitCode == 0 then #[] else #[s!"compiler boundary regressions failed:\n{out.stdout}{out.stderr}"]
+  | ["heavyMissingSource"] => do
+    if !(System.Platform.target.splitOn "-").contains "linux" then
+      IO.eprintln "heavyMissingSource: skipped (Linux compiler source errors)"
+      return #[]
+    let built ← IO.Process.output { cmd := "lake", args := #["-d", "tools/heavy-observe",
+      "build", "heavy_observe", "budget_session", "budget_tests", "--wfail"] }
+    if built.exitCode != 0 then
+      return #[s!"standalone observer build failed:\n{built.stdout}{built.stderr}"]
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/missing_source_test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"compiler source-error compatibility failed:\n{out.stdout}{out.stderr}"]
   | ["heavyPrediction"] => do
     -- The Heavy.Forecast import builds the module loaded by this transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }

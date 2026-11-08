@@ -16,6 +16,8 @@ unbound: Fren.Impls.HeavyOwnership.compile_deadline decision
 unbound: Fren.Impls.HeavyOwnership.compile_lifecycle signal?
 unbound: Fren.Impls.HeavyOwnership.compile_lifecycle waitable?
 unbound: Fren.Impls.HeavyOwnership.compile_row charge
+unbound: Fren.Impls.HeavyOwnership.compile_source_identity digest
+unbound: Fren.Impls.HeavyOwnership.compile_source_identity source
 unbound: Fren.Impls.HeavyOwnership.group_gone gone?
 unbound: Fren.Impls.HeavyOwnership.lease admission
 unbound: Fren.Impls.HeavyOwnership.lease eviction

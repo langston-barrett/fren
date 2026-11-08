@@ -5,6 +5,11 @@ functions do not prove locking, process identity or physical memory bounds. -/
 namespace Heavy.Budget
 open Heavy.Ownership
 
+/-- Canonicalization failure is raw absence. Without that identity, an
+independent fingerprint cannot identify a source-bound request. -/
+def sourceIdentity (canonical fingerprint : Option String) : Option String × Option String :=
+  (canonical, match canonical with | some _ => fingerprint | none => none)
+
 /-- A held but unknown row is an error, including after its monitor dies.
 An unlocked row's stale or partially written metadata is irrelevant. -/
 def charge (locked : Bool) (state ticket : Int) (row : Lease) : Option Int :=
