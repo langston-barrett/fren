@@ -55,8 +55,8 @@ arguments and depth, evaluation before and after the stage has the same
 outcome, including its value or its undefined, exhausted, invalid or unsupported
 failure and associated data. Assumptions remain assumptions restricting the
 assignments relevant to expectations; undefined is never changed to false or
-a pass. This is a correspondence obligation for the future actual pass and
-its consumer, not a theorem about a pass that already exists.
+a pass. The identity stage has an actual-interpreter correspondence theorem;
+future transformations and their consumers must establish their own correspondence.
 
 The current evaluator's depth bound is operational: exhaustion is distinct from
 semantic undefinedness such as division by zero. Identity must preserve both;
@@ -89,22 +89,28 @@ expect waits(l: Light, base: Int) {
 ```
 
 This fence is checked by Fren1 as a concrete example; it is not an executable
-model or a check of Fren2's unimplemented pass. The eventual MIR path must
+model, execution or proof of the Fren2 pass. The eventual MIR path must
 still build a theory, carry the assumption into the goal and preserve its
 meaning; this chapter does not specify or implement that path.
 
 ## Evidence still needed
 
-`FrenThirDesugar` currently contains no pass. No `impl`, proof or property test
-binds the obligations above to actual desugaring code yet. The checked example
-is finite and does not prove them.
+`FrenThirDesugar.Program` carries the actual successful `checkWalking`
+result as evidence. `desugar` returns that program unchanged. The Lean
+`identity`, `static`, `admitted`, `rejected` and `deterministic` theorems
+state properties of this stage. The test-only `FrenThirDesugarTests.evaluation`
+theorem equates actual `FrenEval.evaluate` calls at the same operational depth.
+Finite property tests exercise actual admitted, rejected and partial inputs;
+the checked Fren1 example does not prove these properties.
 
-- [ ] Implement the identity on actual admitted typed data, rejecting any
-  wider unsupported input at its real boundary, and bind the contract to it.
-- [ ] Establish actual-code admission, identity, static and evaluation
-  correspondence, including assumptions, spans and undefinedness; test genuine
-  accepted, rejected and partial inputs with premise counts.
+- [x] Implement the identity on admitted walking typed data, with producer
+  evidence and failure at the actual admission boundary.
+- [x] Establish identity-specific admission, static and evaluator correspondence
+  and test actual producer inputs, including failure and partial outcomes.
+- [ ] Establish universal traversal and checker soundness beyond these identity
+  laws and finite tests.
 - [ ] Specify and implement each future sugared form before admitting it, and
   establish its typing and meaning preservation, including table disjointness.
+- [ ] Build the MIR path and establish assumption-to-goal preservation.
 - [ ] Restate recursive correspondence in Fren when it can express the actual
   recursive syntax and judgments, without copying the IR or pass into Fren.
