@@ -1,6 +1,6 @@
 import Fren.Impl
 import Fren.Literate
-import FrenAstToHir
+import FrenHirToThir
 
 open Fren.Lang
 
@@ -10,14 +10,19 @@ open Fren.Lang
 
 namespace Spec.Compiler.Thir
 
-/-- Admission obligation for the actual public resolved input. The structure
-alone is not evidence; this proposition implements no second resolver. -/
+/-- Same concrete successful-producer relation established by actual admission.
+The public Resolved structure alone remains insufficient evidence. -/
 def Admitted (input : FrenModule.Resolved) : Prop :=
-  FrenAstToHir.resolve input.document = .ok input
+  FrenHirToThir.Admitted input
 
 /-- Nominal key equality uses the real canonical API, not a display string. -/
 theorem nominal_key (a b : FrenBase.ItemId) : (a == b) = true ↔ a = b :=
   FrenBase.ItemId.beq_eq_true_iff a b
+
+#check FrenHirToThir.check_retains
+#check FrenHirToThir.erasure
+#check FrenHirToThir.deterministic
+#check FrenHirToThir.TypingSound
 
 -- Focused accepted-resolver input and source anchor, not a typing verdict.
 private def enumArithmetic :=

@@ -14,12 +14,12 @@ private def ir : List String := ["FrenAst", "FrenModule", "FrenExpr", "FrenMir",
 private def allowed : List (String × List String) :=
   [("FrenBase", []), ("FrenSource", ["FrenBase"]),
    ("FrenDiag", ["FrenBase", "FrenSource"]), ("FrenSexp", []),
-   ("FrenProp", ["FrenSexp"]), ("FrenAst", base), ("FrenModule", base ++ ["FrenAst"]),
-   ("FrenExpr", base), ("FrenMir", base ++ ["FrenExpr", "FrenModule"]),
+   ("FrenProp", ["FrenSexp"]), ("FrenAst", base), ("FrenModule", base ++ ["FrenAst", "FrenExpr"]),
+   ("FrenExpr", base ++ ["FrenAst"]), ("FrenMir", base ++ ["FrenExpr", "FrenModule"]),
    ("FrenLir", base ++ ["FrenMir"]), ("FrenOir", base ++ ["FrenLir"]),
    ("FrenParse", base ++ ["FrenAst"]),
    ("FrenAstToHir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenParse"]),
-   ("FrenHirToThir", base ++ ["FrenModule", "FrenExpr"]),
+   ("FrenHirToThir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenAstToHir"]),
    ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr"]),
    ("FrenThirToMir", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenMirToMono", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
@@ -41,17 +41,18 @@ private def tests : List String := roots.map (· ++ "Tests")
 -- Spec wrappers and FrenTestMain remain Fren1 infrastructure, not Fren2 roots.
 private def owners : List String := roots ++ tests ++
   ["FrenTextTests", "FrenTextTestsTests", "FrenTextDemo", "FrenTextDemoTests",
-   "Fren2TestMain", "FrenTest.Layering", "FrenTest.Fren2Resolver"]
+   "Fren2TestMain", "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing"]
 
 private def testOnly (owner : String) : Bool :=
   tests.contains owner || ["FrenTextTestsTests", "FrenTextDemoTests", "Fren2TestMain",
-    "FrenTest.Layering", "FrenTest.Fren2Resolver"].contains owner
+    "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing"].contains owner
 
 private def permits (owner imported : String) : Bool := Id.run do
   if ["Lean", "Std", "Init"].contains imported then return true
   if owner == imported then return true
+  if owner == "FrenTest.Fren2Typing" then return imported == "FrenHirToThirTests"
   if owner == "FrenTest.Fren2Resolver" then return imported == "FrenAstToHirTests"
-  if ["FrenProp", "FrenAstToHirTests"].contains owner && imported == "Plausible" then return true
+  if ["FrenProp", "FrenAstToHirTests", "FrenHirToThirTests"].contains owner && imported == "Plausible" then return true
   if owner == "FrenTextTests" then return false
   if owner == "FrenTextTestsTests" then return imported == "FrenTextTests"
   if owner == "FrenTextDemo" then return imported == "FrenTextTests"

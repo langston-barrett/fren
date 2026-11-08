@@ -3,7 +3,8 @@
 The typed high-level intermediate representation (THIR) adds value types to
 resolved expressions. This chapter contracts the next production
 `FrenHirToThir` slice using the real `FrenAst` and `FrenModule.Resolved` APIs.
-It implements neither that pass nor a complete THIR schema. The
+The actual pass now retains resolved syntax plus typed occurrence data; this
+chapter does not freeze a complete THIR schema. The
 [Language types](../Language/Types.md) chapter supplies the typing rules.
 
 ## Input admission
@@ -30,7 +31,9 @@ exact lexical context to that input's actual declarations and syntax.
 An API caller can construct or edit every field of `Resolved`. Merely having
 that Lean type, an in-range index, or a supplied `valid?` Boolean establishes
 neither obligation. The wrapper names the concrete successful-producer
-relation `Admitted`; it is a proposition, not a validation implementation.
+relation `Admitted`. The actual `admit` boundary reuses the resolver, its
+proved document-retention law and decidable equality on the complete scope
+and reference table to establish this proposition.
 For the next public checker, reusing the existing resolver to compare with
 the supplied resolved value is an acceptable executable admission check.
 Alternatively a trusted producer boundary can carry evidence. Missing,
@@ -153,22 +156,22 @@ solver checking. The S1 unknown `y` remains a resolver failure. Accepting
 syntax and names for the enum arithmetic example must not turn it into a
 successful typed result or an empty set of goals.
 
-- [ ] Implement the actual walking checker and its admission check, then
-  state `result.typing`, `result.preservation` and deterministic success/failure
-  laws over that concrete function. Add real primitive `impl` bindings only
-  when their deciding functions exist, with proofs rather than sampling.
-- [ ] Add actual-checker tests for each expression/operator, annotation,
-  suffix, local/let/sibling context, forward call, arity and callability case;
-  both enum identities and constructor ownership; every branch and member;
-  and source/target retention. Pin the full `F0304` code/text/span above.
-- [ ] Test API-created/edited resolved inputs with deleted/duplicate entries,
-  changed role, target, context, scope and source. A supplied Boolean cannot
-  exempt any control from admission.
-- [ ] Use direct Plausible on the real checker with valid, ill-typed and
-  partial inputs. Report counts for admission, signature collection, lookup
-  hit/miss and typing success/failure; test wrong-slot, builtin/enum
-  conflation and dropped-branch controls. Finite primitive consequences and
-  sampled tests do not prove the recursive pass.
+- [x] Implement actual walking typing and admission in `FrenHirToThir`, with
+  genuine admission, erasure, lookup, primitive and determinism proofs.
+  The wrapper's `Admitted` is the actual pass's relation.
+- [x] Test every expression/operator, annotation/suffix, local/let/sibling
+  context, forward call, arity, callability, enum identity, constructor owner,
+  branch and member, with independent S1 type/target/span expectations and
+  the exact `F0304` code/text/span above.
+- [x] Reject edited resolved inputs with deleted/duplicate entries and changed
+  role, target, context, scope, constructor owner, source, tape or AST.
+- [x] Run direct Plausible on the actual recursive checker with required
+  success, typing failure and partial-table admission failure per sample.
+  Native census counts admission, signatures, lookup hit/miss and typing
+  success/failure without discarded premises.
+- [ ] Prove the declarative `HasValue` relation for every successful actual
+  traversal (`TypingSound`). The finite native and Plausible cases do not
+  establish universal soundness or complete traversal correctness.
 - [ ] Implement and test `WalkingCoverage` and `WalkingNonrecursive` before
   claiming whole walking static acceptance. Preserve the distinction from
   evaluation, solver verdicts and evidence checks.

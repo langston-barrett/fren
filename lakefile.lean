@@ -171,7 +171,13 @@ input_dir fren_resolve_inputs where
 
 lean_lib FrenHirToThir
 
-lean_lib FrenHirToThirTests
+lean_lib FrenHirToThirTests where
+  needs := #[`@/fren_typecheck_inputs, `@/fren_resolve_inputs]
+
+input_dir fren_typecheck_inputs where
+  path := "test/FrenTypecheck"
+  text := false
+  filter := .extension #["fren"]
 
 lean_lib FrenThirDesugar
 
