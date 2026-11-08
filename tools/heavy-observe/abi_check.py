@@ -8,17 +8,35 @@ from pathlib import Path
 import re
 import subprocess
 
-NAMES = {"heavy_observe_wait", "heavy_observe_signal", "heavy_observe_write", "heavy_observe_read_regular", "heavy_budget_observe", "heavy_budget_session"}
-
-
 def check(here, real, work, source=None):
-    emitted = here / ".lake/build/ir/Main.c"
-    text = emitted.read_text() + "\n" + (here / ".lake/build/ir/BudgetMain.c").read_text()
-    declarations = re.findall(r"^lean_object\* (heavy_(?:observe|budget)_\w+)\(([^;{}]*)\);$", text, re.M)
-    found = [(name, args) for name, args in declarations if name in NAMES]
-    selected = list(dict(found).items())
-    assert all(dict(selected)[name] == args for name, args in found), found
-    assert len(selected) == len(NAMES) and {name for name, _ in selected} == NAMES, selected
+    # Every declared Heavy extern must have a generated declaration in its
+    # corresponding module. A new source module must be built, not skipped.
+    modules = {}
+    sources = [(p, p.relative_to(here)) for p in here.rglob("*.lean")
+               if not any(part.startswith(".") or part == "test-work" for part in p.relative_to(here).parts)]
+    heavy = here.parent.parent / "src/Heavy"
+    sources += [(p, Path("Heavy") / p.relative_to(heavy)) for p in heavy.rglob("*.lean")]
+    for lean, module in sorted(sources):
+        names = set(re.findall(r'@\[extern "(heavy_\w+)"\]', lean.read_text()))
+        if names:
+            modules[lean] = (module, names)
+    assert modules, "no Heavy extern declarations found"
+    selected = {}
+    emitted_text = []
+    for lean, (module, names) in modules.items():
+        generated = here / ".lake/build/ir" / module.with_suffix(".c")
+        text = generated.read_text()
+        emitted_text.append(text)
+        declarations = re.findall(r"^lean_object\* (heavy_\w+)\(([^;{}]*)\);$", text, re.M)
+        found = dict(declarations)
+        assert all(found[name] == args for name, args in declarations), (lean, declarations)
+        assert names <= found.keys(), (lean, names - found.keys())
+        for name in names:
+            args = found[name]
+            assert name not in selected or selected[name] == args, (name, args, selected[name])
+            selected[name] = args
+    text = "\n".join(emitted_text)
+    selected = sorted(selected.items())
     header = work / "emitted-ffi.h"
     header.write_text('#define _GNU_SOURCE\n#include <lean/lean.h>\n' + ''.join(
         f'lean_object* {name}({args});\n' for name, args in selected))

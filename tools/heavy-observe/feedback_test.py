@@ -39,7 +39,7 @@ if sys.argv[1:2] == ['--producer']:
 with tempfile.TemporaryDirectory(prefix='heavy-feedback-') as tmp:
     work = Path(tmp); (work / 'events').mkdir()
     real = Path(subprocess.check_output(['lean', '--print-prefix'], text=True).strip()) / 'bin/lean'
-    overlay = create(work / 'overlay', real, BIN / 'heavy_observe')
+    overlay = create(work / 'overlay', real, Path(os.environ.get('HEAVY_TEST_OBSERVER', str(BIN / 'heavy_observe'))))
     fixture = work / 'fixture'; fixture.write_bytes((HERE / 'budget_fixture.py').read_bytes()); fixture.chmod(0o700)
     (overlay / 'real-lean.path').write_text(str(fixture))
     lines = []
@@ -60,8 +60,9 @@ with tempfile.TemporaryDirectory(prefix='heavy-feedback-') as tmp:
         row = by_source[key]; peak = row['measured_peak_rss_kib']; request = row['requested_reservation_kib']
         assert peak > request > 0 and results[name]['status'] == status
         assert results[name]['stdout'] == f'stdout {key}\n'
-        if name != 'closed':
+        if name != 'closed' and os.environ.get('HEAVY_NOTICE_FAULT') not in ('EBADF', 'ENOSPC'):
             assert f'observed child peak {peak} KiB above requested amount {request} KiB by {peak-request} KiB' in results[name]['stderr']
+        if name != 'closed':
             assert f'stderr {key}\n' in results[name]['stderr']
     row = by_source['Large']; assert row['measured_peak_rss_kib'] <= row['requested_reservation_kib']
     for name in ['large', 'unknown', 'query', 'nocharge']:

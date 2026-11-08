@@ -1520,6 +1520,15 @@ usage are not treated as zero excess. The note is not a Lean warning, a
 physical limit, a budget failure, or a bound on future usage. The IO boundary
 is the actual gate and wait4 observation; the arithmetic theorem does not
 prove those OS observations or the delivery of the note.
+For the best-effort write, the Linux adapter temporarily blocks SIGPIPE in
+the calling thread and restores its prior mask without changing disposition.
+It consumes a newly pending SIGPIPE only after EPIPE and only if none was
+pending before the write, retrying an interrupted drain. Standard SIGPIPE
+signals can coalesce, so an unrelated concurrent SIGPIPE during an EPIPE
+cannot be distinguished from the write's signal. Successful or other failed
+writes do not drain. These transitions rely on Linux signal and write
+semantics and are exercised by owned controls and labelled fault injection,
+not established by the arithmetic proof.
 
 Source paths, arguments, setup-file and output-artifact content fingerprints,
 cwd and the actual compiler's path/version/hash accompany each observation.
@@ -1628,6 +1637,15 @@ pub proc heavy_process_usage(
         then Option::Some(rss) else Option::None)
 }
 
+pub proc heavy_process_request_excess(requested: Option<Int>, observed: Option<Int>): (det excess: Option<Int>) {
+    ensure raw_comparison: excess = (match requested, observed {
+        Option::Some(request), Option::Some(peak) =>
+            if request = 0 then Option::None
+            else Option::Some(if peak > request then peak - request else 0),
+        _, _ => Option::None,
+    })
+}
+
 -- Linux's raw mode type bits are (mode div 4096) mod 16; 8 is regular.
 -- The observer bounds its own fingerprint buffer at 64 MiB.
 pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
@@ -1722,6 +1740,7 @@ pub proc heavy_process_identity(
 #fren_check heavy_process_result
 #fren_check heavy_process_elapsed
 #fren_check heavy_process_usage
+#fren_check heavy_process_request_excess
 #fren_check heavy_process_fingerprint
 #fren_check heavy_process_arguments
 #fren_check heavy_process_identity
