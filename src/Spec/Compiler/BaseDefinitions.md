@@ -65,15 +65,14 @@ byte ranges. They do not bind a compiler span implementation.
 pub mod spec
 pub mod spec::base_definitions
 
-pub fn range_valid?(lo: Int, hi: Int, size: Int) :=
-  0 <= lo <= hi <= size
+pub fn range_valid?(lo: Int, hi: Int, size: Int) := 0 <= lo <= hi <= size
 
 pub proc range_contract(size: Int) {
-  require positive: size > 1
-  expect forward: range_valid?(0, 1, size)
-  expect empty: range_valid?(size, size, size)
-  expect reversed: not range_valid?(1, 0, size)
-  expect outside: not range_valid?(0, size + 1, size)
+    require positive: size > 1
+    expect forward: range_valid?(0, 1, size)
+    expect empty: range_valid?(size, size, size)
+    expect reversed: not range_valid?(1, 0, size)
+    expect outside: not range_valid?(0, size + 1, size)
 }
 ```
 
@@ -83,8 +82,8 @@ each endpoint.
 
 ```fren
 pub proc offset_contract(x: Int) {
-  expect first: x + 1 - x = 1
-  expect last: x + 3 - x = 3
+    expect first: x + 1 - x = 1
+    expect last: x + 3 - x = 3
 }
 ```
 

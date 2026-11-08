@@ -15,7 +15,7 @@ structure Item where
   id : FrenBase.ItemId
   name : FrenAst.Token
   kind : ItemKind
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 /-- Constructors are stored after their owner, in source order. Keys are
 canonical ItemIds, never their potentially colliding display strings. -/
@@ -23,7 +23,7 @@ structure Scope where
   id : FrenBase.ItemId
   name : FrenAst.Token
   items : Array Item
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 abbrev Context := FrenBase.Binding.Context FrenAst.Token
 
@@ -41,7 +41,7 @@ inductive Written where
   | path (value : FrenAst.Path)
   | builtin (token : FrenAst.Token)
   | implicitBool (parameter : FrenAst.Token)
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 def Written.anchor : Written → FrenAst.Token
   | .path p => p.head
@@ -55,7 +55,7 @@ structure Reference where
   role : Role
   target : Target
   context : Context
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 /-- Walking HIR: the lossless structured AST plus all resolved occurrences.
 References follow syntax order. Lookup by tape position is unique for accepted

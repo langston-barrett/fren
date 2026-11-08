@@ -1,0 +1,5 @@
+pub mod bad
+
+pub enum Light { Red, Green }
+
+pub fn f(l: Light): Int := l + 1

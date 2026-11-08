@@ -1,0 +1,3 @@
+pub mod bad
+
+pub fn f(x: Int): Int := y + 1

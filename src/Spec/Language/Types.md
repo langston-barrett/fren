@@ -4,7 +4,9 @@ A type describes which values an expression can produce. This chapter fixes
 only the single-file [walking subset](../Compiler/AstAndParsing.md#walking-subset):
 `Bool`, `Int`, payload-free enumerations and non-generic function signatures.
 [THIR](../Compiler/Thir.md) specifies the next checker over resolved syntax.
-Production walking typing is not implemented yet.
+The actual walking checker is `FrenHirToThir.check`; its retained syntax and
+typed occurrences implement this slice. Coverage and non-recursion remain
+separate validators.
 
 ## Value types and signatures
 
@@ -215,10 +217,14 @@ pub proc binary(op: Binary, left: ValueKind, right: ValueKind, left_id: Int, rig
 }
 ```
 
-Today's solver checks consequences of these independent contracts. There
-is no production primitive or `impl` binding yet. The Lean wrapper proves
-that actual binding-context membership gives a unique type and an in-scope
-index; it does not prove traversal or whole-pass correctness.
+Today's solver checks consequences of these independent contracts. The Lean
+wrapper binds all three procedures to the actual generic `FrenExpr`
+primitives with proofs. The equality-atom instance uses `Int`; the walker
+uses the same definitions with canonical `ItemId`. The generic
+`compatible_iff`, `unary_accepts`, `binary_accepts` and `binary_result` laws
+cover actual nominal equality and operator decisions without rendering or
+hash encoding. The wrapper also proves uniqueness and scope of actual local
+context entries. These are primitive proofs, not whole-traversal soundness.
 
 ## Diagnostic anchor and remaining evidence
 
@@ -237,11 +243,12 @@ The required diagnostic is `F0304` at that operand, with canonical type
 rendering `bad::Light`. The diagnostic uses `::`; `ItemId.render` is a
 general debug display using dots and is not this type renderer.
 
-- [ ] Bind the real compatibility and raw operator decisions to these
-  contracts with genuine proofs after those functions exist, covering every
-  AST operator and both nominal/builtin distinctions.
-- [ ] Check the complete expression rules over the actual recursive checker,
-  including rejected terms and context alignment, as specified in THIR.
+- [x] Bind real generic compatibility and operator decisions with genuine
+  proofs, covering every AST operator and builtin/nominal distinctions.
+- [x] Exercise actual whole traversal, including rejected terms, context
+  alignment, every operator/type-family pair and retained source data.
+- [ ] Prove the universal recursive `FrenHirToThir.TypingSound` obligation;
+  native cases and direct Plausible are finite evidence, not that proof.
 - [ ] Restate recursive expression typing in Fren once Fren2 supports
   recursive expression datatypes and structurally recursive judgments over
   their ordered children; no Fren1 recursion extension is a prerequisite.

@@ -22,12 +22,12 @@ structure Token where
   text : String
   span : FrenSource.Span
   kind : LexicalKind
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 structure Path where
   head : Token
   tail : Array (Token × Token) := #[] -- separator, name, in written order
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 inductive Ty where
   | bool (token : Token)

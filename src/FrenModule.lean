@@ -1,3 +1,3 @@
 module
 
-public import FrenModule.Resolved
+public import FrenModule.Typed
