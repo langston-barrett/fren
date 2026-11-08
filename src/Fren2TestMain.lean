@@ -10,6 +10,7 @@ import FrenParseTests
 import FrenAstToHirTests
 import FrenHirToThirTests
 import FrenEvalTests
+import FrenThirDesugarTests
 
 fren_test_runners textRunners
 
@@ -36,6 +37,9 @@ public def main (args : List String) : IO UInt32 := do
   if args == ["--job", "typingProperties"] then
     FrenHirToThirTests.runProperties
     return 0
+  if args == ["--job", "desugaring"] then
+    FrenThirDesugarTests.run
+    return 0
   if args == ["--job", "evaluator"] then
     FrenEvalTests.runCases
     return 0
@@ -55,6 +59,7 @@ public def main (args : List String) : IO UInt32 := do
   FrenHirToThirTests.runProperties
   FrenEvalTests.runCases
   FrenEvalTests.runProperties
+  FrenThirDesugarTests.run
   Fren.SexpTests.run
   Fren.SexpTests.runDerive
   Fren.SexpTests.Phase.run

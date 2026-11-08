@@ -20,7 +20,7 @@ private def allowed : List (String × List String) :=
    ("FrenParse", base ++ ["FrenAst"]),
    ("FrenAstToHir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenParse"]),
    ("FrenHirToThir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenAstToHir"]),
-   ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr"]),
+   ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr", "FrenHirToThir"]),
    ("FrenThirToMir", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenMirToMono", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenMonoToFo", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
@@ -54,12 +54,13 @@ private def permits (owner imported : String) : Bool := Id.run do
   if owner == imported then return true
   if owner == "FrenTest.Fren2Typing" then return imported == "FrenHirToThirTests"
   if owner == "FrenTest.Fren2Resolver" then return imported == "FrenAstToHirTests"
-  if ["FrenProp", "FrenAstToHirTests", "FrenHirToThirTests", "FrenEvalTests"].contains owner && imported == "Plausible" then return true
+  if ["FrenProp", "FrenAstToHirTests", "FrenHirToThirTests", "FrenEvalTests", "FrenThirDesugarTests"].contains owner && imported == "Plausible" then return true
   if owner == "FrenTextTests" then return false
   if owner == "FrenTextTestsTests" then return imported == "FrenTextTests"
   if owner == "FrenTextDemo" then return imported == "FrenTextTests"
   if owner == "FrenTextDemoTests" then return imported == "FrenTextDemo"
   if owner == "Fren2TestMain" then return (roots ++ tests ++ ["FrenTextDemo"]).contains imported
+  if owner == "FrenThirDesugarTests" && imported == "FrenEval" then return true
   if let some original := owner.dropSuffix? "Tests" then
     let original := original.toString
     if !roots.contains original then return false
