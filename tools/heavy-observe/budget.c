@@ -170,7 +170,7 @@ static int budget_lock(b_lean_obj_arg control, int fd, uint64_t deadline) {
  * stored ticket/state/demand/owner and an independent procfs observation.
  * No ownership/fit Boolean is supplied to Lean. */
 LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg args,
-    b_lean_obj_arg path, uint64_t demand, b_lean_obj_arg decide, b_lean_obj_arg control) {
+    b_lean_obj_arg path, uint64_t demand, uint64_t cpu_limit, b_lean_obj_arg decide, b_lean_obj_arg control) {
     uint64_t extra[7] = {0}; /* error, admission wait ns, ticket, held, allowance, parent */
     lean_object *result = NULL;
     int dir = -1, registry = -1, owner = -1, ticketfd = -1, counter = -1, config = -1;
@@ -297,7 +297,7 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
             extra[1] = now - begin; extra[6] = now;
             if (flock(registry, LOCK_UN) < 0) { e = errno; goto done; }
             locked = 0;
-            result = observe_wait(exe, args, 1);
+            result = observe_wait(exe, args, 1, cpu_limit);
             if (budget_cancelled) e = ECANCELED;
             goto done;
         }

@@ -418,6 +418,14 @@ impl process_request_excess: testing::heavy_process_request_excess
         · have hsub : peak - request = 0 := Nat.sub_eq_zero_of_le (by omega)
           simp [fren_spec, Heavy.Process.requestExcess, hz, hp, hsub]
 
+impl compiler_cpu_limit: testing::heavy_compiler_cpu_limit for (seconds : Nat) (gated query : Bool) {
+  seconds := seconds, gated? := gated, query? := query,
+  limit := (Heavy.Process.compilerCpuLimit seconds gated query).map Int.ofNat,
+} by
+  intro seconds gated query _
+  cases query <;> simp only [fren_spec, Heavy.Process.compilerCpuLimit] <;>
+    split <;> split <;> simp_all <;> omega
+
 impl process_fingerprint: testing::heavy_process_fingerprint for (mode bytes : Nat) {
   mode := mode,
   bytes := bytes,

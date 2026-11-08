@@ -20,7 +20,7 @@ opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO 
 
 @[extern "heavy_budget_observe"]
 opaque observeBudget (exe : @& String) (args : @& Array String) (dir : @& String)
-    (demand : UInt64) (decide : @& (Array String → Array UInt64))
+    (demand cpuLimit : UInt64) (decide : @& (Array String → Array UInt64))
     (control : @& (Array UInt64 → Array UInt64)) : IO (Array UInt64)
 
 -- JSON output needs no elaborator/Lean JSON dependency.
@@ -133,6 +133,14 @@ def run (args : List String) : IO UInt32 := do
     | none => do pure (← compilerQuery real "--version", ← compilerQuery real "--githash")
   let gateDir ← IO.getEnv "HEAVY_BUDGET_DIR"
   let gated := gateDir.isSome && (parsed.map (·.kind)) != some "query"
+  let cpuText ← IO.getEnv "HEAVY_COMPILER_CPU_SECONDS"
+  let cpuSeconds ← match cpuText with
+    | none => pure 0
+    | some text => match text.toNat? with
+      | some n => if n > 0 then pure n else throw (IO.userError "invalid compiler CPU limit")
+      | none => throw (IO.userError "invalid compiler CPU limit")
+  let some cpuLimit := compilerCpuLimit cpuSeconds gateDir.isSome ((parsed.map (·.kind)) == some "query")
+    | throw (IO.userError "invalid compiler CPU limit or missing budget session")
   let mut requestDemand := 0
   let mut provenance := ""
   let raw ← if gated then do
@@ -172,7 +180,7 @@ def run (args : List String) : IO UInt32 := do
       | throw (IO.userError "invalid request demand")
     requestDemand := demand
     provenance := origin
-    observeBudget real.toString args.toArray dir.toString demand.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
+    observeBudget real.toString args.toArray dir.toString demand.toUInt64 cpuLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
     else observe real.toString args.toArray
   if raw.size != (if gated then 18 else 11) then throw (IO.userError "invalid FFI observation length")
   let v := fun i => raw[i]!.toNat
@@ -202,6 +210,7 @@ def run (args : List String) : IO UInt32 := do
       ("child_present", toString childPresent),
       ("wrapper_code", toString (if gateError != 0 then 125 else outcome.shellCode))] else []
     let record := object (gateFields ++ [
+      ("compiler_cpu_limit_seconds", if cpuLimit == 0 || v 0 != 0 || !childPresent then "null" else toString cpuLimit),
       ("boot_id", jsonOption quoted boot),
       ("schema", if gated then "3" else "2"), ("family", quoted "lean"),
       ("input_kind", quoted ((parsed.map (·.kind)).getD "unknown")),

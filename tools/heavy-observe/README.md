@@ -529,3 +529,24 @@ one tiny actual observed compilation and bounded raw JSON mutations through
 the executable/decoder/kernel. Run that focused check alone after building
 `compiler_advice heavy_observe`, under Heavy offline. `--output` selects a
 new absolute owned directory for its records, requests, advice and timing.
+
+### Opt-in compiler CPU limit
+
+For a Fren2 build whose caller elects this initial limit, run for example
+`HEAVY_COMPILER_CPU_SECONDS=10 scripts/heavy lake build TARGET` from the
+Fren2 package. The normal Heavy compiler-budget route must be active; the
+setting is not automatic Fren2 coverage. Ten CPU seconds is an initial
+engineering value, not a measured or universal standard. Unset leaves the
+existing behavior; invalid, zero, or out-of-range values fail before the
+build command launches. An observer invoked outside a budget session rejects
+a positive setting. Queries remain uncapped.
+
+On Linux each selected compiler child receives equal soft and hard
+`RLIMIT_CPU` seconds before exec; failure to install it prevents exec. The
+limit measures process CPU, not admission or elapsed wall time. Descendants
+inherit the limit independently; it is not an aggregate tree limit, memory
+limit, or wall deadline. At the hard limit Linux sends SIGKILL; a lower
+inherited hard limit can prevent setup. The raw wait status and
+`compiler_cpu_limit_seconds` (null when not applied) accompany the existing
+admission and CPU observations. A signal is never compiler success. The
+setting does not cover other compiler families, native builds or tests.

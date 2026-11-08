@@ -19,7 +19,7 @@ extern char **environ;
 static volatile sig_atomic_t budget_cancelled;
 static void budget_signal(int sig) { budget_cancelled = sig; }
 
-static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int guarded) {
+static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int guarded, uint64_t cpu_limit) {
     uint64_t v[11] = {0};
     size_t n = lean_array_size(args);
     char **argv = calloc(n + 2, sizeof(char *));
@@ -42,6 +42,10 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
         if (guarded) {
             if (prctl(PR_SET_PDEATHSIG, SIGKILL) < 0) e = -errno;
             else if (getppid() != parent) e = -EOWNERDEAD;
+        }
+        if (!e && cpu_limit) {
+            struct rlimit limit = {(rlim_t)cpu_limit, (rlim_t)cpu_limit};
+            if (setrlimit(RLIMIT_CPU, &limit) < 0) e = -errno;
         }
         if (e) code = 125;
         else { execve(argv[0], argv, environ); e = errno; }
@@ -99,7 +103,7 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
         used += (size_t)k;
     }
     if (used == sizeof(exec_error)) {
-        if (guarded && exec_error < 0) v[0] = (unsigned int)(-exec_error);
+        if (exec_error < 0) v[0] = (unsigned int)(-exec_error);
         else v[1] = (unsigned int)exec_error;
     }
     else if (used) v[2] = EIO;
@@ -113,7 +117,7 @@ done:
 }
 
 LEAN_EXPORT lean_obj_res heavy_observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args) {
-    return observe_wait(exe, args, 0);
+    return observe_wait(exe, args, 0, 0);
 }
 
 /* Preserve a child's signal termination after Lean has flushed its record. */
