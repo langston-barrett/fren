@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build Lake targets with a private Heavy compiler-budget session."""
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -34,9 +35,25 @@ def main():
         lake = real.parent / 'lake'
         if not lake.is_file() or not os.access(lake, os.X_OK):
             raise ValueError(f'missing Lake beside pinned compiler: {lake}')
+        configured = env.get('FREN_BUILD_REQUESTS_FILE')
+        if configured is not None:
+            requests = Path(configured)
+            if not requests.is_absolute():
+                raise ValueError('FREN_BUILD_REQUESTS_FILE must be an absolute readable regular file')
+            try:
+                fd = os.open(requests, os.O_RDONLY | os.O_NONBLOCK)
+                try:
+                    mode = os.fstat(fd).st_mode
+                    if not stat.S_ISREG(mode) or not mode & 0o444:
+                        raise ValueError('FREN_BUILD_REQUESTS_FILE must be an absolute readable regular file')
+                finally:
+                    os.close(fd)
+            except OSError as error:
+                raise ValueError(f'FREN_BUILD_REQUESTS_FILE: {error}') from error
         work = Path(tempfile.mkdtemp(prefix='fren-build-')).resolve()
-        requests = work / 'requests.tsv'
-        requests.write_text('')
+        if configured is None:
+            requests = work / 'requests.tsv'
+            requests.write_text('')
         print(f'fren-build: retained private state: {work}', file=sys.stderr, flush=True)
         entry = ROOT / 'scripts/heavy-lean-build'
         os.execve(str(entry), [str(entry), '--state', str(work / 'state'), '--real-lean', str(real),
