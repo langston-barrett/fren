@@ -14,11 +14,11 @@ private def ir : List String := ["FrenAst", "FrenModule", "FrenExpr", "FrenMir",
 private def allowed : List (String × List String) :=
   [("FrenBase", []), ("FrenSource", ["FrenBase"]),
    ("FrenDiag", ["FrenBase", "FrenSource"]), ("FrenSexp", []),
-   ("FrenProp", ["FrenSexp"]), ("FrenAst", base), ("FrenModule", base),
+   ("FrenProp", ["FrenSexp"]), ("FrenAst", base), ("FrenModule", base ++ ["FrenAst"]),
    ("FrenExpr", base), ("FrenMir", base ++ ["FrenExpr", "FrenModule"]),
    ("FrenLir", base ++ ["FrenMir"]), ("FrenOir", base ++ ["FrenLir"]),
    ("FrenParse", base ++ ["FrenAst"]),
-   ("FrenAstToHir", base ++ ["FrenAst", "FrenModule", "FrenExpr"]),
+   ("FrenAstToHir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenParse"]),
    ("FrenHirToThir", base ++ ["FrenModule", "FrenExpr"]),
    ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr"]),
    ("FrenThirToMir", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
@@ -40,7 +40,7 @@ private def tests : List String := roots.map (· ++ "Tests")
 private def permits (owner imported : String) : Bool := Id.run do
   if ["Lean", "Std", "Init"].contains imported then return true
   if owner == imported then return true
-  if owner == "FrenProp" && imported == "Plausible" then return true
+  if ["FrenProp", "FrenAstToHirTests"].contains owner && imported == "Plausible" then return true
   if owner == "FrenTextTests" then return false
   if owner == "FrenTextTestsTests" then return imported == "FrenTextTests"
   if owner == "FrenTextDemo" then return imported == "FrenTextTests"

@@ -4506,7 +4506,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["fren2", "resolver"], ["fren2", "resolverProperties"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyProcess"], ["heavyBudget"], ["heavyBudgetBoundaries"], ["heavyMissingSource"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
@@ -4642,6 +4642,11 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["fixing"] => fixing
   | ["libraries"] => libraries
   | ["layering"] => FrenTest.Layering.check
+  | ["fren2", job] => do
+    unless ["resolver", "resolverProperties"].contains job do
+      throw (IO.userError s!"unknown Fren2 job `{job}`")
+    let out ← IO.Process.output { cmd := ".lake/build/bin/fren2_test", args := #["--job", job] }
+    return if out.exitCode == 0 then #[] else #[s!"Fren2 {job} failed:\n{out.stdout}{out.stderr}"]
   | ["lintChapters"] => lintChapters
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
