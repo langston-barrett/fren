@@ -13,14 +13,15 @@ r[evaluator.input.boundary]
 The input module is an actual successful `checkWalking` or
 `checkWalkingSource` result, or a typed value with evidence of actual
 successful typing and walking validation. An arbitrary edited `Typed` record
-is not such evidence. The expression is a retained body or occurrence in
-that module, evaluated in its corresponding lexical context. Each local slot
-has a concrete value of its recorded type; arguments match the callee's
+is not such evidence. The expression is a value-typed retained body or
+occurrence in that module, evaluated in its corresponding lexical context. A callable designator supplies
+the resolved signature and body for a call; it is not itself a value or an
+undefined evaluation. Each local slot has a concrete value of its recorded type; arguments match the callee's
 signature in order. Enum values carry canonical enum and constructor identities.
 
 r[evaluator.outcome.defined]
-Evaluation returns either a value of the expression's type or an explicit
-undefined outcome. It never substitutes a default value for an undefined
+Evaluation of a value-typed expression returns either a value of its type or
+an explicit undefined outcome. It never substitutes a default value for an undefined
 operation or treats undefined as false. Given the same admitted input and
 local values, the outcome is deterministic.
 
@@ -89,6 +90,8 @@ pub proc arithmetic(left: Int, right: Int): (sum: Int, difference: Int) {
     expect addition_example: when left = 70 and right = 30, sum = 100
     expect subtraction_example: when left = 70 and right = 30, difference = 40
 }
+
+#fren_check
 ```
 
 For the walking example with `Light { Red, Amber, Green }`, `next(Amber)`
