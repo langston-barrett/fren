@@ -415,13 +415,30 @@ Current identity is recaptured after reading history; no subsequent
 stale-safe use is guaranteed. A setup fingerprint is the producer's
 before-run observation; it does not prove setup stability during that run.
 
+To explicitly configure the normal build gate from this advice, run in the
+same working directory as capture, for example:
+
+```sh
+compiler_advice --manifest --padding-kib 100000 request.json > requests.tsv
+FREN_BUILD_REQUESTS_FILE="$(realpath requests.tsv)" scripts/fren-build +Target
+```
+
+The exporter requires positive caller-selected padding and a positive sum at
+most 2^50 KiB. It emits one row only after rechecking the canonical source
+and its fingerprint; unknown evidence and invalid configuration return a
+nonzero status and no row, with a diagnostic on stderr. Unsupported tabs,
+newlines and carriage returns in manifest fields are rejected. Keep a
+positive fallback configured for sources that have changed or lack a row.
+The row is operator configuration based on an observed maximum, not a future
+RAM bound. The gate checks only source path and fingerprint: argv, setup,
+imports and environment can change without changing that fingerprint.
+
 This statistical advice does not change complete-input provenance:
 `identity_complete` remains false. Imports, environment, plugins and
 libraries remain outside the partial noncryptographic identity. The peak
 is neither concurrent physical RAM nor a guaranteed future bound. There
 is no automatic capture, history database, gate injection, headroom or
-fallback policy. Callers still supply manual requests and positive fallback
-to the existing controller API.
+fallback policy. Callers choose padding and provide a positive fallback.
 
 The existing standalone integration harness runs `forecast_test.py` with
 one tiny actual observed compilation and bounded raw JSON mutations through

@@ -81,6 +81,49 @@ def main():
         return result
 
     invoke('actual-record', expected=raw['measured_peak_rss_kib'], samples=1, rejected=0)
+    def export(name, config=request, padding='123', cwd=work, ok=False, peak=None):
+        case = work / ('export-' + name); case.mkdir()
+        path = case / 'request.json'; path.write_text(json.dumps(config))
+        proc = subprocess.run([str(HERE / '.lake/build/bin/compiler_advice'), '--manifest',
+                               '--padding-kib', padding, str(path)], cwd=cwd, env=env,
+                              capture_output=True, text=True, timeout=5)
+        (case / 'stdout').write_text(proc.stdout); (case / 'stderr').write_text(proc.stderr)
+        if ok:
+            assert proc.returncode == 0 and proc.stderr == '', (name, proc.stderr)
+            assert proc.stdout == f"{source.resolve()}\t{raw['source_before']}\t{(raw['peak_rss_kib'] if peak is None else peak) + int(padding)}\n"
+        else:
+            assert proc.returncode != 0 and proc.stdout == '' and proc.stderr, (name, proc)
+        return proc
+
+    export('actual-relative-source', ok=True)
+    export('zero-padding', padding='0')
+    export('negative-padding', padding='-1')
+    export('fractional-padding', padding='1.5')
+    export('huge-padding', padding=str(2**50))
+    export('unknown', {**request, 'minimum_samples': 2})
+    export('missing-record', {**request, 'records': [str(work / 'missing')]})
+    bad = work / 'bad.json'; bad.write_text('{')
+    export('malformed-record', {**request, 'records': [str(bad)]})
+    export('stale-window', {**request, 'cutoff_monotonic_ns': raw['end_monotonic_ns'] + 1})
+    boundary = work / 'boundary.json'
+    boundary.write_text(json.dumps({**raw, 'peak_rss_kib': 2**50 - 1,
+                                    'measured_peak_rss_kib': 2**50 - 1}))
+    export('maximum-demand', {**request, 'records': [str(boundary)]}, padding='1',
+           ok=True, peak=2**50 - 1)
+    export('overflow-demand', {**request, 'records': [str(boundary)]}, padding='2')
+    unsupported = work / 'tab\tproject'; unsupported.mkdir()
+    (unsupported / source.name).write_bytes(source.read_bytes())
+    (unsupported / setup.name).write_bytes(setup.read_bytes())
+    bad_overlay = create(work / 'tab-overlay', real, HERE / '.lake/build/bin/heavy_observe')
+    child = subprocess.run([str(bad_overlay / 'bin/lean'), *compiler_args], cwd=unsupported,
+                           env=env, capture_output=True, timeout=5)
+    assert child.returncode == 0, child.stderr
+    bad_record, = (bad_overlay / 'records').glob('process-*.json')
+    export('unsupported-path', {**request, 'records': [str(bad_record)]}, cwd=unsupported)
+    for argv in (['--manifest'], ['--manifest', '--padding-kib', '1'], ['--bogus']):
+        p = subprocess.run([str(HERE / '.lake/build/bin/compiler_advice'), *argv], cwd=work,
+                           capture_output=True, text=True)
+        assert p.returncode != 0 and not p.stdout and p.stderr
     def mutate(name, **fields):
         changed = {**raw, **fields}
         invoke(name, [changed], samples=0)
@@ -146,6 +189,7 @@ def main():
     # Current identity comes from real files, not a request's claimed hashes.
     source.write_text('def tiny : Nat := 5\n')
     invoke('current-source-changed', samples=0)
+    export('changed-source')
     source.unlink()
     invoke('current-source-missing')
     source.write_text('def tiny : Nat := 4\n')

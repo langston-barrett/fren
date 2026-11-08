@@ -1748,15 +1748,27 @@ calibration claim. Bounded selection and maximum laws live in Lean because
 this list fold exceeds the supported Fren proof subset; decoder and current
 filesystem/clock assumptions are tested at the standalone IO boundary.
 
+An explicit manifest export uses the same captured raw cohort and `advice`
+selection, including its identity and boot recapture. UNKNOWN, unstable or
+unavailable evidence exports no row. A known positive selected maximum plus
+caller-supplied positive padding must fit the manifest consumer's 2^50 KiB
+limit. The exporter resolves the captured source to its canonical absolute
+path and verifies its current fingerprint against the captured bytes before
+writing exactly one TSV row. Tabs, newlines and carriage returns in either
+field are unsupported. Invalid configuration fails without a row. This IO
+boundary assumes filesystem reads and canonicalization; it does not prove
+file authenticity or bind imports, arguments or environment at gate time.
+The exporter and consumer are exercised together by producer tests.
+
 Adviser eligibility is separate from complete-input provenance. The observer
 still reports `identity_complete = false`: imported artifacts, environment,
 plugins, libraries and arbitrary reader inputs are not closed over. These
 partial noncryptographic cohorts support statistical advice only, never
 cached semantic evidence, stale-safe admission or a future RAM bound.
 Wait4 peak RSS is not a sum or concurrent physical RAM measurement. This
-slice adds no headroom or fallback policy: callers must choose these
-explicitly, and UNKNOWN stays UNKNOWN. Request manifests, manual fallback,
-controller API, defaults and installed programs are unchanged.
+slice adds no automatic headroom or fallback policy: callers choose padding
+and fallback explicitly, and UNKNOWN stays UNKNOWN. Controller defaults and
+installed programs are unchanged.
 
 ```fren
 pub struct CompilerContext {
