@@ -54,3 +54,74 @@ def duplicateTwo : Runner := default
 /-- error: duplicate text-test directory: test/Duplicate -/
 #guard_msgs in
 fren_test_runners duplicateRegistry
+
+-- Each invocation owns its temporary project and restores the process cwd.
+private def withFixture (test : System.FilePath → IO Unit) : IO Unit :=
+  IO.FS.withTempDir fun root => do
+    let previous ← IO.currentDir
+    try
+      IO.Process.setCurrentDir root
+      IO.FS.createDirAll "test/Owned"
+      test "test/Owned/cases.fren"
+    finally
+      IO.Process.setCurrentDir previous
+
+-- Parse -> real typed callback -> IO bless -> reparse -> callback/check. Original
+-- bytes outside the insertion AND original callback input must both survive.
+#eval withFixture fun path => do
+  let samples := [("1\r", "1\r"), ("\r", "\r"), ("1\r\r", "1\r\r"), ("1", "1"),
+    ("1\n2", "1\n2"), ("1\r\n2\r", "1\r\n2\r"), ("1\n", "1"),
+    ("1\r\n", "1"), ("\n", ""), ("\r\n", "")]
+  for headerEol in ["\n", "\r\n"] do
+    for contextEol in ["\n", "\r\n"] do
+      for (raw, expectedInput) in samples do
+        let source := "-- preamble ü\r\n-- case: c" ++ headerEol ++
+          "-- context: 7 " ++ contextEol ++ raw
+        let original := source.toUTF8
+        IO.FS.writeBinFile path original
+        let .ok before := parse source | throw <| IO.userError "initial parse failed"
+        let c := before[0]!
+        unless c.input == expectedInput do throw <| IO.userError "initial input differs"
+        let observed ← IO.mkRef (#[] : Array String)
+        let runner := Runner.of (fun raw => if raw == " 7 " then .ok (7 : Nat) else .error "context changed")
+          (fun n input => do
+            observed.modify (·.push input)
+            return .ok (toString (n + input.utf8ByteSize)))
+        let blessed ← runDirectory ⟨"test/Owned", runner⟩ { bless := true }
+        let changed ← IO.FS.readBinFile path
+        let actual := toString (7 + expectedInput.utf8ByteSize)
+        unless blessed.selected == 1 && blessed.changed == 1 && blessed.failed == 0 &&
+            c.start == original.size && c.stop == original.size &&
+            changed == original ++ replacement c actual do
+          throw <| IO.userError "blessing changed bytes outside its EOF insertion"
+        let .ok after := parse (String.fromUTF8! changed) | throw <| IO.userError "reparse failed"
+        let d := after[0]!
+        unless after.size == before.size && d.name == c.name && d.context == c.context &&
+            d.input == c.input && agrees d actual do
+          throw <| IO.userError s!"input/result law failed for {repr source}"
+        let checked ← runDirectory ⟨"test/Owned", runner⟩
+        unless checked.failed == 0 && checked.changed == 0 && checked.selected == 1 &&
+            (← observed.get) == #[expectedInput, expectedInput] &&
+            (← IO.FS.readBinFile path) == changed do
+          throw <| IO.userError "next callback/check changed input or disagreed with blessed result"
+  IO.println "40 input-preserving IO bless/recheck cases passed"
+
+-- Deterministic edit after the runner reads the source, before its write guard.
+#eval withFixture fun path => do
+  let original := "-- case: changing\n1\n-- result: wrong\n".toUTF8
+  let callbackBytes := "-- callback owns ü\r\n-- case: changed\r\n9\r\n-- result: keep exactly".toUTF8
+  IO.FS.writeBinFile path original
+  let observed ← IO.mkRef false
+  let runner := Runner.of (fun (_ : String) => .ok ()) (fun _ input => do
+    unless input == "1" do throw <| IO.userError "callback input differs"
+    observed.set true
+    IO.FS.writeBinFile path callbackBytes
+    return .ok "1")
+  let error ← try
+    let _ ← runDirectory ⟨"test/Owned", runner⟩ { bless := true }
+    pure none
+  catch e => pure (some e.toString)
+  unless (← observed.get) && ((error.getD "").splitOn "changed while tests ran").length > 1 &&
+      (← IO.FS.readBinFile path) == callbackBytes do
+    throw <| IO.userError s!"changed-file guard failed: {error}"
+  IO.println "changed-file guard rejected blessing and preserved exact callback bytes"

@@ -84,7 +84,7 @@ def runDirectory (registered : Registered) (options : Options := {}) : IO Summar
             diagnostics := summary.diagnostics.push
               s!"{path}: {c.name}\n- expected: {c.expected.getD "<missing result>"}\n+ actual: {actual}" }
     unless edits.isEmpty do
-      -- Recheck immediately before writing; never overwrite a concurrent edit.
+      -- Best-effort recheck: reject an edit already visible before this write.
       plain "test" .dir
       plain dir .dir
       plain path .file

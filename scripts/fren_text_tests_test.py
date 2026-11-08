@@ -19,8 +19,8 @@ class TextTests(unittest.TestCase):
         self.directory.mkdir(parents=True)
         self.path = self.directory / 'cases.fren'
 
-    def run_cli(self, *args, status=0):
-        p = subprocess.run([BINARY, '--lib', 'FrenTextDemo', *args], cwd=self.root,
+    def run_cli(self, *args, status=0, library="FrenTextDemo"):
+        p = subprocess.run([BINARY, '--lib', library, *args], cwd=self.root,
                            capture_output=True, timeout=20)
         self.assertEqual(p.returncode, status, p.stdout + p.stderr)
         return (p.stdout + p.stderr).decode()
@@ -126,6 +126,38 @@ class TextTests(unittest.TestCase):
         (self.root / 'test').symlink_to(external, target_is_directory=True)
         self.run_cli('--bless', status=1)
         self.assertEqual((external / 'case.fren').read_bytes(), data)
+
+    def test_byte_callback_eol_only_difference(self):
+        directory = self.root / 'test/FrenTextBytes'
+        directory.mkdir()
+        path = directory / 'eol.fren'
+        lf = b'-- case: internal_eol_bytes\n1\n2\n-- result: 3\n'
+        path.write_bytes(lf)
+        self.run_cli(library='FrenTextBytes')
+        crlf = lf.replace(b'\n', b'\r\n')
+        path.write_bytes(crlf)
+        out = self.run_cli(library='FrenTextBytes', status=1)
+        self.assertIn('- expected: 3\n+ actual: 4', out)
+        self.assertEqual(path.read_bytes(), crlf)
+        self.run_cli('--bless', library='FrenTextBytes')
+        after = crlf.replace(b'-- result: 3', b'-- result: 4')
+        self.assertEqual(path.read_bytes(), after)
+        self.run_cli(library='FrenTextBytes')
+
+    def test_byte_callback_missing_cr_input_is_stable(self):
+        directory = self.root / 'test/FrenTextBytes'
+        directory.mkdir()
+        path = directory / 'eof.fren'
+        for header in [b'\n', b'\r\n']:
+            for raw, expected in [(b'1\r', 2), (b'\r', 1), (b'1\r\n2\r', 5)]:
+                with self.subTest(header=header, raw=raw):
+                    before = b'-- case: eof' + header + raw
+                    path.write_bytes(before)
+                    self.run_cli('--bless', library='FrenTextBytes')
+                    after = before + b'\r\n-- result: ' + str(expected).encode()
+                    self.assertEqual(path.read_bytes(), after)
+                    self.run_cli(library='FrenTextBytes')
+                    self.assertEqual(path.read_bytes(), after)
 
     def test_invalid_cli_and_no_cases(self):
         self.run_cli(status=2)

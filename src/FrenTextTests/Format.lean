@@ -90,9 +90,12 @@ def parse (text : String) : Except String (Array Case) := do
       else if rawInput.endsWith "\n" then (rawInput.dropEnd 1).toString else rawInput
     let eol := if ls[a]!.eol.isEmpty then "\n" else ls[a]!.eol
     if r == b then
+      -- A literal EOF CR must not combine with an inserted LF and become the
+      -- CRLF separator that the next parse removes. Give it a separate CRLF.
+      let separator := if rawInput.endsWith "\r" then "\r\n" else eol
       out := out.push {
         name := name, context := context, input := input, expected := none, start := inputStop,
-        stop := inputStop, eol := eol, insertionPrefix := (if rawInput.endsWith "\n" then "" else eol),
+        stop := inputStop, eol := eol, insertionPrefix := (if rawInput.endsWith "\n" then "" else separator),
         finalEol := b < ls.size || text.endsWith "\n" }
     else
       let mut result := payload ls[r]!.text "-- result:"
@@ -127,7 +130,13 @@ def replacement (c : Case) (actual : String) : ByteArray :=
     String.join ((parts.drop 1).map (eol ++ "--  " ++ ·)) ++
     (if c.finalEol then eol else "")).toUTF8
 
-/-- Edits must be in source order and refer to disjoint parsed result spans. -/
+/-- Edits must be in source order and refer to disjoint result spans returned by
+`parse original`. The preservation law is: reparsing a rewrite retains every
+case's name, raw context and callback input, in order; selected expected results
+become the supplied texts, while unselected expected results stay unchanged.
+Bytes outside the original result spans stay identical (missing results insert
+at their empty spans). For deterministic callbacks this also means a blessed
+case agrees with the next computation, not merely that its old bytes survive. -/
 def rewrite (original : ByteArray) (edits : Array (Case × String)) : ByteArray := Id.run do
   let mut out := ByteArray.empty
   let mut pos := 0

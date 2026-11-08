@@ -43,11 +43,16 @@ every line until the next case or EOF is input. Invalid UTF-8 is rejected.
 
 A build-time test module uses `meta import MyLibrary` and
 `#fren_tests MyLibrary.textTests`. Declare its own `input_dir` with path
-`"test/MyLibrary"`, `text := true`, `filter := .extension #["fren"]`, and add it to
+`"test/MyLibrary"`, `text := false`, `filter := .extension #["fren"]`, and add it to
 that test library's `needs`, as `FrenTextDemoTests` does in `lakefile.lean`.
 Include `moreLeanArgs := textTestLeanArgs` for the explicit unsupported-blessing
 diagnostic. Editing a case then invalidates that test library without pulling
-test helpers into production IR libraries.
+test helpers into production IR libraries. These must be byte-sensitive inputs.
+With fixed runner code/configuration, equal build keys must imply identical
+parsed context, callback input and expected-result data (subject to the usual
+content-hash assumption). Lake's text hashes normalize CRLF, while callback
+input retains internal physical EOLs. `FrenTextBytes` supplies a one-case byte-count control: `1\n2`
+has size 3 and `1\r\n2` has size 4, so an EOL-only edit must rerun the check.
 
 Build `FrenTextDemoTests` for an interpreter check, or build `fren2_test` and run:
 
@@ -74,7 +79,21 @@ without executing commands, so source rewriting is not a supported build effect.
 No artifact cache is disabled or purged. Native blessing replaces only selected
 mismatching/missing result spans. Every other byte, including CRLF, Unicode,
 comments and EOF newline status, is retained. Adding a missing result inserts
-its separating newline if necessary. All files are parsed before any writes;
+its separating newline if necessary. An EOF input ending in literal CR gets a
+separate CRLF separator, even after an LF header.
+
+The input-preservation law is stronger than byte-prefix preservation: for a
+well-formed parsed file and ordered, disjoint edits to its parsed result spans,
+reparsing the rewritten file retains all case names, raw contexts and callback
+inputs in order. Selected expected results become the supplied callback texts;
+other expected results remain unchanged. Every byte outside those original
+result spans remains identical, with missing results inserted at empty spans.
+Thus a deterministic callback computes the blessed result again on recheck.
+The helper regressions exercise this law across LF/CRLF/mixed/EOF boundaries,
+including literal trailing CR and otherwise empty CR input; these are finite
+regressions, not a universal proof of the law.
+
+All files are parsed before any writes;
 symlink files/directories and paths outside flat `test/<Library>` are rejected.
 The writer also checks for a concurrent file edit before writing. Concurrent
 writers are unsupported; blessing is not a transaction across multiple files.

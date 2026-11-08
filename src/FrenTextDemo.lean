@@ -26,4 +26,13 @@ def evaluate (initial : Nat) (input : String) : IO (Except String String) := do
 
 @[fren_text_tests "test/FrenTextDemo"]
 def run : Fren.TextTests.Runner := Fren.TextTests.Runner.of parseContext evaluate
+/-- A deliberately byte-sensitive development callback. Empty context is parsed
+as Unit; internal physical line endings are observable in the input's size. -/
+def byteCount (_ : Unit) (input : String) : IO (Except String String) :=
+  pure (.ok (toString input.utf8ByteSize))
+
+@[fren_text_tests "test/FrenTextBytes"]
+def bytes : Fren.TextTests.Runner := .of
+  (fun raw => if raw.isEmpty then .ok () else .error "byte demo requires empty context") byteCount
+
 end Fren.TextDemo

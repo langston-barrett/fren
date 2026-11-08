@@ -100,11 +100,17 @@ def textTestLeanArgs : Array String :=
 
 lean_lib FrenTextDemoTests where
   moreLeanArgs := textTestLeanArgs
-  needs := #[`@/fren_text_demo]
+  needs := #[`@/fren_text_demo, `@/fren_text_bytes]
 
 input_dir fren_text_demo where
   path := "test/FrenTextDemo"
-  text := true
+  text := false
+  filter := .extension #["fren"]
+
+-- Callback input retains internal physical EOLs, so its inputs need byte hashes.
+input_dir fren_text_bytes where
+  path := "test/FrenTextBytes"
+  text := false
   filter := .extension #["fren"]
 
 lean_lib FrenProp
