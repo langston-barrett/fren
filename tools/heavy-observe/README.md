@@ -310,7 +310,40 @@ not a pure filesystem or dependency-closure proof.
 
 ## Developer entrypoint
 
-With `heavy_observe` and `budget_session` already built for this checkout,
+For an ordinary build, first build the standalone tools from this checkout:
+
+```sh
+scripts/heavy lake -d tools/heavy-observe build heavy_observe budget_session --wfail
+```
+
+Then, from the package to build, under the existing fd job and Heavy envelope:
+
+```sh
+scripts/heavy scripts/fren-build FrenSexpTests fren2_test
+```
+
+Use the path to this checkout's `scripts/fren-build` when building another
+worktree; its prebuilt tools must match its reviewed source. The command uses
+the caller's nearest `lean-toolchain` pin and requires it to be installed in
+elan; it invokes the Lake beside that compiler in the caller's directory. It
+passes each argument literally after `lake build`. It neither builds missing
+tools nor installs a toolchain. Lake may access or reconcile dependencies; use
+`--offline` on the outer Heavy command only with a prepared local package.
+
+Each invocation prints and retains a new private temporary directory containing
+an empty request manifest and the overlay, session and records under `state`.
+Remove it when no longer needed. All compiler requests use the explicit
+unknown fallback: no historical adviser output is adopted. Defaults are
+1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
+30,000 ms wait; override them with `FREN_BUILD_ALLOWANCE_KIB`,
+`FREN_BUILD_HEADROOM_KIB`, `FREN_BUILD_FALLBACK_KIB` and
+`FREN_BUILD_TIMEOUT_MS`. Reservations are estimates, not memory bounds; the
+outer fd/Heavy cap and its backstop remain required. The session reports the
+child's exit status, with a signal represented by the usual 128 + signal
+shell status. `TMPDIR` selects the parent of the private directory.
+
+For explicit source requests and a selected compiler,
+with `heavy_observe` and `budget_session` already built for this checkout,
 `scripts/heavy-lean-build` creates a new owned overlay and session, then
 executes the existing session controller. It does not build tools or packages.
 Choose the actual installed toolchain's absolute `bin/lean` explicitly; the

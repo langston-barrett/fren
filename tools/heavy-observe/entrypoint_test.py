@@ -11,6 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRY = ROOT / 'scripts/heavy-lean-build'
+BUILD = ROOT / 'scripts/fren-build'
 TOOLS = ROOT / 'tools/heavy-observe/.lake/build/bin'
 
 
@@ -22,6 +23,7 @@ def main():
     work = Path(tempfile.mkdtemp(prefix='heavy-entrypoint-', dir=parent))
     pkg = work / 'pkg'; pkg.mkdir()
     (pkg / 'lakefile.toml').write_text('name = "entrypoint_test"\nenableArtifactCache = false\n[[lean_lib]]\nname = "Tiny"\n')
+    (pkg / 'lean-toolchain').write_text((ROOT / 'lean-toolchain').read_text())
     (pkg / 'Tiny').mkdir()
     basic = pkg / 'Tiny/Basic.lean'; basic.write_text('import Std\ndef tiny : Nat := 42\n')
     (pkg / 'Tiny.lean').write_text('import Tiny.Basic\ndef nextTiny : Nat := tiny + 1\n')
@@ -42,6 +44,8 @@ def main():
         return p, state
     p, state = call('argv', [sys.executable, '-c', 'import os,sys,json; print(json.dumps([sys.argv[1:],os.environ["ENTRY_SENTINEL"]])); sys.exit(7)', 'space value', '$literal', 'λ'])
     assert p.returncode == 7 and json.loads(p.stdout) == [['space value', '$literal', 'λ'], env['ENTRY_SENTINEL']]
+    p, _ = call('signal', [sys.executable, '-c', 'import os,signal; os.kill(os.getpid(), signal.SIGTERM)'])
+    assert p.returncode == 143
     p, state = call('lake', [lake, '--no-cache', '--verbose', 'build', '+Tiny'])
     assert p.returncode == 0, p.stderr
     rows = [json.loads(p.read_text()) for p in (state / 'overlay/records').glob('process-*.json')]
@@ -53,6 +57,33 @@ def main():
     assert by_source[str(pkg / 'Tiny.lean')]['request_provenance'] == 'explicit-unknown-fallback'
     assert by_source[str(pkg / 'Tiny.lean')]['requested_reservation_kib'] == 600000
     assert all(x['child_present'] and x['raw_wait_status'] == 0 and x['gate_errno'] == 0 for x in compiled)
+    # The ordinary command builds in the caller's package and retains an empty
+    # manifest and fallback records in a private directory chosen under TMPDIR.
+    env['TMPDIR'] = str(work)
+    env['FREN_BUILD_FALLBACK_KIB'] = '550000'
+    basic.write_text(basic.read_text() + '-- rebuild\n')
+    p = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg, env=env, capture_output=True, timeout=30)
+    assert p.returncode == 0, p.stderr
+    builds = list(work.glob('fren-build-*'))
+    assert len(builds) == 1 and builds[0].stat().st_mode & 0o777 == 0o700
+    assert (builds[0] / 'requests.tsv').read_text() == ''
+    built = [json.loads(f.read_text()) for f in (builds[0] / 'state/overlay/records').glob('process-*.json')]
+    assert all(x['real_compiler'] == str(real) and x['cwd'] == str(pkg) for x in built)
+    assert any(x['input_kind'] == 'file' and x['source'] == str(basic)
+               and x['request_provenance'] == 'explicit-unknown-fallback'
+               and x['requested_reservation_kib'] == 550000 for x in built)
+    p = subprocess.run([str(BUILD), 'missing target $literal'], cwd=pkg, env=env, capture_output=True, timeout=30)
+    assert p.returncode != 0 and b'missing target $literal' in p.stderr + p.stdout
+    env['FREN_BUILD_FALLBACK_KIB'] = '0'
+    p = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg, env=env, capture_output=True, timeout=10)
+    assert p.returncode == 125
+    (pkg / 'lean-toolchain').write_text('not-an-installed-toolchain\n')
+    p = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg, env=env, capture_output=True, timeout=10)
+    assert p.returncode == 125 and b'not installed' in p.stderr
+    missing = work / 'missing-build/scripts'; missing.mkdir(parents=True)
+    shutil.copy2(BUILD, missing / 'fren-build')
+    p = subprocess.run([str(missing / 'fren-build'), '+Tiny'], cwd=pkg, env=env, capture_output=True)
+    assert p.returncode == 125 and b'scripts/heavy lake -d tools/heavy-observe build heavy_observe budget_session --wfail' in p.stderr
     bad = work / 'bad'; bad.write_text('invalid\n')
     p, _ = call('bad-manifest', [sys.executable, '-c', 'raise SystemExit(0)'], req=bad)
     assert p.returncode == 125
