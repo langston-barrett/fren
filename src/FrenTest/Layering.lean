@@ -41,17 +41,23 @@ private def permits (owner imported : String) : Bool := Id.run do
   if ["Lean", "Std", "Init"].contains imported then return true
   if owner == imported then return true
   if owner == "FrenProp" && imported == "Plausible" then return true
-  if owner == "Fren2TestMain" then return (roots ++ tests).contains imported
+  if owner == "FrenTextTests" then return false
+  if owner == "FrenTextTestsTests" then return imported == "FrenTextTests"
+  if owner == "FrenTextDemo" then return imported == "FrenTextTests"
+  if owner == "FrenTextDemoTests" then return imported == "FrenTextDemo"
+  if owner == "Fren2TestMain" then return (roots ++ tests ++ ["FrenTextDemo"]).contains imported
   if let some original := owner.dropSuffix? "Tests" then
     let original := original.toString
     if !roots.contains original then return false
-    return (base ++ ["FrenProp", "FrenGen", original] ++
+    return (base ++ ["FrenProp", "FrenGen", "FrenTextTests", original] ++
       (if ["FrenCli2", "FrenHosted2"].contains original then roots else
         (allowed.lookup original).getD [])).contains imported
   if ["FrenCli2", "FrenHosted2"].contains owner then
     return roots.contains imported && imported != "FrenProp"
   return ((allowed.lookup owner).getD []).contains imported
 
+#guard !permits "FrenAst" "FrenTextTests"
+#guard !permits "FrenCli2" "FrenTextDemo"
 #guard permits "FrenProp" "Plausible"
 #guard !permits "FrenBase" "Plausible"
 #guard permits "FrenGen" "FrenProp"
@@ -92,7 +98,7 @@ def check : IO (Array String) := do
     "module\npublic import Lean\nimport /- nested /- comment -/ -/ FrenExpr\n"
   unless fixture.size == 1 && (fixture[0]!).contains "FrenBase may not import FrenExpr".toSlice do
     failures := failures.push s!"layering fixture did not reject FrenBase -> FrenExpr: {fixture}"
-  for owner in roots ++ tests ++ ["Fren2TestMain"] do
+  for owner in roots ++ tests ++ ["FrenTextTests", "FrenTextTestsTests", "FrenTextDemo", "FrenTextDemoTests", "Fren2TestMain"] do
     for path in ← files owner do
       failures := failures ++ (← checkSource owner path.toString (← IO.FS.readFile path))
   return failures

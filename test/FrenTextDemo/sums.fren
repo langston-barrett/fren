@@ -1,0 +1,298 @@
+-- Maintained demo: natural-number sums, not Fren syntax.
+-- case: sum_00
+-- context: 0
+1
+2
+-- result: 3
+
+-- case: sum_01
+-- context: 1
+1
+2
+-- result: 4
+
+-- case: sum_02
+-- context: 2
+1
+2
+-- result: 5
+
+-- case: sum_03
+-- context: 3
+1
+2
+-- result: 6
+
+-- case: sum_04
+-- context: 4
+1
+2
+-- result: 7
+
+-- case: sum_05
+-- context: 5
+1
+2
+-- result: 8
+
+-- case: sum_06
+-- context: 6
+1
+2
+-- result: 9
+
+-- case: sum_07
+-- context: 7
+1
+2
+-- result: 10
+
+-- case: sum_08
+-- context: 8
+1
+2
+-- result: 11
+
+-- case: sum_09
+-- context: 9
+1
+2
+-- result: 12
+
+-- case: sum_10
+-- context: 10
+1
+2
+-- result: 13
+
+-- case: sum_11
+-- context: 11
+1
+2
+-- result: 14
+
+-- case: sum_12
+-- context: 12
+1
+2
+-- result: 15
+
+-- case: sum_13
+-- context: 13
+1
+2
+-- result: 16
+
+-- case: sum_14
+-- context: 14
+1
+2
+-- result: 17
+
+-- case: sum_15
+-- context: 15
+1
+2
+-- result: 18
+
+-- case: sum_16
+-- context: 16
+1
+2
+-- result: 19
+
+-- case: sum_17
+-- context: 17
+1
+2
+-- result: 20
+
+-- case: sum_18
+-- context: 18
+1
+2
+-- result: 21
+
+-- case: sum_19
+-- context: 19
+1
+2
+-- result: 22
+
+-- case: sum_20
+-- context: 20
+1
+2
+-- result: 23
+
+-- case: sum_21
+-- context: 21
+1
+2
+-- result: 24
+
+-- case: sum_22
+-- context: 22
+1
+2
+-- result: 25
+
+-- case: sum_23
+-- context: 23
+1
+2
+-- result: 26
+
+-- case: sum_24
+-- context: 24
+1
+2
+-- result: 27
+
+-- case: sum_25
+-- context: 25
+1
+2
+-- result: 28
+
+-- case: sum_26
+-- context: 26
+1
+2
+-- result: 29
+
+-- case: sum_27
+-- context: 27
+1
+2
+-- result: 30
+
+-- case: sum_28
+-- context: 28
+1
+2
+-- result: 31
+
+-- case: sum_29
+-- context: 29
+1
+2
+-- result: 32
+
+-- case: sum_30
+-- context: 30
+1
+2
+-- result: 33
+
+-- case: sum_31
+-- context: 31
+1
+2
+-- result: 34
+
+-- case: sum_32
+-- context: 32
+1
+2
+-- result: 35
+
+-- case: sum_33
+-- context: 33
+1
+2
+-- result: 36
+
+-- case: sum_34
+-- context: 34
+1
+2
+-- result: 37
+
+-- case: sum_35
+-- context: 35
+1
+2
+-- result: 38
+
+-- case: sum_36
+-- context: 36
+1
+2
+-- result: 39
+
+-- case: sum_37
+-- context: 37
+1
+2
+-- result: 40
+
+-- case: sum_38
+-- context: 38
+1
+2
+-- result: 41
+
+-- case: sum_39
+-- context: 39
+1
+2
+-- result: 42
+
+-- case: sum_40
+-- context: 40
+1
+2
+-- result: 43
+
+-- case: sum_41
+-- context: 41
+1
+2
+-- result: 44
+
+-- case: sum_42
+-- context: 42
+1
+2
+-- result: 45
+
+-- case: sum_43
+-- context: 43
+1
+2
+-- result: 46
+
+-- case: sum_44
+-- context: 44
+1
+2
+-- result: 47
+
+-- case: sum_45
+-- context: 45
+1
+2
+-- result: 48
+
+-- case: sum_46
+-- context: 46
+1
+2
+-- result: 49
+
+-- case: sum_47
+-- context: 47
+1
+2
+-- result: 50
+
+-- case: bad_input
+nope
+-- result: error: invalid natural number
+--  nope
+
+-- case: bad_context
+-- context: x: Seq<Int> = [1, 2]
+1
+-- result: error: demo context must be a natural number, received: x: Seq<Int> = [1, 2]
