@@ -148,6 +148,10 @@ private structure DependentField where
 #guard_msgs in
 deriving instance FromSexp for DependentField
 
+/-- error: S-expression deriving: unsupported dependent field 2 of Fren.SexpTests.DependentField.mk -/
+#guard_msgs in
+deriving instance ToSexp for DependentField
+
 private structure ProofField where
   valid : True
 

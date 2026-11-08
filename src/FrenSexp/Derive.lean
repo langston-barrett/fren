@@ -80,7 +80,20 @@ private meta def fieldBinders (ind : InductiveVal) (argNames : Array Name) (cls 
       for ctorName in ind.ctors do
         let ctor := mkConst ctorName (ind.levelParams.map Level.param)
         let fieldTypes ← forallTelescopeReducing (← inferType (mkAppN ctor params)) fun fields _ =>
-          fields.mapM fun f => do inferType f
+          fields.mapIdxM fun i field => do
+            let escapes := fun type : Expr => (type.abstract params).hasFVar
+            let type ← instantiateMVars (← inferType field)
+            -- Erase apparent field dependencies while their locals are scoped.
+            -- Stop once closed over params: unfolding further could replace an
+            -- independent Ann p with its recursor and lose its codec interface.
+            let type ← if escapes type then
+                whnfHeadPred type (fun t => pure (escapes t))
+              else pure type
+            -- No constructor-field (or other nonparameter) fvar may escape this
+            -- telescope into generated constraints, for either codec class.
+            if escapes type then
+              throwError "S-expression deriving: unsupported dependent field {i + 1} of {privateToUserName ctorName}"
+            return type
         for type in fieldTypes do
           if params.any (fun p => type.containsFVar p.fvarId!) && !types.contains type then
             types := types.push type

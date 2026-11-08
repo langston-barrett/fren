@@ -123,6 +123,32 @@ private def bad [FromSexp α] (_ : α → α) (text : String) (path : List Nat)
     ensure (e.position == position && e.expected == expected) s!"phase positioned error: {repr e}"
   | .ok _ => .error s!"phase accepted positioned: {text}"
 
+-- A field may mention an earlier field syntactically without depending on it.
+-- The generated constraints must erase n while keeping α and its universe free.
+private abbrev Drop (_n : Nat) (α : Type u) := α
+
+private structure ErasedDependency (α : Type u) where
+  n : Nat
+  data : Drop n α
+  deriving BEq, ToSexp, FromSexp
+
+example {α : Type u} [ToSexp α] : ToSexp (ErasedDependency α) := inferInstance
+example {α : Type u} [FromSexp α] : FromSexp (ErasedDependency α) := inferInstance
+
+-- Dropping a field dependency must stop before unfolding the uniform phase
+-- family. This retains the ordinary supplied-field-codec conformance contract.
+private structure ErasedPhase (p : Phase) (α : Type u) (β : Type v) where
+  n : Nat
+  data : Drop n α
+  extra : Drop n (Drop n (Option β))
+  annotation : Drop n (Ann p)
+  deriving ToSexp, FromSexp
+
+example {p : Phase} {α : Type u} {β : Type v}
+    [ToSexp α] [ToSexp β] [ToSexp (Ann p)] : ToSexp (ErasedPhase p α β) := inferInstance
+example {p : Phase} {α : Type u} {β : Type v}
+    [FromSexp α] [FromSexp β] [FromSexp (Ann p)] : FromSexp (ErasedPhase p α β) := inferInstance
+
 private def tests : Except String Unit := do
   fixture (Layer.empty : Layer .raw Nat) "empty"
   fixture (Layer.empty : Layer .checked Nat) "empty"
@@ -199,8 +225,36 @@ private def universeTests : Except String Unit := do
         x.annotation.number == 53) "checked independent universe roundtrip"
     | .error _ => .error "checked independent universe decode"
 
+private def erasedPhaseFixture {p : Phase} [ToSexp (Ann p)] [FromSexp (Ann p)]
+    [BEq (Ann p)] (annotation : Ann p) (text : String) : Except String Unit := do
+  let value : ErasedPhase p Elevated.{0} Elevated.{1} :=
+    ⟨3, ⟨7⟩, some ⟨11⟩, annotation⟩
+  ensure (encode value == text) "erased phase independent universe wire"
+  match fromSexp (α := ErasedPhase p Elevated.{0} Elevated.{1}) (toSexp value),
+      decode (α := ErasedPhase p Elevated.{0} Elevated.{1}) text with
+  | .ok direct, .ok parsed =>
+    for x in [direct, parsed] do
+      ensure (x.n == 3 && x.data.number == 7 && x.extra.map (·.number) == some 11 &&
+        x.annotation == annotation) "erased phase roundtrip fields"
+  | _, _ => .error "erased phase parse"
+
+private def erasedTests : Except String Unit := do
+  fixture (ErasedDependency.mk 3 7) "(erased_dependency 3 7)"
+  erasedPhaseFixture (p := .raw) ()
+    "(erased_phase 3 (elevated 7) (some (elevated 11)) unit)"
+  erasedPhaseFixture (p := .checked) ⟨13⟩
+    "(erased_phase 3 (elevated 7) (some (elevated 11)) (stamp 13))"
+  bad (id : ErasedDependency Nat → _) "(erased_dependency 3 nope)" [2]
+    { byteOffset := 21, column := 22 } "a natural numeral"
+  bad (id : ErasedDependency Nat → _) "(erased_dependency 3)" [] {}
+    "erased_dependency with exactly 2 fields"
+  bad (id : ErasedPhase .raw Nat Bool → _) "(erased_phase 3 7 (some true) (stamp 13))" [4]
+    { byteOffset := 30, column := 31 } "unit"
+  bad (id : ErasedPhase .checked Nat Bool → _) "(erased_phase 3 7 (some true) unit)" [4]
+    { byteOffset := 30, column := 31 } "a constructor tag: stamp"
+
 public def run : IO Unit := do
-  match tests *> universeTests with
+  match tests *> universeTests *> erasedTests with
   | .ok () => IO.println "S-expression phase deriving tests passed"
   | .error e => throw (IO.userError e)
 
