@@ -1510,6 +1510,19 @@ permission to run. No physical clock, fork, exec, wait4, filesystem or signal
 authenticity is proved by these pure functions: the owned subprocess tests
 exercise those external assumptions, including failures.
 
+For an admitted file compiler with a positive requested reservation and valid
+child peak, the additive `request_excess_kib` record field contains the
+observed wait4 peak minus the requested amount, saturated at zero. The field
+is null for a missing or zero request, a query, unsupported metadata, no
+admission or absent child usage. It describes an observed child peak relative
+to the request, not a physical limit, budget failure or future bound. Older
+records may lack the field; the adviser reads the original raw fields rather
+than trusting this derived value. The checked `Heavy.Process.requestExcess`
+arithmetic does not prove OS observation, record publication or completion.
+Finite owned process controls exercise those IO boundaries, including silent
+children with closed or full-but-open stderr; other existing diagnostics and
+the filesystem remain subject to their own IO behavior.
+
 Source paths, arguments, setup-file and output-artifact content fingerprints,
 cwd and the actual compiler's path/version/hash accompany each observation.
 Content fingerprints in this slice are explicitly non-cryptographic Lean
@@ -1617,6 +1630,15 @@ pub proc heavy_process_usage(
         then Option::Some(rss) else Option::None)
 }
 
+pub proc heavy_process_request_excess(requested: Option<Int>, observed: Option<Int>): (det excess: Option<Int>) {
+    ensure raw_comparison: excess = (match requested, observed {
+        Option::Some(request), Option::Some(peak) =>
+            if request = 0 then Option::None
+            else Option::Some(if peak > request then peak - request else 0),
+        _, _ => Option::None,
+    })
+}
+
 -- Linux's raw mode type bits are (mode div 4096) mod 16; 8 is regular.
 -- The observer bounds its own fingerprint buffer at 64 MiB.
 pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
@@ -1711,6 +1733,7 @@ pub proc heavy_process_identity(
 #fren_check heavy_process_result
 #fren_check heavy_process_elapsed
 #fren_check heavy_process_usage
+#fren_check heavy_process_request_excess
 #fren_check heavy_process_fingerprint
 #fren_check heavy_process_arguments
 #fren_check heavy_process_identity

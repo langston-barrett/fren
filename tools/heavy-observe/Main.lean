@@ -147,6 +147,11 @@ def run (args : List String) : IO UInt32 := do
   let outcome := result (v 0) (v 1) (v 2) (v 4)
   let wall := if childPresent then elapsed (v 3) (v 6) (v 7) else none
   let measured := if childPresent then usage (v 0) (v 1) (v 2) (v 4) (v 8) (v 9) (v 10) else none
+  -- Compare exactly the request and wait4 peak recorded below. Unsupported
+  -- metadata, queries, no admission and missing usage are unknown, not zero.
+  let requested := if gated && gateError == 0 && childPresent &&
+      (parsed.map (·.kind)) == some "file" then some requestDemand else none
+  let excess := requestExcess requested (measured.map (·.2))
   let inputClosure : Option String := none
   let complete := identityComplete (sourceBefore.bind id) compilerFingerprint inputClosure
   let outputs := [parsed.bind (·.olean), parsed.bind (·.ilean), parsed.bind (·.c), parsed.bind (·.bc)] |>.filterMap id
@@ -185,6 +190,7 @@ def run (args : List String) : IO UInt32 := do
       ("system_us", toString (v 9)), ("peak_rss_kib", toString (v 10)),
       ("measured_cpu_us", jsonOption (fun p => toString p.1) measured),
       ("measured_peak_rss_kib", jsonOption (fun p => toString p.2) measured),
+      ("request_excess_kib", jsonOption toString excess),
       ("result_kind", if childPresent then toString outcome.kind else "null"), ("result_detail", if childPresent then toString outcome.detail else "null"),
       ("shell_code", if childPresent then toString outcome.shellCode else "null")])
     let dir := (← IO.getEnv "HEAVY_OBSERVE_DIR").map FilePath.mk |>.getD (root / "records")

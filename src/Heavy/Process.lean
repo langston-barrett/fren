@@ -29,6 +29,21 @@ def usage (launchError execError waitError status user system rss : Nat) : Optio
   if launchError = 0 ∧ execError = 0 ∧ waitError = 0 ∧ status % 128 < 127 then
     some (user + system, rss) else none
 
+/-- Observed child peak above a positive requested reservation, in KiB.
+Absent inputs and a zero request carry no comparison. -/
+def requestExcess (requested observed : Option Nat) : Option Nat := do
+  let request ← requested
+  let peak ← observed
+  if request = 0 then none else some (peak - request)
+
+theorem requestExcess_positive (request peak : Nat) (h : request > 0) :
+    requestExcess (some request) (some peak) = some (peak - request) := by
+  simp [requestExcess, Nat.ne_of_gt h]
+
+theorem requestExcess_zero_of_le (request peak : Nat) (h : peak ≤ request) :
+    requestExcess (some request) (some peak) = if request = 0 then none else some 0 := by
+  simp [requestExcess, Nat.sub_eq_zero_of_le h]
+
 /-- Linux raw mode/size from an O_PATH descriptor, before read-capable open.
 This decides eligibility, not whether acquiring identity has OS side effects. -/
 def fingerprintAllowed (mode bytes : Nat) : Bool :=

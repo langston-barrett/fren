@@ -81,6 +81,26 @@ def main():
         return result
 
     invoke('actual-record', expected=raw['measured_peak_rss_kib'], samples=1, rejected=0)
+    assert raw['request_excess_kib'] is None
+    old = dict(raw); del old['request_excess_kib']
+    invoke('legacy-no-excess', [old], expected=raw['measured_peak_rss_kib'], samples=1, rejected=0)
+    manifest = work / 'requests'; manifest.write_text('')
+    before = set((overlay / 'records').glob('process-*.json'))
+    gated_child = subprocess.run([str(HERE / '.lake/build/bin/budget_session'), str(work / 'session'),
+                                  '1000000', '1', '1', '2500', str(manifest), '--',
+                                  sys.executable, '-c',
+                                  'import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:]).returncode)',
+                                  str(overlay / 'bin/lean'), *compiler_args], cwd=work, env=env,
+                                 capture_output=True, timeout=10)
+    assert gated_child.returncode == 0, gated_child.stderr
+    gated_path, = set((overlay / 'records').glob('process-*.json')) - before
+    actual_gated = json.loads(gated_path.read_text())
+    assert actual_gated['schema'] == 3 and actual_gated['request_excess_kib'] == max(
+        0, actual_gated['measured_peak_rss_kib'] - actual_gated['requested_reservation_kib'])
+    invoke('actual-gated-record', [actual_gated], expected=actual_gated['measured_peak_rss_kib'], samples=1, rejected=0)
+    invoke('forged-excess-ignored', [{**actual_gated, 'request_excess_kib': {'invalid': True}}],
+           expected=actual_gated['measured_peak_rss_kib'], samples=1, rejected=0)
+
     def export(name, config=request, padding='123', cwd=work, ok=False, peak=None):
         case = work / ('export-' + name); case.mkdir()
         path = case / 'request.json'; path.write_text(json.dumps(config))
@@ -167,6 +187,8 @@ def main():
     # child, not a claim that this fixture exercised the admission controller.
     gated = {**raw, 'schema': 3, 'gate_errno': 0, 'child_present': True, 'wrapper_code': 0}
     invoke('schema3', [gated], expected=raw['peak_rss_kib'], samples=1)
+    old_gated = dict(gated); del old_gated['request_excess_kib']
+    invoke('schema3-legacy-no-excess', [old_gated], expected=raw['peak_rss_kib'], samples=1, rejected=0)
     for key, value in (('gate_errno', 5), ('child_present', False), ('wrapper_code', 125),
                        ('gate_errno', 0.5), ('child_present', 'true'), ('wrapper_code', None)):
         invoke(f'schema3-{key}-{value}', [{**gated, key: value}], samples=0)

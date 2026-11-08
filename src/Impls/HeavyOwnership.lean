@@ -397,6 +397,27 @@ impl process_usage: testing::heavy_process_usage
   have hs : ((status : Int) % 128 < 127) ↔ status % 128 < 127 := by omega
   simp [fren_spec, Heavy.Process.usage, hs, and_assoc]
 
+impl process_request_excess: testing::heavy_process_request_excess
+    for (requested observed : Option Nat) {
+  requested := requested.map Int.ofNat,
+  observed := observed.map Int.ofNat,
+  excess := (Heavy.Process.requestExcess requested observed).map Int.ofNat,
+} by
+  intro requested observed _
+  cases requested with
+  | none => simp [fren_spec, Heavy.Process.requestExcess]
+  | some request =>
+    cases observed with
+    | none => simp [fren_spec, Heavy.Process.requestExcess]
+    | some peak =>
+      by_cases hz : request = 0
+      · simp [fren_spec, Heavy.Process.requestExcess, hz]
+      · by_cases hp : peak > request
+        · have hsub : ((peak - request : Nat) : Int) = (peak : Int) - request := by omega
+          simp [fren_spec, Heavy.Process.requestExcess, hz, hp, hsub]
+        · have hsub : peak - request = 0 := Nat.sub_eq_zero_of_le (by omega)
+          simp [fren_spec, Heavy.Process.requestExcess, hz, hp, hsub]
+
 impl process_fingerprint: testing::heavy_process_fingerprint for (mode bytes : Nat) {
   mode := mode,
   bytes := bytes,

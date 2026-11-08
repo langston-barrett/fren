@@ -30,6 +30,7 @@ unbound: Fren.Impls.HeavyOwnership.process_arguments parsed
 unbound: Fren.Impls.HeavyOwnership.process_elapsed elapsed
 unbound: Fren.Impls.HeavyOwnership.process_fingerprint read?
 unbound: Fren.Impls.HeavyOwnership.process_identity complete?
+unbound: Fren.Impls.HeavyOwnership.process_request_excess excess
 unbound: Fren.Impls.HeavyOwnership.process_result result
 unbound: Fren.Impls.HeavyOwnership.process_usage cpu
 unbound: Fren.Impls.HeavyOwnership.process_usage peak
