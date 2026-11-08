@@ -35,9 +35,14 @@ structure Lexed where
   eof : FrenSource.Span
   deriving Repr, BEq
 
+/-- Reserved spellings remain reserved even when their constructs are outside
+this grammar. Contextual words (`assume`, `not`) and built-in names/literals
+(`Bool`, `Int`, `true`, `false`) are interpreted at their grammar positions. -/
 private def keywords : List String :=
-  ["pub", "mod", "enum", "fn", "expect", "assume", "Bool", "Int", "true", "false",
-   "if", "then", "else", "let", "in", "match", "not", "and", "or", "iff", "div"]
+  ["mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "trait",
+   "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter",
+   "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall",
+   "exists", "with", "let", "where", "table"]
 
 private def identStart (c : Char) : Bool := c.isAlpha && c.toNat < 128 || c == '_'
 private def identRest (c : Char) : Bool := identStart c || c.isDigit

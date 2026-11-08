@@ -84,3 +84,46 @@ private def check (p : Prop) (p' : Decorations.DecorationsOf p := by mk_decorati
   rejectedAt .expression (x ++ " = 1 = 2") (x.utf8ByteSize + 5) (x.utf8ByteSize + 6) = true
 
 end FrenParseTests
+
+namespace FrenParseTests
+open FrenAst FrenParse
+
+-- A low-precedence prefix is not an implicit parenthesis. Each accepted
+-- parenthesized counterpart remains syntax even when it is ill-typed.
+#eval show IO Unit from do
+  for operator in ["+", "-", "*", "div", "mod", "=", "!=", "<", "<=", ">", ">="] do
+    let start := ("a " ++ operator ++ " ").utf8ByteSize
+    let source := "a " ++ operator ++ " not b = c"
+    unless rejectedAt .expression source start (start + 3) do
+      throw <| IO.userError s!"bare not operand: {source}"
+    let .ok doc := parseExpression ⟨1⟩ ("a " ++ operator ++ " (not b = c)")
+      | throw <| IO.userError "parenthesized not operand"
+    unless coherent doc do throw <| IO.userError "parenthesized not tree"
+  for operator in ["+", "-", "*", "div", "mod", "=", "!=", "<", "<=", ">", ">=", "and", "or", "iff"] do
+    let start := ("a " ++ operator ++ " ").utf8ByteSize
+    let source := "a " ++ operator ++ " let x := true in x"
+    for entry in [Entry.expression, Entry.file, Entry.context] do
+      let lead := if entry == .expression then "" else "fn f(): Bool := "
+      unless rejectedAt entry (lead ++ source) (lead.utf8ByteSize + start)
+          (lead.utf8ByteSize + start + 3) do
+        throw <| IO.userError s!"bare let operand: {source}"
+    let .ok doc := parseExpression ⟨1⟩ ("a " ++ operator ++ " (let x := true in x)")
+      | throw <| IO.userError "parenthesized let operand"
+    unless coherent doc do throw <| IO.userError "parenthesized let tree"
+  for (source, start, stop) in [("-not b", 1, 4), ("-let x := 1 in x", 1, 4),
+      ("not let x := true in x", 4, 7), ("a < not b < c", 4, 7)] do
+    unless rejectedAt .expression source start stop do throw <| IO.userError "unary prefix operand"
+  for source in ["not not b", "-(not b)", "not (let x := true in x)",
+      "a + if b then c else d", "match l { E::A => 1 } + 2", "y + 1", "l + 1"] do
+    let .ok doc := parseExpression ⟨1⟩ source | throw <| IO.userError s!"valid prefix/atom {source}"
+    unless coherent doc && doc.emit == source do throw <| IO.userError "valid operand tree"
+  for word in ["proc", "forall", "exists", "use", "struct", "where", "with"] do
+    unless rejectedAt .expression word 0 word.utf8ByteSize do
+      throw <| IO.userError s!"unsupported reserved word became a name: {word}"
+  for source in ["fn f(assume: Int): Int := assume", "fn assume(): Int := 1",
+      "enum E { Int, Bool, not, assume, true, false }"] do
+    let .ok doc := parseFile ⟨1⟩ source | throw <| IO.userError "contextual name grammar"
+    unless coherent doc && doc.emit == source do throw <| IO.userError "contextual name tree"
+  IO.println "prefix operand restrictions, explicit parentheses, atoms, and reserved/contextual names passed"
+
+end FrenParseTests

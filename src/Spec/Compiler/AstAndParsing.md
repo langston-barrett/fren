@@ -61,6 +61,11 @@ A remainder may put its right operand on the next line.
 `(base - 5) - 2`. Calls bind before arithmetic; unary minus binds before
 multiplication, then addition, then comparisons, then `not`, `and`, `or`
 and `iff`, in decreasing precedence. Parentheses override that grouping.
+A prefix operand must respect this precedence too: `a + not b` and `-not b`
+require parentheses around the `not` expression. A `let` used as an
+operator's operand likewise requires parentheses, as in
+`a and (let x := true in x)`. Repeated `not not b` is valid. `if` and `match`
+are atoms and do not acquire these restrictions.
 `iff` does not associate: write `(a iff b) iff c` or `a iff (b iff c)`.
 This walking slice has binary comparisons only. Unparenthesized comparison
 chains, including the full language's `a < b <= c`, are unsupported rather
@@ -117,7 +122,15 @@ entry categories select grammar roots, not independent parser implementations.
 
 A *token* is a written identifier, keyword, literal or punctuator. *Trivia*
 is text between tokens: spaces, tabs, line endings and comments. The
-walking slice includes `--` line comments ending before LF or CRLF, or
+walking identifiers start with an ASCII letter or `_`, followed by ASCII
+letters, digits or `_`, with an optional final `?`. Fren's reserved words
+remain reserved even when their constructs are unsupported: `proc` and
+`forall` are not names in this slice. Contextual `assume` is an ordinary
+name outside an expectation member's keyword position. `Bool`, `Int`,
+`true`, `false` and `not` are interpreted at their type, literal or operator
+positions, rather than globally reserved from name positions. This does not
+add the constructs or broader lexical forms deferred below. The walking
+slice includes `--` line comments ending before LF or CRLF, or
 at EOF. LF and CRLF retain their original bytes. A keyword is recognized only
 at a token boundary: `next_step` is one identifier. Punctuators use longest
 matching spelling, so `<=`, `!=`, `:=`, `=>` and `::` are not split into

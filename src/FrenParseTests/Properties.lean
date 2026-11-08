@@ -104,8 +104,13 @@ private def expectFailure (name : String) (p : Prop)
   let .integer token value := left | throw <| IO.userError "literal fixture"
   let some shifted := FrenSource.Span.checked ⟨1⟩ 0 0 doc.source.utf8ByteSize
     | throw <| IO.userError "span fixture"
-  let changed : Document := {doc with root := .expression (.integer {token with span := shifted} value)}
-  unless !coherent changed do throw <| IO.userError "perturbed token span survived"
+  let rightTree := Expr.binary middle star multiply right
+  let originalRoot := Expr.binary (.integer token value) plus op rightTree
+  let alteredRoot := Expr.binary (.integer {token with span := shifted} value) plus op rightTree
+  let original : Document := {doc with root := .expression originalRoot}
+  let changed : Document := {doc with root := .expression alteredRoot}
+  unless coherent original && original == doc && !coherent changed && changed.emit == doc.emit do
+    throw <| IO.userError "isolated token span perturbation survived"
 
 #eval show IO Unit from do
   -- Missing required syntax at EOF, byte coordinates after multibyte trivia,

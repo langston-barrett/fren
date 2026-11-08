@@ -118,13 +118,17 @@ mutual
 private def expression : Nat → Nat → Cursor → Except Diagnostic (Expr × Cursor)
   | 0, _, c => fail c "an expression"
   | fuel + 1, minPrec, c => do
-    let (left, c) ← leading fuel c
+    let (left, c) ← leading fuel minPrec c
     tails fuel minPrec left c
 
-private def leading : Nat → Cursor → Except Diagnostic (Expr × Cursor)
-  | 0, c => fail c "an expression"
-  | fuel + 1, c => do
+private def leading : Nat → Nat → Cursor → Except Diagnostic (Expr × Cursor)
+  | 0, _, c => fail c "an expression"
+  | fuel + 1, minPrec, c => do
     let some token := peek c | fail c "an expression"
+    if token.text == "not" && 4 < minPrec then
+      fail c "parentheses around `not` in a tighter operand"
+    if token.text == "let" && 0 < minPrec then
+      fail c "parentheses around `let` in an operator operand"
     if token.text == "-" || token.text == "not" then
       let op := if token.text == "-" then UnaryOp.neg else UnaryOp.not
       let (body, c) ← expression fuel (if op == .neg then 8 else 4) (advance c)

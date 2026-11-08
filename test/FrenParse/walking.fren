@@ -323,3 +323,27 @@ fn f(): Bool := a iff b iff c
 -- case: parenthesized_iff
 fn f(): Bool := a iff (b iff c)
 -- result: context=0; fn f (iff a (paren (iff b c)))
+
+-- case: bare_not_operand
+fn f(): Bool := a + not b = c
+-- result: syntax 20:23: expected parentheses around `not` in a tighter operand
+
+-- case: parenthesized_not_operand
+fn f(): Bool := a + (not b = c)
+-- result: context=0; fn f (+ a (paren (not (= b c))))
+
+-- case: bare_let_operand
+fn f(): Bool := a and let x := true in x
+-- result: syntax 22:25: expected parentheses around `let` in an operator operand
+
+-- case: parenthesized_let_operand
+fn f(): Bool := a and (let x := true in x)
+-- result: context=0; fn f (and a (paren (let x true x)))
+
+-- case: reserved_name
+fn f(): Int := proc
+-- result: syntax 15:19: expected an expression
+
+-- case: contextual_name
+fn f(assume: Int): Int := assume
+-- result: context=0; fn f assume
