@@ -1,6 +1,7 @@
 module
 
 meta import FrenBaseTests.Properties
+meta import FrenBaseTests.Binding
 meta import FrenSourceTests.Properties
 import FrenSexpTests
 

@@ -348,12 +348,41 @@ raw malformed terms exercise scope failure, not all future partial IR forms.
 The original [prototype tests](../../../scratch/expr/Tests.lean) also cover
 both phases, let-value/body distinctions, arrays and deliberately bad lifts.
 
+The production index foundation is now
+[`FrenBase.Binding`](../../FrenBase/Binding.lean), exported by `FrenBase`.
+It is independent of any expression datatype. `Context` stores caller-owned
+entries newest first; `lookup` returns `none` outside the context, and
+`HasType` compares the actual type entry at an index. `InScope` states the
+raw index bound separately. This does not make an arbitrary renaming
+type-preserving, or identify slots of unrelated contexts of equal length.
+
+`shiftIndex` implements upward cutoff insertion. `liftRen` and `liftRenN`
+protect one or several fresh binders. `liftSub` extends a generic environment
+using caller-supplied variable construction and weakening. Its scope theorem
+requires those actions to preserve the caller's scope predicate; the caller
+must also establish that weakening has the intended capture-avoiding meaning.
+No downward shift or expression traversal is supplied.
+
+The [production checks](../../FrenBaseTests/Binding.lean), imported by the
+normal Fren2 test driver, connect these functions to the primitive scope,
+shift and lift contracts with Lean laws and rule references. This is direct
+Lean evidence, not an `impl` binding or a proof from Plausible. Universal
+proofs cover fresh/older lookup, membership bounds and completeness, shift
+boundaries, injectivity and same-cutoff composition, bounded lifted maps,
+the nested cutoff equation, and conditional scope preservation for lifted
+substitution environments. Direct Plausible tests additionally compare
+shifted lookup with concrete context insertion, check raw indices and nested
+lifts, count accepted/rejected scope premises, and falsify deliberately bad
+cutoffs, renaming lifts and substitution weakening. Lists of references test
+the generic environment carrier; they are not a production expression IR.
+
 The evidence boundary is explicit:
 
 | Obligation | Evidence now | Remaining work |
 | --- | --- | --- |
-| Scope preservation and checker equivalence | Universal Lean prototype proofs | Bind to the eventual shared library |
-| Identity, composition, shift/substitution | Bounded executable tests on prototype operations | Universal composition/commutation proofs |
+| Index and environment primitives | Universal Lean production proofs and direct Plausible checks | Instantiate weakening with each actual IR |
+| Whole-term scope preservation and checker equivalence | Universal Lean prototype proofs | Bind to shared structural operations when implemented |
+| Whole-term identity, composition, shift/substitution | Bounded executable tests on prototype operations | Shared structural operations and universal composition/commutation proofs |
 | Free indices, alpha-equivalence, opening/closing inverses | Definitions and laws in this chapter | Actual APIs, formalization and tests |
 | Generic fold induction/fusion | Prototype has a total fold | Prove the reusable theorem once and instantiate it |
 | Production pass simulations | Overview's requirements | Relate values, assumptions and obligations for each pass |
