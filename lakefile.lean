@@ -57,6 +57,8 @@ def coverageLinkArgs : Array String := match get_config? coverage with
 -- fork's branch `cache-translators`, on top of `fren-bool-payloads`,
 -- `parametric-datatypes-v3`, `parametric-datatypes-v2` and
 -- `trust-skip-proofs`.
+require plausible from "vendor/plausible"
+
 require smt from git "https://github.com/langston-barrett/lean-smt.git"@"97e7501e330fde1ba2c412ac1c0e5011568c49c5"
 
 -- Which library builds a module: a library builds each module of its

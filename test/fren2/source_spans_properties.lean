@@ -1,36 +1,14 @@
-import FrenSource
-import FrenSourceTests
-import Plausible
-
-open FrenSource Plausible
-open scoped Plausible.Decorations
-
-def check (label : String) (p : Prop)
-    (p' : Decorations.DecorationsOf p := by mk_decorations) [Testable p'] : IO Unit := do
-  let result ← Testable.checkIO p' { numInst := 500, maxSize := 40, randomSeed := some 73291 }
-  IO.println s!"{label} (500 unconditional cases, seed 73291): {result}"
-  match result with
-  | .success _ => pure ()
-  | _ => throw <| IO.userError s!"source span property failed or gave up: {label}"
-
-#eval check "valid and offset" <| ∀ (file lo width extra : Nat),
-  let hi := lo + width
-  let size := hi + extra
-  let hostStart := 100
-  let hostSize := hostStart + size
-  let span := Span.checked ⟨file⟩ lo hi size
-  span.map (fun s => (s.file, s.start, s.stop)) = some (⟨file⟩, lo, hi) ∧
-  (span.bind fun s => s.offset size ⟨file + 1⟩ hostStart hostSize).map
-    (fun s => (s.file, s.start, s.stop)) = some (⟨file + 1⟩, hostStart + lo, hostStart + hi)
-
-#eval check "reversed" <| ∀ (file lo size : Nat),
-  Span.checked ⟨file⟩ (lo + 1) lo size = none
-
-#eval check "out of bounds" <| ∀ (file size extra : Nat),
-  Span.checked ⟨file⟩ 0 (size + extra + 1) size = none
-
-#eval check "empty EOF" <| ∀ (file size : Nat),
-  (Span.checked ⟨file⟩ size size size).map (fun s => (s.file, s.start, s.stop)) =
-    some (⟨file⟩, size, size)
-
-#eval FrenSourceTests.run
+-- Fren2 properties run at build time: `lake build fren2_test` (also a
+-- dependency of `lake test`). Lake may replay a cached result on later builds;
+-- executing the `fren2_test` binary alone does not rerun these meta checks.
+-- The maintained tests are FrenBaseTests.Properties and
+-- FrenSourceTests.Properties. They use fixed seeds and 500 cases per check;
+-- the span categories are constructed, not measured random frequencies.
+-- The runtime driver still runs the S-expression, derive and phase tests.
+--
+-- Plausible is vendored at v4.32.0, revision
+-- e12c1910fe855cbfc38803cd4e55543906d5fa62, Apache-2.0. UPSTREAM.json
+-- records SHA-256 hashes of the supplied upstream files. Upgrade by replacing
+-- the source and manifest together with a verified compatible upstream release;
+-- do not modify upstream files to adapt Fren's tests.
+import FrenSourceTests.Properties
