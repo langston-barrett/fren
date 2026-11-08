@@ -1948,6 +1948,17 @@ pub proc heavy_compiler_sample(
 #fren_check heavy_compiler_sample
 ```
 
+Successful budgeted compiler observations may also be retained in an owned
+private spool. The real observer applies `heavy_compiler_sample` and the
+supported cohort identity to its raw result before publication. The optional
+publisher rechecks the record, serializes updates, and retains at most two
+records per cohort, 128 cohorts, 16 MiB and seven days of same-boot monotonic
+history on publication. A failed write reports a warning without replacing the
+physical compiler status. The private per-build record remains the receipt.
+These filesystem and process properties are exercised at the IO boundary, not
+proved by `heavy_compiler_sample`; ownership and stable directory identities
+are OS assumptions. The spool is not yet an input to request selection.
+
 The opt-in `scripts/heavy-lean-build` entrypoint prepares a new owned overlay
 using the selected real compiler and the existing helper, then replaces itself
 with the existing budget session. It passes the command after `--` as argv,

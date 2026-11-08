@@ -586,3 +586,19 @@ The signal fallback cannot carry those observations; a process record may also b
 absent if cancellation interrupts its publication. Existing records retain raw
 wait status and timing separately from the timeout cause. The polling interval is
 10 ms; scheduling and bounded shutdown add latency.
+
+Successful supported budgeted compiler observations are also optionally copied
+from the observer into `~/.cache/heavy/compiler-observations`. The private
+per-build record is still written first. The observer applies the existing
+compiler sample and cohort checks to actual fields; the publisher checks the
+raw record again. It keeps at most two newest records per cohort, 128 cohorts,
+16 MiB and seven days of same-boot monotonic history, pruning on publication.
+The spool and its files are private and updates are serialized and published
+atomically. The publisher is a separate Python process for each eligible
+compiler result; lock contention is bounded to one second. Publication
+failures emit a warning and do not change the compiler status. The implementation trusts the owning user's processes and filesystem;
+these records are not authenticated against deliberate same-user tampering.
+The partial cohort does not bind imports, environment or other reader inputs.
+
+This is storage only: ordinary builds still use their explicit request manifest
+or positive unknown fallback. No automatic selection from the spool is enabled.

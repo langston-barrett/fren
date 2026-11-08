@@ -47,7 +47,8 @@ def main():
         overlay = module.create(args.state / 'overlay', args.real_lean, observer)
         env = os.environ.copy()
         env.update(LAKE_OVERRIDE_LEAN='true', LEAN_SYSROOT=str(overlay),
-                   HEAVY_OBSERVE_DIR=str(overlay / 'records'))
+                   HEAVY_OBSERVE_DIR=str(overlay / 'records'),
+                   HEAVY_OBSERVE_PUBLISHER=str(TOOLS / 'publish.py'))
         os.execve(str(session), [str(session), str(args.state / 'session'), args.allowance_kib,
                   args.headroom_kib, args.fallback_kib, args.timeout_ms, str(args.requests),
                   '--', *command[1:]], env)
