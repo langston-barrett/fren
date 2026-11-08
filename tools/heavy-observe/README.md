@@ -307,3 +307,39 @@ Its bytes, version and git hash must match; installed assets are delegated
 read-only in use, with no package/cache copy. The actual reported executable
 must be the selected copy. These finite IO checks establish caller selection,
 not a pure filesystem or dependency-closure proof.
+
+## Developer entrypoint
+
+With `heavy_observe` and `budget_session` already built for this checkout,
+`scripts/heavy-lean-build` creates a new owned overlay and session, then
+executes the existing session controller. It does not build tools or packages.
+Choose the actual installed toolchain's absolute `bin/lean` explicitly; the
+existing overlay helper verifies that it is the installation's compiler and
+rejects a recursive observer. Supply a new absolute state directory whose
+parent exists, and an absolute request manifest. For example, under the
+existing fd job and Heavy offline envelope:
+
+```sh
+scripts/heavy --offline scripts/heavy-lean-build \
+  --state /absolute/owned/new-state \
+  --real-lean /absolute/toolchain/bin/lean \
+  --allowance-kib 1300000 --headroom-kib 100000 \
+  --fallback-kib 600000 --timeout-ms 30000 \
+  --requests /absolute/owned/requests.tsv -- \
+  /absolute/toolchain/bin/lake --no-cache --verbose build +FrenSexp.Codec
+```
+
+All values are explicit development accounting inputs, not memory guarantees.
+The entrypoint passes the command after `--` as argv without shell reparsing,
+keeps the inherited environment except for `LAKE_OVERRIDE_LEAN`, `LEAN_SYSROOT`
+and `HEAVY_OBSERVE_DIR`, and replaces itself with `budget_session`. Records are
+in `new-state/overlay/records`; the retained session is `new-state/session`.
+It neither chooses a cache policy nor verifies dependency checkouts. Before
+using Lake offline, verify the pinned dependency URLs and revisions and choose
+an appropriate owned cache if needed; an offline Lake invocation can still
+reconcile local package directories. A cached target may perform no compilation.
+No default admission, forecast, installation or machine-wide configuration is
+changed. If tools are missing, build the standalone targets using the documented
+recipe first; the caller must ensure those prebuilt binaries match this source.
+The focused standalone test is `python3 -I tools/heavy-observe/entrypoint_test.py`
+through `scripts/heavy --offline`; it is also included in `test.py`.

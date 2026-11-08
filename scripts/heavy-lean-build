@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Run a command in one opt-in Heavy Lean compiler budget session."""
+import argparse
+import importlib.util
+import os
+from pathlib import Path
+import sys
+import subprocess
+
+ROOT = Path(__file__).resolve().parent.parent
+TOOLS = ROOT / 'tools/heavy-observe'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--state', required=True, type=Path, help='new absolute owned state directory')
+    parser.add_argument('--real-lean', required=True, type=Path, help='absolute selected toolchain bin/lean')
+    parser.add_argument('--allowance-kib', required=True)
+    parser.add_argument('--headroom-kib', required=True)
+    parser.add_argument('--fallback-kib', required=True)
+    parser.add_argument('--timeout-ms', required=True)
+    parser.add_argument('--requests', required=True, type=Path)
+    parser.add_argument('command', nargs=argparse.REMAINDER, help='-- absolute command and arguments')
+    args = parser.parse_args()
+    command = args.command
+    if not command or command[0] != '--' or len(command) < 2 or not Path(command[1]).is_absolute():
+        parser.error('supply -- followed by an absolute command and its arguments')
+    if not all(p.is_absolute() for p in (args.state, args.real_lean, args.requests)):
+        parser.error('--state, --real-lean and --requests must be absolute paths')
+    observer = TOOLS / '.lake/build/bin/heavy_observe'
+    session = TOOLS / '.lake/build/bin/budget_session'
+    if not all(p.is_file() and os.access(p, os.X_OK) for p in (observer, session)):
+        parser.exit(125, 'heavy-lean-build: missing prebuilt observer/session; build heavy_observe and budget_session in tools/heavy-observe first\n')
+    try:
+        spec = importlib.util.spec_from_file_location('heavy_overlay', TOOLS / 'overlay.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        args.state.mkdir(mode=0o700, parents=False, exist_ok=False)
+        overlay = module.create(args.state / 'overlay', args.real_lean, observer)
+        env = os.environ.copy()
+        env.update(LAKE_OVERRIDE_LEAN='true', LEAN_SYSROOT=str(overlay),
+                   HEAVY_OBSERVE_DIR=str(overlay / 'records'))
+        os.execve(str(session), [str(session), str(args.state / 'session'), args.allowance_kib,
+                  args.headroom_kib, args.fallback_kib, args.timeout_ms, str(args.requests),
+                  '--', *command[1:]], env)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        parser.exit(125, f'heavy-lean-build: {error}\n')
+
+
+if __name__ == '__main__':
+    main()

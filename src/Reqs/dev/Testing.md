@@ -1716,6 +1716,17 @@ pub proc heavy_process_identity(
 #fren_check heavy_process_identity
 ```
 
+The opt-in `scripts/heavy-lean-build` entrypoint prepares a new owned overlay
+using the selected real compiler and the existing helper, then replaces itself
+with the existing budget session. It passes the command after `--` as argv,
+retains the caller environment apart from the documented overlay selection and
+record directory, and requires explicit session accounting inputs. It neither
+builds missing tools nor chooses a forecast or cache policy. The standalone
+entrypoint integration test exercises real process forwarding, failure status,
+invalid inputs, missing tools and a small Lake build with source and fallback
+requests. These IO controls do not prove filesystem, process or toolchain
+identity assumptions, and do not establish a memory bound.
+
 The opt-in compiler budget applies within one owned build session. All
 quantities below are KiB reservations, not observed RSS. Parent headroom
 is subtracted once from the session allowance; the outer Heavy reservation

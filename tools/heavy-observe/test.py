@@ -31,6 +31,7 @@ OBSERVER = HERE / ".lake/build/bin/heavy_observe"
 
 
 def main():
+    subprocess.run([sys.executable, "-I", str(HERE / "entrypoint_test.py")], check=True)
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=HERE / "test-work"))
     overlay = create(work / "overlay", REAL, OBSERVER)
