@@ -320,8 +320,8 @@ done:
     if (dir >= 0) close(dir);
     if (handlers) { int restore = budget_handlers(old, 0); if (!e) e = restore; }
     if (!result) {
-        lean_object *a = lean_alloc_array(0, 11);
-        for (int i = 0; i < 11; ++i) a = lean_array_push(a, lean_box_uint64(0));
+        lean_object *a = lean_alloc_array(0, 15);
+        for (int i = 0; i < 15; ++i) a = lean_array_push(a, lean_box_uint64(0));
         result = lean_io_result_mk_ok(a);
     }
     lean_object *a = lean_io_result_get_value(result); lean_inc(a); lean_dec(result);

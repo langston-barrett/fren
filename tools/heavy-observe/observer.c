@@ -20,7 +20,7 @@ static volatile sig_atomic_t budget_cancelled;
 static void budget_signal(int sig) { budget_cancelled = sig; }
 
 static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int guarded, uint64_t cpu_limit) {
-    uint64_t v[11] = {0};
+    uint64_t v[15] = {0};
     size_t n = lean_array_size(args);
     char **argv = calloc(n + 2, sizeof(char *));
     int pipefd[2] = {-1, -1};
@@ -46,6 +46,12 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
         if (!e && cpu_limit) {
             struct rlimit limit = {(rlim_t)cpu_limit, (rlim_t)cpu_limit};
             if (setrlimit(RLIMIT_CPU, &limit) < 0) e = -errno;
+        }
+        if (!e && cpu_limit) {
+            int ack = 0x48435055;
+            ssize_t n;
+            do { n = write(pipefd[1], &ack, sizeof(ack)); } while (n < 0 && errno == EINTR);
+            if (n != sizeof(ack)) _exit(125);
         }
         if (e) code = 125;
         else { execve(argv[0], argv, environ); e = errno; }
@@ -93,26 +99,38 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
     }
     if (clock_gettime(CLOCK_MONOTONIC, &t) < 0) v[3] = errno;
     else v[7] = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
-    int exec_error = 0;
+    int frames[2] = {0, 0};
     size_t used = 0;
-    while ((!guarded || waited >= 0) && used < sizeof(exec_error)) {
-        ssize_t k = read(pipefd[0], (char *)&exec_error + used, sizeof(exec_error) - used);
+    int read_error = 0, eof = 0;
+    while (!guarded || waited >= 0) {
+        char overflow;
+        void *dst = used < sizeof(frames) ? (char *)frames + used : &overflow;
+        size_t available = used < sizeof(frames) ? sizeof(frames) - used : 1;
+        ssize_t k = read(pipefd[0], dst, available);
         if (k < 0 && errno == EINTR) continue;
-        if (k < 0) { v[2] = errno; break; }
-        if (k == 0) break;
+        if (k < 0) { read_error = errno; break; }
+        if (k == 0) { eof = 1; break; }
+        if (used == sizeof(frames)) { read_error = EOVERFLOW; break; }
         used += (size_t)k;
     }
-    if (used == sizeof(exec_error)) {
-        if (exec_error < 0) v[0] = (unsigned int)(-exec_error);
-        else v[1] = (unsigned int)exec_error;
+    v[11] = used; v[12] = (unsigned int)frames[0]; v[13] = read_error; v[14] = eof;
+    if (read_error) v[2] = read_error;
+    else if (used % sizeof(int)) v[2] = EIO;
+    else {
+        size_t offset = used && frames[0] == 0x48435055 ? 1 : 0;
+        if (used / sizeof(int) > offset) {
+            int exec_error = frames[offset];
+            if (exec_error < 0) v[0] = (unsigned int)(-exec_error);
+            else v[1] = (unsigned int)exec_error;
+        }
     }
-    else if (used) v[2] = EIO;
+
 done:
     if (pipefd[0] >= 0) close(pipefd[0]);
     if (pipefd[1] >= 0) close(pipefd[1]);
     free(argv);
-    lean_object *a = lean_alloc_array(0, 11);
-    for (size_t i = 0; i < 11; ++i) a = lean_array_push(a, lean_box_uint64(v[i]));
+    lean_object *a = lean_alloc_array(0, 15);
+    for (size_t i = 0; i < 15; ++i) a = lean_array_push(a, lean_box_uint64(v[i]));
     return lean_io_result_mk_ok(a);
 }
 

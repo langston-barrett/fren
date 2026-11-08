@@ -1521,8 +1521,9 @@ compiler queries. Linux applies equal soft and hard `RLIMIT_CPU` values in the
 child before exec; a setup failure prevents exec. This is per process CPU time,
 not queue or wall time, and is inherited by descendants as their own limits,
 not an aggregate family budget. Linux kills a process reaching the hard limit;
-a pre-existing lower hard limit can make setup fail. The raw wait status and
-applied limit remain in the record. The OS operation and status are exercised
+a pre-existing lower hard limit can make setup fail. The raw wait status, requested value, pipe observations and acknowledged
+applied limit remain in the record. A missing or incomplete acknowledgement
+is unknown, even when a PID and no launch error were observed. The OS operation and status are exercised
 by owned process controls, not proved by this decision.
 
 For an admitted file compiler with a positive requested reservation and valid
@@ -1661,6 +1662,19 @@ pub proc heavy_compiler_cpu_limit(seconds: Nat, gated?, query?): (det limit: Opt
         then Option::None else Option::Some(if query? then 0 else seconds))
 }
 
+pub proc heavy_compiler_cpu_observation(
+    seconds: Nat,
+    bytes: Nat,
+    first: Nat,
+    read_error: Nat,
+    eof: Nat,
+    wait_error: Nat,
+): (det applied: Option<Int>) {
+    ensure acknowledged: applied = (if seconds > 0 and (bytes is 4 | 8)
+        and first = 1212371029 and read_error = 0 and eof = 1 and wait_error = 0
+        then Option::Some(seconds) else Option::None)
+}
+
 -- Linux's raw mode type bits are (mode div 4096) mod 16; 8 is regular.
 -- The observer bounds its own fingerprint buffer at 64 MiB.
 pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
@@ -1772,6 +1786,7 @@ pub proc heavy_process_metadata_reuse(
 #fren_check heavy_process_usage
 #fren_check heavy_process_request_excess
 #fren_check heavy_compiler_cpu_limit
+#fren_check heavy_compiler_cpu_observation
 #fren_check heavy_process_fingerprint
 #fren_check heavy_process_arguments
 #fren_check heavy_process_identity

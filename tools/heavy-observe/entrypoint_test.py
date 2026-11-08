@@ -32,11 +32,40 @@ int main(int n, char **v) {
 }
 ''')
     subprocess.run(['cc', '-O2', str(source), '-o', str(fixture)], check=True)
-    def limited(label, setting, arg, lower_hard=False):
+    fault_source = work / 'cpu-fault.c'
+    fault_source.write_text(r'''#define _GNU_SOURCE
+#include <errno.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int setrlimit(__rlimit_resource_t resource, const struct rlimit *limit) {
+    const char *mode = getenv("CPU_FIXTURE_FAULT");
+    if (mode && !strcmp(mode, "preinstall") && resource == RLIMIT_CPU)
+        syscall(SYS_kill, getpid(), SIGKILL);
+    return syscall(SYS_setrlimit, resource, limit);
+}
+ssize_t write(int fd, const void *buf, size_t count) {
+    const char *mode = getenv("CPU_FIXTURE_FAULT");
+    int word = 0;
+    if (count == sizeof(word)) memcpy(&word, buf, sizeof(word));
+    if (mode && !strcmp(mode, "partial") && count == sizeof(word) && word == 0x48435055)
+        return syscall(SYS_write, fd, buf, 1);
+    return syscall(SYS_write, fd, buf, count);
+}
+''')
+    fault_lib = work / 'cpu-fault.so'
+    subprocess.run(['cc', '-shared', '-fPIC', str(fault_source), '-o', str(fault_lib)], check=True)
+    def limited(label, setting, arg, lower_hard=False, fault=None):
         state = work / label
         test_env = env.copy()
         if setting is not None: test_env['HEAVY_COMPILER_CPU_SECONDS'] = setting
         else: test_env.pop('HEAVY_COMPILER_CPU_SECONDS', None)
+        if fault:
+            test_env['CPU_FIXTURE_FAULT'] = fault
+            test_env['LD_PRELOAD'] = str(fault_lib)
         command = [str(ENTRY), '--state', str(state), '--real-lean', str(fixture),
                    '--allowance-kib', '1300000', '--headroom-kib', '100000',
                    '--fallback-kib', '600000', '--timeout-ms', '30000', '--requests', str(request),
@@ -46,13 +75,23 @@ int main(int n, char **v) {
                            preexec_fn=(lambda: resource.setrlimit(resource.RLIMIT_CPU, (1, 1))) if lower_hard else None)
         records = list((state / 'overlay/records').glob('process-*.json'))
         rows = [json.loads(f.read_text()) for f in records]
-        results.append(dict(case=label, status=p.returncode, stderr=p.stderr.decode(), records=rows))
+        results.append(dict(case=label, argv=command, cwd=str(pkg),
+                            environment={k: test_env.get(k) for k in ('HEAVY_COMPILER_CPU_SECONDS', 'CPU_FIXTURE_FAULT', 'LD_PRELOAD', 'PATH', 'ELAN_HOME', 'LAKE_CACHE_DIR')},
+                            rlimit_cpu=list(resource.getrlimit(resource.RLIMIT_CPU)), inherited_override=[1, 1] if lower_hard else None,
+                            timeout_seconds=10, status=p.returncode, stdout=p.stdout.decode(), stderr=p.stderr.decode(), records=rows))
         return p, rows
     p, rows = limited('cpu-positive', '1', 'ok.lean')
     assert p.returncode == 0 and rows[0]['compiler_cpu_limit_seconds'] == 1 and rows[0]['raw_wait_status'] == 0
     p, rows = limited('cpu-negative', '1', 'burn.lean')
     assert p.returncode == 137 and rows[0]['compiler_cpu_limit_seconds'] == 1
     assert rows[0]['result_kind'] == 1 and rows[0]['result_detail'] == 9 and rows[0]['raw_wait_status'] == 9
+    p, rows = limited('cpu-preinstall-signal', '1', 'ok.lean', fault='preinstall')
+    assert p.returncode == 137 and rows[0]['raw_wait_status'] == 9
+    assert rows[0]['compiler_cpu_requested_seconds'] == 1 and rows[0]['compiler_cpu_limit_seconds'] is None
+    assert rows[0]['cpu_protocol_bytes'] == 0 and p.stdout == b''
+    p, rows = limited('cpu-partial-ack', '1', 'ok.lean', fault='partial')
+    assert p.returncode == 125 and rows[0]['cpu_protocol_bytes'] == 1
+    assert rows[0]['compiler_cpu_limit_seconds'] is None and p.stdout == b''
     p, rows = limited('cpu-default', None, 'ok.lean')
     assert p.returncode == 0 and rows[0]['compiler_cpu_limit_seconds'] is None
     for bad in ('0', '-1', 'abc', '2147483648', ''):
@@ -65,6 +104,10 @@ int main(int n, char **v) {
     direct_env['HEAVY_COMPILER_CPU_SECONDS'] = '1'
     p = subprocess.run([str(work / 'cpu-positive/overlay/bin/lean'), 'ok.lean'], cwd=pkg,
                        env=direct_env, capture_output=True, timeout=5)
+    results.append(dict(case='cpu-missing-session', argv=[str(work / 'cpu-positive/overlay/bin/lean'), 'ok.lean'],
+                        cwd=str(pkg), environment={'HEAVY_COMPILER_CPU_SECONDS': '1', 'HEAVY_BUDGET_DIR': None},
+                        rlimit_cpu=list(resource.getrlimit(resource.RLIMIT_CPU)), timeout_seconds=5,
+                        status=p.returncode, stdout=p.stdout.decode(), stderr=p.stderr.decode()))
     assert p.returncode == 125
     p, rows = limited('cpu-query', '1', '--version')
     assert p.returncode == 0 and rows[0]['compiler_cpu_limit_seconds'] is None

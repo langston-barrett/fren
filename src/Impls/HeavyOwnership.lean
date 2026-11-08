@@ -426,6 +426,16 @@ impl compiler_cpu_limit: testing::heavy_compiler_cpu_limit for (seconds : Nat) (
   cases query <;> simp only [fren_spec, Heavy.Process.compilerCpuLimit] <;>
     split <;> split <;> simp_all <;> omega
 
+impl compiler_cpu_observation: testing::heavy_compiler_cpu_observation
+    for (seconds bytes first readError eof waitError : Nat) {
+  seconds := seconds, bytes := bytes, first := first, read_error := readError,
+  eof := eof, wait_error := waitError,
+  applied := (Heavy.Process.appliedCompilerCpu seconds bytes first readError eof waitError).map Int.ofNat,
+} by
+  intro seconds bytes first readError eof waitError _
+  simp [fren_spec, Heavy.Process.appliedCompilerCpu]
+  split <;> split <;> simp_all <;> omega
+
 impl process_fingerprint: testing::heavy_process_fingerprint for (mode bytes : Nat) {
   mode := mode,
   bytes := bytes,

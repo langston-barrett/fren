@@ -182,9 +182,9 @@ def run (args : List String) : IO UInt32 := do
     provenance := origin
     observeBudget real.toString args.toArray dir.toString demand.toUInt64 cpuLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
     else observe real.toString args.toArray
-  if raw.size != (if gated then 18 else 11) then throw (IO.userError "invalid FFI observation length")
+  if raw.size != (if gated then 22 else 15) then throw (IO.userError "invalid FFI observation length")
   let v := fun i => raw[i]!.toNat
-  let gateError := if gated then v 11 else 0
+  let gateError := if gated then v 15 else 0
   let childPresent := !gated || v 5 != 0
   let outcome := result (v 0) (v 1) (v 2) (v 4)
   let wall := if childPresent then elapsed (v 3) (v 6) (v 7) else none
@@ -202,15 +202,19 @@ def run (args : List String) : IO UInt32 := do
     let artifacts ← outputs.mapM artifact
     let sourceAfter ← source.mapM fun s => fingerprint s
     let gateFields := if gated then [
-      ("gate_errno", toString gateError), ("admission_wait_ns", toString (v 12)),
-      ("admission_granted_ns", toString (v 17)),
-      ("reservation_ticket", toString (v 13)), ("held_before_kib", toString (v 14)),
-      ("allowance_kib", toString (v 15)), ("parent_headroom_kib", toString (v 16)),
+      ("gate_errno", toString gateError), ("admission_wait_ns", toString (v 16)),
+      ("admission_granted_ns", toString (v 21)),
+      ("reservation_ticket", toString (v 17)), ("held_before_kib", toString (v 18)),
+      ("allowance_kib", toString (v 19)), ("parent_headroom_kib", toString (v 20)),
       ("requested_reservation_kib", toString requestDemand), ("request_provenance", quoted provenance),
       ("child_present", toString childPresent),
       ("wrapper_code", toString (if gateError != 0 then 125 else outcome.shellCode))] else []
     let record := object (gateFields ++ [
-      ("compiler_cpu_limit_seconds", if cpuLimit == 0 || v 0 != 0 || !childPresent then "null" else toString cpuLimit),
+      ("compiler_cpu_requested_seconds", if cpuSeconds == 0 then "null" else toString cpuSeconds),
+      ("cpu_protocol_bytes", toString (v 11)), ("cpu_protocol_first", toString (v 12)),
+      ("cpu_protocol_errno", toString (v 13)), ("cpu_protocol_eof", toString (v 14)),
+      ("compiler_cpu_limit_seconds", jsonOption toString
+        (appliedCompilerCpu cpuLimit (v 11) (v 12) (v 13) (v 14) (v 2))),
       ("boot_id", jsonOption quoted boot),
       ("schema", if gated then "3" else "2"), ("family", quoted "lean"),
       ("input_kind", quoted ((parsed.map (·.kind)).getD "unknown")),
