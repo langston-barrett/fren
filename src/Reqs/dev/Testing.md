@@ -1514,6 +1514,18 @@ permission to run. No physical clock, fork, exec, wait4, filesystem or signal
 authenticity is proved by these pure functions: the owned subprocess tests
 exercise those external assumptions, including failures.
 
+An optional `HEAVY_COMPILER_CPU_SECONDS` setting selects a positive integer
+limit for compiler invocations in a budget session. The Lean decision below
+rejects out-of-range values and positive limits outside a session and exempts
+compiler queries. Linux applies equal soft and hard `RLIMIT_CPU` values in the
+child before exec; a setup failure prevents exec. This is per process CPU time,
+not queue or wall time, and is inherited by descendants as their own limits,
+not an aggregate family budget. Linux kills a process reaching the hard limit;
+a pre-existing lower hard limit can make setup fail. The raw wait status, requested value, pipe observations and acknowledged
+applied limit remain in the record. A missing or incomplete acknowledgement
+is unknown, even when a PID and no launch error were observed. The OS operation and status are exercised
+by owned process controls, not proved by this decision.
+
 For an admitted file compiler with a positive requested reservation and valid
 child peak, the additive `request_excess_kib` record field contains the
 observed wait4 peak minus the requested amount, saturated at zero. The field
@@ -1645,6 +1657,24 @@ pub proc heavy_process_request_excess(requested: Option<Int>, observed: Option<I
     })
 }
 
+pub proc heavy_compiler_cpu_limit(seconds: Nat, gated?, query?): (det limit: Option<Int>) {
+    ensure selection: limit = (if seconds > 2147483647 or (seconds > 0 and not gated?)
+        then Option::None else Option::Some(if query? then 0 else seconds))
+}
+
+pub proc heavy_compiler_cpu_observation(
+    seconds: Nat,
+    bytes: Nat,
+    first: Nat,
+    read_error: Nat,
+    eof: Nat,
+    wait_error: Nat,
+): (det applied: Option<Int>) {
+    ensure acknowledged: applied = (if seconds > 0 and (bytes is 4 | 8)
+        and first = 1212371029 and read_error = 0 and eof = 1 and wait_error = 0
+        then Option::Some(seconds) else Option::None)
+}
+
 -- Linux's raw mode type bits are (mode div 4096) mod 16; 8 is regular.
 -- The observer bounds its own fingerprint buffer at 64 MiB.
 pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
@@ -1755,6 +1785,8 @@ pub proc heavy_process_metadata_reuse(
 #fren_check heavy_process_elapsed
 #fren_check heavy_process_usage
 #fren_check heavy_process_request_excess
+#fren_check heavy_compiler_cpu_limit
+#fren_check heavy_compiler_cpu_observation
 #fren_check heavy_process_fingerprint
 #fren_check heavy_process_arguments
 #fren_check heavy_process_identity

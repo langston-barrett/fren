@@ -170,7 +170,7 @@ static int budget_lock(b_lean_obj_arg control, int fd, uint64_t deadline) {
  * stored ticket/state/demand/owner and an independent procfs observation.
  * No ownership/fit Boolean is supplied to Lean. */
 LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg args,
-    b_lean_obj_arg path, uint64_t demand, b_lean_obj_arg decide, b_lean_obj_arg control) {
+    b_lean_obj_arg path, uint64_t demand, uint64_t cpu_limit, b_lean_obj_arg decide, b_lean_obj_arg control) {
     uint64_t extra[7] = {0}; /* error, admission wait ns, ticket, held, allowance, parent */
     lean_object *result = NULL;
     int dir = -1, registry = -1, owner = -1, ticketfd = -1, counter = -1, config = -1;
@@ -297,7 +297,7 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
             extra[1] = now - begin; extra[6] = now;
             if (flock(registry, LOCK_UN) < 0) { e = errno; goto done; }
             locked = 0;
-            result = observe_wait(exe, args, 1);
+            result = observe_wait(exe, args, 1, cpu_limit);
             if (budget_cancelled) e = ECANCELED;
             goto done;
         }
@@ -320,8 +320,8 @@ done:
     if (dir >= 0) close(dir);
     if (handlers) { int restore = budget_handlers(old, 0); if (!e) e = restore; }
     if (!result) {
-        lean_object *a = lean_alloc_array(0, 11);
-        for (int i = 0; i < 11; ++i) a = lean_array_push(a, lean_box_uint64(0));
+        lean_object *a = lean_alloc_array(0, 15);
+        for (int i = 0; i < 15; ++i) a = lean_array_push(a, lean_box_uint64(0));
         result = lean_io_result_mk_ok(a);
     }
     lean_object *a = lean_io_result_get_value(result); lean_inc(a); lean_dec(result);

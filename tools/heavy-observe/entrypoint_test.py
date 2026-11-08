@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import resource
 from pathlib import Path
 import shutil
 import subprocess
@@ -15,6 +16,101 @@ ENTRY = ROOT / 'scripts/heavy-lean-build'
 BUILD = ROOT / 'scripts/fren-build'
 TOOLS = ROOT / 'tools/heavy-observe/.lake/build/bin'
 
+
+def cpu_controls(work, pkg, env, request, results):
+    # Limit the actual owned compiler, not the session or metadata queries.
+    fixture = work / 'fixture/bin/lean'; fixture.parent.mkdir(parents=True)
+    source = work / 'fixture.c'
+    source.write_text(r'''#include <string.h>
+#include <unistd.h>
+#include <stdio.h>
+int main(int n, char **v) {
+    if (n > 1 && !strcmp(v[1], "--print-prefix")) { char p[4096]; ssize_t k = readlink("/proc/self/exe", p, sizeof(p)-1); if (k < 9) return 1; p[k-9] = 0; puts(p); return 0; }
+    if (n > 1 && (!strcmp(v[1], "--version") || !strcmp(v[1], "--githash"))) return 0;
+    if (n > 1 && !strcmp(v[1], "burn.lean")) { volatile unsigned long x = 1; for (;;) x++; }
+    write(1, "fixture ok\n", 11); return 0;
+}
+''')
+    subprocess.run(['cc', '-O2', str(source), '-o', str(fixture)], check=True)
+    fault_source = work / 'cpu-fault.c'
+    fault_source.write_text(r'''#define _GNU_SOURCE
+#include <errno.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int setrlimit(__rlimit_resource_t resource, const struct rlimit *limit) {
+    const char *mode = getenv("CPU_FIXTURE_FAULT");
+    if (mode && !strcmp(mode, "preinstall") && resource == RLIMIT_CPU)
+        syscall(SYS_kill, getpid(), SIGKILL);
+    return syscall(SYS_setrlimit, resource, limit);
+}
+ssize_t write(int fd, const void *buf, size_t count) {
+    const char *mode = getenv("CPU_FIXTURE_FAULT");
+    int word = 0;
+    if (count == sizeof(word)) memcpy(&word, buf, sizeof(word));
+    if (mode && !strcmp(mode, "partial") && count == sizeof(word) && word == 0x48435055)
+        return syscall(SYS_write, fd, buf, 1);
+    return syscall(SYS_write, fd, buf, count);
+}
+''')
+    fault_lib = work / 'cpu-fault.so'
+    subprocess.run(['cc', '-shared', '-fPIC', str(fault_source), '-o', str(fault_lib)], check=True)
+    def limited(label, setting, arg, lower_hard=False, fault=None):
+        state = work / label
+        test_env = env.copy()
+        if setting is not None: test_env['HEAVY_COMPILER_CPU_SECONDS'] = setting
+        else: test_env.pop('HEAVY_COMPILER_CPU_SECONDS', None)
+        if fault:
+            test_env['CPU_FIXTURE_FAULT'] = fault
+            test_env['LD_PRELOAD'] = str(fault_lib)
+        command = [str(ENTRY), '--state', str(state), '--real-lean', str(fixture),
+                   '--allowance-kib', '1300000', '--headroom-kib', '100000',
+                   '--fallback-kib', '600000', '--timeout-ms', '30000', '--requests', str(request),
+                   '--', sys.executable, '-c',
+                   'import os,subprocess,sys; p=subprocess.run([os.environ["LEAN_SYSROOT"]+"/bin/lean",sys.argv[1]]); sys.exit(128-p.returncode if p.returncode<0 else p.returncode)', arg]
+        p = subprocess.run(command, cwd=pkg, env=test_env, capture_output=True, timeout=10,
+                           preexec_fn=(lambda: resource.setrlimit(resource.RLIMIT_CPU, (1, 1))) if lower_hard else None)
+        records = list((state / 'overlay/records').glob('process-*.json'))
+        rows = [json.loads(f.read_text()) for f in records]
+        results.append(dict(case=label, argv=command, cwd=str(pkg),
+                            environment={k: test_env.get(k) for k in ('HEAVY_COMPILER_CPU_SECONDS', 'CPU_FIXTURE_FAULT', 'LD_PRELOAD', 'PATH', 'ELAN_HOME', 'LAKE_CACHE_DIR')},
+                            rlimit_cpu=list(resource.getrlimit(resource.RLIMIT_CPU)), inherited_override=[1, 1] if lower_hard else None,
+                            timeout_seconds=10, status=p.returncode, stdout=p.stdout.decode(), stderr=p.stderr.decode(), records=rows))
+        return p, rows
+    p, rows = limited('cpu-positive', '1', 'ok.lean')
+    assert p.returncode == 0 and rows[0]['compiler_cpu_limit_seconds'] == 1 and rows[0]['raw_wait_status'] == 0
+    p, rows = limited('cpu-negative', '1', 'burn.lean')
+    assert p.returncode == 137 and rows[0]['compiler_cpu_limit_seconds'] == 1
+    assert rows[0]['result_kind'] == 1 and rows[0]['result_detail'] == 9 and rows[0]['raw_wait_status'] == 9
+    p, rows = limited('cpu-preinstall-signal', '1', 'ok.lean', fault='preinstall')
+    assert p.returncode == 137 and rows[0]['raw_wait_status'] == 9
+    assert rows[0]['compiler_cpu_requested_seconds'] == 1 and rows[0]['compiler_cpu_limit_seconds'] is None
+    assert rows[0]['cpu_protocol_bytes'] == 0 and p.stdout == b''
+    p, rows = limited('cpu-partial-ack', '1', 'ok.lean', fault='partial')
+    assert p.returncode == 125 and rows[0]['cpu_protocol_bytes'] == 1
+    assert rows[0]['compiler_cpu_limit_seconds'] is None and p.stdout == b''
+    p, rows = limited('cpu-default', None, 'ok.lean')
+    assert p.returncode == 0 and rows[0]['compiler_cpu_limit_seconds'] is None
+    for bad in ('0', '-1', 'abc', '2147483648', ''):
+        p, rows = limited('cpu-invalid-' + (bad or 'empty'), bad, 'ok.lean')
+        assert p.returncode == 125 and not rows
+    p, rows = limited('cpu-setup-failure', '2', 'ok.lean', lower_hard=True)
+    assert p.returncode == 125 and rows[0]['launch_errno'] != 0
+    assert rows[0]['compiler_cpu_limit_seconds'] is None and rows[0]['result_kind'] == 3
+    direct_env = env.copy(); direct_env.pop('HEAVY_BUDGET_DIR', None)
+    direct_env['HEAVY_COMPILER_CPU_SECONDS'] = '1'
+    p = subprocess.run([str(work / 'cpu-positive/overlay/bin/lean'), 'ok.lean'], cwd=pkg,
+                       env=direct_env, capture_output=True, timeout=5)
+    results.append(dict(case='cpu-missing-session', argv=[str(work / 'cpu-positive/overlay/bin/lean'), 'ok.lean'],
+                        cwd=str(pkg), environment={'HEAVY_COMPILER_CPU_SECONDS': '1', 'HEAVY_BUDGET_DIR': None},
+                        rlimit_cpu=list(resource.getrlimit(resource.RLIMIT_CPU)), timeout_seconds=5,
+                        status=p.returncode, stdout=p.stdout.decode(), stderr=p.stderr.decode()))
+    assert p.returncode == 125
+    p, rows = limited('cpu-query', '1', '--version')
+    assert p.returncode == 0 and rows[0]['compiler_cpu_limit_seconds'] is None
 
 def main():
     real = Path(os.environ.get('HEAVY_TEST_REAL_LEAN') or
@@ -58,6 +154,8 @@ def main():
     assert by_source[str(pkg / 'Tiny.lean')]['request_provenance'] == 'explicit-unknown-fallback'
     assert by_source[str(pkg / 'Tiny.lean')]['requested_reservation_kib'] == 600000
     assert all(x['child_present'] and x['raw_wait_status'] == 0 and x['gate_errno'] == 0 for x in compiled)
+    cpu_controls(work, pkg, env, request, results)
+    env['HEAVY_COMPILER_CPU_SECONDS'] = '10'
     # The ordinary command builds in the caller's package and retains an empty
     # manifest and fallback records in a private directory chosen under TMPDIR.
     env['TMPDIR'] = str(work)
@@ -70,6 +168,7 @@ def main():
     assert (builds[0] / 'requests.tsv').read_text() == ''
     built = [json.loads(f.read_text()) for f in (builds[0] / 'state/overlay/records').glob('process-*.json')]
     assert all(x['real_compiler'] == str(real) and x['cwd'] == str(pkg) for x in built)
+    assert all(x['compiler_cpu_limit_seconds'] == 10 for x in built if x['input_kind'] == 'file')
     assert any(x['input_kind'] == 'file' and x['source'] == str(basic)
                and x['request_provenance'] == 'explicit-unknown-fallback'
                and x['requested_reservation_kib'] == 550000 for x in built)

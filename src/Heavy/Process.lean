@@ -61,6 +61,18 @@ structure Metadata where
   setup : Option String := none
   deriving Repr, BEq
 
+/-- Zero disables the limit; positive values apply only to budgeted non-query
+compiler invocations. Values above the native protocol bound are invalid. -/
+def compilerCpuLimit (seconds : Nat) (gated query : Bool) : Option Nat :=
+  if seconds > 2147483647 then none
+  else if seconds > 0 && !gated then none
+  else some (if query then 0 else seconds)
+
+/-- Interpret the actual private pipe observation, not PID or EOF alone. -/
+def appliedCompilerCpu (seconds bytes first readError eof waitError : Nat) : Option Nat :=
+  if seconds > 0 && (bytes == 4 || bytes == 8) && first == 1212371029 &&
+      readError == 0 && eof == 1 && waitError == 0 then some seconds else none
+
 def emptyMetadata (kind : String) : Metadata := ⟨kind, none, none, none, none, none, none⟩
 
 def valueFlag (arg : String) : Bool := decide

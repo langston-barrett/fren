@@ -180,6 +180,9 @@ def main():
         return 125
     try:
         env = os.environ.copy()
+        cpu = env.get('HEAVY_COMPILER_CPU_SECONDS')
+        if cpu is not None and (not cpu.isascii() or not cpu.isdecimal() or not 0 < int(cpu) <= 2147483647):
+            raise ValueError('HEAVY_COMPILER_CPU_SECONDS must be a positive integer at most 2147483647')
         if 'HEAVY_BUDGET_DIR' in env:
             raise ValueError('already budgeted: invoke Lake directly inside the existing session')
         if ordinary:

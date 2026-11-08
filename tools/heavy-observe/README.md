@@ -438,6 +438,10 @@ scripts/heavy --offline scripts/heavy-lean-build \
   /absolute/toolchain/bin/lake --no-cache --verbose build +FrenSexp.Codec
 ```
 
+The session command must remain alive and spawn/wait for the overlay compiler
+in its process group. Making the observer itself the session root, including
+by replacing the launcher with `exec`, fails the existing parent/group check.
+
 All values are explicit development accounting inputs, not memory guarantees.
 The entrypoint passes the command after `--` as argv without shell reparsing,
 keeps the inherited environment except for `LAKE_OVERRIDE_LEAN`, `LEAN_SYSROOT`
@@ -448,7 +452,8 @@ using Lake offline, verify the pinned dependency URLs and revisions and choose
 an appropriate owned cache if needed; an offline Lake invocation can still
 reconcile local package directories. A cached target may perform no compilation.
 No machine-wide admission, forecast, installation or cap configuration is
-changed. This integration does not add per-module CPU/wall limits, test budgets,
+changed. The optional per-process compiler CPU limit below is not mandatory module
+coverage. This integration does not add module wall limits, test budgets,
 automatic request prediction or a total-throughput claim. Python caller/IO
 selection and cgroup discovery are finite integration checks, outside the pure
 Lean requirements and their existing implementation bindings. If tools are
@@ -529,3 +534,25 @@ one tiny actual observed compilation and bounded raw JSON mutations through
 the executable/decoder/kernel. Run that focused check alone after building
 `compiler_advice heavy_observe`, under Heavy offline. `--output` selects a
 new absolute owned directory for its records, requests, advice and timing.
+
+### Opt-in compiler CPU limit
+
+For a Fren2 build whose caller elects this initial limit, run for example
+`HEAVY_COMPILER_CPU_SECONDS=10 scripts/heavy lake build TARGET` from the
+Fren2 package. The normal Heavy compiler-budget route must be active; the
+setting is not automatic Fren2 coverage. Ten CPU seconds is an initial
+engineering value, not a measured or universal standard. Unset leaves the
+existing behavior; invalid, zero, or out-of-range values fail before the
+build command launches. An observer invoked outside a budget session rejects
+a positive setting. Queries remain uncapped.
+
+On Linux each selected compiler child receives equal soft and hard
+`RLIMIT_CPU` seconds before exec; failure to install it prevents exec. The
+limit measures process CPU, not admission or elapsed wall time. Descendants
+inherit the limit independently; it is not an aggregate tree limit, memory
+limit, or wall deadline. At the hard limit Linux sends SIGKILL; a lower
+inherited hard limit can prevent setup. The raw wait status and
+`compiler_cpu_limit_seconds` (null without a complete installation acknowledgement),
+`compiler_cpu_requested_seconds`, and raw pipe observations accompany the existing
+admission and CPU observations. A signal is never compiler success. The
+setting does not cover other compiler families, native builds or tests.

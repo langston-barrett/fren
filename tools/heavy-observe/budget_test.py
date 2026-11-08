@@ -191,6 +191,13 @@ def main():
         producer(sys.argv[2], Path(sys.argv[3]), Path(sys.argv[4])); return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="budget-", dir=HERE / "test-work"))
+    from entrypoint_test import cpu_controls
+    cpu_work = work / "cpu"; cpu_work.mkdir()
+    cpu_pkg = cpu_work / "pkg"; cpu_pkg.mkdir()
+    cpu_request = cpu_work / "requests"; cpu_request.write_text("")
+    cpu_results = []
+    cpu_controls(cpu_work, cpu_pkg, os.environ.copy(), cpu_request, cpu_results)
+    (cpu_work / "results.json").write_text(json.dumps(cpu_results, indent=2))
     cases = ["serial-fifo", "unequal", "cancel", "wait-cancel", "unknown", "pid-reuse", "namespace", "partial", "raw-stale",
              "unlocked", "oversize", "bad-config", "bad-counter", "registry", "write-error", "missing-manifest", "preexec-error",
              "exec-error", "exit", "fallback", "zero-request", "fork-lease", "observer-death", "owner-death", "bypass"]
