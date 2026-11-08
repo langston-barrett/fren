@@ -133,9 +133,12 @@ deriving instance ToSexp for Indexed
 private structure ValueParameter (n : Nat) where
   value : Fin n
 
-/-- error: S-expression deriving supports only ordinary type parameters -/
-#guard_msgs in
-deriving instance FromSexp for ValueParameter
+deriving instance ToSexp, FromSexp for ValueParameter
+
+-- This exact former rejection now requires only the field codec, not a codec
+-- for the uniform Nat value n itself.
+example {n : Nat} [ToSexp (Fin n)] : ToSexp (ValueParameter n) := inferInstance
+example {n : Nat} [FromSexp (Fin n)] : FromSexp (ValueParameter n) := inferInstance
 
 private structure DependentField where
   count : Nat
@@ -144,6 +147,10 @@ private structure DependentField where
 /-- error: S-expression deriving: unsupported dependent field 2 of Fren.SexpTests.DependentField.mk -/
 #guard_msgs in
 deriving instance FromSexp for DependentField
+
+/-- error: S-expression deriving: unsupported dependent field 2 of Fren.SexpTests.DependentField.mk -/
+#guard_msgs in
+deriving instance ToSexp for DependentField
 
 private structure ProofField where
   valid : True
@@ -155,9 +162,24 @@ deriving instance ToSexp for ProofField
 private structure HigherKinded (f : Type → Type) where
   value : f Nat
 
-/-- error: S-expression deriving supports only ordinary type parameters -/
+/-- error: S-expression deriving: unsupported higher-kinded or proof parameter -/
 #guard_msgs in
 deriving instance ToSexp for HigherKinded
+
+/-- error: S-expression deriving: unsupported higher-kinded or proof parameter -/
+#guard_msgs in
+deriving instance FromSexp for HigherKinded
+
+private structure ProofParameter (h : True) where
+  value : Nat
+
+/-- error: S-expression deriving: unsupported higher-kinded or proof parameter -/
+#guard_msgs in
+deriving instance ToSexp for ProofParameter
+
+/-- error: S-expression deriving: unsupported higher-kinded or proof parameter -/
+#guard_msgs in
+deriving instance FromSexp for ProofParameter
 
 private inductive Nested where
   | node (children : Array Nested)
