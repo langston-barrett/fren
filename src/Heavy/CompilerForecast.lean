@@ -18,6 +18,28 @@ structure Context where
   setupFingerprint : Option String
   deriving DecidableEq, Repr
 
+/-- Length framing and hexadecimal bytes preserve order and missing versus empty. -/
+def identityField (s : String) : String := Id.run do
+  let digits := "0123456789abcdef".toList.toArray
+  let mut out := s!"{s.utf8ByteSize}:"
+  for b in s.toUTF8 do
+    out := out.push digits[b.toNat / 16]!
+    out := out.push digits[b.toNat % 16]!
+  return out
+
+def identityOption : Option String → String
+  | none => "0"
+  | some s => "1" ++ identityField s
+
+/-- Bounded partial identity, not a cryptographic digest or input closure. -/
+def cohortIdentity (c : Context) (boot : String) : Option String :=
+  if boot == "" then none else
+  let value := String.join (([c.source, c.cwd, c.sourceFingerprint, c.compiler,
+    c.compilerFingerprint, c.version, c.githash].map identityField) ++
+    [s!"{c.args.length}:"] ++ c.args.map identityField ++
+    [identityOption c.setup, identityOption c.setupFingerprint, identityField boot])
+  if value.utf8ByteSize > 65536 then none else some value
+
 /-- Required fields are decoded strictly, never defaulted to successful zeroes. -/
 structure Record where
   context : Context

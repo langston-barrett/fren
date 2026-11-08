@@ -114,6 +114,11 @@ built, run `scripts/heavy --offline lake env .lake/build/bin/fren_test
 observer is Linux-only. The manual standalone recipe
 above remains independent of Fren.
 
+The registered harness also runs the bounded cohort gate fixture under isolated
+Python. It checks actual extracted source identity for a supported argv change:
+the legacy source-only row selects its request while the cohort row falls back.
+Unsupported metadata has its own fallback control.
+
 The integration test retains its owned scratch directory and `report.json`
 under `test-work/`. It compares a clean ordinary and budget-controlled three-module Lake build
 with cache restoration disabled, including artifact SHA256, and runs bounded
@@ -165,7 +170,7 @@ The outer Heavy/fd reservation and cgroup are unchanged; these inner
 charges are not added to its forecast. No CPU weights, affinity, tokens,
 installation defaults or cross-build admission change.
 
-The manifest has one tab-separated absolute canonical source path,
+The legacy source-only manifest row has one tab-separated absolute canonical source path,
 `lean-bytearray64:<bytes>:<hash>` fingerprint and positive KiB demand per
 line. Use `process_tests --read PATH` to obtain the same ByteArray hash as
 the observer; prefix its `some:HASH` result with the source byte count as
@@ -430,8 +435,15 @@ nonzero status and no row, with a diagnostic on stderr. Unsupported tabs,
 newlines and carriage returns in manifest fields are rejected. Keep a
 positive fallback configured for sources that have changed or lack a row.
 The row is operator configuration based on an observed maximum, not a future
-RAM bound. The gate checks only source path and fingerprint: argv, setup,
-imports and environment can change without changing that fingerprint.
+RAM bound. The exported five-column `cohort-v1` row also binds the ordered raw source,
+cwd, source fingerprint, compiler path and fingerprint, version, githash,
+ordered argv, nullable setup path and fingerprint, and boot ID. The observer
+recomputes that bounded identity before admission; unavailable or unequal
+identity uses the positive fallback and records `explicit-unknown-fallback`.
+A match records `explicit-cohort-request`. The older three-column row remains
+an explicit source-only request (`explicit-source-request`); it does not check
+the cohort. These partial noncryptographic observations do not bind imports,
+plugins or the environment.
 
 This statistical advice does not change complete-input provenance:
 `identity_complete` remains false. Imports, environment, plugins and

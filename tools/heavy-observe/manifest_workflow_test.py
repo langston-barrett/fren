@@ -18,7 +18,7 @@ assert ar['args']==br['args'] and ar['source_before']==br['source_before'] and a
 request={'real_compiler':ar['real_compiler'],'args':ar['args'],'cutoff_monotonic_ns':0,'recent_count':2,'minimum_samples':2,'records':[str(a),str(b)]}; (out/'request.json').write_text(json.dumps(request,indent=2))
 cmd=[str(root/'tools/heavy-observe/.lake/build/bin/compiler_advice'),'--manifest','--padding-kib','100000',str(out/'request.json')]; p=subprocess.run(cmd,cwd=pkg,env=env,capture_output=True,text=True,timeout=30); (out/'export.stderr').write_text(p.stderr); (out/'export.status').write_text(str(p.returncode)+'\n'); manifest=out/'manifest.tsv'; manifest.write_text(p.stdout); assert p.returncode==0,p.stderr
 expected=max(ar['peak_rss_kib'],br['peak_rss_kib'])+100000; assert p.stdout.split('\t')[-1].strip()==str(expected)
-env['FREN_BUILD_REQUESTS_FILE']=str(manifest); _, selected=build('selected'); assert selected['request_provenance']=='explicit-source-request' and selected['requested_reservation_kib']==expected,selected
+env['FREN_BUILD_REQUESTS_FILE']=str(manifest); _, selected=build('selected'); assert selected['request_provenance']=='explicit-cohort-request' and selected['requested_reservation_kib']==expected,selected
 source.write_text(source.read_text()+'-- changed\n'); _, fallback=build('changed'); assert fallback['request_provenance']=='explicit-unknown-fallback' and fallback['requested_reservation_kib']==550000,fallback
 (out/'summary.json').write_text(json.dumps({'capture_records':[str(a),str(b)],'selected':selected,'changed':fallback,'expected':expected,'limits':'schema 3 reports requested reservation, not independently observed held charge'},indent=2)+'\n'); print(out)
 

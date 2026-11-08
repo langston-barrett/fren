@@ -117,7 +117,24 @@ def run (args : List String) : IO UInt32 := do
     let canonical ← try source.mapM fun s => do pure (← IO.FS.realPath s).toString
       catch _ => pure none
     let (requestSource, requestFingerprint) := Heavy.Budget.sourceIdentity canonical (sourceBefore.bind id)
-    let some (demand, origin) := BudgetAdapter.request manifest requestSource requestFingerprint fallback
+    let cohort := do
+      let source ← source
+      let sourceFingerprint ← sourceBefore.bind id
+      let compilerFingerprint ← compilerFingerprint
+      let version ← version
+      let githash ← githash
+      let boot ← boot
+      let setupFingerprint ← match setup, setupBefore with
+        | none, none => some none
+        | some _, some (some f) => some (some f)
+        | _, _ => none
+      let c : Heavy.CompilerForecast.Context := {
+        source := source, cwd := cwd.toString, sourceFingerprint := sourceFingerprint
+        compiler := real.toString, compilerFingerprint := compilerFingerprint
+        version := version, githash := githash, args := args
+        setup := setup, setupFingerprint := setupFingerprint }
+      if Heavy.CompilerForecast.validContext c then Heavy.CompilerForecast.cohortIdentity c boot else none
+    let some (demand, origin) := BudgetAdapter.request manifest requestSource requestFingerprint fallback cohort
       | throw (IO.userError "invalid request demand")
     requestDemand := demand
     provenance := origin

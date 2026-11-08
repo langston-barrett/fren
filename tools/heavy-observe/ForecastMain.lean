@@ -72,7 +72,7 @@ def capture (compiler : String) (args : List String) : IO Context := do
     version := ← query "--version", githash := ← query "--githash", args
     setup := m.setup, setupFingerprint := ← m.setup.mapM fingerprint }
 
-def run (request : Json) : IO (Json × Context × Option Int) := do
+def run (request : Json) : IO (Json × Context × String × Option Int) := do
   let get := @IO.ofExcept
   let compiler ← get (str request "real_compiler")
   unless compiler.startsWith "/" do throw (IO.userError "absolute compiler required")
@@ -109,7 +109,7 @@ def run (request : Json) : IO (Json × Context × Option Int) := do
       ("setup", toJson c.setup), ("setup_fingerprint", toJson c.setupFingerprint)]),
     ("boot_id", toJson boot), ("now_monotonic_ns", toJson now),
     ("cutoff_monotonic_ns", toJson cutoff), ("recent_count", toJson n), ("minimum_samples", toJson minimum),
-    ("limits", toJson "advisory selected maximum only; partial noncryptographic identity; no input closure, headroom, fallback, concurrent RAM or future bound; no gate enforcement")], c, if stable then peak else none)
+    ("limits", toJson "advisory selected maximum only; partial noncryptographic identity; no input closure, headroom, fallback, concurrent RAM or future bound; exported cohort row checks partial identity at gate")], c, boot, if stable then peak else none)
 
 end CompilerAdvice
 
@@ -120,7 +120,7 @@ def main (args : List String) : IO UInt32 := do
       let some padding := paddingText.toNat? | throw (IO.userError "invalid padding")
       if padding == 0 || padding > 2^50 then throw (IO.userError "padding out of range")
       let request ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-      let (_, context, peak) ← CompilerAdvice.run request
+      let (_, context, boot, peak) ← CompilerAdvice.run request
       let some peak := peak | throw (IO.userError "unknown advice; no manifest row")
       if peak ≤ 0 || peak + padding > (2^50 : Int) then
         throw (IO.userError "demand out of range")
@@ -131,7 +131,8 @@ def main (args : List String) : IO UInt32 := do
         throw (IO.userError "source changed; no manifest row")
       if [source, fingerprint].any (fun s => s.contains '\t' || s.contains '\n' || s.contains '\r') then
         throw (IO.userError "unsupported manifest field")
-      IO.println s!"{source}\t{fingerprint}\t{peak + padding}"
+      let some identity := cohortIdentity context boot | throw (IO.userError "unknown cohort identity")
+      IO.println s!"{source}\t{fingerprint}\tcohort-v1\t{identity}\t{peak + padding}"
       return 0
     catch e =>
       (← IO.getStderr).putStrLn s!"compiler_advice: {e}"
@@ -142,7 +143,7 @@ def main (args : List String) : IO UInt32 := do
       return 1
     try
       let request ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-      let (result, _, _) ← CompilerAdvice.run request
+      let (result, _, _, _) ← CompilerAdvice.run request
       IO.println result.compress
       return 0
     catch e =>
