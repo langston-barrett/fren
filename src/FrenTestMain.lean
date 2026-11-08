@@ -4592,7 +4592,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
       return #[]
     -- An independent core/Std package, not a rebuild of Fren at invocation.
     let built ← IO.Process.output { cmd := "lake", args := #["-d", "tools/heavy-observe",
-      "build", "heavy_observe", "process_tests", "budget_session", "budget_tests", "--wfail"] }
+      "build", "heavy_observe", "process_tests", "budget_session", "budget_tests", "compiler_advice", "--wfail"] }
     if built.exitCode != 0 then
       return #[s!"standalone observer build failed:\n{built.stdout}{built.stderr}"]
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/test.py"] ++

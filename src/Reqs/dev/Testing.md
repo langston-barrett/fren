@@ -1716,6 +1716,93 @@ pub proc heavy_process_identity(
 #fren_check heavy_process_identity
 ```
 
+The separate compiler adviser uses actual schema 2/3 records, never the
+legacy job-kind forecast's failed-job policy. `heavy_compiler_sample` binds
+the actual raw sample filter in `Heavy.CompilerForecast`. It compares every
+raw cohort field: selected source path and cwd, source-before fingerprint,
+real compiler path/fingerprint/version/git hash, ordered argv, and setup
+path/fingerprint. Source-after must equal source-before. Successful raw
+launch/exec/wait/clock status, positive child PID, ordinary zero exit,
+positive measured RSS equal to raw RSS, and schema 3's successful gate,
+child-present and wrapper status are required. Missing, malformed or
+nonintegral required JSON quantities are rejected rather than zero-filled.
+Old records without boot identity cannot supply advice.
+
+Completion times are monotonic nanoseconds, comparable only within the
+same nonempty Linux boot identity. Cutoff and now are explicit kernel
+inputs; equality at either endpoint is accepted, future/cross-boot samples
+are excluded, and start must not exceed finish. The executable reads the
+actual boot and monotonic now, and takes an explicit monotonic cutoff.
+It captures current source/setup/compiler identity and argv, rechecks after
+reading history, and returns UNKNOWN on unavailable or changed identity.
+The kernel validates nonempty identity fields, absolute cwd/compiler paths,
+paired setup identity and the supported file-compile argv boundary. It
+excludes `--run`, stdin, queries and unknown metadata.
+
+Selection retains at most the explicit recent count (the executable caps
+it at 1024), newest completion first, larger peak breaking ties. Advice is
+the exact maximum of those selected positive peaks, with their count.
+Zero count/minimum, insufficient samples, or an inverted time window gives
+UNKNOWN, never a zero estimate. The minimum is explicit policy, without a
+calibration claim. Bounded selection and maximum laws live in Lean because
+this list fold exceeds the supported Fren proof subset; decoder and current
+filesystem/clock assumptions are tested at the standalone IO boundary.
+
+Adviser eligibility is separate from complete-input provenance. The observer
+still reports `identity_complete = false`: imported artifacts, environment,
+plugins, libraries and arbitrary reader inputs are not closed over. These
+partial noncryptographic cohorts support statistical advice only, never
+cached semantic evidence, stale-safe admission or a future RAM bound.
+Wait4 peak RSS is not a sum or concurrent physical RAM measurement. This
+slice adds no headroom or fallback policy: callers must choose these
+explicitly, and UNKNOWN stays UNKNOWN. Request manifests, manual fallback,
+controller API, defaults and installed programs are unchanged.
+
+```fren
+pub struct CompilerContext {
+    source: String, cwd: String, source_fingerprint: String,
+    compiler: String, compiler_fingerprint: String, version: String, githash: String,
+    args: ProcessArguments, setup: Option<String>, setup_fingerprint: Option<String>,
+}
+
+-- Raw cohort/status fields, not a precomputed eligibility or key-validity flag.
+pub proc heavy_compiler_sample(
+    observed: CompilerContext,
+    current: CompilerContext,
+    source_after: String,
+    boot: Option<String>,
+    current_boot: String,
+    schema: Nat,
+    family: String,
+    kind: String,
+    launch_error: Nat,
+    exec_error: Nat,
+    wait_error: Nat,
+    clock_error: Nat,
+    status: Nat,
+    pid: Nat,
+    gate_error: Option<Int>,
+    child_present: Option<Bool>,
+    wrapper_code: Option<Int>,
+    start: Nat,
+    finish: Nat,
+    cutoff: Nat,
+    now: Nat,
+    rss: Nat,
+    measured_rss: Nat,
+): (det usable?) {
+    ensure raw_sample: usable? iff observed = current and source_after = current.source_fingerprint
+        and current_boot != "" and boot = Option::Some(current_boot) and family = "lean" and kind = "file"
+        and (schema = 2 or (schema = 3 and gate_error = Option::Some(0)
+        and child_present = Option::Some(true) and wrapper_code = Option::Some(0)))
+        and launch_error = 0 and exec_error = 0 and wait_error = 0 and clock_error = 0
+        and status = 0 and pid > 0 and start <= finish and cutoff <= finish <= now
+        and rss > 0 and measured_rss = rss
+}
+
+#fren_check heavy_compiler_sample
+```
+
 The opt-in `scripts/heavy-lean-build` entrypoint prepares a new owned overlay
 using the selected real compiler and the existing helper, then replaces itself
 with the existing budget session. It passes the command after `--` as argv,
