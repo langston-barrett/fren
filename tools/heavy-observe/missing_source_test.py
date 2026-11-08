@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Actual pinned-compiler source identity errors, without a Lake workload.
 All state/permissions/symlinks are private to this bounded producer test.
+Select the active repository toolchain or HEAVY_TEST_REAL_LEAN explicitly;
+canonicalize once and use that same executable for hashes/calls/records.
 """
 import argparse
 import hashlib
@@ -13,7 +15,8 @@ import tempfile
 import time
 
 HERE = Path(__file__).resolve().parent
-REAL = Path('/opt/elan/toolchains/leanprover--lean4---v4.32.0/bin/lean')
+REAL = Path(os.environ.get('HEAVY_TEST_REAL_LEAN') or
+            (subprocess.check_output(['lean', '--print-prefix'], text=True).strip() + '/bin/lean')).resolve(strict=True)
 
 
 def run(command, cwd, env):

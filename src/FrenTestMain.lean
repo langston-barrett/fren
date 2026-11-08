@@ -4625,7 +4625,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
       "build", "heavy_observe", "budget_session", "budget_tests", "--wfail"] }
     if built.exitCode != 0 then
       return #[s!"standalone observer build failed:\n{built.stdout}{built.stderr}"]
-    let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/missing_source_test.py"] }
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/compiler_discovery_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"compiler source-error compatibility failed:\n{out.stdout}{out.stderr}"]
   | ["heavyPrediction"] => do
     -- The Heavy.Forecast import builds the module loaded by this transport.

@@ -294,3 +294,16 @@ reservation/record, and separately preserves malformed-manifest rejection.
 The bound normalization rule states optional-input handling; filesystem
 exception authenticity and forwarding remain an actual finite IO contract,
 not a pure proof of filesystem behavior or input closure.
+
+
+The missing-source harness uses the active repository-selected compiler from
+`lean --print-prefix`, or explicit `HEAVY_TEST_REAL_LEAN`, and canonicalizes
+that executable once for hashing, overlay configuration, direct invocations
+and record checks. It does not assume an installation directory or install
+a toolchain. Run from the repository with its pinned toolchain available.
+The registered `heavyMissingSource` job runs the same four controls through
+both discovery routes using an owned temporary copy of that exact compiler.
+Its bytes, version and git hash must match; installed assets are delegated
+read-only in use, with no package/cache copy. The actual reported executable
+must be the selected copy. These finite IO checks establish caller selection,
+not a pure filesystem or dependency-closure proof.
