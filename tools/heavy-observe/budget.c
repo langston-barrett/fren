@@ -364,6 +364,19 @@ done:
 /* A transient owner for exactly one controlled build process group.
  * Only a supported disposition and successful unreaped-child observations
  * permit numeric group signals. SIGCHLD disposition is never changed. */
+/* Accept only a complete datagram with a supported cause. The persistent
+ * observation is updated only after the whole packet has been validated. */
+static int wall_receive(int fd, struct wall_message *out, b_lean_obj_arg control) {
+    struct wall_message raw = {0};
+    ssize_t n = recv(fd, &raw, sizeof(raw), MSG_DONTWAIT | MSG_TRUNC);
+    if (n < 0) return (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ? 0 : -errno;
+    uint64_t inputs[] = {3, (uint64_t)n, sizeof(raw), raw.cause}, accepted;
+    int e = budget_control(control, inputs, 4, 1, 0, &accepted);
+    if (e || accepted != 1) return -(e ? e : EPROTO);
+    *out = raw;
+    return 1;
+}
+
 static volatile sig_atomic_t budget_wall;
 static void budget_wall_signal(int sig) { budget_wall = sig == SIGUSR2 ? 2 : 1; }
 
@@ -376,6 +389,7 @@ LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_ar
     int handlers = 0, wall_socket = -1, wall_handlers = 0;
     int wall_enabled = getenv("HEAVY_COMPILER_WALL_MS") != NULL;
     struct wall_message wall_message = {0};
+    int wall_message_present = 0;
     struct sigaction wall_old[2], wall_action = {0};
     char **argv = NULL;
     char identity[256], text[512], wall_name[33] = {0};
@@ -387,14 +401,24 @@ LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_ar
     handlers = 1;
     budget_wall = 0;
     if (wall_enabled) {
+        sigset_t mask;
+        int mask_error = sigprocmask(SIG_SETMASK, NULL, &mask) < 0 ? errno : 0;
+        int usr1 = mask_error ? -1 : sigismember(&mask, SIGUSR1);
+        if (usr1 < 0 && !mask_error) mask_error = errno ? errno : EINVAL;
+        int usr2 = mask_error ? -1 : sigismember(&mask, SIGUSR2);
+        if (usr2 < 0 && !mask_error) mask_error = errno ? errno : EINVAL;
+        uint64_t raw[] = {2, (uint64_t)mask_error, (uint64_t)(usr1 < 0 ? 2 : usr1),
+                          (uint64_t)(usr2 < 0 ? 2 : usr2)}, safe;
+        int e = budget_control(control, raw, 4, 1, 0, &safe);
+        if (e || safe != 1) { values[0] = e ? e : mask_error ? mask_error : EPERM; goto done; }
         wall_action.sa_handler = budget_wall_signal; sigemptyset(&wall_action.sa_mask);
         if (sigaction(SIGUSR1, &wall_action, &wall_old[0]) < 0) { values[0] = errno; goto done; }
         wall_handlers = 1;
         if (sigaction(SIGUSR2, &wall_action, &wall_old[1]) < 0) { values[0] = errno; goto done; }
         wall_handlers = 2;
         /* A fresh abstract address prevents a later PID reuse from targeting a
-     * different session. A missing channel uses the pinned pidfd fallback. */
-    unsigned char nonce[16];
+         * different session. A missing channel uses the pinned pidfd fallback. */
+        unsigned char nonce[16];
         if (getrandom(nonce, sizeof(nonce), GRND_NONBLOCK) == sizeof(nonce)) {
             for (size_t i = 0; i < sizeof(nonce); ++i) snprintf(wall_name + i * 2, 3, "%02x", nonce[i]);
             wall_socket = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
@@ -463,10 +487,9 @@ LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_ar
             previous_wait_error = errno; values[0] = errno; break;
         }
         if (wall_socket >= 0) {
-            ssize_t got = recv(wall_socket, &wall_message, sizeof(wall_message), MSG_DONTWAIT);
-            if (got == sizeof(wall_message)) { budget_wall = wall_message.cause == 1 ? 1 : 2; break; }
-            if (got >= 0) { values[0] = EPROTO; break; }
-            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) { values[0] = errno; break; }
+            int received = wall_receive(wall_socket, &wall_message, control);
+            if (received == 1) { wall_message_present = 1; budget_wall = (int)wall_message.cause; break; }
+            if (received < 0) { values[0] = -received; break; }
         }
         if (budget_wall) break;
         if (info.si_pid || budget_cancelled) break;
@@ -523,10 +546,11 @@ cleanup:
         }
     }
     if (!budget_wall && wall_socket >= 0) {
-        ssize_t got = recv(wall_socket, &wall_message, sizeof(wall_message), MSG_DONTWAIT);
-        if (got == sizeof(wall_message)) budget_wall = wall_message.cause == 1 ? 1 : 2;
+        int received = wall_receive(wall_socket, &wall_message, control);
+        if (received == 1) { wall_message_present = 1; budget_wall = (int)wall_message.cause; }
+        else if (received < 0 && !values[0]) values[0] = -received;
     }
-    if (wall_message.cause) {
+    if (wall_message_present) {
         values[4] = 1; values[5] = wall_message.status; values[6] = wall_message.wait_error;
         values[7] = wall_message.start; values[8] = wall_message.sample;
         values[9] = wall_message.pid; values[10] = wall_message.limit_ms;

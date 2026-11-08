@@ -5,6 +5,7 @@ import fcntl
 import os
 import shutil
 import re
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -44,15 +45,36 @@ fault_source.write_text(r'''#define _GNU_SOURCE
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
+#include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
+int sigprocmask(int how, const sigset_t *set, sigset_t *old) {
+    if (!set && getenv("WALL_FAIL_MASK")) { errno = EIO; return -1; }
+    return syscall(SYS_rt_sigprocmask, how, set, old, 8);
+}
 ssize_t recv(int fd, void *buf, size_t len, int flags) {
+    static int deferred_exit;
+    if (getenv("WALL_LATE_PACKET")) {
+        siginfo_t info = {0};
+        syscall(SYS_waitid, P_ALL, 0, &info, WEXITED | WNOHANG | WNOWAIT, 0);
+        if (!deferred_exit) { if (info.si_pid) deferred_exit = 1; errno = EAGAIN; return -1; }
+    }
     ssize_t r = syscall(SYS_recvfrom, fd, buf, len, flags, 0, 0);
     if (r > 0 && (getenv("WALL_SLOW_RECORD") || getenv("WALL_FAIL_RECORD"))) usleep(300000);
     return r;
 }
 ssize_t sendto(int fd, const void *buf, size_t len, int flags, const struct sockaddr *addr, socklen_t size) {
     if (getenv("WALL_FAIL_SEND")) { errno = EIO; return -1; }
+    const char *mode = getenv("WALL_BAD_PACKET");
+    if (mode) {
+        unsigned char packet[128] = {0};
+        if (len > sizeof(packet) - 1) { errno = EINVAL; return -1; }
+        memcpy(packet, buf, len);
+        if (!strcmp(mode, "cause")) { unsigned long long cause = 3; memcpy(packet, &cause, sizeof(cause)); }
+        size_t sent = !strcmp(mode, "short") ? 8 : !strcmp(mode, "oversized") ? len + 1 : len;
+        return syscall(SYS_sendto, fd, packet, sent, flags, addr, size) < 0 ? -1 : (ssize_t)len;
+    }
     return syscall(SYS_sendto, fd, buf, len, flags, addr, size);
 }
 int link(const char *old, const char *new) {
@@ -71,7 +93,7 @@ int link(const char *old, const char *new) {
 ''')
 fault = work / 'fault.so'
 subprocess.run(['cc', '-shared', '-fPIC', str(fault_source), '-o', str(fault)], check=True)
-def run(label, setting, arg, fault_mode=None):
+def run(label, setting, arg, fault_mode=None, blocked=None, packet=None):
     state = work / label
     env = os.environ.copy(); env.pop('HEAVY_COMPILER_CPU_SECONDS', None)
     if setting is None: env.pop('HEAVY_COMPILER_WALL_MS', None)
@@ -81,10 +103,15 @@ def run(label, setting, arg, fault_mode=None):
         env['LD_PRELOAD'] = str(fault)
         env[fault_mode] = '1'
         env['WALL_MARKER'] = str(work / (label + '.blocked'))
+    if packet:
+        env['LD_PRELOAD'] = str(fault)
+        env['WALL_BAD_PACKET'] = packet.removeprefix('late-')
+        if packet.startswith('late-'): env['WALL_LATE_PACKET'] = '1'
     cmd = [str(ENTRY), '--state', str(state), '--real-lean', str(fixture), '--allowance-kib', '1300000',
            '--headroom-kib', '100000', '--fallback-kib', '600000', '--timeout-ms', '30000', '--requests', str(request),
            '--', sys.executable, '-c', 'import os,subprocess,sys; p=subprocess.run([os.environ["LEAN_SYSROOT"]+"/bin/lean",sys.argv[1]]); sys.exit(128-p.returncode if p.returncode<0 else p.returncode)', arg]
-    start = time.monotonic(); p = subprocess.run(cmd, env=env, cwd=work, capture_output=True, timeout=8)
+    start = time.monotonic(); p = subprocess.run(cmd, env=env, cwd=work, capture_output=True, timeout=8,
+                       preexec_fn=(lambda: signal.pthread_sigmask(signal.SIG_BLOCK, {blocked})) if blocked else None)
     elapsed = time.monotonic() - start
     records = [json.loads(f.read_text()) for f in (state / 'overlay/records').glob('process-*.json')]
     results.append(dict(case=label, argv=cmd, wall_setting=setting, cwd=str(work), status=p.returncode, stdout=p.stdout.decode(), stderr=p.stderr.decode(), wrapper_seconds=elapsed, records=records))
@@ -161,6 +188,17 @@ rows = [json.loads(f.read_text()) for f in (state / 'overlay/records').glob('pro
 results.append(dict(case='exec-failure', status=p.returncode, wrapper_seconds=time.monotonic()-t, records=rows,
                     stdout=p.stdout.decode(), stderr=p.stderr.decode()))
 assert p.returncode == 127 and rows[0]['exec_errno'] == 2 and not rows[0]['wall_timeout'], results[-1]
+# Both fallback signals must be unblocked before the build can launch.
+for sig in (signal.SIGUSR1, signal.SIGUSR2):
+    p, rows = run('blocked-' + str(sig), '200', 'busy.lean', 'WALL_FAIL_SEND', blocked=sig)
+    assert p.returncode == 125 and not rows and not (work / ('blocked-' + str(sig)) / 'session').exists(), results[-1]
+p, rows = run('mask-query-error', '200', 'busy.lean', 'WALL_FAIL_MASK')
+assert p.returncode == 125 and not rows and not (work / 'mask-query-error/session').exists(), results[-1]
+# Malformed packets never transport zero-filled, unreceived observations.
+for packet in ('short', 'oversized', 'cause', 'late-short', 'late-oversized', 'late-cause'):
+    p, rows = run('packet-' + packet, '200', 'busy.lean', packet=packet)
+    assert p.returncode == 125 and b'compiler pid=' not in p.stderr, results[-1]
+
 # The first compiler holds the only fitting reservation; the second has a
 # shorter deadline but completes after admission. Its wait must not count.
 state = work / 'admission'

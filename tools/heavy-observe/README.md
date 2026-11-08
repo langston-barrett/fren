@@ -453,8 +453,9 @@ an appropriate owned cache if needed; an offline Lake invocation can still
 reconcile local package directories. A cached target may perform no compilation.
 No machine-wide admission, forecast, installation or cap configuration is
 changed. The optional per-process compiler CPU limit below is not mandatory module
-coverage. This integration does not add module wall limits, test budgets,
-automatic request prediction or a total-throughput claim. Python caller/IO
+coverage. This integration does not add automatic or universal module wall limits, test
+budgets, physical RAM guarantees, aggregate CPU limits, automatic request
+prediction or a total-throughput claim. Python caller/IO
 selection and cgroup discovery are finite integration checks, outside the pure
 Lean requirements and their existing implementation bindings. If tools are
 missing, build the standalone targets using the documented recipe first; the caller must ensure those prebuilt binaries match this source.
@@ -560,7 +561,8 @@ setting does not cover other compiler families, native builds or tests.
 ### Opt-in compiler wall deadline
 
 Set `HEAVY_COMPILER_WALL_MS` to a positive integer from 1 through 2147483647
-milliseconds before starting a session. It limits each selected, budgeted
+milliseconds before starting a session. The session rejects an inherited mask
+that blocks either SIGUSR1 or SIGUSR2 before launching the build. It limits each selected, budgeted
 non-query compiler invocation; unset preserves the existing route. The monotonic
 clock starts at the admitted child launch. `FREN_BUILD_TIMEOUT_MS` still limits
 admission. A deadline kills and reaps the observer's waitable compiler child,

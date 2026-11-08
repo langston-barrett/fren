@@ -23,6 +23,9 @@ unbound: Fren.Impls.HeavyOwnership.compiler_cpu_limit limit
 unbound: Fren.Impls.HeavyOwnership.compiler_cpu_observation applied
 # Standalone compiler observer, outside Fren CLI/hosted reporting roots.
 unbound: Fren.Impls.HeavyOwnership.compiler_wall_limit limit
+# Datagram acceptance and signal-mask setup are produced by the standalone budget controller.
+unbound: Fren.Impls.HeavyOwnership.wall_message valid?
+unbound: Fren.Impls.HeavyOwnership.wall_signal_mask safe?
 unbound: Fren.Impls.HeavyOwnership.compiler_sample usable?
 unbound: Fren.Impls.HeavyOwnership.group_gone gone?
 unbound: Fren.Impls.HeavyOwnership.lease admission

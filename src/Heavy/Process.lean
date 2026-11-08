@@ -72,6 +72,14 @@ def compilerCpuLimit (seconds : Nat) (gated query : Bool) : Option Nat :=
 def compilerWallLimit (milliseconds : Nat) (gated query : Bool) : Option Nat :=
   compilerCpuLimit milliseconds gated query
 
+/-- Permit fallback signals only when the raw mask query and memberships succeed. -/
+def wallSignalMaskSafe (error usr1 usr2 : Nat) : Bool :=
+  error == 0 && usr1 == 0 && usr2 == 0
+
+/-- A datagram supplies observations only for a complete supported message. -/
+def wallMessageValid (bytes expected cause : Nat) : Bool :=
+  bytes == expected && (cause == 1 || cause == 2)
+
 /-- Interpret the actual private pipe observation, not PID or EOF alone. -/
 def appliedCompilerCpu (seconds bytes first readError eof waitError : Nat) : Option Nat :=
   if seconds > 0 && (bytes == 4 || bytes == 8) && first == 1212371029 &&
