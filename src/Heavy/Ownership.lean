@@ -128,6 +128,22 @@ def lease (cap : Nat) (locked : Bool) (row : Lease) (now : Int) (ttl : Nat) : Le
     ⟨true, admissionMemory cap row.report now ttl, evictionMemory row.report⟩
   else ⟨true, legacyReservation cap row.legacyRss, legacyMemory row.legacyRss⟩
 
+/-- Finite admission accounting over held slots. The adapter omits unlocked
+slots and supplies decoded observations; registry errors and OS failures are
+outside this pure total. One `now` is used for both compatibility and
+charge freshness; Python may sample those at different times. Unknown legacy
+slots share one reservation. -/
+def admissionTotal (cap : Nat) (rows : List Lease) (now : Int) (ttl : Nat) : Int :=
+  let measured := rows.foldr (fun row total =>
+    (if reportOwner row.report row.statusJob row.observed now ttl then
+      admissionMemory cap row.report now ttl else legacyMemory row.legacyRss) + total) 0
+  let unknown := rows.any (fun row =>
+    !reportOwner row.report row.statusJob row.observed now ttl &&
+      match row.legacyRss with
+      | none => true
+      | some rss => decide (rss < 0))
+  measured + if unknown then legacyReservation cap none else 0
+
 /-- A held-job row before the victim eligibility check. Ownership is
 established by the adapter; no PID is used as an identity here. -/
 structure VictimRow where
@@ -157,5 +173,38 @@ def memoryVictim (cap : Nat) (rows : List VictimRow) : Int × Option Owner :=
     let measured := if owner.isSome then row.rss.getD 0 else 0
     (measured + legacyMemory row.legacyRss + total, newestOwner owner latest)) (0, none)
   (total, if total > cap then latest else none)
+
+/-- Observations from wait4 and killpg, after any PID 1 cleanup. They do not
+claim that the probe or waits are atomic with subsequent OS activity. -/
+inductive GroupProbe where
+  | missing | present | denied
+  deriving Repr, BEq
+
+inductive GroupWait where
+  | pending | exhausted
+  deriving Repr, BEq
+
+def groupGone (subreaper leaderReaped : Bool) (wait : GroupWait) (probe : GroupProbe) : Bool :=
+  leaderReaped && (!subreaper || wait == .exhausted) && probe == .missing
+
+/-- Cause observed at the cleanup call site. Registry contention stays a
+memory sample with no selected victim, rather than an accounting failure. -/
+inductive CleanupCause where
+  | memorySample | externalSignal | setupFailure | accountingFailure
+  deriving Repr, BEq
+
+def cleanupTrigger (cause : CleanupCause) (cap ownRss : Nat) (ownJob : Option String)
+    (rows : List VictimRow) : Bool :=
+  match cause with
+  | .memorySample => decide (ownRss > cap) ||
+      match (memoryVictim cap rows).2, ownJob with
+      | some selected, some job => selected.job == job
+      | _, _ => false
+  | _ => true
+
+/-- A decision immediately before one signal attempt; it does not assert
+that a signal is delivered or that the group remains unchanged. -/
+def signalAttempt (subreaper leader : Bool) (wait : GroupWait) (probe : GroupProbe) : Bool :=
+  !groupGone subreaper leader wait probe
 
 end Heavy.Ownership

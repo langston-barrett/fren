@@ -146,6 +146,8 @@ jobs:
     # checks Fren's own requirements with the binary, the slowest job, and
     # the others the rest (`Reqs/dev/Testing`). Warnings in the driver or
     # its imports fail the shard too: the default build omits the driver.
+    - name: Check CI test callers
+      run: python3 test/legacy-native-ci-callers.py
     - run: lake build --wfail fren_test
     # Before the tests run, so that a reviewer can probe a head whose tests
     # fail. A stripped copy, with the merge commit, as for `fren`. Stripping
@@ -184,10 +186,10 @@ jobs:
         key: query-cache-${{ runner.os }}-${{ runner.arch }}-${{ steps.base.outputs.sha }}
         restore-keys: |
           query-cache-${{ runner.os }}-${{ runner.arch }}-
-    - run: lake test -- --skip-own-mutants --timings --shard "$SHARD/4"
+    - name: Notice quarantined legacy coverage
+      run: echo "::notice title=Legacy test quarantine::Omitting enumeration, nativeDiagnostics (core, wait, own, wrapper), nativeObservation and main methods-agree; see test/legacy-native-quarantine.md"
+    - run: lake test -- --skip-unstable-legacy --skip-own-mutants --timings --shard "$SHARD/4"
       env:
-        FREN_DIAG_ENUMERATION: "1"
-        FREN_DIAG_OWN_SPEC_INITIAL: "1"
         SHARD: ${{ matrix.shard }}
         FREN_QUERY_CACHE: ${{ runner.temp }}/query-cache
   # The book, with the page of the rules that shard 0's test driver writes

@@ -67,6 +67,119 @@ require smt from git "https://github.com/langston-barrett/lean-smt.git"@"97e7501
 -- each module is built one way, no module is in the globs of two libraries,
 -- which `lake test`'s `libraries` job checks.
 
+-- Fren2 libraries own their roots and modules imported beneath those roots.
+lean_lib FrenBase
+
+lean_lib FrenBaseTests
+
+lean_lib FrenSource
+
+lean_lib FrenSourceTests
+
+lean_lib FrenDiag
+
+lean_lib FrenDiagTests
+
+lean_lib FrenSexp
+
+lean_lib FrenSexpTests
+
+lean_lib FrenProp
+
+lean_lib FrenPropTests
+
+lean_lib FrenAst
+
+lean_lib FrenAstTests
+
+lean_lib FrenModule
+
+lean_lib FrenModuleTests
+
+lean_lib FrenExpr
+
+lean_lib FrenExprTests
+
+lean_lib FrenMir
+
+lean_lib FrenMirTests
+
+lean_lib FrenLir
+
+lean_lib FrenLirTests
+
+lean_lib FrenOir
+
+lean_lib FrenOirTests
+
+lean_lib FrenParse
+
+lean_lib FrenParseTests
+
+lean_lib FrenAstToHir
+
+lean_lib FrenAstToHirTests
+
+lean_lib FrenHirToThir
+
+lean_lib FrenHirToThirTests
+
+lean_lib FrenThirDesugar
+
+lean_lib FrenThirDesugarTests
+
+lean_lib FrenThirToMir
+
+lean_lib FrenThirToMirTests
+
+lean_lib FrenMirToMono
+
+lean_lib FrenMirToMonoTests
+
+lean_lib FrenMonoToFo
+
+lean_lib FrenMonoToFoTests
+
+lean_lib FrenFoToFlat
+
+lean_lib FrenFoToFlatTests
+
+lean_lib FrenMirToLean
+
+lean_lib FrenMirToLeanTests
+
+lean_lib FrenFlatToLir
+
+lean_lib FrenFlatToLirTests
+
+lean_lib FrenLirToOir
+
+lean_lib FrenLirToOirTests
+
+lean_lib FrenOirToSmt
+
+lean_lib FrenOirToSmtTests
+
+lean_lib FrenEval
+
+lean_lib FrenEvalTests
+
+lean_lib FrenLirEval
+
+lean_lib FrenLirEvalTests
+
+lean_lib FrenGen
+
+lean_lib FrenGenTests
+
+lean_lib FrenCli2
+
+lean_lib FrenCli2Tests
+
+lean_lib FrenHosted2
+
+lean_lib FrenHosted2Tests
+
 -- Standalone scheduler kernels: only Lean core/Std, independent of Fren.
 lean_lib Heavy where
   globs := #[.submodules `Heavy]
@@ -145,6 +258,7 @@ def reqsArgs : Array String :=
 -- file). `lake test`'s `libraries` job checks that each module reads only
 -- the specs of its library.
 @[default_target] lean_lib Reqs where
+  globs := #[`Reqs, `Spec.All]
   needs := #[`@/reqs_md]
   moreLeanArgs := reqsArgs
 
@@ -157,6 +271,280 @@ lean_lib ReqsChapters where
   globs := #[`Reqs.Check, `Reqs.Cli, `Reqs.Eval, `Reqs.Fmt, `Reqs.Generated, `Reqs.Impl, `Reqs.Markdown, `Reqs.Models, `Reqs.Mutate, `Reqs.Trace, `Reqs.View]
   needs := #[`@/reqs_chapters_md]
   moreLeanArgs := reqsArgs
+
+-- Add after scaffold 978 merges; each module has exactly its own input.
+lean_lib SpecLanguageIndex where
+  globs := #[`Spec.Language.Index]
+  needs := #[`@/spec_language_index_md]
+
+input_file spec_language_index_md where
+  path := "src/Spec/Language/index.md"
+  text := true
+
+lean_lib SpecLanguageLexicalStructure where
+  globs := #[`Spec.Language.LexicalStructure]
+  needs := #[`@/spec_language_lexical_structure_md]
+
+input_file spec_language_lexical_structure_md where
+  path := "src/Spec/Language/LexicalStructure.md"
+  text := true
+
+lean_lib SpecLanguageSyntax where
+  globs := #[`Spec.Language.Syntax]
+  needs := #[`@/spec_language_syntax_md]
+
+input_file spec_language_syntax_md where
+  path := "src/Spec/Language/Syntax.md"
+  text := true
+
+lean_lib SpecLanguageNamesAndScope where
+  globs := #[`Spec.Language.NamesAndScope]
+  needs := #[`@/spec_language_names_and_scope_md]
+
+input_file spec_language_names_and_scope_md where
+  path := "src/Spec/Language/NamesAndScope.md"
+  text := true
+
+lean_lib SpecLanguageTypes where
+  globs := #[`Spec.Language.Types]
+  needs := #[`@/spec_language_types_md]
+
+input_file spec_language_types_md where
+  path := "src/Spec/Language/Types.md"
+  text := true
+
+lean_lib SpecLanguageExpressions where
+  globs := #[`Spec.Language.Expressions]
+  needs := #[`@/spec_language_expressions_md]
+
+input_file spec_language_expressions_md where
+  path := "src/Spec/Language/Expressions.md"
+  text := true
+
+lean_lib SpecLanguagePatterns where
+  globs := #[`Spec.Language.Patterns]
+  needs := #[`@/spec_language_patterns_md]
+
+input_file spec_language_patterns_md where
+  path := "src/Spec/Language/Patterns.md"
+  text := true
+
+lean_lib SpecLanguageFunctionsAndRecursion where
+  globs := #[`Spec.Language.FunctionsAndRecursion]
+  needs := #[`@/spec_language_functions_and_recursion_md]
+
+input_file spec_language_functions_and_recursion_md where
+  path := "src/Spec/Language/FunctionsAndRecursion.md"
+  text := true
+
+lean_lib SpecLanguageProcedures where
+  globs := #[`Spec.Language.Procedures]
+  needs := #[`@/spec_language_procedures_md]
+
+input_file spec_language_procedures_md where
+  path := "src/Spec/Language/Procedures.md"
+  text := true
+
+lean_lib SpecLanguagePropertiesAndChecks where
+  globs := #[`Spec.Language.PropertiesAndChecks]
+  needs := #[`@/spec_language_properties_and_checks_md]
+
+input_file spec_language_properties_and_checks_md where
+  path := "src/Spec/Language/PropertiesAndChecks.md"
+  text := true
+
+lean_lib SpecLanguageModulesAndViews where
+  globs := #[`Spec.Language.ModulesAndViews]
+  needs := #[`@/spec_language_modules_and_views_md]
+
+input_file spec_language_modules_and_views_md where
+  path := "src/Spec/Language/ModulesAndViews.md"
+  text := true
+
+lean_lib SpecLanguageEvidence where
+  globs := #[`Spec.Language.Evidence]
+  needs := #[`@/spec_language_evidence_md]
+
+input_file spec_language_evidence_md where
+  path := "src/Spec/Language/Evidence.md"
+  text := true
+
+lean_lib SpecLanguageDiagnosticsAndLints where
+  globs := #[`Spec.Language.DiagnosticsAndLints]
+  needs := #[`@/spec_language_diagnostics_and_lints_md]
+
+input_file spec_language_diagnostics_and_lints_md where
+  path := "src/Spec/Language/DiagnosticsAndLints.md"
+  text := true
+
+lean_lib SpecLanguageFormatting where
+  globs := #[`Spec.Language.Formatting]
+  needs := #[`@/spec_language_formatting_md]
+
+input_file spec_language_formatting_md where
+  path := "src/Spec/Language/Formatting.md"
+  text := true
+
+lean_lib SpecLanguageLeanInterop where
+  globs := #[`Spec.Language.LeanInterop]
+  needs := #[`@/spec_language_lean_interop_md]
+
+input_file spec_language_lean_interop_md where
+  path := "src/Spec/Language/LeanInterop.md"
+  text := true
+
+lean_lib SpecLanguageExample where
+  globs := #[`Spec.Language.Example]
+  needs := #[`@/spec_language_example_md]
+
+input_file spec_language_example_md where
+  path := "src/Spec/Language/Example.md"
+  text := true
+
+lean_lib SpecCompilerIndex where
+  globs := #[`Spec.Compiler.Index]
+  needs := #[`@/spec_compiler_index_md]
+
+input_file spec_compiler_index_md where
+  path := "src/Spec/Compiler/index.md"
+  text := true
+
+lean_lib SpecCompilerOverview where
+  globs := #[`Spec.Compiler.Overview]
+  needs := #[`@/spec_compiler_overview_md]
+
+input_file spec_compiler_overview_md where
+  path := "src/Spec/Compiler/Overview.md"
+  text := true
+
+lean_lib SpecCompilerBaseDefinitions where
+  globs := #[`Spec.Compiler.BaseDefinitions]
+  needs := #[`@/spec_compiler_base_definitions_md]
+
+input_file spec_compiler_base_definitions_md where
+  path := "src/Spec/Compiler/BaseDefinitions.md"
+  text := true
+
+lean_lib SpecCompilerAstAndParsing where
+  globs := #[`Spec.Compiler.AstAndParsing]
+  needs := #[`@/spec_compiler_ast_and_parsing_md]
+
+input_file spec_compiler_ast_and_parsing_md where
+  path := "src/Spec/Compiler/AstAndParsing.md"
+  text := true
+
+lean_lib SpecCompilerHir where
+  globs := #[`Spec.Compiler.Hir]
+  needs := #[`@/spec_compiler_hir_md]
+
+input_file spec_compiler_hir_md where
+  path := "src/Spec/Compiler/Hir.md"
+  text := true
+
+lean_lib SpecCompilerThir where
+  globs := #[`Spec.Compiler.Thir]
+  needs := #[`@/spec_compiler_thir_md]
+
+input_file spec_compiler_thir_md where
+  path := "src/Spec/Compiler/Thir.md"
+  text := true
+
+lean_lib SpecCompilerDesugaring where
+  globs := #[`Spec.Compiler.Desugaring]
+  needs := #[`@/spec_compiler_desugaring_md]
+
+input_file spec_compiler_desugaring_md where
+  path := "src/Spec/Compiler/Desugaring.md"
+  text := true
+
+lean_lib SpecCompilerEvaluator where
+  globs := #[`Spec.Compiler.Evaluator]
+  needs := #[`@/spec_compiler_evaluator_md]
+
+input_file spec_compiler_evaluator_md where
+  path := "src/Spec/Compiler/Evaluator.md"
+  text := true
+
+lean_lib SpecCompilerMir where
+  globs := #[`Spec.Compiler.Mir]
+  needs := #[`@/spec_compiler_mir_md]
+
+input_file spec_compiler_mir_md where
+  path := "src/Spec/Compiler/Mir.md"
+  text := true
+
+lean_lib SpecCompilerMonomorphization where
+  globs := #[`Spec.Compiler.Monomorphization]
+  needs := #[`@/spec_compiler_monomorphization_md]
+
+input_file spec_compiler_monomorphization_md where
+  path := "src/Spec/Compiler/Monomorphization.md"
+  text := true
+
+lean_lib SpecCompilerClosureSpecialization where
+  globs := #[`Spec.Compiler.ClosureSpecialization]
+  needs := #[`@/spec_compiler_closure_specialization_md]
+
+input_file spec_compiler_closure_specialization_md where
+  path := "src/Spec/Compiler/ClosureSpecialization.md"
+  text := true
+
+lean_lib SpecCompilerMatchCompilation where
+  globs := #[`Spec.Compiler.MatchCompilation]
+  needs := #[`@/spec_compiler_match_compilation_md]
+
+input_file spec_compiler_match_compilation_md where
+  path := "src/Spec/Compiler/MatchCompilation.md"
+  text := true
+
+lean_lib SpecCompilerLir where
+  globs := #[`Spec.Compiler.Lir]
+  needs := #[`@/spec_compiler_lir_md]
+
+input_file spec_compiler_lir_md where
+  path := "src/Spec/Compiler/Lir.md"
+  text := true
+
+lean_lib SpecCompilerOir where
+  globs := #[`Spec.Compiler.Oir]
+  needs := #[`@/spec_compiler_oir_md]
+
+input_file spec_compiler_oir_md where
+  path := "src/Spec/Compiler/Oir.md"
+  text := true
+
+lean_lib SpecCompilerSmt where
+  globs := #[`Spec.Compiler.Smt]
+  needs := #[`@/spec_compiler_smt_md]
+
+input_file spec_compiler_smt_md where
+  path := "src/Spec/Compiler/Smt.md"
+  text := true
+
+lean_lib SpecCompilerLeanEmission where
+  globs := #[`Spec.Compiler.LeanEmission]
+  needs := #[`@/spec_compiler_lean_emission_md]
+
+input_file spec_compiler_lean_emission_md where
+  path := "src/Spec/Compiler/LeanEmission.md"
+  text := true
+
+lean_lib SpecCompilerMetatheory where
+  globs := #[`Spec.Compiler.Metatheory]
+  needs := #[`@/spec_compiler_metatheory_md]
+
+input_file spec_compiler_metatheory_md where
+  path := "src/Spec/Compiler/Metatheory.md"
+  text := true
+
+lean_lib SpecCompilerExample where
+  globs := #[`Spec.Compiler.Example]
+  needs := #[`@/spec_compiler_example_md]
+
+input_file spec_compiler_example_md where
+  path := "src/Spec/Compiler/Example.md"
+  text := true
+
 
 -- The shared chapters in `src/Reqs` itself, excluding the separately built
 -- ModuleReports chapter and the language chapters in its subdirectory.
@@ -730,7 +1118,19 @@ lean_lib FrenCli where
 -- binary. It loads Fren's Lean environment at runtime, hence the interpreter.
 lean_exe fren_test where
   -- The executable smoke job must exercise a freshly built fuzzer.
-  needs := #[`@/fren_fuzz_frontends]
+  needs := #[`@/fren_fuzz_frontends, `@/fren2_test,
+    `@/FrenBase, `@/FrenBaseTests, `@/FrenSource, `@/FrenSourceTests, `@/FrenDiag,
+    `@/FrenDiagTests, `@/FrenSexp, `@/FrenSexpTests, `@/FrenProp, `@/FrenPropTests, `@/FrenAst,
+    `@/FrenAstTests, `@/FrenModule, `@/FrenModuleTests, `@/FrenExpr, `@/FrenExprTests, `@/FrenMir,
+    `@/FrenMirTests, `@/FrenLir, `@/FrenLirTests, `@/FrenOir, `@/FrenOirTests, `@/FrenParse,
+    `@/FrenParseTests, `@/FrenAstToHir, `@/FrenAstToHirTests, `@/FrenHirToThir,
+    `@/FrenHirToThirTests, `@/FrenThirDesugar, `@/FrenThirDesugarTests, `@/FrenThirToMir,
+    `@/FrenThirToMirTests, `@/FrenMirToMono, `@/FrenMirToMonoTests, `@/FrenMonoToFo,
+    `@/FrenMonoToFoTests, `@/FrenFoToFlat, `@/FrenFoToFlatTests, `@/FrenMirToLean,
+    `@/FrenMirToLeanTests, `@/FrenFlatToLir, `@/FrenFlatToLirTests, `@/FrenLirToOir,
+    `@/FrenLirToOirTests, `@/FrenOirToSmt, `@/FrenOirToSmtTests, `@/FrenEval, `@/FrenEvalTests,
+    `@/FrenLirEval, `@/FrenLirEvalTests, `@/FrenGen, `@/FrenGenTests, `@/FrenCli2,
+    `@/FrenCli2Tests, `@/FrenHosted2, `@/FrenHosted2Tests]
   root := `FrenTestMain
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o, `@/native_test_core.o]
   supportInterpreter := true
@@ -764,3 +1164,7 @@ lean_exe fren_fuzz_frontends where
   moreLinkObjs := #[`@/mimalloc_malloc.o, `@/mimalloc_lazy_commit.o]
   supportInterpreter := true
   moreLinkArgs := coverageLinkArgs
+
+-- Built by lake test; runtime jobs will be added later.
+lean_exe fren2_test where
+  root := `Fren2TestMain

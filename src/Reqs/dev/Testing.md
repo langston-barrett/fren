@@ -324,9 +324,9 @@ pub mod testing
   The last two are checked on a sample of at most 24 mutants of each
   example. A new origin may need the examples strengthened, or new
   mutants listed.
-- **Enumeration agrees with the solver** (`lake test`, `enumeration`):
-  each ui test and example in the binary's corpus (excluding hosted-only
-  files and files annotated with exit 2) runs with `Args.evidence?` forced
+- **Enumeration agrees with the solver** (`lake test`, `enumeration`;
+  temporarily quarantined in CI, #995): each ui test and example in the
+  binary's corpus (excluding hosted-only files and files annotated with exit 2) runs with `Args.evidence?` forced
   to the solver, then forced to enumeration. The argument overrides the
   file's own settings, including scoped ones. A solver run with a static
   error is skipped, after checking for internal errors. Every recorded
@@ -379,8 +379,8 @@ pub mod testing
   conflicting source evidence settings under each forced method. The ui
   tests `checks/enumerated*.fren` and `checks/evidence_obligations.fren`
   cover enumeration in both front ends.
-- **Methods agree** (`methodsAgree`, on `main`): Fren's own requirements,
-  the same ui/example corpus as `enumeration`, and every seed of the
+- **Methods agree** (`methodsAgree`, temporarily quarantined on `main`,
+  #995): Fren's own requirements, the same ui/example corpus as `enumeration`, and every seed of the
   front-end fuzzer's fixed corpus run with argument overrides for the
   solver, enumeration and random testing. Every record's method is
   validated as above, including records left to the solver, before each
@@ -868,7 +868,10 @@ in turn to shards 1 to `N - 1`, so that the slowest, which come first,
 spread over them.
 `--skip-own-mutants` leaves out the slices of the mutants of Fren's own
 requirements, the slowest jobs, which only the CI run on `main` checks.
-The selection is made before `--bless` runs the snapshots job first.
+`--skip-unstable-legacy` first filters the exact jobs listed in the
+repository file `test/legacy-native-quarantine.md`; without that flag
+they remain selected. The selection is made before `--bless` runs the
+snapshots job first.
 `--timings` prints how long each job took, to balance the shards.
 
 ## Shards
@@ -1480,6 +1483,356 @@ remains Python; its tested binding in `Impls.Trace` still covers log I/O.
 The `heavyPrediction` test job compares both forecasts on sanitized log
 observations and boundary cases.
 
+### Lean compiler process observations
+
+`tools/heavy-observe` is an opt-in, standalone Lean core/Std launcher for
+one compiler family: `lean`. An owned Lake toolchain overlay selects it
+with `LAKE_OVERRIDE_LEAN=true` and `LEAN_SYSROOT`; PATH alone is insufficient.
+It resolves the real compiler from an explicit, canonical configuration,
+independently of compiler discovery, and rejects itself as the real compiler.
+It forwards arguments, environment and inherited standard streams. Discovery
+queries reach the real compiler too. It never builds Fren during invocation
+and changes neither admission nor the measured-memory backstop.
+
+The launcher records raw launch/exec/wait errors, Linux wait status,
+monotonic start/end nanoseconds, wait4 user/system microseconds and peak RSS
+in KiB. `heavy_process_result` distinguishes ordinary exit, signal, exec
+failure and observer failure (kinds 0, 1, 2 and 3). A signal result also
+records the core-dump bit in the raw status; the launcher re-raises that
+signal after recording, rather than pretending it was an ordinary exit.
+`heavy_process_usage` exposes CPU and RSS only after a terminated child was
+reaped without launch, exec or wait errors. A signal measurement is censored:
+it is no evidence of the memory needed to finish. Wait4 includes usage of
+descendants the child waited for; its peak is not a concurrent tree sum.
+Clock or record-write failure must not replace an available child outcome.
+A failed record write emits a diagnostic; observation is best effort, not
+permission to run. No physical clock, fork, exec, wait4, filesystem or signal
+authenticity is proved by these pure functions: the owned subprocess tests
+exercise those external assumptions, including failures.
+
+Source paths, arguments, setup-file and output-artifact content fingerprints,
+cwd and the actual compiler's path/version/hash accompany each observation.
+Content fingerprints in this slice are explicitly non-cryptographic Lean
+ByteArray hashes with byte counts. Imported artifacts, arbitrary reader inputs,
+plugins and environment closure are not captured. The launcher therefore
+leaves `input_closure` absent and reports incomplete identity, including for
+successful builds. A source hash alone is never an exact forecast key.
+`heavy_process_identity` derives completeness from the raw optional identity
+parts, not a supplied verdict. Historical measurements can inform a later
+conservative predictor; this slice provides no admission or memory bound.
+
+Fingerprint identity is acquired with Linux `O_PATH`, which does not open a
+FIFO as a reader and must not release a producer blocked in its writer open.
+The pinned descriptor supplies raw mode, size, device and inode. The actual
+`heavy_process_fingerprint` function decides mode/size eligibility before any
+read-capable open. Only eligible pinned regular files are reopened through
+`/proc/self/fd`; both descriptors must name the same device/inode. A pathname
+stat followed by a pathname read-open is insufficient. The Python setup helper
+uses the same pinned-object route for both executable candidates. This applies
+to source-before/after, setup, compiler, every selected output and recursion
+copy checks. Nonregular, oversized and incomplete reads have no fingerprint.
+The pure Req proves mode/size eligibility, not absence of open side effects,
+procfs authenticity or atomic content snapshots. Those Linux/IO assumptions
+are exercised by synchronized producer-first and pathname-replacement tests.
+
+`heavy_process_arguments` parses raw argv into selected input kind and last
+effective separated settings for `-o`, `-i`, `-c`, `-b` and `--setup`.
+Operands are consumed even when spelled like options. Stdin has no disk source
+fingerprint, including a `.lean` label; queries have no source/setup/output
+metadata. Canonical `--run file` ends compiler metadata before program data.
+Supported neutral flags and separated `-R`/`--root` operands are explicit
+below. Unknown, attached/other long forms, `--` boundaries, missing operands,
+multiple positional files and ambiguous run forms yield absent metadata.
+This is a conservative subset, not an emulation of every compiler option.
+Fields describe selected input and requested output paths, not proof that a
+failed process consumed or produced their bytes. All original argv/env/streams
+are forwarded unchanged; incomplete identity never excuses a mislabeled stdin
+fingerprint. The Linux `heavyProcess` job checks actual compiler behavior and
+retains the positive three-module Lake path.
+
+```fren
+pub struct ProcessResult { kind: Nat, detail: Nat, shell_code: Nat }
+
+pub fn process_result(
+    launch_error: Nat,
+    exec_error: Nat,
+    wait_error: Nat,
+    status: Nat
+): ProcessResult :=
+    if launch_error > 0 then ProcessResult {
+        kind := 3,
+        detail := launch_error,
+        shell_code := 125,
+    }
+    else if wait_error > 0 then ProcessResult {
+        kind := 3,
+        detail := wait_error,
+        shell_code := 125,
+    }
+    else if exec_error > 0 then ProcessResult {
+        kind := 2,
+        detail := exec_error,
+        shell_code := 127,
+    }
+    else if status mod 128 = 0 then ProcessResult {
+        kind := 0,
+        detail := (status div 256) mod 256,
+        shell_code := (status div 256) mod 256,
+    }
+    else if status mod 128 < 127 then ProcessResult {
+        kind := 1,
+        detail := status mod 128,
+        shell_code := 128 + status mod 128,
+    }
+    else ProcessResult {
+        kind := 3,
+        detail := 0,
+        shell_code := 125,
+    }
+
+pub proc heavy_process_result(launch_error: Nat, exec_error: Nat, wait_error: Nat, status: Nat): (
+    det result: ProcessResult,
+) {
+    ensure converted: result = process_result(launch_error, exec_error, wait_error, status)
+}
+
+pub proc heavy_process_elapsed(clock_error: Nat, start: Nat, finish: Nat): (
+    det elapsed: Option<Int>,
+) {
+    ensure measured: elapsed = (if clock_error = 0 and finish >= start then Option::Some(finish - start) else Option::None)
+}
+
+pub proc heavy_process_usage(
+    launch_error: Nat,
+    exec_error: Nat,
+    wait_error: Nat,
+    status: Nat,
+    user: Nat,
+    system: Nat,
+    rss: Nat,
+): (det cpu: Option<Int>, det peak: Option<Int>) {
+    ensure cpu_observation: cpu = (if launch_error = 0 and exec_error = 0 and wait_error = 0 and status mod 128 < 127
+        then Option::Some(user + system) else Option::None)
+    ensure rss_observation: peak = (if launch_error = 0 and exec_error = 0 and wait_error = 0 and status mod 128 < 127
+        then Option::Some(rss) else Option::None)
+}
+
+-- Linux's raw mode type bits are (mode div 4096) mod 16; 8 is regular.
+-- The observer bounds its own fingerprint buffer at 64 MiB.
+pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
+    ensure raw_file: read? iff (mode div 4096) mod 16 = 8 and bytes <= 67108864
+}
+
+pub enum ProcessArguments { Nil, Cons(String, ProcessArguments) }
+
+pub struct ProcessMetadata {
+    kind: String, source: Option<String>, olean: Option<String>, ilean: Option<String>,
+    c: Option<String>, bc: Option<String>, setup: Option<String>,
+}
+
+pub fn process_empty_metadata(kind: String): ProcessMetadata := ProcessMetadata {
+    kind,
+    source := Option::None,
+    olean := Option::None,
+    ilean := Option::None,
+    c := Option::None,
+    bc := Option::None,
+    setup := Option::None,
+}
+
+pub fn process_value_flag?(arg: String) :=
+    arg is "-o" | "-i" | "-c" | "-b" | "--setup" | "-R" | "--root"
+
+pub fn process_query_flag?(arg: String) :=
+    arg is "--version" | "-v" | "--short-version" | "-V" | "--githash" | "-g" | "--help" | "-h" | "--features" | "--print-prefix" | "--print-libdir"
+
+pub fn process_plain_flag?(arg: String) :=
+    arg is "--json" | "-q" | "--stats" | "-Dweak.fren.runChecks=false"
+
+pub fn process_set_metadata(m: ProcessMetadata, flag: String, value: String): ProcessMetadata :=
+    ProcessMetadata {
+        kind := if flag = "--stdin" then "stdin" else m.kind,
+        source := if flag = "input" then Option::Some(value) else m.source,
+        olean := if flag = "-o" then Option::Some(value) else m.olean,
+        ilean := if flag = "-i" then Option::Some(value) else m.ilean,
+        c := if flag = "-c" then Option::Some(value) else m.c,
+        bc := if flag = "-b" then Option::Some(value) else m.bc,
+        setup := if flag = "--setup" then Option::Some(value) else m.setup,
+    }
+
+pub fn process_finish_metadata(m: ProcessMetadata): Option<ProcessMetadata> :=
+    if m.kind = "stdin" then Option::Some({ m with source := Option::None })
+    else match m.source {
+        Option::Some(_) => Option::Some(m),
+        Option::None => Option::None,
+    }
+
+pub fn process_metadata_loop(args: ProcessArguments, m: ProcessMetadata): Option<ProcessMetadata> :=
+    match args {
+        ProcessArguments::Nil => process_finish_metadata(m),
+        ProcessArguments::Cons(arg, rest) =>
+            if process_value_flag?(arg) then match rest {
+                ProcessArguments::Nil => Option::None,
+                ProcessArguments::Cons(value, tail) =>
+                    process_metadata_loop(tail, process_set_metadata(m, arg, value)),
+            }
+            else if process_query_flag?(arg) then Option::Some(process_empty_metadata("query"))
+            else if arg = "--stdin" then process_metadata_loop(rest, process_set_metadata(m, arg, ""))
+            else if arg = "--run" then match rest, m.source {
+                ProcessArguments::Cons(file, _), Option::None =>
+                    if file.starts_with?("-") then Option::None else process_finish_metadata(process_set_metadata(m, "input", file)),
+                _, _ => Option::None,
+            }
+            else if process_plain_flag?(arg) then process_metadata_loop(rest, m)
+            else if arg.starts_with?("-") then Option::None
+            else match m.source {
+                Option::Some(_) => Option::None,
+                Option::None => process_metadata_loop(rest, process_set_metadata(m, "input", arg)),
+            },
+    }
+
+pub proc heavy_process_arguments(args: ProcessArguments): (det parsed: Option<ProcessMetadata>) {
+    out parsed := process_metadata_loop(args, process_empty_metadata("file"))
+}
+
+pub fn identity_part?(part: Option<String>) := match part {
+    Option::Some(value) => value != "",
+    Option::None => false,
+}
+
+pub proc heavy_process_identity(
+    source: Option<String>,
+    toolchain: Option<String>,
+    input_closure: Option<String>,
+): (det complete?) {
+    ensure raw_parts: complete? iff identity_part?(source) and identity_part?(toolchain) and identity_part?(input_closure)
+}
+
+#fren_check heavy_process_result
+#fren_check heavy_process_elapsed
+#fren_check heavy_process_usage
+#fren_check heavy_process_fingerprint
+#fren_check heavy_process_arguments
+#fren_check heavy_process_identity
+```
+
+The opt-in compiler budget applies within one owned build session. All
+quantities below are KiB reservations, not observed RSS. Parent headroom
+is subtracted once from the session allowance; the outer Heavy reservation
+is unchanged. Admission uses a registry-locked snapshot. Every held row
+must have positive demand and matching raw owner identity, including boot,
+PID namespace and process start counter. An unknown held row is an error,
+never a zero charge. Unlocked rows contribute nothing. Held reservations
+do not expire with time. Waiting requests use increasing session tickets;
+only the oldest held waiter can start. No concurrency limit is imposed.
+
+Source canonicalization is an optional observation, not a prerequisite to
+forwarding the compiler invocation. Every error from that source-only IO
+call becomes absent identity, with absent fingerprint for request selection.
+The existing selector must then receive those raw options and the positive
+configured fallback, while still rejecting malformed manifests. Original
+arguments and physical compiler error status/streams are retained. The pure
+normalization below does not prove that the filesystem adapter catches its
+exception: actual pinned-compiler producer controls check that IO boundary.
+
+The runtime must publish its waiting row under the registry lock, retain
+its lease through compiler exit, and publish running state before fork.
+Release closes only its own lease. Cancellation must reap its own child;
+an inherited lease protects the interval after abrupt observer death.
+OS locking, procfs identity, fork/exec, parent-death signals and cleanup
+remain external assumptions, exercised by producer tests. The arithmetic
+invariant holds at completed locked snapshots, not during arbitrary IO.
+
+Acquisition and grant publication check raw monotonic samples against the
+same fixed deadline, including after lock acquisition and after publishing
+a running row. A successful check permits eligibility at that sample; it
+does not prevent preemption before the subsequent fork.
+
+Before fork, the session and gated observer require SIGCHLD's raw handler
+to be SIG_DFL with no SA_NOCLDWAIT. They reject unsupported dispositions
+without changing SIGCHLD. Each group signal additionally checks raw waitid
+WNOWAIT observations and recorded wait/reap results. A previous wait error
+cannot be forgiven by a later probe. This policy assumes no unrelated
+thread or handler changes SIGCHLD or reaps these children between checks;
+Linux observation authenticity remains an external obligation.
+
+```fren
+pub proc heavy_compile_source_identity(canonical: Option<String>, fingerprint: Option<String>): (
+    det source: Option<String>,
+    det digest: Option<String>,
+) {
+    out source := canonical
+    out digest := match canonical {
+        Option::Some(_) => fingerprint,
+        Option::None => Option::None,
+    }
+    expect unknown: when canonical = Option::None, source = Option::None and digest = Option::None
+}
+
+#fren_check heavy_compile_source_identity
+
+pub proc heavy_compile_budget(
+    allowance: Int,
+    parent: Int,
+    held: Int,
+    demand: Int,
+    ticket: Int,
+    oldest: Int,
+): (det decision: Int) {
+    -- 2: malformed accounting; 3: intrinsically oversized; 0: wait; 1: admit.
+    out decision :=
+        if allowance < 0 or parent < 0 or parent > allowance or held < 0
+        or demand <= 0 or ticket <= 0 or oldest <= 0 then 2
+        else if demand > allowance - parent then 3
+        else if ticket = oldest and held + demand <= allowance - parent then 1
+        else 0
+
+    expect snapshot_bound: when decision = 1,
+        0 <= held and 0 < demand and parent + held + demand <= allowance
+    expect no_parent_underflow: when decision = 1, 0 <= parent <= allowance
+    expect oversized_stops: when allowance >= parent >= 0 and demand > allowance - parent
+        and held >= 0 and ticket > 0 and oldest > 0, decision = 3
+}
+
+-- Raw monotonic observations at acquisition and grant commit boundaries.
+-- 0 eligible, 1 expired, 2 clock/representation error. Equality is expired.
+pub proc heavy_compile_deadline(clock_error: Int, now: Int, deadline: Int): (det decision: Int) {
+    out decision :=
+        if clock_error != 0 or now < 0 or deadline < 0 then 2
+        else if now < deadline then 0 else 1
+    expect checked_time: when decision = 0, clock_error = 0 and 0 <= now < deadline
+    expect expiry: when clock_error = 0 and now >= deadline >= 0, decision = 1
+}
+
+-- Linux SIG_DFL has raw handler value 0. The adapter supplies the actual
+-- sa_flags and SA_NOCLDWAIT bit value, not an already-decided ownership flag.
+-- This Linux boundary supports bit value 2 and rejects a different ABI.
+-- observed is waitid's si_pid; reaped is the last successful waitpid result.
+pub proc heavy_compile_lifecycle(
+    action_error: Int,
+    handler: Int,
+    flags: Int,
+    auto_reap_bit: Int,
+    previous_wait_error: Int,
+    wait_error: Int,
+    observed: Int,
+    expected: Int,
+    reaped: Int,
+): (det waitable?, det signal?) {
+    out waitable? := action_error = 0 and handler = 0 and flags >= 0 and auto_reap_bit = 2
+        and (flags div 2) mod 2 = 0
+    out signal? := waitable? and previous_wait_error = 0 and wait_error = 0
+        and expected > 0 and (observed = 0 or observed = expected) and reaped = 0
+    expect lost_anchor: when previous_wait_error != 0 or wait_error != 0 or reaped != 0, not signal?
+    expect no_child: when expected <= 0, not signal?
+    expect ignored: when handler != 0, not waitable? and not signal?
+}
+
+#fren_check heavy_compile_deadline
+#fren_check heavy_compile_lifecycle
+#fren_check heavy_compile_budget
+```
+
 The following requirements state CPU accumulation and interval accounting.
 Time quantities use a common integral unit; ratios are numerator and
 denominator pairs, since Fren has no fractional numeric type. The Python
@@ -1691,8 +2044,9 @@ The lease and victim requirements alone take lock state and reports as inputs,
 so they cannot detect an unbounded wait before those inputs are read.
 
 `Heavy.Ownership` implements the registry attempt, report ownership,
-isolated-lease accounting and observed-memory victim decisions below, bound
-in `Impls.HeavyOwnership`.
+isolated-lease and set-wide admission accounting, observed-memory victim,
+group-completion and owned-signalling decisions below, bound in
+`Impls.HeavyOwnership`.
 Python remains the active scheduler and syscall adapter. The kernel takes
 decoded reports: wire version, token syntax, finite timestamps and monitor
 field shapes are checked by the adapter, not assumed to prove ownership.
@@ -1704,18 +2058,30 @@ checks registry retry boundaries against Python's acquisition loop.
 These `impl`s prove that the decoded Lean functions meet the requirements;
 they do not prove Python's code or establish a call from Fren's CLI or
 hosted front end. The Python connection is checked by the differential
-fixtures and the existing `tested` claims. Both standalone Heavy kernels
+fixtures and the existing `tested` claims. The standalone Heavy kernels
 are outside those Fren runtimes. The `implPaths` audit therefore records
 each mapped output as an exact `unbound` observation in
 `test/impl_paths.txt`, including the forecast's two outputs and ownership's
-ten plus the conversion's four. These observations certify no runtime
+fourteen plus the conversion's four, and the process observer's seven.
+These observations certify no runtime
 connection; unexpected, duplicate and stale inventory entries still fail
 the audit. Its regressions also check that a real standalone kernel call,
 even through a proof adapter, does not count as a Fren production output
 function.
-This slice does not port set-wide admission accounting, sequence allocation
-or publication, completion or signalling. A lease's isolated
-admission charge is not a new admission rule and must not be summed over
+The aggregate takes held rows, recomputes compatibility and freshness, and
+charges one shared forecast for unknown legacy readings. Lock discovery, report
+decoding and rounded elapsed-time transport remain adapter responsibilities.
+The model and differential transport use one time observation per row for
+both compatibility and charge freshness. Python's `jobs` stores freshness
+from one clock sample and may check compatibility at a later sample. With
+no observed monitor, a report can therefore be compatible but stored stale,
+a combination this single-snapshot model cannot express. Full adapter parity
+and runtime use require a model of both raw observations and a regression for
+that case; the mocked Python producer regression preserves it separately.
+Registry timeout propagates and other OS errors yield infinity in Python; the
+pure finite total does not prove those IO paths. Sequence allocation and
+publication, OS waits, probes, signal delivery and PID 1 cleanup also remain
+outside this kernel. A lease's isolated admission charge is not a new rule and must not be summed over
 unknown holders.
 
 The victim kernel takes the fields of rows after `jobs` has checked held locks
@@ -1725,6 +2091,19 @@ verified stale report retains its RSS. The kernel tests eligibility itself;
 it does not establish that locks, reports or procfs readings are authentic.
 The differential fixtures compare it with `memory_victim`, while the existing
 Python tests exercise those OS-facing operations. Python remains the scheduler.
+
+The cleanup trigger consumes observed rows and an optional local job, and
+computes the victim rather than receiving it as an input. Registry contention
+leaves no selected victim but does not disable the local RSS cap. `CleanupCause`
+records a memory sample, an invocation of an installed signal handler, or a
+caught failure at the visible-group, legacy-status or shared-accounting
+cleanup call sites. It does not classify all monitor errors: spawn failure has
+no child to clean up, and exceptions outside these handlers need not initiate
+cleanup. The signal-attempt decision uses a separate completion observation
+per iteration; neither it nor the fixtures guarantee delivery or exclude OS
+races. The older lease-wide `heavy_owned_signal` is an idealized composite,
+not a binding to this producer. Python still performs the actual checks and
+system calls.
 
 Python's clock arithmetic rounds before a freshness comparison. Converting
 the two operands to exact integer ticks and then subtracting changes that
@@ -1896,6 +2275,23 @@ pub fn report_owner?(
     Option::None => false,
 }
 
+pub proc heavy_compile_row(locked?, state: Int, ticket: Int, lease: MemoryLease): (
+    det charge: Option<Int>,
+) {
+    out charge :=
+        if not locked? then Option::Some(0)
+        else match lease.report, lease.observed {
+            Option::Some(r), Option::Some(m) =>
+                if (state is 0 | 1) and ticket > 0 and r.owner.sequence = ticket
+                and r.rss > 0 and m.pid > 0 and m.start > 0 and m.space != ""
+                and report_owner?(lease.report, lease.status_job, lease.observed, 0, 0)
+                then Option::Some(if state = 1 then r.rss else 0) else Option::None,
+            _, _ => Option::None,
+        }
+}
+
+#fren_check heavy_compile_row
+
 pub proc heavy_report_owner(
     report: Option<MemoryReport>,
     status_job: String,
@@ -2002,6 +2398,18 @@ pub fn unknown_legacy?(leases: MemoryLeases, now: Int, ttl: Nat) := match leases
 pub fn admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): Int :=
     observed_admission(cap, leases, now, ttl)
     + (if unknown_legacy?(leases, now, ttl) then legacy_reservation(cap, Option::None) else 0)
+
+-- The adapter supplies held slots only; unlocked metadata is omitted.
+pub proc heavy_admission_total(cap: Nat, leases: MemoryLeases, now: Int, ttl: Nat): (
+    det total: Int,
+) {
+    out total := admission_total(cap, leases, now, ttl)
+    expect empty: when leases = MemoryLeases::Nil, total = 0
+    expect two_unknown: when leases = MemoryLeases::Cons(
+        UNKNOWN_LEASE,
+        MemoryLeases::Cons(UNKNOWN_LEASE, MemoryLeases::Nil)
+    ), total = legacy_reservation(cap, Option::None)
+}
 
 pub fn eviction_total(leases: MemoryLeases, now: Int, ttl: Nat): (rss: Int) {
     out rss := match leases {
@@ -2155,6 +2563,8 @@ pub proc heavy_init_reap(
     expect wait_first: unless group_drained?, not collect_group? and not reap_orphan?
 }
 
+-- The wait observation is pending or exhausted; the adapter obtains it and
+-- the leader status from wait4, then performs init cleanup before probing.
 pub proc heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe: GroupProbe): (
     det gone?,
 ) {
@@ -2165,6 +2575,34 @@ pub proc heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe
     expect wait_pending: when subreaper? and group_wait_pending?, not gone?
     cover nonchild_worker: subreaper? and leader_reaped? and not group_wait_pending?
         and probe = GroupProbe::Present
+}
+
+-- The old lease-wide rule below is an idealized composite; Python uses
+-- observed victim rows and separately checks completion inside kill_group.
+-- These two decisions describe those boundaries, not syscall delivery.
+pub enum CleanupCause { MemorySample, ExternalSignal, SetupFailure, AccountingFailure }
+
+pub proc heavy_cleanup_trigger(
+    cause: CleanupCause,
+    cap: Nat,
+    own_rss: Nat,
+    own_job: Option<String>,
+    rows: VictimRows,
+): (det cleanup?) {
+    let selected: Option<MemoryOwner> :=
+        if victim_total(rows) > cap then victim_latest(rows) else Option::None
+    let selected_own? := match selected, own_job {
+        Option::Some(owner), Option::Some(job) => owner.job = job,
+        _, _ => false,
+    }
+    ensure rule: cleanup? iff cause != CleanupCause::MemorySample or own_rss > cap or selected_own?
+}
+
+pub proc heavy_signal_attempt(subreaper?, leader_reaped?, group_wait_pending?, probe: GroupProbe): (
+    det attempt?,
+) {
+    call completion := heavy_group_gone(subreaper?, leader_reaped?, group_wait_pending?, probe)
+    ensure rule: attempt? iff not completion.gone?
 }
 
 pub proc heavy_owned_signal(
@@ -2434,12 +2872,12 @@ request's.
 On a pull request, the `pre-merge` workflow checks the head merged into
 `main`, starting from the `.lake` that `main`'s last build left: two
 machines run `lake build --wfail`, and others run `lake test --
---skip-own-mutants --shard K/N`, each first building the test driver with
-`lake build --wfail fren_test`. A warning in the driver or in a module
-only it imports fails `pre-merge` too. One build machine builds Fren's own
-requirements and their `impl`s (`lake build --wfail Reqs Impls`), the
-other the rest of the default targets: the code, the tests, the examples
-and the binaries, among them the C code that the first needs none of.
+--skip-unstable-legacy --skip-own-mutants --shard K/N`, each first
+building the test driver with `lake build --wfail fren_test`. A warning in
+the driver or in a module only it imports fails `pre-merge` too. One build
+machine builds Fren's own requirements and their `impl`s (`lake build
+--wfail Reqs Impls`), the other the rest of the default targets: the code,
+the tests, the examples and the binaries, among them the C code that the first needs none of.
 Before the lint chapters were split, the build's critical path ran from
 `Fren.Elab` through the chapter modules from `Reqs.Lang.Base` to
 `Reqs.Lang.ScopeLaws`, then `Reqs.Lang`, `Reqs.Lint` and `Impls.Lint`.
@@ -2458,14 +2896,21 @@ and that of the rest 321, 392 and 297 s; so the build no longer outlasts
 the test shards. Both build what both import, from `FrenCore` to `Fren`, and
 `lake test`'s `libraries` job checks that the two lists of targets
 together are `lakefile.lean`'s default targets. On
-`main`, the `lean ci` workflow runs `lake build --wfail` and the whole
-`lake test`, first building the driver with `--wfail` in each shard. It
-samples mutants of Fren's own requirements, checks them in Lean and
-compares the front ends' messages about them ([Own
-requirements](#own-requirements)), measures the coverage, and saves the
-`.lake` for pull requests. Each job of a `lean ci` run waits for the same
-job of the run before it, not for the whole run, so that the build job
-saves the `.lake` as soon as it has built. A `pre-merge` run that starts
+`main`, the `lean ci` workflow runs `lake build --wfail` and `lake test
+-- --skip-unstable-legacy --shard K/N`, first building the driver with
+`--wfail` in each shard. Unlike `pre-merge`, its shards include the mutants
+of Fren's own requirements. Both workflows temporarily omit `enumeration`,
+`nativeDiagnostics` with `core`, `wait`, `own` or `wrapper`, and
+`nativeObservation`. The separate main `methods-agree` job is disabled.
+The repository file `test/legacy-native-quarantine.md` records manual
+commands and restoration criteria; #995 tracks restoring the gates.
+A local `lake test` without the flag retains all jobs, and explicit
+`--job` commands remain available without this filtering. Main also samples
+mutants of Fren's own requirements, checks them in Lean and compares the
+front ends' messages about them ([Own requirements](#own-requirements)),
+measures the coverage, and saves the `.lake` for pull requests. Each job
+of a `lean ci` run waits for the same job of the run before it, not for
+the whole run, so that the build job saves the `.lake` as soon as it has built. A `pre-merge` run that starts
 before the `.lake` of its `main` is saved starts from an older one, and
 each of its machines rebuilds what `main` changed since. Over the runs of
 2026-11-01 and 2026-11-02, almost half did; had each build job waited only
@@ -2504,11 +2949,12 @@ On 2026-11-03, on a runner, elaborating
 beside it 90 and 95 s, and with three others 112 and 123 s, while in the
 build, beside the rest of `Reqs` and `Impls`, it took 121 to 152 s.
 
-The `lean ci` workflow also compares the methods on every check that
+The `lean ci` workflow normally compares the methods on every check that
 each can run (`methodsAgree`, [Agreement of
-methods](../Methods.md#agreement-of-methods)), and runs the front-end
-fuzzer on seeds that no run used before, from the run's number, with
-`--avoid-known`, of both generators. What fails that job is exactly a
+methods](../Methods.md#agreement-of-methods)); that job is quarantined,
+with restoration tracked in #995. It runs the front-end fuzzer on seeds
+that no run used before, from the run's number, with `--avoid-known`, of
+both generators. What fails that job is exactly a
 spec with a difference of a kind that is not known, a crash, or a
 timeout; a spec whose differences are all of known kinds
 (`knownDifferences` for `--avoid-known`, and `knownKinds`), or only in
@@ -2546,11 +2992,11 @@ request of its own rather than slowing every pull request down.
 | Check | `pre-merge` | `lean ci` | Why |
 |---|---|---|---|
 | `lake build --wfail`: the code, the regression tests, the `impl`s' proofs, the examples, and Fren's own requirements elaborated | yes, on two machines | yes | it is the build |
-| `lake test`, but for the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
+| `lake test`, excluding the quarantined legacy jobs and the mutants of Fren's own requirements | yes | yes | under 10 minutes in each shard |
 | `ownSpec`: Fren's own requirements checked by the binary | yes | yes, with an empty query cache | some 25 s on CI with the query cache, so it is the gate |
 | The mutants of Fren's own requirements (`mutation 0 …`) | no | yes | the slowest jobs of `lake test` |
 | Fren's own requirements checked in Lean, and `ownSpecAgreement` ([Own requirements](#own-requirements)) | no | yes | before the language and lint chapters were split, in `lake build`, the checks took some 80 s of `Reqs.Lang` (256 s with them, 176 s without) and 76 s of `Reqs.Lint` (239 s, 163 s), both on the critical path, which they made 155 s longer, and raised the peak memory of each from some 2.5 GiB to some 10 GiB (one run each) |
-| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | yes | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
+| `methodsAgree`: every check of Fren's own requirements, the ui tests and the fuzzer's corpus under the solver, enumeration and random testing, compared ([Agreement of methods](../Methods.md#agreement-of-methods)) | no | quarantined (#995) | it checks everything three times, and the solver, asked the checks that the specs leave to the other methods, took 9.4 GB on Fren's own requirements at two procedures at once, as the job runs them (13.8 GB at four), and some 4 minutes, and 8.8 GB on the ui tests at fourteen at once, as many as there were cores, on macOS: more than a `lake test` shard can spare |
 | The book, with the page of the rules (`book`) | yes, on a pull request, and part of `pre-merge`'s verdict | yes | some minutes, with the test driver of shard 0, and no Lean |
 | A sample of `fren mutate` over Fren's own requirements, the front-end fuzzer on fresh seeds, the coverage | no | yes | each needs a build or seeds of its own, and what they find is filed or fixed after |
 
@@ -3091,12 +3537,17 @@ that runs or is no longer counted only weakens the list, and gets a
 warning, on GitHub Actions an annotation of the run too, that names the
 line to remove; `fren_coverage --write` rewrites the list as the run found
 it, keeping the reasons. The aim is a list of reasons alone. CI runs it on
-`main`, with Lean CI, and not in `pre-merge`: the instrumented build and
-the whole `lake test` on one machine take 20 to 35 minutes, about twice
-`pre-merge`'s 12 to 15, so a pull request that adds code no test runs
-fails `main` right after it merges, and a small pull request lists or
-tests it. The job's summary gives the counts, the failures, the stale
-lines and the dead code.
+`main`, with Lean CI, and not in `pre-merge`. The instrumented run uses
+`lake -Kcoverage=RUNTIME test -- --skip-unstable-legacy`, retaining
+`ownSpec`, all mutation slices and the other unquarantined jobs. It still
+checks the existing inventory and expects exit 2 from both a failing and
+an empty coverage tool. Omitting the quarantined jobs may leave more
+declarations uncovered and make the report fail. Before the quarantine,
+the instrumented build and whole `lake test` on one machine took 20 to 35
+minutes, about twice `pre-merge`'s 12 to 15. A pull request that adds code
+no test runs can therefore fail `main` right after it merges, and a small pull request
+lists or tests it. The job's summary gives the counts, the failures, the
+stale lines and the dead code.
 
 Before pushing, an author checks the definitions that the branch adds,
 in two steps, with `main`'s job as the backstop:

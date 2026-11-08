@@ -11,6 +11,8 @@ import FrenTest.FuzzFrontends.Corpus
 import FrenTest.FuzzFrontends.Running
 import FrenTest.ImplPath
 import FrenTest.Jobs
+import FrenTest.Layering
+import FrenTest.MatchQuerySize
 import FrenTest.Messages
 import FrenTest.MutateDecisions
 import FrenTest.NativeDiagnostics
@@ -253,8 +255,9 @@ def exampleBlocks (md : String) : Array (Nat × String) :=
 #guard exampleBlocks "````text\n```fren example\nx\n```\n````\n" == #[]
 #guard exampleBlocks "```` ```fren example ```` inline\n```fren example\nx\n```\n" == #[(2, "x\n")]
 
-/-- The Markdown files of the reference, `src/Reqs/**/*.md`. -/
-def manualFiles : IO (Array FilePath) := sortedFiles ("src" / "Reqs") "md"
+/-- The Markdown files of both references. -/
+def manualFiles : IO (Array FilePath) := do
+  return (← sortedFiles ("src" / "Reqs") "md") ++ (← sortedFiles ("src" / "Spec") "md")
 
 /-- Each ```` ```fren example ```` block of the reference, as a spec of its
 own, passes as a ui test through both front ends
@@ -724,15 +727,33 @@ def citedRules (src : String) : Array (Nat × String) :=
 
 #guard citedRules "a\n--@ reference: q.r\n--@ reference:q.s\n" == #[(2, "q.r"), (3, "")]
 
-/-- The `impl`s of `src/Impls`, each with its name, the path of the
-requirement that it is bound to, and its file. -/
+/-- Resolve an unqualified requirement against the items read by a Spec
+wrapper. An ambiguous suffix is left unresolved. -/
+def specImplPath (path : String) (items : Array ReqItem) : String :=
+  let candidates := items.filter fun i => i.path == path || i.path.endsWith ("::" ++ path)
+  if candidates.size == 1 then candidates[0]!.path else path
+
+#guard specImplPath "double" #[{ path := "spec::example::double", file := "x", line := 1, clauses := #[] }] == "spec::example::double"
+#guard specImplPath "double" #[{ path := "a::double", file := "x", line := 1, clauses := #[] }, { path := "b::double", file := "x", line := 2, clauses := #[] }] == "double"
+
+/-- The `impl`s of `src/Impls` and the Spec wrappers, each with its name,
+the requirement path and its file. -/
 def implBindings : IO (Array (String × String × String)) := do
   let mut out := #[]
-  for f in ← sortedFiles ("src" / "Impls") "lean" do
-    for line in (← IO.FS.readFile f).splitOn "\n" do
+  for f in (← sortedFiles ("src" / "Impls") "lean") ++ (← sortedFiles ("src" / "Spec") "lean") do
+    let source ← IO.FS.readFile f
+    let mut items := #[]
+    if f.toString.startsWith "src/Spec/" then
+      for line in source.splitOn "\n" do
+        if let [_, rest] := line.splitOn "#fren_md \"" then
+          let path := f.parent.getD "" / (rest.splitOn "\"").head!
+          let md ← IO.FS.readFile path
+          items := items ++ ((reqItemsOf path.toString md).toOption.getD #[])
+    for line in source.splitOn "\n" do
       if let some rest := line.dropPrefix? "impl " then
         if let name :: after :: _ := rest.toString.splitOn ": " then
-          out := out.push (name, (after.splitOn " ").head!, f.toString)
+          let path := (after.splitOn " ").head!
+          out := out.push (name, if f.toString.startsWith "src/Spec/" then specImplPath path items else path, f.toString)
   return out
 
 /-- The problems of rules under labels that require formalization, and of
@@ -867,7 +888,10 @@ requirements, the `impl`s bound to them and the tests that cite it,
 built. -/
 def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem × Array String))))
     (impls : Array (String × String × String)) (tests : Array (String × String)) (partly : Array String) : String := Id.run do
-  let rel (md : String) := "../" ++ ((md.dropPrefix? "src/Reqs/").map (·.toString)).getD md
+  let rel (md : String) :=
+    if let some rest := md.dropPrefix? "src/Reqs/" then "../" ++ rest.toString
+    else if let some rest := md.dropPrefix? "src/" then "../../" ++ rest.toString
+    else md
   let mut out := "# Rules and their requirements\n\n"
     ++ "For each rule of a chapter of the reference that has rule identifiers:\n"
     ++ "the requirements that formalize it, the `impl`s bound to them, and the\n"
@@ -904,6 +928,15 @@ def rulesReportText (chapters : Array (String × Array (Rule × Array (ReqItem �
   return [("dev", 1, "**none**"), ("Lang", 0, "")].all fun (dir, count, cell) =>
     report.contains (s!"## [src/Reqs/{dir}/Testing.md](../{dir}/Testing.md)\n\n1 rules, {count} under labels that require formalization, {count} of which have no requirement").toSlice &&
     report.contains (s!"| [`testing.example`](../{dir}/Testing.md#r-testing.example) | Rules | {cell} |  | **none** |").toSlice
+
+-- The report lives in src/Reqs/dev; a Spec rule links across to src/Spec.
+#guard Id.run do
+  let rule : Rule := { id := "spec-example.double", line := 1, label := "Dynamic semantics", text := "", links := "" }
+  let item : ReqItem := { path := "spec::example::double", file := "src/Spec/Language/Example.md", line := 2, clauses := #[] }
+  let report := rulesReportText #[(item.file, #[(rule, #[(item, #[])])])] #[("double_meets", item.path, "src/Spec/Language/Example.lean")] #[] #[]
+  return report.contains "(../../Spec/Language/Example.md)" &&
+    report.contains "(../../Spec/Language/Example.md#r-spec-example.double)" &&
+    report.contains "`double_meets` (src/Spec/Language/Example.lean)"
 
 /-- The rules of the reference and their requirements and tests
 (`Reqs/dev/Style#rules-and-requirements`): every rule of **Legality rules**
@@ -1100,7 +1133,7 @@ partial def lintSpecFilesFrom (entry : FilePath) (seen : Array FilePath) : IO (A
 each module is declared before it is used. -/
 def ownSpecFiles : IO (Array String) := do
   let lint ← lintSpecFilesFrom "src/Reqs/Lint.lean" #[]
-  return #[
+  let chapters := #[
     "Lang/Overview",
     "Lang/Lexical",
     "Lang/Types",
@@ -1147,12 +1180,14 @@ def ownSpecFiles : IO (Array String) := do
     "Markdown",
     "dev/Testing",
   ].flatMap fun r => if r == "Lint" then lint.2 else #[s!"src/Reqs/{r}.md"]
+  let spec ← sortedFiles "src/Spec" "md"
+  return chapters ++ (spec.filter fun p => !p.toString.startsWith "src/Spec/dev/").map (·.toString)
 
 /-- The Markdown specs that the Lean front end reads, by the `#fren_md`
-commands of `src/Reqs`, each as a path from the repository's root. -/
+commands of `src/Reqs` and `src/Spec`, each as a path from the repository's root. -/
 def hostedSpecFiles : IO (Array String) := do
   let mut files := #[]
-  for entry in ← sortedFiles "src/Reqs" "lean" do
+  for entry in (← sortedFiles "src/Reqs" "lean") ++ (← sortedFiles "src/Spec" "lean") do
     for line in (← IO.FS.readFile entry).splitOn "\n" do
       if let [_, rest] := line.splitOn "#fren_md \"" then
         if let some name := (rest.splitOn "\"").head? then
@@ -1222,7 +1257,7 @@ Markdown does. A check in an imported module does not count for items
 declared in the importing module. -/
 def hostedChecks : IO (Array String) := do
   let mut failures := #[]
-  for entry in ← sortedFiles "src/Reqs" "lean" do
+  for entry in (← sortedFiles "src/Reqs" "lean") ++ (← sortedFiles "src/Spec" "lean") do
     let mut chunks : Array (String × Array String) := #[]
     for line in (← IO.FS.readFile entry).splitOn "\n" do
       if let [_, rest] := line.splitOn "#fren_md \"" then
@@ -1817,6 +1852,9 @@ def ownSpecMessage? (level : String) (message : String) (dir : FilePath := "src/
     | _ => none
   | _ => none
 
+#guard (ownSpecMessage? "info" "src/Spec/Language/Example.lean:5:0: Example.md:16:2: cover goal `x` is met" "src/Spec/Language").map
+  (fun (f, d) => (f, d.line, d.col)) == some ("src/Spec/Language/Example.md", 16, 2)
+
 #guard (ownSpecMessage? "info" "src/Reqs/Lang.lean:33:0: Lang/Types.md:1041:10: cover goal `t` is met\n\nwitness: x = 1").map
   (fun (f, d) => (f, d.line, d.col, d.severity, d.text)) ==
   some ("src/Reqs/Lang/Types.md", 1041, 10, "info", "cover goal `t` is met\n\nwitness: x = 1")
@@ -1846,7 +1884,7 @@ def traceProblem (trace stem : String) (entries : Array (String × String)) : Op
   match entries.find? (·.1 == "trace") with
   | some (_, cmd) =>
     if cmd.contains "fren.runChecks=false".toSlice then
-      some s!"{trace}: `Reqs.{stem}` was built without its checks; run `lake -R -Kcheck_reqs=1 build Reqs` first"
+      some s!"{trace}: `{stem}` was built without its checks; run `lake -R -Kcheck_reqs=1 build Reqs` first"
     else none
   | none => some s!"{trace}: no command in its log, so whether its checks ran is unknown"
 
@@ -1863,9 +1901,10 @@ unless `-Kcheck_reqs` is set. -/
 def hostedOwnSpec : IO (Array (String × Diagnostic) × Array String) := do
   let mut msgs := #[]
   let mut problems := #[]
-  for entry in ← sortedFiles "src/Reqs" "lean" do
+  for entry in (← sortedFiles "src/Reqs" "lean") ++ (← sortedFiles "src/Spec" "lean") do
+    if entry.toString.startsWith "src/Spec/" && !(← IO.FS.readFile entry).contains "#fren_md \"" then continue
     let relative := (entry.toString.dropPrefix "src/").toString
-    let stem := ((entry.withExtension "").toString.dropPrefix "src/Reqs/").toString.replace "/" "."
+    let stem := ((entry.withExtension "").toString.dropPrefix "src/").toString.replace "/" "."
     let trace : FilePath := ((".lake" : FilePath) / "build" / "lib" / "lean" / relative).withExtension "trace"
     let text ← match ← (IO.FS.readFile trace).toBaseIO with
       | .ok t => pure t
@@ -2988,7 +3027,7 @@ def checkLibraries (lakefile : String) : IO (Array String) := do
     | .ok needed =>
       return reads.filterMap (fun p =>
         if needed p then none else some s!"{sourceOf m}: reads `{p}`, which `{lib}` in `lakefile.lean` does not need")
-  for f in (← System.FilePath.walkDir "src/Reqs").push "src/Reqs.lean" do
+  for f in (← System.FilePath.walkDir "src/Reqs") ++ (← System.FilePath.walkDir "src/Spec") |>.push "src/Reqs.lean" do
     if f.extension != some "lean" then continue
     let m := ((f.withExtension "").toString.dropPrefix "src/").toString.replace "/" "."
     let reads := (specsOf (← IO.FS.readFile f)).map fun (spec : String) =>
@@ -4467,13 +4506,13 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyProcess"], ["heavyBudget"], ["heavyBudgetBoundaries"], ["heavyMissingSource"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
     ++ (← decisionExamples).map (["decisions", ·.toString])
-    ++ #[["implPaths"], ["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"]]
+    ++ #[["implPaths"], ["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"], ["matchQuerySize"]]
     ++ (#["core", "wait", "own", "wrapper"].map (fun group => ["nativeDiagnostics", group]))
     ++ #[["nativeObservation"]]
 
@@ -4545,6 +4584,50 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     -- Build the Std-only module loaded by the test transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_ownership_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"heavy ownership differential check failed:\n{out.stdout}{out.stderr}"]
+  | "heavyProcess" :: mode => do
+    unless mode == [] || mode == ["controls"] do
+      throw (IO.userError "heavyProcess accepts only optional controls")
+    if !(System.Platform.target.splitOn "-").contains "linux" then
+      IO.eprintln "heavyProcess: skipped (Linux process observer)"
+      return #[]
+    -- An independent core/Std package, not a rebuild of Fren at invocation.
+    let built ← IO.Process.output { cmd := "lake", args := #["-d", "tools/heavy-observe",
+      "build", "heavy_observe", "process_tests", "budget_session", "budget_tests", "--wfail"] }
+    if built.exitCode != 0 then
+      return #[s!"standalone observer build failed:\n{built.stdout}{built.stderr}"]
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/test.py"] ++
+      (if mode == ["controls"] then #["--controls-only"] else #[]) }
+    return if out.exitCode == 0 then #[] else #[s!"heavy process integration failed:\n{out.stdout}{out.stderr}"]
+  | ["heavyBudget"] => do
+    if !(System.Platform.target.splitOn "-").contains "linux" then
+      IO.eprintln "heavyBudget: skipped (Linux compiler admission)"
+      return #[]
+    let built ← IO.Process.output { cmd := "lake", args := #["-d", "tools/heavy-observe",
+      "build", "heavy_observe", "budget_session", "process_tests", "budget_tests", "--wfail"] }
+    if built.exitCode != 0 then
+      return #[s!"standalone budget build failed:\n{built.stdout}{built.stderr}"]
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/budget_test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"compiler admission failed:\n{out.stdout}{out.stderr}"]
+  | ["heavyBudgetBoundaries"] => do
+    if !(System.Platform.target.splitOn "-").contains "linux" then
+      IO.eprintln "heavyBudgetBoundaries: skipped (Linux deadline/wait ownership)"
+      return #[]
+    let built ← IO.Process.output { cmd := "lake", args := #["-d", "tools/heavy-observe",
+      "build", "heavy_observe", "budget_session", "process_tests", "budget_tests", "--wfail"] }
+    if built.exitCode != 0 then
+      return #[s!"standalone budget build failed:\n{built.stdout}{built.stderr}"]
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/budget_boundaries.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"compiler boundary regressions failed:\n{out.stdout}{out.stderr}"]
+  | ["heavyMissingSource"] => do
+    if !(System.Platform.target.splitOn "-").contains "linux" then
+      IO.eprintln "heavyMissingSource: skipped (Linux compiler source errors)"
+      return #[]
+    let built ← IO.Process.output { cmd := "lake", args := #["-d", "tools/heavy-observe",
+      "build", "heavy_observe", "budget_session", "budget_tests", "--wfail"] }
+    if built.exitCode != 0 then
+      return #[s!"standalone observer build failed:\n{built.stdout}{built.stderr}"]
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/compiler_discovery_test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"compiler source-error compatibility failed:\n{out.stdout}{out.stderr}"]
   | ["heavyPrediction"] => do
     -- The Heavy.Forecast import builds the module loaded by this transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }
@@ -4558,6 +4641,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["oracleGuards"] => pure FrenTest.OracleChecks.check
   | ["fixing"] => fixing
   | ["libraries"] => libraries
+  | ["layering"] => FrenTest.Layering.check
   | ["lintChapters"] => lintChapters
   | ["backjumping", corpus] => backjumping corpus
   | ["decisions", path] => decisions path
@@ -4571,6 +4655,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     let some n := count.toNat? | throw (IO.userError "invalid copying corpus count")
     let some start := start.toNat? | throw (IO.userError "invalid copying corpus start")
     FrenTest.ExpansionFuzz.run n start
+  | ["matchQuerySize"] => FrenTest.MatchQuerySize.check
   | ["resolvedDump"] => FrenTest.Resolved.check bless
   | ["theoriesDump"] => do FrenTest.TheoryDump.check (← FrenTest.FuzzFrontends.loadFren)
   | ["enumeration"] => enumerationAgrees

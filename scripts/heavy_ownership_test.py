@@ -4,7 +4,9 @@ Run after building Heavy.Ownership: python3 -I scripts/heavy_ownership_test.py.
 The active Python scheduler is the oracle; no real processes are signalled.
 """
 
+import contextlib
 from fractions import Fraction
+import io
 import itertools
 import json
 import math
@@ -14,6 +16,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 from unittest import mock
 
 sys.dont_write_bytecode = True
@@ -114,6 +117,8 @@ def numeric_span(value, ttl=heavy.REPORT_STALE_SECONDS):
 
 
 def transport(case):
+    # One elapsed observation supplies both ownership and freshness. The real
+    # jobs producer can sample twice; see two_clock_producer below.
     r = decoded_report(case["report"])
     # The status adapter extracts only the terminal protocol token. Diagnostic
     # numeric PIDs never enter the Lean observations.
@@ -158,6 +163,59 @@ def python_lease(case, path):
     return [compatible, True, admission, measured]
 
 
+def python_aggregate(cases, cap, path):
+    # This oracle models a single snapshot, not jobs' two clock samples.
+    rows = []
+    for i, case in enumerate(cases):
+        if not case["locked"]:
+            continue
+        path.write_text(json.dumps(case["report"]))
+        report = heavy.read_report(path)
+        token = heavy.slot_job_id(case["status"])
+        compatible = report is not None and heavy.report_current(
+            report, token, case["observed"], case["now"])
+        if compatible:
+            rows.append(dict(report, legacy=False, slot=str(i),
+                             fresh=0 <= case["now"] - report["updated_monotonic"] <= heavy.REPORT_STALE_SECONDS))
+        else:
+            rows.append(dict(legacy=True, legacy_rss_kb=case["legacy_rss"], slot=str(i)))
+    with mock.patch.object(heavy, "jobs", return_value=rows):
+        return heavy.heavy_rss_kb(cap=cap)
+
+
+def aggregate_transport(cases, cap):
+    rows = [transport(case) for case in cases]
+    ttl = max((row["ttl"] for row in rows), default=numeric_span(0)[1])
+    for row in rows:
+        if row["span"]["kind"] == "finite":
+            row["span"]["ticks"] *= ttl // row["ttl"]
+    return dict(kind="aggregate", cap=cap, ttl=ttl, rows=rows)
+
+
+def two_clock_producer():
+    """Exercise the actual jobs producer and accounting with mocked IO.
+
+    The first clock is used for stored freshness, the second for ownership.
+    A single elapsed span cannot represent this compatible but stale row.
+    """
+    report = dict(version=3, job_id="a" * 32, order=1, rss_kb=40,
+                  updated_monotonic=100.0, monitor=None)
+    status = "5 0 [heavy-job=" + "a" * 32 + "]\n"
+    with mock.patch.object(heavy, "registry", return_value=contextlib.nullcontext()), \
+         mock.patch.object(heavy.os, "listdir", return_value=["slot0"]), \
+         mock.patch("builtins.open", mock.mock_open(read_data=status)), \
+         mock.patch.object(heavy, "read_report", side_effect=lambda _: dict(report)), \
+         mock.patch.object(heavy.fcntl, "flock", side_effect=BlockingIOError), \
+         mock.patch.object(heavy.os, "fstat", return_value=SimpleNamespace(st_dev=0, st_ino=1)), \
+         mock.patch.object(heavy.platform, "system", return_value="Darwin"), \
+         mock.patch.object(heavy.platform, "release", return_value="24.0"), \
+         mock.patch.object(heavy.time, "monotonic", side_effect=[99.0, 100.0, 99.0, 100.0]):
+        rows = heavy.jobs("unused")
+        total = heavy.heavy_rss_kb(state="unused", cap=100)
+    assert len(rows) == 1 and rows[0]["fresh"] is False and rows[0]["legacy"] is False, rows
+    assert rows[0]["rss_kb"] == 40 and total == 100, (rows, total)
+
+
 class Retried(Exception):
     pass
 
@@ -196,6 +254,140 @@ def python_registry(available, now, started, requested, state):
     return [acquired, retry, timed_out, deferred]
 
 
+def python_group(subreaper, leader, wait, probe):
+    # Drive the real reap_child and group_gone, mocking only OS observations.
+    child = mock.Mock(pid=123, returncode=0 if leader else None,
+                      heavy_subreaper=subreaper)
+    observation = ChildProcessError() if wait == "exhausted" else (0, 0, None)
+    outcome = {"missing": ProcessLookupError(), "present": None,
+               "denied": PermissionError()}[probe]
+    with mock.patch.object(heavy.os, "getpid", return_value=42), \
+         mock.patch.object(heavy.os, "wait4", side_effect=observation if isinstance(observation, Exception)
+                           else None, return_value=observation), \
+         mock.patch.object(heavy.os, "killpg", side_effect=outcome) as kill:
+        result = heavy.group_gone(123, lambda: heavy.reap_child(child, {}), subreaper)
+        # Collection failure must prevent even the group probe.
+        if not leader or (subreaper and wait == "pending"):
+            kill.assert_not_called()
+        else:
+            kill.assert_called_once_with(123, 0)
+        return result
+
+
+class EndTick(Exception):
+    pass
+
+
+def python_cleanup(case):
+    """Observe the actual monitor call site, with no real child or signal."""
+    with tempfile.TemporaryFile(mode="w+") as slot, contextlib.ExitStack() as stack:
+        if case["own"] is not None:
+            slot.heavy_job = {"job_id": case["own"]}
+        record = {"started_at": 0, "peak_rss_kb": 0, "load_samples": []}
+        patch = lambda name, **kw: stack.enter_context(mock.patch.object(heavy, name, **kw))
+        stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+        stack.enter_context(mock.patch.object(heavy.subprocess, "Popen", return_value=mock.Mock(pid=123, returncode=None)))
+        patch("visible_group", side_effect=OSError("setup") if case["cause"] == "setup" and not case.get("status_failure") else None,
+              return_value=123)
+        patch("write_status", side_effect=OSError("status") if case.get("status_failure") else None)
+        patch("sample_load", return_value=0)
+        patch("sample_cpu", return_value=0)
+        patch("MachineSampler", return_value=mock.Mock(last=(0,)))
+        patch("ProcessSampler")
+        patch("group_processes", return_value=[])
+        patch("group_gone", return_value=False)
+        patch("group_rss_kb", return_value={123: case["rss"]})
+        patch("mem_cap_kb", return_value=case["cap"])
+        failure = OSError("accounting") if case["cause"] == "accounting" else (
+            heavy.RegistryBusy() if case.get("busy") else None)
+        patch("publish_memory", side_effect=failure)
+        patch("jobs", return_value=case["rows"])
+        patch("reap_child", return_value=False)
+        kill = patch("kill_group")
+        stack.enter_context(mock.patch.object(heavy.time, "sleep", side_effect=EndTick))
+        handlers = {}
+        def handler(sig, callback):
+            old = handlers.get(sig, signal.SIG_DFL)
+            handlers[sig] = callback
+            return old
+        stack.enter_context(mock.patch.object(heavy.signal, "signal", side_effect=handler))
+        if case["cause"] == "signal":
+            def invoke(*args, **kwargs):
+                handlers[signal.SIGTERM](signal.SIGTERM, None)
+                return []
+            heavy.group_processes.side_effect = invoke
+        try:
+            code = heavy.monitor_command(slot, ["dummy"], "dummy", record, "unused", {}, lambda: 0, False)
+        except EndTick:
+            code = None
+        if case["cause"] in ("setup", "accounting"):
+            assert code == 125
+        if code == 137:
+            assert kill.call_count == 1
+        if case["cause"] == "signal":
+            assert kill.call_count == 1 and code is None
+        return kill.call_count > 0
+
+
+def python_attempt(subreaper, leader, wait, probe, phase):
+    """Capture each phase attempted by real kill_group and group_gone."""
+    child = mock.Mock(pid=123, returncode=0 if leader else None, heavy_subreaper=subreaper)
+    observation = ChildProcessError() if wait == "exhausted" else (0, 0, None)
+    calls = []
+    def kill(pgid, sig):
+        calls.append(sig)
+        if sig == 0:
+            if probe == "missing":
+                raise ProcessLookupError()
+            if probe == "denied":
+                raise PermissionError()
+    with mock.patch.object(heavy.os, "getpid", return_value=42), \
+         mock.patch.object(heavy.os, "wait4", side_effect=observation if isinstance(observation, Exception)
+                           else None, return_value=observation), \
+         mock.patch.object(heavy.os, "killpg", side_effect=kill), \
+         mock.patch.object(heavy.signal, "pthread_sigmask", return_value=set()), \
+         mock.patch.object(heavy.time, "monotonic", side_effect=[0, 6, 6, 12]):
+        heavy.kill_group(123, lambda: heavy.reap_child(child, {}), subreaper)
+    return phase in calls
+
+
+def escalation_checks():
+    # Checks of Python control flow only; no operating-system signal is sent.
+    for stop_signal, error in itertools.product((signal.SIGTERM, signal.SIGKILL),
+                                                (ProcessLookupError, PermissionError, OSError)):
+        calls = []
+        masks = []
+        def kill(pgid, sig):
+            calls.append(sig)
+            if sig == stop_signal:
+                raise error("injected")
+        def mask(how, values):
+            masks.append(how)
+            return set()
+        with mock.patch.object(heavy, "group_gone", return_value=False), \
+             mock.patch.object(heavy.os, "killpg", side_effect=kill), \
+             mock.patch.object(heavy.signal, "pthread_sigmask", side_effect=mask), \
+             mock.patch.object(heavy.time, "monotonic", side_effect=[0, 6]):
+            if error is OSError:
+                try:
+                    heavy.kill_group(123, lambda: True)
+                    raise AssertionError("unexpected signal error swallowed")
+                except OSError:
+                    pass
+            else:
+                heavy.kill_group(123, lambda: True)
+        assert calls == ([signal.SIGTERM] if stop_signal == signal.SIGTERM else
+                         [signal.SIGTERM, signal.SIGKILL])
+        assert masks == [signal.SIG_BLOCK, signal.SIG_SETMASK] * len(calls)
+    # Group disappears after TERM's wait, before the KILL attempt.
+    with mock.patch.object(heavy, "group_gone", side_effect=[False, True]), \
+         mock.patch.object(heavy.os, "killpg") as kill, \
+         mock.patch.object(heavy.signal, "pthread_sigmask", return_value=set()), \
+         mock.patch.object(heavy.time, "monotonic", side_effect=[0, 6]):
+        heavy.kill_group(123, lambda: True)
+        assert kill.call_args_list == [mock.call(123, signal.SIGTERM)]
+
+
 def main():
     # Synthetic identities and times derived from the ownership regressions;
     # no production PID, job identity, namespace or path is recorded here.
@@ -232,7 +424,51 @@ def main():
         for observed in (None, m):
             cases.append(dict(base, now=now, observed=observed,
                               report=dict(base["report"], updated_monotonic=stamp)))
+    escalation_checks()
+    two_clock_producer()
     inputs, expected = [], []
+    group_count = 0
+    for subreaper, leader, wait, probe in itertools.product(
+            (False, True), (False, True), ("pending", "exhausted"),
+            ("missing", "present", "denied")):
+        inputs.append(dict(kind="group", subreaper=subreaper, leader=leader,
+                           wait=wait, probe=probe, attempt=False))
+        expected.append(python_group(subreaper, leader, wait, probe))
+        group_count += 1
+    attempt_count = 0
+    for subreaper, leader, wait, probe, phase in itertools.product(
+            (False, True), (False, True), ("pending", "exhausted"),
+            ("missing", "present", "denied"), (signal.SIGTERM, signal.SIGKILL)):
+        inputs.append(dict(kind="group", subreaper=subreaper, leader=leader,
+                           wait=wait, probe=probe, attempt=True))
+        expected.append(python_attempt(subreaper, leader, wait, probe, phase))
+        attempt_count += 1
+    owner_rows = [dict(job_id="old", order=1, rss_kb=50, legacy_rss_kb=None),
+                  dict(job_id="new", order=2, rss_kb=51, legacy_rss_kb=None)]
+    tied_rows = [dict(job_id="old", order=2, rss_kb=50, legacy_rss_kb=None), owner_rows[1]]
+    legacy_rows = [dict(job_id=None, order=None, rss_kb=None, legacy_rss_kb=101)]
+    cleanup_cases = []
+    for own, rss, rows in itertools.product((None, "old", "new"), (0, 100, 101),
+                                             ([], owner_rows, tied_rows, legacy_rows)):
+        cleanup_cases.append(dict(kind="cleanup", cause="memory", cap=100, rss=rss, own=own, rows=rows))
+    for own, rss in itertools.product((None, "old"), (0, 101)):
+        cleanup_cases.append(dict(kind="cleanup", cause="memory", cap=100, rss=rss, own=own,
+                                  rows=[], busy=True))
+    cleanup_cases.append(dict(kind="cleanup", cause="setup", cap=100, rss=0, own=None,
+                              rows=[], status_failure=True))
+    for cause in ("signal", "setup", "accounting"):
+        cleanup_cases.append(dict(kind="cleanup", cause=cause, cap=100, rss=0, own="old", rows=[]))
+    for case in cleanup_cases:
+        inputs.append(case)
+        expected.append(python_cleanup(case))
+    # PID 1 can discover a newly adopted group child after the first reap.
+    # A failed second reap must stop before the probe even if it would be missing.
+    with mock.patch.object(heavy.os, "getpid", return_value=1), \
+         mock.patch.object(heavy.os, "waitid", return_value=mock.Mock(si_pid=124)), \
+         mock.patch.object(heavy.os, "getpgid", return_value=123), \
+         mock.patch.object(heavy.os, "killpg") as kill:
+        assert not heavy.group_gone(123, mock.Mock(side_effect=[True, False]), True)
+        kill.assert_not_called()
     # Rows are the actual selector's inputs, after jobs has verified a report.
     # Stale verified owners retain their measurements; freshness and PID are
     # deliberately absent from this selector's input.
@@ -264,6 +500,23 @@ def main():
             if case["name"] in ("rounded_ttl_unobserved", "rounded_ttl_verified"):
                 assert expected[-1] == [True, True, 40, 40], (case, expected[-1])
             inputs.append(transport(case))
+        # Aggregate actual jobs rows after lock and identity observations. Exercise
+        # the shared forecast in both orders and across numeric boundaries.
+        unknown = dict(base, report=None, legacy_rss=None, locked=True)
+        known = dict(unknown, legacy_rss=7)
+        variants = [unknown, known, dict(unknown, legacy_rss=-1),
+                    dict(unknown, legacy_rss=0), dict(unknown, locked=False),
+                    dict(base, observed=None), dict(base, now=111),
+                    dict(base, observed=dict(m, namespace="other")),
+                    dict(base, observed=None, now=110.00000000000001)]
+        groups = [[], [unknown], [unknown, unknown], [known, unknown, unknown],
+                  [unknown, unknown, known]]
+        groups += [list(pair) for pair in itertools.product(variants, repeat=2)]
+        for cap, group in itertools.product((0, 1, 2, 100, 101), groups):
+            inputs.append(aggregate_transport(group, cap))
+            expected.append(python_aggregate(group, cap, path))
+        assert python_aggregate([unknown, unknown], 100, path) == 50
+        assert python_aggregate([known, unknown, unknown], 100, path) == 57
         # Nonfinite timestamps and malformed JSON are rejected by the wire decoder.
         for text in ('{"updated_monotonic": NaN}', '{"partial":', 'null'):
             path.write_text(text)
@@ -308,6 +561,8 @@ def main():
         assert got == want, (i, got, want, inputs[i])
     print(f"{len(cases)} Lean/Python ownership cases and {registry_count} registry attempts agree "
           f"({len(fixed)} sanitized fixtures); {len(values)} numeric conversion cases agree")
+    print(f"{group_count} group completion, {attempt_count} signal attempt and "
+          f"{len(cleanup_cases)} cleanup comparisons agree")
     print(f"{len(victim_cases)} victim fixtures and {generated_count} generated comparisons agree")
 
 
