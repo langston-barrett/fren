@@ -57,6 +57,10 @@ last reap PID. The C caller requires exact output lengths and values. -/
 def control (raw : Array UInt64) : Array UInt64 :=
   match raw.toList.map (fun n => (n.toNat : Int)) with
   | [0, error, now, limit] => #[(deadline error now limit).toNat.toUInt64]
+  | [3, bytes, expected, cause] =>
+    #[if Heavy.Process.wallMessageValid bytes.toNat expected.toNat cause.toNat then 1 else 0]
+  | [2, error, usr1, usr2] =>
+    #[if Heavy.Process.wallSignalMaskSafe error.toNat usr1.toNat usr2.toNat then 1 else 0]
   | [1, error, handler, flags, bit, previous, errorWait, observed, expected, reaped] =>
     #[if waitable error handler flags bit then 1 else 0,
       if groupSignal error handler flags bit previous errorWait observed expected reaped then 1 else 0]

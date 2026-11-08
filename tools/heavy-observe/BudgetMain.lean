@@ -28,10 +28,15 @@ def main (args : List String) : IO UInt32 := do
     if (BudgetAdapter.request requests none none fallback).isNone then
       throw (IO.userError "malformed request manifest")
     let raw ← session path s!"{allowance} {parent} {fallback} {wait}\n" requests exe rest.toArray BudgetAdapter.control
-    if raw.size != 3 then throw (IO.userError "invalid session result")
+    if raw.size != 11 then throw (IO.userError "invalid session result")
+    if raw[4]! != 0 then
+      IO.eprintln s!"heavy-budget: compiler pid={raw[9]!}; raw wait status={raw[5]!}; wait errno={raw[6]!}; start ns={raw[7]!}; sample ns={raw[8]!}; limit ms={raw[10]!}"
     if raw[0]! != 0 || raw[2]! != 0 then
       IO.eprintln s!"heavy-budget: control errno={raw[0]!}; cleanup errno={raw[2]!}; command wait status={raw[1]!}"
       return 125
+    if raw[3]! != 0 then
+      IO.eprintln s!"heavy-budget: compiler wall deadline exceeded; command wait status={raw[1]!}"
+      return 124
     let r := Heavy.Process.result 0 0 0 raw[1]!.toNat
     return r.shellCode.toUInt32
   catch e =>

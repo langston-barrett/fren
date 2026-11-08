@@ -87,6 +87,10 @@ def producer(case, work, shim, fault):
 def main():
     if sys.argv[1:2] == ["--producer"]:
         producer(sys.argv[2], *map(Path, sys.argv[3:])); return
+    wall_start = time.monotonic()
+    wall = subprocess.run([sys.executable, "-I", str(HERE / "wall_test.py")], capture_output=True, timeout=20)
+    wall_seconds = time.monotonic() - wall_start
+    assert wall.returncode == 0, (wall.stdout, wall.stderr)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", type=Path, default=HERE / ".lake/build/bin")
     parser.add_argument("--output", type=Path)
@@ -105,6 +109,7 @@ def main():
     (work / "cc.log").write_bytes(compiled.stdout + compiled.stderr)
     assert compiled.returncode == 0, compiled.stderr
     report = dict(expected="old bugs" if args.expect_old else "fixed behavior", cases=[], compiler_command=cc,
+        wall=dict(status=wall.returncode, seconds=wall_seconds, stdout=wall.stdout.decode(), stderr=wall.stderr.decode()),
         binaries={p:hashlib.sha256((binary / p).read_bytes()).hexdigest() for p in ("heavy_observe", "budget_session")})
     cases = ["initial-lock", "reacquire", "snapshot", "grant-write", "timely-lock", "ignored-chld", "auto-reap", "custom-chld",
              "lost-anchor", "query-error", "last-query-error", "normal-true", "normal-exit"]

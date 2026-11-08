@@ -453,8 +453,9 @@ an appropriate owned cache if needed; an offline Lake invocation can still
 reconcile local package directories. A cached target may perform no compilation.
 No machine-wide admission, forecast, installation or cap configuration is
 changed. The optional per-process compiler CPU limit below is not mandatory module
-coverage. This integration does not add module wall limits, test budgets,
-automatic request prediction or a total-throughput claim. Python caller/IO
+coverage. This integration does not add automatic or universal module wall limits, test
+budgets, physical RAM guarantees, aggregate CPU limits, automatic request
+prediction or a total-throughput claim. Python caller/IO
 selection and cgroup discovery are finite integration checks, outside the pure
 Lean requirements and their existing implementation bindings. If tools are
 missing, build the standalone targets using the documented recipe first; the caller must ensure those prebuilt binaries match this source.
@@ -556,3 +557,32 @@ inherited hard limit can prevent setup. The raw wait status and
 `compiler_cpu_requested_seconds`, and raw pipe observations accompany the existing
 admission and CPU observations. A signal is never compiler success. The
 setting does not cover other compiler families, native builds or tests.
+
+### Opt-in compiler wall deadline
+
+Set `HEAVY_COMPILER_WALL_MS` to a positive integer from 1 through 2147483647
+milliseconds before starting a session. The session rejects an inherited mask
+that blocks either SIGUSR1 or SIGUSR2 before launching the build. It limits each selected, budgeted
+non-query compiler invocation; unset preserves the existing route. The monotonic
+clock starts at the admitted child launch. `FREN_BUILD_TIMEOUT_MS` still limits
+admission. A deadline kills and reaps the observer's waitable compiler child,
+then notifies the private build controller before preparing the process record.
+The controller uses its waitable group anchor to terminate the entire build
+group, including compiler descendants remaining in it, and checks inherited
+reservation locks. Escaped descendants and uninterruptible kernel tasks remain
+outside this boundary. Cleanup is bounded and reports failure rather than waiting
+indefinitely.
+
+Notification uses a nonblocking private datagram, with an authenticated pidfd
+signal fallback when the channel fails. A full channel already has a pending
+cancellation. If both notification methods fail, the observer records a control
+error and returns 125 if its remaining observation and record work completes.
+Neither bounded observer exit nor controller cancellation is guaranteed in that
+case. A controller that has already died cannot be notified. These are IO
+failure limits, not a successful deadline. The session returns 124 for a received deadline after successful cleanup,
+and 125 for a control or cleanup failure. Its diagnostic contains the child's
+raw wait status, clock samples, PID and requested limit when the datagram arrives.
+The signal fallback cannot carry those observations; a process record may also be
+absent if cancellation interrupts its publication. Existing records retain raw
+wait status and timing separately from the timeout cause. The polling interval is
+10 ms; scheduling and bounded shutdown add latency.

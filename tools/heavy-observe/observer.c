@@ -10,17 +10,50 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/syscall.h>
+#include <sys/random.h>
+#include <stddef.h>
+#include <stdio.h>
 
 extern char **environ;
 
 /* Raw Linux observations only. All classification happens in Heavy.Process.
  * Slots: launch errno, exec errno, wait errno, clock errno, status, pid,
- * monotonic start/end ns, wait4 user/system us, wait4 maxrss KiB. */
+ * monotonic start/end ns, wait4 user/system us, wait4 maxrss KiB,
+ * CPU pipe bytes/first/error/EOF, wall expiry/sample/control error. */
 static volatile sig_atomic_t budget_cancelled;
 static void budget_signal(int sig) { budget_cancelled = sig; }
 
-static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int guarded, uint64_t cpu_limit) {
-    uint64_t v[15] = {0};
+/* Raw evidence survives even when group cancellation interrupts the record. */
+struct wall_message {
+    uint64_t cause, status, wait_error, start, sample, pid, limit_ms;
+};
+
+static int wall_notify(const char *name, int ownerfd, const struct wall_message *message) {
+    int fd = name[0] ? socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0) : -1;
+    int e = 0;
+    if (fd >= 0) {
+        struct sockaddr_un addr = {.sun_family = AF_UNIX};
+        int n = snprintf(addr.sun_path + 1, sizeof(addr.sun_path) - 1, "fren-wall-%s", name);
+        if (n < 0 || (size_t)n >= sizeof(addr.sun_path) - 1) e = EOVERFLOW;
+        else if (sendto(fd, message, sizeof(*message), MSG_DONTWAIT, (struct sockaddr *)&addr,
+                        offsetof(struct sockaddr_un, sun_path) + 1 + (size_t)n) != sizeof(*message)) e = errno ? errno : EIO;
+        close(fd);
+        /* A full channel already contains a cancellation request. */
+        if (!e || e == EAGAIN || e == EWOULDBLOCK) return 0;
+    } else e = errno;
+    /* The pidfd pins the authenticated controller, including across PID reuse. */
+    if (syscall(SYS_pidfd_send_signal, ownerfd, message->cause == 2 ? SIGUSR2 : SIGUSR1, NULL, 0) == 0) return 0;
+    return errno ? errno : e;
+}
+
+static int wall_deadline(b_lean_obj_arg control, uint64_t limit, uint64_t *sample, int *error);
+
+static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int guarded, uint64_t cpu_limit,
+                                 uint64_t wall_ms, b_lean_obj_arg control, const char *wall_name, int ownerfd) {
+    uint64_t v[18] = {0};
     size_t n = lean_array_size(args);
     char **argv = calloc(n + 2, sizeof(char *));
     int pipefd[2] = {-1, -1};
@@ -33,6 +66,7 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
     if (pipe2(pipefd, O_CLOEXEC) < 0) { v[0] = errno; goto done; }
     if (clock_gettime(CLOCK_MONOTONIC, &t) < 0) v[3] = errno;
     else v[6] = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
+    if (wall_ms && v[3]) { v[0] = v[3]; goto done; }
     pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) { v[0] = errno; goto done; }
@@ -79,8 +113,23 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
         for (;;) {
             waited = wait4(pid, &status, WNOHANG, &usage);
             if (waited != 0 && !(waited < 0 && errno == EINTR)) break;
+            /* The waitable child PID cannot be reused. The same raw-clock
+             * decision used by admission controls the execution deadline. */
+            if (wall_ms && !v[15]) {
+                uint64_t sample = 0;
+                int error = 0;
+                int de = wall_deadline(control, v[6] + wall_ms * 1000000, &sample, &error);
+                v[16] = sample;
+                if (de == 1) {
+                    v[15] = 1;
+                    if (kill(pid, SIGKILL) < 0 && errno != ESRCH) v[17] = errno;
+                } else if (de) {
+                    v[17] = error ? error : EIO;
+                    if (kill(pid, SIGKILL) < 0 && errno != ESRCH) v[17] = errno;
+                }
+            }
             /* This PID is our unreaped child, so cannot be reused. */
-            if (budget_cancelled) {
+            if (budget_cancelled || v[15] || v[17]) {
                 if (cancelled_ticks == 0) kill(pid, SIGTERM);
                 if (cancelled_ticks == 25) kill(pid, SIGKILL);
                 if (cancelled_ticks >= 125) { errno = ETIMEDOUT; waited = -1; break; }
@@ -96,6 +145,12 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
         v[8] = (uint64_t)usage.ru_utime.tv_sec * 1000000 + usage.ru_utime.tv_usec;
         v[9] = (uint64_t)usage.ru_stime.tv_sec * 1000000 + usage.ru_stime.tv_usec;
         v[10] = (uint64_t)usage.ru_maxrss;
+    }
+    /* Notification precedes all record preparation and output. */
+    if (v[15] || v[17]) {
+        struct wall_message message = {v[17] ? 2 : 1, v[4], v[2], v[6], v[16], v[5], wall_ms};
+        int notify_error = wall_notify(wall_name, ownerfd, &message);
+        if (notify_error) v[17] = notify_error;
     }
     if (clock_gettime(CLOCK_MONOTONIC, &t) < 0) v[3] = errno;
     else v[7] = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
@@ -129,13 +184,13 @@ done:
     if (pipefd[0] >= 0) close(pipefd[0]);
     if (pipefd[1] >= 0) close(pipefd[1]);
     free(argv);
-    lean_object *a = lean_alloc_array(0, 15);
-    for (size_t i = 0; i < 15; ++i) a = lean_array_push(a, lean_box_uint64(v[i]));
+    lean_object *a = lean_alloc_array(0, 18);
+    for (size_t i = 0; i < 18; ++i) a = lean_array_push(a, lean_box_uint64(v[i]));
     return lean_io_result_mk_ok(a);
 }
 
 LEAN_EXPORT lean_obj_res heavy_observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args) {
-    return observe_wait(exe, args, 0, 0);
+    return observe_wait(exe, args, 0, 0, 0, NULL, "", -1);
 }
 
 /* Preserve a child's signal termination after Lean has flushed its record. */
