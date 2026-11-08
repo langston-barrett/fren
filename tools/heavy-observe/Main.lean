@@ -54,6 +54,44 @@ def fingerprint (path : FilePath) : IO (Option String) := do
   let bytes ← readRegular path.toString fingerprintAllowed
   return bytes.map fun bytes => s!"lean-bytearray64:{bytes.size}:{hash bytes}"
 
+def compilerQuery (real : FilePath) (flag : String) : IO (Option String) := do
+  try
+    let out ← IO.Process.output {cmd := real.toString, args := #[flag]}
+    return if out.exitCode == 0 then some out.stdout.trimAscii.copy else none
+  catch _ => return none
+
+/-- Setup-only entry, selected by a private helper basename, never by compiler
+argv. The caller promises a native Lean with immutable installed assets. -/
+def prepareMetadata (real output : FilePath) : IO Unit := do
+  let real ← IO.FS.realPath real
+  let some bytes ← readRegular real.toString fingerprintAllowed | return
+  -- Scripts/wrappers are outside the constant compiled-metadata contract.
+  unless (bytes.extract 0 4).toList == [127, 69, 76, 70] do return
+  let some version ← compilerQuery real "--version" | return
+  let some githash ← compilerQuery real "--githash" | return
+  unless version.startsWith "Lean (version " && githash.length == 40 &&
+      githash.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) &&
+      (version.splitOn githash).length > 1 do return
+  let fields := ["heavy-native-lean-metadata-v1", real.toString,
+    s!"lean-bytearray64:{bytes.size}:{hash bytes}", version, githash]
+  unless fields.all (fun s => !(s.contains '\n') && !(s.contains '\r')) do return
+  -- Keep the pre-query and post-query images equal, without substituting stat.
+  unless (← readRegular real.toString fingerprintAllowed) == some bytes do return
+  let body := String.intercalate "\n" fields
+  IO.FS.writeFile output (body ++ s!"\n{hash body}\n")
+
+def preparedMetadata (root real : FilePath) (current : Option String) : IO (Option (String × String)) := do
+  try
+    let some bytes ← readRegular (root / "compiler-metadata").toString fingerprintAllowed | return none
+    let some raw := String.fromUTF8? bytes | return none
+    let [tag, path, digest, version, githash, checksum, ""] := raw.splitOn "\n" | return none
+    unless tag == "heavy-native-lean-metadata-v1" do return none
+    let some stored := checksum.toNat? | return none
+    let body := String.intercalate "\n" [tag, path, digest, version, githash]
+    return if reuseMetadata real.toString current path digest version githash
+        (hash body).toNat stored then some (version, githash) else none
+  catch _ => return none
+
 def artifact (path : String) : IO String := do
   return object [("path", quoted path), ("fingerprint", jsonOption quoted (← fingerprint path))]
 
@@ -89,14 +127,10 @@ def run (args : List String) : IO UInt32 := do
   let setup := parsed.bind (·.setup)
   let setupBefore ← setup.mapM fun s => fingerprint s
   let compilerFingerprint ← fingerprint real
-  let version ← try
-    let out ← IO.Process.output {cmd := real.toString, args := #["--version"]}
-    pure (if out.exitCode == 0 then some out.stdout.trimAscii.copy else none)
-    catch _ => pure none
-  let githash ← try
-    let out ← IO.Process.output {cmd := real.toString, args := #["--githash"]}
-    pure (if out.exitCode == 0 then some out.stdout.trimAscii.copy else none)
-    catch _ => pure none
+  let prepared ← preparedMetadata root real compilerFingerprint
+  let (version, githash) ← match prepared with
+    | some (version, githash) => pure (some version, some githash)
+    | none => do pure (← compilerQuery real "--version", ← compilerQuery real "--githash")
   let gateDir ← IO.getEnv "HEAVY_BUDGET_DIR"
   let gated := gateDir.isSome && (parsed.map (·.kind)) != some "query"
   let mut requestDemand := 0
@@ -208,6 +242,13 @@ def run (args : List String) : IO UInt32 := do
   return outcome.shellCode.toUInt32
 
 def main (args : List String) : IO UInt32 := do
+  -- Only overlay.py's short-lived private copy can select preparation. Even
+  -- identical arguments to bin/lean continue to reach the actual compiler.
+  if (← IO.appPath).fileName == some ".prepare-compiler-metadata" then
+    try
+      if let [real, output] := args then prepareMetadata real output
+    catch _ => pure ()
+    return 0
   try run args
   catch e =>
     warn s!"setup failed: {e}"

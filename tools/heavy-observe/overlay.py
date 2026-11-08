@@ -46,6 +46,25 @@ def create(destination, real, observer):
     (destination / "bin/lean").chmod(0o755)
     (destination / "real-lean.path").write_text(str(real) + "\n")
     (destination / "records").mkdir(mode=0o700)
+    # Native Lean's compiled version/hash must stay constant for this owned
+    # overlay's lifetime, including its delegated installed libraries. This is
+    # a caller contract, not an ELF/authenticity test for arbitrary executables.
+    # The setup-only copy computes exactly the runtime fingerprint/checksum.
+    helper = destination / "bin/.prepare-compiler-metadata"
+    pending = destination / ".compiler-metadata.pending"
+    helper.write_bytes(observer_data)
+    helper.chmod(0o700)
+    try:
+        result = subprocess.run([str(helper), str(real), str(pending)],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if result.returncode == 0 and pending.exists():
+            pending.chmod(0o444)
+            pending.rename(destination / "compiler-metadata")
+    except OSError:
+        pass  # Optional preparation never replaces the runtime query fallback.
+    finally:
+        helper.unlink()
+        pending.unlink(missing_ok=True)
     # Read-only installed assets, not build outputs, packages or git metadata.
     for name in ("lib", "include", "share", "src"):
         if (prefix / name).exists():

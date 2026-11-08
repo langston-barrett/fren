@@ -116,6 +116,15 @@ def identityPart : Option String → Bool
   | some s => s != ""
   | none => false
 
+/-- Raw observations from the current compiler and trusted immutable setup.
+Checksums detect damage; query stability is the native Lean caller contract. -/
+def reuseMetadata (currentPath : String) (currentFingerprint : Option String)
+    (preparedPath preparedFingerprint version githash : String)
+    (observedChecksum storedChecksum : Nat) : Bool :=
+  decide (currentPath ≠ "" ∧ currentPath = preparedPath ∧
+    currentFingerprint = some preparedFingerprint ∧ preparedFingerprint ≠ "" ∧
+    version ≠ "" ∧ githash ≠ "" ∧ observedChecksum = storedChecksum)
+
 /-- A fingerprint of source bytes alone is deliberately insufficient. The
 caller must leave the input closure absent when it cannot observe it. -/
 def identityComplete (source toolchain inputClosure : Option String) : Bool :=

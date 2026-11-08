@@ -1630,7 +1630,9 @@ pub proc heavy_process_usage(
         then Option::Some(rss) else Option::None)
 }
 
-pub proc heavy_process_request_excess(requested: Option<Int>, observed: Option<Int>): (det excess: Option<Int>) {
+pub proc heavy_process_request_excess(requested: Option<Int>, observed: Option<Int>): (
+    det excess: Option<Int>,
+) {
     ensure raw_comparison: excess = (match requested, observed {
         Option::Some(request), Option::Some(peak) =>
             if request = 0 then Option::None
@@ -1730,6 +1732,21 @@ pub proc heavy_process_identity(
     ensure raw_parts: complete? iff identity_part?(source) and identity_part?(toolchain) and identity_part?(input_closure)
 }
 
+pub proc heavy_process_metadata_reuse(
+    current_path: String,
+    current_fingerprint: Option<String>,
+    prepared_path: String,
+    prepared_fingerprint: String,
+    version: String,
+    githash: String,
+    observed_checksum: Nat,
+    stored_checksum: Nat,
+): (det reuse?) {
+    ensure raw_identity: reuse? iff current_path != "" and current_path = prepared_path
+        and current_fingerprint = Option::Some(prepared_fingerprint) and prepared_fingerprint != ""
+        and version != "" and githash != "" and observed_checksum = stored_checksum
+}
+
 #fren_check heavy_process_result
 #fren_check heavy_process_elapsed
 #fren_check heavy_process_usage
@@ -1737,7 +1754,28 @@ pub proc heavy_process_identity(
 #fren_check heavy_process_fingerprint
 #fren_check heavy_process_arguments
 #fren_check heavy_process_identity
+#fren_check heavy_process_metadata_reuse
 ```
+
+An owned overlay may prepare immutable version/git-hash metadata once for a
+native Lean installation whose two queries are constants of its compiled
+installation, independent of cwd and environment. Its installed libraries must
+remain immutable during the overlay's lifetime. Environment-dependent metadata,
+scripts and unrecognized query formats are unsupported and keep the ordinary
+query path. An ELF header
+and recognizable query text restrict this domain; they do not certify arbitrary
+executables as Lean or prove query stability. The caller supplies a trusted
+native Lean installation, not arbitrary code with Lean-shaped output.
+
+Every invocation still fingerprints the full current compiler through the
+pinned regular-file reader. `heavy_process_metadata_reuse` compares the actual
+canonical path, optional current fingerprint, prepared identity, nonempty
+query values and freshly computed/stored metadata checksums. Missing, malformed,
+corrupt or unequal prepared data silently falls back to both actual queries.
+The checksum detects accidental damage, not malicious replacement of trusted
+owned setup files. Neither stat nor a noncryptographic fingerprint proves byte
+identity or closes a mutation-before-exec race. The existing partial identity,
+source/context fields, cohort and physical status contracts remain unchanged.
 
 The separate compiler adviser uses actual schema 2/3 records, never the
 legacy job-kind forecast's failed-job policy. `heavy_compiler_sample` binds
@@ -2195,7 +2233,7 @@ fixtures and the existing `tested` claims. The standalone Heavy kernels
 are outside those Fren runtimes. The `implPaths` audit therefore records
 each mapped output as an exact `unbound` observation in
 `test/impl_paths.txt`, including the forecast's two outputs and ownership's
-fourteen plus the conversion's four, and the process observer's seven.
+fourteen plus the conversion's four, and the process observer's eight.
 These observations certify no runtime
 connection; unexpected, duplicate and stale inventory entries still fail
 the audit. Its regressions also check that a real standalone kernel call,

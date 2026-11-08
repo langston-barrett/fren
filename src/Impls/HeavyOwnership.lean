@@ -547,6 +547,25 @@ impl process_arguments: testing::heavy_process_arguments for (args : List String
   simpa [fren_spec, Heavy.Process.parseMetadata, empty_metadata_eq] using
     metadata_loop_eq args (Heavy.Process.emptyMetadata "file")
 
+impl process_metadata_reuse: testing::heavy_process_metadata_reuse
+    for (currentPath : String) (currentFingerprint : Option String)
+        (preparedPath preparedFingerprint version githash : String)
+        (observedChecksum storedChecksum : Nat) {
+  current_path := currentPath,
+  current_fingerprint := currentFingerprint,
+  prepared_path := preparedPath,
+  prepared_fingerprint := preparedFingerprint,
+  version := version,
+  githash := githash,
+  observed_checksum := observedChecksum,
+  stored_checksum := storedChecksum,
+  reuse? := Heavy.Process.reuseMetadata currentPath currentFingerprint
+    preparedPath preparedFingerprint version githash observedChecksum storedChecksum,
+} by
+  intro currentPath currentFingerprint preparedPath preparedFingerprint version githash
+    observedChecksum storedChecksum _
+  simp [fren_spec, Heavy.Process.reuseMetadata, Fren.Str.lit, and_assoc]
+
 impl process_identity: testing::heavy_process_identity
     for (source toolchain inputClosure : Option String) {
   source := source,

@@ -195,3 +195,176 @@ def metadata_controls(work, compare, rows):
             assert result.returncode == 0 and (work / output).stat().st_size > 0
         evidence.append({"unsupported_case": args, "actual_status": result.returncode, "metadata_absent": True})
     return evidence
+
+
+def metadata_reuse_controls(work, observer):
+    """Actual producer/query counts using owned native constant-metadata images.
+
+    This fixture obeys the native query-stability contract; its append-only log
+    observes actual argv. It is not evidence that arbitrary ELF output is stable.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from overlay import create
+
+    root = work / "metadata-reuse"
+    (root / "native/bin").mkdir(parents=True)
+    real = root / "native/bin/lean"
+    log = root / "argv.jsonl"
+    src = root / "compiler.c"
+    source = r'''
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <signal.h>
+#ifndef LABEL
+#define LABEL "one"
+#endif
+int main(int argc, char **argv) {
+    const char *log = getenv("METADATA_QUERY_LOG");
+    if (log) { FILE *f = fopen(log, "a"); if (!f) return 91;
+        for (int i = 1; i < argc; ++i) fprintf(f, "%s%s", i == 1 ? "" : "\t", argv[i]);
+        fprintf(f, "\n"); fclose(f); }
+    if (argc == 2 && !strcmp(argv[1], "--print-prefix")) {
+        char p[4096]; ssize_t n = readlink("/proc/self/exe", p, sizeof(p)-1);
+        if (n < 0) return 92; p[n] = 0;
+        *strrchr(p, '/') = 0; *strrchr(p, '/') = 0; puts(p); return 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--version")) {
+        puts("Lean (version fixture-" LABEL ", commit 0123456789abcdef0123456789abcdef01234567, Release)"); return 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--githash")) {
+        puts("0123456789abcdef0123456789abcdef01234567"); return 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--signal")) { raise(SIGTERM); return 93; }
+    fputs("owned compiler stderr\n", stderr); puts(LABEL); return 7;
+}
+'''
+    src.write_text(source)
+    subprocess.run(["cc", "-O2", str(src), "-o", str(real)], check=True, capture_output=True)
+    original = real.read_bytes()
+    env = dict(os.environ, METADATA_QUERY_LOG=str(log))
+    env.pop("HEAVY_BUDGET_DIR", None)
+    env.pop("HEAVY_OBSERVE_DIR", None)
+    overlay = create(root / "overlay", real, observer)
+    shim = overlay / "bin/lean"
+    prepared = overlay / "compiler-metadata"
+    saved = prepared.read_bytes()
+    assert prepared.stat().st_mode & 0o222 == 0
+    evidence = []
+    variable = {"child_pid", "start_monotonic_ns", "end_monotonic_ns", "wall_ns",
+                "user_us", "system_us", "peak_rss_kib", "measured_cpu_us", "measured_peak_rss_kib"}
+
+    def invoke(args, expected_queries):
+        before = set((overlay / "records").glob("*.json"))
+        log.write_text("")
+        ordinary = subprocess.run([str(real), *args], env=env, capture_output=True, timeout=5)
+        log.write_text("")
+        observed = subprocess.run([str(shim), *args], env=env, capture_output=True, timeout=5)
+        calls = log.read_text().splitlines()
+        assert calls == expected_queries + ["\t".join(args)], calls
+        assert (observed.returncode, observed.stdout, observed.stderr) == (
+            ordinary.returncode, ordinary.stdout, ordinary.stderr), (ordinary, observed)
+        added = set((overlay / "records").glob("*.json")) - before
+        assert len(added) == 1
+        row = json.loads(added.pop().read_text())
+        assert row["args"] == args and row["shell_code"] == (128 - observed.returncode if observed.returncode < 0 else observed.returncode)
+        evidence.append(dict(args=args, status=observed.returncode, calls=calls, record=row))
+        return {k: v for k, v in row.items() if k not in variable}
+
+    args = ["Missing.lean", "-o", "requested.olean", "--setup", "missing-setup.json"]
+    reused = invoke(args, [])
+    prepared.unlink()
+    uncached = invoke(args, ["--version", "--githash"])
+    assert reused == uncached, (reused, uncached)
+    prepared.write_bytes(saved)
+    for query in ("--version", "--githash"):
+        invoke([query], [])  # actual query argv is still executed exactly once
+    invoke(["--signal"], [])
+    # Valid compiler argv never selects the setup-only basename entry.
+    invoke(["--heavy-prepare-compiler-metadata", "x", "y"], [])
+    # Well-formed version corruption, rather than merely a parse failure.
+    prepared.write_bytes(saved.replace(b"fixture-one", b"fixture-bad"))
+    invoke(args, ["--version", "--githash"])
+    for corrupt in (b"\xff", b"partial\n", saved + b"trailing", saved.replace(b"\n", b"\r\n")):
+        prepared.write_bytes(corrupt)
+        invoke(args, ["--version", "--githash"])
+    prepared.write_bytes(saved)
+    # The executable still runs when its full image changes without changing
+    # its path/size timestamp observations into a supplied validity verdict.
+    real.write_bytes(original + b"changed image")
+    invoke(args, ["--version", "--githash"])
+    # Replace at the same pathname, preserving mtime, with different metadata.
+    replacement = root / "replacement"
+    subprocess.run(["cc", "-O2", '-DLABEL="two"', str(src), "-o", str(replacement)],
+                   check=True, capture_output=True)
+    info = real.stat()
+    os.utime(replacement, ns=(info.st_atime_ns, info.st_mtime_ns))
+    assert replacement.stat().st_size == len(original)
+    replacement.replace(real)
+    changed = invoke(args, ["--version", "--githash"])
+    assert "fixture-two" in changed["compiler_version"]
+    real.write_bytes(original)
+    moved = real.with_name("missing-image")
+    real.rename(moved)
+    p = subprocess.run([str(shim), "--version"], env=env, capture_output=True, timeout=5)
+    assert p.returncode == 127 and b"exec failed (errno 2)" in p.stderr
+    missing = max((overlay / "records").glob("*.json"), key=lambda p: p.stat().st_mtime_ns)
+    missing = json.loads(missing.read_text())
+    assert missing["compiler_fingerprint"] is None and missing["compiler_version"] is None
+    assert missing["compiler_githash"] is None and missing["exec_errno"] == 2
+    moved.rename(real)
+    evidence.append(dict(missing_image=True, physical_status=p.returncode, record=missing))
+    # The same bytes at a different canonical compiler path do not reuse.
+    copy = root / "native/bin/copy"
+    copy.write_bytes(original); copy.chmod(0o755)
+    (overlay / "real-lean.path").write_text(str(copy) + "\n")
+    invoke(args, ["--version", "--githash"])
+    (overlay / "real-lean.path").write_text(str(real) + "\n")
+    prepared.chmod(0o444)
+    log.write_text("")
+    before = set((overlay / "records").glob("*.json"))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: subprocess.run([str(shim), "--version"],
+            env=env, capture_output=True, timeout=5), range(8)))
+    assert all(p.returncode == 0 and not p.stderr for p in results)
+    assert log.read_text().splitlines() == ["--version"] * 8
+    assert len(set((overlay / "records").glob("*.json")) - before) == 8
+    assert prepared.read_bytes() == saved and prepared.stat().st_mode & 0o222 == 0
+    evidence.append(dict(concurrent_readers=8, actual_calls=8, metadata_queries=0, immutable=True))
+    # Scripts can return arbitrary environment-dependent query output. They
+    # never enter the prepared domain, even when they print Lean-shaped text.
+    script = root / "script/bin/lean"
+    script.parent.mkdir(parents=True)
+    script.write_text('#!/bin/sh\ncase "$1" in\n--print-prefix) dirname "$(dirname "$0")";;\n'
+        '--version) echo "${VARIABLE_VERSION:-script-version}";;\n--githash) exit 9;;\n*) exit 7;;\nesac\n')
+    script.chmod(0o755)
+    unsupported = create(root / "unsupported", script, observer)
+    assert not (unsupported / "compiler-metadata").exists()
+    for version in ("first", "second"):
+        p = subprocess.run([str(unsupported / "bin/lean"), "X.lean"],
+            env={**env, "VARIABLE_VERSION": version}, capture_output=True, timeout=5)
+        assert p.returncode == 7 and not p.stderr
+    rows = [json.loads(p.read_text()) for p in (unsupported / "records").glob("*.json")]
+    assert {r["compiler_version"] for r in rows} == {"first", "second"}
+    assert all(r["compiler_githash"] is None for r in rows)
+    evidence.append(dict(unsupported_script=True, versions=["first", "second"], failed_githash=None))
+    # A four-byte format probe must not allocate a list for the full image.
+    # Finite Linux wait4 regression only: these peaks are not private memory
+    # or predictions. Compare two fresh owned helpers with generous slack.
+    helper = root / ".prepare-compiler-metadata"
+    helper.write_bytes(observer.read_bytes()); helper.chmod(0o700)
+    peaks = []
+    for label, size in (("small", len(original)), ("padded", 2097152)):
+        image = root / (label + "-image")
+        image.write_bytes(original + bytes(size - len(original))); image.chmod(0o700)
+        output = root / (label + "-metadata")
+        child = subprocess.Popen([str(helper), str(image), str(output)], env=env,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _, status, usage = os.wait4(child.pid, 0)
+        child.returncode = os.waitstatus_to_exitcode(status)
+        assert child.returncode == 0 and output.is_file()
+        peaks.append(usage.ru_maxrss)
+    assert peaks[1] - peaks[0] < 32768, peaks
+    evidence.append(dict(prefix_probe_image_bytes=2097152, helper_peaks_kib=peaks))
+    return evidence
