@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -72,6 +73,77 @@ def main():
     assert any(x['input_kind'] == 'file' and x['source'] == str(basic)
                and x['request_provenance'] == 'explicit-unknown-fallback'
                and x['requested_reservation_kib'] == 550000 for x in built)
+    # Real short-command source requests, including a stale fingerprint on rebuild.
+    other = pkg / 'Tiny.lean'
+    def fingerprint(path):
+        value = subprocess.check_output([str(TOOLS / 'process_tests'), '--read', str(path)], text=True).strip()
+        assert value.startswith('some:')
+        return f'lean-bytearray64:{path.stat().st_size}:{value[5:]}'
+    request.write_text(f'{basic}\t{fingerprint(basic)}\t410000\n'
+                       f'{other}\t{fingerprint(other)}\t470000\n')
+    env['FREN_BUILD_REQUESTS_FILE'] = str(request)
+    short = Path(os.environ.get('HEAVY_TEST_SHORT_BUILD', str(BUILD)))
+    old = os.environ.get('HEAVY_TEST_OLD_SHORT') == '1'
+    def short_build(label):
+        shutil.rmtree(pkg / '.lake', ignore_errors=True)
+        before = set(work.glob('fren-build-*'))
+        proc = subprocess.run([str(short), '+Tiny'], cwd=pkg, env=env, capture_output=True, timeout=30)
+        assert proc.returncode == 0, proc.stderr
+        created = set(work.glob('fren-build-*')) - before
+        assert len(created) == 1
+        directory = created.pop()
+        records = [json.loads(f.read_text()) for f in (directory / 'state/overlay/records').glob('process-*.json')]
+        files = {x['source']: x for x in records if x['input_kind'] == 'file'}
+        assert set(files) == {str(basic), str(other)}
+        assert all(x['schema'] == 3 and x['child_present'] and x['raw_wait_status'] == 0
+                   and x['gate_errno'] == 0 and x['cwd'] == str(pkg) for x in files.values())
+        artifacts = {str(f.relative_to(pkg / '.lake/build')): hashlib.sha256(f.read_bytes()).hexdigest()
+                     for f in (pkg / '.lake/build').rglob('*.olean')}
+        results.append({'case': label, 'status': proc.returncode, 'stdout': proc.stdout.decode(),
+                        'stderr': proc.stderr.decode(), 'records': files, 'artifacts': artifacts})
+        return files, artifacts
+    baseline = os.environ.get('HEAVY_TEST_BASELINE_SHORT')
+    if baseline:
+        current_short = short
+        short = Path(baseline)
+        baseline_files, baseline_artifacts = short_build('baseline-explicit-requests')
+        baseline_result = results[-1]
+        assert all(row['request_provenance'] == 'explicit-unknown-fallback'
+                   and row['requested_reservation_kib'] == 550000 for row in baseline_files.values())
+        short = current_short
+    files, artifacts = short_build('explicit-requests')
+    if baseline:
+        assert artifacts == baseline_artifacts
+        assert results[-1]['status'] == baseline_result['status']
+        def normalize(stream):
+            return re.sub(r'\([0-9.]+(?:ms|s)\)', '(TIME)', re.sub(r'fren-build-[^/\s]+', 'fren-build-STATE', stream))
+        assert normalize(results[-1]['stdout']) == normalize(baseline_result['stdout']), (results[-1]['stdout'], baseline_result['stdout'])
+        assert normalize(results[-1]['stderr']) == normalize(baseline_result['stderr'])
+
+    for source, demand in ((basic, 410000), (other, 470000)):
+        row = files[str(source)]
+        assert row['request_provenance'] == ('explicit-unknown-fallback' if old else 'explicit-source-request')
+        assert row['requested_reservation_kib'] == (550000 if old else demand)
+    basic.write_text(basic.read_text() + '-- changed after manifest\n')
+    files, _ = short_build('stale-request')
+    assert files[str(basic)]['request_provenance'] == 'explicit-unknown-fallback'
+    assert files[str(basic)]['requested_reservation_kib'] == 550000
+    if not old:
+        assert files[str(other)]['request_provenance'] == 'explicit-source-request'
+        assert files[str(other)]['requested_reservation_kib'] == 470000
+        # Invalid configuration must not start Lake or create a retained session.
+        unreadable = work / 'unreadable'; unreadable.write_text(''); unreadable.chmod(0)
+        for invalid in ('', 'relative', str(work / 'absent'), str(work), str(unreadable)):
+            before = set(work.glob('fren-build-*'))
+            invalid_env = dict(env, FREN_BUILD_REQUESTS_FILE=invalid)
+            proc = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg, env=invalid_env, capture_output=True, timeout=10)
+            assert proc.returncode == 125 and b'FREN_BUILD_REQUESTS_FILE' in proc.stderr, (invalid, proc.returncode, proc.stderr)
+            assert set(work.glob('fren-build-*')) == before
+        bad = work / 'bad-short'; bad.write_text('invalid\n')
+        proc = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg,
+                              env=dict(env, FREN_BUILD_REQUESTS_FILE=str(bad)), capture_output=True, timeout=10)
+        assert proc.returncode == 125
+    del env['FREN_BUILD_REQUESTS_FILE']
     p = subprocess.run([str(BUILD), 'missing target $literal'], cwd=pkg, env=env, capture_output=True, timeout=30)
     assert p.returncode != 0 and b'missing target $literal' in p.stderr + p.stdout
     env['FREN_BUILD_FALLBACK_KIB'] = '0'

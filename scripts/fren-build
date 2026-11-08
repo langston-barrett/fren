@@ -34,9 +34,19 @@ def main():
         lake = real.parent / 'lake'
         if not lake.is_file() or not os.access(lake, os.X_OK):
             raise ValueError(f'missing Lake beside pinned compiler: {lake}')
+        configured = env.get('FREN_BUILD_REQUESTS_FILE')
+        if configured is not None:
+            requests = Path(configured)
+            if (not requests.is_absolute() or not requests.is_file() or not requests.stat().st_mode & 0o444
+                    or not os.access(requests, os.R_OK)):
+                raise ValueError('FREN_BUILD_REQUESTS_FILE must be an absolute readable regular file')
+            # Check actual readability before starting the controller.
+            with requests.open('rb'):
+                pass
         work = Path(tempfile.mkdtemp(prefix='fren-build-')).resolve()
-        requests = work / 'requests.tsv'
-        requests.write_text('')
+        if configured is None:
+            requests = work / 'requests.tsv'
+            requests.write_text('')
         print(f'fren-build: retained private state: {work}', file=sys.stderr, flush=True)
         entry = ROOT / 'scripts/heavy-lean-build'
         os.execve(str(entry), [str(entry), '--state', str(work / 'state'), '--real-lean', str(real),
