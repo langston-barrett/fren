@@ -14,7 +14,7 @@ expectations with typed parameters and labelled `assume` and `expect`
 members. Types are `Bool`, `Int` and named enumerations. Expressions include
 names and qualified paths, Boolean and decimal integer literals, calls,
 parentheses, `if`, `let` and enumeration `match`. The operator slice is
-unary `-`; binary `+`, `-`, `*`, `/`, `mod`, `=`, `!=`, `<`, `<=`, `>`, `>=`;
+unary `-`; binary `+`, `-`, `*`, `div`, `mod`, `=`, `!=`, `<`, `<=`, `>`, `>=`;
 `not`, `and`, `or` and `iff`. Parsing an operator does not establish its
 operand types or definedness.
 
@@ -46,7 +46,12 @@ expect waits(l: Light, base: Int) {
 }
 
 pub fn choose(b?, base: Int): Int := let delay := base + 5 in if b? then delay else base
+
+expect division(x: Int) { expect euclidean: x = (x div 2) * 2 + x mod 2 }
 ```
+
+Integer division is written `div`; `/` is rejected. The division example
+uses the constant nonzero divisor 2.
 
 `base + 5 * 2` groups as `base + (5 * 2)`, and `base - 5 - 2` as
 `(base - 5) - 2`. Calls bind before arithmetic; unary minus binds before
