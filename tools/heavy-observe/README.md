@@ -110,12 +110,16 @@ peak, private memory, PSS, a reservation or a safe bound. Wall time covers
 fork through wait4, excluding fingerprinting, version probes and publishing.
 Measure caller wall time for total observer overhead.
 
-The registered Linux `heavyProcess` job builds the standalone targets and
-runs the harness as part of `lake test`. With the repository driver already
-built, run `scripts/heavy --offline lake env .lake/build/bin/fren_test
---job heavyProcess`. Other platforms report a skip, since this first
-observer is Linux-only. The manual standalone recipe
-above remains independent of Fren.
+The registered Linux `heavyProcess` jobs build the standalone targets and run
+five disjoint harness selections as part of `lake test`: `publisher`,
+`forecast`, `entrypoint`, `cohort` and `core`. With the repository driver
+already built, run a selection with `scripts/heavy --offline lake env
+.lake/build/bin/fren_test --job heavyProcess publisher` (substitute another
+selection). The manual `--job heavyProcess` runs all five in one job, and
+`--job heavyProcess controls` runs all controls without the scratch comparison;
+neither manual aggregate is a 30-second registered job. Other platforms skip
+these Linux-only controls. The standalone recipe above remains independent of
+Fren.
 
 The registered harness also runs the bounded cohort gate fixture under isolated
 Python. It checks actual extracted source identity for a supported argv change:
