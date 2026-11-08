@@ -4506,7 +4506,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyProcess"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
@@ -4583,6 +4583,17 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     -- Build the Std-only module loaded by the test transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_ownership_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"heavy ownership differential check failed:\n{out.stdout}{out.stderr}"]
+  | ["heavyProcess"] => do
+    if !(System.Platform.target.splitOn "-").contains "linux" then
+      IO.eprintln "heavyProcess: skipped (Linux process observer)"
+      return #[]
+    -- An independent core/Std package, not a rebuild of Fren at invocation.
+    let built ← IO.Process.output { cmd := "lake", args := #["-d", "tools/heavy-observe",
+      "build", "heavy_observe", "process_tests", "--wfail"] }
+    if built.exitCode != 0 then
+      return #[s!"standalone observer build failed:\n{built.stdout}{built.stderr}"]
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"heavy process integration failed:\n{out.stdout}{out.stderr}"]
   | ["heavyPrediction"] => do
     -- The Heavy.Forecast import builds the module loaded by this transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }

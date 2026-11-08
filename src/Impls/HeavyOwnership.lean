@@ -1,6 +1,7 @@
 -- keep-sorted start
 import Fren.Impl
 import Heavy.Ownership
+import Heavy.Process
 import Reqs.Testing
 -- keep-sorted end
 open Fren.Lang
@@ -343,5 +344,96 @@ impl signal_attempt: testing::heavy_signal_attempt
   intro subreaper leader wait probe _
   cases subreaper <;> cases leader <;> cases wait <;> cases probe <;>
     simp [fren_spec, signalAttempt, groupGone, groupProbe] <;> decide
+
+end Fren.Impls.HeavyOwnership
+
+namespace Fren.Impls.HeavyOwnership
+
+-- These are the actual functions called by the standalone compiler launcher.
+impl process_result: testing::heavy_process_result
+    for (launchError execError waitError status : Nat) {
+  launch_error := launchError,
+  exec_error := execError,
+  wait_error := waitError,
+  status := status,
+  result := let r := Heavy.Process.result launchError execError waitError status
+    ⟨r.kind, r.detail, r.shellCode⟩,
+} by
+  intro launchError execError waitError status _
+  have hz : ((status : Int) % 128 = 0) ↔ status % 128 = 0 := by omega
+  have hs : ((status : Int) % 128 < 127) ↔ status % 128 < 127 := by omega
+  by_cases hl : 0 < launchError <;> by_cases hw : 0 < waitError <;>
+    by_cases he : 0 < execError <;> by_cases h0 : status % 128 = 0 <;>
+    by_cases h1 : status % 128 < 127 <;>
+    simp [fren_spec, Heavy.Process.result, testing.process_result, hl, hw, he, h0, h1, hz, hs]
+
+impl process_elapsed: testing::heavy_process_elapsed for (clockError start finish : Nat) {
+  clock_error := clockError,
+  start := start,
+  finish := finish,
+  elapsed := (Heavy.Process.elapsed clockError start finish).map Int.ofNat,
+} by
+  intro clockError start finish _
+  by_cases h : clockError = 0 ∧ finish ≥ start
+  · have hsub : ((finish - start : Nat) : Int) = (finish : Int) - (start : Int) := by omega
+    simp [fren_spec, Heavy.Process.elapsed, h, hsub]
+  · simp [fren_spec, Heavy.Process.elapsed, h]
+
+impl process_usage: testing::heavy_process_usage
+    for (launchError execError waitError status user system rss : Nat) {
+  launch_error := launchError,
+  exec_error := execError,
+  wait_error := waitError,
+  status := status,
+  user := user,
+  system := system,
+  rss := rss,
+  cpu := (Heavy.Process.usage launchError execError waitError status user system rss).map (fun p => (p.1 : Int)),
+  peak := (Heavy.Process.usage launchError execError waitError status user system rss).map (fun p => (p.2 : Int)),
+} by
+  intro launchError execError waitError status user system rss _
+  have hs : ((status : Int) % 128 < 127) ↔ status % 128 < 127 := by omega
+  simp [fren_spec, Heavy.Process.usage, hs, and_assoc]
+
+impl process_fingerprint: testing::heavy_process_fingerprint for (mode bytes : Nat) {
+  mode := mode,
+  bytes := bytes,
+  read? := Heavy.Process.fingerprintAllowed mode bytes,
+} by
+  intro mode bytes _
+  have hm : (((mode : Int) / 4096) % 16 = 8) ↔ mode / 4096 % 16 = 8 := by omega
+  have hb : ((bytes : Int) ≤ 67108864) ↔ bytes ≤ 67108864 := by omega
+  simp [fren_spec, Heavy.Process.fingerprintAllowed, hm, hb]
+
+def arguments : List String → testing.ProcessArguments
+  | [] => .Nil
+  | a :: rest => .Cons a (arguments rest)
+
+impl process_arguments: testing::heavy_process_arguments for (args : List String) {
+  args := arguments args,
+  compiler_args := arguments (Heavy.Process.compilerArguments args),
+} by
+  intro args _
+  simp only [fren_spec]
+  induction args with
+  | nil => simp [arguments, Heavy.Process.compilerArguments, testing.process_compiler_arguments]
+  | cons a rest ih =>
+    cases rest with
+    | nil => by_cases h : a = "--run" <;>
+        simp [arguments, Heavy.Process.compilerArguments, testing.process_compiler_arguments, h]
+    | cons b tail => by_cases h : a = "--run" <;>
+        simp_all [arguments, Heavy.Process.compilerArguments, testing.process_compiler_arguments]
+
+impl process_identity: testing::heavy_process_identity
+    for (source toolchain inputClosure : Option String) {
+  source := source,
+  toolchain := toolchain,
+  input_closure := inputClosure,
+  complete? := Heavy.Process.identityComplete source toolchain inputClosure,
+} by
+  intro source toolchain inputClosure _
+  cases source <;> cases toolchain <;> cases inputClosure <;>
+    simp [fren_spec, Heavy.Process.identityComplete, Heavy.Process.identityPart,
+      testing.identity_part?]
 
 end Fren.Impls.HeavyOwnership

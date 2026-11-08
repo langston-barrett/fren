@@ -1483,6 +1483,167 @@ remains Python; its tested binding in `Impls.Trace` still covers log I/O.
 The `heavyPrediction` test job compares both forecasts on sanitized log
 observations and boundary cases.
 
+### Lean compiler process observations
+
+`tools/heavy-observe` is an opt-in, standalone Lean core/Std launcher for
+one compiler family: `lean`. An owned Lake toolchain overlay selects it
+with `LAKE_OVERRIDE_LEAN=true` and `LEAN_SYSROOT`; PATH alone is insufficient.
+It resolves the real compiler from an explicit, canonical configuration,
+independently of compiler discovery, and rejects itself as the real compiler.
+It forwards arguments, environment and inherited standard streams. Discovery
+queries reach the real compiler too. It never builds Fren during invocation
+and changes neither admission nor the measured-memory backstop.
+
+The launcher records raw launch/exec/wait errors, Linux wait status,
+monotonic start/end nanoseconds, wait4 user/system microseconds and peak RSS
+in KiB. `heavy_process_result` distinguishes ordinary exit, signal, exec
+failure and observer failure (kinds 0, 1, 2 and 3). A signal result also
+records the core-dump bit in the raw status; the launcher re-raises that
+signal after recording, rather than pretending it was an ordinary exit.
+`heavy_process_usage` exposes CPU and RSS only after a terminated child was
+reaped without launch, exec or wait errors. A signal measurement is censored:
+it is no evidence of the memory needed to finish. Wait4 includes usage of
+descendants the child waited for; its peak is not a concurrent tree sum.
+Clock or record-write failure must not replace an available child outcome.
+A failed record write emits a diagnostic; observation is best effort, not
+permission to run. No physical clock, fork, exec, wait4, filesystem or signal
+authenticity is proved by these pure functions: the owned subprocess tests
+exercise those external assumptions, including failures.
+
+Source paths, arguments, setup-file and output-artifact content fingerprints,
+cwd and the actual compiler's path/version/hash accompany each observation.
+Content fingerprints in this slice are explicitly non-cryptographic Lean
+ByteArray hashes with byte counts. Imported artifacts, arbitrary reader inputs,
+plugins and environment closure are not captured. The launcher therefore
+leaves `input_closure` absent and reports incomplete identity, including for
+successful builds. A source hash alone is never an exact forecast key.
+`heavy_process_identity` derives completeness from the raw optional identity
+parts, not a supplied verdict. Historical measurements can inform a later
+conservative predictor; this slice provides no admission or memory bound.
+
+Fingerprint reads open without blocking, inspect the opened descriptor's raw
+mode and size, and call `heavy_process_fingerprint` before reading bytes.
+Nonregular files and files over 64 MiB produce absent fingerprints, including
+FIFO sources/outputs and piped standard streams. Filesystem authenticity and
+concurrent mutation are external assumptions; there is no universal OS proof.
+`heavy_process_arguments` takes raw arguments and retains the `--run` operand
+while excluding the executed program's following arguments from metadata.
+Forwarding still uses the entire original argument list. The Linux-only
+`heavyProcess` test job builds the standalone targets and runs their actual
+subprocess controls, so the normal `lake test` path exercises this boundary.
+
+```fren
+pub struct ProcessResult { kind: Nat, detail: Nat, shell_code: Nat }
+
+pub fn process_result(
+    launch_error: Nat,
+    exec_error: Nat,
+    wait_error: Nat,
+    status: Nat
+): ProcessResult :=
+    if launch_error > 0 then ProcessResult {
+        kind := 3,
+        detail := launch_error,
+        shell_code := 125,
+    }
+    else if wait_error > 0 then ProcessResult {
+        kind := 3,
+        detail := wait_error,
+        shell_code := 125,
+    }
+    else if exec_error > 0 then ProcessResult {
+        kind := 2,
+        detail := exec_error,
+        shell_code := 127,
+    }
+    else if status mod 128 = 0 then ProcessResult {
+        kind := 0,
+        detail := (status div 256) mod 256,
+        shell_code := (status div 256) mod 256,
+    }
+    else if status mod 128 < 127 then ProcessResult {
+        kind := 1,
+        detail := status mod 128,
+        shell_code := 128 + status mod 128,
+    }
+    else ProcessResult {
+        kind := 3,
+        detail := 0,
+        shell_code := 125,
+    }
+
+pub proc heavy_process_result(launch_error: Nat, exec_error: Nat, wait_error: Nat, status: Nat): (
+    det result: ProcessResult,
+) {
+    ensure converted: result = process_result(launch_error, exec_error, wait_error, status)
+}
+
+pub proc heavy_process_elapsed(clock_error: Nat, start: Nat, finish: Nat): (
+    det elapsed: Option<Int>,
+) {
+    ensure measured: elapsed = (if clock_error = 0 and finish >= start then Option::Some(finish - start) else Option::None)
+}
+
+pub proc heavy_process_usage(
+    launch_error: Nat,
+    exec_error: Nat,
+    wait_error: Nat,
+    status: Nat,
+    user: Nat,
+    system: Nat,
+    rss: Nat,
+): (det cpu: Option<Int>, det peak: Option<Int>) {
+    ensure cpu_observation: cpu = (if launch_error = 0 and exec_error = 0 and wait_error = 0 and status mod 128 < 127
+        then Option::Some(user + system) else Option::None)
+    ensure rss_observation: peak = (if launch_error = 0 and exec_error = 0 and wait_error = 0 and status mod 128 < 127
+        then Option::Some(rss) else Option::None)
+}
+
+-- Linux's raw mode type bits are (mode div 4096) mod 16; 8 is regular.
+-- The observer bounds its own fingerprint buffer at 64 MiB.
+pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
+    ensure raw_file: read? iff (mode div 4096) mod 16 = 8 and bytes <= 67108864
+}
+
+pub enum ProcessArguments { Nil, Cons(String, ProcessArguments) }
+
+pub fn process_compiler_arguments(args: ProcessArguments): ProcessArguments := match args {
+    ProcessArguments::Nil => ProcessArguments::Nil,
+    ProcessArguments::Cons(arg, rest) =>
+        if arg = "--run" then match rest {
+            ProcessArguments::Nil => ProcessArguments::Cons(arg, ProcessArguments::Nil),
+            ProcessArguments::Cons(file, _) =>
+                ProcessArguments::Cons(arg, ProcessArguments::Cons(file, ProcessArguments::Nil)),
+        }
+        else ProcessArguments::Cons(arg, process_compiler_arguments(rest)),
+}
+
+pub proc heavy_process_arguments(args: ProcessArguments): (det compiler_args: ProcessArguments) {
+    out compiler_args := process_compiler_arguments(args)
+    expect boundary: compiler_args = process_compiler_arguments(args)
+}
+
+pub fn identity_part?(part: Option<String>) := match part {
+    Option::Some(value) => value != "",
+    Option::None => false,
+}
+
+pub proc heavy_process_identity(
+    source: Option<String>,
+    toolchain: Option<String>,
+    input_closure: Option<String>,
+): (det complete?) {
+    ensure raw_parts: complete? iff identity_part?(source) and identity_part?(toolchain) and identity_part?(input_closure)
+}
+
+#fren_check heavy_process_result
+#fren_check heavy_process_elapsed
+#fren_check heavy_process_usage
+#fren_check heavy_process_fingerprint
+#fren_check heavy_process_arguments
+#fren_check heavy_process_identity
+```
+
 The following requirements state CPU accumulation and interval accounting.
 Time quantities use a common integral unit; ratios are numerator and
 denominator pairs, since Fren has no fractional numeric type. The Python
@@ -1708,11 +1869,12 @@ checks registry retry boundaries against Python's acquisition loop.
 These `impl`s prove that the decoded Lean functions meet the requirements;
 they do not prove Python's code or establish a call from Fren's CLI or
 hosted front end. The Python connection is checked by the differential
-fixtures and the existing `tested` claims. Both standalone Heavy kernels
+fixtures and the existing `tested` claims. The standalone Heavy kernels
 are outside those Fren runtimes. The `implPaths` audit therefore records
 each mapped output as an exact `unbound` observation in
 `test/impl_paths.txt`, including the forecast's two outputs and ownership's
-fourteen plus the conversion's four. These observations certify no runtime
+fourteen plus the conversion's four, and the process observer's seven.
+These observations certify no runtime
 connection; unexpected, duplicate and stale inventory entries still fail
 the audit. Its regressions also check that a real standalone kernel call,
 even through a proof adapter, does not count as a Fren production output
