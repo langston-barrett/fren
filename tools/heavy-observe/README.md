@@ -556,3 +556,30 @@ inherited hard limit can prevent setup. The raw wait status and
 `compiler_cpu_requested_seconds`, and raw pipe observations accompany the existing
 admission and CPU observations. A signal is never compiler success. The
 setting does not cover other compiler families, native builds or tests.
+
+### Opt-in compiler wall deadline
+
+Set `HEAVY_COMPILER_WALL_MS` to a positive integer from 1 through 2147483647
+milliseconds before starting a session. It limits each selected, budgeted
+non-query compiler invocation; unset preserves the existing route. The monotonic
+clock starts at the admitted child launch. `FREN_BUILD_TIMEOUT_MS` still limits
+admission. A deadline kills and reaps the observer's waitable compiler child,
+then notifies the private build controller before preparing the process record.
+The controller uses its waitable group anchor to terminate the entire build
+group, including compiler descendants remaining in it, and checks inherited
+reservation locks. Escaped descendants and uninterruptible kernel tasks remain
+outside this boundary. Cleanup is bounded and reports failure rather than waiting
+indefinitely.
+
+Notification uses a nonblocking private datagram, with an authenticated pidfd
+signal fallback when the channel fails. A full channel already has a pending
+cancellation. If both notification methods fail, the observer returns 125;
+the controller cannot be guaranteed to learn the cutoff. A controller that has
+already died cannot be notified. These are IO failure limits, not a successful
+deadline. The session returns 124 for a received deadline after successful cleanup,
+and 125 for a control or cleanup failure. Its diagnostic contains the child's
+raw wait status, clock samples, PID and requested limit when the datagram arrives.
+The signal fallback cannot carry those observations; a process record may also be
+absent if cancellation interrupts its publication. Existing records retain raw
+wait status and timing separately from the timeout cause. The polling interval is
+10 ms; scheduling and bounded shutdown add latency.

@@ -20,7 +20,7 @@ opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO 
 
 @[extern "heavy_budget_observe"]
 opaque observeBudget (exe : @& String) (args : @& Array String) (dir : @& String)
-    (demand cpuLimit : UInt64) (decide : @& (Array String → Array UInt64))
+    (demand cpuLimit wallLimit : UInt64) (decide : @& (Array String → Array UInt64))
     (control : @& (Array UInt64 → Array UInt64)) : IO (Array UInt64)
 
 -- JSON output needs no elaborator/Lean JSON dependency.
@@ -141,6 +141,14 @@ def run (args : List String) : IO UInt32 := do
       | none => throw (IO.userError "invalid compiler CPU limit")
   let some cpuLimit := compilerCpuLimit cpuSeconds gateDir.isSome ((parsed.map (·.kind)) == some "query")
     | throw (IO.userError "invalid compiler CPU limit or missing budget session")
+  let wallText ← IO.getEnv "HEAVY_COMPILER_WALL_MS"
+  let wallMs ← match wallText with
+    | none => pure 0
+    | some text => match text.toNat? with
+      | some n => if n > 0 then pure n else throw (IO.userError "invalid compiler wall limit")
+      | none => throw (IO.userError "invalid compiler wall limit")
+  let some wallLimit := compilerWallLimit wallMs gateDir.isSome ((parsed.map (·.kind)) == some "query")
+    | throw (IO.userError "invalid compiler wall limit or missing budget session")
   let mut requestDemand := 0
   let mut provenance := ""
   let raw ← if gated then do
@@ -180,11 +188,11 @@ def run (args : List String) : IO UInt32 := do
       | throw (IO.userError "invalid request demand")
     requestDemand := demand
     provenance := origin
-    observeBudget real.toString args.toArray dir.toString demand.toUInt64 cpuLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
+    observeBudget real.toString args.toArray dir.toString demand.toUInt64 cpuLimit.toUInt64 wallLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
     else observe real.toString args.toArray
-  if raw.size != (if gated then 22 else 15) then throw (IO.userError "invalid FFI observation length")
+  if raw.size != (if gated then 25 else 18) then throw (IO.userError "invalid FFI observation length")
   let v := fun i => raw[i]!.toNat
-  let gateError := if gated then v 15 else 0
+  let gateError := if gated then v 18 else 0
   let childPresent := !gated || v 5 != 0
   let outcome := result (v 0) (v 1) (v 2) (v 4)
   let wall := if childPresent then elapsed (v 3) (v 6) (v 7) else none
@@ -202,14 +210,19 @@ def run (args : List String) : IO UInt32 := do
     let artifacts ← outputs.mapM artifact
     let sourceAfter ← source.mapM fun s => fingerprint s
     let gateFields := if gated then [
-      ("gate_errno", toString gateError), ("admission_wait_ns", toString (v 16)),
-      ("admission_granted_ns", toString (v 21)),
-      ("reservation_ticket", toString (v 17)), ("held_before_kib", toString (v 18)),
-      ("allowance_kib", toString (v 19)), ("parent_headroom_kib", toString (v 20)),
+      ("gate_errno", toString gateError), ("admission_wait_ns", toString (v 19)),
+      ("admission_granted_ns", toString (v 24)),
+      ("reservation_ticket", toString (v 20)), ("held_before_kib", toString (v 21)),
+      ("allowance_kib", toString (v 22)), ("parent_headroom_kib", toString (v 23)),
       ("requested_reservation_kib", toString requestDemand), ("request_provenance", quoted provenance),
       ("child_present", toString childPresent),
-      ("wrapper_code", toString (if gateError != 0 then 125 else outcome.shellCode))] else []
+      ("wrapper_code", if v 15 == 1 || v 17 != 0 then "null"
+        else toString (if gateError != 0 then 125 else outcome.shellCode))] else []
     let record := object (gateFields ++ [
+      ("compiler_wall_requested_ms", if wallMs == 0 then "null" else toString wallMs),
+      ("compiler_wall_applied_ms", if wallLimit == 0 || !childPresent then "null" else toString wallLimit),
+      ("wall_timeout", toString (v 15 == 1)), ("wall_deadline_sample_ns", toString (v 16)),
+      ("wall_control_errno", toString (v 17)),
       ("compiler_cpu_requested_seconds", if cpuSeconds == 0 then "null" else toString cpuSeconds),
       ("cpu_protocol_bytes", toString (v 11)), ("cpu_protocol_first", toString (v 12)),
       ("cpu_protocol_errno", toString (v 13)), ("cpu_protocol_eof", toString (v 14)),
@@ -246,6 +259,9 @@ def run (args : List String) : IO UInt32 := do
     let err ← writeRecord dir.toString record
     if err != 0 then warn s!"record failed (errno {err}): {dir}"
   catch e => warn s!"record failed: {e}"
+  if gated && (v 15 == 1 || v 17 != 0) then
+    if v 17 != 0 then return 125
+    return 124
   if gateError != 0 then
     warn s!"budget control failed (errno {gateError}); child present={childPresent}"
     return 125

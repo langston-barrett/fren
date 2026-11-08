@@ -117,6 +117,18 @@ static int budget_control(b_lean_obj_arg control, uint64_t *values, size_t count
     *answer = lean_unbox_uint64(lean_array_get_core(result, index));
     lean_dec(result); return 0;
 }
+/* Keep the decision separate from errno: an OS error may itself be ETIMEDOUT. */
+static int wall_deadline(b_lean_obj_arg control, uint64_t limit, uint64_t *sample, int *error) {
+    struct timespec t;
+    *error = 0; *sample = 0;
+    if (clock_gettime(CLOCK_MONOTONIC, &t) < 0) *error = errno;
+    else *sample = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
+    uint64_t raw[] = {0, (uint64_t)*error, *sample, limit}, answer;
+    int e = budget_control(control, raw, 4, 1, 0, &answer);
+    if (e) { *error = e; return 2; }
+    if (answer > 2) { *error = EPROTO; return 2; }
+    return (int)answer;
+}
 static int budget_deadline(b_lean_obj_arg control, uint64_t limit, uint64_t *sample) {
     struct timespec t;
     uint64_t error = 0;
@@ -170,12 +182,12 @@ static int budget_lock(b_lean_obj_arg control, int fd, uint64_t deadline) {
  * stored ticket/state/demand/owner and an independent procfs observation.
  * No ownership/fit Boolean is supplied to Lean. */
 LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg args,
-    b_lean_obj_arg path, uint64_t demand, uint64_t cpu_limit, b_lean_obj_arg decide, b_lean_obj_arg control) {
+    b_lean_obj_arg path, uint64_t demand, uint64_t cpu_limit, uint64_t wall_ms, b_lean_obj_arg decide, b_lean_obj_arg control) {
     uint64_t extra[7] = {0}; /* error, admission wait ns, ticket, held, allowance, parent */
     lean_object *result = NULL;
     int dir = -1, registry = -1, owner = -1, ticketfd = -1, counter = -1, config = -1;
-    int locked = 0, e = 0, handlers = 0;
-    char self[256], owner_text[512], observed[256], buf[1024], name[80] = {0};
+    int locked = 0, e = 0, handlers = 0, ownerfd = -1;
+    char self[256], owner_text[512], observed[256], buf[1024], name[80] = {0}, wall_name[33] = {0};
     unsigned long long allowance, parent, fallback, wait_ms, next, group;
     long owner_pid;
     uint64_t begin = budget_now(), deadline = 0;
@@ -238,6 +250,17 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
         if (budget_number(&cursor, &group) || strlen(cursor) >= sizeof(expected) ||
             group != (unsigned long long)getpgrp()) { e = EPERM; goto done; }
         strcpy(expected, cursor); expected[strcspn(expected, "\n")] = 0;
+        char *nonce = strchr(cursor, '\n');
+        if (!nonce) { e = EPROTO; goto done; }
+        ++nonce;
+        size_t nonce_len = strcspn(nonce, "\n");
+        if (nonce_len != 32 && nonce_len != 0) { e = EPROTO; goto done; }
+        for (size_t i = 0; i < nonce_len; ++i)
+            if (!((nonce[i] >= '0' && nonce[i] <= '9') || (nonce[i] >= 'a' && nonce[i] <= 'f'))) { e = EPROTO; goto done; }
+        memcpy(wall_name, nonce, nonce_len); wall_name[nonce_len] = 0;
+        char *enabled = strchr(nonce, '\n');
+        if (!enabled || (enabled[1] != '0' && enabled[1] != '1') || enabled[2] != '\n') { e = EPROTO; goto done; }
+        if (wall_ms && enabled[1] != '1') { e = EINVAL; goto done; }
         unsigned long long wire_pid;
         if (budget_number(&cursor, &wire_pid) || wire_pid == 0 || wire_pid > INT_MAX) { e = EPROTO; goto done; }
         owner_pid = (long)wire_pid;
@@ -297,7 +320,13 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
             extra[1] = now - begin; extra[6] = now;
             if (flock(registry, LOCK_UN) < 0) { e = errno; goto done; }
             locked = 0;
-            result = observe_wait(exe, args, 1, cpu_limit);
+            if (wall_ms) {
+                ownerfd = syscall(SYS_pidfd_open, (pid_t)owner_pid, 0);
+                if (ownerfd < 0) { e = errno; goto done; }
+                if ((e = budget_identity((pid_t)owner_pid, observed, sizeof(observed)))) goto done;
+                if (strcmp(expected, observed)) { e = EOWNERDEAD; goto done; }
+            }
+            result = observe_wait(exe, args, 1, cpu_limit, wall_ms, control, wall_name, ownerfd);
             if (budget_cancelled) e = ECANCELED;
             goto done;
         }
@@ -311,6 +340,7 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
 done:
     /* Do not unlink a running lease: inherited child descriptors may still
      * own it. Unlocked metadata is harmless and the session is single-use. */
+    if (ownerfd >= 0) close(ownerfd);
     if (ticketfd >= 0 && close(ticketfd) < 0 && !e) e = errno;
     if (locked && flock(registry, LOCK_UN) < 0 && !e) e = errno;
     if (registry >= 0) close(registry);
@@ -320,8 +350,8 @@ done:
     if (dir >= 0) close(dir);
     if (handlers) { int restore = budget_handlers(old, 0); if (!e) e = restore; }
     if (!result) {
-        lean_object *a = lean_alloc_array(0, 15);
-        for (int i = 0; i < 15; ++i) a = lean_array_push(a, lean_box_uint64(0));
+        lean_object *a = lean_alloc_array(0, 18);
+        for (int i = 0; i < 18; ++i) a = lean_array_push(a, lean_box_uint64(0));
         result = lean_io_result_mk_ok(a);
     }
     lean_object *a = lean_io_result_get_value(result); lean_inc(a); lean_dec(result);
@@ -334,21 +364,53 @@ done:
 /* A transient owner for exactly one controlled build process group.
  * Only a supported disposition and successful unreaped-child observations
  * permit numeric group signals. SIGCHLD disposition is never changed. */
+static volatile sig_atomic_t budget_wall;
+static void budget_wall_signal(int sig) { budget_wall = sig == SIGUSR2 ? 2 : 1; }
+
 LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_arg config,
     b_lean_obj_arg requests, b_lean_obj_arg exe, b_lean_obj_arg args, b_lean_obj_arg control) {
-    uint64_t values[3] = {0}; /* control errno, command raw status, cleanup errno */
+    uint64_t values[11] = {0}; /* control, command status, cleanup, cause, raw message present and fields */
     int dir = -1, owner = -1, fd = -1, pipefd[2] = {-1, -1};
     pid_t child = -1, last_reaped = 0;
     int previous_wait_error = 0;
-    int handlers = 0;
+    int handlers = 0, wall_socket = -1, wall_handlers = 0;
+    int wall_enabled = getenv("HEAVY_COMPILER_WALL_MS") != NULL;
+    struct wall_message wall_message = {0};
+    struct sigaction wall_old[2], wall_action = {0};
     char **argv = NULL;
-    char identity[256], text[512];
+    char identity[256], text[512], wall_name[33] = {0};
     struct sigaction old[3]; budget_cancelled = 0;
     values[0] = budget_lifecycle(control, 0, 0, 0, 0, 0, 0);
     if (values[0]) goto done;
     values[0] = budget_handlers(old, 1);
     if (values[0]) goto done;
     handlers = 1;
+    budget_wall = 0;
+    if (wall_enabled) {
+        wall_action.sa_handler = budget_wall_signal; sigemptyset(&wall_action.sa_mask);
+        if (sigaction(SIGUSR1, &wall_action, &wall_old[0]) < 0) { values[0] = errno; goto done; }
+        wall_handlers = 1;
+        if (sigaction(SIGUSR2, &wall_action, &wall_old[1]) < 0) { values[0] = errno; goto done; }
+        wall_handlers = 2;
+        /* A fresh abstract address prevents a later PID reuse from targeting a
+     * different session. A missing channel uses the pinned pidfd fallback. */
+    unsigned char nonce[16];
+        if (getrandom(nonce, sizeof(nonce), GRND_NONBLOCK) == sizeof(nonce)) {
+            for (size_t i = 0; i < sizeof(nonce); ++i) snprintf(wall_name + i * 2, 3, "%02x", nonce[i]);
+            wall_socket = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+            if (wall_socket >= 0) {
+                struct sockaddr_un wall_addr = {.sun_family = AF_UNIX};
+                int length = snprintf(wall_addr.sun_path + 1, sizeof(wall_addr.sun_path) - 1,
+                                      "fren-wall-%s", wall_name);
+                if (length < 0 || (size_t)length >= sizeof(wall_addr.sun_path) - 1 ||
+                    bind(wall_socket, (struct sockaddr *)&wall_addr,
+                         offsetof(struct sockaddr_un, sun_path) + 1 + (size_t)length) < 0) {
+                    close(wall_socket); wall_socket = -1;
+                }
+            }
+        }
+        if (wall_socket < 0) wall_name[0] = 0;
+    }
     size_t n = lean_array_size(args);
     argv = calloc(n + 2, sizeof(char *));
     if (!argv) { values[0] = ENOMEM; goto done; }
@@ -389,7 +451,7 @@ LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_ar
     }
     close(pipefd[0]); pipefd[0] = -1;
     if (setpgid(child, child) < 0 && errno != EACCES) { values[0] = errno; goto cleanup; }
-    snprintf(text, sizeof(text), "%ld %s\n", (long)child, identity);
+    snprintf(text, sizeof(text), "%ld %s\n%s\n%d\n", (long)child, identity, wall_name, wall_enabled);
     values[0] = budget_text(owner, text);
     if (values[0]) goto cleanup;
     if (write(pipefd[1], "!", 1) != 1) { values[0] = errno ? errno : EIO; goto cleanup; }
@@ -400,6 +462,13 @@ LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_ar
             if (errno == EINTR) continue;
             previous_wait_error = errno; values[0] = errno; break;
         }
+        if (wall_socket >= 0) {
+            ssize_t got = recv(wall_socket, &wall_message, sizeof(wall_message), MSG_DONTWAIT);
+            if (got == sizeof(wall_message)) { budget_wall = wall_message.cause == 1 ? 1 : 2; break; }
+            if (got >= 0) { values[0] = EPROTO; break; }
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) { values[0] = errno; break; }
+        }
+        if (budget_wall) break;
         if (info.si_pid || budget_cancelled) break;
         struct timespec pause = {0, 10000000}; nanosleep(&pause, NULL);
     }
@@ -453,8 +522,22 @@ cleanup:
             struct timespec pause = {0, 10000000}; nanosleep(&pause, NULL);
         }
     }
+    if (!budget_wall && wall_socket >= 0) {
+        ssize_t got = recv(wall_socket, &wall_message, sizeof(wall_message), MSG_DONTWAIT);
+        if (got == sizeof(wall_message)) budget_wall = wall_message.cause == 1 ? 1 : 2;
+    }
+    if (wall_message.cause) {
+        values[4] = 1; values[5] = wall_message.status; values[6] = wall_message.wait_error;
+        values[7] = wall_message.start; values[8] = wall_message.sample;
+        values[9] = wall_message.pid; values[10] = wall_message.limit_ms;
+    }
+    if (budget_wall == 1) values[3] = 1;
+    if (budget_wall == 2 && !values[0]) values[0] = EIO;
     if (budget_cancelled && !values[0]) values[0] = ECANCELED;
 done:
+    if (wall_socket >= 0) close(wall_socket);
+    if (wall_handlers >= 2) sigaction(SIGUSR2, &wall_old[1], NULL);
+    if (wall_handlers >= 1) sigaction(SIGUSR1, &wall_old[0], NULL);
     if (pipefd[0] >= 0) close(pipefd[0]);
     if (pipefd[1] >= 0) close(pipefd[1]);
     if (fd >= 0) close(fd);
@@ -462,7 +545,7 @@ done:
     if (dir >= 0) close(dir);
     free(argv);
     if (handlers) { int restore = budget_handlers(old, 0); if (!values[0]) values[0] = restore; }
-    lean_object *out = lean_alloc_array(0, 3);
-    for (int i = 0; i < 3; ++i) out = lean_array_push(out, lean_box_uint64(values[i]));
+    lean_object *out = lean_alloc_array(0, 11);
+    for (int i = 0; i < 11; ++i) out = lean_array_push(out, lean_box_uint64(values[i]));
     return lean_io_result_mk_ok(out);
 }

@@ -24,6 +24,9 @@ def main():
     args = parser.parse_args()
     if "HEAVY_BUDGET_DIR" in os.environ:
         parser.exit(125, "heavy-lean-build: already budgeted; invoke the command directly inside the existing session\n")
+    wall = os.environ.get("HEAVY_COMPILER_WALL_MS")
+    if wall is not None and (not wall.isascii() or not wall.isdecimal() or not 0 < int(wall) <= 2147483647):
+        parser.exit(125, "heavy-lean-build: invalid HEAVY_COMPILER_WALL_MS\n")
     cpu = os.environ.get("HEAVY_COMPILER_CPU_SECONDS")
     if cpu is not None and (not cpu.isascii() or not cpu.isdecimal() or not 0 < int(cpu) <= 2147483647):
         parser.exit(125, "heavy-lean-build: invalid HEAVY_COMPILER_CPU_SECONDS\n")

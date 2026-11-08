@@ -21,6 +21,8 @@ unbound: Fren.Impls.HeavyOwnership.compile_source_identity source
 # Standalone compiler advice, outside Fren CLI/hosted reporting roots.
 unbound: Fren.Impls.HeavyOwnership.compiler_cpu_limit limit
 unbound: Fren.Impls.HeavyOwnership.compiler_cpu_observation applied
+# Standalone compiler observer, outside Fren CLI/hosted reporting roots.
+unbound: Fren.Impls.HeavyOwnership.compiler_wall_limit limit
 unbound: Fren.Impls.HeavyOwnership.compiler_sample usable?
 unbound: Fren.Impls.HeavyOwnership.group_gone gone?
 unbound: Fren.Impls.HeavyOwnership.lease admission

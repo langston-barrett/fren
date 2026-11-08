@@ -68,6 +68,10 @@ def compilerCpuLimit (seconds : Nat) (gated query : Bool) : Option Nat :=
   else if seconds > 0 && !gated then none
   else some (if query then 0 else seconds)
 
+/-- The wall setting has the same selection and native range as CPU, in milliseconds. -/
+def compilerWallLimit (milliseconds : Nat) (gated query : Bool) : Option Nat :=
+  compilerCpuLimit milliseconds gated query
+
 /-- Interpret the actual private pipe observation, not PID or EOF alone. -/
 def appliedCompilerCpu (seconds bytes first readError eof waitError : Nat) : Option Nat :=
   if seconds > 0 && (bytes == 4 || bytes == 8) && first == 1212371029 &&

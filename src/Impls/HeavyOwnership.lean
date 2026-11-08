@@ -426,6 +426,14 @@ impl compiler_cpu_limit: testing::heavy_compiler_cpu_limit for (seconds : Nat) (
   cases query <;> simp only [fren_spec, Heavy.Process.compilerCpuLimit] <;>
     split <;> split <;> simp_all <;> omega
 
+impl compiler_wall_limit: testing::heavy_compiler_wall_limit for (milliseconds : Nat) (gated query : Bool) {
+  milliseconds := milliseconds, gated? := gated, query? := query,
+  limit := (Heavy.Process.compilerWallLimit milliseconds gated query).map Int.ofNat,
+} by
+  intro milliseconds gated query _
+  cases query <;> simp only [fren_spec, Heavy.Process.compilerWallLimit, Heavy.Process.compilerCpuLimit] <;>
+    split <;> split <;> simp_all <;> omega
+
 impl compiler_cpu_observation: testing::heavy_compiler_cpu_observation
     for (seconds bytes first readError eof waitError : Nat) {
   seconds := seconds, bytes := bytes, first := first, read_error := readError,
