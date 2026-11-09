@@ -5,7 +5,8 @@ meta import FrenHirToThir
 
 /-! Hand-written HIR inputs for the separated pass, for the errors the
 generator does not inject: a local callee, an unwritten type without the `?`
-suffix, an enum or function name where a value or pattern is required. -/
+suffix, an enum name as a value or callee, a function name as a pattern, and a
+non-enum scrutinee with arms; plus a few accepted and arm-agreement cases. -/
 
 namespace FrenHirToThirTests.PassCases
 open FrenExpr FrenModule.Core FrenHirToThir.Pass

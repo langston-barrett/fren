@@ -191,7 +191,8 @@ def TypeError.span (m : Module E) (e : TypeError) : Option FrenSource.Span := do
   let origin ← item.origins[e.origin]?
   origin.span
 
-/-- Render as the existing walking diagnostics do: a mismatch is `F0304`. -/
+/-- A mismatch renders as the walking checker's `F0304` text; the other
+reasons have no catalogue code and their own wording. -/
 def TypeError.headline : TypeError → String
   | ⟨_, _, .mismatch expected found⟩ =>
     s!"type mismatch: expected `{expected.display}`, found `{found.display}`"

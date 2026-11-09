@@ -120,6 +120,10 @@ def lowerControls : IO Unit := do
     if ref.role == .pattern then {ref with role := .expression} else ref
   require ((FrenAstToHir.Lower.lower {r with references := wrongRole}).toOption.isNone)
     "lowering accepted a pattern entry with the wrong role"
+  let wrongContext := r.references.map fun ref =>
+    if ref.role == .expression then {ref with context := []} else ref
+  require ((FrenAstToHir.Lower.lower {r with references := wrongContext}).toOption.isNone)
+    "lowering accepted entries recorded in the wrong lexical context"
 
 /-- Registered as the `typingProperties` job. -/
 def runProperties : IO Unit := do
