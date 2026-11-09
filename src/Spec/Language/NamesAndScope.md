@@ -38,9 +38,12 @@ segment are outside what its judgments decide.
 r[names.overview.function]
 Every judgment of this chapter that Fren defines is a function of its
 inputs: a name, path, written type, layer, source table or module has at
-most one resolution, and each Fren definition above computes it, with
-`None` when there is none. Resolution is therefore decidable, and it never
-consults a type, a value or a solver. An expression is given to these
+most one resolution, and each Fren definition above computes it:
+`module_resolves?` is false, and every other one is `None`, when there is
+none. Resolution is therefore decidable. It consults no typing judgment,
+value or solver: the only types it inspects are the ones it resolves for
+a binder whose name ends in `?`, to apply the
+[suffix rule](#r-names.expression.layer). An expression is given to these
 definitions as a source table; that two tables of one expression resolve
 alike is a [separate law](#r-names.expression.unique-expression), which is
 open. The [interface](#r-names.overview.interface) at the end of the
@@ -915,7 +918,7 @@ could select the module. A written type is *clear* when its first name is
 not the name of a function of the module. A sequence of declarations is
 *admitted* when it has no naming error and every written type of its
 signatures is clear, which is the condition under which [Σ₀ and Σ
-agree](#r-names.collection.agreement); collection yields no environment
+agree](#r-names.collection.agreement) on those types; collection yields no environment
 for a sequence that is not admitted.
 
 ```fren
@@ -1103,8 +1106,9 @@ r[names.collection.agreement] spec::names::signature_agreement::agree
 When collection yields Σ, a clear written type resolves in Σ₀ exactly as
 it does in Σ. Every written type of a signature is clear, so the
 signatures that collection computes in Σ₀ are the ones that the whole
-environment gives, and a written type means the same in a signature and
-in a `let`.
+environment gives. The annotation of a `let` resolves in Σ and need not
+be clear: one whose first name is a function of the module has no
+resolution, though Σ₀ could read it through the module's name.
 
 ```fren
 set_option fren.evidence "random" in

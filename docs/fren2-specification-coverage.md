@@ -1127,9 +1127,11 @@ kinds that each resolved position names, sibling scopes, the parallel
 parameter context, that collection yields a well-formed symbol
 environment, that exchanging the last two declarations changes
 nothing that collection binds, that two sequences of the same
-admitted declarations collect alike, that every type an admitted module
-writes resolves in the environment of enumerations exactly as in the
-collected one (`names.collection.agreement`), that a resolved `let` and a
+admitted declarations collect alike, that a clear written type, one whose first name is no function of the
+module, resolves in the environment of enumerations exactly as in the
+collected one (`names.collection.agreement`); admission makes every
+signature type clear, but not the annotation of a `let`, which resolves
+in the collected environment only, that a resolved `let` and a
 resolved parameter satisfy the `?` suffix rule of typing and that one
 breaking it is refused (`names.expression.layer`,
 `names.collection.parameters`), that an item shadows the module's name,
@@ -1150,8 +1152,9 @@ What production does differently, recorded here rather than in the
 chapter: the resolver numbers locals by index from the newest binder,
 not by level; it may find a path's target before it knows the position,
 and reports a function used as a value or a local used as a callee when
-it forms the typed term; it rejects a module that declares an
-expectation or a program of several modules as unsupported; its `let`
+it forms the typed term; it collects expectations into the item namespace and resolves
+their parameter types and bodies, which the chapter's domain leaves
+out; its `let`
 has no written type, so no front end exercises the annotated `let`; and
 it collects names only, while the chapter's `collect` also resolves
 signature types.
