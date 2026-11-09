@@ -71,7 +71,7 @@ def strings (alphabet : List Char) : Nat → List String
 
 /-- Characters that start, continue or end each class, and some that start none. -/
 def alphabet : List Char :=
-  ['a', 'Z', '_', '7', '?', '-', '<', '>', '=', '!', ':', '(', '{', ',', '+', '*', '/', '.',
+  ['a', 'Z', '_', '7', '?', '-', '<', '>', '=', '!', ':', '(', '{', ',', '+', '*', '%', '/', '.',
    ' ', '\t', '\n', '\r', 'é']
 
 /-- `count` seeded pseudo-random texts of 20 to 120 characters over `alphabet`
@@ -94,15 +94,20 @@ def randomTexts (count : Nat) : List String := Id.run do
 line endings in context, and text outside ASCII. -/
 def corpus : List String :=
   ["pub fn next_step(x: Int): Int := x div 2 -- é😀\r\nmod m", "if? match? _ a?b x--1 x<-1 x < -1",
-   "0x1F 1.5 007 123abc", "a<=b::=c!=d=>e:=f", "-- only a comment", "--\r\r\n\r", "/- x -/",
+   "0x1F 1.5 007 123abc", "a<=b::=c!=d=>e:=f%g%%h", "-- only a comment", "--\r\r\n\r", "/- x -/",
    "assume not true false true? Bool Int", "forall exists proc use struct where with table",
    "é😀 x", "f(x)<=-1 -- note"]
 
+--@ reference: lexical.source.line-ending
+--@ reference: lexical.class.definition
+--@ reference: lexical.piece.longest
+--@ reference: lexical.piece.comment-end
+--@ reference: lexical.piece.rejected
 /-- The lexical rules (`lexical.piece.longest`, `lexical.piece.comment-end`,
 `lexical.piece.rejected`, `lexical.source.line-ending`, `lexical.class.definition`):
 the actual lexer gives exactly the chapter's pieces, with their kinds, its
 slices have UTF-8 byte offsets without gaps, and no text with rejected text
-parses. Bounded: every text of up to three characters over `alphabet` (23
+parses. Bounded: every text of up to three characters over `alphabet` (24
 characters), every text of four over ten of them, `corpus`, and 500 seeded
 random texts of 20 to 120 characters. -/
 def lexer_agrees : Bool :=

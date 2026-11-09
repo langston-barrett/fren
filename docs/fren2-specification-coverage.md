@@ -1395,7 +1395,7 @@ Design debt:
 Evidence of these chapters, and its bounds:
 
 - [ ] The lexer agrees with the lexical classes and maximal munch on every
-  text of up to three characters over 23 characters, of four over ten, a
+  text of up to three characters over 24 characters, of four over ten, a
   corpus and 500 seeded random texts (`lexer_agrees`); not proved for all
   texts.
 - [ ] The grammar agrees with the parser on exhaustive token sequences of

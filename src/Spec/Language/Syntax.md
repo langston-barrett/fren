@@ -477,7 +477,11 @@ r[syntax.property.unambiguous] spec::surface::{binary_category, unary_category, 
 The grammar is unambiguous up to parentheses and complete for well-formed
 expression trees. Every well-formed tree has a text whose tree it is: the
 text that writes each node's tokens and puts a subtree in parentheses
-exactly where `fits?` says that it does not fit its place. This
+exactly where `fits?` says that it does not fit its place: a binary
+operator's operands are at `left_category` and `right_category`, a unary
+operator's operand at the operator's own category, and every other
+subexpression at `Expression`, but a `let`'s definition and an arm's body
+at `Iff` and a match's scrutinee at `Primary`. This
 parenthesization is minimal: dropping any pair of its parentheses gives a
 text that the parser rejects or that has another tree. A subtree fits a
 place when the nonterminal that derives it without parentheses, its
@@ -551,9 +555,8 @@ r[syntax.property.operands] spec::surface::operands::{right, left_associative, n
 Every binary operator's right operand is of a tighter category than the
 operator. Its left operand is of the operator's own category when the
 operator groups to the left, and of a tighter one when it does not
-associate. A unary operator's operand is of the operator's own category.
-For example, `a - b - c` needs no parentheses, `a < (b < c)` and
-`(a < b) < c` both do, and `not not a` and `- - a` need none.
+associate. For example, `a - b - c` needs no parentheses, and
+`a < (b < c)` and `(a < b) < c` both do.
 <!-- status: smt -->
 
 ```fren

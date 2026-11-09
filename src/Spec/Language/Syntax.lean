@@ -395,41 +395,105 @@ def binaryName : SBinary → String
   | .Ne => "Ne" | .Lt => "Lt" | .Le => "Le" | .Gt => "Gt" | .Ge => "Ge" | .And => "And"
   | .Or => "Or" | .Iff => "Iff"
 
-/-- A tree in the chapter's `fren2 trees` notation. -/
-partial def Tree.sexp : Tree → String
-  | .boolean b => s!"(Boolean {b})"
-  | .integer n => s!"(Integer {n})"
-  | .name p => s!"(Name {"::".intercalate p})"
-  | .call p args => s!"(Call {"::".intercalate p}" ++ String.join (args.map (" " ++ ·.sexp)) ++ ")"
-  | .unary op e => s!"(Unary {unaryName op} {e.sexp})"
-  | .binary op l r => s!"(Binary {binaryName op} {l.sexp} {r.sexp})"
-  | .ifE c t e => s!"(If {c.sexp} {t.sexp} {e.sexp})"
-  | .letE x v b => s!"(Let {x} {v.sexp} {b.sexp})"
-  | .matchE s arms => s!"(Match {s.sexp}" ++
-      String.join (arms.map fun (p, b) => s!" (Arm {"::".intercalate p} {b.sexp})") ++ ")"
+/-- A tree's top node, as the chapter's `ExprF` over its subtrees. -/
+def Tree.layer : Tree → spec.surface.ExprF Tree
+  | .boolean b => .Boolean b
+  | .integer n => .Integer n
+  | .name p => .Name (Fren.Seq.ofList p)
+  | .call p args => .Call (Fren.Seq.ofList p) (Fren.Seq.ofList args)
+  | .unary op e => .Unary op e
+  | .binary op l r => .Binary op l r
+  | .ifE c t e => .If c t e
+  | .letE x v b => .Let x v b
+  | .matchE s arms => .Match s (Fren.Seq.ofList (arms.map fun (p, b) => .mk! (Fren.Seq.ofList p) b))
 
-def typeSexp : Ty → String
-  | .bool _ => "Boolean"
-  | .int _ => "Integer"
-  | .named p => s!"(Named {"::".intercalate (pathOf p)})"
+/-- A tree from its top node: `Tree` is the fixed point of `ExprF`. -/
+def Tree.ofLayer : spec.surface.ExprF Tree → Tree
+  | .Boolean b => .boolean b
+  | .Integer n => .integer n
+  | .Name p => .name p.toList
+  | .Call p args => .call p.toList args.toList
+  | .Unary op e => .unary op e
+  | .Binary op l r => .binary op l r
+  | .If c t e => .ifE c t e
+  | .Let x v b => .letE x v b
+  | .Match s arms => .matchE s (arms.toList.map fun a => (a.variant.toList, a.body))
 
-def paramSexp (p : Parameter) : String :=
+theorem Tree.ofLayer_layer (t : Tree) : Tree.ofLayer t.layer = t := by
+  cases t <;> simp [Tree.layer, Tree.ofLayer, Fren.Seq.ofList, Fren.Seq.toList, Function.comp_def]
+
+/-- `ExprF` maps over its subexpressions. -/
+def mapLayer (f : α → β) : spec.surface.ExprF α → spec.surface.ExprF β
+  | .Boolean b => .Boolean b
+  | .Integer n => .Integer n
+  | .Name p => .Name p
+  | .Call p args => .Call p (Fren.Seq.ofList (args.toList.map f))
+  | .Unary op e => .Unary op (f e)
+  | .Binary op l r => .Binary op (f l) (f r)
+  | .If c t e => .If (f c) (f t) (f e)
+  | .Let x v b => .Let x (f v) (f b)
+  | .Match s arms => .Match (f s) (Fren.Seq.ofList (arms.toList.map fun a => .mk! a.variant (f a.body)))
+
+def pathText (p : Fren.Seq String) : String := "::".intercalate p.toList
+
+/-- One `ExprF` node, whose subtrees are already written, in the chapter's
+`fren2 trees` notation: the constructor's name and its fields. -/
+def layerSexp : spec.surface.ExprF String → String
+  | .Boolean b => s!"(Boolean {b})"
+  | .Integer n => s!"(Integer {n})"
+  | .Name p => s!"(Name {pathText p})"
+  | .Call p args => s!"(Call {pathText p}" ++ String.join (args.toList.map (" " ++ ·)) ++ ")"
+  | .Unary op e => s!"(Unary {unaryName op} {e})"
+  | .Binary op l r => s!"(Binary {binaryName op} {l} {r})"
+  | .If c t e => s!"(If {c} {t} {e})"
+  | .Let x v b => s!"(Let {x} {v} {b})"
+  | .Match s arms => s!"(Match {s}" ++
+      String.join (arms.toList.map fun a => s!" (Arm {pathText a.variant} {a.body})") ++ ")"
+
+partial def Tree.sexp (t : Tree) : String := layerSexp (mapLayer Tree.sexp t.layer)
+
+def typeTree : Ty → spec.surface.TypeName
+  | .bool _ => .Boolean
+  | .int _ => .Integer
+  | .named p => .Named (Fren.Seq.ofList (pathOf p))
+
+def typeSexp : spec.surface.TypeName → String
+  | .Boolean => "Boolean"
+  | .Integer => "Integer"
+  | .Named p => s!"(Named {pathText p})"
+
+def paramTree (p : Parameter) : spec.surface.Parameter :=
+  ⟨p.name.text, p.annotation.map (typeTree ·.2)⟩
+
+def paramSexp (p : spec.surface.Parameter) : String :=
   match p.annotation with
-  | some (_, t) => s!"(Parameter {p.name.text} {typeSexp t})"
-  | none => s!"(Parameter {p.name.text})"
+  | some t => s!"(Parameter {p.name} {typeSexp t})"
+  | none => s!"(Parameter {p.name})"
 
-/-- The tree of a declaration (`syntax.tree.productions`). -/
-def declSexp : Decl → String
-  | .moduleDecl v _ p => s!"(Module {if v.isSome then "pub " else ""}{"::".intercalate (pathOf p)})"
-  | .enumDecl v _ n _ vs _ _ =>
-    s!"(Enumeration {if v.isSome then "pub " else ""}{n.text}" ++ String.join (vs.toList.map (" " ++ ·.text)) ++ ")"
+/-- The tree of a declaration (`syntax.tree.productions`), as the chapter's
+`DeclarationF` over expression trees. -/
+def declTree : Decl → spec.surface.DeclarationF Tree
+  | .moduleDecl v _ p => .Module ⟨v.isSome, Fren.Seq.ofList (pathOf p)⟩
+  | .enumDecl v _ n _ vs _ _ => .Enumeration ⟨v.isSome, n.text, Fren.Seq.ofList (vs.toList.map (·.text))⟩
   | .function v _ n ps _ r _ b =>
-    s!"(Function {if v.isSome then "pub " else ""}{n.text}" ++
-      String.join (ps.values.toList.map (" " ++ paramSexp ·)) ++ s!" {typeSexp r} {(abstract b).sexp})"
+    .Function (.mk! v.isSome n.text (Fren.Seq.ofList (ps.values.toList.map paramTree)) (typeTree r) (abstract b))
   | .expectation _ n ps _ ms _ =>
-    s!"(Expectation {n.text}" ++ String.join (ps.values.toList.map (" " ++ paramSexp ·)) ++
-      String.join (ms.toList.map fun m =>
-        s!" (Member {if m.kind == .assume then "Assume" else "Expect"} {m.label.text} {(abstract m.body).sexp})") ++ ")"
+    .Expectation (.mk! n.text (Fren.Seq.ofList (ps.values.toList.map paramTree))
+      (Fren.Seq.ofList (ms.toList.map fun m =>
+        .mk! (if m.kind == .assume then .Assume else .Expect) m.label.text (abstract m.body))))
+
+/-- A `DeclarationF` node in the `fren2 trees` notation, read off its fields. -/
+def declSexp : spec.surface.DeclarationF Tree → String
+  | .Module d => s!"(Module {if d.public? then "pub " else ""}{pathText d.path})"
+  | .Enumeration d =>
+    s!"(Enumeration {if d.public? then "pub " else ""}{d.name}" ++ String.join (d.variants.toList.map (" " ++ ·)) ++ ")"
+  | .Function d =>
+    s!"(Function {if d.public? then "pub " else ""}{d.name}" ++
+      String.join (d.parameters.toList.map (" " ++ paramSexp ·)) ++ s!" {typeSexp d.result} {d.body.sexp})"
+  | .Expectation d =>
+    s!"(Expectation {d.name}" ++ String.join (d.parameters.toList.map (" " ++ paramSexp ·)) ++
+      String.join (d.members.toList.map fun m =>
+        s!" (Member {match m.kind with | .Assume => "Assume" | .Expect => "Expect"} {m.label} {m.body.sexp})") ++ ")"
 
 def exprSexp? (source : String) : Option String :=
   match FrenParse.parseExpression ⟨0⟩ source with
@@ -438,7 +502,7 @@ def exprSexp? (source : String) : Option String :=
 
 def fileSexp? (source : String) : Option String :=
   match FrenParse.parseFile ⟨0⟩ source with
-  | .ok { root := .declarations ds, .. } => some ("(File" ++ String.join (ds.toList.map (" " ++ declSexp ·)) ++ ")")
+  | .ok { root := .declarations ds, .. } => some ("(File" ++ String.join (ds.toList.map fun d => " " ++ declSexp (declTree d)) ++ ")")
   | _ => none
 
 /-- `syntax.tree.well-formed`: every call has an argument and every name is
@@ -735,6 +799,7 @@ def roundtrip_agrees : Bool := Id.run do
 --@ reference: syntax.path.syntax
 --@ reference: syntax.tree.productions
 --@ reference: syntax.tree.well-formed
+--@ reference: parsing.grammar.declaration-trees
 /-- `syntax.tree.productions` and `syntax.tree.well-formed`: each line of the
 chapter's `fren2 trees` blocks has the tree it states, and the tree of every
 expression that the parser accepts among `grammarInputs` is well formed. -/
