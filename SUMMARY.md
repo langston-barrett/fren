@@ -115,7 +115,7 @@
   - [Patterns](src/Spec/Language/Patterns.md)
   - [Functions and recursion](src/Spec/Language/FunctionsAndRecursion.md)
   - [Procedures](src/Spec/Language/Procedures.md)
-  - [Properties and checks](src/Spec/Language/PropertiesAndChecks.md)
+  - [Definedness and verification](src/Spec/Language/PropertiesAndChecks.md)
   - [Modules and views](src/Spec/Language/ModulesAndViews.md)
   - [Evidence](src/Spec/Language/Evidence.md)
   - [Diagnostics and lints](src/Spec/Language/DiagnosticsAndLints.md)

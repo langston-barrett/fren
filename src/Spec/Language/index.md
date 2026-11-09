@@ -12,7 +12,10 @@ constructors and enumerations, complete one-layer expression forms and a
 typing judgment.
 Source constructs are defined by derived forms that translate into this Core.
 [Expressions](Expressions.md) uses those definitions for meaning, mentioned
-names and declarative domain obligations. Later chapters build on these
+names and operator domains.
+[Definedness and verification](PropertiesAndChecks.md) defines the obligations
+of a typed expression, the hypotheses under which each must be proved, and
+what a solver's answer establishes. Later chapters build on these
 same identities, contexts and judgments rather than assuming precomputed
 resolution or typing decisions.
 

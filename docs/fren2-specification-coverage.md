@@ -36,7 +36,8 @@ trusted: `spec::types::expression_uniqueness`
 
 The one `trusted` procedure is the open `types.derivation.unique-expression`,
 whose claim's reason starts `open:`. Types.md, Expressions.md,
-LexicalStructure.md, Syntax.md, AstAndParsing.md and the THIR
+LexicalStructure.md, Syntax.md, AstAndParsing.md,
+[PropertiesAndChecks.md](#definedness-and-verification-correspondence) and the THIR
 chapter are the converted chapters: their wrappers trace with `trusted` as the required
 level, so a property that loses its evidence fails `lake build --wfail`,
 and the `ruleReqs` job checks that they do. It also checks, for all of
@@ -183,6 +184,96 @@ of the definitions it owns.
 Historical requests below to wait for recursive Fren datatypes before
 restating typing are superseded by the one-layer definition; its inductive
 closure and implementation correspondence still need universal proofs.
+
+## Definedness and verification correspondence
+
+The [definedness and verification chapter](../src/Spec/Language/PropertiesAndChecks.md)
+defines, over the derivation tables of Core typing, the condition of each
+layer, the obligations collected from a condition with their hypotheses,
+a declaration's table of members with the obligations of each,
+satisfaction at an assignment, validity, verdicts, and defined and
+verified programs. Satisfaction reads row values from the evaluator of the
+[expressions chapter](../src/Spec/Language/Expressions.md#evaluation).
+Its wrapper's `#fren_trace` reports the following; 13 of the proved
+procedures, the six tested and one trusted belong to the chapters it
+imports, and 14 proved and one trusted are its own:
+
+```text
+evidence: 27 proved, 0 solver, 6 tested, 2 trusted, 0 missing
+tested: `spec::lexical::division`, `spec::surface::accepted_trees_well_formed`, `spec::surface::extent`, `spec::surface::grammar_terminals`, `spec::surface::print_parse`, `spec::surface::reserved_names`
+trusted: `spec::types::expression_uniqueness`, `spec::verification::complete`
+```
+
+| Rule | Evidence |
+| --- | --- |
+| `verification.generation.strict`, `verification.generation.guarded`, `verification.generation.divisor`, `verification.obligation.hypotheses`, `verification.obligation.cut`, `verification.member.scope`, `verification.obligation.flattening`, `verification.generation.context-independent` | Laws for all inputs, bound by `impl` in the wrapper: `proved` |
+| `verification.examples.obligations`, `verification.examples.assignments`, `verification.examples.scopes`, `verification.examples.members`, `verification.examples.domain` | Constant examples that the wrapper evaluates with `decide`: `proved` |
+| `verification.validity.interface` | The wrapper interprets `valid?` as satisfaction by every assignment of the obligation, a classical proposition, and proves the three laws of `verdicts` from it, with `check` interpreted as the function that always answers `Unknown`: `proved` |
+| `verification.generation.complete` | Stated as a procedure over tables, `trusted` and open |
+| `verification.validity.meaning`, `verification.validity.uncomputed`, `verification.program.defined`, `verification.program.verified`, `verification.program.assumptions`, `verification.generation.function`, `verification.keyword.evidence`, `verification.soundness` | Prose. Soundness is open |
+
+What shapes the chapter:
+
+- **The evaluator.** `eval` of the expressions chapter gives a row its
+  value in an assignment, so an assignment is only the values of the
+  locals, a counterexample is checkable, and the examples' values are
+  computed. It gives no value to a product, a quotient, a remainder or a
+  call, because a defined Fren function may not multiply or divide two
+  variables or apply an uninterpreted function. Satisfaction is therefore
+  conservative: a goal that depends on such a row never holds, and a
+  hypothesis that depends on one is never refuted
+  (`verification.validity.uncomputed`). The law that `Proved` implies
+  validity is, for such obligations, stronger than a solver that knows
+  these operators can honour; it becomes exact when the evaluator
+  computes them.
+- **Recursive definitions.** The solver unfolds `condition_holds?`,
+  `some_refuted?`, `eval` and `lookup` one step, and decides neither the
+  laws about them nor their vacuity checks. So the laws are procedures
+  whose own checks are set to random testing, which is not claimed as
+  evidence, and the wrapper proves them. Core typing does the same.
+- **Members.** A declaration is one table, an optional body row and a
+  sequence of members, each a keyword and a root. `member_hyps` folds over
+  the members, so the hypotheses of a member and of a body are
+  definitions, and `declared_obligations` yields `Asserted` goals. The
+  `Decl` of Core typing has no keyword and one table for each condition;
+  the two are not yet one definition.
+- **Calls.** `Defined(r)` holds where every `require` root of the callee
+  evaluates to true at the argument values. The program is a sequence of
+  declarations that satisfaction takes as an argument.
+- **Keywords.** The source grammar has `assume` and `expect` members only;
+  `require` and `assert` members are specified here ahead of it. The `law`
+  keyword of Fren1 is retired: `expect` takes its place. The chapter says
+  nothing of `assert` or `assume` inside an expression, which the Core
+  does not have.
+- **The check.** `check` is an uninterpreted function with three laws. A
+  procedure with a contract could not have the output type `Verdict`,
+  which is unbounded, and the solver did not decide the realizability of a
+  function contract that mentions `satisfied?`.
+
+Production: the [LIR chapter](../src/Spec/Compiler/Lir.md) states and
+proves, in `lir.walking.demand`, what the compiler's lowering of a binary
+operator adds to its operands' verification, for every operand
+(`ordinary_checks`, `division_checks`, `remainder_checks`). This chapter
+no longer binds a sample of it. `FrenLir.Verification` has the
+constructors of `Condition` (`empty`, `check`, `both`, `branch`, `letE`)
+and a source-origin marker; it has no constructor case. That the
+compiler's whole condition for an expression is the chapter's, the
+commuting square with OIR condition generation, is open
+(`oir.contract.correspondence`).
+
+- [ ] Prove `verification.generation.complete`: it needs that a row's
+  condition in a table is generated from the conditions of the rows
+  before it.
+- [ ] State as a property that each goal occurs once for each written
+  path to it, with exactly the hypotheses of the enclosing branches,
+  cases and bindings.
+- [ ] Give the evaluator values for products, quotients, remainders and
+  calls, then state and prove `verification.soundness`.
+- [ ] Make the `Decl` of Core typing and the member table one definition.
+- [ ] Rename `PropertiesAndChecks.md` to match the chapter's title.
+- [ ] Bind `Lowered.branch`, `Lowered.bind` and `Lowered.call` to
+  `if_condition`, `let_condition` and `call_condition` through an
+  erasure of `FrenLir.Verification` to `Condition`.
 
 ## Compiler correction units
 

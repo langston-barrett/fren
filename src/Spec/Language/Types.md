@@ -5,9 +5,9 @@ language; the [THIR chapter](../Compiler/Thir.md) relates it to the
 compiler's typed representation. Static semantics comprises resolution,
 typing, and verification, including definedness. This chapter defines
 typing; [resolution](NamesAndScope.md) supplies identities, and
-[expression obligations](Expressions.md) supply verification hypotheses to
-be discharged by SMT. Dynamic semantics applies only to well-typed, verified
-programs. Typing alone establishes neither definedness nor logical truth.
+[Definedness and verification](PropertiesAndChecks.md) defines the
+obligations that verification proves. Dynamic semantics applies only to
+well-typed, verified programs. Typing alone establishes neither definedness nor logical truth.
 
 ## Overview
 
@@ -819,9 +819,8 @@ An `expect` below is proved by the solver. A procedure states a law that
 the chapter's wrapper proves in Lean, by an `impl` bound to the procedure,
 or that is open, with no `impl`; `fren trace` reports which. Each law's
 procedure has one output, `holds?`, so that its evidence is its own. Its own
-checks are set to random testing only so that the solver is not asked for
-an induction; random inputs rarely meet a law's hypotheses, and that
-testing is not claimed as evidence.
+checks are set to random testing, and that testing is not claimed as
+evidence.
 
 r[types.layer.operators] spec::types::operator_unique::{unary, binary}
 Each unary or binary operator has at most one result type for fixed operand

@@ -4,7 +4,10 @@ A well-typed expression whose partial operations are within their domains
 denotes a value in an interpretation of its declarations and an assignment
 to its free locals. [Core typing](Types.md)
 defines the shared `Ty`, `Symb`, `Ctx` and expression forms.
-This chapter specifies how their meanings and source obligations compose.
+This chapter specifies how their meanings compose and when a partial
+operation is within its domain;
+[Definedness and verification](PropertiesAndChecks.md) specifies the
+obligations.
 The domain is Booleans, integers, payload-free nominal enums, locals, named
 calls, unary and binary operators, lets, conditionals and constructor matches.
 
@@ -352,12 +355,10 @@ Names in an unselected branch or unused definition still count. This
 structural closure uses the same children and binding depths as typing;
 it is independent of a particular evaluation trace.
 
-## Definedness and source verification
+## Operator domains
 
 A domain condition states when a partial operation has its specified meaning.
-This chapter assigns no value to an operation outside its domain. A source
-obligation requires proof of the domain at the operation's written
-occurrence.
+This chapter assigns no value to an operation outside its domain.
 
 r[expressions.domain.integer] spec::expressions::integer_domain?
 Division and remainder require a nonzero divisor. Typing alone does not
@@ -368,34 +369,13 @@ pub fn integer_domain?(op: BinaryOp, right: Int) :=
     not op in {BinaryOp::Div, BinaryOp::Mod} or right != 0
 ```
 
-r[expressions.domain.traversal]
-Verification traverses every written expression. Ordinary unary and binary
-operands, including both sides of `and` and `or`, retain their obligations
-in the incoming context. Unused let values and uncalled named definitions
-retain their obligations too. An interpreter's short-circuit trace cannot
-decide which obligations exist.
+[Definedness and verification](PropertiesAndChecks.md) defines the obligation
+that each written occurrence of a partial operation gives rise to, the
+hypotheses that conditionals, matches and lets supply, and what a solver's
+answer establishes.
 
-r[expressions.domain.guards]
-An if's condition is checked in the incoming context; its branches add the
-condition and its negation respectively. A constructor match checks its
-scrutinee in the incoming context and each arm under its constructor guard.
-These explicit scopes determine conditional obligations. Thus the division
-in `if d != 0 then n div d else 0` has hypothesis `d != 0`, whereas the
-division in `false and (1 div 0 = 0)` retains its unconditional obligation.
-
-r[expressions.domain.evidence]
-An unknown result or resource limit is neither proof nor undefinedness.
-No unproved goal can justify itself. A local hypothesis cannot become an
-unconditional global fact. Verification of a domain and evaluation of a
-value are distinct judgments.
-
-The [OIR rules](../Compiler/Oir.md#static-traversal-guards-and-bindings)
-retain lexical binders, substitutions, branch guards, owners and source
-origins. Their assert/assume and subset interfaces describe scoped
-verification information. The source grammar defined here contains no
-assert/assume expressions or subset syntax; global assumption members are
-specified by the check-request rules. No rule here settles dependency
-semantics for unresolved mutually partial assumptions.
+The [OIR chapter](../Compiler/Oir.md#static-traversal-guards-and-bindings)
+relates the compiler's conditions to those obligations.
 
 ## Examples
 
