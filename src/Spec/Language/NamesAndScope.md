@@ -805,7 +805,7 @@ pub fn param_names(params: Snoc<Param>): Scope := match params {
 }
 ```
 
-r[names.collection.duplicates] spec::names::{distinct?, reserved?, decl_names_ok?, decls_names_ok?, names_ok?}
+r[names.collection.duplicates] spec::names::{distinct?, reserved?, decl_names_ok?, decls_names_ok?}
 Two declarations of one module with the same name are an error (`F0206`),
 whatever their kinds and order. An enumeration named `Bool` or `Int` is an
 error (`F0212`): these are reserved type names, which no declaration
@@ -829,8 +829,6 @@ pub fn decls_names_ok?(decls: Snoc<SrcDecl>) := match decls {
     Empty => true,
     Extend(earlier, decl) => decls_names_ok?(earlier) and decl_names_ok?(decl),
 }
-
-pub fn names_ok?(decls: Snoc<SrcDecl>) := distinct?(item_names(decls)) and decls_names_ok?(decls)
 ```
 
 r[names.collection.members]
@@ -838,6 +836,48 @@ The variant names of one enumeration are distinct, and so are the
 parameter names of one function; a repeated name is an error (`F0213`).
 `decl_names_ok?` above states both. Two enumerations may declare variants
 of the same name: their identities differ.
+
+r[names.collection.function-types] spec::names::{declares_function?, type_clear?, params_clear?, decls_clear?, names_ok?}
+A function is an item of its module, so its name selects it before the
+module's own name does ([path heads](#r-names.paths.head)), and a function
+is not a type and has no members. A written type of a signature whose
+first name is the name of a function of the module therefore has no
+resolution. A sequence of declarations has *no naming error* when its
+names are distinct, each declaration's own names are admitted and no
+signature has such a written type.
+
+```fren
+pub fn declares_function?(decls: Snoc<SrcDecl>, name: String) := match decls {
+    Empty => false,
+    Extend(earlier, decl) => match decl {
+        SrcDecl::Enumeration(_, _) => declares_function?(earlier, name),
+        SrcDecl::Function(function, _, _, _) =>
+            function = name or declares_function?(earlier, name),
+    },
+}
+
+pub fn type_clear?(all: Snoc<SrcDecl>, written: TypeName) := match written {
+    TypeName::Named(path) => not declares_function?(all, path_head(path)),
+    _ => true,
+}
+
+pub fn params_clear?(all: Snoc<SrcDecl>, params: Snoc<Param>) := match params {
+    Empty => true,
+    Extend(earlier, param) => params_clear?(all, earlier) and type_clear?(all, param.ty),
+}
+
+pub fn decls_clear?(all: Snoc<SrcDecl>, decls: Snoc<SrcDecl>) := match decls {
+    Empty => true,
+    Extend(earlier, decl) => match decl {
+        SrcDecl::Enumeration(_, _) => decls_clear?(all, earlier),
+        SrcDecl::Function(_, params, result, _) =>
+            decls_clear?(all, earlier) and params_clear?(all, params) and type_clear?(all, result),
+    },
+}
+
+pub fn names_ok?(decls: Snoc<SrcDecl>) :=
+    distinct?(item_names(decls)) and decls_names_ok?(decls) and decls_clear?(decls, decls)
+```
 
 r[names.collection.complete] spec::names::{constructors, bind_constructors, collect_types}
 Collection has two steps, and both read every declaration before any body
@@ -887,13 +927,14 @@ r[names.locals.annotations] spec::names::{resolve_params, signature, collect_fun
 The second step binds every function `m · f` with its signature. The
 written types of its parameters and result resolve in the environment of
 the first step, which binds every enumeration of the module; no parameter
-is in scope in them. The signature's parameter context has the resolved
+is in scope in them, and none of them begins with a function's name, by
+the [rule above](#r-names.collection.function-types). The signature's parameter context has the resolved
 types in written order. Collection yields the environment of both steps,
-and yields none when a name is repeated, an enumeration has a reserved
-name or a written type has no resolution.
+and yields none when the declarations have a naming error or a written
+type has no resolution.
 
 ```text
-  names of ds distinct, no enumeration reserved   m ⊢ ds ⇒ Σ₀ (enumerations and variants)
+  ds has no naming error   m ⊢ ds ⇒ Σ₀ (enumerations and variants)
   (m, Σ₀) ⊢ Tₖ ⇒ τₖ and (m, Σ₀) ⊢ T ⇒ τ, for each function f(x₀: T₀, …, xₙ: Tₙ): T of ds
   ───────────────────────────────────────────────────────────────────────────────────
   m ⊢ ds ⇒ Σ₀, …, m · f = function (τ₀, …, τₙ) → τ, …
@@ -946,10 +987,12 @@ pub fn collect(parent: ItemId, name: String, decls: Snoc<SrcDecl>): Option<Symb>
     else None
 ```
 
-r[names.collection.rejected] spec::names::rejected::{duplicate, repeated_variant, reserved_name, repeated_parameter}
+r[names.collection.rejected] spec::names::rejected::{duplicate, repeated_variant, reserved_name, repeated_parameter, function_as_qualifier}
 Collection yields no environment for two declarations of one name, for an
 enumeration with a repeated variant, for an enumeration named `Bool`, or
-for a function with a repeated parameter.
+for a function with a repeated parameter. It yields none either for a
+module `M` that declares a function `M` and a signature with the written
+type `M::E`: there `M` is the function, which has no member.
 
 ```fren
 set_option fren.evidence "random" in
@@ -998,6 +1041,19 @@ pub proc rejected(
                     Param { name := variant, ty }
                 ),
                 ty,
+                body
+            )
+        )
+    ) = None
+    ensure function_as_qualifier: collect(
+        parent,
+        module,
+        Extend(
+            Extend(Empty, SrcDecl::Enumeration(name, first)),
+            SrcDecl::Function(
+                module,
+                Empty,
+                TypeName::Named(Path::Member(Path::Name(module), name)),
                 body
             )
         )

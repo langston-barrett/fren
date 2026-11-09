@@ -706,14 +706,14 @@ theorem collect_ok (parent : Fren.Seq String) (name : String) (ds : Snoc SrcDecl
   split at h
   · rename_i hok
     simp only [names_ok?, decide_eq_true_eq] at hok
-    have hT := nodup_types (child parent name) ds hok.1 hok.2
+    have hT := nodup_types (child parent name) ds hok.1.1 hok.1.2
     have hN : SNodup S := by
-      refine nodup_functions _ ds S h hT hok.1 ?_
+      refine nodup_functions _ ds S h hT hok.1.1 ?_
       intro b f ps r body hb hd heq
       rw [mem_collect_types] at hb
       rcases hb with ⟨y, ws, hy, rfl | ⟨v, _, rfl⟩⟩
       · have : y = f := child_inj _ y f heq
-        have e := distinct_decl ds (.Enumeration y ws) (.Function f ps r body) hok.1 hy hd this
+        have e := distinct_decl ds (.Enumeration y ws) (.Function f ps r body) hok.1.1 hy hd this
         cases e
       · exact child_ne_deeper _ y v f heq
     have mono : ∀ i k, entry (collect_types (child parent name) ds) i = some k →
@@ -728,7 +728,7 @@ theorem collect_ok (parent : Fren.Seq String) (name : String) (ds : Snoc SrcDecl
     · rw [mem_collect_types] at hb0
       rcases hb0 with ⟨x, vs, hx, rfl | ⟨v, hv, rfl⟩⟩
       · apply binding_ok_enumeration
-        apply constructors_ok_of _ _ _ (variants_distinct ds x vs hok.2 hx)
+        apply constructors_ok_of _ _ _ (variants_distinct ds x vs hok.1.2 hx)
         intro v hv
         exact mono _ _ (entry_of_mem _ { item := _, kind := .Constructor _ } hT
           ((mem_collect_types _ ds _).mpr ⟨x, vs, hx, Or.inr ⟨v, hv, rfl⟩⟩))
@@ -861,11 +861,44 @@ theorem distinct_swap (s : Snoc String) (a b : String)
   · exact h1 (Or.inl e.symm)
   · exact h2 h
 
+theorem declares_function_swap (ds : Snoc SrcDecl) (a b : SrcDecl) (x : String) :
+    declares_function? (.Extend (.Extend ds a) b) x
+      = declares_function? (.Extend (.Extend ds b) a) x := by
+  cases a <;> cases b <;> simp [declares_function?, fren_spec, Bool.or_left_comm]
+
+theorem decls_clear_congr (A B ds : Snoc SrcDecl)
+    (h : ∀ x, declares_function? A x = declares_function? B x) :
+    decls_clear? A ds = decls_clear? B ds := by
+  have ty : ∀ t, type_clear? A t = type_clear? B t := by
+    intro t
+    cases t <;> simp [type_clear?, h, fren_spec]
+  have ps : ∀ p, params_clear? A p = params_clear? B p := by
+    intro p
+    induction p with
+    | Empty => simp [params_clear?]
+    | Extend e q ih => simp [params_clear?, ih, ty]
+  induction ds with
+  | Empty => simp [decls_clear?]
+  | Extend e d ih => cases d <;> simp [decls_clear?, ih, ps, h, fren_spec]
+
+theorem decls_clear_exchange (X ds : Snoc SrcDecl) (a b : SrcDecl) :
+    decls_clear? X (.Extend (.Extend ds b) a) = decls_clear? X (.Extend (.Extend ds a) b) := by
+  cases a <;> cases b <;>
+    simp [decls_clear?, fren_spec, Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
+
+theorem decls_clear_swap (ds : Snoc SrcDecl) (a b : SrcDecl)
+    (h : decls_clear? (.Extend (.Extend ds a) b) (.Extend (.Extend ds a) b) = true) :
+    decls_clear? (.Extend (.Extend ds b) a) (.Extend (.Extend ds b) a) = true := by
+  rw [decls_clear_congr _ (.Extend (.Extend ds a) b) _
+    (fun x => declares_function_swap ds b a x), decls_clear_exchange]
+  exact h
+
 theorem names_ok_swap (ds : Snoc SrcDecl) (a b : SrcDecl)
     (h : names_ok? (.Extend (.Extend ds a) b) = true) : names_ok? (.Extend (.Extend ds b) a) = true := by
   simp only [names_ok?, decide_eq_true_eq] at h ⊢
-  refine ⟨distinct_swap (item_names ds) (decl_name a) (decl_name b) h.1, ?_⟩
-  have h2 := h.2
+  refine ⟨⟨distinct_swap (item_names ds) (decl_name a) (decl_name b) h.1.1, ?_⟩,
+    decls_clear_swap ds a b h.2⟩
+  have h2 := h.1.2
   simp only [decls_names_ok?, decide_eq_true_eq] at h2 ⊢
   exact ⟨⟨h2.1.1, h2.2⟩, h2.1.2⟩
 
@@ -874,7 +907,7 @@ theorem types_entry (M : Fren.Seq String) (ds1 ds2 : Snoc SrcDecl)
     (ok1 : names_ok? ds1 = true) (ok2 : names_ok? ds2 = true) (i : Fren.Seq String) :
     entry (collect_types M ds1) i = entry (collect_types M ds2) i := by
   simp only [names_ok?, decide_eq_true_eq] at ok1 ok2
-  refine entry_congr _ _ (nodup_types M ds1 ok1.1 ok1.2) (nodup_types M ds2 ok2.1 ok2.2) ?_ ?_ i
+  refine entry_congr _ _ (nodup_types M ds1 ok1.1.1 ok1.1.2) (nodup_types M ds2 ok2.1.1 ok2.1.2) ?_ ?_ i
   · intro b hb
     rw [mem_collect_types] at hb ⊢
     obtain ⟨x, vs, hx, h⟩ := hb
@@ -1272,7 +1305,9 @@ impl names_rejected_proof: rejected for (parent : Fren.Seq String) (module name 
   intro parent module name variant first second ty body _
   simp [spec.names.rejected.ensures, spec.names.rejected.ensure.output,
     spec.names.rejected.ensure.duplicate, spec.names.rejected.ensure.repeated_variant,
-    spec.names.rejected.ensure.reserved_name, spec.names.rejected.ensure.repeated_parameter, collect, names_ok?, distinct?, item_names, decl_name,
+    spec.names.rejected.ensure.reserved_name, spec.names.rejected.ensure.repeated_parameter,
+    spec.names.rejected.ensure.function_as_qualifier, decls_clear?, declares_function?,
+    type_clear?, params_clear?, path_head, collect, names_ok?, distinct?, item_names, decl_name,
     resolve_local, decl_names_ok?, decls_names_ok?, param_names, reserved?, fren_spec]
 
 open spec.types spec.names in
