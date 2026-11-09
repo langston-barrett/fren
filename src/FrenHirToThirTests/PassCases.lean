@@ -40,6 +40,9 @@ private def same : Expr .hir := h 4 (.binary .eq (h 5 (.item g A)) (h 6 (.item g
 -- An enum's own name is not a callee; a function is not a pattern.
 #guard rejects (h 2 (.apply g (.item E) #[h 3 (.int 1)])) 2 (.notCallable (.item E))
 #guard rejects (h 2 (.matchE (h 3 (.item g A)) #[(⟨4, f⟩, h 5 (.int 0))])) 4 (.patternNotConstructor f)
+-- Later arms must have the first arm's type.
+#guard rejects (h 2 (.matchE (h 3 (.item g A)) #[(⟨4, A⟩, h 5 (.int 0)), (⟨6, A⟩, h 7 (.bool true))]))
+  7 (.mismatch .int .bool)
 -- A match on a non-enum is rejected at the scrutinee, before any arm.
 #guard rejects (h 2 (.matchE (h 3 (.var 0)) #[(⟨4, f⟩, h 5 (.int 0))])) 3 (.matchNotEnum .int)
 -- An unwritten type needs the `?` suffix; the suffix needs `Bool`.

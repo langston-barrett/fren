@@ -195,7 +195,15 @@ def TypeError.span (m : Module E) (e : TypeError) : Option FrenSource.Span := do
 def TypeError.headline : TypeError → String
   | ⟨_, _, .mismatch expected found⟩ =>
     s!"type mismatch: expected `{expected.display}`, found `{found.display}`"
-  | ⟨_, _, r⟩ => s!"type error: {repr r}"
+  | ⟨_, _, .notValue id⟩ => s!"`{id.render}` is not a value"
+  | ⟨_, _, .notCallable (.item id)⟩ => s!"`{id.render}` is not a function"
+  | ⟨_, _, .notCallable (.local _)⟩ => "a local variable is not a function"
+  | ⟨_, _, .arity expected found⟩ => s!"expected {expected} arguments, found {found}"
+  | ⟨_, _, .danglingLocal i⟩ => s!"local index {i} has no binder"
+  | ⟨_, _, .matchNotEnum found⟩ => s!"match requires an enum, found `{found.display}`"
+  | ⟨_, _, .emptyMatch⟩ => "cannot infer an empty match result"
+  | ⟨_, _, .patternNotConstructor id⟩ => s!"`{id.render}` is not a constructor"
+  | ⟨_, _, .missingAnnotation⟩ => "omitted annotation requires a Bool suffix"
 
 def TypeError.code : TypeError → Option String
   | ⟨_, _, .mismatch _ _⟩ => some "F0304"

@@ -123,7 +123,7 @@ def runGenerated : IO Unit := do
     ∀ c : Faulty, rejects c.case = true
   property "origins and display names do not affect typing" <|
     ∀ (c : Faulty) (k : Nat), originBlind k c.case = true
-  property "generated input is well scoped unless a dangling local was injected" <|
+  property "generator check (not the pass): input is well scoped unless a dangling local was injected" <|
     ∀ c : Faulty, scopedUnlessDangling c.case = true
 
 end FrenHirToThirTests

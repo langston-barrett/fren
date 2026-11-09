@@ -37,6 +37,8 @@ inductive Fault where
   /-- A pattern from another enum. -/
   | wrongPattern
   | emptyMatch
+  /-- A later `match` arm whose type differs from the first arm's. -/
+  | armMismatch
   /-- A `?`-suffixed `let` whose value is not `Bool`. -/
   | letSuffix
   /-- A `?`-suffixed parameter whose written type is not `Bool`. -/
@@ -44,7 +46,8 @@ inductive Fault where
   deriving Repr, BEq, DecidableEq, Inhabited
 
 def Fault.all : List Fault :=
-  [.swap, .arity, .ctorCallee, .fnValue, .dangling, .wrongPattern, .emptyMatch, .letSuffix, .paramSuffix]
+  [.swap, .arity, .ctorCallee, .fnValue, .dangling, .wrongPattern, .emptyMatch, .armMismatch, .letSuffix,
+   .paramSuffix]
 
 /-- Faults whose program prints as source that parses and resolves. -/
 def Fault.printable : Fault → Bool
@@ -259,7 +262,7 @@ def expr (ctx : List Ty) (t : Ty) (depth : Nat) : G m (Expr .thir) :=
       let n := 1 + (← below pick 3)
       if n > 1 then count 14
       let mut arms := #[]
-      for _ in [:n] do
+      for i in [:n] do
         let wrong := shape.enums.find? (·.id != e.id)
         let faulty ← if wrong.isSome then takeFault .wrongPattern else pure false
         let po ← fresh
@@ -270,7 +273,13 @@ def expr (ctx : List Ty) (t : Ty) (depth : Nat) : G m (Expr .thir) :=
             count 15
             pure c
           else oneOf pick e.ctors FrenBase.ItemId.root
-        let body ← expr ctx t d
+        -- A later arm must have the first arm's type: the arm-mismatch fault.
+        let body ← if i > 0 && (← takeFault .armMismatch) then do
+            let e ← otherLiteral pick shape t
+            record .armMismatch e.origin (.mismatch t e.ann)
+            count 15
+            pure e
+          else expr ctx t d
         arms := arms.push ((⟨po, ctor⟩ : Pattern), ← wrapIf (isLet body) body)
       return mk (← fresh) t (.matchE s arms)
     | 5 => do

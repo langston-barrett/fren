@@ -135,9 +135,12 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard permits "FrenHirToThir" "FrenModule"
 #guard (reach "FrenHirToThir").all (!passes.contains ·)
 #guard (reach "FrenWalking").contains "FrenAstToHir"
+-- The tests reach the parser and resolver only through the walking adapter
+-- (legacy tests and the agreement test), never by a direct import.
 #guard !permits "FrenHirToThirTests" "FrenParse"
 #guard !permits "FrenHirToThirTests" "FrenAstToHir"
 #guard permits "FrenHirToThirTests" "FrenWalking"
+#guard (reach "FrenWalking").contains "FrenParse"
 #guard permits "FrenEvalTests" "Plausible"
 #guard !permits "FrenEval" "Plausible"
 #guard !permits "FrenEval" "FrenCore"
