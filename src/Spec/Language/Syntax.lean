@@ -460,8 +460,9 @@ partial def randomTree (seed : Nat) : Nat → Tree × Nat
     | _ => (.call ["g"] [a], s)
 
 /-- `syntax.print.roundtrip`: printing a tree and parsing the text gives the
-tree back. Bounded: 3000 seeded random trees of depth at most 5, and every
-pair of binary operators and every unary operator around binary operands. -/
+tree back, for well-formed trees, and not for ill-formed ones. Bounded: 3000 seeded random well-formed trees of depth at most 5, every
+pair of binary operators and every unary operator around binary operands, and
+seven ill-formed trees, one for each way to be ill formed. -/
 def roundtrip_agrees : Bool := Id.run do
   let mut seed := 2026
   let mut trees : List Tree := []
@@ -477,7 +478,11 @@ def roundtrip_agrees : Bool := Id.run do
       trees := .binary a (.binary b x y) z :: .binary a x (.binary b y z) :: trees
     for u in unaryOps do
       trees := .unary u (.binary a x y) :: .binary a (.unary u x) y :: .binary a x (.unary u y) :: trees
-  return trees.all fun t => tree? t.print.text == some t.show
+  -- Trees that are not well formed print to text that does not parse back.
+  let illFormed : List Tree := [.call ["f"] [], .name [], .call [] [x],
+    .matchE x [(["A"], y)], .letE "true" x y, .name ["E", "not"], .binary .Add (.name ["if"]) x]
+  return trees.all (fun t => tree? t.print.text == some t.show) &&
+    illFormed.all fun t => tree? t.print.text != some t.show
 
 #guard roundtrip_agrees
 

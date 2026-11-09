@@ -278,7 +278,10 @@ An expression tree is a fixed point of `ExprF`: `ExprF<E>` is one node,
 whose subexpressions are of type `E`. A file's tree is the sequence of
 its declarations' trees, each a `DeclarationF` whose expressions are
 expression trees. The trees keep names as written paths, and have no
-parentheses.
+parentheses. A tree is *well formed* when its paths are nonempty, an
+arm's path has at least two identifiers, every call has at least one
+argument, and every path segment, binder and name is an identifier, not a
+keyword. The tree of every accepted text is well formed.
 
 ```fren
 pub enum UnaryOp { Neg, Not }
@@ -393,7 +396,9 @@ tree's `category` is the nonterminal that derives it without parentheses;
 it fits a place whose nonterminal is no tighter than its category, unless
 it is *open*, an `if` or `let`, or an operator node whose last subtree is
 open, and something of the enclosing expression follows it. Parsing the
-printed text gives the tree back.
+printed text of a well-formed tree gives the tree back. That of a tree
+that is not well formed does not: the tree of an accepted text is well
+formed.
 
 ```fren
 pub enum Category { Expression, Iff, Or, And, Not, Comparison, Sum, Product, Negation, Primary }

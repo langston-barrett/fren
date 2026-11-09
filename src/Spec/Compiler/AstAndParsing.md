@@ -37,13 +37,18 @@ Each driver hands Fren text to the same parser, with an entry category.
 
 r[parsing.shared.entry]
 status: tested FrenParseTests.Properties
-The drivers call the same parser. Given identical Fren text, entry
-category and file identity, they obtain the same tree or the same
-diagnostic, before host positions are translated. The file and context
-categories read a `File`, and the expression category an
-`ExpressionEntry`; each consumes its whole input. Extraction from a host
-document is separate from parsing: delimiters of the host are not Fren
-tokens.
+The parser's entry categories are one parser: the file and context
+categories read a `File` and give the same tree or the same diagnostic
+for the same text and file identity, and the expression category reads an
+`ExpressionEntry`. Each consumes its whole input.
+
+r[parsing.shared.drivers]
+status: open
+Every driver of Fren 2 text, the command line and the hosted reader of
+Markdown blocks, calls this parser, and given identical Fren text, entry
+category and file identity obtains the same tree or the same diagnostic,
+before host positions are translated. Extraction from a host document is
+separate from parsing: delimiters of the host are not Fren tokens.
 
 ## Source ownership and locations
 
@@ -170,9 +175,6 @@ pub proc space_case(byte: Nat): (space?) {
 r[parsing.primitive.continuation] spec::parsing::continuation_case::{classification, first, last, ascii, lead}
 status: lean FrenParse.continuationByte_iff
 A UTF-8 continuation byte is in the inclusive interval 128 through 191.
-In valid UTF-8, an offset inside the text is a character boundary exactly
-when its byte is not a continuation byte; 0 and the byte length are
-boundaries too.
 
 ```fren
 pub proc continuation_case(byte: Nat): (continuation?) {
@@ -185,3 +187,9 @@ pub proc continuation_case(byte: Nat): (continuation?) {
     expect lead: when byte >= 192, not continuation?
 }
 ```
+
+r[parsing.primitive.boundary]
+status: open
+In valid UTF-8, an offset inside the text is a character boundary exactly
+when its byte is not a continuation byte; 0 and the byte length are
+boundaries too.
