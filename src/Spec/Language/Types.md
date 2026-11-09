@@ -77,9 +77,8 @@ r[types.object.identity] spec::types::{ItemId, Ty}
 An *item identity* is the canonical sequence of enclosing module and item
 names supplied by resolution. Constructor identities include their enumeration
 name. Value types are Boolean, mathematical integer, and nominal enumeration
-types; their constructors are disjoint. Two types are the same type exactly
-when they are equal, including every component of a nominal identity; there
-are no coercions or subtypes.
+types. Types are compared by equality, including every component of a
+nominal identity.
 <!-- status: definition -->
 
 ```fren
@@ -372,9 +371,8 @@ pub fn binary_rule?(context: Context, op: BinaryOp, left: Typing, right: Typing,
 
 r[types.expression.call] spec::types::{call_rule?, in_context?, argument_types?}
 If `Σ(f)` is a function with parameters σ₀, …, σₙ₋₁ and result τ, and
-`Σ; Γ ⊢ aₖ : σₖ` for each k < n, then `Σ; Γ ⊢ f(a₀, …, aₙ₋₁) : τ`. The
-arguments and parameters correspond level by level, so their numbers are
-equal.
+`Σ; Γ ⊢ aₖ : σₖ` for each k < n, then `Σ; Γ ⊢ f(a₀, …, aₙ₋₁) : τ`.
+`argument_types?` pairs the arguments and parameters level by level.
 <!-- status: definition -->
 
 ```fren
@@ -402,8 +400,7 @@ pub fn call_rule?(symbols: Symbols, context: Context, item: ItemId, args: Snoc<T
 
 r[types.expression.let] spec::types::let_rule?
 If `Σ; Γ ⊢ v : σ`, the annotation, if any, is σ, and `Σ; Γ, σ ⊢ b : τ`,
-then `Σ; Γ ⊢ let[: σ] v in b : τ`. The new binder has level `|Γ|` in b and
-is absent from v's context.
+then `Σ; Γ ⊢ let[: σ] v in b : τ`.
 <!-- status: definition -->
 
 ```fren
@@ -443,7 +440,7 @@ pub fn if_rule?(
 r[types.expression.match] spec::types::{match_rule?, arm_bodies?, arm_patterns?}
 If `Σ; Γ ⊢ s : Nominal(a)`, the arms are nonempty, every pattern's `Σ`
 entry is a constructor of a, and `Σ; Γ ⊢ b : τ` for each arm body b, then
-`Σ; Γ ⊢ match s { … } : τ`. No arm extends Γ.
+`Σ; Γ ⊢ match s { … } : τ`, each arm body typed in Γ itself.
 <!-- status: definition -->
 
 ```fren
@@ -1075,12 +1072,10 @@ annotation denotes Boolean only when the parameter's name ends in `?`.
 <!-- status: definition -->
 
 r[types.surface.suffix] spec::types::{suffix_rule?, let_annotation?}
-The *`?` suffix rule*: a parameter or let binder whose name ends in `?` has
-type Boolean, including when it has an explicit annotation, which the suffix
-does not overwrite: a parameter `b?: Int` has no type, and a let binder
-`x?: Int` has no Core annotation, so the declaration is not well typed. A
-let binder `x?` without an annotation elaborates to a Core let annotated
-Boolean.
+The *`?` suffix rule*: a parameter or let binder whose name ends in `?` must
+have type Boolean, including when it has an explicit annotation, which the
+suffix does not overwrite. A let binder `x?` without an annotation
+elaborates to a Core let annotated Boolean.
 <!-- status: definition -->
 
 ```fren
@@ -1255,13 +1250,12 @@ pub const PROGRAM_EXAMPLE: Bool := program_ok?(
 ```
 
 r[types.examples.rejected] spec::types::rejected::{out_of_scope, branches, foreign_pattern, no_arms, extra_argument}
-Each rejected example holds for every table: the layer that it names has no
-type whatever its children's typings, beyond those its premises fix.
-`let #0 in #0` has no type in `·`, because its value `#0` has none there.
-`if c then 1 else false` has none, because `1` is an Integer and `false` a
-Boolean. A match on a value of `Nominal(a)` with a pattern `c` whose owner
-is another enumeration has none, nor has a match with no arms, nor
-`f(a, b)` for a function f of one parameter.
+Each rejected example is a layer that has no type, whatever the typings of
+the children its premises leave free: the local `#0` in `·`; a conditional
+whose branches have types Integer and Boolean, such as `1` and `false`; a
+match on a value of `Nominal(a)` whose one arm's pattern is a constructor
+of another enumeration; a match with no arms; and a call with two arguments
+of a function with one parameter.
 <!-- status: smt -->
 
 ```fren
