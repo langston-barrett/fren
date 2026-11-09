@@ -32,17 +32,22 @@ OBSERVER = HERE / ".lake/build/bin/heavy_observe"
 
 def main():
     args = sys.argv[1:]
-    parts = {"publisher", "forecast", "entrypoint", "cohort", "core"}
+    parts = {"publisher", "forecast", "entrypoint", "cohort", "core",
+             "automatic", "automaticEvidence", "automaticStore"}
     if args in ([], ["--controls-only"]):
         selected = parts
     elif len(args) == 2 and args[0] == "--part" and args[1] in parts:
         selected = {args[1]}
     else:
-        raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core}]")
+        raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core,automatic,automaticEvidence,automaticStore}]")
     for part, script in (("publisher", "publish_test.py"), ("forecast", "forecast_test.py"),
                          ("entrypoint", "entrypoint_test.py")):
         if part in selected:
             subprocess.run([sys.executable, "-I", str(HERE / script)], check=True)
+    for part, mode in (("automatic", "positive"), ("automaticEvidence", "evidence"),
+                       ("automaticStore", "store")):
+        if part in selected:
+            subprocess.run([sys.executable, "-I", str(HERE / "automatic_test.py"), mode], check=True)
     if not ({"cohort", "core"} & selected): return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=HERE / "test-work"))

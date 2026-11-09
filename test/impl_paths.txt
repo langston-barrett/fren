@@ -27,6 +27,8 @@ unbound: Fren.Impls.HeavyOwnership.compiler_wall_limit limit
 unbound: Fren.Impls.HeavyOwnership.wall_message valid?
 unbound: Fren.Impls.HeavyOwnership.wall_signal_mask safe?
 unbound: Fren.Impls.HeavyOwnership.compiler_sample usable?
+unbound: Fren.Impls.HeavyOwnership.compiler_padding request
+unbound: Fren.Impls.HeavyOwnership.compiler_request request
 unbound: Fren.Impls.HeavyOwnership.group_gone gone?
 unbound: Fren.Impls.HeavyOwnership.lease admission
 unbound: Fren.Impls.HeavyOwnership.lease eviction

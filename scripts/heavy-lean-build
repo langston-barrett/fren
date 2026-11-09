@@ -30,6 +30,11 @@ def main():
     cpu = os.environ.get("HEAVY_COMPILER_CPU_SECONDS")
     if cpu is not None and (not cpu.isascii() or not cpu.isdecimal() or not 0 < int(cpu) <= 2147483647):
         parser.exit(125, "heavy-lean-build: invalid HEAVY_COMPILER_CPU_SECONDS\n")
+    padding = os.environ.get("FREN_BUILD_PADDING_KIB", "100000")
+    # Automatic advice is optional. Invalid padding disables its estimate;
+    # explicit manifest validation and the positive session fallback still apply.
+    if len(padding) > 16 or not padding.isascii() or not padding.isdecimal() or not 0 < int(padding) <= 2**50:
+        padding = "0"
     command = args.command
     if not command or command[0] != '--' or len(command) < 2 or not Path(command[1]).is_absolute():
         parser.error('supply -- followed by an absolute command and its arguments')
@@ -45,6 +50,17 @@ def main():
         spec.loader.exec_module(module)
         args.state.mkdir(mode=0o700, parents=False, exist_ok=False)
         overlay = module.create(args.state / 'overlay', args.real_lean, observer)
+        # Read-only optional evidence is frozen once for this session. No
+        # subprocess, blocking lock, per-compiler directory scan or estimator.
+        sys.path.insert(0, str(TOOLS))
+        from history import snapshot
+        try:
+            history = snapshot(os.path.expanduser('~'))
+            if history is not None:
+                (overlay / 'compiler-history.json').write_bytes(history)
+        except (OSError, ValueError):
+            (overlay / 'compiler-history.json').unlink(missing_ok=True)
+        (overlay / 'compiler-padding').write_text(padding)
         env = os.environ.copy()
         env.update(LAKE_OVERRIDE_LEAN='true', LEAN_SYSROOT=str(overlay),
                    HEAVY_OBSERVE_DIR=str(overlay / 'records'),

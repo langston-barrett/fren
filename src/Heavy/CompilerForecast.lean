@@ -1,3 +1,4 @@
+import Heavy.Budget
 import Heavy.Forecast
 import Heavy.Process
 
@@ -107,6 +108,19 @@ def advice (rs : List Record) (c : Context) (boot : String) (cutoff now n minimu
   let ps := recent rs c boot cutoff now n
   (if minimum = 0 ∨ n < minimum ∨ now < cutoff ∨ ps.length < minimum then none
    else Heavy.Forecast.maximum ps, ps.length)
+
+/-- Shared with the explicit exporter: positive additive padding, bounded by
+manifest demand capacity. This is not a guarantee about a future peak. -/
+def padded (peak : Option Int) (padding : Nat) : Option Int := do
+  let p ← peak
+  if p > 0 && padding > 0 && p + padding ≤ 2^50 then some (p + padding) else none
+
+/-- Optional advice that cannot fit alone in the configured session is
+unavailable. Preserve the operator fallback, without weakening the real gate
+or treating the fallback as an upper bound on measured/future usage. -/
+def forSession (peak : Option Int) (padding : Nat) (allowance parent : Int) : Option Int := do
+  let demand ← padded peak padding
+  if Heavy.Budget.decision allowance parent 0 demand 1 1 == 1 then some demand else none
 
 /-- The retained count is bounded for arbitrary raw histories, not fixtures. -/
 theorem take_bound (ps : Heavy.Forecast.Peaks) (n : Nat) :
