@@ -63,6 +63,52 @@ assignment, so the demand-driven value is the dynamic semantics there. -/
   let env ← (FrenEval.arguments t b values).mapError reprStr
   strictWalk depth t b env b.expression
 
+/-- Strict evaluation with a shared work budget. Unlike the depth bound, this
+counts visits across siblings and calls, so a branching call tree cannot
+consume exponential work. Exhaustion is an error, never a confirmation. -/
+private def boundedStrictWalk : Nat → FrenModule.Typed → FrenModule.TypedBody →
+    FrenEval.Environment → FrenAst.Expr → StateT Nat (Except String) FrenEval.Value
+  | 0, _, _, _, _ => throw "strict source evaluation exhausted"
+  | n + 1, t, b, env, e => do
+    let remaining ← get
+    if remaining == 0 then throw "evaluation budget exhausted"
+    set (remaining - 1)
+    let visit := boundedStrictWalk n t b env
+    match e with
+    | .bool .. | .integer .. | .name .. => liftM ((FrenEval.walk 1 t b env e).mapError reprStr)
+    | .paren _ a _ => visit a
+    | .unary _ op a => liftM ((FrenEval.unary op (← visit a)).mapError reprStr)
+    | .binary a _ op c =>
+      let l ← visit a
+      let r ← visit c
+      liftM ((FrenEval.binary op l r).mapError reprStr)
+    | .ifE _ c _ yes _ no =>
+      let .bool selected ← visit c | throw "non-Boolean condition"
+      visit (if selected then yes else no)
+    | .letE _ _ _ a _ rest => boundedStrictWalk n t b (.ok (← visit a) :: env) rest
+    | .matchE _ s _ arms _ =>
+      let .enum _ ctor ← visit s | throw "non-enum scrutinee"
+      let some (_, _, arm, _) := arms.find? (fun (pattern, _, _, _) =>
+          (t.resolved.referenceAt pattern.head.slice).any (fun ref =>
+            ref.role == .pattern && ref.target == .item ctor))
+        | throw "no arm for canonical constructor"
+      visit arm
+    | .call callee _ args _ _ =>
+      let some (.callable sig) := FrenHirToThir.occurrenceType b callee
+        | throw "callee is not a callable designator"
+      let some target := t.bodies.find? (fun x => x.owner == sig.id && x.member.isNone)
+        | throw "missing resolved function body"
+      let values ← args.mapM visit
+      let slots ← liftM ((FrenEval.arguments t target values).mapError reprStr)
+      let v ← boundedStrictWalk n t target slots target.expression
+      unless v.type == target.type && v.valid t do throw "callee result disagrees with its type"
+      return v
+
+private def boundedStrictBody (t : FrenModule.Typed) (b : FrenModule.TypedBody)
+    (values : Array FrenEval.Value) (depth budget : Nat) : Except String (FrenEval.Value × Nat) := do
+  let env ← (FrenEval.arguments t b values).mapError reprStr
+  (boundedStrictWalk depth t b env b.expression).run budget
+
 /-- Syntactic test for a partial operation anywhere in an expression, in
 every branch, operand and let. Exhausted traversal counts as partial. -/
 @[expose] def mentionsDivision : Nat → FrenAst.Expr → Bool
@@ -177,15 +223,16 @@ reachable, strict evaluation must agree, so a skipped undefined operand, unused
 let or callee step leaves the observation unconfirmed instead of becoming a
 witness or counterexample. -/
 private def sourceBoolean (p : FrenEval.Program) (b : FrenModule.TypedBody)
-    (values : Array FrenEval.Value) (depth : Nat) : Except String Bool := do
+    (values : Array FrenEval.Value) (depth budget : Nat) : Except String (Bool × Nat) := do
   let e ← (FrenEval.evaluate p ⟨b.owner, b.member.map (·.label.text)⟩ values depth).mapError reprStr
   unless e.body == b do throw "source evaluator selected another body"
   let v ← e.outcome.mapError reprStr
   let .bool value := v | throw "source evaluator returned a non-Boolean"
-  unless divisionFree p.typed b do
-    let strict ← (strictBody p.typed b values depth).mapError ("strict: " ++ ·)
+  if !divisionFree p.typed b then
+    let (strict, remaining) ← (boundedStrictBody p.typed b values depth budget).mapError ("strict: " ++ ·)
     unless strict == v do throw "strict and demand-driven evaluation disagree"
-  return value
+    return (value, remaining)
+  return (value, budget)
 
 /-- This helper consumes the actual producer's output, not editable solver
 formulas. The public assignment entry below re-runs that producer. Successful
@@ -214,18 +261,19 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
     if value.type != param.source.type || !value.valid p.typed then
       return .rejected "assignment sort or enum membership"
   let evaluator : FrenEval.Program := ⟨p.input, p.typed, p.accepted⟩
+  let mut budget := 10000
   for hypothesis in q.hypotheses do
-    match sourceBoolean evaluator hypothesis.source values depth with
+    match sourceBoolean evaluator hypothesis.source values depth budget with
     | .error e => return .unconfirmed ("source premise evaluation: " ++ e)
-    | .ok false => return .rejected "source premise is false"
-    | .ok true => pure ()
+    | .ok (false, _) => return .rejected "source premise is false"
+    | .ok (true, remaining) => budget := remaining
   if q.kind == .assumptionsSatisfiable then return .witness
   if q.kind != .validity then return confirmDefinedness evaluator q values depth
   let some subject := q.subject | return .unconfirmed "missing source goal"
-  match sourceBoolean evaluator subject values depth with
+  match sourceBoolean evaluator subject values depth budget with
   | .error e => return .unconfirmed ("source goal evaluation: " ++ e)
-  | .ok true => return .rejected "source goal is true"
-  | .ok false => return .counterexample
+  | .ok (true, _) => return .rejected "source goal is true"
+  | .ok (false, _) => return .counterexample
 
 /-- Low-level assignment control also binds to the original admitted source
 and exact ordered producer question. It cannot certify a forged OIR record. -/
