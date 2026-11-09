@@ -452,14 +452,18 @@ memory bound. The standalone observer classifies the raw Lean arguments and
 canonical source path before Heavy chooses its control mode. Selected calls
 reuse the private overlay and session, replacing only env's bare `lean`
 executable; the compiler's arguments, cwd, streams and physical status are
-retained. Queries, stdin, `--run` and nonselected legacy sources keep their
+retained. Queries, stdin, `--run`/`-r` and nonselected legacy sources keep their
 existing route. Known option operands are consumed before excluding those
 modes, so an output named `--run` does not bypass the bound. Ambiguous selected
-file syntax and missing required setup fail closed. This covers bare `lean`
+file syntax and missing required setup fail closed. Ambiguous discovery resolves
+every argument before selection, including suffixless/differently suffixed aliases
+to selected sources. The pure scan is bound to a Fren requirement; real compiler
+controls cover resolution and complete argv traversal. This covers bare `lean`
 after `lake env`, not arbitrary executable paths or shell commands. Source
 paths must remain stable between classification and execution. The registered
 `entrypoint` partition includes raw argument, setup denial and real direct
-compilation controls in `module_memory_test.py direct`.
+compilation controls in `module_memory_test.py direct`; the `cohort` partition
+checks that `--run` and `-r` bypass compiler admission in `directRun`.
 
 Each invocation prints and retains a new private temporary directory containing
 the overlay, session and records under `state`. Remove it when no longer

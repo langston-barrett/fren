@@ -515,6 +515,23 @@ def arguments : List String → testing.ProcessArguments
   | [] => .Nil
   | a :: rest => .Cons a (arguments rest)
 
+theorem ambiguous_source_eq (root : String) (candidates : List String) (source : String) :
+    Heavy.ModuleMemory.ambiguousSource root candidates source =
+      testing.module_memory_source root (arguments candidates) source := by
+  induction candidates generalizing source with
+  | nil => rfl
+  | cons canonical rest ih =>
+    simp only [Heavy.ModuleMemory.ambiguousSource, testing.module_memory_source, arguments, ih]
+    congr 1
+    rw [module_selected_eq]
+
+impl module_memory_source: testing::heavy_module_memory_source for (root : String) (candidates : List String) {
+  root := root, candidates := arguments candidates,
+  source := Heavy.ModuleMemory.ambiguousSource root candidates "",
+} by
+  intro root candidates _
+  simpa [fren_spec] using ambiguous_source_eq root candidates ""
+
 def metadata (m : Heavy.Process.Metadata) : testing.ProcessMetadata :=
   ⟨m.kind, m.source, m.olean, m.ilean, m.c, m.bc, m.setup⟩
 
@@ -553,7 +570,7 @@ theorem direct_file_eq (args : List String) :
     simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments, ← value_flag_eq]
   | case4 arg rest hv hq =>
     cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
-      ← value_flag_eq, ← query_flag_eq, Str.lit]
+      ← value_flag_eq, ← query_flag_eq, Str.lit] <;> (intros; simp_all)
   | case5 arg rest hv hq ih =>
     cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
       Heavy.Process.valueFlag, Heavy.Process.queryFlag, testing.process_value_flag?,

@@ -151,15 +151,13 @@ def memoryPath (path : String) : IO String := do
 
 def memorySourcePath (root : String) (args : List String) : IO String := do
   let parsed := parseMetadata args
-  let mut source ← match parsed.bind (·.source) with
+  let source ← match parsed.bind (·.source) with
     | some s => memoryPath s
     | none => pure ""
-  -- Ambiguous metadata must not silently bypass a possible selected source.
+  -- Resolve every raw argument before selection, including aliases without
+  -- a .lean suffix. An unsupported metadata option must not hide one.
   if parsed.isNone then
-    for arg in args do
-      if arg.endsWith ".lean" then
-        let candidate ← memoryPath arg
-        if Heavy.ModuleMemory.selected root candidate then source := candidate
+    return Heavy.ModuleMemory.ambiguousSource root (← args.mapM memoryPath) source
   return source
 
 def run (args : List String) : IO UInt32 := do

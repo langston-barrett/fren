@@ -359,8 +359,6 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
     assert record['compiler_memory_effective_bytes']==1073741824 and marker['swap']=='0',r
     assert record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,r
     assert r['session']['module_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
-    r=case('direct-ambiguous',[selected,'--unsupported'])
-    assert r['status']==125 and r['marker'] is None and not r['records'][0]['child_present'],r
     r=case('direct-signal',[selected],mode='term')
     assert r['status']==143 and r['records'][0]['raw_wait_status']==15,r
     assert r['records'][0]['compiler_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
@@ -370,12 +368,28 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
     r=case('direct-missing-tools',[selected],script=missing/'heavy')
     assert r['status']==125 and r['marker'] is None and not r['records'],r
     real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
+    alias=work/'source-alias';alias.symlink_to(selected)
+    alternate=work/'source-alias.txt';alternate.symlink_to(selected)
+    for path in (alias,alternate):
+        # -j1 is valid Lean syntax outside the conservative metadata subset.
+        # Both the standalone verdict and the observer must see through aliases.
+        verdict=run([str(HERE/'.lake/build/bin/heavy_observe'),'--classify-direct',str(ROOT/'src'),'-j1',str(path)],
+                    directory=work,label='classify-'+path.name,env=env,timeout=3)
+        assert verdict.returncode==0 and verdict.stdout==b'selected\n',verdict
+    native=run([str(real),'-j1',str(alias)],directory=work,label='native-alias-threads',env=env,timeout=5)
+    assert native.returncode==0 and native.stdout==native.stderr==b'',native
+    r=case('direct-ambiguous',['-j1',alias],executable=real.parent/'lake')
+    records=[v for v in r['records'] if v.get('compiler_memory_selected')]
+    assert r['status']==125 and len(records)==1 and not records[0]['child_present'],r
+    assert records[0]['compiler_memory_source']==str(selected) and records[0]['input_kind']=='unknown',r
+    assert r['session']['module_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
     artifact=work/'Identity λ $literal.olean'
-    r=case('direct-actual-lean',[selected,'-o',artifact],executable=real.parent/'lake')
+    r=case('direct-actual-lean',[alias,'-o',artifact],executable=real.parent/'lake')
     records=[v for v in r['records'] if v.get('compiler_memory_selected')]
     assert r['status']==0 and artifact.is_file() and len(records)==1,r
     record=records[0]
-    assert record['args']==[str(selected),'-o',str(artifact)] and record['cwd']==str(ROOT),r
+    assert record['args']==[str(alias),'-o',str(artifact)] and record['cwd']==str(ROOT),r
+    assert record['compiler_memory_source']==str(selected),r
     assert record['compiler_memory_applied_bytes']==record['compiler_memory_effective_bytes']==1073741824,r
     assert record['compiler_memory_ack_pid']==record['child_pid'] and record['compiler_memory_expected_inode']==record['compiler_memory_observed_inode'],r
     assert record['raw_wait_status']==0 and record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,r
@@ -383,6 +397,36 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
     (work/'direct-summary.json').write_text(json.dumps(dict(status='passed',cases=len(results),
         control_wall_seconds=time.monotonic()-start,results=str(work/'direct-results.json')),indent=2)+'\n')
     print(f'direct Lean controls passed: {work}')
+
+
+def direct_run_controls(work):
+    """Program execution bypasses compiler admission in both native spellings."""
+    from owned_test import _build
+    build=_build.load(ROOT/'scripts/fren-build')
+    real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
+    selected=ROOT/'src/FrenBase/Identity.lean'
+    home=work/'home';home.mkdir()
+    env=dict(os.environ,HOME=str(home),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off')
+    for key in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG'):
+        env.pop(key,None)
+    start=time.monotonic();results=[]
+    for flag in ('-r','--run'):
+        native_command=[str(real.parent/'lake'),'env','lean',flag,str(selected)]
+        assert build.heavy_command(native_command,1300000)==native_command
+        native=run(native_command,directory=work,label='native-'+flag.lstrip('-'),cwd=ROOT,env=env,timeout=5)
+        wrapped_command=[str(ROOT/'scripts/heavy'),'--offline',*native_command]
+        wrapped=run(wrapped_command,directory=work,label='heavy-'+flag.lstrip('-'),cwd=ROOT,env=env,timeout=5)
+        row=dict(flag=flag,native_command=native_command,wrapped_command=wrapped_command,
+                 native_status=native.returncode,status=wrapped.returncode,
+                 native_stdout=native.stdout.decode(),stdout=wrapped.stdout.decode(),
+                 native_stderr=native.stderr.decode(),stderr=wrapped.stderr.decode())
+        results.append(row);(work/'run-results.json').write_text(json.dumps(results,indent=2)+'\n')
+        assert native.returncode==wrapped.returncode==1,row
+        assert native.stdout==wrapped.stdout and native.stderr==wrapped.stderr,row
+        assert b"unknown declaration 'main'" in wrapped.stderr,row
+    (work/'run-summary.json').write_text(json.dumps(dict(status='passed',control_wall_seconds=time.monotonic()-start,
+        cgroup=Path('/proc/self/cgroup').read_text(),results=str(work/'run-results.json')),indent=2)+'\n')
+    print(f'direct Lean run controls passed: {work}')
 
 
 def actual_compile(work):
@@ -414,9 +458,10 @@ def actual_compile(work):
 
 
 if __name__=='__main__':
-    part=sys.argv[1];assert part in ('producer','negative','lifecycle','direct')
+    part=sys.argv[1];assert part in ('producer','negative','lifecycle','direct','directRun')
     parent=Path(os.environ.get('HEAVY_MODULE_TEST_ROOT',HERE/'test-work'));parent.mkdir(parents=True,exist_ok=True)
     work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent))
     if part=='direct':direct_controls(work)
+    elif part=='directRun':direct_run_controls(work)
     else:controls(work,part)
     if part=='producer':actual_compile(work)

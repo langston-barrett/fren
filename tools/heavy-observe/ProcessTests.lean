@@ -16,11 +16,18 @@ def main (args : List String) : IO Unit := do
     return
   let selected := "/source/FrenBase/Identity.lean"
   for (args, expected) in [([selected], true), (["-o", "--run", selected], true),
+      (["-o", "-r", selected], true), (["-r", selected], false),
       (["--run", selected], false), (["--stdin", selected], false),
       (["--version", selected], false), ([selected, "--unsupported"], true),
       (["--setup", "--stdin", selected], true), (["-o"], true)] do
     unless Heavy.ModuleMemory.directFile args == expected do
       throw (IO.userError "raw direct compilation selection")
+  let second := "/source/FrenSource/Span.lean"
+  for (candidates, expected) in [([], ""), (["/other/source-alias"], ""),
+      (["/other/source-alias", selected], selected), ([selected, "/other/a.txt"], selected),
+      ([selected, second, "/other/last.lean"], second)] do
+    unless Heavy.ModuleMemory.ambiguousSource "/source" candidates "" == expected do
+      throw (IO.userError "canonical source candidates")
   for bytes in [0, 1, Heavy.ModuleMemory.defaultBytes, 2^50, 2^50+1] do
     unless Heavy.ModuleMemory.limit "/source" selected "file" bytes ==
         (if bytes == 0 || bytes > 2^50 then none else some bytes) do

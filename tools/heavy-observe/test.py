@@ -65,6 +65,7 @@ def main():
             script = "automatic_test.py" if mode in ("positive", "evidence", "store") else "automatic_io_test.py"
             owned_run([sys.executable, "-I", str(HERE / script), mode], directory=fresh,
                       label="dispatch", env=env, timeout=23, grace=5, check=True)
+    if "cohort" in selected: modules("directRun")
     if "entrypoint" in selected:
         modules("direct")
         modules("producer")

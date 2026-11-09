@@ -534,7 +534,7 @@ def direct_routes(work):
         route = build.lake_route(argv)
         assert argv[route[2]] == 'lean' and argv[route[2] + 1:] == [direct_source], argv
         assert build.heavy_command(argv, 1000000)[1] == '--heavy-direct', argv
-    for args in (["--run", direct_source], ["--stdin", direct_source], ["--version"],
+    for args in (["--run", direct_source], ["-r", direct_source], ["--stdin", direct_source], ["--version"],
                  ["-o", direct_source, "Legacy.lean"],
                  [str(ROOT / 'src/FrenTestMain.lean')]):
         argv = ['lake', 'env', 'lean', *args]

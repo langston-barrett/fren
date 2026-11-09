@@ -1612,12 +1612,17 @@ source policy, observer and budget session as Lake builds. Leading Lake options
 and installed elan toolchain selection retain their meaning. The wrapper replaces
 only env's bare `lean` executable with the private observer; compiler argv, cwd
 and inherited streams are preserved. Its raw argument scan consumes known option
-operands before excluding queries, stdin and `--run`; those and nonselected legacy
-sources keep their ordinary route. Unsupported selected file syntax fails closed.
+operands before excluding queries, stdin and `--run`/`-r`; those and nonselected
+legacy sources keep their ordinary route. Unsupported selected file syntax fails closed.
 This route covers bare `lean` after `lake env`, not arbitrary executable paths or
 shell commands. Missing classifier/session tools fail setup rather than launching
 a possibly selected compiler uncapped. Canonical path selection assumes source
 paths remain stable between classification and launch, as for the build route.
+When metadata is ambiguous, every raw argument is canonicalized before the
+source-candidate scan: a suffixless or differently suffixed alias to a selected
+source cannot bypass selection. The pure scan below consumes those canonical
+paths without filtering their original spellings; actual resolution and complete
+argv traversal remain IO obligations covered by real compiler alias controls.
 
 Before the first selected compiler executes, the wrapper requires an owned,
 finite aggregate cgroup-v2 scope. It does not create sibling scopes. In a dedicated
@@ -1895,6 +1900,22 @@ pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
 
 pub enum ProcessArguments { Nil, Cons(String, ProcessArguments) }
 
+pub fn module_memory_source(root: String, candidates: ProcessArguments, source: String): String :=
+    match candidates {
+        ProcessArguments::Nil => source,
+        ProcessArguments::Cons(canonical, rest) => module_memory_source(
+            root,
+            rest,
+            if module_memory_selected?(root, canonical) then canonical else source
+        ),
+    }
+
+pub proc heavy_module_memory_source(root: String, candidates: ProcessArguments): (
+    det source: String,
+) {
+    out source := module_memory_source(root, candidates, "")
+}
+
 pub struct ProcessMetadata {
     kind: String, source: Option<String>, olean: Option<String>, ilean: Option<String>,
     c: Option<String>, bc: Option<String>, setup: Option<String>,
@@ -1972,7 +1993,7 @@ pub fn direct_lean_file?(args: ProcessArguments) := match args {
             ProcessArguments::Nil => true,
             ProcessArguments::Cons(_, tail) => direct_lean_file?(tail),
         }
-        else if arg is "--run" | "--stdin" or process_query_flag?(arg) then false
+        else if arg is "--run" | "-r" | "--stdin" or process_query_flag?(arg) then false
         else direct_lean_file?(rest),
 }
 
@@ -2019,6 +2040,7 @@ pub proc heavy_process_metadata_reuse(
 #fren_check heavy_compiler_cpu_observation
 #fren_check heavy_process_fingerprint
 #fren_check heavy_process_arguments
+#fren_check heavy_module_memory_source
 #fren_check heavy_direct_lean_file
 #fren_check heavy_process_identity
 #fren_check heavy_process_metadata_reuse
