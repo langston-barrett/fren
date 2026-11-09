@@ -1127,12 +1127,34 @@ kinds that each resolved position names, sibling scopes, the parallel
 parameter context, that collection yields a well-formed symbol
 environment, that exchanging the last two declarations changes
 nothing that collection binds, that two sequences of the same
-declarations without a naming error collect alike, and that an
-unannotated `let` hands typing the annotation its binder's `?` suffix
-requires. It binds the production resolver's
+admitted declarations collect alike, that every type an admitted module
+writes resolves in the environment of enumerations exactly as in the
+collected one (`names.collection.agreement`), that a resolved `let` and a
+resolved parameter satisfy the `?` suffix rule of typing and that one
+breaking it is refused (`names.expression.layer`,
+`names.collection.parameters`), that an item shadows the module's name,
+and exactly when a first name denotes nothing (`names.paths.unknown`). It binds the production resolver's
 nearest-name search and name equality (`FrenAstToHir.nearest`,
 `FrenAstToHir.sameName`) to their rules. Two of the chapter's claims are `trusted` and open: `naming_order`
-and `table_weakening`.
+and `table_weakening`. A third is open and stated in prose only:
+`names.expression.unique-expression`, that two source tables denoting the
+same expression resolve to tables that unfold alike. The wrapper proves
+determinism for one source table, not for the expression it denotes.
+
+The chapter's functions return no diagnostic, so the codes its prose
+names are untraced: F0201, F0203, F0204, F0206, F0210, F0212 and F0213
+have no Fren item and no evidence. Its rules decide only that the
+construct has no resolution.
+
+What production does differently, recorded here rather than in the
+chapter: the resolver numbers locals by index from the newest binder,
+not by level; it may find a path's target before it knows the position,
+and reports a function used as a value or a local used as a callee when
+it forms the typed term; it rejects a module that declares an
+expectation or a program of several modules as unsupported; its `let`
+has no written type, so no front end exercises the annotated `let`; and
+it collects names only, while the chapter's `collect` also resolves
+signature types.
 
 - [x] Bind the nearest-name primitive to its rule with a genuine Lean
   proof over every scope.
@@ -1142,15 +1164,24 @@ and `table_weakening`.
 - [x] Prove the exchange law of collection (`names.collection.order`).
 - [x] State the order law for every reordering of the declarations
   (`names.collection.permutation`) and prove that sequences of the same
-  declarations without a naming error collect alike.
-- [ ] Prove `naming_order`: a reordering of declarations without a naming
-  error has none. It is `trusted` and open.
+  admitted declarations collect alike.
+- [ ] Prove `naming_order`: a reordering of admitted declarations is
+  admitted. It is `trusted` and open.
 - [ ] Prove `table_weakening` (`names.expression.table-weakening`), which
   is `trusted` and open; `names.expression.weakening` proves the law for
   one layer.
 - [ ] Define resolution for expectations, which the production resolver
   collects into the item namespace and resolves; the chapter's domain
-  (`names.walking.domain`) leaves them out.
+  (`names.overview.domain`) leaves them out.
+- [ ] State in Fren and prove `names.expression.unique-expression`, which
+  needs the relation "unfold alike" on source tables.
+- [ ] Return the diagnostic from `head`, `descend` and the naming checks,
+  so that the F02xx codes are traced.
+- [ ] State that a module's resolution is invariant under reordering its
+  declarations, bodies included, with a forward-call example; the order
+  laws stop at collection.
+- [ ] Return the environment and each function's resolved body from the
+  module judgment, and state that every function has exactly one body.
 - [ ] Bind path-head and member lookup and collection to the production
   resolver, whose functions read production scope and token structures
   that Fren does not yet state.

@@ -681,6 +681,30 @@ theorem resolve_type_ok (env : Env) (S : Snoc Entry) (t : spec.names.TypeName) (
       · simp at hitem
     · simp at h
 
+theorem param_type_ok (env : Env) (S : Snoc Entry) (p : Param) (ty : Ty)
+    (h : param_type env p = some ty)
+    (mono : ∀ i k, entry env.symb i = some k → entry S i = some k) : ty_ok? S ty = true := by
+  obtain ⟨name, pty⟩ := p
+  cases pty with
+  | none =>
+    simp only [param_type] at h
+    split at h
+    · simp only [Option.some.injEq] at h
+      subst h
+      simp [ty_ok?]
+    · simp at h
+  | some w =>
+    simp only [param_type] at h
+    cases ht : resolve_type env w with
+    | none => simp [ht] at h
+    | some t =>
+      simp only [ht] at h
+      split at h
+      · simp only [Option.some.injEq] at h
+        subst h
+        exact resolve_type_ok env S w _ ht mono
+      · simp at h
+
 theorem resolve_params_ok (env : Env) (S : Snoc Entry) (ps : Snoc Param) (ctx : Snoc Ty)
     (h : resolve_params env ps = some ctx)
     (mono : ∀ i k, entry env.symb i = some k → entry S i = some k) : ctx_ok? S ctx = true := by
@@ -696,7 +720,7 @@ theorem resolve_params_ok (env : Env) (S : Snoc Entry) (ps : Snoc Param) (ctx : 
       simp only [Option.some.injEq] at h
       subst h
       show decide (ty_ok? S ty = true ∧ ctx_ok? S c = true) = true
-      exact decide_eq_true ⟨resolve_type_ok env S p.ty ty hty mono, ih c hc⟩
+      exact decide_eq_true ⟨param_type_ok env S p ty hty mono, ih c hc⟩
     · simp at h
 
 /-- Collection yields a well-formed symbol environment. -/
@@ -705,7 +729,7 @@ theorem collect_ok (parent : Fren.Seq String) (name : String) (ds : Snoc SrcDecl
   simp only [collect] at h
   split at h
   · rename_i hok
-    simp only [names_ok?, decide_eq_true_eq] at hok
+    simp only [admitted?, names_ok?, decide_eq_true_eq] at hok
     have hT := nodup_types (child parent name) ds hok.1.1 hok.1.2
     have hN : SNodup S := by
       refine nodup_functions _ ds S h hT hok.1.1 ?_
@@ -786,7 +810,7 @@ theorem signature_congr (p : Fren.Seq String) (n : String) (A B : Snoc Entry)
       resolve_params { parent := p, name := n, symb := B } ps := by
     induction ps with
     | Empty => simp only [resolve_params]
-    | Extend e q ih => simp only [resolve_params, ih, ty]
+    | Extend e q ih => simp only [resolve_params, param_type, ih, ty]
   simp only [signature, params, ty]
 
 theorem collect_functions_none (env : Env) (ds : Snoc SrcDecl) :
@@ -872,11 +896,14 @@ theorem decls_clear_congr (A B ds : Snoc SrcDecl)
   have ty : ∀ t, type_clear? A t = type_clear? B t := by
     intro t
     cases t <;> simp [type_clear?, h, fren_spec]
+  have an : ∀ a, annotation_clear? A a = annotation_clear? B a := by
+    intro a
+    cases a <;> simp [annotation_clear?, ty]
   have ps : ∀ p, params_clear? A p = params_clear? B p := by
     intro p
     induction p with
     | Empty => simp [params_clear?]
-    | Extend e q ih => simp [params_clear?, ih, ty]
+    | Extend e q ih => simp [params_clear?, ih, an]
   induction ds with
   | Empty => simp [decls_clear?]
   | Extend e d ih => cases d <;> simp [decls_clear?, ih, ps, h, fren_spec]
@@ -894,8 +921,8 @@ theorem decls_clear_swap (ds : Snoc SrcDecl) (a b : SrcDecl)
   exact h
 
 theorem names_ok_swap (ds : Snoc SrcDecl) (a b : SrcDecl)
-    (h : names_ok? (.Extend (.Extend ds a) b) = true) : names_ok? (.Extend (.Extend ds b) a) = true := by
-  simp only [names_ok?, decide_eq_true_eq] at h ⊢
+    (h : admitted? (.Extend (.Extend ds a) b) = true) : admitted? (.Extend (.Extend ds b) a) = true := by
+  simp only [admitted?, names_ok?, decide_eq_true_eq] at h ⊢
   refine ⟨⟨distinct_swap (item_names ds) (decl_name a) (decl_name b) h.1.1, ?_⟩,
     decls_clear_swap ds a b h.2⟩
   have h2 := h.1.2
@@ -904,9 +931,9 @@ theorem names_ok_swap (ds : Snoc SrcDecl) (a b : SrcDecl)
 
 theorem types_entry (M : Fren.Seq String) (ds1 ds2 : Snoc SrcDecl)
     (hP : ∀ d, SMem d ds1 → SMem d ds2) (hQ : ∀ d, SMem d ds2 → SMem d ds1)
-    (ok1 : names_ok? ds1 = true) (ok2 : names_ok? ds2 = true) (i : Fren.Seq String) :
+    (ok1 : admitted? ds1 = true) (ok2 : admitted? ds2 = true) (i : Fren.Seq String) :
     entry (collect_types M ds1) i = entry (collect_types M ds2) i := by
-  simp only [names_ok?, decide_eq_true_eq] at ok1 ok2
+  simp only [admitted?, names_ok?, decide_eq_true_eq] at ok1 ok2
   refine entry_congr _ _ (nodup_types M ds1 ok1.1.1 ok1.1.2) (nodup_types M ds2 ok2.1.1 ok2.1.2) ?_ ?_ i
   · intro b hb
     rw [mem_collect_types] at hb ⊢
@@ -919,11 +946,11 @@ theorem types_entry (M : Fren.Seq String) (ds1 ds2 : Snoc SrcDecl)
 
 theorem collect_none_sub (p : Fren.Seq String) (n : String) (ds1 ds2 : Snoc SrcDecl)
     (hP : ∀ d, SMem d ds1 → SMem d ds2) (hQ : ∀ d, SMem d ds2 → SMem d ds1)
-    (ok12 : names_ok? ds1 = true → names_ok? ds2 = true)
-    (ok21 : names_ok? ds2 = true → names_ok? ds1 = true)
+    (ok12 : admitted? ds1 = true → admitted? ds2 = true)
+    (ok21 : admitted? ds2 = true → admitted? ds1 = true)
     (h : collect p n ds1 = none) : collect p n ds2 = none := by
   simp only [collect] at h ⊢
-  by_cases ok1 : names_ok? ds1 = true
+  by_cases ok1 : admitted? ds1 = true
   · have ok2 := ok12 ok1
     rw [if_pos ok1] at h
     rw [if_pos ok2]
@@ -931,7 +958,7 @@ theorem collect_none_sub (p : Fren.Seq String) (n : String) (ds1 ds2 : Snoc SrcD
     obtain ⟨f, ps, r, body, hd, hs⟩ := h
     refine ⟨f, ps, r, body, hP _ hd, ?_⟩
     exact (signature_congr p n _ _ (fun i => (types_entry _ ds1 ds2 hP hQ ok1 ok2 i).symm) ps r).trans hs
-  · have ok2 : ¬ names_ok? ds2 = true := fun h2 => ok1 (ok21 h2)
+  · have ok2 : ¬ admitted? ds2 = true := fun h2 => ok1 (ok21 h2)
     rw [if_neg ok2]
 
 theorem collect_mem_sub (p : Fren.Seq String) (n : String) (ds1 ds2 : Snoc SrcDecl)
@@ -960,6 +987,123 @@ theorem collect_mem_sub (p : Fren.Seq String) (n : String) (ds1 ds2 : Snoc SrcDe
 theorem nodup_of_ok (S : Snoc Entry) (h : symb_ok? S = true) : SNodup S := by
   simp only [symb_ok?, decide_eq_true_eq] at h
   exact ((bindings_ok_iff S S).mp h).1
+
+/-! ## Agreement of the two environments of collection -/
+
+theorem declares_function_mem (ds : Snoc SrcDecl) (f : String) (ps : Snoc Param)
+    (r : spec.names.TypeName) (body : Snoc SrcRow) (h : SMem (SrcDecl.Function f ps r body) ds) :
+    declares_function? ds f = true := by
+  induction ds with
+  | Empty => exact h.elim
+  | Extend e d ih =>
+    rcases h with rfl | h
+    · simp [declares_function?, fren_spec]
+    · cases d <;> simp [declares_function?, fren_spec, ih h]
+
+/-- Σ₀ and Σ bind an identity alike, unless it is a function's, which only Σ binds. -/
+theorem collect_entry_rel (p : Fren.Seq String) (n : String) (ds : Snoc SrcDecl) (S : Snoc Entry)
+    (h : collect p n ds = some S) (i : Fren.Seq String) :
+    entry (collect_types (child p n) ds) i = entry S i ∨
+      (entry (collect_types (child p n) ds) i = none ∧ ∃ f sig, i = child (child p n) f ∧
+        declares_function? ds f = true ∧ entry S i = some (.Function sig)) := by
+  have hN : SNodup S := nodup_of_ok S (collect_ok p n ds S h)
+  simp only [collect] at h
+  split at h
+  · cases hA : entry (collect_types (child p n) ds) i with
+    | some k =>
+      left
+      exact (entry_of_mem S { item := i, kind := k } hN
+        (mem_collect_functions_base _ ds S _ h (mem_of_entry _ i k hA))).symm
+    | none =>
+      cases hB : entry S i with
+      | none => left; rfl
+      | some k =>
+        right
+        rcases mem_collect_functions _ ds S _ h (mem_of_entry S i k hB) with
+          hb0 | ⟨f, ps, r, body, sig, hd, _, heq⟩
+        · exact absurd rfl ((entry_none_iff _ i).mp hA _ hb0)
+        · have hi : i = _ := congrArg Entry.item heq
+          have hk : k = _ := congrArg Entry.kind heq
+          exact ⟨rfl, f, sig, hi, declares_function_mem ds f ps r body hd, by rw [hk]⟩
+  · simp at h
+
+theorem path_target_agree (p : Fren.Seq String) (n : String) (ds : Snoc SrcDecl) (S : Snoc Entry)
+    (h : collect p n ds = some S) (path : Path)
+    (hc : declares_function? ds (path_head path) = false) :
+    path_target { parent := p, name := n, symb := collect_types (child p n) ds } .Empty path =
+        path_target { parent := p, name := n, symb := S } .Empty path ∨
+      (path_target { parent := p, name := n, symb := collect_types (child p n) ds } .Empty path
+          = none ∧
+        ∃ i sig, path_target { parent := p, name := n, symb := S } .Empty path = some (.Item i) ∧
+          entry S i = some (.Function sig)) := by
+  induction path with
+  | Name x =>
+    simp only [path_head] at hc
+    simp only [path_target, head, resolve_local, item_target, module_of]
+    rcases collect_entry_rel p n ds S h (child (child p n) x) with e | ⟨_, f, _, hi, hf, _⟩
+    · left; rw [e]
+    · rw [child_inj _ x f hi, hf] at hc
+      cases hc
+  | Member q x ih =>
+    simp only [path_head] at hc
+    simp only [path_target]
+    rcases ih hc with heq | ⟨hA, i, sig, hB, hE⟩
+    · rw [heq]
+      cases path_target { parent := p, name := n, symb := S } .Empty q with
+      | none => left; rfl
+      | some t =>
+        cases t with
+        | Local level => left; simp [descend]
+        | Module =>
+          simp only [descend, item_target, module_of]
+          rcases collect_entry_rel p n ds S h (child (child p n) x) with e | ⟨hA, f, sig, _, _, hB⟩
+          · left; rw [e]
+          · right
+            exact ⟨by simp [hA], _, sig, by simp [hB], hB⟩
+        | Item i =>
+          simp only [descend]
+          rcases collect_entry_rel p n ds S h i with e | ⟨hA, f, sig, _, _, hB⟩
+          · rw [e]
+            cases entry S i with
+            | none => left; rfl
+            | some k =>
+              cases k with
+              | Enumeration cs =>
+                simp only [item_target]
+                rcases collect_entry_rel p n ds S h (child i x) with e2 | ⟨hA2, f2, sig2, _, _, hB2⟩
+                · left; rw [e2]
+                · right
+                  exact ⟨by simp [hA2], _, sig2, by simp [hB2], hB2⟩
+              | Constructor o => left; rfl
+              | Function s => left; rfl
+          · left; simp [hA, hB]
+    · left; simp [hA, hB, hE, descend]
+
+/-- A clear written type resolves in Σ₀ as it does in Σ. -/
+theorem resolve_type_agree (p : Fren.Seq String) (n : String) (ds : Snoc SrcDecl) (S : Snoc Entry)
+    (h : collect p n ds = some S) (t : spec.names.TypeName) (hc : type_clear? ds t = true) :
+    resolve_type { parent := p, name := n, symb := collect_types (child p n) ds } t =
+      resolve_type { parent := p, name := n, symb := S } t := by
+  cases t with
+  | Boolean => simp [resolve_type]
+  | Integer => simp [resolve_type]
+  | Named path =>
+    have hc2 : declares_function? ds (path_head path) = false := by
+      simpa [type_clear?, fren_spec] using hc
+    simp only [resolve_type, type_item]
+    rcases path_target_agree p n ds S h path hc2 with e | ⟨hA, i, sig, hB, hE⟩
+    · rw [e]
+      cases path_target { parent := p, name := n, symb := S } .Empty path with
+      | none => rfl
+      | some t =>
+        cases t with
+        | Local level => rfl
+        | Module => rfl
+        | Item i =>
+          rcases collect_entry_rel p n ds S h i with e2 | ⟨hA2, _, sig2, _, _, hB2⟩
+          · simp only [e2]
+          · simp [hA2, hB2]
+    · simp [hA, hB, hE]
 
 theorem swap_mem (ds : Snoc SrcDecl) (a b d : SrcDecl)
     (h : SMem d (.Extend (.Extend ds a) b)) : SMem d (.Extend (.Extend ds b) a) := by
@@ -1013,7 +1157,7 @@ theorem included_mem (a b : Snoc SrcDecl) (h : included? a b = true) (d : SrcDec
 collect alike. -/
 theorem collect_same (p : Fren.Seq String) (n : String) (a b : Snoc SrcDecl)
     (hab : included? a b = true) (hba : included? b a = true) :
-    (names_ok? a = true → names_ok? b = true →
+    (admitted? a = true → admitted? b = true →
       (collect p n a = none ↔ collect p n b = none)) ∧
     ∀ left right item, collect p n a = some left → collect p n b = some right →
       entry left item = entry right item := by
@@ -1282,6 +1426,22 @@ impl names_worked_examples_proof: worked_examples { holds? := true } by
   decide
 
 open spec.types spec.names in
+impl names_path_examples_proof: path_examples { holds? := true } by
+  intro _
+  simp only [spec.names.path_examples.ensures, spec.names.path_examples.ensure.output,
+    spec.names.path_examples.ensure.valid]
+  refine ⟨trivial, ?_⟩
+  decide
+
+open spec.types spec.names in
+impl names_position_examples_proof: position_examples { holds? := true } by
+  intro _
+  simp only [spec.names.position_examples.ensures, spec.names.position_examples.ensure.output,
+    spec.names.position_examples.ensure.valid]
+  refine ⟨trivial, ?_⟩
+  decide
+
+open spec.types spec.names in
 impl names_table_scoping_proof: table_scoping for (env : Env) (rows : Snoc SrcRow)
     (forms : Snoc (ExprF Int)) (position : Int) (row : SrcRow) (level : Int) {
   env := env, rows := rows, forms := forms, position := position, row := row, level := level,
@@ -1307,7 +1467,7 @@ impl names_rejected_proof: rejected for (parent : Fren.Seq String) (module name 
     spec.names.rejected.ensure.duplicate, spec.names.rejected.ensure.repeated_variant,
     spec.names.rejected.ensure.reserved_name, spec.names.rejected.ensure.repeated_parameter,
     spec.names.rejected.ensure.function_as_qualifier, decls_clear?, declares_function?,
-    type_clear?, params_clear?, path_head, collect, names_ok?, distinct?, item_names, decl_name,
+    type_clear?, annotation_clear?, params_clear?, path_head, collect, admitted?, names_ok?, distinct?, item_names, decl_name,
     resolve_local, decl_names_ok?, decls_names_ok?, param_names, reserved?, fren_spec]
 
 open spec.types spec.names in
@@ -1393,14 +1553,77 @@ impl let_handoff_proof: let_handoff for (env : Env) (name : String) (written : s
 } by
   intro env name written ty core _
   simp only [let_handoff.ensures, let_handoff.ensure.output, let_handoff.ensure.omitted,
-    let_handoff.ensure.kept]
-  refine ⟨trivial, ?_, ?_⟩
+    let_handoff.ensure.kept, let_handoff.ensure.refused]
+  refine ⟨trivial, ?_, ?_, ?_⟩
   · intro h
     simp [resolve_annotation] at h
     subst h
     simp [let_annotation?]
   · intro h
-    simp [resolve_annotation, h]
+    obtain ⟨h1, h2⟩ := h
+    simp only [resolve_annotation, h1] at h2
+    split at h2
+    · rename_i hs
+      simp only [Option.some.injEq] at h2
+      subst h2
+      simpa [let_annotation?, suffix_rule?, fren_spec] using hs
+    · simp at h2
+  · intro h
+    simp only [decide_eq_true_eq] at h
+    obtain ⟨h1, h2⟩ := h
+    simp only [resolve_annotation, h1]
+    simp at h2
+    simp [h2]
+
+open spec.types spec.names in
+impl parameter_handoff_proof: parameter_handoff for (env : Env) (name : String)
+    (written : spec.names.TypeName) (annotation ty : Ty) {
+  env := env, name := name, written := written, annotation := annotation, ty := ty, holds? := true
+} by
+  intro env name written annotation ty _
+  simp only [parameter_handoff.ensures, parameter_handoff.ensure.output,
+    parameter_handoff.ensure.omitted, parameter_handoff.ensure.kept,
+    parameter_handoff.ensure.refused]
+  refine ⟨trivial, ?_, ?_, ?_⟩
+  · intro h
+    simp only [param_type] at h
+    split at h
+    · rename_i hq
+      simp only [Option.some.injEq] at h
+      subst h
+      simp [parameter_type?, suffix_rule?, hq]
+    · simp at h
+  · intro h
+    obtain ⟨h1, h2⟩ := h
+    simp only [param_type, h1] at h2
+    split at h2
+    · rename_i hs
+      simp only [Option.some.injEq] at h2
+      subst h2
+      simpa [parameter_type?, suffix_rule?, fren_spec] using hs
+    · simp at h2
+  · intro h
+    simp only [decide_eq_true_eq] at h
+    obtain ⟨h1, h2⟩ := h
+    simp only [param_type, h1]
+    simp at h2
+    simp [h2]
+
+open spec.types spec.names in
+impl signature_agreement_proof: signature_agreement for (parent : Fren.Seq String)
+    (name : String) (decls : Snoc SrcDecl) (symb : Snoc Entry) (written : spec.names.TypeName) {
+  parent := parent, name := name, decls := decls, symb := symb, written := written,
+  holds? := true
+} by
+  intro parent name decls symb written _
+  simp only [signature_agreement.ensures, signature_agreement.ensure.output,
+    signature_agreement.ensure.agree, decide_eq_true_eq]
+  refine ⟨trivial, fun h => ?_⟩
+  exact Spec.Language.NamesAndScope.resolve_type_agree parent name decls symb h.1 written
+    (by
+      cases written with
+      | Named q => simpa [type_clear?, fren_spec] using h.2
+      | _ => simp [type_clear?])
 
 open spec.types spec.names in
 impl collection_permutation_proof: collection_permutation for (parent : Fren.Seq String)
@@ -1415,7 +1638,7 @@ impl collection_permutation_proof: collection_permutation for (parent : Fren.Seq
     same_declarations?, decide_eq_true_eq]
   refine ⟨trivial, fun h => ?_, fun h => ?_⟩
   · exact (Spec.Language.NamesAndScope.collect_same parent name first second h.1.1.1 h.1.1.2).1
-      (by simpa [names_ok?] using h.1.2) (by simpa [names_ok?] using h.2)
+      (by simpa [admitted?, names_ok?] using h.1.2) (by simpa [admitted?, names_ok?] using h.2)
   · exact (Spec.Language.NamesAndScope.collect_same parent name first second h.1.1.1 h.1.1.2).2
       left right item h.1.2 h.2
 
