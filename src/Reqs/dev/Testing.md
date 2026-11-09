@@ -2042,8 +2042,16 @@ runner, requests TERM before KILL, waits within bounded cleanup intervals and
 retains unsuccessful cleanup as unknown rather than signalling unverified
 processes. Ancestor markers preserve ownership through nested harnesses and
 separate sessions. Cancellation signals are recorded while cleanup continues;
-a repeated signal does not interrupt cleanup. These are tested OS/Python IO
-claims, not consequences of the pure native controller lifecycle theorem.
+a repeated signal does not interrupt cleanup. An independent kernel-child
+census includes adopted exits whose ownership environment is unreadable. A
+new child without established ownership makes cleanup unknown; the runner
+does not wait for or signal it. Pinned owned descendants are reaped by pidfd;
+Popen retains the command leader's physical wait status.
+The exited-orphan regression independently checks the kernel child, preserves
+the command's status and streams, and reaps only its exact fixture child.
+Foreign live and exited baseline children remain untouched by the runner.
+These are tested OS/Python IO claims, not consequences of the pure native
+controller lifecycle theorem.
 Kernel delays or a killed harness can still prevent a cleanup guarantee.
 
 The opt-in `scripts/heavy-lean-build` entrypoint prepares a new owned overlay

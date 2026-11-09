@@ -3,6 +3,8 @@
 No numeric-PID/group escalation: only independently pinned owned handles.
 Signals request cancellation; they never interrupt the runner's cleanup. Nested
 runners retain ancestor ownership markers, including across separate sessions.
+An independent kernel-child census can make cleanup unknown even when no
+marked live worker remains; the adapter never turns that into success.
 """
 import importlib.util
 import json

@@ -46,6 +46,57 @@ class OwnedRun:
         self.handles = {}
         self.errors = []
         self.cancelled = None
+        self.initial_children = None
+        self.reaped = []
+
+    def kernel_children(self):
+        """Independent direct-child census, including exits with no environ.
+
+        This establishes presence, not run ownership. A changed/unreadable
+        census cannot certify absence. Never wait or signal from this list.
+        """
+        rows, errors = {}, []
+        tasks = Path('/proc/self/task')
+        try:
+            before = {p.name for p in tasks.iterdir()}
+            pids = set()
+            for tid in before:
+                try:
+                    pids.update(map(int, (tasks / tid / 'children').read_text().split()))
+                except FileNotFoundError:
+                    errors.append(f'kernel task {tid} census unavailable')
+            if before != {p.name for p in tasks.iterdir()}:
+                errors.append('kernel task census changed')
+            for pid in pids:
+                try:
+                    row = self.heavy.process_stat(Path(f'/proc/{pid}/stat').read_text())
+                    if row['ppid'] == os.getpid():
+                        rows[(row['pid'], row['start'])] = row
+                except (FileNotFoundError, ProcessLookupError):
+                    pass  # Already reaped; it no longer requires cleanup.
+                except (OSError, ValueError) as error:
+                    errors.append(f'kernel child {pid}: {error}')
+        except (OSError, ValueError) as error:
+            errors.append(f'kernel child census: {error}')
+        return rows, errors
+
+    def reap_owned(self, root):
+        # A numeric PID may be reused after an earlier reap. P_PIDFD waits
+        # only for that pinned process; ECHILD means not currently our child.
+        for key, fd in self.handles.items():
+            if root is not None and key[0] == root.pid:
+                continue  # Popen retains its own physical wait status.
+            try:
+                result = os.waitid(os.P_PIDFD, fd, os.WEXITED | os.WNOHANG)
+                if result is not None:
+                    self.reaped.append({'pid': result.si_pid, 'start': key[1],
+                                        'code': result.si_code, 'status': result.si_status})
+            except ChildProcessError:
+                pass
+            except (OSError, AttributeError) as error:
+                message = f'owned pidfd wait: {error}'
+                if message not in self.errors:
+                    self.errors.append(message)
 
     def collect(self):
         marker = ('HEAVY_TEST_OWNER=' + self.token).encode()
@@ -113,6 +164,10 @@ class OwnedRun:
             stdin.write(input_data); stdin.seek(0)
             try:
                 assert subreaper, "fixture subreaper unavailable"
+                initial, census_errors = self.kernel_children()
+                if census_errors:
+                    raise RuntimeError('; '.join(census_errors))
+                self.initial_children = set(initial)
                 if self.cancelled is not None:
                     raise InterruptedError('owned runner cancelled before launch')
                 child_env = dict(env, HEAVY_TEST_OWNER=self.token)
@@ -165,13 +220,7 @@ class OwnedRun:
                                 self.errors.append(str(error))
                         if p is not None:
                             p.poll()
-                        for key in self.handles:
-                            if p is not None and key[0] == p.pid:
-                                continue
-                            try:
-                                os.waitpid(key[0], os.WNOHANG)
-                            except ChildProcessError:
-                                pass
+                        self.reap_owned(p)
                         live = list(self.collect().values())
                         if not live and (p is None or p.returncode is not None):
                             break
@@ -185,9 +234,25 @@ class OwnedRun:
                            physical_status_known=p is not None and p.returncode is not None,
                            wrapper_wall_seconds=time.monotonic() - start,
                            stdout=str(outpath), stderr=str(errpath))
-                row['cleanup'] = {'outcome': 'complete' if not live and (p is None or p.returncode is not None) else 'failed',
+                # The environment census cannot see an already-exited orphan.
+                # Check kernel children AFTER root wait/reaping and the final
+                # owned census. Preexisting children belong to other callers;
+                # new unattributed children are unknown, never ours by default.
+                children, census_errors = self.kernel_children()
+                baseline = self.initial_children or set()
+                unknown = [r for key, r in children.items()
+                           if key not in baseline and key not in self.handles]
+                if self.initial_children is None:
+                    census_errors.append('initial kernel census unavailable')
+                known_done = not live and (p is None or p.returncode is not None)
+                outcome = ('failed' if not known_done else 'unknown'
+                           if unknown or census_errors or self.errors else 'complete')
+                row['cleanup'] = {'outcome': outcome,
                                   'seconds': time.monotonic() - cleanup_start,
-                                  'remaining': live, 'errors': self.errors}
+                                  'remaining': live, 'unattributed_children': unknown,
+                                  'census_errors': census_errors,
+                                  'preexisting_children': [list(k) for k in sorted(baseline)],
+                                  'reaped_owned': self.reaped, 'errors': self.errors}
                 row['product_success'] = row['failure'] is None and row['physical_status'] == 0 and row['cleanup']['outcome'] == 'complete'
                 for fd in self.handles.values():
                     os.close(fd)
