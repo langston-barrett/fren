@@ -1,6 +1,7 @@
 import BudgetAdapter
 import CompilerRecords
 import Heavy.Process
+import Heavy.ModuleMemory
 
 /-! Standalone Linux Lean compiler observer. No Fren, solver or Lake imports.
 The standalone package uses the installed Lean core/Std and observer.c. -/
@@ -24,7 +25,7 @@ opaque readRegular (path : @& String) (accept : @& (Nat → Nat → Bool)) : IO 
 
 @[extern "heavy_budget_observe"]
 opaque observeBudget (exe : @& String) (args : @& Array String) (dir : @& String)
-    (demand cpuLimit wallLimit : UInt64) (decide : @& (Array String → Array UInt64))
+    (demand cpuLimit wallLimit memoryLimit : UInt64) (decide : @& (Array String → Array UInt64))
     (control : @& (Array UInt64 → Array UInt64)) : IO (Array UInt64)
 
 -- Record output retains its compact serializer.
@@ -137,6 +138,17 @@ def automaticPeak (root : FilePath) (context : Heavy.CompilerForecast.Context)
     return (Heavy.CompilerForecast.forSession peak padding allowance parent, samples)
   catch _ => return (none, 0)
 
+/-- Canonical parent preserves missing-file diagnostics without pretending the
+file bytes exist. Unresolvable parents remain explicitly unknown. -/
+def memoryPath (path : String) : IO String := do
+  try return (← IO.FS.realPath path).toString
+  catch _ =>
+    let p := FilePath.mk path
+    try
+      let parent ← IO.FS.realPath (p.parent.getD ".")
+      return (parent / (p.fileName.getD "")).toString
+    catch _ => return ""
+
 def run (args : List String) : IO UInt32 := do
   let self ← IO.FS.realPath (← IO.appPath)
   let root := self.parent.getD "." |>.parent.getD "."
@@ -187,6 +199,26 @@ def run (args : List String) : IO UInt32 := do
       | none => throw (IO.userError "invalid compiler wall limit")
   let some wallLimit := compilerWallLimit wallMs gateDir.isSome ((parsed.map (·.kind)) == some "query")
     | throw (IO.userError "invalid compiler wall limit or missing budget session")
+  let memoryText ← IO.getEnv "HEAVY_COMPILER_MEMORY_BYTES"
+  let memoryConfigured := match memoryText with
+    | none => Heavy.ModuleMemory.defaultBytes
+    | some text => if text.length > 16 then 0 else text.toNat?.getD 0
+  let memoryRoot := (← IO.getEnv "HEAVY_MODULE_SOURCE_ROOT").getD ""
+  let mut memorySource ← match source with
+    | some s => memoryPath s
+    | none => pure ""
+  -- Ambiguous metadata must not silently bypass a possible selected source.
+  if parsed.isNone then
+    for arg in args do
+      if arg.endsWith ".lean" then
+        let candidate ← memoryPath arg
+        if Heavy.ModuleMemory.selected memoryRoot candidate then memorySource := candidate
+  let memoryKind := (parsed.map (·.kind)).getD "unknown"
+  let memoryPlan := Heavy.ModuleMemory.limit memoryRoot memorySource memoryKind memoryConfigured
+  let memoryLimit := memoryPlan.getD (2^50 + 1)
+  let memoryGroupRoot ← IO.getEnv "HEAVY_MODULE_MEMORY_ROOT"
+  if !gated && memoryLimit != 0 then
+    throw (IO.userError "selected module memory requires the ordinary budget session")
   let mut requestDemand := 0
   let mut provenance := ""
   let mut adviceSamples := 0
@@ -254,9 +286,9 @@ def run (args : List String) : IO UInt32 := do
                 requestDemand := estimate.toNat
                 provenance := "automatic-cohort-estimate"
     catch _ => pure () -- Optional IO failure leaves the positive fallback.
-    observeBudget real.toString args.toArray dir.toString requestDemand.toUInt64 cpuLimit.toUInt64 wallLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
+    observeBudget real.toString args.toArray dir.toString requestDemand.toUInt64 cpuLimit.toUInt64 wallLimit.toUInt64 memoryLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
     else observe real.toString args.toArray
-  if raw.size != (if gated then 25 else 18) then throw (IO.userError "invalid FFI observation length")
+  if raw.size != (if gated then 41 else 18) then throw (IO.userError "invalid FFI observation length")
   let v := fun i => raw[i]!.toNat
   let gateError := if gated then v 18 else 0
   let childPresent := !gated || v 5 != 0
@@ -284,8 +316,30 @@ def run (args : List String) : IO UInt32 := do
       ("automatic_sample_count", toString adviceSamples),
       ("child_present", toString childPresent),
       ("wrapper_code", if v 15 == 1 || v 17 != 0 then "null"
-        else toString (if gateError != 0 then 125 else outcome.shellCode))] else []
-    let record := object (gateFields ++ [
+        else toString (if gateError != 0 || v 36 != 0 then 125 else outcome.shellCode))] else []
+    let memoryFields := if gated then [
+      ("compiler_memory_configured_text", jsonOption quoted memoryText),
+      ("compiler_memory_configured_bytes", toString memoryConfigured),
+      ("compiler_memory_source", quoted memorySource),
+      ("compiler_memory_limit_bytes", jsonOption toString memoryPlan),
+      ("compiler_memory_selected", toString (memoryLimit != 0)),
+      ("compiler_memory_setup_errno", toString (v 26)),
+      ("compiler_memory_readback_bytes", toString (v 27)),
+      ("compiler_memory_swap_readback_bytes", toString (v 28)),
+      ("compiler_memory_applied_bytes", if v 29 == 0 then "null" else toString (v 29)),
+      ("compiler_memory_effective_bytes", if v 30 == 0 then "null" else toString (v 30)),
+      ("compiler_memory_ack_pid", toString (v 31)),
+      ("compiler_memory_expected_inode", toString (v 32)),
+      ("compiler_memory_observed_inode", toString (v 33)),
+      ("compiler_memory_oom_kill_delta", toString (v 34)),
+      ("compiler_memory_peak_bytes", toString (v 35)),
+      ("compiler_memory_cleanup_errno", toString (v 36)),
+      ("compiler_memory_populated_after", toString (v 37)),
+      ("compiler_memory_scope", if v 38 == 0 then "null" else
+        jsonOption quoted (memoryGroupRoot.map fun p => p ++ s!"/m-{v 38}")),
+      ("compiler_memory_aggregate_max_bytes", toString (v 39)),
+      ("compiler_memory_oom_delta", toString (v 40))] else []
+    let record := object (gateFields ++ memoryFields ++ [
       ("compiler_wall_requested_ms", if wallMs == 0 then "null" else toString wallMs),
       ("compiler_wall_applied_ms", if wallLimit == 0 || !childPresent then "null" else toString wallLimit),
       ("wall_timeout", toString (v 15 == 1)), ("wall_deadline_sample_ns", toString (v 16)),
@@ -352,7 +406,7 @@ def run (args : List String) : IO UInt32 := do
           execError := v 1, waitError := v 2, clockError := v 3, status := v 4,
           pid := v 5, gateError := some gateError, childPresent := some childPresent,
           wrapperCode := if v 15 == 1 || v 17 != 0 then none else
-            some (if gateError != 0 then 125 else outcome.shellCode),
+            some (if gateError != 0 || v 36 != 0 then 125 else outcome.shellCode),
           start := v 6, finish := v 7, rss := v 10, measuredRss := peak }
         if Heavy.CompilerForecast.eligible sample context currentBoot (now - 604800000000000) now
           && (Heavy.CompilerForecast.cohortIdentity context currentBoot).isSome
@@ -364,6 +418,9 @@ def run (args : List String) : IO UInt32 := do
   if gated && (v 15 == 1 || v 17 != 0) then
     if v 17 != 0 then return 125
     return 124
+  if gated && v 36 != 0 then
+    warn s!"module memory cleanup unknown (errno {v 36}); physical root status {v 4}"
+    return 125
   if gateError != 0 then
     warn s!"budget control failed (errno {gateError}); child present={childPresent}"
     return 125

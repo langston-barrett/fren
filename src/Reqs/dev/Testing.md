@@ -1596,6 +1596,173 @@ are forwarded unchanged; incomplete identity never excuses a mislabeled stdin
 fingerprint. The Linux `heavyProcess` job checks actual compiler behavior and
 retains the positive three-module Lake path.
 
+
+Selected-module hard memory is separate from planning reservations, CPU and wall
+limits. The candidate default is 1073741824 bytes (1 GiB), configurable by a
+positive decimal HEAVY_COMPILER_MEMORY_BYTES at most 2^50. It is an engineering
+choice, not a theorem about every selected program's demand. Selection uses the
+actual source/module arguments and canonical source root supplied by the ordinary
+entrypoint, including the current Fren2 library/test/support inventory below.
+FrenTestMain, Impls and unrelated legacy modules and queries are not selected.
+An ambiguous argv containing a possible selected source fails closed; missing
+sources retain their compiler diagnostic when the requested scope can be set up.
+
+Before the first selected compiler executes, the wrapper requires an owned,
+finite aggregate cgroup-v2 scope. It does not create sibling scopes. In a dedicated
+transient job scope containing only this launch chain, preparation moves only its
+verified launch-chain members to a driver leaf, retaining the same aggregate
+memory.max, and enables memory below that aggregate. Its owned transient scope
+requires Delegate=yes and OOMPolicy=continue with actual manager readback, so a
+nested module OOM does not stop the aggregate. These are startup prerequisites,
+not runtime service changes; missing support fails selected launch closed.
+Aggregate caps remain unchanged. Foreign members prevent preparation before
+migration. Nondelegated/unavailable setup is recorded; a
+selected invocation must then fail before uncapped exec. Unselected invocations
+retain the existing physical behavior. Only owned transient job scopes and native
+procfs are supported; no service/global cap is reconfigured.
+
+Each selected compiler is stopped before exec while its own fresh child cgroup
+is configured with memory.max, memory.swap.max=0 and memory.oom.group=1. The child
+joins itself; the parent checks raw readbacks and the child's actual cgroup inode
+before releasing exec. Applied and effective fields require that acknowledgement;
+effective is the minimum positive raw ancestor limit and requested readback.
+A desired number or PID presence alone does not establish application. Mandatory
+configuration/delegation/readback/attachment failure prevents uncapped launch.
+Optional forecast failures retain their existing positive fallback.
+
+Raw OOM counter deltas, peak, physical wait, applied/effective bytes and bounded
+cleanup outcome are reported separately. OOM kill counts are not assumed exact.
+The private single-command observer starts with no other children and becomes a
+subreaper while the selected family runs; only its exact owned/adopted children
+are waited for. cgroup.kill targets only that exclusive fresh leaf. Unknown waits,
+remaining members or cleanup failure remain errors/UNKNOWN, not success. Compiler
+streams and physical root status are retained even when cleanup fails. The bound
+is not a security sandbox against privileged cgroup migration/hostile mutation,
+and arbitrary kernel delays, controller death or uninterruptible tasks can prevent
+bounded physical cleanup. These OS/ownership assumptions require actual IO tests;
+the pure raw-input decisions below do not prove kernel enforcement. Canonical
+path selection describes the resolution instant, not full transitive identity
+or protection against concurrent hostile mutation. The existing entrypoint and
+automaticIO partitions exercise the actual producer and negative IO boundaries.
+
+```fren
+set_option fren.lint.undecidable "allow" in
+pub fn module_memory_in_root?(root: String, source: String, owner: String) :=
+    source = root ++ "/" ++ owner ++ ".lean" or source.starts_with?(root ++ "/" ++ owner ++ "/")
+
+pub fn module_memory_selected?(root: String, source: String) :=
+    root.starts_with?("/") and root != "/" and (
+        module_memory_in_root?(root, source, "FrenBase") or
+        module_memory_in_root?(root, source, "FrenSource") or
+        module_memory_in_root?(root, source, "FrenDiag") or
+        module_memory_in_root?(root, source, "FrenSexp") or
+        module_memory_in_root?(root, source, "FrenProp") or
+        module_memory_in_root?(root, source, "FrenAst") or
+        module_memory_in_root?(root, source, "FrenModule") or
+        module_memory_in_root?(root, source, "FrenExpr") or
+        module_memory_in_root?(root, source, "FrenMir") or
+        module_memory_in_root?(root, source, "FrenLir") or
+        module_memory_in_root?(root, source, "FrenOir") or
+        module_memory_in_root?(root, source, "FrenParse") or
+        module_memory_in_root?(root, source, "FrenAstToHir") or
+        module_memory_in_root?(root, source, "FrenHirToThir") or
+        module_memory_in_root?(root, source, "FrenThirDesugar") or
+        module_memory_in_root?(root, source, "FrenThirToMir") or
+        module_memory_in_root?(root, source, "FrenMirToMono") or
+        module_memory_in_root?(root, source, "FrenMonoToFo") or
+        module_memory_in_root?(root, source, "FrenFoToFlat") or
+        module_memory_in_root?(root, source, "FrenMirToLean") or
+        module_memory_in_root?(root, source, "FrenFlatToLir") or
+        module_memory_in_root?(root, source, "FrenLirToOir") or
+        module_memory_in_root?(root, source, "FrenOirToSmt") or
+        module_memory_in_root?(root, source, "FrenEval") or
+        module_memory_in_root?(root, source, "FrenLirEval") or
+        module_memory_in_root?(root, source, "FrenGen") or
+        module_memory_in_root?(root, source, "FrenCli2") or
+        module_memory_in_root?(root, source, "FrenHosted2") or
+        module_memory_in_root?(root, source, "FrenBaseTests") or
+        module_memory_in_root?(root, source, "FrenSourceTests") or
+        module_memory_in_root?(root, source, "FrenDiagTests") or
+        module_memory_in_root?(root, source, "FrenSexpTests") or
+        module_memory_in_root?(root, source, "FrenPropTests") or
+        module_memory_in_root?(root, source, "FrenAstTests") or
+        module_memory_in_root?(root, source, "FrenModuleTests") or
+        module_memory_in_root?(root, source, "FrenExprTests") or
+        module_memory_in_root?(root, source, "FrenMirTests") or
+        module_memory_in_root?(root, source, "FrenLirTests") or
+        module_memory_in_root?(root, source, "FrenOirTests") or
+        module_memory_in_root?(root, source, "FrenParseTests") or
+        module_memory_in_root?(root, source, "FrenAstToHirTests") or
+        module_memory_in_root?(root, source, "FrenHirToThirTests") or
+        module_memory_in_root?(root, source, "FrenThirDesugarTests") or
+        module_memory_in_root?(root, source, "FrenThirToMirTests") or
+        module_memory_in_root?(root, source, "FrenMirToMonoTests") or
+        module_memory_in_root?(root, source, "FrenMonoToFoTests") or
+        module_memory_in_root?(root, source, "FrenFoToFlatTests") or
+        module_memory_in_root?(root, source, "FrenMirToLeanTests") or
+        module_memory_in_root?(root, source, "FrenFlatToLirTests") or
+        module_memory_in_root?(root, source, "FrenLirToOirTests") or
+        module_memory_in_root?(root, source, "FrenOirToSmtTests") or
+        module_memory_in_root?(root, source, "FrenEvalTests") or
+        module_memory_in_root?(root, source, "FrenLirEvalTests") or
+        module_memory_in_root?(root, source, "FrenGenTests") or
+        module_memory_in_root?(root, source, "FrenCli2Tests") or
+        module_memory_in_root?(root, source, "FrenHosted2Tests") or
+        module_memory_in_root?(root, source, "FrenTextTests") or
+        module_memory_in_root?(root, source, "FrenTextTestsTests") or
+        module_memory_in_root?(root, source, "FrenTextDemo") or
+        module_memory_in_root?(root, source, "FrenTextDemoTests") or
+        module_memory_in_root?(root, source, "Fren2TestMain") or
+        module_memory_in_root?(root, source, "FrenTest/Layering") or
+        module_memory_in_root?(root, source, "FrenTest/Fren2Resolver") or
+        module_memory_in_root?(root, source, "FrenTest/Fren2Typing") or
+        module_memory_in_root?(root, source, "FrenTest/Fren2Mir") or
+        module_memory_in_root?(root, source, "FrenTest/Fren2Lir"))
+
+pub proc heavy_module_memory_limit(root: String, source: String, kind: String, configured: Nat): (
+    det limit: Option<Int>,
+) {
+    out limit :=
+        if kind is "query" | "stdin" then Option::Some(0)
+        else if module_memory_selected?(root, source) then
+        if kind != "file" or configured = 0 or configured > 1125899906842624
+        then Option::None else Option::Some(configured)
+        else Option::Some(0)
+}
+
+pub enum ModuleMemoryLimits { Nil, Cons(Int, ModuleMemoryLimits) }
+
+pub fn module_memory_effective(limits: ModuleMemoryLimits, requested: Int): Int := match limits {
+    ModuleMemoryLimits::Nil => requested,
+    ModuleMemoryLimits::Cons(value, rest) =>
+        module_memory_effective(rest, if 0 < value < requested then value else requested),
+}
+
+pub proc heavy_module_memory_applied(
+    error: Nat,
+    requested: Nat,
+    readback: Nat,
+    swap: Nat,
+    expected_pid: Nat,
+    observed_pid: Nat,
+    expected_inode: Nat,
+    observed_inode: Nat,
+    limits: ModuleMemoryLimits,
+): (det applied: Option<Int>, det effective: Option<Int>) {
+    out applied := if error = 0 and 0 < requested <= 1125899906842624
+        and readback = requested and swap = 0 and expected_pid > 0 and expected_pid = observed_pid
+        and expected_inode > 0 and expected_inode = observed_inode
+        then Option::Some(requested) else Option::None
+    out effective := match applied {
+        Option::None => Option::None,
+        Option::Some(_) => Option::Some(module_memory_effective(limits, requested)),
+    }
+}
+
+#fren_check heavy_module_memory_limit
+#fren_check heavy_module_memory_applied
+```
+
 ```fren
 pub struct ProcessResult { kind: Nat, detail: Nat, shell_code: Nat }
 

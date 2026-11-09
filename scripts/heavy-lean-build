@@ -53,6 +53,9 @@ def main():
         # Read-only optional evidence is frozen once for this session. No
         # subprocess, blocking lock, per-compiler directory scan or estimator.
         env = os.environ.copy()
+        sys.path.insert(0, str(TOOLS))
+        from module_memory import configure
+        configure(env, args.state / 'module-memory-setup.json', ROOT / 'src')
         # Private numeric override: on ANY optional transaction failure, zero
         # reaches the existing native padding policy even if cleanup also fails.
         env.pop('HEAVY_AUTOMATIC_PADDING_KIB', None)

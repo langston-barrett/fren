@@ -28,7 +28,14 @@ def main (args : List String) : IO UInt32 := do
     if (BudgetAdapter.request requests none none fallback).isNone then
       throw (IO.userError "malformed request manifest")
     let raw ← session path s!"{allowance} {parent} {fallback} {wait}\n" requests exe rest.toArray BudgetAdapter.control
-    if raw.size != 11 then throw (IO.userError "invalid session result")
+    if raw.size != 12 then throw (IO.userError "invalid session result")
+    try
+      let diagnostic := "{\"control_errno\":" ++ toString raw[0]! ++
+        ",\"command_wait_status_raw\":" ++ toString raw[1]! ++
+        ",\"cleanup_errno\":" ++ toString raw[2]! ++
+        ",\"module_memory_cleanup_errno\":" ++ toString raw[11]! ++ "}\n"
+      IO.FS.writeFile (System.FilePath.mk path / "module-memory-result.json") diagnostic
+    catch _ => pure () -- Diagnostic output cannot replace physical status.
     if raw[4]! != 0 then
       IO.eprintln s!"heavy-budget: compiler pid={raw[9]!}; raw wait status={raw[5]!}; wait errno={raw[6]!}; start ns={raw[7]!}; sample ns={raw[8]!}; limit ms={raw[10]!}"
     if raw[0]! != 0 || raw[2]! != 0 then

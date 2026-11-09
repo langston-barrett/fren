@@ -1,4 +1,5 @@
 import Heavy.Process
+import Heavy.ModuleMemory
 
 open Heavy.Process
 
@@ -13,6 +14,28 @@ def main (args : List String) : IO Unit := do
     let bytes ← readRegular args[1]! fingerprintAllowed
     IO.println (bytes.map (fun b => s!"some:{hash b}") |>.getD "none")
     return
+  let selected := "/source/FrenBase/Identity.lean"
+  for bytes in [0, 1, Heavy.ModuleMemory.defaultBytes, 2^50, 2^50+1] do
+    unless Heavy.ModuleMemory.limit "/source" selected "file" bytes ==
+        (if bytes == 0 || bytes > 2^50 then none else some bytes) do
+      throw (IO.userError "selected memory configuration")
+    for legacy in ["/source/FrenTestMain.lean", "/source/Impls/Lint.lean",
+                   "/source/FrenBaseOther.lean", "/other/FrenBase/Identity.lean"] do
+      unless Heavy.ModuleMemory.limit "/source" legacy "file" bytes == some 0 do
+        throw (IO.userError "legacy memory configuration")
+    for kind in ["query", "stdin"] do
+      unless Heavy.ModuleMemory.limit "/source" selected kind bytes == some 0 do
+        throw (IO.userError "query/stdin memory configuration")
+  unless Heavy.ModuleMemory.limit "/source" selected "unknown" 1 == none do
+    throw (IO.userError "ambiguous selected memory configuration")
+  unless Heavy.ModuleMemory.applied 0 100 100 0 7 7 9 9 [0, 200, 80] == some (100, 80) do
+    throw (IO.userError "raw applied/effective memory")
+  for raw in [[1,100,100,0,7,7,9,9], [0,100,101,0,7,7,9,9],
+              [0,100,100,1,7,7,9,9], [0,100,100,0,7,8,9,9],
+              [0,100,100,0,7,7,9,10], [0,100,100,0,0,0,9,9]] do
+    unless Heavy.ModuleMemory.applied raw[0]! raw[1]! raw[2]! raw[3]!
+        raw[4]! raw[5]! raw[6]! raw[7]! [] == none do
+      throw (IO.userError "raw memory acknowledgement rejection")
   for status in List.range 65536 do
     let r := result 0 0 0 status
     IO.println s!"{status} {r.kind} {r.detail} {r.shellCode}"

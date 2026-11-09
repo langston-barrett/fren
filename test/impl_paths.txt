@@ -425,3 +425,8 @@ bypassed: Fren.Impls.subset_widening accepted? Fren.Core.subsetWidening
 bypassed: Fren.Impls.subset_widening obliged? Fren.Core.subsetWidening
 bypassed: Fren.Impls.table_eval value Fren.Core.firstCase
 bypassed: Fren.Impls.table_match value Fren.Core.firstCase
+
+# Standalone selected-module raw policy and application, outside Fren reporting roots.
+unbound: Fren.Impls.HeavyOwnership.module_memory_limit limit
+unbound: Fren.Impls.HeavyOwnership.module_memory_applied applied
+unbound: Fren.Impls.HeavyOwnership.module_memory_applied effective

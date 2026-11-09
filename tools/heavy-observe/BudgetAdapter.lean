@@ -1,5 +1,6 @@
 import Heavy.Budget
 import Heavy.Process
+import Heavy.ModuleMemory
 import Heavy.CompilerForecast
 
 /-! Raw protocol adapter for the single-use session, shared with its tests.
@@ -64,6 +65,11 @@ def control (raw : Array UInt64) : Array UInt64 :=
   | [1, error, handler, flags, bit, previous, errorWait, observed, expected, reaped] =>
     #[if waitable error handler flags bit then 1 else 0,
       if groupSignal error handler flags bit previous errorWait observed expected reaped then 1 else 0]
+  | 4 :: error :: requested :: readback :: swap :: expected :: observed :: inode :: actual :: limits =>
+    match Heavy.ModuleMemory.applied error.toNat requested.toNat readback.toNat swap.toNat
+        expected.toNat observed.toNat inode.toNat actual.toNat (limits.map Int.toNat) with
+    | some (applied, effective) => #[applied.toUInt64, effective.toUInt64]
+    | none => #[0, 0]
   | _ => #[2]
 
 /-- Selection compares the actual encoded observations, never a supplied verdict. -/
