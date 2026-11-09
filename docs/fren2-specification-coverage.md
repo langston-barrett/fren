@@ -162,9 +162,10 @@ These are finite/constrained witnesses, not universal metatheory.
 
 `SearchSatisfiable` quantifies over compatible interpretations and typed
 assignments. `AnswerSound` states what trusted Sat/Unsat would need to establish;
-actual `classify` is only protocol recognition. No model request, readback,
-source evaluation confirmation, aggregate verdict, cache, selectors or
-incremental solver API is added. The previous OIR checklist's separate SMT
+actual `classify` is only protocol recognition. The typed readback unit adds
+`solveModels`, strict finite parameter decoding and actual source interpreter
+observations for the conservative total fragment; it adds no aggregate verdict,
+cache, selectors or incremental solver API. The previous OIR checklist's separate SMT
 chapter correction is supplied here; its remaining source-confirmation and
 upstream universal proof obligations are preserved in full.
 
@@ -182,10 +183,18 @@ upstream universal proof obligations are preserved in full.
   the trust bridge expressed by `AnswerSound` rather than deriving it from
   a status token. Prove source/encoding preservation through the accepted
   MIR/LIR/OIR contracts, whose outstanding inventories are unchanged.
-- [ ] Implement and specify actual model decoding, evaluator adequacy and
-  static source confirmation. Preserve all hypotheses, original lexical
-  contexts, definedness questions, dependencies and unresolved readiness;
-  justify mutually partial assumptions before giving them source verdicts.
+- [x] Implement strict Bool/Int/enum parameter readback using the canonical
+  generated names, bounded cvc5 transport and both physical receipts. Retain
+  the source witness and unfiltered ordered question/results envelope.
+- [x] Check concrete premise witnesses and false-goal counterexamples through
+  `FrenEval.evaluate` in the conservative total fragment, with explicit rejected
+  and unconfirmed statuses. Preserve static questions and unresolved readiness;
+  partial operations anywhere in source remain unconfirmed.
+- [ ] Prove `ReadbackContract`, `ConfirmationContract`, static totality of
+  `confirmationFragment` and evaluator adequacy. Extend concrete confirmation
+  to partial/definedness-site forms and justify mutually partial assumptions.
+- [ ] Deliver the separate aggregate multi-question verified verdict, consuming
+  independently discharged static obligations and the universal proof bridges.
 - [ ] Restate the recursive grammar/interpretation contracts in Fren when it
   can quantify over the real recursive production objects. Current primitive
   Fren arithmetic and polarity contracts do not replace those relations.
@@ -808,7 +817,7 @@ The following universal obligations remain pending:
   substitution/capture preservation over all admitted source programs.
 - Establish the unresolved mutually partial assumption rule before claiming
   supported source results for that class.
-- Bind later model decoding and static source confirmation to actual code;
+- Prove the remaining general model decoding and static source correspondence;
   raw SAT/UNSAT, bounded tests and solver trust do not close this obligation.
 
 ## Retained record: src/Spec/Compiler/Hir.md
@@ -1181,3 +1190,21 @@ Implementation correspondence and proof coverage are recorded in the
 > examples. The base, source and diagnostic libraries and their bindings to
 > contracts are future work. The remaining rules are listed as pending
 > formalization; no production implementation or property test is claimed.
+
+## Typed model readback boundary
+
+`FrenOirToSmt.Model` decodes actual bounded cvc5 `get-value` responses to
+source-order Bool/Int/nominal-enum parameters. `Confirm` retains both physical
+requests/receipts, the exact source witness and question envelope, then calls
+`FrenEval.evaluate` for all retained premises and the original goal polarity.
+The original raw `solve` and ordinary status protocol are unchanged.
+`FrenOirToSmtTests.Model` is called from the existing `runControls` runner.
+It tests solver-generated models, decoder rejection, a solver-produced model
+for changed SMT rejected by the source interpreter, conservative static-domain
+rejection, unresolved prerequisites, and bounded transport failures. Direct
+Plausible tests the actual assignment boundary with accepted/rejected counts
+and deterministic regressions. These checks are finite evidence, not proofs
+of the named universal contracts or a complete verified-program implementation.
+
+The shared library dependency table must explicitly permit the actual source
+evaluator import; it must not be bypassed or replaced with a copied evaluator.

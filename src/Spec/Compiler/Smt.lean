@@ -199,7 +199,55 @@ def InterpretationContract : Prop := ∀ input out, Produces input out → Oir.C
 /-- Actual bounded scope/name/arity checker, without a supplied wellformed flag. -/
 def ValidationContract : Prop := ∀ input out, Produces input out → ∀ ctx t ty fuel,
   Term.infer fuel out.oir.lir.mir.source ctx t = some ty → Lir.Sorted out.oir.lir.mir.source ctx t ty
+
+/-- Source-order assignment, independently of the model response's entry order. -/
+def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
+    (values : Array FrenEval.Value) : Prop :=
+  values.size = q.parameters.size ∧ ∀ (i : Nat) (param : FrenOir.Parameter) (value : FrenEval.Value),
+    q.parameters[i]? = some param → values[i]? = some value →
+    value.type = param.source.type ∧ value.valid p.lir.mir.source = true
+
+/-- Observation of the actual interpreter on the retained source body. -/
+def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
+    (depth : Nat) (value : Bool) : Prop :=
+  ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
+      ⟨body.owner, body.member.map (·.label.text)⟩ values depth = .ok observation ∧
+    observation.body = body ∧ observation.outcome = .ok (.bool value)
+
+/-- Concrete candidates do not discharge universal validity or domain questions. -/
+def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
+    (values : Array FrenEval.Value) (depth : Nat) (answer : Confirmation) : Prop :=
+  Produces p out ∧ q ∈ out.oir.questions.toList ∧ q.readiness = .ready ∧
+  ModelAssignment out.oir q values ∧
+  (∀ body ∈ p.typed.bodies.toList, confirmationFragment 10000 body.expression = true) ∧
+  (∀ hypothesis ∈ q.hypotheses.toList, SourceBoolean p hypothesis.source values depth true) ∧
+  ((q.kind = .assumptionsSatisfiable ∧ answer = .witness) ∨
+    (q.kind = .validity ∧ answer = .counterexample ∧
+      ∃ body, q.subject = some body ∧ SourceBoolean p body values depth false))
+
+/-- Decoder typing and source-observation correspondence are separate from the
+universal SMT interpretation, static-totality and evaluator-adequacy bridges. -/
+def ReadbackContract : Prop := ∀ p out, Produces p out → ∀ entry ∈ out.queries.toList,
+  ∀ text cap values, decodeModel out.oir entry.question text cap = .ok values →
+    ModelAssignment out.oir entry.question values
+
+def ConfirmationContract : Prop := ∀ p out, Produces p out → ∀ index entry,
+  out.queries[index]? = some entry → ∀ values depth answer,
+  confirmAssignment p index values depth = answer →
+  (answer = .witness ∨ answer = .counterexample) →
+    SourceCandidate p out entry.question values depth answer
 -- reference end
+
+theorem model_transport_nonzero (r : Receipt) (h : r.exitCode ≠ some 0) : modelData r = false :=
+  FrenOirToSmt.model_nonzero r h
+
+theorem partial_operation_excluded (n : Nat) (a b : Expr) (token : Token) :
+    confirmationFragment (n + 1) (.binary a token .div b) = false :=
+  FrenOirToSmt.fragment_div n a b token
+
+theorem wrong_model_sort (p : FrenOir.Program) :
+    modelValue p .bool (.list #[]) = .error "unsupported model value or wrong sort" :=
+  FrenOirToSmt.wrong_bool p
 
 theorem retains_oir (p : Input) (out : FrenOirToSmt.Program) (h : Produces p out) : Oir.Produces p out.oir :=
   FrenOirToSmt.retains_oir p out h
@@ -427,6 +475,9 @@ theorem flipped_goal_model (p : FrenOir.Program) :
   unless pre.startsWith "(set-logic ALL)\n" do throw (IO.userError "logic prefix missing")
   IO.println "SMT contracts: admitted false-goal encoding with independent Renders/Sorted/Interprets proofs; retained real definition and later assumption; exact sort/polarity/declaration oracle; wrong operator and missing canonical references distinguished from raw printing. No solver run or source-model confirmation."
 
+#print axioms model_transport_nonzero
+#print axioms partial_operation_excluded
+#print axioms wrong_model_sort
 #print axioms exact_encoding
 #print axioms local_translation
 #print axioms binary_translation

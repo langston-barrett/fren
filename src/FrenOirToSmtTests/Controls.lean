@@ -1,6 +1,7 @@
 module
 
 public import FrenOirToSmtTests.Cases
+public import FrenOirToSmtTests.Model
 
 public section
 namespace FrenOirToSmtTests
@@ -12,6 +13,8 @@ private def isResource : Outcome → Bool
   | .resourceExhausted _ => true | _ => false
 
 def runControls : IO Unit := do
+  runModelReadback
+  runSourceConfirmation
   let started ← IO.monoMsNow
   let root ← sourceRoot
   let fake := (root / "src/FrenOirToSmtTests/fake_solver.py").toString

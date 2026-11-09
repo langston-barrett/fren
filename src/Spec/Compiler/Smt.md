@@ -133,9 +133,10 @@ equations and their sorting; general producer conformance is a proof obligation.
 
 r[smt.encoding.query]
 `QueryFor` appends one `declare-const Pi sort` per question parameter, then
-exactly `(assert search)` and `(check-sat)`. Each script includes the complete
-prelude and runs in its own solver process. It uses no selectors,
-`check-sat-assuming`, cache, model request or incremental context.
+exactly `(assert search)` and `(check-sat)`. Each ordinary script includes the complete
+prelude and runs in its own solver process. The optional readback operation
+is specified separately below. There are no selectors, `check-sat-assuming`,
+cache or incremental context.
 `Encoded` binds each actual output entry to the real `prelude`/`script`
 operations, including errors. Its ordered correspondence retains every
 question ID, owner, request, subject, origin, parameter, context, frame,
@@ -347,6 +348,43 @@ def InterpretationContract : Prop := ∀ input out, Produces input out → Oir.C
 /-- Actual bounded scope/name/arity checker, without a supplied wellformed flag. -/
 def ValidationContract : Prop := ∀ input out, Produces input out → ∀ ctx t ty fuel,
   Term.infer fuel out.oir.lir.mir.source ctx t = some ty → Lir.Sorted out.oir.lir.mir.source ctx t ty
+
+/-- Source-order assignment, independently of the model response's entry order. -/
+def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
+    (values : Array FrenEval.Value) : Prop :=
+  values.size = q.parameters.size ∧ ∀ (i : Nat) (param : FrenOir.Parameter) (value : FrenEval.Value),
+    q.parameters[i]? = some param → values[i]? = some value →
+    value.type = param.source.type ∧ value.valid p.lir.mir.source = true
+
+/-- Observation of the actual interpreter on the retained source body. -/
+def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
+    (depth : Nat) (value : Bool) : Prop :=
+  ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
+      ⟨body.owner, body.member.map (·.label.text)⟩ values depth = .ok observation ∧
+    observation.body = body ∧ observation.outcome = .ok (.bool value)
+
+/-- Concrete candidates do not discharge universal validity or domain questions. -/
+def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
+    (values : Array FrenEval.Value) (depth : Nat) (answer : Confirmation) : Prop :=
+  Produces p out ∧ q ∈ out.oir.questions.toList ∧ q.readiness = .ready ∧
+  ModelAssignment out.oir q values ∧
+  (∀ body ∈ p.typed.bodies.toList, confirmationFragment 10000 body.expression = true) ∧
+  (∀ hypothesis ∈ q.hypotheses.toList, SourceBoolean p hypothesis.source values depth true) ∧
+  ((q.kind = .assumptionsSatisfiable ∧ answer = .witness) ∨
+    (q.kind = .validity ∧ answer = .counterexample ∧
+      ∃ body, q.subject = some body ∧ SourceBoolean p body values depth false))
+
+/-- Decoder typing and source-observation correspondence are separate from the
+universal SMT interpretation, static-totality and evaluator-adequacy bridges. -/
+def ReadbackContract : Prop := ∀ p out, Produces p out → ∀ entry ∈ out.queries.toList,
+  ∀ text cap values, decodeModel out.oir entry.question text cap = .ok values →
+    ModelAssignment out.oir entry.question values
+
+def ConfirmationContract : Prop := ∀ p out, Produces p out → ∀ index entry,
+  out.queries[index]? = some entry → ∀ values depth answer,
+  confirmAssignment p index values depth = answer →
+  (answer = .witness ∨ answer = .counterexample) →
+    SourceCandidate p out entry.question values depth answer
 ```
 
 General source preservation additionally consumes the named MIR, LIR and OIR
@@ -376,8 +414,9 @@ Sat on an assumption search is a candidate witness; Unsat is an unsatisfiable
 assumption search. Sat on every refutation is a candidate counterexample;
 Unsat is no counterexample to that search. `Question.interpret` gives exactly
 these raw evidence constructors. None is a confirmed source assignment or an
-aggregate verified-source verdict. No model is requested or decoded by the
-current producer. Confirmation requires typed source values, true active
+aggregate verified-source verdict. `solve` preserves this raw boundary;
+`solveModels` additionally requests typed assignments. Confirmation requires
+typed source values, true active
 assumptions, the correct false goal, independently justified static safety and
 all actual dependencies; a solver answer supplies none of those checks.
 
@@ -403,7 +442,73 @@ completion. Loss of ownership forbids a group signal. These are process
 ownership guarantees of the helper, not guarantees under controller death,
 escaped descendants or uninterruptible execution.
 
-## 6. Primitive laws and examples
+## 6. Typed model readback and source observation
+
+**Dynamic semantics**
+
+r[smt.model.protocol]
+`solveModels` retains the original admitted source witness, produced program,
+question order, limits and every raw result. A raw Sat answer alone permits a
+second bounded request, using the same solver argv, limits and complete
+original script. `modelScript` prefixes only the model-production option and
+appends `get-value` for the literal `true` followed by every `Pi` in source
+parameter order. Both physical receipts and the second request are retained.
+No model request is issued for Unsat or any nonanswer. The ordinary `classify`
+protocol is unchanged and rejects a model envelope as an ordinary answer.
+`modelData` admits only exit-zero, empty-stderr, reason-free process receipts
+whose ordinary classification is an invalid answer protocol. Model parsing
+then independently requires Sat and the complete value response, rejecting
+stdout diagnostics.
+
+r[smt.model.values]
+`decodeModel` accepts exactly one status and one list of bindings, with one
+`(true true)` sentinel and exactly one entry for each generated parameter
+symbol. Input order may differ; the returned assignment follows source order.
+Foreign, missing, duplicate or extra symbols are errors. Bool accepts only
+`true` or `false`; Int accepts a canonical decimal magnitude or `(- magnitude)`
+with positive magnitude; enum values accept only the constructor of that
+parameter's retained nominal owner. No coercion, totalization or default value
+is supplied. Strings, comments, diagnostics, trailing expressions, partial
+responses, wrong sorts and unknown constructors are errors. The byte cap is
+checked before parsing, with nesting at most eight; transport overflow,
+nonzero exit, invalid UTF-8 and all other bounded failures remain unconfirmed.
+`ModelAssignment` specifies the typed source-order result;
+`ReadbackContract` states its correspondence to the actual decoder.
+
+r[smt.model.confirmation]
+`confirmAssignment` regenerates the program from the original admitted source
+and selects its exact question index. `solveModels` applies the same source
+check to decoded assignments. Confirmation supports assumption Sat and
+validity refutations in `confirmationFragment`; definedness-site readback is
+explicitly unconfirmed. Readiness must be ready, every referenced definition
+must exist, and every prerequisite must exist, be ready and be a definedness
+question. The conservative static fragment checks every source body, including
+unused definitions, lets, both ordinary Boolean operands and every branch.
+It excludes division, remainder and exhausted traversal independently of the
+interpreter's demand. Dependencies are not discharged by a raw Unsat token.
+
+Assignments have the exact source arity and types and real enum membership.
+Every retained hypothesis is evaluated as true by `FrenEval.evaluate` on its
+original source body. A Sat search then yields a concrete witness. A validity
+refutation additionally evaluates its retained source goal as false and yields
+a concrete counterexample. A false premise or true goal rejects the candidate;
+unsupported forms and evaluation failures, including exhaustion, are
+unconfirmed. `SourceBoolean` and `SourceCandidate` specify these observations;
+`ConfirmationContract` states correspondence of the actual API to them.
+No per-question confirmation is an aggregate verified-program verdict.
+
+**Proof obligations**
+
+r[smt.model.bridges]
+Concrete source observations are bounded interpreter results. General decoder
+correspondence, static totality of the syntactic fragment, evaluator adequacy,
+model existence, solver identity/trust and recursive source/SMT preservation
+require independent justification. The MIR/LIR/OIR/SMT contracts and their
+semantic domains remain premises of any universal source-soundness claim.
+The nonzero-transport, wrong-model-sort and partial-operation exclusion laws
+constrain actual functions without supplying those recursive bridges.
+
+## 7. Primitive laws and examples
 
 **Dynamic semantics**
 

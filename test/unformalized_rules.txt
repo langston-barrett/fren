@@ -364,5 +364,8 @@ smt.encoding.names -- actual canonical index grammar and lookup laws; general re
 smt.encoding.terms -- actual recursive Renders/TermFor with all binary translation laws; universal printer conformance remains unproved
 smt.encoding.interpretation -- concrete-text Interprets and actual equation Model; universal interpretation/model existence remains unproved
 smt.response.status -- actual classify laws and explicit raw protocol boundary; no recursive Fren receipt contract
-smt.response.polarity -- actual Question.interpret laws and independent model witnesses; source confirmation remains unimplemented
+smt.response.polarity -- actual Question.interpret laws and independent model witnesses; concrete readback/source observation are separate from universal verification
 smt.response.limits -- actual bounded transport and receipt boundary; process ownership is tested, not formally bound in Fren
+smt.model.protocol -- actual two-request bounded transport, original source/question retention and raw physical receipts; process/solver identity remain IO trust boundaries
+smt.model.values -- actual strict decoder with direct Plausible and real models; universal ReadbackContract remains unproved
+smt.model.confirmation -- actual source interpreter boundary and independent SourceCandidate contract; universal ConfirmationContract/evaluator adequacy remain unproved
