@@ -19,6 +19,12 @@ def request_cancel(_signum, _frame):
     cancel_requested = True
 
 
+def observe_exit(child):
+    # WNOWAIT observes a child's exit without releasing its PID/PGID anchor.
+    # Never use Popen.poll/wait/communicate before the final group signal.
+    return os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+
+
 def run(request):
     started = time.monotonic()
     command = request['command']
@@ -39,6 +45,7 @@ def run(request):
     child = None
     streams = {'stdout': bytearray(), 'stderr': bytearray()}
     reason = ''
+    ownership_lost = False
     try:
         child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, start_new_session=True)
@@ -80,7 +87,7 @@ def run(request):
                 if reason:
                     break
             # A child can close both output streams and keep computing.
-            while not reason and child.poll() is None:
+            while not reason and observe_exit(child) is None:
                 if cancel_requested:
                     reason = 'transport cancelled'
                 elif time.monotonic() >= deadline:
@@ -91,18 +98,27 @@ def run(request):
         reason = 'transport error: ' + str(exc)
     finally:
         if child is not None:
-            # The new session belongs solely to this query. Also clean up an
-            # owned descendant that outlives a leader or keeps pipes open.
+            # Keep the direct child unreaped through the LAST group signal,
+            # even after a normal exit. Its reserved PID prevents PGID reuse
+            # while also allowing cleanup of surviving owned descendants.
             try:
-                os.killpg(child.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            child.wait()
+                observe_exit(child)
+            except ChildProcessError:
+                # Unexpected loss of ownership is not permission to signal a
+                # possibly reused numeric group or report a solver answer.
+                ownership_lost = True
+                reason = 'transport error: solver leader is no longer waitable'
+            else:
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                child.wait()
             for stream in [child.stdin, child.stdout, child.stderr]:
                 if stream is not None:
                     stream.close()
             result['exit_code'] = child.returncode
-    if cancel_requested:
+    if cancel_requested and not ownership_lost:
         reason = 'transport cancelled'
     try:
         result['stdout'] = streams['stdout'].decode('utf-8', errors='strict')
@@ -123,6 +139,8 @@ def run(request):
 
 
 def main():
+    # The one-query helper must retain exited children until explicit reap.
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, request_cancel)
     signal.signal(signal.SIGINT, request_cancel)
     try:

@@ -54,7 +54,12 @@ Use the pinned local cvc5 asset, with explicit per-query solver resource/time
 limits and an outer wall deadline. Bound script input and combined stdout and
 stderr. Retain command arguments, process exit, both output streams (including
 exact captured bytes), elapsed time and timeout/output-limit reasons. Reap
-the owned process after failure and normal cancellation.
+the owned process after completion, failure and normal cancellation. Observe
+exit without reaping (`waitid` with `WNOWAIT`), keep the direct leader waitable
+through the last process-group signal, and only then reap it. Its unreaped
+PID anchors the numeric group against reuse, including on normal completion;
+never signal a remembered PID/PGID after releasing that anchor. Unexpected
+loss of this ownership is an error and forbids the group signal.
 A missing executable, nonzero exit, malformed/multiple answer, solver error
 or protocol failure is an error, not Unsat. Unknown remains unknown; reaching
 an outer resource bound remains resource exhaustion. Translation unsupported
@@ -116,7 +121,9 @@ to-real-solver behavior and nonanswers. The fixed fixture independently checks
 32 written requests, signed arithmetic, unused/guarded domains, forward calls,
 shadowing, nominal enums and unresolved mutual assumptions. Owned controls
 exercise invalid protocols, nonzero exits, exact invalid bytes, time/output
-limits, suspended children and repeated cancellation at cleanup. These tests
+limits, suspended children and repeated cancellation at cleanup. The ownership
+regression checks that the direct leader is still waitable at every group
+signal, including normal solver exit and repeated cancellation. These tests
 and raw receipts are finite evidence, not proofs of universal translation
 correctness or SMT soundness, or a new crossover prerequisite.
 
