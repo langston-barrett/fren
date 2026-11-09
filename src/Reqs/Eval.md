@@ -587,6 +587,8 @@ expect eval_exit_status(ran?, complete?, status: eval::Status, expect_false?) {
 refinement as the procedure that checks it, for the checks that run on it. For each, it runs `--tests` tests (default
 100), starting from `--seed` (default 0), so a run can be repeated. Each
 test chooses a random interpretation and searches for an admissible input.
+The random choices for a procedure and its abstract types are independent of
+unrelated abstract type declarations elsewhere in the reference.
 For each call in turn, it confirms the called procedure's assumptions on the
 call's inputs, then searches for the call's behaviour. Last, it
 searches for outputs that meet the procedure. A global expectation's

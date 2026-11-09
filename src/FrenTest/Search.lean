@@ -1,5 +1,5 @@
 -- keep-sorted start
-import FrenCli.Search
+import FrenCli.Quick
 -- keep-sorted end
 
 /-!
@@ -17,3 +17,30 @@ open FrenCli.Eval
                     constraints := #[], insts := #[]
                     defs := #[(`a, .bin .add (.var `b) (.lit (.int 1))), (`b, .var `x), (`c, .var `y)] }
   c.earlyDefs == #[`b, `a]
+
+/- A procedure's random inputs and the interpretation of its own sort stay
+   the same when an unrelated abstract type is added to the reference. -/
+section SeedIsolation
+
+open Lean
+
+def seedIsolationSamples (sp : Spec) : Array (Nat × Option Val × Option Val) := Id.run do
+  let c : Comp := { path := `example.p, vars := #[
+    { name := `x, role := .input, ty := .abstract `S, isPub := true },
+    { name := `y, role := .input, ty := .int, isPub := true }], constraints := #[], insts := #[] }
+  let pre := sp.admitAtoms c (fun _ => none)
+  let mut rng : Rng := ⟨mix 0 (hash c.path)⟩
+  let mut samples := #[]
+  for _ in [0:100] do
+    let (w, next) := (World.random sp).run rng
+    let (admitted, next) := (sp.admit w c #[-1, 0, 1, 2] #[] none pre).run next
+    rng := next
+    samples := samples.push (w.size `S, admitted.bind (·.env[`x]?), admitted.bind (·.env[`y]?))
+  return samples
+
+#guard
+  let a := seedIsolationSamples { sorts := #[`S] }
+  let b := seedIsolationSamples { sorts := #[`Unrelated, `S] }
+  a == b && a.any (fun (_, x, y) => x.isSome && y.isSome)
+
+end SeedIsolation

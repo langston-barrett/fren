@@ -73,7 +73,9 @@ def World.size (w : World) (sort : Name) : Nat := (w.sizes.find? sort).getD 1
 def World.random (sp : Spec) : R World := do
   let seed ← rand
   let mut sizes := {}
-  for s in sp.sorts do sizes := sizes.insert s ((← below 3) + 1)
+  -- A sort gets its own draw, independent of the other sorts and of the
+  -- state used for the procedure’s input search.
+  for s in sp.sorts do sizes := sizes.insert s (((mix seed (hash s) % 3).toNat) + 1)
   return { seed, sizes }
 
 /-- A value of `ty` chosen by `h`: small, so that functions' values are
