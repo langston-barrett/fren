@@ -603,10 +603,15 @@ context, whose types are well formed.
 r[types.program.typing] spec::types::{declarations_ok?, bodies_of, functions_defined?, program_ok?}
 A Core program is well typed when its symbol environment is well formed,
 every declaration is well typed in that one environment, and every function
-that the environment binds has exactly one body among the declarations. A source program
-is well typed exactly when its translation into the Core is; the
-[derived forms](../Compiler/Desugaring.md) define that translation.
+that the environment binds has exactly one body among the declarations.
 <!-- status: definition -->
+
+r[types.program.source]
+A source program is well typed exactly when its translation into a Core
+program is. The derived-forms chapter, not yet written, is to define that
+translation, including which rows of each body's table represent which
+source occurrences.
+<!-- status: open -->
 
 ```fren
 pub enum Declaration { Function(ItemId, Snoc<Row>), Condition(Context, Snoc<Row>) }
