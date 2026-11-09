@@ -16,6 +16,7 @@ import FrenFlatToLirTests
 import FrenLirToOirTests
 import FrenOirTests
 import FrenOirToSmtTests
+import FrenCli2Tests
 
 fren_test_runners textRunners
 
@@ -47,6 +48,7 @@ private def runJob (args : List String) : IO UInt32 := do
     return 0
   if args == ["--job", "smtControls"] then
     FrenOirToSmtTests.runControls
+    FrenCli2Tests.run
     return 0
   if args == ["--job", "smtProperties"] then
     FrenOirToSmtTests.runProperties

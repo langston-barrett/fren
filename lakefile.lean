@@ -1236,5 +1236,9 @@ lean_exe fren_fuzz_frontends where
 
 -- Default S-expression checks and selected registered textual tests.
 lean_exe fren2_test where
-  needs := #[`@/FrenTextDemoTests, `@/FrenTextTestsTests]
+  needs := #[`@/FrenTextDemoTests, `@/FrenTextTestsTests, `@/fren2_check]
   root := `Fren2TestMain
+
+-- Ordinary single-file Fren2 source checker; runtime assets ship with this tree.
+lean_exe fren2_check where
+  root := `Fren2CheckMain
