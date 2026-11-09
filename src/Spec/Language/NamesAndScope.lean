@@ -1505,7 +1505,7 @@ impl bound_items_proof: bound_items for (env : Env) (scope : Snoc String) (form 
 
 open spec.types spec.names in
 impl siblings_proof: siblings for (rows : Snoc SrcRow) (scope : Snoc String) (name : String)
-    (annotation : Option spec.names.TypeName) (op : BinaryOp) (first second : Int) (row : SrcRow) {
+    (annotation : Option spec.names.TypeName) (op : spec.surface.BinaryOp) (first second : Int) (row : SrcRow) {
   rows := rows, scope := scope, name := name, annotation := annotation, op := op,
   first := first, second := second, row := row, holds? := true
 } by

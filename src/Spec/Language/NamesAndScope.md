@@ -91,9 +91,10 @@ entry.
 pub mod spec
 pub mod spec::names
 
+use spec::surface::{BinaryOp, UnaryOp}
+
 use spec::types::{
     ArmF,
-    BinaryOp,
     Ctx,
     Entry,
     ExprF,
@@ -104,7 +105,6 @@ use spec::types::{
     Snoc,
     Symb,
     Ty,
-    UnaryOp,
     entry,
     length,
     let_annotation?,
