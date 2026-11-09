@@ -320,10 +320,10 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
               'FREN_BUILD_FALLBACK_KIB','FREN_BUILD_TIMEOUT_MS'):
         env.pop(k,None)
     results=[]
-    def case(label,args,mode='below',executable=lake,script=ROOT/'scripts/heavy',extra=None):
+    def case(label,args,mode='below',executable=lake,script=ROOT/'scripts/heavy',extra=None,cwd=ROOT):
         marker=work/(label+'.marker')
         command=[str(script),'--offline',str(executable),'env','lean',*map(str,args)]
-        p=run(command,directory=work,label=label,cwd=ROOT,
+        p=run(command,directory=work,label=label,cwd=cwd,
               env=dict(env,MODE=mode,MARKER=str(marker),NO_ARTIFACT='1',**(extra or {})),timeout=8,grace=3)
         match=re.search(rb'fren-build: retained private state: ([^\n]+)',p.stderr)
         state=Path(os.fsdecode(match[1]))/'state' if match else None
@@ -361,6 +361,22 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
     assert record['compiler_memory_effective_bytes']==1073741824 and marker['swap']=='0',r
     assert record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,r
     assert r['session']['module_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
+    new_root=ROOT/'src/Fren2CheckMain.lean'
+    r=case('direct-new-root',[new_root],mode='exit7')
+    assert r['status']==7 and len(r['records'])==1,r
+    record=r['records'][0];marker=r['marker']
+    assert record['args']==[str(new_root)] and record['compiler_memory_source']==str(new_root),r
+    assert record['compiler_memory_selected'] and record['raw_wait_status']==7*256,r
+    assert record['compiler_memory_applied_bytes']==record['compiler_memory_readback_bytes']==1073741824,r
+    assert record['compiler_memory_swap_readback_bytes']==0 and marker['swap']=='0',r
+    assert record['compiler_memory_ack_pid']==record['child_pid']==marker['pid'],r
+    assert record['compiler_memory_expected_inode']==record['compiler_memory_observed_inode']==marker['inode'],r
+    assert record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,r
+    assert r['session']['module_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
+    for label,args in [('new-root-query',['--version',new_root]),
+                       ('new-root-run',['--run',new_root]), ('new-root-stdin',['--stdin',new_root])]:
+        r=case(label,args)
+        assert r['status']==0 and not r['records'] and r['state']=='None',r
     r=case('direct-signal',[selected],mode='term')
     assert r['status']==143 and r['records'][0]['raw_wait_status']==15,r
     assert r['records'][0]['compiler_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
@@ -369,6 +385,9 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
         p=missing/name;p.write_bytes((ROOT/'scripts'/name).read_bytes());p.chmod(0o755)
     r=case('direct-missing-tools',[selected],script=missing/'heavy')
     assert r['status']==125 and r['marker'] is None and not r['records'],r
+    # The real compiler controls need no project dependencies or Lake update.
+    (work/'lakefile.lean').write_text('import Lake\nopen Lake DSL\npackage directControl\n')
+    (work/'lean-toolchain').write_bytes((ROOT/'lean-toolchain').read_bytes())
     real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
     alias=work/'source-alias';alias.symlink_to(selected)
     alternate=work/'source-alias.txt';alternate.symlink_to(selected)
@@ -380,17 +399,17 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
         assert verdict.returncode==0 and verdict.stdout==b'selected\n',verdict
     native=run([str(real),'-j1',str(alias)],directory=work,label='native-alias-threads',env=env,timeout=5)
     assert native.returncode==0 and native.stdout==native.stderr==b'',native
-    r=case('direct-ambiguous',['-j1',alias],executable=real.parent/'lake')
+    r=case('direct-ambiguous',['-j1',alias],executable=real.parent/'lake',cwd=work)
     records=[v for v in r['records'] if v.get('compiler_memory_selected')]
     assert r['status']==125 and len(records)==1 and not records[0]['child_present'],r
     assert records[0]['compiler_memory_source']==str(selected) and records[0]['input_kind']=='unknown',r
     assert r['session']['module_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
     artifact=work/'Identity λ $literal.olean'
-    r=case('direct-actual-lean',[alias,'-o',artifact],executable=real.parent/'lake')
+    r=case('direct-actual-lean',['--root',ROOT,alias,'-o',artifact],executable=real.parent/'lake',cwd=work)
     records=[v for v in r['records'] if v.get('compiler_memory_selected')]
     assert r['status']==0 and artifact.is_file() and len(records)==1,r
     record=records[0]
-    assert record['args']==[str(alias),'-o',str(artifact)] and record['cwd']==str(ROOT),r
+    assert record['args']==['--root',str(ROOT),str(alias),'-o',str(artifact)] and record['cwd']==str(work),r
     assert record['compiler_memory_source']==str(selected),r
     assert record['compiler_memory_applied_bytes']==record['compiler_memory_effective_bytes']==1073741824,r
     assert record['compiler_memory_ack_pid']==record['child_pid'] and record['compiler_memory_expected_inode']==record['compiler_memory_observed_inode'],r

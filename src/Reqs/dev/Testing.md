@@ -1739,6 +1739,7 @@ pub fn module_memory_selected?(root: String, source: String) :=
         module_memory_in_root?(root, source, "FrenTextTestsTests") or
         module_memory_in_root?(root, source, "FrenTextDemo") or
         module_memory_in_root?(root, source, "FrenTextDemoTests") or
+        module_memory_in_root?(root, source, "Fren2CheckMain") or
         module_memory_in_root?(root, source, "Fren2TestMain") or
         module_memory_in_root?(root, source, "FrenTest/Layering") or
         module_memory_in_root?(root, source, "FrenTest/Fren2Resolver") or
