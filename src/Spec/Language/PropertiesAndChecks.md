@@ -86,10 +86,12 @@ use spec::types::{
     Arm,
     ArmF,
     Ctx,
+    Decl,
     ExprF,
     F,
     Form,
     ItemId,
+    ItemKind,
     LIGHT,
     LIGHT_GREEN,
     LIGHT_RED,
@@ -99,6 +101,7 @@ use spec::types::{
     Symb,
     Ty,
     derivation?,
+    entry,
     four,
     length,
     lookup,
@@ -392,7 +395,8 @@ derivation table, all in the context of the declaration's parameters. A
 table's rows are valid, every member's root is a Boolean row in the
 parameter context, and the body's root is a row in that context. The
 [declarations of Core typing](Types.md#declarations-and-programs) carry no
-keyword; relating the two is open.
+keyword; [the tables of a program](#r-verification.program.tables) relates
+the two.
 
 ```fren
 pub struct Member { keyword: Keyword, root: Int }
@@ -620,7 +624,10 @@ r[verification.assignment.goal] spec::verification::goal_holds?
 `NonZero(r)` holds in an assignment where row r is a nonzero integer, and
 `Asserted(r)` where row r is true. `Defined(r)` holds where row r is a
 call, every argument has a value, and those values are within the callee's
-domain. A goal whose row has no value does not hold.
+domain. `NonZero` and `Asserted` do not hold of a row that has no value.
+`Defined` does not read the value of its own row, which a call never has:
+it does not hold where an argument has no value, or where a `require`
+root of the callee has none.
 
 ```fren
 pub fn goal_holds?(prog: Snoc<Declared>, rows: Snoc<Row>, env: Snoc<Value>, goal: Goal) :=
@@ -751,7 +758,10 @@ r[verification.validity.uncomputed]
 A row that depends on a product, a quotient, a remainder or a call has no
 value in any assignment, since the
 [evaluator](Expressions.md#r-expressions.meaning.evaluation) computes
-none. Such a row satisfies no goal and refutes no hypothesis. So
+none. No `NonZero` or `Asserted` goal of such a row holds, and such a
+row refutes no hypothesis. A `Defined` goal of a call row can hold, since
+it reads the arguments and the callee's `require` roots; it does not hold
+where one of those has no value. So
 satisfaction never counts an undefined operation as defined; it also fails
 to count a goal as holding, or a hypothesis as refuted, where that depends
 on such a row.
@@ -771,16 +781,106 @@ pub fn discharged?(verdict: Verdict) := verdict = Verdict::Proved
 
 ## Defined and verified programs
 
+r[verification.program.tables] spec::verification::{rooted?, prefix?, has_member?, condition_tabled?, tabled?, all_tabled?, condition_typed?, members_typed?, tables_typed?, represents?}
+The tables P *represent* the [declarations of a typed program](Types.md#declarations-and-programs)
+when each has the other's bodies. A typed table is *at root r* of a
+declaration's table when it is that table's rows up to r. Every typed
+function has a table for its item, with the parameters of the function's
+signature and with a body, at whose root the function's typed table is.
+Every typed condition is at the root of a member of some declaration that
+has the condition's parameters. Conversely, every declaration's table is
+[well formed](#r-verification.member.table), and every member is a typed
+condition: no table states a member that the program does not have. Core
+typing's conditions carry no keyword and no owner, so that a member has
+the keyword and the declaration that the source gave it is not stated;
+this part of the correspondence is open.
+
+```fren
+pub fn prefix?(short: Snoc<Row>, long: Snoc<Row>) :=
+    short = long
+    or match long {
+        Empty => false,
+        Extend(earlier, _) => prefix?(short, earlier),
+    }
+
+pub fn rooted?(root: Int, body: Snoc<Row>, rows: Snoc<Row>) :=
+    prefix?(body, rows) and root + 1 = length(body)
+
+pub fn has_member?(members: Snoc<Member>, body: Snoc<Row>, rows: Snoc<Row>) := match members {
+    Empty => false,
+    Extend(earlier, member) => has_member?(earlier, body, rows) or rooted?(member.root, body, rows),
+}
+
+pub fn condition_tabled?(prog: Snoc<Declared>, params: Ctx, body: Snoc<Row>) := match prog {
+    Empty => false,
+    Extend(earlier, found) =>
+        condition_tabled?(earlier, params, body)
+        or (found.params = params and has_member?(found.members, body, found.rows)),
+}
+
+pub fn tabled?(symb: Symb, prog: Snoc<Declared>, decl: Decl) := match decl {
+    Decl::Function(item, body) => match declaration_of(prog, item) {
+        Some(found) =>
+            match found.body {
+                Some(root) => rooted?(root, body, found.rows),
+                None => false,
+            }
+            and match entry(symb, item) {
+                Some(ItemKind::Function(sig)) => sig.params = found.params,
+                _ => false,
+            },
+        None => false,
+    },
+    Decl::Condition(params, body) => condition_tabled?(prog, params, body),
+}
+
+pub fn all_tabled?(symb: Symb, prog: Snoc<Declared>, decls: Snoc<Decl>) := match decls {
+    Empty => true,
+    Extend(earlier, decl) => all_tabled?(symb, prog, earlier) and tabled?(symb, prog, decl),
+}
+
+pub fn condition_typed?(decls: Snoc<Decl>, params: Ctx, rows: Snoc<Row>, root: Int) := match decls {
+    Empty => false,
+    Extend(earlier, decl) =>
+        condition_typed?(earlier, params, rows, root)
+        or match decl {
+            Decl::Condition(ctx, body) => ctx = params and rooted?(root, body, rows),
+            Decl::Function(_, _) => false,
+        },
+}
+
+pub fn members_typed?(decls: Snoc<Decl>, params: Ctx, rows: Snoc<Row>, members: Snoc<Member>) :=
+    match members {
+        Empty => true,
+        Extend(earlier, member) =>
+            members_typed?(decls, params, rows, earlier)
+            and condition_typed?(decls, params, rows, member.root),
+    }
+
+pub fn tables_typed?(symb: Symb, decls: Snoc<Decl>, prog: Snoc<Declared>) := match prog {
+    Empty => true,
+    Extend(earlier, found) =>
+        tables_typed?(symb, decls, earlier)
+        and declared_ok?(symb, found)
+        and members_typed?(decls, found.params, found.rows, found.members),
+}
+
+pub fn represents?(symb: Symb, decls: Snoc<Decl>, prog: Snoc<Declared>) :=
+    all_tabled?(symb, prog, decls) and tables_typed?(symb, decls, prog)
+```
+
 r[verification.program.defined]
-A program is *defined* when four conditions hold. It is
-[well typed](Types.md#declarations-and-programs). Every match in it covers
+A program with tables P is *defined* when five conditions hold. It is
+[well typed](Types.md#declarations-and-programs). P
+[represents](#r-verification.program.tables) its declarations. Every match in it covers
 its scrutinee's constructors; coverage is a condition separate from typing
 ([Core typing](Types.md#r-types.judgment.coverage-separate)) and is not yet
 specified. No function in it calls itself, directly or through others
 ([Core typing](Types.md#r-types.program.nonrecursive)). Every
 [obligation of every declaration](#r-verification.member.obligations) is
 valid, except the `Asserted` obligation of an `expect` member. The
-conditions cover a function that nothing calls. Coverage and the absence
+keyword of each member is the one that P states, which nothing here ties
+to the source. The conditions cover a function that nothing calls. Coverage and the absence
 of recursion yield no obligations. The dynamic semantics assigns no
 behaviour to an operation outside its domain, and in a defined program no
 operation is outside its domain.
@@ -1051,6 +1151,34 @@ pub proc cut(
             }
         ),
         satisfied?(prog, rows, env, Obligation { hyps, goal })
+}
+```
+
+r[verification.program.represented] spec::verification::{has_body?, represented::{kept, none}}
+Tables that represent a program omit no function body: a typed function
+has a table with a body, and no tables at all represent no program that
+has a function. So the obligations of a
+[defined program](#r-verification.program.defined) include those of every
+function body that Core typing typed.
+
+```fren
+pub fn has_body?(prog: Snoc<Declared>, item: ItemId) := match declaration_of(prog, item) {
+    Some(found) => found.body != None,
+    None => false,
+}
+
+set_option fren.evidence "random" in
+pub proc represented(
+    symb: Symb,
+    decls: Snoc<Decl>,
+    prog: Snoc<Declared>,
+    item: ItemId,
+    body: Snoc<Row>,
+): (holds?) {
+    ensure output: holds?
+    ensure kept: when represents?(symb, Extend(decls, Decl::Function(item, body)), prog),
+        has_body?(prog, item)
+    ensure none: not represents?(symb, Extend(decls, Decl::Function(item, body)), Empty)
 }
 ```
 
@@ -1745,17 +1873,60 @@ pub proc domains(): (holds?) {
 }
 ```
 
+r[verification.examples.tables] spec::verification::{F_DECLS, NONZERO_BODY, tables::{omitted, present, extra}}
+Let the typed program declare `M::f(x)` with the body `x` and the
+condition `x != 0`. The table above, which has no body, does not
+[represent](#r-verification.program.tables) it, and so no program with
+that table is defined, whatever its obligations. The same table with the
+body at row 0 represents it. That table does not represent the program
+without the condition: its member would be an assumption that the program
+does not state.
+
+```fren
+pub const F_DECLS: Snoc<Decl> := two(
+    Decl::Function(F, one(typed(ExprF::Local(0), BOUND, Ty::Integer))),
+    Decl::Condition(BOUND, NONZERO.rows)
+)
+
+pub const NONZERO_BODY: Declared := Declared {
+    item := F,
+    params := BOUND,
+    rows := NONZERO.rows,
+    body := Some(0),
+    members := NONZERO.members,
+}
+
+-- The examples are constant judgments, which the wrapper evaluates.
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "random" in
+pub proc tables(): (holds?) {
+    ensure output: holds?
+    ensure omitted: not represents?(SYMB, F_DECLS, one(NONZERO))
+    ensure present: represents?(SYMB, F_DECLS, one(NONZERO_BODY))
+    ensure extra: not represents?(
+        SYMB,
+        one(
+            Decl::Function(F, one(typed(ExprF::Local(0), BOUND, Ty::Integer)))
+        ),
+        one(NONZERO_BODY)
+    )
+}
+```
+
 ## Interface
 
-r[verification.validity.interface] spec::validity::{valid?, check, verdicts::{satisfied, proved, refuted}}
+r[verification.validity.interface] spec::validity::{valid?, counterexample, check, verdicts::{satisfied, invalid, proved, refuted}}
 `valid?` is the [validity](#r-verification.validity.meaning) of an
 obligation of a table, and `check` is any function that answers a verdict.
-Three laws relate them to satisfaction. A valid obligation is satisfied by
-every assignment of it. `check` answers `Proved` only for a valid
+Four laws relate them to satisfaction. A valid obligation is satisfied by
+every assignment of it. Conversely, an obligation that is not valid has an
+assignment that does not satisfy it, which `counterexample` names. The two
+together make `valid?` exactly satisfaction by every assignment. `check` answers `Proved` only for a valid
 obligation, and `Refuted(ρ)` only with an assignment ρ of the obligation
 that does not satisfy it; `Unknown` establishes nothing. A solver
 implements `check`. The chapter's wrapper interprets `valid?` as
-satisfaction by every assignment, and shows the laws of `check`
+satisfaction by every assignment and `counterexample` as a choice of an
+assignment that does not satisfy, and shows the laws of `check`
 satisfiable by the function that always answers `Unknown`.
 
 ```fren
@@ -1766,6 +1937,8 @@ use spec::types::{Row, Snoc, Symb}
 use spec::verification::{Declared, Obligation, Verdict, assignment?, satisfied?}
 
 pub fn valid?(Symb, Snoc<Declared>, Snoc<Row>, Obligation)
+
+pub fn counterexample(Symb, Snoc<Declared>, Snoc<Row>, Obligation): Snoc<Value>
 
 pub fn check(Symb, Snoc<Declared>, Snoc<Row>, Obligation): Verdict
 
@@ -1781,6 +1954,19 @@ pub proc verdicts(
     ensure satisfied: when valid?(symb, prog, rows, obligation)
         and assignment?(symb, rows, obligation, env),
         satisfied?(prog, rows, env, obligation)
+    ensure invalid: when not valid?(symb, prog, rows, obligation),
+        assignment?(
+            symb,
+            rows,
+            obligation,
+            counterexample(symb, prog, rows, obligation)
+        )
+        and not satisfied?(
+            prog,
+            rows,
+            counterexample(symb, prog, rows, obligation),
+            obligation
+        )
     ensure proved: when check(symb, prog, rows, obligation) = Verdict::Proved,
         valid?(symb, prog, rows, obligation)
     ensure refuted: when check(symb, prog, rows, obligation) = Verdict::Refuted(env),

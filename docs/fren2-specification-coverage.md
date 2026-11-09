@@ -196,20 +196,21 @@ verified programs. Satisfaction reads row values from the evaluator of the
 [expressions chapter](../src/Spec/Language/Expressions.md#evaluation).
 Its wrapper's `#fren_trace` reports the following; 13 of the proved
 procedures, the six tested and one trusted belong to the chapters it
-imports, and 14 proved and one trusted are its own:
+imports, and 16 proved and one trusted are its own:
 
 ```text
-evidence: 27 proved, 0 solver, 6 tested, 2 trusted, 0 missing
+evidence: 29 proved, 0 solver, 6 tested, 2 trusted, 0 missing
 tested: `spec::lexical::division`, `spec::surface::accepted_trees_well_formed`, `spec::surface::extent`, `spec::surface::grammar_terminals`, `spec::surface::print_parse`, `spec::surface::reserved_names`
 trusted: `spec::types::expression_uniqueness`, `spec::verification::complete`
 ```
 
 | Rule | Evidence |
 | --- | --- |
-| `verification.generation.strict`, `verification.generation.guarded`, `verification.generation.divisor`, `verification.obligation.hypotheses`, `verification.obligation.cut`, `verification.member.scope`, `verification.obligation.flattening`, `verification.generation.context-independent` | Laws for all inputs, bound by `impl` in the wrapper: `proved` |
-| `verification.examples.obligations`, `verification.examples.assignments`, `verification.examples.scopes`, `verification.examples.members`, `verification.examples.domain` | Constant examples that the wrapper evaluates with `decide`: `proved` |
-| `verification.validity.interface` | The wrapper interprets `valid?` as satisfaction by every assignment of the obligation, a classical proposition, and proves the three laws of `verdicts` from it, with `check` interpreted as the function that always answers `Unknown`: `proved` |
+| `verification.generation.strict`, `verification.generation.guarded`, `verification.generation.divisor`, `verification.obligation.hypotheses`, `verification.obligation.cut`, `verification.member.scope`, `verification.program.represented`, `verification.obligation.flattening`, `verification.generation.context-independent` | Laws for all inputs, bound by `impl` in the wrapper: `proved` |
+| `verification.examples.obligations`, `verification.examples.assignments`, `verification.examples.scopes`, `verification.examples.members`, `verification.examples.domain`, `verification.examples.tables` | Constant examples that the wrapper evaluates with `decide`: `proved` |
+| `verification.validity.interface` | The wrapper interprets `valid?` as satisfaction by every assignment of the obligation, a classical proposition, and `counterexample` as a choice of an assignment that does not satisfy it. It proves the four laws of `verdicts` from them, with `check` interpreted as the function that always answers `Unknown`: `proved`. The laws `satisfied` and `invalid` together fix `valid?` as satisfaction by every assignment; either alone admits an interpretation that is always false or always true |
 | `verification.generation.complete` | Stated as a procedure over tables, `trusted` and open |
+| `verification.program.tables` | A definition, `represents?`, with the law and the examples above. That each member has its source keyword and declaration is not stated |
 | `verification.validity.meaning`, `verification.validity.uncomputed`, `verification.program.defined`, `verification.program.verified`, `verification.program.assumptions`, `verification.generation.function`, `verification.keyword.evidence`, `verification.soundness` | Prose. Soundness is open |
 
 What shapes the chapter:
@@ -220,9 +221,11 @@ What shapes the chapter:
   computed. It gives no value to a product, a quotient, a remainder or a
   call, because a defined Fren function may not multiply or divide two
   variables or apply an uninterpreted function. Satisfaction is therefore
-  conservative: a goal that depends on such a row never holds, and a
-  hypothesis that depends on one is never refuted
-  (`verification.validity.uncomputed`). The law that `Proved` implies
+  conservative: a `NonZero` or `Asserted` goal of such a row never holds,
+  and a hypothesis that depends on one is never refuted
+  (`verification.validity.uncomputed`). A `Defined` goal of a call row can
+  hold: it reads the arguments' values and the callee's `require` roots,
+  not the value of the call. The law that `Proved` implies
   validity is, for such obligations, stronger than a solver that knows
   these operators can honour; it becomes exact when the evaluator
   computes them.
@@ -235,8 +238,15 @@ What shapes the chapter:
   sequence of members, each a keyword and a root. `member_hyps` folds over
   the members, so the hypotheses of a member and of a body are
   definitions, and `declared_obligations` yields `Asserted` goals. The
-  `Decl` of Core typing has no keyword and one table for each condition;
-  the two are not yet one definition.
+  `Decl` of Core typing has no keyword and one table for each condition.
+  `represents?` (`verification.program.tables`) ties the two: every typed
+  function has a table with its signature's parameters and its body, every
+  typed condition is a member of a table, and every member is a typed
+  condition. A defined program requires it, so a table that omits a body
+  or a condition, or adds a member, makes no program defined. Typing gives
+  a condition no keyword and no owner, so definedness is relative to the
+  keywords and owners that the tables state; that these are the source's
+  is open.
 - **Calls.** `Defined(r)` holds where every `require` root of the callee
   evaluates to true at the argument values. The program is a sequence of
   declarations that satisfaction takes as an argument.
@@ -245,7 +255,7 @@ What shapes the chapter:
   keyword of Fren1 is retired: `expect` takes its place. The chapter says
   nothing of `assert` or `assume` inside an expression, which the Core
   does not have.
-- **The check.** `check` is an uninterpreted function with three laws. A
+- **The check.** `check` is an uninterpreted function with two laws, and `valid?` one with two more. A
   procedure with a contract could not have the output type `Verdict`,
   which is unbounded, and the solver did not decide the realizability of a
   function contract that mentions `satisfied?`.
@@ -269,7 +279,9 @@ commuting square with OIR condition generation, is open
   cases and bindings.
 - [ ] Give the evaluator values for products, quotients, remainders and
   calls, then state and prove `verification.soundness`.
-- [ ] Make the `Decl` of Core typing and the member table one definition.
+- [ ] Give the `Decl` of Core typing each condition's keyword and owner,
+  so that `represents?` states that a member has its source keyword, or
+  make `Decl` and the member table one definition.
 - [ ] Rename `PropertiesAndChecks.md` to match the chapter's title.
 - [ ] Bind `Lowered.branch`, `Lowered.bind` and `Lowered.call` to
   `if_condition`, `let_condition` and `call_condition` through an
