@@ -761,4 +761,45 @@ impl compiler_sample: testing::heavy_compiler_sample
     by_cases h2 : r.schema = 2 <;>
     simp [fren_spec, sample, ← hc, compilerContext, hg, hw, h2, hs2, hs3, and_assoc]
 
+impl compiler_padding: testing::heavy_compiler_padding
+    for (peak : Option Int) (padding : Nat) {
+  peak := peak,
+  padding := padding,
+  request := Heavy.CompilerForecast.padded peak padding,
+} by
+  intro peak padding _
+  cases peak <;> simp [fren_spec, Heavy.CompilerForecast.padded]
+
+theorem forecast_fit (allowance parent demand : Int) (positive : 0 < demand) :
+    Heavy.Budget.decision allowance parent 0 demand 1 1 = 1 ↔
+      0 ≤ parent ∧ parent ≤ allowance ∧ demand ≤ allowance - parent := by
+  unfold Heavy.Budget.decision
+  split
+  · omega
+  · split
+    · omega
+    · split <;> omega
+
+impl compiler_request: testing::heavy_compiler_request
+    for (peak : Option Int) (padding : Nat) (allowance parent : Int) {
+  peak := peak,
+  padding := padding,
+  allowance := allowance,
+  parent := parent,
+  request := Heavy.CompilerForecast.forSession peak padding allowance parent,
+} by
+  intro peak padding allowance parent _
+  cases peak with
+  | none => simp [fren_spec, Heavy.CompilerForecast.forSession, Heavy.CompilerForecast.padded]
+  | some p =>
+    by_cases hp : 0 < p
+    · by_cases hz : 0 < padding
+      · by_cases hl : p + (padding : Int) ≤ 1125899906842624
+        · have hd : 0 < p + (padding : Int) := by omega
+          simp [fren_spec, Heavy.CompilerForecast.forSession, Heavy.CompilerForecast.padded,
+            hp, hz, hl, forecast_fit allowance parent _ hd, and_assoc]
+        · simp [fren_spec, Heavy.CompilerForecast.forSession, Heavy.CompilerForecast.padded, hp, hz, hl]
+      · simp [fren_spec, Heavy.CompilerForecast.forSession, Heavy.CompilerForecast.padded, hp, hz]
+    · simp [fren_spec, Heavy.CompilerForecast.forSession, Heavy.CompilerForecast.padded, hp]
+
 end Fren.Impls.HeavyOwnership

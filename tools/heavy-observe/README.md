@@ -111,14 +111,14 @@ fork through wait4, excluding fingerprinting, version probes and publishing.
 Measure caller wall time for total observer overhead.
 
 The registered Linux `heavyProcess` jobs build the standalone targets and run
-five disjoint harness selections as part of `lake test`: `publisher`,
-`forecast`, `entrypoint`, `cohort` and `core`. With the repository driver
-already built, run a selection with `scripts/heavy --offline lake env
+ten disjoint harness selections as part of `lake test`: `publisher`,
+`forecast`, `entrypoint`, `cohort`, `core`, `automatic`, `automaticEvidence`,
+`automaticStore`, `automaticIO` and `automaticOwnership`. With the repository
+driver already built, run a selection with `scripts/heavy --offline lake env
 .lake/build/bin/fren_test --job heavyProcess publisher` (substitute another
-selection). The manual `--job heavyProcess` runs all five in one job, and
-`--job heavyProcess controls` runs publisher, forecast, entrypoint and cohort
-plus the pre-scratch core controls. The normal `core` selection and the
-no-argument aggregate also retain the later changed-source assertions, warm
+selection). The manual `--job heavyProcess` runs all ten in one job, and
+`--job heavyProcess controls` runs them with only the pre-scratch core controls.
+The normal `core` selection and the no-argument aggregate also retain the later changed-source assertions, warm
 pairs and concurrent discovery checks. Neither manual aggregate is a
 30-second registered job. Other platforms skip these Linux-only controls. The
 standalone recipe above remains independent of Fren.
@@ -404,15 +404,16 @@ missing tools automatically.
 
 Each invocation prints and retains a new private temporary directory containing
 the overlay, session and records under `state`. Remove it when no longer
-needed. By default it also contains an empty request manifest, so all compiler
-requests use the explicit unknown fallback. Set `FREN_BUILD_REQUESTS_FILE` to
+needed. By default it also contains an empty request manifest. Compiler
+requests use a padded matching observation estimate when available, otherwise
+the explicit unknown fallback. Set `FREN_BUILD_REQUESTS_FILE` to
 an absolute readable regular file to pass an existing manifest to the same
 gate and selection rules described above; invalid paths fail before compilation.
 The precheck opens nonblocking and checks the opened file; the controller reads
 the path again, so the name is not a stable file identity. Keep the file
 available for the invocation. Requests are explicit operator
-configuration; historical adviser output is not automatically adopted. Defaults
-are 1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
+configuration and matching entries take precedence over automatic estimates.
+Defaults are 1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
 30,000 ms wait. For ordinary Heavy dispatch the allowance is at most the smaller
 of Heavy's launch-time memory cap and visible cgroup-v2 ancestor `memory.max`
 limits, minus 100,000 KiB for the outer monitor, and never above 1,300,000 KiB.
@@ -465,8 +466,8 @@ reconcile local package directories. A cached target may perform no compilation.
 No machine-wide admission, forecast, installation or cap configuration is
 changed. The optional per-process compiler CPU limit below is not mandatory module
 coverage. This integration does not add automatic or universal module wall limits, test
-budgets, physical RAM guarantees, aggregate CPU limits, automatic request
-prediction or a total-throughput claim. Python caller/IO
+budgets, physical RAM guarantees, aggregate CPU limits or a total-throughput
+claim. Python caller/IO
 selection and cgroup discovery are finite integration checks, outside the pure
 Lean requirements and their existing implementation bindings. If tools are
 missing, build the standalone targets using the documented recipe first; the caller must ensure those prebuilt binaries match this source.
@@ -528,7 +529,8 @@ RAM bound. The exported five-column `cohort-v1` row also binds the ordered raw s
 cwd, source fingerprint, compiler path and fingerprint, version, githash,
 ordered argv, nullable setup path and fingerprint, and boot ID. The observer
 recomputes that bounded identity before admission; unavailable or unequal
-identity uses the positive fallback and records `explicit-unknown-fallback`.
+identity leaves that row unselected. Ordinary sessions can then use matching
+automatic advice, otherwise the positive `explicit-unknown-fallback`.
 A match records `explicit-cohort-request`. The older three-column row remains
 an explicit source-only request (`explicit-source-request`); it does not check
 the cohort. These partial noncryptographic observations do not bind imports,
@@ -538,9 +540,9 @@ This statistical advice does not change complete-input provenance:
 `identity_complete` remains false. Imports, environment, plugins and
 libraries remain outside the partial noncryptographic identity. The peak
 is neither concurrent physical RAM nor a guaranteed future bound. Raw capture
-is automatic for eligible budgeted compiler results. There is no automatic
-advice selection, gate injection, headroom or fallback policy.
-Callers choose padding and provide a positive fallback.
+is automatic for eligible budgeted compiler results. Ordinary sessions now
+consume its bounded snapshot as described below. Callers still control positive
+padding and fallback; neither establishes a physical memory guarantee.
 
 The existing standalone integration harness runs `forecast_test.py` with
 one tiny actual observed compilation and bounded raw JSON mutations through
@@ -617,5 +619,63 @@ The implementation trusts the owning user's processes and filesystem;
 these records are not authenticated against deliberate same-user tampering.
 The partial cohort does not bind imports, environment or other reader inputs.
 
-This is storage only: ordinary builds still use their explicit request manifest
-or positive unknown fallback. No automatic selection from the spool is enabled.
+Ordinary `scripts/heavy lake build ...` sessions snapshot this store once at
+setup. A busy lock, unavailable/corrupt store, more than 257 entries (including
+the lock), more than 256 records, a record above 64 KiB or raw total above
+16 MiB yields no snapshot. Discovery checks file ownership/mode, regular files,
+SHA-256 names and pinned directory identity with no symlink traversal. It
+never waits for the store lock or modifies the store. Snapshot reads and JSON
+parsing are input bounded; kernel IO delays are not a hard elapsed-time bound.
+
+Each compiler applies the shared Lean decoder and `Heavy.CompilerForecast`
+selection to its actual gate context and boot, with a seven-day cutoff, newest
+two samples and a two-sample minimum. Known advice adds positive
+`FREN_BUILD_PADDING_KIB` (default 100000 KiB), using the same bounded additive
+policy as the manifest exporter. Padding is an operator policy, not calibration
+or a guarantee that a future compiler fits. Invalid automatic padding leaves
+the estimate unknown. Advice that cannot fit alone within the session's
+allowance after parent headroom also leaves the positive fallback selected;
+this does not make the fallback a bound on observed or future memory. This
+uses the existing compile-budget decision, without weakening the real gate.
+A matching valid explicit manifest entry wins; malformed explicit manifests
+and intrinsically oversized explicit requests fail as before. Unknown, insufficient,
+stale, mismatched, incomplete or corrupt evidence retains the existing positive
+fallback. Snapshotting once means compiles earlier in the same session are
+available to a later session, not immediately to their siblings.
+
+After optional selection the gate rechecks source, compiler, setup, cwd,
+canonical source and boot before requesting admission. Mutation during admission
+or before exec remains possible, as do changes to imports/environment outside
+this partial identity. The receipt records `automatic-cohort-estimate`,
+`automatic_sample_count`, `requested_reservation_kib` and the real admission
+fields. No new advisory subprocess or estimator is involved. The standalone
+observer links the pinned installation's shared Lean runtime to keep the
+JSON-enabled executable inside the existing 64 MiB overlay bound. Installed
+runtime assets must remain immutable; compiler/store bounds are unchanged.
+
+`heavyProcess automatic`, `heavyProcess automaticEvidence` and
+`heavyProcess automaticStore` are separate ordinary-build/raw-evidence/store
+controls, each with the existing 30-second target. They retain positive charged
+admission, manifest precedence/no-launch, artifact/status, raw mismatch and
+bounded optional-store controls.
+
+Optional setup errors include snapshot/helper failures, history and padding
+output failures and cleanup failures. The entrypoint retains the command and
+mandatory budget session, using a private `HEAVY_AUTOMATIC_PADDING_KIB=0`
+override on any such error. Normal setup clears that private override and uses
+the regular padding file. The native numerical policy still decides whether
+the value yields a request; no Python eligibility/estimation policy is added.
+Leftover valid-looking metadata after a cleanup failure cannot enable advice.
+
+The five automatic partitions each start in a fresh empty fixture tree and
+create their own `test-work` parent. They retain all earlier assertions and the
+30-second target. `automaticIO` uses a scripted compiler fixture with the actual
+observer/session to check optional ENOSPC/import/cleanup faults, physical exit
+and streams, explicit precedence and required failures; these are not new real
+Lean performance measurements. `automaticOwnership` uses harmless owned sleepers
+to check timeout after readiness and repeated cancellation during cleanup.
+The harness reuses `scripts/heavy_build_test.py`'s nonce/pidfd/subreaper runner,
+with file-backed streams and TERM-before-KILL cleanup. Nested runners preserve
+ancestor markers; signals never abort cleanup, and unestablished ownership is
+reported as a failed/unknown cleanup, not silently treated as success. The pure
+sample/request/controller impl proofs do not prove these Python IO boundaries.

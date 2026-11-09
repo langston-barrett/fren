@@ -45,16 +45,97 @@ class OwnedRun:
         self.token = os.urandom(24).hex()
         self.handles = {}
         self.errors = []
+        self.cancelled = None
+        self.initial_children = None
+        self.reaped = []
+        self.root_wait = None
+        self.root_wait_error = None
+        self.root_wait_errno = None
+
+    def poll_root(self, root):
+        """Observe only our exact child; Popen's ECHILD-to-zero is not status."""
+        if self.root_wait is not None or self.root_wait_error is not None:
+            return True
+        try:
+            pid, raw = os.waitpid(root.pid, os.WNOHANG)
+            if pid == 0:
+                return False
+            if pid != root.pid or not (os.WIFEXITED(raw) or os.WIFSIGNALED(raw)):
+                raise RuntimeError(f'unexpected exact-child wait: {pid}, {raw}')
+            status = os.waitstatus_to_exitcode(raw)
+            self.root_wait = {'pid': pid, 'raw_wait_status': raw, 'status': status}
+            root.returncode = status
+        except InterruptedError:
+            return False
+        except (OSError, RuntimeError) as error:
+            self.root_wait_errno = getattr(error, 'errno', None)
+            self.root_wait_error = f'root wait unavailable: {error!r}'
+            self.errors.append(self.root_wait_error)
+            # Prevent Popen's destructor from polling a lost/reused PID. This
+            # is bookkeeping failure, never a physical status observation.
+            root.returncode = 125
+        return True
+
+    def kernel_children(self):
+        """Independent direct-child census, including exits with no environ.
+
+        This establishes presence, not run ownership. A changed/unreadable
+        census cannot certify absence. Never wait or signal from this list.
+        """
+        rows, errors = {}, []
+        tasks = Path('/proc/self/task')
+        try:
+            before = {p.name for p in tasks.iterdir()}
+            pids = set()
+            for tid in before:
+                try:
+                    pids.update(map(int, (tasks / tid / 'children').read_text().split()))
+                except FileNotFoundError:
+                    errors.append(f'kernel task {tid} census unavailable')
+            if before != {p.name for p in tasks.iterdir()}:
+                errors.append('kernel task census changed')
+            for pid in pids:
+                try:
+                    row = self.heavy.process_stat(Path(f'/proc/{pid}/stat').read_text())
+                    if row['ppid'] == os.getpid():
+                        rows[(row['pid'], row['start'])] = row
+                except (FileNotFoundError, ProcessLookupError):
+                    pass  # Already reaped; it no longer requires cleanup.
+                except (OSError, ValueError) as error:
+                    errors.append(f'kernel child {pid}: {error}')
+        except (OSError, ValueError) as error:
+            errors.append(f'kernel child census: {error}')
+        return rows, errors
+
+    def reap_owned(self, root):
+        # A numeric PID may be reused after an earlier reap. P_PIDFD waits
+        # only for that pinned process; ECHILD means not currently our child.
+        for key, fd in self.handles.items():
+            if root is not None and key[0] == root.pid:
+                continue  # poll_root alone observes/reaps the command root.
+            try:
+                result = os.waitid(os.P_PIDFD, fd, os.WEXITED | os.WNOHANG)
+                if result is not None:
+                    self.reaped.append({'pid': result.si_pid, 'start': key[1],
+                                        'code': result.si_code, 'status': result.si_status})
+            except ChildProcessError:
+                pass
+            except (OSError, AttributeError) as error:
+                message = f'owned pidfd wait: {error}'
+                if message not in self.errors:
+                    self.errors.append(message)
 
     def collect(self):
         marker = ('HEAVY_TEST_OWNER=' + self.token).encode()
+        inherited = ('HEAVY_TEST_OWNED_' + self.token + '=1').encode()
         rows = {}
         for name in os.listdir('/proc'):
             if not name.isdigit():
                 continue
             try:
                 path = Path('/proc') / name
-                if marker not in (path / 'environ').read_bytes().split(b'\0'):
+                environment = (path / 'environ').read_bytes().split(b'\0')
+                if marker not in environment and inherited not in environment:
                     continue
                 row = self.heavy.process_stat((path / 'stat').read_text())
                 key = row['pid'], row['start']
@@ -95,7 +176,7 @@ class OwnedRun:
         signal.pidfd_send_signal(self.handles[keys[0]], sig)
 
     def execute(self, argv, *, cwd, env, ready=None, action=None, timeout=20,
-                ready_timeout=15, grace=8):
+                ready_timeout=15, grace=8, input_data=b'input \xce\xbb\n'):
         start = time.monotonic()
         row = {'case': self.label, 'argv': list(map(str, argv)), 'status': None,
                'physical_status': None, 'failure': None, 'cleanup': {}}
@@ -107,26 +188,44 @@ class OwnedRun:
         with self.heavy.child_subreaper() as subreaper, \
              outpath.open('wb') as stdout, errpath.open('wb') as stderr, \
              tempfile.TemporaryFile() as stdin:
-            stdin.write('input λ\n'.encode()); stdin.seek(0)
+            stdin.write(input_data); stdin.seek(0)
             try:
                 assert subreaper, "fixture subreaper unavailable"
+                initial, census_errors = self.kernel_children()
+                if census_errors:
+                    raise RuntimeError('; '.join(census_errors))
+                self.initial_children = set(initial)
+                if self.cancelled is not None:
+                    raise InterruptedError('owned runner cancelled before launch')
+                child_env = dict(env, HEAVY_TEST_OWNER=self.token)
+                # Retain ancestor ownership through nested runners even when
+                # their private HEAVY_TEST_OWNER changes.
+                child_env['HEAVY_TEST_OWNED_' + self.token] = '1'
                 p = subprocess.Popen(list(map(str, argv)), cwd=cwd,
-                    env=dict(env, HEAVY_TEST_OWNER=self.token), stdin=stdin,
+                    env=child_env, stdin=stdin,
                     stdout=stdout, stderr=stderr, start_new_session=True)
                 self.collect()
                 if ready is not None:
                     deadline = time.monotonic() + ready_timeout
-                    while not ready.exists() and p.poll() is None and time.monotonic() < deadline:
+                    while not ready.exists() and not self.poll_root(p) and time.monotonic() < deadline:
+                        if self.cancelled is not None:
+                            raise InterruptedError('owned runner cancelled during readiness')
                         self.collect(); time.sleep(.02)
                     if not ready.exists():
                         raise RuntimeError('readiness failure')
                     if action is not None:
                         action(self, p, json.loads(ready.read_text()))
                 deadline = time.monotonic() + timeout
-                while p.poll() is None and time.monotonic() < deadline:
+                while not self.poll_root(p) and time.monotonic() < deadline:
+                    if self.cancelled is not None:
+                        raise InterruptedError('owned runner cancelled')
                     self.collect(); time.sleep(.02)
-                if p.poll() is None:
+                if self.cancelled is not None:
+                    raise InterruptedError('owned runner cancelled')
+                if not self.poll_root(p):
                     raise TimeoutError('wrapper timeout')
+                if self.root_wait_error is not None:
+                    raise RuntimeError(self.root_wait_error)
                 survivors = [r for r in self.collect().values() if r['state'] not in ('Z', 'X')]
                 row['survivors_before_harness_cleanup'] = survivors
                 if survivors:
@@ -149,31 +248,45 @@ class OwnedRun:
                             except OSError as error:
                                 self.errors.append(str(error))
                         if p is not None:
-                            p.poll()
-                        for key in self.handles:
-                            if p is not None and key[0] == p.pid:
-                                continue
-                            try:
-                                os.waitpid(key[0], os.WNOHANG)
-                            except ChildProcessError:
-                                pass
+                            self.poll_root(p)
+                        self.reap_owned(p)
                         live = list(self.collect().values())
-                        if not live and (p is None or p.returncode is not None):
+                        if not live and (p is None or self.poll_root(p)):
                             break
                         if time.monotonic() >= deadline:
                             break
                         time.sleep(.02)
-                    if not live and (p is None or p.returncode is not None):
+                    if not live and (p is None or self.poll_root(p)):
                         break
-                row.update(status=None if p is None else p.returncode,
-                           physical_status=None if p is None else p.returncode,
-                           physical_status_known=p is not None and p.returncode is not None,
+                physical = None if self.root_wait is None else self.root_wait['status']
+                row.update(status=physical, physical_status=physical,
+                           physical_status_known=self.root_wait is not None,
+                           root_wait_observation=self.root_wait,
+                           root_wait_error=self.root_wait_error,
+                           root_wait_errno=self.root_wait_errno,
+                           root_pid=None if p is None else p.pid,
                            wrapper_wall_seconds=time.monotonic() - start,
                            stdout=str(outpath), stderr=str(errpath))
-                row['cleanup'] = {'outcome': 'complete' if not live and (p is None or p.returncode is not None) else 'failed',
+                # The environment census cannot see an already-exited orphan.
+                # Check kernel children AFTER root wait/reaping and the final
+                # owned census. Preexisting children belong to other callers;
+                # new unattributed children are unknown, never ours by default.
+                children, census_errors = self.kernel_children()
+                baseline = self.initial_children or set()
+                unknown = [r for key, r in children.items()
+                           if key not in baseline and key not in self.handles]
+                if self.initial_children is None:
+                    census_errors.append('initial kernel census unavailable')
+                tracked_done = not live and (p is None or self.poll_root(p))
+                outcome = ('failed' if not tracked_done else 'unknown'
+                           if unknown or census_errors or self.errors else 'complete')
+                row['cleanup'] = {'outcome': outcome,
                                   'seconds': time.monotonic() - cleanup_start,
-                                  'remaining': live, 'errors': self.errors}
-                row['product_success'] = row['failure'] is None and row['physical_status'] == 0 and row['cleanup']['outcome'] == 'complete'
+                                  'remaining': live, 'unattributed_children': unknown,
+                                  'census_errors': census_errors,
+                                  'preexisting_children': [list(k) for k in sorted(baseline)],
+                                  'reaped_owned': self.reaped, 'errors': self.errors}
+                row['product_success'] = row['failure'] is None and row['physical_status_known'] and row['physical_status'] == 0 and row['cleanup']['outcome'] == 'complete'
                 for fd in self.handles.values():
                     os.close(fd)
                 self.handles.clear()
@@ -258,7 +371,7 @@ def review_fixes(work, family_only=False):
         # this validates routing without recompiling unchanged Lean for a new SHA.
         row,stdout,stderr=run('existing-target-route',[HEAVY,'--offline',native,'-d',str(tools),
             'build','--dir',str(ROOT),'+Heavy.Process:olean','--no-build','--offline','--no-cache'])
-        assert row['status']==0 and not row['failure'],(row,stdout,stderr)
+        assert row['product_success'],(row,stdout,stderr)
 
     fake=work/'bin';fake.mkdir();(fake/'lean').symlink_to(real)
     lake=fake/'lake'

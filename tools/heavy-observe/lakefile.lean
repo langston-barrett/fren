@@ -9,6 +9,8 @@ lean_lib Heavy where
 
 lean_lib BudgetAdapter
 
+lean_lib CompilerRecords
+
 target observer.o pkg : FilePath := do
   let src ← inputTextFile (pkg.dir / "observer.c")
   let gate ← inputTextFile (pkg.dir / "budget.c")
@@ -19,8 +21,15 @@ target observer.o pkg : FilePath := do
 extern_lib observer pkg := do
   buildStaticLib (pkg.staticLibDir / nameToStaticLib "observer") #[← observer.o.fetch]
 
+-- Use the pinned installation's runtime, as its lean executable does. This
+-- avoids copying Lean's JSON/macro runtime into each private compiler overlay.
+-- Installed toolchain assets must remain immutable, as for the overlay itself.
+target leanRuntime _pkg : FilePath := do
+  return Job.pure (← getLeanSharedLib)
+
 @[default_target] lean_exe heavy_observe where
   root := `Main
+  moreLinkObjs := #[leanRuntime]
 
 lean_exe process_tests where
   root := `ProcessTests

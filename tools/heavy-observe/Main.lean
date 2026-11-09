@@ -1,4 +1,5 @@
 import BudgetAdapter
+import CompilerRecords
 import Heavy.Process
 
 /-! Standalone Linux Lean compiler observer. No Fren, solver or Lake imports.
@@ -26,7 +27,7 @@ opaque observeBudget (exe : @& String) (args : @& Array String) (dir : @& String
     (demand cpuLimit wallLimit : UInt64) (decide : @& (Array String → Array UInt64))
     (control : @& (Array UInt64 → Array UInt64)) : IO (Array UInt64)
 
--- JSON output needs no elaborator/Lean JSON dependency.
+-- Record output retains its compact serializer.
 def quoted (s : String) : String := Id.run do
   let mut out := "\""
   for c in s.toList do
@@ -108,6 +109,34 @@ def publishOptional (publisher record : String) : IO Unit := do
     if result != 0 then warn s!"optional publication failed (status {result})"
   catch e => warn s!"optional publication failed: {e}"
 
+/-- Optional bounded session snapshot, decoded by the same raw reader as the
+adviser. Any malformed row makes the snapshot unknown. No recapture/query of
+an unrelated compiler and no precomputed eligibility verdict. -/
+def automaticPeak (root : FilePath) (context : Heavy.CompilerForecast.Context)
+    (boot : String) (allowance parent : Int) : IO (Option Int × Nat) := do
+  try
+    let some bytes ← readRegular (root / "compiler-history.json").toString
+        (fun mode size => decide (mode / 4096 % 16 = 8 ∧ size ≤ 16777473))
+      | return (none, 0)
+    let some text := String.fromUTF8? bytes | return (none, 0)
+    let rows ← IO.ofExcept (Lean.Json.parse text >>= Lean.Json.getArr?)
+    if rows.size > 256 then return (none, 0)
+    let records ← IO.ofExcept (rows.toList.mapM CompilerAdvice.decode)
+    let now ← IO.monoNanosNow
+    let (peak, samples) := Heavy.CompilerForecast.advice records context boot
+      (now - 604800000000000) now 2 2
+    let paddingText ← match (← IO.getEnv "HEAVY_AUTOMATIC_PADDING_KIB") with
+      | some text => pure (some text)
+      | none => do
+        let bytes ← readRegular (root / "compiler-padding").toString
+          (fun mode size => decide (mode / 4096 % 16 = 8 ∧ size ≤ 32))
+        pure (bytes.bind String.fromUTF8?)
+    let some paddingText := paddingText | return (none, samples)
+    if paddingText.utf8ByteSize > 32 then return (none, samples)
+    let some padding := paddingText.toNat? | return (none, samples)
+    return (Heavy.CompilerForecast.forSession peak padding allowance parent, samples)
+  catch _ => return (none, 0)
+
 def run (args : List String) : IO UInt32 := do
   let self ← IO.FS.realPath (← IO.appPath)
   let root := self.parent.getD "." |>.parent.getD "."
@@ -160,14 +189,17 @@ def run (args : List String) : IO UInt32 := do
     | throw (IO.userError "invalid compiler wall limit or missing budget session")
   let mut requestDemand := 0
   let mut provenance := ""
+  let mut adviceSamples := 0
   let raw ← if gated then do
     let dir := FilePath.mk gateDir.get!
     let some configBytes ← readRegular (dir / "config").toString fingerprintAllowed
       | throw (IO.userError "unreadable budget config")
     let some config := String.fromUTF8? configBytes | throw (IO.userError "invalid budget config")
-    let [_, _, fallback, _] := BudgetAdapter.words config.trimAscii.copy
+    let [allowance, parent, fallback, _] := BudgetAdapter.words config.trimAscii.copy
       | throw (IO.userError "malformed budget config")
     let some fallback := fallback.toNat? | throw (IO.userError "malformed fallback")
+    let some allowance := allowance.toInt? | throw (IO.userError "malformed allowance")
+    let some parent := parent.toInt? | throw (IO.userError "malformed parent headroom")
     let some bytes ← readRegular (dir / "requests").toString fingerprintAllowed
       | throw (IO.userError "unreadable request manifest")
     let some manifest := String.fromUTF8? bytes | throw (IO.userError "invalid request manifest")
@@ -176,7 +208,7 @@ def run (args : List String) : IO UInt32 := do
     let canonical ← try source.mapM fun s => do pure (← IO.FS.realPath s).toString
       catch _ => pure none
     let (requestSource, requestFingerprint) := Heavy.Budget.sourceIdentity canonical (sourceBefore.bind id)
-    let cohort := do
+    let context := do
       let source ← source
       let sourceFingerprint ← sourceBefore.bind id
       let compilerFingerprint ← compilerFingerprint
@@ -192,12 +224,37 @@ def run (args : List String) : IO UInt32 := do
         compiler := real.toString, compilerFingerprint := compilerFingerprint
         version := version, githash := githash, args := args
         setup := setup, setupFingerprint := setupFingerprint }
-      if Heavy.CompilerForecast.validContext c then Heavy.CompilerForecast.cohortIdentity c boot else none
+      if Heavy.CompilerForecast.validContext c then some (c, boot) else none
+    let cohort := context.bind fun (c, boot) => Heavy.CompilerForecast.cohortIdentity c boot
     let some (demand, origin) := BudgetAdapter.request manifest requestSource requestFingerprint fallback cohort
       | throw (IO.userError "invalid request demand")
     requestDemand := demand
     provenance := origin
-    observeBudget real.toString args.toArray dir.toString demand.toUInt64 cpuLimit.toUInt64 wallLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
+    try
+      if origin == "explicit-unknown-fallback" then
+        if let some (c, currentBoot) := context then
+          if cohort.isSome then
+            let (estimate, samples) ← automaticPeak root c currentBoot allowance parent
+            adviceSamples := samples
+            if let some estimate := estimate then
+              -- Revalidate the partial input after optional history IO, directly
+              -- before admission. Mutation during admission/exec is still outside
+              -- this snapshot contract, as are imports/environment closure.
+              let sourceNow ← fingerprint c.source
+              let compilerNow ← fingerprint c.compiler
+              let setupNow ← c.setup.mapM fingerprint
+              let cwdNow ← IO.currentDir
+              let bootNow ← try pure (← IO.FS.readFile "/proc/sys/kernel/random/boot_id").trimAscii.copy
+                catch _ => pure ""
+              let canonicalNow ← try pure (some (← IO.FS.realPath c.source).toString)
+                catch _ => pure none
+              if sourceNow == some c.sourceFingerprint && compilerNow == some c.compilerFingerprint &&
+                  setupNow.bind id == c.setupFingerprint && cwdNow == cwd && bootNow == currentBoot &&
+                  canonicalNow == canonical then
+                requestDemand := estimate.toNat
+                provenance := "automatic-cohort-estimate"
+    catch _ => pure () -- Optional IO failure leaves the positive fallback.
+    observeBudget real.toString args.toArray dir.toString requestDemand.toUInt64 cpuLimit.toUInt64 wallLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
     else observe real.toString args.toArray
   if raw.size != (if gated then 25 else 18) then throw (IO.userError "invalid FFI observation length")
   let v := fun i => raw[i]!.toNat
@@ -224,6 +281,7 @@ def run (args : List String) : IO UInt32 := do
       ("reservation_ticket", toString (v 20)), ("held_before_kib", toString (v 21)),
       ("allowance_kib", toString (v 22)), ("parent_headroom_kib", toString (v 23)),
       ("requested_reservation_kib", toString requestDemand), ("request_provenance", quoted provenance),
+      ("automatic_sample_count", toString adviceSamples),
       ("child_present", toString childPresent),
       ("wrapper_code", if v 15 == 1 || v 17 != 0 then "null"
         else toString (if gateError != 0 then 125 else outcome.shellCode))] else []

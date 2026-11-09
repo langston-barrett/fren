@@ -1898,10 +1898,10 @@ still reports `identity_complete = false`: imported artifacts, environment,
 plugins, libraries and arbitrary reader inputs are not closed over. These
 partial noncryptographic cohorts support statistical advice only, never
 cached semantic evidence, stale-safe admission or a future RAM bound.
-Wait4 peak RSS is not a sum or concurrent physical RAM measurement. This
-slice adds no automatic headroom or fallback policy: callers choose padding
-and fallback explicitly, and UNKNOWN stays UNKNOWN. Controller defaults and
-installed programs are unchanged.
+Wait4 peak RSS is not a sum or concurrent physical RAM measurement. The
+padded maximum remains advice; the caller's positive unknown fallback and the
+existing session/backstop accounting still apply. Installed programs
+are unchanged by source changes.
 
 ```fren
 pub struct CompilerContext {
@@ -1948,6 +1948,47 @@ pub proc heavy_compiler_sample(
 #fren_check heavy_compiler_sample
 ```
 
+The ordinary compiler gate can use that same selected maximum with positive
+additive padding. `heavy_compiler_padding` binds the actual numerical boundary:
+unknown or nonpositive peaks, zero padding and sums above 2^50 KiB stay unknown.
+A padded observation is statistical advice, never a physical memory guarantee.
+The gate validates the entire explicit manifest first; a matching valid entry
+wins. Only its unknown fallback may be replaced by a known padded estimate.
+
+```fren
+pub proc heavy_compiler_padding(peak: Option<Int>, padding: Nat): (det request: Option<Int>) {
+    ensure padded: request = match peak {
+        Option::None => Option::None,
+        Option::Some(p) => if p > 0 and padding > 0 and p + padding <= 1125899906842624
+            then Option::Some(p + padding) else Option::None,
+    }
+}
+
+#fren_check heavy_compiler_padding
+```
+
+Automatic advice must also fit alone within this session's allowance after
+parent headroom. `heavy_compiler_request` binds that raw numerical boundary;
+the producer reuses the existing compile-budget decision with no held rows.
+An unusable estimate leaves the operator's fallback selected. This does not
+assert that the fallback covers an observed or future peak. Explicit manifest
+requests retain the gate's existing oversized-request failure.
+
+```fren
+pub proc heavy_compiler_request(peak: Option<Int>, padding: Nat, allowance: Int, parent: Int): (
+    det request: Option<Int>,
+) {
+    ensure usable: request = match peak {
+        Option::None => Option::None,
+        Option::Some(p) => if p > 0 and padding > 0 and p + padding <= 1125899906842624
+            and 0 <= parent <= allowance and p + padding <= allowance - parent
+            then Option::Some(p + padding) else Option::None,
+    }
+}
+
+#fren_check heavy_compiler_request
+```
+
 Successful budgeted compiler observations may also be retained in an owned
 private spool. The real observer applies `heavy_compiler_sample` and the
 supported cohort identity to its raw result before publication. The optional
@@ -1960,7 +2001,66 @@ cancellation; uninterruptible kernel operations can delay cleanup. A failed
 write reports a warning without replacing the physical compiler status. The private per-build record remains the receipt.
 These filesystem and process properties are exercised at the IO boundary, not
 proved by `heavy_compiler_sample`; ownership and stable directory identities
-are OS assumptions. The spool is not yet an input to request selection.
+are OS assumptions.
+
+Ordinary budget-session setup takes one read-only snapshot of this store,
+without waiting for its lock. Discovery reads at most 257 entries (256 raw
+records and the lock), at most 64 KiB per record and 16 MiB of raw bytes.
+Unavailable, busy, corrupt, oversize or replaced stores provide no snapshot.
+The native gate uses the shared raw JSON decoder and the existing advice
+function against its own actual context, current boot and seven-day cutoff,
+requiring two successful matching samples. Only a known positive maximum
+plus positive `FREN_BUILD_PADDING_KIB` (default 100000 KiB) may replace the
+positive fallback. Invalid automatic padding makes the estimate unknown.
+Explicit matching manifests retain precedence, and a malformed explicit
+manifest still fails without launching the command.
+
+Before admitting an automatic request the gate rechecks source, compiler,
+setup, cwd, canonical source and boot after reading the snapshot. Revalidation
+is a partial snapshot before admission, not a claim that inputs cannot change
+while waiting or before exec; it does not include transitive imports or the
+environment. Filesystem operations may still be delayed by the kernel. There
+is no new advisory subprocess, global scheduler or hard runtime/RAM bound.
+Private compiler receipts record `automatic-cohort-estimate`, selected sample
+count and the actual charged reservation/admission fields. Unknown or failed
+optional selection leaves `explicit-unknown-fallback` and the compiler's
+physical outcome, streams and existing cancellation/cleanup path intact.
+
+Optional snapshot and padding output, helper import and cleanup are one IO
+boundary. Failure makes advice unavailable even when cleanup cannot remove
+written files: the entrypoint supplies a private numeric zero padding override,
+which the native padding/request primitives reject as unknown. Required overlay
+and budget-session setup, and explicit manifest validation, remain mandatory.
+The sample/request and native lifecycle impl proofs do not prove these Python
+filesystem exceptions, fixture initialization or harness cleanup. Focused IO
+controls inject optional ENOSPC and cleanup errors at the actual entrypoint,
+then inspect the real session, fallback observation and physical fixture status.
+
+Every registered automatic partition creates its fixture parent in its own
+empty tree. Its harness uses the existing nonce/pidfd/subreaper ownership
+runner, requests TERM before KILL, waits within bounded cleanup intervals and
+retains unsuccessful cleanup as unknown rather than signalling unverified
+processes. Ancestor markers preserve ownership through nested harnesses and
+separate sessions. Cancellation signals are recorded while cleanup continues;
+a repeated signal does not interrupt cleanup. An independent kernel-child
+census includes adopted exits whose ownership environment is unreadable. A
+new child without established ownership makes cleanup unknown; the runner
+does not wait for or signal it. Pinned owned descendants are reaped by pidfd.
+The command leader's physical status requires an actual exact-child wait
+observation, retained with its raw status. Popen's non-null returncode is not
+evidence: it may substitute zero after ECHILD. The runner leaves the caller's
+SIGCHLD disposition and flags untouched; ignored SIGCHLD, SA_NOCLDWAIT or
+another reaper can discard status. An unavailable root status remains unknown
+with an error, even when the final child census is empty. Actual IO controls
+cover ordinary exit 7, ignored SIGCHLD, the native no-child-wait flag and
+preservation of the caller's signal state. The native controller's raw
+sigaction/lifecycle binding does not prove this Python wait observation.
+The exited-orphan regression independently checks the kernel child, preserves
+the command's status and streams, and reaps only its exact fixture child.
+Foreign live and exited baseline children remain untouched by the runner.
+These are tested OS/Python IO claims, not consequences of the pure native
+controller lifecycle theorem.
+Kernel delays or a killed harness can still prevent a cleanup guarantee.
 
 The opt-in `scripts/heavy-lean-build` entrypoint prepares a new owned overlay
 using the selected real compiler and the existing helper, then replaces itself
