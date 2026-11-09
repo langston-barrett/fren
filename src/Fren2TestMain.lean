@@ -20,6 +20,25 @@ import FrenCli2Tests
 
 fren_test_runners textRunners
 
+/-- Run the public fren2_check library pipeline on every annotated source file.
+Empty directories, malformed annotations and missing verdicts fail the job. -/
+private def runVerdictCorpus : IO Unit := do
+  let directory := (← FrenOirToSmt.sourceRoot) / "test/fren2-verdicts"
+  let files := (← directory.readDir).filter (fun e => e.path.extension == some "fren")
+  FrenOirToSmtTests.require (!files.isEmpty) "empty known-verdict corpus"
+  for entry in files do
+    let text ← IO.FS.readFile entry.path
+    let annotation := (text.splitOn "\n").head!
+    let ["--", "verdict:", expected, "exit:", code] := annotation.splitOn " "
+      | throw (IO.userError s!"{entry.path}: malformed verdict annotation")
+    let some code := code.toNat? | throw (IO.userError s!"{entry.path}: malformed exit annotation")
+    let result ← FrenCli2.checkFile entry.path
+    FrenOirToSmtTests.evidence ("corpus-" ++ entry.fileName) (FrenCli2.resultJson entry.path.toString {} result)
+    FrenOirToSmtTests.require (FrenCli2.verdictName result.report.verdict == expected &&
+      (FrenCli2.exitCode result.report.verdict).toNat == code)
+      s!"{entry.path}: expected {expected}/{code}, got {FrenCli2.verdictName result.report.verdict}/{FrenCli2.exitCode result.report.verdict}"
+  IO.println s!"verdict-corpus: {files.size} annotated programs through fren2_check pipeline"
+
 private def runJob (args : List String) : IO UInt32 := do
   if args == ["--job", "resolver"] then
     FrenAstToHirTests.runCases
@@ -42,6 +61,12 @@ private def runJob (args : List String) : IO UInt32 := do
     return 0
   if args == ["--job", "typingProperties"] then
     FrenHirToThirTests.runProperties
+    return 0
+  if args == ["--job", "verdictCorpus"] then
+    runVerdictCorpus
+    return 0
+  if args == ["--job", "definednessControls"] then
+    FrenOirToSmtTests.runDefinednessControls
     return 0
   if args == ["--job", "smt"] then
     FrenOirToSmtTests.runCases
@@ -153,7 +178,8 @@ public def main (args : List String) : IO UInt32 := do
       ["--job", "mir"], ["--job", "mirProperties"],
       ["--job", "lir"], ["--job", "lirProperties"],
       ["--job", "oir"], ["--job", "oirControls"], ["--job", "oirProperties"],
-      ["--job", "smt"], ["--job", "smtControls"], ["--job", "smtProperties"]] do
+      ["--job", "smt"], ["--job", "smtControls"], ["--job", "smtProperties"],
+      ["--job", "definednessControls"], ["--job", "verdictCorpus"]] do
     let status ← bounded job
     if status != 0 then return status
   for name in ["run", "derive", "phase"] do

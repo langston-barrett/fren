@@ -1,0 +1,8 @@
+-- verdict: inconsistent exit: 2
+-- Seed: skeleton review probe inconsistent.fren
+mod example
+expect safe(n: Int) {
+  assume a: n > 0
+  assume b: n < 0
+  expect d: false
+}

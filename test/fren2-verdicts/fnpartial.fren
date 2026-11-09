@@ -1,0 +1,7 @@
+-- verdict: refuted exit: 1
+-- Seed: skeleton review probe fnpartial.fren
+mod example
+fn q(a: Int, b: Int): Int := a div b
+expect safe(n: Int) {
+  expect d: n = n
+}

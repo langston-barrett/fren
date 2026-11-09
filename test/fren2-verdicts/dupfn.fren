@@ -1,0 +1,8 @@
+-- verdict: inputFailure exit: 5
+-- Seed: skeleton review probe dupfn.fren
+mod example
+fn f(a: Int): Int := a
+fn f(a: Int): Int := a + 1
+expect s(a: Int) {
+  expect h: f(a) = a
+}

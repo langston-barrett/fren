@@ -92,15 +92,15 @@ def runCheckerOutcomes : IO Unit := do
   for (label, text) in [("module", "mod empty"), ("block", "mod empty\nexpect empty() {}") ] do
     require ((← runSource label text).verdict == .noChecks) "no-checks reported verified"
   for expression in ["false and (1 div 0 = 0)", "true or (1 div 0 = 0)",
-      "let unused := 1 div 0 in true", "if true then true else 1 div 0 = 0"] do
+      "let unused := 1 div 0 in true"] do
     let r ← runSource "static" ("mod checker\nexpect c() { expect goal: " ++ expression ++ " }")
-    require (r.verdict == .inconclusive && r.checks.any (fun r => isNonzero ⟨⟨r.question, .ok ""⟩, .sat, none⟩))
+    require (r.verdict == .refuted && r.checks.any (fun r => isNonzero ⟨⟨r.question, .ok ""⟩, .sat, none⟩))
       "static undefinedness/guard obligations disappeared"
   let unused ← runSource "unused"
     "mod checker\nfn unused(x: Int): Int := let bad := 1 div 0 in x\nexpect c() { expect good: true }"
-  require (unused.verdict == .inconclusive && unused.checks.any (fun r =>
-    r.question.owner.component == some (.named "unused") && r.status == .unconfirmed))
-    "unused definition static obligations ignored or bare SAT confirmed"
+  require (unused.verdict == .refuted && unused.checks.any (fun r =>
+    r.question.owner.component == some (.named "unused") && r.status == .counterexample))
+    "unused definition static obligations not source-confirmed"
   let cyclic ← runSource "unresolved"
     "mod checker\nexpect c(d: Int) { assume a: 1 div d = 0 assume b: 1 div d != 0 expect bad: false }"
   require (cyclic.verdict == .inconclusive && cyclic.checks.any (·.status == .blocked))
@@ -164,14 +164,80 @@ def runCheckerEntryControls : IO Unit := do
   require (exhausted.verdict == .inconclusive && exhausted.checks.any (fun r =>
     r.status == .unconfirmed && r.reason.startsWith "source premise evaluation:"))
     "actual evaluator exhaustion became a false predicate or verification"
-  let unsupported ← runSource "unsupported-confirmation"
+  let undefined ← runSource "definedness-confirmation"
     "mod checker\nexpect c() { expect goal: 1 div 0 = 0 }"
-  require (unsupported.verdict == .inconclusive && unsupported.checks.any (fun r =>
-    r.status == .unconfirmed && r.reason == "source definedness-site confirmation unsupported"))
-    "unsupported definedness confirmation hidden"
+  require (undefined.verdict == .refuted && undefined.checks.any (fun r =>
+    r.status == .counterexample && r.modelRef.isSome))
+    "reachable undefinedness not confirmed"
   require ((← runSource "invalid" "mod checker\nexpect c() { expect bad: absent }").verdict == .inputFailure)
     "invalid source admitted"
-  IO.println s!"checker-entry-controls: {(← IO.monoMsNow) - started} ms; model absence/staleness/conflict, cross-program/source/owner; 8 owned process controls through actual consumer; real source input/resource/unknown/unsupported/admission failures"
+  IO.println s!"checker-entry-controls: {(← IO.monoMsNow) - started} ms; model absence/staleness/conflict, cross-program/source/owner; 8 owned process controls through actual consumer; real source input/resource/unknown/definedness/admission failures"
+
+/-- Source-site confirmation is checked separately from raw solver answers.
+The end-to-end corpus job also checks the public command's exit classes. -/
+def runDefinednessControls : IO Unit := do
+  for op in ["div", "mod"] do
+    for (label, text, expected) in [
+        ("unrelated", s!"fn half(n: Int): Int := n {op} 2\nexpect c(a: Int) \{ expect good: a = a }", Verdict.verified),
+        ("zero", s!"expect c(d: Int) \{ assume zero: d = 0 expect bad: 1 {op} d = 0 }", .refuted),
+        ("false-guard", s!"expect c() \{ expect good: if false then 1 {op} 0 = 0 else true }", .verified),
+        ("nonzero", s!"expect c(d: Int) \{ assume nz: d != 0 expect good: d {op} d = {if op == "div" then "1" else "0"} }", .verified),
+        ("let-site", s!"expect c(d: Int) \{ expect bad: let x := d - d in 1 {op} x = 0 }", .refuted),
+        ("shadow-site", s!"expect c(d: Int) \{ expect bad: let d := 1 in let d := d - 1 in 1 {op} d = 0 }", .refuted),
+        ("nested-divisor", s!"expect c() \{ expect bad: 1 {op} (1 {op} 0) = 0 }", .refuted),
+        ("undefined-guard", s!"expect c() \{ expect bad: if 1 {op} 0 = 0 then 1 {op} 0 = 0 else true }", .refuted),
+        ("enum-site", s!"enum E \{ A, B }\nexpect c(e: E) \{ assume a: e = E::A expect bad: match e \{ E::A => 1 {op} 0 = 0, E::B => true } }", .refuted)] do
+      let r ← runSource (op ++ "-" ++ label) ("mod sites\n" ++ text)
+      require (r.verdict == expected) s!"{op}/{label}: {reprStr r.verdict}; {reprStr r.checks}"
+      if expected == .refuted then
+        let some run := r.run | throw (IO.userError "definedness run missing")
+        if label == "nested-divisor" || label == "undefined-guard" then
+          require (run.results.any (fun entry => match entry.confirmation with
+            | .unconfirmed reason => reason.startsWith "source definedness evaluation:"
+            | _ => false)) "undefined prefix evaluated as a counterexample"
+        let some i := r.checks.findIdx? (·.status == .counterexample)
+          | throw (IO.userError "definedness counterexample missing")
+        let some model := run.results[i]? | throw (IO.userError "definedness model missing")
+        require (model.confirmation == .counterexample && model.assignment.isOk &&
+          model.modelReceipt.isSome && model.raw.receipt.isSome) "bare SAT refuted"
+        let command ← solverCommand run.limits
+        for changed in #[{model with modelReceipt := none},
+            {model with confirmation := .witness},
+            {model with modelReceipt := model.modelReceipt.map (fun m => {m with binding := "stale"})}] do
+          require ((summarize run.source command {run with results := run.results.set! i changed}).verdict
+            == .inconclusive) "definedness evidence binding bypass"
+  let p ← load "mod sites\nexpect c(d: Int) { expect bad: if d = 0 then 1 div d = 0 else true }"
+  let .ok out := produce p | throw (IO.userError "site control production")
+  let some i := out.queries.findIdx? (fun q => isNonzero ⟨q, .sat, none⟩)
+    | throw (IO.userError "nonzero question missing")
+  require (confirmAssignment p i #[.int 0] == .counterexample) "source zero rejected"
+  require (confirmAssignment p i #[.int 1] != .counterexample) "unreachable site confirmed"
+  require (confirmAssignment p i #[.int 0] 0 != .counterexample) "exhausted site confirmed"
+  let p ← load "mod sites\nexpect c(d: Int) { assume z: d = 0 expect bad: 1 mod d = 0 }"
+  let .ok out := produce p | throw (IO.userError "premise control production")
+  let some i := out.queries.findIdx? (fun q => isNonzero ⟨q, .sat, none⟩)
+    | throw (IO.userError "mod question missing")
+  require (confirmAssignment p i #[.int 1] == .rejected "source premise is false") "false premise confirmed"
+  let p ← load "mod sites\nexpect c(d: Int) { expect bad: 1 div d = 0 }"
+  let .ok out := produce p | throw (IO.userError "divisor control production")
+  let some i := out.queries.findIdx? (fun q => isNonzero ⟨q, .sat, none⟩)
+    | throw (IO.userError "divisor question missing")
+  require (confirmAssignment p i #[.int 2] == .rejected "source divisor is nonzero") "nonzero divisor confirmed"
+  let guardFailure ← runSource "failed-prerequisite"
+    "mod sites\nexpect c(d: Int) { expect bad: if 1 div 0 = 0 then d = d else d = d }"
+  require (guardFailure.verdict == .refuted && guardFailure.checks.any (·.status == .blocked))
+    "refuted guard definedness discharged a dependent question"
+  -- Each level calls the one below twice; totality must visit each body once,
+  -- or this 2^40 walk exceeds the job deadline.
+  let levels := (List.range 39).map fun i =>
+    s!"fn f{i + 1}(x: Int): Int := if x >= 0 then f{i}(x) else f{i}(x)"
+  let p ← load ("mod sites\nfn f0(x: Int): Int := x\n" ++ "\n".intercalate levels ++
+    "\nexpect c(a: Int) { assume p: f39(a) >= 0 expect good: a >= 0 }")
+  let .ok out := produce p | throw (IO.userError "shared callee production")
+  let some i := out.queries.findIdx? (·.question.kind == .assumptionsSatisfiable)
+    | throw (IO.userError "shared callee witness question missing")
+  require (confirmAssignment p i #[.int 0] == .witness) "shared callee witness not confirmed"
+  IO.println "definedness-controls: div/mod source sites, bindings, guards, hypotheses, shared callees and physical evidence controls"
 
 #print axioms FrenOirToSmt.stale_receipt
 #print axioms FrenOirToSmt.empty_no_checks

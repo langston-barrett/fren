@@ -1,0 +1,3 @@
+-- verdict: verified exit: 0
+mod corpus
+expect c(d: Int) { assume pos: d > 0 expect good: 10 div d >= 0 }

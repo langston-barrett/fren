@@ -1,0 +1,4 @@
+-- verdict: refuted exit: 1
+mod corpus
+fn f(x: Int): Int := 1 div x
+expect c() { expect good: true }

@@ -1,0 +1,3 @@
+-- verdict: verified exit: 0
+mod corpus
+expect c(d: Int) { expect good: let z := d * 0 in if z = 0 then true else 1 div z = 0 }

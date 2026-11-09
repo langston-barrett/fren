@@ -1,0 +1,6 @@
+-- verdict: verified exit: 0
+-- Seed: skeleton review probe nestedlet.fren
+mod example
+expect s(a: Int) {
+  expect h: let x := (let y := a + 1 in y + 1) in x = a + 2
+}
