@@ -1,0 +1,4 @@
+-- verdict: refuted exit: 1
+-- A let-bound quotient in the goal: d = 2 gives q = 5, so g is false there.
+mod corpus
+expect c(d: Int) { assume p: d > 1 expect g: let q := 10 div d in q < 5 }

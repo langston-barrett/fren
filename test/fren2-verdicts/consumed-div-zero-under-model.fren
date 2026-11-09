@@ -1,0 +1,6 @@
+-- verdict: refuted exit: 1
+-- The goal divides by d, which `p` allows to be 0. The validity model needs
+-- d = 0, where 10 div d has no value, so that row stays unconfirmed; the
+-- goal definedness row is the source-confirmed counterexample.
+mod corpus
+expect c(d: Int) { assume p: d >= 0 expect g: 10 div d >= 0 }

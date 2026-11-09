@@ -237,6 +237,15 @@ def runDefinednessControls : IO Unit := do
   let some i := out.queries.findIdx? (·.question.kind == .assumptionsSatisfiable)
     | throw (IO.userError "shared callee witness question missing")
   require (confirmAssignment p i #[.int 0] == .witness) "shared callee witness not confirmed"
+  -- Division-free bodies skip strict evaluation, so a short-circuited `and`
+  -- whose skipped operand calls 2^40 times costs only the interpreter's walk.
+  let levels := (List.range 39).map fun i => s!"fn g{i + 1}(x: Int): Bool := g{i}(x) and g{i}(x)"
+  let p ← load ("mod sites\nfn g0(x: Int): Bool := x > 0\n" ++ "\n".intercalate levels ++
+    "\nexpect c(a: Int) { assume p: g39(a) = false expect good: a <= 0 }")
+  let .ok out := produce p | throw (IO.userError "short-circuit production")
+  let some i := out.queries.findIdx? (·.question.kind == .assumptionsSatisfiable)
+    | throw (IO.userError "short-circuit witness question missing")
+  require (confirmAssignment p i #[.int 0] == .witness) "division-free witness not confirmed"
   IO.println "definedness-controls: div/mod source sites, bindings, guards, hypotheses, shared callees and physical evidence controls"
 
 #print axioms FrenOirToSmt.stale_receipt

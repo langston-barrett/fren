@@ -89,13 +89,17 @@ physical transport and source evaluator. Universal source/encoding soundness,
 model existence, confirmation adequacy and `CheckerContract` remain unproved.
 Divisor definedness counterexamples are confirmed by evaluating the source
 assumptions, lexical bindings, conditional guards and divisor at the retained
-site. Confirmation never evaluates the undefined `div` or `mod` operation.
+site. That confirmation never evaluates the site's `div` or `mod` itself.
 Both Boolean operands and unused lets retain static obligations; `if` and
 `match` guard their branches. An unrelated partial expression does not prevent
 a nonvacuity witness or counterexample in another body from being confirmed.
 The complete inventory still includes every function's definedness checks.
-Value confirmation still conservatively requires its consumed bodies and
-transitive callees to be in the total fragment. Unsupported sites, undefined
+Assumptions and goals that a witness or counterexample consumes may divide,
+directly or through called functions. They are evaluated strictly under the
+model's assignment: both Boolean operands, unused let values and callee bodies
+are evaluated, and only an `if` or `match` selects a branch. Any `div` or `mod`
+by zero there leaves the row unconfirmed, and the demand-driven interpreter's
+value must agree with the strict one. Unsupported sites, undefined
 or exhausted prefix evaluation, dependency cycles and absent nonvacuity
 witnesses remain explicit incomplete outcomes. This command adds no soundness
 claim to the production checker.

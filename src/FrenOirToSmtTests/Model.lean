@@ -130,14 +130,20 @@ def runSourceConfirmation : IO Unit := do
     | throw (IO.userError "mutated actual SMT model decoding")
   require (confirmAssignment goal gi changedValues == .rejected "source goal is true")
     "actual SMT polarity mutant escaped source interpreter"
-  for expression in ["false and (1 div 0 = 0)", "true or (1 div 0 = 0)",
-      "let x := 1 div 0 in false", "if true then false else 1 div 0 = 0"] do
-    let partialInput ← load ("mod partial\nexpect c() { expect wrong: " ++ expression ++ " }")
+  -- Strict confirmation evaluates every retained operand, unused let and
+  -- callee step; only an explicit if/match guard selects what it evaluates.
+  for (expression, strict) in [("false and (1 div 0 = 0)", false), ("true or (1 div 0 = 0)", false),
+      ("let x := 1 div 0 in false", false), ("skip(0)", false),
+      ("if true then false else 1 div 0 = 0", true), ("half(3) = 2", true)] do
+    let partialInput ← load ("mod partial\nfn skip(x: Int): Bool := false and 1 div x = 0\n" ++
+      "fn half(x: Int): Int := x div 2\nexpect c() { expect wrong: " ++ expression ++ " }")
     let .ok partialOut := produce partialInput | throw (IO.userError "partial source production")
     let pi ← select partialOut .validity "c"
-    match confirmAssignment partialInput pi #[] with
-    | .unconfirmed _ => pure ()
-    | _ => throw (IO.userError "runtime demand erased static obligation")
+    match confirmAssignment partialInput pi #[], strict with
+    | .unconfirmed reason, false =>
+      require (reason.startsWith "source goal evaluation: strict: ") s!"{expression}: {reason}"
+    | .counterexample, true => pure ()
+    | other, _ => throw (IO.userError s!"strict confirmation of {expression}: {reprStr other}")
   let cyclicInput ← load "mod partial\nexpect c(d: Int) { assume a: 1 div d = 0 assume b: 1 div d != 0 expect wrong: false }"
   let .ok mutualOut := produce cyclicInput | throw (IO.userError "mutual source production")
   let mi ← select mutualOut .validity "c"
@@ -161,10 +167,12 @@ def runSourceConfirmation : IO Unit := do
   require (!modelData input) "model stdin cap admitted"
   require (classify (some 0) "unsat\n(error diagnostic)" "" "finished" "" != .unsat)
     "ordinary classifier weakened"
-  IO.println "source-confirmation: actual retained source interpreter witness/counterexample; false premise/true goal/arity/sort/enum rejects; evaluator exhaustion, 4 skipped-static-obligation forms and unresolved readiness unconfirmed; 10 bounded transport failure controls"
+  IO.println "source-confirmation: actual retained source interpreter witness/counterexample; false premise/true goal/arity/sort/enum rejects; evaluator exhaustion, 4 strictly undefined forms and unresolved readiness unconfirmed; guarded and total dividing goals confirmed; 10 bounded transport failure controls"
 
 #print axioms FrenOirToSmt.wrong_bool
-#print axioms FrenOirToSmt.fragment_div
+#print axioms FrenOirToSmt.strict_operand
+#print axioms FrenOirToSmt.strict_div_zero
+#print axioms FrenOirToSmt.strict_mod_zero
 #print axioms FrenOirToSmt.model_nonzero
 
 end FrenOirToSmtTests

@@ -12,6 +12,14 @@ bindings, nominal enums, calls, inconsistent assumptions, invalid input,
 no checks, unresolved dependencies, and the div/mod definedness regressions:
 sites in unused lets, uncalled and called functions, assumptions, call
 arguments, `if` conditions, `match` arms and divisors that themselves divide.
+The `consumed-*` files cover assumptions and goals that consume a division,
+directly or through (nested) calls: they verify or are refuted by a
+source-confirmed counterexample when strict evaluation at the model is
+defined. Three more show the verdicts around a zero divisor reached only
+under the model, a skipped `or` operand and a callee defined only for some
+inputs; there a definedness row refutes in any case, and the corpus checks
+only verdicts. That strict confirmation leaves such rows unconfirmed is pinned
+by the unit controls in `src/FrenOirToSmtTests/Model.lean`.
 `empty.fren` has a total function, which creates definedness checks and verifies;
 `no-checks.fren` has no obligations.
 

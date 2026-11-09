@@ -207,26 +207,28 @@ def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
     q.parameters[i]? = some param → values[i]? = some value →
     value.type = param.source.type ∧ value.valid p.lir.mir.source = true
 
-/-- Observation of the actual interpreter on the retained source body. -/
+/-- Observation of the actual interpreter on the retained source body, which
+strict evaluation of its retained static obligations must reproduce whenever
+the body or a transitive callee mentions `div` or `mod`. -/
 def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
     (depth : Nat) (value : Bool) : Prop :=
   ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
       ⟨body.owner, body.member.map (·.label.text)⟩ values depth = .ok observation ∧
-    observation.body = body ∧ observation.outcome = .ok (.bool value)
+    observation.body = body ∧ observation.outcome = .ok (.bool value) ∧
+    (divisionFree p.typed body = true ∨ strictBody p.typed body values depth = .ok (.bool value))
 
 /-- Concrete candidates do not discharge universal validity or domain questions. -/
 def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
     (values : Array FrenEval.Value) (depth : Nat) (answer : Confirmation) : Prop :=
   Produces p out ∧ q ∈ out.oir.questions.toList ∧ q.readiness = .ready ∧
   ModelAssignment out.oir q values ∧
-  (∀ body ∈ p.typed.bodies.toList, confirmationFragment 10000 body.expression = true) ∧
   (∀ hypothesis ∈ q.hypotheses.toList, SourceBoolean p hypothesis.source values depth true) ∧
   ((q.kind = .assumptionsSatisfiable ∧ answer = .witness) ∨
     (q.kind = .validity ∧ answer = .counterexample ∧
       ∃ body, q.subject = some body ∧ SourceBoolean p body values depth false))
 
 /-- Decoder typing and source-observation correspondence are separate from the
-universal SMT interpretation, static-totality and evaluator-adequacy bridges. -/
+universal SMT interpretation, strict-evaluation and evaluator-adequacy bridges. -/
 def ReadbackContract : Prop := ∀ p out, Produces p out → ∀ entry ∈ out.queries.toList,
   ∀ text cap values, decodeModel out.oir entry.question text cap = .ok values →
     ModelAssignment out.oir entry.question values
@@ -274,9 +276,23 @@ theorem checker_verified_rows (rows : Array CheckResult) (h : verdict rows = .ve
 theorem model_transport_nonzero (r : Receipt) (h : r.exitCode ≠ some 0) : modelData r = false :=
   FrenOirToSmt.model_nonzero r h
 
-theorem partial_operation_excluded (n : Nat) (a b : Expr) (token : Token) :
-    confirmationFragment (n + 1) (.binary a token .div b) = false :=
-  FrenOirToSmt.fragment_div n a b token
+theorem strict_operand_retained (n : Nat) (t : Typed) (b : TypedBody) (env : FrenEval.Environment)
+    (left right : Expr) (token : Token) (op : BinaryOp) (value : FrenEval.Value) (failure : String)
+    (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .error failure) :
+    strictWalk (n + 1) t b env (.binary left token op right) = .error failure :=
+  FrenOirToSmt.strict_operand n t b env left right token op value failure hl hr
+
+theorem strict_division_by_zero (n : Nat) (t : Typed) (b : TypedBody) (env : FrenEval.Environment)
+    (left right : Expr) (token : Token) (value : FrenEval.Value)
+    (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
+    (strictWalk (n + 1) t b env (.binary left token .div right)).isOk = false :=
+  FrenOirToSmt.strict_div_zero n t b env left right token value hl hr
+
+theorem strict_remainder_by_zero (n : Nat) (t : Typed) (b : TypedBody) (env : FrenEval.Environment)
+    (left right : Expr) (token : Token) (value : FrenEval.Value)
+    (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
+    (strictWalk (n + 1) t b env (.binary left token .mod right)).isOk = false :=
+  FrenOirToSmt.strict_mod_zero n t b env left right token value hl hr
 
 theorem wrong_model_sort (p : FrenOir.Program) :
     modelValue p .bool (.list #[]) = .error "unsupported model value or wrong sort" :=
@@ -509,7 +525,9 @@ theorem flipped_goal_model (p : FrenOir.Program) :
   IO.println "SMT contracts: admitted false-goal encoding with independent Renders/Sorted/Interprets proofs; retained real definition and later assumption; exact sort/polarity/declaration oracle; wrong operator and missing canonical references distinguished from raw printing. No solver run or source-model confirmation."
 
 #print axioms model_transport_nonzero
-#print axioms partial_operation_excluded
+#print axioms strict_operand_retained
+#print axioms strict_division_by_zero
+#print axioms strict_remainder_by_zero
 #print axioms wrong_model_sort
 #print axioms exact_encoding
 #print axioms local_translation

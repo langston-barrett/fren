@@ -189,7 +189,8 @@ These are finite/constrained witnesses, not universal metatheory.
 assignments. `AnswerSound` states what trusted Sat/Unsat would need to establish;
 actual `classify` is only protocol recognition. The typed readback unit adds
 `solveModels`, strict finite parameter decoding and actual source interpreter
-observations for the conservative total fragment. The checker adds conservative
+observations that strict evaluation of the retained static obligations must
+reproduce. The checker adds conservative
 whole-program reports; it adds no cache, selectors or incremental solver API. The previous OIR checklist's separate SMT
 chapter correction is supplied here; its remaining source-confirmation and
 upstream universal proof obligations are preserved in full.
@@ -212,12 +213,15 @@ upstream universal proof obligations are preserved in full.
   generated names, bounded cvc5 transport and both physical receipts. Retain
   the source witness and unfiltered ordered question/results envelope.
 - [x] Check concrete premise witnesses and false-goal counterexamples through
-  `FrenEval.evaluate` in the conservative total fragment, with explicit rejected
-  and unconfirmed statuses. Preserve static questions and unresolved readiness;
-  partial operations anywhere in source remain unconfirmed.
-- [ ] Prove `ReadbackContract`, `ConfirmationContract`, static totality of
-  `confirmationFragment` and evaluator adequacy. Extend concrete confirmation
-  to partial/definedness-site forms and justify mutually partial assumptions.
+  `FrenEval.evaluate` and an agreeing `strictBody`, with explicit rejected and
+  unconfirmed statuses. Preserve static questions and unresolved readiness;
+  a consumed body whose strict evaluation is undefined at the model remains
+  unconfirmed.
+- [ ] Prove `ReadbackContract`, `ConfirmationContract`, adequacy of
+  `strictBody` to `Lir.SourceValue`/`Mir.ValueOf` (so that `SourceBoolean`
+  can be stated through that judgment rather than the implementation) and
+  evaluator adequacy.
+  Justify mutually partial assumptions.
 - [x] Deliver a conservative actual-source checker report with complete ordered
   inventory, receipt provenance, dependency discharge and confirmed nonvacuity.
 - [ ] Prove `CheckerContract` and the universal source-soundness bridges; actual
@@ -1248,8 +1252,9 @@ and recomputes model decoding and source observations. A bounded dependency
 fixed point and confirmed owner nonvacuity gate conservative verification.
 Verified, refuted, inconsistent, inconclusive, no-checks and input-failure
 reports retain original questions, source spans, reasons and physical evidence
-references. Sat definedness sites and source forms outside the existing total
-confirmation fragment remain unconfirmed.
+references. Divisor definedness sites are confirmed at their source prefix;
+consumed bodies are confirmed only when strict evaluation at the model is
+defined and agrees with the interpreter.
 
 `FrenOirToSmtTests.Checker` runs through normal `smtControls` and parent dispatch.
 Real source cases cover supported verification, source-confirmed refutation,

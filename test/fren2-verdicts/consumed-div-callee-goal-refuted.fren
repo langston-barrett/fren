@@ -1,0 +1,6 @@
+-- verdict: refuted exit: 1
+-- A false goal over a dividing function: e.g. half(1) = 0, not 1; any a
+-- other than 0 and -1 is a source-confirmed counterexample.
+mod corpus
+fn half(n: Int): Int := n div 2
+expect c(a: Int) { expect g: half(a) = a }

@@ -1,0 +1,6 @@
+-- verdict: refuted exit: 1
+-- `safe` guards its own division, so it is total; the goal is false at d = 1
+-- (safe(1) = 100), a counterexample that strictly evaluates `safe`.
+mod corpus
+fn safe(x: Int): Int := if x = 0 then 0 else 100 div x
+expect c(d: Int) { assume p: d > 0 expect g: safe(d) < 50 }

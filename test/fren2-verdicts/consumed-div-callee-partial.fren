@@ -1,0 +1,6 @@
+-- verdict: refuted exit: 1
+-- `inv` is defined only for nonzero inputs, so its own definedness check is
+-- refuted at x = 0, even though every call here passes a positive value.
+mod corpus
+fn inv(x: Int): Int := 100 div x
+expect c(d: Int) { assume p: d > 0 assume a: inv(d) = 50 expect g: d = 3 }
