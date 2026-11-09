@@ -21,7 +21,8 @@ private def allowed : List (String × List String) :=
    ("FrenAstToHir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenParse"]),
    ("FrenHirToThir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenAstToHir"]),
    ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr", "FrenHirToThir"]),
-   ("FrenThirToMir", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
+   -- This walking producer consumes the actual checked desugaring witness.
+   ("FrenThirToMir", base ++ ["FrenModule", "FrenExpr", "FrenMir", "FrenThirDesugar"]),
    ("FrenMirToMono", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenMonoToFo", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenFoToFlat", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
@@ -43,15 +44,17 @@ private def tests : List String := roots.map (· ++ "Tests")
 -- Spec wrappers and FrenTestMain remain Fren1 infrastructure, not Fren2 roots.
 private def owners : List String := roots ++ tests ++
   ["FrenTextTests", "FrenTextTestsTests", "FrenTextDemo", "FrenTextDemoTests",
-   "Fren2TestMain", "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing"]
+   "Fren2TestMain", "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing", "FrenTest.Fren2Mir"]
 
 private def testOnly (owner : String) : Bool :=
   tests.contains owner || ["FrenTextTestsTests", "FrenTextDemoTests", "Fren2TestMain",
-    "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing"].contains owner
+    "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing", "FrenTest.Fren2Mir"].contains owner
 
 private def permits (owner imported : String) : Bool := Id.run do
   if ["Lean", "Std", "Init"].contains imported then return true
   if owner == imported then return true
+  if owner == "FrenTest.Fren2Mir" then return imported == "FrenThirToMirTests"
+  if owner == "FrenThirToMirTests" && ["Plausible", "FrenEval"].contains imported then return true
   if owner == "FrenTest.Fren2Typing" then return imported == "FrenHirToThirTests"
   if owner == "FrenTest.Fren2Resolver" then return imported == "FrenAstToHirTests"
   if ["FrenProp", "FrenAstToHirTests", "FrenHirToThirTests", "FrenEvalTests", "FrenThirDesugarTests"].contains owner && imported == "Plausible" then return true
@@ -83,6 +86,10 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard permits "FrenAst" "FrenSexp"
 #guard !permits "Fren2TestMain" "FrenCore"
 #guard !permits "FrenBaseTests" "Fren"
+#guard permits "FrenThirToMir" "FrenThirDesugar"
+#guard !permits "FrenThirToMir" "FrenEval"
+#guard !permits "FrenMir" "FrenThirDesugar"
+#guard !permits "FrenMir" "FrenEval"
 #guard permits "FrenEval" "FrenHirToThir"
 #guard permits "FrenEvalTests" "Plausible"
 #guard !permits "FrenEval" "Plausible"
