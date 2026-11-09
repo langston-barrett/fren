@@ -849,16 +849,27 @@ required level, so that `lake build --wfail` fails when a property loses its
 evidence, and their Markdown has no hand-written status comments. -/
 def evidenceChapters : Array String := ruleAdjacentChapters
 
-/-- The text that a converted chapter's wrapper must contain. -/
-def requiredTrace : String := "set_option fren.requireEvidence \"trusted\" in\n#fren_trace"
+/-- The two lines with which a converted chapter's wrapper must end, as an
+active command: a comment around them would leave other last lines. -/
+def requiredTrace : Array String := #["set_option fren.requireEvidence \"trusted\" in", "#fren_trace"]
+
+/-- Whether the text `lean` ends with `requiredTrace`, ignoring blank lines. -/
+def endsWithTrace (lean : String) : Bool :=
+  let lines := ((lean.splitOn "\n").map (·.trimAscii.toString)).filter (!·.isEmpty) |>.toArray
+  lines.size ≥ 2 && lines.extract (lines.size - 2) lines.size == requiredTrace
+
+#guard endsWithTrace "x\nset_option fren.requireEvidence \"trusted\" in\n#fren_trace\n\n"
+#guard !endsWithTrace "/-\nset_option fren.requireEvidence \"trusted\" in\n#fren_trace\n-/\n"
+#guard !endsWithTrace "set_option fren.requireEvidence \"trusted\" in\n-- #fren_trace\n"
+#guard !endsWithTrace "set_option fren.requireEvidence \"trusted\" in\n#fren_trace\ntheorem t : True := trivial\n"
 
 /-- The problems with the evidence of the converted chapters. -/
 def evidenceProblems : IO (Array String) := do
   let mut out := #[]
   for md in evidenceChapters do
     let wrapper := (md.dropEnd 3).toString ++ ".lean"
-    unless (← IO.FS.readFile wrapper).contains requiredTrace.toSlice do
-      out := out.push s!"{wrapper}: a converted chapter's wrapper ends with `{requiredTrace}`, so that a property without evidence fails the build"
+    unless endsWithTrace (← IO.FS.readFile wrapper) do
+      out := out.push s!"{wrapper}: a converted chapter's wrapper ends with `set_option fren.requireEvidence \"trusted\" in #fren_trace`, so that a property without evidence fails the build"
     if (← IO.FS.readFile md).contains "<!-- status:".toSlice then
       out := out.push s!"{md}: a converted chapter states evidence through Fren, not status comments"
   return out
@@ -874,6 +885,22 @@ def unservedItems (md : String) (items : Array ReqItem)
       if reqs.any (·.1.path == i.path) then none
       else some s!"{md}:{i.line}: `{i.path}` is not linked by `{r.id}`, the rule just before it: put it after the rule that it serves, or link it there"
 
+#guard unservedItems "c.md" #[{ path := "m::f", file := "c.md", line := 3, clauses := #[] }] #[] ==
+  #["c.md:3: `m::f` follows no rule: put each Fren definition after the rule that links it"]
+
+/-- The problems with the rules of chapter `md` that link items but declare
+none of them between themselves and the next rule. -/
+def unservedRules (md : String) (linked : Array (Rule × Array (ReqItem × Array String))) : Array String :=
+  (linked.zipIdx.filterMap fun ((r, reqs), k) =>
+    let next := (linked[k + 1]?.map (·.1.line)).getD (2 ^ 32)
+    if reqs.isEmpty || reqs.any (fun (i, _) => i.file == md && r.line < i.line && i.line < next) then none
+    else some s!"{md}:{r.line}: `{r.id}` is not followed by the Fren that it links, before the next rule")
+
+#guard unservedRules "c.md" #[
+    ({ id := "a.b", line := 1, label := "", text := "", links := "m::f" },
+      #[({ path := "m::f", file := "c.md", line := 9, clauses := #[] }, #[])]),
+    ({ id := "a.c", line := 5, label := "", text := "", links := "" }, #[])] ==
+  #["c.md:1: `a.b` is not followed by the Fren that it links, before the next rule"]
 /-- The rules of the reference with their requirements, by chapter, the
 rules that tests cite, each with the test, and the problems that
 `ruleReqs` finds (`Reqs/dev/Style#rules-and-requirements`). -/
@@ -888,11 +915,14 @@ def ruleLinks : IO (Array (String × Array (Rule × Array (ReqItem × Array Stri
   let mut chapters := #[]
   for (md, text) in texts do
     let rules := rulesOf text
-    if rules.isEmpty then continue
+    if rules.isEmpty then
+      if ruleAdjacentChapters.contains md then
+        failures := failures ++ unservedItems md items #[]
+      continue
     let (linked, problems) := reqsOfChapter md items rules
     failures := failures ++ problems
     if ruleAdjacentChapters.contains md then
-      failures := failures ++ unservedItems md items linked
+      failures := failures ++ unservedItems md items linked ++ unservedRules md linked
     chapters := chapters.push (md, linked)
   let rules := chapters.flatMap fun (md, rs) => rs.map fun (r, reqs) => (md, r, reqs)
   failures := failures ++ ruleRequirementProblems rules (listedRules (← IO.FS.readFile unformalizedFile))

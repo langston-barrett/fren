@@ -454,16 +454,7 @@ pub fn call_rule?(symb: Symb, ctx: Ctx, item: ItemId, args: Snoc<Typing>, ty: Ty
     }
 ```
 
-r[types.expression.let] spec::types::let_rule?
-A let types its value in Γ and its body in Γ extended by the value's type.
-
-```text
-  Σ; Γ ⊢ e₁ : σ   Σ; Γ, x : σ ⊢ e₂ : τ
-  ─────────────────────────────────────
-  Σ; Γ ⊢ let x := e₁ in e₂ : τ
-```
-
-r[types.expression.let-annotated] spec::types::{annotation_matches?, let_rule?}
+r[types.expression.let-annotated] spec::types::annotation_matches?
 A let with an annotation requires its value to have the annotated type.
 
 ```text
@@ -477,7 +468,19 @@ pub fn annotation_matches?(annotation: Option<Ty>, ty: Ty) := match annotation {
     Some(written) => written = ty,
     None => true,
 }
+```
 
+r[types.expression.let] spec::types::let_rule?
+A let types its value in Γ and its body in Γ extended by the value's type,
+and checks its annotation, if any, by the rule above.
+
+```text
+  Σ; Γ ⊢ e₁ : σ   Σ; Γ, x : σ ⊢ e₂ : τ
+  ─────────────────────────────────────
+  Σ; Γ ⊢ let x := e₁ in e₂ : τ
+```
+
+```fren
 pub fn let_rule?(ctx: Ctx, annotation: Option<Ty>, value: Typing, body: Typing, ty: Ty) :=
     value.ctx = ctx
     and annotation_matches?(annotation, value.ty)
