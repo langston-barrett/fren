@@ -1,27 +1,26 @@
-# Types and expression typing
+# Core typing
 
-A type describes which values an expression can produce. This chapter defines
-Booleans, mathematical integers and nominal payload-free enumeration types.
-Named functions have ordered parameter types and a result type; they are not
-first-class values. The [source grammar](../Compiler/AstAndParsing.md#source-forms)
-and [name resolution](NamesAndScope.md) determine the expressions to which
-these rules apply. Typing does not prove a check true or an operation defined.
+The Core is the typed high-level intermediate representation (THIR). Source
+constructs are defined by translation into Core forms. Static semantics comprises resolution, typing,
+and verification, including definedness. This chapter defines typing;
+[resolution](NamesAndScope.md) supplies identities, and
+[expression obligations](Expressions.md) supply verification hypotheses to
+be discharged by SMT. Dynamic semantics applies only to well-typed, verified
+programs. Typing alone establishes neither definedness nor logical truth.
 
-## Shared semantic definitions
-
-An `ItemId` is the canonical sequence of enclosing module and item names,
-including the enumeration name for a constructor. It is obtained by resolution,
-not by splitting a display string. Identity uses the entire sequence. Local
-indices instead refer to the exact nearest-first context at an occurrence,
-as specified by [binding](../Compiler/Bindings.md#contexts-and-scope).
-
-**Legality rules**
+## Semantic objects
 
 r[types.walking.identity] spec::types::type_identity
-Value types have disjoint Boolean, integer and nominal constructors.
+An *item identity* is the canonical sequence of enclosing module and item
+names supplied by resolution. Constructor identities include their enumeration
+name. Value types are Boolean, mathematical integer, and nominal enumeration
+types; their constructors are disjoint.
+<!-- status: definition -->
 
 r[types.walking.compatibility] spec::types::type_identity
-Compatibility is equality of these types, including the complete nominal identity.
+Two value types are *compatible* exactly when they are equal, including every
+component of a nominal identity.
+<!-- status: smt -->
 
 ```fren
 pub mod spec
@@ -33,6 +32,9 @@ pub type Context := Seq<Ty>
 pub struct Signature { item: ItemId, parameters: Seq<Ty>, result: Ty }
 pub struct Constructor { item: ItemId, owner: ItemId }
 pub struct Symbols { functions: Seq<Signature>, constructors: Seq<Constructor> }
+pub enum Unary { Negate, Not }
+pub enum Binary { Add, Sub, Mul, Div, Mod, Lt, Le, Gt, Ge, And, Or, Iff, Eq, Ne }
+pub enum ValueKind { Boolean, Integer, Nominal }
 
 pub fn compatible_type?(left: Ty, right: Ty) := left = right
 
@@ -43,14 +45,22 @@ pub proc type_identity(a: ItemId, b: ItemId) {
 }
 ```
 
-`Symbols` contains resolved function signatures and constructor ownership.
-Its entries come from the collected declarations before bodies are checked.
-The same canonical item has only one signature or constructor entry, and an
-item cannot have both kinds. These are finite, decidable table conditions.
-An enumeration declaration, module, expectation or bare function is not a
-value. Equal variant spellings in different enumerations do not identify them.
+r[types.context.slots]
+A *context* Γ is a finite sequence of value types, newest binder first.
+Γ[i] is defined for 0 ≤ i < |Γ|. Extending Γ by τ produces `[τ] ++ Γ`.
+Local indices refer to this exact context, as specified by
+[binding](../Compiler/Bindings.md#contexts-and-scope).
+<!-- status: definition -->
+
+r[types.symbols.valid] spec::types::symbols_valid?
+A *symbol environment* Σ contains function signatures and constructor
+ownership. Each item has at most one entry and belongs to at most one of
+these tables. Signatures contain parameter types in written order and a
+result type. All signatures are available when bodies are typed.
+<!-- status: definition -->
 
 ```fren
+-- Finite sequence quantifiers lie outside the current solver's decidability lint.
 set_option fren.lint.undecidable "allow" in
 set_option fren.lint.collapsible_when "allow" in
 pub fn symbols_valid?(s: Symbols) :=
@@ -63,12 +73,14 @@ pub fn symbols_valid?(s: Symbols) :=
 ```
 
 r[types.walking.annotations] spec::types::annotation_type?
-Every parameter and function result annotation denotes its resolved value
-type; an omitted parameter annotation supplies `Bool` only for a `?` name.
+A parameter or result annotation denotes its resolved value type. An omitted
+parameter annotation denotes Boolean only when its name ends in `?`.
+<!-- status: definition -->
 
 r[types.walking.suffix] spec::types::binder?
-A parameter or let binder whose name ends in `?` has type `Bool`, including
+A parameter or let binder whose name ends in `?` has type Boolean, including
 when a parameter has an explicit annotation.
+<!-- status: definition -->
 
 ```fren
 pub enum Annotation { Boolean, Integer, Nominal(ItemId), Omitted }
@@ -81,20 +93,19 @@ pub fn annotation_type?(annotation: Annotation, question?, ty: Ty) := match anno
 }
 
 pub fn binder?(question?, ty: Ty) := not question? or ty = Ty::Boolean
+pub struct Parameter { ty: Ty, question? }
 ```
 
-There are no coercions or integer subtypes in this domain. A written
-`b?: Int` resolves but fails typing; the suffix does not overwrite an
-annotation. Parameter contexts reverse written parameter order, so the last
-parameter is at index zero. Every parameter must satisfy `binder?`.
+There are no coercions or integer subtypes. A written `b?: Int` fails typing;
+the suffix does not overwrite its annotation.
 
 r[types.context.parameters] spec::types::parameter_context?
-Parameter types occupy the body context in reverse written order, with every
-question-suffixed parameter checked against Boolean.
+A declaration's body context reverses written parameter order. Every
+parameter satisfies its binder condition.
+<!-- status: definition -->
 
 ```fren
-pub struct Parameter { ty: Ty, question? }
-
+-- The bounded parameter/context sequence quantifier needs the solver lint opt-out.
 set_option fren.lint.undecidable "allow" in
 pub fn parameter_context?(parameters: Seq<Parameter>, context: Context) :=
     parameters.len = context.len
@@ -103,22 +114,336 @@ pub fn parameter_context?(parameters: Seq<Parameter>, context: Context) :=
         and binder?(parameters[i].question?, parameters[i].ty))
 ```
 
-## Operators
+<a id="finite-expression-derivations"></a>
 
-The following contracts retain the actual-code bindings for compatibility
-and operator decisions. `ValueKind` is an adapter classification, not a second
-language type representation: the nominal identity is carried by `Ty` above.
-The integer identity atoms in these bindings instantiate the production
-primitive's generic identity parameter; they are never hashes or rendered names.
+## Core forms and judgments
+
+r[types.expression.syntax] spec::types::ExprF
+An expression has one of the forms of `ExprF<E>`, where E is the position
+occupied by a child expression. An arm has a resolved constructor pattern
+and a body, with no binder. Literal payloads do not affect typing. Parentheses
+are a type-preserving derived form retained in this presentation.
+<!-- status: definition -->
+
+```fren
+pub struct ArmF<E> { constructor: ItemId, body: E }
+
+pub enum ExprF<E> {
+    BooleanLiteral,
+    IntegerLiteral,
+    Local(Int),
+    ConstructorValue(ItemId),
+    UnaryExpression(Unary, E),
+    BinaryExpression(Binary, E, E),
+    Call(ItemId, Seq<E>),
+    Let(Bool, E, E),
+    Conditional(E, E, E),
+    Match(E, Seq<ArmF<E>>),
+    Parenthesized(E),
+}
+
+pub struct Judgment { context: Context, ty: Ty }
+```
+
+r[types.judgment.typing] spec::types::layer_rule?
+The judgment `Σ; Γ ⊢ e : τ` holds when e has a finite derivation tree with
+root context Γ and type τ. Each node satisfies `layer_rule?` for its form
+and the judgments derived by all its children. A child annotation contains
+its own context and type; it is justified by that child's subtree.
+<!-- status: definition -->
+
+r[types.judgment.layer] spec::types::rule?
+The one-layer judgment takes a form and child annotations and checks exactly
+the matching rule below. `annotation` associates each child position with
+its judgment. Instantiating E with `Judgment` and annotation with identity
+places those annotations directly in the form. The symbol environment is
+valid and shared by every node of a derivation. Lookup requires a matching
+entry and checks the premise at every matching entry; validity makes that
+entry unique.
+<!-- status: definition -->
+
+All written children require derivations, including unused let values,
+both conditional branches and every match body. Verification is a further
+static judgment, not a premise that may excuse a missing typing derivation.
+
+## Typing rules
+
+r[types.expression.values] spec::types::rule?
+The literal and constructor rules are the only rules for value leaves.
+<!-- status: definition -->
+
+r[types.expression.items] spec::types::rule?
+Only constructor items are values; only function items are callable.
+Enumeration declarations, modules, assumptions, expectations and bare
+functions are not value forms.
+<!-- status: definition -->
+
+r[types.operator.unary] spec::types::unary_type?
+Unary minus takes and returns integers; `not` takes and returns Booleans.
+<!-- status: lean Spec.Language.Types.core_unary -->
+
+r[types.operator.binary] spec::types::binary_type?
+Arithmetic takes integers and returns an integer; integer comparisons return
+a Boolean. Boolean operators take and return Booleans. Equality and
+inequality take two compatible operands and return a Boolean.
+<!-- status: lean Spec.Language.Types.core_binary -->
+
+```fren
+pub fn integer_binary?(op: Binary) :=
+    op in {
+        Binary::Add,
+        Binary::Sub,
+        Binary::Mul,
+        Binary::Div,
+        Binary::Mod,
+    }
+
+pub fn comparison?(op: Binary) := op in {Binary::Lt, Binary::Le, Binary::Gt, Binary::Ge}
+pub fn boolean_binary?(op: Binary) := op in {Binary::And, Binary::Or, Binary::Iff}
+
+pub fn unary_type?(op: Unary, operand: Ty, result: Ty) := match op {
+    Unary::Negate => operand = Ty::Integer and result = Ty::Integer,
+    Unary::Not => operand = Ty::Boolean and result = Ty::Boolean,
+}
+
+pub fn binary_type?(op: Binary, left: Ty, right: Ty, result: Ty) :=
+    if integer_binary?(op) then left = Ty::Integer and right = Ty::Integer and result = Ty::Integer
+    else if comparison?(op) then left = Ty::Integer and right = Ty::Integer and result = Ty::Boolean
+    else if boolean_binary?(op) then left = Ty::Boolean and right = Ty::Boolean and result = Ty::Boolean
+    else compatible_type?(left, right) and result = Ty::Boolean
+```
+
+r[types.expression.boolean] spec::types::rule?
+With no premises, `Σ; Γ ⊢ BooleanLiteral : Boolean`.
+<!-- status: definition -->
+
+r[types.expression.integer] spec::types::rule?
+With no premises, `Σ; Γ ⊢ IntegerLiteral : Integer`.
+<!-- status: definition -->
+
+r[types.expression.local] spec::types::rule?
+If 0 ≤ i < |Γ| and Γ[i] = τ, then `Σ; Γ ⊢ Local(i) : τ`.
+<!-- status: definition -->
+
+r[types.expression.constructor] spec::types::rule?
+If Σ records constructor c with owner a, then
+`Σ; Γ ⊢ ConstructorValue(c) : Nominal(a)`.
+<!-- status: definition -->
+
+r[types.expression.unary] spec::types::rule?
+If `Σ; Γ ⊢ e : σ` and `unary_type?(op, σ, τ)`, then
+`Σ; Γ ⊢ UnaryExpression(op, e) : τ`.
+<!-- status: definition -->
+
+r[types.expression.binary] spec::types::rule?
+If `Σ; Γ ⊢ l : σ`, `Σ; Γ ⊢ r : υ` and `binary_type?(op, σ, υ, τ)`,
+then `Σ; Γ ⊢ BinaryExpression(op, l, r) : τ`.
+<!-- status: definition -->
+
+r[types.expression.call] spec::types::rule?
+If Σ records f with parameter types σ₀ … σₙ₋₁ and result τ, there are
+exactly n arguments, and `Σ; Γ ⊢ aᵢ : σᵢ` for each i, then
+`Σ; Γ ⊢ Call(f, [a₀, …, aₙ₋₁]) : τ`.
+<!-- status: definition -->
+
+r[types.expression.let] spec::types::rule?
+If `Σ; Γ ⊢ v : σ`, `binder?(q, σ)` and `Σ; [σ] ++ Γ ⊢ b : τ`,
+then `Σ; Γ ⊢ Let(q, v, b) : τ`. The new binder is absent from v's context.
+<!-- status: definition -->
+
+r[types.expression.if] spec::types::rule?
+If `Σ; Γ ⊢ c : Boolean`, `Σ; Γ ⊢ y : τ` and `Σ; Γ ⊢ n : τ`,
+then `Σ; Γ ⊢ Conditional(c, y, n) : τ`.
+<!-- status: definition -->
+
+r[types.expression.match] spec::types::rule?
+If `Σ; Γ ⊢ s : Nominal(a)`, the arms are nonempty, every pattern is a
+constructor owned by a, and `Σ; Γ ⊢ b : τ` for each arm body b, then
+`Σ; Γ ⊢ Match(s, arms) : τ`. No arm extends Γ.
+<!-- status: definition -->
+
+r[types.expression.parentheses] spec::types::rule?
+If `Σ; Γ ⊢ e : τ`, then `Σ; Γ ⊢ Parenthesized(e) : τ`.
+<!-- status: definition -->
+
+```fren
+-- Bounded table quantifiers and exact let-context concatenation exceed the solver lint's decidable core.
+set_option fren.lint.undecidable "allow" in
+pub fn rule?<E>(
+    s: Symbols,
+    context: Context,
+    form: ExprF<E>,
+    annotation: fn(E) -> Judgment,
+    ty: Ty
+) := match form {
+    ExprF::BooleanLiteral => ty = Ty::Boolean,
+    ExprF::IntegerLiteral => ty = Ty::Integer,
+    ExprF::Local(slot) => 0 <= slot < context.len and ty = context[slot],
+    ExprF::ConstructorValue(item) =>
+        (exists (k: Int), 0 <= k < s.constructors.len and s.constructors[k].item = item)
+        and (forall (k: Int), when 0 <= k < s.constructors.len, when s.constructors[k].item = item,
+            ty = Ty::Nominal(s.constructors[k].owner)),
+    ExprF::UnaryExpression(op, child) => annotation(child).context = context
+        and unary_type?(op, annotation(child).ty, ty),
+    ExprF::BinaryExpression(op, left, right) => annotation(left).context = context
+        and annotation(right).context = context
+        and binary_type?(op, annotation(left).ty, annotation(right).ty, ty),
+    ExprF::Call(item, args) =>
+        (exists (k: Int), 0 <= k < s.functions.len and s.functions[k].item = item)
+        and (forall (k: Int), when 0 <= k < s.functions.len, when s.functions[k].item = item,
+            args.len = s.functions[k].parameters.len and ty = s.functions[k].result
+            and (forall (j: Int), when 0 <= j < args.len,
+            annotation(args[j]).context = context and annotation(args[j]).ty = s.functions[k].parameters[j])),
+    ExprF::Let(question?, value, body) => annotation(value).context = context
+        and binder?(question?, annotation(value).ty)
+        and annotation(body).context = [annotation(value).ty] ++ context and annotation(body).ty = ty,
+    ExprF::Conditional(condition, yes, no) => annotation(condition).context = context
+        and annotation(condition).ty = Ty::Boolean
+        and annotation(yes).context = context and annotation(yes).ty = ty
+        and annotation(no).context = context and annotation(no).ty = ty,
+    ExprF::Match(scrutinee, arms) => arms != [] and annotation(scrutinee).context = context
+        and (forall (j: Int), when 0 <= j < arms.len,
+        annotation(arms[j].body).context = context and annotation(arms[j].body).ty = ty
+        and (exists (k: Int), 0 <= k < s.constructors.len
+        and s.constructors[k].item = arms[j].constructor
+        and annotation(scrutinee).ty = Ty::Nominal(s.constructors[k].owner))),
+    ExprF::Parenthesized(child) =>
+        annotation(child).context = context and annotation(child).ty = ty,
+}
+
+pub fn layer_rule?(s: Symbols, context: Context, form: ExprF<Judgment>, ty: Ty) :=
+    rule?(s, context, form, |child| child, ty)
+```
+
+r[types.declaration.result] spec::types::derivation?
+A function body has a derivation at its declared result type in its parameter
+context.
+<!-- status: definition -->
+
+r[types.declaration.conditions] spec::types::derivation?
+Each assume or expect body has a derivation at Boolean in its parameter
+context.
+<!-- status: definition -->
+
+Match coverage and absence of recursive function cycles are further static
+conditions. Typing admits repeated or missing constructors in a nonempty
+match. Operation domains, including nonzero divisors, belong to verification.
+No dynamic behavior is assigned here to an unverified `x div 0` or to an
+evaluation order.
+
+## Properties of typing
+
+r[types.layer.determinism] spec::types::layer_properties
+For a valid Σ and fixed child annotations, a layer has at most one result
+type: if it satisfies the rule at τ and υ, then τ = υ. The expectations
+cover every constructor of `ExprF`.
+<!-- status: smt -->
+
+r[types.layer.context] spec::types::context_properties
+Every ordinary child uses Γ. In a let, the value uses Γ and the body uses
+exactly `[type(value)] ++ Γ`. Match arms introduce no binder.
+<!-- status: smt -->
+
+r[types.layer.operators] spec::types::operator_properties
+Each unary or binary operator has at most one result type for fixed operand
+types.
+<!-- status: smt -->
+
+```fren
+pub proc operator_properties(op: Binary, unary_op: Unary, left: Ty, right: Ty, a: Ty, b: Ty) {
+    expect unary_unique: when unary_type?(unary_op, left, a) and unary_type?(unary_op, left, b), a = b
+    expect binary_unique: when binary_type?(op, left, right, a) and binary_type?(op, left, right, b), a = b
+}
+
+pub proc layer_properties(
+    s: Symbols,
+    context: Context,
+    item: ItemId,
+    slot: Int,
+    op: Binary,
+    unary_op: Unary,
+    left: Judgment,
+    right: Judgment,
+    body: Judgment,
+    q?,
+    args: Seq<Judgment>,
+    arms: Seq<ArmF<Judgment>>,
+    a: Ty,
+    b: Ty,
+) {
+    require valid: symbols_valid?(s)
+    expect boolean: when layer_rule?(s, context, ExprF::BooleanLiteral, a) and layer_rule?(s, context, ExprF::BooleanLiteral, b), a = b
+    expect integer: when layer_rule?(s, context, ExprF::IntegerLiteral, a) and layer_rule?(s, context, ExprF::IntegerLiteral, b), a = b
+    expect local_case: when layer_rule?(s, context, ExprF::Local(slot), a) and layer_rule?(s, context, ExprF::Local(slot), b), a = b
+    expect constructor: when layer_rule?(s, context, ExprF::ConstructorValue(item), a) and layer_rule?(s, context, ExprF::ConstructorValue(item), b), a = b
+    expect unary: when layer_rule?(s, context, ExprF::UnaryExpression(unary_op, left), a) and layer_rule?(s, context, ExprF::UnaryExpression(unary_op, left), b), a = b
+    expect binary: when layer_rule?(s, context, ExprF::BinaryExpression(op, left, right), a) and layer_rule?(s, context, ExprF::BinaryExpression(op, left, right), b), a = b
+    expect call: when layer_rule?(s, context, ExprF::Call(item, args), a) and layer_rule?(s, context, ExprF::Call(item, args), b), a = b
+    expect let_case: when layer_rule?(s, context, ExprF::Let(q?, left, body), a) and layer_rule?(s, context, ExprF::Let(q?, left, body), b), a = b
+    expect conditional: when layer_rule?(s, context, ExprF::Conditional(left, right, body), a) and layer_rule?(s, context, ExprF::Conditional(left, right, body), b), a = b
+    expect match_case: when layer_rule?(s, context, ExprF::Match(left, arms), a) and layer_rule?(s, context, ExprF::Match(left, arms), b), a = b
+    expect parentheses: when layer_rule?(s, context, ExprF::Parenthesized(left), a) and layer_rule?(s, context, ExprF::Parenthesized(left), b), a = b
+}
+
+-- Exact let-context extension uses a sequence concatenation equation.
+set_option fren.lint.undecidable "allow" in
+pub proc context_properties(
+    s: Symbols,
+    context: Context,
+    q?,
+    value: Judgment,
+    body: Judgment,
+    c: Judgment,
+    y: Judgment,
+    n: Judgment,
+    ty: Ty,
+    op: Binary,
+    unary_op: Unary,
+    item: ItemId,
+    args: Seq<Judgment>,
+    arms: Seq<ArmF<Judgment>>,
+    j: Int,
+) {
+    expect let_context: when layer_rule?(s, context, ExprF::Let(q?, value, body), ty),
+        value.context = context and body.context = [value.ty] ++ context and body.ty = ty
+    expect conditional_context: when layer_rule?(s, context, ExprF::Conditional(c, y, n), ty),
+        c.context = context and c.ty = Ty::Boolean and y.context = context and n.context = context
+    expect unary_context: when layer_rule?(s, context, ExprF::UnaryExpression(unary_op, value), ty), value.context = context
+    expect binary_context: when layer_rule?(s, context, ExprF::BinaryExpression(op, value, body), ty), value.context = context and body.context = context
+    expect call_context: when layer_rule?(s, context, ExprF::Call(item, args), ty) and 0 <= j < args.len, args[j].context = context
+    expect match_context: when layer_rule?(s, context, ExprF::Match(value, arms), ty) and 0 <= j < arms.len, value.context = context and arms[j].body.context = context
+    expect parentheses_context: when layer_rule?(s, context, ExprF::Parenthesized(value), ty), value.context = context
+}
+```
+
+r[types.derivation.unique]
+If `Σ; Γ ⊢ e : τ` and `Σ; Γ ⊢ e : υ`, then τ = υ. The claim is for the
+same complete expression with the same resolved identities and local indices.
+<!-- status: open -->
+
+r[types.derivation.weakening]
+If `Σ; Γ ⊢ e : τ`, extending Γ with fresh slots preserves typing after
+capture-avoiding adjustment of local indices. Under each let the adjustment
+protects the body's new slot and acts on the value in its incoming context.
+<!-- status: open -->
+
+r[types.derivation.correspondence]
+For an admitted resolved expression in this Core domain, a successful
+production typing traversal yields exactly a derivation of its reported type
+in its resolved context, and every such derivation is accepted by that
+traversal. The correspondence retains every written occurrence.
+<!-- status: open -->
+
+## Primitive contracts
+
+The following contracts express operator decisions with a finite tag and a
+separate nominal equality atom. `Ty` retains complete canonical identities.
 
 r[types.primitive.compatibility] spec::types::compatible::{meaning, builtin, nominal, distinct, disjoint}
 Compatibility compares tags and, only for nominal types, identity atoms.
+<!-- status: lean Spec.Language.Types.compatibility -->
 
 ```fren
-pub enum ValueKind { Boolean, Integer, Nominal }
-pub enum Unary { Negate, Not }
-pub enum Binary { Add, Sub, Mul, Div, Mod, Lt, Le, Gt, Ge, And, Or, Iff, Eq, Ne }
-
 pub proc compatible(left: ValueKind, right: ValueKind, left_id: Int, right_id: Int): (same?) {
     ensure meaning: same? iff left = right and (left != ValueKind::Nominal or left_id = right_id)
 
@@ -131,6 +456,7 @@ pub proc compatible(left: ValueKind, right: ValueKind, left_id: Int, right_id: I
 
 r[types.primitive.unary] spec::types::unary::{meaning, result_type, negate_bool, not_int}
 A unary operator accepts exactly its table operand and preserves its tag.
+<!-- status: lean Spec.Language.Types.unary -->
 
 ```fren
 pub proc unary(op: Unary, operand: ValueKind): (accepted?, result: ValueKind) {
@@ -145,6 +471,7 @@ pub proc unary(op: Unary, operand: ValueKind): (accepted?, result: ValueKind) {
 r[types.primitive.binary] spec::types::binary::{meaning, result_type, enum_add, mixed_equality, distinct_enums, same_enum}
 A binary operator accepts exactly its table operands and returns its table
 tag, including nominal identity comparison for equality.
+<!-- status: lean Spec.Language.Types.binary -->
 
 ```fren
 pub proc binary(op: Binary, left: ValueKind, right: ValueKind, left_id: Int, right_id: Int): (
@@ -192,12 +519,17 @@ pub proc binary(op: Binary, left: ValueKind, right: ValueKind, left_id: Int, rig
 ```
 
 
-## Shared values and operator meaning
+## Values and arithmetic domains
 
-A nominal value records its enum owner and constructor identity. `value_type`
-computes its type; `value_valid?` additionally checks actual constructor
-ownership in the resolved symbols. Static typing and value validity remain
-separate from an integer operation's domain.
+r[types.value.owner] spec::types::value_valid?
+A nominal value records its enumeration owner and a constructor belonging
+to that owner in Σ. Boolean and integer values have their built-in type.
+<!-- status: definition -->
+
+r[types.value.domain] spec::types::integer_domain?
+Integer division and remainder require a nonzero divisor for verification.
+This condition does not restrict their typing rule.
+<!-- status: definition -->
 
 ```fren
 pub enum Value { Boolean(Bool), Integer(Int), Nominal(ItemId, ItemId) }
@@ -208,6 +540,7 @@ pub fn value_type(value: Value): Ty := match value {
     Value::Nominal(owner, _) => Ty::Nominal(owner),
 }
 
+-- Constructor lookup quantifies over a supplied finite sequence.
 set_option fren.lint.undecidable "allow" in
 pub fn value_valid?(s: Symbols, value: Value) := match value {
     Value::Nominal(owner, item) => (exists (k: Int), 0 <= k < s.constructors.len
@@ -234,171 +567,62 @@ pub proc meaning_examples(n: Int) {
 }
 ```
 
-`linear_meaning?` defines addition and subtraction; it rejects other operators.
-The examples additionally check signed division and remainder with a fixed
-nonzero divisor. The general multiplication and Euclidean equations are
-mathematical rules in the expression chapter, not claims that the current
-linear-arithmetic solver decides them for variable operands.
-An arithmetic equation constrains a result only within its operation's
-domain. Outside it, the expression still denotes a value of its type, fixed
-by the interpretation, but no arithmetic equation here constrains that value.
-Successful proof establishes the domain; a timeout establishes neither its
-truth nor its negation. Operational failure reports are specified separately
-by the [evaluator](../Compiler/Evaluator.md).
+## Derivation representation
 
-## Finite expression derivations
-
-Write `Σ; Γ ⊢ e : T` when `e` has type `T` in symbols `Σ` and local context
-`Γ`. A finite expression is represented by its written occurrences in
-postorder: each child index is strictly smaller than its parent's. A row
-contains the occurrence and a *candidate* context and type. These candidates
-are a derivation witness, not trusted typing facts: `derivation?` checks the
-local rule at **every** row, using the child's actual row and requiring its
-exact context and type. The final row is the root. All written children,
-including unused let values and unreachable branches, must appear.
-This representation describes a judgment, not a production compiler IR.
+r[types.derivation.table] spec::types::derivation?
+A derivation may be represented by rows in postorder. Each child index is
+strictly smaller than its parent index. Every row satisfies the same
+one-layer rule under its recorded context and type. The last row is the
+root; all rows, including any extra rows, are checked. Unfolding shared rows
+produces a finite tree. Sharing requires identical contexts and types.
+<!-- status: definition -->
 
 ```fren
-pub struct Arm { constructor: ItemId, body: Int }
-
-pub enum Form {
-    BooleanLiteral,
-    IntegerLiteral,
-    Local(Int),
-    ConstructorValue(ItemId),
-    UnaryExpression(Unary, Int),
-    BinaryExpression(Binary, Int, Int),
-    Call(ItemId, Seq<Int>),
-    Let(Bool, Int, Int),
-    Conditional(Int, Int, Int),
-    Match(Int, Seq<Arm>),
-    Parenthesized(Int),
-}
-
+pub type Form := ExprF<Int>
+pub type Arm := ArmF<Int>
 pub struct Row { form: Form, context: Context, ty: Ty }
 
+-- Match-pattern membership quantifies over the finite arm sequence.
 set_option fren.lint.undecidable "allow" in
 pub fn direct_item?(form: Form, item: ItemId) := match form {
-    Form::ConstructorValue(target) => item = target,
-    Form::Call(target, _) => item = target,
-    Form::Match(_, arms) => (exists (j: Int), 0 <= j < arms.len and item = arms[j].constructor),
+    ExprF::ConstructorValue(target) => item = target,
+    ExprF::Call(target, _) => item = target,
+    ExprF::Match(_, arms) => (exists (j: Int), 0 <= j < arms.len and item = arms[j].constructor),
     _ => false,
 }
 
 pub fn edge?(rows: Seq<Row>, parent: Int, child: Int, context: Context, ty: Ty) :=
     0 <= child < parent < rows.len and rows[child].context = context and compatible_type?(rows[child].ty, ty)
 
-pub fn integer_binary?(op: Binary) :=
-    op in {
-        Binary::Add,
-        Binary::Sub,
-        Binary::Mul,
-        Binary::Div,
-        Binary::Mod,
-    }
-
-pub fn comparison?(op: Binary) := op in {Binary::Lt, Binary::Le, Binary::Gt, Binary::Ge}
-pub fn boolean_binary?(op: Binary) := op in {Binary::And, Binary::Or, Binary::Iff}
-```
-
-r[types.operator.unary] spec::types::unary_type?
-Unary minus takes and returns `Int`; `not` takes and returns `Bool`.
-
-r[types.operator.binary] spec::types::binary_type?
-Arithmetic takes integers and returns an integer; integer comparisons return
-a Boolean. Boolean operators take and return Booleans. Equality and
-inequality take two values of one type and return a Boolean.
-
-```fren
-pub fn unary_type?(op: Unary, operand: Ty, result: Ty) := match op {
-    Unary::Negate => operand = Ty::Integer and result = Ty::Integer,
-    Unary::Not => operand = Ty::Boolean and result = Ty::Boolean,
+-- Child-position checks quantify only over finite argument and arm sequences.
+set_option fren.lint.undecidable "allow" in
+pub fn children_before?(form: Form, parent: Int) := match form {
+    ExprF::UnaryExpression(_, child) => 0 <= child < parent,
+    ExprF::BinaryExpression(_, left, right) => 0 <= left < parent and 0 <= right < parent,
+    ExprF::Call(_, args) => (forall (j: Int), when 0 <= j < args.len, 0 <= args[j] < parent),
+    ExprF::Let(_, value, body) => 0 <= value < parent and 0 <= body < parent,
+    ExprF::Conditional(condition, yes, no) =>
+        0 <= condition < parent and 0 <= yes < parent and 0 <= no < parent,
+    ExprF::Match(scrutinee, arms) => 0 <= scrutinee < parent
+        and (forall (j: Int), when 0 <= j < arms.len, 0 <= arms[j].body < parent),
+    ExprF::Parenthesized(child) => 0 <= child < parent,
+    _ => true,
 }
 
-pub fn binary_type?(op: Binary, left: Ty, right: Ty, result: Ty) :=
-    if integer_binary?(op) then left = Ty::Integer and right = Ty::Integer and result = Ty::Integer
-    else if comparison?(op) then left = Ty::Integer and right = Ty::Integer and result = Ty::Boolean
-    else if boolean_binary?(op) then left = Ty::Boolean and right = Ty::Boolean and result = Ty::Boolean
-    else compatible_type?(left, right) and result = Ty::Boolean
-```
+pub fn local_rule?(s: Symbols, rows: Seq<Row>, i: Int) := 0 <= i < rows.len
+    and children_before?(rows[i].form, i)
+    and rule?(
+        s,
+        rows[i].context,
+        rows[i].form,
+        |child| Judgment {
+            context := rows[child].context,
+            ty := rows[child].ty,
+        },
+        rows[i].ty
+    )
 
-The literal forms retain their type-relevant shape only; their Boolean or
-integer value is irrelevant to typing. `Let` records whether its binder has
-the `?` suffix. A match pattern has a resolved constructor identity and no
-binder. Parentheses preserve type. The relation below has no permissive
-fallback for non-value items or non-function callees.
-
-**Legality rules**
-
-r[types.expression.local] spec::types::local_rule?
-A local has the exact context entry at its resolved index; missing lookup fails.
-
-r[types.expression.values] spec::types::local_rule?
-Literals have their built-in type; constructors have their canonical owner's type.
-
-r[types.expression.items] spec::types::local_rule?
-Only constructor items are values; only function items are callable.
-
-r[types.expression.call] spec::types::local_rule?
-A call checks the exact arity and every positional argument against its signature.
-
-r[types.expression.let] spec::types::local_rule?
-The value uses the incoming context, and only the body receives its type as a new slot.
-
-r[types.expression.if] spec::types::local_rule?
-The condition is Boolean and both branches have the result type.
-
-r[types.expression.match] spec::types::local_rule?
-The scrutinee is nominal; every pattern has that owner and every body has the result type.
-
-r[types.expression.parentheses] spec::types::local_rule?
-Parentheses preserve context and type.
-
-```fren
-set_option fren.lint.undecidable "allow" in
-pub fn local_rule?(s: Symbols, rows: Seq<Row>, i: Int) := 0 <= i < rows.len and
-    (let r := rows[i] in match r.form {
-        Form::BooleanLiteral => r.ty = Ty::Boolean,
-        Form::IntegerLiteral => r.ty = Ty::Integer,
-        Form::Local(slot) => 0 <= slot < r.context.len and r.ty = r.context[slot],
-        Form::ConstructorValue(item) => (exists (k: Int), 0 <= k < s.constructors.len
-            and s.constructors[k].item = item and r.ty = Ty::Nominal(s.constructors[k].owner)),
-        Form::UnaryExpression(op, child) => 0 <= child < i
-            and edge?(rows, i, child, r.context, rows[child].ty)
-            and unary_type?(op, rows[child].ty, r.ty),
-        Form::BinaryExpression(op, left, right) => 0 <= left < i and 0 <= right < i
-            and edge?(rows, i, left, r.context, rows[left].ty)
-            and edge?(rows, i, right, r.context, rows[right].ty)
-            and binary_type?(op, rows[left].ty, rows[right].ty, r.ty),
-        Form::Call(item, args) => (exists (k: Int), 0 <= k < s.functions.len
-            and s.functions[k].item = item and args.len = s.functions[k].parameters.len
-            and r.ty = s.functions[k].result
-            and (forall (j: Int), when 0 <= j < args.len,
-            edge?(rows, i, args[j], r.context, s.functions[k].parameters[j]))),
-        Form::Let(question?, value, body) => 0 <= value < i
-            and edge?(rows, i, value, r.context, rows[value].ty)
-            and binder?(question?, rows[value].ty)
-            and edge?(rows, i, body, [rows[value].ty] ++ r.context, r.ty),
-        Form::Conditional(condition, yes, no) => edge?(rows, i, condition, r.context, Ty::Boolean)
-            and edge?(rows, i, yes, r.context, r.ty) and edge?(rows, i, no, r.context, r.ty),
-        Form::Match(scrutinee, arms) => 0 <= scrutinee < i and arms != []
-            and edge?(rows, i, scrutinee, r.context, rows[scrutinee].ty)
-            and (forall (j: Int), when 0 <= j < arms.len,
-            edge?(rows, i, arms[j].body, r.context, r.ty)
-            and (exists (k: Int), 0 <= k < s.constructors.len
-            and s.constructors[k].item = arms[j].constructor
-            and rows[scrutinee].ty = Ty::Nominal(s.constructors[k].owner))),
-        Form::Parenthesized(child) => edge?(rows, i, child, r.context, r.ty),
-    })
-```
-
-r[types.declaration.result] spec::types::derivation?
-A function body has a derivation at its declared result type.
-
-r[types.declaration.conditions] spec::types::derivation?
-Each assume/expect body has a derivation at `Ty::Boolean`.
-
-```fren
+-- The derivation check quantifies over all rows of the supplied finite table.
 set_option fren.lint.undecidable "allow" in
 pub fn derivation?(s: Symbols, rows: Seq<Row>, context: Context, ty: Ty) :=
     symbols_valid?(s) and rows != []
@@ -406,34 +630,8 @@ pub fn derivation?(s: Symbols, rows: Seq<Row>, context: Context, ty: Ty) :=
     and (forall (i: Int), when 0 <= i < rows.len, local_rule?(s, rows, i))
 ```
 
-This is a full-domain decidable *derivation check* for arbitrary finite
-sequences, not a test bounded to a particular number of nodes or enum types.
-Every indexed access has an explicit finite bound. The `undecidable` lint
-opt-outs mark the current solver's treatment of sequence operations and
-integer quantifiers, not mathematical undecidability: their guards restrict
-all quantified indices to the supplied finite sequences. They do not claim
-that SMT can prove every universally quantified theorem about this judgment. A malformed index, empty
-match, wrong context or wrong candidate type fails the relation. No solver
-verdict or caller-supplied `accepted?` determines a row's validity.
-By induction on the row index, each child of an accepted row has a derivation
-in its required context. Conversely, a finite tree derivation can be listed
-in postorder with these rows. Sharing is permitted only when both contexts
-and types agree; a source adapter must retain every distinct written
-occurrence for diagnostics. Extra rows are checked too and cannot hide an
-ill-typed term. The judgment of a source expression is the existence of such
-a derivation of its complete occurrence tree, with root context `Γ` and type
-`T`. This existential presentation is not itself a claim that unbounded
-SMT search for a witness terminates. Type inference on a fixed resolved
-finite tree is a bottom-up decision: leaf types come from literals, `Γ` and
-`Σ`; each operator, call, let or branch either determines its type or fails.
-The production traversal's universal correspondence is recorded separately
-in the [coverage document](../../../docs/fren2-specification-coverage.md).
-
-Match coverage and absence of recursive function cycles are separate static
-obligations. This relation admits repeated or missing constructors in a
-nonempty match whose bodies have one type. It checks every arm, regardless
-of reachability. Function bodies must have their declared result type;
-assume/expect bodies must be Boolean in their parameter context.
+A representation of a source expression retains its complete occurrence tree;
+a table alone does not identify which source expression it represents.
 
 ## Worked derivations
 
@@ -445,7 +643,7 @@ never Integer. A let value does not have access to its new slot.
 pub const EMPTY_SYMBOLS: Symbols := Symbols { functions := [], constructors := [] }
 
 pub fn literal(ty: Ty): Row := Row {
-    form := Form::IntegerLiteral,
+    form := ExprF::IntegerLiteral,
     context := [],
     ty,
 }
@@ -458,7 +656,7 @@ pub proc derivation_examples() {
         EMPTY_SYMBOLS,
         [
             Row {
-                form := Form::Local(0),
+                form := ExprF::Local(0),
                 context := [],
                 ty := Ty::Integer,
             },
@@ -470,7 +668,7 @@ pub proc derivation_examples() {
         EMPTY_SYMBOLS,
         [
             Row {
-                form := Form::Local(0),
+                form := ExprF::Local(0),
                 context := [Ty::Boolean, Ty::Integer],
                 ty := Ty::Boolean,
             },
@@ -482,7 +680,7 @@ pub proc derivation_examples() {
         EMPTY_SYMBOLS,
         [
             Row {
-                form := Form::Local(0),
+                form := ExprF::Local(0),
                 context := [Ty::Boolean, Ty::Integer],
                 ty := Ty::Integer,
             },
@@ -494,7 +692,7 @@ pub proc derivation_examples() {
         EMPTY_SYMBOLS,
         [
             Row {
-                form := Form::Parenthesized(0),
+                form := ExprF::Parenthesized(0),
                 context := [],
                 ty := Ty::Integer,
             },
@@ -516,10 +714,7 @@ The following examples exercise every expression form. Each case checks a
 complete derivation, including every written row. The partial and repeated-arm
 examples deliberately pass typing: coverage is separate. Wrong contexts,
 argument counts, owners and branch types deliberately fail.
-The type and expression Lean wrappers check every example constant against these Fren
-definitions, using exact finite quantifier decisions. These concrete checks
-do not prove production traversal soundness; the core definitions remain
-unbounded in sequence length and nominal identity.
+The examples instantiate the rules at particular contexts, types and symbols.
 
 ```fren
 pub fn node(form: Form, context: Context, ty: Ty): Row := Row { form, context, ty }
@@ -567,8 +762,8 @@ pub const MATCH_SYMBOLS: Symbols := Symbols {
 pub const UNARY_EXAMPLE: Bool := derivation?(
     EMPTY_SYMBOLS,
     [
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::UnaryExpression(Unary::Negate, 0), [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::UnaryExpression(Unary::Negate, 0), [], Ty::Integer),
     ],
     [],
     Ty::Integer
@@ -578,8 +773,8 @@ pub const UNARY_REJECT_EXAMPLE: Bool :=
     not derivation?(
         EMPTY_SYMBOLS,
         [
-            node(Form::BooleanLiteral, [], Ty::Boolean),
-            node(Form::UnaryExpression(Unary::Negate, 0), [], Ty::Integer),
+            node(ExprF::BooleanLiteral, [], Ty::Boolean),
+            node(ExprF::UnaryExpression(Unary::Negate, 0), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -588,9 +783,9 @@ pub const UNARY_REJECT_EXAMPLE: Bool :=
 pub const BINARY_EXAMPLE: Bool := derivation?(
     EMPTY_SYMBOLS,
     [
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::BinaryExpression(Binary::Add, 0, 1), [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::BinaryExpression(Binary::Add, 0, 1), [], Ty::Integer),
     ],
     [],
     Ty::Integer
@@ -600,9 +795,9 @@ pub const BINARY_REJECT_EXAMPLE: Bool :=
     not derivation?(
         EMPTY_SYMBOLS,
         [
-            node(Form::BooleanLiteral, [], Ty::Boolean),
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::BinaryExpression(Binary::Add, 0, 1), [], Ty::Integer),
+            node(ExprF::BooleanLiteral, [], Ty::Boolean),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::BinaryExpression(Binary::Add, 0, 1), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -612,9 +807,9 @@ pub const BOOLEAN_RIGHT_CHECKED_EXAMPLE: Bool :=
     not derivation?(
         EMPTY_SYMBOLS,
         [
-            node(Form::BooleanLiteral, [], Ty::Boolean),
-            node(Form::Local(0), [], Ty::Boolean),
-            node(Form::BinaryExpression(Binary::And, 0, 1), [], Ty::Boolean),
+            node(ExprF::BooleanLiteral, [], Ty::Boolean),
+            node(ExprF::Local(0), [], Ty::Boolean),
+            node(ExprF::BinaryExpression(Binary::And, 0, 1), [], Ty::Boolean),
         ],
         [],
         Ty::Boolean
@@ -623,9 +818,9 @@ pub const BOOLEAN_RIGHT_CHECKED_EXAMPLE: Bool :=
 pub const LET_BODY_EXAMPLE: Bool := derivation?(
     EMPTY_SYMBOLS,
     [
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::Local(0), [Ty::Integer], Ty::Integer),
-        node(Form::Let(false, 0, 1), [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::Local(0), [Ty::Integer], Ty::Integer),
+        node(ExprF::Let(false, 0, 1), [], Ty::Integer),
     ],
     [],
     Ty::Integer
@@ -635,9 +830,9 @@ pub const SUFFIX_EXAMPLE: Bool :=
     not derivation?(
         EMPTY_SYMBOLS,
         [
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::Local(0), [Ty::Integer], Ty::Integer),
-            node(Form::Let(true, 0, 1), [], Ty::Integer),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::Local(0), [Ty::Integer], Ty::Integer),
+            node(ExprF::Let(true, 0, 1), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -647,9 +842,9 @@ pub const LET_VALUE_SCOPE_EXAMPLE: Bool :=
     not derivation?(
         EMPTY_SYMBOLS,
         [
-            node(Form::Local(0), [], Ty::Integer),
-            node(Form::Local(0), [Ty::Integer], Ty::Integer),
-            node(Form::Let(false, 0, 1), [], Ty::Integer),
+            node(ExprF::Local(0), [], Ty::Integer),
+            node(ExprF::Local(0), [Ty::Integer], Ty::Integer),
+            node(ExprF::Let(false, 0, 1), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -658,10 +853,10 @@ pub const LET_VALUE_SCOPE_EXAMPLE: Bool :=
 pub const CONDITIONAL_EXAMPLE: Bool := derivation?(
     EMPTY_SYMBOLS,
     [
-        node(Form::BooleanLiteral, [], Ty::Boolean),
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::Conditional(0, 1, 2), [], Ty::Integer),
+        node(ExprF::BooleanLiteral, [], Ty::Boolean),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::Conditional(0, 1, 2), [], Ty::Integer),
     ],
     [],
     Ty::Integer
@@ -671,10 +866,10 @@ pub const BOTH_BRANCHES_EXAMPLE: Bool :=
     not derivation?(
         EMPTY_SYMBOLS,
         [
-            node(Form::BooleanLiteral, [], Ty::Boolean),
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::BooleanLiteral, [], Ty::Boolean),
-            node(Form::Conditional(0, 1, 2), [], Ty::Integer),
+            node(ExprF::BooleanLiteral, [], Ty::Boolean),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::BooleanLiteral, [], Ty::Boolean),
+            node(ExprF::Conditional(0, 1, 2), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -684,10 +879,10 @@ pub const CONDITION_TYPE_EXAMPLE: Bool :=
     not derivation?(
         EMPTY_SYMBOLS,
         [
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::Conditional(0, 1, 2), [], Ty::Integer),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::Conditional(0, 1, 2), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -697,21 +892,21 @@ pub const MATCH_ARMS_EXAMPLE: Bool := derivation?(
     MATCH_SYMBOLS,
     [
         node(
-            Form::ConstructorValue(["M", "Light", "Red"]),
+            ExprF::ConstructorValue(["M", "Light", "Red"]),
             [],
             Ty::Nominal(["M", "Light"])
         ),
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
         node(
-            Form::Match(
+            ExprF::Match(
                 0,
                 [
-                    Arm {
+                    ArmF {
                         constructor := ["M", "Light", "Red"],
                         body := 1,
                     },
-                    Arm {
+                    ArmF {
                         constructor := ["M", "Light", "Green"],
                         body := 2,
                     },
@@ -730,16 +925,16 @@ pub const MATCH_OWNER_EXAMPLE: Bool :=
         EXAMPLE_SYMBOLS,
         [
             node(
-                Form::ConstructorValue(["M", "Light", "Red"]),
+                ExprF::ConstructorValue(["M", "Light", "Red"]),
                 [],
                 Ty::Nominal(["M", "Light"])
             ),
-            node(Form::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
             node(
-                Form::Match(
+                ExprF::Match(
                     0,
                     [
-                        Arm {
+                        ArmF {
                             constructor := ["M", "Signal", "Red"],
                             body := 1,
                         },
@@ -758,11 +953,11 @@ pub const MATCH_EMPTY_EXAMPLE: Bool :=
         MATCH_SYMBOLS,
         [
             node(
-                Form::ConstructorValue(["M", "Light", "Red"]),
+                ExprF::ConstructorValue(["M", "Light", "Red"]),
                 [],
                 Ty::Nominal(["M", "Light"])
             ),
-            node(Form::Match(0, []), [], Ty::Integer),
+            node(ExprF::Match(0, []), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -773,21 +968,21 @@ pub const MATCH_ALL_BODIES_EXAMPLE: Bool :=
         MATCH_SYMBOLS,
         [
             node(
-                Form::ConstructorValue(["M", "Light", "Red"]),
+                ExprF::ConstructorValue(["M", "Light", "Red"]),
                 [],
                 Ty::Nominal(["M", "Light"])
             ),
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::BooleanLiteral, [], Ty::Boolean),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::BooleanLiteral, [], Ty::Boolean),
             node(
-                Form::Match(
+                ExprF::Match(
                     0,
                     [
-                        Arm {
+                        ArmF {
                             constructor := ["M", "Light", "Red"],
                             body := 1,
                         },
-                        Arm {
+                        ArmF {
                             constructor := ["M", "Light", "Green"],
                             body := 2,
                         },
@@ -805,16 +1000,16 @@ pub const COVERAGE_SEPARATE_EXAMPLE: Bool := derivation?(
     MATCH_SYMBOLS,
     [
         node(
-            Form::ConstructorValue(["M", "Light", "Red"]),
+            ExprF::ConstructorValue(["M", "Light", "Red"]),
             [],
             Ty::Nominal(["M", "Light"])
         ),
-        node(Form::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
         node(
-            Form::Match(
+            ExprF::Match(
                 0,
                 [
-                    Arm {
+                    ArmF {
                         constructor := ["M", "Light", "Red"],
                         body := 1,
                     },
@@ -832,20 +1027,20 @@ pub const DUPLICATES_SEPARATE_EXAMPLE: Bool := derivation?(
     MATCH_SYMBOLS,
     [
         node(
-            Form::ConstructorValue(["M", "Light", "Red"]),
+            ExprF::ConstructorValue(["M", "Light", "Red"]),
             [],
             Ty::Nominal(["M", "Light"])
         ),
-        node(Form::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
         node(
-            Form::Match(
+            ExprF::Match(
                 0,
                 [
-                    Arm {
+                    ArmF {
                         constructor := ["M", "Light", "Red"],
                         body := 1,
                     },
-                    Arm {
+                    ArmF {
                         constructor := ["M", "Light", "Red"],
                         body := 1,
                     },
@@ -862,8 +1057,8 @@ pub const DUPLICATES_SEPARATE_EXAMPLE: Bool := derivation?(
 pub const CALL_EXAMPLE: Bool := derivation?(
     CALL_SYMBOLS,
     [
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::Call(["M", "f"], [0]), [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::Call(["M", "f"], [0]), [], Ty::Integer),
     ],
     [],
     Ty::Integer
@@ -873,8 +1068,8 @@ pub const CALL_ARITY_EXAMPLE: Bool :=
     not derivation?(
         CALL_SYMBOLS,
         [
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::Call(["M", "f"], [0, 0]), [], Ty::Integer),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::Call(["M", "f"], [0, 0]), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -884,8 +1079,8 @@ pub const CALL_ARGUMENT_EXAMPLE: Bool :=
     not derivation?(
         CALL_SYMBOLS,
         [
-            node(Form::BooleanLiteral, [], Ty::Boolean),
-            node(Form::Call(["M", "f"], [0]), [], Ty::Integer),
+            node(ExprF::BooleanLiteral, [], Ty::Boolean),
+            node(ExprF::Call(["M", "f"], [0]), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -895,8 +1090,8 @@ pub const CONSTRUCTOR_NOT_CALLABLE_EXAMPLE: Bool :=
     not derivation?(
         EXAMPLE_SYMBOLS,
         [
-            node(Form::IntegerLiteral, [], Ty::Integer),
-            node(Form::Call(["M", "Light", "Red"], [0]), [], Ty::Integer),
+            node(ExprF::IntegerLiteral, [], Ty::Integer),
+            node(ExprF::Call(["M", "Light", "Red"], [0]), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -905,7 +1100,7 @@ pub const CONSTRUCTOR_NOT_CALLABLE_EXAMPLE: Bool :=
 pub const FUNCTION_NOT_VALUE_EXAMPLE: Bool :=
     not derivation?(
         CALL_SYMBOLS,
-        [node(Form::ConstructorValue(["M", "f"]), [], Ty::Integer)],
+        [node(ExprF::ConstructorValue(["M", "f"]), [], Ty::Integer)],
         [],
         Ty::Integer
     )
@@ -915,7 +1110,7 @@ pub const CONSTRUCTOR_TYPE_EXAMPLE: Bool :=
         MATCH_SYMBOLS,
         [
             node(
-                Form::ConstructorValue(["M", "Light", "Red"]),
+                ExprF::ConstructorValue(["M", "Light", "Red"]),
                 [],
                 Ty::Integer
             ),
@@ -927,8 +1122,8 @@ pub const CONSTRUCTOR_TYPE_EXAMPLE: Bool :=
 pub const PARENTHESES_EXAMPLE: Bool := derivation?(
     EMPTY_SYMBOLS,
     [
-        node(Form::IntegerLiteral, [], Ty::Integer),
-        node(Form::Parenthesized(0), [], Ty::Integer),
+        node(ExprF::IntegerLiteral, [], Ty::Integer),
+        node(ExprF::Parenthesized(0), [], Ty::Integer),
     ],
     [],
     Ty::Integer
@@ -938,8 +1133,8 @@ pub const CONTEXT_ALIGNMENT_EXAMPLE: Bool :=
     not derivation?(
         EMPTY_SYMBOLS,
         [
-            node(Form::Local(0), [Ty::Integer], Ty::Integer),
-            node(Form::Parenthesized(0), [], Ty::Integer),
+            node(ExprF::Local(0), [Ty::Integer], Ty::Integer),
+            node(ExprF::Parenthesized(0), [], Ty::Integer),
         ],
         [],
         Ty::Integer
@@ -978,7 +1173,7 @@ pub const WRONG_VALUE_OWNER_EXAMPLE: Bool :=
         Value::Nominal(["M", "Signal"], ["M", "Light", "Red"])
     )
 
-pub const DIRECT_CALLEE_EXAMPLE: Bool := direct_item?(Form::Call(["M", "f"], []), ["M", "f"])
+pub const DIRECT_CALLEE_EXAMPLE: Bool := direct_item?(ExprF::Call(["M", "f"], []), ["M", "f"])
 ```
 
 Typing does not decide integer division's domain or a Boolean goal's truth.

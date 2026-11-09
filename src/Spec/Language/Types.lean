@@ -7,6 +7,7 @@ open Fren.Lang
 
 #fren_md "Types.md"
 
+set_option warningAsError true in
 #fren_check
 
 namespace Spec.Language.Types
@@ -153,6 +154,9 @@ theorem exists_below_flat (upper : Int) (p : Int → Prop) :
       ∃ i : Fin upper.toNat, p (i.val : Int) := by
   simpa only [and_assoc] using exists_below_iff upper p
 
+-- Expanding generic layers and bounded arm tables needs more simplifier work.
+set_option maxHeartbeats 1000000
+
 -- A shared simp set keeps each finite example on the same exact definitions.
 attribute [local simp] forall_below_flat exists_below_flat Fin.forall_fin_succ
   Fin.exists_fin_succ Fren.Seq.ofList Fren.Seq.unit Fren.Seq.len Fren.Seq.toList
@@ -190,6 +194,72 @@ example : spec.types.BOTH_BRANCHES_EXAMPLE := by
   simp [fren_spec] <;> decide
 
 example : spec.types.CONDITION_TYPE_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.MATCH_ARMS_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.MATCH_OWNER_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.MATCH_EMPTY_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.MATCH_ALL_BODIES_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.COVERAGE_SEPARATE_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.DUPLICATES_SEPARATE_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.CALL_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.CALL_ARITY_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.CALL_ARGUMENT_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.CONSTRUCTOR_NOT_CALLABLE_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.FUNCTION_NOT_VALUE_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.CONSTRUCTOR_TYPE_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.PARENTHESES_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.CONTEXT_ALIGNMENT_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.PARAMETER_ORDER_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.PARAMETER_SUFFIX_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.IMPLICIT_BOOLEAN_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.MISSING_ANNOTATION_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.EXPLICIT_NOT_OVERWRITTEN_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.VALUE_OWNER_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.WRONG_VALUE_OWNER_EXAMPLE := by
+  simp [fren_spec] <;> decide
+
+example : spec.types.DIRECT_CALLEE_EXAMPLE := by
   simp [fren_spec] <;> decide
 
 end Spec.Language.Types

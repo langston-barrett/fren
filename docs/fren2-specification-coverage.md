@@ -9,37 +9,66 @@ Fren language or compiler has been verified.
 
 ## Language core correspondence
 
-`Spec/Language/Types.md` defines `Ty`, `Value`, canonical source `ItemId`,
-`Context`, signatures, constructor ownership, operator typing and a finite
-postorder expression derivation. Its predicates compute decisions from raw
-forms, child indices, exact contexts and symbols; candidate row types are
-checked witnesses, never assumed judgments. Guarded integer quantifiers range
-over supplied finite sequences. Fren1's `undecidable` lint opt-outs reflect
-its solver fragment and sequence encoding, not mathematical undecidability
-of checking a finite derivation. Universal SMT validity and unbounded witness
-search are not claimed decidable. General multiplication and Euclidean value
-laws remain mathematical reference rules: the current checker accepts linear
-arithmetic and fixed divisors only.
+The [Core typing chapter](../src/Spec/Language/Types.md) defines semantic
+objects first, then `ExprF<E>` and `ArmF<E>`, judgment forms, one rule per
+expression constructor, layer properties, primitive contracts, an optional
+postorder witness and examples. It contains no Lean code. The
+[style guide](../src/Spec/dev/Style.md) specifies the chapter template and
+standalone `<!-- status: STATUS -->` metadata after each rule paragraph.
+This is the pilot; the rest of the reference has not yet adopted the syntax.
+No mechanical status checker is delivered by this unit.
+
+`rule?` is the single generic one-layer relation. It receives a child-position
+to `Judgment` annotation function, preserving each child's exact context and
+type. `layer_rule?` instantiates it with annotations directly in the recursive
+positions. `local_rule?` instantiates the same relation with annotation lookup
+in the postorder table and separately checks that every child precedes its
+parent. It does not repeat the typing decisions. A finite derivation tree
+justifies every annotation, including unused let values and all branches.
+The postorder-to-tree argument is mathematical; a checked source-occurrence
+adapter theorem is still needed.
+
+Guarded integer quantifiers range over supplied finite sequences. Each
+remaining `undecidable` lint opt-out explains the solver restriction it
+addresses. None excuses a failed expectation or claims mathematical
+undecidability of finite derivation checking. Unbounded SMT witness search
+is not claimed decidable. The reference's dynamic semantics has a verified,
+well-typed domain; partial-operation and strategy notes in historical records
+below describe implementations and do not extend that semantic domain.
 
 The source representation uses canonical sequences of named components.
-Production `FrenBase.ItemId` also admits generated components; they are not
-source declarations in this domain. No display string or hash is an identity.
-The existing integer-atom `ValueKind` contracts and all three genuine `impl`
-bindings are retained unchanged as adapters for `FrenExpr`'s generic primitive
-compatibility/unary/binary functions. They are not the normative type data.
-The type wrapper proves injectivity of the new `Ty` adapter and exact
-compatibility, unary and binary typing through the production generic type
-carrier. These proofs cover arbitrary canonical identity sequences and all
-operators, rather than bounded enum samples. The `local_rule?`
-judgment is not yet bound to the entire production traversal. `FrenHirToThir.HasValue` states recursive
-typing over the real retained AST, and `FrenHirToThir.TypingSound` remains an
-unproved universal obligation. Finite examples, native tests, Plausible and
-local derivation equations cannot discharge it. The postorder induction and
-converse tree-flattening arguments in the reference describe the mathematical
-closure; they are not claimed here as checked Lean proofs of the source adapter.
+Production `FrenBase.ItemId` also admits generated components, which are not
+source declarations in this domain. Display strings and hashes are not
+identities. The three genuine primitive `impl` bindings remain in
+`Types.lean`, using integer equality atoms to instantiate the generic
+production compatibility/unary/binary operations. They are adapters, not
+the normative type representation.
 
-- [ ] Prove a complete occurrence/context-preserving source-to-derivation
-  correspondence and the actual checker's `TypingSound` theorem.
+| Rule or obligation | Evidence and limit |
+| --- | --- |
+| `types.walking.identity`, `types.walking.compatibility` | Fren expectations for disjointness and exact nominal equality |
+| `types.layer.determinism` | Fren expectation for arbitrary layers and valid symbol environments, with child judgments fixed |
+| `types.layer.context` | Fren expectations for exact child contexts, including let extension and binder-free match arms |
+| `types.layer.operators` | Fren expectations for result uniqueness at fixed operand types |
+| `types.operator.unary`, `types.operator.binary` | `Spec.Language.Types.core_unary` and `core_binary` prove agreement with the actual generic primitives for every operator and arbitrary canonical identities |
+| `types.primitive.compatibility`, `types.primitive.unary`, `types.primitive.binary` | Existing universal `impl` proofs of the primitive contracts |
+| Context lookup | `local_type_unique` and `local_type_scoped` prove actual production binding laws |
+| Concrete derivations | Wrapper checks for every public example constant, by finite index expansion; finite evidence only |
+| `types.derivation.unique` | Open: lift the layer step to uniqueness of whole derivations by induction, comparing recursively derived child types |
+| `types.derivation.weakening` | Open: define the capture-avoiding index adjustment and prove typing under context extension by induction |
+| `types.derivation.correspondence` | Open: prove both directions between this Core relation and the production checker in its admitted domain |
+
+The theorem names used in rule metadata belong to `Spec.Language.Types`.
+The `definition` rules introduce objects and relations; their status is not
+an implementation proof. Whole-term laws marked `open` remain normative
+obligations. Existing production `FrenHirToThir.HasValue` and
+`FrenHirToThir.TypingSound` concern the retained AST. Native tests, Plausible,
+closed examples and layer step cases do not establish `TypingSound`, its
+converse, or a complete source-to-Core occurrence correspondence.
+
+- [ ] Prove whole-derivation uniqueness and capture-avoiding weakening.
+- [ ] Prove the complete occurrence/context-preserving source-to-Core
+  correspondence and actual checker's `TypingSound` theorem and converse.
 - [ ] Prove universal match-coverage and call-graph correspondence separately
   from typing, preserving all branch bodies and unused definitions.
 - [ ] Formalize interpretation/free-local/mentioned-item recursive closure
@@ -47,20 +76,16 @@ closure; they are not claimed here as checked Lean proofs of the source adapter.
 - [ ] Establish universal value and declarative source-obligation preservation
   for each actual lowering stage under independently justified domains.
 - [ ] Resolve mutually partial assumption dependencies before claiming a
-  supported verification result for that class. This reference change does
-  not choose that semantics.
+  supported verification result for that class.
 
-Runtime evaluation can be left-to-right and short-circuiting on well-defined
-values. It does not choose static obligations. Both ordinary Boolean operands
-and unused written definitions retain checks; explicit if/match guards supply
-conditional contexts. Unknown, exhaustion and unsupported checks are not
-proof or undefinedness. No unproved goal is its own premise.
-
-The type and expression wrappers prove every concrete example constant by expanding
-its actual finite index domains and simplifying the generated Fren definitions.
+The type wrapper checks the public concrete example constants by expanding
+their finite index domains and simplifying the generated Fren definitions.
 The finite-bound lemmas apply to arbitrary integer upper bounds, including
-empty/negative ranges. These closed examples are exact checked cases, not
-bounded enumeration or sampled traversal soundness.
+empty/negative ranges. These are exact closed cases, not sampled traversal
+soundness. The expression wrapper also checks the examples it imports.
+Historical requests below to wait for recursive Fren datatypes before
+restating typing are superseded by the one-layer definition; its inductive
+closure and implementation correspondence still need universal proofs.
 
 ## Compiler correction units
 
