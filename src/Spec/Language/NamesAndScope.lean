@@ -475,6 +475,11 @@ theorem distinct_extend (s : Snoc String) (n : String) :
     distinct? (.Extend s n) = true ↔ ¬ SMem n s ∧ distinct? s = true := by
   simp only [distinct?, decide_eq_true_eq, local_none_iff]
 
+theorem enum_ok_distinct (x : String) (vs : Snoc String)
+    (h : decl_names_ok? (SrcDecl.Enumeration x vs) = true) : distinct? vs = true := by
+  simp [decl_names_ok?, fren_spec] at h
+  exact h.2
+
 theorem decls_ok_mem (ds : Snoc SrcDecl) (d : SrcDecl) (h : decls_names_ok? ds = true)
     (hd : SMem d ds) : decl_names_ok? d = true := by
   induction ds with
@@ -489,9 +494,7 @@ theorem decls_ok_mem (ds : Snoc SrcDecl) (d : SrcDecl) (h : decls_names_ok? ds =
 theorem variants_distinct (ds : Snoc SrcDecl) (x : String) (vs : Snoc String)
     (h : decls_names_ok? ds = true) (hd : SMem (SrcDecl.Enumeration x vs) ds) :
     distinct? vs = true := by
-  have := decls_ok_mem ds _ h hd
-  simp only [decl_names_ok?, decide_eq_true_eq] at this
-  exact this.2
+  exact enum_ok_distinct x vs (decls_ok_mem ds _ h hd)
 
 theorem nodup_bind (S : Snoc Entry) (o : Fren.Seq String) (vs : Snoc String) (hn : SNodup S)
     (hd : distinct? vs = true) (hf : ∀ v, SMem v vs → entry S (child o v) = none) :
@@ -534,7 +537,9 @@ theorem nodup_types (M : Fren.Seq String) (ds : Snoc SrcDecl)
         rcases hb with ⟨y, ws, hy, rfl | ⟨v, _, rfl⟩⟩
         · exact fresh y ws hy (child_inj M y x heq)
         · exact child_ne_deeper M y v x heq
-      · exact ho.2.2
+      · have h2 := ho.2
+        simp [fren_spec] at h2
+        exact h2.2
       · intro v _
         rw [entry_none_iff]
         intro b hb heq

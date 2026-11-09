@@ -1139,6 +1139,8 @@ is `trusted`.
 - [x] Prove the exchange law of collection (`names.collection.order`).
 - [ ] State and prove the order law for every permutation of the
   declarations; the chapter states it only for the last two.
+- [ ] State and prove weakening for a whole source table
+  (`names.expression.weakening` proves it for one layer).
 - [ ] Bind path-head and member lookup and collection to the production
   resolver, whose functions read production scope and token structures
   that Fren does not yet state.

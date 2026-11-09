@@ -337,6 +337,13 @@ function. A match pattern denotes a variant (else `F0210`, `expected a
 variant`). A path that denotes anything else has no resolution in that
 position.
 
+The value and callee conditions are what make the result a Core form: the
+Core has no function as a value and no local or variant as a callee. They
+have no diagnostic code of this chapter. An implementation may find the
+target of such a path first and report the failed condition where it
+forms the typed term, as `… is not a value`, `… is not a function` or `a
+local variable is not a function`; the module is rejected either way.
+
 ```fren
 pub fn value_form<E>(env: Env, scope: Scope, path: Path): Option<ExprF<E>> :=
     match path_target(env, scope, path) {
@@ -526,9 +533,10 @@ A layer *mentions* a name when it is the first name of one of the layer's
 paths in value, callee or pattern position. Inserting a binder of a name
 that the layer does not mention at level n of S, with `0 ≤ n ≤ |S|`, shifts
 the layer's resolution at n and changes nothing else, as `shift_form` of
-[typing's weakening](Types.md#r-types.derivation.weakening) does. So the
-resolution of an expression survives a new binder around it that captures
-none of its names.
+[typing's weakening](Types.md#r-types.derivation.weakening) does. The law
+is proved for one layer. The law for a whole table, where the binder is
+inserted into the scope of every row and no row mentions its name, is not
+stated in Fren and is open.
 
 ```fren
 pub fn path_head(path: Path): String := match path {
@@ -725,8 +733,10 @@ pub fn param_names(params: Snoc<Param>): Scope := match params {
 
 r[names.collection.duplicates] spec::names::{distinct?, reserved?, decl_names_ok?, decls_names_ok?, names_ok?}
 Two declarations of one module with the same name are an error (`F0206`),
-whatever their kinds and order. A declaration named `Bool` or `Int` is an
-error (`F0212`): these are reserved type names.
+whatever their kinds and order. An enumeration named `Bool` or `Int` is an
+error (`F0212`): these are reserved type names, which no declaration
+redefines. A function may have either name, since a function is never
+what a written type denotes.
 
 ```fren
 pub fn distinct?(names: Scope) := match names {
@@ -736,12 +746,10 @@ pub fn distinct?(names: Scope) := match names {
 
 pub fn reserved?(name: String) := name is "Bool" | "Int"
 
-pub fn decl_names_ok?(decl: SrcDecl) :=
-    not reserved?(decl_name(decl))
-    and match decl {
-        SrcDecl::Enumeration(_, variants) => distinct?(variants),
-        SrcDecl::Function(_, params, _, _) => distinct?(param_names(params)),
-    }
+pub fn decl_names_ok?(decl: SrcDecl) := match decl {
+    SrcDecl::Enumeration(name, variants) => not reserved?(name) and distinct?(variants),
+    SrcDecl::Function(_, params, _, _) => distinct?(param_names(params)),
+}
 
 pub fn decls_names_ok?(decls: Snoc<SrcDecl>) := match decls {
     Empty => true,
@@ -807,11 +815,11 @@ written types of its parameters and result resolve in the environment of
 the first step, which binds every enumeration of the module; no parameter
 is in scope in them. The signature's parameter context has the resolved
 types in written order. Collection yields the environment of both steps,
-and yields none when a name is repeated or reserved or a written type has
-no resolution.
+and yields none when a name is repeated, an enumeration has a reserved
+name or a written type has no resolution.
 
 ```text
-  names of ds distinct, none reserved   m ⊢ ds ⇒ Σ₀ (enumerations and variants)
+  names of ds distinct, no enumeration reserved   m ⊢ ds ⇒ Σ₀ (enumerations and variants)
   (m, Σ₀) ⊢ Tₖ ⇒ τₖ and (m, Σ₀) ⊢ T ⇒ τ, for each function f(x₀: T₀, …, xₙ: Tₙ): T of ds
   ───────────────────────────────────────────────────────────────────────────────────
   m ⊢ ds ⇒ Σ₀, …, m · f = function (τ₀, …, τₙ) → τ, …
@@ -866,8 +874,8 @@ pub fn collect(parent: ItemId, name: String, decls: Snoc<SrcDecl>): Option<Symb>
 
 r[names.collection.rejected] spec::names::rejected::{duplicate, repeated_variant, reserved_name, repeated_parameter}
 Collection yields no environment for two declarations of one name, for an
-enumeration with a repeated variant, for a declaration named `Bool`, or for
-a function with a repeated parameter.
+enumeration with a repeated variant, for an enumeration named `Bool`, or
+for a function with a repeated parameter.
 
 ```fren
 set_option fren.evidence "random" in
